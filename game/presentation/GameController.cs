@@ -169,12 +169,19 @@ public partial class GameController : Node2D
             .DefaultIfEmpty("nothing")
             .Aggregate((a, b) => $"{a}, {b}");
 
+        string stores = colony.Stores.Where(kv => kv.Value > 0)
+            .Select(kv => $"{kv.Key[(kv.Key.LastIndexOf('.') + 1)..]} {kv.Value}")
+            .DefaultIfEmpty("(empty)")
+            .Aggregate((a, b) => $"{a}, {b}");
+
         GetNode<Label>("UI/ColonyPanel/VBox/ColonyTitle").Text = colony.Name;
         GetNode<Label>("UI/ColonyPanel/VBox/ColonyInfo").Text =
             $"Population: {colony.Population}\n" +
             $"Terrain: {terrain.ShortName}\n" +
-            $"Colony square yield: {centreYield}\n\n" +
-            "(Workers, buildings and production arrive with the colony economy.)";
+            $"Colony square yield: {centreYield} per turn\n" +
+            $"Stores: {stores}\n" +
+            $"Food for next colonist: {colony.Food}/{Colony.FoodForGrowth}\n\n" +
+            "(Worker assignment and buildings arrive in later economy slices.)";
         _colonyPanel.Show();
     }
 

@@ -98,7 +98,7 @@ public sealed class Game
         Ruleset ruleset, GameMap map, RandomState randomState, int turn,
         IEnumerable<(int id, UnitType type, Position position, int movementLeft)> units,
         IEnumerable<Position>? explored,
-        IEnumerable<(int id, string name, Position position, int population)>? colonies = null)
+        IEnumerable<Colony>? colonies = null)
     {
         var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn);
         foreach ((int id, UnitType type, Position position, int movementLeft) in units)
@@ -108,10 +108,10 @@ public sealed class Game
             game._nextUnitId = Math.Max(game._nextUnitId, id + 1);
         }
 
-        foreach ((int id, string name, Position position, int population) in colonies ?? [])
+        foreach (Colony colony in colonies ?? [])
         {
-            game._colonies.Add(new Colony(id, name, position, population));
-            game._nextColonyId = Math.Max(game._nextColonyId, id + 1);
+            game._colonies.Add(colony);
+            game._nextColonyId = Math.Max(game._nextColonyId, colony.Id + 1);
         }
 
         if (explored is not null)
@@ -259,14 +259,48 @@ public sealed class Game
         return colony;
     }
 
-    /// <summary>Ends the current turn: all units regain movement, the turn counter advances.</summary>
+    /// <summary>
+    /// Ends the current turn: colonies produce, eat, and grow; units regain
+    /// movement; the turn counter advances. (Turn-step order matters and grows
+    /// with each economy slice — documented in docs/systems/turns.md.)
+    /// </summary>
     public void EndTurn()
     {
+        foreach (Colony colony in _colonies)
+        {
+            RunColonyTurn(colony);
+        }
         foreach (Unit unit in _units)
         {
             unit.ResetMovement();
         }
         Turn++;
+    }
+
+    /// <summary>One colony's production-eat-grow step.</summary>
+    private void RunColonyTurn(Colony colony)
+    {
+        // 1. The colony square works itself (unattended yield). Worker-tile
+        //    and building production are later Phase 3 slices.
+        TerrainType terrain = Map.TerrainAt(colony.Position);
+        foreach (ProductionEntry entry in terrain.Productions.Where(p => p.Unattended))
+        {
+            foreach (GoodsOutput output in entry.Outputs)
+            {
+                colony.AddGoods(output.GoodsId, output.Amount);
+            }
+        }
+
+        // 2. Colonists eat. Starvation (population loss on shortfall) is
+        //    deliberately deferred until food production is controllable.
+        colony.ConsumeFood(colony.Population * Colony.FoodPerColonist);
+
+        // 3. Growth: a food surplus of 200 raises a new colonist.
+        if (colony.Food >= Colony.FoodForGrowth)
+        {
+            colony.ConsumeFood(Colony.FoodForGrowth);
+            colony.Population++;
+        }
     }
 
     /// <summary>Reveals all tiles within the unit's line of sight.</summary>

@@ -17,11 +17,11 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
-    /// v2 lacked <see cref="Colonies"/>.
+    /// v2 lacked <see cref="Colonies"/>; v3 colonies lacked goods stores.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -81,7 +81,9 @@ public sealed record SaveGame
                 .OrderBy(i => i)
                 .ToList(),
             Colonies = game.Colonies
-                .Select(c => new SavedColony(c.Id, c.Name, c.Position.X, c.Position.Y, c.Population))
+                .Select(c => new SavedColony(
+                    c.Id, c.Name, c.Position.X, c.Position.Y, c.Population,
+                    c.Stores.Count > 0 ? new Dictionary<string, int>(c.Stores) : null))
                 .ToList(),
         };
     }
@@ -104,7 +106,17 @@ public sealed record SaveGame
                 new Position(u.X, u.Y),
                 u.MovementLeft)),
             Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
-            Colonies?.Select(c => (c.Id, c.Name, new Position(c.X, c.Y), c.Population)));
+            Colonies?.Select(c =>
+            {
+                var colony = new CrownAndColony.GameLogic.Colonies.Colony(
+                    c.Id, c.Name, new Position(c.X, c.Y), c.Population);
+                foreach ((string goods, int amount) in
+                         c.Stores ?? new Dictionary<string, int>())
+                {
+                    colony.AddGoods(goods, amount);
+                }
+                return colony;
+            }));
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -123,7 +135,10 @@ public sealed record SaveGame
 /// <param name="X">Map column.</param>
 /// <param name="Y">Map row.</param>
 /// <param name="Population">Colonists living in the colony.</param>
-public sealed record SavedColony(int Id, string Name, int X, int Y, int Population);
+/// <param name="Stores">Warehouse contents by goods id (null in pre-v4 saves / when empty).</param>
+public sealed record SavedColony(
+    int Id, string Name, int X, int Y, int Population,
+    IReadOnlyDictionary<string, int>? Stores = null);
 
 /// <summary>A unit inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Id">Unit id.</param>

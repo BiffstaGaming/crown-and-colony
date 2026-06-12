@@ -15,10 +15,11 @@ The game advances in turns, starting at turn 1. Press **End Turn** and every uni
 
 ## 2. Detailed rules
 
-| On EndTurn | Effect |
+| On EndTurn | Effect (in order) |
 |---|---|
-| All units | movement restored to full |
-| Turn counter | +1 |
+| 1. Each colony | produce (colony square) → eat (2/colonist) → grow (at 200 food) — see [colonies](colonies.md) |
+| 2. All units | movement restored to full |
+| 3. Turn counter | +1 |
 
 **Deviations from original / FreeCol:** none yet — the skeleton turn does the minimum. The original's turn/season/year mapping (1492 start, seasons after 1600) arrives with the calendar in Phase 2+.
 

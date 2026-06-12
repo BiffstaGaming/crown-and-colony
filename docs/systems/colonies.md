@@ -22,6 +22,15 @@ Select a colonist and press **B** to found a colony where it stands. The colonis
 | Tile already has a colony | rejected |
 | Otherwise | colony founded, population 1, founding unit consumed |
 
+**Economy tick (every EndTurn, first economy slice):**
+| Step | Effect |
+|---|---|
+| 1. Colony square produces | the tile's unattended yield goes to the stores (plains: grain 3 + cotton 2) |
+| 2. Colonists eat | 2 food per colonist; grain drains before fish; stores floor at 0 |
+| 3. Growth | at ≥200 stored food: −200 food, +1 population |
+
+Food = grain + fish (hardcoded pair — proper `is-food`/`stored-as` goods-type parsing arrives with production chains). **Starvation is deliberately deferred** until food output is player-controllable (worker assignments) — a food shortfall currently just floors at 0.
+
 **Deviations from original / FreeCol — PENDING CROSS-CHECK:** FreeCol enforces a minimum distance between colonies and the original restricts founding adjacent to existing colonies; we currently only block the same tile. Cross-check and adopt when colony spacing starts to matter (Phase 3).
 
 ## 3. Technical design
@@ -53,3 +62,4 @@ Select a colonist and press **B** to found a colony where it stands. The colonis
 |---|---|---|
 | 2026-06-13 | Founding (B key), colony marker, save v3 | Phase 2b |
 | 2026-06-13 | FreeCol settlement art; colony panel (click colony → name, population, terrain, colony-square yield; Close button). `GameController.OpenColonyPanel` is the public entry; L3-tested | Phase 2c |
+| 2026-06-13 | Economy slice 1: goods stores, colony-square production tick, eat 2/colonist, growth at 200 food (save v4; panel shows stores + growth progress). Consumption/growth values consistent with the original — formal cross-check when goods-types are parsed | Phase 3 |
