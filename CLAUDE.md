@@ -81,7 +81,9 @@ Document IDs (use `clickup_list_document_pages` / `clickup_get_document_pages` t
 
 **Docs vs tasks — the split (Chris's decision, 2026-06-13):**
 - **Documents hold knowledge** — what exists, how it works, why decisions were made. Never keep todo-lists in docs; the roadmap doc holds phase summaries only.
-- **ClickUp tasks are the kanban** — every actionable work item is a task in List `901615382059` (space "Colonization"). Name prefix = phase/stream (`[P2b]`, `[P2c]`, `[QA]`). Chris reorders/prioritizes there; treat task order and priority as his steer.
+- **ClickUp tasks are the kanban** — every actionable work item is a task in List `901615382059` (space "Colonization"). Name prefix = phase/stream (`[P2b]`, `[P2c]`, `[QA]`, `[EPIC Pn]`). Chris reorders/prioritizes there; treat task order and priority as his steer.
+- **Rolling-wave planning:** granular tasks (one work block each: lands with tests + docs + CI green) exist only for the current and next phase. Future phases are single `[EPIC Pn]` tasks — decompose an epic into granular tasks when its phase starts, never earlier.
+- **Status flow** (list statuses, use exactly these): `Backlog` (captured, not scoped) → `Scoping`/`In Design` (research/ADR or design needed) → `Ready for Development` (scoped, can start) → `In Development` (active) → `In Review` (awaiting Chris's playtest/feedback) → `Testing` (QA verification beyond the standard gates) → `Shipped` (merged, CI green, docs synced). `Cancelled` for dropped work. Typical Claude flow: Ready for Development → In Development → Shipped, with In Review when Chris should look before it counts as done.
 
 Workflow each session:
 1. **Start**: read the Session Log (latest entry) + the kanban (open tasks via `clickup_filter_tasks` on the list) before doing significant work.
