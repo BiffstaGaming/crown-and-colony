@@ -28,6 +28,7 @@ public partial class GameController : Node2D
     private ulong _currentSeed;
     private MapView _mapView = null!;
     private UnitMarker _unitMarker = null!;
+    private Node2D _colonyLayer = null!;
     private Label _statusLabel = null!;
     private Unit? _selectedUnit;
     private string? _notice;
@@ -36,6 +37,7 @@ public partial class GameController : Node2D
     {
         _mapView = GetNode<MapView>("MapView");
         _unitMarker = GetNode<UnitMarker>("MapView/UnitMarker");
+        _colonyLayer = GetNode<Node2D>("MapView/ColonyLayer");
         _statusLabel = GetNode<Label>("UI/StatusLabel");
         GetNode<Button>("UI/EndTurnButton").Pressed += OnEndTurnPressed;
 
@@ -81,6 +83,9 @@ public partial class GameController : Node2D
             case InputEventKey { Keycode: Key.N, Pressed: true, Echo: false }:
                 NewGame();
                 break;
+            case InputEventKey { Keycode: Key.B, Pressed: true, Echo: false }:
+                FoundColony();
+                break;
         }
     }
 
@@ -97,6 +102,11 @@ public partial class GameController : Node2D
         {
             _selectedUnit = unitOnTile;
         }
+        else if (_game.ColonyAt(tile) is { } colony)
+        {
+            // Colony screen skeleton: show its vitals (real screen is a later task).
+            _notice = $"{colony.Name} — population {colony.Population}";
+        }
         else if (_selectedUnit is not null)
         {
             MoveCheck check = _game.CheckMove(_selectedUnit, tile);
@@ -110,6 +120,29 @@ public partial class GameController : Node2D
             }
         }
 
+        RefreshView();
+    }
+
+    private void FoundColony()
+    {
+        if (_selectedUnit is null)
+        {
+            _notice = "Select a unit first (click it), then press B to build.";
+            RefreshView();
+            return;
+        }
+
+        MoveCheck check = _game.CheckFoundColony(_selectedUnit);
+        if (!check.Allowed)
+        {
+            _notice = check.Reason;
+        }
+        else
+        {
+            var colony = _game.FoundColony(_selectedUnit);
+            _selectedUnit = null;
+            _notice = $"{colony.Name} founded!";
+        }
         RefreshView();
     }
 
@@ -138,21 +171,48 @@ public partial class GameController : Node2D
     private void RefreshView()
     {
         _mapView.ShowState(_game.Map, _game.Explored);
+        SyncColonyMarkers();
 
-        Unit unit = _game.Units[0];
-        _unitMarker.Position = MapView.TileCentre(unit.Position);
-        _unitMarker.Selected = _selectedUnit == unit;
+        Unit? unit = _game.Units.Count > 0 ? _game.Units[0] : null;
+        _unitMarker.Visible = unit is not null;
+        if (unit is not null)
+        {
+            _unitMarker.Position = MapView.TileCentre(unit.Position);
+            _unitMarker.Selected = _selectedUnit == unit;
+        }
 
-        string terrain = _game.Map.TerrainAt(unit.Position).ShortName;
+        string subject = unit is not null
+            ? $"{unit.Type.ShortName} on {_game.Map.TerrainAt(unit.Position).ShortName}, " +
+              $"movement {unit.MovementLeft}/{unit.Type.Movement}"
+            : _game.Colonies.Count > 0
+                ? $"{_game.Colonies[^1].Name} (pop {_game.Colonies[^1].Population})"
+                : "no units";
         string status =
-            $"Turn {_game.Turn}   |   {unit.Type.ShortName} on {terrain}, " +
-            $"movement {unit.MovementLeft}/{unit.Type.Movement}   |   seed {_currentSeed}" +
-            "   |   N new map, F5 save, F9 load";
+            $"Turn {_game.Turn}   |   {subject}   |   seed {_currentSeed}" +
+            "   |   B build colony, N new map, F5 save, F9 load";
         if (_notice is not null)
         {
             status += $"   |   ⚠ {_notice}";
             _notice = null;
         }
         _statusLabel.Text = status;
+    }
+
+    /// <summary>One marker per colony, reconciled each refresh (colony count is tiny).</summary>
+    private void SyncColonyMarkers()
+    {
+        foreach (Node child in _colonyLayer.GetChildren())
+        {
+            child.QueueFree();
+        }
+        foreach (var colony in _game.Colonies)
+        {
+            var marker = new ColonyMarker
+            {
+                Position = MapView.TileCentre(colony.Position),
+                ColonyName = colony.Name,
+            };
+            _colonyLayer.AddChild(marker);
+        }
     }
 }

@@ -79,10 +79,14 @@ Document IDs (use `clickup_list_document_pages` / `clickup_get_document_pages` t
 - `2kz0t3mf-796` — 05 Asset Register
 - `2kz0t3mf-816` — 06 Session Log (newest entry first; add a new page per session)
 
+**Docs vs tasks — the split (Chris's decision, 2026-06-13):**
+- **Documents hold knowledge** — what exists, how it works, why decisions were made. Never keep todo-lists in docs; the roadmap doc holds phase summaries only.
+- **ClickUp tasks are the kanban** — every actionable work item is a task in List `901615382059` (space "Colonization"). Name prefix = phase/stream (`[P2b]`, `[P2c]`, `[QA]`). Chris reorders/prioritizes there; treat task order and priority as his steer.
+
 Workflow each session:
-1. **Start**: read the ClickUp Space docs (project plan, architecture decisions, current phase/status) before doing significant work.
-2. **During**: track work as ClickUp tasks; keep statuses current.
-3. **End of significant work**: update the relevant docs — decisions made, what changed, what's next. Write for a future session with zero conversation memory.
+1. **Start**: read the Session Log (latest entry) + the kanban (open tasks via `clickup_filter_tasks` on the list) before doing significant work.
+2. **During**: set the task you're working on to in-progress; create tasks for newly discovered work instead of keeping private lists.
+3. **End of significant work**: close finished tasks, update the relevant docs — decisions made, what changed, what's next. Write for a future session with zero conversation memory.
 
 Documentation structure (best practice — keep these as separate documents):
 - **Project Plan / Roadmap** — phases, milestones, current status

@@ -1,3 +1,4 @@
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
@@ -15,10 +16,19 @@ public sealed class Game
     /// <summary>The starting unit's type for a new game.</summary>
     public const string StartingUnitTypeId = "model.unit.freeColonist";
 
+    /// <summary>Default colony names, used in founding order (nation-specific lists come with nations).</summary>
+    private static readonly string[] ColonyNames =
+    [
+        "Jamestown", "Plymouth", "Boston", "New Amsterdam", "Charlesfort",
+        "Salem", "Penobscot", "Roanoke", "New Haven", "Providence",
+    ];
+
     private readonly List<Unit> _units = [];
+    private readonly List<Colony> _colonies = [];
     private readonly HashSet<Position> _explored = [];
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
+    private int _nextColonyId = 1;
 
     private Game(Ruleset ruleset, GameMap map, Pcg32Random random, int turn)
     {
@@ -39,6 +49,12 @@ public sealed class Game
 
     /// <summary>All units in the game.</summary>
     public IReadOnlyList<Unit> Units => _units;
+
+    /// <summary>All colonies, in founding order.</summary>
+    public IReadOnlyList<Colony> Colonies => _colonies;
+
+    /// <summary>The colony on a tile, or null.</summary>
+    public Colony? ColonyAt(Position p) => _colonies.FirstOrDefault(c => c.Position == p);
 
     /// <summary>Tiles the player has seen (fog of war).</summary>
     public IReadOnlySet<Position> Explored => _explored;
@@ -77,7 +93,8 @@ public sealed class Game
     internal static Game Restore(
         Ruleset ruleset, GameMap map, RandomState randomState, int turn,
         IEnumerable<(int id, UnitType type, Position position, int movementLeft)> units,
-        IEnumerable<Position>? explored)
+        IEnumerable<Position>? explored,
+        IEnumerable<(int id, string name, Position position, int population)>? colonies = null)
     {
         var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn);
         foreach ((int id, UnitType type, Position position, int movementLeft) in units)
@@ -85,6 +102,12 @@ public sealed class Game
             var unit = new Unit(id, type, position) { MovementLeft = movementLeft };
             game._units.Add(unit);
             game._nextUnitId = Math.Max(game._nextUnitId, id + 1);
+        }
+
+        foreach ((int id, string name, Position position, int population) in colonies ?? [])
+        {
+            game._colonies.Add(new Colony(id, name, position, population));
+            game._nextColonyId = Math.Max(game._nextColonyId, id + 1);
         }
 
         if (explored is not null)
@@ -187,6 +210,49 @@ public sealed class Game
         unit.Position = target;
         unit.MovementLeft -= check.Cost;
         Reveal(unit);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="unit"/> may found a colony where it stands, and why
+    /// not if not.
+    /// </summary>
+    public MoveCheck CheckFoundColony(Unit unit)
+    {
+        if (!unit.Type.CanFoundColony)
+        {
+            return MoveCheck.No($"A {unit.Type.ShortName} cannot found a colony.");
+        }
+        TerrainType terrain = Map.TerrainAt(unit.Position);
+        if (!terrain.CanSettle)
+        {
+            return MoveCheck.No($"A colony cannot be built on {terrain.ShortName}.");
+        }
+        if (ColonyAt(unit.Position) is not null)
+        {
+            return MoveCheck.No("There is already a colony here.");
+        }
+        // TODO cross-check: FreeCol/original minimum-distance-between-colonies rule.
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Founds a colony where the unit stands. The founding unit settles down and
+    /// becomes the colony's first colonist (it leaves the map).
+    /// </summary>
+    /// <exception cref="InvalidMoveException">Founding is not allowed; see <see cref="CheckFoundColony"/>.</exception>
+    public Colony FoundColony(Unit unit)
+    {
+        MoveCheck check = CheckFoundColony(unit);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+
+        string name = ColonyNames[(_nextColonyId - 1) % ColonyNames.Length];
+        var colony = new Colony(_nextColonyId++, name, unit.Position, population: 1);
+        _colonies.Add(colony);
+        _units.Remove(unit);
+        return colony;
     }
 
     /// <summary>Ends the current turn: all units regain movement, the turn counter advances.</summary>

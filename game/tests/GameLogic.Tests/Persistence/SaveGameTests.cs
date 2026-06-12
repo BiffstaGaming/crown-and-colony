@@ -80,6 +80,32 @@ public class SaveGameTests
     }
 
     [Fact]
+    public void RoundTrip_PreservesColonies()
+    {
+        var game = Game.New(Classic, seed: 11);
+        var founded = game.FoundColony(game.Units[0]);
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        var colony = Assert.Single(loaded.Colonies);
+        Assert.Equal(founded.Id, colony.Id);
+        Assert.Equal(founded.Name, colony.Name);
+        Assert.Equal(founded.Position, colony.Position);
+        Assert.Equal(founded.Population, colony.Population);
+    }
+
+    [Fact]
+    public void PreV3Save_WithoutColonies_LoadsEmpty()
+    {
+        var game = Game.New(Classic, seed: 11);
+        SaveGame v2 = SaveGame.From(game) with { Version = 2, Colonies = null };
+
+        Game loaded = SaveGame.FromJson(v2.ToJson()).Restore(Classic);
+
+        Assert.Empty(loaded.Colonies);
+    }
+
+    [Fact]
     public void Load_WithUnknownTerrainId_Throws()
     {
         var game = Game.New(Classic, seed: 1);

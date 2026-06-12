@@ -48,3 +48,4 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 |---|---|---|
 | 2026-06-13 | JSON save format v1, F5/F9 quicksave, resume-identical guarantee | Phase 1 skeleton |
 | 2026-06-13 | Format v2: unit type ids + explored tiles; v1 loads with defaults (tested) | Phase 2a |
+| 2026-06-13 | Format v3: colonies; pre-v3 loads with none (tested) | Phase 2b |

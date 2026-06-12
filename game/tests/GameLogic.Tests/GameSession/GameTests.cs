@@ -176,6 +176,50 @@ public class GameTests
         Assert.True(game.IsExplored(unit.Position));
     }
 
+    [Fact]
+    public void FoundColony_OnSettleableLand_ConsumesUnitAndCreatesColony()
+    {
+        var game = Game.New(Classic, seed: 42);
+        Unit unit = game.Units[0];
+        Position site = unit.Position;
+
+        var colony = game.FoundColony(unit);
+
+        Assert.Empty(game.Units);                      // founder settled down
+        Assert.Single(game.Colonies);
+        Assert.Equal(site, colony.Position);
+        Assert.Equal(1, colony.Population);
+        Assert.False(string.IsNullOrWhiteSpace(colony.Name));
+        Assert.Same(colony, game.ColonyAt(site));
+    }
+
+    [Fact]
+    public void FoundColony_Rejected_OnOccupiedTile_UnsettleableTerrain_AndForShips()
+    {
+        TerrainType plains = Classic.Terrain("model.tile.plains");
+        TerrainType mountains = Classic.Terrain("model.tile.mountains");
+        TerrainType ocean = Classic.Terrain("model.tile.ocean");
+        var map = new GameMap(3, 1, [plains, mountains, ocean]);
+
+        // Mountains: can-settle is false.
+        Game onMountains = RestoreOnMap(Classic, map,
+            [new SavedUnit(1, "model.unit.freeColonist", 1, 0, 3)]);
+        Assert.False(onMountains.CheckFoundColony(onMountains.Units[0]).Allowed);
+
+        // Ships lack the foundColony ability.
+        Game ship = RestoreOnMap(Classic, map, [new SavedUnit(1, "model.unit.caravel", 2, 0, 12)]);
+        Assert.False(ship.CheckFoundColony(ship.Units[0]).Allowed);
+
+        // Occupied tile: found once, a second colonist cannot found again there.
+        Game occupied = RestoreOnMap(Classic, map, [
+            new SavedUnit(1, "model.unit.freeColonist", 0, 0, 3),
+            new SavedUnit(2, "model.unit.freeColonist", 0, 0, 3)]);
+        occupied.FoundColony(occupied.Units[0]);
+        MoveCheck second = occupied.CheckFoundColony(occupied.Units[0]);
+        Assert.False(second.Allowed);
+        Assert.Throws<InvalidMoveException>(() => occupied.FoundColony(occupied.Units[0]));
+    }
+
     private static Position AdjacentLand(Game game, Position from) =>
         from.Neighbours().First(n => game.CheckMove(game.Units[0], n).Allowed);
 

@@ -17,9 +17,12 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
-    /// <summary>Save format version. v1 lacked <see cref="Explored"/> and unit type ids.</summary>
+    /// <summary>
+    /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
+    /// v2 lacked <see cref="Colonies"/>.
+    /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
     /// <summary>Current turn number.</summary>
@@ -49,6 +52,9 @@ public sealed record SaveGame
     /// </summary>
     public IReadOnlyList<int>? Explored { get; init; }
 
+    /// <summary>All colonies. Null in pre-v3 saves (no colonies existed).</summary>
+    public IReadOnlyList<SavedColony>? Colonies { get; init; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -74,6 +80,9 @@ public sealed record SaveGame
                 .Select(p => p.Y * game.Map.Width + p.X)
                 .OrderBy(i => i)
                 .ToList(),
+            Colonies = game.Colonies
+                .Select(c => new SavedColony(c.Id, c.Name, c.Position.X, c.Position.Y, c.Population))
+                .ToList(),
         };
     }
 
@@ -94,7 +103,8 @@ public sealed record SaveGame
                 ruleset.Unit(u.TypeId ?? Game.StartingUnitTypeId),
                 new Position(u.X, u.Y),
                 u.MovementLeft)),
-            Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)));
+            Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
+            Colonies?.Select(c => (c.Id, c.Name, new Position(c.X, c.Y), c.Population)));
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -106,6 +116,14 @@ public sealed record SaveGame
         JsonSerializer.Deserialize<SaveGame>(json, JsonOptions)
             ?? throw new JsonException("Save file deserialized to null.");
 }
+
+/// <summary>A colony inside a <see cref="SaveGame"/>.</summary>
+/// <param name="Id">Colony id.</param>
+/// <param name="Name">Display name.</param>
+/// <param name="X">Map column.</param>
+/// <param name="Y">Map row.</param>
+/// <param name="Population">Colonists living in the colony.</param>
+public sealed record SavedColony(int Id, string Name, int X, int Y, int Population);
 
 /// <summary>A unit inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Id">Unit id.</param>
