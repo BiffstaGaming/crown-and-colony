@@ -27,6 +27,36 @@ offset_top = 8.0
 offset_right = 900.0
 offset_bottom = 32.0
 
+[node name="ColonyPanel" type="PanelContainer" parent="UI"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -180.0
+offset_top = -120.0
+offset_right = 180.0
+offset_bottom = 120.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="UI/ColonyPanel"]
+layout_mode = 2
+
+[node name="ColonyTitle" type="Label" parent="UI/ColonyPanel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+
+[node name="ColonyInfo" type="Label" parent="UI/ColonyPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CloseButton" type="Button" parent="UI/ColonyPanel/VBox"]
+layout_mode = 2
+text = "Close"
+
 [node name="EndTurnButton" type="Button" parent="UI"]
 anchors_preset = 3
 anchor_left = 1.0

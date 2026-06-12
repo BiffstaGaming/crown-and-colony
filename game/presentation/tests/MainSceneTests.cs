@@ -39,6 +39,35 @@ public class MainSceneTests
     }
 
     [TestCase]
+    public async Task ColonyPanel_OpensWithColonyDetails_AndCloses()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // Found a colony through the game API, then open its panel.
+        var game = (CrownAndColony.GameLogic.GameSession.Game)controller
+            .GetType()
+            .GetField("_game", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(controller)!;
+        var colony = game.FoundColony(game.Units[0]);
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        var panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+        AssertThat(panel.Visible).IsTrue();
+        AssertThat(controller.GetNode<Label>("UI/ColonyPanel/VBox/ColonyTitle").Text)
+            .IsEqual(colony.Name);
+        AssertThat(controller.GetNode<Label>("UI/ColonyPanel/VBox/ColonyInfo").Text)
+            .Contains("Population: 1");
+
+        controller.GetNode<Button>("UI/ColonyPanel/VBox/CloseButton")
+            .EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(panel.Visible).IsFalse();
+    }
+
+    [TestCase]
     public async Task UnitMarker_SitsOnUnitTile()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

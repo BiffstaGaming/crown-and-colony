@@ -52,3 +52,4 @@ Select a colonist and press **B** to found a colony where it stands. The colonis
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-13 | Founding (B key), colony marker, save v3 | Phase 2b |
+| 2026-06-13 | FreeCol settlement art; colony panel (click colony → name, population, terrain, colony-square yield; Close button). `GameController.OpenColonyPanel` is the public entry; L3-tested | Phase 2c |

@@ -61,3 +61,4 @@ There's one explorer on the map. Click it to select (gold ring), click a neighbo
 |---|---|---|
 | 2026-06-13 | Skeleton unit, 8-way single-step movement, selection UI | Phase 1 skeleton |
 | 2026-06-13 | Unit types from ruleset; naval movement; real FreeCol partial-movement rule (cross-check resolved) | Phase 2a |
+| 2026-06-13 | FreeCol unit sprites by type short-name (`assets/freecol/units/`), red-disc fallback, iso ground-ellipse selection | Phase 2c |

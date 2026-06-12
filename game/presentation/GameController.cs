@@ -1,4 +1,5 @@
 using System.Linq;
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
@@ -30,6 +31,7 @@ public partial class GameController : Node2D
     private UnitMarker _unitMarker = null!;
     private Node2D _colonyLayer = null!;
     private Label _statusLabel = null!;
+    private PanelContainer _colonyPanel = null!;
     private Unit? _selectedUnit;
     private string? _notice;
 
@@ -39,7 +41,9 @@ public partial class GameController : Node2D
         _unitMarker = GetNode<UnitMarker>("MapView/UnitMarker");
         _colonyLayer = GetNode<Node2D>("MapView/ColonyLayer");
         _statusLabel = GetNode<Label>("UI/StatusLabel");
+        _colonyPanel = GetNode<PanelContainer>("UI/ColonyPanel");
         GetNode<Button>("UI/EndTurnButton").Pressed += OnEndTurnPressed;
+        GetNode<Button>("UI/ColonyPanel/VBox/CloseButton").Pressed += () => _colonyPanel.Hide();
 
         NewGame();
     }
@@ -110,8 +114,7 @@ public partial class GameController : Node2D
         }
         else if (_game.ColonyAt(tile) is { } colony)
         {
-            // Colony screen skeleton: show its vitals (real screen is a later task).
-            _notice = $"{colony.Name} — population {colony.Population}";
+            OpenColonyPanel(colony);
         }
         else if (_selectedUnit is not null)
         {
@@ -152,6 +155,29 @@ public partial class GameController : Node2D
         RefreshView();
     }
 
+    /// <summary>
+    /// Opens the colony panel (Phase 2b skeleton — the Phase 3 economy UI grows
+    /// here). Public so scene tests can drive it directly.
+    /// </summary>
+    public void OpenColonyPanel(Colony colony)
+    {
+        var terrain = _game.Map.TerrainAt(colony.Position);
+        string centreYield = terrain.Productions
+            .Where(p => p.Unattended)
+            .SelectMany(p => p.Outputs)
+            .Select(o => $"{o.GoodsId[(o.GoodsId.LastIndexOf('.') + 1)..]} {o.Amount}")
+            .DefaultIfEmpty("nothing")
+            .Aggregate((a, b) => $"{a}, {b}");
+
+        GetNode<Label>("UI/ColonyPanel/VBox/ColonyTitle").Text = colony.Name;
+        GetNode<Label>("UI/ColonyPanel/VBox/ColonyInfo").Text =
+            $"Population: {colony.Population}\n" +
+            $"Terrain: {terrain.ShortName}\n" +
+            $"Colony square yield: {centreYield}\n\n" +
+            "(Workers, buildings and production arrive with the colony economy.)";
+        _colonyPanel.Show();
+    }
+
     private void QuickSave()
     {
         using var file = FileAccess.Open(QuickSavePath, FileAccess.ModeFlags.Write);
@@ -185,6 +211,7 @@ public partial class GameController : Node2D
         {
             _unitMarker.Position = MapView.TileCentre(unit.Position);
             _unitMarker.Selected = _selectedUnit == unit;
+            _unitMarker.SetUnitType(unit.Type.ShortName);
         }
 
         string subject = unit is not null
