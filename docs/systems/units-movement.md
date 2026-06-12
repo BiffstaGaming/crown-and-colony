@@ -43,7 +43,7 @@ There's one explorer on the map. Click it to select (gold ring), click a neighbo
 |---|---|---|---|
 | L1 Unit | Always | `GameTests`: legal move spends points; rejects non-adjacent/off-map/water/exhausted; spawn validation | ✅ |
 | L2 Scenario | Always | 10-turn wander with per-move invariants; deterministic twin games | ✅ |
-| L3 Interaction | Yes | unit marker tile-centre test; click-to-move simulation TODO | ⚠️ partial |
+| L3 Interaction | Yes | `InputTests`: click-select + click-to-move (simulated mouse, camera-aware); marker placement | ✅ |
 | L4 Visual | Yes | TODO with visual harness | ⬜ |
 
 - **FreeCol cross-check:** ✅ partial-movement rule matches `Unit.getMoveCost`; rejection branch pinned with a synthetic 12-MP unit (`PartialMovement_BigShortfall_MidTurn_Rejected`); small-shortfall branch pinned with a caravel.

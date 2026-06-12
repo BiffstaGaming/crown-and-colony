@@ -34,7 +34,7 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 |---|---|---|---|
 | L1 Unit | Always | JSON round-trip preserves all fields; RNG state preserved; unknown terrain id throws | ✅ |
 | L2 Scenario | Always | save-mid-game acid test: interrupted vs uninterrupted runs end byte-identical | ✅ |
-| L3 Interaction | Yes (F5/F9) | TODO: simulated keypress test | ⬜ |
+| L3 Interaction | Yes (F5/F9) | `InputTests.QuickSaveF5_ThenF9_RestoresTheTurn` (simulated keys) | ✅ |
 | L4 Visual | No screen | — | — |
 
 ## 5. Open issues / TODO
