@@ -10,5 +10,7 @@
   </RunConfiguration>
   <GdUnit4>
     <DisplayName>FullyQualifiedName</DisplayName>
+    <GodotConnectTimeout>60000</GodotConnectTimeout>
+    <CompileProcessTimeout>60000</CompileProcessTimeout>
   </GdUnit4>
 </RunSettings>
