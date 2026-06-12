@@ -1,0 +1,19 @@
+# FreeCol reference clone — read-only reference, not part of this repo.
+# Restore with: git clone --depth 1 https://github.com/FreeCol/freecol.git freecol
+/freecol/
+
+# Godot 4
+.godot/
+*.translation
+
+# .NET / C#
+bin/
+obj/
+*.user
+.vs/
+.vscode/
+*.csproj.old
+
+# OS
+Thumbs.db
+.DS_Store

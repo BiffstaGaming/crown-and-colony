@@ -1,0 +1,79 @@
+# Project: Crown & Colony (Colonization Remake in Godot)
+
+**Game name:** Crown & Colony · **GitHub:** https://github.com/BiffstaGaming/crown-and-colony (public)
+
+A from-scratch remake of Sid Meier's Colonization (1994), built natively in **Godot 4 with C#**, using **FreeCol** (the GPL v2 Java reimplementation, cloned at `freecol/`) as the concept base and reference specification. After the base game works, the plan is a **variant scenario set in Australia** (or another country) instead of the USA.
+
+## About the user (Chris)
+
+- Average software development experience — mostly **C# and PHP**. Can read and sanity-check C# code.
+- **Zero game development experience** and zero Godot experience. Claude is expected to research and apply game-dev and Godot best practices proactively — do not assume Chris knows engine concepts; explain decisions briefly when they matter.
+- No graphical or musical ability. All assets must come from freely-licensed online sources (see Licensing).
+- Limited time. Chris reviews and decides; Claude does the legwork.
+
+## Locked decisions (do not re-litigate without being asked)
+
+| Decision | Choice | Why |
+|---|---|---|
+| Engine | Godot 4.x | Open source (MIT), license-compatible with GPL game code |
+| Language | C# (.NET version of Godot) | Large logic-heavy codebase: static typing, refactoring tooling, mature test ecosystem (xUnit/NUnit), AI-turn performance. Chris can read it. Accepted trade-off: no browser export for now. |
+| Architecture | Full native Godot remake | No Java server dependency. FreeCol code is a *reference spec*, not a runtime component. |
+| Rules/data | Reuse FreeCol's XML data formats (`freecol/data/`) where practical | Inherits the complete ruleset; makes the Australia variant a data change, not a code change |
+| Base game first | Faithful Colonization gameplay before any variant work | Variant = new data/scenario on a proven engine |
+
+## Licensing — important constraints
+
+- FreeCol is **GPL v2** (code and most assets; some assets CC BY 4.0). Anything derived from its code or assets makes this project **GPL v2**. Treat this project as GPL v2 from day one.
+- Original 1994/2008 Sid Meier game assets, code, and data are **off-limits**. Never copy, extract, or decompile them.
+- Third-party assets (art, music, sound) must have licenses compatible with GPL v2 distribution (CC0, CC BY, GPL, OFL etc. — verify each one, record source + license in an asset credits file). When in doubt, ask Chris before including.
+- "Colonization" as a trademark: the released game needs its own name eventually — flag this when distribution becomes relevant.
+
+## Repository layout
+
+- `CLAUDE.md` — this file
+- `freecol/` — read-only reference clone of FreeCol (GPL v2 Java), **gitignored** (not part of our repo; re-clone with `git clone --depth 1 https://github.com/FreeCol/freecol.git freecol`). **Never modify.** Use it to answer "how does the original behave?" — game rules live in `freecol/data/`, logic in `freecol/src/`, dev docs in `freecol/doc/`.
+- `game/` — (to be created) the Godot project. All new work happens here.
+- `LICENSE` — GPL v2 (whole project)
+
+## Testing — non-negotiable requirements
+
+Chris does **not** have time to manually test. Every feature must ship with automated tests that verify *actual behavior*, not just compilation:
+
+- **Unit tests** for all game logic (rules engine, economy, combat, AI) — game logic must be engine-independent C# classes so they're testable headlessly without Godot running.
+- **Integration/simulation tests**: scripted game scenarios that run turns headlessly and assert outcomes (e.g. "colonist works tile → expected goods produced").
+- **Cross-check against FreeCol** where possible: same inputs should produce the same rule outcomes as the reference implementation.
+- Headless Godot test runs (GUT or GodotTestDriver / `godot --headless`) for scene-level behavior.
+- CI from early on (GitHub Actions) — every change runs the full suite.
+- When Claude completes work, it reports test results honestly. "Tests pass" must mean behavior verified, not "it compiles."
+
+## Documentation & cross-session knowledge — ClickUp
+
+All project knowledge lives in the ClickUp Space **"Colonization"** (Space ID `90167219053`; connector is configured). Purpose: (a) human-readable project plan, (b) durable memory Claude re-ingests across sessions.
+
+Document IDs (use `clickup_list_document_pages` / `clickup_get_document_pages` to read):
+- `2kz0t3mf-716` — 01 Project Plan & Roadmap
+- `2kz0t3mf-736` — 02 Architecture & Decisions (ADR)
+- `2kz0t3mf-756` — 03 Game Design Reference
+- `2kz0t3mf-776` — 04 Godot Knowledge Base
+- `2kz0t3mf-796` — 05 Asset Register
+- `2kz0t3mf-816` — 06 Session Log (newest entry first; add a new page per session)
+
+Workflow each session:
+1. **Start**: read the ClickUp Space docs (project plan, architecture decisions, current phase/status) before doing significant work.
+2. **During**: track work as ClickUp tasks; keep statuses current.
+3. **End of significant work**: update the relevant docs — decisions made, what changed, what's next. Write for a future session with zero conversation memory.
+
+Documentation structure (best practice — keep these as separate documents):
+- **Project Plan / Roadmap** — phases, milestones, current status
+- **Architecture & Decisions (ADR-style)** — one entry per decision: context, choice, why
+- **Game Design Reference** — the Colonization ruleset as we implement it, with FreeCol file references
+- **Godot Knowledge Base** — engine patterns/best practices researched and adopted for this project
+- **Asset Register** — every asset: source URL, license, attribution requirement
+- **Session Log** — dated entries: what was done, state of play, immediate next steps
+
+## How Claude should work on this project
+
+- **Research first**: for any Godot or game-dev pattern, check current best practice online (Godot 4.x specifically — much online material is outdated Godot 3) before implementing.
+- **Ask when it matters**: when a decision genuinely needs Chris's input, ask — and always present researched options with a recommendation, not open-ended questions.
+- **Don't gold-plate**: faithful-to-FreeCol behavior first; modern features and the Australia variant come after the base game is solid.
+- **Keep the separation**: game logic (pure C#, tested) vs. presentation (Godot scenes/nodes). This is the architectural rule that makes the testing requirements achievable.
