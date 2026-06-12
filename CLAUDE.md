@@ -28,6 +28,13 @@ A from-scratch remake of Sid Meier's Colonization (1994), built natively in **Go
 - Third-party assets (art, music, sound) must have licenses compatible with GPL v2 distribution (CC0, CC BY, GPL, OFL etc. — verify each one, record source + license in an asset credits file). When in doubt, ask Chris before including.
 - "Colonization" as a trademark: the released game needs its own name eventually — flag this when distribution becomes relevant.
 
+## Local toolchain (Chris's machine — non-standard paths!)
+
+This machine has no winget and the system .NET is runtime-only. The working toolchain:
+- **.NET SDK 10 (user-local):** `C:\Users\Chris\.dotnet` — NOT first on PATH by default. Prepend it (and set `DOTNET_ROOT`) before any `dotnet` command, or dot-source `scripts/dev-env.ps1`. The `dotnet` that resolves without this is `C:\Program Files\dotnet` and **cannot build** (no SDKs).
+- **Godot 4.6.3 .NET:** `C:\Users\Chris\Tools\Godot_v4.6.3-stable_mono_win64\` — use the `_console.exe` for headless work (`--headless --path game --import` / `--build-solutions --quit`).
+- Build: `dotnet build game/CrownAndColony.slnx` · Test: `dotnet test game/CrownAndColony.slnx` (solution is `.slnx`, the new format — there is no `.sln`).
+
 ## Repository layout
 
 - `CLAUDE.md` — this file

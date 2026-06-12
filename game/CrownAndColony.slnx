@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GameLogic/GameLogic.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GameLogic.Tests/GameLogic.Tests.csproj" />
+  </Folder>
+  <Project Path="CrownAndColony.csproj" />
+</Solution>

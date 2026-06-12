@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  logic-tests:
+    name: "L1+L2: build & logic tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build solution
+        run: dotnet build game/CrownAndColony.slnx --configuration Release
+
+      - name: Run logic tests (L1 unit + L2 scenario)
+        run: dotnet test game/CrownAndColony.slnx --configuration Release --no-build --logger "console;verbosity=normal"
+
+  # L3 (GdUnit4Net interaction) and L4 (visual goldens) jobs are added when the
+  # first scenes exist — they need the Godot editor binary + software GPU on the
+  # runner. See docs/TESTING.md for the gate definitions.

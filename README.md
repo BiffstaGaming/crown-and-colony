@@ -18,6 +18,16 @@ A planned scenario variant will reframe the game around the colonization of Aust
 
 This project contains **no code or assets from the original Sid Meier games**.
 
+## Building from source
+
+Requirements: [.NET SDK](https://dotnet.microsoft.com/download) 8.0+ and [Godot 4.6+ (.NET edition)](https://godotengine.org/download).
+
+```
+dotnet build game/CrownAndColony.slnx     # build everything
+dotnet test  game/CrownAndColony.slnx     # run the logic test suite
+godot --path game                          # open in Godot (editor or play)
+```
+
 ## License
 
 GPL v2 — see [LICENSE](LICENSE). Art/audio assets may carry their own GPL-compatible licenses (CC0/CC BY etc.); see the asset credits once assets land.
