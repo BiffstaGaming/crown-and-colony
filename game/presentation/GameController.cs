@@ -48,7 +48,13 @@ public partial class GameController : Node2D
     {
         // Picking the seed may be non-deterministic (player convenience);
         // the game itself is fully determined by the chosen seed.
-        _currentSeed = Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi();
+        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi());
+    }
+
+    /// <summary>Starts a new game from an explicit seed (tests, visual goldens — ADR-009).</summary>
+    public void StartNewGame(ulong seed)
+    {
+        _currentSeed = seed;
         StartGame(Game.New(Ruleset.LoadClassic(), _currentSeed));
     }
 

@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Run GdUnit4 scene tests in Godot runtime
+      - name: Run GdUnit4 scene tests in Godot runtime (L3 + L4 goldens)
         uses: MikeSchulze/gdUnit4-action@v1
         with:
           godot-version: "4.6.3"
@@ -42,4 +42,10 @@ jobs:
           paths: "presentation/tests"
           publish-report: false
 
-  # L4 (visual goldens) job is added with the visual-test harness — see docs/TESTING.md.
+      - name: Upload visual diff artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs
+          path: game/TestResults/visual/
+          if-no-files-found: ignore
