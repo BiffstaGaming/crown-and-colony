@@ -33,6 +33,7 @@ A from-scratch remake of Sid Meier's Colonization (1994), built natively in **Go
 - `CLAUDE.md` — this file
 - `freecol/` — read-only reference clone of FreeCol (GPL v2 Java), **gitignored** (not part of our repo; re-clone with `git clone --depth 1 https://github.com/FreeCol/freecol.git freecol`). **Never modify.** Use it to answer "how does the original behave?" — game rules live in `freecol/data/`, logic in `freecol/src/`, dev docs in `freecol/doc/`.
 - `game/` — (to be created) the Godot project. All new work happens here.
+- `docs/` — code-coupled documentation: `DOCUMENTATION.md` (standards — binding), `systems/` (one dual-audience doc per game system), `modules/` (one doc per code module), `templates/` (the formats to copy from)
 - `LICENSE` — GPL v2 (whole project)
 
 ## Testing — non-negotiable requirements
@@ -46,11 +47,25 @@ Chris does **not** have time to manually test. Every feature must ship with auto
 - CI from early on (GitHub Actions) — every change runs the full suite.
 - When Claude completes work, it reports test results honestly. "Tests pass" must mean behavior verified, not "it compiles."
 
+## Documentation — the no-drift rule (non-negotiable)
+
+Full standards live in `docs/DOCUMENTATION.md` — read it before writing code or docs. The core rule:
+
+**Documentation is part of the change, not a follow-up task.** Any commit that adds or alters game logic, behavior, a formula, or a public API must update the matching documentation **in that same commit**:
+- Game behavior changed → update `docs/systems/<system>.md` (create from `docs/templates/TEMPLATE-game-system.md` if missing) — **both layers**: the plain-English section AND the technical section, plus a changelog row.
+- Public API added/changed → C# XML doc comments (`///`) and `docs/modules/<module>.md`.
+- Every system doc is dual-audience: plain English first (no jargon, worked examples), technical second (exact formulas, code refs, FreeCol references, test list). If the plain-English section can't be written, the design isn't understood yet — stop and understand it.
+
+**Definition of done for any feature:** tests pass (behavior verified) + system doc updated (both layers) + XML doc comments + changelog row + ClickUp updated if plan/decisions/assets changed. A feature missing any of these is not done — do not report it as done.
+
+Split of responsibilities: **repo `docs/` = anything describing code behavior** (same-commit rule applies); **ClickUp = project-level knowledge** (plan, ADRs, session log, assets, engine research).
+
 ## Documentation & cross-session knowledge — ClickUp
 
 All project knowledge lives in the ClickUp Space **"Colonization"** (Space ID `90167219053`; connector is configured). Purpose: (a) human-readable project plan, (b) durable memory Claude re-ingests across sessions.
 
 Document IDs (use `clickup_list_document_pages` / `clickup_get_document_pages` to read):
+- `2kz0t3mf-836` — 00 Documentation Standards (index — authoritative version is repo `docs/DOCUMENTATION.md`)
 - `2kz0t3mf-716` — 01 Project Plan & Roadmap
 - `2kz0t3mf-736` — 02 Architecture & Decisions (ADR)
 - `2kz0t3mf-756` — 03 Game Design Reference
