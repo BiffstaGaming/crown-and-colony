@@ -38,14 +38,13 @@ A from-scratch remake of Sid Meier's Colonization (1994), built natively in **Go
 
 ## Testing — non-negotiable requirements
 
-Chris does **not** have time to manually test. Every feature must ship with automated tests that verify *actual behavior*, not just compilation:
+Chris does **not** have time to manually test. The full strategy is **binding and lives in `docs/TESTING.md`** — read it before writing tests or CI. Summary:
 
-- **Unit tests** for all game logic (rules engine, economy, combat, AI) — game logic must be engine-independent C# classes so they're testable headlessly without Godot running.
-- **Integration/simulation tests**: scripted game scenarios that run turns headlessly and assert outcomes (e.g. "colonist works tile → expected goods produced").
-- **Cross-check against FreeCol** where possible: same inputs should produce the same rule outcomes as the reference implementation.
-- Headless Godot test runs (GUT or GodotTestDriver / `godot --headless`) for scene-level behavior.
-- CI from early on (GitHub Actions) — every change runs the full suite.
-- When Claude completes work, it reports test results honestly. "Tests pass" must mean behavior verified, not "it compiles."
+- **Five-layer pyramid**: L1 unit (xUnit, engine-free `GameLogic`) → L2 scenario simulations (scripted turns, FreeCol cross-checks) → L3 interaction (GdUnit4Net scene runner, simulated input) → L4 visual regression (golden screenshots, custom harness) → L5 nightly smoke/soak (AI autoplay, perf budget).
+- **Determinism (ADR-009)**: all randomness through a seeded, injectable RNG — no direct `Random`/`GD.Randf()` anywhere. Treat violations like compile errors.
+- Every system doc's Verification section carries the five-layer coverage table; required layers must be green in CI before a feature is "done".
+- CI gates: push = L1+L2; PR = +L3+L4; nightly = L5. Visual-golden regeneration must be deliberate and visible in the PR.
+- When Claude completes work, it reports test results honestly. "Tests pass" must mean behavior verified at every required layer, not "it compiles."
 
 ## Documentation — the no-drift rule (non-negotiable)
 
@@ -88,6 +87,7 @@ Documentation structure (best practice — keep these as separate documents):
 
 ## How Claude should work on this project
 
+- **No knowledge lives only in chat**: any plan, standard, template, or concept agreed in conversation must be formalized into the appropriate doc (repo `docs/` if code-coupled, ClickUp if project-level, CLAUDE.md if it's a working rule) **in the same session it's agreed** — and committed/pushed. If it isn't written down, it doesn't exist for the next session.
 - **Research first**: for any Godot or game-dev pattern, check current best practice online (Godot 4.x specifically — much online material is outdated Godot 3) before implementing.
 - **Ask when it matters**: when a decision genuinely needs Chris's input, ask — and always present researched options with a recommendation, not open-ended questions.
 - **Don't gold-plate**: faithful-to-FreeCol behavior first; modern features and the Australia variant come after the base game is solid.

@@ -53,11 +53,17 @@ One-paragraph summary of what this system does and why it matters to the player.
 
 ## 4. Verification
 
-*How we know this works — the testing contract for this system.*
+*How we know this works — the testing contract for this system (see `docs/TESTING.md` for layer definitions).*
 
-- **Unit tests:** `<file>` — what they pin down.
-- **Scenario tests:** `<file>` — scripted situations + expected outcomes (e.g. "colony with farmer on grassland, 10 turns → +30 food").
-- **FreeCol cross-check:** compared / not yet compared; results and any discrepancies.
+| Layer | Required? | Tests / goldens | Status |
+|---|---|---|---|
+| L1 Unit | Always | `game/tests/<Area>/...` | ⬜ |
+| L2 Scenario | Always | `<scenario + expected outcome>` | ⬜ |
+| L3 Interaction | If the system has UI | `<GdUnit4Net scene tests>` | ⬜ |
+| L4 Visual | If the system has a screen | `<golden ids>` (defs in `docs/visual-tests/`) | ⬜ |
+| L5 Soak | Covered by global suite | — | — |
+
+- **FreeCol cross-check:** compared / not yet compared; setup, expected values, results, and any discrepancies (with rationale if we keep them).
 
 ## 5. Open issues / TODO
 
