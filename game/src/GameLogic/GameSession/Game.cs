@@ -73,14 +73,18 @@ public sealed class Game
 
         var game = new Game(ruleset, map, random, turn: 1);
 
-        // Start on settleable land that has somewhere to walk to (not a 1-tile islet).
+        // Start on settleable land that has somewhere to walk to (not a 1-tile
+        // islet), preferring temperate latitudes (nearest the equator row) over
+        // a polar landfall.
         bool Settleable(Position p)
         {
             TerrainType t = map.TerrainAt(p);
             return !t.IsWater && t.CanSettle;
         }
+        int equator = mapHeight / 2;
         Position start = map.AllPositions()
             .Where(Settleable)
+            .OrderBy(p => Math.Abs(p.Y - equator))
             .FirstOrDefault(
                 p => p.Neighbours().Any(n => map.InBounds(n) && !map.TerrainAt(n).IsWater),
                 map.AllPositions().First(Settleable));

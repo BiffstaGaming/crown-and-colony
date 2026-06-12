@@ -20,7 +20,7 @@ public partial class UnitMarker : Node2D
 
     public override void _Draw()
     {
-        const float radius = MapView.TileSize * 0.35f;
+        const float radius = MapView.TileH * 0.30f;
         DrawCircle(Vector2.Zero, radius, new Color(0.75f, 0.15f, 0.15f));
         DrawArc(Vector2.Zero, radius, 0, Mathf.Tau, 32, Colors.Black, 2f);
         if (_selected)

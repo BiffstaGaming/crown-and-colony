@@ -20,7 +20,7 @@ public partial class ColonyMarker : Node2D
 
     public override void _Draw()
     {
-        const float half = MapView.TileSize * 0.38f;
+        const float half = MapView.TileH * 0.34f;
         var body = new Rect2(-half, -half, half * 2, half * 2);
         DrawRect(body, new Color(0.85f, 0.80f, 0.65f));
         DrawRect(body, Colors.Black, filled: false, width: 2f);

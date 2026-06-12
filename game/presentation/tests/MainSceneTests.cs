@@ -47,9 +47,10 @@ public class MainSceneTests
         var controller = (GameController)runner.Scene();
         var marker = controller.GetNode<UnitMarker>("MapView/UnitMarker");
 
-        // The marker must sit at the centre of some on-map tile (the unit's).
+        // The marker must sit at the centre of some diamond: isometric centres
+        // land on multiples of half the tile width/height.
         Vector2 pos = marker.Position;
-        AssertThat(pos.X % MapView.TileSize).IsEqual(MapView.TileSize / 2f);
-        AssertThat(pos.Y % MapView.TileSize).IsEqual(MapView.TileSize / 2f);
+        AssertThat(pos.X % (MapView.TileW / 2f)).IsEqual(0f);
+        AssertThat(pos.Y % (MapView.TileH / 2f)).IsEqual(0f);
     }
 }

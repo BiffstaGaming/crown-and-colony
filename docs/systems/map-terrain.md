@@ -29,7 +29,7 @@ The world is a rectangular grid of square tiles, each with one terrain type from
 - `Position` (record struct): adjacency + neighbour enumeration.
 - `GameMap`: immutable terrain grid (row-major array), bounds checks throw off-map.
 - `MapGenerator.Generate(ruleset, w, h, IGameRandom)`: pure function of its inputs.
-- Rendering (`MapView`): `_Draw`-based flat-colour tiles, 32 px (`MapView.TileSize`); palette keyed by `TerrainType.ShortName`, unknown terrain renders magenta to be unmissable. Map-space↔tile conversions live in `MapView.TileCentre`/`TileAt`.
+- Rendering (`MapView`, ADR-014): **isometric diamonds with FreeCol art** — the unchanged square grid projects 45° (`screen = ((x−y)·64, (x+y)·32)`, tiles 128×64, `TileW`/`TileH`). Base diamond per terrain (2 variants picked by position hash — no RNG draws); forest/hills/mountains render as base + overlay (base mapping mirrors the climate pairs); fog uses FreeCol's `unexplored` art; unmapped terrain renders a magenta diamond. Conversions in `TileCentre`/`TileAt` (exact diamond picking via rounding in grid space). Art provenance: `game/assets/freecol/PROVENANCE.md`. Not yet adopted: beach/river transitions, 16-variant forest connection bitmasks, hi-res `.size9` art.
 
 ## 4. Verification
 
@@ -53,3 +53,4 @@ The world is a rectangular grid of square tiles, each with one terrain type from
 |---|---|---|
 | 2026-06-13 | Grid model, placeholder generator, flat-colour rendering | Phase 1 skeleton |
 | 2026-06-13 | Climate-band generation from spec `<gen>` data; high-seas edges; fog rendering | Phase 2a |
+| 2026-06-13 | Isometric rendering with FreeCol terrain art (ADR-014); temperate-biased start tile | Phase 2c |
