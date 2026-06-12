@@ -1,0 +1,53 @@
+using CrownAndColony.GameLogic.Specification;
+
+namespace CrownAndColony.GameLogic.World;
+
+/// <summary>The game world: a rectangular grid of tiles, each with a terrain type.</summary>
+public sealed class GameMap
+{
+    private readonly TerrainType[] _terrain;
+
+    /// <summary>Creates a map from a row-major terrain array (length must be Width × Height).</summary>
+    public GameMap(int width, int height, IReadOnlyList<TerrainType> terrain)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        if (terrain.Count != width * height)
+        {
+            throw new ArgumentException(
+                $"Terrain array length {terrain.Count} does not match {width}x{height} map.", nameof(terrain));
+        }
+
+        Width = width;
+        Height = height;
+        _terrain = [.. terrain];
+    }
+
+    /// <summary>Map width in tiles.</summary>
+    public int Width { get; }
+
+    /// <summary>Map height in tiles.</summary>
+    public int Height { get; }
+
+    /// <summary>True when the position lies on the map.</summary>
+    public bool InBounds(Position p) => p.X >= 0 && p.X < Width && p.Y >= 0 && p.Y < Height;
+
+    /// <summary>The terrain at a position.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">Position is off the map.</exception>
+    public TerrainType TerrainAt(Position p) =>
+        InBounds(p)
+            ? _terrain[p.Y * Width + p.X]
+            : throw new ArgumentOutOfRangeException(nameof(p), p, "Position is off the map.");
+
+    /// <summary>All positions on the map, row by row.</summary>
+    public IEnumerable<Position> AllPositions()
+    {
+        for (int y = 0; y < Height; y++)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                yield return new Position(x, y);
+            }
+        }
+    }
+}

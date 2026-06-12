@@ -1,0 +1,49 @@
+# System: Save & load
+
+| | |
+|---|---|
+| **Status** | Implemented (skeleton scope) |
+| **Last verified** | 2026-06-13 @ Phase 1 walking skeleton |
+| **Code** | `game/src/GameLogic/Persistence/SaveGame.cs` · UI: `GameController` F5/F9 |
+| **Tests** | `game/tests/GameLogic.Tests/Persistence/SaveGameTests.cs`, `Scenarios/` |
+| **FreeCol reference** | n/a — our own format (FreeCol's .fsg is not a compatibility goal) |
+| **Related systems** | [randomness](randomness.md) (RNG state is part of the save) |
+
+## 1. How it works (plain English)
+
+Press **F5** to save, **F9** to load. A save captures everything — the map, the units, whose turn it is, and even the game's hidden "dice position" — so a loaded game continues *exactly* as if you'd never stopped: the same future battles, the same future maps. Saves are readable JSON files (handy for debugging and bug reports).
+
+## 2. Detailed rules
+
+- A save restores: turn, map (terrain per tile), every unit (id, position, movement left), RNG state.
+- Loading an interrupted game then continuing produces **identical outcomes** to never having saved (tested).
+- Saves carry a format `Version` (currently 1); breaking shape changes bump it.
+- Saves reference terrain by ruleset id — loading needs the matching ruleset; unknown ids fail loudly.
+
+**Deviations:** our own JSON format by design; no FreeCol save compatibility planned.
+
+## 3. Technical design
+
+- `SaveGame` (record): pure DTO snapshot; `From(game)` / `Restore(ruleset)` / `ToJson()` / `FromJson()`. System.Text.Json, indented output.
+- RNG round-trip via `RandomState` (ADR-009) — the linchpin of resume-identical behaviour.
+- Quicksave path: `user://quicksave.json` (Godot user dir); file I/O lives in presentation (`GameController`), serialization in GameLogic — keeps GameLogic free of file-system concerns.
+
+## 4. Verification
+
+| Layer | Required? | Tests / goldens | Status |
+|---|---|---|---|
+| L1 Unit | Always | JSON round-trip preserves all fields; RNG state preserved; unknown terrain id throws | ✅ |
+| L2 Scenario | Always | save-mid-game acid test: interrupted vs uninterrupted runs end byte-identical | ✅ |
+| L3 Interaction | Yes (F5/F9) | TODO: simulated keypress test | ⬜ |
+| L4 Visual | No screen | — | — |
+
+## 5. Open issues / TODO
+
+- [ ] Save slots / save dialog UI (later phase); L3 hotkey test.
+- [ ] Versioned migration once format changes post-1.
+
+## Changelog
+
+| Date | Change | Commit |
+|---|---|---|
+| 2026-06-13 | JSON save format v1, F5/F9 quicksave, resume-identical guarantee | Phase 1 skeleton |

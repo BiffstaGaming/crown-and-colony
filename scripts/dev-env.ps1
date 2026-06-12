@@ -7,6 +7,8 @@ $env:PATH = "$env:DOTNET_ROOT;$env:PATH"
 
 # Godot 4.6.3 .NET edition; the _console exe attaches to the terminal (use for --headless).
 $env:GODOT = "C:\Users\Chris\Tools\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64_console.exe"
+# Used by the GdUnit4 test adapter (L3 tests).
+$env:GODOT_BIN = $env:GODOT
 
 Write-Output "dotnet: $((Get-Command dotnet).Source) ($(dotnet --version))"
 Write-Output "godot:  $env:GODOT"

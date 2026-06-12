@@ -21,8 +21,25 @@ jobs:
         run: dotnet build game/CrownAndColony.slnx --configuration Release
 
       - name: Run logic tests (L1 unit + L2 scenario)
-        run: dotnet test game/CrownAndColony.slnx --configuration Release --no-build --logger "console;verbosity=normal"
+        run: >
+          dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj
+          --configuration Release --no-build --logger "console;verbosity=normal"
 
-  # L3 (GdUnit4Net interaction) and L4 (visual goldens) jobs are added when the
-  # first scenes exist — they need the Godot editor binary + software GPU on the
-  # runner. See docs/TESTING.md for the gate definitions.
+  scene-tests:
+    name: "L3: Godot interaction tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run GdUnit4 scene tests in Godot runtime
+        uses: MikeSchulze/gdUnit4-action@v1
+        with:
+          godot-version: "4.6.3"
+          godot-net: true
+          dotnet-version: net8.0
+          version: latest
+          project_dir: "./game/"
+          paths: "presentation/tests"
+          publish-report: false
+
+  # L4 (visual goldens) job is added with the visual-test harness — see docs/TESTING.md.

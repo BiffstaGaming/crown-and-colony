@@ -2,10 +2,28 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
+    <!-- Lets the VSTest host (L3 tests) run on a newer installed runtime. -->
+    <RollForward>LatestMajor</RollForward>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <Nullable>enable</Nullable>
     <RootNamespace>CrownAndColony</RootNamespace>
   </PropertyGroup>
+
+  <!-- L3 interaction tests (presentation/tests) live inside this project: the
+       GdUnit4 adapter requires the test assembly's project to BE the Godot
+       project (official gdUnit4Net example layout). Run with:
+       dotnet test CrownAndColony.csproj (settings file: gdunit.runsettings) -->
+  <PropertyGroup>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <VSTestTestAdapterPath>none</VSTestTestAdapterPath>
+    <TestFramework>GdUnit4</TestFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="gdUnit4.api" Version="5.0.0" />
+    <PackageReference Include="gdUnit4.test.adapter" Version="3.0.0" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="src\GameLogic\GameLogic.csproj" />

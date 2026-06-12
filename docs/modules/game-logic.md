@@ -21,6 +21,15 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | `Randomness.IGameRandom` | The only permitted randomness source (ADR-009) |
 | `Randomness.Pcg32Random` | Deterministic PCG32 implementation; `FromState()` resumes saves |
 | `Randomness.RandomState` | Serializable generator snapshot |
+| `Specification.Ruleset` | Parsed rule data; `LoadClassic()` reads the embedded classic spec |
+| `Specification.TerrainType` / `ProductionEntry` / `GoodsOutput` | Immutable terrain rule data |
+| `World.Position` | Grid coordinate; 8-way adjacency |
+| `World.GameMap` | Immutable terrain grid |
+| `World.MapGenerator` | Seeded placeholder map generation (Phase 2 replaces algorithm) |
+| `Units.Unit` | Unit state; mutated only via `Game` |
+| `GameSession.Game` | The running game: `New`, `CheckMove`, `MoveUnit`, `EndTurn`, `SpawnUnit` |
+| `GameSession.MoveCheck` / `InvalidMoveException` | Move legality result / violation |
+| `Persistence.SaveGame` / `SavedUnit` | Complete JSON-serializable game snapshot |
 
 (Grows as systems land; keep this table current.)
 

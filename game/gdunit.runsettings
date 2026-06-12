@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <MaxCpuCount>1</MaxCpuCount>
+    <TestSessionTimeout>180000</TestSessionTimeout>
+    <EnvironmentVariables>
+      <!-- Local dev default (see scripts/dev-env.ps1); CI overrides via env. -->
+      <GODOT_BIN>C:\Users\Chris\Tools\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64_console.exe</GODOT_BIN>
+    </EnvironmentVariables>
+  </RunConfiguration>
+  <GdUnit4>
+    <DisplayName>FullyQualifiedName</DisplayName>
+  </GdUnit4>
+</RunSettings>

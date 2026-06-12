@@ -11,4 +11,15 @@
 
   <!-- This library must remain engine-free (ADR-006): no Godot package references, ever. -->
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="GameLogic.Tests" />
+  </ItemGroup>
+
+  <!-- The classic ruleset ships inside the assembly so game, tests, and CI all
+       read identical bytes and Godot exports need no loose-file handling. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\data\rules\classic\specification.xml"
+                      LogicalName="CrownAndColony.GameLogic.Specification.classic.specification.xml" />
+  </ItemGroup>
+
 </Project>
