@@ -30,20 +30,53 @@ public class SaveGameTests
             loaded.Map.AllPositions().Select(p => loaded.Map.TerrainAt(p).Id));
         Assert.Equal(game.Units.Count, loaded.Units.Count);
         Assert.Equal(game.Units[0].Id, loaded.Units[0].Id);
+        Assert.Equal(game.Units[0].Type.Id, loaded.Units[0].Type.Id);
         Assert.Equal(game.Units[0].Position, loaded.Units[0].Position);
         Assert.Equal(game.Units[0].MovementLeft, loaded.Units[0].MovementLeft);
     }
 
     [Fact]
+    public void RoundTrip_PreservesExploredTilesExactly()
+    {
+        var game = Game.New(Classic, seed: 99);
+        game.MoveUnit(game.Units[0], AdjacentLand(game, game.Units[0].Position));
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(
+            game.Explored.OrderBy(p => (p.Y, p.X)),
+            loaded.Explored.OrderBy(p => (p.Y, p.X)));
+    }
+
+    [Fact]
     public void LoadedGame_ContinuesIdenticalRandomSequence()
     {
-        // The determinism contract end-to-end (ADR-009): a saved-and-loaded game
-        // must behave identically to the original from the save point onward.
         var original = Game.New(Classic, seed: 7);
         string json = SaveGame.From(original).ToJson();
         Game loaded = SaveGame.FromJson(json).Restore(Classic);
 
         Assert.Equal(original.RandomState, loaded.RandomState);
+    }
+
+    [Fact]
+    public void V1Save_WithoutFogOrUnitTypes_LoadsWithDefaults()
+    {
+        // Format v1 (Phase 1) had no Explored list and no unit TypeId. Loading
+        // must still work: units default to free colonists, fog reveals around them.
+        var game = Game.New(Classic, seed: 5);
+        SaveGame v1 = SaveGame.From(game) with
+        {
+            Version = 1,
+            Explored = null,
+            Units = game.Units.Select(u =>
+                new SavedUnit(u.Id, null, u.Position.X, u.Position.Y, u.MovementLeft)).ToList(),
+        };
+
+        Game loaded = SaveGame.FromJson(v1.ToJson()).Restore(Classic);
+
+        Assert.Equal(Game.StartingUnitTypeId, loaded.Units[0].Type.Id);
+        Assert.True(loaded.IsExplored(loaded.Units[0].Position));
+        Assert.InRange(loaded.Explored.Count, 4, 9);
     }
 
     [Fact]

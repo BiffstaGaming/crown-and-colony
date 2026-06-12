@@ -11,15 +11,21 @@ namespace CrownAndColony.GameLogic.Specification;
 public sealed class Ruleset
 {
     private readonly Dictionary<string, TerrainType> _terrainById;
+    private readonly Dictionary<string, UnitType> _unitById;
 
-    private Ruleset(Dictionary<string, TerrainType> terrainById)
+    private Ruleset(Dictionary<string, TerrainType> terrainById, Dictionary<string, UnitType> unitById)
     {
         _terrainById = terrainById;
+        _unitById = unitById;
         TerrainTypes = _terrainById.Values.ToList();
+        UnitTypes = _unitById.Values.ToList();
     }
 
     /// <summary>All terrain types, in specification order.</summary>
     public IReadOnlyList<TerrainType> TerrainTypes { get; }
+
+    /// <summary>All concrete (non-abstract) unit types, in specification order.</summary>
+    public IReadOnlyList<UnitType> UnitTypes { get; }
 
     /// <summary>Looks up a terrain type by ruleset id (e.g. <c>model.tile.plains</c>).</summary>
     /// <exception cref="KeyNotFoundException">Unknown id.</exception>
@@ -27,6 +33,13 @@ public sealed class Ruleset
         _terrainById.TryGetValue(id, out var t)
             ? t
             : throw new KeyNotFoundException($"Unknown terrain type '{id}'.");
+
+    /// <summary>Looks up a unit type by ruleset id (e.g. <c>model.unit.freeColonist</c>).</summary>
+    /// <exception cref="KeyNotFoundException">Unknown id.</exception>
+    public UnitType Unit(string id) =>
+        _unitById.TryGetValue(id, out var u)
+            ? u
+            : throw new KeyNotFoundException($"Unknown unit type '{id}'.");
 
     /// <summary>Loads the classic (1994-faithful) ruleset embedded in this assembly.</summary>
     public static Ruleset LoadClassic()
@@ -64,7 +77,94 @@ public sealed class Ruleset
             throw new RulesetFormatException("Specification defines no tile types.");
         }
 
-        return new Ruleset(terrain);
+        XElement unitTypes = root.Element("unit-types")
+            ?? throw new RulesetFormatException("Specification has no <unit-types> section.");
+        Dictionary<string, UnitType> units = ParseUnitTypes(unitTypes);
+
+        return new Ruleset(terrain, units);
+    }
+
+    /// <summary>
+    /// Parses unit types, resolving the spec's <c>extends</c> inheritance chains
+    /// (attributes: nearest definition wins; abilities: any ancestor may set them).
+    /// Abstract types participate in resolution but are not exposed.
+    /// </summary>
+    private static Dictionary<string, UnitType> ParseUnitTypes(XElement unitTypes)
+    {
+        var elements = new Dictionary<string, XElement>();
+        foreach (XElement el in unitTypes.Elements("unit-type"))
+        {
+            string id = RequiredAttribute(el, "id");
+            if (!elements.TryAdd(id, el))
+            {
+                throw new RulesetFormatException($"Duplicate unit-type id '{id}'.");
+            }
+        }
+
+        var units = new Dictionary<string, UnitType>();
+        foreach ((string id, XElement el) in elements)
+        {
+            if ((bool?)el.Attribute("abstract") ?? false)
+            {
+                continue;
+            }
+
+            units[id] = new UnitType(
+                Id: id,
+                Movement: ResolveIntAttribute(el, "movement", elements) ?? 3,
+                LineOfSight: ResolveIntAttribute(el, "line-of-sight", elements) ?? 1,
+                IsNaval: ResolveAbility(el, "model.ability.navalUnit", elements),
+                CanFoundColony: ResolveAbility(el, "model.ability.foundColony", elements));
+        }
+
+        if (units.Count == 0)
+        {
+            throw new RulesetFormatException("Specification defines no concrete unit types.");
+        }
+        return units;
+    }
+
+    /// <summary>Walks the extends chain until an element defines the attribute. Defaults match FreeCol's UnitType.</summary>
+    private static int? ResolveIntAttribute(
+        XElement el, string name, Dictionary<string, XElement> elements)
+    {
+        for (XElement? current = el; current is not null; current = ParentOf(current, elements))
+        {
+            if ((int?)current.Attribute(name) is int value)
+            {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>True when any element in the extends chain sets the ability to true (nearest wins).</summary>
+    private static bool ResolveAbility(
+        XElement el, string abilityId, Dictionary<string, XElement> elements)
+    {
+        for (XElement? current = el; current is not null; current = ParentOf(current, elements))
+        {
+            XElement? ability = current.Elements("ability")
+                .FirstOrDefault(a => (string?)a.Attribute("id") == abilityId);
+            if (ability is not null)
+            {
+                return (bool?)ability.Attribute("value") ?? true;
+            }
+        }
+        return false;
+    }
+
+    private static XElement? ParentOf(XElement el, Dictionary<string, XElement> elements)
+    {
+        string? parentId = (string?)el.Attribute("extends");
+        if (parentId is null)
+        {
+            return null;
+        }
+        return elements.TryGetValue(parentId, out XElement? parent)
+            ? parent
+            : throw new RulesetFormatException(
+                $"unit-type '{(string?)el.Attribute("id")}' extends unknown type '{parentId}'.");
     }
 
     private static TerrainType ParseTileType(XElement el)
@@ -82,6 +182,8 @@ public sealed class Ruleset
                     .ToList()))
             .ToList();
 
+        XElement? gen = el.Element("gen");
+
         return new TerrainType(
             Id: id,
             MoveCost: (int?)el.Attribute("basic-move-cost")
@@ -93,7 +195,14 @@ public sealed class Ruleset
             IsElevation: (bool?)el.Attribute("is-elevation") ?? false,
             CanSettle: (bool?)el.Attribute("can-settle") ?? true,
             IsConnected: (bool?)el.Attribute("is-connected") ?? false,
-            Productions: productions);
+            Productions: productions,
+            Gen: gen is null ? null : new GenRanges(
+                HumidityMin: (int?)gen.Attribute("humidity-minimum") ?? 0,
+                HumidityMax: (int?)gen.Attribute("humidity-maximum") ?? 100,
+                TemperatureMin: (int?)gen.Attribute("temperature-minimum") ?? -20,
+                TemperatureMax: (int?)gen.Attribute("temperature-maximum") ?? 40,
+                AltitudeMin: (int?)gen.Attribute("altitude-minimum") ?? 0,
+                AltitudeMax: (int?)gen.Attribute("altitude-maximum") ?? 30));
     }
 
     private static string RequiredAttribute(XElement el, string name) =>

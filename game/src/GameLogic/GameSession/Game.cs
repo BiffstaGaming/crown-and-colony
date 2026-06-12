@@ -6,12 +6,17 @@ using CrownAndColony.GameLogic.World;
 namespace CrownAndColony.GameLogic.GameSession;
 
 /// <summary>
-/// One running game: the map, the units, and the turn counter. All mutations of
-/// game state go through methods on this class so rules are enforced in one place.
+/// One running game: the map, the units, exploration state, and the turn counter.
+/// All mutations of game state go through methods on this class so rules are
+/// enforced in one place.
 /// </summary>
 public sealed class Game
 {
+    /// <summary>The starting unit's type for a new game.</summary>
+    public const string StartingUnitTypeId = "model.unit.freeColonist";
+
     private readonly List<Unit> _units = [];
+    private readonly HashSet<Position> _explored = [];
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
 
@@ -35,23 +40,35 @@ public sealed class Game
     /// <summary>All units in the game.</summary>
     public IReadOnlyList<Unit> Units => _units;
 
+    /// <summary>Tiles the player has seen (fog of war).</summary>
+    public IReadOnlySet<Position> Explored => _explored;
+
+    /// <summary>Whether a tile has been revealed.</summary>
+    public bool IsExplored(Position p) => _explored.Contains(p);
+
     /// <summary>
     /// Starts a new game: generates a map from the seed and places one starting
-    /// unit on the first settleable land tile.
+    /// colonist on the first settleable land tile, revealing its surroundings.
     /// </summary>
-    public static Game New(Ruleset ruleset, ulong seed, int mapWidth = 24, int mapHeight = 16)
+    public static Game New(Ruleset ruleset, ulong seed, int mapWidth = 36, int mapHeight = 24)
     {
         var random = new Pcg32Random(seed);
         GameMap map = MapGenerator.Generate(ruleset, mapWidth, mapHeight, random);
 
         var game = new Game(ruleset, map, random, turn: 1);
 
-        Position start = map.AllPositions().First(p =>
+        // Start on settleable land that has somewhere to walk to (not a 1-tile islet).
+        bool Settleable(Position p)
         {
             TerrainType t = map.TerrainAt(p);
             return !t.IsWater && t.CanSettle;
-        });
-        game.SpawnUnit(start);
+        }
+        Position start = map.AllPositions()
+            .Where(Settleable)
+            .FirstOrDefault(
+                p => p.Neighbours().Any(n => map.InBounds(n) && !map.TerrainAt(n).IsWater),
+                map.AllPositions().First(Settleable));
+        game.SpawnUnit(ruleset.Unit(StartingUnitTypeId), start);
 
         return game;
     }
@@ -59,14 +76,28 @@ public sealed class Game
     /// <summary>Restores a game from saved state (see <see cref="Persistence.SaveGame"/>).</summary>
     internal static Game Restore(
         Ruleset ruleset, GameMap map, RandomState randomState, int turn,
-        IEnumerable<(int id, Position position, int movementLeft)> units)
+        IEnumerable<(int id, UnitType type, Position position, int movementLeft)> units,
+        IEnumerable<Position>? explored)
     {
         var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn);
-        foreach ((int id, Position position, int movementLeft) in units)
+        foreach ((int id, UnitType type, Position position, int movementLeft) in units)
         {
-            var unit = new Unit(id, position) { MovementLeft = movementLeft };
+            var unit = new Unit(id, type, position) { MovementLeft = movementLeft };
             game._units.Add(unit);
             game._nextUnitId = Math.Max(game._nextUnitId, id + 1);
+        }
+
+        if (explored is not null)
+        {
+            game._explored.UnionWith(explored.Where(map.InBounds));
+        }
+        else
+        {
+            // Pre-fog save (format v1): reveal around the units we have.
+            foreach (Unit unit in game._units)
+            {
+                game.Reveal(unit);
+            }
         }
         return game;
     }
@@ -74,27 +105,29 @@ public sealed class Game
     /// <summary>The game's RNG state, captured for saving.</summary>
     internal RandomState RandomState => _random.SaveState();
 
-    /// <summary>Creates a new unit at a position (skeleton: used for the starting unit).</summary>
-    public Unit SpawnUnit(Position position)
+    /// <summary>Creates a new unit at a position and reveals its surroundings.</summary>
+    public Unit SpawnUnit(UnitType type, Position position)
     {
         if (!Map.InBounds(position))
         {
             throw new ArgumentOutOfRangeException(nameof(position), position, "Off the map.");
         }
-        if (Map.TerrainAt(position).IsWater)
+        if (Map.TerrainAt(position).IsWater != type.IsNaval)
         {
-            throw new InvalidMoveException("Land units cannot be placed on water.");
+            throw new InvalidMoveException(type.IsNaval
+                ? "Naval units must be placed on water."
+                : "Land units cannot be placed on water.");
         }
 
-        var unit = new Unit(_nextUnitId++, position);
+        var unit = new Unit(_nextUnitId++, type, position);
         _units.Add(unit);
+        Reveal(unit);
         return unit;
     }
 
     /// <summary>
     /// Whether <paramref name="unit"/> may move to <paramref name="target"/> right now,
-    /// and why not if not. Movement rules (skeleton): one step to an adjacent on-map
-    /// land tile, requiring at least 1 movement point remaining.
+    /// and why not if not.
     /// </summary>
     public MoveCheck CheckMove(Unit unit, Position target)
     {
@@ -106,22 +139,42 @@ public sealed class Game
         {
             return MoveCheck.No("Units move one tile at a time.");
         }
-        if (Map.TerrainAt(target).IsWater)
+
+        TerrainType terrain = Map.TerrainAt(target);
+        if (terrain.IsWater && !unit.Type.IsNaval)
         {
             return MoveCheck.No("Land units cannot enter water.");
         }
-        if (unit.MovementLeft <= 0)
+        if (!terrain.IsWater && unit.Type.IsNaval)
+        {
+            return MoveCheck.No("Ships cannot move onto land.");
+        }
+
+        int movesLeft = unit.MovementLeft;
+        if (movesLeft <= 0)
         {
             return MoveCheck.No("No movement left this turn.");
         }
-        return MoveCheck.Yes(Map.TerrainAt(target).MoveCost);
+
+        // FreeCol's partial-movement rule (Unit.getMoveCost): when the terrain
+        // costs more than the unit has left, the move is still allowed — for the
+        // full remainder — only if the unit is near full movement (lost at most
+        // 2/3 of a move) or the shortfall is small. (A settlement target also
+        // qualifies; none exist yet.) Otherwise the unit must wait.
+        int cost = terrain.MoveCost;
+        if (cost > movesLeft)
+        {
+            bool allowed = movesLeft + 2 >= unit.Type.Movement || cost <= movesLeft + 2;
+            if (!allowed)
+            {
+                return MoveCheck.No("Not enough movement left this turn.");
+            }
+            cost = movesLeft;
+        }
+        return MoveCheck.Yes(cost);
     }
 
-    /// <summary>
-    /// Moves a unit one tile. Costs the target terrain's move cost (a unit with any
-    /// movement remaining may always make one move; the cost may overdraw to 0 —
-    /// pending FreeCol cross-check, see docs/systems/units-movement.md).
-    /// </summary>
+    /// <summary>Moves a unit one tile, spending movement and revealing new ground.</summary>
     /// <exception cref="InvalidMoveException">The move is not allowed; see <see cref="CheckMove"/>.</exception>
     public void MoveUnit(Unit unit, Position target)
     {
@@ -132,7 +185,8 @@ public sealed class Game
         }
 
         unit.Position = target;
-        unit.MovementLeft = Math.Max(0, unit.MovementLeft - check.Cost);
+        unit.MovementLeft -= check.Cost;
+        Reveal(unit);
     }
 
     /// <summary>Ends the current turn: all units regain movement, the turn counter advances.</summary>
@@ -143,6 +197,23 @@ public sealed class Game
             unit.ResetMovement();
         }
         Turn++;
+    }
+
+    /// <summary>Reveals all tiles within the unit's line of sight.</summary>
+    private void Reveal(Unit unit)
+    {
+        int r = unit.Type.LineOfSight;
+        for (int dy = -r; dy <= r; dy++)
+        {
+            for (int dx = -r; dx <= r; dx++)
+            {
+                var p = new Position(unit.Position.X + dx, unit.Position.Y + dy);
+                if (Map.InBounds(p))
+                {
+                    _explored.Add(p);
+                }
+            }
+        }
     }
 }
 

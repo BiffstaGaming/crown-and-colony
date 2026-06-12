@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
 using Godot;
@@ -15,6 +16,9 @@ public partial class MapView : Node2D
     public const int TileSize = 32;
 
     private GameMap? _map;
+    private IReadOnlySet<Position>? _explored;
+
+    private static readonly Color FogColour = new(0.07f, 0.07f, 0.10f);
 
     // Placeholder palette per terrain short name; unknown terrain renders magenta
     // so a missing entry is impossible to miss.
@@ -45,10 +49,11 @@ public partial class MapView : Node2D
         ["greatRiver"] = new Color(0.30f, 0.50f, 0.68f),
     };
 
-    /// <summary>Assigns the map to draw and triggers a redraw.</summary>
-    public void ShowMap(GameMap map)
+    /// <summary>Assigns the map and exploration state to draw and triggers a redraw.</summary>
+    public void ShowState(GameMap map, IReadOnlySet<Position> explored)
     {
         _map = map;
+        _explored = explored;
         QueueRedraw();
     }
 
@@ -69,11 +74,19 @@ public partial class MapView : Node2D
 
         foreach (Position p in _map.AllPositions())
         {
+            var rect = new Rect2(p.X * TileSize, p.Y * TileSize, TileSize, TileSize);
+
+            // Fog of war: unexplored tiles show nothing.
+            if (_explored is not null && !_explored.Contains(p))
+            {
+                DrawRect(rect, FogColour);
+                continue;
+            }
+
             TerrainType terrain = _map.TerrainAt(p);
             Color colour = Palette.TryGetValue(terrain.ShortName, out Color c)
                 ? c
                 : new Color(1f, 0f, 1f);
-            var rect = new Rect2(p.X * TileSize, p.Y * TileSize, TileSize, TileSize);
             DrawRect(rect, colour);
             DrawRect(rect, colour.Darkened(0.15f), filled: false, width: 1f);
         }

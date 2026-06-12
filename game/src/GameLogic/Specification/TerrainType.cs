@@ -16,6 +16,7 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <param name="CanSettle">Whether a colony can be founded here.</param>
 /// <param name="IsConnected">Water connected to the high seas (ocean yes, lake no).</param>
 /// <param name="Productions">What this terrain can produce when worked.</param>
+/// <param name="Gen">Climate envelope for map generation; null when the spec defines none.</param>
 public sealed record TerrainType(
     string Id,
     int MoveCost,
@@ -25,7 +26,8 @@ public sealed record TerrainType(
     bool IsElevation,
     bool CanSettle,
     bool IsConnected,
-    IReadOnlyList<ProductionEntry> Productions)
+    IReadOnlyList<ProductionEntry> Productions,
+    GenRanges? Gen)
 {
     /// <summary>Short name derived from the id: <c>model.tile.plains</c> → <c>plains</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];

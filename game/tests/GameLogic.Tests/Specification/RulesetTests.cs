@@ -89,6 +89,56 @@ public class RulesetTests
     }
 
     [Fact]
+    public void GenRanges_ParsedFromSpec()
+    {
+        GenRanges plains = Classic.Terrain("model.tile.plains").Gen!;
+        Assert.Equal((0, 60, 0, 15, 1, 2), (
+            plains.HumidityMin, plains.HumidityMax,
+            plains.TemperatureMin, plains.TemperatureMax,
+            plains.AltitudeMin, plains.AltitudeMax));
+
+        GenRanges mountains = Classic.Terrain("model.tile.mountains").Gen!;
+        Assert.Equal((20, 30), (mountains.AltitudeMin, mountains.AltitudeMax));
+
+        Assert.True(plains.Contains(30, 10, 1));
+        Assert.False(plains.Contains(70, 10, 1)); // too humid
+        Assert.False(plains.Contains(30, 30, 1)); // too hot
+    }
+
+    [Fact]
+    public void FreeColonist_ResolvesInheritedAttributes()
+    {
+        // movement/line-of-sight come from the abstract 'colonist' parent;
+        // foundColony ability likewise.
+        UnitType colonist = Classic.Unit("model.unit.freeColonist");
+
+        Assert.Equal(3, colonist.Movement);
+        Assert.Equal(1, colonist.LineOfSight);
+        Assert.False(colonist.IsNaval);
+        Assert.True(colonist.CanFoundColony);
+        Assert.Equal("freeColonist", colonist.ShortName);
+    }
+
+    [Fact]
+    public void Caravel_IsNavalWithShipAttributes()
+    {
+        UnitType caravel = Classic.Unit("model.unit.caravel");
+
+        Assert.Equal(12, caravel.Movement);
+        Assert.True(caravel.IsNaval);   // via abstract 'ship' parent's ability
+        Assert.False(caravel.CanFoundColony);
+    }
+
+    [Fact]
+    public void AbstractUnitTypes_AreNotExposed()
+    {
+        Assert.Throws<KeyNotFoundException>(() => Classic.Unit("colonist"));
+        Assert.Throws<KeyNotFoundException>(() => Classic.Unit("ship"));
+        Assert.DoesNotContain(Classic.UnitTypes, u => u.Id is "colonist" or "ship");
+        Assert.True(Classic.UnitTypes.Count >= 20, $"only {Classic.UnitTypes.Count} unit types");
+    }
+
+    [Fact]
     public void MalformedSpecification_ThrowsFormatException()
     {
         static Stream Xml(string content)

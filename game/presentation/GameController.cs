@@ -17,15 +17,20 @@ public partial class GameController : Node2D
 {
     private const string QuickSavePath = "user://quicksave.json";
 
-    /// <summary>New-game seed; exported so scenes/tests can pin it (ADR-009).</summary>
+    /// <summary>
+    /// New-game seed. 0 (default) = pick a random seed per game; set non-zero to
+    /// pin the world (tests, bug reproduction — ADR-009).
+    /// </summary>
     [Export]
-    public ulong Seed { get; set; } = 2026;
+    public ulong Seed { get; set; }
 
     private Game _game = null!;
+    private ulong _currentSeed;
     private MapView _mapView = null!;
     private UnitMarker _unitMarker = null!;
     private Label _statusLabel = null!;
     private Unit? _selectedUnit;
+    private string? _notice;
 
     public override void _Ready()
     {
@@ -34,16 +39,23 @@ public partial class GameController : Node2D
         _statusLabel = GetNode<Label>("UI/StatusLabel");
         GetNode<Button>("UI/EndTurnButton").Pressed += OnEndTurnPressed;
 
-        StartGame(Game.New(Ruleset.LoadClassic(), Seed));
+        NewGame();
+    }
+
+    private void NewGame()
+    {
+        // Picking the seed may be non-deterministic (player convenience);
+        // the game itself is fully determined by the chosen seed.
+        _currentSeed = Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi();
+        StartGame(Game.New(Ruleset.LoadClassic(), _currentSeed));
     }
 
     private void StartGame(Game game)
     {
         _game = game;
         _selectedUnit = null;
-        _mapView.ShowMap(_game.Map);
-        GetNode<Camera2D>("Camera").Position = MapView.TileCentre(
-            new Position(_game.Map.Width / 2, _game.Map.Height / 2));
+        _notice = null;
+        GetNode<Camera2D>("Camera").Position = MapView.TileCentre(_game.Units[0].Position);
         RefreshView();
     }
 
@@ -65,6 +77,9 @@ public partial class GameController : Node2D
                 break;
             case InputEventKey { Keycode: Key.F9, Pressed: true, Echo: false }:
                 QuickLoad();
+                break;
+            case InputEventKey { Keycode: Key.N, Pressed: true, Echo: false }:
+                NewGame();
                 break;
         }
     }
@@ -91,7 +106,7 @@ public partial class GameController : Node2D
             }
             else
             {
-                GD.Print($"Move rejected: {check.Reason}");
+                _notice = check.Reason;
             }
         }
 
@@ -102,7 +117,7 @@ public partial class GameController : Node2D
     {
         using var file = FileAccess.Open(QuickSavePath, FileAccess.ModeFlags.Write);
         file.StoreString(SaveGame.From(_game).ToJson());
-        GD.Print("Game saved.");
+        _notice = "Game saved.";
         RefreshView();
     }
 
@@ -110,23 +125,34 @@ public partial class GameController : Node2D
     {
         if (!FileAccess.FileExists(QuickSavePath))
         {
-            GD.Print("No quicksave found.");
+            _notice = "No quicksave found.";
+            RefreshView();
             return;
         }
         using var file = FileAccess.Open(QuickSavePath, FileAccess.ModeFlags.Read);
         StartGame(SaveGame.FromJson(file.GetAsText()).Restore(Ruleset.LoadClassic()));
-        GD.Print("Game loaded.");
+        _notice = "Game loaded.";
+        RefreshView();
     }
 
     private void RefreshView()
     {
+        _mapView.ShowState(_game.Map, _game.Explored);
+
         Unit unit = _game.Units[0];
         _unitMarker.Position = MapView.TileCentre(unit.Position);
         _unitMarker.Selected = _selectedUnit == unit;
 
         string terrain = _game.Map.TerrainAt(unit.Position).ShortName;
-        _statusLabel.Text =
-            $"Turn {_game.Turn}   |   Unit on {terrain}, movement {unit.MovementLeft}/{Unit.BaseMovementPoints}" +
-            "   |   Click unit to select, click tile to move. F5 save, F9 load.";
+        string status =
+            $"Turn {_game.Turn}   |   {unit.Type.ShortName} on {terrain}, " +
+            $"movement {unit.MovementLeft}/{unit.Type.Movement}   |   seed {_currentSeed}" +
+            "   |   N new map, F5 save, F9 load";
+        if (_notice is not null)
+        {
+            status += $"   |   ⚠ {_notice}";
+            _notice = null;
+        }
+        _statusLabel.Text = status;
     }
 }

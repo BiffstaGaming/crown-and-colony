@@ -43,7 +43,8 @@ public class WalkingSkeletonScenarioTests
                 // Invariants after every single move:
                 Assert.True(game.Map.InBounds(unit.Position));
                 Assert.False(game.Map.TerrainAt(unit.Position).IsWater);
-                Assert.InRange(unit.MovementLeft, 0, Unit.BaseMovementPoints);
+                Assert.InRange(unit.MovementLeft, 0, unit.Type.Movement);
+                Assert.True(game.IsExplored(unit.Position), "unit must stand on explored ground");
             }
 
             game.EndTurn();

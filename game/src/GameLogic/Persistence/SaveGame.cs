@@ -10,14 +10,17 @@ namespace CrownAndColony.GameLogic.Persistence;
 
 /// <summary>
 /// Serializable snapshot of a complete game, including the RNG state so a loaded
-/// game continues with the identical future random sequence (ADR-009). Terrain is
-/// stored as ruleset ids — the ruleset itself is not saved, so saves stay valid
-/// across ruleset-irrelevant code changes but require the matching ruleset to load.
+/// game continues with the identical future random sequence (ADR-009). Terrain and
+/// unit types are stored as ruleset ids — the ruleset itself is not saved, so the
+/// matching ruleset is required to load.
 /// </summary>
 public sealed record SaveGame
 {
-    /// <summary>Save format version; bump on breaking shape changes.</summary>
-    public int Version { get; init; } = 1;
+    /// <summary>Current save format version.</summary>
+    public const int CurrentVersion = 2;
+
+    /// <summary>Save format version. v1 lacked <see cref="Explored"/> and unit type ids.</summary>
+    public int Version { get; init; } = CurrentVersion;
 
     /// <summary>Current turn number.</summary>
     public required int Turn { get; init; }
@@ -40,6 +43,12 @@ public sealed record SaveGame
     /// <summary>All units.</summary>
     public required IReadOnlyList<SavedUnit> Units { get; init; }
 
+    /// <summary>
+    /// Explored tile indexes (row-major <c>y * MapWidth + x</c>), fog of war.
+    /// Null in v1 saves — loading reveals around units instead.
+    /// </summary>
+    public IReadOnlyList<int>? Explored { get; init; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -59,13 +68,17 @@ public sealed record SaveGame
             MapHeight = game.Map.Height,
             Terrain = game.Map.AllPositions().Select(p => game.Map.TerrainAt(p).Id).ToList(),
             Units = game.Units
-                .Select(u => new SavedUnit(u.Id, u.Position.X, u.Position.Y, u.MovementLeft))
+                .Select(u => new SavedUnit(u.Id, u.Type.Id, u.Position.X, u.Position.Y, u.MovementLeft))
+                .ToList(),
+            Explored = game.Explored
+                .Select(p => p.Y * game.Map.Width + p.X)
+                .OrderBy(i => i)
                 .ToList(),
         };
     }
 
     /// <summary>Reconstructs a running game from this snapshot.</summary>
-    /// <exception cref="KeyNotFoundException">A saved terrain id is missing from the ruleset.</exception>
+    /// <exception cref="KeyNotFoundException">A saved terrain or unit type id is missing from the ruleset.</exception>
     public Game Restore(Ruleset ruleset)
     {
         var terrain = Terrain.Select(ruleset.Terrain).ToList();
@@ -75,7 +88,13 @@ public sealed record SaveGame
             map,
             new RandomState(RandomStateValue, RandomIncrement),
             Turn,
-            Units.Select(u => (u.Id, new Position(u.X, u.Y), u.MovementLeft)));
+            Units.Select(u => (
+                u.Id,
+                // v1 saves carry no type id; everything was effectively a colonist.
+                ruleset.Unit(u.TypeId ?? Game.StartingUnitTypeId),
+                new Position(u.X, u.Y),
+                u.MovementLeft)),
+            Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)));
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -90,7 +109,8 @@ public sealed record SaveGame
 
 /// <summary>A unit inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Id">Unit id.</param>
+/// <param name="TypeId">Ruleset unit type id (null in v1 saves → free colonist).</param>
 /// <param name="X">Map column.</param>
 /// <param name="Y">Map row.</param>
 /// <param name="MovementLeft">Movement points remaining this turn.</param>
-public sealed record SavedUnit(int Id, int X, int Y, int MovementLeft);
+public sealed record SavedUnit(int Id, string? TypeId, int X, int Y, int MovementLeft);

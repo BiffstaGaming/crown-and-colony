@@ -15,9 +15,9 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 
 ## 2. Detailed rules
 
-- A save restores: turn, map (terrain per tile), every unit (id, position, movement left), RNG state.
+- A save restores: turn, map (terrain per tile), every unit (id, **type**, position, movement left), **explored tiles (fog of war)**, RNG state.
 - Loading an interrupted game then continuing produces **identical outcomes** to never having saved (tested).
-- Saves carry a format `Version` (currently 1); breaking shape changes bump it.
+- Saves carry a format `Version` (currently **2**); v1 saves still load (units default to free colonists, fog reveals around units).
 - Saves reference terrain by ruleset id — loading needs the matching ruleset; unknown ids fail loudly.
 
 **Deviations:** our own JSON format by design; no FreeCol save compatibility planned.
@@ -47,3 +47,4 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-13 | JSON save format v1, F5/F9 quicksave, resume-identical guarantee | Phase 1 skeleton |
+| 2026-06-13 | Format v2: unit type ids + explored tiles; v1 loads with defaults (tested) | Phase 2a |

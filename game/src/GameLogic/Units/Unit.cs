@@ -1,27 +1,25 @@
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
 
 namespace CrownAndColony.GameLogic.Units;
 
-/// <summary>
-/// A unit on the map. Phase 1 skeleton: every unit is a generic land unit with
-/// 3 movement points (one normal move per turn, matching the free colonist).
-/// Unit types parsed from the ruleset arrive with the units system proper.
-/// </summary>
+/// <summary>A unit on the map. Its capabilities come from its ruleset <see cref="UnitType"/>.</summary>
 public sealed class Unit
 {
-    /// <summary>Movement points per turn for the skeleton's generic unit (spec scale: 3 = one normal move).</summary>
-    public const int BaseMovementPoints = 3;
-
-    /// <summary>Creates a unit at a position with full movement.</summary>
-    public Unit(int id, Position position)
+    /// <summary>Creates a unit of a type at a position with full movement.</summary>
+    public Unit(int id, UnitType type, Position position)
     {
         Id = id;
+        Type = type;
         Position = position;
-        MovementLeft = BaseMovementPoints;
+        MovementLeft = type.Movement;
     }
 
     /// <summary>Stable per-game identifier.</summary>
     public int Id { get; }
+
+    /// <summary>The ruleset type (movement, sight, naval, …).</summary>
+    public UnitType Type { get; }
 
     /// <summary>Current map position.</summary>
     public Position Position { get; internal set; }
@@ -30,5 +28,5 @@ public sealed class Unit
     public int MovementLeft { get; internal set; }
 
     /// <summary>Restores full movement at the start of a turn.</summary>
-    internal void ResetMovement() => MovementLeft = BaseMovementPoints;
+    internal void ResetMovement() => MovementLeft = Type.Movement;
 }

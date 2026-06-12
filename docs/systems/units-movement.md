@@ -21,13 +21,14 @@ There's one explorer on the map. Click it to select (gold ring), click a neighbo
 |---|---|
 | Target off-map | rejected |
 | Target not one of the 8 neighbours | rejected (one step at a time) |
-| Target is water | rejected (land unit) |
+| Land unit → water, or naval unit → land | rejected |
 | 0 movement points left | rejected |
-| ≥1 movement point left | allowed; cost = target terrain's move cost, clamped at 0 remaining |
+| cost ≤ movement left | allowed; pay the terrain's move cost |
+| cost > movement left | allowed **for all remaining points** only if near-full movement (`left+2 ≥ max`) or small shortfall (`cost ≤ left+2`) or target is a settlement; otherwise rejected |
 
-- Skeleton unit: 3 movement points/turn (= free colonist's `movement="3"` in the spec).
+- Unit capabilities come from the ruleset (`UnitType`): free colonist 3 MP land, caravel 12 MP naval, etc.
 
-**Deviations from original / FreeCol — PENDING CROSS-CHECK:** the "any remaining movement allows one move, overdraw clamps to 0" rule is our simplification. FreeCol's exact partial-movement rules (and the original's) must be cross-checked when unit types land in Phase 2; this is the system's top verification debt.
+**Deviations from original / FreeCol:** ✅ **cross-check done (2026-06-13).** The partial-movement rule above is FreeCol's exactly (`Unit.getMoveCost`, Unit.java:2227). Not yet implemented from that method: tile-improvement cost changes (roads/rivers — arrive with improvements) and the settlement-target clause (no settlements yet). For 3-MP units the rule is equivalent to the old skeleton behaviour; it differs for faster units (pinned by test).
 
 ## 3. Technical design
 
@@ -45,12 +46,13 @@ There's one explorer on the map. Click it to select (gold ring), click a neighbo
 | L3 Interaction | Yes | unit marker tile-centre test; click-to-move simulation TODO | ⚠️ partial |
 | L4 Visual | Yes | TODO with visual harness | ⬜ |
 
-- **FreeCol cross-check:** ❌ not yet — see deviation note above.
+- **FreeCol cross-check:** ✅ partial-movement rule matches `Unit.getMoveCost`; rejection branch pinned with a synthetic 12-MP unit (`PartialMovement_BigShortfall_MidTurn_Rejected`); small-shortfall branch pinned with a caravel.
 
 ## 5. Open issues / TODO
 
-- [ ] Cross-check partial-movement rule against FreeCol (`Unit.getMoveCost`) and adopt/document the real rule.
-- [ ] Unit types from ruleset (movement, abilities); naval units; multiple units.
+- [ ] Tile-improvement movement costs (roads/rivers) with the improvements system.
+- [ ] Settlement-target movement clause when colonies exist.
+- [ ] Multiple player units / unit cycling UI.
 - [ ] L3 click-to-move test; L4 golden with unit + selection ring.
 
 ## Changelog
@@ -58,3 +60,4 @@ There's one explorer on the map. Click it to select (gold ring), click a neighbo
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-13 | Skeleton unit, 8-way single-step movement, selection UI | Phase 1 skeleton |
+| 2026-06-13 | Unit types from ruleset; naval movement; real FreeCol partial-movement rule (cross-check resolved) | Phase 2a |

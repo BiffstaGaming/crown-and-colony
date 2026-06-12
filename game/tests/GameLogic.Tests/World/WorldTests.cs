@@ -77,11 +77,14 @@ public class MapGeneratorTests
 {
     private static readonly Ruleset Classic = Ruleset.LoadClassic();
 
+    private static GameMap Generate(ulong seed, int w = 36, int h = 24) =>
+        MapGenerator.Generate(Classic, w, h, new Pcg32Random(seed));
+
     [Fact]
     public void SameSeed_GeneratesIdenticalMap()
     {
-        GameMap a = MapGenerator.Generate(Classic, 24, 16, new Pcg32Random(seed: 5));
-        GameMap b = MapGenerator.Generate(Classic, 24, 16, new Pcg32Random(seed: 5));
+        GameMap a = Generate(5);
+        GameMap b = Generate(5);
 
         Assert.Equal(
             a.AllPositions().Select(p => a.TerrainAt(p).Id),
@@ -91,8 +94,8 @@ public class MapGeneratorTests
     [Fact]
     public void DifferentSeeds_GenerateDifferentMaps()
     {
-        GameMap a = MapGenerator.Generate(Classic, 24, 16, new Pcg32Random(seed: 5));
-        GameMap b = MapGenerator.Generate(Classic, 24, 16, new Pcg32Random(seed: 6));
+        GameMap a = Generate(5);
+        GameMap b = Generate(6);
 
         Assert.NotEqual(
             a.AllPositions().Select(p => a.TerrainAt(p).Id).ToList(),
@@ -100,18 +103,77 @@ public class MapGeneratorTests
     }
 
     [Fact]
-    public void Map_HasOceanBorder_AndLandInterior()
+    public void MapEdges_AreWater_WithHighSeasColumns()
     {
-        GameMap map = MapGenerator.Generate(Classic, 24, 16, new Pcg32Random(seed: 1));
+        GameMap map = Generate(1);
 
-        // Border ring (2 tiles) is water.
+        // Watery margin: 4 columns east/west, 2 rows north/south.
         Assert.All(
-            map.AllPositions().Where(p => p.X < 2 || p.Y < 2 || p.X >= 22 || p.Y >= 14),
-            p => Assert.True(map.TerrainAt(p).IsWater, $"{p} should be ocean"));
+            map.AllPositions().Where(p => p.X < 4 || p.Y < 2 || p.X >= map.Width - 4 || p.Y >= map.Height - 2),
+            p => Assert.True(map.TerrainAt(p).IsWater, $"{p} should be water"));
 
-        // Interior is land.
+        // Outermost columns are the route to Europe.
         Assert.All(
-            map.AllPositions().Where(p => p.X is >= 2 and < 22 && p.Y is >= 2 and < 14),
-            p => Assert.False(map.TerrainAt(p).IsWater, $"{p} should be land"));
+            map.AllPositions().Where(p => p.X == 0 || p.X == map.Width - 1),
+            p => Assert.Equal("model.tile.highSeas", map.TerrainAt(p).Id));
+    }
+
+    [Fact]
+    public void Map_HasSubstantialVariedLandmass()
+    {
+        GameMap map = Generate(7);
+        var landTypes = map.AllPositions()
+            .Select(map.TerrainAt)
+            .Where(t => !t.IsWater)
+            .ToList();
+
+        // A real continent: a meaningful share of the map…
+        double landFraction = landTypes.Count / (double)(map.Width * map.Height);
+        Assert.InRange(landFraction, 0.20, 0.60);
+
+        // …with climate-driven variety, not a monoculture.
+        Assert.True(landTypes.Select(t => t.Id).Distinct().Count() >= 5,
+            $"only {landTypes.Select(t => t.Id).Distinct().Count()} land types generated");
+
+        // Settleable ground exists (a colonist must be able to start).
+        Assert.Contains(landTypes, t => t.CanSettle);
+    }
+
+    [Fact]
+    public void PolarLand_IsColdTerrain()
+    {
+        // Land near the poles (top/bottom three rows) must be cold-climate types —
+        // the climate envelopes at −20…−10 °C only admit these.
+        string[] polarTypes =
+        [
+            "model.tile.arctic", "model.tile.tundra", "model.tile.borealForest",
+            "model.tile.hills", "model.tile.mountains",
+        ];
+
+        for (ulong seed = 1; seed <= 5; seed++)
+        {
+            GameMap map = Generate(seed);
+            var polarLand = map.AllPositions()
+                .Where(p => p.Y < 3 || p.Y >= map.Height - 3)
+                .Select(map.TerrainAt)
+                .Where(t => !t.IsWater);
+
+            Assert.All(polarLand, t => Assert.Contains(t.Id, polarTypes));
+        }
+    }
+
+    [Fact]
+    public void Tropics_GrowHotTerrain_NotArctic()
+    {
+        // The equatorial band (middle rows) must never produce polar tiles.
+        GameMap map = Generate(3);
+        int mid = map.Height / 2;
+        var equatorLand = map.AllPositions()
+            .Where(p => Math.Abs(p.Y - mid) <= 2)
+            .Select(map.TerrainAt)
+            .Where(t => !t.IsWater);
+
+        Assert.All(equatorLand, t =>
+            Assert.DoesNotContain(t.Id, new[] { "model.tile.arctic", "model.tile.tundra", "model.tile.borealForest" }));
     }
 }

@@ -19,9 +19,10 @@ The world is a rectangular grid of square tiles, each with one terrain type from
 
 - Coordinates: (0,0) top-left; X east, Y south. Diagonals count as adjacent (8 neighbours), as in the original game.
 - Same seed → identical map, every time, every machine (ADR-009).
-- Placeholder generator: border ring (2 tiles) is always ocean; interior tiles drawn from a weighted land table (plains 25, grassland 20, prairie 15, mixed forest 15, conifer forest 10, hills 10, mountains 5).
+- **Climate-band generation (Phase 2a):** a continent grown from seeded blobs (~45% land, watery margins); per-tile climate triple — temperature from latitude (40 °C equator → −20 °C poles, jittered), humidity from smoothed noise (0–100), altitude rolled (lowland 84%, hills 10%, mountains ~4–6%); terrain picked among ruleset types whose `<gen>` envelope contains the triple (forest-vs-clear is a separate ~45% roll; off-envelope triples take the climate-nearest type). Outermost map columns are **high seas** (the future route to Europe).
+- Result: hot wet equator → savannah/tropical forest, dry bands → desert/scrub, poles → arctic/tundra/boreal.
 
-**Deviations from original / FreeCol:** the generator is a stand-in, *not* the FreeCol algorithm — flagged for Phase 2 replacement (humidity/temperature/altitude bands from the spec's `<gen>` data). The grid is square-topology like the original 1994 game; FreeCol renders isometric but the logical model is the same grid.
+**Deviations from original / FreeCol:** uses FreeCol's climate *data* but not its exact algorithm (FreeCol layers landmass styles, rivers, bonus resources, lakes — future work). Square grid topology as in the 1994 original.
 
 ## 3. Technical design
 
@@ -43,7 +44,7 @@ The world is a rectangular grid of square tiles, each with one terrain type from
 
 ## 5. Open issues / TODO
 
-- [ ] Phase 2: FreeCol-style map generation from `<gen>` climate bands; map import.
+- [ ] Rivers, lakes, bonus resources, multiple landmass styles (FreeCol generator features).
 - [ ] L3 camera input tests; L4 map golden.
 
 ## Changelog
@@ -51,3 +52,4 @@ The world is a rectangular grid of square tiles, each with one terrain type from
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-13 | Grid model, placeholder generator, flat-colour rendering | Phase 1 skeleton |
+| 2026-06-13 | Climate-band generation from spec `<gen>` data; high-seas edges; fog rendering | Phase 2a |
