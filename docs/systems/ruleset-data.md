@@ -59,3 +59,4 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 | 2026-06-13 | Founding Fathers (`<founding-father>`: type + age weights) | Phase 4 |
 | 2026-06-13 | Founding-father `<modifier>`/`<ability>` (FatherModifier/FatherAbility); unit `recruit-probability`, `model.ability.person`, `space`/`spaceTaken` | Phase 4 slices 4–7 |
 | 2026-06-13 | Resource types (`<resource-type>` yield modifiers, ResourceType/ResourceModifier) | Phase 4 slice 8 |
+| 2026-06-13 | Unit `price` (Europe purchase/training cost) → `UnitType.Price`/`IsPurchasable` | Phase 4 slice 11 |

@@ -23,7 +23,7 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | `Randomness.RandomState` | Serializable generator snapshot |
 | `Specification.Ruleset` | Parsed rule data; `LoadClassic()` reads the embedded classic spec; `Terrain(id)`, `Unit(id)` |
 | `Specification.TerrainType` / `ProductionEntry` / `GoodsOutput` / `GenRanges` | Immutable terrain rule data incl. climate envelopes |
-| `Specification.UnitType` | Unit rule data (movement, sight, naval, foundColony, `RecruitProbability`, `IsPerson`, `Space`/`SpaceTaken`/`IsCarrier`/`CarrySlots`) with `extends` inheritance resolved |
+| `Specification.UnitType` | Unit rule data (movement, sight, naval, foundColony, `RecruitProbability`, `IsPerson`, `Space`/`SpaceTaken`/`IsCarrier`/`CarrySlots`, `Price`/`IsPurchasable`) with `extends` inheritance resolved |
 | `Specification.GoodsType` | Goods rule data: `is-food`, `stored-as`, `made-from`, breeding number, market seed |
 | `Specification.BuildingType` | Building rule data: conversions (with inputs), workplaces, upgrade chain, build cost |
 | `Specification.ResourceType` / `ResourceModifier` | Bonus-resource yield modifiers (goods, type, index, unit-type scopes) |
@@ -35,7 +35,7 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | `Trade.Market` | European market: per-good bid/ask, supply-driven `Sell` with tax (FreeCol price model) |
 | `Specification.GoodsMarket` | Per-good market seed (initial amount/price/spread) |
 | `Specification.FoundingFather` / `FatherType` / `FatherModifier` / `FatherAbility` / `ModifierType` / `ModifierMath` | Founding-father rule data: category, age weights, the modifiers + abilities an election grants |
-| `GameSession.Game` | The running game. Map/units: `New`, `CheckMove`/`MoveUnit`, `EndTurn`, `SpawnUnit`, `CheckFoundColony`/`FoundColony`, `TileYield`. Colony work: `AssignWork`/`UnassignWork`, `AssignBuildingWork`/`UnassignBuildingWork`, `SetBuild`/`Buildables`, `JoinColony`/`LeaveColony`. Trade: `Gold`, `TaxRate`, `Market`, `SellColonyGoods`/`SellShipCargo`/`BuyEuropeGoods`. Europe/sailing: `SailToEurope`/`SailToNewWorld`, `UnitsInEurope`. Transport: `Board`/`Disembark`/`DisembarkToDock`, `Passengers`, `CargoCapacity`/`CargoSlotsUsed`/`CargoSlotsFree`. Fathers: `Liberty`, `Congress`, `ChooseFather`, `OfferedFathers`, `HasAbility`, `ApplyGoodsModifiers`. Immigration: `Immigration`/`ImmigrationRequired`, `RecruitDock`, `RecruitPrice`, `Recruit`/`CheckRecruit`. (All checks have a `Check…` oracle, ADR-006.) |
+| `GameSession.Game` | The running game. Map/units: `New`, `CheckMove`/`MoveUnit`, `EndTurn`, `SpawnUnit`, `CheckFoundColony`/`FoundColony`, `TileYield`. Colony work: `AssignWork`/`UnassignWork`, `AssignBuildingWork`/`UnassignBuildingWork`, `SetBuild`/`Buildables`, `JoinColony`/`LeaveColony`. Trade: `Gold`, `TaxRate`, `Market`, `SellColonyGoods`/`SellShipCargo`/`BuyEuropeGoods`, `BuyUnit`/`CheckBuyUnit`. Europe/sailing: `SailToEurope`/`SailToNewWorld`, `UnitsInEurope`. Transport: `Board`/`Disembark`/`DisembarkToDock`, `Passengers`, `CargoCapacity`/`CargoSlotsUsed`/`CargoSlotsFree`. Fathers: `Liberty`, `Congress`, `ChooseFather`, `OfferedFathers`, `HasAbility`, `ApplyGoodsModifiers`. Immigration: `Immigration`/`ImmigrationRequired`, `RecruitDock`, `RecruitPrice`, `Recruit`/`CheckRecruit`. (All checks have a `Check…` oracle, ADR-006.) |
 | `GameSession.MoveCheck` / `InvalidMoveException` | Move legality result / violation |
 | `Persistence.SaveGame` / `SavedUnit` / `SavedColony` / `SavedResource` / `SavedWorker` | Complete JSON-serializable game snapshot (format v13) |
 
@@ -49,7 +49,7 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 
 ## Tests
 
-`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **207 tests** (205 L1+L2 incl. 10 E2E journeys + 2 nightly soak), all green as of 2026-06-13. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md).)
+`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **213 tests** (211 L1+L2 incl. 10 E2E journeys + 2 nightly soak), all green as of 2026-06-13. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md).)
 
 ## Changelog
 

@@ -176,6 +176,25 @@ public partial class EuropePanel : PanelContainer
             }
             dynamic.AddChild(row);
         }
+
+        // — Buy / train units in Europe —
+        dynamic.AddChild(SectionLabel("Buy / train"));
+        var buyUnit = new OptionButton { Name = "BuyUnit" };
+        buyUnit.AddItem("Buy a unit…");
+        var purchasable = _game.Ruleset.UnitTypes.Where(u => u.IsPurchasable).ToList();
+        foreach (UnitType type in purchasable)
+        {
+            buyUnit.AddItem($"{type.ShortName} ({type.Price})");
+        }
+        buyUnit.ItemSelected += index =>
+        {
+            if (index > 0 && _game.CheckBuyUnit(purchasable[(int)index - 1].Id).Allowed)
+            {
+                _game.BuyUnit(purchasable[(int)index - 1].Id);
+                Changed();
+            }
+        };
+        dynamic.AddChild(buyUnit);
     }
 
     private static Label Grow(Label label)

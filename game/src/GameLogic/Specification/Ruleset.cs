@@ -322,7 +322,10 @@ public sealed class Ruleset
                 // space (cargo capacity) and spaceTaken (carry cost) inherit up the
                 // extends chain in FreeCol; defaults match UnitType (0 and 1).
                 Space: ResolveIntAttribute(el, "space", elements) ?? 0,
-                SpaceTaken: ResolveIntAttribute(el, "spaceTaken", elements) ?? 1);
+                SpaceTaken: ResolveIntAttribute(el, "spaceTaken", elements) ?? 1,
+                // price = Europe purchase/training cost (0 if absent; manOWar uses
+                // mercenary-price, not price, so it stays non-purchasable here).
+                Price: ResolveIntAttribute(el, "price", elements) ?? 0);
         }
 
         if (units.Count == 0)

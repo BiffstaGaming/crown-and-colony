@@ -742,6 +742,51 @@ public sealed class Game
         return check.Cost;
     }
 
+    /// <summary>
+    /// A high-seas tile a ship bought in Europe enters the New World at (the map's
+    /// entry edge). Falls back to (0,0) on maps with no high seas (test fixtures).
+    /// </summary>
+    private Position EuropeEntryTile() =>
+        Map.AllPositions().FirstOrDefault(p => Map.TerrainAt(p).Id == HighSeasId, new Position(0, 0));
+
+    /// <summary>Whether the player can buy a <paramref name="unitTypeId"/> in Europe right now.</summary>
+    public MoveCheck CheckBuyUnit(string unitTypeId)
+    {
+        UnitType type = Ruleset.Unit(unitTypeId);
+        if (!type.IsPurchasable)
+        {
+            return MoveCheck.No($"A {type.ShortName} cannot be bought in Europe.");
+        }
+        if (Gold < type.Price)
+        {
+            return MoveCheck.No($"Not enough gold (need {type.Price}).");
+        }
+        return MoveCheck.Yes(type.Price);
+    }
+
+    /// <summary>
+    /// Buys a unit in Europe for gold; it appears docked there. A ship enters at the
+    /// high-seas tile so it can sail to the New World; a land unit waits on the dock to board one.
+    /// </summary>
+    /// <returns>The purchased unit, in Europe.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBuyUnit"/>.</exception>
+    public Unit BuyUnit(string unitTypeId)
+    {
+        MoveCheck check = CheckBuyUnit(unitTypeId);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        Gold -= check.Cost;
+        UnitType type = Ruleset.Unit(unitTypeId);
+        var unit = new Unit(_nextUnitId++, type, type.IsNaval ? EuropeEntryTile() : new Position(0, 0))
+        {
+            Location = UnitLocation.InEurope,
+        };
+        _units.Add(unit);
+        return unit;
+    }
+
     /// <summary>Goods that pack into one cargo slot (FreeCol <c>GoodsContainer.CARGO_SIZE</c>).</summary>
     private const int CargoSlotSize = 100;
 

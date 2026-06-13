@@ -132,6 +132,28 @@ public class EuropePanelTests
         AssertThat(game.CargoSlotsUsed(ship) > 0).IsTrue();   // goods are now aboard
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task BuyUnitDropdown_PurchasesAUnitIntoEurope()
+    {
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units = [], Explored = [], Gold = 5000,
+        });
+        int goldBefore = game.Gold;
+        int inEuropeBefore = game.UnitsInEurope.Count();
+
+        var buy = controller.GetNode<PanelContainer>("UI/EuropePanel")
+            .FindChild("BuyUnit", recursive: true, owned: false) as OptionButton;
+        AssertThat(buy).IsNotNull();
+        buy!.EmitSignal(OptionButton.SignalName.ItemSelected, 1L); // the first purchasable unit type
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.Gold < goldBefore).IsTrue();
+        AssertThat(game.UnitsInEurope.Count()).IsEqual(inEuropeBefore + 1);
+    }
+
     private static async Task<(ISceneRunner, GameController, Game)> OpenEurope(SaveGame state)
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
