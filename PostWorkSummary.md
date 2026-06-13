@@ -1,6 +1,6 @@
 # Post-Work Summary
 
-A running, at-a-glance log of what Claude completed after each prompt / area of work — Chris's quick read of "what just happened." **Newest entry first.** The durable, full cross-session record lives in the ClickUp **Session Log** (doc 06); this file is the lightweight TL;DR.
+A running, at-a-glance log of what Claude completed after each prompt / area of work — Chris's quick read of "what just happened" and **what's scheduled next.** **Newest entry first.** The durable, full cross-session record lives in the ClickUp **Session Log** (doc 06); this file is the lightweight TL;DR.
 
 > **Entry format** (copy this for each new entry; prepend it directly under this block):
 >
@@ -12,7 +12,8 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 > **Status:** <build / tests / CI — e.g. "352 tests green, CI ✓, pushed (abc1234)">
 > **Changed:** <key files or areas; commit hash(es)>
 > **Decisions:** <choices made + why; or "—">
-> **Next / follow-ups:** <what's queued or recommended next>
+> **Scheduled next:** <the single specific work item to start next — name it + its kanban task id>
+> **Follow-ups:** <other queued / recommended items; or "—">
 > **Needs you:** <questions / playtest / approvals; or "Nothing">
 > ```
 
@@ -20,15 +21,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ## 2026-06-14 — Add PostWorkSummary + working rule
 
-**Requested:** Update CLAUDE.md and create a `PostWorkSummary.md` template to summarize completed work after every prompt / area of work.
+**Requested:** Update CLAUDE.md and create a `PostWorkSummary.md` template to summarize completed work after every prompt / area of work — including the item scheduled next.
 **Did:**
 - Created this file (repo root) with a per-entry format and a newest-first log.
 - Added a working rule to `CLAUDE.md` ("How Claude should work") requiring a prepended entry here after each prompt / area of work.
+- Added an explicit **Scheduled next** field to the entry format (the specific next work item + its kanban task id), separate from broader follow-ups.
 - Back-filled the Combat 5b entry below so the log starts in use.
 **Status:** Docs only — no code/tests affected.
 **Changed:** `CLAUDE.md`, `PostWorkSummary.md` (new).
 **Decisions:** Put the file at repo root (next to CLAUDE.md) for visibility; newest-first rolling log; it complements, not replaces, the ClickUp Session Log.
-**Next / follow-ups:** Continue Phase 5 — **Combat 5c** (`86d3bba2z`) when ready.
+**Scheduled next:** **Combat 5c** (`86d3bba2z`) — settlement assault/plunder, naval, foreign-unit combat, native-initiated attacks (AI), nation-level tension.
+**Follow-ups:** Apply role movement bonuses (`86d3bbvv6`); queued niceties (native-interaction UI `86d3bb1wh`, native trade buy + inland/wagon, transposability-tuning migration `86d3bb1x3`).
 **Needs you:** Nothing — flag if you'd prefer a different location, format, or single-overwrite (vs. rolling log).
 
 ## 2026-06-14 — Combat 5b: attack action + roles/equipment + braves (Phase 5 slice 5b)
@@ -42,5 +45,6 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 **Status:** **352 tests green** (332 logic incl. 2 soak + 20 scene); **CI ✓** (run `27480663094`); pushed to `main` (`6425a9c`); handoff refresh (`0f1a42e`).
 **Changed:** `Game.cs`, `Unit.cs`, `UnitType.cs`, `Ruleset.cs`, `NativeSettlement.cs`, `SaveGame.cs`, new `RoleType.cs`/`UnitChange.cs`, `GameController.cs`; tests `CombatTests.cs`/`RoleTests.cs` (+ others); 9 docs synced (combat, natives, units-movement, save-load, ruleset-data, fog-of-war, founding-fathers, modules, QA-REPORT).
 **Decisions:** Included roles (your call); braves placed *adjacent to* (not on) settlements so attacking is clean open-field combat and settlement assault defers cleanly to 5c; combat uses the main saved RNG (internal RNG-injecting overload for tests).
-**Next / follow-ups:** **Combat 5c** (`86d3bba2z`) — settlement assault/plunder, naval, foreign-unit combat, native-initiated attacks (AI), nation-level tension (also exercises capture-unit + Revere end-to-end). New low-pri task: apply role movement bonuses (`86d3bbvv6`).
+**Scheduled next:** **Combat 5c** (`86d3bba2z`) — settlement assault/plunder, naval, foreign-unit combat, native-initiated attacks (AI), nation-level tension (also exercises capture-unit + Revere end-to-end).
+**Follow-ups:** Apply role movement bonuses (`86d3bbvv6`).
 **Needs you:** No combat UI yet (logic + tests only) — say if you'd rather make natives/combat playable with a UI before 5c. Existing In Review playtest items still await your look.
