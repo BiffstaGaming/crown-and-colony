@@ -472,6 +472,69 @@ public sealed class Game
     }
 
     /// <summary>
+    /// Whether the colonist <paramref name="unit"/> may join <paramref name="colony"/> —
+    /// it must be a person on the map, standing on or next to the colony.
+    /// </summary>
+    public MoveCheck CheckJoinColony(Unit unit, Colony colony)
+    {
+        if (!unit.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (!unit.Type.IsPerson)
+        {
+            return MoveCheck.No($"A {unit.Type.ShortName} cannot join a colony.");
+        }
+        if (unit.Position != colony.Position && !unit.Position.IsAdjacentTo(colony.Position))
+        {
+            return MoveCheck.No("The unit must be at the colony to join it.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>Adds a colonist to a colony's population (the unit leaves the map; the newcomer is put to work).</summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckJoinColony"/>.</exception>
+    public void JoinColony(Unit unit, Colony colony)
+    {
+        MoveCheck check = CheckJoinColony(unit, colony);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        colony.Population++;
+        _units.Remove(unit);
+        AutoAssignIdleToFood(colony);
+    }
+
+    /// <summary>Whether a colonist may be detached from <paramref name="colony"/> (it must keep at least one).</summary>
+    public MoveCheck CheckLeaveColony(Colony colony) =>
+        colony.Population > 1
+            ? MoveCheck.Yes(0)
+            : MoveCheck.No("A colony must keep at least one colonist.");
+
+    /// <summary>
+    /// Detaches a colonist from a colony onto the colony's own tile. Our colony model
+    /// is a population count, so the detached unit is a generic free colonist (expert
+    /// colonists are not tracked inside a colony).
+    /// </summary>
+    /// <returns>The detached unit, standing on the colony tile.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckLeaveColony"/>.</exception>
+    public Unit LeaveColony(Colony colony)
+    {
+        MoveCheck check = CheckLeaveColony(colony);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        colony.Population--;
+        TrimAssignments(colony); // the lost colonist vacates a job if every colonist was working
+        var unit = new Unit(_nextUnitId++, Ruleset.Unit(StartingUnitTypeId), colony.Position);
+        _units.Add(unit);
+        Reveal(unit);
+        return unit;
+    }
+
+    /// <summary>
     /// Whether an idle colonist may be put to work in one of the colony's buildings.
     /// </summary>
     public MoveCheck CheckAssignBuildingWork(Colony colony, string buildingId)

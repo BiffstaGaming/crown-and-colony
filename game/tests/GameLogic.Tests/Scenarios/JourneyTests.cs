@@ -479,6 +479,62 @@ public class JourneyTests
         Assert.Equal(15, reloaded.Liberty); // 9 + 6, still boosted after reload
     }
 
+    // ──────────── Journey 9: Immigration grows an existing colony ────────────
+
+    [Fact]
+    public void Journey9_ShipARecruitHome_ThenJoinTheColony()
+    {
+        // A coastal colony at (0,0); a caravel in Europe already carrying a recruit.
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 3,
+            MapHeight = 1,
+            Terrain = ["model.tile.plains", "model.tile.ocean", "model.tile.highSeas"],
+            Units =
+            [
+                new SavedUnit(1, "model.unit.caravel", 1, 0, 12, (int)UnitLocation.InEurope),
+                new SavedUnit(2, "model.unit.freeColonist", 1, 0, 3, (int)UnitLocation.InEurope,
+                    CarrierId: 1),
+            ],
+            Explored = [],
+            Colonies = [new SavedColony(1, "Port", 0, 0, 1)],
+        };
+        Game game = save.Restore(Classic);
+        Unit ship = game.Units.First(u => u.Id == 1);
+        Unit recruit = game.Units.First(u => u.Id == 2);
+        Colony colony = game.Colonies[0];
+        Assert.Equal(1, colony.Population);
+        Assert.Equal(recruit.Id, Assert.Single(game.Passengers(ship)).Id);
+
+        // M1 — sail home; the recruit arrives aboard at the ship's coastal tile.
+        game.SailToNewWorld(ship);
+        for (int i = 0; i < Game.SailTurns; i++)
+        {
+            game.EndTurn();
+        }
+        Assert.True(ship.IsOnMap);
+        Assert.Equal(new Position(1, 0), ship.Position);
+
+        // M2 — disembark onto the colony's tile.
+        game.Disembark(recruit, colony.Position);
+        Assert.True(recruit.IsOnMap);
+        Assert.Equal(colony.Position, recruit.Position);
+
+        // M3 — join the colony: population grows, the unit is consumed and put to work.
+        game.JoinColony(recruit, colony);
+        Assert.Equal(2, colony.Population);
+        Assert.DoesNotContain(recruit, game.Units);
+
+        // M4 — acid round-trip: the grown colony + empty docks survive identically.
+        string json = SaveGame.From(game).ToJson();
+        Game reloaded = SaveGame.FromJson(json).Restore(Classic);
+        Assert.Equal(json, SaveGame.From(reloaded).ToJson());
+        Assert.Equal(2, reloaded.Colonies[0].Population);
+    }
+
     // ───────────────────────── fixtures ─────────────────────────
 
     /// <summary>A pop-N colony at the centre of a 3×3 all-plains map (free base buildings re-derived).</summary>

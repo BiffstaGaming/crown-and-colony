@@ -47,6 +47,10 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 - Founding and growth **auto-assign** to the best free grain tile (deterministic tie-break); the player can rearrange (re-assignment UI is the economy-UI slice).
 - Idle colonists produce nothing (building jobs are a later slice).
 
+**Colonist membership (slice 9):**
+- **Join** — a colonist (any person unit) on or next to a colony can `JoinColony`: population +1, the unit leaves the map, the newcomer is auto-assigned to a food tile. This is the payoff of immigration ([immigration](immigration.md)/[transport](transport.md)): ship a recruit home, disembark by a colony, and it grows the colony.
+- **Leave** — `LeaveColony` detaches a colonist onto the colony's own tile as a **free colonist** (our colony stores a population *count*, not individual types, so the detached unit is generic), population −1; a colony must keep ≥ 1 colonist, and a fully-staffed colony vacates one job to fit.
+
 **Deviations from original / FreeCol — PENDING CROSS-CHECK:** FreeCol enforces a minimum distance between colonies and the original restricts founding adjacent to existing colonies; we currently only block the same tile. Cross-check and adopt when colony spacing starts to matter (Phase 3).
 
 ## 3. Technical design
@@ -62,7 +66,7 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
 | L1 Unit | Always | found-on-settleable consumes unit/creates colony; rejections (ship, mountains, occupied tile); **resource yields** (`ResourceYieldTests`: resource boosts, expert-scope skipped, no-enable guard, Hudson ×2 furs, resource+father stack order) | ✅ |
-| L2 Scenario | Always | save/load round-trip preserves colonies; pre-v3 compat; production uses the boosted resource yield (`ResourceYieldTests.Production_UsesTheBoostedYield`) | ✅ |
+| L2 Scenario | Always | save/load round-trip preserves colonies; pre-v3 compat; production uses the boosted resource yield (`ResourceYieldTests.Production_UsesTheBoostedYield`); **join/leave** (`ColonyMembershipTests`: grow on join, detach a free colonist, keep ≥1, trim a job; round-trip) + `JourneyTests.Journey9` (ship a recruit home → join → colony grows) | ✅ |
 | L3 Interaction | Yes | `InputTests` (B founds), `MainSceneTests` (panel opens/closes), `ColonyPanelTests` (staff/unstaff buttons, release field worker, construction dropdown + stop) | ✅ |
 | L4 Visual | Yes (marker) | colony golden (`colony-seed424242`) | ✅ |
 
@@ -85,3 +89,4 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 | 2026-06-13 | Economy slice 6: starvation on food shortfall (pop floors at 1, assignments trimmed workshop-first); bare-square boom-bust cycle pinned by long-run test | Phase 3 |
 | 2026-06-13 | Economy UI: interactive colony screen (`ColonyPanel.cs`) — staff/unstaff buildings, release field workers, send idle to fields, construction dropdown with costs + stop; all via Game oracles, L3-tested | Phase 3 |
 | 2026-06-13 | Bonus-resource yield modifiers in `TileYield` (+ Henry Hudson's +100% furs); expert-scoped resource bonuses parsed but deferred (no per-colonist identity). No save change | Phase 4 slice 8 |
+| 2026-06-13 | Colonist membership: `JoinColony` (grow a colony, the immigration payoff) and `LeaveColony` (detach a free colonist). No save change | Phase 4 slice 9 |

@@ -41,6 +41,7 @@ CI gates (unchanged): push = L1+L2 (incl. logic E2E); PR = +L3+L4 (incl. scene E
 | 6 | Immigration & recruitment (accrue → emigrate → penalty → recruit) | P2 | L2 | ✅ buildable now (immigration shipped) |
 | 7 | A recruit reaches the New World (board → sail → disembark → found) | P2 | L2 | ✅ buildable now (transport shipped) |
 | 8 | An elected father grants its bonus (choose → elect → boosted production) | P2 | L2 | ✅ buildable now (modifier system shipped) |
+| 9 | Immigration grows a colony (ship a recruit home → disembark → join) | P2 | L2 | ✅ buildable now (join/leave shipped) |
 
 ## 5. Journey 1 — Explore & found a colony *(golden path, built first)*
 
@@ -112,6 +113,14 @@ Constructed (a pop-1 colony with the colonist in the town hall = 4 bells/turn; T
 2. **Bonus takes effect** — the next turn the same 4 bells become **6** liberty (+50%): the elected modifier is live.
 3. **Persists across reload** — save → load → save is byte-identical, and another turn on the reload still yields the boosted +6 (the effect rides on the persisted Congress).
 
+## 9e. Journey 9 — Immigration grows a colony (L2)
+
+Constructed (a coastal pop-1 colony; a caravel in Europe already carrying a recruit). The full immigration payoff, as a connected chain:
+1. **Sail home** — the recruit arrives aboard at the ship's coastal tile after the crossing.
+2. **Disembark** — onto the colony's tile.
+3. **Join** — `JoinColony`: population grows to 2, the unit is consumed and put to work.
+4. **Acid round-trip** — the grown colony and empty docks survive save/load byte-identically.
+
 ## 10. Fixtures & helpers
 
 - **Seed policy:** `424242` is the pinned founding seed (used by `InputTests`, `TileWorkerTests`). Record any new pinned seed here.
@@ -132,6 +141,8 @@ Constructed (a pop-1 colony with the colonist in the town hall = 4 bells/turn; T
 | Immigration + recruitment + recruit-price escalation | `ImmigrationTests` | Journey 6 | ✅ covered-e2e |
 | Unit transport (board/sail/disembark + capacity) | `TransportTests` | Journey 7 | ✅ covered-e2e |
 | Founding-Father effects (modifiers + abilities) | `FoundingFatherEffectsTests` | Journey 8 | ✅ covered-e2e (applied effects; rest deferred) |
+| Bonus-resource yields | `ResourceYieldTests` | (covered by slice tests) | ✅ covered |
+| Colonist join/leave a colony | `ColonyMembershipTests` | Journey 9 | ✅ covered-e2e |
 
 ## 12. Blocked journeys & roadmap
 
@@ -149,3 +160,4 @@ A journey is **done** only when: its milestone assertions are green in CI · thi
 | 2026-06-13 | Journey 6 (immigration & recruitment) built and added (P4 slice 4) |
 | 2026-06-13 | Journey 7 (a recruit reaches the New World) built and added (P4 slice 5) |
 | 2026-06-13 | Journey 8 (an elected father grants its bonus) built and added (P4 slice 7) |
+| 2026-06-13 | Journey 9 (immigration grows a colony) built and added (P4 slice 9) |

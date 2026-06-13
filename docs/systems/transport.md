@@ -40,7 +40,7 @@ A colonist can't swim the ocean — to move one across the sea you put it **on a
 | Boarding ends the turn | a boarded or disembarked unit has 0 movement left that turn |
 
 **Deviations from original 1994 / FreeCol behavior:**
-- **No "join an existing colony" on disembark.** A disembarked colonist lands on a tile as a free unit; adding it straight into a colony's population (and the reverse — pulling a colonist out of a colony onto a ship) is a later "colonist in/out of colony" mechanic. It can already **found** a colony.
+- **Disembark lands a free unit; joining a colony is a separate step.** A disembarked colonist can now `JoinColony` an adjacent colony to grow it (see [colonies](colonies.md)) or `FoundColony` a new one — disembark itself just puts it ashore. (Embarking a colonist *directly* from a colony onto a ship in one action is still future; today you `LeaveColony` then board.)
 - **Only ships carry; only land units are carried.** Wagon trains and ships-on-ships are out of scope (faithful for the early game).
 - **Capacity now enforced for goods too** (the gap [europe.md](europe.md) flagged): loading goods or boarding a unit is rejected when the hold is full.
 
@@ -74,7 +74,7 @@ A colonist can't swim the ocean — to move one across the sea you put it **on a
 ## 5. Open issues / TODO
 
 - [x] **Europe screen UI** — done ([europe.md](europe.md)): board passengers onto ships and sail them home from the Europe screen (passengers + free slots shown). *Map-side disembark/board UI (next to a coastal ship) is still to come.*
-- [ ] **Colonist in/out of a colony** — disembark straight into a colony (population +1) and embark a colonist from a colony.
+- [x] **Colonist in/out of a colony** — done ([colonies](colonies.md)): `JoinColony` grows a colony, `LeaveColony` detaches one. (A one-action embark *from* a colony onto a ship is still future.)
 - [ ] Capacity-aware **auto-loading**; multi-ship cargo transfer; ship loss drowning its passengers.
 
 ## Changelog
