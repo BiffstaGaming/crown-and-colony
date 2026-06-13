@@ -24,11 +24,14 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | `Specification.Ruleset` | Parsed rule data; `LoadClassic()` reads the embedded classic spec; `Terrain(id)`, `Unit(id)` |
 | `Specification.TerrainType` / `ProductionEntry` / `GoodsOutput` / `GenRanges` | Immutable terrain rule data incl. climate envelopes |
 | `Specification.UnitType` | Unit rule data (movement, sight, naval, foundColony) with `extends` inheritance resolved |
+| `Specification.GoodsType` | Goods rule data: `is-food`, `stored-as`, `made-from`, breeding number |
+| `Specification.BuildingType` | Building rule data: conversions (with inputs), workplaces, upgrade chain, build cost |
 | `World.Position` | Grid coordinate; 8-way adjacency |
 | `World.GameMap` | Immutable terrain grid |
 | `World.MapGenerator` | Seeded placeholder map generation (Phase 2 replaces algorithm) |
 | `Units.Unit` | Unit state; mutated only via `Game` |
-| `GameSession.Game` | The running game: `New`, `CheckMove`, `MoveUnit`, `EndTurn`, `SpawnUnit` |
+| `Colonies.Colony` | Colony state: population, stores, tile/building workers, buildings, build target |
+| `GameSession.Game` | The running game: `New`, `CheckMove`/`MoveUnit`, `EndTurn`, `SpawnUnit`, `CheckFoundColony`/`FoundColony`, `TileYield`, `CheckAssignWork`/`AssignWork`/`UnassignWork`, `CheckAssignBuildingWork`/`AssignBuildingWork`/`UnassignBuildingWork`, `CheckSetBuild`/`SetBuild`/`Buildables` |
 | `GameSession.MoveCheck` / `InvalidMoveException` | Move legality result / violation |
 | `Persistence.SaveGame` / `SavedUnit` | Complete JSON-serializable game snapshot |
 

@@ -17,7 +17,7 @@ The game advances in turns, starting at turn 1. Press **End Turn** and every uni
 
 | On EndTurn | Effect (in order) |
 |---|---|
-| 1. Each colony | produce (colony square) → eat (2/colonist) → grow (at 200 food) — see [colonies](colonies.md) |
+| 1. Each colony | colony square produces → worked tiles produce → buildings produce (unattended + per-worker conversions, breeding-gated) → construction completes if materials cover it → colonists eat (2 each) → growth at 200 food (newborn auto-assigned) — see [colonies](colonies.md) |
 | 2. All units | movement restored to full |
 | 3. Turn counter | +1 |
 
