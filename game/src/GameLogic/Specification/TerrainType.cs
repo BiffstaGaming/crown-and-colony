@@ -34,12 +34,22 @@ public sealed record TerrainType(
 }
 
 /// <summary>
-/// One production option of a terrain type: either what the tile yields with no
-/// colonist working it (<paramref name="Unattended"/>) or one choice of attended output.
+/// One production option of a terrain or building type: either automatic
+/// (<paramref name="Unattended"/>) or per assigned worker. Buildings may consume
+/// inputs (lumber 3 → hammers 3); tiles never do.
 /// </summary>
-/// <param name="Unattended">True for the tile's automatic colony-center yield.</param>
+/// <param name="Unattended">True for automatic production (colony-centre tile, town hall bell).</param>
 /// <param name="Outputs">Goods produced, e.g. grain 5.</param>
-public sealed record ProductionEntry(bool Unattended, IReadOnlyList<GoodsOutput> Outputs);
+/// <param name="Inputs">Goods consumed to produce the outputs (empty for tiles).</param>
+public sealed record ProductionEntry(
+    bool Unattended,
+    IReadOnlyList<GoodsOutput> Outputs,
+    IReadOnlyList<GoodsOutput> Inputs)
+{
+    /// <summary>Tile-style entry without inputs.</summary>
+    public ProductionEntry(bool unattended, IReadOnlyList<GoodsOutput> outputs)
+        : this(unattended, outputs, []) { }
+}
 
 /// <summary>A quantity of one goods type, e.g. <c>model.goods.grain</c> × 5.</summary>
 /// <param name="GoodsId">Ruleset goods id.</param>

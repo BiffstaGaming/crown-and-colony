@@ -13,18 +13,22 @@ public sealed class Ruleset
     private readonly Dictionary<string, TerrainType> _terrainById;
     private readonly Dictionary<string, UnitType> _unitById;
     private readonly Dictionary<string, GoodsType> _goodsById;
+    private readonly Dictionary<string, BuildingType> _buildingById;
 
     private Ruleset(
         Dictionary<string, TerrainType> terrainById,
         Dictionary<string, UnitType> unitById,
-        Dictionary<string, GoodsType> goodsById)
+        Dictionary<string, GoodsType> goodsById,
+        Dictionary<string, BuildingType> buildingById)
     {
         _terrainById = terrainById;
         _unitById = unitById;
         _goodsById = goodsById;
+        _buildingById = buildingById;
         TerrainTypes = _terrainById.Values.ToList();
         UnitTypes = _unitById.Values.ToList();
         GoodsTypes = _goodsById.Values.ToList();
+        BuildingTypes = _buildingById.Values.ToList();
     }
 
     /// <summary>All terrain types, in specification order.</summary>
@@ -63,6 +67,16 @@ public sealed class Ruleset
     /// </summary>
     public string StorageIdOf(string goodsId) =>
         _goodsById.TryGetValue(goodsId, out var g) ? g.StoredAs : goodsId;
+
+    /// <summary>All building types, in specification order.</summary>
+    public IReadOnlyList<BuildingType> BuildingTypes { get; }
+
+    /// <summary>Looks up a building type by ruleset id (e.g. <c>model.building.townHall</c>).</summary>
+    /// <exception cref="KeyNotFoundException">Unknown id.</exception>
+    public BuildingType Building(string id) =>
+        _buildingById.TryGetValue(id, out var b)
+            ? b
+            : throw new KeyNotFoundException($"Unknown building type '{id}'.");
 
     /// <summary>Loads the classic (1994-faithful) ruleset embedded in this assembly.</summary>
     public static Ruleset LoadClassic()
@@ -116,8 +130,57 @@ public sealed class Ruleset
                 IsFarmed: (bool?)el.Attribute("is-farmed") ?? false);
         }
 
-        return new Ruleset(terrain, units, goods);
+        var buildings = new Dictionary<string, BuildingType>();
+        var buildingElements = new Dictionary<string, XElement>();
+        foreach (XElement el in root.Element("building-types")?.Elements("building-type") ?? [])
+        {
+            buildingElements[RequiredAttribute(el, "id")] = el;
+        }
+        foreach ((string id, XElement el) in buildingElements)
+        {
+            // Productions: the building's own if defined, else inherited up the
+            // extends chain. Attributes: nearest definition wins (FreeCol default
+            // workplaces = 3).
+            XElement? productionSource = el;
+            while (productionSource is not null && !productionSource.Elements("production").Any())
+            {
+                string? parent = (string?)productionSource.Attribute("extends");
+                productionSource = parent is not null ? buildingElements.GetValueOrDefault(parent) : null;
+            }
+
+            buildings[id] = new BuildingType(
+                Id: id,
+                UpgradesFrom: (string?)el.Attribute("upgrades-from"),
+                Workplaces: ResolveIntAttribute(el, "workplaces", buildingElements) ?? 3,
+                RequiredPopulation: ResolveIntAttribute(el, "required-population", buildingElements) ?? 1,
+                Productions: (productionSource?.Elements("production") ?? [])
+                    .Select(ParseProduction)
+                    .ToList(),
+                BuildCost: el.Elements("required-goods")
+                    .Select(g => new GoodsOutput(
+                        RequiredAttribute(g, "id"),
+                        (int?)g.Attribute("value")
+                            ?? throw new RulesetFormatException($"required-goods in '{id}' lacks value.")))
+                    .ToList());
+        }
+
+        return new Ruleset(terrain, units, goods, buildings);
     }
+
+    private static ProductionEntry ParseProduction(XElement p) => new(
+        Unattended: (bool?)p.Attribute("unattended") ?? false,
+        Outputs: p.Elements("output")
+            .Select(o => new GoodsOutput(
+                RequiredAttribute(o, "goods-type"),
+                (int?)o.Attribute("value")
+                    ?? throw new RulesetFormatException("<output> lacks a value.")))
+            .ToList(),
+        Inputs: p.Elements("input")
+            .Select(o => new GoodsOutput(
+                RequiredAttribute(o, "goods-type"),
+                (int?)o.Attribute("value")
+                    ?? throw new RulesetFormatException("<input> lacks a value.")))
+            .ToList());
 
     /// <summary>
     /// Parses unit types, resolving the spec's <c>extends</c> inheritance chains
@@ -206,16 +269,7 @@ public sealed class Ruleset
     {
         string id = RequiredAttribute(el, "id");
 
-        var productions = el.Elements("production")
-            .Select(p => new ProductionEntry(
-                Unattended: (bool?)p.Attribute("unattended") ?? false,
-                Outputs: p.Elements("output")
-                    .Select(o => new GoodsOutput(
-                        RequiredAttribute(o, "goods-type"),
-                        (int?)o.Attribute("value")
-                            ?? throw new RulesetFormatException($"<output> in '{id}' lacks a value.")))
-                    .ToList()))
-            .ToList();
+        var productions = el.Elements("production").Select(ParseProduction).ToList();
 
         XElement? gen = el.Element("gen");
 

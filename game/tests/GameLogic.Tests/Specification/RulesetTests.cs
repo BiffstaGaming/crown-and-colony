@@ -130,6 +130,32 @@ public class RulesetTests
     }
 
     [Fact]
+    public void BuildingTypes_ParseWithProductionsAndCosts()
+    {
+        // Town hall: free building producing bells (1 unattended, 3 per worker).
+        BuildingType townHall = Classic.Building("model.building.townHall");
+        Assert.Empty(townHall.BuildCost);
+        Assert.Contains(townHall.Productions, p =>
+            p.Unattended && p.Outputs.Any(o => o is { GoodsId: "model.goods.bells", Amount: 1 }));
+        Assert.Contains(townHall.Productions, p =>
+            !p.Unattended && p.Outputs.Any(o => o is { GoodsId: "model.goods.bells", Amount: 3 }));
+
+        // Carpenter's house: lumber 3 → hammers 3 per worker.
+        BuildingType carpenter = Classic.Building("model.building.carpenterHouse");
+        ProductionEntry conversion = Assert.Single(carpenter.Productions);
+        Assert.Equal([("model.goods.lumber", 3)], conversion.Inputs.Select(i => (i.GoodsId, i.Amount)));
+        Assert.Equal([("model.goods.hammers", 3)], conversion.Outputs.Select(o => (o.GoodsId, o.Amount)));
+
+        // Lumber mill: upgrade with a hammer cost and population requirement.
+        BuildingType mill = Classic.Building("model.building.lumberMill");
+        Assert.Equal("model.building.carpenterHouse", mill.UpgradesFrom);
+        Assert.Equal(3, mill.RequiredPopulation);
+        Assert.Contains(mill.BuildCost, g => g is { GoodsId: "model.goods.hammers", Amount: 52 });
+
+        Assert.True(Classic.BuildingTypes.Count >= 15, $"only {Classic.BuildingTypes.Count} building types");
+    }
+
+    [Fact]
     public void AbstractUnitTypes_AreNotExposed()
     {
         Assert.Throws<KeyNotFoundException>(() => Classic.Unit("colonist"));
