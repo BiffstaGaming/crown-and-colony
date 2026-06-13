@@ -37,16 +37,51 @@ public sealed class Game
     /// </summary>
     public const int FoundingFatherFactor = 24;
 
+    /// <summary>The warehouse goods id for religious crosses (immigration points).</summary>
+    private const string CrossesId = "model.goods.crosses";
+
+    /// <summary>Immigration points needed for the first emigrant (spec <c>model.option.initialImmigration</c>, classic 15).</summary>
+    public const int InitialImmigration = 15;
+
+    /// <summary>Added to the immigration target after each emigrant (spec <c>crossesIncrement</c>, classic medium 2).</summary>
+    public const int CrossesIncrement = 2;
+
+    /// <summary>Immigration lost per person idling in Europe each turn (spec <c>europeanUnitImmigrationPenalty</c>, classic −4).</summary>
+    public const int EuropeUnitImmigrationPenalty = -4;
+
+    /// <summary>Flat immigration a colonial player gains each turn (spec <c>playerImmigrationBonus</c>, classic +2).</summary>
+    public const int PlayerImmigrationBonus = 2;
+
+    /// <summary>Recruit slots on the Europe dock (FreeCol <c>MigrationType.MIGRANT_COUNT</c>).</summary>
+    public const int RecruitSlots = 3;
+
+    /// <summary>Starting base recruit price (FreeCol <c>Europe.RECRUIT_PRICE_INITIAL</c>, classic 200).</summary>
+    public const int InitialRecruitPrice = 200;
+
+    /// <summary>Recruit-price floor (FreeCol <c>Europe.LOWER_CAP_INITIAL</c>, classic 80).</summary>
+    public const int InitialRecruitLowerCap = 80;
+
+    /// <summary>Base recruit price rise per paid recruit (spec <c>recruitPriceIncrease</c>, classic medium 30).</summary>
+    public const int RecruitPriceIncrease = 30;
+
+    /// <summary>Recruit-price-floor rise per paid recruit (spec <c>lowerCapIncrease</c>, classic 0).</summary>
+    public const int RecruitLowerCapIncrease = 0;
+
     private readonly List<Unit> _units = [];
     private readonly List<Colony> _colonies = [];
     private readonly HashSet<Position> _explored = [];
     private readonly List<string> _congress = [];
     private readonly List<string> _offeredFathers = [];
+    private readonly List<string> _recruitDock = [];
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
     private int _nextColonyId = 1;
     private int _liberty;
     private string? _currentFather;
+    private int _immigration;
+    private int _immigrationRequired = InitialImmigration;
+    private int _baseRecruitPrice = InitialRecruitPrice;
+    private int _recruitLowerCap = InitialRecruitLowerCap;
 
     private Game(Ruleset ruleset, GameMap map, Pcg32Random random, int turn)
     {
@@ -86,6 +121,35 @@ public sealed class Game
 
     /// <summary>The fathers offered this round — one per category that has an eligible candidate.</summary>
     public IReadOnlyList<string> OfferedFathers => _offeredFathers;
+
+    /// <summary>Immigration points banked toward the next emigrant (crosses + the Europe contribution).</summary>
+    public int Immigration => _immigration;
+
+    /// <summary>Immigration points needed to produce the next emigrant (rises by <see cref="CrossesIncrement"/> each time).</summary>
+    public int ImmigrationRequired => _immigrationRequired;
+
+    /// <summary>The unit types waiting on the Europe recruitment dock (one id per <see cref="RecruitSlots"/> slot).</summary>
+    public IReadOnlyList<string> RecruitDock => _recruitDock;
+
+    /// <summary>
+    /// Current gold price to buy one recruit from the dock (FreeCol
+    /// <c>Europe.getCurrentRecruitPrice</c>): <c>max(base·max(required−immigration,0)/required, floor)</c>.
+    /// Falls toward the floor as immigration approaches the target, then jumps after each paid recruit.
+    /// </summary>
+    public int RecruitPrice
+    {
+        get
+        {
+            int difference = Math.Max(_immigrationRequired - _immigration, 0);
+            return Math.Max(_baseRecruitPrice * difference / _immigrationRequired, _recruitLowerCap);
+        }
+    }
+
+    /// <summary>The escalating base used in the recruit-price formula (persisted; FreeCol <c>baseRecruitPrice</c>).</summary>
+    internal int BaseRecruitPrice => _baseRecruitPrice;
+
+    /// <summary>The recruit-price floor (persisted; FreeCol <c>recruitLowerCap</c>).</summary>
+    internal int RecruitLowerCap => _recruitLowerCap;
 
     /// <summary>
     /// Game age (1–3) used to weight which fathers are offered. Simplified
@@ -164,6 +228,7 @@ public sealed class Game
                 map.AllPositions().First(Settleable));
         game.SpawnUnit(ruleset.Unit(StartingUnitTypeId), start);
         game.GenerateOffers(); // Congress choices available from the first turn
+        game.InitRecruitDock(); // three recruits waiting on the Europe dock from turn 1
 
         return game;
     }
@@ -178,7 +243,10 @@ public sealed class Game
         int gold = 0, int taxRate = 0,
         IReadOnlyDictionary<string, int>? marketDeltas = null,
         int liberty = 0, IEnumerable<string>? congress = null,
-        string? currentFather = null, IEnumerable<string>? offeredFathers = null)
+        string? currentFather = null, IEnumerable<string>? offeredFathers = null,
+        int immigration = 0, int immigrationRequired = InitialImmigration,
+        int baseRecruitPrice = InitialRecruitPrice, int recruitLowerCap = InitialRecruitLowerCap,
+        IEnumerable<string>? recruitDock = null)
     {
         var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn)
         {
@@ -199,6 +267,17 @@ public sealed class Game
         {
             game._offeredFathers.AddRange(offeredFathers);
         }
+        game._immigration = immigration;
+        game._immigrationRequired = immigrationRequired;
+        game._baseRecruitPrice = baseRecruitPrice;
+        game._recruitLowerCap = recruitLowerCap;
+        if (recruitDock is not null)
+        {
+            game._recruitDock.AddRange(recruitDock);
+        }
+        // Top up to a full dock: a no-op when the save held all slots (so the RNG
+        // sequence is preserved); draws a fresh dock for pre-v12 saves that had none.
+        game.InitRecruitDock();
         foreach ((int id, UnitType type, Position position, int movementLeft,
                   UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo) in units)
         {
@@ -334,6 +413,10 @@ public sealed class Game
     /// </summary>
     public MoveCheck CheckFoundColony(Unit unit)
     {
+        if (!unit.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
         if (!unit.Type.CanFoundColony)
         {
             return MoveCheck.No($"A {unit.Type.ShortName} cannot found a colony.");
@@ -683,6 +766,7 @@ public sealed class Game
             RunColonyTurn(colony);
         }
         AccumulateLibertyAndElectFathers();
+        AccumulateImmigrationAndEmigrate();
         AdvanceSailing();
         foreach (Unit unit in _units)
         {
@@ -752,6 +836,154 @@ public sealed class Game
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Accrues immigration and emigrates while the target is met (FreeCol
+    /// <c>Player.getTotalImmigrationProduction</c> + the auto-emigrate loop in
+    /// <c>ServerPlayer.csNewTurn</c>): colony crosses drain into the pool (like
+    /// bells → liberty), the Europe contribution (−4 per person there, +2 player
+    /// bonus, never dropping the turn's total below zero) is added, then each time
+    /// the pool meets the target an emigrant arrives in Europe from a random dock slot.
+    /// </summary>
+    private void AccumulateImmigrationAndEmigrate()
+    {
+        // Colony crosses become immigration and leave the warehouse (not tradeable stock).
+        int crossesThisTurn = 0;
+        foreach (Colony colony in _colonies)
+        {
+            int crosses = colony.StoreOf(CrossesId);
+            if (crosses > 0)
+            {
+                colony.AddGoods(CrossesId, -crosses);
+                crossesThisTurn += crosses;
+            }
+        }
+
+        // Europe contribution: penalty per person docked, plus the flat player bonus,
+        // clamped so this turn's immigration production cannot be negative.
+        int personsInEurope = _units.Count(u => u.Location == UnitLocation.InEurope && u.Type.IsPerson);
+        int europe = (personsInEurope * EuropeUnitImmigrationPenalty) + PlayerImmigrationBonus;
+        if (europe + crossesThisTurn < 0)
+        {
+            europe = -crossesThisTurn;
+        }
+        _immigration += crossesThisTurn + europe;
+
+        // Auto-emigrate (no William Brewster / select-recruit yet → a random dock slot).
+        // Guarded on a stocked dock: test rulesets with no recruitable units have none.
+        while (_recruitDock.Count > 0 && _immigration >= _immigrationRequired)
+        {
+            Emigrate(_random.Next(_recruitDock.Count));
+            ReduceImmigration();
+            _immigrationRequired += CrossesIncrement;
+        }
+    }
+
+    /// <summary>
+    /// Consumes immigration on emigration (FreeCol <c>Player.reduceImmigration</c> with
+    /// classic <c>saveProductionOverflow=true</c>): subtract the target, keeping any surplus.
+    /// </summary>
+    private void ReduceImmigration() =>
+        _immigration = _immigrationRequired > _immigration ? 0 : _immigration - _immigrationRequired;
+
+    /// <summary>
+    /// Fills the dock to <see cref="RecruitSlots"/> with fresh weighted draws. A no-op
+    /// when the ruleset defines no recruitable units (minimal test rulesets), so those
+    /// games simply have no Europe dock.
+    /// </summary>
+    private void InitRecruitDock()
+    {
+        if (!Ruleset.UnitTypes.Any(u => u.RecruitProbability > 0))
+        {
+            return;
+        }
+        while (_recruitDock.Count < RecruitSlots)
+        {
+            _recruitDock.Add(DrawRecruitType());
+        }
+    }
+
+    /// <summary>
+    /// A weighted-random recruitable unit type id (FreeCol <c>ServerEurope.generateRecruitablesList</c>):
+    /// each type's <see cref="UnitType.RecruitProbability"/> is its weight.
+    /// </summary>
+    private string DrawRecruitType()
+    {
+        var pool = Ruleset.UnitTypes.Where(u => u.RecruitProbability > 0).ToList();
+        int total = pool.Sum(u => u.RecruitProbability);
+        int roll = _random.Next(total);
+        foreach (UnitType type in pool)
+        {
+            roll -= type.RecruitProbability;
+            if (roll < 0)
+            {
+                return type.Id;
+            }
+        }
+        return pool[^1].Id; // unreachable: roll < total guarantees an earlier return
+    }
+
+    /// <summary>
+    /// Takes the recruit in <paramref name="slot"/> off the dock, lands it in Europe,
+    /// and refills the dock with a fresh draw (the new recruit joins at the bottom slot).
+    /// </summary>
+    private Unit Emigrate(int slot)
+    {
+        string typeId = _recruitDock[slot];
+        _recruitDock.RemoveAt(slot);
+        _recruitDock.Add(DrawRecruitType());
+        return CreateEuropeRecruit(typeId);
+    }
+
+    /// <summary>Creates a recruited unit docked in Europe (it has never been on the map).</summary>
+    private Unit CreateEuropeRecruit(string unitTypeId)
+    {
+        var unit = new Unit(_nextUnitId++, Ruleset.Unit(unitTypeId), new Position(0, 0))
+        {
+            Location = UnitLocation.InEurope,
+        };
+        _units.Add(unit);
+        return unit;
+    }
+
+    /// <summary>Whether the player can buy the recruit in <paramref name="slot"/> right now.</summary>
+    public MoveCheck CheckRecruit(int slot)
+    {
+        if (slot < 0 || slot >= _recruitDock.Count)
+        {
+            return MoveCheck.No("No recruit in that dock slot.");
+        }
+        int price = RecruitPrice;
+        if (Gold < price)
+        {
+            return MoveCheck.No($"Not enough gold to recruit (need {price}).");
+        }
+        return MoveCheck.Yes(price);
+    }
+
+    /// <summary>
+    /// Buys the recruit in <paramref name="slot"/>: pays <see cref="RecruitPrice"/>, raises the
+    /// base price, and — like a free emigrant — consumes immigration and raises the next target
+    /// (FreeCol <c>ServerPlayer.csEmigrate</c>, the RECRUIT case falling through to NORMAL).
+    /// The recruit lands in Europe and the dock refills.
+    /// </summary>
+    /// <returns>The recruited unit, docked in Europe.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckRecruit"/>.</exception>
+    public Unit Recruit(int slot)
+    {
+        MoveCheck check = CheckRecruit(slot);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        Gold -= check.Cost;                              // price read before the base rises
+        _baseRecruitPrice += RecruitPriceIncrease;       // increaseRecruitmentDifficulty
+        _recruitLowerCap += RecruitLowerCapIncrease;
+        Unit recruit = Emigrate(slot);                   // extract precedes the immigration cut (as in FreeCol)
+        ReduceImmigration();
+        _immigrationRequired += CrossesIncrement;
+        return recruit;
     }
 
     /// <summary>

@@ -313,6 +313,66 @@ public class JourneyTests
         Assert.Equal(game.Congress, reloaded.Congress);
     }
 
+    // ──────────────────── Journey 6: Immigration & recruitment ────────────────────
+
+    [Fact]
+    public void Journey6_AccrueImmigrationEmigrateThenRecruit()
+    {
+        // M1 — new game with a treasury; found a colony. The dock is stocked and the
+        //      immigration clock starts at the classic target with the full base price.
+        var game = Game.New(Classic, seed: 42, startingGold: 1000);
+        game.FoundColony(game.Units[0]);
+        Assert.Equal(Game.RecruitSlots, game.RecruitDock.Count);
+        Assert.All(game.RecruitDock, id => Assert.True(Classic.Unit(id).RecruitProbability > 0));
+        Assert.Equal(0, game.Immigration);
+        Assert.Equal(15, game.ImmigrationRequired);
+        Assert.Equal(200, game.RecruitPrice);
+
+        // M2 — accrual feeds Europe: 3 immigration/turn (1 chapel cross + 2 player bonus);
+        //      no emigrant before the target, exactly one the turn it is met.
+        for (int t = 0; t < 4; t++)
+        {
+            game.EndTurn();
+        }
+        Assert.Empty(game.UnitsInEurope);           // 12 < 15: nobody has emigrated yet
+        Assert.Equal(12, game.Immigration);
+
+        game.EndTurn();                             // 15 ≥ 15 → emigrate
+        Unit emigrant = Assert.Single(game.UnitsInEurope);
+        Assert.True(emigrant.Type.IsPerson);
+        Assert.Equal(UnitLocation.InEurope, emigrant.Location);
+        Assert.Equal(17, game.ImmigrationRequired); // the target escalated
+        Assert.Equal(0, game.Immigration);
+
+        // M3 — the emigrant idling in Europe suppresses further immigration (−4 clamp):
+        //      a single chapel's cross cannot push the clock forward.
+        game.EndTurn();
+        Assert.Equal(0, game.Immigration);
+        Assert.Single(game.UnitsInEurope);          // still just the one
+
+        // M4 — paid recruit: gold buys the chosen slot's unit into Europe, the dock
+        //      refills, and the base price escalates for next time.
+        int goldBefore = game.Gold;
+        int price = game.RecruitPrice;              // 200 (immigration 0, required 17)
+        string slotType = game.RecruitDock[1];
+        Unit recruit = game.Recruit(1);
+        Assert.Equal(slotType, recruit.Type.Id);
+        Assert.Equal(goldBefore - price, game.Gold);
+        Assert.Equal(2, game.UnitsInEurope.Count()); // emigrant + recruit
+        Assert.Equal(Game.RecruitSlots, game.RecruitDock.Count);
+        Assert.Equal(price + Game.RecruitPriceIncrease, game.RecruitPrice); // 200 → 230
+
+        // M5 — acid test: the whole immigration + dock + Europe state round-trips identically.
+        string json = SaveGame.From(game).ToJson();
+        Game reloaded = SaveGame.FromJson(json).Restore(Classic);
+        Assert.Equal(json, SaveGame.From(reloaded).ToJson());
+        Assert.Equal(game.Immigration, reloaded.Immigration);
+        Assert.Equal(game.ImmigrationRequired, reloaded.ImmigrationRequired);
+        Assert.Equal(game.RecruitDock, reloaded.RecruitDock);
+        Assert.Equal(game.RecruitPrice, reloaded.RecruitPrice);
+        Assert.Equal(game.UnitsInEurope.Count(), reloaded.UnitsInEurope.Count());
+    }
+
     // ───────────────────────── fixtures ─────────────────────────
 
     /// <summary>A pop-N colony at the centre of a 3×3 all-plains map (free base buildings re-derived).</summary>

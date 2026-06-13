@@ -10,12 +10,23 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <param name="LineOfSight">Sight radius in tiles (fog of war reveal).</param>
 /// <param name="IsNaval">Naval unit: moves on water, not land (<c>model.ability.navalUnit</c>).</param>
 /// <param name="CanFoundColony">May found a colony (<c>model.ability.foundColony</c>).</param>
+/// <param name="RecruitProbability">
+/// Relative weight for the Europe recruitment draw (spec <c>recruit-probability</c>);
+/// 0 means not recruitable. Classic: free colonist / indentured servant / petty
+/// criminal 20, experts 1.
+/// </param>
+/// <param name="IsPerson">
+/// A colonist/person, not a ship or wagon (<c>model.ability.person</c>). Persons
+/// idling in Europe suppress immigration (the −4/turn penalty).
+/// </param>
 public sealed record UnitType(
     string Id,
     int Movement,
     int LineOfSight,
     bool IsNaval,
-    bool CanFoundColony)
+    bool CanFoundColony,
+    int RecruitProbability = 0,
+    bool IsPerson = false)
 {
     /// <summary>Short name derived from the id: <c>model.unit.freeColonist</c> → <c>freeColonist</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];

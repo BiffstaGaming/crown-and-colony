@@ -17,12 +17,14 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 11;
+    public const int CurrentVersion = 12;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
     /// v2 lacked <see cref="Colonies"/>; v3 colonies lacked goods stores;
-    /// v4 lacked tile workers; v5 lacked buildings.
+    /// v4 lacked tile workers; v5 lacked buildings; v9 added gold/tax/market;
+    /// v10 added liberty/congress; v11 added unit location/cargo; v12 added
+    /// immigration + the Europe recruitment dock.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -80,6 +82,21 @@ public sealed record SaveGame
     /// <summary>The fathers offered this round, so a reload restores the same choice (v10+).</summary>
     public IReadOnlyList<string>? OfferedFathers { get; init; }
 
+    /// <summary>Immigration points banked toward the next emigrant (v12+).</summary>
+    public int Immigration { get; init; }
+
+    /// <summary>Immigration points required for the next emigrant; null pre-v12 → classic default 15.</summary>
+    public int? ImmigrationRequired { get; init; }
+
+    /// <summary>Escalating base recruit price; null pre-v12 → classic default 200.</summary>
+    public int? BaseRecruitPrice { get; init; }
+
+    /// <summary>Recruit-price floor; null pre-v12 → classic default 80.</summary>
+    public int? RecruitLowerCap { get; init; }
+
+    /// <summary>Unit types waiting on the Europe dock; null pre-v12 → a fresh dock is drawn on load.</summary>
+    public IReadOnlyList<string>? RecruitDock { get; init; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -134,6 +151,11 @@ public sealed record SaveGame
             Congress = game.Congress.Count > 0 ? game.Congress.ToList() : null,
             CurrentFather = game.CurrentFather,
             OfferedFathers = game.OfferedFathers.Count > 0 ? game.OfferedFathers.ToList() : null,
+            Immigration = game.Immigration,
+            ImmigrationRequired = game.ImmigrationRequired,
+            BaseRecruitPrice = game.BaseRecruitPrice,
+            RecruitLowerCap = game.RecruitLowerCap,
+            RecruitDock = game.RecruitDock.Count > 0 ? game.RecruitDock.ToList() : null,
         };
     }
 
@@ -200,7 +222,12 @@ public sealed record SaveGame
             Liberty,
             Congress,
             CurrentFather,
-            OfferedFathers);
+            OfferedFathers,
+            Immigration,
+            ImmigrationRequired ?? Game.InitialImmigration,
+            BaseRecruitPrice ?? Game.InitialRecruitPrice,
+            RecruitLowerCap ?? Game.InitialRecruitLowerCap,
+            RecruitDock);
     }
 
     /// <summary>Serializes to JSON.</summary>

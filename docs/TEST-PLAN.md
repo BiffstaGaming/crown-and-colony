@@ -38,8 +38,8 @@ CI gates (unchanged): push = L1+L2 (incl. logic E2E); PR = +L3+L4 (incl. scene E
 | 3b | Full trade voyage (load → sail → sell in Europe → return) | P1 | L2 | ✅ buildable now (sailing shipped) |
 | 4 | Liberty & sequential Founding-Father elections | P1 | L2 | ✅ buildable now (effects out of scope) |
 | 5 | Scene E2E: new → select → move → found → panel → staff → tick | P0 | L3 | ✅ buildable now |
+| 6 | Immigration & recruitment (accrue → emigrate → penalty → recruit) | P2 | L2 | ✅ buildable now (immigration shipped) |
 | — | Sail cargo to Europe & trade | P2 | L2/L3 | ⛔ blocked on ships sailing (P4 slice 3) |
-| — | Immigration & recruitment | P2 | L2 | ⛔ blocked on immigration (P4 slice 4) |
 | — | Founding-Father *effects* applied | P2 | L2 | ⛔ blocked on the modifier system |
 
 ## 5. Journey 1 — Explore & found a colony *(golden path, built first)*
@@ -87,6 +87,15 @@ Fully deterministic (town hall = 1 bell/turn). Milestones:
 The single representative scene journey, reusing the `ClickTile`/`FindButton`/`GameOf` helpers from `InputTests`/`ColonyPanelTests`:
 new game → click unit (selected) → click adjacent tile (moved) → press B (founded) → open colony panel → staff a building via its `+` button → end turn → assert the staffed building produced. Proves the UI→logic seam across a flow, which L2 cannot see.
 
+## 9b. Journey 6 — Immigration & recruitment (L2)
+
+Seed `42`, `startingGold 1000` (founds cleanly). Milestones, each asserted as a connected chain:
+1. **New game + found** — the dock holds three recruitable types; pool 0, target 15, price 200.
+2. **Accrual feeds Europe** — 3 immigration/turn (1 chapel cross + 2 player bonus); no emigrant at 12, exactly one docked in Europe the turn the pool hits 15; the target escalates to 17 and the pool resets.
+3. **Europe penalty stalls the pool** — with one person idling in Europe, a single chapel cross is cancelled by the −4 (clamped); no second emigrant appears.
+4. **Paid recruit** — gold buys the chosen slot's unit into Europe (now two there), the dock refills, gold is debited by exactly the price, and the base price escalates by 30 (200 → 230).
+5. **Acid round-trip** — the whole immigration + dock + Europe-units state round-trips byte-identical.
+
 ## 10. Fixtures & helpers
 
 - **Seed policy:** `424242` is the pinned founding seed (used by `InputTests`, `TileWorkerTests`). Record any new pinned seed here.
@@ -104,12 +113,12 @@ new game → click unit (selected) → click adjacent tile (moved) → press B (
 | High-seas sailing + Europe trade | `SailingTests` | Journey 3b | ✅ covered-e2e |
 | Liberty + father election + cost escalation | `FoundingFatherTests` | Journey 4 | ✅ covered-e2e |
 | UI→logic seam (select/move/found/staff) | `InputTests`, `ColonyPanelTests`, `MainSceneTests` | Journey 5 | ✅ covered-e2e |
-| Immigration / recruitment | — | (blocked) | ⛔ gap until P4 slice 4 |
+| Immigration + recruitment + recruit-price escalation | `ImmigrationTests` | Journey 6 | ✅ covered-e2e |
 | Founding-Father effects | — | (blocked) | ⛔ gap until modifier system |
 
 ## 12. Blocked journeys & roadmap
 
-Blocked journeys are kept as named stubs (above), each with its missing feature. When **ships sail** (P4 slice 3), Journey 3 gains a load→sail→sell-in-Europe→sail-back leg. When **immigration** lands (P4 slice 4), a recruitment journey is added. When the **modifier system** lands, Journey 4 gains an "elected father grants its bonus" milestone. Extend journeys *in place*; don't fork.
+Blocked journeys are kept as named stubs (above), each with its missing feature. When **ships sail** (P4 slice 3) Journey 3 gained its load→sail→sell-in-Europe→sail-back leg (now Journey 3b). When **immigration** landed (P4 slice 4) the recruitment journey was added (now **Journey 6**). When the **modifier system** lands, Journey 4 gains an "elected father grants its bonus" milestone. Extend journeys *in place*; don't fork.
 
 ## 13. Definition of done (E2E journey)
 
@@ -120,3 +129,4 @@ A journey is **done** only when: its milestone assertions are green in CI · thi
 | Date | Change |
 |---|---|
 | 2026-06-13 | Plan created; Journeys 1–5 specified (designed via a 5-agent coverage-gap audit workflow) |
+| 2026-06-13 | Journey 6 (immigration & recruitment) built and added (P4 slice 4) |

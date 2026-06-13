@@ -17,7 +17,7 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 
 - A save restores: turn, map (terrain per tile), every unit (id, **type**, position, movement left), **explored tiles (fog of war)**, RNG state.
 - Loading an interrupted game then continuing produces **identical outcomes** to never having saved (tested).
-- Saves carry a format `Version` (currently **2**); v1 saves still load (units default to free colonists, fog reveals around units).
+- Saves carry a format `Version` (currently **12**); older saves still load with sensible defaults for fields that didn't exist yet (see the changelog), and v1 saves default units to free colonists and reveal fog around units.
 - Saves reference terrain by ruleset id — loading needs the matching ruleset; unknown ids fail loudly.
 
 **Deviations:** our own JSON format by design; no FreeCol save compatibility planned.
@@ -57,3 +57,4 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 | 2026-06-13 | Format v9: treasury (gold, tax) + moved-market inventories (sparse); pre-v9 loads 0 gold/tax, market reseeded (tested) | Phase 4 |
 | 2026-06-13 | Format v10: liberty, Congress, current/offered fathers; pre-v10 loads empty (tested) | Phase 4 |
 | 2026-06-13 | Format v11: unit location + sail turns + cargo hold; pre-v11 units load on-map empty (tested) | Phase 4 |
+| 2026-06-13 | Format v12: immigration (pool, target) + Europe recruitment dock (slots, escalating base price/floor); pre-v12 loads classic defaults + a fresh dock (tested) | Phase 4 slice 4 |

@@ -7,7 +7,7 @@
 | **Code** | `game/src/GameLogic/Units/Unit.cs` (cargo, location), `GameSession/Game.cs` (sailing + Europe trade) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/SailingTests.cs`, `Scenarios/JourneyTests.cs` (Journey 3b) |
 | **FreeCol reference** | `Europe.java`, `Unit.java` (`getSailTurns`, `TURNS_TO_SAIL` line 2629) |
-| **Related systems** | [market](market.md) (sales), [units-movement](units-movement.md), [save-load](save-load.md) |
+| **Related systems** | [market](market.md) (sales), [immigration](immigration.md) (recruitment dock), [units-movement](units-movement.md), [save-load](save-load.md) |
 
 ## 1. How it works (plain English)
 
@@ -27,7 +27,7 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 | Sail home | from Europe; arrives in 3 turns at the departure high-seas tile |
 | Off-map units | a sailing/Europe unit cannot be moved on the map |
 
-**Deviations / simplifications:** sailing departs only from the actual high-seas edge tile (FreeCol allows any "high-seas-connected" tile); sail time is the fixed default 3 (FreeCol adds ship modifiers); recruitment, immigration, and unit purchase in Europe are a later slice; a ship's cargo capacity is not yet enforced.
+**Deviations / simplifications:** sailing departs only from the actual high-seas edge tile (FreeCol allows any "high-seas-connected" tile); sail time is the fixed default 3 (FreeCol adds ship modifiers); a ship's cargo capacity is not yet enforced. Recruitment & immigration now exist — see [immigration.md](immigration.md) — but carrying a recruited colonist home (unit-as-cargo) and buying ships/artillery in Europe are still later slices.
 
 ## 3. Technical design
 
@@ -48,8 +48,8 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 
 ## 5. Open issues / TODO
 
-- [ ] Europe screen UI (dock, recruit, purchase); recruitment + immigration (P4 slice 4).
-- [ ] Cargo capacity limits; ship combat/sinking; sail-time modifiers.
+- [ ] Europe screen UI (show the dock, recruit/purchase, off-map units) — recruitment/immigration logic now exists ([immigration.md](immigration.md)).
+- [ ] Cargo capacity limits; carry recruited colonists home (unit-as-cargo); ship combat/sinking; sail-time modifiers.
 - [ ] Presentation: show sailing/Europe units off-map (currently the map view shows only on-map units).
 
 ## Changelog
@@ -57,3 +57,4 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-13 | High-seas sailing (3 turns each way), ship cargo, sell/buy in Europe; save v11 | Phase 4 slice 3 |
+| 2026-06-13 | Immigration & recruitment dock split into [immigration.md](immigration.md); save v12 | Phase 4 slice 4 |

@@ -253,7 +253,11 @@ public sealed class Ruleset
                 Movement: ResolveIntAttribute(el, "movement", elements) ?? 3,
                 LineOfSight: ResolveIntAttribute(el, "line-of-sight", elements) ?? 1,
                 IsNaval: ResolveAbility(el, "model.ability.navalUnit", elements),
-                CanFoundColony: ResolveAbility(el, "model.ability.foundColony", elements));
+                CanFoundColony: ResolveAbility(el, "model.ability.foundColony", elements),
+                // recruit-probability is a direct attribute in the spec (not inherited
+                // via extends), so it is read off the concrete type only.
+                RecruitProbability: (int?)el.Attribute("recruit-probability") ?? 0,
+                IsPerson: ResolveAbility(el, "model.ability.person", elements));
         }
 
         if (units.Count == 0)
