@@ -2,6 +2,8 @@
 
 Binding, same status as `DOCUMENTATION.md`. Defines the five-layer test pyramid, required coverage, and CI gates. "Tests pass" in this project means **behavior verified at every required layer**, never "it compiles."
 
+> **Latest results + screenshots:** see [QA-REPORT.md](QA-REPORT.md) for a point-in-time snapshot (test counts per layer + the visual goldens embedded), and the [CI runs](https://github.com/BiffstaGaming/crown-and-colony/actions) for always-current pass/fail.
+
 ## Foundational rule: determinism (ADR-009)
 
 All randomness flows through a **seeded, injectable RNG** owned by the game state — no direct `Random`/`GD.Randf()` anywhere in game logic or presentation. Same seed + same inputs = identical game, always. This is what makes scenario tests (L2) and visual goldens (L4) reliable instead of flaky. Violating this rule breaks the entire QA strategy; treat it like a compile error.
