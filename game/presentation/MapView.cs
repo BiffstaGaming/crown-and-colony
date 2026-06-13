@@ -60,6 +60,7 @@ public partial class MapView : Node2D
 
     private readonly Dictionary<string, Texture2D[]> _bases = [];
     private readonly Dictionary<string, Texture2D[]> _overlays = [];
+    private readonly Dictionary<string, Texture2D> _bonusIcons = [];
     private Texture2D[] _unexplored = [];
 
     public override void _Ready()
@@ -82,6 +83,15 @@ public partial class MapView : Node2D
                 textures.Add(GD.Load<Texture2D>($"res://assets/freecol/{file}"));
             }
             _overlays[name] = [.. textures];
+        }
+
+        foreach (string resource in new[]
+        {
+            "cotton", "fish", "furs", "game", "grain", "lumber",
+            "minerals", "oasis", "ore", "silver", "sugar", "tobacco",
+        })
+        {
+            _bonusIcons[resource] = GD.Load<Texture2D>($"res://assets/freecol/bonus/{resource}.png");
         }
     }
 
@@ -155,6 +165,17 @@ public partial class MapView : Node2D
             if (_overlays.TryGetValue(terrain.ShortName, out Texture2D[]? overlay))
             {
                 DrawTile(overlay, variantSeed, centre);
+            }
+
+            // Bonus resource icon, centred on the diamond.
+            if (_map.ResourceAt(p) is { } resourceId)
+            {
+                string shortName = resourceId[(resourceId.LastIndexOf('.') + 1)..];
+                if (_bonusIcons.TryGetValue(shortName, out Texture2D? icon))
+                {
+                    Vector2 size = icon.GetSize();
+                    DrawTexture(icon, centre - size / 2f);
+                }
             }
         }
     }

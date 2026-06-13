@@ -106,6 +106,18 @@ public class SaveGameTests
     }
 
     [Fact]
+    public void RoundTrip_PreservesBonusResources()
+    {
+        var game = Game.New(Classic, seed: 11);
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(
+            game.Map.Resources.OrderBy(r => (r.Key.Y, r.Key.X)),
+            loaded.Map.Resources.OrderBy(r => (r.Key.Y, r.Key.X)));
+    }
+
+    [Fact]
     public void Load_WithUnknownTerrainId_Throws()
     {
         var game = Game.New(Classic, seed: 1);

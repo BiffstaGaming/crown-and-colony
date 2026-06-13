@@ -17,6 +17,7 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <param name="IsConnected">Water connected to the high seas (ocean yes, lake no).</param>
 /// <param name="Productions">What this terrain can produce when worked.</param>
 /// <param name="Gen">Climate envelope for map generation; null when the spec defines none.</param>
+/// <param name="Resources">Bonus resources that can appear on this terrain, with pick weights.</param>
 public sealed record TerrainType(
     string Id,
     int MoveCost,
@@ -27,7 +28,8 @@ public sealed record TerrainType(
     bool CanSettle,
     bool IsConnected,
     IReadOnlyList<ProductionEntry> Productions,
-    GenRanges? Gen)
+    GenRanges? Gen,
+    IReadOnlyList<ResourceChance> Resources)
 {
     /// <summary>Short name derived from the id: <c>model.tile.plains</c> → <c>plains</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
@@ -50,6 +52,11 @@ public sealed record ProductionEntry(
     public ProductionEntry(bool unattended, IReadOnlyList<GoodsOutput> outputs)
         : this(unattended, outputs, []) { }
 }
+
+/// <summary>A bonus resource a terrain can host (e.g. prime grain on plains), with its pick weight.</summary>
+/// <param name="ResourceId">Ruleset resource id, e.g. <c>model.resource.grain</c>.</param>
+/// <param name="Probability">Relative weight when the generator picks among the terrain's resources.</param>
+public sealed record ResourceChance(string ResourceId, int Probability);
 
 /// <summary>A quantity of one goods type, e.g. <c>model.goods.grain</c> × 5.</summary>
 /// <param name="GoodsId">Ruleset goods id.</param>

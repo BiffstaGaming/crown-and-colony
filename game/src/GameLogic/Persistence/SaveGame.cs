@@ -17,7 +17,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 7;
+    public const int CurrentVersion = 8;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -56,6 +56,9 @@ public sealed record SaveGame
     /// <summary>All colonies. Null in pre-v3 saves (no colonies existed).</summary>
     public IReadOnlyList<SavedColony>? Colonies { get; init; }
 
+    /// <summary>Bonus resources by row-major tile index. Null in pre-v8 saves (none).</summary>
+    public IReadOnlyList<SavedResource>? Resources { get; init; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -92,6 +95,12 @@ public sealed record SaveGame
                     c.BuildingWorkers.Count > 0 ? new Dictionary<string, int>(c.BuildingWorkers) : null,
                     c.CurrentBuild))
                 .ToList(),
+            Resources = game.Map.Resources.Count > 0
+                ? game.Map.Resources
+                    .Select(r => new SavedResource(r.Key.Y * game.Map.Width + r.Key.X, r.Value))
+                    .OrderBy(r => r.Index)
+                    .ToList()
+                : null,
         };
     }
 
@@ -100,7 +109,11 @@ public sealed record SaveGame
     public Game Restore(Ruleset ruleset)
     {
         var terrain = Terrain.Select(ruleset.Terrain).ToList();
-        var map = new GameMap(MapWidth, MapHeight, terrain);
+        var map = new GameMap(
+            MapWidth, MapHeight, terrain,
+            Resources?.ToDictionary(
+                r => new Position(r.Index % MapWidth, r.Index / MapWidth),
+                r => r.ResourceId));
         return Game.Restore(
             ruleset,
             map,
@@ -175,6 +188,11 @@ public sealed record SavedColony(
     IReadOnlyList<string>? Buildings = null,
     IReadOnlyDictionary<string, int>? BuildingWorkers = null,
     string? CurrentBuild = null);
+
+/// <summary>A bonus resource on a tile inside a <see cref="SaveGame"/>.</summary>
+/// <param name="Index">Row-major tile index (<c>y * MapWidth + x</c>).</param>
+/// <param name="ResourceId">Ruleset resource id.</param>
+public sealed record SavedResource(int Index, string ResourceId);
 
 /// <summary>A colonist's tile assignment inside a <see cref="SavedColony"/>.</summary>
 /// <param name="X">Worked tile column.</param>

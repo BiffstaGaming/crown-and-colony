@@ -15,6 +15,9 @@ public static class MapGenerator
     /// <summary>Fraction of matching land tiles that come up forested.</summary>
     private const double ForestChance = 0.45;
 
+    /// <summary>Chance a tile hosts a bonus resource (prime grain, minerals, fishery…).</summary>
+    private const double ResourceChanceFraction = 0.08;
+
     /// <summary>Fraction of land tiles raised to hills / mountains.</summary>
     private const double HillsChance = 0.10;
     private const double MountainsChance = 0.04;
@@ -29,6 +32,7 @@ public static class MapGenerator
         int[,] humidity = SmoothedNoise(width, height, random, 0, 101);
 
         var terrain = new TerrainType[width * height];
+        var resources = new Dictionary<Position, string>();
         for (int y = 0; y < height; y++)
         {
             int temperature = TemperatureAtLatitude(y, height, random);
@@ -47,10 +51,30 @@ public static class MapGenerator
                     type = PickLandTerrain(ruleset, humidity[x, y], temperature, altitude, random);
                 }
                 terrain[y * width + x] = type;
+
+                // Bonus resources, picked from the terrain's own table by weight.
+                if (type.Resources.Count > 0 && random.NextDouble() < ResourceChanceFraction)
+                {
+                    resources[new Position(x, y)] = PickWeightedResource(type.Resources, random);
+                }
             }
         }
 
-        return new GameMap(width, height, terrain);
+        return new GameMap(width, height, terrain, resources);
+    }
+
+    private static string PickWeightedResource(IReadOnlyList<ResourceChance> table, IGameRandom random)
+    {
+        int roll = random.Next(table.Sum(r => r.Probability));
+        foreach (ResourceChance entry in table)
+        {
+            roll -= entry.Probability;
+            if (roll < 0)
+            {
+                return entry.ResourceId;
+            }
+        }
+        return table[^1].ResourceId;
     }
 
     /// <summary>

@@ -163,6 +163,33 @@ public class MapGeneratorTests
     }
 
     [Fact]
+    public void BonusResources_AppearSparsely_AndOnlyWhereTheTerrainAllows()
+    {
+        GameMap map = Generate(11);
+
+        Assert.True(map.Resources.Count > 0, "a 36x24 map should host some bonus resources");
+        double fraction = map.Resources.Count / (double)(map.Width * map.Height);
+        Assert.InRange(fraction, 0.005, 0.20); // sparse, not carpeted
+
+        Assert.All(map.Resources, kv =>
+        {
+            TerrainType terrain = map.TerrainAt(kv.Key);
+            Assert.Contains(terrain.Resources, r => r.ResourceId == kv.Value);
+        });
+    }
+
+    [Fact]
+    public void BonusResources_AreDeterministicPerSeed()
+    {
+        GameMap a = Generate(12);
+        GameMap b = Generate(12);
+
+        Assert.Equal(
+            a.Resources.OrderBy(r => (r.Key.Y, r.Key.X)),
+            b.Resources.OrderBy(r => (r.Key.Y, r.Key.X)));
+    }
+
+    [Fact]
     public void Tropics_GrowHotTerrain_NotArctic()
     {
         // The equatorial band (middle rows) must never produce polar tiles.

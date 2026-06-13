@@ -6,9 +6,16 @@ namespace CrownAndColony.GameLogic.World;
 public sealed class GameMap
 {
     private readonly TerrainType[] _terrain;
+    private readonly Dictionary<Position, string> _resources;
 
     /// <summary>Creates a map from a row-major terrain array (length must be Width × Height).</summary>
-    public GameMap(int width, int height, IReadOnlyList<TerrainType> terrain)
+    /// <param name="width">Map width in tiles.</param>
+    /// <param name="height">Map height in tiles.</param>
+    /// <param name="terrain">Row-major terrain per tile.</param>
+    /// <param name="resources">Bonus resources by tile (sparse; null = none).</param>
+    public GameMap(
+        int width, int height, IReadOnlyList<TerrainType> terrain,
+        IReadOnlyDictionary<Position, string>? resources = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
@@ -21,6 +28,7 @@ public sealed class GameMap
         Width = width;
         Height = height;
         _terrain = [.. terrain];
+        _resources = resources is null ? [] : new Dictionary<Position, string>(resources);
     }
 
     /// <summary>Map width in tiles.</summary>
@@ -38,6 +46,12 @@ public sealed class GameMap
         InBounds(p)
             ? _terrain[p.Y * Width + p.X]
             : throw new ArgumentOutOfRangeException(nameof(p), p, "Position is off the map.");
+
+    /// <summary>The bonus resource on a tile (e.g. <c>model.resource.grain</c>), or null.</summary>
+    public string? ResourceAt(Position p) => _resources.GetValueOrDefault(p);
+
+    /// <summary>All tiles carrying a bonus resource.</summary>
+    public IReadOnlyDictionary<Position, string> Resources => _resources;
 
     /// <summary>All positions on the map, row by row.</summary>
     public IEnumerable<Position> AllPositions()

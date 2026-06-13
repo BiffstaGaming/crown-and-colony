@@ -292,7 +292,12 @@ public sealed class Ruleset
                 TemperatureMin: (int?)gen.Attribute("temperature-minimum") ?? -20,
                 TemperatureMax: (int?)gen.Attribute("temperature-maximum") ?? 40,
                 AltitudeMin: (int?)gen.Attribute("altitude-minimum") ?? 0,
-                AltitudeMax: (int?)gen.Attribute("altitude-maximum") ?? 30));
+                AltitudeMax: (int?)gen.Attribute("altitude-maximum") ?? 30),
+            Resources: el.Elements("resource")
+                .Select(r => new ResourceChance(
+                    RequiredAttribute(r, "type"),
+                    (int?)r.Attribute("probability") ?? 100))
+                .ToList());
     }
 
     private static string RequiredAttribute(XElement el, string name) =>
