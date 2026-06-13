@@ -29,7 +29,7 @@ Select a colonist and press **B** to found a colony where it stands. The colonis
 | 2. Colonists eat | 2 food per colonist; grain drains before fish; stores floor at 0 |
 | 3. Growth | at ≥200 stored food: −200 food, +1 population |
 
-Food = grain + fish (hardcoded pair — proper `is-food`/`stored-as` goods-type parsing arrives with production chains). **Starvation is deliberately deferred** — a food shortfall currently just floors at 0.
+Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat all become **food** (one warehouse entry, matching FreeCol; the earlier grain+fish shortcut is gone and legacy saves normalize on load). **Starvation is deliberately deferred** — a food shortfall currently just floors at 0.
 
 **Tile workers (economy slice 2):**
 - Colonists work the 8 tiles around the colony, one colonist per tile, each producing **one chosen goods type** at the terrain's best attended yield (`Game.TileYield`); ocean tiles fish.

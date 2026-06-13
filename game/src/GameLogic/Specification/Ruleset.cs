@@ -12,13 +12,19 @@ public sealed class Ruleset
 {
     private readonly Dictionary<string, TerrainType> _terrainById;
     private readonly Dictionary<string, UnitType> _unitById;
+    private readonly Dictionary<string, GoodsType> _goodsById;
 
-    private Ruleset(Dictionary<string, TerrainType> terrainById, Dictionary<string, UnitType> unitById)
+    private Ruleset(
+        Dictionary<string, TerrainType> terrainById,
+        Dictionary<string, UnitType> unitById,
+        Dictionary<string, GoodsType> goodsById)
     {
         _terrainById = terrainById;
         _unitById = unitById;
+        _goodsById = goodsById;
         TerrainTypes = _terrainById.Values.ToList();
         UnitTypes = _unitById.Values.ToList();
+        GoodsTypes = _goodsById.Values.ToList();
     }
 
     /// <summary>All terrain types, in specification order.</summary>
@@ -40,6 +46,23 @@ public sealed class Ruleset
         _unitById.TryGetValue(id, out var u)
             ? u
             : throw new KeyNotFoundException($"Unknown unit type '{id}'.");
+
+    /// <summary>All goods types, in specification order.</summary>
+    public IReadOnlyList<GoodsType> GoodsTypes { get; }
+
+    /// <summary>Looks up a goods type by ruleset id (e.g. <c>model.goods.sugar</c>).</summary>
+    /// <exception cref="KeyNotFoundException">Unknown id.</exception>
+    public GoodsType Goods(string id) =>
+        _goodsById.TryGetValue(id, out var g)
+            ? g
+            : throw new KeyNotFoundException($"Unknown goods type '{id}'.");
+
+    /// <summary>
+    /// The warehouse id a goods type stores as (grain → food); unknown ids pass
+    /// through unchanged so test rulesets without goods stay usable.
+    /// </summary>
+    public string StorageIdOf(string goodsId) =>
+        _goodsById.TryGetValue(goodsId, out var g) ? g.StoredAs : goodsId;
 
     /// <summary>Loads the classic (1994-faithful) ruleset embedded in this assembly.</summary>
     public static Ruleset LoadClassic()
@@ -81,7 +104,19 @@ public sealed class Ruleset
             ?? throw new RulesetFormatException("Specification has no <unit-types> section.");
         Dictionary<string, UnitType> units = ParseUnitTypes(unitTypes);
 
-        return new Ruleset(terrain, units);
+        var goods = new Dictionary<string, GoodsType>();
+        foreach (XElement el in root.Element("goods-types")?.Elements("goods-type") ?? [])
+        {
+            string id = RequiredAttribute(el, "id");
+            goods[id] = new GoodsType(
+                Id: id,
+                IsFood: (bool?)el.Attribute("is-food") ?? false,
+                StoredAs: (string?)el.Attribute("stored-as") ?? id,
+                MadeFrom: (string?)el.Attribute("made-from"),
+                IsFarmed: (bool?)el.Attribute("is-farmed") ?? false);
+        }
+
+        return new Ruleset(terrain, units, goods);
     }
 
     /// <summary>

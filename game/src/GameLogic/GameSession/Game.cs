@@ -366,20 +366,21 @@ public sealed class Game
     /// <summary>One colony's production-eat-grow step.</summary>
     private void RunColonyTurn(Colony colony)
     {
-        // 1a. The colony square works itself (unattended yield).
+        // 1a. The colony square works itself (unattended yield). Goods enter
+        //     the warehouse under their stored-as id: grain/fish → food.
         TerrainType terrain = Map.TerrainAt(colony.Position);
         foreach (ProductionEntry entry in terrain.Productions.Where(p => p.Unattended))
         {
             foreach (GoodsOutput output in entry.Outputs)
             {
-                colony.AddGoods(output.GoodsId, output.Amount);
+                colony.AddGoods(Ruleset.StorageIdOf(output.GoodsId), output.Amount);
             }
         }
 
         // 1b. Worked tiles produce their assigned goods.
         foreach ((Position tile, string goodsId) in colony.TileWorkers)
         {
-            colony.AddGoods(goodsId, TileYield(tile, goodsId));
+            colony.AddGoods(Ruleset.StorageIdOf(goodsId), TileYield(tile, goodsId));
         }
 
         // 2. Colonists eat. Starvation (population loss on shortfall) is

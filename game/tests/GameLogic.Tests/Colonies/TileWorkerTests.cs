@@ -53,8 +53,9 @@ public class TileWorkerTests
 
         game.EndTurn();
 
-        // Centre: +3 grain +2 cotton; farm +5 grain; mine +4 ore; 2 eat 4.
-        Assert.Equal(3 + 5 - 4, colony.StoreOf(Grain));
+        // Centre: +3 grain +2 cotton; farm +5 grain (all stored as food);
+        // mine +4 ore; 2 colonists eat 4.
+        Assert.Equal(3 + 5 - 4, colony.Food);
         Assert.Equal(4, colony.StoreOf(Ore));
         Assert.Equal(0, colony.IdleColonists);
     }
@@ -108,7 +109,7 @@ public class TileWorkerTests
         Game game = ColonyOnCross(population: 1);
         Colony colony = game.Colonies[0];
         game.AssignWork(colony, new Position(0, 1), Grain);
-        colony.AddGoods(Grain, 195);
+        colony.AddGoods(Colony.FoodId, 195);
 
         game.EndTurn(); // +3 centre +5 farm −2 eat → 201 ≥ 200 → growth
 

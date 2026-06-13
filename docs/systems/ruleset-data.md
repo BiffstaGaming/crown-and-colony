@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (terrain types incl. climate `<gen>` envelopes + unit types; goods/buildings come with their systems) |
+| **Status** | Implemented (terrain incl. `<gen>` envelopes, unit types, goods types incl. `stored-as`/`made-from`; buildings come with their system) |
 | **Last verified** | 2026-06-13 @ Phase 1 walking skeleton |
 | **Code** | `game/src/GameLogic/Specification/` |
 | **Tests** | `game/tests/GameLogic.Tests/Specification/RulesetTests.cs` |
@@ -53,3 +53,4 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 |---|---|---|
 | 2026-06-13 | Terrain-type parsing, embedded classic ruleset | Phase 1 skeleton |
 | 2026-06-13 | Unit types (with `extends` inheritance + ability resolution); terrain `<gen>` climate envelopes | Phase 2a |
+| 2026-06-13 | Goods types: `is-food`, `stored-as` (grain/fish/meat → food), `made-from` (chains data), `is-farmed`; `Ruleset.StorageIdOf` | Phase 3 |

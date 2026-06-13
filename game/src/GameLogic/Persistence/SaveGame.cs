@@ -117,7 +117,8 @@ public sealed record SaveGame
                 foreach ((string goods, int amount) in
                          c.Stores ?? new Dictionary<string, int>())
                 {
-                    colony.AddGoods(goods, amount);
+                    // Normalizes pre-v6 saves that stored raw grain/fish.
+                    colony.AddGoods(ruleset.StorageIdOf(goods), amount);
                 }
                 foreach (SavedWorker worker in c.Workers ?? [])
                 {

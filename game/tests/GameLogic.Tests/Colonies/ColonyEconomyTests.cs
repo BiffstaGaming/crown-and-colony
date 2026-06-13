@@ -11,9 +11,8 @@ public class ColonyEconomyTests
 {
     private static readonly Ruleset Classic = Ruleset.LoadClassic();
 
-    private const string Grain = "model.goods.grain";
+    private const string Food = Colony.FoodId;
     private const string Cotton = "model.goods.cotton";
-    private const string Fish = "model.goods.fish";
 
     /// <summary>A pop-1 colony on a 1×1 plains map (plains centre yield: grain 3 + cotton 2).</summary>
     private static Game PlainsColony()
@@ -41,12 +40,12 @@ public class ColonyEconomyTests
 
         game.EndTurn();
 
-        // Plains centre: +3 grain +2 cotton; 1 colonist eats 2 food → net grain 1.
-        Assert.Equal(1, colony.StoreOf(Grain));
+        // Plains centre: +3 grain (stored as food) +2 cotton; 1 colonist eats 2.
+        Assert.Equal(1, colony.StoreOf(Food));
         Assert.Equal(2, colony.StoreOf(Cotton));
 
         game.EndTurn();
-        Assert.Equal(2, colony.StoreOf(Grain));
+        Assert.Equal(2, colony.StoreOf(Food));
         Assert.Equal(4, colony.StoreOf(Cotton));
     }
 
@@ -55,7 +54,7 @@ public class ColonyEconomyTests
     {
         Game game = PlainsColony();
         Colony colony = game.Colonies[0];
-        colony.AddGoods(Grain, 199);
+        colony.AddGoods(Food, 199);
 
         game.EndTurn(); // +3 → 202, eat 2 → 200 → growth consumes 200
 
@@ -64,19 +63,31 @@ public class ColonyEconomyTests
     }
 
     [Fact]
-    public void ConsumeFood_DrainsGrainBeforeFish_AndReportsShortfall()
+    public void ConsumeFood_ReportsShortfall_AndFloorsAtZero()
     {
         Game game = PlainsColony();
         Colony colony = game.Colonies[0];
-        colony.AddGoods(Grain, 3);
-        colony.AddGoods(Fish, 5);
+        colony.AddGoods(Food, 4);
 
-        Assert.Equal(0, colony.ConsumeFood(4)); // 3 grain + 1 fish
-        Assert.Equal(0, colony.StoreOf(Grain));
-        Assert.Equal(4, colony.StoreOf(Fish));
-
-        Assert.Equal(6, colony.ConsumeFood(10)); // only 4 fish available
+        Assert.Equal(0, colony.ConsumeFood(4));
         Assert.Equal(0, colony.Food);
+        Assert.Equal(6, colony.ConsumeFood(6)); // empty store: full shortfall
+        Assert.Equal(0, colony.Food);
+    }
+
+    [Fact]
+    public void GrainAndFish_StoreAsFood_PerSpec()
+    {
+        // The spec's stored-as model: raw food goods normalize into one
+        // warehouse entry (also applied to legacy saves on load).
+        Assert.Equal(Food, Ruleset.LoadClassic().StorageIdOf("model.goods.grain"));
+        Assert.Equal(Food, Ruleset.LoadClassic().StorageIdOf("model.goods.fish"));
+        Assert.Equal("model.goods.cotton", Ruleset.LoadClassic().StorageIdOf("model.goods.cotton"));
+
+        GoodsType rum = Classic.Goods("model.goods.rum");
+        Assert.Equal("model.goods.sugar", rum.MadeFrom);
+        Assert.False(rum.IsFarmed);
+        Assert.True(Classic.Goods(Food).IsFood);
     }
 
     [Fact]
@@ -87,8 +98,16 @@ public class ColonyEconomyTests
         game.EndTurn();
 
         Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
-        Assert.Equal(2, loaded.Colonies[0].StoreOf(Grain));
+        Assert.Equal(2, loaded.Colonies[0].StoreOf(Food));
         Assert.Equal(4, loaded.Colonies[0].StoreOf(Cotton));
+
+        // Legacy stores holding raw grain normalize to food on load.
+        SaveGame legacy = SaveGame.From(game) with
+        {
+            Colonies = [new SavedColony(1, "Testville", 0, 0, 1,
+                new Dictionary<string, int> { ["model.goods.grain"] = 7 })],
+        };
+        Assert.Equal(7, SaveGame.FromJson(legacy.ToJson()).Restore(Classic).Colonies[0].Food);
 
         // v3 save: colonies without stores.
         SaveGame v3 = SaveGame.From(game) with
