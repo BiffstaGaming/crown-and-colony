@@ -41,6 +41,9 @@ jobs:
           project_dir: "./game/"
           paths: "presentation/tests"
           publish-report: false
+          # Godot-runtime startup on cold runners occasionally times out
+          # (exit 137, "Failed to connect") — one retry absorbs the flake.
+          retries: 1
 
       - name: Upload visual diff artifacts
         if: failure()
