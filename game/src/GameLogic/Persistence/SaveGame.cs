@@ -17,7 +17,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -89,7 +89,8 @@ public sealed record SaveGame
                         ? c.TileWorkers.Select(w => new SavedWorker(w.Key.X, w.Key.Y, w.Value)).ToList()
                         : null,
                     c.Buildings.ToList(),
-                    c.BuildingWorkers.Count > 0 ? new Dictionary<string, int>(c.BuildingWorkers) : null))
+                    c.BuildingWorkers.Count > 0 ? new Dictionary<string, int>(c.BuildingWorkers) : null,
+                    c.CurrentBuild))
                 .ToList(),
         };
     }
@@ -141,6 +142,7 @@ public sealed record SaveGame
                 {
                     colony.SetBuildingWorkers(buildingId, workers);
                 }
+                colony.CurrentBuild = c.CurrentBuild;
                 return colony;
             }));
     }
@@ -165,12 +167,14 @@ public sealed record SaveGame
 /// <param name="Workers">Tile work assignments (null in pre-v5 saves / when none).</param>
 /// <param name="Buildings">Building type ids (null in pre-v6 saves → free base set re-derived).</param>
 /// <param name="BuildingWorkers">Building staffing (null when none).</param>
+/// <param name="CurrentBuild">Building under construction (null when idle / pre-v7).</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
     IReadOnlyDictionary<string, int>? Stores = null,
     IReadOnlyList<SavedWorker>? Workers = null,
     IReadOnlyList<string>? Buildings = null,
-    IReadOnlyDictionary<string, int>? BuildingWorkers = null);
+    IReadOnlyDictionary<string, int>? BuildingWorkers = null,
+    string? CurrentBuild = null);
 
 /// <summary>A colonist's tile assignment inside a <see cref="SavedColony"/>.</summary>
 /// <param name="X">Worked tile column.</param>

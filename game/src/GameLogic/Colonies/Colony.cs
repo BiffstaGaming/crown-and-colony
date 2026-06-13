@@ -74,7 +74,21 @@ public sealed class Colony
     /// <summary>Whether the colony has a building.</summary>
     public bool HasBuilding(string buildingId) => _buildings.Contains(buildingId);
 
+    /// <summary>Building type currently under construction (null when idle).</summary>
+    public string? CurrentBuild { get; internal set; }
+
     internal void AddBuilding(string buildingId) => _buildings.Add(buildingId);
+
+    /// <summary>Swaps an upgraded building for its successor, preserving staffing.</summary>
+    internal void ReplaceBuilding(string oldId, string newId)
+    {
+        int index = _buildings.IndexOf(oldId);
+        _buildings[index] = newId;
+        if (_buildingWorkers.Remove(oldId, out int workers))
+        {
+            _buildingWorkers[newId] = workers;
+        }
+    }
 
     internal void SetBuildingWorkers(string buildingId, int workers)
     {

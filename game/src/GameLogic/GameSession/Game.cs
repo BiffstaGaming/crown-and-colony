@@ -306,6 +306,80 @@ public sealed class Game
     public void UnassignBuildingWork(Colony colony, string buildingId) =>
         colony.SetBuildingWorkers(buildingId, colony.BuildingWorkers.GetValueOrDefault(buildingId) - 1);
 
+    /// <summary>Whether the colony may start constructing a building type.</summary>
+    public MoveCheck CheckSetBuild(Colony colony, string buildingId)
+    {
+        BuildingType building = Ruleset.Building(buildingId);
+        if (colony.HasBuilding(buildingId))
+        {
+            return MoveCheck.No($"The colony already has a {building.ShortName}.");
+        }
+        if (building.BuildCost.Count == 0)
+        {
+            return MoveCheck.No($"The {building.ShortName} cannot be constructed.");
+        }
+        if (building.UpgradesFrom is not null && !colony.HasBuilding(building.UpgradesFrom))
+        {
+            return MoveCheck.No($"A {building.ShortName} upgrades an existing building the colony lacks.");
+        }
+        if (colony.Population < building.RequiredPopulation)
+        {
+            return MoveCheck.No(
+                $"The {building.ShortName} needs a population of {building.RequiredPopulation}.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>Sets what the colony is constructing (null stops construction).</summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckSetBuild"/>.</exception>
+    public void SetBuild(Colony colony, string? buildingId)
+    {
+        if (buildingId is not null)
+        {
+            MoveCheck check = CheckSetBuild(colony, buildingId);
+            if (!check.Allowed)
+            {
+                throw new InvalidMoveException(check.Reason!);
+            }
+        }
+        colony.CurrentBuild = buildingId;
+    }
+
+    /// <summary>Building types the colony could start constructing right now.</summary>
+    public IEnumerable<BuildingType> Buildables(Colony colony) =>
+        Ruleset.BuildingTypes.Where(b => CheckSetBuild(colony, b.Id).Allowed);
+
+    /// <summary>
+    /// Completes construction when the stores cover the cost: materials are
+    /// consumed and the building appears (replacing the one it upgrades).
+    /// </summary>
+    private void RunConstruction(Colony colony)
+    {
+        if (colony.CurrentBuild is null)
+        {
+            return;
+        }
+        BuildingType building = Ruleset.Building(colony.CurrentBuild);
+        if (building.BuildCost.Any(c => colony.StoreOf(Ruleset.StorageIdOf(c.GoodsId)) < c.Amount))
+        {
+            return; // keep saving materials
+        }
+
+        foreach (GoodsOutput cost in building.BuildCost)
+        {
+            colony.AddGoods(Ruleset.StorageIdOf(cost.GoodsId), -cost.Amount);
+        }
+        if (building.UpgradesFrom is not null)
+        {
+            colony.ReplaceBuilding(building.UpgradesFrom, building.Id);
+        }
+        else
+        {
+            colony.AddBuilding(building.Id);
+        }
+        colony.CurrentBuild = null;
+    }
+
     /// <summary>
     /// Ends the current turn: colonies produce, eat, and grow; units regain
     /// movement; the turn counter advances. (Turn-step order matters and grows
@@ -486,6 +560,9 @@ public sealed class Game
         {
             RunBuildingProduction(colony, Ruleset.Building(buildingId));
         }
+
+        // 1d. Construction completes when materials are saved up.
+        RunConstruction(colony);
 
         // 2. Colonists eat. Starvation (population loss on shortfall) is
         //    deliberately deferred until food production is controllable.

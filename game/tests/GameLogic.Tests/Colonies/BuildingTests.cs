@@ -117,6 +117,65 @@ public class BuildingTests
     }
 
     [Fact]
+    public void Construction_Validation()
+    {
+        Game game = FoundedColony();
+        Colony colony = game.Colonies[0];
+
+        // Lumber mill needs population 3 — a fresh colony of 1 can't start it.
+        Assert.False(game.CheckSetBuild(colony, "model.building.lumberMill").Allowed);
+        // Already-owned and free-base buildings can't be queued.
+        Assert.False(game.CheckSetBuild(colony, Carpenter).Allowed);
+        // Docks (no upgrade chain, affordable cost, pop 1) is a legal target.
+        Assert.Contains(game.Buildables(colony), b => b.BuildCost.Count > 0);
+    }
+
+    [Fact]
+    public void Construction_AccumulatesMaterials_ThenCompletesAnUpgrade()
+    {
+        Game game = FoundedColony();
+        Colony colony = game.Colonies[0];
+        colony.Population = 3; // meet the lumber mill's requirement
+
+        game.SetBuild(colony, "model.building.lumberMill"); // costs 52 hammers
+        colony.AddGoods(Hammers, 51);
+        game.EndTurn();
+        Assert.True(colony.HasBuilding(Carpenter));   // not yet — 51 < 52
+        Assert.Equal("model.building.lumberMill", colony.CurrentBuild);
+
+        colony.AddGoods(Hammers, 1);
+        game.EndTurn();
+
+        Assert.True(colony.HasBuilding("model.building.lumberMill"));
+        Assert.False(colony.HasBuilding(Carpenter));  // upgraded away
+        Assert.Equal(0, colony.StoreOf(Hammers));     // materials consumed
+        Assert.Null(colony.CurrentBuild);
+
+        // The upgrade doubles the conversion: lumber 6 → hammers 6 per worker.
+        foreach (var tile in colony.TileWorkers.Keys.ToList())
+        {
+            game.UnassignWork(colony, tile);
+        }
+        game.AssignBuildingWork(colony, "model.building.lumberMill");
+        colony.AddGoods(Lumber, 6);
+        game.EndTurn();
+        Assert.Equal(6, colony.StoreOf(Hammers));
+    }
+
+    [Fact]
+    public void SaveRoundTrip_PreservesCurrentBuild()
+    {
+        Game game = FoundedColony();
+        Colony colony = game.Colonies[0];
+        colony.Population = 3;
+        game.SetBuild(colony, "model.building.lumberMill");
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal("model.building.lumberMill", loaded.Colonies[0].CurrentBuild);
+    }
+
+    [Fact]
     public void SaveRoundTrip_PreservesBuildingsAndStaffing_PreV6Rederives()
     {
         Game game = FoundedColony();
