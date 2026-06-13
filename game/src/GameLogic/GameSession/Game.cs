@@ -533,6 +533,34 @@ public sealed class Game
         }
     }
 
+    /// <summary>
+    /// Drops assignments until they fit the population: building workers are
+    /// pulled before field workers (deterministic order — last building, then
+    /// last tile in row-major order).
+    /// </summary>
+    private static void TrimAssignments(Colony colony)
+    {
+        while (colony.IdleColonists < 0)
+        {
+            if (colony.BuildingWorkers.Count > 0)
+            {
+                string building = colony.BuildingWorkers.Keys.Last();
+                colony.SetBuildingWorkers(building, colony.BuildingWorkers[building] - 1);
+            }
+            else if (colony.TileWorkers.Count > 0)
+            {
+                Position tile = colony.TileWorkers.Keys
+                    .OrderBy(p => p.Y).ThenBy(p => p.X)
+                    .Last();
+                colony.RemoveWorker(tile);
+            }
+            else
+            {
+                return;
+            }
+        }
+    }
+
     /// <summary>One colony's production-eat-grow step.</summary>
     private void RunColonyTurn(Colony colony)
     {
@@ -564,9 +592,14 @@ public sealed class Game
         // 1d. Construction completes when materials are saved up.
         RunConstruction(colony);
 
-        // 2. Colonists eat. Starvation (population loss on shortfall) is
-        //    deliberately deferred until food production is controllable.
-        colony.ConsumeFood(colony.Population * Colony.FoodPerColonist);
+        // 2. Colonists eat; an unfed colonist starves (population floors at 1 —
+        //    colony destruction is a later rule). Assignments shrink to match.
+        int shortfall = colony.ConsumeFood(colony.Population * Colony.FoodPerColonist);
+        if (shortfall > 0 && colony.Population > 1)
+        {
+            colony.Population--;
+            TrimAssignments(colony);
+        }
 
         // 3. Growth: a food surplus of 200 raises a new colonist, who reports
         //    to the best free food tile.

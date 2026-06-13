@@ -29,7 +29,7 @@ Select a colonist and press **B** to found a colony where it stands. The colonis
 | 2. Colonists eat | 2 food per colonist; grain drains before fish; stores floor at 0 |
 | 3. Growth | at ≥200 stored food: −200 food, +1 population |
 
-Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat all become **food** (one warehouse entry, matching FreeCol; the earlier grain+fish shortcut is gone and legacy saves normalize on load). **Starvation is deliberately deferred** — a food shortfall currently just floors at 0.
+Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat all become **food** (one warehouse entry, matching FreeCol; legacy saves normalize on load). **Starvation:** a food shortfall starves one colonist that turn (population floors at 1 — colony destruction is a future rule); assignments shrink to fit, pulling workshop workers before field workers.
 
 **Buildings (economy slice 4):**
 - New colonies start with the **free base buildings** (no build cost, not an upgrade): town hall, carpenter's/blacksmith's/artisan houses, pasture, etc. Construction of costed buildings/upgrades is the next slice.
@@ -81,3 +81,4 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 | 2026-06-13 | Economy slice 2: tile workers (assign/unassign oracles, per-tile chosen goods, ocean fishing, auto-assign on founding/growth, save v5, panel lists workers) | Phase 3 |
 | 2026-06-13 | Economy slice 3+4: stored-as goods model; free base buildings, building jobs (input→output conversions, workplaces cap), town-hall bells, breeding-gated pasture; save v6 | Phase 3 |
 | 2026-06-13 | Economy slice 5: construction queue (SetBuild/Buildables oracles, material-based completion, upgrades replace + keep staff); save v7 | Phase 3 |
+| 2026-06-13 | Economy slice 6: starvation on food shortfall (pop floors at 1, assignments trimmed workshop-first); bare-square boom-bust cycle pinned by long-run test | Phase 3 |

@@ -120,11 +120,77 @@ public class ColonyEconomyTests
     }
 
     [Fact]
-    public void LongRun_ColonyGrowsOnce_ThenHoldsAtEquilibrium()
+    public void FoodShortfall_StarvesAColonist_ButNeverTheLast()
+    {
+        // Pop 3 on a bare plains square: produces 3 food, appetite 6 → shortfall
+        // every turn → starve down to pop 1 (3 produced ≥ 2 appetite: stable).
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 1,
+            MapHeight = 1,
+            Terrain = ["model.tile.plains"],
+            Units = [],
+            Explored = [0],
+            Colonies = [new SavedColony(1, "Starving", 0, 0, 3)],
+        };
+        Game game = save.Restore(Classic);
+        Colony colony = game.Colonies[0];
+
+        game.EndTurn(); // +3, eat 6 → shortfall → pop 2
+        Assert.Equal(2, colony.Population);
+        game.EndTurn(); // +3, eat 4 → shortfall → pop 1
+        Assert.Equal(1, colony.Population);
+
+        for (int i = 0; i < 10; i++)
+        {
+            game.EndTurn();
+        }
+        Assert.Equal(1, colony.Population); // the last colonist never starves
+    }
+
+    [Fact]
+    public void Starvation_TrimsExcessAssignments()
+    {
+        // Pop 2, both assigned (1 field, 1 workshop). Starvation to pop 1 must
+        // pull the building worker first, keeping assignments ≤ population.
+        var game = Game.New(Classic, seed: 424242);
+        game.FoundColony(game.Units[0]);
+        Colony colony = game.Colonies[0];
+        colony.Population = 2;
+        if (colony.TileWorkers.Count == 0)
+        {
+            game.AssignWork(colony, colony.Position.Neighbours()
+                .First(n => game.CheckAssignWork(colony, n, "model.goods.grain").Allowed), "model.goods.grain");
+        }
+        game.AssignBuildingWork(colony, "model.building.carpenterHouse");
+        Assert.Equal(0, colony.IdleColonists);
+
+        // Drain the larder and starve one colonist.
+        colony.AddGoods(Colony.FoodId, -colony.Food);
+        // Remove field food production so the shortfall is guaranteed.
+        foreach (var tile in colony.TileWorkers.Keys.ToList())
+        {
+            game.UnassignWork(colony, tile);
+        }
+        game.AssignBuildingWork(colony, "model.building.carpenterHouse"); // both in the workshop now
+
+        game.EndTurn();
+
+        Assert.Equal(1, colony.Population);
+        Assert.True(colony.IdleColonists >= 0, "assignments must never exceed population");
+        Assert.True(colony.BuildingWorkers.GetValueOrDefault("model.building.carpenterHouse") <= 1);
+    }
+
+    [Fact]
+    public void LongRun_BareColonyCycles_GrowThenStarve()
     {
         // L2 scenario: net +1 food/turn at pop 1 → growth on the 200th tick;
-        // at pop 2 the square's 3 grain can't feed 4 appetite, food floors at 0,
-        // and (starvation deliberately deferred) population holds at 2.
+        // a bare square's 3 food can't feed pop 2's appetite of 4, so the
+        // newborn starves next turn — a boom-bust cycle around pop 1. (Real
+        // colonies escape it by farming surrounding tiles.)
         Game game = PlainsColony();
         Colony colony = game.Colonies[0];
 
@@ -136,15 +202,16 @@ public class ColonyEconomyTests
         Assert.Equal(199, colony.Food);
 
         game.EndTurn();
-        Assert.Equal(2, colony.Population);
-        Assert.Equal(0, colony.Food);
+        Assert.Equal(2, colony.Population); // born…
 
-        for (int i = 0; i < 50; i++)
+        game.EndTurn();
+        Assert.Equal(1, colony.Population); // …and starved on the bare square
+
+        for (int i = 0; i < 49; i++)
         {
             game.EndTurn();
         }
-        Assert.Equal(2, colony.Population);
-        Assert.Equal(0, colony.Food);
+        Assert.Equal(1, colony.Population);
         Assert.Equal(2 * 250, colony.StoreOf(Cotton)); // 250 ticks, cotton untouched by appetite
     }
 }
