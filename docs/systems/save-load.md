@@ -50,3 +50,4 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 | 2026-06-13 | Format v2: unit type ids + explored tiles; v1 loads with defaults (tested) | Phase 2a |
 | 2026-06-13 | Format v3: colonies; pre-v3 loads with none (tested) | Phase 2b |
 | 2026-06-13 | Format v4: colony goods stores; pre-v4 colonies load with empty stores (tested) | Phase 3 |
+| 2026-06-13 | Format v5: colony tile workers; pre-v5 loads with none (tested) | Phase 3 |

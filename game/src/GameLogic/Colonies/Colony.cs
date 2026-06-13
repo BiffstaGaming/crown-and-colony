@@ -20,6 +20,7 @@ public sealed class Colony
         new HashSet<string> { "model.goods.grain", "model.goods.fish" };
 
     private readonly Dictionary<string, int> _stores = [];
+    private readonly Dictionary<Position, string> _tileWorkers = [];
 
     /// <summary>Creates a colony.</summary>
     public Colony(int id, string name, Position position, int population)
@@ -50,6 +51,19 @@ public sealed class Colony
 
     /// <summary>Total stored food across all food goods.</summary>
     public int Food => FoodGoods.Sum(StoreOf);
+
+    /// <summary>
+    /// Colonists working surrounding tiles: tile → the goods they produce there.
+    /// Colonists not in this map are idle (building jobs are a later slice).
+    /// </summary>
+    public IReadOnlyDictionary<Position, string> TileWorkers => _tileWorkers;
+
+    /// <summary>Colonists without a tile assignment.</summary>
+    public int IdleColonists => Population - _tileWorkers.Count;
+
+    internal void SetWorker(Position tile, string goodsId) => _tileWorkers[tile] = goodsId;
+
+    internal void RemoveWorker(Position tile) => _tileWorkers.Remove(tile);
 
     /// <summary>Adds goods to the store (negative removes; floor at 0).</summary>
     internal void AddGoods(string goodsId, int amount) =>

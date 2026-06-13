@@ -256,6 +256,7 @@ public sealed class Game
         var colony = new Colony(_nextColonyId++, name, unit.Position, population: 1);
         _colonies.Add(colony);
         _units.Remove(unit);
+        AutoAssignWorkers(colony);
         return colony;
     }
 
@@ -277,11 +278,95 @@ public sealed class Game
         Turn++;
     }
 
+    /// <summary>
+    /// The yield of one goods type when a colonist works a tile: the terrain's
+    /// best attended output for that goods (0 when it can't be produced there).
+    /// </summary>
+    public int TileYield(Position tile, string goodsId) =>
+        Map.TerrainAt(tile).Productions
+            .Where(p => !p.Unattended)
+            .SelectMany(p => p.Outputs)
+            .Where(o => o.GoodsId == goodsId)
+            .Select(o => o.Amount)
+            .DefaultIfEmpty(0)
+            .Max();
+
+    /// <summary>
+    /// Whether a colonist of <paramref name="colony"/> may be put to work on
+    /// <paramref name="tile"/> producing <paramref name="goodsId"/>.
+    /// </summary>
+    public MoveCheck CheckAssignWork(Colony colony, Position tile, string goodsId)
+    {
+        if (!Map.InBounds(tile))
+        {
+            return MoveCheck.No("Tile is off the map.");
+        }
+        if (!tile.IsAdjacentTo(colony.Position))
+        {
+            return MoveCheck.No("Colonists work the eight tiles around the colony.");
+        }
+        if (colony.TileWorkers.ContainsKey(tile))
+        {
+            return MoveCheck.No("That tile is already worked.");
+        }
+        if (colony.IdleColonists <= 0)
+        {
+            return MoveCheck.No("No idle colonists.");
+        }
+        int yield = TileYield(tile, goodsId);
+        if (yield <= 0)
+        {
+            return MoveCheck.No($"That tile cannot produce {goodsId[(goodsId.LastIndexOf('.') + 1)..]}.");
+        }
+        return MoveCheck.Yes(yield);
+    }
+
+    /// <summary>Puts an idle colonist to work on a tile producing one goods type.</summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAssignWork"/>.</exception>
+    public void AssignWork(Colony colony, Position tile, string goodsId)
+    {
+        MoveCheck check = CheckAssignWork(colony, tile, goodsId);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        colony.SetWorker(tile, goodsId);
+    }
+
+    /// <summary>Returns a tile's worker to the idle pool.</summary>
+    public void UnassignWork(Colony colony, Position tile) => colony.RemoveWorker(tile);
+
+    /// <summary>
+    /// Auto-assigns idle colonists to the best unworked food tiles (highest grain
+    /// yield, deterministic tie-break). Called on founding and growth; the player
+    /// can rearrange freely.
+    /// </summary>
+    private void AutoAssignWorkers(Colony colony)
+    {
+        const string grain = "model.goods.grain";
+        while (colony.IdleColonists > 0)
+        {
+            var best = colony.Position.Neighbours()
+                .Where(n => Map.InBounds(n) && !colony.TileWorkers.ContainsKey(n))
+                .Select(n => (tile: n, yield: TileYield(n, grain)))
+                .Where(t => t.yield > 0)
+                .OrderByDescending(t => t.yield)
+                .ThenBy(t => t.tile.Y)
+                .ThenBy(t => t.tile.X)
+                .Cast<(Position tile, int yield)?>()
+                .FirstOrDefault();
+            if (best is null)
+            {
+                return; // nowhere productive left — colonist stays idle
+            }
+            colony.SetWorker(best.Value.tile, grain);
+        }
+    }
+
     /// <summary>One colony's production-eat-grow step.</summary>
     private void RunColonyTurn(Colony colony)
     {
-        // 1. The colony square works itself (unattended yield). Worker-tile
-        //    and building production are later Phase 3 slices.
+        // 1a. The colony square works itself (unattended yield).
         TerrainType terrain = Map.TerrainAt(colony.Position);
         foreach (ProductionEntry entry in terrain.Productions.Where(p => p.Unattended))
         {
@@ -291,15 +376,23 @@ public sealed class Game
             }
         }
 
+        // 1b. Worked tiles produce their assigned goods.
+        foreach ((Position tile, string goodsId) in colony.TileWorkers)
+        {
+            colony.AddGoods(goodsId, TileYield(tile, goodsId));
+        }
+
         // 2. Colonists eat. Starvation (population loss on shortfall) is
         //    deliberately deferred until food production is controllable.
         colony.ConsumeFood(colony.Population * Colony.FoodPerColonist);
 
-        // 3. Growth: a food surplus of 200 raises a new colonist.
+        // 3. Growth: a food surplus of 200 raises a new colonist, who reports
+        //    to the best free food tile.
         if (colony.Food >= Colony.FoodForGrowth)
         {
             colony.ConsumeFood(Colony.FoodForGrowth);
             colony.Population++;
+            AutoAssignWorkers(colony);
         }
     }
 

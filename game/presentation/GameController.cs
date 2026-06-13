@@ -175,13 +175,19 @@ public partial class GameController : Node2D
             .Aggregate((a, b) => $"{a}, {b}");
 
         GetNode<Label>("UI/ColonyPanel/VBox/ColonyTitle").Text = colony.Name;
+        string workers = colony.TileWorkers
+            .Select(w => $"({w.Key.X},{w.Key.Y}) → {w.Value[(w.Value.LastIndexOf('.') + 1)..]} {_game.TileYield(w.Key, w.Value)}")
+            .DefaultIfEmpty("(none)")
+            .Aggregate((a, b) => $"{a}; {b}");
+
         GetNode<Label>("UI/ColonyPanel/VBox/ColonyInfo").Text =
-            $"Population: {colony.Population}\n" +
+            $"Population: {colony.Population} ({colony.IdleColonists} idle)\n" +
             $"Terrain: {terrain.ShortName}\n" +
             $"Colony square yield: {centreYield} per turn\n" +
+            $"Workers: {workers}\n" +
             $"Stores: {stores}\n" +
             $"Food for next colonist: {colony.Food}/{Colony.FoodForGrowth}\n\n" +
-            "(Worker assignment and buildings arrive in later economy slices.)";
+            "(Worker re-assignment UI and buildings arrive in later economy slices.)";
         _colonyPanel.Show();
     }
 

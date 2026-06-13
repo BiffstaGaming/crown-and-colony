@@ -17,11 +17,12 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
-    /// v2 lacked <see cref="Colonies"/>; v3 colonies lacked goods stores.
+    /// v2 lacked <see cref="Colonies"/>; v3 colonies lacked goods stores;
+    /// v4 lacked tile workers.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -83,7 +84,10 @@ public sealed record SaveGame
             Colonies = game.Colonies
                 .Select(c => new SavedColony(
                     c.Id, c.Name, c.Position.X, c.Position.Y, c.Population,
-                    c.Stores.Count > 0 ? new Dictionary<string, int>(c.Stores) : null))
+                    c.Stores.Count > 0 ? new Dictionary<string, int>(c.Stores) : null,
+                    c.TileWorkers.Count > 0
+                        ? c.TileWorkers.Select(w => new SavedWorker(w.Key.X, w.Key.Y, w.Value)).ToList()
+                        : null))
                 .ToList(),
         };
     }
@@ -115,6 +119,10 @@ public sealed record SaveGame
                 {
                     colony.AddGoods(goods, amount);
                 }
+                foreach (SavedWorker worker in c.Workers ?? [])
+                {
+                    colony.SetWorker(new Position(worker.X, worker.Y), worker.GoodsId);
+                }
                 return colony;
             }));
     }
@@ -136,9 +144,17 @@ public sealed record SaveGame
 /// <param name="Y">Map row.</param>
 /// <param name="Population">Colonists living in the colony.</param>
 /// <param name="Stores">Warehouse contents by goods id (null in pre-v4 saves / when empty).</param>
+/// <param name="Workers">Tile work assignments (null in pre-v5 saves / when none).</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
-    IReadOnlyDictionary<string, int>? Stores = null);
+    IReadOnlyDictionary<string, int>? Stores = null,
+    IReadOnlyList<SavedWorker>? Workers = null);
+
+/// <summary>A colonist's tile assignment inside a <see cref="SavedColony"/>.</summary>
+/// <param name="X">Worked tile column.</param>
+/// <param name="Y">Worked tile row.</param>
+/// <param name="GoodsId">Goods being produced there.</param>
+public sealed record SavedWorker(int X, int Y, string GoodsId);
 
 /// <summary>A unit inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Id">Unit id.</param>
