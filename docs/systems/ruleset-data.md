@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (terrain incl. `<gen>` envelopes, unit types, goods types incl. `stored-as`/`made-from`, building types incl. conversions/upgrade chains/build costs) |
-| **Last verified** | 2026-06-13 @ Phase 1 walking skeleton |
+| **Status** | Implemented (terrain incl. `<gen>` envelopes + resources, unit types, goods types incl. market/`stored-as`/`made-from`, building types, founding fathers incl. modifiers/abilities, resource types) |
+| **Last verified** | 2026-06-13 @ Phase 4 slice 8 |
 | **Code** | `game/src/GameLogic/Specification/` |
 | **Tests** | `game/tests/GameLogic.Tests/Specification/RulesetTests.cs` |
 | **FreeCol reference** | `freecol/data/rules/classic/specification.xml` (copied to `game/data/rules/classic/`) |
@@ -44,7 +44,7 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 
 ## 5. Open issues / TODO
 
-- [ ] Parse goods-types, buildings, nations, founding fathers as those systems land (Phases 3–5).
+- [ ] Parse **nations** when foreign powers land (Phase 5). *(Goods, buildings, founding fathers — incl. modifiers/abilities — and resource types are now parsed.)*
 - [ ] Unit roles (scout = colonist + horses etc.) — FreeCol models these separately from unit types.
 
 ## Changelog
@@ -57,3 +57,5 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 | 2026-06-13 | Building types: per-worker input→output conversions (ProductionEntry gains Inputs), workplaces, upgrade chains, build costs (required-goods) | Phase 3 |
 | 2026-06-13 | Goods market data (`<market>`: initial-amount/price/difference) + new-world flag on GoodsType | Phase 4 |
 | 2026-06-13 | Founding Fathers (`<founding-father>`: type + age weights) | Phase 4 |
+| 2026-06-13 | Founding-father `<modifier>`/`<ability>` (FatherModifier/FatherAbility); unit `recruit-probability`, `model.ability.person`, `space`/`spaceTaken` | Phase 4 slices 4–7 |
+| 2026-06-13 | Resource types (`<resource-type>` yield modifiers, ResourceType/ResourceModifier) | Phase 4 slice 8 |

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (liberty accrual + election + a modifier/ability system; the effects that touch existing systems are applied) |
-| **Last verified** | 2026-06-13 @ Phase 4 slice 7 |
+| **Last verified** | 2026-06-13 @ Phase 4 slice 8 |
 | **Code** | `game/src/GameLogic/GameSession/Game.cs` (liberty/Congress/offers, `HasAbility`, `ApplyGoodsModifiers`), `Specification/FoundingFather.cs` (`FatherModifier`, `FatherAbility`) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/FoundingFatherTests.cs`, `FoundingFatherEffectsTests.cs`, `Scenarios/JourneyTests.cs` (Journey 8) |
 | **FreeCol reference** | `Player.java` (`getTotalFoundingFatherCost` line 1544), `Modifier.java`/`FeatureContainer.applyModifiers`, `<founding-father>` spec elements |
@@ -62,7 +62,7 @@ Each father carries **modifiers** (bonuses) and **abilities** (capabilities) fro
 
 ## 5. Open issues / TODO
 
-- [ ] Apply the **deferred** father effects as their systems land (goods-yield: Hudson; movement: Magellan; buildings: Smith/Stuyvesant/La Salle; combat/native/foreign/diplomacy fathers).
+- [ ] Apply the **deferred** father effects as their systems land (movement: Magellan; buildings: Smith/Stuyvesant/La Salle; combat/native/foreign/diplomacy fathers). *(Hudson's +100% furs is applied — slice 8.)*
 - [ ] Evaluate modifier **scopes** (person/non-person, unit-type) when per-source production modifiers are needed (bonus-resource yields).
 - [ ] `selectRecruit` UI (choose which dock recruit emigrates); real age boundaries with the calendar; difficulty-driven `factor`; Congress / father-choice UI.
 

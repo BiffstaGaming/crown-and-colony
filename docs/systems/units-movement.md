@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (skeleton: one generic land unit) |
-| **Last verified** | 2026-06-13 @ Phase 1 walking skeleton |
+| **Status** | Implemented (ruleset unit types, naval units, off-map sailing/Europe, cargo + passengers) |
+| **Last verified** | 2026-06-13 @ Phase 4 slice 9 |
 | **Code** | `game/src/GameLogic/Units/`, `GameSession/Game.cs` · rendering: `game/presentation/UnitMarker.cs` |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/GameTests.cs` |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/common/model/Unit.java` (`getMoveCost`, `MoveType`) |

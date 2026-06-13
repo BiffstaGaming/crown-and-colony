@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (data layer — direct colony→Europe sales; ship transport is a later slice) |
-| **Last verified** | 2026-06-13 @ Phase 4 slice 1 |
-| **Code** | `game/src/GameLogic/Trade/Market.cs`, `GameSession/Game.cs` (`Gold`, `TaxRate`, `SellColonyGoods`) |
+| **Status** | Implemented (supply-price model + treasury + sales tax; sells direct or via a ship in Europe; buying in Europe) |
+| **Last verified** | 2026-06-13 @ Phase 4 slice 3 |
+| **Code** | `game/src/GameLogic/Trade/Market.cs`, `GameSession/Game.cs` (`Gold`, `TaxRate`, `SellColonyGoods`, `SellShipCargo`, `BuyEuropeGoods`) |
 | **Tests** | `game/tests/GameLogic.Tests/Trade/MarketTests.cs` |
 | **FreeCol reference** | `MarketData.java` (`price()` lines 319–383), `Market.java`, `server/model/ServerPlayer.java` (`sellInEurope`) |
 | **Related systems** | [colonies](colonies.md), [ruleset-data](ruleset-data.md), [save-load](save-load.md) |
@@ -27,7 +27,7 @@ You sell your colonies' goods to Europe for **gold**, and Europe charges a **sal
 - **Tax:** `goldCredited = (100 − taxRate) × revenue ÷ 100`, integer-truncated (the player can lose a gold to rounding). Tax starts at 0%.
 - Non-tradeable goods (grain, fish, bells, crosses — anything without a `<market>`) cannot be sold.
 
-**Deviations from FreeCol:** for this slice, `SellColonyGoods` sells straight from a colony warehouse to Europe (an abstraction); requiring an actual ship to carry the cargo is Phase 4 slice 3. Buying goods (which doesn't move the price in FreeCol) is not yet exposed.
+**Deviations from FreeCol:** `SellColonyGoods` still sells straight from a colony warehouse to Europe (a convenience abstraction kept from slice 1); since slice 3 a ship can also carry cargo and sell it in Europe (`SellShipCargo`) and buy goods at the ask price without moving the price (`BuyEuropeGoods`) — see [europe.md](europe.md). Goods buy/sell has logic but no on-screen UI yet (the Europe screen covers recruitment, not goods trading).
 
 ## 3. Technical design
 
@@ -42,15 +42,15 @@ You sell your colonies' goods to Europe for **gold**, and Europe charges a **sal
 |---|---|---|---|
 | L1 Unit | Always | `MarketTests`: initial prices vs spec (7 goods), inventory rise + bid fall (sugar 600 → bid 1, gold 1200), tax truncation (33% on 112 → 75), [1,19] bounds across all goods, New World cap, SellColonyGoods deduct/credit/validate | ✅ |
 | L2 Scenario | Always | save round-trip preserves gold/tax/moved-market; pre-v9 reseeds | ✅ |
-| L3 Interaction | No UI yet | — (Europe screen is slice 3) | — |
+| L3 Interaction | No goods-trading UI yet | — (the Europe screen covers recruitment; sell/buy goods has logic but no buttons) | — |
 | L4 Visual | No screen yet | — | — |
 
 - **FreeCol cross-check:** `Recompute` ported line-for-line from `MarketData.price()`; initial prices verified against the spec; the sugar sell-down (600 → bid 1, inventory 2100) and silver tax (75) hand-computed from the reference formula.
 
 ## 5. Open issues / TODO
 
-- [ ] Buying goods from Europe (ask price, no price rise) — with the Europe screen (slice 3).
-- [ ] Sales require a ship to carry cargo (slice 3); tea-party/monarch tax rises (later).
+- [x] Ship-carried sales (`SellShipCargo`) and buying in Europe (`BuyEuropeGoods`, ask price, no price rise) — done in slice 3 ([europe.md](europe.md)).
+- [ ] A goods buy/sell **UI** on the Europe screen (today only recruitment is wired); tea-party/monarch tax rises (later).
 - [ ] Cross-check the chunked sell-down revenue against a FreeCol play-through for a known seed.
 
 ## Changelog

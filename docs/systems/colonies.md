@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (founding only; economy is Phase 3) |
-| **Last verified** | 2026-06-13 @ Phase 2b |
+| **Status** | Implemented (founding, full colony economy, membership join/leave, bonus-resource yields) |
+| **Last verified** | 2026-06-13 @ Phase 4 slice 9 |
 | **Code** | `game/src/GameLogic/Colonies/Colony.cs`, `GameSession/Game.cs` (`CheckFoundColony`/`FoundColony`) · rendering: `game/presentation/ColonyMarker.cs` |
 | **Tests** | `GameTests.FoundColony_*`, `SaveGameTests.RoundTrip_PreservesColonies` |
 | **FreeCol reference** | `Colony.java`, `BuildColonyMessage` — minimum-distance rule pending cross-check |

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (board/sail/disembark + shared goods/passenger capacity; no Europe screen UI yet) |
+| **Status** | Implemented (board/sail/disembark + shared goods/passenger capacity; board/sail on the Europe screen) |
 | **Last verified** | 2026-06-13 @ Phase 4 slice 5 |
 | **Code** | `game/src/GameLogic/GameSession/Game.cs` (board/disembark/capacity), `Units/Unit.cs` (`CarrierId`), `Specification/UnitType.cs` (`Space`/`SpaceTaken`) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/TransportTests.cs`, `Scenarios/JourneyTests.cs` (Journey 7) |
@@ -22,7 +22,7 @@ A colonist can't swim the ocean — to move one across the sea you put it **on a
 **Worked example:**
 > A caravel waits in Europe. You recruited a free colonist last turn — board it (1 of the caravel's 2 slots used). Sail to the New World; three turns later the caravel re-appears off the coast with the colonist still aboard. Disembark it onto the neighbouring grassland and found your second colony there.
 
-**What the player sees and does:** *(no Europe/transport UI yet)* the capacity, passengers, and board/disembark actions are on the game state for the upcoming Europe screen; for now the flow is exercised through the game API and tests.
+**What the player sees and does:** on the **Europe screen** ([europe.md](europe.md)) you board a recruit onto a ship and press *Sail to New World*; ships show their hold (used/free slots) and passengers. Map-side board/disembark (next to a coastal ship) is still future — for now disembarking in the New World is driven through the game API.
 
 ## 2. Detailed rules
 

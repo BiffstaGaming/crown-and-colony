@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Last verified** | 2026-06-13 @ Phase 0 scaffold commit |
+| **Last verified** | 2026-06-13 @ Phase 4 slice 9 |
 | **Location** | `game/src/GameLogic/` |
 | **Layer** | GameLogic (engine-free) |
 | **Depends on** | nothing (BCL only) |
@@ -23,20 +23,21 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | `Randomness.RandomState` | Serializable generator snapshot |
 | `Specification.Ruleset` | Parsed rule data; `LoadClassic()` reads the embedded classic spec; `Terrain(id)`, `Unit(id)` |
 | `Specification.TerrainType` / `ProductionEntry` / `GoodsOutput` / `GenRanges` | Immutable terrain rule data incl. climate envelopes |
-| `Specification.UnitType` | Unit rule data (movement, sight, naval, foundColony) with `extends` inheritance resolved |
-| `Specification.GoodsType` | Goods rule data: `is-food`, `stored-as`, `made-from`, breeding number |
+| `Specification.UnitType` | Unit rule data (movement, sight, naval, foundColony, `RecruitProbability`, `IsPerson`, `Space`/`SpaceTaken`/`IsCarrier`/`CarrySlots`) with `extends` inheritance resolved |
+| `Specification.GoodsType` | Goods rule data: `is-food`, `stored-as`, `made-from`, breeding number, market seed |
 | `Specification.BuildingType` | Building rule data: conversions (with inputs), workplaces, upgrade chain, build cost |
+| `Specification.ResourceType` / `ResourceModifier` | Bonus-resource yield modifiers (goods, type, index, unit-type scopes) |
 | `World.Position` | Grid coordinate; 8-way adjacency |
-| `World.GameMap` | Immutable terrain grid |
-| `World.MapGenerator` | Seeded placeholder map generation (Phase 2 replaces algorithm) |
-| `Units.Unit` / `UnitLocation` | Unit state incl. map/sailing/Europe location and cargo hold; mutated only via `Game` |
+| `World.GameMap` | Immutable terrain grid + bonus resources (`ResourceAt`) |
+| `World.MapGenerator` | Seeded climate-band map generation + resource placement |
+| `Units.Unit` / `UnitLocation` | Unit state: map/sailing/Europe `Location`, `SailTurnsRemaining`, `Cargo`, `CarrierId`/`IsAboard`, `IsOnMap`; mutated only via `Game` |
 | `Colonies.Colony` | Colony state: population, stores, tile/building workers, buildings, build target |
 | `Trade.Market` | European market: per-good bid/ask, supply-driven `Sell` with tax (FreeCol price model) |
 | `Specification.GoodsMarket` | Per-good market seed (initial amount/price/spread) |
-| `Specification.FoundingFather` / `FatherType` | Founding-father rule data (category + age weights) |
-| `GameSession.Game` | The running game: `New`, `CheckMove`/`MoveUnit`, `EndTurn`, `SpawnUnit`, `CheckFoundColony`/`FoundColony`, `TileYield`, `CheckAssignWork`/`AssignWork`/`UnassignWork`, `CheckAssignBuildingWork`/`AssignBuildingWork`/`UnassignBuildingWork`, `CheckSetBuild`/`SetBuild`/`Buildables` |
+| `Specification.FoundingFather` / `FatherType` / `FatherModifier` / `FatherAbility` / `ModifierType` / `ModifierMath` | Founding-father rule data: category, age weights, the modifiers + abilities an election grants |
+| `GameSession.Game` | The running game. Map/units: `New`, `CheckMove`/`MoveUnit`, `EndTurn`, `SpawnUnit`, `CheckFoundColony`/`FoundColony`, `TileYield`. Colony work: `AssignWork`/`UnassignWork`, `AssignBuildingWork`/`UnassignBuildingWork`, `SetBuild`/`Buildables`, `JoinColony`/`LeaveColony`. Trade: `Gold`, `TaxRate`, `Market`, `SellColonyGoods`/`SellShipCargo`/`BuyEuropeGoods`. Europe/sailing: `SailToEurope`/`SailToNewWorld`, `UnitsInEurope`. Transport: `Board`/`Disembark`/`DisembarkToDock`, `Passengers`, `CargoCapacity`/`CargoSlotsUsed`/`CargoSlotsFree`. Fathers: `Liberty`, `Congress`, `ChooseFather`, `OfferedFathers`, `HasAbility`, `ApplyGoodsModifiers`. Immigration: `Immigration`/`ImmigrationRequired`, `RecruitDock`, `RecruitPrice`, `Recruit`/`CheckRecruit`. (All checks have a `Check…` oracle, ADR-006.) |
 | `GameSession.MoveCheck` / `InvalidMoveException` | Move legality result / violation |
-| `Persistence.SaveGame` / `SavedUnit` | Complete JSON-serializable game snapshot |
+| `Persistence.SaveGame` / `SavedUnit` / `SavedColony` / `SavedResource` / `SavedWorker` | Complete JSON-serializable game snapshot (format v13) |
 
 (Grows as systems land; keep this table current.)
 
@@ -48,10 +49,12 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 
 ## Tests
 
-`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. 13 tests, all passing as of 2026-06-13.
+`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **207 tests** (205 L1+L2 incl. 10 E2E journeys + 2 nightly soak), all green as of 2026-06-13. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md).)
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-13 | Project created with Randomness namespace | Phase 0 scaffold |
+| 2026-06-13 | Phases 1–3: ruleset parsing, map/units/turns/save, fog, colonies + full economy (stores, tile/building work, construction, growth) | Phases 1–3 |
+| 2026-06-13 | Phase 4: market+treasury, founding fathers + effects (modifier/ability system), Europe + high-seas sailing, immigration & recruitment, unit transport, bonus-resource yields, colonist join/leave; save v13 | Phase 4 |

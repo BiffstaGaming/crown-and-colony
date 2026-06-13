@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Last verified** | 2026-06-13 @ Phase 1 walking skeleton |
+| **Last verified** | 2026-06-13 @ Phase 4 slice 6 |
 | **Location** | `game/presentation/`, `game/scenes/` (project: `game/CrownAndColony.csproj`) |
 | **Layer** | Presentation (Godot) |
 | **Depends on** | `GameLogic`, Godot 4.6 |
@@ -16,12 +16,14 @@ Everything the player sees and touches: scene tree, drawing, camera, input, UI. 
 
 | Part | What it does |
 |---|---|
-| `GameController` (root of `scenes/main.tscn`) | Owns the `Game`; input → commands; quicksave F5/F9; exported `Seed` for deterministic test runs |
-| `MapView` | Flat-colour tile drawing; tile↔pixel conversions (`TileSize` = 32) |
-| `UnitMarker` | Placeholder unit disc + selection ring |
+| `GameController` (root of `scenes/main.tscn`) | Owns the `Game`; input → commands (click select/move, B found, E Europe, F5/F9 save/load); opens the colony + Europe panels; exported `Seed` for deterministic test runs |
+| `MapView` | Isometric tile drawing with FreeCol terrain art (ADR-014, 128×64 diamonds); tile↔pixel conversions |
+| `UnitMarker` | FreeCol unit sprite + selection ring (on-map units only) |
+| `ColonyMarker` | FreeCol settlement sprite + name plate, one per colony |
 | `CameraController` | Drag pan + wheel zoom |
-| `ColonyPanel` | Interactive colony screen: staffing, field release, auto-assign, construction choice — UI built programmatically per open/refresh, all actions via Game oracles |
-| `presentation/tests/` | **L3 GdUnit4 tests — live inside this project** because the GdUnit4 adapter requires the test assembly's project to BE the Godot project (official gdUnit4Net layout; see ADR notes). Run: `dotnet test game/CrownAndColony.csproj` with `gdunit.runsettings` + `GODOT_BIN` set |
+| `ColonyPanel` | Interactive colony screen: staffing, field release, auto-assign, construction choice — built programmatically per open/refresh, all actions via Game oracles |
+| `EuropePanel` | The Europe screen: recruitment dock (recruit), ships in port (sail home), colonists on the dock (board), immigration clock — all via Game oracles |
+| `presentation/tests/` | **L3 GdUnit4 + L4 visual tests — live inside this project** because the GdUnit4 adapter requires the test assembly's project to BE the Godot project (official gdUnit4Net layout; ADR-011/015). Run: `dotnet test game/CrownAndColony.csproj` with `gdunit.runsettings` + `GODOT_BIN` set, after a clean `godot --build-solutions` |
 
 ## Key design notes
 
@@ -32,10 +34,13 @@ Everything the player sees and touches: scene tree, drawing, camera, input, UI. 
 
 ## Tests
 
-L3: `presentation/tests/MainSceneTests.cs` — scene loads at turn 1, End Turn click advances the label, unit marker sits on a tile centre. 3/3 passing locally (real Godot runtime).
+**15 scene tests** (13 L3 interaction + 2 L4 visual goldens), green on the real Godot runtime: `MainSceneTests`, `InputTests` (click/move, hotkeys, F5/F9), `ColonyPanelTests`, `EuropePanelTests`, `JourneyE2ETests` (the one scene-level E2E), `VisualGoldenTests` (golden-screenshot diff). Driven in CI by ADR-015 (CI owns the Godot install; 3-attempt retry under xvfb).
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-13 | Walking-skeleton scene: map view, unit, camera, turn UI, quicksave; GdUnit4 L3 wiring | Phase 1 skeleton |
+| 2026-06-13 | Isometric rendering with FreeCol terrain/unit/settlement art (ADR-014); L4 visual-golden harness | Phase 2 |
+| 2026-06-13 | Interactive colony screen (`ColonyPanel`); L3 input + panel tests | Phase 3 |
+| 2026-06-13 | Europe screen (`EuropePanel`): dock/recruit, ships, board/sail; map renders only on-map units; L3-tested | Phase 4 slice 6 |

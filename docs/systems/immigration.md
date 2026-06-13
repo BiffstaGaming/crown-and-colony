@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (accrual + auto-emigration + paid recruitment; no Europe screen UI yet) |
+| **Status** | Implemented (accrual + auto-emigration + paid recruitment; on the Europe screen) |
 | **Last verified** | 2026-06-13 @ Phase 4 slice 4 |
 | **Code** | `game/src/GameLogic/GameSession/Game.cs` (immigration accrual, dock, recruit), `Specification/UnitType.cs` (recruit weight + person) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/ImmigrationTests.cs`, `Scenarios/JourneyTests.cs` (Journey 5) |
@@ -25,7 +25,7 @@ You don't have to wait. Europe always shows **three recruits** on offer; you can
 **Worked example:**
 > Your one colony's chapel makes 1 cross a turn; with the +2 bonus your pool climbs 3 a turn: 3, 6, 9, 12, **15** — and on the fifth turn a colonist emigrates to your Europe dock. The target is now 17. That colonist now sits in Europe; until you sail it home it shaves 4 a turn off the pool, so the next immigrant takes much longer. Impatient, you pay **200** gold to recruit a second from the dock right away — the next recruit will cost **230**.
 
-**What the player sees and does:** *(no Europe screen yet)* the recruits, price, pool and target are exposed on the game state for the upcoming Europe screen; for now the flow is exercised through the game API and tests. Recruited/emigrated units appear in Europe (`UnitsInEurope`).
+**What the player sees and does:** the **Europe screen** ([europe.md](europe.md)) shows the recruits, their price, and the immigration pool/target, with a Recruit button per slot. Recruited/emigrated units appear in Europe (`UnitsInEurope`) and can be shipped home ([transport.md](transport.md)).
 
 ## 2. Detailed rules
 
