@@ -37,15 +37,18 @@ public class BuildingTests
     }
 
     [Fact]
-    public void TownHall_RingsOneBell_EveryTurn_Unattended()
+    public void TownHall_RingsOneBell_EveryTurn_WhichBecomesLiberty()
     {
+        // The town hall produces 1 bell/turn unattended; bells are consumed into
+        // player liberty each turn (Founding Fathers), not left as warehouse stock.
         Game game = FoundedColony();
         Colony colony = game.Colonies[0];
 
         game.EndTurn();
         game.EndTurn();
 
-        Assert.Equal(2, colony.StoreOf(Bells));
+        Assert.Equal(0, colony.StoreOf(Bells)); // converted, not stockpiled
+        Assert.Equal(2, game.Liberty);
     }
 
     [Fact]

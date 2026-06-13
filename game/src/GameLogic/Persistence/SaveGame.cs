@@ -17,7 +17,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 9;
+    public const int CurrentVersion = 10;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -68,6 +68,18 @@ public sealed record SaveGame
     /// <summary>Market inventories that have moved from their ruleset seed (sparse; v9+).</summary>
     public IReadOnlyDictionary<string, int>? MarketState { get; init; }
 
+    /// <summary>Liberty banked toward the next Founding Father (v10+).</summary>
+    public int Liberty { get; init; }
+
+    /// <summary>Elected Founding Father ids, in order (null when none; v10+).</summary>
+    public IReadOnlyList<string>? Congress { get; init; }
+
+    /// <summary>The father currently being recruited (v10+).</summary>
+    public string? CurrentFather { get; init; }
+
+    /// <summary>The fathers offered this round, so a reload restores the same choice (v10+).</summary>
+    public IReadOnlyList<string>? OfferedFathers { get; init; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -115,6 +127,10 @@ public sealed record SaveGame
             MarketState = game.Market.SaveDeltas() is { Count: > 0 } deltas
                 ? new Dictionary<string, int>(deltas)
                 : null,
+            Liberty = game.Liberty,
+            Congress = game.Congress.Count > 0 ? game.Congress.ToList() : null,
+            CurrentFather = game.CurrentFather,
+            OfferedFathers = game.OfferedFathers.Count > 0 ? game.OfferedFathers.ToList() : null,
         };
     }
 
@@ -174,7 +190,11 @@ public sealed record SaveGame
             }),
             Gold,
             Tax,
-            MarketState);
+            MarketState,
+            Liberty,
+            Congress,
+            CurrentFather,
+            OfferedFathers);
     }
 
     /// <summary>Serializes to JSON.</summary>

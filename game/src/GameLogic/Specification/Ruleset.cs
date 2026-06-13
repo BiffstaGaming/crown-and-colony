@@ -14,21 +14,25 @@ public sealed class Ruleset
     private readonly Dictionary<string, UnitType> _unitById;
     private readonly Dictionary<string, GoodsType> _goodsById;
     private readonly Dictionary<string, BuildingType> _buildingById;
+    private readonly Dictionary<string, FoundingFather> _fatherById;
 
     private Ruleset(
         Dictionary<string, TerrainType> terrainById,
         Dictionary<string, UnitType> unitById,
         Dictionary<string, GoodsType> goodsById,
-        Dictionary<string, BuildingType> buildingById)
+        Dictionary<string, BuildingType> buildingById,
+        Dictionary<string, FoundingFather> fatherById)
     {
         _terrainById = terrainById;
         _unitById = unitById;
         _goodsById = goodsById;
         _buildingById = buildingById;
+        _fatherById = fatherById;
         TerrainTypes = _terrainById.Values.ToList();
         UnitTypes = _unitById.Values.ToList();
         GoodsTypes = _goodsById.Values.ToList();
         BuildingTypes = _buildingById.Values.ToList();
+        FoundingFathers = _fatherById.Values.ToList();
     }
 
     /// <summary>All terrain types, in specification order.</summary>
@@ -77,6 +81,16 @@ public sealed class Ruleset
         _buildingById.TryGetValue(id, out var b)
             ? b
             : throw new KeyNotFoundException($"Unknown building type '{id}'.");
+
+    /// <summary>All Founding Fathers, in specification order.</summary>
+    public IReadOnlyList<FoundingFather> FoundingFathers { get; }
+
+    /// <summary>Looks up a Founding Father by ruleset id (e.g. <c>model.foundingFather.adamSmith</c>).</summary>
+    /// <exception cref="KeyNotFoundException">Unknown id.</exception>
+    public FoundingFather Father(string id) =>
+        _fatherById.TryGetValue(id, out var f)
+            ? f
+            : throw new KeyNotFoundException($"Unknown founding father '{id}'.");
 
     /// <summary>Loads the classic (1994-faithful) ruleset embedded in this assembly.</summary>
     public static Ruleset LoadClassic()
@@ -174,7 +188,24 @@ public sealed class Ruleset
                     .ToList());
         }
 
-        return new Ruleset(terrain, units, goods, buildings);
+        var fathers = new Dictionary<string, FoundingFather>();
+        foreach (XElement el in root.Element("founding-fathers")?.Elements("founding-father") ?? [])
+        {
+            string id = RequiredAttribute(el, "id");
+            string typeName = RequiredAttribute(el, "type");
+            if (!Enum.TryParse(typeName, ignoreCase: true, out FatherType type))
+            {
+                throw new RulesetFormatException($"Founding father '{id}' has unknown type '{typeName}'.");
+            }
+            fathers[id] = new FoundingFather(
+                Id: id,
+                Type: type,
+                Weight1: (int?)el.Attribute("weight1") ?? 0,
+                Weight2: (int?)el.Attribute("weight2") ?? 0,
+                Weight3: (int?)el.Attribute("weight3") ?? 0);
+        }
+
+        return new Ruleset(terrain, units, goods, buildings, fathers);
     }
 
     private static ProductionEntry ParseProduction(XElement p) => new(

@@ -56,3 +56,4 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 | 2026-06-13 | Goods types: `is-food`, `stored-as` (grain/fish/meat → food), `made-from` (chains data), `is-farmed`; `Ruleset.StorageIdOf` | Phase 3 |
 | 2026-06-13 | Building types: per-worker input→output conversions (ProductionEntry gains Inputs), workplaces, upgrade chains, build costs (required-goods) | Phase 3 |
 | 2026-06-13 | Goods market data (`<market>`: initial-amount/price/difference) + new-world flag on GoodsType | Phase 4 |
+| 2026-06-13 | Founding Fathers (`<founding-father>`: type + age weights) | Phase 4 |

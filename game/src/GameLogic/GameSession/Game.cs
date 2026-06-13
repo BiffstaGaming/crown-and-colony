@@ -24,12 +24,26 @@ public sealed class Game
         "Salem", "Penobscot", "Roanoke", "New Haven", "Providence",
     ];
 
+    /// <summary>The warehouse goods id for liberty bells.</summary>
+    private const string BellsId = "model.goods.bells";
+
+    /// <summary>
+    /// Liberty multiplier in the Founding Father cost formula. Classic "other"
+    /// difficulty = 24 (spec <c>model.option.foundingFatherFactor</c>);
+    /// difficulty-based values arrive with the difficulty system.
+    /// </summary>
+    public const int FoundingFatherFactor = 24;
+
     private readonly List<Unit> _units = [];
     private readonly List<Colony> _colonies = [];
     private readonly HashSet<Position> _explored = [];
+    private readonly List<string> _congress = [];
+    private readonly List<string> _offeredFathers = [];
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
     private int _nextColonyId = 1;
+    private int _liberty;
+    private string? _currentFather;
 
     private Game(Ruleset ruleset, GameMap map, Pcg32Random random, int turn)
     {
@@ -57,6 +71,46 @@ public sealed class Game
 
     /// <summary>The European market (trade prices). (Single shared market until foreign powers arrive.)</summary>
     public Market Market { get; }
+
+    /// <summary>Liberty points banked toward the next Founding Father.</summary>
+    public int Liberty => _liberty;
+
+    /// <summary>Founding Fathers elected to the Continental Congress, in election order.</summary>
+    public IReadOnlyList<string> Congress => _congress;
+
+    /// <summary>The father the player is currently recruiting (null = none chosen).</summary>
+    public string? CurrentFather => _currentFather;
+
+    /// <summary>The fathers offered this round — one per category that has an eligible candidate.</summary>
+    public IReadOnlyList<string> OfferedFathers => _offeredFathers;
+
+    /// <summary>
+    /// Game age (1–3) used to weight which fathers are offered. Simplified
+    /// turn bands until the calendar exists; FreeCol keys age off the year.
+    /// </summary>
+    public int CurrentAge => Turn < 100 ? 1 : Turn < 200 ? 2 : 3;
+
+    /// <summary>
+    /// Liberty needed to elect the next father (FreeCol <c>getTotalFoundingFatherCost</c>):
+    /// the first is free-ish at <paramref name="factor"/>, later ones cost
+    /// <c>2·(elected+1)·factor + 1</c>.
+    /// </summary>
+    public static int FoundingFatherCost(int electedCount, int factor) =>
+        electedCount == 0 ? factor : 2 * (electedCount + 1) * factor + 1;
+
+    /// <summary>Liberty needed to elect this game's next father.</summary>
+    public int TotalFoundingFatherCost() => FoundingFatherCost(_congress.Count, FoundingFatherFactor);
+
+    /// <summary>Chooses which offered father to recruit toward.</summary>
+    /// <exception cref="InvalidMoveException">The father is not currently offered.</exception>
+    public void ChooseFather(string fatherId)
+    {
+        if (!_offeredFathers.Contains(fatherId))
+        {
+            throw new InvalidMoveException($"{fatherId} is not currently offered.");
+        }
+        _currentFather = fatherId;
+    }
 
     /// <summary>All units in the game.</summary>
     public IReadOnlyList<Unit> Units => _units;
@@ -106,6 +160,7 @@ public sealed class Game
                 p => p.Neighbours().Any(n => map.InBounds(n) && !map.TerrainAt(n).IsWater),
                 map.AllPositions().First(Settleable));
         game.SpawnUnit(ruleset.Unit(StartingUnitTypeId), start);
+        game.GenerateOffers(); // Congress choices available from the first turn
 
         return game;
     }
@@ -117,7 +172,9 @@ public sealed class Game
         IEnumerable<Position>? explored,
         IEnumerable<Colony>? colonies = null,
         int gold = 0, int taxRate = 0,
-        IReadOnlyDictionary<string, int>? marketDeltas = null)
+        IReadOnlyDictionary<string, int>? marketDeltas = null,
+        int liberty = 0, IEnumerable<string>? congress = null,
+        string? currentFather = null, IEnumerable<string>? offeredFathers = null)
     {
         var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn)
         {
@@ -127,6 +184,16 @@ public sealed class Game
         if (marketDeltas is { Count: > 0 })
         {
             game.Market.LoadDeltas(marketDeltas);
+        }
+        game._liberty = liberty;
+        game._currentFather = currentFather;
+        if (congress is not null)
+        {
+            game._congress.AddRange(congress);
+        }
+        if (offeredFathers is not null)
+        {
+            game._offeredFathers.AddRange(offeredFathers);
         }
         foreach ((int id, UnitType type, Position position, int movementLeft) in units)
         {
@@ -443,11 +510,75 @@ public sealed class Game
         {
             RunColonyTurn(colony);
         }
+        AccumulateLibertyAndElectFathers();
         foreach (Unit unit in _units)
         {
             unit.ResetMovement();
         }
         Turn++;
+    }
+
+    /// <summary>
+    /// Converts each colony's freshly-produced bells into player liberty, elects
+    /// the chosen father once enough is banked, and refreshes the offered set.
+    /// </summary>
+    private void AccumulateLibertyAndElectFathers()
+    {
+        foreach (Colony colony in _colonies)
+        {
+            int bells = colony.StoreOf(BellsId);
+            if (bells > 0)
+            {
+                colony.AddGoods(BellsId, -bells); // bells become liberty, not tradeable stock
+                _liberty += bells;
+            }
+        }
+
+        if (_currentFather is not null && _liberty >= TotalFoundingFatherCost())
+        {
+            _liberty -= TotalFoundingFatherCost();
+            _congress.Add(_currentFather);
+            _currentFather = null;
+            _offeredFathers.Clear();
+        }
+
+        if (_currentFather is null && _offeredFathers.Count == 0)
+        {
+            GenerateOffers();
+        }
+    }
+
+    /// <summary>
+    /// Offers one eligible father per category, picked by seeded weight for the
+    /// current age (already-elected fathers and zero-weight ones are excluded).
+    /// </summary>
+    private void GenerateOffers()
+    {
+        _offeredFathers.Clear();
+        int age = CurrentAge;
+        var elected = _congress.ToHashSet();
+
+        foreach (FatherType type in Enum.GetValues<FatherType>())
+        {
+            var candidates = Ruleset.FoundingFathers
+                .Where(f => f.Type == type && !elected.Contains(f.Id) && f.WeightForAge(age) > 0)
+                .ToList();
+            if (candidates.Count == 0)
+            {
+                continue;
+            }
+            int totalWeight = candidates.Sum(f => f.WeightForAge(age));
+            int roll = _random.Next(totalWeight);
+            foreach (FoundingFather f in candidates)
+            {
+                roll -= f.WeightForAge(age);
+                if (roll < 0)
+                {
+                    _offeredFathers.Add(f.Id);
+                    break;
+                }
+            }
+        }
     }
 
     /// <summary>

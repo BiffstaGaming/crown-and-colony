@@ -18,8 +18,9 @@ The game advances in turns, starting at turn 1. Press **End Turn** and every uni
 | On EndTurn | Effect (in order) |
 |---|---|
 | 1. Each colony | colony square produces → worked tiles produce → buildings produce (unattended + per-worker conversions, breeding-gated) → construction completes if materials cover it → colonists eat (2 each) → growth at 200 food (newborn auto-assigned) — see [colonies](colonies.md) |
-| 2. All units | movement restored to full |
-| 3. Turn counter | +1 |
+| 2. Liberty | each colony's bells → player liberty; elect the chosen Founding Father if affordable; refresh offers — see [founding-fathers](founding-fathers.md) |
+| 3. All units | movement restored to full |
+| 4. Turn counter | +1 |
 
 **Deviations from original / FreeCol:** none yet — the skeleton turn does the minimum. The original's turn/season/year mapping (1492 start, seasons after 1600) arrives with the calendar in Phase 2+.
 

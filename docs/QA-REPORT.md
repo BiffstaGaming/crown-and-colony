@@ -1,6 +1,6 @@
 # QA Report — Crown & Colony
 
-> **Snapshot** taken 2026-06-13 at commit `c3e4fdf` (*Phase 4 slice 1: European market + treasury*).
+> **Snapshot** taken 2026-06-13, latest on `main` (*Phase 4 slice 2: Founding Fathers*).
 > This is a committed, point-in-time QA snapshot combining **test results** and the **visual goldens** (screenshots) in one place.
 > Regenerate after a green run with `dotnet test` + a `GOLDEN_UPDATE=1` golden pass (see [TESTING.md](TESTING.md)); the goldens below always show the *committed expected* render.
 > **Live, always-current results:** the [GitHub Actions CI runs](https://github.com/BiffstaGaming/crown-and-colony/actions) — every push is gated on these same suites.
@@ -11,11 +11,11 @@
 |---|---|---|---:|:--:|---|
 | **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 126 | ✅ | every push |
 | **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 126 | ✅ | every push |
-| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **126** | ✅ | every push |
+| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **136** | ✅ | every push |
 | **L3 Interaction** | Real scenes driven by simulated input/signals | GdUnit4 | 10 | ✅ | every push (CI) |
 | **L4 Visual** | Golden-screenshot diff of the rendered map | GdUnit4 + custom diff | 2 | ✅ | every push (CI) |
 | **L5 Soak** | 25-seed × 200-turn runs + per-turn perf budget | xUnit | 2 | ✅ | nightly |
-| | | | **140** | **all green** | |
+| | | | **150** | **all green** | |
 
 Reproduce locally (toolchain in [CLAUDE.md](../CLAUDE.md)):
 ```
@@ -53,6 +53,7 @@ Each system doc carries a five-layer verification table; this is the index:
 | Units & movement | [units-movement.md](systems/units-movement.md) | ✅ | ✅ | ✅ | ⬜ |
 | Colonies & economy | [colonies.md](systems/colonies.md) | ✅ | ✅ | ✅ | ⬜ |
 | Market & treasury | [market.md](systems/market.md) | ✅ | ✅ | — | — |
+| Founding Fathers | [founding-fathers.md](systems/founding-fathers.md) | ✅ | ✅ | — | — |
 | Turns | [turns.md](systems/turns.md) | ✅ | ✅ | ✅ | ⬜ |
 | Save/load | [save-load.md](systems/save-load.md) | ✅ | ✅ | ✅ | — |
 
