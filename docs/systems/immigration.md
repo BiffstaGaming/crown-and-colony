@@ -76,14 +76,14 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 |---|---|---|---|
 | L1 Unit | Always | `ImmigrationTests`: recruit-price formula (5 pinned cases), spec weights + person ability, dock determinism, colonyless +2 accrual, crosses→pool drain, threshold emigration, Europe-penalty clamp, paid-recruit escalation, recruit rejection, save round-trip, pre-v12 load | ✅ |
 | L2 Scenario | Always | `JourneyTests.Journey5` (accrue → emigrate → penalty stall → paid recruit → save acid test); `SoakTests` (25-seed × 200-turn invariants hold with immigrants accumulating) | ✅ |
-| L3 Interaction | No UI yet | — (Europe screen is a later slice) | — |
-| L4 Visual | No screen yet | — | — |
+| L3 Interaction | Yes (Europe screen) | `EuropePanelTests.RecruitButton_BuysAColonistIntoEurope` (recruit from the dock via the real screen; gold debited) — see [europe.md](europe.md) | ✅ |
+| L4 Visual | UI hidden in goldens | — | — |
 
 - **FreeCol cross-check:** every number pinned against source, not the task brief — `initialImmigration=15`, `crossesIncrement=2`, `europeanUnitImmigrationPenalty=−4`, `playerImmigrationBonus=2`, `recruitPriceIncrease=30`, `lowerCapIncrease=0` (medium difficulty in `specification.xml`); `RECRUIT_PRICE_INITIAL=200`, `LOWER_CAP_INITIAL=80`, `MIGRANT_COUNT=3` (`Europe.java`/`MigrationType`). The recruit pool follows the spec's `recruit-probability` (so indentured servants and petty criminals are in it at weight 20, which the original task brief omitted).
 
 ## 5. Open issues / TODO
 
-- [ ] **Europe screen UI** — render off-map units, show the dock/price/pool, wire the recruit button (next P4 task).
+- [x] **Europe screen UI** — done ([europe.md](europe.md)): the dock, prices, immigration clock and a recruit button are on the Europe screen.
 - [x] **Carry recruits home** — done in [transport.md](transport.md): board a recruit onto a ship and sail it to the New World.
 - [ ] **William Brewster / `selectRecruit`** — choose the emigrating slot (needs the Founding-Father modifier system).
 - [ ] **Fountain of Youth** burst immigration and the survival auto-recruit are not modelled.

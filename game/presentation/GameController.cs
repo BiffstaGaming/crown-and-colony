@@ -33,6 +33,7 @@ public partial class GameController : Node2D
     private Node2D _colonyLayer = null!;
     private Label _statusLabel = null!;
     private PanelContainer _colonyPanel = null!;
+    private PanelContainer _europePanel = null!;
     private Unit? _selectedUnit;
     private string? _notice;
 
@@ -43,8 +44,11 @@ public partial class GameController : Node2D
         _colonyLayer = GetNode<Node2D>("MapView/ColonyLayer");
         _statusLabel = GetNode<Label>("UI/StatusLabel");
         _colonyPanel = GetNode<PanelContainer>("UI/ColonyPanel");
+        _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
         GetNode<Button>("UI/EndTurnButton").Pressed += OnEndTurnPressed;
+        GetNode<Button>("UI/EuropeButton").Pressed += OpenEuropePanel;
         GetNode<Button>("UI/ColonyPanel/VBox/CloseButton").Pressed += () => _colonyPanel.Hide();
+        GetNode<Button>("UI/EuropePanel/VBox/CloseButton").Pressed += () => _europePanel.Hide();
 
         NewGame();
     }
@@ -97,6 +101,9 @@ public partial class GameController : Node2D
             case InputEventKey { Keycode: Key.B, Pressed: true, Echo: false }:
                 FoundColony();
                 break;
+            case InputEventKey { Keycode: Key.E, Pressed: true, Echo: false }:
+                OpenEuropePanel();
+                break;
         }
     }
 
@@ -108,7 +115,8 @@ public partial class GameController : Node2D
         }
 
         // Click a unit: select it. Click elsewhere with a selection: try to move.
-        Unit? unitOnTile = _game.Units.FirstOrDefault(u => u.Position == tile);
+        // Only on-map units are clickable (units in Europe / at sea live off-map).
+        Unit? unitOnTile = _game.Units.FirstOrDefault(u => u.IsOnMap && u.Position == tile);
         if (unitOnTile is not null)
         {
             _selectedUnit = unitOnTile;
@@ -160,6 +168,10 @@ public partial class GameController : Node2D
     public void OpenColonyPanel(Colony colony) =>
         ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView);
 
+    /// <summary>Opens the Europe screen (dock, recruits, ships in port). Public so scene tests can drive it.</summary>
+    public void OpenEuropePanel() =>
+        ((EuropePanel)_europePanel).Open(_game, RefreshView);
+
     private void QuickSave()
     {
         using var file = FileAccess.Open(QuickSavePath, FileAccess.ModeFlags.Write);
@@ -187,7 +199,7 @@ public partial class GameController : Node2D
         _mapView.ShowState(_game.Map, _game.Explored);
         SyncColonyMarkers();
 
-        Unit? unit = _game.Units.Count > 0 ? _game.Units[0] : null;
+        Unit? unit = _game.Units.FirstOrDefault(u => u.IsOnMap);
         _unitMarker.Visible = unit is not null;
         if (unit is not null)
         {
@@ -196,12 +208,15 @@ public partial class GameController : Node2D
             _unitMarker.SetUnitType(unit.Type.ShortName);
         }
 
+        int inEurope = _game.UnitsInEurope.Count();
         string subject = unit is not null
             ? $"{unit.Type.ShortName} on {_game.Map.TerrainAt(unit.Position).ShortName}, " +
               $"movement {unit.MovementLeft}/{unit.Type.Movement}"
             : _game.Colonies.Count > 0
                 ? $"{_game.Colonies[^1].Name} (pop {_game.Colonies[^1].Population})"
-                : "no units";
+                : inEurope > 0
+                    ? $"{inEurope} in Europe — press E"
+                    : "no units";
         string status =
             $"Turn {_game.Turn}   |   {subject}   |   seed {_currentSeed}" +
             "   |   B build colony, N new map, F5 save, F9 load";

@@ -66,14 +66,14 @@ A colonist can't swim the ocean — to move one across the sea you put it **on a
 |---|---|---|---|
 | L1 Unit | Always | `TransportTests`: spec capacity/carry-cost, board in Europe + on the map (adjacency), shared goods/passenger capacity, over-capacity rejection, aboard-unit guards, disembark to land + rejections (water/non-adjacent/in-Europe), disembark to dock, boarding frees the immigration penalty, save round-trip with a passenger, pre-v13 load | ✅ |
 | L2 Scenario | Always | `JourneyTests.Journey7` (board → sail home → mid-voyage acid round-trip → disembark → found); `SoakTests` still green | ✅ |
-| L3 Interaction | No UI yet | — (Europe screen is the next slice) | — |
-| L4 Visual | No screen yet | — | — |
+| L3 Interaction | Yes (Europe screen) | `EuropePanelTests.BoardThenSail_SendsAColonistHome` (board a colonist + sail via the real screen buttons) — see [europe.md](europe.md) | ✅ |
+| L4 Visual | UI hidden in goldens | — | — |
 
 - **FreeCol cross-check:** `space`/`spaceTaken` and `getSpaceTaken = max(spaceTaken, space+1)` from `UnitType.java`; capacity = `getCargoCapacity`, room test = `getSpaceLeft`/`canAdd` (`Unit.java`); goods pack at `GoodsContainer.CARGO_SIZE = 100`. Caravel `space=2`, colonist carry cost 1 — pinned in tests.
 
 ## 5. Open issues / TODO
 
-- [ ] **Europe screen UI** — board/disembark buttons, show passengers + free slots, off-map units (next slice).
+- [x] **Europe screen UI** — done ([europe.md](europe.md)): board passengers onto ships and sail them home from the Europe screen (passengers + free slots shown). *Map-side disembark/board UI (next to a coastal ship) is still to come.*
 - [ ] **Colonist in/out of a colony** — disembark straight into a colony (population +1) and embark a colonist from a colony.
 - [ ] Capacity-aware **auto-loading**; multi-ship cargo transfer; ship loss drowning its passengers.
 
