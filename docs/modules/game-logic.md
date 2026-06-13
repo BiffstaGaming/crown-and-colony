@@ -23,8 +23,9 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | `Randomness.RandomState` | Serializable generator snapshot |
 | `Specification.Ruleset` | Parsed rule data; `LoadClassic()` / `LoadEmbedded(resource)` / `Load(Stream)`; `Terrain(id)`, `Unit(id)` |
 | `Specification.GameVariant` / `GameVariants` | Selectable game variant (id, name, ruleset loader) + registry (`ClassicAmerica`, `All`, `Default`, `ById`, `Resolve`) — transposability backbone (ADR-018) |
-| `Specification.TerrainType` / `ProductionEntry` / `GoodsOutput` / `GenRanges` | Immutable terrain rule data incl. climate envelopes |
-| `Specification.UnitType` | Unit rule data (movement, sight, naval, foundColony, `RecruitProbability`, `IsPerson`, `Space`/`SpaceTaken`/`IsCarrier`/`CarrySlots`, `Price`/`IsPurchasable`) with `extends` inheritance resolved |
+| `Specification.TerrainType` / `ProductionEntry` / `GoodsOutput` / `GenRanges` | Immutable terrain rule data incl. climate envelopes + combat `DefenceBonus` |
+| `Specification.UnitType` | Unit rule data (movement, sight, naval, foundColony, `RecruitProbability`, `IsPerson`, `Space`/`SpaceTaken`/`IsCarrier`/`CarrySlots`, `Price`/`IsPurchasable`, `Offence`/`Defence`) with `extends` inheritance resolved |
+| `Combat.CombatModel` / `AttackContext` / `DefenceContext` / `CombatResult` / `MovementPenalty` | Pure combat model: attack/defence power, win odds (`att/(att+def)`), graded resolution (FreeCol `SimpleCombatModel`) |
 | `Specification.GoodsType` | Goods rule data: `is-food`, `stored-as`, `made-from`, breeding number, market seed |
 | `Specification.BuildingType` | Building rule data: conversions (with inputs), workplaces, upgrade chain, build cost |
 | `Specification.ResourceType` / `ResourceModifier` | Bonus-resource yield modifiers (goods, type, index, unit-type scopes) |
@@ -53,7 +54,7 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 
 ## Tests
 
-`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **276 tests** (274 L1+L2 incl. 10 E2E journeys + 2 nightly soak), all green as of 2026-06-14. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md).)
+`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **292 tests** (290 L1+L2 incl. 10 E2E journeys + 2 nightly soak), all green as of 2026-06-14. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md).)
 
 ## Changelog
 
@@ -67,3 +68,4 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | 2026-06-13 | Explored-vs-visible fog: `CurrentlyVisible`/`IsVisible` (units + colonies), colony reveal on founding | Phase 5 (fog upgrade) |
 | 2026-06-14 | Native interaction: alarm model (`AlarmLevel`, `ChangeNativeAlarm`, turn decay), `Visit` (tales + gift), `LearnSkill` (unit upgrade); save v16 | Phase 5 slice 3 |
 | 2026-06-14 | Native trade: sell cargo to a coastal settlement (`SellToNatives`/`NativeSalePrice`), wanted goods per settlement; save v17 | Phase 5 slice 4 |
+| 2026-06-14 | Combat foundation: parse unit offence/defence + terrain defence bonus; pure `CombatModel` (power, odds, graded resolution) | Phase 5 slice 5a |

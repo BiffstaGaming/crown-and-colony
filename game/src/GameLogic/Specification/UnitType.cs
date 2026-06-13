@@ -22,6 +22,15 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <param name="Space">Cargo capacity in hold slots when this unit is a carrier (spec <c>space</c>; caravel 2).</param>
 /// <param name="SpaceTaken">Raw hold slots this unit occupies when carried (spec <c>spaceTaken</c>; default 1).</param>
 /// <param name="Price">Europe purchase/training price in gold (spec <c>price</c>); 0 = not purchasable there.</param>
+/// <param name="Offence">
+/// Combat offence power (spec <c>offence</c> + the type's own offence <c>&lt;modifier&gt;</c>s folded in):
+/// free colonist 0, brave 1, veteran soldier 0 (×1.5 = 0), king's regular 4, artillery 7. Context modifiers
+/// (attack bonus, terrain, fortification, …) are applied by the combat model.
+/// </param>
+/// <param name="Defence">
+/// Combat defence power (spec <c>defence</c> + folded defence modifiers): free colonist 1, brave 1,
+/// veteran soldier 1.5, king's regular 5, artillery 5.
+/// </param>
 public sealed record UnitType(
     string Id,
     int Movement,
@@ -32,7 +41,9 @@ public sealed record UnitType(
     bool IsPerson = false,
     int Space = 0,
     int SpaceTaken = 1,
-    int Price = 0)
+    int Price = 0,
+    double Offence = 0,
+    double Defence = 0)
 {
     /// <summary>Short name derived from the id: <c>model.unit.freeColonist</c> → <c>freeColonist</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];

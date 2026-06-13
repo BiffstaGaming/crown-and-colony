@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (terrain incl. `<gen>` envelopes + resources, unit types, goods types incl. market/`stored-as`/`made-from`, building types, founding fathers incl. modifiers/abilities, resource types, native nation + settlement types) |
-| **Last verified** | 2026-06-13 @ Phase 5 slice 1 |
+| **Status** | Implemented (terrain incl. `<gen>` envelopes + resources + defence bonus, unit types incl. offence/defence, goods types incl. market/`stored-as`/`made-from`, building types, founding fathers incl. modifiers/abilities, resource types, native nation + settlement types) |
+| **Last verified** | 2026-06-14 @ Phase 5 slice 5a |
 | **Code** | `game/src/GameLogic/Specification/` |
 | **Tests** | `game/tests/GameLogic.Tests/Specification/RulesetTests.cs`, `NativeNationTypeTests.cs` |
 | **FreeCol reference** | `freecol/data/rules/classic/specification.xml` (copied to `game/data/rules/classic/`) |
@@ -62,3 +62,4 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 | 2026-06-13 | Unit `price` (Europe purchase/training cost) → `UnitType.Price`/`IsPurchasable` | Phase 4 slice 11 |
 | 2026-06-13 | Native nation types (`<indian-nation-type>`: settlement templates, number-of-settlements, aggression, skills, regions) + settlement types (`<settlement>`: sizes, radii, trade-bonus, defence modifier) with `extends` resolution; `NativeNationType`/`SettlementType`/`NativeSkill` | Phase 5 slice 1 |
 | 2026-06-13 | `Ruleset.LoadEmbedded` + variant selection (`GameVariant`/`GameVariants`) — spec chosen by game variant (ADR-018) | Phase 5 (variant layer) |
+| 2026-06-14 | Unit `offence`/`defence` (base + folded offence/defence modifiers → `UnitType.Offence`/`Defence`); terrain `model.modifier.defence` → `TerrainType.DefenceBonus` | Phase 5 slice 5a |

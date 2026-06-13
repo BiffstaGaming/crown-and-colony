@@ -18,6 +18,10 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <param name="Productions">What this terrain can produce when worked.</param>
 /// <param name="Gen">Climate envelope for map generation; null when the spec defines none.</param>
 /// <param name="Resources">Bonus resources that can appear on this terrain, with pick weights.</param>
+/// <param name="DefenceBonus">
+/// Percentage defence bonus a unit gains while standing here in combat (spec
+/// <c>model.modifier.defence</c>): plains 0, marsh/swamp 25, most forest 50, rainForest 75, hills 100.
+/// </param>
 public sealed record TerrainType(
     string Id,
     int MoveCost,
@@ -29,7 +33,8 @@ public sealed record TerrainType(
     bool IsConnected,
     IReadOnlyList<ProductionEntry> Productions,
     GenRanges? Gen,
-    IReadOnlyList<ResourceChance> Resources)
+    IReadOnlyList<ResourceChance> Resources,
+    double DefenceBonus = 0)
 {
     /// <summary>Short name derived from the id: <c>model.tile.plains</c> → <c>plains</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];

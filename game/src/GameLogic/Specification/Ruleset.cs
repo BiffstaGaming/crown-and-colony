@@ -368,7 +368,11 @@ public sealed class Ruleset
                 SpaceTaken: ResolveIntAttribute(el, "spaceTaken", elements) ?? 1,
                 // price = Europe purchase/training cost (0 if absent; manOWar uses
                 // mercenary-price, not price, so it stays non-purchasable here).
-                Price: ResolveIntAttribute(el, "price", elements) ?? 0);
+                Price: ResolveIntAttribute(el, "price", elements) ?? 0,
+                // Combat power: base offence/defence attribute folded with the type's own
+                // offence/defence modifiers (e.g. veteran soldier +50%, king's regular +4).
+                Offence: ResolveCombatValue(el, "offence", "model.modifier.offence", elements),
+                Defence: ResolveCombatValue(el, "defence", "model.modifier.defence", elements));
         }
 
         if (units.Count == 0)
@@ -376,6 +380,40 @@ public sealed class Ruleset
             throw new RulesetFormatException("Specification defines no concrete unit types.");
         }
         return units;
+    }
+
+    /// <summary>
+    /// A unit type's combat power: the base <paramref name="attribute"/> (resolved up the
+    /// extends chain) with the type's own offence/defence <c>&lt;modifier&gt;</c>s folded in
+    /// (additive then percentage, by ascending index — FreeCol applies these at indices 20/40),
+    /// e.g. the veteran soldier's +50% or the king's regular's +4.
+    /// </summary>
+    private static double ResolveCombatValue(
+        XElement el, string attribute, string modifierId, Dictionary<string, XElement> elements)
+    {
+        double power = ResolveIntAttribute(el, attribute, elements) ?? 0;
+        var modifiers = new List<(double Value, ModifierType Type, int Index)>();
+        for (XElement? current = el; current is not null; current = ParentOf(current, elements))
+        {
+            foreach (XElement m in current.Elements("modifier")
+                         .Where(m => (string?)m.Attribute("id") == modifierId))
+            {
+                modifiers.Add((
+                    (double?)m.Attribute("value") ?? 0,
+                    (string?)m.Attribute("type") switch
+                    {
+                        "multiplicative" => ModifierType.Multiplicative,
+                        "percentage" => ModifierType.Percentage,
+                        _ => ModifierType.Additive,
+                    },
+                    (int?)m.Attribute("index") ?? 0));
+            }
+        }
+        foreach ((double value, ModifierType type, int _) in modifiers.OrderBy(m => m.Index))
+        {
+            power = ModifierMath.Apply(type, power, value);
+        }
+        return power;
     }
 
     /// <summary>Walks the extends chain until an element defines the attribute. Defaults match FreeCol's UnitType.</summary>
@@ -452,7 +490,11 @@ public sealed class Ruleset
                 .Select(r => new ResourceChance(
                     RequiredAttribute(r, "type"),
                     (int?)r.Attribute("probability") ?? 100))
-                .ToList());
+                .ToList(),
+            // Combat defence bonus a unit gains while on this terrain (percentage modifier).
+            DefenceBonus: (double?)el.Elements("modifier")
+                .FirstOrDefault(m => (string?)m.Attribute("id") == "model.modifier.defence")
+                ?.Attribute("value") ?? 0);
     }
 
     /// <summary>
