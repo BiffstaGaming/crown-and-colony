@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Last verified** | 2026-06-13 @ Phase 5 slice 1 |
+| **Last verified** | 2026-06-14 @ Phase 5 (scene suite green through slice 5a; no presentation change since the fog upgrade) |
 | **Location** | `game/presentation/`, `game/scenes/` (project: `game/CrownAndColony.csproj`) |
 | **Layer** | Presentation (Godot) |
 | **Depends on** | `GameLogic`, Godot 4.6 |

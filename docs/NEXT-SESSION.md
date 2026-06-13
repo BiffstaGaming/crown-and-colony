@@ -1,25 +1,37 @@
 # New-session prompt
 
-Copy the block below into a fresh session. (CLAUDE.md auto-loads, so this focuses on *where we are* and *what to do next*.) Last updated 2026-06-13 after Phase 5 slice 1.
+Copy the block below into a fresh session. (CLAUDE.md auto-loads, so this focuses on *where we are* and *what to do next*.) Last updated 2026-06-14 after Phase 5 slice 5a.
 
 ---
 
-You're continuing work on **Crown & Colony** (a Godot 4 / C# remake of Sid Meier's Colonization, FreeCol as reference spec). Read `CLAUDE.md` first — it has the locked decisions, the non-standard toolchain paths, and the working rules. Then catch up via the ClickUp Space "Colonization": the **Session Log (doc 06, newest entry first)** and the **kanban** (`clickup_filter_tasks` on list `901615382059`). The **Roadmap is doc 01**.
+You're continuing work on **Crown & Colony** (a Godot 4 / C# remake of Sid Meier's Colonization, FreeCol as reference spec). Read `CLAUDE.md` first — locked decisions, the non-standard toolchain paths, working rules. Then catch up via the ClickUp Space "Colonization": the **Session Log (doc 06, newest entry first)** and the **kanban** (`clickup_filter_tasks` on list `901615382059`). The **Roadmap is doc 01**.
 
-**Where we are (2026-06-13):** Phases 0–4 are complete. **Phase 5 (other powers)** has begun — `[EPIC P5]` is decomposed (natives-first, incremental: Chris's call). **Slice 1 (native settlements) is done**: the 8 indigenous nations + camp/village/city settlement types parse from the spec, settlements are placed at map-gen (capital-first, min-distance, on a dedicated RNG stream) and render on the map with FreeCol indian art (fog-gated — discover them by exploring), save format **v14**. **250 tests** (229 logic incl. 10 E2E + 2 soak + 16 L3 scene + 3 L4 visual), all green, git clean. See `docs/systems/natives.md`.
+**Where we are (2026-06-14):** Phases 0–4 are complete. **Phase 5 (other powers)** is in progress, built **natives-first / incremental** (Chris's call): a minimal "owner" concept now, the full multi-player refactor deferred to the foreign-European slice. Shipped so far:
+- **Variant / game-mode selection layer (ADR-018)** — the transposability backbone. Selecting a `GameVariant` is the *only* thing that swaps the data; a test proves a different ruleset yields a different game. Saves record their variant (v15). *This was Chris's explicit requirement: American/Australian/etc. game modes each define their own Founding Fathers/nations/countries via data, not code.*
+- **Native settlements (1)** — 8 nations + camp/village/city types parsed, placed at map-gen, rendered with FreeCol art (fog-gated). Save v14.
+- **Fog upgrade (2)** — explored vs. currently-visible; remembered tiles dim.
+- **Native interaction (3)** — alarm/tension model, speak-with-chief (gift/tales), learn-skill. Save v16.
+- **Native trade (4)** — sell cargo to coastal settlements (wanted-goods premium pricing, no tax, builds goodwill). Save v17.
+- **Combat foundation (5a)** — unit offence/defence + terrain defence parsed; pure `CombatModel` (power, odds `att/(att+def)`, graded resolution), pinned to FreeCol's `SimpleCombatModel`.
+
+**312 automated tests** (290 L1+L2 incl. 10 E2E + 2 nightly soak + 16 L3 scene + 4 L4 visual), CI green, **save format v17**, git clean.
 
 **Do this next (Phase 5, natives-first order — kanban has the granular tasks):**
-1. **`[P5] Fog-of-war upgrade: explored vs. visible`** (`86d3b7qn8`): add per-turn visibility on top of permanent "explored"; dim explored-but-unseen tiles; the doc-flagged upgrade in `docs/systems/fog-of-war.md`.
-2. **`[P5] Native interaction`** (`86d3b7qpf`): tension/alarm model (FreeCol `Tension.java` thresholds) + visit a settlement (gifts/tales, learn the taught skill). Unblocks Pocahontas.
-3. **`[P5] Native trade`** (`86d3b7qre`), then **`[P5] Combat — land`** (`86d3b7qvd`) — note combat data is **not parsed yet** (offence/defence/role modifiers must be added to `Ruleset`/`UnitType` first). Then the big **foreign-European + multi-player refactor** (`86d3b7qwm`, decompose when reached) and the **deferred father effects** (`86d3b7qxr`).
+1. **Combat 5b — attack action** (`86d3b7qvd`): a minimal **unit-ownership** concept (player vs native), **brave units** for settlements, and `CheckAttack`/`Attack` resolving via `CombatModel` (use the main saved RNG); outcomes (demote/promote/capture via `UpgradeUnitType`); attacking a native raises alarm (`ChangeNativeAlarm`, FreeCol `TENSION_ADD_*`). Likely needs roles/equipment for armed soldiers. Unblocks **George Washington** (auto-promote) and **Paul Revere** (auto-arm).
+2. **Combat 5c** (`86d3bba2z`): settlement attack/plunder/destroy (parsed settlement defence + `<plunder>`), naval combat + evade/sink, foreign-unit combat. Unblocks **Drake** and **Cortés**.
+3. **Foreign European powers + the full multi-player refactor + basic AI** (`86d3b7qwm`) — the largest chunk; decompose when reached. Then the **deferred Founding-Father effects** (`86d3b7qxr`).
+4. Smaller queued: **native-interaction UI** (`86d3bb1wh`, on-map speak/learn panel — makes interaction playable), **native trade buy + inland/wagon trains** (in natives.md TODO), **transposability-tuning migration** (`86d3bb1x3`: move FreeCol-pinned constants — gift range, decay, alarm bands, combat modifiers, learner set — to ruleset data).
 
-**Awaiting Chris's playtest (don't mark done):** the **In Review** kanban items — the FreeCol art passes, the colony screen, the economy UI, and the Europe screen. Launch the game for him if he asks (`& "C:\Users\Chris\Tools\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64.exe" --path "C:\Users\Chris\Code\Colonization\game"`).
+**Then:** Phase 6 (independence & REF), Phase 7 (polish), Phase 8 (Australia variant = author a data set + register a `GameVariant`, *no engine rewrite* — the whole point of ADR-018).
 
-**Working rules that matter most here:**
-- **Docs are part of the change** (no-drift rule): a slice isn't done until its `docs/systems/<x>.md` (both layers + verification table + changelog), save-load changelog, kanban status, and session log are updated in the same work.
-- **Determinism (ADR-009):** all randomness via the injectable `IGameRandom`; no direct `Random`/`GD.Randf()`.
-- **Verify FreeCol numbers against source**, don't trust recall — and pin them in tests with the source line referenced.
-- **Definition of done = tests green at every required layer + docs synced + CI green.** Run `dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj` for logic; scene tests need a clean `godot --build-solutions` first (local discovery quirk — see Godot KB doc 04). Toolchain: prepend `C:\Users\Chris\.dotnet` to PATH + set `DOTNET_ROOT` (or dot-source `scripts/dev-env.ps1`).
-- **QA:** `docs/TEST-PLAN.md` (E2E journeys) and `docs/QA-REPORT.md` (results + screenshots) are the QA surfaces — keep them current.
+**How to work here (matters most):**
+- **Docs are part of the change** (no-drift): a slice isn't done until its `docs/systems/<x>.md` (both layers + verification + changelog), `save-load.md` if the format changed, the module docs, `QA-REPORT.md` counts, the kanban status, and a Session Log entry are updated *in the same work*.
+- **Determinism (ADR-009):** all randomness via the injectable `IGameRandom`. Native placement uses a separate stream (1); interaction/trade/combat use the **main saved RNG** so save/resume stays deterministic.
+- **Transposability (ADR-018):** new mechanics read ruleset data; FreeCol-pinned tuning constants are tracked for migration, not hard-coded as American-specific.
+- **Verify FreeCol numbers against `freecol/` source** and pin them in tests with the source referenced.
+- **Process used this phase (worked well):** for each substantive slice, a **research workflow** (parallel readers over FreeCol + our code) → implement → an **adversarial review workflow** → fix → commit. (Skip the review for pure-math slices already pinned by tests.)
+- **Definition of done = tests green at every required layer + docs synced + CI green.** Logic: `dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj`. Scene (L3/L4): `dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings` after a clean `godot --build-solutions` (+ `GODOT_BIN`). Toolchain: dot-source `scripts/dev-env.ps1` (prepends the user-local .NET 10 SDK + sets Godot paths). Chris has authorised **commit & push to `main` per slice**.
 
-Start by reading the latest Session Log entry and the open kanban, confirm the build + tests are green, then continue Phase 5 with the next slice (fog-of-war upgrade, or native interaction) — or ask me if you'd rather reprioritise.
+**Awaiting Chris's playtest (don't mark done):** the In Review kanban items — FreeCol art passes, colony screen, economy UI, Europe screen, native settlements. Native interaction / trade / combat have **no UI yet** (logic + tests only; the native-interaction UI is task `86d3bb1wh`). Launch the game if asked: `& "C:\Users\Chris\Tools\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64.exe" --path "C:\Users\Chris\Code\Colonization\game"` (launch detached — e.g. `Start-Process` — or the harness reaps it).
+
+Start by reading the latest Session Log entry + the open kanban, confirm the build + tests are green, then continue with **Combat 5b** — or ask me if you'd rather reprioritise (e.g. make the native interaction playable with its UI first).
