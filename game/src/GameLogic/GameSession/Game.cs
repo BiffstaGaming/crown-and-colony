@@ -205,11 +205,48 @@ public sealed class Game
     public NativeSettlement? NativeSettlementAt(Position p) =>
         _nativeSettlements.FirstOrDefault(s => s.Position == p);
 
-    /// <summary>Tiles the player has seen (fog of war).</summary>
+    /// <summary>Tiles the player has ever seen (permanent fog of war — stays on the map once revealed).</summary>
     public IReadOnlySet<Position> Explored => _explored;
 
-    /// <summary>Whether a tile has been revealed.</summary>
+    /// <summary>Whether a tile has ever been revealed.</summary>
     public bool IsExplored(Position p) => _explored.Contains(p);
+
+    /// <summary>How far a colony sees (FreeCol settlements carry a line of sight): its 3×3 surroundings.</summary>
+    public const int ColonySightRadius = 1;
+
+    /// <summary>
+    /// Tiles the player can see <em>right now</em> — within the line of sight of an
+    /// on-map unit or a colony. Always a subset of <see cref="Explored"/>; recomputed
+    /// from current positions (not stored, never stale). Explored-but-not-visible tiles
+    /// are "remembered" (drawn dimmed); foreign units there are hidden.
+    /// </summary>
+    public IReadOnlySet<Position> CurrentlyVisible
+    {
+        get
+        {
+            var visible = new HashSet<Position>();
+            foreach (Unit unit in _units)
+            {
+                if (unit.IsOnMap)
+                {
+                    visible.UnionWith(TilesInRange(unit.Position, unit.Type.LineOfSight));
+                }
+            }
+            foreach (Colony colony in _colonies)
+            {
+                visible.UnionWith(TilesInRange(colony.Position, ColonySightRadius));
+            }
+            return visible;
+        }
+    }
+
+    /// <summary>Whether a tile is currently in sight (not merely explored).</summary>
+    public bool IsVisible(Position p) =>
+        _units.Any(u => u.IsOnMap && InSight(u.Position, p, u.Type.LineOfSight))
+        || _colonies.Any(c => InSight(c.Position, p, ColonySightRadius));
+
+    private static bool InSight(Position centre, Position p, int radius) =>
+        Math.Abs(centre.X - p.X) <= radius && Math.Abs(centre.Y - p.Y) <= radius;
 
     /// <summary>
     /// Starts a new game: generates a map from the seed and places one starting
@@ -503,6 +540,7 @@ public sealed class Game
 
         _colonies.Add(colony);
         _units.Remove(unit);
+        RevealAround(colony.Position, ColonySightRadius); // the colony keeps its surroundings explored
         AutoAssignIdleToFood(colony);
         return colony;
     }
@@ -1599,18 +1637,29 @@ public sealed class Game
         }
     }
 
-    /// <summary>Reveals all tiles within the unit's line of sight.</summary>
-    private void Reveal(Unit unit)
+    /// <summary>Reveals (permanently explores) all tiles within the unit's line of sight.</summary>
+    private void Reveal(Unit unit) => RevealAround(unit.Position, unit.Type.LineOfSight);
+
+    /// <summary>Permanently explores every in-bounds tile within <paramref name="radius"/> of a centre.</summary>
+    private void RevealAround(Position centre, int radius)
     {
-        int r = unit.Type.LineOfSight;
-        for (int dy = -r; dy <= r; dy++)
+        foreach (Position p in TilesInRange(centre, radius))
         {
-            for (int dx = -r; dx <= r; dx++)
+            _explored.Add(p);
+        }
+    }
+
+    /// <summary>The in-bounds tiles within a square (Chebyshev) <paramref name="radius"/> of a centre.</summary>
+    private IEnumerable<Position> TilesInRange(Position centre, int radius)
+    {
+        for (int dy = -radius; dy <= radius; dy++)
+        {
+            for (int dx = -radius; dx <= radius; dx++)
             {
-                var p = new Position(unit.Position.X + dx, unit.Position.Y + dy);
+                var p = new Position(centre.X + dx, centre.Y + dy);
                 if (Map.InBounds(p))
                 {
-                    _explored.Add(p);
+                    yield return p;
                 }
             }
         }

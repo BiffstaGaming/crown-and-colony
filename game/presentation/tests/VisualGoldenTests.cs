@@ -98,6 +98,33 @@ public class VisualGoldenTests
         AssertGolden("native-settlement-seed424242", actual);
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task MapView_RememberedFog_MatchesGolden()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+
+        controller.GetWindow().Size = CaptureSize;
+        controller.GetNode<CanvasLayer>("UI").Visible = false;
+        controller.StartNewGame(GoldenSeed);
+        await runner.SimulateFrames(2);
+
+        // Step the colonist one tile onto a land neighbour, then refresh: the tiles it
+        // leaves behind become explored-but-not-visible and should render dimmed.
+        var game = GetGame(controller);
+        var unit = game.Units[0];
+        var origin = unit.Position;
+        var dest = origin.Neighbours().First(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater && game.CheckMove(unit, n).Allowed);
+        game.MoveUnit(unit, dest);
+        controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Camera2D>("Camera").Position = MapView.TileCentre(origin);
+        await runner.SimulateFrames(3);
+
+        Image actual = controller.GetViewport().GetTexture().GetImage();
+        AssertGolden("remembered-fog-seed424242", actual);
+    }
+
     private static CrownAndColony.GameLogic.GameSession.Game GetGame(GameController controller) =>
         (CrownAndColony.GameLogic.GameSession.Game)controller
             .GetType()

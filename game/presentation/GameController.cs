@@ -202,7 +202,7 @@ public partial class GameController : Node2D
 
     private void RefreshView()
     {
-        _mapView.ShowState(_game.Map, _game.Explored);
+        _mapView.ShowState(_game.Map, _game.Explored, _game.CurrentlyVisible);
         SyncColonyMarkers();
         SyncNativeMarkers();
 

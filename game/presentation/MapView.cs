@@ -19,8 +19,12 @@ public partial class MapView : Node2D
     /// <summary>Diamond tile height in pixels.</summary>
     public const int TileH = 64;
 
+    /// <summary>Modulate for explored-but-not-currently-visible tiles ("remembered" — darkened).</summary>
+    private static readonly Color DimTint = new(0.5f, 0.5f, 0.58f);
+
     private GameMap? _map;
     private IReadOnlySet<Position>? _explored;
+    private IReadOnlySet<Position>? _visible;
 
     // Forested/elevated terrain renders as a base tile + an overlay drawn on top.
     // Base mapping mirrors the classic ruleset's climate pairs (forest variants
@@ -109,11 +113,15 @@ public partial class MapView : Node2D
         return [.. variants];
     }
 
-    /// <summary>Assigns the map and exploration state to draw and triggers a redraw.</summary>
-    public void ShowState(GameMap map, IReadOnlySet<Position> explored)
+    /// <summary>
+    /// Assigns the map, the explored set (ever-seen) and the currently-visible set to
+    /// draw, then triggers a redraw. Explored-but-not-visible tiles render dimmed.
+    /// </summary>
+    public void ShowState(GameMap map, IReadOnlySet<Position> explored, IReadOnlySet<Position> visible)
     {
         _map = map;
         _explored = explored;
+        _visible = visible;
         QueueRedraw();
     }
 
@@ -146,15 +154,18 @@ public partial class MapView : Node2D
 
             if (_explored is not null && !_explored.Contains(p))
             {
-                DrawTile(_unexplored, variantSeed, centre);
+                DrawTile(_unexplored, variantSeed, centre, Colors.White);
                 continue;
             }
+
+            // Explored but out of current sight → "remembered": draw dimmed.
+            Color tint = _visible is not null && !_visible.Contains(p) ? DimTint : Colors.White;
 
             TerrainType terrain = _map.TerrainAt(p);
             string baseName = BaseFor.GetValueOrDefault(terrain.ShortName, terrain.ShortName);
             if (_bases.TryGetValue(baseName, out Texture2D[]? baseVariants))
             {
-                DrawTile(baseVariants, variantSeed, centre);
+                DrawTile(baseVariants, variantSeed, centre, tint);
             }
             else
             {
@@ -164,7 +175,7 @@ public partial class MapView : Node2D
 
             if (_overlays.TryGetValue(terrain.ShortName, out Texture2D[]? overlay))
             {
-                DrawTile(overlay, variantSeed, centre);
+                DrawTile(overlay, variantSeed, centre, tint);
             }
 
             // Bonus resource icon, centred on the diamond.
@@ -174,14 +185,14 @@ public partial class MapView : Node2D
                 if (_bonusIcons.TryGetValue(shortName, out Texture2D? icon))
                 {
                     Vector2 size = icon.GetSize();
-                    DrawTexture(icon, centre - size / 2f);
+                    DrawTexture(icon, centre - size / 2f, tint);
                 }
             }
         }
     }
 
-    /// <summary>Draws a tile texture bottom-aligned to the diamond (overlays are taller than 64px).</summary>
-    private void DrawTile(Texture2D[] variants, int variantSeed, Vector2 centre)
+    /// <summary>Draws a tile texture bottom-aligned to the diamond (overlays are taller than 64px), tinted by <paramref name="modulate"/>.</summary>
+    private void DrawTile(Texture2D[] variants, int variantSeed, Vector2 centre, Color modulate)
     {
         if (variants.Length == 0)
         {
@@ -189,7 +200,7 @@ public partial class MapView : Node2D
         }
         Texture2D texture = variants[(variantSeed & int.MaxValue) % variants.Length];
         Vector2 size = texture.GetSize();
-        DrawTexture(texture, new Vector2(centre.X - size.X / 2f, centre.Y + TileH / 2f - size.Y));
+        DrawTexture(texture, new Vector2(centre.X - size.X / 2f, centre.Y + TileH / 2f - size.Y), modulate);
     }
 
     private static Vector2[] DiamondPoints(Vector2 c) =>

@@ -1,6 +1,6 @@
 # QA Report — Crown & Colony
 
-> **Snapshot** taken 2026-06-13, latest on `main` (*Phase 5 — variant/game-mode selection layer (transposability)*).
+> **Snapshot** taken 2026-06-13, latest on `main` (*Phase 5 — explored-vs-visible fog of war*).
 > This is a committed, point-in-time QA snapshot combining **test results** and the **visual goldens** (screenshots) in one place.
 > **End-to-end journeys:** the connected player-journey coverage is specified in [TEST-PLAN.md](TEST-PLAN.md).
 > Regenerate after a green run with `dotnet test` + a `GOLDEN_UPDATE=1` golden pass (see [TESTING.md](TESTING.md)); the goldens below always show the *committed expected* render.
@@ -10,20 +10,20 @@
 
 | Layer | What it checks | Tooling | Count | Status | Where it runs |
 |---|---|---|---:|:--:|---|
-| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 235 | ✅ | every push |
-| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 235 | ✅ | every push |
-| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **235** | ✅ | every push |
+| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 239 | ✅ | every push |
+| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 239 | ✅ | every push |
+| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **239** | ✅ | every push |
 | ↳ of which **E2E journeys** | Connected player journeys, milestone-asserted ([TEST-PLAN.md](TEST-PLAN.md)) | xUnit `[Trait E2E]` | 10 | ✅ | every push |
 | **L3 Interaction** | Real scenes driven by simulated input/signals (incl. 1 scene E2E + the Europe screen) | GdUnit4 | 16 | ✅ | every push (CI) |
-| **L4 Visual** | Golden-screenshot diff of the rendered map | GdUnit4 + custom diff | 3 | ✅ | every push (CI) |
+| **L4 Visual** | Golden-screenshot diff of the rendered map | GdUnit4 + custom diff | 4 | ✅ | every push (CI) |
 | **L5 Soak** | 25-seed × 200-turn runs + per-turn perf budget | xUnit | 2 | ✅ | nightly |
-| | | | **256** | **all green** | |
+| | | | **261** | **all green** | |
 
 Reproduce locally (toolchain in [CLAUDE.md](../CLAUDE.md)):
 ```
-dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (235)
+dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (239)
 dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category=Soak"    # L5 (2)
-dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings                 # L3+L4 (19), needs GODOT_BIN
+dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings                 # L3+L4 (20), needs GODOT_BIN
 ```
 
 ## Visual goldens (committed screenshots)
@@ -45,6 +45,11 @@ What it verifies: a discovered native settlement renders — FreeCol indian-sett
 
 ![Native settlement golden](../game/tests/visual/goldens/native-settlement-seed424242.png)
 
+### Remembered fog — `remembered-fog-seed424242`
+What it verifies: after the colonist moves on, the tiles it leaves render **dimmed** (explored but no longer in sight) while the tiles around the unit stay full-bright.
+
+![Remembered fog golden](../game/tests/visual/goldens/remembered-fog-seed424242.png)
+
 Definitions (scene, seed, tolerance, human-check list): [docs/visual-tests/map-goldens.md](visual-tests/map-goldens.md).
 
 ## Per-system coverage
@@ -56,7 +61,7 @@ Each system doc carries a five-layer verification table; this is the index:
 | Randomness | [randomness.md](systems/randomness.md) | ✅ | ✅ | — | — |
 | Ruleset data | [ruleset-data.md](systems/ruleset-data.md) | ✅ | ✅ | — | — |
 | Map & terrain | [map-terrain.md](systems/map-terrain.md) | ✅ | ✅ | ⚠️ | ✅ |
-| Fog of war | [fog-of-war.md](systems/fog-of-war.md) | ✅ | ✅ | ✅ | ⬜ |
+| Fog of war | [fog-of-war.md](systems/fog-of-war.md) | ✅ | ✅ | ✅ | ✅ |
 | Units & movement | [units-movement.md](systems/units-movement.md) | ✅ | ✅ | ✅ | ⬜ |
 | Colonies & economy | [colonies.md](systems/colonies.md) | ✅ | ✅ | ✅ | ⬜ |
 | Market & treasury | [market.md](systems/market.md) | ✅ | ✅ | ✅ | — |
