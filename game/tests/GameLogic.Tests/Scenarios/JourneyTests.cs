@@ -1,0 +1,275 @@
+using CrownAndColony.GameLogic.Colonies;
+using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Persistence;
+using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.Units;
+using CrownAndColony.GameLogic.World;
+using Xunit;
+
+namespace CrownAndColony.GameLogic.Tests.Scenarios;
+
+/// <summary>
+/// End-to-end journeys (docs/TEST-PLAN.md): each test drives one complete player
+/// journey through the real Game API and asserts at every milestone that the step's
+/// output feeds the next — the gap that isolated slice tests and broad-invariant
+/// soak runs leave open. Seed-pinned and deterministic; map-dependent steps are
+/// guarded, not assumed.
+/// </summary>
+[Trait("Category", "E2E")]
+public class JourneyTests
+{
+    private static readonly Ruleset Classic = Ruleset.LoadClassic();
+
+    private const string Food = "model.goods.food";
+    private const string Grain = "model.goods.grain";
+    private const string Cotton = "model.goods.cotton";
+    private const string Lumber = "model.goods.lumber";
+    private const string Hammers = "model.goods.hammers";
+    private const string Bells = "model.goods.bells";
+    private const string Sugar = "model.goods.sugar";
+    private const ulong FoundSeed = 424242; // proven to start on settleable land
+
+    // ───────────────────────── Journey 1: Explore & found ─────────────────────────
+
+    [Fact]
+    public void Journey1_ExploreAndFoundAColony()
+    {
+        // M1 — new game.
+        var game = Game.New(Classic, seed: FoundSeed);
+        Assert.Equal(1, game.Turn);
+        Unit unit = Assert.Single(game.Units);
+        Assert.True(game.IsExplored(unit.Position), "start tile must be explored");
+        Assert.False(game.Map.TerrainAt(unit.Position).IsWater);
+        Assert.True(game.Map.TerrainAt(unit.Position).CanSettle);
+        Assert.True(game.Explored.Count >= 4);
+        Assert.All(game.Explored, p => Assert.True(game.Map.InBounds(p)));
+
+        // M2 — explore (guarded: a start tile can legally be boxed in).
+        int exploredBefore = game.Explored.Count;
+        Position startPos = unit.Position;
+        Position? step = unit.Position.Neighbours()
+            .Where(n => game.CheckMove(unit, n).Allowed)
+            .Cast<Position?>()
+            .FirstOrDefault();
+        if (step is not null)
+        {
+            game.MoveUnit(unit, step.Value);
+            Assert.Equal(step.Value, unit.Position);
+            Assert.True(game.Explored.Count > exploredBefore, "moving must reveal new tiles");
+            Assert.True(game.IsExplored(startPos) && game.IsExplored(unit.Position),
+                "no fog-of-war violation — every occupied tile stays revealed");
+        }
+
+        // M3 — found is legal.
+        Assert.True(game.CheckFoundColony(unit).Allowed);
+        Position foundedAt = unit.Position;
+
+        // M4 — found consumes the founder and creates the colony.
+        Colony colony = game.FoundColony(unit);
+        Assert.Empty(game.Units);
+        Colony onlyColony = Assert.Single(game.Colonies);
+        Assert.Same(colony, onlyColony);
+        Assert.Equal(foundedAt, colony.Position);
+        Assert.Equal(1, colony.Population);
+        Assert.False(string.IsNullOrEmpty(colony.Name));
+        Assert.Null(colony.CurrentBuild);
+
+        // M5 — free base buildings present (derived from the ruleset, not hard-coded).
+        var freeBase = Classic.BuildingTypes
+            .Where(b => b.BuildCost.Count == 0 && b.UpgradesFrom is null)
+            .Select(b => b.Id)
+            .ToList();
+        Assert.NotEmpty(freeBase);
+        Assert.All(freeBase, id =>
+            Assert.True(colony.HasBuilding(id), $"new colony must have free base building {id}"));
+
+        // M6 — auto-assignment (branched: a pop-1 colony may have no grain neighbour).
+        Assert.True(colony.TileWorkers.Count <= 1);
+        if (colony.TileWorkers.Count == 1)
+        {
+            (Position tile, string goods) = colony.TileWorkers.First();
+            Assert.Equal(Grain, goods);
+            Assert.True(tile.IsAdjacentTo(colony.Position));
+            Assert.True(game.TileYield(tile, Grain) > 0);
+            Assert.Equal(0, colony.IdleColonists);
+        }
+
+        // M7 — economy tick converts bells to liberty.
+        game.EndTurn();
+        Assert.Equal(2, game.Turn);
+        Assert.All(colony.Stores.Values, v => Assert.True(v >= 0, "no negative stores after the first tick"));
+        Assert.Equal(1, game.Liberty);              // town hall rang one bell → one liberty
+        Assert.Equal(0, colony.StoreOf(Bells));     // bells left the warehouse
+
+        // M8 — save/load acid test.
+        string json = SaveGame.From(game).ToJson();
+        Game reloaded = SaveGame.FromJson(json).Restore(Classic);
+        Assert.Equal(json, SaveGame.From(reloaded).ToJson());
+        Colony r = Assert.Single(reloaded.Colonies);
+        Assert.Equal(colony.Name, r.Name);
+        Assert.Equal(colony.Position, r.Position);
+        Assert.Equal(colony.Population, r.Population);
+        Assert.Equal(game.Liberty, reloaded.Liberty);
+    }
+
+    [Fact]
+    public void Journey1_IsDeterministic()
+    {
+        static string PlayAndSave()
+        {
+            var game = Game.New(Classic, seed: FoundSeed);
+            game.FoundColony(game.Units[0]);
+            game.EndTurn();
+            return SaveGame.From(game).ToJson();
+        }
+        Assert.Equal(PlayAndSave(), PlayAndSave());
+    }
+
+    // ───────────────────────── Journey 2: Colony economy ─────────────────────────
+
+    [Fact]
+    public void Journey2_RawToRefineToConstructToGrow()
+    {
+        // Deterministic fixture: a 3×3 all-plains map, pop-2 colony at the centre,
+        // free base buildings re-derived, no auto-assigned workers.
+        Game game = AllPlainsColony(population: 2);
+        Colony colony = game.Colonies[0];
+        Assert.True(colony.HasBuilding("model.building.townHall"));
+        Assert.True(colony.HasBuilding("model.building.carpenterHouse"));
+
+        // M1 — assign a farmer + a carpenter; raw tile yield AND building refinement
+        //      both reach the warehouse in one connected tick.
+        game.AssignWork(colony, new Position(0, 1), Grain);          // plains farm, yield 5
+        game.AssignBuildingWork(colony, "model.building.carpenterHouse");
+        colony.AddGoods(Lumber, 10);
+
+        game.EndTurn();
+        Assert.Equal(3 + 5 - 4, colony.Food);       // centre 3 + farm 5 − two colonists eat 4
+        Assert.Equal(3, colony.StoreOf(Hammers));   // carpenter: 3 lumber → 3 hammers
+        Assert.Equal(7, colony.StoreOf(Lumber));    // 10 − 3 consumed
+        Assert.Equal(2, colony.StoreOf(Cotton));    // centre square's cotton, untouched
+
+        // M2 — queue a buildable, fund it, and watch construction complete.
+        game.UnassignBuildingWork(colony, "model.building.carpenterHouse"); // quiet the hammer noise
+        BuildingType target = Assert.Single(game.Buildables(colony).Take(1));
+        game.SetBuild(colony, target.Id);
+        foreach (GoodsOutput cost in target.BuildCost)
+        {
+            colony.AddGoods(cost.GoodsId, cost.Amount);
+        }
+        Assert.False(colony.HasBuilding(target.Id));
+        game.EndTurn();
+        Assert.True(colony.HasBuilding(target.Id), $"{target.ShortName} should be built");
+        Assert.Null(colony.CurrentBuild);
+
+        // M3 — a food surplus raises a new colonist.
+        int popBefore = colony.Population;
+        colony.AddGoods(Food, 200);
+        game.EndTurn();
+        Assert.Equal(popBefore + 1, colony.Population);
+
+        // M4 — round-trip.
+        string json = SaveGame.From(game).ToJson();
+        Assert.Equal(json, SaveGame.From(SaveGame.FromJson(json).Restore(Classic)).ToJson());
+    }
+
+    // ───────────────────────── Journey 3: Trade to treasury ─────────────────────────
+
+    [Fact]
+    public void Journey3_ProduceSellPriceTaxTreasury()
+    {
+        // Sugar seeded into the store stands in for production (Journey 2 proves that).
+        var game = Game.New(Classic, seed: 7, startingGold: 0, startingTax: 0);
+        Colony colony = game.FoundColony(game.Units[0]);
+        colony.AddGoods(Sugar, 50);
+
+        int initialAmount = game.Market.AmountInMarket(Sugar);
+        int initialBid = game.Market.BidPrice(Sugar);
+
+        // M1 — sell: the store empties and the treasury gains exactly the credit.
+        int credited = game.SellColonyGoods(colony, Sugar, 50);
+        Assert.Equal(0, colony.StoreOf(Sugar));
+        Assert.Equal(credited, game.Gold);
+        Assert.Equal(50 * initialBid, credited); // 50 < one chunk, no tax → full revenue
+
+        // M2 — the price moved: more sugar in Europe, bid no higher than before.
+        Assert.True(game.Market.AmountInMarket(Sugar) > initialAmount);
+        Assert.True(game.Market.BidPrice(Sugar) <= initialBid);
+
+        // M3 — tax is applied (a fresh game with 50% tax).
+        var taxed = Game.New(Classic, seed: 7, startingGold: 0, startingTax: 50);
+        Colony taxedColony = taxed.FoundColony(taxed.Units[0]);
+        taxedColony.AddGoods(Sugar, 50);
+        int taxedCredit = taxed.SellColonyGoods(taxedColony, Sugar, 50);
+        Assert.Equal(50 * initialBid / 2, taxedCredit); // (100−50)% truncated
+        Assert.Equal(taxedCredit, taxed.Gold);
+
+        // M4 — round-trip preserves treasury + moved market.
+        string json = SaveGame.From(game).ToJson();
+        Game reloaded = SaveGame.FromJson(json).Restore(Classic);
+        Assert.Equal(game.Gold, reloaded.Gold);
+        Assert.Equal(game.Market.AmountInMarket(Sugar), reloaded.Market.AmountInMarket(Sugar));
+    }
+
+    // ───────────────────────── Journey 4: Liberty & elections ─────────────────────────
+
+    [Fact]
+    public void Journey4_TwoSequentialFatherElectionsWithCostEscalation()
+    {
+        var game = Game.New(Classic, seed: 42);
+        game.FoundColony(game.Units[0]);
+
+        // M1 — first election: choose a father, accrue 1 liberty/turn (town hall), elect at 24.
+        string father1 = game.OfferedFathers[0];
+        game.ChooseFather(father1);
+        for (int t = 0; t < 60 && game.Congress.Count == 0; t++)
+        {
+            game.EndTurn();
+        }
+        Assert.Equal(new[] { father1 }, game.Congress.ToArray());
+        Assert.True(game.Liberty < 24, "liberty resets after election");
+        Assert.DoesNotContain(father1, game.OfferedFathers);
+
+        // M2 — cost escalation asserted directly (count 1 → 2·2·24+1 = 97).
+        Assert.Equal(97, game.TotalFoundingFatherCost());
+
+        // M3 — second election: the next father costs more and both are retained.
+        string father2 = game.OfferedFathers[0];
+        game.ChooseFather(father2);
+        for (int t = 0; t < 200 && game.Congress.Count == 1; t++)
+        {
+            game.EndTurn();
+        }
+        Assert.Equal(2, game.Congress.Count);
+        Assert.Contains(father1, game.Congress);
+        Assert.Contains(father2, game.Congress);
+        Assert.DoesNotContain(father2, game.OfferedFathers);
+
+        // M4 — round-trip AFTER an election (no other test does this).
+        string json = SaveGame.From(game).ToJson();
+        Game reloaded = SaveGame.FromJson(json).Restore(Classic);
+        Assert.Equal(json, SaveGame.From(reloaded).ToJson());
+        Assert.Equal(game.Congress, reloaded.Congress);
+    }
+
+    // ───────────────────────── fixtures ─────────────────────────
+
+    /// <summary>A pop-N colony at the centre of a 3×3 all-plains map (free base buildings re-derived).</summary>
+    private static Game AllPlainsColony(int population)
+    {
+        string[] terrain = Enumerable.Repeat("model.tile.plains", 9).ToArray();
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 3,
+            MapHeight = 3,
+            Terrain = terrain,
+            Units = [],
+            Explored = [],
+            Colonies = [new SavedColony(1, "Econtown", 1, 1, population)],
+        };
+        return save.Restore(Classic);
+    }
+}

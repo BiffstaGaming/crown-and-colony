@@ -3,6 +3,7 @@
 Binding, same status as `DOCUMENTATION.md`. Defines the five-layer test pyramid, required coverage, and CI gates. "Tests pass" in this project means **behavior verified at every required layer**, never "it compiles."
 
 > **Latest results + screenshots:** see [QA-REPORT.md](QA-REPORT.md) for a point-in-time snapshot (test counts per layer + the visual goldens embedded), and the [CI runs](https://github.com/BiffstaGaming/crown-and-colony/actions) for always-current pass/fail.
+> **End-to-end journeys:** [TEST-PLAN.md](TEST-PLAN.md) specifies the connected player-journey tests (a `[Trait("Category","E2E")]` category within L2, plus one representative L3 scene journey) — milestone-asserted, not just end-state invariants.
 
 ## Foundational rule: determinism (ADR-009)
 
