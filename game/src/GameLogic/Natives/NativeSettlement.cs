@@ -100,4 +100,23 @@ public sealed class NativeSettlement
 
     /// <summary>True once this settlement's <see cref="LearnableSkill"/> has been taught (capitals never consume theirs).</summary>
     public bool SkillConsumed { get; internal set; }
+
+    /// <summary>
+    /// The goods this settlement most wants to buy (FreeCol <c>wantedGoods</c>, up to 3,
+    /// most-wanted first). Selling a wanted good earns a premium (150/125/110%).
+    /// </summary>
+    public IReadOnlyList<string> WantedGoods { get; internal set; } = [];
+
+    /// <summary>The wanted-good slot of a goods id (0 = most wanted), or -1 if not wanted.</summary>
+    public int WantedSlot(string goodsId)
+    {
+        for (int i = 0; i < WantedGoods.Count; i++)
+        {
+            if (WantedGoods[i] == goodsId)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
 }

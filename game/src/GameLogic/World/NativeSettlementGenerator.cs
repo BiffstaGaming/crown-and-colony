@@ -35,9 +35,39 @@ public static class NativeSettlementGenerator
     /// <summary>
     /// Generates the native settlements for a map. <paramref name="excluded"/> are
     /// tiles to stay clear of (the player's landing site and its surrounds). Returns
-    /// settlements with ids assigned from 1.
+    /// settlements with ids assigned from 1, each with its wanted goods.
     /// </summary>
     public static List<NativeSettlement> Place(
+        Ruleset ruleset, GameMap map, IGameRandom random, IReadOnlySet<Position> excluded)
+    {
+        List<NativeSettlement> settlements = PlaceSettlements(ruleset, map, random, excluded);
+        AssignWantedGoods(settlements, ruleset, random);
+        return settlements;
+    }
+
+    /// <summary>
+    /// Gives each settlement up to 3 wanted goods (FreeCol <c>wantedGoods</c>) — drawn
+    /// <em>after</em> placement so the placement RNG sequence (positions/sizes/skills) is
+    /// unchanged. FreeCol picks the top-3 by buy-price (settlement-stock-dependent); we
+    /// don't model settlement stock yet, so we draw 3 distinct tradeable goods.
+    /// </summary>
+    private static void AssignWantedGoods(
+        List<NativeSettlement> settlements, Ruleset ruleset, IGameRandom random)
+    {
+        var tradeable = ruleset.GoodsTypes.Where(g => g.Market is not null).Select(g => g.Id).ToList();
+        if (tradeable.Count == 0)
+        {
+            return;
+        }
+        foreach (NativeSettlement settlement in settlements)
+        {
+            var pool = new List<string>(tradeable);
+            Shuffle(pool, random);
+            settlement.WantedGoods = pool.Take(Math.Min(3, pool.Count)).ToList();
+        }
+    }
+
+    private static List<NativeSettlement> PlaceSettlements(
         Ruleset ruleset, GameMap map, IGameRandom random, IReadOnlySet<Position> excluded)
     {
         var settlements = new List<NativeSettlement>();

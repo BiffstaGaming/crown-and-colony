@@ -339,6 +339,80 @@ public sealed class Game
         return expert;
     }
 
+    /// <summary>Base price per good unit in native trade (FreeCol <c>IndianSettlement.GOODS_BASE_PRICE</c>).</summary>
+    private const int NativeGoodsBasePrice = 12;
+
+    /// <summary>
+    /// What a settlement pays for <paramref name="amount"/> of <paramref name="goodsId"/> you sell it
+    /// (FreeCol <c>getPriceToSell</c> ≈ <c>amount + 11·getPriceToBuy/10</c>): a per-unit base of
+    /// <c>12 + the settlement's trade bonus</c>, times a wanted-goods premium (150 / 125 / 110% for its
+    /// 1st / 2nd / 3rd wanted good). Settlement goods stock — which lowers the price as they fill up — is
+    /// not modelled yet, so the price assumes they still want it.
+    /// </summary>
+    public int NativeSalePrice(NativeSettlement settlement, string goodsId, int amount)
+    {
+        int full = NativeGoodsBasePrice + Ruleset.Settlement(settlement.SettlementTypeId).TradeBonus;
+        int wantedMultiplier = settlement.WantedSlot(goodsId) switch
+        {
+            0 => 150,
+            1 => 125,
+            2 => 110,
+            _ => 100,
+        };
+        int perUnit = full * wantedMultiplier / 100;
+        return amount + (11 * perUnit * amount) / 10;
+    }
+
+    /// <summary>Whether <paramref name="ship"/> may sell <paramref name="amount"/> of a good to <paramref name="settlement"/> now.</summary>
+    public MoveCheck CheckSellToNatives(Unit ship, NativeSettlement settlement, string goodsId, int amount)
+    {
+        if (!ship.Type.IsCarrier || !ship.IsOnMap)
+        {
+            return MoveCheck.No("Only a ship on the map can trade with a settlement.");
+        }
+        if (ship.Position != settlement.Position && !ship.Position.IsAdjacentTo(settlement.Position))
+        {
+            return MoveCheck.No("The ship must be next to the settlement to trade.");
+        }
+        if (settlement.AlarmLevel >= AlarmLevel.Angry)
+        {
+            return MoveCheck.No("The settlement is too hostile to trade.");
+        }
+        if (amount <= 0)
+        {
+            return MoveCheck.No("Nothing to sell.");
+        }
+        if (ship.CargoOf(goodsId) < amount)
+        {
+            return MoveCheck.No($"The ship is not carrying {amount} {goodsId}.");
+        }
+        return MoveCheck.Yes(NativeSalePrice(settlement, goodsId, amount));
+    }
+
+    /// <summary>
+    /// Sells goods from a ship's hold to an adjacent native settlement for gold (no European tax),
+    /// at the native price. Trading builds goodwill (lowers the settlement's alarm) and ends the
+    /// ship's turn. (Buying from settlements needs a settlement goods-stock model — a later slice;
+    /// inland settlements need wagon trains, also later, so only coastal settlements are reachable today.)
+    /// </summary>
+    /// <returns>The gold received.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckSellToNatives"/>.</exception>
+    public int SellToNatives(Unit ship, NativeSettlement settlement, string goodsId, int amount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
+        MoveCheck check = CheckSellToNatives(ship, settlement, goodsId, amount);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        int price = check.Cost;
+        ship.AddCargo(goodsId, -amount);
+        Gold += price; // natives pay in gold; no European market tax
+        ChangeNativeAlarm(settlement, -Math.Max(1, price / 50)); // goodwill (FreeCol ALARM_BONUS_SELL ≈ 20% → price/50; min 1 per trade)
+        ship.MovementLeft = 0; // opening a trade session ends the ship's turn
+        return price;
+    }
+
     /// <summary>
     /// Replaces a unit with one of a new type, keeping its id, position, location, carrier
     /// and cargo (units are immutable in their <see cref="Unit.Type"/>, so an upgrade is a swap).
