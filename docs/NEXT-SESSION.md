@@ -1,6 +1,6 @@
 # New-session prompt
 
-Copy the block below into a fresh session. (CLAUDE.md auto-loads, so this focuses on *where we are* and *what to do next*.) Last updated 2026-06-14 after Phase 5 slice 5a.
+Copy the block below into a fresh session. (CLAUDE.md auto-loads, so this focuses on *where we are* and *what to do next*.) Last updated 2026-06-14 after Phase 5 slice 5b.
 
 ---
 
@@ -13,14 +13,14 @@ You're continuing work on **Crown & Colony** (a Godot 4 / C# remake of Sid Meier
 - **Native interaction (3)** — alarm/tension model, speak-with-chief (gift/tales), learn-skill. Save v16.
 - **Native trade (4)** — sell cargo to coastal settlements (wanted-goods premium pricing, no tax, builds goodwill). Save v17.
 - **Combat foundation (5a)** — unit offence/defence + terrain defence parsed; pure `CombatModel` (power, odds `att/(att+def)`, graded resolution), pinned to FreeCol's `SimpleCombatModel`.
+- **Combat — attack action (5b)** — unit ownership (`OwnerNationId`; `PlayerUnits`/`NativeUnits`) + roles/equipment (`RoleType`, `UnitChange`, `EquipRole`), brave defenders (one per settlement, fog-excluded), `CheckAttack`/`Attack` with the faithful FreeCol loser/winner precedence (slaughter / disarm + equipment-capture / capture-unit / demote / promote), native alarm on attack (+200/+400), George Washington (auto-promote) + Paul Revere (auto-arm). Save v18. *Player-initiated open-field combat vs braves only — settlements/naval/foreign/native-AI are 5c.*
 
-**312 automated tests** (290 L1+L2 incl. 10 E2E + 2 nightly soak + 16 L3 scene + 4 L4 visual), CI green, **save format v17**, git clean.
+**352 automated tests** (330 L1+L2 incl. 10 E2E + 2 nightly soak + 16 L3 scene + 4 L4 visual), CI green, **save format v18**, git clean.
 
 **Do this next (Phase 5, natives-first order — kanban has the granular tasks):**
-1. **Combat 5b — attack action** (`86d3b7qvd`): a minimal **unit-ownership** concept (player vs native), **brave units** for settlements, and `CheckAttack`/`Attack` resolving via `CombatModel` (use the main saved RNG); outcomes (demote/promote/capture via `UpgradeUnitType`); attacking a native raises alarm (`ChangeNativeAlarm`, FreeCol `TENSION_ADD_*`). Likely needs roles/equipment for armed soldiers. Unblocks **George Washington** (auto-promote) and **Paul Revere** (auto-arm).
-2. **Combat 5c** (`86d3bba2z`): settlement attack/plunder/destroy (parsed settlement defence + `<plunder>`), naval combat + evade/sink, foreign-unit combat. Unblocks **Drake** and **Cortés**.
-3. **Foreign European powers + the full multi-player refactor + basic AI** (`86d3b7qwm`) — the largest chunk; decompose when reached. Then the **deferred Founding-Father effects** (`86d3b7qxr`).
-4. Smaller queued: **native-interaction UI** (`86d3bb1wh`, on-map speak/learn panel — makes interaction playable), **native trade buy + inland/wagon trains** (in natives.md TODO), **transposability-tuning migration** (`86d3bb1x3`: move FreeCol-pinned constants — gift range, decay, alarm bands, combat modifiers, learner set — to ruleset data).
+1. **Combat 5c** (`86d3bba2z`): settlement attack/plunder/destroy (parsed settlement defence + `<plunder>`), naval combat + evade/sink, foreign-unit combat, **native-initiated attacks (native AI)**, **nation-level tension propagation**. Unblocks **Drake** and **Cortés**, and exercises the capture-unit + Revere paths end-to-end. (Brave-on-settlement-tile settlement-defence bonus, `getSlaughterTension` routing, Revere musket persistence, and the veteran+role percentage path are now all handled or scoped here — see `docs/systems/combat.md` §5.)
+2. **Foreign European powers + the full multi-player refactor + basic AI** (`86d3b7qwm`) — the largest chunk; decompose when reached. Then the **deferred Founding-Father effects** (`86d3b7qxr`).
+3. Smaller queued: **native-interaction UI** (`86d3bb1wh`, on-map speak/learn panel — makes interaction playable), **native trade buy + inland/wagon trains** (in natives.md TODO), **transposability-tuning migration** (`86d3bb1x3`: move FreeCol-pinned constants — gift range, decay, alarm bands, combat modifiers, learner set — to ruleset data), **apply role movement bonuses** (`86d3bbvv6`).
 
 **Then:** Phase 6 (independence & REF), Phase 7 (polish), Phase 8 (Australia variant = author a data set + register a `GameVariant`, *no engine rewrite* — the whole point of ADR-018).
 
@@ -34,4 +34,4 @@ You're continuing work on **Crown & Colony** (a Godot 4 / C# remake of Sid Meier
 
 **Awaiting Chris's playtest (don't mark done):** the In Review kanban items — FreeCol art passes, colony screen, economy UI, Europe screen, native settlements. Native interaction / trade / combat have **no UI yet** (logic + tests only; the native-interaction UI is task `86d3bb1wh`). Launch the game if asked: `& "C:\Users\Chris\Tools\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64.exe" --path "C:\Users\Chris\Code\Colonization\game"` (launch detached — e.g. `Start-Process` — or the harness reaps it).
 
-Start by reading the latest Session Log entry + the open kanban, confirm the build + tests are green, then continue with **Combat 5b** — or ask me if you'd rather reprioritise (e.g. make the native interaction playable with its UI first).
+Start by reading the latest Session Log entry + the open kanban, confirm the build + tests are green, then continue with **Combat 5c** — or ask me if you'd rather reprioritise (e.g. make the native interaction/combat playable with UI first).
