@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -11,10 +12,10 @@ using static GdUnit4.Assertions;
 namespace CrownAndColony.Presentation.Tests;
 
 /// <summary>
-/// L3 tests for the Europe screen: recruiting from the dock and boarding a
-/// colonist onto a ship to sail home — all via the real UI controls. The Europe
-/// state is injected (a constructed <see cref="Game"/>) so the seam is exercised
-/// deterministically without playing turns to reach it.
+/// L3 tests for the Europe screen: recruiting from the dock, boarding a colonist
+/// to sail home, and selling/buying goods — all via the real UI controls. The
+/// Europe state is injected (a constructed <see cref="Game"/>) so the seam is
+/// exercised deterministically without playing turns to reach it.
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -22,6 +23,7 @@ public class EuropePanelTests
 {
     private const string Caravel = "model.unit.caravel";
     private const string Colonist = "model.unit.freeColonist";
+    private const string Sugar = "model.goods.sugar";
 
     [TestCase(Timeout = 60000)]
     public async Task RecruitButton_BuysAColonistIntoEurope()
@@ -78,6 +80,56 @@ public class EuropePanelTests
         sail.EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
         AssertThat(ship.Location).IsEqual(UnitLocation.SailingToNewWorld);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task SellButton_SellsCargo_AndCreditsTreasury()
+    {
+        // A caravel in Europe carrying 100 sugar.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units =
+            [
+                new SavedUnit(1, Caravel, 0, 0, 12, (int)UnitLocation.InEurope, 0,
+                    new Dictionary<string, int> { [Sugar] = 100 }),
+            ],
+            Explored = [],
+        });
+        Unit ship = game.Units[0];
+
+        Button sell = FindButton(controller, "Sell_1_sugar")!;
+        AssertThat(sell).IsNotNull();
+        sell.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.Gold).IsEqual(200);            // 100 sugar × bid 2, no tax
+        AssertThat(ship.CargoOf(Sugar)).IsEqual(0);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task BuyDropdown_BuysGoodsIntoTheHold()
+    {
+        // A caravel in Europe and a treasury.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units = [new SavedUnit(1, Caravel, 0, 0, 12, (int)UnitLocation.InEurope)],
+            Explored = [], Gold = 1000,
+        });
+        Unit ship = game.Units[0];
+        int goldBefore = game.Gold;
+
+        var buy = controller.GetNode<PanelContainer>("UI/EuropePanel")
+            .FindChild("Buy_1", recursive: true, owned: false) as OptionButton;
+        AssertThat(buy).IsNotNull();
+        buy!.EmitSignal(OptionButton.SignalName.ItemSelected, 1L); // the first tradeable good, ×100
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.Gold < goldBefore).IsTrue();          // gold was spent
+        AssertThat(game.CargoSlotsUsed(ship) > 0).IsTrue();   // goods are now aboard
     }
 
     private static async Task<(ISceneRunner, GameController, Game)> OpenEurope(SaveGame state)

@@ -15,7 +15,7 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 
 **Worked example:** a caravel loads 100 sugar at your port, sails to the edge, crosses to Europe over three turns, sells the sugar for 200 gold, and sails home — re-appearing on the high-seas tile it departed from.
 
-**The Europe screen:** click **Europe** (or press **E**) to open it. It shows your treasury, the immigration clock, the **recruitment dock** (three colonists, each with its current price), the **ships in port** (with their holds and a *Sail to New World* button), and the **colonists on the dock** (each with a *Board* button per ship that has room). It's the one place you recruit colonists, put them on a ship, and send them home. Units in Europe are *not* drawn on the map — they live on this screen.
+**The Europe screen:** click **Europe** (or press **E**) to open it. It shows your treasury, the immigration clock, the **recruitment dock** (three colonists, each with its current price), the **ships in port** (each with its hold, a *Sail to New World* button, its passengers, its **cargo with Sell buttons**, and a **Buy goods** dropdown), and the **colonists on the dock** (each with a *Board* button per ship that has room). It's the one place you recruit colonists, trade goods, put colonists on a ship, and send them home. Units in Europe are *not* drawn on the map — they live on this screen.
 
 ## 2. Detailed rules
 
@@ -36,7 +36,7 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 - `Unit` gains `Location` (`UnitLocation`: OnMap / SailingToEurope / InEurope / SailingToNewWorld), `SailTurnsRemaining`, and a goods `Cargo` hold (`AddCargo`/`CargoOf`). `IsOnMap` gates map interactions.
 - `Game`: `SailTurns` (3); `CheckSailToEurope`/`SailToEurope`, `SailToNewWorld`, `LoadFromColony`, `SellShipCargo`, `CheckBuyEuropeGoods`/`BuyEuropeGoods`, `UnitsInEurope`. `AdvanceSailing` runs in `EndTurn` (decrement, then dock in Europe or re-enter the map). `CheckMove` rejects off-map units.
 - **Persistence:** save v11 stores each unit's location, sail turns, and cargo; pre-v11 units load on-map with empty holds.
-- **Europe screen UI:** `EuropePanel` (a `PanelContainer`, like `ColonyPanel`) renders `UnitsInEurope` + `RecruitDock`/`RecruitPrice`/`Immigration` and forwards clicks to `Recruit`, `Board`, `DisembarkToDock`, `SailToNewWorld` — all Game oracles, no rules in the scene (ADR-006). Opened from `GameController` (the **Europe** button / **E** key). The map view renders only on-map units; off-map units appear on this screen.
+- **Europe screen UI:** `EuropePanel` (a `PanelContainer`, like `ColonyPanel`) renders `UnitsInEurope` + `RecruitDock`/`RecruitPrice`/`Immigration` and forwards clicks to `Recruit`, `Board`, `DisembarkToDock`, `SailToNewWorld`, plus per-ship cargo `SellShipCargo` and a Buy-goods dropdown (`BuyEuropeGoods`, 100/pick) — all Game oracles, no rules in the scene (ADR-006). Opened from `GameController` (the **Europe** button / **E** key). The map view renders only on-map units; off-map units appear on this screen.
 
 ## 4. Verification
 
@@ -44,7 +44,7 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 |---|---|---|---|
 | L1 Unit | Always | `SailingTests`: 3-turn crossing each way, sail-eligibility (naval + high-seas), load/sell/buy validation, buy doesn't move price, off-map can't move | ✅ |
 | L2 Scenario | Always | `SailingTests.FullTradeVoyage` + `JourneyTests.Journey3b` (load→sail→sell→return, incl. mid-voyage save acid test) | ✅ |
-| L3 Interaction | Yes (Europe screen) | `EuropePanelTests`: recruit-from-dock buys a colonist into Europe (gold debited); board-then-sail sends a colonist home — driven through the real scene buttons | ✅ |
+| L3 Interaction | Yes (Europe screen) | `EuropePanelTests`: recruit-from-dock (gold debited); board-then-sail sends a colonist home; **sell cargo** credits the treasury; **buy-goods dropdown** loads the hold — all through the real scene controls | ✅ |
 | L4 Visual | UI hidden in goldens | — (L4 captures hide the UI layer; see [QA-REPORT](../QA-REPORT.md)) | — |
 
 - **FreeCol cross-check:** `SailTurns = 3` from `TURNS_TO_SAIL` (`Unit.java:2629`); buying-doesn't-move-price per `Market`/`Europe` behaviour.
@@ -62,3 +62,4 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 | 2026-06-13 | Immigration & recruitment dock split into [immigration.md](immigration.md); save v12 | Phase 4 slice 4 |
 | 2026-06-13 | Cargo capacity now enforced; carrying colonists on ships split into [transport.md](transport.md); save v13 | Phase 4 slice 5 |
 | 2026-06-13 | Europe screen UI (`EuropePanel`): dock/recruit, ships in port, board/sail; off-map units rendered here (L3 tested) | Phase 4 slice 6 |
+| 2026-06-13 | Europe screen: per-ship goods trading — Sell cargo + Buy-goods dropdown (L3 tested) | Phase 4 slice 10 |

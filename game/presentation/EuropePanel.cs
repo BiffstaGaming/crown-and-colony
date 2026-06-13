@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using Godot;
 
@@ -114,6 +115,43 @@ public partial class EuropePanel : PanelContainer
                 }));
                 dynamic.AddChild(prow);
             }
+
+            // Cargo in the hold: sell each goods stack to the market.
+            foreach ((string goodsId, int amount) in ship.Cargo.OrderBy(kv => kv.Key))
+            {
+                var crow = new HBoxContainer();
+                crow.AddChild(Grow(new Label { Text = $"    {Short(goodsId)} {amount}" }));
+                if (_game.Market.IsTradeable(goodsId))
+                {
+                    string g = goodsId;
+                    int amt = amount;
+                    crow.AddChild(ActionButton($"Sell_{ship.Id}_{Short(goodsId)}",
+                        $"Sell ({_game.Market.BidPrice(goodsId)})", () =>
+                        {
+                            _game.SellShipCargo(sh, g, amt);
+                            Changed();
+                        }));
+                }
+                dynamic.AddChild(crow);
+            }
+
+            // Buy goods into this ship's hold (100 at a time, at the ask price).
+            var buyOptions = new OptionButton { Name = $"Buy_{ship.Id}" };
+            buyOptions.AddItem("Buy goods…");
+            var buyable = _game.Ruleset.GoodsTypes.Where(g => _game.Market.IsTradeable(g.Id)).ToList();
+            foreach (GoodsType g in buyable)
+            {
+                buyOptions.AddItem($"{g.ShortName} ×100 ({_game.Market.AskPrice(g.Id) * 100})");
+            }
+            buyOptions.ItemSelected += index =>
+            {
+                if (index > 0 && _game.CheckBuyEuropeGoods(sh, buyable[(int)index - 1].Id, 100).Allowed)
+                {
+                    _game.BuyEuropeGoods(sh, buyable[(int)index - 1].Id, 100);
+                    Changed();
+                }
+            };
+            dynamic.AddChild(buyOptions);
         }
 
         // — Colonists waiting on the dock —
