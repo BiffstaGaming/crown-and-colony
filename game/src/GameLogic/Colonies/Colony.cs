@@ -23,6 +23,8 @@ public sealed class Colony
 
     private readonly Dictionary<string, int> _stores = [];
     private readonly Dictionary<Position, string> _tileWorkers = [];
+    private readonly List<string> _buildings = [];
+    private readonly Dictionary<string, int> _buildingWorkers = [];
 
     /// <summary>Creates a colony.</summary>
     public Colony(int id, string name, Position position, int population)
@@ -60,8 +62,31 @@ public sealed class Colony
     /// </summary>
     public IReadOnlyDictionary<Position, string> TileWorkers => _tileWorkers;
 
-    /// <summary>Colonists without a tile assignment.</summary>
-    public int IdleColonists => Population - _tileWorkers.Count;
+    /// <summary>Colonists without a tile or building assignment.</summary>
+    public int IdleColonists => Population - _tileWorkers.Count - _buildingWorkers.Values.Sum();
+
+    /// <summary>Building type ids present in the colony, in construction order.</summary>
+    public IReadOnlyList<string> Buildings => _buildings;
+
+    /// <summary>Colonists working in buildings: building type id → worker count.</summary>
+    public IReadOnlyDictionary<string, int> BuildingWorkers => _buildingWorkers;
+
+    /// <summary>Whether the colony has a building.</summary>
+    public bool HasBuilding(string buildingId) => _buildings.Contains(buildingId);
+
+    internal void AddBuilding(string buildingId) => _buildings.Add(buildingId);
+
+    internal void SetBuildingWorkers(string buildingId, int workers)
+    {
+        if (workers <= 0)
+        {
+            _buildingWorkers.Remove(buildingId);
+        }
+        else
+        {
+            _buildingWorkers[buildingId] = workers;
+        }
+    }
 
     internal void SetWorker(Position tile, string goodsId) => _tileWorkers[tile] = goodsId;
 

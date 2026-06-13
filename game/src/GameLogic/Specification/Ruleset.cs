@@ -127,7 +127,8 @@ public sealed class Ruleset
                 IsFood: (bool?)el.Attribute("is-food") ?? false,
                 StoredAs: (string?)el.Attribute("stored-as") ?? id,
                 MadeFrom: (string?)el.Attribute("made-from"),
-                IsFarmed: (bool?)el.Attribute("is-farmed") ?? false);
+                IsFarmed: (bool?)el.Attribute("is-farmed") ?? false,
+                BreedingNumber: (int?)el.Attribute("breeding-number"));
         }
 
         var buildings = new Dictionary<string, BuildingType>();

@@ -11,12 +11,17 @@ namespace CrownAndColony.GameLogic.Specification;
 /// </param>
 /// <param name="MadeFrom">Raw input this refined goods is made from (null for raw goods).</param>
 /// <param name="IsFarmed">Produced by working tiles (vs manufactured in buildings).</param>
+/// <param name="BreedingNumber">
+/// Minimum stored amount before auto-production breeds more (horses: 2);
+/// null for goods that don't breed.
+/// </param>
 public sealed record GoodsType(
     string Id,
     bool IsFood,
     string StoredAs,
     string? MadeFrom,
-    bool IsFarmed)
+    bool IsFarmed,
+    int? BreedingNumber)
 {
     /// <summary>Short name derived from the id: <c>model.goods.food</c> → <c>food</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];

@@ -17,12 +17,12 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = 6;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
     /// v2 lacked <see cref="Colonies"/>; v3 colonies lacked goods stores;
-    /// v4 lacked tile workers.
+    /// v4 lacked tile workers; v5 lacked buildings.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -87,7 +87,9 @@ public sealed record SaveGame
                     c.Stores.Count > 0 ? new Dictionary<string, int>(c.Stores) : null,
                     c.TileWorkers.Count > 0
                         ? c.TileWorkers.Select(w => new SavedWorker(w.Key.X, w.Key.Y, w.Value)).ToList()
-                        : null))
+                        : null,
+                    c.Buildings.ToList(),
+                    c.BuildingWorkers.Count > 0 ? new Dictionary<string, int>(c.BuildingWorkers) : null))
                 .ToList(),
         };
     }
@@ -124,6 +126,21 @@ public sealed record SaveGame
                 {
                     colony.SetWorker(new Position(worker.X, worker.Y), worker.GoodsId);
                 }
+                // Pre-v6 saves carry no buildings: re-derive the free base set.
+                var buildings = c.Buildings
+                    ?? ruleset.BuildingTypes
+                        .Where(b => b.BuildCost.Count == 0 && b.UpgradesFrom is null)
+                        .Select(b => b.Id)
+                        .ToList() as IReadOnlyList<string>;
+                foreach (string buildingId in buildings)
+                {
+                    colony.AddBuilding(buildingId);
+                }
+                foreach ((string buildingId, int workers) in
+                         c.BuildingWorkers ?? new Dictionary<string, int>())
+                {
+                    colony.SetBuildingWorkers(buildingId, workers);
+                }
                 return colony;
             }));
     }
@@ -146,10 +163,14 @@ public sealed record SaveGame
 /// <param name="Population">Colonists living in the colony.</param>
 /// <param name="Stores">Warehouse contents by goods id (null in pre-v4 saves / when empty).</param>
 /// <param name="Workers">Tile work assignments (null in pre-v5 saves / when none).</param>
+/// <param name="Buildings">Building type ids (null in pre-v6 saves → free base set re-derived).</param>
+/// <param name="BuildingWorkers">Building staffing (null when none).</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
     IReadOnlyDictionary<string, int>? Stores = null,
-    IReadOnlyList<SavedWorker>? Workers = null);
+    IReadOnlyList<SavedWorker>? Workers = null,
+    IReadOnlyList<string>? Buildings = null,
+    IReadOnlyDictionary<string, int>? BuildingWorkers = null);
 
 /// <summary>A colonist's tile assignment inside a <see cref="SavedColony"/>.</summary>
 /// <param name="X">Worked tile column.</param>

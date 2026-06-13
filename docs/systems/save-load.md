@@ -51,3 +51,4 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 | 2026-06-13 | Format v3: colonies; pre-v3 loads with none (tested) | Phase 2b |
 | 2026-06-13 | Format v4: colony goods stores; pre-v4 colonies load with empty stores (tested) | Phase 3 |
 | 2026-06-13 | Format v5: colony tile workers; pre-v5 loads with none (tested) | Phase 3 |
+| 2026-06-13 | Format v6: colony buildings + staffing; pre-v6 re-derives free base buildings (tested). Legacy raw-grain stores normalize to food on load | Phase 3 |

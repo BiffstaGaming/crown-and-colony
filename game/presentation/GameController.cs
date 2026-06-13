@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
@@ -180,14 +181,21 @@ public partial class GameController : Node2D
             .DefaultIfEmpty("(none)")
             .Aggregate((a, b) => $"{a}; {b}");
 
+        string buildings = colony.Buildings
+            .Select(b => b[(b.LastIndexOf('.') + 1)..]
+                + (colony.BuildingWorkers.GetValueOrDefault(b) is var w and > 0 ? $" ({w}👤)" : ""))
+            .DefaultIfEmpty("(none)")
+            .Aggregate((a, b) => $"{a}, {b}");
+
         GetNode<Label>("UI/ColonyPanel/VBox/ColonyInfo").Text =
             $"Population: {colony.Population} ({colony.IdleColonists} idle)\n" +
             $"Terrain: {terrain.ShortName}\n" +
             $"Colony square yield: {centreYield} per turn\n" +
             $"Workers: {workers}\n" +
+            $"Buildings: {buildings}\n" +
             $"Stores: {stores}\n" +
             $"Food for next colonist: {colony.Food}/{Colony.FoodForGrowth}\n\n" +
-            "(Worker re-assignment UI and buildings arrive in later economy slices.)";
+            "(Worker re-assignment UI and construction arrive in later economy slices.)";
         _colonyPanel.Show();
     }
 

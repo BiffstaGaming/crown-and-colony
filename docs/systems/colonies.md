@@ -31,6 +31,11 @@ Select a colonist and press **B** to found a colony where it stands. The colonis
 
 Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat all become **food** (one warehouse entry, matching FreeCol; the earlier grain+fish shortcut is gone and legacy saves normalize on load). **Starvation is deliberately deferred** — a food shortfall currently just floors at 0.
 
+**Buildings (economy slice 4):**
+- New colonies start with the **free base buildings** (no build cost, not an upgrade): town hall, carpenter's/blacksmith's/artisan houses, pasture, etc. Construction of costed buildings/upgrades is the next slice.
+- Building production runs in the tick after tiles: **unattended** entries always run (town hall rings 1 bell/turn; the pasture breeds horses from food **only when ≥2 horses are stabled** — the spec's breeding-number gate); **worker** entries convert warehouse inputs per assigned colonist (carpenter: lumber 3 → hammers 3), scaled down when inputs run short.
+- `CheckAssignBuildingWork`/`AssignBuildingWork`/`UnassignBuildingWork` oracles; workplaces cap (default 3); idle accounting spans tiles + buildings.
+
 **Tile workers (economy slice 2):**
 - Colonists work the 8 tiles around the colony, one colonist per tile, each producing **one chosen goods type** at the terrain's best attended yield (`Game.TileYield`); ocean tiles fish.
 - `CheckAssignWork`/`AssignWork`/`UnassignWork` oracles; rejects: off-map, non-adjacent, tile taken, no idle colonist, terrain can't produce the goods.
@@ -70,3 +75,4 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 | 2026-06-13 | FreeCol settlement art; colony panel (click colony → name, population, terrain, colony-square yield; Close button). `GameController.OpenColonyPanel` is the public entry; L3-tested | Phase 2c |
 | 2026-06-13 | Economy slice 1: goods stores, colony-square production tick, eat 2/colonist, growth at 200 food (save v4; panel shows stores + growth progress). Consumption/growth values consistent with the original — formal cross-check when goods-types are parsed | Phase 3 |
 | 2026-06-13 | Economy slice 2: tile workers (assign/unassign oracles, per-tile chosen goods, ocean fishing, auto-assign on founding/growth, save v5, panel lists workers) | Phase 3 |
+| 2026-06-13 | Economy slice 3+4: stored-as goods model; free base buildings, building jobs (input→output conversions, workplaces cap), town-hall bells, breeding-gated pasture; save v6 | Phase 3 |

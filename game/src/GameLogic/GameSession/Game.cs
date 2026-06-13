@@ -254,11 +254,57 @@ public sealed class Game
 
         string name = ColonyNames[(_nextColonyId - 1) % ColonyNames.Length];
         var colony = new Colony(_nextColonyId++, name, unit.Position, population: 1);
+
+        // Every colony starts with the free base buildings (no build cost, not
+        // an upgrade) — town hall, carpenter's house, the artisan houses, etc.
+        foreach (BuildingType building in Ruleset.BuildingTypes
+                     .Where(b => b.BuildCost.Count == 0 && b.UpgradesFrom is null))
+        {
+            colony.AddBuilding(building.Id);
+        }
+
         _colonies.Add(colony);
         _units.Remove(unit);
         AutoAssignWorkers(colony);
         return colony;
     }
+
+    /// <summary>
+    /// Whether an idle colonist may be put to work in one of the colony's buildings.
+    /// </summary>
+    public MoveCheck CheckAssignBuildingWork(Colony colony, string buildingId)
+    {
+        if (!colony.HasBuilding(buildingId))
+        {
+            return MoveCheck.No("The colony does not have that building.");
+        }
+        if (colony.IdleColonists <= 0)
+        {
+            return MoveCheck.No("No idle colonists.");
+        }
+        BuildingType building = Ruleset.Building(buildingId);
+        if (colony.BuildingWorkers.GetValueOrDefault(buildingId) >= building.Workplaces)
+        {
+            return MoveCheck.No($"The {building.ShortName} is fully staffed.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>Puts an idle colonist to work in a building.</summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAssignBuildingWork"/>.</exception>
+    public void AssignBuildingWork(Colony colony, string buildingId)
+    {
+        MoveCheck check = CheckAssignBuildingWork(colony, buildingId);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        colony.SetBuildingWorkers(buildingId, colony.BuildingWorkers.GetValueOrDefault(buildingId) + 1);
+    }
+
+    /// <summary>Returns one of a building's workers to the idle pool.</summary>
+    public void UnassignBuildingWork(Colony colony, string buildingId) =>
+        colony.SetBuildingWorkers(buildingId, colony.BuildingWorkers.GetValueOrDefault(buildingId) - 1);
 
     /// <summary>
     /// Ends the current turn: colonies produce, eat, and grow; units regain
@@ -363,6 +409,56 @@ public sealed class Game
         }
     }
 
+    /// <summary>
+    /// One building's turn: unattended output plus per-worker conversion of
+    /// warehouse inputs to outputs (scaled down when inputs run short).
+    /// </summary>
+    private void RunBuildingProduction(Colony colony, BuildingType building)
+    {
+        int workers = colony.BuildingWorkers.GetValueOrDefault(building.Id);
+        foreach (ProductionEntry entry in building.Productions)
+        {
+            int multiplier = entry.Unattended ? 1 : workers;
+            if (multiplier == 0)
+            {
+                continue;
+            }
+
+            // Breeding gate (FreeCol autoProduction): goods with a breeding
+            // number (horses) only multiply when enough are already stabled.
+            bool breedingBlocked = entry.Outputs.Any(o =>
+                Ruleset.GoodsTypes.FirstOrDefault(g => g.Id == o.GoodsId)?.BreedingNumber
+                    is int needed && colony.StoreOf(Ruleset.StorageIdOf(o.GoodsId)) < needed);
+            if (breedingBlocked)
+            {
+                continue;
+            }
+
+            // Scale by the scarcest input (classic conversions are 1:1, but the
+            // ratio is honoured generically).
+            double fraction = 1.0;
+            foreach (GoodsOutput input in entry.Inputs)
+            {
+                int wanted = input.Amount * multiplier;
+                int available = colony.StoreOf(Ruleset.StorageIdOf(input.GoodsId));
+                fraction = Math.Min(fraction, wanted == 0 ? 1.0 : Math.Min(1.0, available / (double)wanted));
+            }
+
+            foreach (GoodsOutput input in entry.Inputs)
+            {
+                colony.AddGoods(
+                    Ruleset.StorageIdOf(input.GoodsId),
+                    -(int)Math.Floor(input.Amount * multiplier * fraction));
+            }
+            foreach (GoodsOutput output in entry.Outputs)
+            {
+                colony.AddGoods(
+                    Ruleset.StorageIdOf(output.GoodsId),
+                    (int)Math.Floor(output.Amount * multiplier * fraction));
+            }
+        }
+    }
+
     /// <summary>One colony's production-eat-grow step.</summary>
     private void RunColonyTurn(Colony colony)
     {
@@ -381,6 +477,14 @@ public sealed class Game
         foreach ((Position tile, string goodsId) in colony.TileWorkers)
         {
             colony.AddGoods(Ruleset.StorageIdOf(goodsId), TileYield(tile, goodsId));
+        }
+
+        // 1c. Buildings produce: unattended entries always run (town hall bell);
+        //     worker entries convert inputs to outputs per colonist, limited by
+        //     what the warehouse holds.
+        foreach (string buildingId in colony.Buildings)
+        {
+            RunBuildingProduction(colony, Ruleset.Building(buildingId));
         }
 
         // 2. Colonists eat. Starvation (population loss on shortfall) is
