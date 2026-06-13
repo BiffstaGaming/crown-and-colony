@@ -12,12 +12,12 @@
 |---|---|---|---:|:--:|---|
 | **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 126 | ✅ | every push |
 | **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 126 | ✅ | every push |
-| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **141** | ✅ | every push |
-| ↳ of which **E2E journeys** | Connected player journeys, milestone-asserted ([TEST-PLAN.md](TEST-PLAN.md)) | xUnit `[Trait E2E]` | 5 | ✅ | every push |
+| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **151** | ✅ | every push |
+| ↳ of which **E2E journeys** | Connected player journeys, milestone-asserted ([TEST-PLAN.md](TEST-PLAN.md)) | xUnit `[Trait E2E]` | 6 | ✅ | every push |
 | **L3 Interaction** | Real scenes driven by simulated input/signals (incl. 1 scene E2E) | GdUnit4 | 11 | ✅ | every push (CI) |
 | **L4 Visual** | Golden-screenshot diff of the rendered map | GdUnit4 + custom diff | 2 | ✅ | every push (CI) |
 | **L5 Soak** | 25-seed × 200-turn runs + per-turn perf budget | xUnit | 2 | ✅ | nightly |
-| | | | **156** | **all green** | |
+| | | | **166** | **all green** | |
 
 Reproduce locally (toolchain in [CLAUDE.md](../CLAUDE.md)):
 ```

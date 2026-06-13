@@ -27,6 +27,9 @@ public sealed class Game
     /// <summary>The warehouse goods id for liberty bells.</summary>
     private const string BellsId = "model.goods.bells";
 
+    /// <summary>The terrain a ship sets sail to Europe from (the map's outer edge).</summary>
+    private const string HighSeasId = "model.tile.highSeas";
+
     /// <summary>
     /// Liberty multiplier in the Founding Father cost formula. Classic "other"
     /// difficulty = 24 (spec <c>model.option.foundingFatherFactor</c>);
@@ -168,7 +171,8 @@ public sealed class Game
     /// <summary>Restores a game from saved state (see <see cref="Persistence.SaveGame"/>).</summary>
     internal static Game Restore(
         Ruleset ruleset, GameMap map, RandomState randomState, int turn,
-        IEnumerable<(int id, UnitType type, Position position, int movementLeft)> units,
+        IEnumerable<(int id, UnitType type, Position position, int movementLeft,
+            UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo)> units,
         IEnumerable<Position>? explored,
         IEnumerable<Colony>? colonies = null,
         int gold = 0, int taxRate = 0,
@@ -195,9 +199,19 @@ public sealed class Game
         {
             game._offeredFathers.AddRange(offeredFathers);
         }
-        foreach ((int id, UnitType type, Position position, int movementLeft) in units)
+        foreach ((int id, UnitType type, Position position, int movementLeft,
+                  UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo) in units)
         {
-            var unit = new Unit(id, type, position) { MovementLeft = movementLeft };
+            var unit = new Unit(id, type, position)
+            {
+                MovementLeft = movementLeft,
+                Location = location,
+                SailTurnsRemaining = sailTurns,
+            };
+            foreach ((string goodsId, int amount) in cargo ?? new Dictionary<string, int>())
+            {
+                unit.AddCargo(goodsId, amount);
+            }
             game._units.Add(unit);
             game._nextUnitId = Math.Max(game._nextUnitId, id + 1);
         }
@@ -252,6 +266,10 @@ public sealed class Game
     /// </summary>
     public MoveCheck CheckMove(Unit unit, Position target)
     {
+        if (!unit.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
         if (!Map.InBounds(target))
         {
             return MoveCheck.No("Destination is off the map.");
@@ -425,6 +443,160 @@ public sealed class Game
         return sale.GoldAfterTax;
     }
 
+    /// <summary>Turns a naval unit spends crossing the high seas each way (FreeCol TURNS_TO_SAIL).</summary>
+    public const int SailTurns = 3;
+
+    /// <summary>Units currently docked in Europe.</summary>
+    public IEnumerable<Unit> UnitsInEurope => _units.Where(u => u.Location == UnitLocation.InEurope);
+
+    /// <summary>Whether a naval unit may set sail for Europe from where it is.</summary>
+    public MoveCheck CheckSailToEurope(Unit unit)
+    {
+        if (!unit.Type.IsNaval)
+        {
+            return MoveCheck.No("Only ships can sail to Europe.");
+        }
+        if (!unit.IsOnMap)
+        {
+            return MoveCheck.No("The ship is not on the map.");
+        }
+        if (Map.TerrainAt(unit.Position).Id != HighSeasId)
+        {
+            return MoveCheck.No("Ships sail to Europe from the high seas (the map edge).");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>Sends a ship across the high seas to Europe (arrives in <see cref="SailTurns"/> turns).</summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckSailToEurope"/>.</exception>
+    public void SailToEurope(Unit unit)
+    {
+        MoveCheck check = CheckSailToEurope(unit);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        unit.Location = UnitLocation.SailingToEurope;
+        unit.SailTurnsRemaining = SailTurns;
+    }
+
+    /// <summary>Sends a docked ship back to the New World (re-enters at its departure high-seas tile).</summary>
+    /// <exception cref="InvalidMoveException">The ship is not in Europe.</exception>
+    public void SailToNewWorld(Unit unit)
+    {
+        if (unit.Location != UnitLocation.InEurope)
+        {
+            throw new InvalidMoveException("Only a ship in Europe can sail to the New World.");
+        }
+        unit.Location = UnitLocation.SailingToNewWorld;
+        unit.SailTurnsRemaining = SailTurns;
+    }
+
+    /// <summary>Loads goods from a colony's warehouse into an adjacent ship's hold.</summary>
+    /// <exception cref="InvalidMoveException">The ship isn't adjacent on the map, or the colony lacks the goods.</exception>
+    public void LoadFromColony(Unit ship, Colony colony, string goodsId, int amount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
+        if (!ship.Type.IsNaval || !ship.IsOnMap)
+        {
+            throw new InvalidMoveException("Only a ship on the map can carry cargo.");
+        }
+        if (!ship.Position.IsAdjacentTo(colony.Position) && ship.Position != colony.Position)
+        {
+            throw new InvalidMoveException("The ship must be next to the colony to load cargo.");
+        }
+        if (colony.StoreOf(goodsId) < amount)
+        {
+            throw new InvalidMoveException($"The colony does not have {amount} {goodsId}.");
+        }
+        colony.AddGoods(goodsId, -amount);
+        ship.AddCargo(goodsId, amount);
+    }
+
+    /// <summary>Sells goods from a docked ship's hold to the European market, crediting the treasury after tax.</summary>
+    /// <returns>The gold credited after tax.</returns>
+    /// <exception cref="InvalidMoveException">The ship isn't in Europe, the good is untradeable, or the hold lacks it.</exception>
+    public int SellShipCargo(Unit ship, string goodsId, int amount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
+        if (ship.Location != UnitLocation.InEurope)
+        {
+            throw new InvalidMoveException("Goods are sold once the ship reaches Europe.");
+        }
+        if (!Market.IsTradeable(goodsId))
+        {
+            throw new InvalidMoveException($"{goodsId} cannot be sold in Europe.");
+        }
+        if (ship.CargoOf(goodsId) < amount)
+        {
+            throw new InvalidMoveException($"The ship is not carrying {amount} {goodsId}.");
+        }
+        ship.AddCargo(goodsId, -amount);
+        SaleResult sale = Market.Sell(goodsId, amount, TaxRate);
+        Gold += sale.GoldAfterTax;
+        return sale.GoldAfterTax;
+    }
+
+    /// <summary>
+    /// Whether the player can buy <paramref name="amount"/> of a good in Europe for
+    /// the docked <paramref name="ship"/> (no market price rise on buying, per FreeCol).
+    /// </summary>
+    public MoveCheck CheckBuyEuropeGoods(Unit ship, string goodsId, int amount)
+    {
+        if (ship.Location != UnitLocation.InEurope)
+        {
+            return MoveCheck.No("Goods are bought once the ship reaches Europe.");
+        }
+        if (!Market.IsTradeable(goodsId))
+        {
+            return MoveCheck.No($"{goodsId} is not sold in Europe.");
+        }
+        int cost = Market.AskPrice(goodsId) * amount;
+        if (Gold < cost)
+        {
+            return MoveCheck.No($"Not enough gold (need {cost}).");
+        }
+        return MoveCheck.Yes(cost);
+    }
+
+    /// <summary>Buys goods in Europe into a docked ship's hold, debiting the treasury at the ask price.</summary>
+    /// <returns>The gold spent.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBuyEuropeGoods"/>.</exception>
+    public int BuyEuropeGoods(Unit ship, string goodsId, int amount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
+        MoveCheck check = CheckBuyEuropeGoods(ship, goodsId, amount);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        Gold -= check.Cost;
+        ship.AddCargo(goodsId, amount);
+        return check.Cost;
+    }
+
+    /// <summary>Advances sailing units; arrivals dock in Europe or re-enter the map.</summary>
+    private void AdvanceSailing()
+    {
+        foreach (Unit unit in _units.Where(u =>
+            u.Location is UnitLocation.SailingToEurope or UnitLocation.SailingToNewWorld))
+        {
+            if (--unit.SailTurnsRemaining > 0)
+            {
+                continue;
+            }
+            if (unit.Location == UnitLocation.SailingToEurope)
+            {
+                unit.Location = UnitLocation.InEurope;
+            }
+            else
+            {
+                unit.Location = UnitLocation.OnMap; // re-enters at its departure high-seas tile
+                Reveal(unit);
+            }
+        }
+    }
+
     /// <summary>Whether the colony may start constructing a building type.</summary>
     public MoveCheck CheckSetBuild(Colony colony, string buildingId)
     {
@@ -511,6 +683,7 @@ public sealed class Game
             RunColonyTurn(colony);
         }
         AccumulateLibertyAndElectFathers();
+        AdvanceSailing();
         foreach (Unit unit in _units)
         {
             unit.ResetMovement();

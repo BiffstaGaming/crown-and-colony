@@ -56,3 +56,4 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 | 2026-06-13 | Format v8: map bonus resources (sparse index list) | Phase 2/3 |
 | 2026-06-13 | Format v9: treasury (gold, tax) + moved-market inventories (sparse); pre-v9 loads 0 gold/tax, market reseeded (tested) | Phase 4 |
 | 2026-06-13 | Format v10: liberty, Congress, current/offered fathers; pre-v10 loads empty (tested) | Phase 4 |
+| 2026-06-13 | Format v11: unit location + sail turns + cargo hold; pre-v11 units load on-map empty (tested) | Phase 4 |

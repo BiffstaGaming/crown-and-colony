@@ -34,7 +34,8 @@ CI gates (unchanged): push = L1+L2 (incl. logic E2E); PR = +L3+L4 (incl. scene E
 |---|---|---|---|---|
 | 1 | Explore & found a colony | P0 | L2 (+L3 slice) | ✅ buildable now |
 | 2 | Colony economy cycle (raw → refine → construct → grow) | P0 | L2 | ✅ buildable now |
-| 3 | Trade to treasury (produce → sell → price → tax → gold) | P1 | L2 | ✅ buildable now (sale leg); ⛔ shipping leg blocked on sailing |
+| 3 | Trade to treasury (produce → sell → price → tax → gold) | P1 | L2 | ✅ buildable now |
+| 3b | Full trade voyage (load → sail → sell in Europe → return) | P1 | L2 | ✅ buildable now (sailing shipped) |
 | 4 | Liberty & sequential Founding-Father elections | P1 | L2 | ✅ buildable now (effects out of scope) |
 | 5 | Scene E2E: new → select → move → found → panel → staff → tick | P0 | L3 | ✅ buildable now |
 | — | Sail cargo to Europe & trade | P2 | L2/L3 | ⛔ blocked on ships sailing (P4 slice 3) |
@@ -99,10 +100,10 @@ new game → click unit (selected) → click adjacent tile (moved) → press B (
 | Map gen + fog + movement | `GameTests`, `WorldTests` | Journey 1 | ✅ covered-e2e |
 | Founding + free base buildings + auto-assign | `GameTests`, `TileWorkerTests`, `BuildingTests` | Journey 1 | ✅ covered-e2e |
 | Tile work + building refinement + construction + growth | `TileWorkerTests`, `BuildingTests`, `ColonyEconomyTests`, `ProductionChainTests` | Journey 2 | ✅ covered-e2e |
-| Market + treasury + tax | `MarketTests` | Journey 3 | ✅ covered-e2e (sale leg) |
+| Market + treasury + tax | `MarketTests` | Journey 3 | ✅ covered-e2e |
+| High-seas sailing + Europe trade | `SailingTests` | Journey 3b | ✅ covered-e2e |
 | Liberty + father election + cost escalation | `FoundingFatherTests` | Journey 4 | ✅ covered-e2e |
 | UI→logic seam (select/move/found/staff) | `InputTests`, `ColonyPanelTests`, `MainSceneTests` | Journey 5 | ✅ covered-e2e |
-| Ship sailing → Europe trade | — | (blocked) | ⛔ gap until P4 slice 3 |
 | Immigration / recruitment | — | (blocked) | ⛔ gap until P4 slice 4 |
 | Founding-Father effects | — | (blocked) | ⛔ gap until modifier system |
 

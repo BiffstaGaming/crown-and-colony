@@ -17,7 +17,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 10;
+    public const int CurrentVersion = 11;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -99,7 +99,10 @@ public sealed record SaveGame
             MapHeight = game.Map.Height,
             Terrain = game.Map.AllPositions().Select(p => game.Map.TerrainAt(p).Id).ToList(),
             Units = game.Units
-                .Select(u => new SavedUnit(u.Id, u.Type.Id, u.Position.X, u.Position.Y, u.MovementLeft))
+                .Select(u => new SavedUnit(
+                    u.Id, u.Type.Id, u.Position.X, u.Position.Y, u.MovementLeft,
+                    (int)u.Location, u.SailTurnsRemaining,
+                    u.Cargo.Count > 0 ? new Dictionary<string, int>(u.Cargo) : null))
                 .ToList(),
             Explored = game.Explored
                 .Select(p => p.Y * game.Map.Width + p.X)
@@ -154,7 +157,10 @@ public sealed record SaveGame
                 // v1 saves carry no type id; everything was effectively a colonist.
                 ruleset.Unit(u.TypeId ?? Game.StartingUnitTypeId),
                 new Position(u.X, u.Y),
-                u.MovementLeft)),
+                u.MovementLeft,
+                (UnitLocation)u.Location,   // pre-v11 → 0 = OnMap
+                u.SailTurns,
+                u.Cargo)),
             Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
             Colonies?.Select(c =>
             {
@@ -243,4 +249,9 @@ public sealed record SavedWorker(int X, int Y, string GoodsId);
 /// <param name="X">Map column.</param>
 /// <param name="Y">Map row.</param>
 /// <param name="MovementLeft">Movement points remaining this turn.</param>
-public sealed record SavedUnit(int Id, string? TypeId, int X, int Y, int MovementLeft);
+/// <param name="Location">Where the unit is (0 = on map; sailing/Europe in v11+).</param>
+/// <param name="SailTurns">Turns left in transit (0 when not sailing).</param>
+/// <param name="Cargo">Goods in the unit's hold (null when empty / pre-v11).</param>
+public sealed record SavedUnit(
+    int Id, string? TypeId, int X, int Y, int MovementLeft,
+    int Location = 0, int SailTurns = 0, IReadOnlyDictionary<string, int>? Cargo = null);

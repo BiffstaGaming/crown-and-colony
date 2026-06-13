@@ -211,6 +211,67 @@ public class JourneyTests
         Assert.Equal(game.Market.AmountInMarket(Sugar), reloaded.Market.AmountInMarket(Sugar));
     }
 
+    // ───────────────── Journey 3b: Full trade voyage (sailing leg) ─────────────────
+
+    [Fact]
+    public void Journey3b_LoadSailSellReturn()
+    {
+        // Coast → ocean → high-seas strip with a port colony holding sugar.
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 5,
+            MapHeight = 1,
+            Terrain = ["model.tile.plains", "model.tile.ocean", "model.tile.ocean", "model.tile.ocean", "model.tile.highSeas"],
+            Units = [new SavedUnit(1, "model.unit.caravel", 1, 0, 12)],
+            Explored = [],
+            Colonies = [new SavedColony(1, "Port", 0, 0, 1, new Dictionary<string, int> { [Sugar] = 100 })],
+        };
+        Game game = save.Restore(Classic);
+        Unit ship = game.Units[0];
+        Colony colony = game.Colonies[0];
+
+        // M1 — load cargo at the colony.
+        game.LoadFromColony(ship, colony, Sugar, 100);
+        Assert.Equal(100, ship.CargoOf(Sugar));
+        Assert.Equal(0, colony.StoreOf(Sugar));
+
+        // M2 — sail to the edge and set out for Europe.
+        game.MoveUnit(ship, new Position(2, 0));
+        game.MoveUnit(ship, new Position(3, 0));
+        game.MoveUnit(ship, new Position(4, 0));
+        game.SailToEurope(ship);
+        Assert.Equal(UnitLocation.SailingToEurope, ship.Location);
+
+        // M3 — a mid-voyage save survives byte-identical.
+        string midJson = SaveGame.From(game).ToJson();
+        Assert.Equal(midJson, SaveGame.From(SaveGame.FromJson(midJson).Restore(Classic)).ToJson());
+
+        // M4 — arrive in Europe after exactly the sail time.
+        for (int i = 0; i < Game.SailTurns; i++)
+        {
+            game.EndTurn();
+        }
+        Assert.Equal(UnitLocation.InEurope, ship.Location);
+
+        // M5 — sell the cargo; treasury gains, hold empties.
+        int credited = game.SellShipCargo(ship, Sugar, 100);
+        Assert.Equal(200, credited);            // 100 × bid 2, no tax
+        Assert.Equal(200, game.Gold);
+        Assert.Equal(0, ship.CargoOf(Sugar));
+
+        // M6 — sail home and re-enter at the departure tile.
+        game.SailToNewWorld(ship);
+        for (int i = 0; i < Game.SailTurns; i++)
+        {
+            game.EndTurn();
+        }
+        Assert.True(ship.IsOnMap);
+        Assert.Equal(new Position(4, 0), ship.Position);
+    }
+
     // ───────────────────────── Journey 4: Liberty & elections ─────────────────────────
 
     [Fact]

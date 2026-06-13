@@ -29,7 +29,7 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | `World.Position` | Grid coordinate; 8-way adjacency |
 | `World.GameMap` | Immutable terrain grid |
 | `World.MapGenerator` | Seeded placeholder map generation (Phase 2 replaces algorithm) |
-| `Units.Unit` | Unit state; mutated only via `Game` |
+| `Units.Unit` / `UnitLocation` | Unit state incl. map/sailing/Europe location and cargo hold; mutated only via `Game` |
 | `Colonies.Colony` | Colony state: population, stores, tile/building workers, buildings, build target |
 | `Trade.Market` | European market: per-good bid/ask, supply-driven `Sell` with tax (FreeCol price model) |
 | `Specification.GoodsMarket` | Per-good market seed (initial amount/price/spread) |
