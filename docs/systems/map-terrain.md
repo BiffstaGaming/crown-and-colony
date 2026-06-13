@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (skeleton: grid + placeholder generator; real generation is Phase 2) |
-| **Last verified** | 2026-06-13 @ Phase 1 walking skeleton |
+| **Status** | Implemented (climate-band generation + isometric FreeCol-art rendering + bonus resources with yield effects) |
+| **Last verified** | 2026-06-13 @ Phase 4 slice 8 |
 | **Code** | `game/src/GameLogic/World/` · rendering: `game/presentation/MapView.cs` |
 | **Tests** | `game/tests/GameLogic.Tests/World/WorldTests.cs` |
 | **FreeCol reference** | map model: `freecol/src/net/sf/freecol/common/model/Map.java`, `Tile.java` |

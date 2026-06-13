@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Last verified** | 2026-06-13 @ Phase 4 slice 9 |
+| **Last verified** | 2026-06-13 @ Phase 4 slice 11 |
 | **Location** | `game/src/GameLogic/` |
 | **Layer** | GameLogic (engine-free) |
 | **Depends on** | nothing (BCL only) |
