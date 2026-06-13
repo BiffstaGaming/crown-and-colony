@@ -84,7 +84,7 @@ public class VisibilityTests
         Game game = Game.New(Classic, Seed);
         Colony colony = game.FoundColony(game.Units[0]); // founder leaves the map
 
-        Assert.Empty(game.Units);
+        Assert.Empty(game.PlayerUnits); // braves (native) remain, but they don't lift the player's fog
         Assert.True(game.IsVisible(colony.Position));
         Assert.True(game.IsExplored(colony.Position));
         // No on-map units → visibility is exactly the colony's sight.

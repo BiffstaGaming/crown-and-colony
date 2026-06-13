@@ -64,11 +64,12 @@ public class SaveGameTests
         // Format v1 (Phase 1) had no Explored list and no unit TypeId. Loading
         // must still work: units default to free colonists, fog reveals around them.
         var game = Game.New(Classic, seed: 5);
+        // A v1 save predates natives — only the player's lone starting colonist existed.
         SaveGame v1 = SaveGame.From(game) with
         {
             Version = 1,
             Explored = null,
-            Units = game.Units.Select(u =>
+            Units = game.PlayerUnits.Select(u =>
                 new SavedUnit(u.Id, null, u.Position.X, u.Position.Y, u.MovementLeft)).ToList(),
         };
 
@@ -77,6 +78,41 @@ public class SaveGameTests
         Assert.Equal(Game.StartingUnitTypeId, loaded.Units[0].Type.Id);
         Assert.True(loaded.IsExplored(loaded.Units[0].Position));
         Assert.InRange(loaded.Explored.Count, 4, 9);
+    }
+
+    [Fact]
+    public void FreshGame_OmitsRoleTokens_SoDefaultUnitsMatchV17()
+    {
+        string json = SaveGame.From(Game.New(Classic, seed: 5)).ToJson();
+        // Default-role units emit no Role/RoleCount tokens → a player unit serializes byte-identically to v17.
+        Assert.DoesNotContain("\"RoleCount\"", json);
+        Assert.DoesNotContain("\"Role\"", json);
+        // Braves do carry their owning nation (the one genuinely new v18 unit field in a fresh game).
+        Assert.Contains("\"Owner\"", json);
+    }
+
+    [Fact]
+    public void PreV18Save_LoadsUnitsAsPlayerOwnedDefaultRole()
+    {
+        // v17 and earlier predate unit owner + role; loading must default every unit to
+        // player-owned and the unarmed default role (and such a save carries no braves).
+        var game = Game.New(Classic, seed: 5);
+        SaveGame v17 = SaveGame.From(game) with
+        {
+            Version = 17,
+            Units = game.PlayerUnits
+                .Select(u => new SavedUnit(u.Id, u.Type.Id, u.Position.X, u.Position.Y, u.MovementLeft))
+                .ToList(),
+        };
+
+        Game loaded = SaveGame.FromJson(v17.ToJson()).Restore(Classic);
+
+        Assert.All(loaded.Units, u =>
+        {
+            Assert.Null(u.OwnerNationId);
+            Assert.Equal(RoleType.DefaultRoleId, u.RoleId);
+            Assert.Equal(0, u.RoleCount);
+        });
     }
 
     [Fact]

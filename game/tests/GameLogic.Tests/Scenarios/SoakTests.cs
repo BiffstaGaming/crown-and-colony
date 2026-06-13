@@ -69,9 +69,10 @@ public class SoakTests
         for (int turn = 0; turn < turns; turn++)
         {
             // Phase 1: wander until turn 5, then settle where we stand (if legal).
-            if (game.Units.Count > 0)
+            // Only the player's own on-map units (never a native brave) are driven.
+            Unit? unit = game.PlayerUnits.FirstOrDefault(u => u.IsOnMap);
+            if (unit is not null)
             {
-                Unit unit = game.Units[0];
                 if (turn >= 5 && game.CheckFoundColony(unit).Allowed)
                 {
                     game.FoundColony(unit);

@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 17;
+    public const int CurrentVersion = 18;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -29,7 +29,8 @@ public sealed record SaveGame
     /// (passengers aboard ships); v14 added native settlements; v15 added the
     /// game variant id (which ruleset the game plays under); v16 added native
     /// settlement interaction state (alarm, visited, skill-consumed); v17 added
-    /// native settlement wanted goods.
+    /// native settlement wanted goods; v18 added unit owner nation + role/roleCount
+    /// (native braves and armed soldiers).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -138,7 +139,12 @@ public sealed record SaveGame
                     u.Id, u.Type.Id, u.Position.X, u.Position.Y, u.MovementLeft,
                     (int)u.Location, u.SailTurnsRemaining,
                     u.Cargo.Count > 0 ? new Dictionary<string, int>(u.Cargo) : null,
-                    u.CarrierId))
+                    u.CarrierId,
+                    u.OwnerNationId,
+                    // The unarmed default role is the common case → omit role + count so a default-role
+                    // player unit serializes byte-identically to a v17 save (no churn, no golden drift).
+                    u.RoleId == Specification.RoleType.DefaultRoleId ? null : u.RoleId,
+                    u.RoleCount == 0 ? null : u.RoleCount))
                 .ToList(),
             Explored = game.Explored
                 .Select(p => p.Y * game.Map.Width + p.X)
@@ -211,7 +217,10 @@ public sealed record SaveGame
                 (UnitLocation)u.Location,   // pre-v11 → 0 = OnMap
                 u.SailTurns,
                 u.Cargo,
-                u.CarrierId)),              // pre-v13 → null = not aboard
+                u.CarrierId,                // pre-v13 → null = not aboard
+                u.Owner,                    // pre-v18 → null = player-owned
+                u.Role,                     // pre-v18 → null = default role
+                u.RoleCount ?? 0)),         // pre-v18 / default role → 0
             Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
             Colonies?.Select(c =>
             {
@@ -337,7 +346,11 @@ public sealed record SavedNativeSettlement(
 /// <param name="SailTurns">Turns left in transit (0 when not sailing).</param>
 /// <param name="Cargo">Goods in the unit's hold (null when empty / pre-v11).</param>
 /// <param name="CarrierId">Id of the ship carrying this unit as a passenger (null when not aboard / pre-v13).</param>
+/// <param name="Owner">Owning native nation type id (null = the player; pre-v18 default; v18+).</param>
+/// <param name="Role">Military role id (null = the unarmed default role; pre-v18 default; v18+).</param>
+/// <param name="RoleCount">Equipment count held for the role (null/0 for the default role; v18+). Nullable so a default-role unit emits no token and serializes identically to v17.</param>
 public sealed record SavedUnit(
     int Id, string? TypeId, int X, int Y, int MovementLeft,
     int Location = 0, int SailTurns = 0, IReadOnlyDictionary<string, int>? Cargo = null,
-    int? CarrierId = null);
+    int? CarrierId = null,
+    string? Owner = null, string? Role = null, int? RoleCount = null);

@@ -72,3 +72,4 @@ Each father carries **modifiers** (bonuses) and **abilities** (capabilities) fro
 |---|---|---|
 | 2026-06-13 | Liberty accrual from bells, cost formula, weighted offers, election; save v10 | Phase 4 slice 2 |
 | 2026-06-13 | Modifier + ability system; applied father effects (Jefferson/Penn/Paine production, Brewster recruit ban); rest deferred | Phase 4 slice 7 |
+| 2026-06-14 | Military fathers wired into combat: **George Washington** (`automaticPromotion` — every win promotes) and **Paul Revere** (`automaticEquipment` — auto-arm an unarmed colony defender); see [combat](combat.md) | Phase 5 slice 5b |

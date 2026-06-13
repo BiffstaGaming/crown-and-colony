@@ -77,7 +77,9 @@ public class InputTests
         await runner.SimulateFrames(2);
 
         AssertThat(game.Colonies.Count).IsEqual(1);
-        AssertThat(game.Units.Count).IsEqual(0); // founder settled
+        AssertThat(game.PlayerUnits.Count()).IsEqual(0); // founder settled (native braves remain)
+        // The HUD unit marker must hide — it must never show a native brave as the player's unit.
+        AssertThat(controller.GetNode<UnitMarker>("MapView/UnitMarker").Visible).IsFalse();
     }
 
     [TestCase(Timeout = 60000)]

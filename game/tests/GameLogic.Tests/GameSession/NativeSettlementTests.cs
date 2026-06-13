@@ -56,7 +56,7 @@ public class NativeSettlementTests
         var settlements = game.NativeSettlements;
 
         // The lone starting colonist's tile — nothing should sit on or beside it.
-        Position start = Assert.Single(game.Units).Position;
+        Position start = Assert.Single(game.PlayerUnits).Position;
 
         for (int i = 0; i < settlements.Count; i++)
         {
@@ -121,8 +121,8 @@ public class NativeSettlementTests
     [Fact]
     public void SaveVersion_IsCurrent()
     {
-        Assert.Equal(17, SaveGame.CurrentVersion);
-        Assert.Equal(17, SaveGame.From(Game.New(Classic, Seed)).Version);
+        Assert.Equal(18, SaveGame.CurrentVersion);
+        Assert.Equal(18, SaveGame.From(Game.New(Classic, Seed)).Version);
     }
 
     private static int Chebyshev(Position a, Position b) =>

@@ -24,8 +24,10 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | `Specification.Ruleset` | Parsed rule data; `LoadClassic()` / `LoadEmbedded(resource)` / `Load(Stream)`; `Terrain(id)`, `Unit(id)` |
 | `Specification.GameVariant` / `GameVariants` | Selectable game variant (id, name, ruleset loader) + registry (`ClassicAmerica`, `All`, `Default`, `ById`, `Resolve`) — transposability backbone (ADR-018) |
 | `Specification.TerrainType` / `ProductionEntry` / `GoodsOutput` / `GenRanges` | Immutable terrain rule data incl. climate envelopes + combat `DefenceBonus` |
-| `Specification.UnitType` | Unit rule data (movement, sight, naval, foundColony, `RecruitProbability`, `IsPerson`, `Space`/`SpaceTaken`/`IsCarrier`/`CarrySlots`, `Price`/`IsPurchasable`, `Offence`/`Defence`) with `extends` inheritance resolved |
-| `Combat.CombatModel` / `AttackContext` / `DefenceContext` / `CombatResult` / `MovementPenalty` | Pure combat model: attack/defence power, win odds (`att/(att+def)`), graded resolution (FreeCol `SimpleCombatModel`) |
+| `Specification.UnitType` | Unit rule data (movement, sight, naval, foundColony, `RecruitProbability`, `IsPerson`, `Space`/`SpaceTaken`/`IsCarrier`/`CarrySlots`, `Price`/`IsPurchasable`, `Offence`/`Defence`, combat-ability flags `DisposeOnCombatLoss`/`CanBeCaptured`/`CaptureUnits`/`CaptureEquipment`/`DisposeOnAllEquipmentLost`/`DemoteOnAllEquipmentLost`/`Bombard`) with `extends` inheritance resolved |
+| `Specification.RoleType` / `RoleRequiredGoods` / `RoleChange` | Military role/equipment rule data: offence/defence, required-goods, downgrade, granted/required abilities, equipment-capture (`role-change`) rules; `Ruleset.Role(id)`/`Roles`/`CaptureRole(winner, loser, native)` |
+| `Specification.UnitChange` / `UnitChangeTypeIds` | Unit-type transitions (promotion/demotion/capture: from→to + probability); `Ruleset.GetUnitChange(changeType, fromId)` |
+| `Combat.CombatModel` / `AttackContext` / `DefenceContext` / `CombatResult` / `MovementPenalty` | Pure combat model: attack/defence power, win odds (`att/(att+def)`), graded resolution (FreeCol `SimpleCombatModel`). Roles fold into the scalar base power passed in. |
 | `Specification.GoodsType` | Goods rule data: `is-food`, `stored-as`, `made-from`, breeding number, market seed |
 | `Specification.BuildingType` | Building rule data: conversions (with inputs), workplaces, upgrade chain, build cost |
 | `Specification.ResourceType` / `ResourceModifier` | Bonus-resource yield modifiers (goods, type, index, unit-type scopes) |
@@ -35,14 +37,14 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | `World.Position` | Grid coordinate; 8-way adjacency |
 | `World.GameMap` | Immutable terrain grid + bonus resources (`ResourceAt`) |
 | `World.MapGenerator` | Seeded climate-band map generation + resource placement |
-| `Units.Unit` / `UnitLocation` | Unit state: map/sailing/Europe `Location`, `SailTurnsRemaining`, `Cargo`, `CarrierId`/`IsAboard`, `IsOnMap`; mutated only via `Game` |
+| `Units.Unit` / `UnitLocation` | Unit state: map/sailing/Europe `Location`, `SailTurnsRemaining`, `Cargo`, `CarrierId`/`IsAboard`, `IsOnMap`, `OwnerNationId`/`IsNative` (player vs native), `RoleId`/`RoleCount`/`HasDefaultRole` (equipment); mutated only via `Game` |
 | `Colonies.Colony` | Colony state: population, stores, tile/building workers, buildings, build target |
 | `Trade.Market` | European market: per-good bid/ask, supply-driven `Sell` with tax (FreeCol price model) |
 | `Specification.GoodsMarket` | Per-good market seed (initial amount/price/spread) |
 | `Specification.FoundingFather` / `FatherType` / `FatherModifier` / `FatherAbility` / `ModifierType` / `ModifierMath` | Founding-father rule data: category, age weights, the modifiers + abilities an election grants |
-| `GameSession.Game` | The running game. Map/units: `New`, `CheckMove`/`MoveUnit`, `EndTurn`, `SpawnUnit`, `CheckFoundColony`/`FoundColony`, `TileYield`. Colony work: `AssignWork`/`UnassignWork`, `AssignBuildingWork`/`UnassignBuildingWork`, `SetBuild`/`Buildables`, `JoinColony`/`LeaveColony`. Trade: `Gold`, `TaxRate`, `Market`, `SellColonyGoods`/`SellShipCargo`/`BuyEuropeGoods`, `BuyUnit`/`CheckBuyUnit`. Europe/sailing: `SailToEurope`/`SailToNewWorld`, `UnitsInEurope`. Transport: `Board`/`Disembark`/`DisembarkToDock`, `Passengers`, `CargoCapacity`/`CargoSlotsUsed`/`CargoSlotsFree`. Fathers: `Liberty`, `Congress`, `ChooseFather`, `OfferedFathers`, `HasAbility`, `ApplyGoodsModifiers`. Immigration: `Immigration`/`ImmigrationRequired`, `RecruitDock`, `RecruitPrice`, `Recruit`/`CheckRecruit`. Natives: `NativeSettlements`, `NativeSettlementAt`, `ChangeNativeAlarm`, `Visit`/`CheckVisit`, `LearnSkill`/`CheckLearnSkill`, `SellToNatives`/`CheckSellToNatives`/`NativeSalePrice`. Fog: `Explored`/`IsExplored`, `CurrentlyVisible`/`IsVisible`. (All checks have a `Check…` oracle, ADR-006.) |
+| `GameSession.Game` | The running game. Map/units: `New`, `CheckMove`/`MoveUnit`, `EndTurn`, `SpawnUnit`, `CheckFoundColony`/`FoundColony`, `TileYield`. Colony work: `AssignWork`/`UnassignWork`, `AssignBuildingWork`/`UnassignBuildingWork`, `SetBuild`/`Buildables`, `JoinColony`/`LeaveColony`. Trade: `Gold`, `TaxRate`, `Market`, `SellColonyGoods`/`SellShipCargo`/`BuyEuropeGoods`, `BuyUnit`/`CheckBuyUnit`. Europe/sailing: `SailToEurope`/`SailToNewWorld`, `UnitsInEurope`. Transport: `Board`/`Disembark`/`DisembarkToDock`, `Passengers`, `CargoCapacity`/`CargoSlotsUsed`/`CargoSlotsFree`. Fathers: `Liberty`, `Congress`, `ChooseFather`, `OfferedFathers`, `HasAbility`, `ApplyGoodsModifiers`. Immigration: `Immigration`/`ImmigrationRequired`, `RecruitDock`, `RecruitPrice`, `Recruit`/`CheckRecruit`. Natives: `NativeSettlements`, `NativeSettlementAt`, `ChangeNativeAlarm`, `Visit`/`CheckVisit`, `LearnSkill`/`CheckLearnSkill`, `SellToNatives`/`CheckSellToNatives`/`NativeSalePrice`. Combat: `PlayerUnits`/`NativeUnits`, `CheckAttack`/`Attack`, `CheckEquipRole`/`EquipRole`, `EffectiveCombatRole`. Fog: `Explored`/`IsExplored`, `CurrentlyVisible`/`IsVisible`. (All checks have a `Check…` oracle, ADR-006.) |
 | `GameSession.MoveCheck` / `InvalidMoveException` | Move legality result / violation |
-| `Persistence.SaveGame` / `SavedUnit` / `SavedColony` / `SavedResource` / `SavedWorker` / `SavedNativeSettlement` | Complete JSON-serializable game snapshot (format v17; records its game variant + native interaction/trade state) |
+| `Persistence.SaveGame` / `SavedUnit` / `SavedColony` / `SavedResource` / `SavedWorker` / `SavedNativeSettlement` | Complete JSON-serializable game snapshot (format v18; records its game variant, native interaction/trade state, and per-unit owner + role) |
 
 (Grows as systems land; keep this table current.)
 
@@ -54,7 +56,7 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 
 ## Tests
 
-`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **292 tests** (290 L1+L2 incl. 10 E2E journeys + 2 nightly soak), all green as of 2026-06-14. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md).)
+`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **332 tests** (330 L1+L2 incl. 10 E2E journeys + 2 nightly soak), all green as of 2026-06-14. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md).)
 
 ## Changelog
 
@@ -69,3 +71,4 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | 2026-06-14 | Native interaction: alarm model (`AlarmLevel`, `ChangeNativeAlarm`, turn decay), `Visit` (tales + gift), `LearnSkill` (unit upgrade); save v16 | Phase 5 slice 3 |
 | 2026-06-14 | Native trade: sell cargo to a coastal settlement (`SellToNatives`/`NativeSalePrice`), wanted goods per settlement; save v17 | Phase 5 slice 4 |
 | 2026-06-14 | Combat foundation: parse unit offence/defence + terrain defence bonus; pure `CombatModel` (power, odds, graded resolution) | Phase 5 slice 5a |
+| 2026-06-14 | Combat 5b: unit ownership (`OwnerNationId`, `PlayerUnits`/`NativeUnits`) + roles/equipment (`RoleType`, `UnitChange`, `EquipRole`), brave defenders, attack action (`CheckAttack`/`Attack`) with FreeCol loser/winner outcome precedence + native alarm, Washington/Revere; save v18 | Phase 5 slice 5b |

@@ -18,6 +18,8 @@ public sealed class Ruleset
     private readonly Dictionary<string, ResourceType> _resourceById;
     private readonly Dictionary<string, NativeNationType> _nativeNationById;
     private readonly Dictionary<string, SettlementType> _settlementById;
+    private readonly Dictionary<string, RoleType> _roleById;
+    private readonly Dictionary<string, Dictionary<string, UnitChange>> _unitChangeByType;
 
     private Ruleset(
         Dictionary<string, TerrainType> terrainById,
@@ -27,7 +29,9 @@ public sealed class Ruleset
         Dictionary<string, FoundingFather> fatherById,
         Dictionary<string, ResourceType> resourceById,
         Dictionary<string, NativeNationType> nativeNationById,
-        Dictionary<string, SettlementType> settlementById)
+        Dictionary<string, SettlementType> settlementById,
+        Dictionary<string, RoleType> roleById,
+        Dictionary<string, Dictionary<string, UnitChange>> unitChangeByType)
     {
         _terrainById = terrainById;
         _unitById = unitById;
@@ -37,6 +41,8 @@ public sealed class Ruleset
         _resourceById = resourceById;
         _nativeNationById = nativeNationById;
         _settlementById = settlementById;
+        _roleById = roleById;
+        _unitChangeByType = unitChangeByType;
         TerrainTypes = _terrainById.Values.ToList();
         UnitTypes = _unitById.Values.ToList();
         GoodsTypes = _goodsById.Values.ToList();
@@ -45,6 +51,7 @@ public sealed class Ruleset
         ResourceTypes = _resourceById.Values.ToList();
         NativeNationTypes = _nativeNationById.Values.ToList();
         SettlementTypes = _settlementById.Values.ToList();
+        Roles = _roleById.Values.ToList();
     }
 
     /// <summary>All terrain types, in specification order.</summary>
@@ -126,6 +133,39 @@ public sealed class Ruleset
         _settlementById.TryGetValue(id, out var s)
             ? s
             : throw new KeyNotFoundException($"Unknown settlement type '{id}'.");
+
+    /// <summary>All military/equipment roles (default, soldier, dragoon, scout, brave roles, …), in specification order.</summary>
+    public IReadOnlyList<RoleType> Roles { get; }
+
+    /// <summary>Looks up a role by ruleset id (e.g. <c>model.role.soldier</c>).</summary>
+    /// <exception cref="KeyNotFoundException">Unknown id.</exception>
+    public RoleType Role(string id) =>
+        _roleById.TryGetValue(id, out var r)
+            ? r
+            : throw new KeyNotFoundException($"Unknown role '{id}'.");
+
+    /// <summary>
+    /// The unit-type change of a given change-type for a unit type, or null if that type
+    /// does not change (FreeCol <c>UnitType.getUnitChange</c>). E.g.
+    /// <c>GetUnitChange(UnitChangeTypeIds.Promotion, "model.unit.freeColonist")</c> → veteran soldier.
+    /// </summary>
+    public UnitChange? GetUnitChange(string changeTypeId, string fromUnitId) =>
+        _unitChangeByType.TryGetValue(changeTypeId, out var byFrom)
+        && byFrom.TryGetValue(fromUnitId, out var change)
+            ? change
+            : null;
+
+    /// <summary>
+    /// The role a victor in <paramref name="winnerRoleId"/> upgrades to by capturing the equipment of a
+    /// defeated unit in <paramref name="loserRoleId"/>, or null if none is available to that owner
+    /// (FreeCol <c>Unit.canCaptureEquipment</c>): the military role whose <c>role-change</c> matches, gated
+    /// to the winner's side (native roles for natives, non-REF roles for non-REF units).
+    /// </summary>
+    public RoleType? CaptureRole(string winnerRoleId, string loserRoleId, bool winnerIsNative) =>
+        Roles.FirstOrDefault(r =>
+            r.RequiresNative == winnerIsNative
+            && !r.RequiresRef
+            && r.RoleChanges.Any(rc => rc.From == winnerRoleId && rc.Capture == loserRoleId));
 
     /// <summary>Looks up a Founding Father by ruleset id (e.g. <c>model.foundingFather.adamSmith</c>).</summary>
     /// <exception cref="KeyNotFoundException">Unknown id.</exception>
@@ -272,8 +312,85 @@ public sealed class Ruleset
         (Dictionary<string, NativeNationType> nativeNations, Dictionary<string, SettlementType> settlements) =
             ParseNativeNationTypes(root.Element("indian-nation-types"));
 
+        Dictionary<string, RoleType> roles = ParseRoles(root.Element("roles"));
+        Dictionary<string, Dictionary<string, UnitChange>> unitChanges =
+            ParseUnitChanges(root.Element("unit-change-types"));
+
         return new Ruleset(
-            terrain, units, goods, buildings, fathers, resources, nativeNations, settlements);
+            terrain, units, goods, buildings, fathers, resources, nativeNations, settlements,
+            roles, unitChanges);
+    }
+
+    /// <summary>
+    /// Parses the <c>&lt;roles&gt;</c> section into role types. Offence/defence are summed from each
+    /// role's index-30 additive combat modifiers; required-goods, abilities, downgrade and capture
+    /// rules carry over verbatim. A null section (minimal test rulesets) yields no roles.
+    /// </summary>
+    private static Dictionary<string, RoleType> ParseRoles(XElement? section)
+    {
+        var roles = new Dictionary<string, RoleType>();
+        foreach (XElement el in section?.Elements("role") ?? [])
+        {
+            string id = RequiredAttribute(el, "id");
+
+            double SumModifier(string modifierId) => el.Elements("modifier")
+                .Where(m => (string?)m.Attribute("id") == modifierId
+                            && (string?)m.Attribute("type") is null or "additive")
+                .Sum(m => (double?)m.Attribute("value") ?? 0);
+
+            var parsed = new RoleType(
+                Id: id,
+                Downgrade: (string?)el.Attribute("downgrade"),
+                MaximumCount: (int?)el.Attribute("maximum-count") ?? 1,
+                ExpertUnit: (string?)el.Attribute("expert-unit"),
+                Offence: SumModifier("model.modifier.offence"),
+                Defence: SumModifier("model.modifier.defence"),
+                MovementBonus: SumModifier("model.modifier.movementBonus"),
+                RequiredGoods: el.Elements("required-goods")
+                    .Select(g => new RoleRequiredGoods(
+                        RequiredAttribute(g, "id"),
+                        (int?)g.Attribute("value")
+                            ?? throw new RulesetFormatException($"required-goods in role '{id}' lacks value.")))
+                    .ToList(),
+                RequiredAbilities: el.Elements("required-ability")
+                    .ToDictionary(a => RequiredAttribute(a, "id"), a => (bool?)a.Attribute("value") ?? true),
+                GrantedAbilities: el.Elements("ability")
+                    .ToDictionary(a => RequiredAttribute(a, "id"), a => (bool?)a.Attribute("value") ?? true),
+                RoleChanges: el.Elements("role-change")
+                    .Select(rc => new RoleChange(RequiredAttribute(rc, "from"), RequiredAttribute(rc, "capture")))
+                    .ToList());
+
+            if (!roles.TryAdd(id, parsed))
+            {
+                throw new RulesetFormatException($"Duplicate role id '{id}'.");
+            }
+        }
+        return roles;
+    }
+
+    /// <summary>
+    /// Parses the <c>&lt;unit-change-types&gt;</c> section into a [change-type id][from-unit id] → change
+    /// map. A null section yields no changes (combat then never promotes/demotes/captures by type).
+    /// </summary>
+    private static Dictionary<string, Dictionary<string, UnitChange>> ParseUnitChanges(XElement? section)
+    {
+        var byType = new Dictionary<string, Dictionary<string, UnitChange>>();
+        foreach (XElement typeEl in section?.Elements("unit-change-type") ?? [])
+        {
+            string changeTypeId = RequiredAttribute(typeEl, "id");
+            var byFrom = new Dictionary<string, UnitChange>();
+            foreach (XElement change in typeEl.Elements("unit-type-change"))
+            {
+                string from = RequiredAttribute(change, "from");
+                // Nearest definition wins on the rare duplicate from-row (none in classic combat sets).
+                byFrom[from] = new UnitChange(
+                    From: from,
+                    To: RequiredAttribute(change, "to"),
+                    Probability: (int?)change.Attribute("probability") ?? 0);
+            }
+            byType[changeTypeId] = byFrom;
+        }
+        return byType;
     }
 
     private static ResourceModifier ParseResourceModifier(XElement m) => new(
@@ -369,10 +486,26 @@ public sealed class Ruleset
                 // price = Europe purchase/training cost (0 if absent; manOWar uses
                 // mercenary-price, not price, so it stays non-purchasable here).
                 Price: ResolveIntAttribute(el, "price", elements) ?? 0,
-                // Combat power: base offence/defence attribute folded with the type's own
-                // offence/defence modifiers (e.g. veteran soldier +50%, king's regular +4).
-                Offence: ResolveCombatValue(el, "offence", "model.modifier.offence", elements),
-                Defence: ResolveCombatValue(el, "defence", "model.modifier.defence", elements));
+                // Combat power, split at the role-modifier index (30) so a unit's role additive can
+                // fold in at the correct point: the pre-role additive base (attribute + the type's own
+                // index-<30 additive modifiers, e.g. king's regular +4) and the post-role multiplier
+                // (the type's own index-≥30 percentage modifiers, e.g. veteran soldier +50% → ×1.5).
+                // Offence/Defence are the unarmed fold (additive × multiplier), kept for callers that
+                // want a unit's bare power; the combat code recombines with the role (see Game.OffenceBase).
+                OffenceAdditive: ResolveCombatPower(el, "offence", "model.modifier.offence", elements).Additive,
+                DefenceAdditive: ResolveCombatPower(el, "defence", "model.modifier.defence", elements).Additive,
+                OffenceMultiplier: ResolveCombatPower(el, "offence", "model.modifier.offence", elements).Multiplier,
+                DefenceMultiplier: ResolveCombatPower(el, "defence", "model.modifier.defence", elements).Multiplier,
+                Offence: ResolveCombatPower(el, "offence", "model.modifier.offence", elements).Folded,
+                Defence: ResolveCombatPower(el, "defence", "model.modifier.defence", elements).Folded,
+                // Combat-outcome abilities (drive the loser/winner precedence; default false).
+                DisposeOnCombatLoss: ResolveAbility(el, "model.ability.disposeOnCombatLoss", elements),
+                CanBeCaptured: ResolveAbility(el, "model.ability.canBeCaptured", elements),
+                CaptureUnits: ResolveAbility(el, "model.ability.captureUnits", elements),
+                CaptureEquipment: ResolveAbility(el, "model.ability.captureEquipment", elements),
+                DisposeOnAllEquipmentLost: ResolveAbility(el, "model.ability.disposeOnAllEquipLost", elements),
+                DemoteOnAllEquipmentLost: ResolveAbility(el, "model.ability.demoteOnAllEquipLost", elements),
+                Bombard: ResolveAbility(el, "model.ability.bombard", elements));
         }
 
         if (units.Count == 0)
@@ -382,16 +515,24 @@ public sealed class Ruleset
         return units;
     }
 
+    /// <summary>The index at which a unit's role contributes its offence/defence (FreeCol roles use index 30).</summary>
+    private const int RoleCombatIndex = 30;
+
     /// <summary>
-    /// A unit type's combat power: the base <paramref name="attribute"/> (resolved up the
-    /// extends chain) with the type's own offence/defence <c>&lt;modifier&gt;</c>s folded in
-    /// (additive then percentage, by ascending index — FreeCol applies these at indices 20/40),
-    /// e.g. the veteran soldier's +50% or the king's regular's +4.
+    /// A unit type's combat power, split at the role-modifier index so a role additive can fold at the
+    /// correct point (FreeCol applies modifiers in one ascending-index pass; roles sit at index 30
+    /// between the type's additive modifiers at 20 and its percentage modifiers at 40):
+    /// <list type="bullet">
+    /// <item><c>Additive</c> — the base <paramref name="attribute"/> with the type's own index-&lt;30
+    /// modifiers folded in (king's regular +4, colonial regular +3); a role additive adds to this.</item>
+    /// <item><c>Multiplier</c> — the product of the type's index-≥30 percentage/multiplicative modifiers
+    /// (veteran soldier +50% → 1.5), applied to <c>Additive + roleAdditive</c>.</item>
+    /// <item><c>Folded</c> — <c>Additive × Multiplier</c>, the unit's bare (unarmed) power.</item>
+    /// </list>
     /// </summary>
-    private static double ResolveCombatValue(
+    private static (double Additive, double Multiplier, double Folded) ResolveCombatPower(
         XElement el, string attribute, string modifierId, Dictionary<string, XElement> elements)
     {
-        double power = ResolveIntAttribute(el, attribute, elements) ?? 0;
         var modifiers = new List<(double Value, ModifierType Type, int Index)>();
         for (XElement? current = el; current is not null; current = ParentOf(current, elements))
         {
@@ -409,11 +550,23 @@ public sealed class Ruleset
                     (int?)m.Attribute("index") ?? 0));
             }
         }
-        foreach ((double value, ModifierType type, int _) in modifiers.OrderBy(m => m.Index))
+
+        double additive = ResolveIntAttribute(el, attribute, elements) ?? 0;
+        double multiplier = 1.0;
+        foreach ((double value, ModifierType type, int index) in modifiers.OrderBy(m => m.Index))
         {
-            power = ModifierMath.Apply(type, power, value);
+            if (index < RoleCombatIndex)
+            {
+                additive = ModifierMath.Apply(type, additive, value); // pre-role: fold into the base
+            }
+            else
+            {
+                // Post-role: applies after the role additive. Percentage/multiplicative accumulate as a
+                // multiplier (×(1+v/100) / ×v); classic combat data has no post-role additive.
+                multiplier = ModifierMath.Apply(type, multiplier, value);
+            }
         }
-        return power;
+        return (additive, multiplier, additive * multiplier);
     }
 
     /// <summary>Walks the extends chain until an element defines the attribute. Defaults match FreeCol's UnitType.</summary>

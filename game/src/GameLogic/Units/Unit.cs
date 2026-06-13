@@ -60,6 +60,28 @@ public sealed class Unit
     /// </summary>
     public int? CarrierId { get; internal set; }
 
+    /// <summary>
+    /// The owning native nation's type id (e.g. <c>model.nationType.apache</c>) when this is a
+    /// native brave, or null when owned by the human colonial player. A minimal ownership concept
+    /// (Phase 5 slice 5b) pending the full multi-player refactor.
+    /// </summary>
+    public string? OwnerNationId { get; internal set; }
+
+    /// <summary>True when owned by a native nation (a brave), not the player.</summary>
+    public bool IsNative => OwnerNationId is not null;
+
+    /// <summary>
+    /// The unit's military status / equipment (FreeCol <see cref="Specification.RoleType"/> id);
+    /// the unarmed default role unless armed (soldier/dragoon) or a brave equipped from stock.
+    /// </summary>
+    public string RoleId { get; internal set; } = Specification.RoleType.DefaultRoleId;
+
+    /// <summary>The multiple of the role's required goods held (FreeCol <c>roleCount</c>); 0 for the default role.</summary>
+    public int RoleCount { get; internal set; }
+
+    /// <summary>True when the unit is in the unarmed default role.</summary>
+    public bool HasDefaultRole => RoleId == Specification.RoleType.DefaultRoleId;
+
     /// <summary>True when this unit is a passenger aboard a ship.</summary>
     public bool IsAboard => CarrierId is not null;
 

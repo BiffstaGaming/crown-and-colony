@@ -75,7 +75,14 @@ public partial class GameController : Node2D
         _game = game;
         _selectedUnit = null;
         _notice = null;
-        GetNode<Camera2D>("Camera").Position = MapView.TileCentre(_game.Units[0].Position);
+        // Centre on the player's first on-map unit; after founding the only colony the player may have
+        // none on the map (and the unit list now also holds native braves), so fall back to a colony,
+        // then the map centre.
+        Position focus = _game.PlayerUnits.FirstOrDefault(u => u.IsOnMap)?.Position
+            ?? (_game.Colonies.Count > 0
+                ? _game.Colonies[0].Position
+                : new Position(_game.Map.Width / 2, _game.Map.Height / 2));
+        GetNode<Camera2D>("Camera").Position = MapView.TileCentre(focus);
         RefreshView();
     }
 
@@ -119,7 +126,7 @@ public partial class GameController : Node2D
 
         // Click a unit: select it. Click elsewhere with a selection: try to move.
         // Only on-map units are clickable (units in Europe / at sea live off-map).
-        Unit? unitOnTile = _game.Units.FirstOrDefault(u => u.IsOnMap && u.Position == tile);
+        Unit? unitOnTile = _game.Units.FirstOrDefault(u => u.IsOnMap && !u.IsNative && u.Position == tile);
         if (unitOnTile is not null)
         {
             _selectedUnit = unitOnTile;
@@ -206,7 +213,7 @@ public partial class GameController : Node2D
         SyncColonyMarkers();
         SyncNativeMarkers();
 
-        Unit? unit = _game.Units.FirstOrDefault(u => u.IsOnMap);
+        Unit? unit = _game.PlayerUnits.FirstOrDefault(u => u.IsOnMap); // never render a native brave as the HUD unit
         _unitMarker.Visible = unit is not null;
         if (unit is not null)
         {

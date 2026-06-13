@@ -53,3 +53,4 @@ The world starts hidden. Your units and colonies light up the map — each revea
 |---|---|---|
 | 2026-06-13 | Exploration fog: reveal on spawn/move, persisted in saves (v2) | Phase 2a |
 | 2026-06-13 | Explored vs. currently-visible: `CurrentlyVisible`/`IsVisible` (units + colonies), dimmed remembered tiles in `MapView`; `VisibilityTests` + `remembered-fog` golden | Phase 5 (fog upgrade) |
+| 2026-06-14 | Native units (braves) are excluded from `CurrentlyVisible`/`IsVisible` and don't reveal/explore — only the player's own units and colonies lift fog | Phase 5 slice 5b |

@@ -53,7 +53,7 @@ public class JourneyE2ETests
         runner.SimulateKeyPressed(Key.B);
         await runner.SimulateFrames(2);
         AssertThat(game.Colonies.Count).IsEqual(1);
-        AssertThat(game.Units.Count).IsEqual(0);
+        AssertThat(game.PlayerUnits.Count()).IsEqual(0); // native braves remain on the map
         var colony = game.Colonies[0];
 
         // ── open the colony panel by clicking the colony's tile ──

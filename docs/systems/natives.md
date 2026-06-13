@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | In development (Phase 5: settlements placed + rendered + persisted (slice 1); tension/alarm + speak-with-chief + learn-skill (slice 3). Trade and combat are later slices.) |
-| **Last verified** | 2026-06-14 @ Phase 5 slice 3 |
-| **Code** | `Specification/NativeNationType.cs`, `Natives/NativeSettlement.cs` (+ `AlarmLevel`), `World/NativeSettlementGenerator.cs`, `GameSession/Game.cs` (`ChangeNativeAlarm`/`Visit`/`LearnSkill`); rendering `presentation/NativeSettlementMarker.cs` + `GameController.SyncNativeMarkers` |
+| **Status** | In development (Phase 5: settlements placed + rendered + persisted (slice 1); tension/alarm + speak-with-chief + learn-skill (slice 3); sell-trade (slice 4); **brave defenders + alarm-on-attack (slice 5b)**. Settlement assault/plunder and native-initiated combat are slice 5c.) |
+| **Last verified** | 2026-06-14 @ Phase 5 slice 5b |
+| **Code** | `Specification/NativeNationType.cs`, `Natives/NativeSettlement.cs` (+ `AlarmLevel`, `TensionAdd*`), `World/NativeSettlementGenerator.cs`, `GameSession/Game.cs` (`ChangeNativeAlarm`/`Visit`/`LearnSkill`/brave spawning + alarm on `Attack`); rendering `presentation/NativeSettlementMarker.cs` + `GameController.SyncNativeMarkers`. Combat itself lives in [combat](combat.md). |
 | **Tests** | `GameLogic.Tests/Specification/NativeNationTypeTests.cs`, `GameSession/NativeSettlementTests.cs`, `GameSession/NativeInteractionTests.cs`; visual `presentation/tests/VisualGoldenTests.cs` |
 | **FreeCol reference** | `freecol/data/rules/classic/specification.xml` `<indian-nation-types>`; `freecol/src/.../server/generator/SimpleMapGenerator.java` (`makeNativeSettlements`) |
 | **Related systems** | [ruleset-data](ruleset-data.md), [map-terrain](map-terrain.md), [fog-of-war](fog-of-war.md), [save-load](save-load.md) |
@@ -24,7 +24,9 @@ The New World is already inhabited. When a game begins, the indigenous nations �
 
 **Interacting with a settlement.** Move a colonist next to a settlement and you can **speak with its chief**: the first time, they tell tales of nearby lands (revealing the map around the settlement) and usually hand over a small gold gift. A plain colonist (a free colonist or indentured servant) can also **learn the settlement's skill** — it is taught the settlement's expert profession (e.g. an expert farmer), a free shortcut to a specialist. An ordinary settlement teaches its one skill just once; a nation's **capital** teaches forever.
 
-Each settlement also has an **alarm** level toward you — Happy, Content, Displeased, Angry, or Hateful. It starts peaceful and cools over time, but hostile acts (taking their land, attacking them — later slices) raise it. An **angry** settlement won't teach you; a **hateful** one gives no gifts and is dangerous to be near.
+Each settlement also has an **alarm** level toward you — Happy, Content, Displeased, Angry, or Hateful. It starts peaceful and cools over time, but hostile acts raise it: **attacking one of its braves** adds a lot of alarm, and **killing the brave** adds a lot more. An **angry** settlement won't teach you; a **hateful** one gives no gifts and is dangerous to be near.
+
+**Braves.** Every settlement is guarded by a **brave** — a native warrior standing on the land next to it. Braves are the natives' fighting units (and your targets): you can attack one with an armed unit, and combat plays out by the rules in [combat](combat.md). In this slice braves only *defend* — native-initiated raids come with the AI in a later slice.
 
 **Trading.** Sail a ship loaded with goods next to a coastal settlement and you can **sell your cargo** to it for gold — no European tax. Each settlement most wants three particular goods and pays a premium for them (half as much again for its favourite). Bring what they crave and you'll do far better than at the European docks. Trading is friendly: each sale lowers their alarm a little. (Buying *from* settlements, and reaching inland ones with wagon trains, come later.)
 
@@ -71,7 +73,8 @@ Each settlement also has an **alarm** level toward you — Happy, Content, Displ
 | Angry | 701–800 | won't teach its skill |
 | Hateful | 801–1000 | no gifts; dangerous |
 
-- Settlements start at alarm **0** (Happy). Each turn alarm cools toward 0 by `value/100 + 4` (FreeCol `ServerPlayer` decay). `Game.ChangeNativeAlarm(settlement, delta)` (clamped 0–1000) is the mutation point hostile acts will call in later slices.
+- Settlements start at alarm **0** (Happy). Each turn alarm cools toward 0 by `value/100 + 4` (FreeCol `ServerPlayer` decay). `Game.ChangeNativeAlarm(settlement, delta)` (clamped 0–1000) is the public alarm mutator. Combat now calls it: attacking a brave adds **+200** (`TensionAddNormal`) to its nearest settlement, and **+400** more (`TensionAddUnitDestroyed`) if the brave is killed — see [combat](combat.md). (Nation-level tension and land-taking deltas are later slices; the `TensionAdd*` constants live on `NativeSettlement`.)
+- **Braves** (`Game.New`): each settlement is garrisoned by one native-owned `model.unit.brave` placed on a free land tile adjacent to it (deterministic, no RNG draw — the placement stream is unaffected). Braves are full `Unit`s (`OwnerNationId` = the settlement's nation, unarmed default role) so they round-trip through the save and can be the strongest defender on their tile. They are **excluded from the player's fog/visibility** (a brave never reveals tiles for the player) and cannot be selected or commanded by the player. Native-initiated movement/attacks need the native AI (slice 5c).
 - **Speak with chief** (`Visit`): a person unit next to a settlement that hasn't been visited reveals the lands within `TalesRevealRadius` (3) of it and, unless the settlement is Hateful, gives a gold gift of **10–80** (FreeCol `GIFT_MINIMUM/MAXIMUM`). Once only; ends the unit's turn.
 - **Learn skill** (`LearnSkill`): a **free colonist or indentured servant** next to a settlement whose skill isn't yet consumed and whose alarm is below Angry is taught the settlement's `LearnableSkill` expert type (the unit is replaced by one of that type, keeping its id). The skill is then consumed — **except at a capital**, which teaches indefinitely. Experts and petty criminals cannot learn.
 - **Trade** (`SellToNatives`): a ship next to a settlement whose alarm is below Angry sells goods from its hold for gold (no European tax). Each settlement has up to **3 wanted goods**; the price it pays per unit is `(12 + trade-bonus) × wanted-premium`, where the premium is **150 / 125 / 110%** for its 1st / 2nd / 3rd wanted good (else 100%), with a ~10% markup on top (FreeCol `getPriceToSell`). `trade-bonus` is the settlement type's (camp 1 → city 4). A successful sale lowers the settlement's alarm; trading ends the ship's turn.
@@ -120,7 +123,8 @@ Each settlement also has an **alarm** level toward you — Happy, Content, Displ
 - [ ] **Native interaction UI** (next): on-map panel to speak with the chief / learn a skill (L3).
 - [x] **Native trade — sell** (P5 slice 4): sell cargo to a coastal settlement (wanted goods + trade-bonus pricing, alarm-gated, goodwill).
 - [ ] **Native trade — buy + inland**: buying from settlements (needs a settlement goods-stock/production model); wagon trains for land transport to inland settlements; per-turn wanted-goods refresh by stock; haggling.
-- [ ] **Combat** (P5 slice 5): braves, settlement defence (the parsed defence modifier), plunder/destruction (`<plunder>` parsing); attacking/land-taking should call `ChangeNativeAlarm`.
+- [x] **Combat — braves & alarm-on-attack** (P5 slice 5b): native-owned brave defenders; attacking a brave calls `ChangeNativeAlarm` (+200 attack, +400 kill). See [combat](combat.md).
+- [ ] **Combat — settlements** (P5 slice 5c): settlement defence (the parsed defence modifier), plunder/destruction (`<plunder>` parsing), native-initiated raids (AI); land-taking should call `ChangeNativeAlarm`; nation-level tension + propagation.
 - [ ] **Scout role** for the richer chief-speak (bigger beads from `<gifts>` RandomRange, free-learn chance, death at hateful); `<gifts>` parsing.
 - [ ] **Move native-interaction tuning constants to ruleset data** (transposability, ADR-018): the learnable-colonist set (via FreeCol `unit-change-types` NATIVES, instead of the hard-coded ids), the gift range (10–80), the tales radius, the alarm-decay constants, and the alarm bands. They are FreeCol-pinned today; a future variant should be able to override native temperament/generosity without code. Tracked on the kanban.
 - [ ] **Settlement growth** over turns; map *regions* so placement can follow FreeCol's region/landmass counts.
@@ -133,3 +137,4 @@ Each settlement also has an **alarm** level toward you — Happy, Content, Displ
 | 2026-06-13 | Native nation + settlement parsing, `NativeSettlement` domain, placement (capital-first, min-distance, dedicated RNG stream), save v14, FreeCol art rendering (fog-gated) | Phase 5 slice 1 |
 | 2026-06-14 | Alarm/tension model (`AlarmLevel`, `ChangeNativeAlarm`, per-turn decay), speak-with-chief (`Visit`: tales reveal + 10–80 gift), learn-skill (`LearnSkill`: upgrade via unit replace, consume unless capital); save v16 | Phase 5 slice 3 |
 | 2026-06-14 | Native trade — sell cargo to a coastal settlement (`SellToNatives`/`NativeSalePrice`); 3 wanted goods per settlement (premium pricing) generated at placement; trade lowers alarm; save v17 | Phase 5 slice 4 |
+| 2026-06-14 | Native braves (one per settlement, fog-excluded) + alarm on attack (`TensionAdd*` constants, +200 attack / +400 kill via `ChangeNativeAlarm`); save v18. Combat itself in [combat](combat.md). | Phase 5 slice 5b |

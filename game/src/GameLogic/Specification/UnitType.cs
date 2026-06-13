@@ -31,6 +31,17 @@ namespace CrownAndColony.GameLogic.Specification;
 /// Combat defence power (spec <c>defence</c> + folded defence modifiers): free colonist 1, brave 1,
 /// veteran soldier 1.5, king's regular 5, artillery 5.
 /// </param>
+/// <param name="DisposeOnCombatLoss">Defeating this unit destroys it outright (<c>model.ability.disposeOnCombatLoss</c>; braves, scouts).</param>
+/// <param name="CanBeCaptured">This unit can be captured rather than killed when it loses (<c>model.ability.canBeCaptured</c>; free colonist).</param>
+/// <param name="CaptureUnits">This unit can capture a defeated enemy (<c>model.ability.captureUnits</c>).</param>
+/// <param name="CaptureEquipment">This unit can capture a defeated enemy's role equipment (<c>model.ability.captureEquipment</c>; braves).</param>
+/// <param name="DisposeOnAllEquipmentLost">Losing the last equipment destroys this unit (<c>model.ability.disposeOnAllEquipLost</c>; king's regular).</param>
+/// <param name="DemoteOnAllEquipmentLost">Losing the last equipment demotes this unit's type (<c>model.ability.demoteOnAllEquipLost</c>; colonial regular).</param>
+/// <param name="Bombard">Artillery-style unit (<c>model.ability.bombard</c>): suffers the −75% artillery-in-the-open penalty when fighting outside a settlement.</param>
+/// <param name="OffenceAdditive">The pre-role offence base (the attribute + the type's own additive offence modifiers, e.g. king's regular +4), before any percentage. A unit's role additive folds onto this before <see cref="OffenceMultiplier"/>.</param>
+/// <param name="DefenceAdditive">The pre-role defence base (attribute + additive defence modifiers), before any percentage.</param>
+/// <param name="OffenceMultiplier">The post-role offence multiplier from the type's own percentage modifiers (veteran soldier +50% → 1.5), applied after the role additive.</param>
+/// <param name="DefenceMultiplier">The post-role defence multiplier from the type's own percentage modifiers.</param>
 public sealed record UnitType(
     string Id,
     int Movement,
@@ -43,7 +54,18 @@ public sealed record UnitType(
     int SpaceTaken = 1,
     int Price = 0,
     double Offence = 0,
-    double Defence = 0)
+    double Defence = 0,
+    bool DisposeOnCombatLoss = false,
+    bool CanBeCaptured = false,
+    bool CaptureUnits = false,
+    bool CaptureEquipment = false,
+    bool DisposeOnAllEquipmentLost = false,
+    bool DemoteOnAllEquipmentLost = false,
+    bool Bombard = false,
+    double OffenceAdditive = 0,
+    double DefenceAdditive = 0,
+    double OffenceMultiplier = 1,
+    double DefenceMultiplier = 1)
 {
     /// <summary>Short name derived from the id: <c>model.unit.freeColonist</c> → <c>freeColonist</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];

@@ -18,7 +18,7 @@ public class GameTests
         var game = Game.New(Classic, seed: 42);
 
         Assert.Equal(1, game.Turn);
-        Unit unit = Assert.Single(game.Units);
+        Unit unit = Assert.Single(game.PlayerUnits); // native braves also exist on the map
         Assert.Equal(Game.StartingUnitTypeId, unit.Type.Id);
 
         TerrainType startTerrain = game.Map.TerrainAt(unit.Position);
@@ -185,7 +185,7 @@ public class GameTests
 
         var colony = game.FoundColony(unit);
 
-        Assert.Empty(game.Units);                      // founder settled down
+        Assert.Empty(game.PlayerUnits);                // founder settled down (braves remain)
         Assert.Single(game.Colonies);
         Assert.Equal(site, colony.Position);
         Assert.Equal(1, colony.Population);

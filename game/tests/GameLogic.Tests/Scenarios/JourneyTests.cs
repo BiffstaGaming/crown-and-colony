@@ -37,7 +37,7 @@ public class JourneyTests
         // M1 — new game.
         var game = Game.New(Classic, seed: FoundSeed);
         Assert.Equal(1, game.Turn);
-        Unit unit = Assert.Single(game.Units);
+        Unit unit = Assert.Single(game.PlayerUnits); // native braves also exist
         Assert.True(game.IsExplored(unit.Position), "start tile must be explored");
         Assert.False(game.Map.TerrainAt(unit.Position).IsWater);
         Assert.True(game.Map.TerrainAt(unit.Position).CanSettle);
@@ -66,7 +66,7 @@ public class JourneyTests
 
         // M4 — found consumes the founder and creates the colony.
         Colony colony = game.FoundColony(unit);
-        Assert.Empty(game.Units);
+        Assert.Empty(game.PlayerUnits); // braves remain on the map
         Colony onlyColony = Assert.Single(game.Colonies);
         Assert.Same(colony, onlyColony);
         Assert.Equal(foundedAt, colony.Position);

@@ -41,6 +41,7 @@ Everything the player sees and touches: scene tree, drawing, camera, input, UI. 
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-14 | `GameController` only selects/renders the **player's** units (native braves are skipped as the HUD unit and on click); camera centres on a player unit → colony → map centre (braves now share the unit list) | Phase 5 slice 5b |
 | 2026-06-13 | Walking-skeleton scene: map view, unit, camera, turn UI, quicksave; GdUnit4 L3 wiring | Phase 1 skeleton |
 | 2026-06-13 | Isometric rendering with FreeCol terrain/unit/settlement art (ADR-014); L4 visual-golden harness | Phase 2 |
 | 2026-06-13 | Interactive colony screen (`ColonyPanel`); L3 input + panel tests | Phase 3 |

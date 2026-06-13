@@ -1,4 +1,5 @@
 using CrownAndColony.GameLogic.Colonies;
+using CrownAndColony.GameLogic.Combat;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
@@ -17,6 +18,15 @@ public sealed class Game
 {
     /// <summary>The starting unit's type for a new game.</summary>
     public const string StartingUnitTypeId = "model.unit.freeColonist";
+
+    /// <summary>The native warrior unit type spawned to garrison native settlements (FreeCol <c>model.unit.brave</c>).</summary>
+    public const string BraveUnitTypeId = "model.unit.brave";
+
+    /// <summary>
+    /// Braves spawned per native settlement (Phase 5 slice 5b — a documented simplification; FreeCol
+    /// scales a settlement's military strength to its size). They are native-owned defenders.
+    /// </summary>
+    private const int BravesPerSettlement = 1;
 
     /// <summary>Default colony names, used in founding order (nation-specific lists come with nations).</summary>
     private static readonly string[] ColonyNames =
@@ -189,8 +199,14 @@ public sealed class Game
         _currentFather = fatherId;
     }
 
-    /// <summary>All units in the game.</summary>
+    /// <summary>All units in the game — the player's and the natives' (braves).</summary>
     public IReadOnlyList<Unit> Units => _units;
+
+    /// <summary>The human colonial player's units (everything not owned by a native nation).</summary>
+    public IEnumerable<Unit> PlayerUnits => _units.Where(u => !u.IsNative);
+
+    /// <summary>The native braves owned by a nation.</summary>
+    public IEnumerable<Unit> NativeUnits => _units.Where(u => u.IsNative);
 
     /// <summary>All colonies, in founding order.</summary>
     public IReadOnlyList<Colony> Colonies => _colonies;
@@ -413,9 +429,383 @@ public sealed class Game
         return price;
     }
 
+    // ===== Combat (Phase 5 slice 5b): roles/equipment + the attack action =====
+
+    private const string AutomaticPromotionAbility = "model.ability.automaticPromotion"; // George Washington
+    private const string AutomaticEquipmentAbility = "model.ability.automaticEquipment";  // Paul Revere
+    private const string CaptureUnitsAbility = "model.ability.captureUnits";
+    private const string CaptureEquipmentAbility = "model.ability.captureEquipment";
+
     /// <summary>
-    /// Replaces a unit with one of a new type, keeping its id, position, location, carrier
-    /// and cargo (units are immutable in their <see cref="Unit.Type"/>, so an upgrade is a swap).
+    /// A unit's offence base for combat: the type's pre-role additive plus its role's offence, then the
+    /// type's own percentage multiplier (so a veteran soldier's +50% applies to base <em>and</em> role —
+    /// FreeCol's single index-ordered fold; the situational percentages come later in <see cref="CombatModel"/>).
+    /// </summary>
+    internal double OffenceBase(Unit unit) =>
+        (unit.Type.OffenceAdditive + Ruleset.Role(unit.RoleId).Offence) * unit.Type.OffenceMultiplier;
+
+    /// <summary>A unit's defence base for combat: the type's pre-role additive plus its (effective) role's defence, then the type's percentage multiplier.</summary>
+    internal double DefenceBase(Unit unit) =>
+        (unit.Type.DefenceAdditive + Ruleset.Role(EffectiveCombatRole(unit, defending: true)).Defence)
+        * unit.Type.DefenceMultiplier;
+
+    /// <summary>
+    /// The role a unit fights in. A defender may be automatically equipped for the fight (FreeCol
+    /// <c>getAutomaticRole</c>): an unarmed unit in a colony whose owner has the automatic-equipment
+    /// ability (Paul Revere → soldier) and whose colony stocks the equipment. (5b applies the resulting
+    /// defence bonus only; it does not permanently consume the goods — that persistence is a later slice.)
+    /// </summary>
+    internal string EffectiveCombatRole(Unit unit, bool defending)
+    {
+        if (!defending || !unit.HasDefaultRole)
+        {
+            return unit.RoleId;
+        }
+        if (ColonyAt(unit.Position) is not { } colony)
+        {
+            return unit.RoleId; // auto-equip only inside a friendly colony
+        }
+        foreach (string roleId in AutoEquipRoleScopes(unit.OwnerNationId))
+        {
+            RoleType role = Ruleset.Role(roleId);
+            if (role.RequiredGoods.All(g => colony.StoreOf(Ruleset.StorageIdOf(g.GoodsId)) >= g.Amount))
+            {
+                return roleId;
+            }
+        }
+        return unit.RoleId;
+    }
+
+    /// <summary>
+    /// The roles a unit's owner can be automatically equipped into when defending. The player draws on
+    /// the elected Continental Congress (Paul Revere scopes the soldier role); native auto-equipment is
+    /// deferred until native settlements stock goods, so a native owner yields none for now.
+    /// </summary>
+    private IEnumerable<string> AutoEquipRoleScopes(string? ownerNationId) =>
+        ownerNationId is not null
+            ? []
+            : _congress.Select(Ruleset.Father)
+                .SelectMany(f => f.Abilities)
+                .Where(a => a.Id == AutomaticEquipmentAbility && a.Value)
+                .SelectMany(a => a.ScopeTypes);
+
+    /// <summary>The strongest enemy of <paramref name="attacker"/> standing on a tile, or null.</summary>
+    private Unit? DefenderAt(Unit attacker, Position p) =>
+        _units.Where(u => u.IsOnMap && u.IsNative != attacker.IsNative && u.Position == p)
+            .OrderByDescending(DefenceBase)
+            .FirstOrDefault();
+
+    /// <summary>A free, in-bounds land tile adjacent to a centre (no settlement or unit on it), or null.</summary>
+    private Position? FreeAdjacentLand(Position centre) =>
+        centre.Neighbours()
+            .Where(n => Map.InBounds(n) && !Map.TerrainAt(n).IsWater
+                        && ColonyAt(n) is null && NativeSettlementAt(n) is null
+                        && !_units.Any(u => u.IsOnMap && u.Position == n))
+            .Cast<Position?>()
+            .FirstOrDefault();
+
+    /// <summary>The nearest settlement of a native unit's nation (for routing combat alarm), or null.</summary>
+    private NativeSettlement? HomeSettlementOf(Unit nativeUnit, Position at) =>
+        !nativeUnit.IsNative
+            ? null
+            : _nativeSettlements
+                .Where(s => s.NationTypeId == nativeUnit.OwnerNationId)
+                .OrderBy(s => Math.Max(Math.Abs(s.Position.X - at.X), Math.Abs(s.Position.Y - at.Y)))
+                .FirstOrDefault();
+
+    /// <summary>The attacker's movement-spent penalty (FreeCol: 1 point left → big, 2 → small).</summary>
+    private static MovementPenalty MovementPenaltyFor(Unit attacker) => attacker.MovementLeft switch
+    {
+        1 => MovementPenalty.Big,
+        2 => MovementPenalty.Small,
+        _ => MovementPenalty.None,
+    };
+
+    /// <summary>Whether <paramref name="unit"/> may equip into <paramref name="targetRoleId"/> at <paramref name="colony"/> now.</summary>
+    public MoveCheck CheckEquipRole(Unit unit, Colony colony, string targetRoleId)
+    {
+        if (unit.IsNative)
+        {
+            return MoveCheck.No("Native units are not equipped this way.");
+        }
+        if (!unit.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (!unit.Type.IsPerson)
+        {
+            return MoveCheck.No($"A {unit.Type.ShortName} cannot change its equipment.");
+        }
+        if (unit.Position != colony.Position)
+        {
+            return MoveCheck.No("Stand in the colony to change equipment.");
+        }
+        RoleType target = Ruleset.Role(targetRoleId);
+        if (target.RequiresNative || target.RequiresRef)
+        {
+            return MoveCheck.No($"A colonist cannot take the {target.ShortName} role.");
+        }
+        foreach ((string goodsId, int amount) in RoleGoodsDelta(unit, target))
+        {
+            if (amount > 0 && colony.StoreOf(Ruleset.StorageIdOf(goodsId)) < amount)
+            {
+                return MoveCheck.No($"The colony lacks {amount} {goodsId[(goodsId.LastIndexOf('.') + 1)..]}.");
+            }
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Equips a colonist into a role, consuming the required-goods difference from the colony store
+    /// (and refunding goods the change drops). Arming a free colonist into the soldier role spends
+    /// 50 muskets; into the dragoon role, 50 muskets and 50 horses.
+    /// </summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckEquipRole"/>.</exception>
+    public void EquipRole(Unit unit, Colony colony, string targetRoleId)
+    {
+        MoveCheck check = CheckEquipRole(unit, colony, targetRoleId);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        RoleType target = Ruleset.Role(targetRoleId);
+        foreach ((string goodsId, int amount) in RoleGoodsDelta(unit, target))
+        {
+            colony.AddGoods(Ruleset.StorageIdOf(goodsId), -amount); // consume positive deltas, refund negative
+        }
+        ChangeRole(unit, targetRoleId, targetRoleId == RoleType.DefaultRoleId ? 0 : 1);
+    }
+
+    /// <summary>
+    /// The per-good change in equipment to move from a unit's current role to <paramref name="target"/>
+    /// (at a single equipment count): positive = consumed from the store, negative = refunded.
+    /// </summary>
+    private IEnumerable<(string GoodsId, int Amount)> RoleGoodsDelta(Unit unit, RoleType target)
+    {
+        var delta = new Dictionary<string, int>();
+        foreach (RoleRequiredGoods g in target.RequiredGoods)
+        {
+            delta[g.GoodsId] = delta.GetValueOrDefault(g.GoodsId) + g.Amount;
+        }
+        foreach (RoleRequiredGoods g in Ruleset.Role(unit.RoleId).RequiredGoods)
+        {
+            delta[g.GoodsId] = delta.GetValueOrDefault(g.GoodsId) - (g.Amount * Math.Max(1, unit.RoleCount));
+        }
+        return delta.Where(kv => kv.Value != 0).Select(kv => (kv.Key, kv.Value));
+    }
+
+    /// <summary>Sets a unit's role and equipment count (the default role always has count 0).</summary>
+    private static void ChangeRole(Unit unit, string roleId, int count)
+    {
+        unit.RoleId = roleId;
+        unit.RoleCount = roleId == RoleType.DefaultRoleId ? 0 : Math.Max(1, count);
+    }
+
+    /// <summary>Whether <paramref name="attacker"/> may attack the strongest enemy on <paramref name="target"/> now.</summary>
+    public MoveCheck CheckAttack(Unit attacker, Position target)
+    {
+        if (!attacker.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (attacker.IsNative)
+        {
+            return MoveCheck.No("Native units do not attack yet."); // native-initiated combat is a later slice
+        }
+        if (!Map.InBounds(target))
+        {
+            return MoveCheck.No("Target is off the map.");
+        }
+        if (!attacker.Position.IsAdjacentTo(target))
+        {
+            return MoveCheck.No("Attack an adjacent tile.");
+        }
+        if (attacker.MovementLeft <= 0)
+        {
+            return MoveCheck.No("No movement left this turn.");
+        }
+        if (OffenceBase(attacker) <= 0)
+        {
+            return MoveCheck.No($"A {attacker.Type.ShortName} has no offensive strength — arm it first.");
+        }
+        if (DefenderAt(attacker, target) is null)
+        {
+            return MoveCheck.No("There is no enemy to attack there.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Resolves an attack on the strongest defender at <paramref name="target"/> through the pure
+    /// <see cref="CombatModel"/> (drawing from the game's main saved RNG, so combat is resume-deterministic),
+    /// applies the graded outcome, raises the attacked nation's alarm, and ends the attacker's turn.
+    /// Open-field unit combat only (Phase 5 slice 5b): assaulting the settlement itself is slice 5c.
+    /// </summary>
+    /// <returns>The graded combat result.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAttack"/>.</exception>
+    public CombatResult Attack(Unit attacker, Position target) => Attack(attacker, target, _random);
+
+    /// <summary>
+    /// The attack resolution, drawing from an explicit RNG. Production uses the game's main saved RNG
+    /// (resume-deterministic); tests inject a fixed RNG to force a chosen outcome band.
+    /// </summary>
+    internal CombatResult Attack(Unit attacker, Position target, IGameRandom random)
+    {
+        MoveCheck check = CheckAttack(attacker, target);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+
+        Unit defender = DefenderAt(attacker, target)!;
+        NativeSettlement? defenderHome = HomeSettlementOf(defender, target);
+
+        var attackContext = new AttackContext(
+            Movement: MovementPenaltyFor(attacker), // snapshot the movement penalty before spending it
+            ArtilleryInOpen: attacker.Type.Bombard); // 5b defenders are in the open, never in a settlement
+        var defenceContext = new DefenceContext(
+            TerrainDefenceBonus: Map.TerrainAt(target).DefenceBonus);
+
+        double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext);
+        double defencePower = CombatModel.DefencePower(DefenceBase(defender), defenceContext);
+
+        // Attacking ends the attacker's turn now — before any promotion/demotion that swaps the unit
+        // object (UpgradeUnitType copies MovementLeft, so the swapped unit inherits the spent turn).
+        attacker.MovementLeft = 0;
+
+        CombatResult result = CombatModel.Resolve(CombatModel.WinProbability(attackPower, defencePower), random);
+        bool attackerWon = result is CombatResult.GreatWin or CombatResult.Win;
+        bool great = result is CombatResult.GreatWin or CombatResult.GreatLoss;
+        Unit winner = attackerWon ? attacker : defender;
+        Unit loser = attackerWon ? defender : attacker;
+
+        ResolveLoserOutcome(winner, loser);
+        ApplyWinnerPromotion(winner, great, random);
+
+        // Attacking a native raises its settlement's alarm; destroying its brave raises it further.
+        if (defenderHome is not null)
+        {
+            ChangeNativeAlarm(defenderHome, NativeSettlement.TensionAddNormal);
+            if (!_units.Contains(defender))
+            {
+                ChangeNativeAlarm(defenderHome, NativeSettlement.TensionAddUnitDestroyed);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Applies what happens to the losing unit (FreeCol <c>SimpleCombatModel.resolveAttack</c>, land
+    /// open-field path), in precedence order: destroyed if doomed-on-loss; else an armed role is disarmed
+    /// (the winner may capture the equipment to arm itself) and may then be killed/demoted on losing its
+    /// last equipment; else a capturable unit changes side; else a demotable type steps down; else it dies.
+    /// </summary>
+    private void ResolveLoserOutcome(Unit winner, Unit loser)
+    {
+        RoleType loserRole = Ruleset.Role(loser.RoleId);
+
+        // 1. Doomed on any combat loss (braves, scouts) → destroyed.
+        if (DisposeOnCombatLoss(loser))
+        {
+            _units.Remove(loser);
+            return;
+        }
+
+        // 2. An offensive (armed) role is disarmed.
+        if (loserRole.IsOffensive)
+        {
+            bool killsOnLastLost = loser.Type.DisposeOnAllEquipmentLost && loserRole.Downgrade is null;
+            bool demotesOnLastLost = loser.Type.DemoteOnAllEquipmentLost && loserRole.Downgrade is null;
+            if (CanCaptureEquipment(winner)
+                && Ruleset.CaptureRole(winner.RoleId, loser.RoleId, winner.IsNative) is { } captured)
+            {
+                ChangeRole(winner, captured.Id, 1); // the winner captures the equipment and arms itself
+            }
+            ChangeRole(loser, loserRole.Downgrade ?? RoleType.DefaultRoleId, loserRole.Downgrade is null ? 0 : 1);
+            if (killsOnLastLost)
+            {
+                _units.Remove(loser);
+            }
+            else if (demotesOnLastLost
+                && Ruleset.GetUnitChange(UnitChangeTypeIds.Demotion, loser.Type.Id) is { } d)
+            {
+                UpgradeUnitType(loser, d.To);
+            }
+            return;
+        }
+
+        // 3. A capturable unit changes side (and may downgrade its type on capture).
+        if (loser.Type.CanBeCaptured && CanCaptureUnits(winner))
+        {
+            CaptureUnit(loser, winner.OwnerNationId);
+            return;
+        }
+
+        // 4. A demotable type steps down; otherwise the loser is destroyed.
+        if (Ruleset.GetUnitChange(UnitChangeTypeIds.Demotion, loser.Type.Id) is { } demotion)
+        {
+            UpgradeUnitType(loser, demotion.To);
+            return;
+        }
+
+        _units.Remove(loser);
+    }
+
+    /// <summary>Captures a defeated unit: it changes side (with the capture type-change, if any) and is disarmed.</summary>
+    private void CaptureUnit(Unit loser, string? newOwnerNationId)
+    {
+        Unit captive = Ruleset.GetUnitChange(UnitChangeTypeIds.Capture, loser.Type.Id) is { } change
+            ? UpgradeUnitType(loser, change.To) // e.g. veteran soldier → free colonist on capture
+            : loser;
+        captive.OwnerNationId = newOwnerNationId;
+        ChangeRole(captive, RoleType.DefaultRoleId, 0);
+    }
+
+    /// <summary>
+    /// Promotes the winner if its type can advance and either it has automatic promotion (George
+    /// Washington) or this was a decisive (great) win and the promotion roll succeeds (FreeCol
+    /// <c>SimpleCombatModel</c>; the promotion draw is a second main-RNG draw, taken only when needed).
+    /// </summary>
+    private void ApplyWinnerPromotion(Unit winner, bool great, IGameRandom random)
+    {
+        if (!_units.Contains(winner)
+            || Ruleset.GetUnitChange(UnitChangeTypeIds.Promotion, winner.Type.Id) is not { } change)
+        {
+            return;
+        }
+        bool automatic = AbilityForOwner(winner.OwnerNationId, AutomaticPromotionAbility);
+        if (automatic || (great && 100 * random.NextDouble() <= change.Probability))
+        {
+            UpgradeUnitType(winner, change.To);
+        }
+    }
+
+    /// <summary>True when defeating <paramref name="unit"/> destroys it outright (type or role <c>disposeOnCombatLoss</c>).</summary>
+    private bool DisposeOnCombatLoss(Unit unit) =>
+        unit.Type.DisposeOnCombatLoss || Ruleset.Role(unit.RoleId).DisposeOnCombatLoss;
+
+    /// <summary>True when <paramref name="unit"/> can capture a defeated enemy's role equipment (type or role).</summary>
+    private bool CanCaptureEquipment(Unit unit) =>
+        unit.Type.CaptureEquipment
+        || Ruleset.Role(unit.RoleId).GrantedAbilities.GetValueOrDefault(CaptureEquipmentAbility);
+
+    /// <summary>True when <paramref name="unit"/> can capture a defeated enemy unit (type or role).</summary>
+    private bool CanCaptureUnits(Unit unit) =>
+        unit.Type.CaptureUnits
+        || Ruleset.Role(unit.RoleId).GrantedAbilities.GetValueOrDefault(CaptureUnitsAbility);
+
+    /// <summary>
+    /// Whether a unit's owner has a combat ability: the player via the elected Continental Congress
+    /// (Washington, Revere); native nations have no automatic combat abilities wired yet (deferred with
+    /// native goods storage), so a native owner returns false.
+    /// </summary>
+    private bool AbilityForOwner(string? ownerNationId, string abilityId) =>
+        ownerNationId is null && HasAbility(abilityId);
+
+    /// <summary>
+    /// Replaces a unit with one of a new type, keeping its id, position, location, carrier,
+    /// owner, role and cargo (units are immutable in their <see cref="Unit.Type"/>, so an upgrade is a swap).
     /// </summary>
     private Unit UpgradeUnitType(Unit unit, string newTypeId)
     {
@@ -425,6 +815,9 @@ public sealed class Game
             SailTurnsRemaining = unit.SailTurnsRemaining,
             CarrierId = unit.CarrierId,
             MovementLeft = unit.MovementLeft,
+            OwnerNationId = unit.OwnerNationId, // a promotion/demotion/capture keeps the side and role
+            RoleId = unit.RoleId,
+            RoleCount = unit.RoleCount,
         };
         foreach ((string goodsId, int amount) in unit.Cargo)
         {
@@ -464,7 +857,7 @@ public sealed class Game
             var visible = new HashSet<Position>();
             foreach (Unit unit in _units)
             {
-                if (unit.IsOnMap)
+                if (unit.IsOnMap && !unit.IsNative) // native braves don't lift the player's fog
                 {
                     visible.UnionWith(TilesInRange(unit.Position, unit.Type.LineOfSight));
                 }
@@ -479,7 +872,7 @@ public sealed class Game
 
     /// <summary>Whether a tile is currently in sight (not merely explored).</summary>
     public bool IsVisible(Position p) =>
-        _units.Any(u => u.IsOnMap && InSight(u.Position, p, u.Type.LineOfSight))
+        _units.Any(u => u.IsOnMap && !u.IsNative && InSight(u.Position, p, u.Type.LineOfSight))
         || _colonies.Any(c => InSight(c.Position, p, ColonySightRadius));
 
     private static bool InSight(Position centre, Position p, int radius) =>
@@ -530,6 +923,26 @@ public sealed class Game
             game._nextSettlementId = Math.Max(game._nextSettlementId, settlement.Id + 1);
         }
 
+        // Garrison each settlement with native braves on adjacent open land (unarmed defenders the
+        // player can attack in the open field; the settlement tile itself is assaulted in slice 5c).
+        // Placement is deterministic and consumes no RNG draw, so neither the economy stream (0) nor
+        // the native placement stream (1) is shifted.
+        if (ruleset.UnitTypes.Any(u => u.Id == BraveUnitTypeId))
+        {
+            UnitType braveType = ruleset.Unit(BraveUnitTypeId);
+            foreach (NativeSettlement settlement in game._nativeSettlements)
+            {
+                for (int i = 0; i < BravesPerSettlement; i++)
+                {
+                    Position? spot = game.FreeAdjacentLand(settlement.Position);
+                    if (spot is { } p)
+                    {
+                        game.SpawnUnit(braveType, p, settlement.NationTypeId);
+                    }
+                }
+            }
+        }
+
         game.GenerateOffers(); // Congress choices available from the first turn
         game.InitRecruitDock(); // three recruits waiting on the Europe dock from turn 1
 
@@ -541,7 +954,7 @@ public sealed class Game
         Ruleset ruleset, GameMap map, RandomState randomState, int turn,
         IEnumerable<(int id, UnitType type, Position position, int movementLeft,
             UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
-            int? carrierId)> units,
+            int? carrierId, string? ownerNationId, string? roleId, int roleCount)> units,
         IEnumerable<Position>? explored,
         IEnumerable<Colony>? colonies = null,
         int gold = 0, int taxRate = 0,
@@ -585,7 +998,7 @@ public sealed class Game
         game.InitRecruitDock();
         foreach ((int id, UnitType type, Position position, int movementLeft,
                   UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
-                  int? carrierId) in units)
+                  int? carrierId, string? ownerNationId, string? roleId, int roleCount) in units)
         {
             var unit = new Unit(id, type, position)
             {
@@ -593,6 +1006,9 @@ public sealed class Game
                 Location = location,
                 SailTurnsRemaining = sailTurns,
                 CarrierId = carrierId,
+                OwnerNationId = ownerNationId,
+                RoleId = roleId ?? RoleType.DefaultRoleId,
+                RoleCount = roleCount,
             };
             foreach ((string goodsId, int amount) in cargo ?? new Dictionary<string, int>())
             {
@@ -632,8 +1048,11 @@ public sealed class Game
     /// <summary>The game's RNG state, captured for saving.</summary>
     internal RandomState RandomState => _random.SaveState();
 
-    /// <summary>Creates a new unit at a position and reveals its surroundings.</summary>
-    public Unit SpawnUnit(UnitType type, Position position)
+    /// <summary>
+    /// Creates a new unit at a position. A player unit reveals its surroundings; a native-owned unit
+    /// (a brave, <paramref name="ownerNationId"/> set) does not — natives don't lift the player's fog.
+    /// </summary>
+    public Unit SpawnUnit(UnitType type, Position position, string? ownerNationId = null)
     {
         if (!Map.InBounds(position))
         {
@@ -646,9 +1065,12 @@ public sealed class Game
                 : "Land units cannot be placed on water.");
         }
 
-        var unit = new Unit(_nextUnitId++, type, position);
+        var unit = new Unit(_nextUnitId++, type, position) { OwnerNationId = ownerNationId };
         _units.Add(unit);
-        Reveal(unit);
+        if (ownerNationId is null)
+        {
+            Reveal(unit);
+        }
         return unit;
     }
 
@@ -679,6 +1101,10 @@ public sealed class Game
         if (!terrain.IsWater && unit.Type.IsNaval)
         {
             return MoveCheck.No("Ships cannot move onto land.");
+        }
+        if (DefenderAt(unit, target) is not null)
+        {
+            return MoveCheck.No("An enemy unit holds that tile — attack it instead.");
         }
 
         int movesLeft = unit.MovementLeft;
@@ -717,7 +1143,10 @@ public sealed class Game
 
         unit.Position = target;
         unit.MovementLeft -= check.Cost;
-        Reveal(unit);
+        if (!unit.IsNative)
+        {
+            Reveal(unit); // a native brave moving never lifts the player's fog (mirrors SpawnUnit)
+        }
         if (unit.Type.IsCarrier)
         {
             SyncPassengers(unit); // any colonists aboard move with the ship

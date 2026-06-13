@@ -81,6 +81,26 @@ public sealed class NativeSettlement
     internal const int AlarmDispleasedMax = 700;
     internal const int AlarmAngryMax = 800;
 
+    // FreeCol tension deltas for hostile acts (Tension.java TENSION_ADD_*). FreeCol-pinned
+    // tuning constants (transposability-migration items, ADR-018 — see game-modes.md).
+    /// <summary>Tension added for a minor slight (FreeCol <c>TENSION_ADD_MINOR</c>).</summary>
+    internal const int TensionAddMinor = 100;
+
+    /// <summary>Tension added for an ordinary hostile act such as being attacked (FreeCol <c>TENSION_ADD_NORMAL</c>).</summary>
+    internal const int TensionAddNormal = 200;
+
+    /// <summary>Tension added for a major hostile act (FreeCol <c>TENSION_ADD_MAJOR</c>).</summary>
+    internal const int TensionAddMajor = 300;
+
+    /// <summary>Tension added when one of the nation's units is destroyed (FreeCol <c>TENSION_ADD_UNIT_DESTROYED</c>).</summary>
+    internal const int TensionAddUnitDestroyed = 400;
+
+    /// <summary>Tension added when a settlement is attacked (FreeCol <c>TENSION_ADD_SETTLEMENT_ATTACKED</c>; used by the 5c settlement-combat slice).</summary>
+    internal const int TensionAddSettlementAttacked = 500;
+
+    /// <summary>Tension added when the capital is attacked (FreeCol <c>TENSION_ADD_CAPITAL_ATTACKED</c>; used by 5c).</summary>
+    internal const int TensionAddCapitalAttacked = 600;
+
     /// <summary>
     /// Alarm toward the player (0–<see cref="MaxAlarm"/>); starts peaceful at 0, raised
     /// by hostile acts (combat/land-taking, later slices) and cools each turn.

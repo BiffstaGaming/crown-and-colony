@@ -74,6 +74,22 @@ public class CombatModelTests
         Assert.Equal(1.5, CombatModel.DefencePower(1, new DefenceContext(SettlementDefenceBonus: 50)), 5);
     }
 
+    [Fact]
+    public void RolePower_FoldsIntoTheBase()
+    {
+        // A unit's role offence/defence adds to its type base before the situational percentages (index 30).
+        double soldierAtk = Classic.Unit("model.unit.freeColonist").Offence + Classic.Role("model.role.soldier").Offence;
+        Assert.Equal(2, soldierAtk, 5);
+        Assert.Equal(3.0, CombatModel.AttackPower(soldierAtk, new AttackContext()), 5); // 2 × 1.5 attack bonus
+
+        double dragoonDef = Classic.Unit("model.unit.freeColonist").Defence + Classic.Role("model.role.dragoon").Defence;
+        Assert.Equal(3, dragoonDef, 5);
+        Assert.Equal(4.5, CombatModel.DefencePower(dragoonDef, new DefenceContext(Fortified: true)), 5); // 3 × 1.5
+
+        double armedBrave = Classic.Unit("model.unit.brave").Offence + Classic.Role("model.role.armedBrave").Offence;
+        Assert.Equal(4.5, CombatModel.AttackPower(armedBrave, new AttackContext()), 5); // (1+2) × 1.5
+    }
+
     // ---- Odds + resolution ----
 
     [Fact]
