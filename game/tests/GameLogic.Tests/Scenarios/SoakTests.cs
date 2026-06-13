@@ -1,0 +1,120 @@
+using System.Diagnostics;
+using CrownAndColony.GameLogic.Colonies;
+using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Persistence;
+using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.Units;
+using CrownAndColony.GameLogic.World;
+using Xunit;
+
+namespace CrownAndColony.GameLogic.Tests.Scenarios;
+
+/// <summary>
+/// L5 soak tests (docs/TESTING.md): long multi-seed runs with invariants and a
+/// performance budget. Excluded from the per-push suite (Category=Soak) and run
+/// by the nightly workflow.
+/// </summary>
+[Trait("Category", "Soak")]
+public class SoakTests
+{
+    private static readonly Ruleset Classic = Ruleset.LoadClassic();
+
+    [Fact]
+    public void TwentyFiveSeeds_TwoHundredTurns_InvariantsAlwaysHold()
+    {
+        for (ulong seed = 1000; seed < 1025; seed++)
+        {
+            Game game = PlayGame(seed, turns: 200);
+
+            // End-state invariants.
+            Assert.All(game.Colonies, c =>
+            {
+                Assert.True(c.Population >= 1, $"seed {seed}: colony starved out");
+                Assert.All(c.Stores.Values, v => Assert.True(v >= 0));
+                Assert.True(c.TileWorkers.Count + c.BuildingWorkers.Values.Sum() <= c.Population,
+                    $"seed {seed}: assignments exceed population");
+            });
+            Assert.All(game.Explored, p => Assert.True(game.Map.InBounds(p)));
+
+            // The whole end state survives a save/load round-trip identically.
+            string json = SaveGame.From(game).ToJson();
+            Assert.Equal(json, SaveGame.From(SaveGame.FromJson(json).Restore(Classic)).ToJson());
+        }
+    }
+
+    [Fact]
+    public void TurnProcessing_StaysWithinPerformanceBudget()
+    {
+        // Budget: a turn with an active colony must average < 2 ms (the UI calls
+        // EndTurn synchronously; even late-game turn counts must feel instant).
+        Game game = PlayGame(seed: 7777, turns: 10);
+
+        var stopwatch = Stopwatch.StartNew();
+        const int ticks = 1000;
+        for (int i = 0; i < ticks; i++)
+        {
+            game.EndTurn();
+        }
+        stopwatch.Stop();
+
+        double average = stopwatch.Elapsed.TotalMilliseconds / ticks;
+        Assert.True(average < 2.0, $"average EndTurn took {average:F3} ms (budget 2 ms)");
+    }
+
+    /// <summary>Plays a game: wander a few turns, found a colony, manage it greedily.</summary>
+    private static Game PlayGame(ulong seed, int turns)
+    {
+        var game = Game.New(Classic, seed);
+
+        for (int turn = 0; turn < turns; turn++)
+        {
+            // Phase 1: wander until turn 5, then settle where we stand (if legal).
+            if (game.Units.Count > 0)
+            {
+                Unit unit = game.Units[0];
+                if (turn >= 5 && game.CheckFoundColony(unit).Allowed)
+                {
+                    game.FoundColony(unit);
+                }
+                else
+                {
+                    Position? next = unit.Position.Neighbours()
+                        .Where(n => game.CheckMove(unit, n).Allowed)
+                        .Cast<Position?>()
+                        .FirstOrDefault();
+                    if (next is not null)
+                    {
+                        game.MoveUnit(unit, next.Value);
+                    }
+                }
+            }
+
+            // Greedy colony management: keep idle colonists working, build the
+            // first affordable thing.
+            foreach (Colony colony in game.Colonies)
+            {
+                game.AutoAssignIdleToFood(colony);
+                if (colony.IdleColonists > 0)
+                {
+                    string? staffable = colony.Buildings
+                        .FirstOrDefault(b => game.CheckAssignBuildingWork(colony, b).Allowed);
+                    if (staffable is not null)
+                    {
+                        game.AssignBuildingWork(colony, staffable);
+                    }
+                }
+                if (colony.CurrentBuild is null)
+                {
+                    BuildingType? target = game.Buildables(colony).FirstOrDefault();
+                    if (target is not null)
+                    {
+                        game.SetBuild(colony, target.Id);
+                    }
+                }
+            }
+
+            game.EndTurn();
+        }
+        return game;
+    }
+}

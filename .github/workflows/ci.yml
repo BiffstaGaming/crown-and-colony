@@ -23,7 +23,8 @@ jobs:
       - name: Build and run logic tests (L1 unit + L2 scenario)
         run: >
           dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj
-          --configuration Release --logger "console;verbosity=normal"
+          --configuration Release --filter "Category!=Soak"
+          --logger "console;verbosity=normal"
 
   scene-tests:
     name: "L3: Godot interaction tests"

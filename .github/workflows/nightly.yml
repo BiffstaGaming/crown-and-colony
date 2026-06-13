@@ -1,0 +1,29 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 16 * * *" # ~02:00 AEST
+  workflow_dispatch:
+
+jobs:
+  soak:
+    name: "L5: soak + full logic suite"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run L5 soak tests (multi-seed long runs + perf budget)
+        run: >
+          dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj
+          --configuration Release --filter "Category=Soak"
+          --logger "console;verbosity=normal"
+
+      - name: Run full logic suite
+        run: >
+          dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj
+          --configuration Release --no-build --filter "Category!=Soak"
+          --logger "console;verbosity=normal"
