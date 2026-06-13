@@ -20,6 +20,7 @@ Everything the player sees and touches: scene tree, drawing, camera, input, UI. 
 | `MapView` | Flat-colour tile drawing; tile↔pixel conversions (`TileSize` = 32) |
 | `UnitMarker` | Placeholder unit disc + selection ring |
 | `CameraController` | Drag pan + wheel zoom |
+| `ColonyPanel` | Interactive colony screen: staffing, field release, auto-assign, construction choice — UI built programmatically per open/refresh, all actions via Game oracles |
 | `presentation/tests/` | **L3 GdUnit4 tests — live inside this project** because the GdUnit4 adapter requires the test assembly's project to BE the Godot project (official gdUnit4Net layout; see ADR notes). Run: `dotnet test game/CrownAndColony.csproj` with `gdunit.runsettings` + `GODOT_BIN` set |
 
 ## Key design notes

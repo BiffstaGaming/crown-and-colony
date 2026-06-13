@@ -265,7 +265,7 @@ public sealed class Game
 
         _colonies.Add(colony);
         _units.Remove(unit);
-        AutoAssignWorkers(colony);
+        AutoAssignIdleToFood(colony);
         return colony;
     }
 
@@ -458,10 +458,10 @@ public sealed class Game
 
     /// <summary>
     /// Auto-assigns idle colonists to the best unworked food tiles (highest grain
-    /// yield, deterministic tie-break). Called on founding and growth; the player
-    /// can rearrange freely.
+    /// yield, deterministic tie-break). Runs on founding and growth; also available
+    /// to the player ("send idle colonists to the fields").
     /// </summary>
-    private void AutoAssignWorkers(Colony colony)
+    public void AutoAssignIdleToFood(Colony colony)
     {
         const string grain = "model.goods.grain";
         while (colony.IdleColonists > 0)
@@ -607,7 +607,7 @@ public sealed class Game
         {
             colony.ConsumeFood(Colony.FoodForGrowth);
             colony.Population++;
-            AutoAssignWorkers(colony);
+            AutoAssignIdleToFood(colony);
         }
     }
 

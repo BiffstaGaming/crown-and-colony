@@ -156,48 +156,9 @@ public partial class GameController : Node2D
         RefreshView();
     }
 
-    /// <summary>
-    /// Opens the colony panel (Phase 2b skeleton — the Phase 3 economy UI grows
-    /// here). Public so scene tests can drive it directly.
-    /// </summary>
-    public void OpenColonyPanel(Colony colony)
-    {
-        var terrain = _game.Map.TerrainAt(colony.Position);
-        string centreYield = terrain.Productions
-            .Where(p => p.Unattended)
-            .SelectMany(p => p.Outputs)
-            .Select(o => $"{o.GoodsId[(o.GoodsId.LastIndexOf('.') + 1)..]} {o.Amount}")
-            .DefaultIfEmpty("nothing")
-            .Aggregate((a, b) => $"{a}, {b}");
-
-        string stores = colony.Stores.Where(kv => kv.Value > 0)
-            .Select(kv => $"{kv.Key[(kv.Key.LastIndexOf('.') + 1)..]} {kv.Value}")
-            .DefaultIfEmpty("(empty)")
-            .Aggregate((a, b) => $"{a}, {b}");
-
-        GetNode<Label>("UI/ColonyPanel/VBox/ColonyTitle").Text = colony.Name;
-        string workers = colony.TileWorkers
-            .Select(w => $"({w.Key.X},{w.Key.Y}) → {w.Value[(w.Value.LastIndexOf('.') + 1)..]} {_game.TileYield(w.Key, w.Value)}")
-            .DefaultIfEmpty("(none)")
-            .Aggregate((a, b) => $"{a}; {b}");
-
-        string buildings = colony.Buildings
-            .Select(b => b[(b.LastIndexOf('.') + 1)..]
-                + (colony.BuildingWorkers.GetValueOrDefault(b) is var w and > 0 ? $" ({w}👤)" : ""))
-            .DefaultIfEmpty("(none)")
-            .Aggregate((a, b) => $"{a}, {b}");
-
-        GetNode<Label>("UI/ColonyPanel/VBox/ColonyInfo").Text =
-            $"Population: {colony.Population} ({colony.IdleColonists} idle)\n" +
-            $"Terrain: {terrain.ShortName}\n" +
-            $"Colony square yield: {centreYield} per turn\n" +
-            $"Workers: {workers}\n" +
-            $"Buildings: {buildings}\n" +
-            $"Stores: {stores}\n" +
-            $"Food for next colonist: {colony.Food}/{Colony.FoodForGrowth}\n\n" +
-            "(Worker re-assignment UI and construction arrive in later economy slices.)";
-        _colonyPanel.Show();
-    }
+    /// <summary>Opens the interactive colony screen. Public so scene tests can drive it directly.</summary>
+    public void OpenColonyPanel(Colony colony) =>
+        ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView);
 
     private void QuickSave()
     {

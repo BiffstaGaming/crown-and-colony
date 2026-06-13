@@ -62,8 +62,8 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 |---|---|---|---|
 | L1 Unit | Always | found-on-settleable consumes unit/creates colony; rejections (ship, mountains, occupied tile) | ✅ |
 | L2 Scenario | Always | save/load round-trip preserves colonies; pre-v3 compat | ✅ |
-| L3 Interaction | Yes (B key, click) | TODO — covered by kanban task [QA] L3 input tests | ⬜ |
-| L4 Visual | Yes (marker) | TODO with visual harness | ⬜ |
+| L3 Interaction | Yes | `InputTests` (B founds), `MainSceneTests` (panel opens/closes), `ColonyPanelTests` (staff/unstaff buttons, release field worker, construction dropdown + stop) | ✅ |
+| L4 Visual | Yes (marker) | colony golden (`colony-seed424242`) | ✅ |
 
 ## 5. Open issues / TODO
 
@@ -82,3 +82,4 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 | 2026-06-13 | Economy slice 3+4: stored-as goods model; free base buildings, building jobs (input→output conversions, workplaces cap), town-hall bells, breeding-gated pasture; save v6 | Phase 3 |
 | 2026-06-13 | Economy slice 5: construction queue (SetBuild/Buildables oracles, material-based completion, upgrades replace + keep staff); save v7 | Phase 3 |
 | 2026-06-13 | Economy slice 6: starvation on food shortfall (pop floors at 1, assignments trimmed workshop-first); bare-square boom-bust cycle pinned by long-run test | Phase 3 |
+| 2026-06-13 | Economy UI: interactive colony screen (`ColonyPanel.cs`) — staff/unstaff buildings, release field workers, send idle to fields, construction dropdown with costs + stop; all via Game oracles, L3-tested | Phase 3 |
