@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | In development (Phase 5 slice 1: nations + settlement data, placement, rendering, persistence. Interaction / trade / tension / combat are later slices.) |
-| **Last verified** | 2026-06-13 @ Phase 5 slice 1 |
-| **Code** | `game/src/GameLogic/Specification/NativeNationType.cs`, `Natives/NativeSettlement.cs`, `World/NativeSettlementGenerator.cs`; rendering `game/presentation/NativeSettlementMarker.cs` + `GameController.SyncNativeMarkers` |
-| **Tests** | `GameLogic.Tests/Specification/NativeNationTypeTests.cs`, `GameLogic.Tests/GameSession/NativeSettlementTests.cs`; visual `presentation/tests/VisualGoldenTests.cs` |
+| **Status** | In development (Phase 5: settlements placed + rendered + persisted (slice 1); tension/alarm + speak-with-chief + learn-skill (slice 3). Trade and combat are later slices.) |
+| **Last verified** | 2026-06-14 @ Phase 5 slice 3 |
+| **Code** | `Specification/NativeNationType.cs`, `Natives/NativeSettlement.cs` (+ `AlarmLevel`), `World/NativeSettlementGenerator.cs`, `GameSession/Game.cs` (`ChangeNativeAlarm`/`Visit`/`LearnSkill`); rendering `presentation/NativeSettlementMarker.cs` + `GameController.SyncNativeMarkers` |
+| **Tests** | `GameLogic.Tests/Specification/NativeNationTypeTests.cs`, `GameSession/NativeSettlementTests.cs`, `GameSession/NativeInteractionTests.cs`; visual `presentation/tests/VisualGoldenTests.cs` |
 | **FreeCol reference** | `freecol/data/rules/classic/specification.xml` `<indian-nation-types>`; `freecol/src/.../server/generator/SimpleMapGenerator.java` (`makeNativeSettlements`) |
 | **Related systems** | [ruleset-data](ruleset-data.md), [map-terrain](map-terrain.md), [fog-of-war](fog-of-war.md), [save-load](save-load.md) |
 
@@ -22,7 +22,11 @@ The New World is already inhabited. When a game begins, the indigenous nations �
 **Worked example:**
 > You sail in and found your first colony. A few turns later your scout walks north-east and the fog peels back to reveal an Iroquois village — a cluster of longhouses with "Iroquois" on its name plate. Press on and you might find their capital, marked with a ★.
 
-**What the player sees and does:** native settlements draw on the map (camp / village / Inca-city / Aztec-city art) with the nation's name beneath, capitals starred. For now they are landmarks you discover — you cannot yet interact with them.
+**Interacting with a settlement.** Move a colonist next to a settlement and you can **speak with its chief**: the first time, they tell tales of nearby lands (revealing the map around the settlement) and usually hand over a small gold gift. A plain colonist (a free colonist or indentured servant) can also **learn the settlement's skill** — it is taught the settlement's expert profession (e.g. an expert farmer), a free shortcut to a specialist. An ordinary settlement teaches its one skill just once; a nation's **capital** teaches forever.
+
+Each settlement also has an **alarm** level toward you — Happy, Content, Displeased, Angry, or Hateful. It starts peaceful and cools over time, but hostile acts (taking their land, attacking them — later slices) raise it. An **angry** settlement won't teach you; a **hateful** one gives no gifts and is dangerous to be near.
+
+**What the player sees and does:** native settlements draw on the map (camp / village / Inca-city / Aztec-city art) with the nation's name beneath, capitals starred. Standing a colonist beside one lets you speak with the chief or learn its skill (the on-map UI for this is the next slice).
 
 ## 2. Detailed rules
 
@@ -55,7 +59,23 @@ The New World is already inhabited. When a game begins, the indigenous nations �
 - Settlements are at least **3 tiles apart** (Chebyshev) and at least 3 tiles from the player's landing tile and its neighbours (so the nearest a settlement can be to the start is 4 tiles — outside the starting colonist's sight).
 - Each settlement's **size** is a random value in its type's range; its **taught skill** is a weighted random pick from the nation's skill list (or none if the nation lists no skills).
 
+**Alarm bands** (FreeCol `Tension.Level`, `Tension.java`) — alarm is 0–1000:
+
+| Band | Alarm | Effect |
+|---|---|---|
+| Happy | 0–100 | friendly |
+| Content | 101–600 | tolerant |
+| Displeased | 601–700 | wary |
+| Angry | 701–800 | won't teach its skill |
+| Hateful | 801–1000 | no gifts; dangerous |
+
+- Settlements start at alarm **0** (Happy). Each turn alarm cools toward 0 by `value/100 + 4` (FreeCol `ServerPlayer` decay). `Game.ChangeNativeAlarm(settlement, delta)` (clamped 0–1000) is the mutation point hostile acts will call in later slices.
+- **Speak with chief** (`Visit`): a person unit next to a settlement that hasn't been visited reveals the lands within `TalesRevealRadius` (3) of it and, unless the settlement is Hateful, gives a gold gift of **10–80** (FreeCol `GIFT_MINIMUM/MAXIMUM`). Once only; ends the unit's turn.
+- **Learn skill** (`LearnSkill`): a **free colonist or indentured servant** next to a settlement whose skill isn't yet consumed and whose alarm is below Angry is taught the settlement's `LearnableSkill` expert type (the unit is replaced by one of that type, keeping its id). The skill is then consumed — **except at a capital**, which teaches indefinitely. Experts and petty criminals cannot learn.
+
 **Deviations from original 1994 / FreeCol behavior:**
+- **Speak-with-chief is simplified.** FreeCol's full scout chief-speak has weighted outcomes (larger "beads" from the settlement-type `<gifts>` RandomRange, a chance to learn for free, and death at a hateful settlement) and requires the scout role. We give a flat 10–80 gift + a tales reveal on first contact for any colonist, no scout role, no death — the scout-specific behaviour is a later slice. No alarm change occurs on speaking (matches FreeCol).
+- **Learn-skill gating.** FreeCol lets you *attempt* a learn at an angry/hateful settlement (the unit learns nothing, or dies). We gate it in the `Check` (Angry+ is refused) — no random death yet. The learnable-colonist set (free colonist / indentured servant) is hard-coded pending FreeCol `unit-change-types` (NATIVES) data.
 - **Settlement counts & placement regions.** FreeCol assigns each nation a named map *region* and scales settlement counts by landmass and difficulty. Our map has no named regions yet, so we place settlements greedily on suitable tiles with a fixed per-band count (`NativeSettlementGenerator.TargetCount`). The *suitability* rule (settleable + ≥50% land neighbourhood) and the *capital-first* rule are kept. Counts/regions can be tuned toward FreeCol when the map gains regions.
 - **Aggression / skills are parsed but not yet used.** They feed the tension and learn-skill slices (P5 slices 3–4); stored now so the data layer is complete.
 - **`<plunder>` / `<gifts>` not parsed yet.** Combat plunder and gift-giving arrive with their slices; only the settlement's core attributes + defence modifier are parsed today.
@@ -65,7 +85,8 @@ The New World is already inhabited. When a game begins, the indigenous nations �
 **Domain model:**
 - `Specification.NativeNationType` (record) — one per concrete nation: its non-capital + capital `SettlementType` ids, `SettlementNumber` band, `NativeAggression`, the weighted `NativeSkill` list, and preferred region ids. Abstract templates (`default`/`camp`/`village`/`city`) are resolved away, not exposed.
 - `Specification.SettlementType` (record) — a camp/village/city template (capital variant is a separate record): sizes, claimable radii, trade bonus, convert threshold, and the parsed `model.modifier.defence` percentage (used by the combat slice).
-- `Natives.NativeSettlement` — a placed settlement: id, owning `NationTypeId`, `SettlementTypeId`, `IsCapital`, `Position`, `Size`, `LearnableSkill`. (A minimal "owner" concept — the full multi-player `Player`/`Nation` refactor is deferred to the foreign-European slice.)
+- `Natives.NativeSettlement` — a placed settlement: id, owning `NationTypeId`, `SettlementTypeId`, `IsCapital`, `Position`, `Size`, `LearnableSkill`, plus interaction state `Alarm` (0–1000) / `AlarmLevel` (computed band) / `HasBeenVisited` / `SkillConsumed` (all internal-set). (A minimal "owner" concept — the full multi-player `Player`/`Nation` refactor is deferred to the foreign-European slice.)
+- `Natives.AlarmLevel` (enum Happy→Hateful) — the hostility band, mapped from `Alarm` by the FreeCol `Tension.Level` limits.
 
 **Data sources:** `specification.xml` → `<indian-nation-types>` (parsed in `Ruleset.ParseNativeNationTypes`). `extends` chains are resolved nearest-wins for attributes and the settlement template; **skills and regions accumulate** down the chain (so the Inca inherit the abstract `city` skills and add their own). A null section (minimal test rulesets) yields no native nations.
 
@@ -73,15 +94,17 @@ The New World is already inhabited. When a game begins, the indigenous nations �
 
 **Integration points:** generated once in `Game.New` on a **dedicated RNG stream** (`NativeStreamId = 1`, ADR-009) so placement cannot shift the economy/father/immigration draws (stream 0). Exposed via `Game.NativeSettlements` and `Game.NativeSettlementAt(pos)`. Rendering: `GameController.SyncNativeMarkers` makes one `NativeSettlementMarker` per settlement **on an explored tile** (fog-gated), in the scene's `MapView/NativeLayer`; art selected per settlement type (FreeCol `indian_camp` / `indian_village` / `inca_city` / `aztec_city`, ADR-014).
 
-**Persistence:** save format **v14** adds `SavedNativeSettlement[]`; settlements round-trip verbatim (placement is not replayed, so the native RNG stream is not saved). Pre-v14 saves load with no native settlements.
+**Interaction flow** (`Game.cs`): `CheckVisit`/`Visit` and `CheckLearnSkill`/`LearnSkill` follow the standard `Check…`-oracle pattern (ADR-006); `Visit` uses the main saved RNG (`_random`) for the gift roll (so save/resume stays deterministic — no extra stream needed). Learning replaces the unit via `UpgradeUnitType` (keeps id/position/location/cargo, since `Unit.Type` is immutable). `Game.ChangeNativeAlarm` is the public alarm mutator; `DecayNativeAlarm` runs for every settlement in `EndTurn` (see [turns](turns.md)).
+
+**Persistence:** save format **v14** added `SavedNativeSettlement[]`; **v16** added the interaction state (`Alarm`, `HasBeenVisited`, `SkillConsumed`). Settlements round-trip verbatim (placement is not replayed, so the native RNG stream is not saved). Pre-v14 saves load with no native settlements; pre-v16 settlements load peaceful/unvisited.
 
 ## 4. Verification
 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
-| L1 Unit | Always | `NativeNationTypeTests` (8 nations, settlement sizes/radii/defence pinned to spec, `extends` resolution, no-natives ruleset); `NativeSettlementTests` (size-in-range, determinism, save round-trip, v14) | ✅ |
-| L2 Scenario | Always | `NativeSettlementTests`: a new classic game places ≥1 settlement + exactly one capital per nation, all on settleable land, spaced ≥3 apart and clear of the player | ✅ |
-| L3 Interaction | No UI yet (read-only landmarks) | — | — |
+| L1 Unit | Always | `NativeNationTypeTests` (8 nations, sizes/radii/defence pinned, `extends`); `NativeSettlementTests` (placement, determinism, save); `NativeInteractionTests` (alarm bands/clamp/decay, visit gift+tales+once, learn upgrade/consume/capital, gating, save round-trip) | ✅ |
+| L2 Scenario | Always | `NativeSettlementTests`: a new classic game places ≥1 settlement + one capital per nation, on settleable land, spaced ≥3 apart, clear of the player; `NativeInteractionTests` operates on a generated game | ✅ |
+| L3 Interaction | UI is the next slice | — (on-map speak/learn UI pending) | ⬜ |
 | L4 Visual | Yes (drawn on the map) | `native-settlement-seed424242` golden (a revealed settlement) | ✅ |
 | L5 Soak | Covered by global suite | — | — |
 
@@ -89,10 +112,13 @@ The New World is already inhabited. When a game begins, the indigenous nations �
 
 ## 5. Open issues / TODO
 
-- [ ] **Native interaction** (P5 slice 3): visit a settlement — speak-with-chief (gifts/tales), learn the taught skill; the tension/alarm model (happy→hateful).
+- [x] **Native interaction** (P5 slice 3): alarm model (happy→hateful) + speak-with-chief (gift/tales) + learn-skill.
+- [ ] **Native interaction UI** (next): on-map panel to speak with the chief / learn a skill (L3).
 - [ ] **Native trade** (P5 slice 4): buy/sell at settlements (demand + `trade-bonus`).
-- [ ] **Combat** (P5 slice 5): braves, settlement defence (the parsed defence modifier), plunder/destruction (`<plunder>` parsing).
-- [ ] **Settlement growth** over turns; `<gifts>` parsing; map *regions* so placement can follow FreeCol's region/landmass counts.
+- [ ] **Combat** (P5 slice 5): braves, settlement defence (the parsed defence modifier), plunder/destruction (`<plunder>` parsing); attacking/land-taking should call `ChangeNativeAlarm`.
+- [ ] **Scout role** for the richer chief-speak (bigger beads from `<gifts>` RandomRange, free-learn chance, death at hateful); `<gifts>` parsing.
+- [ ] **Move native-interaction tuning constants to ruleset data** (transposability, ADR-018): the learnable-colonist set (via FreeCol `unit-change-types` NATIVES, instead of the hard-coded ids), the gift range (10–80), the tales radius, the alarm-decay constants, and the alarm bands. They are FreeCol-pinned today; a future variant should be able to override native temperament/generosity without code. Tracked on the kanban.
+- [ ] **Settlement growth** over turns; map *regions* so placement can follow FreeCol's region/landmass counts.
 - [ ] Foreign-European players reuse the owner concept introduced here (P5 foreign-powers slice).
 
 ## Changelog
@@ -100,3 +126,4 @@ The New World is already inhabited. When a game begins, the indigenous nations �
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-13 | Native nation + settlement parsing, `NativeSettlement` domain, placement (capital-first, min-distance, dedicated RNG stream), save v14, FreeCol art rendering (fog-gated) | Phase 5 slice 1 |
+| 2026-06-14 | Alarm/tension model (`AlarmLevel`, `ChangeNativeAlarm`, per-turn decay), speak-with-chief (`Visit`: tales reveal + 10–80 gift), learn-skill (`LearnSkill`: upgrade via unit replace, consume unless capital); save v16 | Phase 5 slice 3 |

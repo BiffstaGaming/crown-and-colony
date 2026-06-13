@@ -29,7 +29,7 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | `Specification.BuildingType` | Building rule data: conversions (with inputs), workplaces, upgrade chain, build cost |
 | `Specification.ResourceType` / `ResourceModifier` | Bonus-resource yield modifiers (goods, type, index, unit-type scopes) |
 | `Specification.NativeNationType` / `SettlementType` / `NativeSkill` / `SettlementNumber` / `NativeAggression` | Native nation + settlement rule data (templates, counts, aggression, taught skills); `Ruleset.NativeNation(id)`, `Settlement(id)` |
-| `Natives.NativeSettlement` | A placed native settlement: nation type, settlement type, capital flag, position, size, taught skill |
+| `Natives.NativeSettlement` / `Natives.AlarmLevel` | A placed native settlement: nation type, settlement type, capital flag, position, size, taught skill, + interaction state (alarm/`AlarmLevel`, visited, skill-consumed) |
 | `World.NativeSettlementGenerator` | Seeded native-settlement placement (capital-first, min-distance, suitability) |
 | `World.Position` | Grid coordinate; 8-way adjacency |
 | `World.GameMap` | Immutable terrain grid + bonus resources (`ResourceAt`) |
@@ -39,9 +39,9 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | `Trade.Market` | European market: per-good bid/ask, supply-driven `Sell` with tax (FreeCol price model) |
 | `Specification.GoodsMarket` | Per-good market seed (initial amount/price/spread) |
 | `Specification.FoundingFather` / `FatherType` / `FatherModifier` / `FatherAbility` / `ModifierType` / `ModifierMath` | Founding-father rule data: category, age weights, the modifiers + abilities an election grants |
-| `GameSession.Game` | The running game. Map/units: `New`, `CheckMove`/`MoveUnit`, `EndTurn`, `SpawnUnit`, `CheckFoundColony`/`FoundColony`, `TileYield`. Colony work: `AssignWork`/`UnassignWork`, `AssignBuildingWork`/`UnassignBuildingWork`, `SetBuild`/`Buildables`, `JoinColony`/`LeaveColony`. Trade: `Gold`, `TaxRate`, `Market`, `SellColonyGoods`/`SellShipCargo`/`BuyEuropeGoods`, `BuyUnit`/`CheckBuyUnit`. Europe/sailing: `SailToEurope`/`SailToNewWorld`, `UnitsInEurope`. Transport: `Board`/`Disembark`/`DisembarkToDock`, `Passengers`, `CargoCapacity`/`CargoSlotsUsed`/`CargoSlotsFree`. Fathers: `Liberty`, `Congress`, `ChooseFather`, `OfferedFathers`, `HasAbility`, `ApplyGoodsModifiers`. Immigration: `Immigration`/`ImmigrationRequired`, `RecruitDock`, `RecruitPrice`, `Recruit`/`CheckRecruit`. Natives: `NativeSettlements`, `NativeSettlementAt`. Fog: `Explored`/`IsExplored`, `CurrentlyVisible`/`IsVisible`. (All checks have a `Check…` oracle, ADR-006.) |
+| `GameSession.Game` | The running game. Map/units: `New`, `CheckMove`/`MoveUnit`, `EndTurn`, `SpawnUnit`, `CheckFoundColony`/`FoundColony`, `TileYield`. Colony work: `AssignWork`/`UnassignWork`, `AssignBuildingWork`/`UnassignBuildingWork`, `SetBuild`/`Buildables`, `JoinColony`/`LeaveColony`. Trade: `Gold`, `TaxRate`, `Market`, `SellColonyGoods`/`SellShipCargo`/`BuyEuropeGoods`, `BuyUnit`/`CheckBuyUnit`. Europe/sailing: `SailToEurope`/`SailToNewWorld`, `UnitsInEurope`. Transport: `Board`/`Disembark`/`DisembarkToDock`, `Passengers`, `CargoCapacity`/`CargoSlotsUsed`/`CargoSlotsFree`. Fathers: `Liberty`, `Congress`, `ChooseFather`, `OfferedFathers`, `HasAbility`, `ApplyGoodsModifiers`. Immigration: `Immigration`/`ImmigrationRequired`, `RecruitDock`, `RecruitPrice`, `Recruit`/`CheckRecruit`. Natives: `NativeSettlements`, `NativeSettlementAt`, `ChangeNativeAlarm`, `Visit`/`CheckVisit`, `LearnSkill`/`CheckLearnSkill`. Fog: `Explored`/`IsExplored`, `CurrentlyVisible`/`IsVisible`. (All checks have a `Check…` oracle, ADR-006.) |
 | `GameSession.MoveCheck` / `InvalidMoveException` | Move legality result / violation |
-| `Persistence.SaveGame` / `SavedUnit` / `SavedColony` / `SavedResource` / `SavedWorker` / `SavedNativeSettlement` | Complete JSON-serializable game snapshot (format v15; records its game variant) |
+| `Persistence.SaveGame` / `SavedUnit` / `SavedColony` / `SavedResource` / `SavedWorker` / `SavedNativeSettlement` | Complete JSON-serializable game snapshot (format v16; records its game variant + native interaction state) |
 
 (Grows as systems land; keep this table current.)
 
@@ -53,7 +53,7 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 
 ## Tests
 
-`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **241 tests** (239 L1+L2 incl. 10 E2E journeys + 2 nightly soak), all green as of 2026-06-13. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md).)
+`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **266 tests** (264 L1+L2 incl. 10 E2E journeys + 2 nightly soak), all green as of 2026-06-14. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md).)
 
 ## Changelog
 
@@ -65,3 +65,4 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | 2026-06-13 | Phase 5 slice 1: native nation + settlement rule data, `NativeSettlement` domain + seeded placement (`NativeSettlementGenerator`), save v14 | Phase 5 slice 1 |
 | 2026-06-13 | Variant/game-mode selection layer (`GameVariant`/`GameVariants`, `Ruleset.LoadEmbedded`); variant-aware saves (v15) — transposability backbone (ADR-018) | Phase 5 (variant layer) |
 | 2026-06-13 | Explored-vs-visible fog: `CurrentlyVisible`/`IsVisible` (units + colonies), colony reveal on founding | Phase 5 (fog upgrade) |
+| 2026-06-14 | Native interaction: alarm model (`AlarmLevel`, `ChangeNativeAlarm`, turn decay), `Visit` (tales + gift), `LearnSkill` (unit upgrade); save v16 | Phase 5 slice 3 |

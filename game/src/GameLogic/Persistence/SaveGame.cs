@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 15;
+    public const int CurrentVersion = 16;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -27,7 +27,8 @@ public sealed record SaveGame
     /// v10 added liberty/congress; v11 added unit location/cargo; v12 added
     /// immigration + the Europe recruitment dock; v13 added unit carrier ids
     /// (passengers aboard ships); v14 added native settlements; v15 added the
-    /// game variant id (which ruleset the game plays under).
+    /// game variant id (which ruleset the game plays under); v16 added native
+    /// settlement interaction state (alarm, visited, skill-consumed).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -177,7 +178,8 @@ public sealed record SaveGame
                 ? game.NativeSettlements
                     .Select(s => new SavedNativeSettlement(
                         s.Id, s.NationTypeId, s.SettlementTypeId, s.IsCapital,
-                        s.Position.X, s.Position.Y, s.Size, s.LearnableSkill))
+                        s.Position.X, s.Position.Y, s.Size, s.LearnableSkill,
+                        s.Alarm, s.HasBeenVisited, s.SkillConsumed))
                     .ToList()
                 : null,
         };
@@ -255,7 +257,12 @@ public sealed record SaveGame
             RecruitDock,
             NativeSettlements?.Select(s => new NativeSettlement(
                 s.Id, s.NationTypeId, s.SettlementTypeId, s.IsCapital,
-                new Position(s.X, s.Y), s.Size, s.LearnableSkill)));
+                new Position(s.X, s.Y), s.Size, s.LearnableSkill)
+            {
+                Alarm = s.Alarm,
+                HasBeenVisited = s.HasBeenVisited,
+                SkillConsumed = s.SkillConsumed,
+            }));
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -307,9 +314,13 @@ public sealed record SavedWorker(int X, int Y, string GoodsId);
 /// <param name="Y">Map row.</param>
 /// <param name="Size">Resident population.</param>
 /// <param name="LearnableSkill">Expert unit type the settlement can teach (null = none).</param>
+/// <param name="Alarm">Alarm toward the player, 0–1000 (v16+; pre-v16 = 0).</param>
+/// <param name="HasBeenVisited">Whether the chief has been spoken with (v16+).</param>
+/// <param name="SkillConsumed">Whether the skill has been taught/consumed (v16+).</param>
 public sealed record SavedNativeSettlement(
     int Id, string NationTypeId, string SettlementTypeId, bool IsCapital,
-    int X, int Y, int Size, string? LearnableSkill = null);
+    int X, int Y, int Size, string? LearnableSkill = null,
+    int Alarm = 0, bool HasBeenVisited = false, bool SkillConsumed = false);
 
 /// <summary>A unit inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Id">Unit id.</param>

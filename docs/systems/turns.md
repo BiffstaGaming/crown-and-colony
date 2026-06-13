@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (colony economy, liberty/fathers, immigration, high-seas sailing) |
-| **Last verified** | 2026-06-13 @ Phase 4 slice 9 |
+| **Last verified** | 2026-06-14 @ Phase 5 slice 3 |
 | **Code** | `game/src/GameLogic/GameSession/Game.cs` (`EndTurn`) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/GameTests.cs`, `Scenarios/` |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/server/control/` turn handling (cross-check when economy lands) |
@@ -21,14 +21,15 @@ The game advances in turns, starting at turn 1. Press **End Turn** and the world
 | 2. Liberty & fathers | each colony's bells → player liberty (with father modifiers); elect the chosen Founding Father if affordable; refresh offers — see [founding-fathers](founding-fathers.md) |
 | 3. Immigration | colony crosses + the Europe contribution → the immigration pool; emigrants arrive on the Europe dock when the target is met — see [immigration](immigration.md) |
 | 4. Sailing | ships in transit advance; arrivals dock in Europe or re-enter the map (passengers travel with them) — see [europe](europe.md)/[transport](transport.md) |
-| 5. All units | movement restored to full |
-| 6. Turn counter | +1 |
+| 5. Native settlements | each settlement's alarm toward the player cools toward 0 (`value/100 + 4`) — see [natives](natives.md) |
+| 6. All units | movement restored to full |
+| 7. Turn counter | +1 |
 
-**Deviations from original / FreeCol:** the original's turn/season/year mapping (1492 start, seasons after 1600) arrives with the calendar (still pending); ages currently use simple turn bands. No AI/foreign-power step yet.
+**Deviations from original / FreeCol:** the original's turn/season/year mapping (1492 start, seasons after 1600) arrives with the calendar (still pending); ages currently use simple turn bands. No AI/foreign-power step yet (native settlements currently only decay alarm; their AI — raids, gifts, growth — comes with the combat/foreign-powers slices).
 
 ## 3. Technical design
 
-- `Game.EndTurn()` is the single end-of-turn entry point; its steps run in the fixed order above (`RunColonyTurn` → `AccumulateLibertyAndElectFathers` → `AccumulateImmigrationAndEmigrate` → `AdvanceSailing` → reset movement → `Turn++`). New phase steps slot into this order and are documented here.
+- `Game.EndTurn()` is the single end-of-turn entry point; its steps run in the fixed order above (`RunColonyTurn` → `AccumulateLibertyAndElectFathers` → `AccumulateImmigrationAndEmigrate` → `AdvanceSailing` → `DecayNativeAlarm` per settlement → reset movement → `Turn++`). New phase steps slot into this order and are documented here.
 - UI: End Turn button → `GameController.OnEndTurnPressed` → `Game.EndTurn()` → view refresh. No turn logic in the UI (ADR-006).
 
 ## 4. Verification
@@ -50,3 +51,4 @@ The game advances in turns, starting at turn 1. Press **End Turn** and the world
 |---|---|---|
 | 2026-06-13 | Turn counter + movement reset + End Turn UI | Phase 1 skeleton |
 | 2026-06-13 | Turn pipeline grew: colony economy (Phase 3), then liberty/fathers, immigration, and high-seas sailing steps (Phase 4) | Phases 3–4 |
+| 2026-06-14 | Native settlement alarm decay step added (Phase 5 slice 3) | Phase 5 slice 3 |

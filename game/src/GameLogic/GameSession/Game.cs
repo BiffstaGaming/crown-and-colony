@@ -205,6 +205,169 @@ public sealed class Game
     public NativeSettlement? NativeSettlementAt(Position p) =>
         _nativeSettlements.FirstOrDefault(s => s.Position == p);
 
+    /// <summary>
+    /// Tiles a settlement's chief reveals when you first speak ("tales of nearby lands";
+    /// scaled down from FreeCol's <c>TALES_RADIUS</c> = 6 for our smaller default map).
+    /// </summary>
+    public const int TalesRevealRadius = 3;
+
+    /// <summary>Min/max gold in a settlement's first-contact gift (FreeCol <c>IndianSettlement.GIFT_MINIMUM/MAXIMUM</c>).</summary>
+    private const int GiftMinimum = 10;
+    private const int GiftMaximum = 80;
+
+    /// <summary>
+    /// Unit types that can be taught a skill at a native settlement (FreeCol: the free
+    /// colonist and indentured servant only — experts and petty criminals cannot). A
+    /// documented simplification pending FreeCol <c>unit-change-types</c> (NATIVES) data.
+    /// </summary>
+    private static readonly string[] SkillLearnerTypeIds =
+        ["model.unit.freeColonist", "model.unit.indenturedServant"];
+
+    /// <summary>
+    /// Changes a native settlement's alarm toward the player, clamped to
+    /// [0, <see cref="NativeSettlement.MaxAlarm"/>]. The mutation point hostile acts
+    /// (combat, taking land) will call in later slices (FreeCol <c>csModifyAlarm</c>).
+    /// </summary>
+    public void ChangeNativeAlarm(NativeSettlement settlement, int delta) =>
+        settlement.Alarm = Math.Clamp(settlement.Alarm + delta, 0, NativeSettlement.MaxAlarm);
+
+    /// <summary>Whether <paramref name="unit"/> may speak with <paramref name="settlement"/>'s chief now.</summary>
+    public MoveCheck CheckVisit(Unit unit, NativeSettlement settlement)
+    {
+        if (!unit.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (!unit.Type.IsPerson)
+        {
+            return MoveCheck.No($"A {unit.Type.ShortName} cannot speak with a settlement's chief.");
+        }
+        if (unit.MovementLeft <= 0)
+        {
+            return MoveCheck.No("No movement left this turn.");
+        }
+        if (unit.Position != settlement.Position && !unit.Position.IsAdjacentTo(settlement.Position))
+        {
+            return MoveCheck.No("Move next to the settlement to speak with its chief.");
+        }
+        if (settlement.HasBeenVisited)
+        {
+            return MoveCheck.No("You have already spoken with this settlement's chief.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Speaks with a settlement's chief (first contact): reveals the surrounding lands
+    /// ("tales") and, unless the settlement is hateful, gives a small gold gift. Marks the
+    /// settlement visited and ends the unit's turn. (Scout-specific outcomes — larger beads,
+    /// learning by chance, danger — are a later slice.)
+    /// </summary>
+    /// <returns>The gold gifted (0 if the settlement gave none).</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckVisit"/>.</exception>
+    public int Visit(Unit unit, NativeSettlement settlement)
+    {
+        MoveCheck check = CheckVisit(unit, settlement);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+
+        settlement.HasBeenVisited = true;
+        RevealAround(settlement.Position, TalesRevealRadius); // tales of nearby lands
+        int gift = 0;
+        if (settlement.AlarmLevel != AlarmLevel.Hateful)
+        {
+            gift = _random.Next(GiftMinimum, GiftMaximum + 1);
+            Gold += gift;
+        }
+        unit.MovementLeft = 0; // speaking ends the unit's turn
+        return gift;
+    }
+
+    /// <summary>Whether <paramref name="unit"/> may learn <paramref name="settlement"/>'s skill now.</summary>
+    public MoveCheck CheckLearnSkill(Unit unit, NativeSettlement settlement)
+    {
+        if (!unit.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (unit.Position != settlement.Position && !unit.Position.IsAdjacentTo(settlement.Position))
+        {
+            return MoveCheck.No("Move next to the settlement to learn from it.");
+        }
+        if (settlement.LearnableSkill is null)
+        {
+            return MoveCheck.No("This settlement has no skill to teach.");
+        }
+        if (settlement.SkillConsumed)
+        {
+            return MoveCheck.No("This settlement has already taught its skill.");
+        }
+        if (!SkillLearnerTypeIds.Contains(unit.Type.Id))
+        {
+            return MoveCheck.No($"A {unit.Type.ShortName} cannot learn a new skill here.");
+        }
+        if (settlement.AlarmLevel >= AlarmLevel.Angry)
+        {
+            return MoveCheck.No("The settlement is too hostile to teach you.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Learns the settlement's skill: the colonist is taught the expert profession
+    /// (e.g. free colonist → expert farmer). The settlement's skill is then consumed —
+    /// unless it is a capital, which teaches indefinitely (FreeCol). Ends the unit's turn.
+    /// </summary>
+    /// <returns>The upgraded unit (a new unit of the expert type, keeping the id and place).</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckLearnSkill"/>.</exception>
+    public Unit LearnSkill(Unit unit, NativeSettlement settlement)
+    {
+        MoveCheck check = CheckLearnSkill(unit, settlement);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+
+        Unit expert = UpgradeUnitType(unit, settlement.LearnableSkill!);
+        expert.MovementLeft = 0; // learning ends the unit's turn
+        if (!settlement.IsCapital)
+        {
+            settlement.SkillConsumed = true; // capitals never run out
+        }
+        return expert;
+    }
+
+    /// <summary>
+    /// Replaces a unit with one of a new type, keeping its id, position, location, carrier
+    /// and cargo (units are immutable in their <see cref="Unit.Type"/>, so an upgrade is a swap).
+    /// </summary>
+    private Unit UpgradeUnitType(Unit unit, string newTypeId)
+    {
+        var upgraded = new Unit(unit.Id, Ruleset.Unit(newTypeId), unit.Position)
+        {
+            Location = unit.Location,
+            SailTurnsRemaining = unit.SailTurnsRemaining,
+            CarrierId = unit.CarrierId,
+            MovementLeft = unit.MovementLeft,
+        };
+        foreach ((string goodsId, int amount) in unit.Cargo)
+        {
+            upgraded.AddCargo(goodsId, amount);
+        }
+        int index = _units.IndexOf(unit);
+        if (index >= 0)
+        {
+            _units[index] = upgraded;
+        }
+        else
+        {
+            _units.Add(upgraded);
+        }
+        return upgraded;
+    }
+
     /// <summary>Tiles the player has ever seen (permanent fog of war — stays on the map once revealed).</summary>
     public IReadOnlySet<Position> Explored => _explored;
 
@@ -1116,6 +1279,10 @@ public sealed class Game
         AccumulateLibertyAndElectFathers();
         AccumulateImmigrationAndEmigrate();
         AdvanceSailing();
+        foreach (NativeSettlement settlement in _nativeSettlements)
+        {
+            DecayNativeAlarm(settlement);
+        }
         foreach (Unit unit in _units)
         {
             unit.ResetMovement();
@@ -1636,6 +1803,10 @@ public sealed class Game
             AutoAssignIdleToFood(colony);
         }
     }
+
+    /// <summary>Each turn a settlement's alarm cools toward 0 (FreeCol tension decay, <c>ServerPlayer</c>: −value/100 − 4).</summary>
+    private static void DecayNativeAlarm(NativeSettlement settlement) =>
+        settlement.Alarm = Math.Max(0, settlement.Alarm - (settlement.Alarm / 100 + 4));
 
     /// <summary>Reveals (permanently explores) all tiles within the unit's line of sight.</summary>
     private void Reveal(Unit unit) => RevealAround(unit.Position, unit.Type.LineOfSight);
