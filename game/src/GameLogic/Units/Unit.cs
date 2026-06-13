@@ -54,8 +54,17 @@ public sealed class Unit
     /// <summary>Turns left before a sailing unit arrives (0 when not sailing).</summary>
     public int SailTurnsRemaining { get; internal set; }
 
-    /// <summary>True when the unit is on the game map (not sailing or in Europe).</summary>
-    public bool IsOnMap => Location == UnitLocation.OnMap;
+    /// <summary>
+    /// The id of the ship carrying this unit, or null when not aboard. A carried
+    /// unit's <see cref="Location"/>/<see cref="Position"/> mirror its carrier's.
+    /// </summary>
+    public int? CarrierId { get; internal set; }
+
+    /// <summary>True when this unit is a passenger aboard a ship.</summary>
+    public bool IsAboard => CarrierId is not null;
+
+    /// <summary>True when the unit is on the game map (not sailing, in Europe, or aboard a ship).</summary>
+    public bool IsOnMap => Location == UnitLocation.OnMap && !IsAboard;
 
     /// <summary>Goods carried in the unit's hold (naval cargo).</summary>
     public IReadOnlyDictionary<string, int> Cargo => _cargo;

@@ -39,6 +39,7 @@ CI gates (unchanged): push = L1+L2 (incl. logic E2E); PR = +L3+L4 (incl. scene E
 | 4 | Liberty & sequential Founding-Father elections | P1 | L2 | ✅ buildable now (effects out of scope) |
 | 5 | Scene E2E: new → select → move → found → panel → staff → tick | P0 | L3 | ✅ buildable now |
 | 6 | Immigration & recruitment (accrue → emigrate → penalty → recruit) | P2 | L2 | ✅ buildable now (immigration shipped) |
+| 7 | A recruit reaches the New World (board → sail → disembark → found) | P2 | L2 | ✅ buildable now (transport shipped) |
 | — | Sail cargo to Europe & trade | P2 | L2/L3 | ⛔ blocked on ships sailing (P4 slice 3) |
 | — | Founding-Father *effects* applied | P2 | L2 | ⛔ blocked on the modifier system |
 
@@ -96,6 +97,15 @@ Seed `42`, `startingGold 1000` (founds cleanly). Milestones, each asserted as a 
 4. **Paid recruit** — gold buys the chosen slot's unit into Europe (now two there), the dock refills, gold is debited by exactly the price, and the base price escalates by 30 (200 → 230).
 5. **Acid round-trip** — the whole immigration + dock + Europe-units state round-trips byte-identical.
 
+## 9c. Journey 7 — A recruit reaches the New World (L2)
+
+Hand-built (a caravel + a recruit, both in Europe; a coast to land on). Milestones, each asserted as a connected chain:
+1. **Board** — the recruit boards the ship on the Europe dock (1 of the caravel's 2 slots used).
+2. **Sail home** — after the crossing the ship is back on the map with the recruit **still aboard** at the ship's tile (the passenger tracked the carrier).
+3. **Acid round-trip (mid-voyage)** — a passenger-aboard game round-trips byte-identical, carrier id preserved.
+4. **Disembark** — onto the adjacent coast; the recruit is a free on-map unit, the hold empties.
+5. **Found** — the disembarked colonist founds a colony: the immigration → New World loop is closed.
+
 ## 10. Fixtures & helpers
 
 - **Seed policy:** `424242` is the pinned founding seed (used by `InputTests`, `TileWorkerTests`). Record any new pinned seed here.
@@ -114,6 +124,7 @@ Seed `42`, `startingGold 1000` (founds cleanly). Milestones, each asserted as a 
 | Liberty + father election + cost escalation | `FoundingFatherTests` | Journey 4 | ✅ covered-e2e |
 | UI→logic seam (select/move/found/staff) | `InputTests`, `ColonyPanelTests`, `MainSceneTests` | Journey 5 | ✅ covered-e2e |
 | Immigration + recruitment + recruit-price escalation | `ImmigrationTests` | Journey 6 | ✅ covered-e2e |
+| Unit transport (board/sail/disembark + capacity) | `TransportTests` | Journey 7 | ✅ covered-e2e |
 | Founding-Father effects | — | (blocked) | ⛔ gap until modifier system |
 
 ## 12. Blocked journeys & roadmap
@@ -130,3 +141,4 @@ A journey is **done** only when: its milestone assertions are green in CI · thi
 |---|---|
 | 2026-06-13 | Plan created; Journeys 1–5 specified (designed via a 5-agent coverage-gap audit workflow) |
 | 2026-06-13 | Journey 6 (immigration & recruitment) built and added (P4 slice 4) |
+| 2026-06-13 | Journey 7 (a recruit reaches the New World) built and added (P4 slice 5) |

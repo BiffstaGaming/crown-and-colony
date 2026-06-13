@@ -19,6 +19,8 @@ namespace CrownAndColony.GameLogic.Specification;
 /// A colonist/person, not a ship or wagon (<c>model.ability.person</c>). Persons
 /// idling in Europe suppress immigration (the −4/turn penalty).
 /// </param>
+/// <param name="Space">Cargo capacity in hold slots when this unit is a carrier (spec <c>space</c>; caravel 2).</param>
+/// <param name="SpaceTaken">Raw hold slots this unit occupies when carried (spec <c>spaceTaken</c>; default 1).</param>
 public sealed record UnitType(
     string Id,
     int Movement,
@@ -26,10 +28,21 @@ public sealed record UnitType(
     bool IsNaval,
     bool CanFoundColony,
     int RecruitProbability = 0,
-    bool IsPerson = false)
+    bool IsPerson = false,
+    int Space = 0,
+    int SpaceTaken = 1)
 {
     /// <summary>Short name derived from the id: <c>model.unit.freeColonist</c> → <c>freeColonist</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
+
+    /// <summary>Can this unit carry cargo/passengers (a ship)? (<see cref="Space"/> &gt; 0).</summary>
+    public bool IsCarrier => Space > 0;
+
+    /// <summary>
+    /// Effective hold slots this unit takes when carried (FreeCol
+    /// <c>UnitType.getSpaceTaken</c> = <c>max(spaceTaken, space+1)</c>); a colonist is 1.
+    /// </summary>
+    public int CarrySlots => Math.Max(SpaceTaken, Space + 1);
 }
 
 /// <summary>

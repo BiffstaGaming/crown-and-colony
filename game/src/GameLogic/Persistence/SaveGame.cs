@@ -17,14 +17,15 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 12;
+    public const int CurrentVersion = 13;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
     /// v2 lacked <see cref="Colonies"/>; v3 colonies lacked goods stores;
     /// v4 lacked tile workers; v5 lacked buildings; v9 added gold/tax/market;
     /// v10 added liberty/congress; v11 added unit location/cargo; v12 added
-    /// immigration + the Europe recruitment dock.
+    /// immigration + the Europe recruitment dock; v13 added unit carrier ids
+    /// (passengers aboard ships).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -119,7 +120,8 @@ public sealed record SaveGame
                 .Select(u => new SavedUnit(
                     u.Id, u.Type.Id, u.Position.X, u.Position.Y, u.MovementLeft,
                     (int)u.Location, u.SailTurnsRemaining,
-                    u.Cargo.Count > 0 ? new Dictionary<string, int>(u.Cargo) : null))
+                    u.Cargo.Count > 0 ? new Dictionary<string, int>(u.Cargo) : null,
+                    u.CarrierId))
                 .ToList(),
             Explored = game.Explored
                 .Select(p => p.Y * game.Map.Width + p.X)
@@ -182,7 +184,8 @@ public sealed record SaveGame
                 u.MovementLeft,
                 (UnitLocation)u.Location,   // pre-v11 → 0 = OnMap
                 u.SailTurns,
-                u.Cargo)),
+                u.Cargo,
+                u.CarrierId)),              // pre-v13 → null = not aboard
             Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
             Colonies?.Select(c =>
             {
@@ -279,6 +282,8 @@ public sealed record SavedWorker(int X, int Y, string GoodsId);
 /// <param name="Location">Where the unit is (0 = on map; sailing/Europe in v11+).</param>
 /// <param name="SailTurns">Turns left in transit (0 when not sailing).</param>
 /// <param name="Cargo">Goods in the unit's hold (null when empty / pre-v11).</param>
+/// <param name="CarrierId">Id of the ship carrying this unit as a passenger (null when not aboard / pre-v13).</param>
 public sealed record SavedUnit(
     int Id, string? TypeId, int X, int Y, int MovementLeft,
-    int Location = 0, int SailTurns = 0, IReadOnlyDictionary<string, int>? Cargo = null);
+    int Location = 0, int SailTurns = 0, IReadOnlyDictionary<string, int>? Cargo = null,
+    int? CarrierId = null);

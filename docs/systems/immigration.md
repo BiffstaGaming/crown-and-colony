@@ -34,7 +34,7 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 | Input / condition | Result |
 |---|---|
 | Immigration per turn | `crosses produced by all colonies` + Europe contribution |
-| Europe contribution | `(persons in Europe × −4) + 2`, but clamped so the **turn's total** immigration is never negative |
+| Europe contribution | `(persons on the dock × −4) + 2`, but clamped so the **turn's total** immigration is never negative (a person *aboard a ship* in Europe does not count — see [transport.md](transport.md)) |
 | Initial target | **15** (`model.option.initialImmigration`) |
 | Emigrant produced | whenever pool ≥ target: one recruit leaves the dock for Europe; repeat while still ≥ target |
 | On each emigration | pool reduced by the target (surplus kept — `saveProductionOverflow=true`); target **+2** (`crossesIncrement`) |
@@ -47,7 +47,7 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 **Deviations from original 1994 / FreeCol behavior:**
 - **No recruit selection on free emigration.** FreeCol lets a player with William Brewster (the `selectRecruit` ability) choose which dock slot emigrates; we have no Founding-Father *effects* yet, so free emigration always takes a **random** slot. Paid recruitment already lets the player choose a slot.
 - **No religious-unrest modifier.** FreeCol's `updateImmigrationRequired` folds in a `RELIGIOUS_UNREST_BONUS` modifier; with no modifier system yet, the target simply rises by the increment (the modifier resolves to ×1 anyway in the classic base game).
-- **Recruits stay in Europe.** Carrying a colonist home requires loading it onto a ship (unit-as-cargo), which we don't model yet — recruits accumulate on the dock until that lands.
+- **Recruits reach the New World by ship.** Boarding a recruit onto a ship and sailing it home is implemented — see [transport.md](transport.md). (Recruits still can't be carried directly into an existing colony's population yet.)
 - **Single (human) colonial player**: the recruitable pool is filtered only by `recruit-probability > 0`, omitting FreeCol's per-nation `canRecruitUnit`/availability checks (irrelevant until foreign powers exist).
 
 ## 3. Technical design
@@ -66,7 +66,7 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 - `DrawRecruitType()` — seeded weighted pick over `Ruleset.UnitTypes` by `RecruitProbability` (same pattern as Founding-Father offers; ADR-009 RNG, no `System.Random`).
 - `Recruit(slot)` / `CheckRecruit(slot)` — the paid path; mirrors `ServerPlayer.csEmigrate`'s RECRUIT case (pay → `increaseRecruitmentDifficulty` → fall through to the NORMAL pool consume + target raise).
 
-**Integration points:** runs in `Game.EndTurn` between `AccumulateLibertyAndElectFathers` and `AdvanceSailing`. The Europe penalty counts only **person** units with `Location == InEurope` (a docked trade ship does not suppress immigration). `CheckFoundColony` now also rejects off-map units (Europe emigrants can't found colonies).
+**Integration points:** runs in `Game.EndTurn` between `AccumulateLibertyAndElectFathers` and `AdvanceSailing`. The Europe penalty counts only **person** units with `Location == InEurope` that are **not aboard a ship** (a docked trade ship, or a recruit already boarded for home, does not suppress immigration — see [transport.md](transport.md)). `CheckFoundColony` now also rejects off-map units (Europe emigrants can't found colonies).
 
 **Persistence:** save **v12** adds `Immigration`, `ImmigrationRequired`, `BaseRecruitPrice`, `RecruitLowerCap`, and `RecruitDock`. Pre-v12 saves load with the classic defaults (target 15, base 200, floor 80) and a freshly drawn dock.
 
@@ -84,7 +84,7 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 ## 5. Open issues / TODO
 
 - [ ] **Europe screen UI** — render off-map units, show the dock/price/pool, wire the recruit button (next P4 task).
-- [ ] **Carry recruits home** — load a colonist onto a ship as cargo, so emigrants reach the New World.
+- [x] **Carry recruits home** — done in [transport.md](transport.md): board a recruit onto a ship and sail it to the New World.
 - [ ] **William Brewster / `selectRecruit`** — choose the emigrating slot (needs the Founding-Father modifier system).
 - [ ] **Fountain of Youth** burst immigration and the survival auto-recruit are not modelled.
 

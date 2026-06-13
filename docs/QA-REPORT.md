@@ -1,6 +1,6 @@
 # QA Report — Crown & Colony
 
-> **Snapshot** taken 2026-06-13, latest on `main` (*Phase 4 slice 4 — immigration & recruitment*).
+> **Snapshot** taken 2026-06-13, latest on `main` (*Phase 4 slice 5 — unit transport (ships carry colonists)*).
 > This is a committed, point-in-time QA snapshot combining **test results** and the **visual goldens** (screenshots) in one place.
 > **End-to-end journeys:** the connected player-journey coverage is specified in [TEST-PLAN.md](TEST-PLAN.md).
 > Regenerate after a green run with `dotnet test` + a `GOLDEN_UPDATE=1` golden pass (see [TESTING.md](TESTING.md)); the goldens below always show the *committed expected* render.
@@ -10,18 +10,18 @@
 
 | Layer | What it checks | Tooling | Count | Status | Where it runs |
 |---|---|---|---:|:--:|---|
-| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 168 | ✅ | every push |
-| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 168 | ✅ | every push |
-| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **168** | ✅ | every push |
-| ↳ of which **E2E journeys** | Connected player journeys, milestone-asserted ([TEST-PLAN.md](TEST-PLAN.md)) | xUnit `[Trait E2E]` | 7 | ✅ | every push |
+| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 181 | ✅ | every push |
+| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 181 | ✅ | every push |
+| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **181** | ✅ | every push |
+| ↳ of which **E2E journeys** | Connected player journeys, milestone-asserted ([TEST-PLAN.md](TEST-PLAN.md)) | xUnit `[Trait E2E]` | 8 | ✅ | every push |
 | **L3 Interaction** | Real scenes driven by simulated input/signals (incl. 1 scene E2E) | GdUnit4 | 11 | ✅ | every push (CI) |
 | **L4 Visual** | Golden-screenshot diff of the rendered map | GdUnit4 + custom diff | 2 | ✅ | every push (CI) |
 | **L5 Soak** | 25-seed × 200-turn runs + per-turn perf budget | xUnit | 2 | ✅ | nightly |
-| | | | **183** | **all green** | |
+| | | | **196** | **all green** | |
 
 Reproduce locally (toolchain in [CLAUDE.md](../CLAUDE.md)):
 ```
-dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (168)
+dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (181)
 dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category=Soak"    # L5 (2)
 dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings                 # L3+L4 (12), needs GODOT_BIN
 ```
@@ -58,6 +58,7 @@ Each system doc carries a five-layer verification table; this is the index:
 | Founding Fathers | [founding-fathers.md](systems/founding-fathers.md) | ✅ | ✅ | — | — |
 | Europe & sailing | [europe.md](systems/europe.md) | ✅ | ✅ | — | — |
 | Immigration & recruitment | [immigration.md](systems/immigration.md) | ✅ | ✅ | — | — |
+| Unit transport | [transport.md](systems/transport.md) | ✅ | ✅ | — | — |
 | Turns | [turns.md](systems/turns.md) | ✅ | ✅ | ✅ | ⬜ |
 | Save/load | [save-load.md](systems/save-load.md) | ✅ | ✅ | ✅ | — |
 

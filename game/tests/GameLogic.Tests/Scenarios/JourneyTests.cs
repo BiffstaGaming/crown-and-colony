@@ -373,6 +373,66 @@ public class JourneyTests
         Assert.Equal(game.UnitsInEurope.Count(), reloaded.UnitsInEurope.Count());
     }
 
+    // ───────────────── Journey 7: A recruit reaches the New World ─────────────────
+
+    [Fact]
+    public void Journey7_BoardSailDisembarkAndFound()
+    {
+        // A caravel and a recruit, both in Europe; a coast to come home to.
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 3,
+            MapHeight = 1,
+            Terrain = ["model.tile.plains", "model.tile.ocean", "model.tile.highSeas"],
+            Units =
+            [
+                new SavedUnit(1, "model.unit.caravel", 1, 0, 12, (int)UnitLocation.InEurope),
+                new SavedUnit(2, "model.unit.freeColonist", 0, 0, 3, (int)UnitLocation.InEurope),
+            ],
+            Explored = [],
+        };
+        Game game = save.Restore(Classic);
+        Unit ship = game.Units.First(u => u.Id == 1);
+        Unit recruit = game.Units.First(u => u.Id == 2);
+
+        // M1 — the recruit boards the ship on the Europe dock.
+        game.Board(recruit, ship);
+        Assert.Equal(ship.Id, recruit.CarrierId);
+        Assert.Equal(1, game.CargoSlotsUsed(ship));
+
+        // M2 — sail home: after the crossing the ship is on the map with the recruit still aboard.
+        game.SailToNewWorld(ship);
+        for (int i = 0; i < Game.SailTurns; i++)
+        {
+            game.EndTurn();
+        }
+        Assert.True(ship.IsOnMap);
+        Assert.Equal(new Position(1, 0), ship.Position);
+        Assert.True(recruit.IsAboard);
+        Assert.Equal(ship.Position, recruit.Position); // the passenger tracked the carrier
+
+        // M3 — acid test mid-state: a passenger-aboard game round-trips byte-identical.
+        string json = SaveGame.From(game).ToJson();
+        Game reloaded = SaveGame.FromJson(json).Restore(Classic);
+        Assert.Equal(json, SaveGame.From(reloaded).ToJson());
+        Assert.Equal(ship.Id, reloaded.Units.First(u => u.Id == 2).CarrierId);
+
+        // M4 — disembark onto the adjacent coast; the recruit is a free unit on the map.
+        game.Disembark(recruit, new Position(0, 0));
+        Assert.True(recruit.IsOnMap);
+        Assert.Equal(new Position(0, 0), recruit.Position);
+        Assert.Empty(game.Passengers(ship));
+
+        // M5 — the colonist founds a colony: the immigration → New World loop is closed.
+        Colony colony = game.FoundColony(recruit);
+        Assert.Equal(new Position(0, 0), colony.Position);
+        Assert.Single(game.Colonies);
+        Assert.DoesNotContain(recruit, game.Units); // the founder settled down
+    }
+
     // ───────────────────────── fixtures ─────────────────────────
 
     /// <summary>A pop-N colony at the centre of a 3×3 all-plains map (free base buildings re-derived).</summary>

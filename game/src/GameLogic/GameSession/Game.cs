@@ -237,7 +237,8 @@ public sealed class Game
     internal static Game Restore(
         Ruleset ruleset, GameMap map, RandomState randomState, int turn,
         IEnumerable<(int id, UnitType type, Position position, int movementLeft,
-            UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo)> units,
+            UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
+            int? carrierId)> units,
         IEnumerable<Position>? explored,
         IEnumerable<Colony>? colonies = null,
         int gold = 0, int taxRate = 0,
@@ -279,13 +280,15 @@ public sealed class Game
         // sequence is preserved); draws a fresh dock for pre-v12 saves that had none.
         game.InitRecruitDock();
         foreach ((int id, UnitType type, Position position, int movementLeft,
-                  UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo) in units)
+                  UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
+                  int? carrierId) in units)
         {
             var unit = new Unit(id, type, position)
             {
                 MovementLeft = movementLeft,
                 Location = location,
                 SailTurnsRemaining = sailTurns,
+                CarrierId = carrierId,
             };
             foreach ((string goodsId, int amount) in cargo ?? new Dictionary<string, int>())
             {
@@ -405,6 +408,10 @@ public sealed class Game
         unit.Position = target;
         unit.MovementLeft -= check.Cost;
         Reveal(unit);
+        if (unit.Type.IsCarrier)
+        {
+            SyncPassengers(unit); // any colonists aboard move with the ship
+        }
     }
 
     /// <summary>
@@ -561,18 +568,24 @@ public sealed class Game
         }
         unit.Location = UnitLocation.SailingToEurope;
         unit.SailTurnsRemaining = SailTurns;
+        SyncPassengers(unit);
     }
 
     /// <summary>Sends a docked ship back to the New World (re-enters at its departure high-seas tile).</summary>
     /// <exception cref="InvalidMoveException">The ship is not in Europe.</exception>
     public void SailToNewWorld(Unit unit)
     {
+        if (unit.IsAboard)
+        {
+            throw new InvalidMoveException("A unit aboard a ship cannot sail on its own.");
+        }
         if (unit.Location != UnitLocation.InEurope)
         {
             throw new InvalidMoveException("Only a ship in Europe can sail to the New World.");
         }
         unit.Location = UnitLocation.SailingToNewWorld;
         unit.SailTurnsRemaining = SailTurns;
+        SyncPassengers(unit);
     }
 
     /// <summary>Loads goods from a colony's warehouse into an adjacent ship's hold.</summary>
@@ -591,6 +604,10 @@ public sealed class Game
         if (colony.StoreOf(goodsId) < amount)
         {
             throw new InvalidMoveException($"The colony does not have {amount} {goodsId}.");
+        }
+        if (ExtraGoodsSlots(ship, goodsId, amount) > CargoSlotsFree(ship))
+        {
+            throw new InvalidMoveException("The ship has no room for that cargo.");
         }
         colony.AddGoods(goodsId, -amount);
         ship.AddCargo(goodsId, amount);
@@ -639,6 +656,10 @@ public sealed class Game
         {
             return MoveCheck.No($"Not enough gold (need {cost}).");
         }
+        if (ExtraGoodsSlots(ship, goodsId, amount) > CargoSlotsFree(ship))
+        {
+            return MoveCheck.No("The ship has no room for that cargo.");
+        }
         return MoveCheck.Yes(cost);
     }
 
@@ -656,6 +677,150 @@ public sealed class Game
         Gold -= check.Cost;
         ship.AddCargo(goodsId, amount);
         return check.Cost;
+    }
+
+    /// <summary>Goods that pack into one cargo slot (FreeCol <c>GoodsContainer.CARGO_SIZE</c>).</summary>
+    private const int CargoSlotSize = 100;
+
+    /// <summary>Hold slots a goods amount occupies (each goods type packs in 100s, rounded up).</summary>
+    private static int SlotsFor(int amount) => (amount + CargoSlotSize - 1) / CargoSlotSize;
+
+    /// <summary>Extra slots needed to add <paramref name="amount"/> more of a goods type already partly aboard.</summary>
+    private static int ExtraGoodsSlots(Unit ship, string goodsId, int amount) =>
+        SlotsFor(ship.CargoOf(goodsId) + amount) - SlotsFor(ship.CargoOf(goodsId));
+
+    /// <summary>A ship's total cargo capacity in hold slots (FreeCol <c>getCargoCapacity</c> = unit <c>space</c>).</summary>
+    public int CargoCapacity(Unit ship) => ship.Type.Space;
+
+    /// <summary>Hold slots a ship is using — goods (packed in 100s) plus carried units.</summary>
+    public int CargoSlotsUsed(Unit ship) =>
+        ship.Cargo.Sum(kv => SlotsFor(kv.Value))
+        + _units.Where(u => u.CarrierId == ship.Id).Sum(u => u.Type.CarrySlots);
+
+    /// <summary>Hold slots still free on a ship (FreeCol <c>getSpaceLeft</c>).</summary>
+    public int CargoSlotsFree(Unit ship) => CargoCapacity(ship) - CargoSlotsUsed(ship);
+
+    /// <summary>The units a ship is carrying as passengers.</summary>
+    public IEnumerable<Unit> Passengers(Unit ship) => _units.Where(u => u.CarrierId == ship.Id);
+
+    private Unit? UnitById(int id) => _units.FirstOrDefault(u => u.Id == id);
+
+    /// <summary>Keeps a carrier's passengers at the carrier's location and tile.</summary>
+    private void SyncPassengers(Unit carrier)
+    {
+        foreach (Unit passenger in _units.Where(u => u.CarrierId == carrier.Id))
+        {
+            passenger.Location = carrier.Location;
+            passenger.Position = carrier.Position;
+        }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="unit"/> may board <paramref name="ship"/> now — they must be
+    /// together (both in Europe, or the unit next to the ship on the map) and the ship must have room.
+    /// </summary>
+    public MoveCheck CheckBoard(Unit unit, Unit ship)
+    {
+        if (!ship.Type.IsCarrier)
+        {
+            return MoveCheck.No($"A {ship.Type.ShortName} cannot carry units.");
+        }
+        if (unit.Type.IsNaval)
+        {
+            return MoveCheck.No("A ship cannot be carried.");
+        }
+        if (unit.IsAboard)
+        {
+            return MoveCheck.No("The unit is already aboard a ship.");
+        }
+        bool together =
+            (unit.Location == UnitLocation.InEurope && ship.Location == UnitLocation.InEurope)
+            || (unit.IsOnMap && ship.IsOnMap
+                && (unit.Position == ship.Position || unit.Position.IsAdjacentTo(ship.Position)));
+        if (!together)
+        {
+            return MoveCheck.No("The unit must be with the ship in Europe, or next to it on the map.");
+        }
+        if (CargoSlotsFree(ship) < unit.Type.CarrySlots)
+        {
+            return MoveCheck.No("The ship has no room.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>Loads a unit aboard a ship as a passenger (it then travels with the ship).</summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBoard"/>.</exception>
+    public void Board(Unit unit, Unit ship)
+    {
+        MoveCheck check = CheckBoard(unit, ship);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        unit.CarrierId = ship.Id;
+        unit.Location = ship.Location;
+        unit.Position = ship.Position;
+        unit.MovementLeft = 0; // boarding ends the unit's turn
+    }
+
+    /// <summary>Whether a carried unit may disembark onto <paramref name="target"/> (a land tile next to its ship).</summary>
+    public MoveCheck CheckDisembark(Unit unit, Position target)
+    {
+        if (!unit.IsAboard)
+        {
+            return MoveCheck.No("The unit is not aboard a ship.");
+        }
+        Unit? ship = UnitById(unit.CarrierId!.Value);
+        if (ship is null || !ship.IsOnMap)
+        {
+            return MoveCheck.No("The ship must be on the map to put the unit ashore.");
+        }
+        if (!Map.InBounds(target))
+        {
+            return MoveCheck.No("Destination is off the map.");
+        }
+        if (!target.IsAdjacentTo(ship.Position))
+        {
+            return MoveCheck.No("Disembark onto a tile next to the ship.");
+        }
+        if (Map.TerrainAt(target).IsWater)
+        {
+            return MoveCheck.No("Land units disembark onto land.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>Puts a carried unit ashore on an adjacent land tile (it ends its turn there).</summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckDisembark"/>.</exception>
+    public void Disembark(Unit unit, Position target)
+    {
+        MoveCheck check = CheckDisembark(unit, target);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        unit.CarrierId = null;
+        unit.Location = UnitLocation.OnMap;
+        unit.Position = target;
+        unit.MovementLeft = 0; // disembarking ends the unit's turn
+        Reveal(unit);
+    }
+
+    /// <summary>Takes a carried unit off its ship back onto the Europe dock.</summary>
+    /// <exception cref="InvalidMoveException">The unit isn't aboard a ship that is in Europe.</exception>
+    public void DisembarkToDock(Unit unit)
+    {
+        if (!unit.IsAboard)
+        {
+            throw new InvalidMoveException("The unit is not aboard a ship.");
+        }
+        Unit? ship = UnitById(unit.CarrierId!.Value);
+        if (ship is null || ship.Location != UnitLocation.InEurope)
+        {
+            throw new InvalidMoveException("The ship must be in Europe to put the unit on the dock.");
+        }
+        unit.CarrierId = null;
+        unit.Location = UnitLocation.InEurope;
     }
 
     /// <summary>Advances sailing units; arrivals dock in Europe or re-enter the map.</summary>
@@ -677,6 +842,7 @@ public sealed class Game
                 unit.Location = UnitLocation.OnMap; // re-enters at its departure high-seas tile
                 Reveal(unit);
             }
+            SyncPassengers(unit); // carried colonists arrive with the ship
         }
     }
 
@@ -860,9 +1026,11 @@ public sealed class Game
             }
         }
 
-        // Europe contribution: penalty per person docked, plus the flat player bonus,
-        // clamped so this turn's immigration production cannot be negative.
-        int personsInEurope = _units.Count(u => u.Location == UnitLocation.InEurope && u.Type.IsPerson);
+        // Europe contribution: penalty per person standing on the dock (not aboard a
+        // ship), plus the flat player bonus, clamped so this turn's immigration
+        // production cannot be negative.
+        int personsInEurope = _units.Count(u =>
+            u.Location == UnitLocation.InEurope && u.Type.IsPerson && !u.IsAboard);
         int europe = (personsInEurope * EuropeUnitImmigrationPenalty) + PlayerImmigrationBonus;
         if (europe + crossesThisTurn < 0)
         {
