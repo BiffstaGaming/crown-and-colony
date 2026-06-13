@@ -54,3 +54,4 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 | 2026-06-13 | Format v6: colony buildings + staffing; pre-v6 re-derives free base buildings (tested). Legacy raw-grain stores normalize to food on load | Phase 3 |
 | 2026-06-13 | Format v7: colony construction target (CurrentBuild) | Phase 3 |
 | 2026-06-13 | Format v8: map bonus resources (sparse index list) | Phase 2/3 |
+| 2026-06-13 | Format v9: treasury (gold, tax) + moved-market inventories (sparse); pre-v9 loads 0 gold/tax, market reseeded (tested) | Phase 4 |

@@ -31,6 +31,8 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | `World.MapGenerator` | Seeded placeholder map generation (Phase 2 replaces algorithm) |
 | `Units.Unit` | Unit state; mutated only via `Game` |
 | `Colonies.Colony` | Colony state: population, stores, tile/building workers, buildings, build target |
+| `Trade.Market` | European market: per-good bid/ask, supply-driven `Sell` with tax (FreeCol price model) |
+| `Specification.GoodsMarket` | Per-good market seed (initial amount/price/spread) |
 | `GameSession.Game` | The running game: `New`, `CheckMove`/`MoveUnit`, `EndTurn`, `SpawnUnit`, `CheckFoundColony`/`FoundColony`, `TileYield`, `CheckAssignWork`/`AssignWork`/`UnassignWork`, `CheckAssignBuildingWork`/`AssignBuildingWork`/`UnassignBuildingWork`, `CheckSetBuild`/`SetBuild`/`Buildables` |
 | `GameSession.MoveCheck` / `InvalidMoveException` | Move legality result / violation |
 | `Persistence.SaveGame` / `SavedUnit` | Complete JSON-serializable game snapshot |

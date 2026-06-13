@@ -122,13 +122,22 @@ public sealed class Ruleset
         foreach (XElement el in root.Element("goods-types")?.Elements("goods-type") ?? [])
         {
             string id = RequiredAttribute(el, "id");
+            XElement? market = el.Element("market");
             goods[id] = new GoodsType(
                 Id: id,
                 IsFood: (bool?)el.Attribute("is-food") ?? false,
                 StoredAs: (string?)el.Attribute("stored-as") ?? id,
                 MadeFrom: (string?)el.Attribute("made-from"),
                 IsFarmed: (bool?)el.Attribute("is-farmed") ?? false,
-                BreedingNumber: (int?)el.Attribute("breeding-number"));
+                BreedingNumber: (int?)el.Attribute("breeding-number"),
+                IsNewWorldGoods: (bool?)el.Attribute("new-world-goods") ?? false,
+                Market: market is null ? null : new GoodsMarket(
+                    InitialAmount: (int?)market.Attribute("initial-amount")
+                        ?? throw new RulesetFormatException($"<market> in '{id}' lacks initial-amount."),
+                    InitialPrice: (int?)market.Attribute("initial-price")
+                        ?? throw new RulesetFormatException($"<market> in '{id}' lacks initial-price."),
+                    PriceDifference: (int?)market.Attribute("price-difference")
+                        ?? throw new RulesetFormatException($"<market> in '{id}' lacks price-difference.")));
         }
 
         var buildings = new Dictionary<string, BuildingType>();

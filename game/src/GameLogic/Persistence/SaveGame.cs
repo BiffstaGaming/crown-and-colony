@@ -17,7 +17,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 8;
+    public const int CurrentVersion = 9;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -58,6 +58,15 @@ public sealed record SaveGame
 
     /// <summary>Bonus resources by row-major tile index. Null in pre-v8 saves (none).</summary>
     public IReadOnlyList<SavedResource>? Resources { get; init; }
+
+    /// <summary>Player treasury in gold (v9+).</summary>
+    public int Gold { get; init; }
+
+    /// <summary>Sales tax percentage (v9+).</summary>
+    public int Tax { get; init; }
+
+    /// <summary>Market inventories that have moved from their ruleset seed (sparse; v9+).</summary>
+    public IReadOnlyDictionary<string, int>? MarketState { get; init; }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -100,6 +109,11 @@ public sealed record SaveGame
                     .Select(r => new SavedResource(r.Key.Y * game.Map.Width + r.Key.X, r.Value))
                     .OrderBy(r => r.Index)
                     .ToList()
+                : null,
+            Gold = game.Gold,
+            Tax = game.TaxRate,
+            MarketState = game.Market.SaveDeltas() is { Count: > 0 } deltas
+                ? new Dictionary<string, int>(deltas)
                 : null,
         };
     }
@@ -157,7 +171,10 @@ public sealed record SaveGame
                 }
                 colony.CurrentBuild = c.CurrentBuild;
                 return colony;
-            }));
+            }),
+            Gold,
+            Tax,
+            MarketState);
     }
 
     /// <summary>Serializes to JSON.</summary>

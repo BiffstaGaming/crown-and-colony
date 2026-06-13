@@ -1,6 +1,7 @@
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.Trade;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 
@@ -36,6 +37,7 @@ public sealed class Game
         Map = map;
         _random = random;
         Turn = turn;
+        Market = new Market(ruleset);
     }
 
     /// <summary>The rule data this game plays by.</summary>
@@ -46,6 +48,15 @@ public sealed class Game
 
     /// <summary>Current turn number, starting at 1.</summary>
     public int Turn { get; private set; }
+
+    /// <summary>The player's treasury in gold.</summary>
+    public int Gold { get; private set; }
+
+    /// <summary>Sales tax as a percentage (0–100) deducted from European sales.</summary>
+    public int TaxRate { get; private set; }
+
+    /// <summary>The European market (trade prices). (Single shared market until foreign powers arrive.)</summary>
+    public Market Market { get; }
 
     /// <summary>All units in the game.</summary>
     public IReadOnlyList<Unit> Units => _units;
@@ -66,12 +77,18 @@ public sealed class Game
     /// Starts a new game: generates a map from the seed and places one starting
     /// colonist on the first settleable land tile, revealing its surroundings.
     /// </summary>
-    public static Game New(Ruleset ruleset, ulong seed, int mapWidth = 36, int mapHeight = 24)
+    public static Game New(
+        Ruleset ruleset, ulong seed, int mapWidth = 36, int mapHeight = 24,
+        int startingGold = 0, int startingTax = 0)
     {
         var random = new Pcg32Random(seed);
         GameMap map = MapGenerator.Generate(ruleset, mapWidth, mapHeight, random);
 
-        var game = new Game(ruleset, map, random, turn: 1);
+        var game = new Game(ruleset, map, random, turn: 1)
+        {
+            Gold = startingGold,
+            TaxRate = startingTax,
+        };
 
         // Start on settleable land that has somewhere to walk to (not a 1-tile
         // islet), preferring temperate latitudes (nearest the equator row) over
@@ -98,9 +115,19 @@ public sealed class Game
         Ruleset ruleset, GameMap map, RandomState randomState, int turn,
         IEnumerable<(int id, UnitType type, Position position, int movementLeft)> units,
         IEnumerable<Position>? explored,
-        IEnumerable<Colony>? colonies = null)
+        IEnumerable<Colony>? colonies = null,
+        int gold = 0, int taxRate = 0,
+        IReadOnlyDictionary<string, int>? marketDeltas = null)
     {
-        var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn);
+        var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn)
+        {
+            Gold = gold,
+            TaxRate = taxRate,
+        };
+        if (marketDeltas is { Count: > 0 })
+        {
+            game.Market.LoadDeltas(marketDeltas);
+        }
         foreach ((int id, UnitType type, Position position, int movementLeft) in units)
         {
             var unit = new Unit(id, type, position) { MovementLeft = movementLeft };
@@ -305,6 +332,31 @@ public sealed class Game
     /// <summary>Returns one of a building's workers to the idle pool.</summary>
     public void UnassignBuildingWork(Colony colony, string buildingId) =>
         colony.SetBuildingWorkers(buildingId, colony.BuildingWorkers.GetValueOrDefault(buildingId) - 1);
+
+    /// <summary>
+    /// Sells goods from a colony's warehouse to the European market, crediting the
+    /// treasury after tax and moving the market price. (Phase 4 slice 1: an abstract
+    /// "shipped to Europe" sale; slice 3 will require an actual ship to carry it.)
+    /// </summary>
+    /// <returns>The gold credited to the treasury after tax.</returns>
+    /// <exception cref="InvalidMoveException">The good is untradeable or the colony lacks the amount.</exception>
+    public int SellColonyGoods(Colony colony, string goodsId, int amount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
+        if (!Market.IsTradeable(goodsId))
+        {
+            throw new InvalidMoveException($"{goodsId} cannot be sold in Europe.");
+        }
+        if (colony.StoreOf(goodsId) < amount)
+        {
+            throw new InvalidMoveException($"The colony does not have {amount} {goodsId} to sell.");
+        }
+
+        colony.AddGoods(goodsId, -amount);
+        SaleResult sale = Market.Sell(goodsId, amount, TaxRate);
+        Gold += sale.GoldAfterTax;
+        return sale.GoldAfterTax;
+    }
 
     /// <summary>Whether the colony may start constructing a building type.</summary>
     public MoveCheck CheckSetBuild(Colony colony, string buildingId)
