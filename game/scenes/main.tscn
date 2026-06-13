@@ -13,6 +13,8 @@ script = ExtResource("1")
 [node name="MapView" type="Node2D" parent="."]
 script = ExtResource("2")
 
+[node name="NativeLayer" type="Node2D" parent="MapView"]
+
 [node name="ColonyLayer" type="Node2D" parent="MapView"]
 
 [node name="UnitMarker" type="Node2D" parent="MapView"]

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
@@ -17,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 13;
+    public const int CurrentVersion = 14;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -25,7 +26,7 @@ public sealed record SaveGame
     /// v4 lacked tile workers; v5 lacked buildings; v9 added gold/tax/market;
     /// v10 added liberty/congress; v11 added unit location/cargo; v12 added
     /// immigration + the Europe recruitment dock; v13 added unit carrier ids
-    /// (passengers aboard ships).
+    /// (passengers aboard ships); v14 added native settlements.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -98,6 +99,9 @@ public sealed record SaveGame
     /// <summary>Unit types waiting on the Europe dock; null pre-v12 → a fresh dock is drawn on load.</summary>
     public IReadOnlyList<string>? RecruitDock { get; init; }
 
+    /// <summary>Native settlements on the map. Null in pre-v14 saves (none existed).</summary>
+    public IReadOnlyList<SavedNativeSettlement>? NativeSettlements { get; init; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -158,6 +162,13 @@ public sealed record SaveGame
             BaseRecruitPrice = game.BaseRecruitPrice,
             RecruitLowerCap = game.RecruitLowerCap,
             RecruitDock = game.RecruitDock.Count > 0 ? game.RecruitDock.ToList() : null,
+            NativeSettlements = game.NativeSettlements.Count > 0
+                ? game.NativeSettlements
+                    .Select(s => new SavedNativeSettlement(
+                        s.Id, s.NationTypeId, s.SettlementTypeId, s.IsCapital,
+                        s.Position.X, s.Position.Y, s.Size, s.LearnableSkill))
+                    .ToList()
+                : null,
         };
     }
 
@@ -230,7 +241,10 @@ public sealed record SaveGame
             ImmigrationRequired ?? Game.InitialImmigration,
             BaseRecruitPrice ?? Game.InitialRecruitPrice,
             RecruitLowerCap ?? Game.InitialRecruitLowerCap,
-            RecruitDock);
+            RecruitDock,
+            NativeSettlements?.Select(s => new NativeSettlement(
+                s.Id, s.NationTypeId, s.SettlementTypeId, s.IsCapital,
+                new Position(s.X, s.Y), s.Size, s.LearnableSkill)));
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -272,6 +286,19 @@ public sealed record SavedResource(int Index, string ResourceId);
 /// <param name="Y">Worked tile row.</param>
 /// <param name="GoodsId">Goods being produced there.</param>
 public sealed record SavedWorker(int X, int Y, string GoodsId);
+
+/// <summary>A native settlement inside a <see cref="SaveGame"/> (v14+).</summary>
+/// <param name="Id">Settlement id.</param>
+/// <param name="NationTypeId">Owning native nation type id (e.g. <c>model.nationType.apache</c>).</param>
+/// <param name="SettlementTypeId">Settlement template id (e.g. <c>model.settlement.camp</c>).</param>
+/// <param name="IsCapital">Whether this is the nation's capital.</param>
+/// <param name="X">Map column.</param>
+/// <param name="Y">Map row.</param>
+/// <param name="Size">Resident population.</param>
+/// <param name="LearnableSkill">Expert unit type the settlement can teach (null = none).</param>
+public sealed record SavedNativeSettlement(
+    int Id, string NationTypeId, string SettlementTypeId, bool IsCapital,
+    int X, int Y, int Size, string? LearnableSkill = null);
 
 /// <summary>A unit inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Id">Unit id.</param>

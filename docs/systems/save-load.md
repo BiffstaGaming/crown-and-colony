@@ -17,7 +17,8 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 
 - A save restores: turn, map (terrain per tile), every unit (id, **type**, position, movement left), **explored tiles (fog of war)**, RNG state.
 - Loading an interrupted game then continuing produces **identical outcomes** to never having saved (tested).
-- Saves carry a format `Version` (currently **13**); older saves still load with sensible defaults for fields that didn't exist yet (see the changelog), and v1 saves default units to free colonists and reveal fog around units.
+- Saves carry a format `Version` (currently **14**); older saves still load with sensible defaults for fields that didn't exist yet (see the changelog), and v1 saves default units to free colonists and reveal fog around units.
+- A save also restores all **native settlements** (v14+): id, owning nation type, settlement type, capital flag, position, size, taught skill.
 - Saves reference terrain by ruleset id — loading needs the matching ruleset; unknown ids fail loudly.
 
 **Deviations:** our own JSON format by design; no FreeCol save compatibility planned.
@@ -59,3 +60,4 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 | 2026-06-13 | Format v11: unit location + sail turns + cargo hold; pre-v11 units load on-map empty (tested) | Phase 4 |
 | 2026-06-13 | Format v12: immigration (pool, target) + Europe recruitment dock (slots, escalating base price/floor); pre-v12 loads classic defaults + a fresh dock (tested) | Phase 4 slice 4 |
 | 2026-06-13 | Format v13: unit carrier ids (colonists aboard ships); pre-v13 units load not-aboard (tested) | Phase 4 slice 5 |
+| 2026-06-13 | Format v14: native settlements (id, nation type, settlement type, capital, position, size, skill); pre-v14 loads with none (tested) | Phase 5 slice 1 |

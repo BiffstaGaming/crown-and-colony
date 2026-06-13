@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (terrain incl. `<gen>` envelopes + resources, unit types, goods types incl. market/`stored-as`/`made-from`, building types, founding fathers incl. modifiers/abilities, resource types) |
-| **Last verified** | 2026-06-13 @ Phase 4 slice 8 |
+| **Status** | Implemented (terrain incl. `<gen>` envelopes + resources, unit types, goods types incl. market/`stored-as`/`made-from`, building types, founding fathers incl. modifiers/abilities, resource types, native nation + settlement types) |
+| **Last verified** | 2026-06-13 @ Phase 5 slice 1 |
 | **Code** | `game/src/GameLogic/Specification/` |
-| **Tests** | `game/tests/GameLogic.Tests/Specification/RulesetTests.cs` |
+| **Tests** | `game/tests/GameLogic.Tests/Specification/RulesetTests.cs`, `NativeNationTypeTests.cs` |
 | **FreeCol reference** | `freecol/data/rules/classic/specification.xml` (copied to `game/data/rules/classic/`) |
 | **Related systems** | [map-terrain](map-terrain.md), all future rule-driven systems |
 
@@ -44,7 +44,7 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 
 ## 5. Open issues / TODO
 
-- [ ] Parse **nations** when foreign powers land (Phase 5). *(Goods, buildings, founding fathers — incl. modifiers/abilities — and resource types are now parsed.)*
+- [ ] Parse the European **`<nation>`** elements (colours, REF, preferred latitude) when foreign powers land (Phase 5 foreign-powers slice). *(Native nation types + settlement templates are now parsed — see [natives](natives.md); `<plunder>`/`<gifts>` within settlements are deferred to the native combat/trade slices.)*
 - [ ] Unit roles (scout = colonist + horses etc.) — FreeCol models these separately from unit types.
 
 ## Changelog
@@ -60,3 +60,4 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 | 2026-06-13 | Founding-father `<modifier>`/`<ability>` (FatherModifier/FatherAbility); unit `recruit-probability`, `model.ability.person`, `space`/`spaceTaken` | Phase 4 slices 4–7 |
 | 2026-06-13 | Resource types (`<resource-type>` yield modifiers, ResourceType/ResourceModifier) | Phase 4 slice 8 |
 | 2026-06-13 | Unit `price` (Europe purchase/training cost) → `UnitType.Price`/`IsPurchasable` | Phase 4 slice 11 |
+| 2026-06-13 | Native nation types (`<indian-nation-type>`: settlement templates, number-of-settlements, aggression, skills, regions) + settlement types (`<settlement>`: sizes, radii, trade-bonus, defence modifier) with `extends` resolution; `NativeNationType`/`SettlementType`/`NativeSkill` | Phase 5 slice 1 |

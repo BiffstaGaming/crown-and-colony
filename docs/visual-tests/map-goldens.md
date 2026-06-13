@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| **Golden files** | `game/tests/visual/goldens/map-seed424242.png`, `colony-seed424242.png` |
+| **Golden files** | `game/tests/visual/goldens/map-seed424242.png`, `colony-seed424242.png`, `native-settlement-seed424242.png` |
 | **Test** | `game/presentation/tests/VisualGoldenTests.cs` (GdUnit4, runs with the L3 suite) |
 | **Scene** | `res://scenes/main.tscn`, UI layer hidden (map-only capture for cross-platform stability) |
 | **Resolution** | 1024×600 window capture |
-| **Seed / fixture** | `StartNewGame(424242)`; colony golden additionally founds a colony at the start tile + one End Turn |
+| **Seed / fixture** | `StartNewGame(424242)`; colony golden additionally founds a colony at the start tile + one End Turn; native-settlement golden reveals the first native settlement (by tile order), recentres the camera on it |
 | **Tolerance** | per-channel Δ ≤ 8; ≤ 0.5% of pixels may exceed it |
 | **Last regenerated** | 2026-06-13 — initial flat-colour baseline, regenerated same day for ADR-014 isometric art |
 

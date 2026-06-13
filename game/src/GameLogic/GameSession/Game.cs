@@ -1,4 +1,5 @@
 using CrownAndColony.GameLogic.Colonies;
+using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Trade;
@@ -67,8 +68,16 @@ public sealed class Game
     /// <summary>Recruit-price-floor rise per paid recruit (spec <c>lowerCapIncrease</c>, classic 0).</summary>
     public const int RecruitLowerCapIncrease = 0;
 
+    /// <summary>
+    /// RNG stream id for native settlement placement (ADR-009). A separate stream
+    /// from the main game (stream 0) keeps placement deterministic without shifting
+    /// the economy/father/immigration draws.
+    /// </summary>
+    private const ulong NativeStreamId = 1;
+
     private readonly List<Unit> _units = [];
     private readonly List<Colony> _colonies = [];
+    private readonly List<NativeSettlement> _nativeSettlements = [];
     private readonly HashSet<Position> _explored = [];
     private readonly List<string> _congress = [];
     private readonly List<string> _offeredFathers = [];
@@ -76,6 +85,7 @@ public sealed class Game
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
     private int _nextColonyId = 1;
+    private int _nextSettlementId = 1;
     private int _liberty;
     private string? _currentFather;
     private int _immigration;
@@ -188,6 +198,13 @@ public sealed class Game
     /// <summary>The colony on a tile, or null.</summary>
     public Colony? ColonyAt(Position p) => _colonies.FirstOrDefault(c => c.Position == p);
 
+    /// <summary>All native settlements on the map.</summary>
+    public IReadOnlyList<NativeSettlement> NativeSettlements => _nativeSettlements;
+
+    /// <summary>The native settlement on a tile, or null.</summary>
+    public NativeSettlement? NativeSettlementAt(Position p) =>
+        _nativeSettlements.FirstOrDefault(s => s.Position == p);
+
     /// <summary>Tiles the player has seen (fog of war).</summary>
     public IReadOnlySet<Position> Explored => _explored;
 
@@ -227,6 +244,18 @@ public sealed class Game
                 p => p.Neighbours().Any(n => map.InBounds(n) && !map.TerrainAt(n).IsWater),
                 map.AllPositions().First(Settleable));
         game.SpawnUnit(ruleset.Unit(StartingUnitTypeId), start);
+
+        // Native settlements, on their own RNG stream so placement does not shift the
+        // economy/father/immigration draws. They keep clear of the player's landing.
+        var nativeRandom = new Pcg32Random(seed, NativeStreamId);
+        var excluded = new HashSet<Position>(start.Neighbours().Append(start));
+        foreach (NativeSettlement settlement in
+                 NativeSettlementGenerator.Place(ruleset, map, nativeRandom, excluded))
+        {
+            game._nativeSettlements.Add(settlement);
+            game._nextSettlementId = Math.Max(game._nextSettlementId, settlement.Id + 1);
+        }
+
         game.GenerateOffers(); // Congress choices available from the first turn
         game.InitRecruitDock(); // three recruits waiting on the Europe dock from turn 1
 
@@ -247,7 +276,8 @@ public sealed class Game
         string? currentFather = null, IEnumerable<string>? offeredFathers = null,
         int immigration = 0, int immigrationRequired = InitialImmigration,
         int baseRecruitPrice = InitialRecruitPrice, int recruitLowerCap = InitialRecruitLowerCap,
-        IEnumerable<string>? recruitDock = null)
+        IEnumerable<string>? recruitDock = null,
+        IEnumerable<NativeSettlement>? nativeSettlements = null)
     {
         var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn)
         {
@@ -302,6 +332,12 @@ public sealed class Game
         {
             game._colonies.Add(colony);
             game._nextColonyId = Math.Max(game._nextColonyId, colony.Id + 1);
+        }
+
+        foreach (NativeSettlement settlement in nativeSettlements ?? [])
+        {
+            game._nativeSettlements.Add(settlement);
+            game._nextSettlementId = Math.Max(game._nextSettlementId, settlement.Id + 1);
         }
 
         if (explored is not null)

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using CrownAndColony.Presentation;
 using GdUnit4;
@@ -68,6 +69,33 @@ public class VisualGoldenTests
 
         Image actual = controller.GetViewport().GetTexture().GetImage();
         AssertGolden("colony-seed424242", actual);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task MapView_NativeSettlement_MatchesGolden()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+
+        controller.GetWindow().Size = CaptureSize;
+        controller.GetNode<CanvasLayer>("UI").Visible = false;
+        controller.StartNewGame(GoldenSeed);
+        await runner.SimulateFrames(2);
+
+        // Reveal one (deterministically chosen) native settlement by exploring its
+        // tile, refresh via the public End-Turn path, then frame it with the camera.
+        var game = GetGame(controller);
+        var settlement = game.NativeSettlements
+            .OrderBy(s => s.Position.Y)
+            .ThenBy(s => s.Position.X)
+            .First();
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.freeColonist"), settlement.Position);
+        controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Camera2D>("Camera").Position = MapView.TileCentre(settlement.Position);
+        await runner.SimulateFrames(3);
+
+        Image actual = controller.GetViewport().GetTexture().GetImage();
+        AssertGolden("native-settlement-seed424242", actual);
     }
 
     private static CrownAndColony.GameLogic.GameSession.Game GetGame(GameController controller) =>

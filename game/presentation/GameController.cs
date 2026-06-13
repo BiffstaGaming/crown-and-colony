@@ -31,6 +31,7 @@ public partial class GameController : Node2D
     private MapView _mapView = null!;
     private UnitMarker _unitMarker = null!;
     private Node2D _colonyLayer = null!;
+    private Node2D _nativeLayer = null!;
     private Label _statusLabel = null!;
     private PanelContainer _colonyPanel = null!;
     private PanelContainer _europePanel = null!;
@@ -42,6 +43,7 @@ public partial class GameController : Node2D
         _mapView = GetNode<MapView>("MapView");
         _unitMarker = GetNode<UnitMarker>("MapView/UnitMarker");
         _colonyLayer = GetNode<Node2D>("MapView/ColonyLayer");
+        _nativeLayer = GetNode<Node2D>("MapView/NativeLayer");
         _statusLabel = GetNode<Label>("UI/StatusLabel");
         _colonyPanel = GetNode<PanelContainer>("UI/ColonyPanel");
         _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
@@ -198,6 +200,7 @@ public partial class GameController : Node2D
     {
         _mapView.ShowState(_game.Map, _game.Explored);
         SyncColonyMarkers();
+        SyncNativeMarkers();
 
         Unit? unit = _game.Units.FirstOrDefault(u => u.IsOnMap);
         _unitMarker.Visible = unit is not null;
@@ -243,6 +246,36 @@ public partial class GameController : Node2D
                 ColonyName = colony.Name,
             };
             _colonyLayer.AddChild(marker);
+        }
+    }
+
+    /// <summary>
+    /// One marker per discovered native settlement, reconciled each refresh. Only
+    /// settlements on explored tiles are shown — undiscovered ones stay hidden under
+    /// the fog of war (until the explored-vs-visible upgrade, a settlement once seen
+    /// stays drawn).
+    /// </summary>
+    private void SyncNativeMarkers()
+    {
+        foreach (Node child in _nativeLayer.GetChildren())
+        {
+            child.QueueFree();
+        }
+        foreach (var settlement in _game.NativeSettlements)
+        {
+            if (!_game.IsExplored(settlement.Position))
+            {
+                continue;
+            }
+            string shortName = settlement.NationTypeId[(settlement.NationTypeId.LastIndexOf('.') + 1)..];
+            string caption = char.ToUpperInvariant(shortName[0]) + shortName[1..];
+            var marker = new NativeSettlementMarker
+            {
+                Position = MapView.TileCentre(settlement.Position),
+                SettlementTypeId = settlement.SettlementTypeId,
+                Caption = settlement.IsCapital ? $"{caption} ★" : caption,
+            };
+            _nativeLayer.AddChild(marker);
         }
     }
 }

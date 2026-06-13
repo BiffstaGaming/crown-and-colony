@@ -7,7 +7,7 @@
 | **Code** | `game/src/GameLogic/GameSession/Game.cs` (`Explored`, `Reveal`) · rendering: `game/presentation/MapView.cs` |
 | **Tests** | `GameTests.FogOfWar_*`, `SaveGameTests.RoundTrip_PreservesExploredTilesExactly` |
 | **FreeCol reference** | `Tile.exploredBy` / player `canSee` — cross-check when multiple players exist |
-| **Related systems** | [units-movement](units-movement.md), [save-load](save-load.md), [randomness](randomness.md) |
+| **Related systems** | [units-movement](units-movement.md), [save-load](save-load.md), [randomness](randomness.md), [natives](natives.md) |
 
 ## 1. How it works (plain English)
 
@@ -27,7 +27,7 @@ The world starts hidden. Your units light up the map as they travel — each uni
 
 - `Game._explored` (`HashSet<Position>`), exposed read-only (`Explored`, `IsExplored`); `Reveal(unit)` called on spawn and every move — exploration is game state, not presentation state, because it must persist and later drive rules (e.g. can't found colonies on unseen land).
 - Save format v2 stores explored tiles as row-major indexes (`y*W+x`); v1 saves (no list) reveal around units on load.
-- Rendering: `MapView` draws unexplored tiles as near-black; explored tiles render normally.
+- Rendering: `MapView` draws unexplored tiles as near-black; explored tiles render normally. Native settlements are the first hidden entities to consume this: `GameController.SyncNativeMarkers` draws a settlement only if `IsExplored(its tile)` (see [natives](natives.md)). With exploration-only fog, a settlement once seen stays drawn — the explored-vs-visible upgrade (P5.2) will dim it when out of current sight.
 
 ## 4. Verification
 
