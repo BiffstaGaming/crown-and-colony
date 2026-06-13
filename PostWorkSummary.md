@@ -1,0 +1,46 @@
+# Post-Work Summary
+
+A running, at-a-glance log of what Claude completed after each prompt / area of work — Chris's quick read of "what just happened." **Newest entry first.** The durable, full cross-session record lives in the ClickUp **Session Log** (doc 06); this file is the lightweight TL;DR.
+
+> **Entry format** (copy this for each new entry; prepend it directly under this block):
+>
+> ```
+> ## YYYY-MM-DD — <short title>
+>
+> **Requested:** <one line — what was asked>
+> **Did:** <2–5 bullets — what was actually done>
+> **Status:** <build / tests / CI — e.g. "352 tests green, CI ✓, pushed (abc1234)">
+> **Changed:** <key files or areas; commit hash(es)>
+> **Decisions:** <choices made + why; or "—">
+> **Next / follow-ups:** <what's queued or recommended next>
+> **Needs you:** <questions / playtest / approvals; or "Nothing">
+> ```
+
+---
+
+## 2026-06-14 — Add PostWorkSummary + working rule
+
+**Requested:** Update CLAUDE.md and create a `PostWorkSummary.md` template to summarize completed work after every prompt / area of work.
+**Did:**
+- Created this file (repo root) with a per-entry format and a newest-first log.
+- Added a working rule to `CLAUDE.md` ("How Claude should work") requiring a prepended entry here after each prompt / area of work.
+- Back-filled the Combat 5b entry below so the log starts in use.
+**Status:** Docs only — no code/tests affected.
+**Changed:** `CLAUDE.md`, `PostWorkSummary.md` (new).
+**Decisions:** Put the file at repo root (next to CLAUDE.md) for visibility; newest-first rolling log; it complements, not replaces, the ClickUp Session Log.
+**Next / follow-ups:** Continue Phase 5 — **Combat 5c** (`86d3bba2z`) when ready.
+**Needs you:** Nothing — flag if you'd prefer a different location, format, or single-overwrite (vs. rolling log).
+
+## 2026-06-14 — Combat 5b: attack action + roles/equipment + braves (Phase 5 slice 5b)
+
+**Requested:** Continue Phase 5; implement Combat 5b (the attack action). You chose to **include roles/equipment** in the slice.
+**Did:**
+- Unit ownership (`OwnerNationId`; `PlayerUnits`/`NativeUnits`) + roles/equipment (`RoleType`, `UnitChange`, `EquipRole`); combat power folds the role at the correct index (veteran +50% applies to base **and** role).
+- Brave defenders (one per settlement, fog-excluded, no RNG perturbation); `CheckAttack`/`Attack` with FreeCol's loser/winner precedence (slaughter / disarm + equipment-capture / capture-unit / demote / promote) + native alarm (+200 attack, +400 kill).
+- George Washington (auto-promote) + Paul Revere (auto-arm a colony defender); save format **v18** (default role omitted → byte-identical to v17 per unit).
+- Process: research workflow (6 readers, numbers verified vs `freecol/`) → implement → adversarial review workflow → fixed all 5 confirmed findings.
+**Status:** **352 tests green** (332 logic incl. 2 soak + 20 scene); **CI ✓** (run `27480663094`); pushed to `main` (`6425a9c`); handoff refresh (`0f1a42e`).
+**Changed:** `Game.cs`, `Unit.cs`, `UnitType.cs`, `Ruleset.cs`, `NativeSettlement.cs`, `SaveGame.cs`, new `RoleType.cs`/`UnitChange.cs`, `GameController.cs`; tests `CombatTests.cs`/`RoleTests.cs` (+ others); 9 docs synced (combat, natives, units-movement, save-load, ruleset-data, fog-of-war, founding-fathers, modules, QA-REPORT).
+**Decisions:** Included roles (your call); braves placed *adjacent to* (not on) settlements so attacking is clean open-field combat and settlement assault defers cleanly to 5c; combat uses the main saved RNG (internal RNG-injecting overload for tests).
+**Next / follow-ups:** **Combat 5c** (`86d3bba2z`) — settlement assault/plunder, naval, foreign-unit combat, native-initiated attacks (AI), nation-level tension (also exercises capture-unit + Revere end-to-end). New low-pri task: apply role movement bonuses (`86d3bbvv6`).
+**Needs you:** No combat UI yet (logic + tests only) — say if you'd rather make natives/combat playable with a UI before 5c. Existing In Review playtest items still await your look.
