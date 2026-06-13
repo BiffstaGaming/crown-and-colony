@@ -26,7 +26,7 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 
 ## 3. Technical design
 
-- `Ruleset.LoadClassic()` reads `specification.xml` **embedded in GameLogic.dll** (identical bytes for game, tests, CI; no loose-file export handling). `Ruleset.Load(Stream)` exists for future rulesets/mods.
+- `Ruleset.LoadEmbedded(resource)` reads a `specification.xml` **embedded in GameLogic.dll** (identical bytes for game, tests, CI); `Ruleset.LoadClassic()` is the convenience for the classic variant. Which spec loads is chosen by the selected **game variant** (`GameVariant.LoadRuleset`, ADR-018 — see [game-modes](game-modes.md)). `Ruleset.Load(Stream)` parses any spec — the engine is variant-agnostic.
 - Parse: `System.Xml.Linq`; strict — missing ids/costs or duplicate ids throw `RulesetFormatException`.
 - Model: `TerrainType` (immutable record; `ShortName` strips the `model.tile.` prefix), `ProductionEntry`, `GoodsOutput`. Lookup via `Ruleset.Terrain(id)` (throws `KeyNotFoundException` on unknown id).
 - The copied spec file is upstream data — never edit (see `game/data/README.md`); deviations happen in code or future overlay rulesets.
@@ -61,3 +61,4 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 | 2026-06-13 | Resource types (`<resource-type>` yield modifiers, ResourceType/ResourceModifier) | Phase 4 slice 8 |
 | 2026-06-13 | Unit `price` (Europe purchase/training cost) → `UnitType.Price`/`IsPurchasable` | Phase 4 slice 11 |
 | 2026-06-13 | Native nation types (`<indian-nation-type>`: settlement templates, number-of-settlements, aggression, skills, regions) + settlement types (`<settlement>`: sizes, radii, trade-bonus, defence modifier) with `extends` resolution; `NativeNationType`/`SettlementType`/`NativeSkill` | Phase 5 slice 1 |
+| 2026-06-13 | `Ruleset.LoadEmbedded` + variant selection (`GameVariant`/`GameVariants`) — spec chosen by game variant (ADR-018) | Phase 5 (variant layer) |

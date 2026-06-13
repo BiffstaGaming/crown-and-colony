@@ -28,6 +28,7 @@ public partial class GameController : Node2D
 
     private Game _game = null!;
     private ulong _currentSeed;
+    private GameVariant _variant = GameVariants.Default;
     private MapView _mapView = null!;
     private UnitMarker _unitMarker = null!;
     private Node2D _colonyLayer = null!;
@@ -66,7 +67,7 @@ public partial class GameController : Node2D
     public void StartNewGame(ulong seed)
     {
         _currentSeed = seed;
-        StartGame(Game.New(Ruleset.LoadClassic(), _currentSeed));
+        StartGame(Game.New(_variant.LoadRuleset(), _currentSeed));
     }
 
     private void StartGame(Game game)
@@ -177,7 +178,7 @@ public partial class GameController : Node2D
     private void QuickSave()
     {
         using var file = FileAccess.Open(QuickSavePath, FileAccess.ModeFlags.Write);
-        file.StoreString(SaveGame.From(_game).ToJson());
+        file.StoreString(SaveGame.From(_game, _variant.Id).ToJson());
         _notice = "Game saved.";
         RefreshView();
     }
@@ -191,7 +192,10 @@ public partial class GameController : Node2D
             return;
         }
         using var file = FileAccess.Open(QuickSavePath, FileAccess.ModeFlags.Read);
-        StartGame(SaveGame.FromJson(file.GetAsText()).Restore(Ruleset.LoadClassic()));
+        SaveGame save = SaveGame.FromJson(file.GetAsText());
+        // Reload under the save's own variant so its ruleset matches (ADR-018).
+        _variant = GameVariants.Resolve(save.Variant);
+        StartGame(save.Restore(_variant.LoadRuleset()));
         _notice = "Game loaded.";
         RefreshView();
     }

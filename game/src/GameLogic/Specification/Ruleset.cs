@@ -134,13 +134,24 @@ public sealed class Ruleset
             ? f
             : throw new KeyNotFoundException($"Unknown founding father '{id}'.");
 
-    /// <summary>Loads the classic (1994-faithful) ruleset embedded in this assembly.</summary>
-    public static Ruleset LoadClassic()
+    /// <summary>
+    /// Loads the classic (1994-faithful, Colonial-America) ruleset embedded in this
+    /// assembly. Convenience for the default variant; equivalent to
+    /// <c>GameVariants.ClassicAmerica.LoadRuleset()</c>.
+    /// </summary>
+    public static Ruleset LoadClassic() => LoadEmbedded(GameVariants.ClassicSpecResource);
+
+    /// <summary>
+    /// Loads a ruleset from a specification embedded in this assembly (used by
+    /// <see cref="GameVariant.LoadRuleset"/> to load the selected variant's data).
+    /// </summary>
+    /// <param name="resourceName">Manifest resource name of the embedded <c>specification.xml</c>.</param>
+    /// <exception cref="InvalidOperationException">No embedded resource with that name exists.</exception>
+    public static Ruleset LoadEmbedded(string resourceName)
     {
         var assembly = Assembly.GetExecutingAssembly();
-        const string resource = "CrownAndColony.GameLogic.Specification.classic.specification.xml";
-        using Stream stream = assembly.GetManifestResourceStream(resource)
-            ?? throw new InvalidOperationException($"Embedded ruleset '{resource}' missing from assembly.");
+        using Stream stream = assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException($"Embedded ruleset '{resourceName}' missing from assembly.");
         return Load(stream);
     }
 

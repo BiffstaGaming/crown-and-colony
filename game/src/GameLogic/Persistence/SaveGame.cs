@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 14;
+    public const int CurrentVersion = 15;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -26,9 +26,17 @@ public sealed record SaveGame
     /// v4 lacked tile workers; v5 lacked buildings; v9 added gold/tax/market;
     /// v10 added liberty/congress; v11 added unit location/cargo; v12 added
     /// immigration + the Europe recruitment dock; v13 added unit carrier ids
-    /// (passengers aboard ships); v14 added native settlements.
+    /// (passengers aboard ships); v14 added native settlements; v15 added the
+    /// game variant id (which ruleset the game plays under).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
+
+    /// <summary>
+    /// The game variant this save was played under (e.g. <c>classic</c>), so it
+    /// reloads with the matching ruleset (ADR-018). Null in pre-v15 saves → the
+    /// caller treats it as the default variant.
+    /// </summary>
+    public string? Variant { get; init; }
 
     /// <summary>Current turn number.</summary>
     public required int Turn { get; init; }
@@ -108,12 +116,15 @@ public sealed record SaveGame
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    /// <summary>Captures the complete state of a running game.</summary>
-    public static SaveGame From(Game game)
+    /// <summary>Captures the complete state of a running game, tagged with the variant it plays under.</summary>
+    /// <param name="game">The running game.</param>
+    /// <param name="variantId">The variant id to record (defaults to the standard variant).</param>
+    public static SaveGame From(Game game, string? variantId = null)
     {
         RandomState rng = game.RandomState;
         return new SaveGame
         {
+            Variant = variantId ?? Specification.GameVariants.Default.Id,
             Turn = game.Turn,
             RandomStateValue = rng.State,
             RandomIncrement = rng.Increment,
