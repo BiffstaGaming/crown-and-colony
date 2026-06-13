@@ -40,8 +40,7 @@ CI gates (unchanged): push = L1+L2 (incl. logic E2E); PR = +L3+L4 (incl. scene E
 | 5 | Scene E2E: new → select → move → found → panel → staff → tick | P0 | L3 | ✅ buildable now |
 | 6 | Immigration & recruitment (accrue → emigrate → penalty → recruit) | P2 | L2 | ✅ buildable now (immigration shipped) |
 | 7 | A recruit reaches the New World (board → sail → disembark → found) | P2 | L2 | ✅ buildable now (transport shipped) |
-| — | Sail cargo to Europe & trade | P2 | L2/L3 | ⛔ blocked on ships sailing (P4 slice 3) |
-| — | Founding-Father *effects* applied | P2 | L2 | ⛔ blocked on the modifier system |
+| 8 | An elected father grants its bonus (choose → elect → boosted production) | P2 | L2 | ✅ buildable now (modifier system shipped) |
 
 ## 5. Journey 1 — Explore & found a colony *(golden path, built first)*
 
@@ -106,6 +105,13 @@ Hand-built (a caravel + a recruit, both in Europe; a coast to land on). Mileston
 4. **Disembark** — onto the adjacent coast; the recruit is a free on-map unit, the hold empties.
 5. **Found** — the disembarked colonist founds a colony: the immigration → New World loop is closed.
 
+## 9d. Journey 8 — An elected father grants its bonus (L2)
+
+Constructed (a pop-1 colony with the colonist in the town hall = 4 bells/turn; Thomas Jefferson chosen, liberty one short of his cost). Milestones, each asserted as a connected chain:
+1. **Election turn** — the 4 unmodified bells tip liberty over the 24 cost; Jefferson joins Congress; liberty resets to the surplus (3).
+2. **Bonus takes effect** — the next turn the same 4 bells become **6** liberty (+50%): the elected modifier is live.
+3. **Persists across reload** — save → load → save is byte-identical, and another turn on the reload still yields the boosted +6 (the effect rides on the persisted Congress).
+
 ## 10. Fixtures & helpers
 
 - **Seed policy:** `424242` is the pinned founding seed (used by `InputTests`, `TileWorkerTests`). Record any new pinned seed here.
@@ -125,11 +131,11 @@ Hand-built (a caravel + a recruit, both in Europe; a coast to land on). Mileston
 | UI→logic seam (select/move/found/staff) | `InputTests`, `ColonyPanelTests`, `MainSceneTests` | Journey 5 | ✅ covered-e2e |
 | Immigration + recruitment + recruit-price escalation | `ImmigrationTests` | Journey 6 | ✅ covered-e2e |
 | Unit transport (board/sail/disembark + capacity) | `TransportTests` | Journey 7 | ✅ covered-e2e |
-| Founding-Father effects | — | (blocked) | ⛔ gap until modifier system |
+| Founding-Father effects (modifiers + abilities) | `FoundingFatherEffectsTests` | Journey 8 | ✅ covered-e2e (applied effects; rest deferred) |
 
 ## 12. Blocked journeys & roadmap
 
-Blocked journeys are kept as named stubs (above), each with its missing feature. When **ships sail** (P4 slice 3) Journey 3 gained its load→sail→sell-in-Europe→sail-back leg (now Journey 3b). When **immigration** landed (P4 slice 4) the recruitment journey was added (now **Journey 6**). When the **modifier system** lands, Journey 4 gains an "elected father grants its bonus" milestone. Extend journeys *in place*; don't fork.
+Blocked journeys are kept as named stubs (above), each with its missing feature. When **ships sail** (P4 slice 3) Journey 3 gained its load→sail→sell-in-Europe→sail-back leg (now Journey 3b). When **immigration** landed (P4 slice 4) the recruitment journey was added (now **Journey 6**); **transport** added **Journey 7** (slice 5). The **modifier system** (slice 7) added **Journey 8** as a dedicated, deterministic father-effect journey — chosen over extending Journey 4, whose elected fathers are RNG-determined and so cannot deterministically assert a *specific* father's bonus. Extend journeys *in place* where the flow is deterministic; otherwise add a focused one.
 
 ## 13. Definition of done (E2E journey)
 
@@ -142,3 +148,4 @@ A journey is **done** only when: its milestone assertions are green in CI · thi
 | 2026-06-13 | Plan created; Journeys 1–5 specified (designed via a 5-agent coverage-gap audit workflow) |
 | 2026-06-13 | Journey 6 (immigration & recruitment) built and added (P4 slice 4) |
 | 2026-06-13 | Journey 7 (a recruit reaches the New World) built and added (P4 slice 5) |
+| 2026-06-13 | Journey 8 (an elected father grants its bonus) built and added (P4 slice 7) |

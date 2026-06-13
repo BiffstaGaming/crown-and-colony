@@ -45,7 +45,7 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 | Recruit placement | the unit lands in Europe (`InEurope`); the dock refills with a fresh weighted draw at the bottom slot |
 
 **Deviations from original 1994 / FreeCol behavior:**
-- **No recruit selection on free emigration.** FreeCol lets a player with William Brewster (the `selectRecruit` ability) choose which dock slot emigrates; we have no Founding-Father *effects* yet, so free emigration always takes a **random** slot. Paid recruitment already lets the player choose a slot.
+- **No recruit selection on free emigration.** William Brewster's recruit *ban* (no servants/criminals on the dock) is applied — see [founding-fathers.md](founding-fathers.md) — but his `selectRecruit` *choice* (pick which dock slot emigrates for free) is a UI hook not yet wired, so free emigration still takes a **random** slot. Paid recruitment already lets the player choose a slot.
 - **No religious-unrest modifier.** FreeCol's `updateImmigrationRequired` folds in a `RELIGIOUS_UNREST_BONUS` modifier; with no modifier system yet, the target simply rises by the increment (the modifier resolves to ×1 anyway in the classic base game).
 - **Recruits reach the New World by ship.** Boarding a recruit onto a ship and sailing it home is implemented — see [transport.md](transport.md). (Recruits still can't be carried directly into an existing colony's population yet.)
 - **Single (human) colonial player**: the recruitable pool is filtered only by `recruit-probability > 0`, omitting FreeCol's per-nation `canRecruitUnit`/availability checks (irrelevant until foreign powers exist).
@@ -85,7 +85,7 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 
 - [x] **Europe screen UI** — done ([europe.md](europe.md)): the dock, prices, immigration clock and a recruit button are on the Europe screen.
 - [x] **Carry recruits home** — done in [transport.md](transport.md): board a recruit onto a ship and sail it to the New World.
-- [ ] **William Brewster / `selectRecruit`** — choose the emigrating slot (needs the Founding-Father modifier system).
+- [x] **William Brewster's recruit ban** — done ([founding-fathers.md](founding-fathers.md)): elected, he keeps servants/criminals off the dock. (His `selectRecruit` *slot choice* still needs a UI hook.)
 - [ ] **Fountain of Youth** burst immigration and the survival auto-recruit are not modelled.
 
 ## Changelog

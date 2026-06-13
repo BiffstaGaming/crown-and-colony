@@ -953,7 +953,7 @@ public sealed class Game
             if (bells > 0)
             {
                 colony.AddGoods(BellsId, -bells); // bells become liberty, not tradeable stock
-                _liberty += bells;
+                _liberty += ApplyGoodsModifiers(BellsId, bells); // founding-father bonuses (Jefferson, Paine)
             }
         }
 
@@ -963,6 +963,7 @@ public sealed class Game
             _congress.Add(_currentFather);
             _currentFather = null;
             _offeredFathers.Clear();
+            RefreshDockForRecruitability(); // a newly-elected father may ban dock recruits (Brewster)
         }
 
         if (_currentFather is null && _offeredFathers.Count == 0)
@@ -1004,6 +1005,69 @@ public sealed class Game
         }
     }
 
+    /// <summary>The ability by which Thomas Paine adds the tax rate as a bell bonus.</summary>
+    private const string AddTaxToBellsAbility = "model.ability.addTaxToBells";
+
+    /// <summary>The ability gating which unit types may be recruited (William Brewster denies some).</summary>
+    private const string CanRecruitUnitAbility = "model.ability.canRecruitUnit";
+
+    /// <summary>True when any elected Founding Father grants <paramref name="abilityId"/>.</summary>
+    public bool HasAbility(string abilityId) =>
+        _congress.Select(Ruleset.Father)
+            .SelectMany(f => f.Abilities)
+            .Any(a => a.Id == abilityId && a.Value);
+
+    /// <summary>
+    /// Applies the elected Founding Fathers' production modifiers for a goods type to a
+    /// base amount (FreeCol <c>FeatureContainer.applyModifiers</c>: ascending index, then
+    /// fold; truncated to int). Thomas Paine's <c>addTaxToBells</c> adds the tax rate as a
+    /// bell percentage. With no relevant fathers elected the base is returned unchanged.
+    /// </summary>
+    public int ApplyGoodsModifiers(string goodsId, int baseAmount)
+    {
+        var modifiers = _congress.Select(Ruleset.Father)
+            .SelectMany(f => f.Modifiers)
+            .Where(m => m.TargetId == goodsId)
+            .ToList();
+        if (goodsId == BellsId && HasAbility(AddTaxToBellsAbility))
+        {
+            // Paine: the spec template modifier (index 40) takes the current tax rate as its value.
+            modifiers.Add(new FatherModifier(BellsId, ModifierType.Percentage, TaxRate, 40));
+        }
+        if (modifiers.Count == 0)
+        {
+            return baseAmount;
+        }
+        double result = baseAmount;
+        foreach (FatherModifier modifier in modifiers.OrderBy(m => m.Index))
+        {
+            result = modifier.ApplyTo(result);
+        }
+        return (int)result; // truncate, matching FreeCol's (int) cast on production
+    }
+
+    /// <summary>Whether a unit type may currently be recruited (probability &gt; 0 and not denied by a father).</summary>
+    private bool IsRecruitable(UnitType type) =>
+        type.RecruitProbability > 0 && !IsRecruitBlocked(type.Id);
+
+    /// <summary>True when an elected Founding Father denies recruiting this unit type (William Brewster).</summary>
+    private bool IsRecruitBlocked(string unitTypeId) =>
+        _congress.Select(Ruleset.Father)
+            .SelectMany(f => f.Abilities)
+            .Any(a => a.Id == CanRecruitUnitAbility && !a.Value && a.ScopeTypes.Contains(unitTypeId));
+
+    /// <summary>Replaces any dock recruit a newly-elected father now forbids (e.g. Brewster's scum ban).</summary>
+    private void RefreshDockForRecruitability()
+    {
+        for (int i = 0; i < _recruitDock.Count; i++)
+        {
+            if (IsRecruitBlocked(_recruitDock[i]))
+            {
+                _recruitDock[i] = DrawRecruitType();
+            }
+        }
+    }
+
     /// <summary>
     /// Accrues immigration and emigrates while the target is met (FreeCol
     /// <c>Player.getTotalImmigrationProduction</c> + the auto-emigrate loop in
@@ -1022,7 +1086,7 @@ public sealed class Game
             if (crosses > 0)
             {
                 colony.AddGoods(CrossesId, -crosses);
-                crossesThisTurn += crosses;
+                crossesThisTurn += ApplyGoodsModifiers(CrossesId, crosses); // founding-father bonus (Penn)
             }
         }
 
@@ -1062,7 +1126,7 @@ public sealed class Game
     /// </summary>
     private void InitRecruitDock()
     {
-        if (!Ruleset.UnitTypes.Any(u => u.RecruitProbability > 0))
+        if (!Ruleset.UnitTypes.Any(IsRecruitable))
         {
             return;
         }
@@ -1078,7 +1142,7 @@ public sealed class Game
     /// </summary>
     private string DrawRecruitType()
     {
-        var pool = Ruleset.UnitTypes.Where(u => u.RecruitProbability > 0).ToList();
+        var pool = Ruleset.UnitTypes.Where(IsRecruitable).ToList();
         int total = pool.Sum(u => u.RecruitProbability);
         int roll = _random.Next(total);
         foreach (UnitType type in pool)

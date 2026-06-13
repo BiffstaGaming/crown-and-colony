@@ -202,11 +202,33 @@ public sealed class Ruleset
                 Type: type,
                 Weight1: (int?)el.Attribute("weight1") ?? 0,
                 Weight2: (int?)el.Attribute("weight2") ?? 0,
-                Weight3: (int?)el.Attribute("weight3") ?? 0);
+                Weight3: (int?)el.Attribute("weight3") ?? 0,
+                Modifiers: el.Elements("modifier").Select(ParseModifier).ToList(),
+                Abilities: el.Elements("ability").Select(ParseAbility).ToList());
         }
 
         return new Ruleset(terrain, units, goods, buildings, fathers);
     }
+
+    private static FatherModifier ParseModifier(XElement m) => new(
+        TargetId: RequiredAttribute(m, "id"),
+        Type: (string?)m.Attribute("type") switch
+        {
+            "multiplicative" => ModifierType.Multiplicative,
+            "percentage" => ModifierType.Percentage,
+            _ => ModifierType.Additive,
+        },
+        Value: (double?)m.Attribute("value") ?? 0,
+        Index: (int?)m.Attribute("index") ?? 0);
+
+    private static FatherAbility ParseAbility(XElement a) => new(
+        Id: RequiredAttribute(a, "id"),
+        Value: (bool?)a.Attribute("value") ?? true,
+        ScopeTypes: a.Elements("scope")
+            .Select(s => (string?)s.Attribute("type"))
+            .Where(t => t is not null)
+            .Select(t => t!)
+            .ToList());
 
     private static ProductionEntry ParseProduction(XElement p) => new(
         Unattended: (bool?)p.Attribute("unattended") ?? false,

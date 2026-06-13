@@ -433,6 +433,52 @@ public class JourneyTests
         Assert.DoesNotContain(recruit, game.Units); // the founder settled down
     }
 
+    // ─────────────── Journey 8: An elected father grants its bonus ───────────────
+
+    [Fact]
+    public void Journey8_ElectJefferson_ThenBellsBecomeMoreLiberty()
+    {
+        // A pop-1 colony with the colonist in the town hall makes 4 bells/turn.
+        // Jefferson is chosen and the treasury of liberty is one short of his cost.
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 3,
+            MapHeight = 3,
+            Terrain = [.. Enumerable.Repeat("model.tile.plains", 9)],
+            Units = [],
+            Explored = [],
+            Colonies =
+            [
+                new SavedColony(1, "Capital", 1, 1, 1,
+                    BuildingWorkers: new Dictionary<string, int> { ["model.building.townHall"] = 1 }),
+            ],
+            Liberty = 23,
+            CurrentFather = "model.foundingFather.thomasJefferson",
+        };
+        Game game = save.Restore(Classic);
+        Assert.Empty(game.Congress);
+
+        // M1 — the election turn: 4 bells (unmodified, he's not in yet) tips liberty over
+        //      the 24 cost and Jefferson is elected; liberty resets with the surplus.
+        game.EndTurn();
+        Assert.Contains("model.foundingFather.thomasJefferson", game.Congress);
+        Assert.Equal(3, game.Liberty); // 23 + 4 − 24
+
+        // M2 — now elected, the same 4 bells become 6 liberty (+50%): the bonus took effect.
+        game.EndTurn();
+        Assert.Equal(9, game.Liberty); // 3 + 6
+
+        // M3 — the effect persists across save/load (it rides on the elected congress).
+        string json = SaveGame.From(game).ToJson();
+        Game reloaded = SaveGame.FromJson(json).Restore(Classic);
+        Assert.Equal(json, SaveGame.From(reloaded).ToJson());
+        reloaded.EndTurn();
+        Assert.Equal(15, reloaded.Liberty); // 9 + 6, still boosted after reload
+    }
+
     // ───────────────────────── fixtures ─────────────────────────
 
     /// <summary>A pop-N colony at the centre of a 3×3 all-plains map (free base buildings re-derived).</summary>
