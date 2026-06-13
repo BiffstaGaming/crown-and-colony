@@ -19,7 +19,7 @@ public enum FatherType
     Religious,
 }
 
-/// <summary>How a <see cref="FatherModifier"/> combines with a base value (FreeCol <c>Modifier.ModifierType</c>).</summary>
+/// <summary>How a modifier combines with a base value (FreeCol <c>Modifier.ModifierType</c>).</summary>
 public enum ModifierType
 {
     /// <summary><c>base + value</c>.</summary>
@@ -30,6 +30,18 @@ public enum ModifierType
 
     /// <summary><c>base + base·value/100</c>.</summary>
     Percentage,
+}
+
+/// <summary>Shared modifier arithmetic (FreeCol <c>Modifier.apply</c>), used by father and resource modifiers.</summary>
+public static class ModifierMath
+{
+    /// <summary>Applies <paramref name="value"/> to <paramref name="baseValue"/> by <paramref name="type"/>.</summary>
+    public static double Apply(ModifierType type, double baseValue, double value) => type switch
+    {
+        ModifierType.Additive => baseValue + value,
+        ModifierType.Multiplicative => baseValue * value,
+        _ => baseValue + (baseValue * value / 100.0), // Percentage
+    };
 }
 
 /// <summary>
@@ -43,12 +55,7 @@ public enum ModifierType
 public sealed record FatherModifier(string TargetId, ModifierType Type, double Value, int Index)
 {
     /// <summary>Applies this modifier to a running value.</summary>
-    public double ApplyTo(double value) => Type switch
-    {
-        ModifierType.Additive => value + Value,
-        ModifierType.Multiplicative => value * Value,
-        _ => value + (value * Value / 100.0), // Percentage
-    };
+    public double ApplyTo(double value) => ModifierMath.Apply(Type, value, Value);
 }
 
 /// <summary>

@@ -1219,17 +1219,41 @@ public sealed class Game
     }
 
     /// <summary>
-    /// The yield of one goods type when a colonist works a tile: the terrain's
-    /// best attended output for that goods (0 when it can't be produced there).
+    /// The yield of one goods type when a colonist works a tile: the terrain's best
+    /// attended output, then any bonus-resource boost on the tile, then the player's
+    /// Founding-Father goods modifiers (e.g. Henry Hudson's +100% furs). 0 when the
+    /// terrain can't produce the goods at all (a resource never enables a new good).
     /// </summary>
-    public int TileYield(Position tile, string goodsId) =>
-        Map.TerrainAt(tile).Productions
+    public int TileYield(Position tile, string goodsId)
+    {
+        int baseYield = Map.TerrainAt(tile).Productions
             .Where(p => !p.Unattended)
             .SelectMany(p => p.Outputs)
             .Where(o => o.GoodsId == goodsId)
             .Select(o => o.Amount)
             .DefaultIfEmpty(0)
             .Max();
+        if (baseYield <= 0)
+        {
+            return 0;
+        }
+
+        double yield = baseYield;
+        // Bonus resource on the tile: apply its unscoped modifiers (expert-scoped ones
+        // need per-colonist identity we don't track yet, so they are skipped).
+        if (Map.ResourceAt(tile) is { } resourceId)
+        {
+            foreach (ResourceModifier modifier in Ruleset.Resource(resourceId).Modifiers
+                         .Where(m => m.GoodsId == goodsId && m.IsUnscoped)
+                         .OrderBy(m => m.Index))
+            {
+                yield = modifier.ApplyTo(yield);
+            }
+        }
+
+        // Founding-father goods modifiers stack on top (higher index, applied last).
+        return ApplyGoodsModifiers(goodsId, (int)yield);
+    }
 
     /// <summary>
     /// Whether a colonist of <paramref name="colony"/> may be put to work on

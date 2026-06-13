@@ -34,7 +34,8 @@ Each father carries **modifiers** (bonuses) and **abilities** (capabilities) fro
 | William Penn | +50% cross production (→ immigration) | ✅ applied |
 | Thomas Paine | bell production +the tax rate (`addTaxToBells`) | ✅ applied |
 | William Brewster | no servants/criminals on the recruit dock (`canRecruitUnit=false`); `selectRecruit` | ✅ pool ban applied (recruit-slot choice is a UI hook) |
-| Henry Hudson (+100% furs), Ferdinand Magellan (ship movement/sail time) | goods-yield / movement modifiers | ⏳ infra ready; deferred to the bonus-resource-yield slice |
+| Henry Hudson | +100% furs (applied in `TileYield` — see [colonies](colonies.md)) | ✅ applied (slice 8) |
+| Ferdinand Magellan | +3 ship movement, −1 sail turn | ⏳ infra ready; deferred to a naval-movement slice |
 | Adam Smith (factories), Peter Stuyvesant (custom house), La Salle (free stockade) | building unlocks/grants | ⏳ deferred |
 | combat / native / foreign-trade / diplomacy / exploration-rumour / SoL fathers | (Revere, Washington, Drake, Pocahontas, Franklin, de Witt, Cortés, Bolívar, …) | ⏳ deferred to their systems |
 

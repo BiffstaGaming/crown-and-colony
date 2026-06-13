@@ -55,3 +55,4 @@ The world is a rectangular grid of square tiles, each with one terrain type from
 | 2026-06-13 | Climate-band generation from spec `<gen>` data; high-seas edges; fog rendering | Phase 2a |
 | 2026-06-13 | Isometric rendering with FreeCol terrain art (ADR-014); temperate-biased start tile | Phase 2c |
 | 2026-06-13 | Bonus resources: ~8% of tiles host a resource from the terrain's spec table (weighted), rendered with FreeCol bonus icons, persisted (save v8). Yield effects pending (spec modifiers — with expert/modifier system) | Phase 2/3 |
+| 2026-06-13 | Bonus-resource **yield effects** now applied in production (`TileYield`); see [colonies](colonies.md). Expert-scoped bonuses deferred (no per-colonist identity) | Phase 4 slice 8 |

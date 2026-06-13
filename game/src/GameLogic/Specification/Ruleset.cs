@@ -15,24 +15,28 @@ public sealed class Ruleset
     private readonly Dictionary<string, GoodsType> _goodsById;
     private readonly Dictionary<string, BuildingType> _buildingById;
     private readonly Dictionary<string, FoundingFather> _fatherById;
+    private readonly Dictionary<string, ResourceType> _resourceById;
 
     private Ruleset(
         Dictionary<string, TerrainType> terrainById,
         Dictionary<string, UnitType> unitById,
         Dictionary<string, GoodsType> goodsById,
         Dictionary<string, BuildingType> buildingById,
-        Dictionary<string, FoundingFather> fatherById)
+        Dictionary<string, FoundingFather> fatherById,
+        Dictionary<string, ResourceType> resourceById)
     {
         _terrainById = terrainById;
         _unitById = unitById;
         _goodsById = goodsById;
         _buildingById = buildingById;
         _fatherById = fatherById;
+        _resourceById = resourceById;
         TerrainTypes = _terrainById.Values.ToList();
         UnitTypes = _unitById.Values.ToList();
         GoodsTypes = _goodsById.Values.ToList();
         BuildingTypes = _buildingById.Values.ToList();
         FoundingFathers = _fatherById.Values.ToList();
+        ResourceTypes = _resourceById.Values.ToList();
     }
 
     /// <summary>All terrain types, in specification order.</summary>
@@ -84,6 +88,16 @@ public sealed class Ruleset
 
     /// <summary>All Founding Fathers, in specification order.</summary>
     public IReadOnlyList<FoundingFather> FoundingFathers { get; }
+
+    /// <summary>All bonus-resource types, in specification order.</summary>
+    public IReadOnlyList<ResourceType> ResourceTypes { get; }
+
+    /// <summary>Looks up a bonus-resource type by ruleset id (e.g. <c>model.resource.minerals</c>).</summary>
+    /// <exception cref="KeyNotFoundException">Unknown id.</exception>
+    public ResourceType Resource(string id) =>
+        _resourceById.TryGetValue(id, out var r)
+            ? r
+            : throw new KeyNotFoundException($"Unknown resource type '{id}'.");
 
     /// <summary>Looks up a Founding Father by ruleset id (e.g. <c>model.foundingFather.adamSmith</c>).</summary>
     /// <exception cref="KeyNotFoundException">Unknown id.</exception>
@@ -207,8 +221,33 @@ public sealed class Ruleset
                 Abilities: el.Elements("ability").Select(ParseAbility).ToList());
         }
 
-        return new Ruleset(terrain, units, goods, buildings, fathers);
+        var resources = new Dictionary<string, ResourceType>();
+        foreach (XElement el in root.Element("resource-types")?.Elements("resource-type") ?? [])
+        {
+            string id = RequiredAttribute(el, "id");
+            resources[id] = new ResourceType(
+                Id: id,
+                Modifiers: el.Elements("modifier").Select(ParseResourceModifier).ToList());
+        }
+
+        return new Ruleset(terrain, units, goods, buildings, fathers, resources);
     }
+
+    private static ResourceModifier ParseResourceModifier(XElement m) => new(
+        GoodsId: RequiredAttribute(m, "id"),
+        Type: (string?)m.Attribute("type") switch
+        {
+            "multiplicative" => ModifierType.Multiplicative,
+            "percentage" => ModifierType.Percentage,
+            _ => ModifierType.Additive,
+        },
+        Value: (double?)m.Attribute("value") ?? 0,
+        Index: (int?)m.Attribute("index") ?? 0,
+        ScopeUnitTypes: m.Elements("scope")
+            .Select(s => (string?)s.Attribute("type"))
+            .Where(t => t is not null)
+            .Select(t => t!)
+            .ToList());
 
     private static FatherModifier ParseModifier(XElement m) => new(
         TargetId: RequiredAttribute(m, "id"),

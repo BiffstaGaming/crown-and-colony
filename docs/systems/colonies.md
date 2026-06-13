@@ -42,6 +42,7 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 
 **Tile workers (economy slice 2):**
 - Colonists work the 8 tiles around the colony, one colonist per tile, each producing **one chosen goods type** at the terrain's best attended yield (`Game.TileYield`); ocean tiles fish.
+- **Bonus-resource yields (slice 8):** a tile's special deposit boosts what's produced there — `TileYield` applies the resource's spec modifiers (e.g. minerals +3 ore, prime sugar ×2), then the player's Founding-Father goods modifiers (Henry Hudson +100% furs), in ascending modifier-index order. A resource never *enables* a good the terrain can't already make. Expert-scoped resource bonuses (an extra bonus when an expert works the tile) are parsed but **not applied** — we don't track which colonist works a tile yet. See [ruleset-data](ruleset-data.md) (`ResourceType`) and [founding-fathers](founding-fathers.md) (the modifier system).
 - `CheckAssignWork`/`AssignWork`/`UnassignWork` oracles; rejects: off-map, non-adjacent, tile taken, no idle colonist, terrain can't produce the goods.
 - Founding and growth **auto-assign** to the best free grain tile (deterministic tie-break); the player can rearrange (re-assignment UI is the economy-UI slice).
 - Idle colonists produce nothing (building jobs are a later slice).
@@ -60,8 +61,8 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
-| L1 Unit | Always | found-on-settleable consumes unit/creates colony; rejections (ship, mountains, occupied tile) | ✅ |
-| L2 Scenario | Always | save/load round-trip preserves colonies; pre-v3 compat | ✅ |
+| L1 Unit | Always | found-on-settleable consumes unit/creates colony; rejections (ship, mountains, occupied tile); **resource yields** (`ResourceYieldTests`: resource boosts, expert-scope skipped, no-enable guard, Hudson ×2 furs, resource+father stack order) | ✅ |
+| L2 Scenario | Always | save/load round-trip preserves colonies; pre-v3 compat; production uses the boosted resource yield (`ResourceYieldTests.Production_UsesTheBoostedYield`) | ✅ |
 | L3 Interaction | Yes | `InputTests` (B founds), `MainSceneTests` (panel opens/closes), `ColonyPanelTests` (staff/unstaff buttons, release field worker, construction dropdown + stop) | ✅ |
 | L4 Visual | Yes (marker) | colony golden (`colony-seed424242`) | ✅ |
 
@@ -83,3 +84,4 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 | 2026-06-13 | Economy slice 5: construction queue (SetBuild/Buildables oracles, material-based completion, upgrades replace + keep staff); save v7 | Phase 3 |
 | 2026-06-13 | Economy slice 6: starvation on food shortfall (pop floors at 1, assignments trimmed workshop-first); bare-square boom-bust cycle pinned by long-run test | Phase 3 |
 | 2026-06-13 | Economy UI: interactive colony screen (`ColonyPanel.cs`) — staff/unstaff buildings, release field workers, send idle to fields, construction dropdown with costs + stop; all via Game oracles, L3-tested | Phase 3 |
+| 2026-06-13 | Bonus-resource yield modifiers in `TileYield` (+ Henry Hudson's +100% furs); expert-scoped resource bonuses parsed but deferred (no per-colonist identity). No save change | Phase 4 slice 8 |
