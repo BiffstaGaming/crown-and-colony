@@ -31,20 +31,46 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # Flake mitigation (see kanban "Stabilize L3 CI"): GameLogic.Tests is NOT
-      # in CrownAndColony.slnx, so the action's `dotnet test` runs only the
-      # Godot-runtime suites — the 100+ logic tests no longer compete with
-      # Godot's boot on the 2-core runner (exit-137 / connect-timeout flake).
-      - name: Run GdUnit4 scene tests in Godot runtime (L3 + L4 goldens)
-        uses: MikeSchulze/gdUnit4-action@v1
+      - uses: actions/setup-dotnet@v5
         with:
-          godot-version: "4.6.3"
-          godot-net: true
-          dotnet-version: net8.0
-          version: latest
-          project_dir: "./game/"
-          paths: "presentation/tests"
-          publish-report: false
+          dotnet-version: 10.0.x
+
+      - name: Cache Godot
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-4.6.3-mono-linux
+
+      - name: Install Godot 4.6.3 (.NET)
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL -o godot.zip https://github.com/godotengine/godot/releases/download/4.6.3-stable/Godot_v4.6.3-stable_mono_linux_x86_64.zip
+          mkdir -p ~/godot && unzip -q godot.zip -d ~/godot
+
+      - name: Configure environment
+        run: echo "GODOT_BIN=$HOME/godot/Godot_v4.6.3-stable_mono_linux_x86_64/Godot_v4.6.3-stable_mono_linux.x86_64" >> "$GITHUB_ENV"
+
+      - name: Build solution
+        run: dotnet build game/CrownAndColony.slnx
+
+      - name: Import Godot project
+        run: xvfb-run --auto-servernum "$GODOT_BIN" --path game --headless --import || true
+
+      # Direct invocation with shell-level retry: the GdUnit Godot-runtime host
+      # occasionally fails its socket connect on cold runners ("Failed to
+      # connect: Connection timeout", exit 137) — see kanban "Stabilize L3 CI".
+      - name: Run scene tests (L3 + L4 goldens, up to 3 attempts)
+        working-directory: game
+        run: |
+          for attempt in 1 2 3; do
+            if xvfb-run --auto-servernum dotnet test CrownAndColony.csproj --no-build --settings .runsettings \
+                 --logger "console;verbosity=normal"; then
+              exit 0
+            fi
+            echo "::warning::Scene-test attempt $attempt failed; retrying"
+          done
+          exit 1
 
       - name: Upload visual diff artifacts
         if: failure()
