@@ -33,7 +33,7 @@ A from-scratch remake of Sid Meier's Colonization (1994), built natively in **Go
 This machine has no winget and the system .NET is runtime-only. The working toolchain:
 - **.NET SDK 10 (user-local):** `C:\Users\Chris\.dotnet` — NOT first on PATH by default. Prepend it (and set `DOTNET_ROOT`) before any `dotnet` command, or dot-source `scripts/dev-env.ps1`. The `dotnet` that resolves without this is `C:\Program Files\dotnet` and **cannot build** (no SDKs).
 - **Godot 4.6.3 .NET:** `C:\Users\Chris\Tools\Godot_v4.6.3-stable_mono_win64\` — use the `_console.exe` for headless work (`--headless --path game --import` / `--build-solutions --quit`).
-- Build: `dotnet build game/CrownAndColony.slnx` · Test: `dotnet test game/CrownAndColony.slnx` (solution is `.slnx`, the new format — there is no `.sln`).
+- Build: `dotnet build game/CrownAndColony.slnx` · Logic tests: `dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj` · Scene tests: `dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings` (needs `GODOT_BIN`). Note: GameLogic.Tests is deliberately **not** in the `.slnx` — the CI GdUnit action tests the solution and must only see the Godot-runtime suites (flake mitigation).
 
 ## Repository layout
 
