@@ -50,6 +50,7 @@ Chris does **not** have time to manually test. The full strategy is **binding an
 - **Five-layer pyramid**: L1 unit (xUnit, engine-free `GameLogic`) → L2 scenario simulations (scripted turns, FreeCol cross-checks) → L3 interaction (GdUnit4Net scene runner, simulated input) → L4 visual regression (golden screenshots, custom harness) → L5 nightly smoke/soak (AI autoplay, perf budget).
 - **Determinism (ADR-009)**: all randomness through a seeded, injectable RNG — no direct `Random`/`GD.Randf()` anywhere. Treat violations like compile errors.
 - Every system doc's Verification section carries the five-layer coverage table; required layers must be green in CI before a feature is "done".
+- **End-to-end journeys**: `docs/TEST-PLAN.md` defines connected-flow tests as a `[Trait("Category","E2E")]` category within L2 (+ one L3 scene journey), milestone-asserted. **Results + screenshots**: `docs/QA-REPORT.md` (snapshot) and the GitHub Actions CI runs (always-current).
 - CI gates: push = L1+L2; PR = +L3+L4; nightly = L5. Visual-golden regeneration must be deliberate and visible in the PR.
 - When Claude completes work, it reports test results honestly. "Tests pass" must mean behavior verified at every required layer, not "it compiles."
 
