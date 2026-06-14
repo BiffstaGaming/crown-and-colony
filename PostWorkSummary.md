@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-14 — Combat 5c: native settlement assault (Phase 5 slice 5c)
+
+**Requested:** Move onto the next item of work (Combat 5c).
+**Did:**
+- Native **settlement assault**: `CheckAttackSettlement`/`AttackSettlement` — a settlement defends with an implicit garrison (brave defence × its settlement defence bonus); a win sacks it (destroy + plunder gold), a loss disarms/demotes the attacker. Can't walk onto a native settlement.
+- `<plunder>` ranges parsed (`SettlementPlunder`); `ComputePlunder` ≈ FreeCol `RandomRange`; **Hernán Cortés** (`plunderNatives`) → the richer "extra" range. Save **v19** (marker only — a destroyed settlement is just absent; plunder folds into gold).
+- Process: research workflow (4 readers, numbers verified vs `freecol/`) → implement → adversarial review workflow → fixed both confirmed findings.
+- **Review fix + a deeper unification:** reworked combat tension to FreeCol's `defenderTension` across **both** 5b (open-field) and 5c (settlement): a win raises the nation's alarm nation-wide (open kill +500; non-capital sack +900; burning a capital → the nation **surrenders**, settlements set to 350); a **repelled** attack *lowers* it (−100, or −300 if your unit is slain). This corrects 5b's flat +200/+400 (wrong-signed on a loss) and a false "destroy adds none" doc claim.
+**Status:** **366 tests green** (346 logic incl. 2 soak + 20 scene); CI running; pushed to `main` (`d8d6631`).
+**Changed:** `Game.cs`, `NativeNationType.cs` (+`SettlementPlunder`), `Ruleset.cs`, `NativeSettlement.cs`, `SaveGame.cs`; tests `CombatTests.cs` (+ version pins); 7 docs synced (combat, natives, save-load, ruleset-data, founding-fathers, game-logic, QA-REPORT).
+**Decisions:** Scoped 5c to **settlement assault only** — naval + foreign-European + native-initiated (AI) combat have no targets natives-only, so they move to the foreign-powers slice; **implicit-garrison** defender (vs braves-adjacent), justified by avoiding an in-settlement unit-list + save-schema change.
+**Scheduled next:** **Foreign European powers + multi-player refactor + basic AI** (`86d3b7qwm`) — the largest Phase 5 chunk; decompose when reached. (It also unlocks naval/foreign-unit combat + Drake, tracked at `86d3bek5r`.)
+**Follow-ups:** Naval + foreign-unit combat (+ Drake); native-initiated raids (AI); apply role movement bonuses (`86d3bbvv6`); deferred Founding-Father effects (`86d3b7qxr`).
+**Needs you:** Still no combat UI (logic + tests only). Phase 5's remaining big piece (foreign powers + AI) is large — say if you'd rather I decompose it into a plan first, or push on.
+
 ## 2026-06-14 — Add PostWorkSummary + working rule
 
 **Requested:** Update CLAUDE.md and create a `PostWorkSummary.md` template to summarize completed work after every prompt / area of work — including the item scheduled next.
