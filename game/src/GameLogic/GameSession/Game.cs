@@ -350,7 +350,7 @@ public sealed class Game
         int gift = 0;
         if (settlement.AlarmLevel != AlarmLevel.Hateful)
         {
-            gift = _random.Next(GiftMinimum, GiftMaximum + 1);
+            gift = RandomFor(player).Next(GiftMinimum, GiftMaximum + 1); // the visitor's own stream (the human is 0)
             player.Gold += gift;
         }
         unit.MovementLeft = 0; // speaking ends the unit's turn
@@ -1153,10 +1153,15 @@ public sealed class Game
         game.SpawnRivalsAndNatives(ruleset, start); // foreign powers (landed) + native nations as players (FP-3b/FP-4)
 
         // Each non-human player draws from its own independent PCG stream (ADR-009); created here from the
-        // same seed so the human's stream 0 is untouched (foreign units already placed, drawing nothing).
+        // same seed so the human's stream 0 is untouched (foreign units already placed, drawing nothing). A
+        // foreign colonial power also gets its own Europe recruit dock (FP-5), drawn from its own stream.
         foreach (Player ai in game._players.Where(p => !p.IsHuman))
         {
             ai.Rng = new Pcg32Random(seed, ai.RngStreamId);
+            if (ai.PlayerType == PlayerType.Colonial)
+            {
+                game.InitRecruitDock(ai);
+            }
         }
 
         game.GenerateOffers(human); // Congress choices available from the first turn
@@ -1269,10 +1274,14 @@ public sealed class Game
             game._players.Add(BuildPlayer(ruleset, rp, randomState));
         }
 
-        // Top up the human's dock to a full set: a no-op when the save held all slots (so the RNG sequence
-        // is preserved); draws a fresh dock for pre-v12 saves that had none. Inert foreign powers/natives
-        // have no dock yet — topping theirs up would draw from the human's stream 0 (FP-4 gives them their own).
+        // Top up each colonial player's dock to a full set: a no-op when the save held all slots (so the RNG
+        // sequence is preserved); draws a fresh dock for an older save that had none (a pre-v12 human, or a
+        // pre-FP-5 foreign power). A foreign power draws from its own restored stream, never the human's stream 0.
         game.InitRecruitDock(human);
+        foreach (Player power in game._players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial))
+        {
+            game.InitRecruitDock(power);
+        }
 
         foreach ((int id, UnitType type, Position position, int movementLeft,
                   UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
@@ -1596,9 +1605,12 @@ public sealed class Game
         }
         colony.Population--;
         TrimAssignments(colony); // the lost colonist vacates a job if every colonist was working
-        var unit = new Unit(_nextUnitId++, Ruleset.Unit(StartingUnitTypeId), colony.Position);
+        var unit = new Unit(_nextUnitId++, Ruleset.Unit(StartingUnitTypeId), colony.Position)
+        {
+            OwnerId = colony.OwnerId, // the detached colonist belongs to the colony's owner (the human is 0)
+        };
         _units.Add(unit);
-        Reveal(unit);
+        RevealForOwner(unit); // lifts the owning player's fog (the human's, or a foreign power's)
         return unit;
     }
 
@@ -1872,6 +1884,7 @@ public sealed class Game
         var unit = new Unit(_nextUnitId++, type, type.IsNaval ? EuropeEntryTile() : new Position(0, 0))
         {
             Location = UnitLocation.InEurope,
+            OwnerId = player.PlayerId, // the bought unit belongs to its buyer (the human is 0; a foreign power its own id)
         };
         _units.Add(unit);
         return unit;
@@ -2149,26 +2162,83 @@ public sealed class Game
     }
 
     /// <summary>
-    /// Runs one player's turn: the human's colonies produce and it accrues liberty/immigration; a foreign
-    /// colonial power runs the FP-4 AI (move/explore/found, drawing from its own RNG stream); native players
-    /// stay inert (their AI is a later slice). Only the human draws from stream 0, so its game stays byte-stable.
+    /// Runs one colonial player's turn: its colonies produce/eat/grow and it accrues liberty and immigration
+    /// (FP-5). A foreign power then runs its AI — the economy (pursue a father, sell surplus, recruit) and the
+    /// FP-4 unit AI (move/explore/found). Native players stay inert (their AI is a later slice). The human draws
+    /// only from stream 0 and every foreign power only from its own stream (<see cref="RandomFor"/>), so the
+    /// human's game stays byte-stable (ADR-009).
     /// </summary>
     private void RunPlayerTurn(Player player)
     {
-        if (player.IsHuman)
+        if (player.PlayerType != PlayerType.Colonial)
         {
-            foreach (Colony colony in ColoniesOf(player))
-            {
-                RunColonyTurn(colony);
-            }
-            AccumulateLibertyAndElectFathers(player);
-            AccumulateImmigrationAndEmigrate(player);
+            return; // natives stay inert until their own AI slice
         }
-        else if (player.PlayerType == PlayerType.Colonial)
+
+        foreach (Colony colony in ColoniesOf(player))
         {
-            RunForeignPowerTurn(player); // FP-4 AI; natives stay inert (their AI is a later slice)
+            RunColonyTurn(player, colony);
+        }
+        AccumulateLibertyAndElectFathers(player);
+        AccumulateImmigrationAndEmigrate(player);
+
+        if (!player.IsHuman)
+        {
+            RunForeignPowerEconomy(player); // FP-5: pursue a father, sell surplus, recruit (own stream/market)
+            RunForeignPowerTurn(player);     // FP-4: move / explore / found
         }
     }
+
+    /// <summary>Goods left in an AI colony's warehouse when selling surplus (0 = sell all sellable output each turn).</summary>
+    private const int AiTradeReserve = 0;
+
+    /// <summary>How many of its own colonists a foreign power lets wait in Europe before it stops recruiting (no AI shipping yet).</summary>
+    private const int AiMaxEuropeRecruits = 2;
+
+    /// <summary>
+    /// The minimal foreign-power economic AI (FP-5): pursue a Founding Father, sell each colony's tradeable
+    /// surplus (never food) to the power's OWN market, and recruit while affordable up to a Europe cap. Every
+    /// choice draws from the power's own RNG stream and trades against its own market (ADR-019), so the human's
+    /// stream 0 and market are untouched. Colonies/goods are iterated in stable id order for determinism.
+    /// </summary>
+    private void RunForeignPowerEconomy(Player power)
+    {
+        // Bank toward a father so accrued liberty is eventually spent (deterministic pick from the own stream).
+        if (power.CurrentFather is null && power.OfferedFathers.Count > 0)
+        {
+            power.CurrentFather = power.OfferedFathers[RandomFor(power).Next(power.OfferedFathers.Count)];
+        }
+
+        // Sell the surplus of each tradeable good (the colony centre and worked tiles yield cash crops/ore
+        // unattended) to the power's own market. Food is kept so the colony never starves itself for gold.
+        foreach (Colony colony in ColoniesOf(power).OrderBy(c => c.Id))
+        {
+            foreach (string goodsId in colony.Stores.Keys.OrderBy(g => g, StringComparer.Ordinal).ToList())
+            {
+                if (goodsId == Colony.FoodId || !power.Market.IsTradeable(goodsId))
+                {
+                    continue;
+                }
+                int surplus = colony.StoreOf(goodsId) - AiTradeReserve;
+                if (surplus > 0)
+                {
+                    SellColonyGoods(power, colony, goodsId, surplus);
+                }
+            }
+        }
+
+        // Recruit while gold allows, capped so colonists do not pile up in Europe (ships are idle until FP-6).
+        while (OwnPersonsInEurope(power) < AiMaxEuropeRecruits
+               && power.RecruitDock.Count > 0
+               && CheckRecruit(power, 0).Allowed)
+        {
+            Recruit(power, 0);
+        }
+    }
+
+    /// <summary>The number of <paramref name="player"/>'s own colonists currently waiting on the Europe dock (not aboard a ship).</summary>
+    private int OwnPersonsInEurope(Player player) => _units.Count(u =>
+        u.Location == UnitLocation.InEurope && u.Type.IsPerson && !u.IsAboard && IsOwnedBy(u, player));
 
     /// <summary>
     /// The minimal foreign-power AI (FP-4): per unit in stable by-id order, a colonist founds a colony where
@@ -2250,7 +2320,7 @@ public sealed class Game
             if (bells > 0)
             {
                 colony.AddGoods(BellsId, -bells); // bells become liberty, not tradeable stock
-                player.Liberty += ApplyGoodsModifiers(BellsId, bells); // founding-father bonuses (Jefferson, Paine)
+                player.Liberty += ApplyGoodsModifiers(player, BellsId, bells); // founding-father bonuses (Jefferson, Paine)
             }
         }
 
@@ -2289,7 +2359,7 @@ public sealed class Game
                 continue;
             }
             int totalWeight = candidates.Sum(f => f.WeightForAge(age));
-            int roll = _random.Next(totalWeight);
+            int roll = RandomFor(player).Next(totalWeight);
             foreach (FoundingFather f in candidates)
             {
                 roll -= f.WeightForAge(age);
@@ -2309,27 +2379,31 @@ public sealed class Game
     private const string CanRecruitUnitAbility = "model.ability.canRecruitUnit";
 
     /// <summary>
-    /// True when any Founding Father elected to the human player's Congress grants <paramref name="abilityId"/>.
-    /// (FP-1: the modifier/ability helpers read the human's Congress; per-player folding lands with AI economy, FP-5.)
+    /// True when any Founding Father elected to the human player's Congress grants <paramref name="abilityId"/>
+    /// (presentation/test helper; the rules fold abilities per acting player via <see cref="HasAbilityFor"/>, FP-5).
     /// </summary>
     public bool HasAbility(string abilityId) => HasAbilityFor(_human, abilityId);
 
+    /// <summary>Applies the human player's elected Founding Fathers' production modifiers (presentation/test helper).</summary>
+    public int ApplyGoodsModifiers(string goodsId, int baseAmount) => ApplyGoodsModifiers(_human, goodsId, baseAmount);
+
     /// <summary>
-    /// Applies the human player's elected Founding Fathers' production modifiers for a goods type to a
-    /// base amount (FreeCol <c>FeatureContainer.applyModifiers</c>: ascending index, then
-    /// fold; truncated to int). Thomas Paine's <c>addTaxToBells</c> adds the tax rate as a
-    /// bell percentage. With no relevant fathers elected the base is returned unchanged.
+    /// Applies <paramref name="player"/>'s elected Founding Fathers' production modifiers for a goods type to a
+    /// base amount (FreeCol <c>FeatureContainer.applyModifiers</c>: ascending index, then fold; truncated to
+    /// int). Thomas Paine's <c>addTaxToBells</c> adds that player's tax rate as a bell percentage. Each player
+    /// folds its OWN Congress (FP-5), so a foreign power's economy is independent of the human's fathers; with
+    /// no relevant fathers elected the base is returned unchanged.
     /// </summary>
-    public int ApplyGoodsModifiers(string goodsId, int baseAmount)
+    internal int ApplyGoodsModifiers(Player player, string goodsId, int baseAmount)
     {
-        var modifiers = _human.Congress.Select(Ruleset.Father)
+        var modifiers = player.Congress.Select(Ruleset.Father)
             .SelectMany(f => f.Modifiers)
             .Where(m => m.TargetId == goodsId)
             .ToList();
-        if (goodsId == BellsId && HasAbility(AddTaxToBellsAbility))
+        if (goodsId == BellsId && HasAbilityFor(player, AddTaxToBellsAbility))
         {
             // Paine: the spec template modifier (index 40) takes the current tax rate as its value.
-            modifiers.Add(new FatherModifier(BellsId, ModifierType.Percentage, _human.TaxRate, 40));
+            modifiers.Add(new FatherModifier(BellsId, ModifierType.Percentage, player.TaxRate, 40));
         }
         if (modifiers.Count == 0)
         {
@@ -2383,16 +2457,14 @@ public sealed class Game
             if (crosses > 0)
             {
                 colony.AddGoods(CrossesId, -crosses);
-                crossesThisTurn += ApplyGoodsModifiers(CrossesId, crosses); // founding-father bonus (Penn)
+                crossesThisTurn += ApplyGoodsModifiers(player, CrossesId, crosses); // founding-father bonus (Penn)
             }
         }
 
         // Europe contribution: penalty per person standing on the dock (not aboard a
         // ship), plus the flat player bonus, clamped so this turn's immigration
         // production cannot be negative.
-        int personsInEurope = _units.Count(u =>
-            u.Location == UnitLocation.InEurope && u.Type.IsPerson && !u.IsAboard && IsOwnedBy(u, player));
-        int europe = (personsInEurope * EuropeUnitImmigrationPenalty) + PlayerImmigrationBonus;
+        int europe = (OwnPersonsInEurope(player) * EuropeUnitImmigrationPenalty) + PlayerImmigrationBonus;
         if (europe + crossesThisTurn < 0)
         {
             europe = -crossesThisTurn;
@@ -2403,7 +2475,7 @@ public sealed class Game
         // Guarded on a stocked dock: test rulesets with no recruitable units have none.
         while (player.RecruitDock.Count > 0 && player.Immigration >= player.ImmigrationRequired)
         {
-            Emigrate(player, _random.Next(player.RecruitDock.Count));
+            Emigrate(player, RandomFor(player).Next(player.RecruitDock.Count));
             ReduceImmigration(player);
             player.ImmigrationRequired += CrossesIncrement;
         }
@@ -2441,7 +2513,7 @@ public sealed class Game
     {
         var pool = Ruleset.UnitTypes.Where(t => IsRecruitable(player, t)).ToList();
         int total = pool.Sum(u => u.RecruitProbability);
-        int roll = _random.Next(total);
+        int roll = RandomFor(player).Next(total);
         foreach (UnitType type in pool)
         {
             roll -= type.RecruitProbability;
@@ -2462,15 +2534,16 @@ public sealed class Game
         string typeId = player.RecruitDock[slot];
         player.RecruitDockList.RemoveAt(slot);
         player.RecruitDockList.Add(DrawRecruitType(player));
-        return CreateEuropeRecruit(typeId);
+        return CreateEuropeRecruit(player, typeId);
     }
 
-    /// <summary>Creates a recruited unit docked in Europe (it has never been on the map).</summary>
-    private Unit CreateEuropeRecruit(string unitTypeId)
+    /// <summary>Creates a recruited unit docked in <paramref name="player"/>'s Europe (it has never been on the map).</summary>
+    private Unit CreateEuropeRecruit(Player player, string unitTypeId)
     {
         var unit = new Unit(_nextUnitId++, Ruleset.Unit(unitTypeId), new Position(0, 0))
         {
             Location = UnitLocation.InEurope,
+            OwnerId = player.PlayerId, // the recruit belongs to its player (the human is 0; a foreign power its own id)
         };
         _units.Add(unit);
         return unit;
@@ -2522,12 +2595,19 @@ public sealed class Game
     }
 
     /// <summary>
-    /// The yield of one goods type when a colonist works a tile: the terrain's best
-    /// attended output, then any bonus-resource boost on the tile, then the player's
-    /// Founding-Father goods modifiers (e.g. Henry Hudson's +100% furs). 0 when the
-    /// terrain can't produce the goods at all (a resource never enables a new good).
+    /// The yield of one goods type when a colonist works a tile, with the <em>human</em> player's
+    /// Founding-Father goods modifiers (presentation/test helper). The colony-turn rules use the
+    /// <see cref="TileYield(Player, Position, string)"/> overload so a foreign power's tiles fold its own fathers.
     /// </summary>
-    public int TileYield(Position tile, string goodsId)
+    public int TileYield(Position tile, string goodsId) => TileYield(_human, tile, goodsId);
+
+    /// <summary>
+    /// The yield of one goods type when a colonist of <paramref name="player"/> works a tile: the terrain's
+    /// best attended output, then any bonus-resource boost on the tile, then that player's Founding-Father
+    /// goods modifiers (e.g. Henry Hudson's +100% furs). 0 when the terrain can't produce the goods at all
+    /// (a resource never enables a new good).
+    /// </summary>
+    internal int TileYield(Player player, Position tile, string goodsId)
     {
         int baseYield = Map.TerrainAt(tile).Productions
             .Where(p => !p.Unattended)
@@ -2555,7 +2635,7 @@ public sealed class Game
         }
 
         // Founding-father goods modifiers stack on top (higher index, applied last).
-        return ApplyGoodsModifiers(goodsId, (int)yield);
+        return ApplyGoodsModifiers(player, goodsId, (int)yield);
     }
 
     /// <summary>
@@ -2708,8 +2788,8 @@ public sealed class Game
         }
     }
 
-    /// <summary>One colony's production-eat-grow step.</summary>
-    private void RunColonyTurn(Colony colony)
+    /// <summary>One colony's production-eat-grow step (its <paramref name="owner"/>'s fathers fold into tile yields).</summary>
+    private void RunColonyTurn(Player owner, Colony colony)
     {
         // 1a. The colony square works itself (unattended yield). Goods enter
         //     the warehouse under their stored-as id: grain/fish → food.
@@ -2725,7 +2805,7 @@ public sealed class Game
         // 1b. Worked tiles produce their assigned goods.
         foreach ((Position tile, string goodsId) in colony.TileWorkers)
         {
-            colony.AddGoods(Ruleset.StorageIdOf(goodsId), TileYield(tile, goodsId));
+            colony.AddGoods(Ruleset.StorageIdOf(goodsId), TileYield(owner, tile, goodsId));
         }
 
         // 1c. Buildings produce: unattended entries always run (town hall bell);

@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (accrual + auto-emigration + paid recruitment; on the Europe screen) |
-| **Last verified** | 2026-06-13 @ Phase 4 slice 4 |
-| **Code** | `game/src/GameLogic/GameSession/Game.cs` (immigration accrual, dock, recruit), `Specification/UnitType.cs` (recruit weight + person) |
-| **Tests** | `game/tests/GameLogic.Tests/GameSession/ImmigrationTests.cs`, `Scenarios/JourneyTests.cs` (Journey 5) |
+| **Status** | Implemented (accrual + auto-emigration + paid recruitment; on the Europe screen; **per-player** — the foreign-power AI runs it too, FP-5) |
+| **Last verified** | 2026-06-14 @ FP-5 (per-player immigration on the AI's own stream) |
+| **Code** | `game/src/GameLogic/GameSession/Player.cs` (per-player immigration/dock state), `GameSession/Game.cs` (accrual, dock, recruit — `Player`-parameterised), `Specification/UnitType.cs` (recruit weight + person) |
+| **Tests** | `game/tests/GameLogic.Tests/GameSession/ImmigrationTests.cs`, `ForeignPowerEconomyTests.cs` (the AI recruits onto its own dock with correctly-owned units), `Scenarios/JourneyTests.cs` (Journey 5) |
 | **FreeCol reference** | `Player.java` (immigration/`reduceImmigration`/`updateImmigrationRequired`), `Europe.java` (`getCurrentRecruitPrice`, `getImmigration`), `ServerEurope.java` (`generateRecruitablesList`, `increaseRecruitmentDifficulty`), `ServerPlayer.java` (`csEmigrate`), classic `specification.xml` difficulty options |
 | **Related systems** | [europe.md](europe.md) (sailing/trade), [colonies.md](colonies.md) (crosses production), [founding-fathers.md](founding-fathers.md) (the parallel liberty system), [save-load.md](save-load.md) |
 
@@ -48,11 +48,11 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 - **No recruit selection on free emigration.** William Brewster's recruit *ban* (no servants/criminals on the dock) is applied — see [founding-fathers.md](founding-fathers.md) — but his `selectRecruit` *choice* (pick which dock slot emigrates for free) is a UI hook not yet wired, so free emigration still takes a **random** slot. Paid recruitment already lets the player choose a slot.
 - **No religious-unrest modifier.** FreeCol's `updateImmigrationRequired` folds in a `RELIGIOUS_UNREST_BONUS` modifier; with no modifier system yet, the target simply rises by the increment (the modifier resolves to ×1 anyway in the classic base game).
 - **Recruits reach the New World by ship.** Boarding a recruit onto a ship and sailing it home is implemented — see [transport.md](transport.md). (Recruits still can't be carried directly into an existing colony's population yet.)
-- **Single (human) colonial player**: the recruitable pool is filtered only by `recruit-probability > 0`, omitting FreeCol's per-nation `canRecruitUnit`/availability checks (irrelevant until foreign powers exist).
+- **Per-player from FP-5**: every colonial player accrues immigration and recruits on its **own** dock, drawing from its **own** RNG stream (`RandomFor(player)`) — the foreign-power AI runs the same accrual + auto-emigration and recruits when affordable (capped Europe pile-up; see [players.md](players.md)). Recruited/emigrated units carry the owner's id (the human is 0), so a foreign power's colonists never land on the human's dock. The recruitable pool is still filtered only by `recruit-probability > 0` (+ Brewster's ban), omitting FreeCol's per-nation `canRecruitUnit`/availability checks.
 
 ## 3. Technical design
 
-**Domain model:** all immigration state lives on `Game` (the single-player game state), alongside the parallel liberty/Founding-Father state:
+**Domain model:** immigration state is **per player** (`Player`, ADR-019), alongside the parallel liberty/Founding-Father state; `Game`'s no-argument properties pass through to the human:
 - `Immigration` / `ImmigrationRequired` — the pool and its target.
 - `RecruitDock` — the three unit-type ids on offer.
 - `RecruitPrice` — the computed current price; `BaseRecruitPrice` / `RecruitLowerCap` — the escalating internals (persisted).
@@ -60,10 +60,10 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 **Data sources:** `UnitType` gains two parsed fields — `RecruitProbability` (the spec's direct `recruit-probability` attribute, **not** inherited via `extends`) and `IsPerson` (the `model.ability.person` ability, resolved up the `extends` chain). Crosses are `model.goods.crosses` (`is-farmed=false`, `storable=false`), produced unattended by `model.building.chapel`/`church`/`cathedral`.
 
 **Algorithms & formulas** (`GameSession/Game.cs`):
-- `AccumulateImmigrationAndEmigrate()` (called from `EndTurn`, after liberty): drains each colony's crosses store into the pool (mirroring bells→liberty), adds the clamped Europe contribution, then auto-emigrates while `pool ≥ target` (random dock slot).
+- `AccumulateImmigrationAndEmigrate(player)` (called from `RunPlayerTurn` for every colonial player, after liberty): drains each of the player's colonies' crosses store into its pool (mirroring bells→liberty; the player's own fathers fold via `ApplyGoodsModifiers(player, …)`), adds the clamped Europe contribution (its own dock persons), then auto-emigrates while `pool ≥ target` (a random dock slot drawn from `RandomFor(player)`).
 - `RecruitPrice` getter = `max(base · max(required−immigration,0) / required, floor)` — FreeCol `Europe.getCurrentRecruitPrice` verbatim.
 - `ReduceImmigration()` — subtract the target, keep surplus (`saveProductionOverflow=true`).
-- `DrawRecruitType()` — seeded weighted pick over `Ruleset.UnitTypes` by `RecruitProbability` (same pattern as Founding-Father offers; ADR-009 RNG, no `System.Random`).
+- `DrawRecruitType(player)` — seeded weighted pick over `Ruleset.UnitTypes` by `RecruitProbability`, drawing from `RandomFor(player)` (the human's stream 0, a foreign power's own stream); same pattern as Founding-Father offers (ADR-009 RNG, no `System.Random`).
 - `Recruit(slot)` / `CheckRecruit(slot)` — the paid path; mirrors `ServerPlayer.csEmigrate`'s RECRUIT case (pay → `increaseRecruitmentDifficulty` → fall through to the NORMAL pool consume + target raise).
 
 **Integration points:** runs in `Game.EndTurn` between `AccumulateLibertyAndElectFathers` and `AdvanceSailing`. The Europe penalty counts only **person** units with `Location == InEurope` that are **not aboard a ship** (a docked trade ship, or a recruit already boarded for home, does not suppress immigration — see [transport.md](transport.md)). `CheckFoundColony` now also rejects off-map units (Europe emigrants can't found colonies).
@@ -93,3 +93,4 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-13 | Immigration accrual (crosses + Europe formula), 3-slot dock, weighted recruit draw, escalating recruit price, auto-emigration; save v12 | Phase 4 slice 4 |
+| 2026-06-14 | FP-5: immigration/recruitment run **per player** — accrual + dock draws + emigrate use `RandomFor(player)`; the foreign-power AI recruits onto its own dock (capped), recruited/bought units carry the owner id; foreign docks seeded at New + topped up on load | FP-5 |

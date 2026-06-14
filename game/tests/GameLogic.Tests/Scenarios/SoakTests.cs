@@ -22,11 +22,12 @@ public class SoakTests
     [Fact]
     public void TwentyFiveSeeds_TwoHundredTurns_InvariantsAlwaysHold()
     {
+        bool aForeignEconomyWasActive = false;
         for (ulong seed = 1000; seed < 1025; seed++)
         {
             Game game = PlayGame(seed, turns: 200);
 
-            // End-state invariants.
+            // End-state invariants — over ALL colonies, the human's and the foreign powers' alike (FP-5).
             Assert.All(game.Colonies, c =>
             {
                 Assert.True(c.Population >= 1, $"seed {seed}: colony starved out");
@@ -36,10 +37,24 @@ public class SoakTests
             });
             Assert.All(game.Explored, p => Assert.True(game.Map.InBounds(p)));
 
-            // The whole end state survives a save/load round-trip identically.
+            // FP-5 economy invariants: no colonial player runs its treasury into debt (the overspend guards
+            // hold), and the foreign economies are bounded — neither stalling nor running away.
+            Assert.All(game.Players, p =>
+                Assert.True(p.Gold >= 0, $"seed {seed}: player {p.PlayerId} treasury went negative ({p.Gold})"));
+            var foreignPowers = game.Players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).ToList();
+            if (foreignPowers.Any(p => p.Gold > 0 || p.Market.SaveDeltas().Count > 0 || p.Congress.Count > 0
+                    || game.Units.Any(u => u.OwnerId == p.PlayerId && u.Location == UnitLocation.InEurope)))
+            {
+                aForeignEconomyWasActive = true;
+            }
+
+            // The whole end state — every player's market/gold/dock/RNG and the foreign colonies — survives a
+            // save/load round-trip byte-identically (the per-player streams stay isolated, the human included).
             string json = SaveGame.From(game).ToJson();
             Assert.Equal(json, SaveGame.From(SaveGame.FromJson(json).Restore(Classic)).ToJson());
         }
+
+        Assert.True(aForeignEconomyWasActive, "no foreign power ran an economy across 25 seeds — the AI stalled");
     }
 
     [Fact]

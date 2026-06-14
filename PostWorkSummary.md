@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-14 — FP-5: foreign-power AI economy (trade + immigration + recruit)
+
+**Requested:** Continue the foreign-powers wave → FP-5 (`86d3bex4w`): give the foreign powers an economy, per-player and on their own RNG streams, so the human's stream 0 stays byte-stable.
+**Did:**
+- **Foreign economy runs:** `RunPlayerTurn` is unified — every colonial player now runs `RunColonyTurn` for its colonies + `AccumulateLibertyAndElectFathers`/`AccumulateImmigrationAndEmigrate` (FP-4 only ran the human's). A foreign power then runs the new **`RunForeignPowerEconomy`**: pursue a Founding Father (pick from its offers), **sell each colony's tradeable surplus — never food — to its OWN market** (`SellColonyGoods(power,…)`), and **recruit** while affordable up to a Europe cap (`AiMaxEuropeRecruits` = 2; no AI shipping yet), then the FP-4 unit AI.
+- **Determinism (the crux):** the economy RNG helpers (`GenerateOffers`, `DrawRecruitType`, the emigrate draw, `RefreshDockForRecruitability` via dock draws, + the new father-pick/recruit) now draw from **`RandomFor(player)`** — the human keeps stream 0, foreign powers draw from `Player.Rng`. Founding-father production modifiers fold **per player** (`ApplyGoodsModifiers(player,…)`/`HasAbilityFor(player,…)`; public no-arg overloads delegate to the human, byte-identical). Foreign powers get their **own recruit dock** at `New` (drawn from their own streams) + topped up on load.
+- **Owner-id fix:** `CreateEuropeRecruit`/`BuyUnit` (and via the review, `LeaveColony`) now stamp `OwnerId = player.PlayerId` — previously a foreign power's recruits would have wrongly belonged to the human (id 0). Auto-emigration is correctly owned too.
+- **Tests:** new `ForeignPowerEconomyTests` (full economy on own stream/market; per-player market **independence**; per-player market **save round-trip**; recruit + owner-id; whole-economy byte-stability) + rewrote the FP-4 "no economy" test; extended the **soak** (no negative treasury, economy active + bounded, 200-turn active-economy round-trip byte-identical, 2 ms budget).
+- **Process:** manual deep-read research → implement → 1 thorough adversarial-review agent (**no blockers**; all 5 hard invariants held). Applied its 4 low-sev items: 2 latent seam fixes (`LeaveColony` owner, `Visit` per-player RNG — both byte-identical for the human), ordinal goods sort, DRY `OwnPersonsInEurope`.
+**Status:** **388 tests green** (366 L1+L2 incl. 10 E2E +5 new, 2 soak, 16 L3, 4 L4); builds 0/0; goldens unchanged; save **v20**. **Human stream 0 / market / goldens byte-stable**; soak round-trips 25 seeds × 200 turns of active rival economies byte-identically within the 2 ms budget. Committed + pushed to `main`; CI pending.
+**Changed:** `Game.cs` (economy + per-player RNG/modifier folding + owner stamps + foreign dock), tests `ForeignPowerEconomyTests` (new), `MultiPlayerTests`, `SoakTests`; docs `players.md`/`market.md`/`turns.md`/`immigration.md`/`save-load.md`/`founding-fathers.md`/`QA-REPORT.md`.
+**Decisions:** Minimal economy — the AI sells the colony **centre tile's** unattended cash-crop output (it doesn't staff cash-crop tiles or refine); food excluded explicitly (it **is** a tradeable market good in the classic spec, so an `IsTradeable`-only filter would starve colonies). Recruit (not goods-buy) is the Europe action — goods-buying needs a docked AI ship (FP-6). Save stays **v20** (additive; frozen at FP-7).
+**Scheduled next:** **FP-6 — AI combat + diplomacy basics** (`86d3bex51`): stance/tension primitives (contact→peace, attack→war, tension→stance) replacing the stubbed `AreEnemies` hook; new `docs/systems/diplomacy.md`; foreign/naval combat lands here.
+**Follow-ups (review-flagged, latent):** a human-only baseline regression test pinning stream 0 (architecturally enforced + replay-stable today); the FP-4 carry-overs still open (frontier cache for `StepTowardNearestUnexplored`; min-distance-between-colonies rule; synthesize native `Player` rows on pre-FP-3b load; persist `_currentPlayerIndex`; wire native units to their player id); AI goods-buying + shipping recruits home (FP-6).
+**Needs you:** Nothing — no human-facing gameplay/UI change (rival economies are off-screen under your fog). Say the word for FP-6.
+
 ## 2026-06-14 — FP-4: minimal foreign-power AI (explore / move / found)
 
 **Requested:** Continue the foreign-powers wave → FP-4 (`86d3bex4u`), the first active AI.

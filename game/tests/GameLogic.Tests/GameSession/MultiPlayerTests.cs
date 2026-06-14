@@ -58,7 +58,7 @@ public class MultiPlayerTests
     }
 
     [Fact]
-    public void EndTurn_RunsForeignPowerAi_ButNotTheirEconomy()
+    public void EndTurn_RunsForeignPowerAi_AndItsEconomy()
     {
         var game = Game.New(Classic, seed: 7);
         int turnBefore = game.Turn;
@@ -67,14 +67,14 @@ public class MultiPlayerTests
 
         Assert.Equal(turnBefore + 1, game.Turn);            // the world advanced once
         Assert.Same(game.HumanPlayer, game.CurrentPlayer);  // control returned to the human
-        // A foreign power acted — it founded a colony on the land it settled.
+        // A foreign power acted — it founded a colony on the land it settled (FP-4).
         Assert.Contains(game.Colonies, c => game.Players.Any(p =>
             p.PlayerId == c.OwnerId && !p.IsHuman && p.PlayerType == PlayerType.Colonial));
-        // …but the foreign powers have no economy yet (no trade/immigration/liberty until FP-5).
+        // …and it now runs an economy (FP-5): it accrued immigration on its own (the flat +2 player bonus,
+        // independent of terrain) and it has its own Europe recruit dock.
         Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
-        Assert.Equal(0, power.Gold);
-        Assert.Equal(0, power.Immigration);
-        Assert.Equal(0, power.Liberty);
+        Assert.True(power.Immigration > 0, "the foreign power accrued no immigration");
+        Assert.NotEmpty(power.RecruitDock);
     }
 
     [Fact]
