@@ -2,6 +2,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 using GdUnit4;
@@ -127,6 +128,34 @@ public class InputTests
         // 0 movement. A rejected move would have left it on its tile with full movement.
         Unit? after = game.Units.FirstOrDefault(u => u.Id == artId);
         AssertThat(after == null || after.MovementLeft == 0).IsTrue();
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task NativeRaid_DuringEndTurn_ShowsANoticeInTheStatusBar()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Plant a brave adjacent to the human's starting unit and enrage every native nation, so when the turn
+        // ends the brave raids the human — exercising the AI-combat → CombatNotice → status-bar feedback path.
+        Position humanPos = game.PlayerUnits.First(u => u.IsOnMap).Position;
+        Position bravePos = humanPos.Neighbours().First(n => Free(game, n));
+        string nation = game.NativeSettlements.First().NationTypeId;
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.brave"), bravePos, nation);
+        foreach (NativeSettlement s in game.NativeSettlements)
+        {
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm);
+        }
+
+        // End the turn via the button (the notice path lives in OnEndTurnPressed, not Game.EndTurn).
+        controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+
+        var label = controller.GetNode<Label>("UI/StatusLabel");
+        AssertThat(label.Text.ToLower()).Contains("raid"); // "raided" (native won) or "fought off … raid" (defended)
     }
 
     private static bool Free(Game game, Position n) =>

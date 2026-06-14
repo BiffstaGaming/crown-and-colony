@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
@@ -55,6 +56,49 @@ public class SoakTests
         }
 
         Assert.True(aForeignEconomyWasActive, "no foreign power ran an economy across 25 seeds — the AI stalled");
+    }
+
+    [Fact]
+    public void NativeRaids_StayBounded_Deterministic_AndNeverSoftlock()
+    {
+        // Hold every native nation at maximum alarm for the whole game so the raid AI runs at full pressure,
+        // and assert it never runs away or wedges: the turn always advances, braves never multiply, no store or
+        // treasury goes negative — and a game-long onslaught is still deterministic and round-trips byte-identically.
+        for (ulong seed = 2000; seed < 2008; seed++)
+        {
+            Game game = Game.New(Classic, seed);
+            Game twin = Game.New(Classic, seed); // determinism witness: same seed, same provocation
+            int braveStart = game.NativeUnits.Count();
+
+            for (int turn = 0; turn < 150; turn++)
+            {
+                Enrage(game);
+                Enrage(twin);
+
+                int turnBefore = game.Turn;
+                game.EndTurn();
+                twin.EndTurn();
+
+                Assert.Equal(turnBefore + 1, game.Turn); // no softlock: the world always advances
+                Assert.True(game.NativeUnits.Count() <= braveStart, $"seed {seed}: braves multiplied");
+                Assert.All(game.Colonies, c => Assert.All(c.Stores.Values, v =>
+                    Assert.True(v >= 0, $"seed {seed}: colony store went negative")));
+                Assert.All(game.Players, p =>
+                    Assert.True(p.Gold >= 0, $"seed {seed}: player {p.PlayerId} treasury went negative"));
+            }
+
+            Assert.Equal(SaveGame.From(game).ToJson(), SaveGame.From(twin).ToJson());     // deterministic under onslaught
+            string json = SaveGame.From(game).ToJson();
+            Assert.Equal(json, SaveGame.From(SaveGame.FromJson(json).Restore(Classic)).ToJson()); // byte-identical round-trip
+        }
+
+        static void Enrage(Game game)
+        {
+            foreach (NativeSettlement s in game.NativeSettlements)
+            {
+                game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm);
+            }
+        }
     }
 
     [Fact]

@@ -7,9 +7,10 @@ using Xunit;
 namespace CrownAndColony.GameLogic.Tests.GameSession;
 
 /// <summary>
-/// Multi-player scaffolding (FP-3b, ADR-019): the human plus inert foreign colonial powers and the native
-/// nations as players, the ring-buffer turn (the human acts, the others are inert), and the multi-element
-/// save. The foreign powers/natives draw no RNG and take no turn, so seeded games/goldens stay byte-stable.
+/// Multi-player scaffolding (FP-3b, ADR-019): the human plus the foreign colonial powers and the native
+/// nations as players, the ring-buffer turn, and the multi-element save. Every non-human player draws only
+/// from its own RNG stream (foreign powers run an economy + AI; natives raid/wander from 1b), so the human's
+/// stream 0 stays byte-stable. Native-AI specifics live in <see cref="NativeAiTests"/>.
 /// </summary>
 public class MultiPlayerTests
 {

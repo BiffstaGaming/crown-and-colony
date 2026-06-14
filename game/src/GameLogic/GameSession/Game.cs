@@ -89,6 +89,7 @@ public sealed class Game
     private readonly List<Colony> _colonies = [];
     private readonly List<NativeSettlement> _nativeSettlements = [];
     private readonly List<Player> _players = [];
+    private readonly List<CombatNotice> _combatNotices = []; // transient: the most recent turn's AI-vs-human raids (not saved)
     private readonly Player _human;
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
@@ -339,6 +340,13 @@ public sealed class Game
 
     /// <summary>The native braves owned by a nation.</summary>
     public IEnumerable<Unit> NativeUnits => _units.Where(u => u.IsNative);
+
+    /// <summary>
+    /// Combat the human was the victim of (not the initiator) during the most recent <see cref="EndTurn"/> —
+    /// native braves raiding the human's units. Transient per-turn UI scratch (cleared each <c>EndTurn</c>,
+    /// never saved); the presentation reads it after the turn resolves to notify the player.
+    /// </summary>
+    public IReadOnlyList<CombatNotice> CombatNotices => _combatNotices;
 
     /// <summary>All colonies, in founding order.</summary>
     public IReadOnlyList<Colony> Colonies => _colonies;
@@ -759,16 +767,17 @@ public sealed class Game
         unit.RoleCount = roleId == RoleType.DefaultRoleId ? 0 : Math.Max(1, count);
     }
 
-    /// <summary>Whether <paramref name="attacker"/> may attack the strongest enemy on <paramref name="target"/> now.</summary>
+    /// <summary>
+    /// Whether <paramref name="attacker"/> may attack the strongest enemy on <paramref name="target"/> now.
+    /// Native units may attack from slice 1b (the gate is gone), so this admits any owner-inequality enemy
+    /// (<see cref="AreEnemies"/>) — restricting a brave to human targets is the native AI's job
+    /// (<see cref="NearestHumanUnit"/>), not this legality check.
+    /// </summary>
     public MoveCheck CheckAttack(Unit attacker, Position target)
     {
         if (!attacker.IsOnMap)
         {
             return MoveCheck.No("The unit is at sea or in Europe.");
-        }
-        if (attacker.IsNative)
-        {
-            return MoveCheck.No("Native units do not attack yet."); // native-initiated combat is a later slice
         }
         if (!Map.InBounds(target))
         {
@@ -872,7 +881,7 @@ public sealed class Game
         }
         if (attacker.IsNative)
         {
-            return MoveCheck.No("Native units do not attack yet.");
+            return MoveCheck.No("Native units do not assault settlements."); // braves raid units (1b), not settlements
         }
         if (!Map.InBounds(target))
         {
@@ -1055,7 +1064,10 @@ public sealed class Game
             ? UpgradeUnitType(loser, change.To) // e.g. veteran soldier → free colonist on capture
             : loser;
         captive.OwnerNationId = winner.OwnerNationId;
-        captive.OwnerId = winner.OwnerId;
+        // For a native winner OwnerNationId is the authoritative owner, so the captive's OwnerId is unused (0);
+        // never copy the brave's OwnerId (which is 0 == the human's id) or capture would hand the unit back to
+        // the human. Braves cannot capture units in the classic ruleset today, so this is defensive (dormant).
+        captive.OwnerId = winner.IsNative ? 0 : winner.OwnerId;
         ChangeRole(captive, RoleType.DefaultRoleId, 0);
     }
 
@@ -1271,8 +1283,8 @@ public sealed class Game
 
     /// <summary>
     /// Registers the native nations and the foreign colonial powers as players (ADR-019). Each distinct
-    /// native nation present becomes a <see cref="PlayerType.Native"/> player (its units/settlements still
-    /// reference it by nation id, and natives stay inert); the foreign powers are the first
+    /// native nation present becomes a <see cref="PlayerType.Native"/> player (its units/settlements
+    /// reference it by nation id; its braves act via <see cref="RunNativeTurn"/> from slice 1b); the foreign powers are the first
     /// <see cref="ForeignPowerCount"/> classic playable European nations, <b>landed on the map</b> far from
     /// the human (FP-4) with their starting units. Placement draws no RNG (the human's stream 0 stays
     /// byte-stable); player ids are allocated densely in a stable order (human 0, then natives, then powers).
@@ -2257,9 +2269,10 @@ public sealed class Game
     /// </summary>
     public void EndTurn()
     {
-        // One full round around the player ring: each player takes its turn in order (the human and the
-        // foreign powers act; natives stay inert until their own AI slice), then the shared world advances
-        // once. The ring pointer completes the loop back to the player it started on.
+        // One full round around the player ring: each player takes its turn in order (the human, the foreign
+        // powers, and the native nations all act), then the shared world advances once. The ring pointer
+        // completes the loop back to the player it started on.
+        _combatNotices.Clear(); // this turn's AI-initiated raids on the human are collected fresh each round
         int startIndex = _currentPlayerIndex;
         do
         {
@@ -2284,17 +2297,22 @@ public sealed class Game
     }
 
     /// <summary>
-    /// Runs one colonial player's turn: its colonies produce/eat/grow and it accrues liberty and immigration
-    /// (FP-5). A foreign power then runs its AI — the economy (pursue a father, sell surplus, recruit) and the
-    /// FP-4 unit AI (move/explore/found). Native players stay inert (their AI is a later slice). The human draws
-    /// only from stream 0 and every foreign power only from its own stream (<see cref="RandomFor"/>), so the
-    /// human's game stays byte-stable (ADR-009).
+    /// Runs one player's turn. A native nation runs its raid/wander AI (<see cref="RunNativeTurn"/>). A colonial
+    /// player's colonies produce/eat/grow and it accrues liberty and immigration (FP-5); a foreign power then
+    /// runs its AI — the economy (pursue a father, sell surplus, recruit) and the FP-4 unit AI
+    /// (move/explore/found). The human draws only from stream 0 and every non-human player only from its own
+    /// stream (<see cref="RandomFor"/>), so the human's game stays byte-stable (ADR-009).
     /// </summary>
     private void RunPlayerTurn(Player player)
     {
+        if (player.PlayerType == PlayerType.Native)
+        {
+            RunNativeTurn(player); // braves raid the human when alarmed, else wander — on the nation's own stream
+            return;
+        }
         if (player.PlayerType != PlayerType.Colonial)
         {
-            return; // natives stay inert until their own AI slice
+            return; // future-proofing: any PlayerType that is neither Native nor Colonial takes no turn
         }
 
         foreach (Colony colony in ColoniesOf(player))
@@ -2411,11 +2429,16 @@ public sealed class Game
                 target = p;
             }
         }
-        if (target is not { } goal)
-        {
-            return null; // everything explored
-        }
+        return target is { } goal ? StepToward(power, unit, goal) : null; // null = everything explored
+    }
 
+    /// <summary>
+    /// The legal adjacent move that most reduces the Chebyshev distance to <paramref name="goal"/>, ties broken
+    /// by position (Y then X) and finally by the player's own RNG stream. Null when the unit cannot move. The
+    /// only random draw is the final tiebreak, taken from <see cref="RandomFor"/> — never the human's stream 0.
+    /// </summary>
+    private Position? StepToward(Player player, Unit unit, Position goal)
+    {
         var steps = unit.Position.Neighbours()
             .Where(n => CheckMove(unit, n).Allowed)
             .ToList();
@@ -2427,7 +2450,99 @@ public sealed class Game
         var tied = steps.Where(n => Chebyshev(n, goal) == closest)
             .OrderBy(n => n.Y).ThenBy(n => n.X)
             .ToList();
-        return tied.Count == 1 ? tied[0] : tied[RandomFor(power).Next(tied.Count)];
+        return tied.Count == 1 ? tied[0] : tied[RandomFor(player).Next(tied.Count)];
+    }
+
+    /// <summary>
+    /// A native brave leaves its camp to hunt the human once its home settlement's alarm reaches this band
+    /// (FreeCol <c>NativeAIPlayer.secureIndianSettlement</c>: a settlement sends braves to seek-and-destroy an
+    /// enemy only when its tension toward that enemy is above CONTENT — i.e. Displeased or worse). Below it the
+    /// brave merely wanders. Per-settlement alarm stands in for FreeCol's nation-level tension (see natives.md).
+    /// </summary>
+    private const AlarmLevel RaidAlarmThreshold = AlarmLevel.Displeased;
+
+    /// <summary>
+    /// The minimal native AI (slice 1b): each of the nation's units, in stable by-id order, takes ONE action.
+    /// When its home settlement is alarmed enough (<see cref="RaidAlarmThreshold"/>) the brave hunts the nearest
+    /// human unit — attacking when adjacent, else stepping toward it; otherwise it wanders one tile. Every choice
+    /// (the wander pick, the path tiebreak, the combat resolution) draws from the nation's OWN RNG stream via
+    /// <see cref="RandomFor"/>, never the human's stream 0, so the human's seeded game stays byte-stable
+    /// (ADR-009). A flat priority switch, not FreeCol's mission planner.
+    /// </summary>
+    private void RunNativeTurn(Player player)
+    {
+        // Snapshot: a raid can remove the prey (or, on a loss, the brave itself) from _units mid-loop.
+        foreach (Unit brave in _units.Where(u => u.OwnerNationId == player.NationId).OrderBy(u => u.Id).ToList())
+        {
+            if (!brave.IsOnMap || brave.MovementLeft <= 0)
+            {
+                continue;
+            }
+
+            bool hostile = HomeSettlement(player, brave) is { } home && home.AlarmLevel >= RaidAlarmThreshold;
+            if (hostile && NearestHumanUnit(brave) is { } prey)
+            {
+                if (brave.Position.IsAdjacentTo(prey.Position) && CheckAttack(brave, prey.Position).Allowed)
+                {
+                    RaidHumanUnit(player, brave, prey.Position);
+                }
+                else if (StepToward(player, brave, prey.Position) is { } step)
+                {
+                    MoveUnit(brave, step); // hemmed-in hostile braves simply wait (no fallback wander)
+                }
+            }
+            else if (Wander(player, brave) is { } wanderStep)
+            {
+                MoveUnit(brave, wanderStep);
+            }
+        }
+    }
+
+    /// <summary>One legal random neighbour for an idle brave to wander to (drawn from the nation's own stream), or null if hemmed in.</summary>
+    private Position? Wander(Player player, Unit brave)
+    {
+        var steps = brave.Position.Neighbours()
+            .Where(n => CheckMove(brave, n).Allowed)
+            .OrderBy(n => n.Y).ThenBy(n => n.X)
+            .ToList();
+        return steps.Count == 0 ? null : steps[RandomFor(player).Next(steps.Count)];
+    }
+
+    /// <summary>
+    /// The nearest on-map human-owned unit to a brave (Chebyshev, ties broken by position), or null if the human
+    /// has none on the map. This filter is the <b>sole contract</b> that keeps braves attacking the human only:
+    /// the engine's <see cref="CheckAttack"/>/<see cref="DefenderAt"/> gate on owner-inequality
+    /// (<see cref="AreEnemies"/>), which would also admit foreign powers and rival tribes, so a brave is only ever
+    /// handed a human target here — never a foreign-power or other-nation unit.
+    /// </summary>
+    private Unit? NearestHumanUnit(Unit brave) =>
+        _units.Where(u => u.IsOnMap && IsHumanOwned(u))
+            .OrderBy(u => Chebyshev(u.Position, brave.Position))
+            .ThenBy(u => u.Position.Y).ThenBy(u => u.Position.X)
+            .FirstOrDefault();
+
+    /// <summary>The brave's home settlement — the nearest surviving settlement of its own nation (Chebyshev, ties by position), or null if the nation has lost them all.</summary>
+    private NativeSettlement? HomeSettlement(Player player, Unit brave) =>
+        _nativeSettlements.Where(s => s.NationTypeId == player.NationId)
+            .OrderBy(s => Chebyshev(s.Position, brave.Position))
+            .ThenBy(s => s.Position.Y).ThenBy(s => s.Position.X)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// Resolves a brave's raid on the human unit at <paramref name="target"/> through the nation's OWN RNG
+    /// stream (never stream 0), recording a <see cref="CombatNotice"/> so the presentation can tell the player.
+    /// The defender is human-owned (the caller filtered to <see cref="IsHumanOwned(Unit)"/>), so the native-alarm path
+    /// in <see cref="Attack(Unit, Position, Randomness.IGameRandom)"/> is skipped — a raid never raises the
+    /// raider's own nation's alarm.
+    /// </summary>
+    private void RaidHumanUnit(Player player, Unit brave, Position target)
+    {
+        // The pathing picked the nearest human as prey; Attack (via DefenderAt) resolves against the strongest
+        // defender on that tile — all human, since CheckMove forbids a brave from co-locating with an enemy.
+        Unit defender = DefenderAt(brave, target)!;          // human-owned (filtered upstream)
+        string defenderTypeId = defender.Type.Id;            // capture before the attack — a beaten loser is removed
+        CombatResult result = Attack(brave, target, RandomFor(player)); // INTERNAL overload → the nation's stream
+        _combatNotices.Add(new CombatNotice(player.NationId!, defenderTypeId, result, target));
     }
 
     /// <summary>

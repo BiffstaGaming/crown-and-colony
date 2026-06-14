@@ -89,7 +89,26 @@ public partial class GameController : Node2D
     private void OnEndTurnPressed()
     {
         _game.EndTurn();
+        if (_game.CombatNotices.Count > 0)
+        {
+            // Surface raids the human suffered during the AI phase (no return value to read, unlike a
+            // player-initiated attack). Notices are in deterministic by-brave order; show them together.
+            _notice = string.Join("   ", _game.CombatNotices.Select(FormatCombatNotice));
+        }
         RefreshView();
+    }
+
+    /// <summary>Turns a native raid on the human into a status-bar message, from the human defender's point of view.</summary>
+    private string FormatCombatNotice(CombatNotice notice)
+    {
+        string id = notice.AttackerNationId;
+        string shortName = id[(id.LastIndexOf('.') + 1)..];
+        string nation = char.ToUpperInvariant(shortName[0]) + shortName[1..];
+        string unit = _game.Ruleset.Unit(notice.DefenderUnitTypeId).ShortName;
+        bool nativeWon = notice.Outcome is CombatResult.GreatWin or CombatResult.Win;
+        return nativeWon
+            ? $"⚔ The {nation} raided your {unit} at ({notice.Position.X},{notice.Position.Y})!"
+            : $"Your {unit} fought off a {nation} raid at ({notice.Position.X},{notice.Position.Y}).";
     }
 
     public override void _UnhandledInput(InputEvent @event)

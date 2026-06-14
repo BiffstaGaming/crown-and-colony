@@ -176,10 +176,49 @@ public class CombatTests
     }
 
     [Fact]
-    public void Natives_CannotAttack()
+    public void Brave_CanAttackAnAdjacentHumanUnit_ButNotAssaultSettlements()
     {
-        (Game game, _, Unit brave, _) = SetupAttack();
-        Assert.False(game.CheckAttack(brave, brave.Position.Neighbours().First()).Allowed);
+        // Slice 1b removed the "natives do not attack" gate on CheckAttack: a brave adjacent to a human unit
+        // may raid it. The CheckAttackSettlement gate stays closed — braves don't assault settlements yet.
+        (Game game, Unit human, Unit brave, NativeSettlement home) = SetupAttack();
+        Assert.True(game.CheckAttack(brave, human.Position).Allowed);
+        Assert.False(game.CheckAttackSettlement(brave, home.Position).Allowed);
+
+        brave.MovementLeft = 0;
+        Assert.False(game.CheckAttack(brave, human.Position).Allowed); // ...but not when out of movement
+    }
+
+    [Fact]
+    public void Brave_BeatsUnarmedHumanColonist_DestroysIt_NeverReassignsItToTheHuman()
+    {
+        // Braves cannot capture units in the classic ruleset (captureUnits=false), so a beaten unarmed colonist
+        // is slaughtered — never captured and (via the brave's OwnerId 0 == the human) handed back to the human.
+        // Pins the observable outcome; the OwnerId-hardening line in CaptureUnit is a dormant safety net behind it.
+        (Game game, Unit colonist, Unit brave, _) = SetupAttack(); // unarmed human free colonist as the prey
+        int colonistId = colonist.Id;
+        int humanUnitsBefore = game.PlayerUnits.Count();
+
+        game.Attack(brave, colonist.Position, new FixedRandom(0.0)); // force a brave great-win
+
+        Assert.DoesNotContain(colonist, game.Units);                  // slaughtered (no capture path for braves)
+        Assert.DoesNotContain(game.Units, u => u.Id == colonistId);   // and not lingering, re-owned to anyone
+        Assert.Equal(humanUnitsBefore - 1, game.PlayerUnits.Count()); // the human lost it; it was not handed back
+        Assert.Contains(brave, game.Units);                           // the raider survives, still native
+        Assert.True(brave.IsNative);
+    }
+
+    [Fact]
+    public void NativeRaid_OnTheHuman_DoesNotChangeTheRaidersOwnAlarm()
+    {
+        // Native combat tension keys on a NATIVE defender (a European attacking braves). A brave raiding the
+        // human takes the defenderNation-is-null path, so the raider's own settlement alarm is untouched.
+        (Game game, Unit colonist, Unit brave, NativeSettlement home) = SetupAttack();
+        game.ChangeNativeAlarm(home, 650); // Displeased
+        int alarmBefore = home.Alarm;
+
+        game.Attack(brave, colonist.Position, new FixedRandom(0.0)); // brave wins
+
+        Assert.Equal(alarmBefore, home.Alarm);
     }
 
     // ---- Outcomes ----

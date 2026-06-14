@@ -2,16 +2,16 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (per-player ring: every colonial player runs the economy; foreign powers also run the AI; colony economy, liberty/fathers, immigration, high-seas sailing) |
-| **Last verified** | 2026-06-14 @ FP-5 |
-| **Code** | `game/src/GameLogic/GameSession/Game.cs` (`EndTurn`, `RunPlayerTurn`, `RunForeignPowerEconomy`, `RunForeignPowerTurn`) |
+| **Status** | Implemented (per-player ring: every colonial player runs the economy; foreign powers also run the AI; native nations run their raid/wander AI (slice 1b); colony economy, liberty/fathers, immigration, high-seas sailing) |
+| **Last verified** | 2026-06-15 @ slice 1b (native AI) |
+| **Code** | `game/src/GameLogic/GameSession/Game.cs` (`EndTurn`, `RunPlayerTurn`, `RunForeignPowerEconomy`, `RunForeignPowerTurn`, `RunNativeTurn`) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/GameTests.cs`, `MultiPlayerTests.cs`, `Scenarios/` |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/server/control/` turn handling (cross-check when economy lands) |
 | **Related systems** | [players](players.md), [units-movement](units-movement.md), [colonies](colonies.md), [founding-fathers](founding-fathers.md), [immigration](immigration.md), [europe](europe.md) |
 
 ## 1. How it works (plain English)
 
-The game advances in turns, starting at turn 1. Press **End Turn** and play goes around the ring of players: first **you** take your end-of-turn (colonies produce, eat and grow; bells become liberty and may elect a Founding Father; crosses bring immigrants), then each **foreign power** takes its computer-played turn — it runs the *same* economy (its colonies produce, it banks liberty/immigration), then sells surplus and recruits in its own Europe, founds a colony and sends colonists exploring (see [players](players.md)) — then the natives' (still empty) turns. After the full round the shared world ticks once — ships at sea advance and arrive, native alarm cools, every unit gets its movement back, the turn counter ticks up — and it's your turn again.
+The game advances in turns, starting at turn 1. Press **End Turn** and play goes around the ring of players: first **you** take your end-of-turn (colonies produce, eat and grow; bells become liberty and may elect a Founding Father; crosses bring immigrants), then each **foreign power** takes its computer-played turn — it runs the *same* economy (its colonies produce, it banks liberty/immigration), then sells surplus and recruits in its own Europe, founds a colony and sends colonists exploring (see [players](players.md)) — then each **native nation** takes its turn: its braves raid your units if the tribe is angry enough, otherwise they roam (see [natives](natives.md)). After the full round the shared world ticks once — ships at sea advance and arrive, native alarm cools, every unit gets its movement back, the turn counter ticks up — and it's your turn again. Any raids you suffered during the round are reported in the status bar.
 
 ## 2. Detailed rules
 
@@ -21,7 +21,7 @@ Each player takes its turn in ring order (`RunPlayerTurn`); then the **world ste
 |---|---|
 | Colonial economy (human **and** foreign powers) | its colonies produce/eat/grow → its bells become liberty (electing a father if affordable) → its crosses + Europe contribution become immigration (emigrants arrive on the dock). Owner-filtered (only that player's colonies/units count) and folding that player's own fathers — see [colonies](colonies.md), [founding-fathers](founding-fathers.md), [immigration](immigration.md) |
 | Foreign power (AI), after its economy | `RunForeignPowerEconomy` — pursue a father, sell each colony's tradeable surplus (never food) to its own market, recruit while affordable up to a Europe cap — then `RunForeignPowerTurn`, a flat per-unit switch: found a colony while under `MaxAiColonies`, else step toward the nearest unexplored tile; ships idle. All draws from the player's own RNG stream — see [players](players.md), [market](market.md) |
-| Native | inert (no AI yet) |
+| Native (AI) | `RunNativeTurn` — each brave takes one action in stable by-id order: if its home settlement is alarmed enough (Displeased+, FreeCol's seek-and-destroy gate) it attacks the nearest human unit when adjacent else steps toward it; otherwise it wanders one tile. All draws from the nation's own RNG stream; raids on the human are recorded as transient notices — see [players](players.md), [natives](natives.md) |
 
 | Then, world steps once (in order) | Effect |
 |---|---|
@@ -33,11 +33,11 @@ Each player takes its turn in ring order (`RunPlayerTurn`); then the **world ste
 | All units | movement restored to full |
 | Turn counter | +1 |
 
-**Deviations from original / FreeCol:** the original's turn/season/year mapping (1492 start, seasons after 1600) arrives with the calendar (still pending); ages currently use simple turn bands. The foreign-power AI is a minimal flat switch + a minimal economy (ADR-019), not FreeCol missions/`ColonyPlan`; native nations still only decay alarm (their AI — raids, gifts, growth — and the foreign powers' combat/diplomacy come with FP-6).
+**Deviations from original / FreeCol:** the original's turn/season/year mapping (1492 start, seasons after 1600) arrives with the calendar (still pending); ages currently use simple turn bands. The foreign-power AI is a minimal flat switch + a minimal economy (ADR-019), not FreeCol missions/`ColonyPlan`; the native AI is likewise a flat raid/wander switch, not FreeCol's mission planner (gifts, tribute demands, colony pillage, growth deferred — see [natives](natives.md)). Foreign-power combat/diplomacy *action* on stance is still ahead.
 
 ## 3. Technical design
 
-- `Game.EndTurn()` walks the player ring from `_currentPlayerIndex` (via `NextPlayerIndex`), calling `RunPlayerTurn` on each, then the **world steps once** (`AdvanceSailing` → `DetectColonialContacts` → `DecayColonialTension` → `UpdateColonialStances` → `DecayNativeAlarm` per settlement → reset movement → `Turn++`) and the pointer returns to the human. `RunPlayerTurn` is unified (FP-5): a native returns immediately (inert); every colonial player runs the economy — `RunColonyTurn(player, …)` per owned colony → `AccumulateLibertyAndElectFathers(player)` → `AccumulateImmigrationAndEmigrate(player)` — and a foreign power then runs `RunForeignPowerEconomy(player)` + `RunForeignPowerTurn(player)`. Everything is owner-filtered, folds that player's own fathers, and draws from that player's RNG stream (`RandomFor`; the human is stream 0) and trades on that player's market, so adding/animating players never disturbs the human's seeded game.
+- `Game.EndTurn()` first clears the transient `_combatNotices` (the round's AI-raids-on-the-human, surfaced to the UI; never saved), then walks the player ring from `_currentPlayerIndex` (via `NextPlayerIndex`), calling `RunPlayerTurn` on each, then the **world steps once** (`AdvanceSailing` → `DetectColonialContacts` → `DecayColonialTension` → `UpdateColonialStances` → `DecayNativeAlarm` per settlement → reset movement → `Turn++`) and the pointer returns to the human. `RunPlayerTurn` dispatches by `PlayerType`: a **native** runs `RunNativeTurn(player)` (raid/wander, slice 1b) and returns; every colonial player runs the economy — `RunColonyTurn(player, …)` per owned colony → `AccumulateLibertyAndElectFathers(player)` → `AccumulateImmigrationAndEmigrate(player)` — and a foreign power then runs `RunForeignPowerEconomy(player)` + `RunForeignPowerTurn(player)`. Everything is owner-filtered, folds that player's own fathers, and draws from that player's RNG stream (`RandomFor`; the human is stream 0) and trades on that player's market, so adding/animating players never disturbs the human's seeded game. **Ordering note:** braves read settlement alarm *during* the ring (before the end-of-round `DecayNativeAlarm`), so a raid uses the alarm the human has earned, which then cools.
 - UI: End Turn button → `GameController.OnEndTurnPressed` → `Game.EndTurn()` → view refresh. No turn logic in the UI (ADR-006).
 
 ## 4. Verification
@@ -65,3 +65,4 @@ Each player takes its turn in ring order (`RunPlayerTurn`); then the **world ste
 | 2026-06-14 | FP-5: `RunPlayerTurn` unified — every colonial player runs the economy (colony turns + liberty + immigration, folding its own fathers); foreign powers add `RunForeignPowerEconomy` (sell/recruit/father) before the unit AI; all on per-player streams/markets | FP-5 |
 | 2026-06-14 | FP-6a: two new world-step phases — `DetectColonialContacts` (first sight → Peace) and `DecayColonialTension` — added to `EndTurn` beside native-alarm decay (recorded diplomacy; no RNG) — see [diplomacy](diplomacy.md) | FP-6a |
 | 2026-06-15 | FP-6b: `UpdateColonialStances` world-step added after tension decay — each met colonial pair's stance follows its tension (war→cease-fire→peace; deterministic, no RNG) — see [diplomacy](diplomacy.md) | FP-6b |
+| 2026-06-15 | Native AI (slice 1b): `RunPlayerTurn` dispatches `PlayerType.Native` to `RunNativeTurn` (raid/wander on the nation's own stream); `EndTurn` clears the transient `_combatNotices` (raids surfaced to the UI, not saved) at the top of the round — see [natives](natives.md), [players](players.md) | Phase 5 slice 1b |
