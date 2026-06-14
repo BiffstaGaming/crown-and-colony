@@ -20,6 +20,9 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\data\rules\classic\specification.xml"
                       LogicalName="CrownAndColony.GameLogic.Specification.classic.specification.xml" />
+    <!-- Per-nation colony names (not in the spec XML — extracted from FreeCol's message strings; FP-3a). -->
+    <EmbeddedResource Include="..\..\data\rules\classic\european-nation-names.properties"
+                      LogicalName="CrownAndColony.GameLogic.Specification.classic.european-nation-names.properties" />
   </ItemGroup>
 
 </Project>

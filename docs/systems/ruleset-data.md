@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (terrain incl. `<gen>` envelopes + resources + defence bonus, unit types incl. offence/defence, goods types incl. market/`stored-as`/`made-from`, building types, founding fathers incl. modifiers/abilities, resource types, native nation + settlement types) |
-| **Last verified** | 2026-06-14 @ Phase 5 slice 5a |
+| **Status** | Implemented (terrain incl. `<gen>` envelopes + resources + defence bonus, unit types incl. offence/defence, goods types incl. market/`stored-as`/`made-from`, building types, founding fathers incl. modifiers/abilities, resource types, native nation + settlement types, European nations + nation-types) |
+| **Last verified** | 2026-06-14 @ FP-3a |
 | **Code** | `game/src/GameLogic/Specification/` |
-| **Tests** | `game/tests/GameLogic.Tests/Specification/RulesetTests.cs`, `NativeNationTypeTests.cs` |
+| **Tests** | `game/tests/GameLogic.Tests/Specification/RulesetTests.cs`, `NativeNationTypeTests.cs`, `EuropeanNationTypeTests.cs` |
 | **FreeCol reference** | `freecol/data/rules/classic/specification.xml` (copied to `game/data/rules/classic/`) |
 | **Related systems** | [map-terrain](map-terrain.md), all future rule-driven systems |
 
@@ -44,7 +44,7 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 
 ## 5. Open issues / TODO
 
-- [ ] Parse the European **`<nation>`** elements (colours, REF, preferred latitude) when foreign powers land (Phase 5 foreign-powers slice). *(Native nation types + settlement templates are now parsed — see [natives](natives.md); `<plunder>`/`<gifts>` within settlements are deferred to the native combat/trade slices.)*
+- [x] European **`<nation>`** + **`<european-nation-type>`** parsed (FP-3a): the four colonial powers + their REFs, advantages (abilities/modifiers), starting units (extends-resolved), and per-nation classic colony names — see [players](players.md). *(Native nation types + settlement templates: see [natives](natives.md).)*
 - [ ] Unit roles (scout = colonist + horses etc.) — FreeCol models these separately from unit types.
 
 ## Changelog
@@ -65,3 +65,4 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 | 2026-06-14 | Unit `offence`/`defence` (base + folded offence/defence modifiers → `UnitType.Offence`/`Defence`); terrain `model.modifier.defence` → `TerrainType.DefenceBonus` | Phase 5 slice 5a |
 | 2026-06-14 | Roles (`<roles>` → `RoleType`: offence/defence, required-goods, downgrade, abilities, `role-change` capture rules) + unit-change types (`<unit-change-types>` → `UnitChange`: promotion/demotion/capture; `Ruleset.GetUnitChange`/`CaptureRole`); unit combat-ability flags (`disposeOnCombatLoss`/`canBeCaptured`/`captureUnits`/`captureEquipment`/`disposeOnAllEquipLost`/`demoteOnAllEquipLost`/`bombard`) | Phase 5 slice 5b |
 | 2026-06-14 | Settlement `<plunder>` ranges (`SettlementPlunder` base + extra → `SettlementType.Plunder`/`PlunderRange`); the plunder gold formula matches FreeCol `RandomRange` | Phase 5 slice 5c |
+| 2026-06-14 | European nations + nation-types (`<nation>` / `<european-nation-type>` → `EuropeanNation`/`EuropeanNationType`/`EuropeanStartingUnit`): the four classic powers + REFs, advantages (abilities/modifiers), starting units (extends-resolved, expert variants kept), `ref` flag. Per-nation classic colony names embedded from FreeCol's message strings (`european-nation-names.properties`) and parsed. Data only — `FoundColony` adopts per-nation names in FP-3b | FP-3a |

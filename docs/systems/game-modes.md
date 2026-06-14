@@ -44,7 +44,7 @@ The important promise: **picking a variant is the only thing that changes the da
 **Persistence:** save format **v15** adds the variant id (`SaveGame.Variant`); `SaveGame.From(game, variantId)` records it. Pre-v15 saves load as Default.
 
 **Still hard-coded (tracked migrations toward full per-variant data):**
-- Colony name list (`Game.ColonyNames`) — should come from nation data (needs `<nation>` parsing; lands with the foreign-powers slice).
+- Colony names: **per-nation lists are now ruleset data** (`EuropeanNation.ColonyNames`, parsed in FP-3a — see [ruleset-data](ruleset-data.md)/[players](players.md)). `Game.ColonyNames` remains the fallback used by the nation-less human until `FoundColony` adopts per-nation names when the human is assigned a nation (FP-3b).
 - Starting unit type (`Game.StartingUnitTypeId`) and a few father-effect handlers keyed to specific ability ids.
 
 ## 4. Verification

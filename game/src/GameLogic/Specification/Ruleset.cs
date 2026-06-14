@@ -20,6 +20,7 @@ public sealed class Ruleset
     private readonly Dictionary<string, SettlementType> _settlementById;
     private readonly Dictionary<string, RoleType> _roleById;
     private readonly Dictionary<string, Dictionary<string, UnitChange>> _unitChangeByType;
+    private readonly Dictionary<string, EuropeanNation> _europeanNationById;
 
     private Ruleset(
         Dictionary<string, TerrainType> terrainById,
@@ -31,7 +32,8 @@ public sealed class Ruleset
         Dictionary<string, NativeNationType> nativeNationById,
         Dictionary<string, SettlementType> settlementById,
         Dictionary<string, RoleType> roleById,
-        Dictionary<string, Dictionary<string, UnitChange>> unitChangeByType)
+        Dictionary<string, Dictionary<string, UnitChange>> unitChangeByType,
+        Dictionary<string, EuropeanNation> europeanNationById)
     {
         _terrainById = terrainById;
         _unitById = unitById;
@@ -43,6 +45,7 @@ public sealed class Ruleset
         _settlementById = settlementById;
         _roleById = roleById;
         _unitChangeByType = unitChangeByType;
+        _europeanNationById = europeanNationById;
         TerrainTypes = _terrainById.Values.ToList();
         UnitTypes = _unitById.Values.ToList();
         GoodsTypes = _goodsById.Values.ToList();
@@ -52,6 +55,7 @@ public sealed class Ruleset
         NativeNationTypes = _nativeNationById.Values.ToList();
         SettlementTypes = _settlementById.Values.ToList();
         Roles = _roleById.Values.ToList();
+        EuropeanNations = _europeanNationById.Values.ToList();
     }
 
     /// <summary>All terrain types, in specification order.</summary>
@@ -145,6 +149,19 @@ public sealed class Ruleset
             : throw new KeyNotFoundException($"Unknown role '{id}'.");
 
     /// <summary>
+    /// All European nations (the colonial powers and their Royal Expeditionary Forces), in specification
+    /// order. The classic playable powers are the non-REF selectable ones (Dutch, French, English, Spanish).
+    /// </summary>
+    public IReadOnlyList<EuropeanNation> EuropeanNations { get; }
+
+    /// <summary>Looks up a European nation by ruleset id (e.g. <c>model.nation.dutch</c>).</summary>
+    /// <exception cref="KeyNotFoundException">Unknown id.</exception>
+    public EuropeanNation EuropeanNation(string id) =>
+        _europeanNationById.TryGetValue(id, out var n)
+            ? n
+            : throw new KeyNotFoundException($"Unknown European nation '{id}'.");
+
+    /// <summary>
     /// The unit-type change of a given change-type for a unit type, or null if that type
     /// does not change (FreeCol <c>UnitType.getUnitChange</c>). E.g.
     /// <c>GetUnitChange(UnitChangeTypeIds.Promotion, "model.unit.freeColonist")</c> → veteran soldier.
@@ -192,12 +209,18 @@ public sealed class Ruleset
         var assembly = Assembly.GetExecutingAssembly();
         using Stream stream = assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException($"Embedded ruleset '{resourceName}' missing from assembly.");
-        return Load(stream);
+        // Per-nation colony names ship as a sibling resource (FreeCol keeps them out of the spec XML).
+        // A variant supplies its own by following the naming convention; absent names → no colony-name lists.
+        string colonyNamesResource = resourceName.Replace("specification.xml", "european-nation-names.properties");
+        using Stream? colonyNames = assembly.GetManifestResourceStream(colonyNamesResource);
+        return Load(stream, colonyNames);
     }
 
     /// <summary>Parses a ruleset from FreeCol-format specification XML.</summary>
+    /// <param name="xml">The specification XML stream.</param>
+    /// <param name="colonyNames">Optional FreeCol-format per-nation colony-name properties (null → European nations get empty colony-name lists).</param>
     /// <exception cref="RulesetFormatException">The XML is missing required elements or attributes.</exception>
-    public static Ruleset Load(Stream xml)
+    public static Ruleset Load(Stream xml, Stream? colonyNames = null)
     {
         XDocument doc = XDocument.Load(xml);
         XElement root = doc.Root
@@ -316,9 +339,146 @@ public sealed class Ruleset
         Dictionary<string, Dictionary<string, UnitChange>> unitChanges =
             ParseUnitChanges(root.Element("unit-change-types"));
 
+        Dictionary<string, EuropeanNationType> europeanNationTypes =
+            ParseEuropeanNationTypes(root.Element("european-nation-types"));
+        Dictionary<string, EuropeanNation> europeanNations = ParseEuropeanNations(
+            root.Element("nations"), europeanNationTypes, ParseColonyNames(colonyNames));
+
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, nativeNations, settlements,
-            roles, unitChanges);
+            roles, unitChanges, europeanNations);
+    }
+
+    /// <summary>
+    /// Parses the <c>&lt;european-nation-types&gt;</c> section, resolving <c>extends</c> chains: starting
+    /// units are taken from the nearest level that defines a slot (keeping a slot's expert variant), while
+    /// abilities and modifiers accumulate from the whole chain. A null section yields no types.
+    /// </summary>
+    private static Dictionary<string, EuropeanNationType> ParseEuropeanNationTypes(XElement? section)
+    {
+        var types = new Dictionary<string, EuropeanNationType>();
+        if (section is null)
+        {
+            return types;
+        }
+
+        var elements = new Dictionary<string, XElement>();
+        foreach (XElement el in section.Elements("european-nation-type"))
+        {
+            string id = RequiredAttribute(el, "id");
+            if (!elements.TryAdd(id, el))
+            {
+                throw new RulesetFormatException($"Duplicate european-nation-type id '{id}'.");
+            }
+        }
+
+        foreach ((string id, XElement el) in elements)
+        {
+            var chain = ExtendsChain(el, elements).ToList(); // leaf → root
+            var bySlot = new Dictionary<string, List<EuropeanStartingUnit>>();
+            foreach (XElement level in chain)
+            {
+                foreach (var slot in level.Elements("unit").GroupBy(u => RequiredAttribute(u, "id")))
+                {
+                    if (bySlot.ContainsKey(slot.Key))
+                    {
+                        continue; // a nearer level already defined this slot (override)
+                    }
+                    bySlot[slot.Key] = slot.Select(u => new EuropeanStartingUnit(
+                        Slot: slot.Key,
+                        UnitTypeId: RequiredAttribute(u, "type"),
+                        RoleId: (string?)u.Attribute("role"),
+                        Mounted: (bool?)u.Attribute("mounted") ?? false,
+                        Expert: (bool?)u.Attribute("expert-starting-units") ?? false)).ToList();
+                }
+            }
+            types[id] = new EuropeanNationType(
+                Id: id,
+                IsRef: (bool?)el.Attribute("ref") ?? false,
+                StartingUnits: bySlot.Values.SelectMany(u => u).ToList(),
+                Abilities: chain.SelectMany(c => c.Elements("ability")).Select(ParseAbility).ToList(),
+                Modifiers: chain.SelectMany(c => c.Elements("modifier")).Select(ParseModifier).ToList());
+        }
+        return types;
+    }
+
+    /// <summary>
+    /// Parses the European <c>&lt;nation&gt;</c> rows, resolving each to its <see cref="EuropeanNationType"/>
+    /// and per-nation colony names. Nations whose <c>nation-type</c> is not a European type (the native
+    /// nations) and the <c>unknownEnemy</c> pseudo-nation are skipped. A null section yields no nations.
+    /// </summary>
+    private static Dictionary<string, EuropeanNation> ParseEuropeanNations(
+        XElement? section,
+        Dictionary<string, EuropeanNationType> types,
+        Dictionary<string, IReadOnlyList<string>> colonyNamesByNation)
+    {
+        var nations = new Dictionary<string, EuropeanNation>();
+        foreach (XElement el in section?.Elements("nation") ?? [])
+        {
+            string id = RequiredAttribute(el, "id");
+            if (id == "model.nation.unknownEnemy")
+            {
+                continue; // the no-owner pseudo-nation, not a real power
+            }
+            // Native nations carry an indian-nation-type here — they are handled separately; skip them.
+            if (!types.TryGetValue(RequiredAttribute(el, "nation-type"), out EuropeanNationType? type))
+            {
+                continue;
+            }
+            nations[id] = new EuropeanNation(
+                Id: id,
+                DisplayName: DeriveNationDisplayName(id),
+                NationType: type,
+                Color: (string?)el.Attribute("color"),
+                Selectable: (bool?)el.Attribute("selectable") ?? false,
+                RefNationId: (string?)el.Attribute("ref"),
+                ColonyNames: colonyNamesByNation.GetValueOrDefault(id, []));
+        }
+        return nations;
+    }
+
+    /// <summary>A player-facing nation name derived from its id: <c>model.nation.dutch</c> → <c>Dutch</c>.</summary>
+    private static string DeriveNationDisplayName(string id)
+    {
+        string shortName = id[(id.LastIndexOf('.') + 1)..];
+        return shortName.Length == 0 ? shortName : char.ToUpperInvariant(shortName[0]) + shortName[1..];
+    }
+
+    /// <summary>
+    /// Parses FreeCol-format colony-name properties (<c>model.nation.&lt;id&gt;.settlementName.classic.&lt;n&gt;=Name</c>)
+    /// into per-nation lists ordered by index. A null stream yields no names.
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<string>> ParseColonyNames(Stream? properties)
+    {
+        var byNation = new Dictionary<string, List<(int Index, string Name)>>();
+        if (properties is not null)
+        {
+            const string marker = ".settlementName.classic.";
+            using var reader = new StreamReader(properties);
+            for (string? line = reader.ReadLine(); line is not null; line = reader.ReadLine())
+            {
+                int eq = line.IndexOf('=');
+                if (line.StartsWith('#') || eq < 0)
+                {
+                    continue;
+                }
+                string key = line[..eq].Trim();
+                int m = key.IndexOf(marker, StringComparison.Ordinal);
+                if (m < 0 || !int.TryParse(key[(m + marker.Length)..], out int index))
+                {
+                    continue;
+                }
+                string nationId = key[..m];
+                if (!byNation.TryGetValue(nationId, out var list))
+                {
+                    byNation[nationId] = list = [];
+                }
+                list.Add((index, line[(eq + 1)..].Trim()));
+            }
+        }
+        return byNation.ToDictionary(
+            kv => kv.Key,
+            kv => (IReadOnlyList<string>)kv.Value.OrderBy(x => x.Index).Select(x => x.Name).ToList());
     }
 
     /// <summary>

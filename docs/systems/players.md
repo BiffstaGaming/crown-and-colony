@@ -76,7 +76,7 @@ Every side in the game is a **player**. Today there is exactly one — **you**, 
 ## 5. Open issues / TODO
 
 - [x] Owner-id seam: authoritative `Unit.OwnerId`/`Colony.OwnerId`; enemy/fog/abilities resolve by owner + a stance hook (FP-2 ✅).
-- [ ] European nations as variant data (`EuropeanNationType`) + inert rival players (FP-3).
+- [x] European nations as variant data (`EuropeanNationType`/`EuropeanNation` parsed into the ruleset, FP-3a ✅) — see [ruleset-data](ruleset-data.md). [ ] Inert rival players that use that data (FP-3b).
 - [ ] Per-player RNG streams; AI explore/move/found, economy, combat/diplomacy (FP-4…FP-6).
 - [ ] Per-player founding-father modifier/ability resolution and per-owner live visibility.
 - [ ] Save consolidation: drop the legacy flat fields, freeze + verify the format (FP-7).
@@ -87,3 +87,4 @@ Every side in the game is a **player**. Today there is exactly one — **you**, 
 |---|---|---|
 | 2026-06-14 | FP-1: extracted `Player` (single human, zero behaviour change); player-scoped state off `Game`; save v20 (`Players[]`, v19 folds to one human player) | FP-1 |
 | 2026-06-14 | FP-2: owner-id seam — `Unit.OwnerId`/`Colony.OwnerId`; enemy/fog/ability rules resolve by owner + a stance hook; save v20 gains optional owner ids (additive, null = human). Zero behaviour change with human + natives | FP-2 |
+| 2026-06-14 | FP-3a: parsed European nations + nation-types into the ruleset (`EuropeanNation`/`EuropeanNationType`/`EuropeanStartingUnit`) — the four classic powers + REFs, advantages, starting units, per-nation classic colony names. Data only (no players, nothing saved); `FoundColony` adopts per-nation names in FP-3b | FP-3a |
