@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
+using CrownAndColony.GameLogic.Combat;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
@@ -136,18 +137,63 @@ public partial class GameController : Node2D
         }
         else if (_selectedUnit is not null)
         {
-            MoveCheck check = _game.CheckMove(_selectedUnit, tile);
-            if (check.Allowed)
+            // An adjacent enemy on the clicked tile → attack it; otherwise try to move there.
+            if (_game.NativeSettlementAt(tile) is not null)
             {
-                _game.MoveUnit(_selectedUnit, tile);
+                AttackSettlementAt(tile);
+            }
+            else if (_game.Units.Any(u => u.IsOnMap && u.Position == tile))
+            {
+                AttackUnitAt(tile); // any on-map unit here is an enemy (the player's own were handled above)
             }
             else
             {
-                _notice = check.Reason;
+                MoveCheck check = _game.CheckMove(_selectedUnit, tile);
+                if (check.Allowed)
+                {
+                    _game.MoveUnit(_selectedUnit, tile);
+                }
+                else
+                {
+                    _notice = check.Reason;
+                }
             }
         }
 
         RefreshView();
+    }
+
+    /// <summary>Attacks the enemy unit on an adjacent tile with the selected unit, reporting the outcome.</summary>
+    private void AttackUnitAt(Position tile)
+    {
+        MoveCheck check = _game.CheckAttack(_selectedUnit!, tile);
+        if (!check.Allowed)
+        {
+            _notice = check.Reason;
+            return;
+        }
+        string who = _selectedUnit!.Type.ShortName;
+        CombatResult result = _game.Attack(_selectedUnit, tile);
+        _selectedUnit = null; // the attack ends the unit's turn (and may demote/destroy it)
+        _notice = result is CombatResult.GreatWin or CombatResult.Win
+            ? $"Your {who} won the battle."
+            : $"Your {who} was beaten back.";
+    }
+
+    /// <summary>Assaults the native settlement on an adjacent tile with the selected unit, reporting the outcome.</summary>
+    private void AttackSettlementAt(Position tile)
+    {
+        MoveCheck check = _game.CheckAttackSettlement(_selectedUnit!, tile);
+        if (!check.Allowed)
+        {
+            _notice = check.Reason;
+            return;
+        }
+        CombatResult result = _game.AttackSettlement(_selectedUnit!, tile);
+        _selectedUnit = null;
+        _notice = result is CombatResult.GreatWin or CombatResult.Win
+            ? "The native settlement was sacked!"
+            : "Your assault was repelled.";
     }
 
     private void FoundColony()

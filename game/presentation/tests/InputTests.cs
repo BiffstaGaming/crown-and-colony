@@ -101,6 +101,39 @@ public class InputTests
         AssertThat(GameOf(controller).Turn).IsEqual(1);
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task ClickingAnEnemy_WithSelectedUnit_Attacks()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Plant a native brave next to the human's start (on-screen for the click) and a human artillery
+        // (offence 7, no role needed) adjacent to it, then click the brave to attack.
+        string nation = game.Units.First(u => u.IsNative).OwnerNationId!;
+        Position human = game.PlayerUnits.First(u => u.IsOnMap).Position;
+        Position bravePos = human.Neighbours().First(n => Free(game, n));
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.brave"), bravePos, nation);
+        Position artPos = bravePos.Neighbours().First(n => n != human && Free(game, n));
+        Unit artillery = game.SpawnUnit(game.Ruleset.Unit("model.unit.artillery"), artPos);
+        int artId = artillery.Id;
+
+        await ClickTile(runner, controller, artPos);    // select the artillery
+        await ClickTile(runner, controller, bravePos);  // click the brave → attack (not a move)
+
+        // The attack resolved: the attacker spent its turn — it's gone (slain/demoted-away) or present with
+        // 0 movement. A rejected move would have left it on its tile with full movement.
+        Unit? after = game.Units.FirstOrDefault(u => u.Id == artId);
+        AssertThat(after == null || after.MovementLeft == 0).IsTrue();
+    }
+
+    private static bool Free(Game game, Position n) =>
+        game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+        && game.NativeSettlementAt(n) is null && game.ColonyAt(n) is null
+        && !game.Units.Any(u => u.IsOnMap && u.Position == n);
+
     /// <summary>Left-clicks the window position corresponding to a map tile (camera-aware, zoom 1).</summary>
     private static async Task ClickTile(ISceneRunner runner, GameController controller, Position tile)
     {

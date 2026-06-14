@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | In development (Phase 5: slice 5b = the attack action, unit ownership, roles/equipment, brave defenders, the loser/winner outcomes, and native alarm; slice 5c = **native settlement assault** (attack / plunder / destroy). Naval combat, foreign-European unit combat and native-initiated raids are the foreign-powers slice.) |
-| **Last verified** | 2026-06-14 @ Phase 5 slice 5c |
-| **Code** | `game/src/GameLogic/Combat/Combat.cs` (`CombatModel`); the attack + settlement-assault actions, roles/equipment + outcomes in `GameSession/Game.cs`; data on `Specification/UnitType.cs`, `TerrainType.cs`, `RoleType.cs`, `UnitChange.cs`, `NativeNationType.cs` (`SettlementType`/`SettlementPlunder`), parsed in `Ruleset.cs`; unit owner/role on `Units/Unit.cs` |
-| **Tests** | `Combat/CombatModelTests.cs` (pure model), `Specification/RoleTests.cs` (role/unit-change data), `GameSession/CombatTests.cs` (attack action, outcomes, fathers, equip, braves, **settlement assault/plunder**), `Persistence/SaveGameTests.cs` (v19) |
+| **Status** | In development (Phase 5: slice 5b = the attack action, unit ownership, roles/equipment, brave defenders, the loser/winner outcomes, and native alarm; slice 5c = **native settlement assault** (attack / plunder / destroy); **on-map combat UI** = click an adjacent enemy/settlement to attack. Naval combat, foreign-European unit combat and native-initiated raids are the foreign-powers slice.) |
+| **Last verified** | 2026-06-15 @ on-map combat UI |
+| **Code** | `game/src/GameLogic/Combat/Combat.cs` (`CombatModel`); the attack + settlement-assault actions, roles/equipment + outcomes in `GameSession/Game.cs`; data on `Specification/UnitType.cs`, `TerrainType.cs`, `RoleType.cs`, `UnitChange.cs`, `NativeNationType.cs` (`SettlementType`/`SettlementPlunder`), parsed in `Ruleset.cs`; unit owner/role on `Units/Unit.cs` · UI: `presentation/GameController.cs` (`HandleTileClick` → `AttackUnitAt`/`AttackSettlementAt`) |
+| **Tests** | `Combat/CombatModelTests.cs` (pure model), `Specification/RoleTests.cs` (role/unit-change data), `GameSession/CombatTests.cs` (attack action, outcomes, fathers, equip, braves, **settlement assault/plunder**), `Persistence/SaveGameTests.cs` (v19), `presentation/tests/InputTests.cs` (click-to-attack L3) |
 | **FreeCol reference** | `freecol/src/.../common/model/SimpleCombatModel.java` (power + `resolveAttack`, settlement branch), `Unit.java` (role helpers), `Tension.java` (alarm deltas), `RandomRange.java` (`getAmount` → plunder); data in `freecol/data/rules/classic/specification.xml` (`<roles>`, `<unit-change-types>`, `<plunder>`) |
 | **Related systems** | [ruleset-data](ruleset-data.md), [units-movement](units-movement.md), [natives](natives.md) (settlements, alarm), [founding-fathers](founding-fathers.md) (Washington/Revere/Cortés), [save-load](save-load.md) |
 
@@ -30,7 +30,7 @@ The defender is also helped by rough ground (a hill doubles defence, a forest ad
 
 **Sacking a settlement.** You can also attack a native settlement itself. It defends with its warriors *and* its walls — a camp adds half again to its defence, a capital doubles it — so you'll usually want artillery or massed soldiers. Win and you **sack it**: the settlement is destroyed and you carry off **plunder** (gold — a camp gives a few hundred, a rich village far more, and **Hernán Cortés** doubles the take and always finds treasure). The whole nation seethes: its *other* settlements' alarm jumps. Lose, and your attacker is beaten back — disarmed or, for artillery, smashed to damaged artillery — while that settlement turns on you. (You can't simply walk onto a native settlement; you attack it, or trade/talk from beside it.)
 
-**What the player does (no combat UI yet):** this slice is the rules and the data — arming a colonist, attacking an adjacent brave or a settlement, the outcomes, plunder and alarm. The on-map combat buttons come later.
+**What the player does:** with a unit selected, **click an adjacent enemy brave or native settlement to attack it** — the same click that would move you onto an empty tile attacks an enemy that holds it instead. The result is shown in the HUD ("won the battle" / "beaten back"; "the native settlement was sacked!" / "assault was repelled"), and attacking ends the unit's turn. (Arming colonists still happens via the colony equip action; richer combat feedback/animation comes later.)
 
 **Worked example:**
 > Your free colonist, armed as a soldier (offence 0 + 2 = 2), attacks a native brave (defence 1) in the open. The soldier's offence with the +50% attack bonus is 2 × 1.5 = 3; the brave's defence is 1. The win chance is 3 / (3 + 1) = 75%. If you win, the brave (doomed on any loss) is killed and the settlement's alarm jumps. If you lose, your soldier drops his muskets and walks home a plain colonist — and the brave picks the muskets up.
@@ -88,7 +88,7 @@ The defender is also helped by rough ground (a hill doubles defence, a forest ad
 |---|---|---|---|
 | L1 Unit | Always | `CombatModelTests` (power/odds/resolution + role fold); `RoleTests` (roles, unit-changes, capture-roles, combat abilities pinned to spec); `CombatTests` (CheckAttack gating, slaughter/disarm/demote/promote outcomes, equip-capture chains, alarm deltas, Washington, Revere, EquipRole, brave garrison, fog exclusion; **settlement: plunder parse + formula, Cortés extra range, destroy, tension 500/600 + sibling propagation, loss-disarm, CheckAttackSettlement/CheckMove guards**) | ✅ |
 | L2 Scenario | When stateful | `CombatTests` save round-trips (v18 owner/role/braves; **v19 destroyed-settlement state + production main-RNG resume-determinism**); `SaveGameTests` pre-v18 default load | ✅ |
-| L3 Interaction | When there's UI | — (no combat UI yet) | — |
+| L3 Interaction | Yes (attack click) | `InputTests.ClickingAnEnemy_WithSelectedUnit_Attacks` (select a unit, click an adjacent brave → the attack fires, not a move) | ✅ |
 | L4 Visual | No screen | — | — |
 
 - **FreeCol cross-check:** role/unit-change values, the loser-outcome precedence, the tension deltas and the power numbers are pinned to `SimpleCombatModel`, `Unit.java`, `Tension.java` and the classic spec in the tests above.
@@ -96,19 +96,21 @@ The defender is also helped by rough ground (a hill doubles defence, a forest ad
 ## 5. Open issues / TODO
 
 - [x] **Combat 5c — native settlement assault** (attack / plunder / destroy + Cortés): shipped. See §2/§3.
-- [ ] **Naval combat** (+ evade/sink/loot, privateers, **Francis Drake**) and **foreign-European unit/colony combat** — the foreign-powers slice (no targets exist natives-only).
+- [ ] **Naval combat** (+ evade/sink/loot, privateers, **Francis Drake**) and **foreign-European unit/colony combat** — the foreign-powers slice (no targets exist natives-only). **Includes:** a `CheckMove` guard so a unit can't walk onto an ungarrisoned *foreign* colony (today `CheckMove` blocks enemy units + native settlements but not foreign colonies; harmless now — foreign colonies are fog-gated/far — but the on-map attack UI newly exposes the path).
 - [ ] **Native-initiated attacks (native AI)** — exercises the capture-unit and Revere paths end-to-end.
 - [ ] Faithful multi-brave on-tile settlement defence (in-settlement unit lists); clearing the adjacent garrison before the settlement falls.
 - [ ] Treasure trains for plunder + Cortés's `treasureTransportFee`; `CAPTURE_CONVERT`/`BURN_MISSIONS` with the missionary system; `DESTROY_NATION`/atrocity bookkeeping.
 - [ ] Nation-level tension store + `getSlaughterTension` location routing (5c keeps per-settlement + sibling propagation).
 - [ ] Persist Revere's auto-equipped muskets (`AUTOEQUIP_UNIT`); native auto-equipment once settlements stock goods.
-- [ ] Apply role movement bonuses (dragoon/scout +9) to unit movement.
+- [x] Apply role movement bonuses (dragoon/scout +9) to unit movement (done — see [units-movement](units-movement.md)).
+- [x] On-map combat UI — click an adjacent enemy/settlement to attack (done).
 - [ ] Move the pinned modifier/tension/promotion constants to ruleset data (transposability, [game-modes](game-modes.md)).
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-15 | On-map combat UI: `GameController.HandleTileClick` routes a click on an adjacent enemy unit / native settlement to `Attack`/`AttackSettlement` (else move), with a HUD outcome notice and selection cleared after; L3-tested (`InputTests.ClickingAnEnemy_WithSelectedUnit_Attacks`). Presentation only (ADR-006) | combat UI |
 | 2026-06-14 | Combat 5c: native settlement assault (`CheckAttackSettlement`/`AttackSettlement`) — implicit-garrison defence with the settlement bonus, destroy-on-win, `<plunder>` gold (`SettlementPlunder`, `ComputePlunder` ≈ FreeCol `RandomRange`), Hernán Cortés (`plunderNatives` → extra range), loss-disarm; can't move onto a settlement; save v19. Reworked combat tension to FreeCol `defenderTension` (nation-wide; win raises, repelled attack lowers; non-capital sack +900, capital burn → surrender 350) — supersedes 5b's flat +200/+400 | Phase 5 slice 5c |
 | 2026-06-14 | Combat 5b: unit ownership + roles/equipment (`RoleType`, `UnitChange`, `EquipRole`), brave defenders, the attack action (`CheckAttack`/`Attack`) with the FreeCol loser/winner outcome precedence (slaughter/disarm/equipment-capture/demote/promote), native alarm on attack, Washington & Revere; save v18 | Phase 5 slice 5b |
 | 2026-06-14 | Combat foundation: parse unit `offence`/`defence` and terrain defence bonus; pure `CombatModel` (power, odds, graded resolution) | Phase 5 slice 5a |

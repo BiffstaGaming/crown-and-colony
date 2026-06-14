@@ -57,7 +57,7 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 
 ## Tests
 
-`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **405 tests** (403 L1+L2 incl. 10 E2E journeys + 2 nightly soak), all green as of 2026-06-15 @ FP-7. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md); 425 across all five layers.)
+`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **405 tests** (403 L1+L2 incl. 10 E2E journeys + 2 nightly soak), all green as of 2026-06-15 @ FP-7. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md); 426 across all five layers.)
 
 ## Changelog
 
