@@ -1521,7 +1521,14 @@ public sealed class Game
         {
             return MoveCheck.No("There is already a colony here.");
         }
-        // TODO cross-check: FreeCol/original minimum-distance-between-colonies rule.
+        // Minimum colony spacing (FreeCol Player.canClaimToFoundSettlementReason: tile.getAdjacentColonies()
+        // must be empty): no colony may be founded on a tile adjacent to an existing colony, so colony
+        // footprints never touch. Native settlements do not block founding (FreeCol treats that as a land
+        // claim, not a hard bar; we don't model land price).
+        if (unit.Position.Neighbours().Any(n => Map.InBounds(n) && ColonyAt(n) is not null))
+        {
+            return MoveCheck.No("A colony cannot be founded next to another colony.");
+        }
         return MoveCheck.Yes(0);
     }
 

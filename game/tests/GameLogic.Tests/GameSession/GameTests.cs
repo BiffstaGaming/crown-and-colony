@@ -220,6 +220,27 @@ public class GameTests
         Assert.Throws<InvalidMoveException>(() => occupied.FoundColony(occupied.Units[0]));
     }
 
+    [Fact]
+    public void FoundColony_Rejected_AdjacentToAnExistingColony()
+    {
+        // Minimum colony spacing (FreeCol): a colony can't be founded next to another, but two tiles is fine.
+        TerrainType plains = Classic.Terrain("model.tile.plains");
+        var map = new GameMap(3, 1, [plains, plains, plains]);
+        Game game = RestoreOnMap(Classic, map, [
+            new SavedUnit(1, "model.unit.freeColonist", 0, 0, 3),
+            new SavedUnit(2, "model.unit.freeColonist", 1, 0, 3),
+            new SavedUnit(3, "model.unit.freeColonist", 2, 0, 3)]);
+
+        game.FoundColony(game.Units[0]); // colony at (0,0)
+
+        Unit adjacent = game.Units.First(u => u.Position == new Position(1, 0));
+        Assert.False(game.CheckFoundColony(adjacent).Allowed);            // (1,0) touches the colony
+        Assert.Throws<InvalidMoveException>(() => game.FoundColony(adjacent));
+
+        Unit twoAway = game.Units.First(u => u.Position == new Position(2, 0));
+        Assert.True(game.CheckFoundColony(twoAway).Allowed);             // (2,0) is two tiles away — allowed
+    }
+
     private static Position AdjacentLand(Game game, Position from) =>
         from.Neighbours().First(n => game.CheckMove(game.Units[0], n).Allowed);
 

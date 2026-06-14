@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (founding, full colony economy, membership join/leave, bonus-resource yields) |
-| **Last verified** | 2026-06-13 @ Phase 4 slice 9 |
+| **Status** | Implemented (founding + min colony spacing, full colony economy, membership join/leave, bonus-resource yields) |
+| **Last verified** | 2026-06-14 @ FP-5 (minimum colony-distance rule) |
 | **Code** | `game/src/GameLogic/Colonies/Colony.cs`, `GameSession/Game.cs` (`CheckFoundColony`/`FoundColony`) · rendering: `game/presentation/ColonyMarker.cs` |
 | **Tests** | `GameTests.FoundColony_*`, `SaveGameTests.RoundTrip_PreservesColonies` |
-| **FreeCol reference** | `Colony.java`, `BuildColonyMessage` — minimum-distance rule pending cross-check |
+| **FreeCol reference** | `Colony.java`, `BuildColonyMessage`, `Player.canClaimToFoundSettlementReason` (adjacent-colony rule, ✅ cross-checked) |
 | **Related systems** | [units-movement](units-movement.md), [save-load](save-load.md), [ruleset-data](ruleset-data.md) |
 
 ## 1. How it works (plain English)
@@ -20,6 +20,7 @@ Select a colonist and press **B** to found a colony where it stands. The colonis
 | Unit type lacks the foundColony ability (e.g. ships) | rejected |
 | Terrain is not settleable (mountains, water) | rejected |
 | Tile already has a colony | rejected |
+| Tile is adjacent to an existing colony | rejected (minimum colony spacing — colony footprints never touch) |
 | Otherwise | colony founded, population 1, founding unit consumed |
 
 **Economy tick (every EndTurn, first economy slice):**
@@ -51,7 +52,7 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 - **Join** — a colonist (any person unit) on or next to a colony can `JoinColony`: population +1, the unit leaves the map, the newcomer is auto-assigned to a food tile. This is the payoff of immigration ([immigration](immigration.md)/[transport](transport.md)): ship a recruit home, disembark by a colony, and it grows the colony.
 - **Leave** — `LeaveColony` detaches a colonist onto the colony's own tile as a **free colonist** (our colony stores a population *count*, not individual types, so the detached unit is generic), population −1; a colony must keep ≥ 1 colonist, and a fully-staffed colony vacates one job to fit.
 
-**Deviations from original / FreeCol — PENDING CROSS-CHECK:** FreeCol enforces a minimum distance between colonies and the original restricts founding adjacent to existing colonies; we currently only block the same tile. Cross-check and adopt when colony spacing starts to matter (Phase 3).
+**Deviations from original / FreeCol:** ✅ **minimum colony spacing cross-check done (FP-5).** Founding is now blocked on a tile adjacent to an existing colony, matching FreeCol's `Player.canClaimToFoundSettlementReason` (`tile.getAdjacentColonies()` must be empty) and the original's no-touching-footprints rule. Native settlements do **not** block founding (FreeCol treats native proximity as a land claim/price, not a hard bar; we don't model land price yet).
 
 ## 3. Technical design
 
@@ -65,14 +66,14 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
-| L1 Unit | Always | found-on-settleable consumes unit/creates colony; rejections (ship, mountains, occupied tile); **resource yields** (`ResourceYieldTests`: resource boosts, expert-scope skipped, no-enable guard, Hudson ×2 furs, resource+father stack order) | ✅ |
+| L1 Unit | Always | found-on-settleable consumes unit/creates colony; rejections (ship, mountains, occupied tile, **adjacent to an existing colony** — `FoundColony_Rejected_AdjacentToAnExistingColony`); **resource yields** (`ResourceYieldTests`: resource boosts, expert-scope skipped, no-enable guard, Hudson ×2 furs, resource+father stack order) | ✅ |
 | L2 Scenario | Always | save/load round-trip preserves colonies; pre-v3 compat; production uses the boosted resource yield (`ResourceYieldTests.Production_UsesTheBoostedYield`); **join/leave** (`ColonyMembershipTests`: grow on join, detach a free colonist, keep ≥1, trim a job; round-trip) + `JourneyTests.Journey9` (ship a recruit home → join → colony grows) | ✅ |
 | L3 Interaction | Yes | `InputTests` (B founds), `MainSceneTests` (panel opens/closes), `ColonyPanelTests` (staff/unstaff buttons, release field worker, construction dropdown + stop) | ✅ |
 | L4 Visual | Yes (marker) | colony golden (`colony-seed424242`) | ✅ |
 
 ## 5. Open issues / TODO
 
-- [ ] Minimum colony distance rule (cross-check vs FreeCol/original).
+- [x] Minimum colony distance rule (no founding adjacent to an existing colony) — cross-checked vs FreeCol, adopted (FP-5).
 - [ ] Real colony screen (kanban [P2b] colony screen skeleton → Phase 3 economy UI).
 - [ ] Nation-specific colony name lists when nations exist.
 
@@ -81,6 +82,7 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-13 | Founding (B key), colony marker, save v3 | Phase 2b |
+| 2026-06-14 | Minimum colony spacing: `CheckFoundColony` rejects a tile adjacent to an existing colony (FreeCol `canClaimToFoundSettlementReason`); resolves the long-standing TODO. Applies to the human and the AI | FP-5 |
 | 2026-06-13 | FreeCol settlement art; colony panel (click colony → name, population, terrain, colony-square yield; Close button). `GameController.OpenColonyPanel` is the public entry; L3-tested | Phase 2c |
 | 2026-06-13 | Economy slice 1: goods stores, colony-square production tick, eat 2/colonist, growth at 200 food (save v4; panel shows stores + growth progress). Consumption/growth values consistent with the original — formal cross-check when goods-types are parsed | Phase 3 |
 | 2026-06-13 | Economy slice 2: tile workers (assign/unassign oracles, per-tile chosen goods, ocean fishing, auto-assign on founding/growth, save v5, panel lists workers) | Phase 3 |

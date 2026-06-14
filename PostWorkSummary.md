@@ -19,6 +19,16 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-14 — Minimum colony-distance rule [autonomous]
+
+**Requested:** Overnight autonomous run — work through backlog tasks, full process each.
+**Did:** Resolved the long-standing `CheckFoundColony` TODO: a colony can no longer be founded on a tile **adjacent to an existing colony** (FreeCol `Player.canClaimToFoundSettlementReason` — `tile.getAdjacentColonies()` must be empty; the original's no-touching-footprints rule). Native settlements don't block founding (FreeCol treats that as a land claim, not a hard bar; land price unmodelled). Applies to the human and the AI.
+**Status:** **392 tests green** (370 L1+L2 + 2 soak + 16 L3 + 4 L4); goldens unchanged. Byte-stable — foreign powers/human found far apart, so the soak/replay are unperturbed (verified). Committed with this entry; CI running.
+**Changed:** `Game.cs` (`CheckFoundColony`), `GameTests.cs` (`FoundColony_Rejected_AdjacentToAnExistingColony`), `colonies.md`.
+**Decisions:** Adjacent-colony block only (the in-scope FreeCol rule); native-adjacency deferred (needs the land-price model).
+**Scheduled next:** **FP-6 — AI combat + diplomacy basics** (`86d3bex51`) — the headline next slice; scope locked by ADR-019 (stance/tension primitives).
+**Needs you:** Nothing.
+
 ## 2026-06-14 — Role movement bonuses (dragoon/scout +9) [autonomous]
 
 **Requested:** Overnight autonomous run — work through backlog tasks, full process each.
