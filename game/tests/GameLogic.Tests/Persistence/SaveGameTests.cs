@@ -166,6 +166,46 @@ public class SaveGameTests
         Assert.Throws<KeyNotFoundException>(() => corrupted.Restore(Classic));
     }
 
+    [Fact]
+    public void V19Save_LoadsAsSingleHumanPlayer()
+    {
+        // A v19-and-earlier save has no Players[]; its flat top-level player fields must fold
+        // into exactly one human player on load (ADR-019, save v20).
+        var game = Game.New(Classic, seed: 42, startingGold: 500, startingTax: 10);
+        game.EndTurn(); // accrue a little immigration so the folded value is non-trivial
+
+        // A v19 save predates Players[]; its flat top-level fields (still written by From, dropped at FP-7)
+        // carry the human's state. Override the version and a market delta to exercise the fold path.
+        SaveGame v19 = SaveGame.From(game) with
+        {
+            Version = 19,
+            MarketState = new Dictionary<string, int> { ["model.goods.sugar"] = 99 },
+        };
+
+        Game loaded = SaveGame.FromJson(v19.ToJson()).Restore(Classic);
+
+        Player human = Assert.Single(loaded.Players);
+        Assert.Same(human, loaded.HumanPlayer);
+        Assert.True(human.IsHuman);
+        Assert.Equal(0, human.PlayerId);
+        Assert.Equal(PlayerType.Colonial, human.PlayerType);
+        Assert.Equal(500, human.Gold);
+        Assert.Equal(10, human.TaxRate);
+        Assert.Equal(game.Liberty, human.Liberty);
+        Assert.Equal(game.Congress, human.Congress);
+        Assert.Equal(game.CurrentFather, human.CurrentFather);
+        Assert.Equal(game.OfferedFathers, human.OfferedFathers);
+        Assert.Equal(game.Immigration, human.Immigration);
+        Assert.Equal(game.ImmigrationRequired, human.ImmigrationRequired);
+        Assert.Equal(game.BaseRecruitPrice, human.BaseRecruitPrice);
+        Assert.Equal(game.RecruitLowerCap, human.RecruitLowerCap);
+        Assert.Equal(game.RecruitDock, human.RecruitDock);
+        Assert.Equal(99, human.Market.AmountInMarket("model.goods.sugar"));
+        Assert.Equal(
+            game.Explored.OrderBy(p => (p.Y, p.X)),
+            loaded.Explored.OrderBy(p => (p.Y, p.X)));
+    }
+
     private static Position AdjacentLand(Game game, Position from) =>
         from.Neighbours().First(n => game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater);
 }

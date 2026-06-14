@@ -110,10 +110,10 @@ public class SailingTests
     [Fact]
     public void BuyEuropeGoods_DebitsGoldAtAsk_WithoutMovingThePrice()
     {
-        // A docked ship and a treasury of 1000 gold.
+        // A docked ship and a treasury of 1000 gold (player state lives in Players[] from save v20).
         SaveGame seed = SaveGame.From(
-            GameOn(["model.tile.highSeas"], 1, 1, [new SavedUnit(1, Caravel, 0, 0, 12)]))
-            with { Gold = 1000 };
+            GameOn(["model.tile.highSeas"], 1, 1, [new SavedUnit(1, Caravel, 0, 0, 12)]));
+        seed = seed with { Players = seed.Players!.Select(p => p with { Gold = 1000 }).ToList() };
         Game game = seed.Restore(Classic);
         Unit ship = game.Units[0];
         ship.Location = UnitLocation.InEurope;

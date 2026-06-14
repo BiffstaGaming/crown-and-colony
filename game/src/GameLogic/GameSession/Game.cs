@@ -88,28 +88,21 @@ public sealed class Game
     private readonly List<Unit> _units = [];
     private readonly List<Colony> _colonies = [];
     private readonly List<NativeSettlement> _nativeSettlements = [];
-    private readonly HashSet<Position> _explored = [];
-    private readonly List<string> _congress = [];
-    private readonly List<string> _offeredFathers = [];
-    private readonly List<string> _recruitDock = [];
+    private readonly List<Player> _players = [];
+    private readonly Player _human;
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
     private int _nextColonyId = 1;
     private int _nextSettlementId = 1;
-    private int _liberty;
-    private string? _currentFather;
-    private int _immigration;
-    private int _immigrationRequired = InitialImmigration;
-    private int _baseRecruitPrice = InitialRecruitPrice;
-    private int _recruitLowerCap = InitialRecruitLowerCap;
 
-    private Game(Ruleset ruleset, GameMap map, Pcg32Random random, int turn)
+    private Game(Ruleset ruleset, GameMap map, Pcg32Random random, int turn, Player human)
     {
         Ruleset = ruleset;
         Map = map;
         _random = random;
         Turn = turn;
-        Market = new Market(ruleset);
+        _human = human;
+        _players.Add(human);
     }
 
     /// <summary>The rule data this game plays by.</summary>
@@ -121,55 +114,54 @@ public sealed class Game
     /// <summary>Current turn number, starting at 1.</summary>
     public int Turn { get; private set; }
 
-    /// <summary>The player's treasury in gold.</summary>
-    public int Gold { get; private set; }
+    /// <summary>All players in the game (the human today; foreign powers and natives join from FP-3).</summary>
+    public IReadOnlyList<Player> Players => _players;
 
-    /// <summary>Sales tax as a percentage (0–100) deducted from European sales.</summary>
-    public int TaxRate { get; private set; }
+    /// <summary>The local human player. Player-scoped state is reached through here, never by list index (ADR-019).</summary>
+    public Player HumanPlayer => _human;
 
-    /// <summary>The European market (trade prices). (Single shared market until foreign powers arrive.)</summary>
-    public Market Market { get; }
+    /// <summary>The human player's treasury in gold.</summary>
+    public int Gold => _human.Gold;
 
-    /// <summary>Liberty points banked toward the next Founding Father.</summary>
-    public int Liberty => _liberty;
+    /// <summary>The human player's sales tax as a percentage (0–100) deducted from European sales.</summary>
+    public int TaxRate => _human.TaxRate;
 
-    /// <summary>Founding Fathers elected to the Continental Congress, in election order.</summary>
-    public IReadOnlyList<string> Congress => _congress;
+    /// <summary>The human player's European market (trade prices).</summary>
+    public Market Market => _human.Market;
 
-    /// <summary>The father the player is currently recruiting (null = none chosen).</summary>
-    public string? CurrentFather => _currentFather;
+    /// <summary>Liberty points banked toward the human player's next Founding Father.</summary>
+    public int Liberty => _human.Liberty;
 
-    /// <summary>The fathers offered this round — one per category that has an eligible candidate.</summary>
-    public IReadOnlyList<string> OfferedFathers => _offeredFathers;
+    /// <summary>Founding Fathers elected to the human player's Continental Congress, in election order.</summary>
+    public IReadOnlyList<string> Congress => _human.Congress;
 
-    /// <summary>Immigration points banked toward the next emigrant (crosses + the Europe contribution).</summary>
-    public int Immigration => _immigration;
+    /// <summary>The father the human player is currently recruiting (null = none chosen).</summary>
+    public string? CurrentFather => _human.CurrentFather;
 
-    /// <summary>Immigration points needed to produce the next emigrant (rises by <see cref="CrossesIncrement"/> each time).</summary>
-    public int ImmigrationRequired => _immigrationRequired;
+    /// <summary>The fathers offered to the human player this round — one per category with an eligible candidate.</summary>
+    public IReadOnlyList<string> OfferedFathers => _human.OfferedFathers;
 
-    /// <summary>The unit types waiting on the Europe recruitment dock (one id per <see cref="RecruitSlots"/> slot).</summary>
-    public IReadOnlyList<string> RecruitDock => _recruitDock;
+    /// <summary>Immigration points banked toward the human player's next emigrant (crosses + the Europe contribution).</summary>
+    public int Immigration => _human.Immigration;
+
+    /// <summary>Immigration points needed to produce the human player's next emigrant (rises by <see cref="CrossesIncrement"/> each time).</summary>
+    public int ImmigrationRequired => _human.ImmigrationRequired;
+
+    /// <summary>The unit types waiting on the human player's Europe recruitment dock (one id per <see cref="RecruitSlots"/> slot).</summary>
+    public IReadOnlyList<string> RecruitDock => _human.RecruitDock;
 
     /// <summary>
     /// Current gold price to buy one recruit from the dock (FreeCol
     /// <c>Europe.getCurrentRecruitPrice</c>): <c>max(base·max(required−immigration,0)/required, floor)</c>.
     /// Falls toward the floor as immigration approaches the target, then jumps after each paid recruit.
     /// </summary>
-    public int RecruitPrice
-    {
-        get
-        {
-            int difference = Math.Max(_immigrationRequired - _immigration, 0);
-            return Math.Max(_baseRecruitPrice * difference / _immigrationRequired, _recruitLowerCap);
-        }
-    }
+    public int RecruitPrice => _human.RecruitPrice;
 
     /// <summary>The escalating base used in the recruit-price formula (persisted; FreeCol <c>baseRecruitPrice</c>).</summary>
-    internal int BaseRecruitPrice => _baseRecruitPrice;
+    internal int BaseRecruitPrice => _human.BaseRecruitPrice;
 
     /// <summary>The recruit-price floor (persisted; FreeCol <c>recruitLowerCap</c>).</summary>
-    internal int RecruitLowerCap => _recruitLowerCap;
+    internal int RecruitLowerCap => _human.RecruitLowerCap;
 
     /// <summary>
     /// Game age (1–3) used to weight which fathers are offered. Simplified
@@ -185,18 +177,22 @@ public sealed class Game
     public static int FoundingFatherCost(int electedCount, int factor) =>
         electedCount == 0 ? factor : 2 * (electedCount + 1) * factor + 1;
 
-    /// <summary>Liberty needed to elect this game's next father.</summary>
-    public int TotalFoundingFatherCost() => FoundingFatherCost(_congress.Count, FoundingFatherFactor);
+    /// <summary>Liberty needed to elect the human player's next father.</summary>
+    public int TotalFoundingFatherCost() => TotalFoundingFatherCost(_human);
 
-    /// <summary>Chooses which offered father to recruit toward.</summary>
+    /// <summary>Liberty needed to elect <paramref name="player"/>'s next father.</summary>
+    private int TotalFoundingFatherCost(Player player) =>
+        FoundingFatherCost(player.Congress.Count, FoundingFatherFactor);
+
+    /// <summary>Chooses which offered father the human player recruits toward.</summary>
     /// <exception cref="InvalidMoveException">The father is not currently offered.</exception>
     public void ChooseFather(string fatherId)
     {
-        if (!_offeredFathers.Contains(fatherId))
+        if (!_human.OfferedFathers.Contains(fatherId))
         {
             throw new InvalidMoveException($"{fatherId} is not currently offered.");
         }
-        _currentFather = fatherId;
+        _human.CurrentFather = fatherId;
     }
 
     /// <summary>All units in the game — the player's and the natives' (braves).</summary>
@@ -281,7 +277,10 @@ public sealed class Game
     /// </summary>
     /// <returns>The gold gifted (0 if the settlement gave none).</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckVisit"/>.</exception>
-    public int Visit(Unit unit, NativeSettlement settlement)
+    public int Visit(Unit unit, NativeSettlement settlement) => Visit(_human, unit, settlement);
+
+    /// <summary>Speaks with a settlement's chief on behalf of <paramref name="player"/> (the unit's owner).</summary>
+    internal int Visit(Player player, Unit unit, NativeSettlement settlement)
     {
         MoveCheck check = CheckVisit(unit, settlement);
         if (!check.Allowed)
@@ -290,12 +289,12 @@ public sealed class Game
         }
 
         settlement.HasBeenVisited = true;
-        RevealAround(settlement.Position, TalesRevealRadius); // tales of nearby lands
+        RevealAround(player, settlement.Position, TalesRevealRadius); // tales of nearby lands
         int gift = 0;
         if (settlement.AlarmLevel != AlarmLevel.Hateful)
         {
             gift = _random.Next(GiftMinimum, GiftMaximum + 1);
-            Gold += gift;
+            player.Gold += gift;
         }
         unit.MovementLeft = 0; // speaking ends the unit's turn
         return gift;
@@ -413,7 +412,11 @@ public sealed class Game
     /// </summary>
     /// <returns>The gold received.</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckSellToNatives"/>.</exception>
-    public int SellToNatives(Unit ship, NativeSettlement settlement, string goodsId, int amount)
+    public int SellToNatives(Unit ship, NativeSettlement settlement, string goodsId, int amount) =>
+        SellToNatives(_human, ship, settlement, goodsId, amount);
+
+    /// <summary>Sells goods to a native settlement on behalf of <paramref name="player"/> (the ship's owner).</summary>
+    internal int SellToNatives(Player player, Unit ship, NativeSettlement settlement, string goodsId, int amount)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
         MoveCheck check = CheckSellToNatives(ship, settlement, goodsId, amount);
@@ -423,7 +426,7 @@ public sealed class Game
         }
         int price = check.Cost;
         ship.AddCargo(goodsId, -amount);
-        Gold += price; // natives pay in gold; no European market tax
+        player.Gold += price; // natives pay in gold; no European market tax
         ChangeNativeAlarm(settlement, -Math.Max(1, price / 50)); // goodwill (FreeCol ALARM_BONUS_SELL ≈ 20% → price/50; min 1 per trade)
         ship.MovementLeft = 0; // opening a trade session ends the ship's turn
         return price;
@@ -485,7 +488,7 @@ public sealed class Game
     private IEnumerable<string> AutoEquipRoleScopes(string? ownerNationId) =>
         ownerNationId is not null
             ? []
-            : _congress.Select(Ruleset.Father)
+            : _human.Congress.Select(Ruleset.Father) // a null owner is the human player today (owner-id arrives in FP-2)
                 .SelectMany(f => f.Abilities)
                 .Where(a => a.Id == AutomaticEquipmentAbility && a.Value)
                 .SelectMany(a => a.ScopeTypes);
@@ -793,7 +796,7 @@ public sealed class Game
         if (attackerWon)
         {
             ApplyWinnerPromotion(attacker, great, random); // promotion draw (if any) before the plunder draws
-            Gold += ComputePlunder(type, hasPlunderAbility, random);
+            _human.Gold += ComputePlunder(type, hasPlunderAbility, random); // the attacker is the human in FP-1 (combat becomes player-aware in FP-6)
             _nativeSettlements.Remove(settlement); // destroyed
 
             if (capital)
@@ -983,11 +986,11 @@ public sealed class Game
         return upgraded;
     }
 
-    /// <summary>Tiles the player has ever seen (permanent fog of war — stays on the map once revealed).</summary>
-    public IReadOnlySet<Position> Explored => _explored;
+    /// <summary>Tiles the human player has ever seen (permanent fog of war — stays on the map once revealed).</summary>
+    public IReadOnlySet<Position> Explored => _human.Explored;
 
-    /// <summary>Whether a tile has ever been revealed.</summary>
-    public bool IsExplored(Position p) => _explored.Contains(p);
+    /// <summary>Whether a tile has ever been revealed to the human player.</summary>
+    public bool IsExplored(Position p) => _human.Explored.Contains(p);
 
     /// <summary>How far a colony sees (FreeCol settlements carry a line of sight): its 3×3 surroundings.</summary>
     public const int ColonySightRadius = 1;
@@ -1037,11 +1040,13 @@ public sealed class Game
         var random = new Pcg32Random(seed);
         GameMap map = MapGenerator.Generate(ruleset, mapWidth, mapHeight, random);
 
-        var game = new Game(ruleset, map, random, turn: 1)
+        // The single human player (stream 0; foreign powers and natives become players in FP-3).
+        var human = new Player(playerId: 0, nationId: null, isHuman: true, PlayerType.Colonial, new Market(ruleset))
         {
             Gold = startingGold,
             TaxRate = startingTax,
         };
+        var game = new Game(ruleset, map, random, turn: 1, human);
 
         // Start on settleable land that has somewhere to walk to (not a 1-tile
         // islet), preferring temperate latitudes (nearest the equator row) over
@@ -1091,59 +1096,40 @@ public sealed class Game
             }
         }
 
-        game.GenerateOffers(); // Congress choices available from the first turn
-        game.InitRecruitDock(); // three recruits waiting on the Europe dock from turn 1
+        game.GenerateOffers(human); // Congress choices available from the first turn
+        game.InitRecruitDock(human); // three recruits waiting on the Europe dock from turn 1
 
         return game;
     }
 
-    /// <summary>Restores a game from saved state (see <see cref="Persistence.SaveGame"/>).</summary>
+    /// <summary>
+    /// Restores a game from saved state (see <see cref="Persistence.SaveGame"/>). The per-player state
+    /// arrives as one <see cref="RestoredPlayer"/> per player (a single human today); the world — units,
+    /// colonies, native settlements — stays as flat global lists referenced by owner id.
+    /// </summary>
     internal static Game Restore(
         Ruleset ruleset, GameMap map, RandomState randomState, int turn,
+        IReadOnlyList<RestoredPlayer> players,
         IEnumerable<(int id, UnitType type, Position position, int movementLeft,
             UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
             int? carrierId, string? ownerNationId, string? roleId, int roleCount)> units,
-        IEnumerable<Position>? explored,
         IEnumerable<Colony>? colonies = null,
-        int gold = 0, int taxRate = 0,
-        IReadOnlyDictionary<string, int>? marketDeltas = null,
-        int liberty = 0, IEnumerable<string>? congress = null,
-        string? currentFather = null, IEnumerable<string>? offeredFathers = null,
-        int immigration = 0, int immigrationRequired = InitialImmigration,
-        int baseRecruitPrice = InitialRecruitPrice, int recruitLowerCap = InitialRecruitLowerCap,
-        IEnumerable<string>? recruitDock = null,
         IEnumerable<NativeSettlement>? nativeSettlements = null)
     {
-        var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn)
+        Player human = BuildPlayer(ruleset, players.Single(p => p.IsHuman));
+        var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn, human);
+        foreach (RestoredPlayer rp in players.Where(p => !p.IsHuman))
         {
-            Gold = gold,
-            TaxRate = taxRate,
-        };
-        if (marketDeltas is { Count: > 0 })
-        {
-            game.Market.LoadDeltas(marketDeltas);
+            game._players.Add(BuildPlayer(ruleset, rp)); // none in FP-1 (the human is the only player)
         }
-        game._liberty = liberty;
-        game._currentFather = currentFather;
-        if (congress is not null)
-        {
-            game._congress.AddRange(congress);
-        }
-        if (offeredFathers is not null)
-        {
-            game._offeredFathers.AddRange(offeredFathers);
-        }
-        game._immigration = immigration;
-        game._immigrationRequired = immigrationRequired;
-        game._baseRecruitPrice = baseRecruitPrice;
-        game._recruitLowerCap = recruitLowerCap;
-        if (recruitDock is not null)
-        {
-            game._recruitDock.AddRange(recruitDock);
-        }
-        // Top up to a full dock: a no-op when the save held all slots (so the RNG
+
+        // Top up each player's dock to a full set: a no-op when the save held all slots (so the RNG
         // sequence is preserved); draws a fresh dock for pre-v12 saves that had none.
-        game.InitRecruitDock();
+        foreach (Player player in game._players)
+        {
+            game.InitRecruitDock(player);
+        }
+
         foreach ((int id, UnitType type, Position position, int movementLeft,
                   UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
                   int? carrierId, string? ownerNationId, string? roleId, int roleCount) in units)
@@ -1178,19 +1164,58 @@ public sealed class Game
             game._nextSettlementId = Math.Max(game._nextSettlementId, settlement.Id + 1);
         }
 
-        if (explored is not null)
+        // Fog: union each player's explored tiles; a pre-fog save (v1, explored null) re-derives its
+        // fog by revealing around that player's units, mirroring the original load fallback.
+        foreach (RestoredPlayer rp in players)
         {
-            game._explored.UnionWith(explored.Where(map.InBounds));
-        }
-        else
-        {
-            // Pre-fog save (format v1): reveal around the units we have.
-            foreach (Unit unit in game._units)
+            Player player = game._players.Single(p => p.PlayerId == rp.PlayerId);
+            if (rp.Explored is not null)
             {
-                game.Reveal(unit);
+                player.ExploredSet.UnionWith(rp.Explored.Where(map.InBounds));
+            }
+            else
+            {
+                foreach (Unit unit in game._units.Where(u => !u.IsNative))
+                {
+                    game.Reveal(player, unit);
+                }
             }
         }
         return game;
+    }
+
+    /// <summary>Rebuilds a player and its market from saved per-player state (its fog is applied later, once units exist).</summary>
+    private static Player BuildPlayer(Ruleset ruleset, RestoredPlayer saved)
+    {
+        var market = new Market(ruleset);
+        if (saved.MarketDeltas is { Count: > 0 })
+        {
+            market.LoadDeltas(saved.MarketDeltas);
+        }
+        var player = new Player(saved.PlayerId, saved.NationId, saved.IsHuman, saved.PlayerType, market)
+        {
+            Gold = saved.Gold,
+            TaxRate = saved.TaxRate,
+            Liberty = saved.Liberty,
+            CurrentFather = saved.CurrentFather,
+            Immigration = saved.Immigration,
+            ImmigrationRequired = saved.ImmigrationRequired,
+            BaseRecruitPrice = saved.BaseRecruitPrice,
+            RecruitLowerCap = saved.RecruitLowerCap,
+        };
+        if (saved.Congress is not null)
+        {
+            player.CongressList.AddRange(saved.Congress);
+        }
+        if (saved.OfferedFathers is not null)
+        {
+            player.OfferedFathersList.AddRange(saved.OfferedFathers);
+        }
+        if (saved.RecruitDock is not null)
+        {
+            player.RecruitDockList.AddRange(saved.RecruitDock);
+        }
+        return player;
     }
 
     /// <summary>The game's RNG state, captured for saving.</summary>
@@ -1470,10 +1495,14 @@ public sealed class Game
     /// </summary>
     /// <returns>The gold credited to the treasury after tax.</returns>
     /// <exception cref="InvalidMoveException">The good is untradeable or the colony lacks the amount.</exception>
-    public int SellColonyGoods(Colony colony, string goodsId, int amount)
+    public int SellColonyGoods(Colony colony, string goodsId, int amount) =>
+        SellColonyGoods(_human, colony, goodsId, amount);
+
+    /// <summary>Sells a colony's goods to <paramref name="player"/>'s European market (the colony's owner today).</summary>
+    internal int SellColonyGoods(Player player, Colony colony, string goodsId, int amount)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
-        if (!Market.IsTradeable(goodsId))
+        if (!player.Market.IsTradeable(goodsId))
         {
             throw new InvalidMoveException($"{goodsId} cannot be sold in Europe.");
         }
@@ -1483,8 +1512,8 @@ public sealed class Game
         }
 
         colony.AddGoods(goodsId, -amount);
-        SaleResult sale = Market.Sell(goodsId, amount, TaxRate);
-        Gold += sale.GoldAfterTax;
+        SaleResult sale = player.Market.Sell(goodsId, amount, player.TaxRate);
+        player.Gold += sale.GoldAfterTax;
         return sale.GoldAfterTax;
     }
 
@@ -1571,14 +1600,18 @@ public sealed class Game
     /// <summary>Sells goods from a docked ship's hold to the European market, crediting the treasury after tax.</summary>
     /// <returns>The gold credited after tax.</returns>
     /// <exception cref="InvalidMoveException">The ship isn't in Europe, the good is untradeable, or the hold lacks it.</exception>
-    public int SellShipCargo(Unit ship, string goodsId, int amount)
+    public int SellShipCargo(Unit ship, string goodsId, int amount) =>
+        SellShipCargo(_human, ship, goodsId, amount);
+
+    /// <summary>Sells a docked ship's cargo to <paramref name="player"/>'s European market (the ship's owner today).</summary>
+    internal int SellShipCargo(Player player, Unit ship, string goodsId, int amount)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
         if (ship.Location != UnitLocation.InEurope)
         {
             throw new InvalidMoveException("Goods are sold once the ship reaches Europe.");
         }
-        if (!Market.IsTradeable(goodsId))
+        if (!player.Market.IsTradeable(goodsId))
         {
             throw new InvalidMoveException($"{goodsId} cannot be sold in Europe.");
         }
@@ -1587,8 +1620,8 @@ public sealed class Game
             throw new InvalidMoveException($"The ship is not carrying {amount} {goodsId}.");
         }
         ship.AddCargo(goodsId, -amount);
-        SaleResult sale = Market.Sell(goodsId, amount, TaxRate);
-        Gold += sale.GoldAfterTax;
+        SaleResult sale = player.Market.Sell(goodsId, amount, player.TaxRate);
+        player.Gold += sale.GoldAfterTax;
         return sale.GoldAfterTax;
     }
 
@@ -1596,18 +1629,22 @@ public sealed class Game
     /// Whether the player can buy <paramref name="amount"/> of a good in Europe for
     /// the docked <paramref name="ship"/> (no market price rise on buying, per FreeCol).
     /// </summary>
-    public MoveCheck CheckBuyEuropeGoods(Unit ship, string goodsId, int amount)
+    public MoveCheck CheckBuyEuropeGoods(Unit ship, string goodsId, int amount) =>
+        CheckBuyEuropeGoods(_human, ship, goodsId, amount);
+
+    /// <summary>Whether <paramref name="player"/> can buy <paramref name="amount"/> of a good for the docked <paramref name="ship"/>.</summary>
+    internal MoveCheck CheckBuyEuropeGoods(Player player, Unit ship, string goodsId, int amount)
     {
         if (ship.Location != UnitLocation.InEurope)
         {
             return MoveCheck.No("Goods are bought once the ship reaches Europe.");
         }
-        if (!Market.IsTradeable(goodsId))
+        if (!player.Market.IsTradeable(goodsId))
         {
             return MoveCheck.No($"{goodsId} is not sold in Europe.");
         }
-        int cost = Market.AskPrice(goodsId) * amount;
-        if (Gold < cost)
+        int cost = player.Market.AskPrice(goodsId) * amount;
+        if (player.Gold < cost)
         {
             return MoveCheck.No($"Not enough gold (need {cost}).");
         }
@@ -1620,16 +1657,20 @@ public sealed class Game
 
     /// <summary>Buys goods in Europe into a docked ship's hold, debiting the treasury at the ask price.</summary>
     /// <returns>The gold spent.</returns>
-    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBuyEuropeGoods"/>.</exception>
-    public int BuyEuropeGoods(Unit ship, string goodsId, int amount)
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBuyEuropeGoods(Unit, string, int)"/>.</exception>
+    public int BuyEuropeGoods(Unit ship, string goodsId, int amount) =>
+        BuyEuropeGoods(_human, ship, goodsId, amount);
+
+    /// <summary>Buys goods in Europe for <paramref name="player"/> into a docked ship's hold (the ship's owner today).</summary>
+    internal int BuyEuropeGoods(Player player, Unit ship, string goodsId, int amount)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
-        MoveCheck check = CheckBuyEuropeGoods(ship, goodsId, amount);
+        MoveCheck check = CheckBuyEuropeGoods(player, ship, goodsId, amount);
         if (!check.Allowed)
         {
             throw new InvalidMoveException(check.Reason!);
         }
-        Gold -= check.Cost;
+        player.Gold -= check.Cost;
         ship.AddCargo(goodsId, amount);
         return check.Cost;
     }
@@ -1642,14 +1683,17 @@ public sealed class Game
         Map.AllPositions().FirstOrDefault(p => Map.TerrainAt(p).Id == HighSeasId, new Position(0, 0));
 
     /// <summary>Whether the player can buy a <paramref name="unitTypeId"/> in Europe right now.</summary>
-    public MoveCheck CheckBuyUnit(string unitTypeId)
+    public MoveCheck CheckBuyUnit(string unitTypeId) => CheckBuyUnit(_human, unitTypeId);
+
+    /// <summary>Whether <paramref name="player"/> can buy a <paramref name="unitTypeId"/> in Europe right now.</summary>
+    internal MoveCheck CheckBuyUnit(Player player, string unitTypeId)
     {
         UnitType type = Ruleset.Unit(unitTypeId);
         if (!type.IsPurchasable)
         {
             return MoveCheck.No($"A {type.ShortName} cannot be bought in Europe.");
         }
-        if (Gold < type.Price)
+        if (player.Gold < type.Price)
         {
             return MoveCheck.No($"Not enough gold (need {type.Price}).");
         }
@@ -1661,15 +1705,18 @@ public sealed class Game
     /// high-seas tile so it can sail to the New World; a land unit waits on the dock to board one.
     /// </summary>
     /// <returns>The purchased unit, in Europe.</returns>
-    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBuyUnit"/>.</exception>
-    public Unit BuyUnit(string unitTypeId)
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBuyUnit(string)"/>.</exception>
+    public Unit BuyUnit(string unitTypeId) => BuyUnit(_human, unitTypeId);
+
+    /// <summary>Buys a unit in Europe for <paramref name="player"/> (the human today; bought units carry no native owner).</summary>
+    internal Unit BuyUnit(Player player, string unitTypeId)
     {
-        MoveCheck check = CheckBuyUnit(unitTypeId);
+        MoveCheck check = CheckBuyUnit(player, unitTypeId);
         if (!check.Allowed)
         {
             throw new InvalidMoveException(check.Reason!);
         }
-        Gold -= check.Cost;
+        player.Gold -= check.Cost;
         UnitType type = Ruleset.Unit(unitTypeId);
         var unit = new Unit(_nextUnitId++, type, type.IsNaval ? EuropeEntryTile() : new Position(0, 0))
         {
@@ -1931,8 +1978,9 @@ public sealed class Game
         {
             RunColonyTurn(colony);
         }
-        AccumulateLibertyAndElectFathers();
-        AccumulateImmigrationAndEmigrate();
+        // FP-1: only the human accrues liberty/immigration (it owns every colony); FP-4/5 loop all players.
+        AccumulateLibertyAndElectFathers(_human);
+        AccumulateImmigrationAndEmigrate(_human);
         AdvanceSailing();
         foreach (NativeSettlement settlement in _nativeSettlements)
         {
@@ -1949,7 +1997,7 @@ public sealed class Game
     /// Converts each colony's freshly-produced bells into player liberty, elects
     /// the chosen father once enough is banked, and refreshes the offered set.
     /// </summary>
-    private void AccumulateLibertyAndElectFathers()
+    private void AccumulateLibertyAndElectFathers(Player player)
     {
         foreach (Colony colony in _colonies)
         {
@@ -1957,22 +2005,22 @@ public sealed class Game
             if (bells > 0)
             {
                 colony.AddGoods(BellsId, -bells); // bells become liberty, not tradeable stock
-                _liberty += ApplyGoodsModifiers(BellsId, bells); // founding-father bonuses (Jefferson, Paine)
+                player.Liberty += ApplyGoodsModifiers(BellsId, bells); // founding-father bonuses (Jefferson, Paine)
             }
         }
 
-        if (_currentFather is not null && _liberty >= TotalFoundingFatherCost())
+        if (player.CurrentFather is not null && player.Liberty >= TotalFoundingFatherCost(player))
         {
-            _liberty -= TotalFoundingFatherCost();
-            _congress.Add(_currentFather);
-            _currentFather = null;
-            _offeredFathers.Clear();
-            RefreshDockForRecruitability(); // a newly-elected father may ban dock recruits (Brewster)
+            player.Liberty -= TotalFoundingFatherCost(player);
+            player.CongressList.Add(player.CurrentFather);
+            player.CurrentFather = null;
+            player.OfferedFathersList.Clear();
+            RefreshDockForRecruitability(player); // a newly-elected father may ban dock recruits (Brewster)
         }
 
-        if (_currentFather is null && _offeredFathers.Count == 0)
+        if (player.CurrentFather is null && player.OfferedFathers.Count == 0)
         {
-            GenerateOffers();
+            GenerateOffers(player);
         }
     }
 
@@ -1980,11 +2028,11 @@ public sealed class Game
     /// Offers one eligible father per category, picked by seeded weight for the
     /// current age (already-elected fathers and zero-weight ones are excluded).
     /// </summary>
-    private void GenerateOffers()
+    private void GenerateOffers(Player player)
     {
-        _offeredFathers.Clear();
+        player.OfferedFathersList.Clear();
         int age = CurrentAge;
-        var elected = _congress.ToHashSet();
+        var elected = player.Congress.ToHashSet();
 
         foreach (FatherType type in Enum.GetValues<FatherType>())
         {
@@ -2002,7 +2050,7 @@ public sealed class Game
                 roll -= f.WeightForAge(age);
                 if (roll < 0)
                 {
-                    _offeredFathers.Add(f.Id);
+                    player.OfferedFathersList.Add(f.Id);
                     break;
                 }
             }
@@ -2015,28 +2063,31 @@ public sealed class Game
     /// <summary>The ability gating which unit types may be recruited (William Brewster denies some).</summary>
     private const string CanRecruitUnitAbility = "model.ability.canRecruitUnit";
 
-    /// <summary>True when any elected Founding Father grants <paramref name="abilityId"/>.</summary>
+    /// <summary>
+    /// True when any Founding Father elected to the human player's Congress grants <paramref name="abilityId"/>.
+    /// (FP-1: the modifier/ability helpers read the human's Congress; per-player folding lands with AI economy, FP-5.)
+    /// </summary>
     public bool HasAbility(string abilityId) =>
-        _congress.Select(Ruleset.Father)
+        _human.Congress.Select(Ruleset.Father)
             .SelectMany(f => f.Abilities)
             .Any(a => a.Id == abilityId && a.Value);
 
     /// <summary>
-    /// Applies the elected Founding Fathers' production modifiers for a goods type to a
+    /// Applies the human player's elected Founding Fathers' production modifiers for a goods type to a
     /// base amount (FreeCol <c>FeatureContainer.applyModifiers</c>: ascending index, then
     /// fold; truncated to int). Thomas Paine's <c>addTaxToBells</c> adds the tax rate as a
     /// bell percentage. With no relevant fathers elected the base is returned unchanged.
     /// </summary>
     public int ApplyGoodsModifiers(string goodsId, int baseAmount)
     {
-        var modifiers = _congress.Select(Ruleset.Father)
+        var modifiers = _human.Congress.Select(Ruleset.Father)
             .SelectMany(f => f.Modifiers)
             .Where(m => m.TargetId == goodsId)
             .ToList();
         if (goodsId == BellsId && HasAbility(AddTaxToBellsAbility))
         {
             // Paine: the spec template modifier (index 40) takes the current tax rate as its value.
-            modifiers.Add(new FatherModifier(BellsId, ModifierType.Percentage, TaxRate, 40));
+            modifiers.Add(new FatherModifier(BellsId, ModifierType.Percentage, _human.TaxRate, 40));
         }
         if (modifiers.Count == 0)
         {
@@ -2050,24 +2101,24 @@ public sealed class Game
         return (int)result; // truncate, matching FreeCol's (int) cast on production
     }
 
-    /// <summary>Whether a unit type may currently be recruited (probability &gt; 0 and not denied by a father).</summary>
-    private bool IsRecruitable(UnitType type) =>
-        type.RecruitProbability > 0 && !IsRecruitBlocked(type.Id);
+    /// <summary>Whether a unit type may currently be recruited by <paramref name="player"/> (probability &gt; 0 and not denied by a father).</summary>
+    private bool IsRecruitable(Player player, UnitType type) =>
+        type.RecruitProbability > 0 && !IsRecruitBlocked(player, type.Id);
 
-    /// <summary>True when an elected Founding Father denies recruiting this unit type (William Brewster).</summary>
-    private bool IsRecruitBlocked(string unitTypeId) =>
-        _congress.Select(Ruleset.Father)
+    /// <summary>True when a father elected by <paramref name="player"/> denies recruiting this unit type (William Brewster).</summary>
+    private bool IsRecruitBlocked(Player player, string unitTypeId) =>
+        player.Congress.Select(Ruleset.Father)
             .SelectMany(f => f.Abilities)
             .Any(a => a.Id == CanRecruitUnitAbility && !a.Value && a.ScopeTypes.Contains(unitTypeId));
 
     /// <summary>Replaces any dock recruit a newly-elected father now forbids (e.g. Brewster's scum ban).</summary>
-    private void RefreshDockForRecruitability()
+    private void RefreshDockForRecruitability(Player player)
     {
-        for (int i = 0; i < _recruitDock.Count; i++)
+        for (int i = 0; i < player.RecruitDock.Count; i++)
         {
-            if (IsRecruitBlocked(_recruitDock[i]))
+            if (IsRecruitBlocked(player, player.RecruitDock[i]))
             {
-                _recruitDock[i] = DrawRecruitType();
+                player.RecruitDockList[i] = DrawRecruitType(player);
             }
         }
     }
@@ -2080,7 +2131,7 @@ public sealed class Game
     /// bonus, never dropping the turn's total below zero) is added, then each time
     /// the pool meets the target an emigrant arrives in Europe from a random dock slot.
     /// </summary>
-    private void AccumulateImmigrationAndEmigrate()
+    private void AccumulateImmigrationAndEmigrate(Player player)
     {
         // Colony crosses become immigration and leave the warehouse (not tradeable stock).
         int crossesThisTurn = 0;
@@ -2104,15 +2155,15 @@ public sealed class Game
         {
             europe = -crossesThisTurn;
         }
-        _immigration += crossesThisTurn + europe;
+        player.Immigration += crossesThisTurn + europe;
 
         // Auto-emigrate (no William Brewster / select-recruit yet → a random dock slot).
         // Guarded on a stocked dock: test rulesets with no recruitable units have none.
-        while (_recruitDock.Count > 0 && _immigration >= _immigrationRequired)
+        while (player.RecruitDock.Count > 0 && player.Immigration >= player.ImmigrationRequired)
         {
-            Emigrate(_random.Next(_recruitDock.Count));
-            ReduceImmigration();
-            _immigrationRequired += CrossesIncrement;
+            Emigrate(player, _random.Next(player.RecruitDock.Count));
+            ReduceImmigration(player);
+            player.ImmigrationRequired += CrossesIncrement;
         }
     }
 
@@ -2120,33 +2171,33 @@ public sealed class Game
     /// Consumes immigration on emigration (FreeCol <c>Player.reduceImmigration</c> with
     /// classic <c>saveProductionOverflow=true</c>): subtract the target, keeping any surplus.
     /// </summary>
-    private void ReduceImmigration() =>
-        _immigration = _immigrationRequired > _immigration ? 0 : _immigration - _immigrationRequired;
+    private static void ReduceImmigration(Player player) =>
+        player.Immigration = player.ImmigrationRequired > player.Immigration ? 0 : player.Immigration - player.ImmigrationRequired;
 
     /// <summary>
     /// Fills the dock to <see cref="RecruitSlots"/> with fresh weighted draws. A no-op
     /// when the ruleset defines no recruitable units (minimal test rulesets), so those
     /// games simply have no Europe dock.
     /// </summary>
-    private void InitRecruitDock()
+    private void InitRecruitDock(Player player)
     {
-        if (!Ruleset.UnitTypes.Any(IsRecruitable))
+        if (!Ruleset.UnitTypes.Any(t => IsRecruitable(player, t)))
         {
             return;
         }
-        while (_recruitDock.Count < RecruitSlots)
+        while (player.RecruitDock.Count < RecruitSlots)
         {
-            _recruitDock.Add(DrawRecruitType());
+            player.RecruitDockList.Add(DrawRecruitType(player));
         }
     }
 
     /// <summary>
-    /// A weighted-random recruitable unit type id (FreeCol <c>ServerEurope.generateRecruitablesList</c>):
-    /// each type's <see cref="UnitType.RecruitProbability"/> is its weight.
+    /// A weighted-random recruitable unit type id for <paramref name="player"/> (FreeCol
+    /// <c>ServerEurope.generateRecruitablesList</c>): each type's <see cref="UnitType.RecruitProbability"/> is its weight.
     /// </summary>
-    private string DrawRecruitType()
+    private string DrawRecruitType(Player player)
     {
-        var pool = Ruleset.UnitTypes.Where(IsRecruitable).ToList();
+        var pool = Ruleset.UnitTypes.Where(t => IsRecruitable(player, t)).ToList();
         int total = pool.Sum(u => u.RecruitProbability);
         int roll = _random.Next(total);
         foreach (UnitType type in pool)
@@ -2161,14 +2212,14 @@ public sealed class Game
     }
 
     /// <summary>
-    /// Takes the recruit in <paramref name="slot"/> off the dock, lands it in Europe,
+    /// Takes the recruit in <paramref name="slot"/> off <paramref name="player"/>'s dock, lands it in Europe,
     /// and refills the dock with a fresh draw (the new recruit joins at the bottom slot).
     /// </summary>
-    private Unit Emigrate(int slot)
+    private Unit Emigrate(Player player, int slot)
     {
-        string typeId = _recruitDock[slot];
-        _recruitDock.RemoveAt(slot);
-        _recruitDock.Add(DrawRecruitType());
+        string typeId = player.RecruitDock[slot];
+        player.RecruitDockList.RemoveAt(slot);
+        player.RecruitDockList.Add(DrawRecruitType(player));
         return CreateEuropeRecruit(typeId);
     }
 
@@ -2183,15 +2234,18 @@ public sealed class Game
         return unit;
     }
 
-    /// <summary>Whether the player can buy the recruit in <paramref name="slot"/> right now.</summary>
-    public MoveCheck CheckRecruit(int slot)
+    /// <summary>Whether the human player can buy the recruit in <paramref name="slot"/> right now.</summary>
+    public MoveCheck CheckRecruit(int slot) => CheckRecruit(_human, slot);
+
+    /// <summary>Whether <paramref name="player"/> can buy the recruit in <paramref name="slot"/> right now.</summary>
+    internal MoveCheck CheckRecruit(Player player, int slot)
     {
-        if (slot < 0 || slot >= _recruitDock.Count)
+        if (slot < 0 || slot >= player.RecruitDock.Count)
         {
             return MoveCheck.No("No recruit in that dock slot.");
         }
-        int price = RecruitPrice;
-        if (Gold < price)
+        int price = player.RecruitPrice;
+        if (player.Gold < price)
         {
             return MoveCheck.No($"Not enough gold to recruit (need {price}).");
         }
@@ -2205,20 +2259,23 @@ public sealed class Game
     /// The recruit lands in Europe and the dock refills.
     /// </summary>
     /// <returns>The recruited unit, docked in Europe.</returns>
-    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckRecruit"/>.</exception>
-    public Unit Recruit(int slot)
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckRecruit(int)"/>.</exception>
+    public Unit Recruit(int slot) => Recruit(_human, slot);
+
+    /// <summary>Buys the recruit in <paramref name="slot"/> for <paramref name="player"/> (see <see cref="Recruit(int)"/>).</summary>
+    internal Unit Recruit(Player player, int slot)
     {
-        MoveCheck check = CheckRecruit(slot);
+        MoveCheck check = CheckRecruit(player, slot);
         if (!check.Allowed)
         {
             throw new InvalidMoveException(check.Reason!);
         }
-        Gold -= check.Cost;                              // price read before the base rises
-        _baseRecruitPrice += RecruitPriceIncrease;       // increaseRecruitmentDifficulty
-        _recruitLowerCap += RecruitLowerCapIncrease;
-        Unit recruit = Emigrate(slot);                   // extract precedes the immigration cut (as in FreeCol)
-        ReduceImmigration();
-        _immigrationRequired += CrossesIncrement;
+        player.Gold -= check.Cost;                          // price read before the base rises
+        player.BaseRecruitPrice += RecruitPriceIncrease;    // increaseRecruitmentDifficulty
+        player.RecruitLowerCap += RecruitLowerCapIncrease;
+        Unit recruit = Emigrate(player, slot);              // extract precedes the immigration cut (as in FreeCol)
+        ReduceImmigration(player);
+        player.ImmigrationRequired += CrossesIncrement;
         return recruit;
     }
 
@@ -2463,15 +2520,21 @@ public sealed class Game
     private static void DecayNativeAlarm(NativeSettlement settlement) =>
         settlement.Alarm = Math.Max(0, settlement.Alarm - (settlement.Alarm / 100 + 4));
 
-    /// <summary>Reveals (permanently explores) all tiles within the unit's line of sight.</summary>
-    private void Reveal(Unit unit) => RevealAround(unit.Position, unit.Type.LineOfSight);
+    /// <summary>Reveals (permanently explores) all tiles within the unit's line of sight for the human player.</summary>
+    private void Reveal(Unit unit) => Reveal(_human, unit);
 
-    /// <summary>Permanently explores every in-bounds tile within <paramref name="radius"/> of a centre.</summary>
-    private void RevealAround(Position centre, int radius)
+    /// <summary>Reveals all tiles within the unit's line of sight for <paramref name="player"/>.</summary>
+    private void Reveal(Player player, Unit unit) => RevealAround(player, unit.Position, unit.Type.LineOfSight);
+
+    /// <summary>Permanently explores every in-bounds tile within <paramref name="radius"/> of a centre for the human player.</summary>
+    private void RevealAround(Position centre, int radius) => RevealAround(_human, centre, radius);
+
+    /// <summary>Permanently explores every in-bounds tile within <paramref name="radius"/> of a centre for <paramref name="player"/>.</summary>
+    private void RevealAround(Player player, Position centre, int radius)
     {
         foreach (Position p in TilesInRange(centre, radius))
         {
-            _explored.Add(p);
+            player.ExploredSet.Add(p);
         }
     }
 

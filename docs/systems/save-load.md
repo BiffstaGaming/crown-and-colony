@@ -3,11 +3,11 @@
 | | |
 |---|---|
 | **Status** | Implemented (skeleton scope) |
-| **Last verified** | 2026-06-13 @ Phase 1 walking skeleton |
+| **Last verified** | 2026-06-14 @ FP-1 (Player extraction) |
 | **Code** | `game/src/GameLogic/Persistence/SaveGame.cs` · UI: `GameController` F5/F9 |
 | **Tests** | `game/tests/GameLogic.Tests/Persistence/SaveGameTests.cs`, `Scenarios/` |
 | **FreeCol reference** | n/a — our own format (FreeCol's .fsg is not a compatibility goal) |
-| **Related systems** | [randomness](randomness.md) (RNG state is part of the save) |
+| **Related systems** | [randomness](randomness.md) (RNG state is part of the save), [players](players.md) (player-scoped state) |
 
 ## 1. How it works (plain English)
 
@@ -17,7 +17,8 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 
 - A save restores: turn, map (terrain per tile), every unit (id, **type**, position, movement left), **explored tiles (fog of war)**, RNG state.
 - Loading an interrupted game then continuing produces **identical outcomes** to never having saved (tested).
-- Saves carry a format `Version` (currently **19**); older saves still load with sensible defaults for fields that didn't exist yet (see the changelog), and v1 saves default units to free colonists and reveal fog around units.
+- Saves carry a format `Version` (currently **20**); older saves still load with sensible defaults for fields that didn't exist yet (see the changelog), and v1 saves default units to free colonists and reveal fog around units.
+- **Player-scoped state (v20+)** — treasury/tax, the per-player market, liberty/Congress, immigration + the Europe dock, and explored fog — is stored in a `Players[]` array (one human player today; see [players](players.md)). The load path is chosen by version: a v20+ save reads `Players[]`; a v19-and-earlier save **folds** the old flat top-level fields into a single human player. For the transition a v20 save **still writes** those flat fields too (so every pre-v20 load path stays exercised); they are removed at the foreign-powers save-consolidation slice (FP-7).
 - Each unit also restores its **owner and equipment** (v18+): the owning native nation (null = the player) and its military role + role count; pre-v18 saves load every unit player-owned and unarmed (tested). Native braves persist through the unit list via the owner field — no separate collection — so a saved game's garrisons come back intact.
 - A save also restores all **native settlements** (v14+): id, owning nation type, settlement type, capital flag, position, size, taught skill, plus their **interaction state** (v16+): alarm, visited flag, skill-consumed flag, and **wanted goods** (v17+). A settlement **destroyed by assault (v19+)** is simply absent from the saved list — there is no new field; its plunder is already folded into the saved gold.
 - A save records its **game variant** (v15+; e.g. `classic`) so it reloads under the matching ruleset (ADR-018); pre-v15 saves resolve to the default variant. See [game-modes](game-modes.md).
@@ -68,3 +69,4 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 | 2026-06-14 | Format v17: native settlement wanted goods; pre-v17 settlements load with none (tested) | Phase 5 slice 4 |
 | 2026-06-14 | Format v18: unit owner nation + role/roleCount (native braves, armed soldiers); pre-v18 units load player-owned and unarmed (tested); default-role player units serialize identically to v17 | Phase 5 slice 5b |
 | 2026-06-14 | Format v19: settlement assault — a destroyed settlement is absent from the list, plunder folds into gold (no new field; a marker only). Older saves load unchanged; a sacked-settlement game round-trips (tested) | Phase 5 slice 5c |
+| 2026-06-14 | Format v20: player-scoped state moved into a `Players[]` array (one human player); load keyed on version (v20+ reads `Players[]`, ≤v19 folds the flat fields into one human player — tested `V19Save_LoadsAsSingleHumanPlayer`). Flat fields still written in v20 (dropped at FP-7). See [players](players.md) (ADR-019) | FP-1 |

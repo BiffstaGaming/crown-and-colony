@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-14 — FP-1: Extract Player (single human, zero behaviour change)
+
+**Requested:** Start the foreign-powers wave with FP-1 (`86d3bex4a`) — pure refactor: move player-scoped state off `Game` onto a new `Player`, save v20, all tests stay green.
+**Did:**
+- New `sealed class Player` (`GameSession/Player.cs`) owns player-scoped state: identity (`PlayerId`/`NationId`/`IsHuman`/`PlayerType`), treasury+tax, its **own Market** (per-player), liberty/Congress/fathers, immigration/recruit-dock + `RecruitPrice`, and explored fog. `Game` holds `IReadOnlyList<Player> Players` + a cached `HumanPlayer`; the former fields are now **thin pass-through props** to the human, so presentation + tests barely change.
+- Mutating seams (`Sell*`/`Buy*`/`Recruit`/`Visit`/`SellToNatives`/accumulate/`Reveal`) got internal `Player`-taking overloads; the public method delegates to `HumanPlayer`. Collapsed the 23-param `Game.Restore` to take a `RestoredPlayer` list (one element).
+- **Save v20:** new `Players[]` array (`SavedPlayer` record). Load keyed on `Version >= 20` (else fold the legacy flat fields into one human player). A v20 save still writes the flat fields too (every pre-v20 load path stays exercised; dropped at FP-7). New test `V19Save_LoadsAsSingleHumanPlayer`; determinism/goldens/soak untouched (human = RNG stream 0).
+- Docs: new `docs/systems/players.md`; `save-load.md` synced (v20 row + behaviour). Ran an adversarial review workflow over the diff.
+**Status:** **367 tests green** (347 logic +1 new, 20 scene); solution builds 0/0; CI pending on push.
+**Changed:** `Player.cs` (new), `Game.cs`, `SaveGame.cs`; tests (`CombatTests`/`SailingTests` father+gold injection → `Players[]`, version pins 19→20, new fold test); docs `players.md` (new) + `save-load.md`. Commit `895854d`.
+**Decisions:** Keep flat save fields in v20 + key the load path on `Version` (not on `Players != null`) so the 12+ version-downgrade tests stay byte-identical (interim duplication, removed at FP-7). Founding-father modifier/ability resolution + live `CurrentlyVisible` stay human-scoped in FP-1 (need the owner-id seam — FP-2); only the **stored** fog (`Explored`) is per-player now.
+**Scheduled next:** **FP-2 — owner-id seam + stance-ready enemy/fog** (next kanban slice; decompose/confirm id from the list). Do not start until FP-1 is merged green on CI.
+**Follow-ups:** FP-3 (European nations as variant data + inert rivals) … FP-7 (save consolidation: drop flat fields, freeze format); deferred naval/foreign-unit combat (`86d3bek5r`).
+**Needs you:** Nothing — pure refactor, no gameplay/UI change. FP-2 begins once CI is green.
+
 ## 2026-06-14 — Foreign-powers wave: plan + decompose (ADR-019)
 
 **Requested:** Begin the next item (foreign European powers) — then Chris asked me to **plan the entire phase and provide a new-session kickoff prompt** (not start coding now), and chose a **per-player market**.

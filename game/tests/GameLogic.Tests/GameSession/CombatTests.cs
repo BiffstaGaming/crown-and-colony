@@ -48,7 +48,7 @@ public class CombatTests
         Game game = Game.New(Classic, Seed);
         if (congress.Length > 0)
         {
-            game = (SaveGame.From(game) with { Congress = congress }).Restore(Classic);
+            game = Elect(game, congress);
         }
 
         bool Free(Game g, Position n) =>
@@ -73,6 +73,19 @@ public class CombatTests
 
     private static int Chebyshev(Position a, Position b) =>
         Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
+
+    /// <summary>
+    /// A copy of <paramref name="game"/> with the given fathers elected to the human player (via a save
+    /// round-trip). Player state lives in <c>Players[]</c> from save v20, so the injection targets it.
+    /// </summary>
+    private static Game Elect(Game game, params string[] congress)
+    {
+        SaveGame save = SaveGame.From(game);
+        return (save with
+        {
+            Players = save.Players!.Select(p => p with { Congress = congress }).ToList(),
+        }).Restore(Classic);
+    }
 
     // ---- Brave garrison ----
 
@@ -262,7 +275,7 @@ public class CombatTests
     {
         Game baseGame = Game.New(Classic, Seed);
         Colony colony = baseGame.FoundColony(baseGame.PlayerUnits.First());
-        Game game = (SaveGame.From(baseGame) with { Congress = [Revere] }).Restore(Classic);
+        Game game = Elect(baseGame, Revere);
         colony = game.Colonies.First();
 
         Unit defender = game.SpawnUnit(Classic.Unit(FreeColonist), colony.Position);
@@ -334,7 +347,7 @@ public class CombatTests
         Game game = Game.New(Classic, Seed);
         if (congress.Length > 0)
         {
-            game = (SaveGame.From(game) with { Congress = congress }).Restore(Classic);
+            game = Elect(game, congress);
         }
         bool Free(Position n) =>
             game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
@@ -509,14 +522,14 @@ public class CombatTests
     }
 
     [Fact]
-    public void AttackSettlement_DestroyedState_SurvivesASaveRoundTrip_AtV19()
+    public void AttackSettlement_DestroyedState_SurvivesASaveRoundTrip_AtV20()
     {
         (Game game, Unit attacker, NativeSettlement settlement) = SetupSettlementAttack();
         int before = game.NativeSettlements.Count;
         game.AttackSettlement(attacker, settlement.Position, new FixedRandom(0.0)); // forced great win → destroy + plunder
 
         SaveGame snapshot = SaveGame.From(game);
-        Assert.Equal(19, snapshot.Version);
+        Assert.Equal(20, snapshot.Version);
         Game loaded = SaveGame.FromJson(snapshot.ToJson()).Restore(Classic);
 
         Assert.Equal(before - 1, game.NativeSettlements.Count);                     // exactly one destroyed
