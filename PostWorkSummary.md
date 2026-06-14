@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-14 — Foreign-powers wave: plan + decompose (ADR-019)
+
+**Requested:** Begin the next item (foreign European powers) — then Chris asked me to **plan the entire phase and provide a new-session kickoff prompt** (not start coding now), and chose a **per-player market**.
+**Did:**
+- Ran a planning workflow (3 readers over our `Game`, FreeCol's `Player`/turn loop, save/presentation seams) → a full architecture + decomposition; surfaced the per-player-vs-shared market fork to Chris (he chose per-player).
+- Recorded **ADR-019** (Player/Nation model) in the ClickUp Architecture doc; refreshed the **Roadmap** (5b/5c ✅, foreign powers planned, 366 tests, v19).
+- Decomposed the epic (`86d3b7qwm`) into **7 ordered, test-green kanban slices** FP-1…FP-7 (FP-1 → Ready for Development; rest Backlog); created the deferred naval/foreign-combat task (`86d3bek5r`).
+- Rewrote `docs/NEXT-SESSION.md` as the **foreign-powers kickoff prompt** (the deliverable), and added a Session Log entry.
+**Status:** **Planning only — no code changed.** Repo still 366 tests green, save v19, git clean. Docs/ClickUp updated; committing the repo handoff (`NEXT-SESSION.md`, `PostWorkSummary.md`).
+**Changed:** `docs/NEXT-SESSION.md`, `PostWorkSummary.md`; ClickUp ADR-019 + Roadmap + Session Log + 8 kanban tasks.
+**Decisions:** Per-player market (Chris); `Player` owns player-scoped state, `Game` keeps the global world + a players list + ring-buffer turns; units/colonies global, referenced by owner id; human via `HumanPlayer` not index; one RNG stream per player (human = stream 0); European nations = variant data; minimal AI (priority switch, not missions); REF/full-AI/rich-diplomacy/naval deferred.
+**Scheduled next:** **FP-1 — Extract `Player`** (`86d3bex4a`): the pure-refactor foundation (single human, zero behaviour change, all tests stay green, save v20). Do it first and alone.
+**Follow-ups:** FP-2…FP-7 (in order, only after FP-1 merges green); deferred Founding-Father effects (`86d3b7qxr`); naval/foreign-unit combat (`86d3bek5r`).
+**Needs you:** Nothing to decide — the plan is sign-off'd (per-player market confirmed). Next session: paste `docs/NEXT-SESSION.md` and build FP-1.
+
 ## 2026-06-14 — Combat 5c: native settlement assault (Phase 5 slice 5c)
 
 **Requested:** Move onto the next item of work (Combat 5c).
