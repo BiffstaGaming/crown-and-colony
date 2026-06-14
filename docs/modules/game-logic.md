@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Last verified** | 2026-06-13 @ Phase 5 slice 1 |
+| **Last verified** | 2026-06-14 @ FP-5 (foreign-power AI economy) |
 | **Location** | `game/src/GameLogic/` |
 | **Layer** | GameLogic (engine-free) |
 | **Depends on** | nothing (BCL only) |
@@ -37,14 +37,15 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | `World.Position` | Grid coordinate; 8-way adjacency |
 | `World.GameMap` | Immutable terrain grid + bonus resources (`ResourceAt`) |
 | `World.MapGenerator` | Seeded climate-band map generation + resource placement |
-| `Units.Unit` / `UnitLocation` | Unit state: map/sailing/Europe `Location`, `SailTurnsRemaining`, `Cargo`, `CarrierId`/`IsAboard`, `IsOnMap`, `OwnerNationId`/`IsNative` (player vs native), `RoleId`/`RoleCount`/`HasDefaultRole` (equipment); mutated only via `Game` |
-| `Colonies.Colony` | Colony state: population, stores, tile/building workers, buildings, build target |
-| `Trade.Market` | European market: per-good bid/ask, supply-driven `Sell` with tax (FreeCol price model) |
+| `GameSession.Player` / `PlayerType` / `RestoredPlayer` | A player and its player-scoped state (ADR-019): identity (`PlayerId`/`NationId`/`IsHuman`/`PlayerType` {Colonial, Native}), `Gold`/`TaxRate`, its **own** `Market`, liberty/`Congress`/`CurrentFather`/`OfferedFathers`, immigration/`RecruitDock`/`RecruitPrice`, `Explored` fog, and its own RNG stream (`RngStreamId`/`Rng`). `RestoredPlayer` is the load-time DTO. Mutated via `Game` |
+| `Units.Unit` / `UnitLocation` | Unit state: map/sailing/Europe `Location`, `SailTurnsRemaining`, `Cargo`, `CarrierId`/`IsAboard`, `IsOnMap`, `OwnerNationId`/`IsNative` (native owner), `OwnerId` (colonial owner; the human is 0), `RoleId`/`RoleCount`/`HasDefaultRole` (equipment); mutated only via `Game` |
+| `Colonies.Colony` | Colony state: `OwnerId` (colonial owner; the human is 0), population, stores, tile/building workers, buildings, build target |
+| `Trade.Market` | A **per-player** European market: per-good bid/ask, supply-driven `Sell` with tax (FreeCol price model), `SaveDeltas`/`LoadDeltas` |
 | `Specification.GoodsMarket` | Per-good market seed (initial amount/price/spread) |
 | `Specification.FoundingFather` / `FatherType` / `FatherModifier` / `FatherAbility` / `ModifierType` / `ModifierMath` | Founding-father rule data: category, age weights, the modifiers + abilities an election grants |
-| `GameSession.Game` | The running game. Map/units: `New`, `CheckMove`/`MoveUnit`, `EndTurn`, `SpawnUnit`, `CheckFoundColony`/`FoundColony`, `TileYield`. Colony work: `AssignWork`/`UnassignWork`, `AssignBuildingWork`/`UnassignBuildingWork`, `SetBuild`/`Buildables`, `JoinColony`/`LeaveColony`. Trade: `Gold`, `TaxRate`, `Market`, `SellColonyGoods`/`SellShipCargo`/`BuyEuropeGoods`, `BuyUnit`/`CheckBuyUnit`. Europe/sailing: `SailToEurope`/`SailToNewWorld`, `UnitsInEurope`. Transport: `Board`/`Disembark`/`DisembarkToDock`, `Passengers`, `CargoCapacity`/`CargoSlotsUsed`/`CargoSlotsFree`. Fathers: `Liberty`, `Congress`, `ChooseFather`, `OfferedFathers`, `HasAbility`, `ApplyGoodsModifiers`. Immigration: `Immigration`/`ImmigrationRequired`, `RecruitDock`, `RecruitPrice`, `Recruit`/`CheckRecruit`. Natives: `NativeSettlements`, `NativeSettlementAt`, `ChangeNativeAlarm`, `Visit`/`CheckVisit`, `LearnSkill`/`CheckLearnSkill`, `SellToNatives`/`CheckSellToNatives`/`NativeSalePrice`. Combat: `PlayerUnits`/`NativeUnits`, `CheckAttack`/`Attack`, `CheckAttackSettlement`/`AttackSettlement`, `CheckEquipRole`/`EquipRole`, `EffectiveCombatRole`. Fog: `Explored`/`IsExplored`, `CurrentlyVisible`/`IsVisible`. (All checks have a `Check…` oracle, ADR-006.) |
+| `GameSession.Game` | The running game. Players (ADR-019): `Players`, `HumanPlayer`, `CurrentPlayer` (the ring pointer); player-scoped state is reached through `HumanPlayer` (the public no-arg `Gold`/`Market`/`Congress`/… pass through to the human, each mutating seam has an internal `Player`-taking overload). The human + 3 foreign colonial powers + native nations are `Player` rows; foreign powers run their own AI economy (sell/recruit/father) + unit AI in `EndTurn`, each on its own RNG stream/market so the human's stream 0 stays byte-stable. Map/units: `New`, `CheckMove`/`MoveUnit`, `EndTurn`, `SpawnUnit`, `CheckFoundColony`/`FoundColony`, `TileYield`. Colony work: `AssignWork`/`UnassignWork`, `AssignBuildingWork`/`UnassignBuildingWork`, `SetBuild`/`Buildables`, `JoinColony`/`LeaveColony`. Trade: `Gold`, `TaxRate`, `Market`, `SellColonyGoods`/`SellShipCargo`/`BuyEuropeGoods`, `BuyUnit`/`CheckBuyUnit`. Europe/sailing: `SailToEurope`/`SailToNewWorld`, `UnitsInEurope`. Transport: `Board`/`Disembark`/`DisembarkToDock`, `Passengers`, `CargoCapacity`/`CargoSlotsUsed`/`CargoSlotsFree`. Fathers: `Liberty`, `Congress`, `ChooseFather`, `OfferedFathers`, `HasAbility`, `ApplyGoodsModifiers`. Immigration: `Immigration`/`ImmigrationRequired`, `RecruitDock`, `RecruitPrice`, `Recruit`/`CheckRecruit`. Natives: `NativeSettlements`, `NativeSettlementAt`, `ChangeNativeAlarm`, `Visit`/`CheckVisit`, `LearnSkill`/`CheckLearnSkill`, `SellToNatives`/`CheckSellToNatives`/`NativeSalePrice`. Combat: `PlayerUnits`/`NativeUnits`, `CheckAttack`/`Attack`, `CheckAttackSettlement`/`AttackSettlement`, `CheckEquipRole`/`EquipRole`, `EffectiveCombatRole`. Fog: `Explored`/`IsExplored`, `CurrentlyVisible`/`IsVisible`. (All checks have a `Check…` oracle, ADR-006.) |
 | `GameSession.MoveCheck` / `InvalidMoveException` | Move legality result / violation |
-| `Persistence.SaveGame` / `SavedUnit` / `SavedColony` / `SavedResource` / `SavedWorker` / `SavedNativeSettlement` | Complete JSON-serializable game snapshot (format v19; records its game variant, native interaction/trade state, and per-unit owner + role; a sacked settlement is simply absent) |
+| `Persistence.SaveGame` / `SavedUnit` / `SavedColony` / `SavedResource` / `SavedWorker` / `SavedNativeSettlement` / `SavedPlayer` | Complete JSON-serializable game snapshot (format **v20**; per-player state in a `Players[]` array — gold/tax/per-player market/liberty/Congress/immigration/dock/RNG/explored; per-unit + per-colony owner ids; records its game variant, native interaction/trade state, per-unit role; a sacked settlement is simply absent; ≤v19 saves fold the legacy flat fields into one human player) |
 
 (Grows as systems land; keep this table current.)
 
@@ -56,7 +57,7 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 
 ## Tests
 
-`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **346 tests** (344 L1+L2 incl. 10 E2E journeys + 2 nightly soak), all green as of 2026-06-14. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md).)
+`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **368 tests** (366 L1+L2 incl. 10 E2E journeys + 2 nightly soak), all green as of 2026-06-14 @ FP-5. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md); 388 across all five layers.)
 
 ## Changelog
 
@@ -73,3 +74,4 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | 2026-06-14 | Combat foundation: parse unit offence/defence + terrain defence bonus; pure `CombatModel` (power, odds, graded resolution) | Phase 5 slice 5a |
 | 2026-06-14 | Combat 5b: unit ownership (`OwnerNationId`, `PlayerUnits`/`NativeUnits`) + roles/equipment (`RoleType`, `UnitChange`, `EquipRole`), brave defenders, attack action (`CheckAttack`/`Attack`) with FreeCol loser/winner outcome precedence + native alarm, Washington/Revere; save v18 | Phase 5 slice 5b |
 | 2026-06-14 | Combat 5c: native settlement assault (`CheckAttackSettlement`/`AttackSettlement`, `ComputePlunder`, `SettlementPlunder`) — implicit-garrison defence, destroy + plunder gold, +500/+600 tension with sibling propagation, Cortés; can't move onto a settlement; save v19 | Phase 5 slice 5c |
+| 2026-06-14 | Foreign-powers wave FP-1→FP-5 (ADR-019): extracted `Player` (player-scoped state incl. its own `Market`); owner-id seam (`Unit.OwnerId`/`Colony.OwnerId`; enemy/fog/abilities resolve by owner + a stance hook); parsed European nations as ruleset data; multi-player `Game` (human + 3 foreign powers + natives as `Player` rows; ring-buffer `EndTurn`); foreign-power AI — land/found/explore (FP-4) then a per-player economy — trade/immigration/recruit/father (FP-5), each on its own RNG stream; save **v20** (`Players[]`, per-player markets/RNG, owner ids; ≤v19 folds to one human) | FP-1…FP-5 |

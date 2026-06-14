@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Last verified** | 2026-06-14 @ Phase 5 (scene suite green through slice 5a; no presentation change since the fog upgrade) |
+| **Last verified** | 2026-06-14 @ FP-5 (scene suite green; no presentation change since FP-4's rival owner/fog-gating — foreign powers + their economy are off-screen under the human's fog) |
 | **Location** | `game/presentation/`, `game/scenes/` (project: `game/CrownAndColony.csproj`) |
 | **Layer** | Presentation (Godot) |
 | **Depends on** | `GameLogic`, Godot 4.6 |
@@ -16,7 +16,7 @@ Everything the player sees and touches: scene tree, drawing, camera, input, UI. 
 
 | Part | What it does |
 |---|---|
-| `GameController` (root of `scenes/main.tscn`) | Owns the `Game` + the selected `GameVariant` (new game loads its ruleset; saves record it; loads restore under the save's variant — ADR-018); input → commands (click select/move, B found, E Europe, F5/F9 save/load); opens the colony + Europe panels; exported `Seed` for deterministic test runs |
+| `GameController` (root of `scenes/main.tscn`) | Owns the `Game` + the selected `GameVariant` (new game loads its ruleset; saves record it; loads restore under the save's variant — ADR-018); input → commands (click select/move, B found, E Europe, F5/F9 save/load); opens the colony + Europe panels; exported `Seed` for deterministic test runs. **Owner-gated for multi-player (FP-4):** `SyncColonyMarkers` fog-gates colony markers (a foreign colony stays hidden until a human unit discovers its tile), and tile-click, the HUD subject line, and the camera focus resolve the human **by owner** — so the human can't manage or centre on a foreign power's colony |
 | `MapView` | Isometric tile drawing with FreeCol terrain art (ADR-014, 128×64 diamonds); `ShowState(map, explored, visible)` — unexplored black, explored-but-unseen dimmed, visible full bright; tile↔pixel conversions |
 | `UnitMarker` | FreeCol unit sprite + selection ring (on-map units only) |
 | `ColonyMarker` | FreeCol settlement sprite + name plate, one per colony |
@@ -41,6 +41,7 @@ Everything the player sees and touches: scene tree, drawing, camera, input, UI. 
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-14 | FP-4: `GameController` owner-gates the rivals — `SyncColonyMarkers` fog-gates foreign colonies (hidden under the human's fog), and tile-click / HUD subject / camera focus resolve the human by owner (can't manage or centre on a foreign colony). FP-5 (AI economy) added no presentation change — rival economies are off-screen | FP-4 |
 | 2026-06-14 | `GameController` only selects/renders the **player's** units (native braves are skipped as the HUD unit and on click); camera centres on a player unit → colony → map centre (braves now share the unit list) | Phase 5 slice 5b |
 | 2026-06-13 | Walking-skeleton scene: map view, unit, camera, turn UI, quicksave; GdUnit4 L3 wiring | Phase 1 skeleton |
 | 2026-06-13 | Isometric rendering with FreeCol terrain/unit/settlement art (ADR-014); L4 visual-golden harness | Phase 2 |
