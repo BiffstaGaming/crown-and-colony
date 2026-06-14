@@ -305,7 +305,8 @@ public sealed record SaveGame
         p.Immigration, p.ImmigrationRequired ?? Game.InitialImmigration,
         p.BaseRecruitPrice ?? Game.InitialRecruitPrice, p.RecruitLowerCap ?? Game.InitialRecruitLowerCap,
         p.RecruitDock,
-        p.Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)));
+        p.Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
+        p.RngState is { } s && p.RngIncrement is { } inc ? new RandomState(s, inc) : null);
 
     /// <summary>Folds a v19-and-earlier save's flat top-level fields into the single human player (null explored = pre-fog).</summary>
     private RestoredPlayer FoldFlatFieldsToHumanPlayer() => new(
@@ -318,15 +319,20 @@ public sealed record SaveGame
         Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)));
 
     /// <summary>Captures one player's state for a v20+ save (explored stored as compact row-major indexes).</summary>
-    private static SavedPlayer ToSavedPlayer(Player p, GameMap map) => new(
-        p.PlayerId, p.NationId, p.IsHuman, (int)p.PlayerType,
-        p.Gold, p.TaxRate,
-        p.Market.SaveDeltas() is { Count: > 0 } deltas ? new Dictionary<string, int>(deltas) : null,
-        p.Liberty, p.Congress.Count > 0 ? p.Congress.ToList() : null, p.CurrentFather,
-        p.OfferedFathers.Count > 0 ? p.OfferedFathers.ToList() : null,
-        p.Immigration, p.ImmigrationRequired, p.BaseRecruitPrice, p.RecruitLowerCap,
-        p.RecruitDock.Count > 0 ? p.RecruitDock.ToList() : null,
-        p.Explored.Select(pos => pos.Y * map.Width + pos.X).OrderBy(i => i).ToList());
+    private static SavedPlayer ToSavedPlayer(Player p, GameMap map)
+    {
+        RandomState? rng = p.Rng?.SaveState(); // non-human players carry their own stream (FP-4); the human's is stream 0
+        return new SavedPlayer(
+            p.PlayerId, p.NationId, p.IsHuman, (int)p.PlayerType,
+            p.Gold, p.TaxRate,
+            p.Market.SaveDeltas() is { Count: > 0 } deltas ? new Dictionary<string, int>(deltas) : null,
+            p.Liberty, p.Congress.Count > 0 ? p.Congress.ToList() : null, p.CurrentFather,
+            p.OfferedFathers.Count > 0 ? p.OfferedFathers.ToList() : null,
+            p.Immigration, p.ImmigrationRequired, p.BaseRecruitPrice, p.RecruitLowerCap,
+            p.RecruitDock.Count > 0 ? p.RecruitDock.ToList() : null,
+            p.Explored.Select(pos => pos.Y * map.Width + pos.X).OrderBy(i => i).ToList(),
+            rng?.State, rng?.Increment);
+    }
 
     /// <summary>Serializes to JSON.</summary>
     public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
@@ -432,6 +438,8 @@ public sealed record SavedUnit(
 /// <param name="RecruitLowerCap">Recruit-price floor (null → classic default 80).</param>
 /// <param name="RecruitDock">Unit types waiting on the Europe dock (null when none).</param>
 /// <param name="Explored">Explored tile indexes (row-major <c>y * MapWidth + x</c>); null = pre-fog fallback.</param>
+/// <param name="RngState">A non-human player's own PCG stream state word (v20 additive, FP-4; null = the human / no stream).</param>
+/// <param name="RngIncrement">That stream's increment (paired with <paramref name="RngState"/>; null = the human / no stream).</param>
 public sealed record SavedPlayer(
     int PlayerId, string? NationId, bool IsHuman, int PlayerType,
     int Gold = 0, int Tax = 0,
@@ -441,4 +449,5 @@ public sealed record SavedPlayer(
     int Immigration = 0, int? ImmigrationRequired = null,
     int? BaseRecruitPrice = null, int? RecruitLowerCap = null,
     IReadOnlyList<string>? RecruitDock = null,
-    IReadOnlyList<int>? Explored = null);
+    IReadOnlyList<int>? Explored = null,
+    ulong? RngState = null, ulong? RngIncrement = null);

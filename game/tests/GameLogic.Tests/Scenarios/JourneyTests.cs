@@ -105,7 +105,7 @@ public class JourneyTests
         string json = SaveGame.From(game).ToJson();
         Game reloaded = SaveGame.FromJson(json).Restore(Classic);
         Assert.Equal(json, SaveGame.From(reloaded).ToJson());
-        Colony r = Assert.Single(reloaded.Colonies);
+        Colony r = Assert.Single(reloaded.Colonies, c => c.OwnerId == 0); // the human's colony (foreign powers found their own)
         Assert.Equal(colony.Name, r.Name);
         Assert.Equal(colony.Position, r.Position);
         Assert.Equal(colony.Population, r.Population);

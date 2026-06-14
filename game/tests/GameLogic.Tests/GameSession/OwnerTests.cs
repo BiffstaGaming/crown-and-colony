@@ -48,8 +48,8 @@ public class OwnerTests
         Unit human = game.PlayerUnits.First(u => u.IsOnMap);
         Position rivalTile = AdjacentFreeLand(game, human.Position);
 
-        // Put a foreign colonial power's unit on the map next to the human (the powers themselves start
-        // inert in Europe; this exercises the on-map owner-inequality path).
+        // Put a foreign colonial power's unit on the map next to the human (the powers themselves land far
+        // away; this exercises the on-map owner-inequality path right next to the human).
         SaveGame save = SaveGame.From(game);
         int rivalOwnerId = save.Players!.First(p => !p.IsHuman && p.PlayerType == (int)PlayerType.Colonial).PlayerId;
         int rivalUnitId = game.Units.Max(u => u.Id) + 1;

@@ -134,6 +134,9 @@ public sealed class Game
     /// <summary>The player with the given id, or null.</summary>
     private Player? PlayerById(int id) => _players.FirstOrDefault(p => p.PlayerId == id);
 
+    /// <summary>The RNG a player draws from: the human uses the game's main stream 0; other players use their own (ADR-009).</summary>
+    private IGameRandom RandomFor(Player player) => player.IsHuman ? _random : player.Rng!;
+
     /// <summary>Whether <paramref name="unit"/> is owned by the given colonial player (not a native).</summary>
     private static bool IsOwnedBy(Unit unit, Player player) => unit.OwnerNationId is null && unit.OwnerId == player.PlayerId;
 
@@ -1147,7 +1150,14 @@ public sealed class Game
             }
         }
 
-        game.SpawnRivalsAndNatives(ruleset); // inert foreign powers + native nations as players (FP-3b)
+        game.SpawnRivalsAndNatives(ruleset, start); // foreign powers (landed) + native nations as players (FP-3b/FP-4)
+
+        // Each non-human player draws from its own independent PCG stream (ADR-009); created here from the
+        // same seed so the human's stream 0 is untouched (foreign units already placed, drawing nothing).
+        foreach (Player ai in game._players.Where(p => !p.IsHuman))
+        {
+            ai.Rng = new Pcg32Random(seed, ai.RngStreamId);
+        }
 
         game.GenerateOffers(human); // Congress choices available from the first turn
         game.InitRecruitDock(human); // three recruits waiting on the Europe dock from turn 1
@@ -1158,41 +1168,82 @@ public sealed class Game
     /// <summary>The number of foreign colonial powers spawned alongside the human (the classic four minus the human's slot).</summary>
     private const int ForeignPowerCount = 3;
 
+    /// <summary>How far (Chebyshev) a foreign power lands from the human's start, so rivals stay outside the human's view.</summary>
+    private const int ForeignLandingMinDistance = 6;
+
+    /// <summary>Colonies a foreign power's AI founds before its remaining colonists explore instead (FP-4 minimal AI).</summary>
+    private const int MaxAiColonies = 1;
+
+    private static int Chebyshev(Position a, Position b) => Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
+
     /// <summary>
-    /// Registers the native nations and the foreign colonial powers as players (FP-3b, ADR-019). Each
-    /// distinct native nation present becomes a <see cref="PlayerType.Native"/> player (its units/settlements
-    /// still reference it by nation id); the foreign powers are the first <see cref="ForeignPowerCount"/>
-    /// classic playable European nations, created with their starting units docked in Europe. All are
-    /// <em>inert</em> — they draw no RNG and take no turn yet, so the human's stream 0 (and every seeded
-    /// game/golden) stays byte-stable. Player ids are allocated densely in a stable order (human 0, then
-    /// natives, then foreign powers).
+    /// Registers the native nations and the foreign colonial powers as players (ADR-019). Each distinct
+    /// native nation present becomes a <see cref="PlayerType.Native"/> player (its units/settlements still
+    /// reference it by nation id, and natives stay inert); the foreign powers are the first
+    /// <see cref="ForeignPowerCount"/> classic playable European nations, <b>landed on the map</b> far from
+    /// the human (FP-4) with their starting units. Placement draws no RNG (the human's stream 0 stays
+    /// byte-stable); player ids are allocated densely in a stable order (human 0, then natives, then powers).
     /// </summary>
-    private void SpawnRivalsAndNatives(Ruleset ruleset)
+    private void SpawnRivalsAndNatives(Ruleset ruleset, Position humanStart)
     {
         foreach (string nationType in _nativeSettlements.Select(s => s.NationTypeId).Distinct().OrderBy(n => n))
         {
             _players.Add(new Player(_players.Count, nationType, isHuman: false, PlayerType.Native, new Market(ruleset)));
         }
 
+        var taken = new HashSet<Position>(); // tiles claimed by foreign landings (keeps powers apart)
         foreach (EuropeanNation nation in ruleset.EuropeanNations
                      .Where(n => n.Selectable && !n.IsRef).Take(ForeignPowerCount))
         {
             var power = new Player(_players.Count, nation.Id, isHuman: false, PlayerType.Colonial, new Market(ruleset));
             _players.Add(power);
-            foreach (EuropeanStartingUnit start in nation.NationType.RegularStartingUnits)
+            LandForeignPower(ruleset, power, nation, humanStart, taken);
+        }
+    }
+
+    /// <summary>
+    /// Lands a foreign power on the map far from the human (FP-4): its colonists on settleable land and its
+    /// ship on adjacent water, around a deterministic anchor (the farthest free coastal tile from the human,
+    /// away from other landings), revealing the power's own fog. A unit with no free on-map tile falls back
+    /// to docking in Europe (robustness on small/crowded maps). Deterministic — draws no RNG.
+    /// </summary>
+    private void LandForeignPower(Ruleset ruleset, Player power, EuropeanNation nation, Position humanStart, HashSet<Position> taken)
+    {
+        bool FreeLand(Position p) => Map.InBounds(p) && Map.TerrainAt(p).CanSettle && !Map.TerrainAt(p).IsWater
+            && ColonyAt(p) is null && NativeSettlementAt(p) is null
+            && !_units.Any(u => u.IsOnMap && u.Position == p) && !taken.Contains(p);
+        bool FreeWater(Position p) => Map.InBounds(p) && Map.TerrainAt(p).IsWater
+            && !_units.Any(u => u.IsOnMap && u.Position == p) && !taken.Contains(p);
+        Position? FirstFree(Position anchor, Func<Position, bool> free) =>
+            free(anchor) ? anchor : anchor.Neighbours().Where(free).Cast<Position?>().FirstOrDefault();
+
+        // A coastal land anchor as far from the human as possible (and from other powers' claimed tiles).
+        Position? anchor = Map.AllPositions()
+            .Where(p => FreeLand(p) && Chebyshev(p, humanStart) >= ForeignLandingMinDistance && p.Neighbours().Any(FreeWater))
+            .OrderByDescending(p => Chebyshev(p, humanStart)).ThenBy(p => p.Y).ThenBy(p => p.X)
+            .Cast<Position?>().FirstOrDefault();
+
+        foreach (EuropeanStartingUnit start in nation.NationType.RegularStartingUnits)
+        {
+            if (!ruleset.UnitTypes.Any(u => u.Id == start.UnitTypeId))
             {
-                if (!ruleset.UnitTypes.Any(u => u.Id == start.UnitTypeId))
-                {
-                    continue; // a variant may omit a starting unit type
-                }
-                string roleId = start.RoleId ?? RoleType.DefaultRoleId;
-                _units.Add(new Unit(_nextUnitId++, ruleset.Unit(start.UnitTypeId), new Position(0, 0))
-                {
-                    Location = UnitLocation.InEurope, // inert powers begin docked in Europe (no map placement, no fog)
-                    OwnerId = power.PlayerId,
-                    RoleId = roleId,
-                    RoleCount = roleId == RoleType.DefaultRoleId ? 0 : 1,
-                });
+                continue; // a variant may omit a starting unit type
+            }
+            UnitType type = ruleset.Unit(start.UnitTypeId);
+            string roleId = start.RoleId ?? RoleType.DefaultRoleId;
+            Position? spot = anchor is { } a ? FirstFree(a, type.IsNaval ? FreeWater : FreeLand) : null;
+            var unit = new Unit(_nextUnitId++, type, spot ?? new Position(0, 0))
+            {
+                Location = spot is null ? UnitLocation.InEurope : UnitLocation.OnMap,
+                OwnerId = power.PlayerId,
+                RoleId = roleId,
+                RoleCount = roleId == RoleType.DefaultRoleId ? 0 : 1,
+            };
+            _units.Add(unit);
+            if (spot is { } s)
+            {
+                taken.Add(s);
+                Reveal(power, unit); // the power lifts its own fog around its landing
             }
         }
     }
@@ -1211,11 +1262,11 @@ public sealed class Game
         IEnumerable<Colony>? colonies = null,
         IEnumerable<NativeSettlement>? nativeSettlements = null)
     {
-        Player human = BuildPlayer(ruleset, players.Single(p => p.IsHuman));
+        Player human = BuildPlayer(ruleset, players.Single(p => p.IsHuman), randomState);
         var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn, human);
         foreach (RestoredPlayer rp in players.Where(p => !p.IsHuman))
         {
-            game._players.Add(BuildPlayer(ruleset, rp)); // none in FP-1 (the human is the only player)
+            game._players.Add(BuildPlayer(ruleset, rp, randomState));
         }
 
         // Top up the human's dock to a full set: a no-op when the save held all slots (so the RNG sequence
@@ -1278,8 +1329,12 @@ public sealed class Game
         return game;
     }
 
-    /// <summary>Rebuilds a player and its market from saved per-player state (its fog is applied later, once units exist).</summary>
-    private static Player BuildPlayer(Ruleset ruleset, RestoredPlayer saved)
+    /// <summary>
+    /// Rebuilds a player and its market from saved per-player state (its fog is applied later, once units
+    /// exist). A non-human player's own RNG stream is restored from the save, or — for a pre-FP-4 save that
+    /// has none — re-derived deterministically from the restored main-stream state and its reserved id.
+    /// </summary>
+    private static Player BuildPlayer(Ruleset ruleset, RestoredPlayer saved, RandomState mainStream)
     {
         var market = new Market(ruleset);
         if (saved.MarketDeltas is { Count: > 0 })
@@ -1309,6 +1364,12 @@ public sealed class Game
         {
             player.RecruitDockList.AddRange(saved.RecruitDock);
         }
+        if (!saved.IsHuman)
+        {
+            player.Rng = saved.Rng is { } rng
+                ? Pcg32Random.FromState(rng)
+                : new Pcg32Random(mainStream.State, player.RngStreamId); // pre-FP-4 / synthesized row
+        }
         return player;
     }
 
@@ -1334,10 +1395,7 @@ public sealed class Game
 
         var unit = new Unit(_nextUnitId++, type, position) { OwnerNationId = ownerNationId };
         _units.Add(unit);
-        if (IsHumanOwned(unit)) // only the human's own units lift the human's fog
-        {
-            Reveal(unit);
-        }
+        RevealForOwner(unit); // a unit lifts its own owner's fog (the human's, or a foreign power's; natives none)
         return unit;
     }
 
@@ -1414,10 +1472,7 @@ public sealed class Game
 
         unit.Position = target;
         unit.MovementLeft -= check.Cost;
-        if (IsHumanOwned(unit)) // only the human's own units lift the human's fog (mirrors SpawnUnit)
-        {
-            Reveal(unit);
-        }
+        RevealForOwner(unit); // the mover lifts its own owner's fog (mirrors SpawnUnit)
         if (unit.Type.IsCarrier)
         {
             SyncPassengers(unit); // any colonists aboard move with the ship
@@ -1478,7 +1533,8 @@ public sealed class Game
 
         _colonies.Add(colony);
         _units.Remove(unit);
-        RevealAround(colony.Position, ColonySightRadius); // the colony keeps its surroundings explored
+        // The colony keeps its surroundings explored — for its owner (the human, or a foreign founder; FP-4).
+        RevealAround(PlayerById(colony.OwnerId) ?? _human, colony.Position, ColonySightRadius);
         AutoAssignIdleToFood(colony);
         return colony;
     }
@@ -1982,10 +2038,7 @@ public sealed class Game
             else
             {
                 unit.Location = UnitLocation.OnMap; // re-enters at its departure high-seas tile
-                if (IsHumanOwned(unit)) // only the human's ships lift the human's fog (foreign ships sail in FP-4)
-                {
-                    Reveal(unit);
-                }
+                RevealForOwner(unit); // the arriving ship lifts its own owner's fog
             }
             SyncPassengers(unit); // carried colonists arrive with the ship
         }
@@ -2072,9 +2125,9 @@ public sealed class Game
     /// </summary>
     public void EndTurn()
     {
-        // One full round around the player ring: each player takes its turn in order (FP-3b: only the
-        // human acts — the foreign powers and natives are inert until the AI slices), then the shared
-        // world advances once. The ring pointer completes the loop back to the player it started on.
+        // One full round around the player ring: each player takes its turn in order (the human and the
+        // foreign powers act; natives stay inert until their own AI slice), then the shared world advances
+        // once. The ring pointer completes the loop back to the player it started on.
         int startIndex = _currentPlayerIndex;
         do
         {
@@ -2096,22 +2149,93 @@ public sealed class Game
     }
 
     /// <summary>
-    /// Runs one player's turn. FP-3b: only the human acts — its colonies produce and it accrues
-    /// liberty/immigration. The foreign powers and natives take an empty turn (no economy, no AI, and so
-    /// no RNG draws — keeping the human's stream 0 byte-stable) until the AI slices (FP-4/5/6).
+    /// Runs one player's turn: the human's colonies produce and it accrues liberty/immigration; a foreign
+    /// colonial power runs the FP-4 AI (move/explore/found, drawing from its own RNG stream); native players
+    /// stay inert (their AI is a later slice). Only the human draws from stream 0, so its game stays byte-stable.
     /// </summary>
     private void RunPlayerTurn(Player player)
     {
-        if (!player.IsHuman)
+        if (player.IsHuman)
         {
-            return; // inert
+            foreach (Colony colony in ColoniesOf(player))
+            {
+                RunColonyTurn(colony);
+            }
+            AccumulateLibertyAndElectFathers(player);
+            AccumulateImmigrationAndEmigrate(player);
         }
-        foreach (Colony colony in ColoniesOf(player))
+        else if (player.PlayerType == PlayerType.Colonial)
         {
-            RunColonyTurn(colony);
+            RunForeignPowerTurn(player); // FP-4 AI; natives stay inert (their AI is a later slice)
         }
-        AccumulateLibertyAndElectFathers(player);
-        AccumulateImmigrationAndEmigrate(player);
+    }
+
+    /// <summary>
+    /// The minimal foreign-power AI (FP-4): per unit in stable by-id order, a colonist founds a colony where
+    /// it stands while the power has fewer than <see cref="MaxAiColonies"/> colonies, else steps one tile
+    /// toward the nearest tile the power has not explored; ships and non-founders idle. Choices draw from the
+    /// player's own RNG stream (ADR-009) — never the human's stream 0 — so the human's game stays byte-stable.
+    /// </summary>
+    private void RunForeignPowerTurn(Player power)
+    {
+        // Snapshot the owned units (founding removes the founder from _units mid-loop).
+        foreach (Unit unit in _units.Where(u => IsOwnedBy(u, power)).OrderBy(u => u.Id).ToList())
+        {
+            if (!unit.IsOnMap || unit.Type.IsNaval || !unit.Type.CanFoundColony)
+            {
+                continue; // ships and non-founders idle; units still in Europe wait
+            }
+            if (ColoniesOf(power).Count() < MaxAiColonies && CheckFoundColony(unit).Allowed)
+            {
+                FoundColony(unit);
+                continue;
+            }
+            if (StepTowardNearestUnexplored(power, unit) is { } step)
+            {
+                MoveUnit(unit, step);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The tile <paramref name="unit"/> should step to, heading toward the nearest tile its owner has not
+    /// explored: the legal adjacent move that most reduces the Chebyshev distance to that target, ties broken
+    /// by the player's RNG then by position. Null when the map is fully explored or the unit cannot move.
+    /// </summary>
+    private Position? StepTowardNearestUnexplored(Player power, Unit unit)
+    {
+        Position? target = null;
+        int best = int.MaxValue;
+        foreach (Position p in Map.AllPositions())
+        {
+            if (power.Explored.Contains(p))
+            {
+                continue;
+            }
+            int distance = Chebyshev(p, unit.Position);
+            if (distance < best || (distance == best && target is { } t && (p.Y < t.Y || (p.Y == t.Y && p.X < t.X))))
+            {
+                best = distance;
+                target = p;
+            }
+        }
+        if (target is not { } goal)
+        {
+            return null; // everything explored
+        }
+
+        var steps = unit.Position.Neighbours()
+            .Where(n => CheckMove(unit, n).Allowed)
+            .ToList();
+        if (steps.Count == 0)
+        {
+            return null;
+        }
+        int closest = steps.Min(n => Chebyshev(n, goal));
+        var tied = steps.Where(n => Chebyshev(n, goal) == closest)
+            .OrderBy(n => n.Y).ThenBy(n => n.X)
+            .ToList();
+        return tied.Count == 1 ? tied[0] : tied[RandomFor(power).Next(tied.Count)];
     }
 
     /// <summary>
@@ -2643,6 +2767,18 @@ public sealed class Game
 
     /// <summary>Reveals all tiles within the unit's line of sight for <paramref name="player"/>.</summary>
     private void Reveal(Player player, Unit unit) => RevealAround(player, unit.Position, unit.Type.LineOfSight);
+
+    /// <summary>
+    /// Reveals a unit's surroundings into its <em>owning colonial player's</em> fog — the human's for a human
+    /// unit, a foreign power's for its own unit (FP-4). Native-owned units lift no fog, mirroring the old behaviour.
+    /// </summary>
+    private void RevealForOwner(Unit unit)
+    {
+        if (unit.OwnerNationId is null && PlayerById(unit.OwnerId) is { } owner)
+        {
+            Reveal(owner, unit);
+        }
+    }
 
     /// <summary>Permanently explores every in-bounds tile within <paramref name="radius"/> of a centre for the human player.</summary>
     private void RevealAround(Position centre, int radius) => RevealAround(_human, centre, radius);

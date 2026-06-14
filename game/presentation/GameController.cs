@@ -79,9 +79,8 @@ public partial class GameController : Node2D
         // none on the map (and the unit list now also holds native braves), so fall back to a colony,
         // then the map centre.
         Position focus = _game.PlayerUnits.FirstOrDefault(u => u.IsOnMap)?.Position
-            ?? (_game.Colonies.Count > 0
-                ? _game.Colonies[0].Position
-                : new Position(_game.Map.Width / 2, _game.Map.Height / 2));
+            ?? _game.Colonies.FirstOrDefault(c => c.OwnerId == _game.HumanPlayer.PlayerId)?.Position
+            ?? new Position(_game.Map.Width / 2, _game.Map.Height / 2);
         GetNode<Camera2D>("Camera").Position = MapView.TileCentre(focus);
         RefreshView();
     }
@@ -131,9 +130,9 @@ public partial class GameController : Node2D
         {
             _selectedUnit = unitOnTile;
         }
-        else if (_game.ColonyAt(tile) is { } colony)
+        else if (_game.ColonyAt(tile) is { } colony && colony.OwnerId == _game.HumanPlayer.PlayerId)
         {
-            OpenColonyPanel(colony);
+            OpenColonyPanel(colony); // only the human's own colonies are the player's to manage
         }
         else if (_selectedUnit is not null)
         {
@@ -226,8 +225,8 @@ public partial class GameController : Node2D
         string subject = unit is not null
             ? $"{unit.Type.ShortName} on {_game.Map.TerrainAt(unit.Position).ShortName}, " +
               $"movement {unit.MovementLeft}/{unit.Type.Movement}"
-            : _game.Colonies.Count > 0
-                ? $"{_game.Colonies[^1].Name} (pop {_game.Colonies[^1].Population})"
+            : _game.Colonies.LastOrDefault(c => c.OwnerId == _game.HumanPlayer.PlayerId) is { } ownColony
+                ? $"{ownColony.Name} (pop {ownColony.Population})"
                 : inEurope > 0
                     ? $"{inEurope} in Europe — press E"
                     : "no units";
@@ -251,6 +250,12 @@ public partial class GameController : Node2D
         }
         foreach (var colony in _game.Colonies)
         {
+            // Only colonies on explored tiles are shown — a foreign power's colony stays hidden under the
+            // human's fog until discovered (the human's own colonies always reveal their own surroundings).
+            if (!_game.IsExplored(colony.Position))
+            {
+                continue;
+            }
             var marker = new ColonyMarker
             {
                 Position = MapView.TileCentre(colony.Position),

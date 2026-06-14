@@ -1,3 +1,4 @@
+using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Trade;
 using CrownAndColony.GameLogic.World;
 
@@ -70,6 +71,12 @@ public sealed class Player
     /// the id now keeps the human's stream 0 — and therefore all existing seeded games/goldens — byte-stable.
     /// </summary>
     public ulong RngStreamId => PlayerId == 0 ? 0UL : (ulong)PlayerId + 1;
+
+    /// <summary>
+    /// This non-human player's own PCG stream (ADR-009), used by its AI from FP-4 and saved/restored like
+    /// the main stream. Null for the human, which draws from the game's stream 0 (<c>Game._random</c>).
+    /// </summary>
+    internal Pcg32Random? Rng { get; set; }
 
     /// <summary>The player's treasury in gold.</summary>
     public int Gold { get; internal set; }
@@ -147,4 +154,5 @@ public sealed record RestoredPlayer(
     IEnumerable<string>? OfferedFathers,
     int Immigration, int ImmigrationRequired, int BaseRecruitPrice, int RecruitLowerCap,
     IEnumerable<string>? RecruitDock,
-    IEnumerable<Position>? Explored);
+    IEnumerable<Position>? Explored,
+    RandomState? Rng = null);

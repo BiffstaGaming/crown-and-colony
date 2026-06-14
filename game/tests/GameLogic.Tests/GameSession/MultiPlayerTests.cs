@@ -43,34 +43,55 @@ public class MultiPlayerTests
     }
 
     [Fact]
-    public void ForeignPowers_StartInert_WithUnitsInEurope_HiddenFromTheHuman()
+    public void ForeignPowers_StartOnTheMap_HiddenFromTheHuman()
     {
         var game = Game.New(Classic, seed: 7);
         Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
 
         var theirUnits = game.Units.Where(u => u.OwnerNationId is null && u.OwnerId == power.PlayerId).ToList();
         Assert.NotEmpty(theirUnits);
-        Assert.All(theirUnits, u => Assert.Equal(UnitLocation.InEurope, u.Location));
-        // The human's Europe view excludes the foreign power's units (it has none of its own at the start).
-        Assert.Empty(game.UnitsInEurope);
+        Assert.Contains(theirUnits, u => u.IsOnMap);                   // landed on the map (FP-4), not docked in Europe
+        Assert.DoesNotContain(theirUnits, u => game.PlayerUnits.Contains(u)); // never the human's
+        // A foreign power lands far from the human, so its units do not lift the human's fog.
+        Assert.All(theirUnits.Where(u => u.IsOnMap), u => Assert.False(game.IsVisible(u.Position)));
+        Assert.Empty(game.UnitsInEurope);                              // the human has none of its own in Europe
     }
 
     [Fact]
-    public void EndTurn_RunsTheHumansEconomy_AndLeavesForeignPowersInert()
+    public void EndTurn_RunsForeignPowerAi_ButNotTheirEconomy()
     {
         var game = Game.New(Classic, seed: 7);
-        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
         int turnBefore = game.Turn;
 
-        game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap)); // give the human's economy something to do
         game.EndTurn();
 
         Assert.Equal(turnBefore + 1, game.Turn);            // the world advanced once
         Assert.Same(game.HumanPlayer, game.CurrentPlayer);  // control returned to the human
-        // The foreign power stayed inert — no economy ran for it.
+        // A foreign power acted — it founded a colony on the land it settled.
+        Assert.Contains(game.Colonies, c => game.Players.Any(p =>
+            p.PlayerId == c.OwnerId && !p.IsHuman && p.PlayerType == PlayerType.Colonial));
+        // …but the foreign powers have no economy yet (no trade/immigration/liberty until FP-5).
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
         Assert.Equal(0, power.Gold);
         Assert.Equal(0, power.Immigration);
         Assert.Equal(0, power.Liberty);
+    }
+
+    [Fact]
+    public void ForeignPowerAi_IsReplayStable_ForAFixedSeed()
+    {
+        var a = Game.New(Classic, seed: 31337);
+        var b = Game.New(Classic, seed: 31337);
+        for (int turn = 0; turn < 20; turn++)
+        {
+            a.EndTurn();
+            b.EndTurn();
+        }
+
+        // Same seed → byte-identical games after 20 turns of foreign-power AI: every AI choice draws from
+        // that player's own deterministic stream (ADR-009), and the human's stream 0 is never touched.
+        Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
+        Assert.Contains(a.Colonies, c => c.OwnerId != 0); // a foreign power was active — it founded a colony
     }
 
     [Fact]
