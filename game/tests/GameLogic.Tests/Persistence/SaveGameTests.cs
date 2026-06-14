@@ -81,14 +81,18 @@ public class SaveGameTests
     }
 
     [Fact]
-    public void FreshGame_OmitsRoleTokens_SoDefaultUnitsMatchV17()
+    public void FreshGame_HumanDefaultUnits_OmitRoleAndOwnerTokens()
     {
-        string json = SaveGame.From(Game.New(Classic, seed: 5)).ToJson();
-        // Default-role units emit no Role/RoleCount tokens → a player unit serializes byte-identically to v17.
-        Assert.DoesNotContain("\"RoleCount\"", json);
-        Assert.DoesNotContain("\"Role\"", json);
-        // Braves do carry their owning nation (the one genuinely new v18 unit field in a fresh game).
-        Assert.Contains("\"Owner\"", json);
+        var game = Game.New(Classic, seed: 5);
+        SaveGame save = SaveGame.From(game);
+        // A default-role, human-owned unit serializes with no role/owner tokens (byte-identical to a v17 unit).
+        SavedUnit human = save.Units.First(u => u.Id == game.PlayerUnits.First().Id);
+        Assert.Null(human.Role);
+        Assert.Null(human.RoleCount);
+        Assert.Null(human.OwnerId); // the human (id 0) is omitted
+        Assert.Null(human.Owner);   // no native nation
+        // Native braves still carry their owning nation (the genuinely new v18 unit field).
+        Assert.Contains(save.Units, u => u.Owner is not null);
     }
 
     [Fact]

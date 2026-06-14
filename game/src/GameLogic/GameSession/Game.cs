@@ -94,6 +94,7 @@ public sealed class Game
     private int _nextUnitId = 1;
     private int _nextColonyId = 1;
     private int _nextSettlementId = 1;
+    private int _currentPlayerIndex; // whose turn it is in the ring (the human, index 0, between turns)
 
     private Game(Ruleset ruleset, GameMap map, Pcg32Random random, int turn, Player human)
     {
@@ -119,6 +120,12 @@ public sealed class Game
 
     /// <summary>The local human player. Player-scoped state is reached through here, never by list index (ADR-019).</summary>
     public Player HumanPlayer => _human;
+
+    /// <summary>The player whose turn it currently is (the human between turns; the ring advances during <see cref="EndTurn"/>).</summary>
+    public Player CurrentPlayer => _players[_currentPlayerIndex];
+
+    /// <summary>The next index in the player ring after <paramref name="index"/> (wraps to the start).</summary>
+    private int NextPlayerIndex(int index) => (index + 1) % _players.Count;
 
     // ===== Owner model (FP-2, ADR-019): the human-vs-native binary generalises to owner-inequality + stance.
     // In FP-2 the only colonial player is the human, so these are behaviourally identical to the old !IsNative
@@ -155,6 +162,17 @@ public sealed class Game
 
     /// <summary>The colonies owned by <paramref name="player"/> (the human owns all colonies until foreign powers found their own).</summary>
     private IEnumerable<Colony> ColoniesOf(Player player) => _colonies.Where(c => c.OwnerId == player.PlayerId);
+
+    /// <summary>
+    /// The colony-name list the colonial player <paramref name="ownerId"/> founds by: its European nation's
+    /// names (FP-3a data) if it has one, else the default list. The human is nation-less for now, so it uses
+    /// the default — keeping its colony names unchanged (FP-3b); foreign powers found by their own names.
+    /// </summary>
+    private IReadOnlyList<string> ColonyNamesFor(int ownerId) =>
+        PlayerById(ownerId)?.NationId is { } nationId
+        && Ruleset.EuropeanNations.FirstOrDefault(n => n.Id == nationId) is { ColonyNames.Count: > 0 } nation
+            ? nation.ColonyNames
+            : ColonyNames;
 
     /// <summary>The human player's treasury in gold.</summary>
     public int Gold => _human.Gold;
@@ -1129,10 +1147,54 @@ public sealed class Game
             }
         }
 
+        game.SpawnRivalsAndNatives(ruleset); // inert foreign powers + native nations as players (FP-3b)
+
         game.GenerateOffers(human); // Congress choices available from the first turn
         game.InitRecruitDock(human); // three recruits waiting on the Europe dock from turn 1
 
         return game;
+    }
+
+    /// <summary>The number of foreign colonial powers spawned alongside the human (the classic four minus the human's slot).</summary>
+    private const int ForeignPowerCount = 3;
+
+    /// <summary>
+    /// Registers the native nations and the foreign colonial powers as players (FP-3b, ADR-019). Each
+    /// distinct native nation present becomes a <see cref="PlayerType.Native"/> player (its units/settlements
+    /// still reference it by nation id); the foreign powers are the first <see cref="ForeignPowerCount"/>
+    /// classic playable European nations, created with their starting units docked in Europe. All are
+    /// <em>inert</em> — they draw no RNG and take no turn yet, so the human's stream 0 (and every seeded
+    /// game/golden) stays byte-stable. Player ids are allocated densely in a stable order (human 0, then
+    /// natives, then foreign powers).
+    /// </summary>
+    private void SpawnRivalsAndNatives(Ruleset ruleset)
+    {
+        foreach (string nationType in _nativeSettlements.Select(s => s.NationTypeId).Distinct().OrderBy(n => n))
+        {
+            _players.Add(new Player(_players.Count, nationType, isHuman: false, PlayerType.Native, new Market(ruleset)));
+        }
+
+        foreach (EuropeanNation nation in ruleset.EuropeanNations
+                     .Where(n => n.Selectable && !n.IsRef).Take(ForeignPowerCount))
+        {
+            var power = new Player(_players.Count, nation.Id, isHuman: false, PlayerType.Colonial, new Market(ruleset));
+            _players.Add(power);
+            foreach (EuropeanStartingUnit start in nation.NationType.RegularStartingUnits)
+            {
+                if (!ruleset.UnitTypes.Any(u => u.Id == start.UnitTypeId))
+                {
+                    continue; // a variant may omit a starting unit type
+                }
+                string roleId = start.RoleId ?? RoleType.DefaultRoleId;
+                _units.Add(new Unit(_nextUnitId++, ruleset.Unit(start.UnitTypeId), new Position(0, 0))
+                {
+                    Location = UnitLocation.InEurope, // inert powers begin docked in Europe (no map placement, no fog)
+                    OwnerId = power.PlayerId,
+                    RoleId = roleId,
+                    RoleCount = roleId == RoleType.DefaultRoleId ? 0 : 1,
+                });
+            }
+        }
     }
 
     /// <summary>
@@ -1156,12 +1218,10 @@ public sealed class Game
             game._players.Add(BuildPlayer(ruleset, rp)); // none in FP-1 (the human is the only player)
         }
 
-        // Top up each player's dock to a full set: a no-op when the save held all slots (so the RNG
-        // sequence is preserved); draws a fresh dock for pre-v12 saves that had none.
-        foreach (Player player in game._players)
-        {
-            game.InitRecruitDock(player);
-        }
+        // Top up the human's dock to a full set: a no-op when the save held all slots (so the RNG sequence
+        // is preserved); draws a fresh dock for pre-v12 saves that had none. Inert foreign powers/natives
+        // have no dock yet — topping theirs up would draw from the human's stream 0 (FP-4 gives them their own).
+        game.InitRecruitDock(human);
 
         foreach ((int id, UnitType type, Position position, int movementLeft,
                   UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
@@ -1404,7 +1464,8 @@ public sealed class Game
             throw new InvalidMoveException(check.Reason!);
         }
 
-        string name = ColonyNames[(_nextColonyId - 1) % ColonyNames.Length];
+        IReadOnlyList<string> names = ColonyNamesFor(unit.OwnerId);
+        string name = names[(_nextColonyId - 1) % names.Count];
         var colony = new Colony(_nextColonyId++, name, unit.Position, population: 1, ownerId: unit.OwnerId);
 
         // Every colony starts with the free base buildings (no build cost, not
@@ -1921,7 +1982,10 @@ public sealed class Game
             else
             {
                 unit.Location = UnitLocation.OnMap; // re-enters at its departure high-seas tile
-                Reveal(unit);
+                if (IsHumanOwned(unit)) // only the human's ships lift the human's fog (foreign ships sail in FP-4)
+                {
+                    Reveal(unit);
+                }
             }
             SyncPassengers(unit); // carried colonists arrive with the ship
         }
@@ -2008,13 +2072,17 @@ public sealed class Game
     /// </summary>
     public void EndTurn()
     {
-        foreach (Colony colony in _colonies)
+        // One full round around the player ring: each player takes its turn in order (FP-3b: only the
+        // human acts — the foreign powers and natives are inert until the AI slices), then the shared
+        // world advances once. The ring pointer completes the loop back to the player it started on.
+        int startIndex = _currentPlayerIndex;
+        do
         {
-            RunColonyTurn(colony);
+            RunPlayerTurn(_players[_currentPlayerIndex]);
+            _currentPlayerIndex = NextPlayerIndex(_currentPlayerIndex);
         }
-        // FP-1: only the human accrues liberty/immigration (it owns every colony); FP-4/5 loop all players.
-        AccumulateLibertyAndElectFathers(_human);
-        AccumulateImmigrationAndEmigrate(_human);
+        while (_currentPlayerIndex != startIndex);
+
         AdvanceSailing();
         foreach (NativeSettlement settlement in _nativeSettlements)
         {
@@ -2025,6 +2093,25 @@ public sealed class Game
             unit.ResetMovement();
         }
         Turn++;
+    }
+
+    /// <summary>
+    /// Runs one player's turn. FP-3b: only the human acts — its colonies produce and it accrues
+    /// liberty/immigration. The foreign powers and natives take an empty turn (no economy, no AI, and so
+    /// no RNG draws — keeping the human's stream 0 byte-stable) until the AI slices (FP-4/5/6).
+    /// </summary>
+    private void RunPlayerTurn(Player player)
+    {
+        if (!player.IsHuman)
+        {
+            return; // inert
+        }
+        foreach (Colony colony in ColoniesOf(player))
+        {
+            RunColonyTurn(colony);
+        }
+        AccumulateLibertyAndElectFathers(player);
+        AccumulateImmigrationAndEmigrate(player);
     }
 
     /// <summary>

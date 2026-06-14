@@ -124,9 +124,9 @@ public partial class GameController : Node2D
             return;
         }
 
-        // Click a unit: select it. Click elsewhere with a selection: try to move.
-        // Only on-map units are clickable (units in Europe / at sea live off-map).
-        Unit? unitOnTile = _game.Units.FirstOrDefault(u => u.IsOnMap && !u.IsNative && u.Position == tile);
+        // Click a unit: select it. Click elsewhere with a selection: try to move. Only the human's own
+        // on-map units are clickable (natives and foreign powers are not the player's to command).
+        Unit? unitOnTile = _game.PlayerUnits.FirstOrDefault(u => u.IsOnMap && u.Position == tile);
         if (unitOnTile is not null)
         {
             _selectedUnit = unitOnTile;

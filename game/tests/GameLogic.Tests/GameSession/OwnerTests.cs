@@ -33,10 +33,11 @@ public class OwnerTests
     public void HumanOwnerId_IsOmittedFromTheSave_AndRoundTrips()
     {
         var game = Game.New(Classic, seed: 7);
-        string json = SaveGame.From(game).ToJson();
-        Assert.DoesNotContain("\"OwnerId\"", json); // the human (id 0) is omitted → human-only saves stay byte-stable
+        SaveGame save = SaveGame.From(game);
+        // The human (id 0) is omitted on its units so they stay byte-stable (foreign powers carry their id).
+        Assert.Null(save.Units.First(u => u.Id == game.PlayerUnits.First().Id).OwnerId);
 
-        Game loaded = SaveGame.FromJson(json).Restore(Classic);
+        Game loaded = SaveGame.FromJson(save.ToJson()).Restore(Classic);
         Assert.All(loaded.PlayerUnits, u => Assert.Equal(0, u.OwnerId));
     }
 
@@ -47,15 +48,16 @@ public class OwnerTests
         Unit human = game.PlayerUnits.First(u => u.IsOnMap);
         Position rivalTile = AdjacentFreeLand(game, human.Position);
 
-        // A foreign colonial unit: no native nation, owner id 1 (no Player row exists for it yet — FP-2).
-        int rivalId = game.Units.Max(u => u.Id) + 1;
-        var rival = new SavedUnit(rivalId, FreeColonist, rivalTile.X, rivalTile.Y, 0, OwnerId: 1);
+        // Put a foreign colonial power's unit on the map next to the human (the powers themselves start
+        // inert in Europe; this exercises the on-map owner-inequality path).
         SaveGame save = SaveGame.From(game);
+        int rivalOwnerId = save.Players!.First(p => !p.IsHuman && p.PlayerType == (int)PlayerType.Colonial).PlayerId;
+        int rivalUnitId = game.Units.Max(u => u.Id) + 1;
+        var rival = new SavedUnit(rivalUnitId, FreeColonist, rivalTile.X, rivalTile.Y, 0, OwnerId: rivalOwnerId);
         Game loaded = (save with { Units = save.Units.Append(rival).ToList() }).Restore(Classic);
 
-        Assert.Equal(1, loaded.Units.First(u => u.Id == rivalId).OwnerId); // owner id round-trips
-        Assert.DoesNotContain(loaded.PlayerUnits, u => u.Id == rivalId);    // not one of the human's units
-        Assert.Single(loaded.Players);                                     // still just the human (no rival Player in FP-2)
+        Assert.Equal(rivalOwnerId, loaded.Units.First(u => u.Id == rivalUnitId).OwnerId); // owner id round-trips
+        Assert.DoesNotContain(loaded.PlayerUnits, u => u.Id == rivalUnitId);              // not one of the human's units
 
         // Owner-inequality enemy test: the human cannot walk onto the foreign unit's tile.
         Unit loadedHuman = loaded.PlayerUnits.First(u => u.IsOnMap);

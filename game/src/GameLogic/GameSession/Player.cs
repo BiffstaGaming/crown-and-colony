@@ -63,6 +63,14 @@ public sealed class Player
     /// <summary>This player's European market (per-player; ADR-019).</summary>
     public Market Market { get; }
 
+    /// <summary>
+    /// The deterministic PCG RNG stream id reserved for this player (ADR-009): the human is stream 0
+    /// (the game's main stream); other players reserve <c>PlayerId + 1</c> so they avoid both stream 0 and
+    /// the native-placement stream (1). The actual stream is created when the AI needs it (FP-4+); reserving
+    /// the id now keeps the human's stream 0 — and therefore all existing seeded games/goldens — byte-stable.
+    /// </summary>
+    public ulong RngStreamId => PlayerId == 0 ? 0UL : (ulong)PlayerId + 1;
+
     /// <summary>The player's treasury in gold.</summary>
     public int Gold { get; internal set; }
 
