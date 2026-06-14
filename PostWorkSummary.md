@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-14 — FP-4: minimal foreign-power AI (explore / move / found)
+
+**Requested:** Continue the foreign-powers wave → FP-4 (`86d3bex4u`), the first active AI.
+**Did:**
+- The 3 foreign powers go **active**: at `Game.New` they **land on the map** far from the human (`LandForeignPower` — deterministic, no RNG) instead of docking in Europe; each non-human player gets its **own PCG stream** (`Player.Rng`, saved/restored; save v20 additive `RngState`/`RngIncrement`).
+- **AI** (`RunForeignPowerTurn`): per unit by-id — a colonist founds where it stands while under `MaxAiColonies`, else steps toward the nearest tile it hasn't explored (`StepTowardNearestUnexplored`); ships idle. A flat priority switch, **not** a planner. All choices draw from the player's **own** stream (`RandomFor`) — never the human's stream 0.
+- Fog generalised to the unit's owner (`RevealForOwner`): foreign powers explore under their own fog; the human can't see/manage a foreign colony until discovered (presentation **fog-gates** colony markers + only the human's own colonies are clickable/HUD/camera — closed 2 owner-leaks the review flagged).
+- Process: 3-reader research workflow (test blast-radius + AI helpers/fog + per-player-RNG design) → implement → adversarial review (clean on determinism/save/AI-correctness; fixed its 2 presentation findings).
+**Status:** **384 tests green** (363 logic incl. new AI + replay-stability tests, 20 scene/golden, 2 soak); CI ✓ (run `27494340531`); save **v20**; git clean on `main`. **Byte-stable + replay-stable**: human stream 0 / RNG-resume / L4 goldens unchanged; **soak round-trips 25 seeds × 200 turns of active rivals byte-identically within the 2 ms turn budget**; two same-seed games byte-identical after 20 AI turns.
+**Changed:** `Game.cs` (landing + AI + per-player RNG + owner-reveal), `Player.cs` (`Rng`), `SaveGame.cs` (per-player RNG), `GameController.cs` (fog-gate + owner-gated click/HUD/focus); tests `MultiPlayerTests`/`OwnerTests`/`JourneyTests`; docs `players.md`/`turns.md`/`save-load.md`. Commit `0ad7cef`.
+**Decisions:** Foreign powers **land on the map** (not Europe) — required for the explore/found AI; far landing + the colony-marker fog-gate keep the goldens stable (no regeneration). AI is **deterministic + per-player-streamed** (replay-stable, stream 0 untouched). Natives stay **inert** (their AI is a later slice). Save stays **v20** (additive through the wave, frozen at FP-7).
+**Scheduled next:** **FP-5 — AI economy: trade + immigration + recruit** (`86d3bex4w`) — give the foreign powers an economy on their own streams/markets.
+**Follow-ups (review-flagged, latent):** owner-gate the rest of the presentation when rivals become discoverable; `StepTowardNearestUnexplored` is O(map)/unit/turn (fine at the 2 ms budget, cache a frontier when the AI grows); min-distance-between-colonies rule (the `CheckFoundColony` TODO); synthesize native `Player` rows on a pre-FP-3b load; wire native units to their player id.
+**Needs you:** Nothing — no human-facing gameplay/UI change yet (rivals are off-screen under your fog). Say the word for FP-5.
+
 ## 2026-06-14 — FP-2 + FP-3: owner-id seam → European nation data → inert multi-player
 
 **Requested:** Do **FP-2 and FP-3** (the next foreign-powers slices), in order.
