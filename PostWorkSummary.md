@@ -19,6 +19,16 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-14 — Stream-0 byte-stability regression guard [autonomous]
+
+**Requested:** Overnight autonomous run — work through backlog tasks, full process each.
+**Did:** Added the review-flagged human-stream-0 baseline guard (`ForeignPowerEconomyTests.HumanStream0_IsUnaffectedByHowMuchTheRivalsDo`): runs two same-seed games, one with the rivals' treasuries funded +1000/turn so they recruit/trade far more, and asserts the whole game diverged (rivals richer) **yet** the human's `RandomState` (stream 0) + dock + immigration + gold are byte-identical. Magic-number-free; decisively pins the ADR-009 contract that no foreign path touches stream 0.
+**Status:** Pure test addition (no production change). **393 tests green** (371 L1+L2 + 2 soak + 20 scene). Committed; CI running.
+**Changed:** `ForeignPowerEconomyTests.cs` (+1 test).
+**Decisions:** Perturb-and-compare rather than pin literals (robust to legitimate future changes; only a real stream-0 leak fails it).
+**Scheduled next:** **FP-6 — AI combat + diplomacy basics** (`86d3bex51`).
+**Needs you:** Nothing.
+
 ## 2026-06-14 — Minimum colony-distance rule [autonomous]
 
 **Requested:** Overnight autonomous run — work through backlog tasks, full process each.

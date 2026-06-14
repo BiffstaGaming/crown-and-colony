@@ -129,4 +129,34 @@ public class ForeignPowerEconomyTests
             && (p.Liberty > 0 || p.Congress.Count > 0
                 || a.Units.Any(u => u.OwnerId == p.PlayerId && u.Location == UnitLocation.InEurope)));
     }
+
+    [Fact]
+    public void HumanStream0_IsUnaffectedByHowMuchTheRivalsDo()
+    {
+        // The decisive byte-stability guard (ADR-009): the human draws ONLY from stream 0; every foreign power
+        // draws ONLY from its own stream. So however much the rivals do — funding them makes them recruit and
+        // trade far more, consuming more of THEIR streams — the human's stream 0 must end byte-identical, and
+        // the human's own player state must be untouched. (Magic-number-free: it compares two same-seed games,
+        // one with the rival economies heavily perturbed, rather than pinning literals.)
+        Game baseline = Game.New(Classic, seed: 8675309);
+        Game perturbed = Game.New(Classic, seed: 8675309);
+
+        for (int turn = 0; turn < 25; turn++)
+        {
+            foreach (Player rival in perturbed.Players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial))
+            {
+                rival.Gold += 1000; // fund the rivals so they recruit/trade far more than in the baseline
+            }
+            baseline.EndTurn();
+            perturbed.EndTurn();
+        }
+
+        // The perturbation genuinely diverged the rivals (richer treasuries, more units/trade)…
+        Assert.NotEqual(SaveGame.From(baseline).ToJson(), SaveGame.From(perturbed).ToJson());
+        // …yet the human's RNG stream 0 and its own scoped state are byte-identical — no rival path touched them.
+        Assert.Equal(baseline.RandomState, perturbed.RandomState);
+        Assert.Equal(baseline.HumanPlayer.RecruitDock, perturbed.HumanPlayer.RecruitDock);
+        Assert.Equal(baseline.HumanPlayer.Immigration, perturbed.HumanPlayer.Immigration);
+        Assert.Equal(baseline.HumanPlayer.Gold, perturbed.HumanPlayer.Gold);
+    }
 }
