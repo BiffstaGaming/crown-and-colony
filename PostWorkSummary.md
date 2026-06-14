@@ -19,6 +19,29 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-14 — Role movement bonuses (dragoon/scout +9) [autonomous]
+
+**Requested:** Overnight autonomous run — work through backlog tasks, full process each.
+**Did:**
+- Applied role movement bonuses (`86d3bbvv6`): new `Game.InitialMovement(unit)` = unit-type base + role `movementBonus` (mounted +9, missionary +3; resolved null-safely from `Ruleset.Roles` so minimal test rulesets just get the base). Used at the `EndTurn` movement reset and as the "near full movement" reference in `CheckMove`'s partial-move rule. Removed the now-unused `Unit.ResetMovement` (it can't see the ruleset).
+- Faithful to FreeCol `getInitialMovesLeft` (bonus at turn reset, not on equip).
+**Status:** **391 tests green** (369 L1+L2 + 2 soak + 16 L3 + 4 L4); goldens unchanged. Byte-stable — every existing seeded unit is default/soldier/pioneer role (bonus 0), so soak/replay/goldens are unaffected. Pushed `22a87c3`; CI running.
+**Changed:** `Game.cs` (`InitialMovement` + reset + partial-move), `Unit.cs` (removed `ResetMovement`), `RoleMovementTests.cs` (new), `units-movement.md`.
+**Decisions:** Apply only at turn reset (FreeCol equip doesn't refund moves). Nation-type (naval +3) / Magellan (+3) movement bonuses left deferred (scoped modifiers → scope evaluation / father effects).
+**Scheduled next:** Minimum colony-distance rule (the `Game.cs` `CheckFoundColony` TODO) — then FP-6.
+**Follow-ups:** review nit — `InitialMovement` does a per-call LINQ scan of ~12 roles (fine at the 2 ms budget; switch to a dict lookup if ever profiled).
+**Needs you:** Nothing.
+
+## 2026-06-14 — Module-docs refresh to FP-5 (no-drift) [autonomous]
+
+**Requested:** Overnight autonomous run (see above).
+**Did:** Brought the two stale module docs current (a real no-drift gap surfaced by the backlog audit): `docs/modules/game-logic.md` (was save v19 / 346 tests, no `Player`/owner-id/per-player-market API) and `docs/modules/presentation.md` (was through slice 5a) now reflect the FP-1→FP-5 wave (Player/owner-id/per-player markets/AI economy; save v20; 368 tests; FP-4 rival owner/fog-gating).
+**Status:** Docs only, no code change. Pushed `5f5de12`; **CI ✓** (run `27496917625`).
+**Changed:** `docs/modules/game-logic.md`, `docs/modules/presentation.md`.
+**Decisions:** `map-goldens.md` needed no change (audit's stale-version flag was a false positive).
+**Scheduled next:** Role movement bonuses (done next, above).
+**Needs you:** Nothing.
+
 ## 2026-06-14 — FP-5: foreign-power AI economy (trade + immigration + recruit)
 
 **Requested:** Continue the foreign-powers wave → FP-5 (`86d3bex4w`): give the foreign powers an economy, per-player and on their own RNG streams, so the human's stream 0 stays byte-stable.
