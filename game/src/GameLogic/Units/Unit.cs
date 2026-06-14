@@ -62,12 +62,19 @@ public sealed class Unit
 
     /// <summary>
     /// The owning native nation's type id (e.g. <c>model.nationType.apache</c>) when this is a
-    /// native brave, or null when owned by the human colonial player. A minimal ownership concept
-    /// (Phase 5 slice 5b) pending the full multi-player refactor.
+    /// native brave, or null when owned by a colonial player. Native ownership is carried here until
+    /// natives become players (FP-3b); colonial ownership is <see cref="OwnerId"/>.
     /// </summary>
     public string? OwnerNationId { get; internal set; }
 
-    /// <summary>True when owned by a native nation (a brave), not the player.</summary>
+    /// <summary>
+    /// The owning colonial player's id (FP-2; ADR-019). The human is 0; foreign colonial powers get
+    /// their own ids in FP-3b. Authoritative for colonial ownership; unused (0) for a native-owned unit,
+    /// whose owner is <see cref="OwnerNationId"/>. The enemy/fog/ability rules resolve the owner via <see cref="GameSession.Game"/>.
+    /// </summary>
+    public int OwnerId { get; internal set; }
+
+    /// <summary>True when owned by a native nation (a brave), not a colonial player.</summary>
     public bool IsNative => OwnerNationId is not null;
 
     /// <summary>

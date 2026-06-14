@@ -120,6 +120,42 @@ public sealed class Game
     /// <summary>The local human player. Player-scoped state is reached through here, never by list index (ADR-019).</summary>
     public Player HumanPlayer => _human;
 
+    // ===== Owner model (FP-2, ADR-019): the human-vs-native binary generalises to owner-inequality + stance.
+    // In FP-2 the only colonial player is the human, so these are behaviourally identical to the old !IsNative
+    // tests; they install the seam so foreign colonial powers (FP-3b) slot in without re-touching these rules.
+
+    /// <summary>The player with the given id, or null.</summary>
+    private Player? PlayerById(int id) => _players.FirstOrDefault(p => p.PlayerId == id);
+
+    /// <summary>Whether <paramref name="unit"/> is owned by the given colonial player (not a native).</summary>
+    private static bool IsOwnedBy(Unit unit, Player player) => unit.OwnerNationId is null && unit.OwnerId == player.PlayerId;
+
+    /// <summary>Whether <paramref name="unit"/> is owned by the human colonial player.</summary>
+    private bool IsHumanOwned(Unit unit) => IsOwnedBy(unit, _human);
+
+    /// <summary>Whether <paramref name="colony"/> is owned by the human colonial player.</summary>
+    private bool IsHumanOwned(Colony colony) => colony.OwnerId == _human.PlayerId;
+
+    /// <summary>Two units share an owner iff the same native nation, or the same colonial player.</summary>
+    private static bool SameOwner(Unit a, Unit b) => a.OwnerNationId == b.OwnerNationId && a.OwnerId == b.OwnerId;
+
+    /// <summary>
+    /// Whether two units are combat/fog enemies — a different owner. This is the single stance hook:
+    /// diplomacy (peace/war/alliance) plugs in here in FP-6; for now every distinct owner is hostile.
+    /// </summary>
+    private static bool AreEnemies(Unit a, Unit b) => !SameOwner(a, b);
+
+    /// <summary>True when a Founding Father elected to <paramref name="player"/>'s Congress grants the ability.</summary>
+    private bool HasAbilityFor(Player player, string abilityId) =>
+        player.Congress.Select(Ruleset.Father).SelectMany(f => f.Abilities).Any(a => a.Id == abilityId && a.Value);
+
+    /// <summary>True when <paramref name="unit"/>'s owning colonial player has the combat ability (a native owner has none wired yet).</summary>
+    private bool AbilityForUnit(Unit unit, string abilityId) =>
+        unit.OwnerNationId is null && PlayerById(unit.OwnerId) is { } owner && HasAbilityFor(owner, abilityId);
+
+    /// <summary>The colonies owned by <paramref name="player"/> (the human owns all colonies until foreign powers found their own).</summary>
+    private IEnumerable<Colony> ColoniesOf(Player player) => _colonies.Where(c => c.OwnerId == player.PlayerId);
+
     /// <summary>The human player's treasury in gold.</summary>
     public int Gold => _human.Gold;
 
@@ -198,8 +234,8 @@ public sealed class Game
     /// <summary>All units in the game — the player's and the natives' (braves).</summary>
     public IReadOnlyList<Unit> Units => _units;
 
-    /// <summary>The human colonial player's units (everything not owned by a native nation).</summary>
-    public IEnumerable<Unit> PlayerUnits => _units.Where(u => !u.IsNative);
+    /// <summary>The human colonial player's units (resolved by owner, so foreign powers' units are excluded — FP-2).</summary>
+    public IEnumerable<Unit> PlayerUnits => _units.Where(IsHumanOwned);
 
     /// <summary>The native braves owned by a nation.</summary>
     public IEnumerable<Unit> NativeUnits => _units.Where(u => u.IsNative);
@@ -469,7 +505,7 @@ public sealed class Game
         {
             return unit.RoleId; // auto-equip only inside a friendly colony
         }
-        foreach (string roleId in AutoEquipRoleScopes(unit.OwnerNationId))
+        foreach (string roleId in AutoEquipRoleScopes(unit))
         {
             RoleType role = Ruleset.Role(roleId);
             if (role.RequiredGoods.All(g => colony.StoreOf(Ruleset.StorageIdOf(g.GoodsId)) >= g.Amount))
@@ -481,21 +517,21 @@ public sealed class Game
     }
 
     /// <summary>
-    /// The roles a unit's owner can be automatically equipped into when defending. The player draws on
-    /// the elected Continental Congress (Paul Revere scopes the soldier role); native auto-equipment is
-    /// deferred until native settlements stock goods, so a native owner yields none for now.
+    /// The roles a unit's owner can be automatically equipped into when defending. A colonial player draws on
+    /// its own elected Continental Congress (Paul Revere scopes the soldier role); native auto-equipment is
+    /// deferred until native settlements stock goods, so a native-owned unit yields none for now.
     /// </summary>
-    private IEnumerable<string> AutoEquipRoleScopes(string? ownerNationId) =>
-        ownerNationId is not null
+    private IEnumerable<string> AutoEquipRoleScopes(Unit unit) =>
+        unit.OwnerNationId is not null || PlayerById(unit.OwnerId) is not { } owner
             ? []
-            : _human.Congress.Select(Ruleset.Father) // a null owner is the human player today (owner-id arrives in FP-2)
+            : owner.Congress.Select(Ruleset.Father)
                 .SelectMany(f => f.Abilities)
                 .Where(a => a.Id == AutomaticEquipmentAbility && a.Value)
                 .SelectMany(a => a.ScopeTypes);
 
     /// <summary>The strongest enemy of <paramref name="attacker"/> standing on a tile, or null.</summary>
     private Unit? DefenderAt(Unit attacker, Position p) =>
-        _units.Where(u => u.IsOnMap && u.IsNative != attacker.IsNative && u.Position == p)
+        _units.Where(u => u.IsOnMap && AreEnemies(attacker, u) && u.Position == p)
             .OrderByDescending(DefenceBase)
             .FirstOrDefault();
 
@@ -783,7 +819,7 @@ public sealed class Game
         double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext);
         double defencePower = CombatModel.DefencePower(DefenceBase(defender), defenceContext);
 
-        bool hasPlunderAbility = AbilityForOwner(attacker.OwnerNationId, PlunderNativesAbility); // Cortés
+        bool hasPlunderAbility = AbilityForUnit(attacker, PlunderNativesAbility); // Cortés
         int attackerId = attacker.Id;
         string nation = settlement.NationTypeId;
         bool capital = settlement.IsCapital;
@@ -889,7 +925,7 @@ public sealed class Game
         // 3. A capturable unit changes side (and may downgrade its type on capture).
         if (loser.Type.CanBeCaptured && CanCaptureUnits(winner))
         {
-            CaptureUnit(loser, winner.OwnerNationId);
+            CaptureUnit(loser, winner);
             return;
         }
 
@@ -903,13 +939,14 @@ public sealed class Game
         _units.Remove(loser);
     }
 
-    /// <summary>Captures a defeated unit: it changes side (with the capture type-change, if any) and is disarmed.</summary>
-    private void CaptureUnit(Unit loser, string? newOwnerNationId)
+    /// <summary>Captures a defeated unit: it changes to the winner's side (with the capture type-change, if any) and is disarmed.</summary>
+    private void CaptureUnit(Unit loser, Unit winner)
     {
         Unit captive = Ruleset.GetUnitChange(UnitChangeTypeIds.Capture, loser.Type.Id) is { } change
             ? UpgradeUnitType(loser, change.To) // e.g. veteran soldier → free colonist on capture
             : loser;
-        captive.OwnerNationId = newOwnerNationId;
+        captive.OwnerNationId = winner.OwnerNationId;
+        captive.OwnerId = winner.OwnerId;
         ChangeRole(captive, RoleType.DefaultRoleId, 0);
     }
 
@@ -925,7 +962,7 @@ public sealed class Game
         {
             return;
         }
-        bool automatic = AbilityForOwner(winner.OwnerNationId, AutomaticPromotionAbility);
+        bool automatic = AbilityForUnit(winner, AutomaticPromotionAbility);
         if (automatic || (great && 100 * random.NextDouble() <= change.Probability))
         {
             UpgradeUnitType(winner, change.To);
@@ -947,14 +984,6 @@ public sealed class Game
         || Ruleset.Role(unit.RoleId).GrantedAbilities.GetValueOrDefault(CaptureUnitsAbility);
 
     /// <summary>
-    /// Whether a unit's owner has a combat ability: the player via the elected Continental Congress
-    /// (Washington, Revere); native nations have no automatic combat abilities wired yet (deferred with
-    /// native goods storage), so a native owner returns false.
-    /// </summary>
-    private bool AbilityForOwner(string? ownerNationId, string abilityId) =>
-        ownerNationId is null && HasAbility(abilityId);
-
-    /// <summary>
     /// Replaces a unit with one of a new type, keeping its id, position, location, carrier,
     /// owner, role and cargo (units are immutable in their <see cref="Unit.Type"/>, so an upgrade is a swap).
     /// </summary>
@@ -967,6 +996,7 @@ public sealed class Game
             CarrierId = unit.CarrierId,
             MovementLeft = unit.MovementLeft,
             OwnerNationId = unit.OwnerNationId, // a promotion/demotion/capture keeps the side and role
+            OwnerId = unit.OwnerId,
             RoleId = unit.RoleId,
             RoleCount = unit.RoleCount,
         };
@@ -1008,14 +1038,17 @@ public sealed class Game
             var visible = new HashSet<Position>();
             foreach (Unit unit in _units)
             {
-                if (unit.IsOnMap && !unit.IsNative) // native braves don't lift the player's fog
+                if (unit.IsOnMap && IsHumanOwned(unit)) // only the human's own units lift the human's fog
                 {
                     visible.UnionWith(TilesInRange(unit.Position, unit.Type.LineOfSight));
                 }
             }
             foreach (Colony colony in _colonies)
             {
-                visible.UnionWith(TilesInRange(colony.Position, ColonySightRadius));
+                if (IsHumanOwned(colony))
+                {
+                    visible.UnionWith(TilesInRange(colony.Position, ColonySightRadius));
+                }
             }
             return visible;
         }
@@ -1023,8 +1056,8 @@ public sealed class Game
 
     /// <summary>Whether a tile is currently in sight (not merely explored).</summary>
     public bool IsVisible(Position p) =>
-        _units.Any(u => u.IsOnMap && !u.IsNative && InSight(u.Position, p, u.Type.LineOfSight))
-        || _colonies.Any(c => InSight(c.Position, p, ColonySightRadius));
+        _units.Any(u => u.IsOnMap && IsHumanOwned(u) && InSight(u.Position, p, u.Type.LineOfSight))
+        || _colonies.Any(c => IsHumanOwned(c) && InSight(c.Position, p, ColonySightRadius));
 
     private static bool InSight(Position centre, Position p, int radius) =>
         Math.Abs(centre.X - p.X) <= radius && Math.Abs(centre.Y - p.Y) <= radius;
@@ -1112,7 +1145,7 @@ public sealed class Game
         IReadOnlyList<RestoredPlayer> players,
         IEnumerable<(int id, UnitType type, Position position, int movementLeft,
             UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
-            int? carrierId, string? ownerNationId, string? roleId, int roleCount)> units,
+            int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId)> units,
         IEnumerable<Colony>? colonies = null,
         IEnumerable<NativeSettlement>? nativeSettlements = null)
     {
@@ -1132,7 +1165,7 @@ public sealed class Game
 
         foreach ((int id, UnitType type, Position position, int movementLeft,
                   UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
-                  int? carrierId, string? ownerNationId, string? roleId, int roleCount) in units)
+                  int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId) in units)
         {
             var unit = new Unit(id, type, position)
             {
@@ -1141,6 +1174,7 @@ public sealed class Game
                 SailTurnsRemaining = sailTurns,
                 CarrierId = carrierId,
                 OwnerNationId = ownerNationId,
+                OwnerId = ownerId,
                 RoleId = roleId ?? RoleType.DefaultRoleId,
                 RoleCount = roleCount,
             };
@@ -1175,7 +1209,7 @@ public sealed class Game
             }
             else
             {
-                foreach (Unit unit in game._units.Where(u => !u.IsNative))
+                foreach (Unit unit in game._units.Where(u => IsOwnedBy(u, player)))
                 {
                     game.Reveal(player, unit);
                 }
@@ -1240,7 +1274,7 @@ public sealed class Game
 
         var unit = new Unit(_nextUnitId++, type, position) { OwnerNationId = ownerNationId };
         _units.Add(unit);
-        if (ownerNationId is null)
+        if (IsHumanOwned(unit)) // only the human's own units lift the human's fog
         {
             Reveal(unit);
         }
@@ -1320,9 +1354,9 @@ public sealed class Game
 
         unit.Position = target;
         unit.MovementLeft -= check.Cost;
-        if (!unit.IsNative)
+        if (IsHumanOwned(unit)) // only the human's own units lift the human's fog (mirrors SpawnUnit)
         {
-            Reveal(unit); // a native brave moving never lifts the player's fog (mirrors SpawnUnit)
+            Reveal(unit);
         }
         if (unit.Type.IsCarrier)
         {
@@ -1371,7 +1405,7 @@ public sealed class Game
         }
 
         string name = ColonyNames[(_nextColonyId - 1) % ColonyNames.Length];
-        var colony = new Colony(_nextColonyId++, name, unit.Position, population: 1);
+        var colony = new Colony(_nextColonyId++, name, unit.Position, population: 1, ownerId: unit.OwnerId);
 
         // Every colony starts with the free base buildings (no build cost, not
         // an upgrade) — town hall, carpenter's house, the artisan houses, etc.
@@ -1520,8 +1554,8 @@ public sealed class Game
     /// <summary>Turns a naval unit spends crossing the high seas each way (FreeCol TURNS_TO_SAIL).</summary>
     public const int SailTurns = 3;
 
-    /// <summary>Units currently docked in Europe.</summary>
-    public IEnumerable<Unit> UnitsInEurope => _units.Where(u => u.Location == UnitLocation.InEurope);
+    /// <summary>The human player's units currently docked in Europe (resolved by owner — FP-2).</summary>
+    public IEnumerable<Unit> UnitsInEurope => _units.Where(u => u.Location == UnitLocation.InEurope && IsHumanOwned(u));
 
     /// <summary>Whether a naval unit may set sail for Europe from where it is.</summary>
     public MoveCheck CheckSailToEurope(Unit unit)
@@ -1999,7 +2033,7 @@ public sealed class Game
     /// </summary>
     private void AccumulateLibertyAndElectFathers(Player player)
     {
-        foreach (Colony colony in _colonies)
+        foreach (Colony colony in ColoniesOf(player))
         {
             int bells = colony.StoreOf(BellsId);
             if (bells > 0)
@@ -2067,10 +2101,7 @@ public sealed class Game
     /// True when any Founding Father elected to the human player's Congress grants <paramref name="abilityId"/>.
     /// (FP-1: the modifier/ability helpers read the human's Congress; per-player folding lands with AI economy, FP-5.)
     /// </summary>
-    public bool HasAbility(string abilityId) =>
-        _human.Congress.Select(Ruleset.Father)
-            .SelectMany(f => f.Abilities)
-            .Any(a => a.Id == abilityId && a.Value);
+    public bool HasAbility(string abilityId) => HasAbilityFor(_human, abilityId);
 
     /// <summary>
     /// Applies the human player's elected Founding Fathers' production modifiers for a goods type to a
@@ -2135,7 +2166,7 @@ public sealed class Game
     {
         // Colony crosses become immigration and leave the warehouse (not tradeable stock).
         int crossesThisTurn = 0;
-        foreach (Colony colony in _colonies)
+        foreach (Colony colony in ColoniesOf(player))
         {
             int crosses = colony.StoreOf(CrossesId);
             if (crosses > 0)
@@ -2149,7 +2180,7 @@ public sealed class Game
         // ship), plus the flat player bonus, clamped so this turn's immigration
         // production cannot be negative.
         int personsInEurope = _units.Count(u =>
-            u.Location == UnitLocation.InEurope && u.Type.IsPerson && !u.IsAboard);
+            u.Location == UnitLocation.InEurope && u.Type.IsPerson && !u.IsAboard && IsOwnedBy(u, player));
         int europe = (personsInEurope * EuropeUnitImmigrationPenalty) + PlayerImmigrationBonus;
         if (europe + crossesThisTurn < 0)
         {

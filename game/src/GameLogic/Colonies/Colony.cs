@@ -26,17 +26,21 @@ public sealed class Colony
     private readonly List<string> _buildings = [];
     private readonly Dictionary<string, int> _buildingWorkers = [];
 
-    /// <summary>Creates a colony.</summary>
-    public Colony(int id, string name, Position position, int population)
+    /// <summary>Creates a colony owned by a colonial player (the human is 0; ADR-019).</summary>
+    public Colony(int id, string name, Position position, int population, int ownerId = 0)
     {
         Id = id;
         Name = name;
         Position = position;
         Population = population;
+        OwnerId = ownerId;
     }
 
     /// <summary>Stable per-game identifier.</summary>
     public int Id { get; }
+
+    /// <summary>The owning colonial player's id (FP-2; the human is 0). Foreign powers own colonies from FP-4+.</summary>
+    public int OwnerId { get; }
 
     /// <summary>Display name (e.g. "Jamestown").</summary>
     public string Name { get; }

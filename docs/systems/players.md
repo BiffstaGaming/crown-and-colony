@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (single human; foreign powers/natives become players in later FP slices) |
-| **Last verified** | 2026-06-14 @ FP-1 (Player extraction) |
-| **Code** | `game/src/GameLogic/GameSession/Player.cs` · `game/src/GameLogic/GameSession/Game.cs` |
+| **Status** | Implemented (single human + owner-id seam; foreign powers/natives become players in later FP slices) |
+| **Last verified** | 2026-06-14 @ FP-2 (owner-id seam) |
+| **Code** | `game/src/GameLogic/GameSession/Player.cs` · `game/src/GameLogic/GameSession/Game.cs` · `Units/Unit.cs` (`OwnerId`) · `Colonies/Colony.cs` (`OwnerId`) |
 | **Tests** | `game/tests/GameLogic.Tests/Persistence/SaveGameTests.cs` (`V19Save_LoadsAsSingleHumanPlayer`), `Scenarios/` (soak/journey acid tests), the economy/founding-father/immigration suites |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/common/model/Player.java` (player-scoped state; note FreeCol's `Player.units` is derived, not authoritative) |
 | **Related systems** | [save-load](save-load.md), [randomness](randomness.md), [founding-fathers](founding-fathers.md), [trade](trade.md), [game-modes](game-modes.md) |
@@ -18,7 +18,7 @@ Every side in the game is a **player**. Today there is exactly one — **you**, 
 **The rules, in plain words:**
 - There is one human player; you reach "your" gold, market, Congress, fog, etc. *through that player*.
 - Each player's money, market, fathers, immigration and explored map are its own — they do not leak between players.
-- Units and colonies are a single shared list; each one remembers which player owns it (the ownership tag itself is filled in across the next slices — today everything not native is yours).
+- Units and colonies are a single shared list; each one remembers which player owns it (an owner id — the human is 0). Whether two units are friends or enemies, and whose fog a unit lifts, is now decided by *who owns them*, not by "is it native" — so when foreign powers arrive their units are correctly treated as rivals with no extra rules.
 - Saving the game writes each player's private state; loading an old save (from before players existed) treats all of it as belonging to the single human.
 
 **Worked example:**
@@ -32,6 +32,7 @@ Every side in the game is a **player**. Today there is exactly one — **you**, 
 
 - A `Player` owns **only** player-scoped state: identity (`PlayerId`, `NationId`, `IsHuman`, `PlayerType`), `Gold`, `TaxRate`, its own `Market`, `Liberty`/`Congress`/`CurrentFather`/`OfferedFathers`, `Immigration`/`ImmigrationRequired`/`BaseRecruitPrice`/`RecruitLowerCap`/`RecruitDock`, and `Explored`.
 - The world stays on `Game`: the map, ruleset, turn counter, the main RNG, units, colonies, native settlements, and the global id counters.
+- **Ownership (FP-2):** `Unit.OwnerId` and `Colony.OwnerId` are the authoritative colonial-owner ids (the human is 0; foreign powers get their own ids in FP-3b). Native units still carry `OwnerNationId` (the native nation id) until natives become players (FP-3b). The rules resolve ownership through `Game` helpers: `IsHumanOwned`, `IsOwnedBy(unit, player)`, `SameOwner(a, b)`, and the enemy test `AreEnemies(a, b)` = different owner (the single **stance hook** — diplomacy plugs in here in FP-6, stubbed today to "different owner = enemy"). Founding-father abilities resolve to the unit's owning player (`AbilityForUnit`), so a foreign power never uses the human's fathers.
 - The human is **player id 0**, `IsHuman = true`, `PlayerType = Colonial`, `NationId = null` (the classic human has no European nation type until FP-3). It is found via `Game.HumanPlayer` / `IsHuman`, **never by list index** (turn order is spawn/variant-driven).
 - **Determinism (ADR-009):** for FP-1 the human draws from the game's single main RNG stream (stream 0); the refactor does not add, remove, or reorder any RNG draw, so seeded games, goldens and save-resume stay byte-identical. Per-player RNG streams arrive with the foreign powers.
 
@@ -43,7 +44,7 @@ Every side in the game is a **player**. Today there is exactly one — **you**, 
 | Load a v20+ save | Player state read from the save's `Players[]` |
 | Load a v19-and-earlier save | The flat top-level fields fold into one human player (`Players[]` absent) |
 
-**Deviations from FreeCol:** FreeCol keeps each player's `units`/`settlements` as live lists on the player; we keep units and colonies as **flat global lists referenced by an owner id** (FreeCol itself treats those lists as derived, not the source of truth). Founding-father modifier/ability resolution (`ApplyGoodsModifiers`, `HasAbility`) still reads the *human's* Congress in FP-1 — per-player folding lands with AI economy (FP-5). Live visibility (`CurrentlyVisible`/`IsVisible`) is still derived from the non-native units + colonies rather than a per-player owner filter; it becomes per-owner once the owner-id seam lands (FP-2). The **stored** fog (`Explored`) is already per-player.
+**Deviations from FreeCol:** FreeCol keeps each player's `units`/`settlements` as live lists on the player; we keep units and colonies as **flat global lists referenced by an owner id** (FreeCol itself treats those lists as derived, not the source of truth). Founding-father *production* modifiers (`ApplyGoodsModifiers`, `HasAbility`) still read the *human's* Congress in FP-1/FP-2 — per-player folding lands with AI economy (FP-5); combat abilities already resolve per-owner (`AbilityForUnit`, FP-2). Live visibility (`CurrentlyVisible`/`IsVisible`) is now filtered to the **human's own** units + colonies (FP-2); it's still a single human fog (one viewer) — true per-player fog arrives with the AI. Natives are not yet `Player` rows (FP-3b): a native unit's owner is its `OwnerNationId`, and its `OwnerId` is unused (0) until then.
 
 ## 3. Technical design
 
@@ -74,7 +75,7 @@ Every side in the game is a **player**. Today there is exactly one — **you**, 
 
 ## 5. Open issues / TODO
 
-- [ ] Owner-id seam: generalise `Unit.OwnerNationId` → authoritative owner id; enemy/fog tests become owner-inequality + stance (FP-2).
+- [x] Owner-id seam: authoritative `Unit.OwnerId`/`Colony.OwnerId`; enemy/fog/abilities resolve by owner + a stance hook (FP-2 ✅).
 - [ ] European nations as variant data (`EuropeanNationType`) + inert rival players (FP-3).
 - [ ] Per-player RNG streams; AI explore/move/found, economy, combat/diplomacy (FP-4…FP-6).
 - [ ] Per-player founding-father modifier/ability resolution and per-owner live visibility.
@@ -85,3 +86,4 @@ Every side in the game is a **player**. Today there is exactly one — **you**, 
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-14 | FP-1: extracted `Player` (single human, zero behaviour change); player-scoped state off `Game`; save v20 (`Players[]`, v19 folds to one human player) | FP-1 |
+| 2026-06-14 | FP-2: owner-id seam — `Unit.OwnerId`/`Colony.OwnerId`; enemy/fog/ability rules resolve by owner + a stance hook; save v20 gains optional owner ids (additive, null = human). Zero behaviour change with human + natives | FP-2 |

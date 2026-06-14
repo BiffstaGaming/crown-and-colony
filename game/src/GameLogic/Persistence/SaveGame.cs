@@ -36,7 +36,8 @@ public sealed record SaveGame
     /// (gold/tax/market/liberty/Congress/immigration/dock/explored). The load path is chosen by
     /// version: v20+ reads <see cref="Players"/>; a v19-and-earlier save folds the legacy flat
     /// top-level fields into one human player. A v20 save still writes those flat fields too (so every
-    /// older load path stays exercised); they are dropped at the FP-7 save-consolidation slice.
+    /// older load path stays exercised); they are dropped at the FP-7 save-consolidation slice. v20 also
+    /// gained optional unit/colony owner ids (FP-2, additive — null = the human, id 0).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -156,7 +157,9 @@ public sealed record SaveGame
                     // The unarmed default role is the common case → omit role + count so a default-role
                     // player unit serializes byte-identically to a v17 save (no churn, no golden drift).
                     u.RoleId == Specification.RoleType.DefaultRoleId ? null : u.RoleId,
-                    u.RoleCount == 0 ? null : u.RoleCount))
+                    u.RoleCount == 0 ? null : u.RoleCount,
+                    // Owner player id omitted for the human (id 0) so human-only saves stay byte-identical (FP-2).
+                    u.OwnerId == 0 ? null : u.OwnerId))
                 .ToList(),
             // Legacy flat fog field (v1+); also held per-player in Players[] from v20.
             Explored = game.Explored
@@ -172,7 +175,8 @@ public sealed record SaveGame
                         : null,
                     c.Buildings.ToList(),
                     c.BuildingWorkers.Count > 0 ? new Dictionary<string, int>(c.BuildingWorkers) : null,
-                    c.CurrentBuild))
+                    c.CurrentBuild,
+                    c.OwnerId == 0 ? null : c.OwnerId))
                 .ToList(),
             Resources = game.Map.Resources.Count > 0
                 ? game.Map.Resources
@@ -235,13 +239,14 @@ public sealed record SaveGame
                 u.SailTurns,
                 u.Cargo,
                 u.CarrierId,                // pre-v13 → null = not aboard
-                u.Owner,                    // pre-v18 → null = player-owned
+                u.Owner,                    // pre-v18 → null = colonial-owned
                 u.Role,                     // pre-v18 → null = default role
-                u.RoleCount ?? 0)),         // pre-v18 / default role → 0
+                u.RoleCount ?? 0,           // pre-v18 / default role → 0
+                u.OwnerId ?? 0)),           // pre-v20 / human → 0
             Colonies?.Select(c =>
             {
                 var colony = new CrownAndColony.GameLogic.Colonies.Colony(
-                    c.Id, c.Name, new Position(c.X, c.Y), c.Population);
+                    c.Id, c.Name, new Position(c.X, c.Y), c.Population, c.OwnerId ?? 0);
                 foreach ((string goods, int amount) in
                          c.Stores ?? new Dictionary<string, int>())
                 {
@@ -344,13 +349,15 @@ public sealed record SaveGame
 /// <param name="Buildings">Building type ids (null in pre-v6 saves → free base set re-derived).</param>
 /// <param name="BuildingWorkers">Building staffing (null when none).</param>
 /// <param name="CurrentBuild">Building under construction (null when idle / pre-v7).</param>
+/// <param name="OwnerId">Owning colonial player id (null = the human, id 0; v20+, FP-2).</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
     IReadOnlyDictionary<string, int>? Stores = null,
     IReadOnlyList<SavedWorker>? Workers = null,
     IReadOnlyList<string>? Buildings = null,
     IReadOnlyDictionary<string, int>? BuildingWorkers = null,
-    string? CurrentBuild = null);
+    string? CurrentBuild = null,
+    int? OwnerId = null);
 
 /// <summary>A bonus resource on a tile inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Index">Row-major tile index (<c>y * MapWidth + x</c>).</param>
@@ -392,14 +399,16 @@ public sealed record SavedNativeSettlement(
 /// <param name="SailTurns">Turns left in transit (0 when not sailing).</param>
 /// <param name="Cargo">Goods in the unit's hold (null when empty / pre-v11).</param>
 /// <param name="CarrierId">Id of the ship carrying this unit as a passenger (null when not aboard / pre-v13).</param>
-/// <param name="Owner">Owning native nation type id (null = the player; pre-v18 default; v18+).</param>
+/// <param name="Owner">Owning native nation type id (null = a colonial player; pre-v18 default; v18+).</param>
 /// <param name="Role">Military role id (null = the unarmed default role; pre-v18 default; v18+).</param>
 /// <param name="RoleCount">Equipment count held for the role (null/0 for the default role; v18+). Nullable so a default-role unit emits no token and serializes identically to v17.</param>
+/// <param name="OwnerId">Owning colonial player id (null = the human, id 0; v20+, FP-2). Foreign-power units carry their player id.</param>
 public sealed record SavedUnit(
     int Id, string? TypeId, int X, int Y, int MovementLeft,
     int Location = 0, int SailTurns = 0, IReadOnlyDictionary<string, int>? Cargo = null,
     int? CarrierId = null,
-    string? Owner = null, string? Role = null, int? RoleCount = null);
+    string? Owner = null, string? Role = null, int? RoleCount = null,
+    int? OwnerId = null);
 
 /// <summary>
 /// A player inside a <see cref="SaveGame"/> (v20+). Holds the player-scoped state that used to sit as
