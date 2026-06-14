@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-14 — FP-2 + FP-3: owner-id seam → European nation data → inert multi-player
+
+**Requested:** Do **FP-2 and FP-3** (the next foreign-powers slices), in order.
+**Did:**
+- **FP-2 — owner-id seam (`2a1e79c`):** added authoritative `Unit.OwnerId`/`Colony.OwnerId` (human = 0); converted the binary human-vs-native enemy test + fog filters + per-owner founding-father abilities to **owner-based** helpers (`AreEnemies` = the single stance hook, `IsHumanOwned`, `AbilityForUnit`); save v20 gained optional owner ids (additive). Behaviourally identical with human + natives. +5 `OwnerTests` (inject a simulated foreign unit → prove enemy/fog/ability isolation before real rivals).
+- **FP-3a — European nation data (`9e5ac20`):** new `EuropeanNation`/`EuropeanNationType`/`EuropeanStartingUnit` + parser (the four classic powers + REFs, advantages, starting units, ref flag); embedded the 173 classic per-nation colony names (extracted from FreeCol's strings) + parsed them. Data only. +6 parse tests.
+- **FP-3b — inert multi-player (`632327e`):** `Game.New` spawns 3 inert foreign powers (starting units in Europe) + native nations as `Player` rows; **ring-buffer `EndTurn`** (`CurrentPlayer`/`NextPlayerIndex`, only the human acts); reserved per-player RNG streams; save v20 persists multi-element `Players[]`; `FoundColony` uses per-nation names (human keeps the default). +4 `MultiPlayerTests`.
+- **Process:** research workflow (FreeCol spec + our parser + a two-faction-breakage scan) → implement → **3-lens adversarial-review workflow** (determinism / save / owner-integration) — came back clean; closed the 2 latent seam gaps it flagged (`AdvanceSailing` + presentation tile-click now resolve the human by owner).
+**Status:** **382 tests green** (362 logic + 20 scene/golden); CI ✓ on all three pushes (FP-3b run `27492840276`); save **v20**; git clean on `main`. Determinism/goldens/soak byte-stable (rivals draw no RNG, are inert).
+**Changed:** `Game.cs`, `Player.cs`, `Unit.cs`, `Colony.cs`, `Ruleset.cs`, new `EuropeanNationType.cs`, `SaveGame.cs`, `GameController.cs`, `GameLogic.csproj` + embedded `european-nation-names.properties`; tests `OwnerTests`/`MultiPlayerTests`/`EuropeanNationTypeTests` (new) + edits; docs `players.md`/`save-load.md`/`ruleset-data.md`/`game-modes.md`. Commits `2a1e79c`, `9e5ac20`, `632327e`.
+**Decisions:** Natives + foreign powers become real `Player` rows now (uniform list); foreign powers start **inert in Europe** (no map placement → no fog/golden impact, no RNG); the human stays nation-less (so its colony names/economy are byte-stable); save stays **v20** (additive through the wave, frozen at FP-7). The 4 classic powers = the first selectable non-REF European nations (the human is the nation-less 4th).
+**Scheduled next:** **FP-4 — minimal AI turn: explore / move / found** (`86d3bex4u`): give the inert players behaviour + their own RNG streams; land the foreign powers on the map. (Then FP-5 economy, FP-6 combat/diplomacy, FP-7 save consolidation.)
+**Follow-ups (review-flagged, latent until FP-4):** synthesize native `Player` rows when loading a pre-FP-3b save; persist `_currentPlayerIndex` once turns can be saved mid-ring; harden foreign-power selection with an explicit `OrderBy`; wire native units to their player id.
+**Needs you:** Nothing — no gameplay/UI change yet (rivals are invisible/inert). Say the word for FP-4 (where rivals start moving and become visible).
+
 ## 2026-06-14 — FP-1: Extract Player (single human, zero behaviour change)
 
 **Requested:** Start the foreign-powers wave with FP-1 (`86d3bex4a`) — pure refactor: move player-scoped state off `Game` onto a new `Player`, save v20, all tests stay green.
