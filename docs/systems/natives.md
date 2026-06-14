@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | In development (Phase 5: settlements placed + rendered + persisted (slice 1); tension/alarm + speak-with-chief + learn-skill (slice 3); sell-trade (slice 4); **brave defenders + alarm-on-attack (slice 5b)**. Settlement assault/plunder and native-initiated combat are slice 5c.) |
-| **Last verified** | 2026-06-14 @ Phase 5 slice 5b |
+| **Status** | In development (Phase 5: settlements placed + rendered + persisted (slice 1); tension/alarm + speak-with-chief + learn-skill (slice 3); sell-trade (slice 4); brave defenders + alarm-on-attack (slice 5b); **settlement assault/plunder/destroy (slice 5c)**. Native-initiated raids (native AI) are the foreign-powers slice.) |
+| **Last verified** | 2026-06-14 @ Phase 5 slice 5c |
 | **Code** | `Specification/NativeNationType.cs`, `Natives/NativeSettlement.cs` (+ `AlarmLevel`, `TensionAdd*`), `World/NativeSettlementGenerator.cs`, `GameSession/Game.cs` (`ChangeNativeAlarm`/`Visit`/`LearnSkill`/brave spawning + alarm on `Attack`); rendering `presentation/NativeSettlementMarker.cs` + `GameController.SyncNativeMarkers`. Combat itself lives in [combat](combat.md). |
 | **Tests** | `GameLogic.Tests/Specification/NativeNationTypeTests.cs`, `GameSession/NativeSettlementTests.cs`, `GameSession/NativeInteractionTests.cs`; visual `presentation/tests/VisualGoldenTests.cs` |
 | **FreeCol reference** | `freecol/data/rules/classic/specification.xml` `<indian-nation-types>`; `freecol/src/.../server/generator/SimpleMapGenerator.java` (`makeNativeSettlements`) |
@@ -123,8 +123,9 @@ Each settlement also has an **alarm** level toward you — Happy, Content, Displ
 - [ ] **Native interaction UI** (next): on-map panel to speak with the chief / learn a skill (L3).
 - [x] **Native trade — sell** (P5 slice 4): sell cargo to a coastal settlement (wanted goods + trade-bonus pricing, alarm-gated, goodwill).
 - [ ] **Native trade — buy + inland**: buying from settlements (needs a settlement goods-stock/production model); wagon trains for land transport to inland settlements; per-turn wanted-goods refresh by stock; haggling.
-- [x] **Combat — braves & alarm-on-attack** (P5 slice 5b): native-owned brave defenders; attacking a brave calls `ChangeNativeAlarm` (+200 attack, +400 kill). See [combat](combat.md).
-- [ ] **Combat — settlements** (P5 slice 5c): settlement defence (the parsed defence modifier), plunder/destruction (`<plunder>` parsing), native-initiated raids (AI); land-taking should call `ChangeNativeAlarm`; nation-level tension + propagation.
+- [x] **Combat — braves & alarm-on-attack** (P5 slice 5b): native-owned brave defenders; combat shifts the nation's alarm (FreeCol `defenderTension`; reworked in 5c). See [combat](combat.md).
+- [x] **Combat — settlement assault** (P5 slice 5c): attacking/plundering/destroying a settlement (its defence modifier + `<plunder>` → gold; Cortés), +500/+600 alarm with sibling propagation. See [combat](combat.md).
+- [ ] **Native-initiated raids (native AI)** and land-taking `ChangeNativeAlarm`; full nation-level tension store + propagation — the foreign-powers/AI slice.
 - [ ] **Scout role** for the richer chief-speak (bigger beads from `<gifts>` RandomRange, free-learn chance, death at hateful); `<gifts>` parsing.
 - [ ] **Move native-interaction tuning constants to ruleset data** (transposability, ADR-018): the learnable-colonist set (via FreeCol `unit-change-types` NATIVES, instead of the hard-coded ids), the gift range (10–80), the tales radius, the alarm-decay constants, and the alarm bands. They are FreeCol-pinned today; a future variant should be able to override native temperament/generosity without code. Tracked on the kanban.
 - [ ] **Settlement growth** over turns; map *regions* so placement can follow FreeCol's region/landmass counts.
@@ -137,4 +138,5 @@ Each settlement also has an **alarm** level toward you — Happy, Content, Displ
 | 2026-06-13 | Native nation + settlement parsing, `NativeSettlement` domain, placement (capital-first, min-distance, dedicated RNG stream), save v14, FreeCol art rendering (fog-gated) | Phase 5 slice 1 |
 | 2026-06-14 | Alarm/tension model (`AlarmLevel`, `ChangeNativeAlarm`, per-turn decay), speak-with-chief (`Visit`: tales reveal + 10–80 gift), learn-skill (`LearnSkill`: upgrade via unit replace, consume unless capital); save v16 | Phase 5 slice 3 |
 | 2026-06-14 | Native trade — sell cargo to a coastal settlement (`SellToNatives`/`NativeSalePrice`); 3 wanted goods per settlement (premium pricing) generated at placement; trade lowers alarm; save v17 | Phase 5 slice 4 |
-| 2026-06-14 | Native braves (one per settlement, fog-excluded) + alarm on attack (`TensionAdd*` constants, +200 attack / +400 kill via `ChangeNativeAlarm`); save v18. Combat itself in [combat](combat.md). | Phase 5 slice 5b |
+| 2026-06-14 | Native braves (one per settlement, fog-excluded) + alarm on attack (`TensionAdd*` constants); save v18. Combat itself in [combat](combat.md). | Phase 5 slice 5b |
+| 2026-06-14 | Settlement assault — `<plunder>` parsed (`SettlementPlunder`), settlements can be sacked (gold + destroy), Cortés; can't move onto a settlement tile; save v19. Combat tension reworked to FreeCol `defenderTension` (nation-wide; win raises, repelled attack lowers; capital burn → surrender). Combat in [combat](combat.md). | Phase 5 slice 5c |

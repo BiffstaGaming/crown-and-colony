@@ -43,6 +43,23 @@ public enum NativeAggression
 public sealed record NativeSkill(string UnitTypeId, int Probability);
 
 /// <summary>
+/// One <c>&lt;plunder&gt;</c> range a settlement type yields when sacked (FreeCol
+/// <c>RandomRange</c>, <c>continuous=false</c>): the gold is
+/// <c>(rnd[0,Maximum−Minimum] + Minimum) × Factor</c>, paid only when a
+/// <see cref="Probability"/>% roll passes (a probability of 100 always pays).
+/// </summary>
+/// <param name="Probability">Percent chance the plunder is non-zero (100 = always).</param>
+/// <param name="Minimum">Smallest range multiple.</param>
+/// <param name="Maximum">Largest range multiple.</param>
+/// <param name="Factor">Gold per range multiple.</param>
+/// <param name="RequiresPlunderAbility">
+/// True = the richer "extra" range, used when the attacker has
+/// <c>model.ability.plunderNatives</c> (Hernán Cortés); false = the base range.
+/// </param>
+public sealed record SettlementPlunder(
+    int Probability, int Minimum, int Maximum, int Factor, bool RequiresPlunderAbility);
+
+/// <summary>
 /// A native settlement type from the ruleset (FreeCol <c>&lt;settlement&gt;</c>):
 /// the camp / village / city templates — each with a capital variant — that define
 /// how big a settlement is, how much land it claims, and how well it defends.
@@ -60,7 +77,11 @@ public sealed record NativeSkill(string UnitTypeId, int Probability);
 /// <param name="DefenceModifier">
 /// Percentage defence bonus the settlement grants its defenders (FreeCol
 /// <c>model.modifier.defence</c>; camp/village 50, capital 100, city 100, city capital 200).
-/// Parsed now; applied by the combat slice.
+/// </param>
+/// <param name="Plunder">
+/// The gold ranges a sacked settlement yields (base + "extra"; empty if it has no
+/// <c>&lt;plunder&gt;</c>). The attacker picks one by its <c>plunderNatives</c> status —
+/// see <see cref="PlunderRange"/>.
 /// </param>
 public sealed record SettlementType(
     string Id,
@@ -73,10 +94,18 @@ public sealed record SettlementType(
     int MaximumGrowth,
     int TradeBonus,
     int ConvertThreshold,
-    double DefenceModifier)
+    double DefenceModifier,
+    IReadOnlyList<SettlementPlunder> Plunder)
 {
     /// <summary>Short name derived from the id: <c>model.settlement.camp</c> → <c>camp</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
+
+    /// <summary>
+    /// The plunder range to use against an attacker with (or without) the
+    /// <c>model.ability.plunderNatives</c> ability, or null if the settlement yields no plunder.
+    /// </summary>
+    public SettlementPlunder? PlunderRange(bool hasPlunderAbility) =>
+        Plunder.FirstOrDefault(p => p.RequiresPlunderAbility == hasPlunderAbility);
 }
 
 /// <summary>

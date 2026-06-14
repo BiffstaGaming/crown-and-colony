@@ -180,9 +180,10 @@ public class CombatTests
 
         Assert.Equal(CombatResult.GreatWin, result);
         Assert.DoesNotContain(brave, game.Units);                 // the brave is destroyed
+        // Killing the brave in the open: UNIT_DESTROYED (+400) + a minor insult (+100) = +500.
         Assert.Equal(
-            NativeSettlement.TensionAddNormal + NativeSettlement.TensionAddUnitDestroyed,
-            home.Alarm);                                          // +200 attack, +400 kill
+            NativeSettlement.TensionAddUnitDestroyed + NativeSettlement.TensionAddMinor,
+            home.Alarm);
     }
 
     [Fact]
@@ -190,6 +191,7 @@ public class CombatTests
     {
         (Game game, Unit attacker, Unit brave, NativeSettlement home) = SetupAttack(FreeColonist, Soldier);
         int id = attacker.Id;
+        game.ChangeNativeAlarm(home, 500); // start hostile so the post-loss drop is observable
 
         CombatResult result = game.Attack(attacker, brave.Position, new FixedRandom(0.99));
 
@@ -198,7 +200,7 @@ public class CombatTests
         Assert.Equal(RoleType.DefaultRoleId, disarmed.RoleId);    // the soldier loses his muskets
         Assert.Equal(FreeColonist, disarmed.Type.Id);            // but survives as a colonist
         Assert.Equal("model.role.armedBrave", brave.RoleId);     // the brave arms itself with them
-        Assert.Equal(NativeSettlement.TensionAddNormal, home.Alarm); // +200 attack only (nobody died)
+        Assert.Equal(500 - NativeSettlement.TensionAddMinor, home.Alarm); // a repelled attack calms them (−100)
     }
 
     [Fact]
@@ -308,6 +310,236 @@ public class CombatTests
 
         Assert.True(game.CheckEquipRole(colonist, colony, Soldier).Allowed);
         Assert.False(game.CheckEquipRole(colonist, colony, Dragoon).Allowed); // no horses
+    }
+
+    // ---- Settlement assault (5c) ----
+
+    private const string Artillery = "model.unit.artillery";
+    private const string Cortes = "model.foundingFather.hernanCortes";
+
+    /// <summary>A scripted RNG: a fixed combat roll (NextDouble) plus a queue of Next(int) values for plunder.</summary>
+    private sealed class ScriptedRandom(double roll, params int[] ints) : IGameRandom
+    {
+        private int _i;
+        public int Next(int maxExclusive) => _i < ints.Length ? ints[_i++] : 0;
+        public int Next(int minInclusive, int maxExclusive) => minInclusive;
+        public double NextDouble() => roll;
+        public RandomState SaveState() => new(0, 0);
+    }
+
+    /// <summary>A new game (optionally with fathers), a native settlement (capital filter optional), and a player attacker on a free adjacent tile.</summary>
+    private static (Game game, Unit attacker, NativeSettlement settlement) SetupSettlementAttack(
+        string attackerType = Artillery, bool? capital = null, params string[] congress)
+    {
+        Game game = Game.New(Classic, Seed);
+        if (congress.Length > 0)
+        {
+            game = (SaveGame.From(game) with { Congress = congress }).Restore(Classic);
+        }
+        bool Free(Position n) =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.NativeSettlementAt(n) is null && game.ColonyAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n);
+        NativeSettlement settlement = game.NativeSettlements.First(s =>
+            (capital is null || s.IsCapital == capital) && s.Position.Neighbours().Any(Free));
+        Position spot = settlement.Position.Neighbours().First(Free);
+        Unit attacker = game.SpawnUnit(Classic.Unit(attackerType), spot);
+        return (game, attacker, settlement);
+    }
+
+    [Theory]
+    [InlineData("model.settlement.camp", 20, 2, 3, 100, 100, 3, 6, 100)]
+    [InlineData("model.settlement.village", 50, 3, 8, 100, 100, 4, 12, 100)]
+    [InlineData("model.settlement.camp.capital", 100, 2, 4, 200, 100, 2, 4, 300)]
+    public void SettlementPlunder_MatchesSpec(
+        string id, int bp, int bmin, int bmax, int bf, int xp, int xmin, int xmax, int xf)
+    {
+        SettlementType type = Classic.Settlement(id);
+        SettlementPlunder baseRange = type.PlunderRange(hasPlunderAbility: false)!;
+        SettlementPlunder extraRange = type.PlunderRange(hasPlunderAbility: true)!;
+        Assert.Equal((bp, bmin, bmax, bf), (baseRange.Probability, baseRange.Minimum, baseRange.Maximum, baseRange.Factor));
+        Assert.Equal((xp, xmin, xmax, xf), (extraRange.Probability, extraRange.Minimum, extraRange.Maximum, extraRange.Factor));
+    }
+
+    [Fact]
+    public void AttackSettlement_GreatWin_DestroysAndPlunders()
+    {
+        (Game game, Unit attacker, NativeSettlement settlement) = SetupSettlementAttack();
+        Position pos = settlement.Position;
+
+        SettlementPlunder baseRange = Classic.Settlement(settlement.SettlementTypeId).PlunderRange(false)!;
+        CombatResult result = game.AttackSettlement(attacker, pos, new FixedRandom(0.0)); // great win; all plunder rolls 0
+
+        Assert.Equal(CombatResult.GreatWin, result);
+        Assert.Null(game.NativeSettlementAt(pos));                  // settlement destroyed
+        Assert.DoesNotContain(settlement, game.NativeSettlements);
+        // base range, all rolls 0: probability gate passes, range roll 0 → (0 + min) × factor.
+        Assert.Equal(baseRange.Minimum * baseRange.Factor, game.Gold);
+    }
+
+    [Fact]
+    public void AttackSettlement_PlunderProbabilityFails_NoGold()
+    {
+        (Game game, Unit attacker, NativeSettlement settlement) =
+            SetupSettlementAttack(capital: false);
+        // Only test a settlement whose base plunder is a sub-100 probability (camp 20 / village 50).
+        int prob = Classic.Settlement(settlement.SettlementTypeId).PlunderRange(false)!.Probability;
+        var rng = new ScriptedRandom(0.0, prob); // probability roll == prob → NOT < prob → no plunder
+
+        game.AttackSettlement(attacker, settlement.Position, rng);
+
+        Assert.Null(game.NativeSettlementAt(settlement.Position)); // still destroyed
+        Assert.Equal(0, game.Gold);                                // but no plunder
+    }
+
+    [Fact]
+    public void AttackSettlement_WithCortes_UsesTheRicherExtraRange()
+    {
+        (Game game, Unit attacker, NativeSettlement settlement) =
+            SetupSettlementAttack(Artillery, capital: false, Cortes);
+        SettlementPlunder extra = Classic.Settlement(settlement.SettlementTypeId).PlunderRange(true)!;
+        // extra range is probability 100 (no probability draw); range roll 1 → (1 + min) × factor.
+        int expected = (1 + extra.Minimum) * extra.Factor;
+        var rng = new ScriptedRandom(0.0, 1);
+
+        game.AttackSettlement(attacker, settlement.Position, rng);
+
+        Assert.Equal(expected, game.Gold); // the .extra-range value (Cortés grants model.ability.plunderNatives)
+    }
+
+    [Fact]
+    public void AttackSettlement_Loss_LowersAlarmAndDemotesArtillery()
+    {
+        (Game game, Unit attacker, NativeSettlement settlement) = SetupSettlementAttack(Artillery);
+        int id = attacker.Id;
+        game.ChangeNativeAlarm(settlement, 500); // start hostile so the post-loss drop is observable
+
+        CombatResult result = game.AttackSettlement(attacker, settlement.Position, new FixedRandom(0.99)); // great loss
+
+        Assert.Equal(CombatResult.GreatLoss, result);
+        Assert.Same(settlement, game.NativeSettlementAt(settlement.Position));          // survives
+        Assert.Equal(500 - NativeSettlement.TensionAddMinor, settlement.Alarm);         // a repelled assault calms them (−100)
+        Assert.Equal("model.unit.damagedArtillery", game.Units.First(u => u.Id == id).Type.Id); // attacker demoted
+    }
+
+    [Fact]
+    public void AttackSettlement_Loss_AttackerSlain_LowersAlarmBy300()
+    {
+        // A damaged-artillery attacker is destroyed on loss (no demotion left, the garrison can't capture it)
+        // → minor (−100) + normal (−200) = −300.
+        (Game game, Unit attacker, NativeSettlement settlement) = SetupSettlementAttack("model.unit.damagedArtillery");
+        int id = attacker.Id;
+        game.ChangeNativeAlarm(settlement, 500);
+
+        game.AttackSettlement(attacker, settlement.Position, new FixedRandom(0.99)); // great loss
+
+        Assert.DoesNotContain(game.Units, u => u.Id == id); // attacker slain
+        Assert.Equal(
+            500 - (NativeSettlement.TensionAddMinor + NativeSettlement.TensionAddNormal),
+            settlement.Alarm);
+    }
+
+    /// <summary>Finds a multi-settlement tribe whose member matching <paramref name="want"/> has a free adjacent tile to attack from.</summary>
+    private static (NativeSettlement target, NativeSettlement sibling, Position spawn) MultiSettlementTribe(
+        Game game, Func<NativeSettlement, bool> want)
+    {
+        bool Free(Position n) =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.NativeSettlementAt(n) is null && game.ColonyAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n);
+        var nation = game.NativeSettlements
+            .GroupBy(s => s.NationTypeId)
+            .First(g => g.Count() >= 2 && g.Any(s => want(s) && s.Position.Neighbours().Any(Free)));
+        NativeSettlement target = nation.First(s => want(s) && s.Position.Neighbours().Any(Free));
+        return (target, nation.First(s => s != target), target.Position.Neighbours().First(Free));
+    }
+
+    [Fact]
+    public void AttackSettlement_Win_PropagatesAlarmToTheNationsOtherSettlements()
+    {
+        Game game = Game.New(Classic, Seed);
+        (NativeSettlement target, NativeSettlement sibling, Position spawn) = MultiSettlementTribe(game, s => !s.IsCapital);
+        Unit attacker = game.SpawnUnit(Classic.Unit(Artillery), spawn);
+
+        game.AttackSettlement(attacker, target.Position, new FixedRandom(0.0)); // great win → destroy
+
+        Assert.Null(game.NativeSettlementAt(target.Position)); // target destroyed
+        // slaughter (+500) + destroy major (+300) + minor (+100) = +900, propagated to the surviving sibling.
+        Assert.Equal(
+            NativeSettlement.TensionAddSettlementAttacked + NativeSettlement.TensionAddMajor + NativeSettlement.TensionAddMinor,
+            sibling.Alarm);
+    }
+
+    [Fact]
+    public void AttackSettlement_BurningTheCapital_SurrendersTheNation()
+    {
+        Game game = Game.New(Classic, Seed);
+        (NativeSettlement capital, NativeSettlement sibling, Position spawn) = MultiSettlementTribe(game, s => s.IsCapital);
+        game.ChangeNativeAlarm(sibling, 900); // start hateful to prove surrender SETS the alarm (not adds)
+        Unit attacker = game.SpawnUnit(Classic.Unit(Artillery), spawn);
+
+        game.AttackSettlement(attacker, capital.Position, new FixedRandom(0.0)); // great win → burn the capital
+
+        Assert.Null(game.NativeSettlementAt(capital.Position));         // capital destroyed
+        Assert.Equal(NativeSettlement.SurrenderedAlarm, sibling.Alarm); // the nation surrenders to peace (set, not added)
+    }
+
+    [Fact]
+    public void CheckAttackSettlement_RejectsNonSettlementsAndBadAttackers()
+    {
+        (Game game, Unit attacker, NativeSettlement settlement) = SetupSettlementAttack();
+        Assert.True(game.CheckAttackSettlement(attacker, settlement.Position).Allowed);
+
+        // An adjacent tile with no settlement on it is rejected.
+        Position empty = attacker.Position.Neighbours()
+            .First(n => game.Map.InBounds(n) && game.NativeSettlementAt(n) is null);
+        Assert.False(game.CheckAttackSettlement(attacker, empty).Allowed);
+
+        attacker.MovementLeft = 0;
+        Assert.False(game.CheckAttackSettlement(attacker, settlement.Position).Allowed); // no movement
+    }
+
+    [Fact]
+    public void CheckMove_OntoANativeSettlement_IsRejected()
+    {
+        (Game game, Unit attacker, NativeSettlement settlement) = SetupSettlementAttack();
+        MoveCheck check = game.CheckMove(attacker, settlement.Position);
+        Assert.False(check.Allowed);
+        Assert.Contains("settlement", check.Reason!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AttackSettlement_DestroyedState_SurvivesASaveRoundTrip_AtV19()
+    {
+        (Game game, Unit attacker, NativeSettlement settlement) = SetupSettlementAttack();
+        int before = game.NativeSettlements.Count;
+        game.AttackSettlement(attacker, settlement.Position, new FixedRandom(0.0)); // forced great win → destroy + plunder
+
+        SaveGame snapshot = SaveGame.From(game);
+        Assert.Equal(19, snapshot.Version);
+        Game loaded = SaveGame.FromJson(snapshot.ToJson()).Restore(Classic);
+
+        Assert.Equal(before - 1, game.NativeSettlements.Count);                     // exactly one destroyed
+        Assert.Equal(game.NativeSettlements.Count, loaded.NativeSettlements.Count); // stays gone after reload
+        Assert.Equal(game.Gold, loaded.Gold);                                      // plunder gold persisted
+        Assert.Equal(game.RandomState, loaded.RandomState);                        // resume-deterministic
+    }
+
+    [Fact]
+    public void AttackSettlement_ProductionPath_DrawsFromTheSavedRngAndRoundTrips()
+    {
+        (Game game, Unit attacker, NativeSettlement settlement) = SetupSettlementAttack();
+        RandomState before = game.RandomState;
+
+        game.AttackSettlement(attacker, settlement.Position); // public path → the game's main saved RNG
+
+        Assert.NotEqual(before, game.RandomState); // the saved stream advanced (≥ the combat draw)
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+        Assert.Equal(game.RandomState, loaded.RandomState); // resume-deterministic
+        Assert.Equal(game.Gold, loaded.Gold);
+        Assert.Equal(
+            game.NativeSettlements.Select(s => s.Id).OrderBy(i => i),
+            loaded.NativeSettlements.Select(s => s.Id).OrderBy(i => i));
     }
 
     // ---- Save round-trip (v18) ----

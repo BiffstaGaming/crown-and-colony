@@ -435,6 +435,7 @@ public sealed class Game
     private const string AutomaticEquipmentAbility = "model.ability.automaticEquipment";  // Paul Revere
     private const string CaptureUnitsAbility = "model.ability.captureUnits";
     private const string CaptureEquipmentAbility = "model.ability.captureEquipment";
+    private const string PlunderNativesAbility = "model.ability.plunderNatives"; // Hernán Cortés
 
     /// <summary>
     /// A unit's offence base for combat: the type's pre-role additive plus its role's offence, then the
@@ -504,14 +505,32 @@ public sealed class Game
             .Cast<Position?>()
             .FirstOrDefault();
 
-    /// <summary>The nearest settlement of a native unit's nation (for routing combat alarm), or null.</summary>
-    private NativeSettlement? HomeSettlementOf(Unit nativeUnit, Position at) =>
-        !nativeUnit.IsNative
-            ? null
-            : _nativeSettlements
-                .Where(s => s.NationTypeId == nativeUnit.OwnerNationId)
-                .OrderBy(s => Math.Max(Math.Abs(s.Position.X - at.X), Math.Abs(s.Position.Y - at.Y)))
-                .FirstOrDefault();
+    /// <summary>
+    /// Applies a combat tension change (FreeCol <c>defenderTension</c>) to every settlement of a native
+    /// nation — its alarm toward the player (positive after a European win, negative after a repelled
+    /// attack). FreeCol propagates the full delta to all the nation's settlements (<c>csModifyTension</c>).
+    /// </summary>
+    private void ApplyNativeCombatTension(string nationTypeId, int defenderTension)
+    {
+        if (defenderTension == 0)
+        {
+            return;
+        }
+        foreach (NativeSettlement s in _nativeSettlements.Where(s => s.NationTypeId == nationTypeId))
+        {
+            ChangeNativeAlarm(s, defenderTension);
+        }
+    }
+
+    /// <summary>
+    /// The native combat tension a European victory or defeat inflicts on the defending nation
+    /// (FreeCol <c>defenderTension</c>): a win adds the slain defender's slaughter tension (+ a minor
+    /// insult); a loss subtracts a minor insult, and a further <c>NORMAL</c> if the attacker was slain.
+    /// </summary>
+    private static int DefenderCombatTension(bool attackerWon, int slaughterTension, bool attackerSlain) =>
+        attackerWon
+            ? slaughterTension + NativeSettlement.TensionAddMinor
+            : -(NativeSettlement.TensionAddMinor + (attackerSlain ? NativeSettlement.TensionAddNormal : 0));
 
     /// <summary>The attacker's movement-spent penalty (FreeCol: 1 point left → big, 2 → small).</summary>
     private static MovementPenalty MovementPenaltyFor(Unit attacker) => attacker.MovementLeft switch
@@ -658,7 +677,9 @@ public sealed class Game
         }
 
         Unit defender = DefenderAt(attacker, target)!;
-        NativeSettlement? defenderHome = HomeSettlementOf(defender, target);
+        int attackerId = attacker.Id; // ids survive a promotion/demotion swap; the object reference may not
+        int defenderId = defender.Id;
+        string? defenderNation = defender.OwnerNationId;
 
         var attackContext = new AttackContext(
             Movement: MovementPenaltyFor(attacker), // snapshot the movement penalty before spending it
@@ -682,17 +703,144 @@ public sealed class Game
         ResolveLoserOutcome(winner, loser);
         ApplyWinnerPromotion(winner, great, random);
 
-        // Attacking a native raises its settlement's alarm; destroying its brave raises it further.
-        if (defenderHome is not null)
+        // Native alarm shifts across the defender's whole nation by FreeCol's defenderTension: a European
+        // win raises it (the slain brave in the open + a minor insult); a repelled attack lowers it.
+        if (defenderNation is not null)
         {
-            ChangeNativeAlarm(defenderHome, NativeSettlement.TensionAddNormal);
-            if (!_units.Contains(defender))
-            {
-                ChangeNativeAlarm(defenderHome, NativeSettlement.TensionAddUnitDestroyed);
-            }
+            int slaughter = _units.Any(u => u.Id == defenderId) ? 0 : NativeSettlement.TensionAddUnitDestroyed;
+            bool attackerSlain = !_units.Any(u => u.Id == attackerId);
+            ApplyNativeCombatTension(defenderNation, DefenderCombatTension(attackerWon, slaughter, attackerSlain));
         }
 
         return result;
+    }
+
+    /// <summary>Whether <paramref name="attacker"/> may assault the native settlement on <paramref name="target"/> now.</summary>
+    public MoveCheck CheckAttackSettlement(Unit attacker, Position target)
+    {
+        if (!attacker.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (attacker.IsNative)
+        {
+            return MoveCheck.No("Native units do not attack yet.");
+        }
+        if (!Map.InBounds(target))
+        {
+            return MoveCheck.No("Target is off the map.");
+        }
+        if (!attacker.Position.IsAdjacentTo(target))
+        {
+            return MoveCheck.No("Attack an adjacent tile.");
+        }
+        if (attacker.MovementLeft <= 0)
+        {
+            return MoveCheck.No("No movement left this turn.");
+        }
+        if (OffenceBase(attacker) <= 0)
+        {
+            return MoveCheck.No($"A {attacker.Type.ShortName} has no offensive strength — arm it first.");
+        }
+        if (NativeSettlementAt(target) is null)
+        {
+            return MoveCheck.No("There is no native settlement to attack there.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Assaults the native settlement on <paramref name="target"/> through the pure <see cref="CombatModel"/>
+    /// (main saved RNG, resume-deterministic). The settlement is defended by an implicit garrison (a brave's
+    /// defence with the settlement's defence bonus); a win sacks it — plunder gold, alarm raised on the
+    /// nation's other settlements, the settlement destroyed — while a loss disarms/demotes the attacker.
+    /// Natives-only (Phase 5 slice 5c); naval and foreign-European combat are the foreign-powers slice.
+    /// </summary>
+    /// <returns>The graded combat result.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAttackSettlement"/>.</exception>
+    public CombatResult AttackSettlement(Unit attacker, Position target) => AttackSettlement(attacker, target, _random);
+
+    /// <summary>The settlement-assault resolution drawing from an explicit RNG (tests inject a fixed RNG).</summary>
+    internal CombatResult AttackSettlement(Unit attacker, Position target, IGameRandom random)
+    {
+        MoveCheck check = CheckAttackSettlement(attacker, target);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+
+        NativeSettlement settlement = NativeSettlementAt(target)!;
+        SettlementType type = Ruleset.Settlement(settlement.SettlementTypeId);
+        // The settlement's implicit garrison defender: a brave with the settlement's defence bonus
+        // (FreeCol suppresses the open-tile terrain bonus and ambush inside a settlement).
+        var defender = new Unit(0, Ruleset.Unit(BraveUnitTypeId), target) { OwnerNationId = settlement.NationTypeId };
+
+        var attackContext = new AttackContext(Movement: MovementPenaltyFor(attacker));
+        var defenceContext = new DefenceContext(SettlementDefenceBonus: type.DefenceModifier);
+        double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext);
+        double defencePower = CombatModel.DefencePower(DefenceBase(defender), defenceContext);
+
+        bool hasPlunderAbility = AbilityForOwner(attacker.OwnerNationId, PlunderNativesAbility); // Cortés
+        int attackerId = attacker.Id;
+        string nation = settlement.NationTypeId;
+        bool capital = settlement.IsCapital;
+        attacker.MovementLeft = 0; // attacking ends the attacker's turn (before any promotion swap)
+
+        CombatResult result = CombatModel.Resolve(CombatModel.WinProbability(attackPower, defencePower), random);
+        bool attackerWon = result is CombatResult.GreatWin or CombatResult.Win;
+        bool great = result is CombatResult.GreatWin or CombatResult.GreatLoss;
+
+        if (attackerWon)
+        {
+            ApplyWinnerPromotion(attacker, great, random); // promotion draw (if any) before the plunder draws
+            Gold += ComputePlunder(type, hasPlunderAbility, random);
+            _nativeSettlements.Remove(settlement); // destroyed
+
+            if (capital)
+            {
+                // Burning a native capital makes the nation surrender — its surviving settlements drop to peace.
+                foreach (NativeSettlement s in _nativeSettlements.Where(s => s.NationTypeId == nation))
+                {
+                    s.Alarm = NativeSettlement.SurrenderedAlarm;
+                }
+            }
+            else
+            {
+                // In-settlement defender slaughtered (+500) + the settlement destroyed (+300 MAJOR) + a
+                // minor insult (+100) = +900, propagated to the nation's surviving settlements.
+                ApplyNativeCombatTension(nation, NativeSettlement.TensionAddSettlementAttacked
+                    + NativeSettlement.TensionAddMajor + NativeSettlement.TensionAddMinor);
+            }
+        }
+        else
+        {
+            // The attacker loses to the garrison: disarm/demote/destroy it via the shared precedence.
+            // A repelled assault lowers the nation's alarm (the natives prevailed) — across all its settlements.
+            ResolveLoserOutcome(defender, attacker);
+            bool attackerSlain = !_units.Any(u => u.Id == attackerId);
+            ApplyNativeCombatTension(nation, DefenderCombatTension(attackerWon: false, slaughterTension: 0, attackerSlain));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// The gold a sacked settlement yields (FreeCol <c>RandomRange.getAmount</c>, <c>continuous=false</c>):
+    /// the range selected by the attacker's <c>plunderNatives</c> status pays, on a <c>Probability%</c>
+    /// roll, <c>(rnd[0,max−min] + min) × factor</c>. Draws from <paramref name="random"/> (the probability
+    /// roll only when below 100, then the range roll).
+    /// </summary>
+    private static int ComputePlunder(SettlementType type, bool hasPlunderAbility, IGameRandom random)
+    {
+        if (type.PlunderRange(hasPlunderAbility) is not { } range)
+        {
+            return 0;
+        }
+        if (range.Probability < 100 && (range.Probability <= 0 || random.Next(100) >= range.Probability))
+        {
+            return 0;
+        }
+        int roll = random.Next(range.Maximum - range.Minimum + 1);
+        return (roll + range.Minimum) * range.Factor;
     }
 
     /// <summary>
@@ -1105,6 +1253,10 @@ public sealed class Game
         if (DefenderAt(unit, target) is not null)
         {
             return MoveCheck.No("An enemy unit holds that tile — attack it instead.");
+        }
+        if (!unit.IsNative && NativeSettlementAt(target) is not null)
+        {
+            return MoveCheck.No("A native settlement holds that tile — attack, trade or speak with it from beside it.");
         }
 
         int movesLeft = unit.MovementLeft;

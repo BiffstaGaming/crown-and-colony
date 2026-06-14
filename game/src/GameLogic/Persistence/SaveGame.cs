@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 18;
+    public const int CurrentVersion = 19;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -30,7 +30,8 @@ public sealed record SaveGame
     /// game variant id (which ruleset the game plays under); v16 added native
     /// settlement interaction state (alarm, visited, skill-consumed); v17 added
     /// native settlement wanted goods; v18 added unit owner nation + role/roleCount
-    /// (native braves and armed soldiers).
+    /// (native braves and armed soldiers); v19 = settlement assault (a destroyed
+    /// settlement is simply absent from the list; plunder folds into gold — no new field).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 

@@ -98,8 +98,14 @@ public sealed class NativeSettlement
     /// <summary>Tension added when a settlement is attacked (FreeCol <c>TENSION_ADD_SETTLEMENT_ATTACKED</c>; used by the 5c settlement-combat slice).</summary>
     internal const int TensionAddSettlementAttacked = 500;
 
-    /// <summary>Tension added when the capital is attacked (FreeCol <c>TENSION_ADD_CAPITAL_ATTACKED</c>; used by 5c).</summary>
+    /// <summary>Tension added when the capital is attacked (FreeCol <c>TENSION_ADD_CAPITAL_ATTACKED</c>).</summary>
     internal const int TensionAddCapitalAttacked = 600;
+
+    /// <summary>
+    /// The alarm a nation's settlements are set to when it surrenders — its capital sacked
+    /// (FreeCol <c>Tension.SURRENDERED</c> = <c>(Content.limit + Happy.limit) / 2</c> = <c>(600 + 100) / 2</c>).
+    /// </summary>
+    internal const int SurrenderedAlarm = (AlarmContentMax + AlarmHappyMax) / 2;
 
     /// <summary>
     /// Alarm toward the player (0–<see cref="MaxAlarm"/>); starts peaceful at 0, raised

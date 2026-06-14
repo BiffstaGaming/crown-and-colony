@@ -737,7 +737,16 @@ public sealed class Ruleset
             MaximumGrowth: (int?)el.Attribute("maximum-growth") ?? 0,
             TradeBonus: (int?)el.Attribute("trade-bonus") ?? 0,
             ConvertThreshold: (int?)el.Attribute("convert-threshold") ?? 0,
-            DefenceModifier: (double?)defence?.Attribute("value") ?? 0);
+            DefenceModifier: (double?)defence?.Attribute("value") ?? 0,
+            Plunder: el.Elements("plunder")
+                .Select(p => new SettlementPlunder(
+                    Probability: (int?)p.Attribute("probability") ?? 0,
+                    Minimum: (int?)p.Attribute("minimum") ?? 0,
+                    Maximum: (int?)p.Attribute("maximum") ?? 0,
+                    Factor: (int?)p.Attribute("factor") ?? 0,
+                    RequiresPlunderAbility:
+                        (bool?)p.Element("scope")?.Attribute("ability-value") ?? false))
+                .ToList());
     }
 
     /// <summary>The chain of indian-nation-type elements from <paramref name="el"/> up its extends ancestors (leaf → root).</summary>

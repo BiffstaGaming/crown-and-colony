@@ -17,9 +17,9 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 
 - A save restores: turn, map (terrain per tile), every unit (id, **type**, position, movement left), **explored tiles (fog of war)**, RNG state.
 - Loading an interrupted game then continuing produces **identical outcomes** to never having saved (tested).
-- Saves carry a format `Version` (currently **18**); older saves still load with sensible defaults for fields that didn't exist yet (see the changelog), and v1 saves default units to free colonists and reveal fog around units.
+- Saves carry a format `Version` (currently **19**); older saves still load with sensible defaults for fields that didn't exist yet (see the changelog), and v1 saves default units to free colonists and reveal fog around units.
 - Each unit also restores its **owner and equipment** (v18+): the owning native nation (null = the player) and its military role + role count; pre-v18 saves load every unit player-owned and unarmed (tested). Native braves persist through the unit list via the owner field — no separate collection — so a saved game's garrisons come back intact.
-- A save also restores all **native settlements** (v14+): id, owning nation type, settlement type, capital flag, position, size, taught skill, plus their **interaction state** (v16+): alarm, visited flag, skill-consumed flag, and **wanted goods** (v17+).
+- A save also restores all **native settlements** (v14+): id, owning nation type, settlement type, capital flag, position, size, taught skill, plus their **interaction state** (v16+): alarm, visited flag, skill-consumed flag, and **wanted goods** (v17+). A settlement **destroyed by assault (v19+)** is simply absent from the saved list — there is no new field; its plunder is already folded into the saved gold.
 - A save records its **game variant** (v15+; e.g. `classic`) so it reloads under the matching ruleset (ADR-018); pre-v15 saves resolve to the default variant. See [game-modes](game-modes.md).
 - Saves reference terrain by ruleset id — loading needs the matching ruleset; unknown ids fail loudly.
 
@@ -67,3 +67,4 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 | 2026-06-14 | Format v16: native settlement interaction state (alarm, visited, skill-consumed); pre-v16 settlements load peaceful/unvisited (tested) | Phase 5 slice 3 |
 | 2026-06-14 | Format v17: native settlement wanted goods; pre-v17 settlements load with none (tested) | Phase 5 slice 4 |
 | 2026-06-14 | Format v18: unit owner nation + role/roleCount (native braves, armed soldiers); pre-v18 units load player-owned and unarmed (tested); default-role player units serialize identically to v17 | Phase 5 slice 5b |
+| 2026-06-14 | Format v19: settlement assault — a destroyed settlement is absent from the list, plunder folds into gold (no new field; a marker only). Older saves load unchanged; a sacked-settlement game round-trips (tested) | Phase 5 slice 5c |
