@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (ruleset unit types, naval units, off-map sailing/Europe, cargo + passengers) |
-| **Last verified** | 2026-06-13 @ Phase 4 slice 9 |
-| **Code** | `game/src/GameLogic/Units/`, `GameSession/Game.cs` · rendering: `game/presentation/UnitMarker.cs` |
-| **Tests** | `game/tests/GameLogic.Tests/GameSession/GameTests.cs` |
+| **Status** | Implemented (ruleset unit types, naval units, off-map sailing/Europe, cargo + passengers, role movement bonuses) |
+| **Last verified** | 2026-06-14 @ FP-5 (role movement bonuses) |
+| **Code** | `game/src/GameLogic/Units/`, `GameSession/Game.cs` (`InitialMovement`) · rendering: `game/presentation/UnitMarker.cs` |
+| **Tests** | `game/tests/GameLogic.Tests/GameSession/GameTests.cs`, `RoleMovementTests.cs` |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/common/model/Unit.java` (`getMoveCost`, `MoveType`) |
 | **Related systems** | [map-terrain](map-terrain.md), [turns](turns.md) |
 
@@ -25,9 +25,10 @@ There's one explorer on the map. Click it to select (gold ring), click a neighbo
 | Target holds an enemy unit (e.g. a native brave) | rejected — *attack* it instead (see [combat](combat.md)) |
 | 0 movement points left | rejected |
 | cost ≤ movement left | allowed; pay the terrain's move cost |
-| cost > movement left | allowed **for all remaining points** only if near-full movement (`left+2 ≥ max`) or small shortfall (`cost ≤ left+2`) or target is a settlement; otherwise rejected |
+| cost > movement left | allowed **for all remaining points** only if near-full movement (`left+2 ≥ max`, where `max` = the unit's full turn movement *including its role bonus*) or small shortfall (`cost ≤ left+2`) or target is a settlement; otherwise rejected |
 
 - Unit capabilities come from the ruleset (`UnitType`): free colonist 3 MP land, caravel 12 MP naval, etc.
+- **Initial (per-turn) movement = unit-type base + role movement bonus** (FreeCol `Unit.getInitialMovesLeft` folding `model.modifier.movementBonus`): a **mounted** role adds **+9** (one "move" is 3 points, so +3 tiles) — dragoon, scout, cavalry, mounted/native-dragoon braves; the **missionary** role adds **+3**; foot roles (soldier/infantry/pioneer) and the unarmed default add nothing. The bonus is applied at each turn's movement reset (`Game.InitialMovement`); a freshly-equipped mount gets the bonus from its next turn (equipping doesn't refund moves mid-turn). *Nation-type (naval +3) and Magellan (+3) movement bonuses are separate scoped modifiers — deferred with scope evaluation / founding-father effects.*
 - **Ownership & equipment** (Phase 5 slice 5b): a unit carries an `OwnerNationId` (null = the human player; a native nation id = a brave) and a military **role** (`RoleId`/`RoleCount` — unarmed by default; soldier/dragoon when equipped). `Game.PlayerUnits`/`NativeUnits` partition the unit list by owner. A unit cannot move onto a tile held by an enemy — combat is a separate action ([combat](combat.md)). Native units never lift the player's fog and can't be selected.
 
 **Deviations from original / FreeCol:** ✅ **cross-check done (2026-06-13).** The partial-movement rule above is FreeCol's exactly (`Unit.getMoveCost`, Unit.java:2227). Not yet implemented from that method: tile-improvement cost changes (roads/rivers — arrive with improvements) and the settlement-target clause (no settlements yet). For 3-MP units the rule is equivalent to the old skeleton behaviour; it differs for faster units (pinned by test).
@@ -35,6 +36,7 @@ There's one explorer on the map. Click it to select (gold ring), click a neighbo
 ## 3. Technical design
 
 - `Unit`: mutable state (Position, MovementLeft), internal setters — only `Game` mutates it.
+- `Game.InitialMovement(unit)` = `unit.Type.Movement + (int)role.MovementBonus` (role resolved null-safely from `Ruleset.Roles`, so minimal rulesets without role data just get the base). Used by the per-turn reset in `EndTurn` and as the "full movement" reference in `CheckMove`'s partial-move rule. `Unit` no longer carries a `ResetMovement` (it can't see the ruleset to resolve the role).
 - `Game.CheckMove(unit, target) → MoveCheck{Allowed, Cost, Reason}`: the single legality oracle; UI calls it before attempting. `Game.MoveUnit` throws `InvalidMoveException` if used without checking.
 - Selection is presentation state (`GameController._selectedUnit`), not game state.
 - `UnitMarker`: `_Draw` disc + selection ring; positioned via `MapView.TileCentre`.
@@ -43,7 +45,7 @@ There's one explorer on the map. Click it to select (gold ring), click a neighbo
 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
-| L1 Unit | Always | `GameTests`: legal move spends points; rejects non-adjacent/off-map/water/exhausted; spawn validation | ✅ |
+| L1 Unit | Always | `GameTests`: legal move spends points; rejects non-adjacent/off-map/water/exhausted; spawn validation. `RoleMovementTests`: dragoon/scout reset to base + 9, foot/default unchanged | ✅ |
 | L2 Scenario | Always | 10-turn wander with per-move invariants; deterministic twin games | ✅ |
 | L3 Interaction | Yes | `InputTests`: click-select + click-to-move (simulated mouse, camera-aware); marker placement | ✅ |
 | L4 Visual | Yes | TODO with visual harness | ⬜ |
@@ -52,6 +54,8 @@ There's one explorer on the map. Click it to select (gold ring), click a neighbo
 
 ## 5. Open issues / TODO
 
+- [x] Role movement bonuses (dragoon/scout/cavalry +9, pioneer +3) applied at the per-turn reset (FP-5, `86d3bbvv6`).
+- [ ] Nation-type (naval +3) and Magellan (+3) movement bonuses — scoped `movementBonus` modifiers, deferred with scope evaluation / founding-father effects.
 - [ ] Tile-improvement movement costs (roads/rivers) with the improvements system.
 - [ ] Settlement-target movement clause when colonies exist.
 - [ ] Multiple player units / unit cycling UI.
@@ -66,3 +70,4 @@ There's one explorer on the map. Click it to select (gold ring), click a neighbo
 | 2026-06-13 | FreeCol unit sprites by type short-name (`assets/freecol/units/`), red-disc fallback, iso ground-ellipse selection | Phase 2c |
 | 2026-06-13 | Off-map units (sailing/Europe) can't be moved on the map; units gain a cargo hold — see [europe](europe.md) | Phase 4 |
 | 2026-06-14 | Unit ownership (`OwnerNationId`, `PlayerUnits`/`NativeUnits`) + military roles (`RoleId`/`RoleCount`); can't move onto an enemy tile (attack instead); native units fog-excluded — see [combat](combat.md) | Phase 5 slice 5b |
+| 2026-06-14 | Role movement bonuses applied: per-turn movement = unit-type base + role `movementBonus` (mounted +9, missionary +3) via `Game.InitialMovement`; partial-move "near full" now measured against the boosted max; `Unit.ResetMovement` removed | FP-5 (`86d3bbvv6`) |

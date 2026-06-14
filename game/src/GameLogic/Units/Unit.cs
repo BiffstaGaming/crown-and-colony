@@ -115,6 +115,4 @@ public sealed class Unit
         }
     }
 
-    /// <summary>Restores full movement at the start of a turn.</summary>
-    internal void ResetMovement() => MovementLeft = Type.Movement;
 }

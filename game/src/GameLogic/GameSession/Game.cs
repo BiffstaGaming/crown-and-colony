@@ -1409,6 +1409,16 @@ public sealed class Game
     }
 
     /// <summary>
+    /// A unit's movement points for a fresh turn: its unit-type base plus its role's movement bonus
+    /// (FreeCol <c>Unit.getInitialMovesLeft</c> folding <c>model.modifier.movementBonus</c>) — e.g. a
+    /// dragoon/scout/cavalry/mounted brave gets +9 (one extra "move" is 3 points). The role lookup is
+    /// null-safe so minimal rulesets without role data simply get the base. (Nation/Magellan movement
+    /// bonuses are separate, scoped modifiers — deferred with scope evaluation / founding-father effects.)
+    /// </summary>
+    private int InitialMovement(Unit unit) =>
+        unit.Type.Movement + (int)(Ruleset.Roles.FirstOrDefault(r => r.Id == unit.RoleId)?.MovementBonus ?? 0);
+
+    /// <summary>
     /// Whether <paramref name="unit"/> may move to <paramref name="target"/> right now,
     /// and why not if not.
     /// </summary>
@@ -1459,7 +1469,7 @@ public sealed class Game
         int cost = terrain.MoveCost;
         if (cost > movesLeft)
         {
-            bool allowed = movesLeft + 2 >= unit.Type.Movement || cost <= movesLeft + 2;
+            bool allowed = movesLeft + 2 >= InitialMovement(unit) || cost <= movesLeft + 2;
             if (!allowed)
             {
                 return MoveCheck.No("Not enough movement left this turn.");
@@ -2156,7 +2166,7 @@ public sealed class Game
         }
         foreach (Unit unit in _units)
         {
-            unit.ResetMovement();
+            unit.MovementLeft = InitialMovement(unit); // base + role bonus (dragoon/scout +9)
         }
         Turn++;
     }
