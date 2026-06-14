@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-15 — FP-7: save-format v20 consolidation (drop legacy flat fields)
+
+**Requested:** "Continue through as you would" (no playtest-gating) → next clean roadmap item: FP-7 (`86d3bex56`).
+**Did:** Consolidated the v20 save format — `Players[]` has been the source of truth for player state since FP-1, but `From()` also dual-wrote the legacy flat top-level fields. FP-7 stops writing them:
+- The 4 non-nullable flat value fields (`Gold`/`Tax`/`Liberty`/`Immigration`) became `int?`; `From()` no longer writes any flat field (gold/tax/market/liberty/Congress/fathers/immigration/dock/explored); the fold path coalesces with `?? 0` so ≤v19 saves fold identically.
+- **`CurrentVersion` stays 20** (deliberate, plan-argued): the v20 load path was already `Players[]`-only, so dropping the redundant mirror changes no branch — new v20 saves are just smaller. Flat *properties* kept (read-only) so ≤v19 saves still fold and pre-FP-7 v20 saves (carry both) still load.
+- Process: research workflow (legacy-field map + version-test blast radius → migration plan) → implement → adversarial review (running).
+**Status:** **425 tests green** (403 L1+L2 + 2 soak + 20 scene; +7 SaveGameTests: `NewSave_OmitsLegacyFlatPlayerFields`, `LegacyV20Save_...LoadsFromPlayersIgnoringFlatFields`, `OldSaveVersion_WithFlatFields_FoldsToOneHuman` (v9/12/19), `HumanState_RoundTripsThroughPlayersOnly`, `PreV9Save_WithNoTreasuryTokens_FoldsToZeroDefaults`; rewrote `V19Save_LoadsAsSingleHumanPlayer` to construct the v19 shape since `From` no longer emits flat fields). Soak round-trip stays byte-identical (flat fields omitted symmetrically). Persistence-only — no RNG/gameplay change. Adversarial review: **no blockers**; added its suggested pre-v9 absent-token test. Committed; CI running.
+**Changed:** `SaveGame.cs` (nullable flat fields + drop writes + fold `?? 0` + version doc); `SaveGameTests.cs` (rewrite 1 + 4 new); docs `save-load.md`/`game-logic.md`/`QA-REPORT.md`.
+**Decisions:** Keep Version=20 (no bump — no new load path; a bump would mislead). Keep flat properties read-only (don't delete — needed to deserialize old saves). Losslessness rests on: the fold `?? 0` reproducing the old `default(int)`; the `Players[]` arm ignoring flat fields; the 8 byte-identical round-trip tests as the symmetry net.
+**Scheduled next:** the FP wave (FP-1→FP-7) is now **complete**. Next per roadmap: the deferred **Founding-Father effects** (`86d3b7qxr`) and the rest of **FP-6b** (AI acting on stance / native raids — gameplay-altering, pairs with combat UI). Then Phase 6 (independence & REF).
+**Needs you:** Nothing for FP-7. The remaining wave-adjacent work (AI combat, founding-father effects) is logic I can continue; the *visible* AI behaviour + UI is where your playtest will matter once there's a combat/rival UI.
+
 ## 2026-06-15 — FP-6b (1/n): tension→stance state machine
 
 **Requested:** "Continue with the current correct order of building things" (back on the roadmap after the colony-screen question) → next is finishing FP-6 (`86d3bex51`).

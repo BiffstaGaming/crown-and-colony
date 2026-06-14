@@ -34,9 +34,12 @@ public sealed record SaveGame
     /// settlement is simply absent from the list; plunder folds into gold — no new field);
     /// v20 introduced <see cref="Players"/> as the source of truth for player-scoped state
     /// (gold/tax/market/liberty/Congress/immigration/dock/explored). The load path is chosen by
-    /// version: v20+ reads <see cref="Players"/>; a v19-and-earlier save folds the legacy flat
-    /// top-level fields into one human player. A v20 save still writes those flat fields too (so every
-    /// older load path stays exercised); they are dropped at the FP-7 save-consolidation slice. v20 also
+    /// version: v20+ reads <see cref="Players"/>; a v19-and-earlier save (or any save with no
+    /// <see cref="Players"/>) folds the legacy flat top-level fields into one human player. As of <b>FP-7</b> a
+    /// v20 save no longer writes those flat fields — player state lives only in <see cref="Players"/>; the
+    /// version stays 20 because the v20 load path was already <see cref="Players"/>-only, so new v20 saves are
+    /// simply smaller. The flat field properties remain (read-only) so ≤v19 saves still fold and pre-FP-7 v20
+    /// saves (which carry both) still load. v20 also
     /// gained optional unit/colony owner ids (FP-2, additive — null = the human, id 0) and, additively through
     /// the foreign-powers wave, per-player RNG streams (FP-4) and per-player diplomacy stance + tension maps
     /// (FP-6a; omitted when empty, so a no-contact game is byte-identical; older saves load Uncontacted/0).
@@ -83,29 +86,29 @@ public sealed record SaveGame
     /// <summary>Bonus resources by row-major tile index. Null in pre-v8 saves (none).</summary>
     public IReadOnlyList<SavedResource>? Resources { get; init; }
 
-    /// <summary>Player treasury in gold (v9+; also mirrored in <see cref="Players"/> from v20, which the v20 load path reads).</summary>
-    public int Gold { get; init; }
+    /// <summary>Legacy ≤v19 / pre-FP-7 read-only player treasury (v9+). Player state lives in <see cref="Players"/> (v20+); no longer written as of FP-7. Nullable so new saves omit it.</summary>
+    public int? Gold { get; init; }
 
-    /// <summary>Sales tax percentage (v9+; also mirrored in <see cref="Players"/> from v20).</summary>
-    public int Tax { get; init; }
+    /// <summary>Legacy ≤v19 / pre-FP-7 read-only sales tax (v9+). See <see cref="Gold"/>.</summary>
+    public int? Tax { get; init; }
 
-    /// <summary>Market inventories that have moved from their ruleset seed (sparse; v9+; also mirrored in <see cref="Players"/> from v20).</summary>
+    /// <summary>Legacy ≤v19 / pre-FP-7 read-only moved-market inventories (sparse; v9+). See <see cref="Gold"/>.</summary>
     public IReadOnlyDictionary<string, int>? MarketState { get; init; }
 
-    /// <summary>Liberty banked toward the next Founding Father (v10+; also mirrored in <see cref="Players"/> from v20).</summary>
-    public int Liberty { get; init; }
+    /// <summary>Legacy ≤v19 / pre-FP-7 read-only liberty (v10+). See <see cref="Gold"/>.</summary>
+    public int? Liberty { get; init; }
 
-    /// <summary>Elected Founding Father ids, in order (null when none; v10+).</summary>
+    /// <summary>Legacy ≤v19 / pre-FP-7 read-only elected Founding Father ids (null when none; v10+). See <see cref="Gold"/>.</summary>
     public IReadOnlyList<string>? Congress { get; init; }
 
-    /// <summary>The father currently being recruited (v10+).</summary>
+    /// <summary>Legacy ≤v19 / pre-FP-7 read-only current father (v10+). See <see cref="Gold"/>.</summary>
     public string? CurrentFather { get; init; }
 
-    /// <summary>The fathers offered this round, so a reload restores the same choice (v10+).</summary>
+    /// <summary>Legacy ≤v19 / pre-FP-7 read-only offered fathers (v10+). See <see cref="Gold"/>.</summary>
     public IReadOnlyList<string>? OfferedFathers { get; init; }
 
-    /// <summary>Immigration points banked toward the next emigrant (v12+; also mirrored in <see cref="Players"/> from v20).</summary>
-    public int Immigration { get; init; }
+    /// <summary>Legacy ≤v19 / pre-FP-7 read-only immigration points (v12+). See <see cref="Gold"/>.</summary>
+    public int? Immigration { get; init; }
 
     /// <summary>Immigration points required for the next emigrant; null pre-v12 → classic default 15.</summary>
     public int? ImmigrationRequired { get; init; }
@@ -163,11 +166,6 @@ public sealed record SaveGame
                     // Owner player id omitted for the human (id 0) so human-only saves stay byte-identical (FP-2).
                     u.OwnerId == 0 ? null : u.OwnerId))
                 .ToList(),
-            // Legacy flat fog field (v1+); also held per-player in Players[] from v20.
-            Explored = game.Explored
-                .Select(p => p.Y * game.Map.Width + p.X)
-                .OrderBy(i => i)
-                .ToList(),
             Colonies = game.Colonies
                 .Select(c => new SavedColony(
                     c.Id, c.Name, c.Position.X, c.Position.Y, c.Population,
@@ -186,23 +184,11 @@ public sealed record SaveGame
                     .OrderBy(r => r.Index)
                     .ToList()
                 : null,
-            // Player-scoped state: authoritative in Players[] from v20; also written to the legacy flat
-            // fields below so every pre-v20 load path stays exercised (dropped at FP-7 save-consolidation).
+            // Player-scoped state: authoritative in (and written only to) Players[]. The legacy flat
+            // top-level fields are no longer written as of FP-7 — they remain readable for ≤v19 / pre-FP-7
+            // v20 saves (the fold path), but the v20 load path was always Players[]-only, so the format
+            // version stays 20 and new v20 saves are simply smaller.
             Players = game.Players.Select(p => ToSavedPlayer(p, game.Map)).ToList(),
-            Gold = game.Gold,
-            Tax = game.TaxRate,
-            MarketState = game.Market.SaveDeltas() is { Count: > 0 } deltas
-                ? new Dictionary<string, int>(deltas)
-                : null,
-            Liberty = game.Liberty,
-            Congress = game.Congress.Count > 0 ? game.Congress.ToList() : null,
-            CurrentFather = game.CurrentFather,
-            OfferedFathers = game.OfferedFathers.Count > 0 ? game.OfferedFathers.ToList() : null,
-            Immigration = game.Immigration,
-            ImmigrationRequired = game.ImmigrationRequired,
-            BaseRecruitPrice = game.BaseRecruitPrice,
-            RecruitLowerCap = game.RecruitLowerCap,
-            RecruitDock = game.RecruitDock.Count > 0 ? game.RecruitDock.ToList() : null,
             NativeSettlements = game.NativeSettlements.Count > 0
                 ? game.NativeSettlements
                     .Select(s => new SavedNativeSettlement(
@@ -311,12 +297,17 @@ public sealed record SaveGame
         p.RngState is { } s && p.RngIncrement is { } inc ? new RandomState(s, inc) : null,
         p.Stances, p.Tensions);
 
-    /// <summary>Folds a v19-and-earlier save's flat top-level fields into the single human player (null explored = pre-fog).</summary>
+    /// <summary>
+    /// Folds the legacy flat top-level fields into the single human player — taken for a ≤v19 save, or any save
+    /// with no <see cref="Players"/> (the JourneyTests fixtures). The flat value fields are nullable since FP-7
+    /// (new saves omit them); they coalesce to their former <c>default(int)</c> 0, so a genuine old save (whose
+    /// flat tokens are present) is unaffected and a field that was always absent still yields 0. Null explored = pre-fog.
+    /// </summary>
     private RestoredPlayer FoldFlatFieldsToHumanPlayer() => new(
         PlayerId: 0, NationId: null, IsHuman: true, PlayerType.Colonial,
-        Gold, Tax, MarketState,
-        Liberty, Congress, CurrentFather, OfferedFathers,
-        Immigration, ImmigrationRequired ?? Game.InitialImmigration,
+        Gold ?? 0, Tax ?? 0, MarketState,
+        Liberty ?? 0, Congress, CurrentFather, OfferedFathers,
+        Immigration ?? 0, ImmigrationRequired ?? Game.InitialImmigration,
         BaseRecruitPrice ?? Game.InitialRecruitPrice, RecruitLowerCap ?? Game.InitialRecruitLowerCap,
         RecruitDock,
         Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)));

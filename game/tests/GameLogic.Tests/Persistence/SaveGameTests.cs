@@ -178,12 +178,26 @@ public class SaveGameTests
         var game = Game.New(Classic, seed: 42, startingGold: 500, startingTax: 10);
         game.EndTurn(); // accrue a little immigration so the folded value is non-trivial
 
-        // A v19 save predates Players[]; its flat top-level fields (still written by From, dropped at FP-7)
-        // carry the human's state. Override the version and a market delta to exercise the fold path.
+        // A v19 save predates Players[]; its flat top-level fields carry the human's state. From() no longer
+        // writes those fields (dropped at FP-7), so this fixture *constructs* the v19 shape explicitly to keep
+        // exercising the fold path. Players = null forces the fold even though the source game has one.
         SaveGame v19 = SaveGame.From(game) with
         {
             Version = 19,
+            Players = null,
+            Gold = 500,
+            Tax = 10,
+            Liberty = game.Liberty,
+            Congress = game.Congress.Count > 0 ? game.Congress.ToList() : null,
+            CurrentFather = game.CurrentFather,
+            OfferedFathers = game.OfferedFathers.Count > 0 ? game.OfferedFathers.ToList() : null,
+            Immigration = game.Immigration,
+            ImmigrationRequired = game.ImmigrationRequired,
+            BaseRecruitPrice = game.BaseRecruitPrice,
+            RecruitLowerCap = game.RecruitLowerCap,
+            RecruitDock = game.RecruitDock.Count > 0 ? game.RecruitDock.ToList() : null,
             MarketState = new Dictionary<string, int> { ["model.goods.sugar"] = 99 },
+            Explored = game.Explored.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList(),
         };
 
         Game loaded = SaveGame.FromJson(v19.ToJson()).Restore(Classic);
@@ -208,6 +222,136 @@ public class SaveGameTests
         Assert.Equal(
             game.Explored.OrderBy(p => (p.Y, p.X)),
             loaded.Explored.OrderBy(p => (p.Y, p.X)));
+    }
+
+    [Fact]
+    public void NewSave_OmitsLegacyFlatPlayerFields()
+    {
+        // FP-7: From() no longer populates the legacy flat top-level player fields — player state lives only
+        // in Players[]. (The flat names are shared with SavedPlayer, so we prove omission via the record/reload,
+        // not a raw-JSON substring search.)
+        var save = SaveGame.From(Game.New(Classic, seed: 5, startingGold: 500, startingTax: 10));
+
+        Assert.Null(save.Gold);
+        Assert.Null(save.Tax);
+        Assert.Null(save.Liberty);
+        Assert.Null(save.Immigration);
+        Assert.Null(save.MarketState);
+        Assert.Null(save.Congress);
+        Assert.Null(save.CurrentFather);
+        Assert.Null(save.OfferedFathers);
+        Assert.Null(save.ImmigrationRequired);
+        Assert.Null(save.BaseRecruitPrice);
+        Assert.Null(save.RecruitLowerCap);
+        Assert.Null(save.RecruitDock);
+        Assert.Null(save.Explored);
+
+        // They round-trip as absent (a reloaded record still reads them null at the top level)…
+        SaveGame reloaded = SaveGame.FromJson(save.ToJson());
+        Assert.Null(reloaded.Gold);
+        Assert.Null(reloaded.Explored);
+        Assert.Null(reloaded.RecruitDock);
+
+        // …while the human's state is carried under Players[].
+        SavedPlayer human = save.Players!.First(p => p.IsHuman);
+        Assert.Equal(500, human.Gold);
+        Assert.Equal(10, human.Tax);
+    }
+
+    [Fact]
+    public void LegacyV20Save_WithFlatFieldsAndPlayers_LoadsFromPlayersIgnoringFlatFields()
+    {
+        // A pre-FP-7 v20 save carries BOTH Players[] and the flat fields. The v20 load path reads Players[]
+        // and ignores the flat fields — proven by feeding deliberately-wrong flat values.
+        var game = Game.New(Classic, seed: 42, startingGold: 250, startingTax: 7);
+        SaveGame withStaleFlats = SaveGame.From(game) with
+        {
+            Gold = 999999,
+            Tax = 99,
+            Liberty = 12345,
+            Immigration = 4242,
+            Explored = new List<int>(), // bogus empty fog
+        };
+
+        Game loaded = SaveGame.FromJson(withStaleFlats.ToJson()).Restore(Classic);
+        Player human = loaded.HumanPlayer;
+
+        Assert.Equal(250, human.Gold);    // from Players[], not the bogus 999999
+        Assert.Equal(7, human.TaxRate);
+        Assert.Equal(game.Liberty, human.Liberty);
+        Assert.Equal(game.Immigration, human.Immigration);
+        Assert.NotEmpty(loaded.Explored); // real fog from Players[0], not the bogus empty list
+    }
+
+    [Theory]
+    [InlineData(9)]
+    [InlineData(12)]
+    [InlineData(19)]
+    public void OldSaveVersion_WithFlatFields_FoldsToOneHuman(int version)
+    {
+        // Every pre-Players[] version still folds its flat fields into a single human (Players = null forces
+        // the fold even though the source game has rivals).
+        var game = Game.New(Classic, seed: 7, startingGold: 400, startingTax: 8);
+        SaveGame old = SaveGame.From(game) with
+        {
+            Version = version,
+            Players = null,
+            Gold = 400,
+            Tax = 8,
+            ImmigrationRequired = game.ImmigrationRequired,
+            BaseRecruitPrice = game.BaseRecruitPrice,
+            RecruitLowerCap = game.RecruitLowerCap,
+            RecruitDock = game.RecruitDock.ToList(),
+            Explored = game.Explored.Select(p => p.Y * game.Map.Width + p.X).ToList(),
+        };
+
+        Game loaded = SaveGame.FromJson(old.ToJson()).Restore(Classic);
+
+        Player human = Assert.Single(loaded.Players);
+        Assert.True(human.IsHuman);
+        Assert.Equal(400, human.Gold);
+        Assert.Equal(8, human.TaxRate);
+    }
+
+    [Fact]
+    public void PreV9Save_WithNoTreasuryTokens_FoldsToZeroDefaults()
+    {
+        // A genuinely old (pre-v9) save carries no Gold/Tax/Liberty/Immigration tokens at all; the fold must
+        // default them to 0 (the former default(int)), proving the now-nullable fields' `?? 0` coalesce.
+        var game = Game.New(Classic, seed: 7);
+        SaveGame preV9 = SaveGame.From(game) with
+        {
+            Version = 8,
+            Players = null,
+            // Gold/Tax/Liberty/Immigration deliberately left null (token absent) — must fold to 0.
+        };
+
+        Game loaded = SaveGame.FromJson(preV9.ToJson()).Restore(Classic);
+        Player human = Assert.Single(loaded.Players);
+
+        Assert.Equal(0, human.Gold);
+        Assert.Equal(0, human.TaxRate);
+        Assert.Equal(0, human.Liberty);
+        Assert.Equal(0, human.Immigration);
+    }
+
+    [Fact]
+    public void HumanState_RoundTripsThroughPlayersOnly()
+    {
+        var game = Game.New(Classic, seed: 99, startingGold: 300, startingTax: 5);
+        game.EndTurn(); // accrue some immigration; advance state
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(game.Gold, loaded.Gold);
+        Assert.Equal(game.TaxRate, loaded.TaxRate);
+        Assert.Equal(game.Liberty, loaded.Liberty);
+        Assert.Equal(game.Immigration, loaded.Immigration);
+        Assert.Equal(game.RecruitDock, loaded.RecruitDock);
+        Assert.Equal(
+            game.Explored.OrderBy(p => (p.Y, p.X)),
+            loaded.Explored.OrderBy(p => (p.Y, p.X)));
+        Assert.Null(SaveGame.From(game).Gold); // carried under Players[], not the legacy flat field
     }
 
     private static Position AdjacentLand(Game game, Position from) =>
