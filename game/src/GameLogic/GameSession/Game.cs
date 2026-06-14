@@ -167,6 +167,26 @@ public sealed class Game
     /// <summary>Tension added to a colonial pair by an act of war — the FreeCol WAR modifier (<c>HATEFUL.limit</c>).</summary>
     internal const int TensionWar = 1000;
 
+    // FreeCol Tension.Level limits + DELTA, used by the tension→stance machine (Stance.getStanceFromTension).
+    private const int TensionContentLimit = 600; // CONTENT band
+    private const int TensionHappyLimit = 100;   // HAPPY band
+    private const int TensionDelta = 10;         // hysteresis
+
+    /// <summary>
+    /// The stance a colonial pair should hold given the <paramref name="current"/> stance and its
+    /// <paramref name="tension"/> — FreeCol <c>Stance.getStanceFromTension</c> (DELTA hysteresis): a war cools to
+    /// <see cref="Stance.CeaseFire"/> at ≤ 590, a cease-fire warms to <see cref="Stance.Peace"/> at ≤ 90, and
+    /// peace flares to <see cref="Stance.War"/> above 1010. <see cref="Stance.Uncontacted"/> never changes here
+    /// (only first contact promotes it). Returns <paramref name="current"/> when no threshold is crossed.
+    /// </summary>
+    internal static Stance StanceFromTension(Stance current, int tension) => current switch
+    {
+        Stance.War when tension <= TensionContentLimit - TensionDelta => Stance.CeaseFire,
+        Stance.CeaseFire when tension <= TensionHappyLimit - TensionDelta => Stance.Peace,
+        Stance.CeaseFire or Stance.Peace when tension > TensionWar + TensionDelta => Stance.War,
+        _ => current,
+    };
+
     /// <summary><paramref name="a"/>'s diplomatic stance toward <paramref name="b"/> (their <see cref="Player.PlayerId"/>s); <see cref="Stance.Uncontacted"/> if unrecorded or either is non-colonial.</summary>
     public Stance StanceBetween(int a, int b) =>
         PlayerById(a) is { } pa ? pa.Stances.GetValueOrDefault(b) : Stance.Uncontacted;
@@ -2251,6 +2271,7 @@ public sealed class Game
         AdvanceSailing();
         DetectColonialContacts();   // first sight of a rival colonial power → Peace (FP-6a)
         DecayColonialTension();     // colonial-pair tension cools each turn (mirrors native alarm)
+        UpdateColonialStances();    // stance follows tension: war → cease-fire → peace as it cools (FP-6b)
         foreach (NativeSettlement settlement in _nativeSettlements)
         {
             DecayNativeAlarm(settlement);
@@ -2978,7 +2999,8 @@ public sealed class Game
     /// <summary>
     /// Each turn, colonial-pair tension cools toward 0 using the same formula as native alarm
     /// (<c>−value/100 − 4</c>) — a deliberate symmetry (FreeCol has no European tension decay; the slice scope
-    /// asks for it). Decay never changes <see cref="Stance"/> (tension→stance de-escalation is FP-6b). No RNG.
+    /// asks for it). Decay never changes <see cref="Stance"/> directly — <see cref="UpdateColonialStances"/>
+    /// derives stance from the cooled tension afterwards. No RNG.
     /// </summary>
     private void DecayColonialTension()
     {
@@ -2988,6 +3010,34 @@ public sealed class Game
             {
                 int t = p.TensionMap[otherId];
                 p.TensionMap[otherId] = Math.Max(0, t - (t / 100 + 4));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Re-derives each colonial pair's <see cref="Stance"/> from its (just-decayed) tension via
+    /// <see cref="StanceFromTension"/> (FP-6b): a war cools to cease-fire then peace as tension falls. Runs after
+    /// <see cref="DecayColonialTension"/>, over recorded pairs in id order, symmetric, deterministic, no RNG.
+    /// Only pairs that have met (have a stance entry) are considered, so uncontacted pairs stay uncontacted.
+    /// </summary>
+    private void UpdateColonialStances()
+    {
+        var colonial = _players.Where(p => p.PlayerType == PlayerType.Colonial).OrderBy(p => p.PlayerId).ToList();
+        for (int i = 0; i < colonial.Count; i++)
+        {
+            for (int j = i + 1; j < colonial.Count; j++)
+            {
+                Player a = colonial[i], b = colonial[j];
+                Stance current = a.Stances.GetValueOrDefault(b.PlayerId);
+                if (current == Stance.Uncontacted)
+                {
+                    continue; // not yet met — only first contact promotes Uncontacted
+                }
+                Stance next = StanceFromTension(current, a.Tensions.GetValueOrDefault(b.PlayerId));
+                if (next != current)
+                {
+                    SetStance(a.PlayerId, b.PlayerId, next); // symmetric
+                }
             }
         }
     }

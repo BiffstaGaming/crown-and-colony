@@ -120,11 +120,12 @@ public class DiplomacyTests
         int fid = ForeignPowerId(game);
         Colony rivalColony = game.Colonies.First(c => c.OwnerId == fid);
         game.SetStance(0, fid, Stance.War); // already at war before "meeting"
+        game.ChangeTension(0, fid, 1000);   // a hot war (so the tension→stance machine keeps it at War this turn)
 
         game.HumanPlayer.ExploredSet.Add(rivalColony.Position);
         game.EndTurn();
 
-        Assert.Equal(Stance.War, game.StanceBetween(0, fid)); // contact only promotes Uncontacted → Peace
+        Assert.Equal(Stance.War, game.StanceBetween(0, fid)); // contact only promotes Uncontacted → Peace; war holds
     }
 
     // ---- Attack → War ----
@@ -155,17 +156,73 @@ public class DiplomacyTests
     // ---- Decay ----
 
     [Fact]
-    public void ColonialTension_DecaysEachTurn_AndNeverChangesStance()
+    public void ColonialTension_DecaysEachTurn_WarPersistsWhileHot()
     {
         var game = Game.New(Classic, seed: 7);
         int fid = ForeignPowerId(game);
         game.SetStance(0, fid, Stance.War);
-        game.ChangeTension(0, fid, 500);
+        game.ChangeTension(0, fid, 1000);
 
         game.EndTurn();
 
-        Assert.Equal(491, game.TensionBetween(0, fid)); // 500 − (500/100 + 4), same formula as native alarm
-        Assert.Equal(Stance.War, game.StanceBetween(0, fid)); // decay cools the number but never changes stance
+        Assert.Equal(986, game.TensionBetween(0, fid)); // 1000 − (1000/100 + 4), same formula as native alarm
+        Assert.Equal(Stance.War, game.StanceBetween(0, fid)); // still well above the cease-fire line — war holds
+    }
+
+    // ---- Tension → Stance (FP-6b state machine) ----
+
+    [Theory]
+    [InlineData(Stance.War, 1000, Stance.War)]              // a hot war holds
+    [InlineData(Stance.War, 590, Stance.CeaseFire)]         // cooled to ≤ CONTENT−DELTA (590) → cease-fire
+    [InlineData(Stance.War, 591, Stance.War)]               // one above the line → still war
+    [InlineData(Stance.CeaseFire, 200, Stance.CeaseFire)]   // a truce holds in the middle band
+    [InlineData(Stance.CeaseFire, 90, Stance.Peace)]        // cooled to ≤ HAPPY−DELTA (90) → peace
+    [InlineData(Stance.CeaseFire, 91, Stance.CeaseFire)]    // one above the line → still cease-fire
+    [InlineData(Stance.CeaseFire, 1011, Stance.War)]        // re-flares above HATEFUL+DELTA (1010)
+    [InlineData(Stance.Peace, 1011, Stance.War)]            // peace → war above 1010
+    [InlineData(Stance.Peace, 1010, Stance.Peace)]          // at the line → still peace
+    [InlineData(Stance.Peace, 0, Stance.Peace)]
+    [InlineData(Stance.Uncontacted, 5000, Stance.Uncontacted)] // contact is never derived from tension
+    public void StanceFromTension_FollowsFreeColThresholds(Stance current, int tension, Stance expected) =>
+        Assert.Equal(expected, Game.StanceFromTension(current, tension));
+
+    [Fact]
+    public void War_DeEscalatesToCeaseFire_AsTensionDecaysBelowTheLine()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        game.SetStance(0, fid, Stance.War);
+        game.ChangeTension(0, fid, 595); // one turn's decay (→586) drops it to ≤590
+
+        game.EndTurn();
+
+        Assert.Equal(Stance.CeaseFire, game.StanceBetween(0, fid));
+        Assert.Equal(Stance.CeaseFire, game.StanceBetween(fid, 0)); // symmetric
+    }
+
+    [Fact]
+    public void CeaseFire_WarmsToPeace_AsTensionDecaysToCalm()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        game.SetStance(0, fid, Stance.CeaseFire);
+        game.ChangeTension(0, fid, 94); // decays to 90 → peace
+
+        game.EndTurn();
+
+        Assert.Equal(Stance.Peace, game.StanceBetween(0, fid));
+    }
+
+    [Fact]
+    public void Save_RoundTrips_CeaseFireStance()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        game.SetStance(0, fid, Stance.CeaseFire);
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(Stance.CeaseFire, loaded.StanceBetween(0, fid));
     }
 
     // ---- Persistence (additive on save v20) ----

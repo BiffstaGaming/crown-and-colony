@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-15 — FP-6b (1/n): tension→stance state machine
+
+**Requested:** "Continue with the current correct order of building things" (back on the roadmap after the colony-screen question) → next is finishing FP-6 (`86d3bex51`).
+**Did:** Implemented the **tension→stance state machine**, the in-order logic foundation of FP-6b (no playtest needed; the *visible* AI-combat parts come next):
+- Added `Stance.CeaseFire` (=3, appended so FP-6a save ordinals stay stable).
+- `Game.StanceFromTension(current, tension)` — a faithful port of FreeCol `Stance.getStanceFromTension` (DELTA=10): War→CeaseFire at ≤590, CeaseFire→Peace at ≤90, Peace/CeaseFire→War at >1010, Uncontacted unchanged.
+- `UpdateColonialStances` runs each turn in `EndTurn` **after** tension decay, re-deriving each met colonial pair's stance from its cooled tension (so a war drifts war→cease-fire→peace as it cools). Deterministic, no RNG, symmetric, id-ordered.
+- Still **recorded-only** — `AreEnemies`/combat/fog/move legality unchanged; the AI doesn't yet *act* on stance.
+**Status:** **418 tests green** (396 L1+L2 + 2 soak + 20 scene; +14 incl. an 11-case `StanceFromTension` theory + war→cease-fire / cease-fire→peace integration). Goldens unchanged; byte-stable (no RNG; soak + stream-0 guard hold). Adversarial review: **no blockers / no should-fix** (FreeCol fall-through fidelity + invariants verified). Committed; CI running.
+**Changed:** `Stance.cs` (CeaseFire), `Game.cs` (`StanceFromTension`/`UpdateColonialStances` + EndTurn wiring + thresholds); `DiplomacyTests.cs` (+14, 2 FP-6a tests updated for the now-evolving stance); docs `diplomacy.md`/`turns.md`/`players.md`/`save-load.md`/`QA-REPORT.md`.
+**Decisions:** Stance update runs after decay (one-turn de-escalation; matches "cool then read"). `CeaseFire` appended (ordinal stability). `Peace→War from tension alone` is implemented faithfully but unreachable in play today (only an attack raises colonial tension, and it sets War directly) — documented + unit-tested. `Alliance` deferred (only a diplomacy action sets it).
+**Scheduled next:** the rest of **FP-6b** — the AI *acting* on stance (foreign powers/natives deciding to declare & wage war; native raids; foreign-power-initiated combat, `86d3bek5r`). **This is the gameplay-altering / visible part — best done with your playtest.**
+**Needs you:** A steer on the AI-combat scope when ready (raid frequency/targeting/balance are playtest-tuned). Nothing blocking; this slice is invisible in-game.
+
 ## 2026-06-14 — FP-6a: diplomacy foundation (stance + tension) [autonomous]
 
 **Requested:** Overnight autonomous run — work through backlog tasks, full process each.
