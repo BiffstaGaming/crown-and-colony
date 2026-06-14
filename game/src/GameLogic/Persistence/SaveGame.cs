@@ -37,7 +37,9 @@ public sealed record SaveGame
     /// version: v20+ reads <see cref="Players"/>; a v19-and-earlier save folds the legacy flat
     /// top-level fields into one human player. A v20 save still writes those flat fields too (so every
     /// older load path stays exercised); they are dropped at the FP-7 save-consolidation slice. v20 also
-    /// gained optional unit/colony owner ids (FP-2, additive — null = the human, id 0).
+    /// gained optional unit/colony owner ids (FP-2, additive — null = the human, id 0) and, additively through
+    /// the foreign-powers wave, per-player RNG streams (FP-4) and per-player diplomacy stance + tension maps
+    /// (FP-6a; omitted when empty, so a no-contact game is byte-identical; older saves load Uncontacted/0).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -306,7 +308,8 @@ public sealed record SaveGame
         p.BaseRecruitPrice ?? Game.InitialRecruitPrice, p.RecruitLowerCap ?? Game.InitialRecruitLowerCap,
         p.RecruitDock,
         p.Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
-        p.RngState is { } s && p.RngIncrement is { } inc ? new RandomState(s, inc) : null);
+        p.RngState is { } s && p.RngIncrement is { } inc ? new RandomState(s, inc) : null,
+        p.Stances, p.Tensions);
 
     /// <summary>Folds a v19-and-earlier save's flat top-level fields into the single human player (null explored = pre-fog).</summary>
     private RestoredPlayer FoldFlatFieldsToHumanPlayer() => new(
@@ -331,7 +334,9 @@ public sealed record SaveGame
             p.Immigration, p.ImmigrationRequired, p.BaseRecruitPrice, p.RecruitLowerCap,
             p.RecruitDock.Count > 0 ? p.RecruitDock.ToList() : null,
             p.Explored.Select(pos => pos.Y * map.Width + pos.X).OrderBy(i => i).ToList(),
-            rng?.State, rng?.Increment);
+            rng?.State, rng?.Increment,
+            p.Stances.Count > 0 ? new Dictionary<int, Stance>(p.Stances) : null,
+            p.Tensions.Count > 0 ? new Dictionary<int, int>(p.Tensions) : null);
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -440,6 +445,8 @@ public sealed record SavedUnit(
 /// <param name="Explored">Explored tile indexes (row-major <c>y * MapWidth + x</c>); null = pre-fog fallback.</param>
 /// <param name="RngState">A non-human player's own PCG stream state word (v20 additive, FP-4; null = the human / no stream).</param>
 /// <param name="RngIncrement">That stream's increment (paired with <paramref name="RngState"/>; null = the human / no stream).</param>
+/// <param name="Stances">This player's diplomatic stance toward each other player it has met, by their player id (v20 additive, FP-6a; null/omitted when it has met no one). An ordinal of <see cref="GameSession.Stance"/>.</param>
+/// <param name="Tensions">This player's tension toward each other player, by their player id (v20 additive, FP-6a; null/omitted when all zero).</param>
 public sealed record SavedPlayer(
     int PlayerId, string? NationId, bool IsHuman, int PlayerType,
     int Gold = 0, int Tax = 0,
@@ -450,4 +457,6 @@ public sealed record SavedPlayer(
     int? BaseRecruitPrice = null, int? RecruitLowerCap = null,
     IReadOnlyList<string>? RecruitDock = null,
     IReadOnlyList<int>? Explored = null,
-    ulong? RngState = null, ulong? RngIncrement = null);
+    ulong? RngState = null, ulong? RngIncrement = null,
+    IReadOnlyDictionary<int, Stance>? Stances = null,
+    IReadOnlyDictionary<int, int>? Tensions = null);

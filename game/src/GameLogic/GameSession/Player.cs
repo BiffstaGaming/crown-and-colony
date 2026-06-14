@@ -38,6 +38,8 @@ public sealed class Player
     private readonly List<string> _offeredFathers = [];
     private readonly List<string> _recruitDock = [];
     private readonly HashSet<Position> _explored = [];
+    private readonly Dictionary<int, Stance> _stance = [];   // this player's directional view of each other player (FP-6a)
+    private readonly Dictionary<int, int> _tension = [];     // this player's tension toward each other player (0..MaxTension)
 
     /// <summary>Creates a player with its own market; callers seed the remaining state via the internal setters.</summary>
     internal Player(int playerId, string? nationId, bool isHuman, PlayerType playerType, Market market)
@@ -114,6 +116,12 @@ public sealed class Player
     /// <summary>Tiles this player has ever seen (permanent fog of war).</summary>
     public IReadOnlySet<Position> Explored => _explored;
 
+    /// <summary>This player's diplomatic <see cref="Stance"/> toward each other player it has met, by their <see cref="PlayerId"/> (FP-6a; an absent entry = <see cref="Stance.Uncontacted"/>).</summary>
+    public IReadOnlyDictionary<int, Stance> Stances => _stance;
+
+    /// <summary>This player's tension toward each other player, by their <see cref="PlayerId"/> (0..<see cref="Game.MaxTension"/>; an absent entry = 0).</summary>
+    public IReadOnlyDictionary<int, int> Tensions => _tension;
+
     /// <summary>Mutable view of <see cref="Congress"/> for the rules on <see cref="Game"/>.</summary>
     internal List<string> CongressList => _congress;
 
@@ -125,6 +133,12 @@ public sealed class Player
 
     /// <summary>Mutable view of <see cref="Explored"/> for the rules on <see cref="Game"/>.</summary>
     internal HashSet<Position> ExploredSet => _explored;
+
+    /// <summary>Mutable view of <see cref="Stances"/> for the diplomacy rules on <see cref="Game"/>.</summary>
+    internal Dictionary<int, Stance> StanceMap => _stance;
+
+    /// <summary>Mutable view of <see cref="Tensions"/> for the diplomacy rules on <see cref="Game"/>.</summary>
+    internal Dictionary<int, int> TensionMap => _tension;
 
     /// <summary>
     /// Current gold price to buy one recruit from the dock (FreeCol
@@ -155,4 +169,6 @@ public sealed record RestoredPlayer(
     int Immigration, int ImmigrationRequired, int BaseRecruitPrice, int RecruitLowerCap,
     IEnumerable<string>? RecruitDock,
     IEnumerable<Position>? Explored,
-    RandomState? Rng = null);
+    RandomState? Rng = null,
+    IReadOnlyDictionary<int, Stance>? Stances = null,
+    IReadOnlyDictionary<int, int>? Tensions = null);

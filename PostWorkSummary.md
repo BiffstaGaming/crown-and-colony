@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-14 — FP-6a: diplomacy foundation (stance + tension) [autonomous]
+
+**Requested:** Overnight autonomous run — work through backlog tasks, full process each.
+**Did:** Implemented the **diplomacy foundation** of FP-6 (`86d3bex51`), scoped (deliberately) to *recorded* colonial-colonial relationship state — no gameplay/AI change, so it's safe to land unattended:
+- New `Stance` enum {Uncontacted, Peace, War}; per-(other-player) **Stance + Tension** maps on `Player` (`Stances`/`Tensions`); `Game` API — `StanceBetween`/`TensionBetween` (public reads), `SetStance`/`ChangeTension` (internal; **no-op unless both are distinct colonial players** — natives stay on the per-settlement alarm system).
+- **Transitions** (all deterministic, no RNG, none gate legality): first contact (a colonial player's fog covers a rival's unit/colony) → mutual **Peace** (`DetectColonialContacts`, in `EndTurn`); attacking a rival colonial unit → mutual **War** + tension `TensionWar` 1000 (in `Attack`, guarded to colonial defenders; recorded before resolution); per-turn **decay** mirroring native alarm (`DecayColonialTension`).
+- `AreEnemies` and all combat/fog/move legality **unchanged** (the gate-on-stance change is FP-6b).
+- Persistence: save **v20 additive** (`SavedPlayer.Stances`/`Tensions`, omitted when empty → no-contact games byte-identical; older saves load Uncontacted/0).
+- Process: research workflow (FreeCol stance/tension + our `AreEnemies`/combat blast radius + native-alarm/contact/persistence seams → a behaviour-preserving plan) → implement → adversarial review (running).
+**Status:** **404 tests green** (382 L1+L2 + 2 soak + 20 scene; +11 `DiplomacyTests`); goldens unchanged; build 0/0. Byte-stable — diplomacy is inert until contact/attack and draws no RNG (soak round-trip + stream-0 guard hold). Adversarial review: **no blockers / no should-fix**; applied 2 of 4 nits (contact-detector symmetry hardening; contact-only round-trip test) + a doc-ref fix. Committed; CI running.
+**Changed:** `Stance.cs` (new), `Player.cs` (maps), `Game.cs` (API + transitions + EndTurn wiring + Attack hook), `SaveGame.cs` (additive persistence); `DiplomacyTests.cs` (new, 10); new `docs/systems/diplomacy.md` + `players.md`/`turns.md`/`save-load.md`/`combat.md`/`QA-REPORT.md`.
+**Decisions:** Foundation-only (recorded state); colonial-colonial only (natives keep alarm — minimises entanglement, mirrors FreeCol's split); save stays v20 additive (wave convention, frozen at FP-7); `Stance` is a faithful 3-value subset (Alliance/CeaseFire arrive with the AI tension→stance machine in FP-6b).
+**Scheduled next:** **FP-6b** — consume the model (AI declares/wages war from tension; gate colonial attacks behind war; native raids) + foreign/naval combat (`86d3bek5r`). **This is gameplay-altering and warrants Chris's playtest** — flagged, not started autonomously.
+**Needs you:** A look at FP-6b scope when you're back (it changes what you can do / what rivals do — best designed with your eye). Nothing blocking; FP-6a is invisible in-game.
+
 ## 2026-06-14 — Stream-0 byte-stability regression guard [autonomous]
 
 **Requested:** Overnight autonomous run — work through backlog tasks, full process each.

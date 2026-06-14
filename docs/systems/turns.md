@@ -26,6 +26,8 @@ Each player takes its turn in ring order (`RunPlayerTurn`); then the **world ste
 | Then, world steps once (in order) | Effect |
 |---|---|
 | Sailing | ships in transit advance; arrivals dock in Europe or re-enter the map (passengers travel with them) — see [europe](europe.md)/[transport](transport.md) |
+| Colonial contact | first sight of a rival colonial power's unit/colony records mutual Peace (`DetectColonialContacts`) — see [diplomacy](diplomacy.md) |
+| Colonial tension decay | each colonial-pair tension cools toward 0 (`value/100 + 4`, same as native alarm; `DecayColonialTension`) — see [diplomacy](diplomacy.md) |
 | Native settlements | each settlement's alarm toward the player cools toward 0 (`value/100 + 4`) — see [natives](natives.md) |
 | All units | movement restored to full |
 | Turn counter | +1 |
@@ -34,7 +36,7 @@ Each player takes its turn in ring order (`RunPlayerTurn`); then the **world ste
 
 ## 3. Technical design
 
-- `Game.EndTurn()` walks the player ring from `_currentPlayerIndex` (via `NextPlayerIndex`), calling `RunPlayerTurn` on each, then the **world steps once** (`AdvanceSailing` → `DecayNativeAlarm` per settlement → reset movement → `Turn++`) and the pointer returns to the human. `RunPlayerTurn` is unified (FP-5): a native returns immediately (inert); every colonial player runs the economy — `RunColonyTurn(player, …)` per owned colony → `AccumulateLibertyAndElectFathers(player)` → `AccumulateImmigrationAndEmigrate(player)` — and a foreign power then runs `RunForeignPowerEconomy(player)` + `RunForeignPowerTurn(player)`. Everything is owner-filtered, folds that player's own fathers, and draws from that player's RNG stream (`RandomFor`; the human is stream 0) and trades on that player's market, so adding/animating players never disturbs the human's seeded game.
+- `Game.EndTurn()` walks the player ring from `_currentPlayerIndex` (via `NextPlayerIndex`), calling `RunPlayerTurn` on each, then the **world steps once** (`AdvanceSailing` → `DetectColonialContacts` → `DecayColonialTension` → `DecayNativeAlarm` per settlement → reset movement → `Turn++`) and the pointer returns to the human. `RunPlayerTurn` is unified (FP-5): a native returns immediately (inert); every colonial player runs the economy — `RunColonyTurn(player, …)` per owned colony → `AccumulateLibertyAndElectFathers(player)` → `AccumulateImmigrationAndEmigrate(player)` — and a foreign power then runs `RunForeignPowerEconomy(player)` + `RunForeignPowerTurn(player)`. Everything is owner-filtered, folds that player's own fathers, and draws from that player's RNG stream (`RandomFor`; the human is stream 0) and trades on that player's market, so adding/animating players never disturbs the human's seeded game.
 - UI: End Turn button → `GameController.OnEndTurnPressed` → `Game.EndTurn()` → view refresh. No turn logic in the UI (ADR-006).
 
 ## 4. Verification
@@ -60,3 +62,4 @@ Each player takes its turn in ring order (`RunPlayerTurn`); then the **world ste
 | 2026-06-14 | Per-player ring (FP-3b): `EndTurn` iterates `_players` (`RunPlayerTurn`) then runs the world steps once | FP-3b |
 | 2026-06-14 | Foreign-power AI step (FP-4): `RunForeignPowerTurn` (found/explore/idle) on each power's own RNG stream | FP-4 |
 | 2026-06-14 | FP-5: `RunPlayerTurn` unified — every colonial player runs the economy (colony turns + liberty + immigration, folding its own fathers); foreign powers add `RunForeignPowerEconomy` (sell/recruit/father) before the unit AI; all on per-player streams/markets | FP-5 |
+| 2026-06-14 | FP-6a: two new world-step phases — `DetectColonialContacts` (first sight → Peace) and `DecayColonialTension` — added to `EndTurn` beside native-alarm decay (recorded diplomacy; no RNG) — see [diplomacy](diplomacy.md) | FP-6a |

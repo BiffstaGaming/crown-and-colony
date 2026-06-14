@@ -150,10 +150,69 @@ public sealed class Game
     private static bool SameOwner(Unit a, Unit b) => a.OwnerNationId == b.OwnerNationId && a.OwnerId == b.OwnerId;
 
     /// <summary>
-    /// Whether two units are combat/fog enemies — a different owner. This is the single stance hook:
-    /// diplomacy (peace/war/alliance) plugs in here in FP-6; for now every distinct owner is hostile.
+    /// Whether two units are combat/fog enemies — a different owner. The stance hook: diplomacy
+    /// (<see cref="Stance"/>) is now <em>recorded</em> (FP-6a) but does not yet gate this — every distinct
+    /// owner is still hostile for move/attack/fog legality; making this stance-aware (no attacking at peace)
+    /// is FP-6b, which would change current behaviour and needs a playtest.
     /// </summary>
     private static bool AreEnemies(Unit a, Unit b) => !SameOwner(a, b);
+
+    // ===== Diplomacy (FP-6a, ADR-019): colonial-player ↔ colonial-player stance + tension, RECORDED only.
+    // Each player holds its own directional view (FreeCol Player.stance/tension maps). Natives stay on the
+    // per-settlement alarm system; native player ids are silently ignored here. No path draws RNG.
+
+    /// <summary>Maximum tension (FreeCol <c>Tension.Level.HATEFUL.limit + 100</c>); mirrors the native-alarm scale.</summary>
+    internal const int MaxTension = 1100;
+
+    /// <summary>Tension added to a colonial pair by an act of war — the FreeCol WAR modifier (<c>HATEFUL.limit</c>).</summary>
+    internal const int TensionWar = 1000;
+
+    /// <summary><paramref name="a"/>'s diplomatic stance toward <paramref name="b"/> (their <see cref="Player.PlayerId"/>s); <see cref="Stance.Uncontacted"/> if unrecorded or either is non-colonial.</summary>
+    public Stance StanceBetween(int a, int b) =>
+        PlayerById(a) is { } pa ? pa.Stances.GetValueOrDefault(b) : Stance.Uncontacted;
+
+    /// <summary><paramref name="a"/>'s tension toward <paramref name="b"/> (0 if unrecorded).</summary>
+    public int TensionBetween(int a, int b) =>
+        PlayerById(a) is { } pa ? pa.Tensions.GetValueOrDefault(b) : 0;
+
+    /// <summary>Whether the player with this id exists and is a colonial power (diplomacy only tracks colonial pairs).</summary>
+    private bool IsColonialPlayer(int id) => PlayerById(id) is { PlayerType: PlayerType.Colonial };
+
+    /// <summary>
+    /// Records <paramref name="a"/>'s stance toward <paramref name="b"/> (and, when <paramref name="symmetric"/>,
+    /// <paramref name="b"/>'s toward <paramref name="a"/>). A no-op unless both are distinct colonial players.
+    /// </summary>
+    internal void SetStance(int a, int b, Stance stance, bool symmetric = true)
+    {
+        if (a == b || !IsColonialPlayer(a) || !IsColonialPlayer(b))
+        {
+            return;
+        }
+        PlayerById(a)!.StanceMap[b] = stance;
+        if (symmetric)
+        {
+            PlayerById(b)!.StanceMap[a] = stance;
+        }
+    }
+
+    /// <summary>
+    /// Adjusts <paramref name="a"/>'s tension toward <paramref name="b"/> by <paramref name="delta"/> (clamped to
+    /// [0, <see cref="MaxTension"/>]), symmetrically by default. A no-op unless both are distinct colonial players.
+    /// </summary>
+    internal void ChangeTension(int a, int b, int delta, bool symmetric = true)
+    {
+        if (a == b || !IsColonialPlayer(a) || !IsColonialPlayer(b))
+        {
+            return;
+        }
+        Player pa = PlayerById(a)!;
+        pa.TensionMap[b] = Math.Clamp(pa.Tensions.GetValueOrDefault(b) + delta, 0, MaxTension);
+        if (symmetric)
+        {
+            Player pb = PlayerById(b)!;
+            pb.TensionMap[a] = Math.Clamp(pb.Tensions.GetValueOrDefault(a) + delta, 0, MaxTension);
+        }
+    }
 
     /// <summary>True when a Founding Father elected to <paramref name="player"/>'s Congress grants the ability.</summary>
     private bool HasAbilityFor(Player player, string abilityId) =>
@@ -740,6 +799,15 @@ public sealed class Game
         int attackerId = attacker.Id; // ids survive a promotion/demotion swap; the object reference may not
         int defenderId = defender.Id;
         string? defenderNation = defender.OwnerNationId;
+
+        // Attacking a rival colonial player's unit declares war and spikes tension, both ways (FreeCol: Europeans
+        // go to war on the act of attacking, win or lose). A no-op for native defenders, who stay on the alarm
+        // system handled below. This only records the relationship — it does not gate the attack (FP-6a).
+        if (defenderNation is null)
+        {
+            SetStance(attacker.OwnerId, defender.OwnerId, Stance.War);
+            ChangeTension(attacker.OwnerId, defender.OwnerId, TensionWar);
+        }
 
         var attackContext = new AttackContext(
             Movement: MovementPenaltyFor(attacker), // snapshot the movement penalty before spending it
@@ -1372,6 +1440,20 @@ public sealed class Game
         if (saved.RecruitDock is not null)
         {
             player.RecruitDockList.AddRange(saved.RecruitDock);
+        }
+        if (saved.Stances is not null)
+        {
+            foreach ((int otherId, Stance stance) in saved.Stances)
+            {
+                player.StanceMap[otherId] = stance;
+            }
+        }
+        if (saved.Tensions is not null)
+        {
+            foreach ((int otherId, int tension) in saved.Tensions)
+            {
+                player.TensionMap[otherId] = tension;
+            }
         }
         if (!saved.IsHuman)
         {
@@ -2167,6 +2249,8 @@ public sealed class Game
         while (_currentPlayerIndex != startIndex);
 
         AdvanceSailing();
+        DetectColonialContacts();   // first sight of a rival colonial power → Peace (FP-6a)
+        DecayColonialTension();     // colonial-pair tension cools each turn (mirrors native alarm)
         foreach (NativeSettlement settlement in _nativeSettlements)
         {
             DecayNativeAlarm(settlement);
@@ -2858,6 +2942,55 @@ public sealed class Game
     /// <summary>Each turn a settlement's alarm cools toward 0 (FreeCol tension decay, <c>ServerPlayer</c>: −value/100 − 4).</summary>
     private static void DecayNativeAlarm(NativeSettlement settlement) =>
         settlement.Alarm = Math.Max(0, settlement.Alarm - (settlement.Alarm / 100 + 4));
+
+    /// <summary>
+    /// Records first contact between colonial players (FP-6a): when one player's explored fog now covers a tile
+    /// holding another colonial player's unit or colony, both move from <see cref="Stance.Uncontacted"/> to
+    /// <see cref="Stance.Peace"/> (FreeCol <c>makeContact</c>: symmetric peace, zero tension). Already-met pairs
+    /// (Peace or War) are left alone. Deterministic — reads the existing fog, draws no RNG, ordered by id.
+    /// </summary>
+    private void DetectColonialContacts()
+    {
+        var colonial = _players.Where(p => p.PlayerType == PlayerType.Colonial).OrderBy(p => p.PlayerId).ToList();
+        for (int i = 0; i < colonial.Count; i++)
+        {
+            for (int j = i + 1; j < colonial.Count; j++)
+            {
+                Player a = colonial[i], b = colonial[j];
+                if (a.Stances.GetValueOrDefault(b.PlayerId) != Stance.Uncontacted
+                    || b.Stances.GetValueOrDefault(a.PlayerId) != Stance.Uncontacted)
+                {
+                    continue; // already met (either direction — robust to a future directional SetStance)
+                }
+                if (Sees(a, b) || Sees(b, a))
+                {
+                    SetStance(a.PlayerId, b.PlayerId, Stance.Peace); // symmetric; tension stays 0
+                }
+            }
+        }
+    }
+
+    /// <summary>Whether <paramref name="viewer"/>'s explored fog covers any tile holding a unit or colony owned by <paramref name="other"/>.</summary>
+    private bool Sees(Player viewer, Player other) =>
+        _units.Any(u => IsOwnedBy(u, other) && u.IsOnMap && viewer.Explored.Contains(u.Position))
+        || _colonies.Any(c => c.OwnerId == other.PlayerId && viewer.Explored.Contains(c.Position));
+
+    /// <summary>
+    /// Each turn, colonial-pair tension cools toward 0 using the same formula as native alarm
+    /// (<c>−value/100 − 4</c>) — a deliberate symmetry (FreeCol has no European tension decay; the slice scope
+    /// asks for it). Decay never changes <see cref="Stance"/> (tension→stance de-escalation is FP-6b). No RNG.
+    /// </summary>
+    private void DecayColonialTension()
+    {
+        foreach (Player p in _players.Where(p => p.PlayerType == PlayerType.Colonial).OrderBy(p => p.PlayerId))
+        {
+            foreach (int otherId in p.TensionMap.Keys.OrderBy(k => k).ToList())
+            {
+                int t = p.TensionMap[otherId];
+                p.TensionMap[otherId] = Math.Max(0, t - (t / 100 + 4));
+            }
+        }
+    }
 
     /// <summary>Reveals (permanently explores) all tiles within the unit's line of sight for the human player.</summary>
     private void Reveal(Unit unit) => Reveal(_human, unit);
