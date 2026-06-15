@@ -94,9 +94,10 @@ public partial class GameController : Node2D
     {
         _game.EndTurn();
         // Surface what the human suffered during the AI phase (no return value to read, unlike a player-initiated
-        // attack): raids on units (1c-2/1c-3a′) then captures of colonies (1c-3f). Notices are in deterministic
-        // order; show them together.
+        // attack): raids on units (1c-2/1c-3a′), native pillages of colonies, then captures of colonies (1c-3f).
+        // Notices are in deterministic order; show them together.
         var messages = _game.CombatNotices.Select(FormatCombatNotice)
+            .Concat(_game.ColonyRaidNotices.Select(FormatColonyRaidNotice))
             .Concat(_game.ColonyLossNotices.Select(FormatColonyLossNotice))
             .ToList();
         if (messages.Count > 0)
@@ -139,6 +140,10 @@ public partial class GameController : Node2D
     /// <summary>Turns an AI capture of a human colony into a status-bar message (the colony-loss sibling of <see cref="FormatCombatNotice"/>).</summary>
     private static string FormatColonyLossNotice(ColonyLossNotice notice) =>
         $"⚑ The {NationLabel(notice.AttackerNationId)} captured your colony {notice.ColonyName} at ({notice.Position.X},{notice.Position.Y})!";
+
+    /// <summary>Turns a native pillage of a human colony into a status-bar message (the goods-raid sibling of <see cref="FormatColonyLossNotice"/>).</summary>
+    private string FormatColonyRaidNotice(ColonyRaidNotice notice) =>
+        $"⚔ The {NationLabel(notice.AttackerNationId)} raided {notice.ColonyName} and carried off {notice.Amount} {_game.Ruleset.Goods(notice.GoodsId).ShortName}!";
 
     /// <summary>The display label for a nation id (e.g. <c>model.nation.dutch</c> → "Dutch").</summary>
     private static string NationLabel(string nationId)

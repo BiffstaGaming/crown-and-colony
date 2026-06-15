@@ -91,6 +91,7 @@ public sealed class Game
     private readonly List<Player> _players = [];
     private readonly List<CombatNotice> _combatNotices = []; // transient: the most recent turn's AI-vs-human raids (not saved)
     private readonly List<ColonyLossNotice> _colonyLossNotices = []; // transient: the most recent turn's AI captures of human colonies (not saved)
+    private readonly List<ColonyRaidNotice> _colonyRaidNotices = []; // transient: the most recent turn's native pillages of human colonies (not saved)
     private readonly Player _human;
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
@@ -355,6 +356,13 @@ public sealed class Game
     /// resolves to tell the player "X captured your colony Y".
     /// </summary>
     public IReadOnlyList<ColonyLossNotice> ColonyLossNotices => _colonyLossNotices;
+
+    /// <summary>
+    /// Human colonies pillaged by a native brave during the most recent <see cref="EndTurn"/> (native colony
+    /// pillage). Transient per-turn UI scratch (cleared each <c>EndTurn</c>, never saved); the presentation reads
+    /// it after the turn resolves to tell the player "X raided your colony Y and carried off N goods".
+    /// </summary>
+    public IReadOnlyList<ColonyRaidNotice> ColonyRaidNotices => _colonyRaidNotices;
 
     /// <summary>
     /// Sentinel <see cref="CombatNotice.AttackerNationId"/> for a raider that hides its flag (a privateer —
@@ -1152,6 +1160,113 @@ public sealed class Game
     /// colony are later sub-slices.
     /// </summary>
     private void CaptureColony(Colony colony, int newOwnerId) => colony.OwnerId = newOwnerId;
+
+    /// <summary>The most goods a single native pillage carries off from one stack (FreeCol <c>csPillageColony</c>: <c>min(amount/2, 50)</c>).</summary>
+    private const int PillageGoodsCap = 50;
+
+    /// <summary>A colony's lootable goods stacks (non-empty and <c>storable</c>), in stable goods-id order — the targets a native pillage can steal from (FreeCol <c>Colony.getLootableGoodsList</c> = the storable stored goods; this excludes hammers/bells/crosses, which accrue in stores but are <c>storable="false"</c>).</summary>
+    private IEnumerable<KeyValuePair<string, int>> PillageableGoods(Colony colony) =>
+        colony.Stores.Where(kv => kv.Value > 0 && Ruleset.Goods(kv.Key).IsStorable).OrderBy(kv => kv.Key, StringComparer.Ordinal);
+
+    /// <summary>Whether <paramref name="brave"/> may pillage the human colony on <paramref name="target"/> now (FreeCol <c>Colony.canBePillaged</c> + native attacker).</summary>
+    public MoveCheck CheckPillageColony(Unit brave, Position target)
+    {
+        if (!brave.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (!brave.IsNative)
+        {
+            return MoveCheck.No("Only native braves pillage colonies."); // model.ability.pillageUnprotectedColony is the brave's; colonial units capture (AttackColony)
+        }
+        if (!Map.InBounds(target))
+        {
+            return MoveCheck.No("Target is off the map.");
+        }
+        if (!brave.Position.IsAdjacentTo(target))
+        {
+            return MoveCheck.No("Pillage an adjacent tile.");
+        }
+        if (brave.MovementLeft <= 0)
+        {
+            return MoveCheck.No("No movement left this turn.");
+        }
+        if (OffenceBase(brave) <= 0)
+        {
+            return MoveCheck.No("The brave has no offensive strength.");
+        }
+        if (ColonyAt(target) is not { } colony || !IsHumanOwned(colony))
+        {
+            return MoveCheck.No("There is no human colony to pillage there."); // natives raid the human only (the sole target contract, as NearestHumanUnit)
+        }
+        if (_units.Any(u => u.IsOnMap && u.Position == target))
+        {
+            return MoveCheck.No("The colony is defended — its garrison must be beaten first."); // canBePillaged: unprotected only
+        }
+        if (!PillageableGoods(colony).Any())
+        {
+            return MoveCheck.No("The colony has nothing worth pillaging."); // canBePillaged: something to take (we model goods loot only)
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// A native brave pillages the undefended human colony on <paramref name="target"/> (FreeCol
+    /// <c>csPillageColony</c> / the <c>PILLAGE_COLONY</c> combat effect — a native win over a colony's unarmed
+    /// last-resort defender). The defender is a transient unarmed colonist (defence 1, the abstracted population);
+    /// on a brave **win** the brave carries off <c>min(amount/2, 50)</c> of one randomly-chosen lootable goods
+    /// stack (the colony keeps its buildings, people and ownership — natives never capture a colony), recording a
+    /// <see cref="ColonyRaidNotice"/>; on a **loss** the brave is slain (dispose-on-combat-loss). The whole path
+    /// draws from <paramref name="random"/> (the nation's own stream when driven by the AI) — combat band, then
+    /// the goods-stack pick — never the human's stream 0 (ADR-009).
+    /// </summary>
+    /// <remarks>
+    /// Faithful subset: we model the **goods-loot** pillage outcome only, and the loot is destroyed (the brave
+    /// does not carry it off — no native goods-hauling/settlement-restock model; FreeCol's brave does
+    /// <c>attacker.add(goods)</c>). FreeCol also picks (uniformly) a building to burn, a ship on the colony tile to
+    /// sink/damage, or gold to steal (<c>colony.getPlunder/5</c>); those are deferred (no building-destruction
+    /// model; colony gold plunder shares the deferred colony-capture plunder formula). We also pillage on **any**
+    /// native win, where FreeCol gates pillage on a non-great win and lets a **great** win kill a colonist or
+    /// destroy the colony — so our great win is *gentler* than FreeCol's (a tribe never destroys a colony here);
+    /// the colonist-kill/destroy path and the attacker's tension easing are deferred (no population-on-combat
+    /// decrement; no nation-level native-tension store).
+    /// </remarks>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckPillageColony"/>.</exception>
+    internal void PillageColony(Unit brave, Position target, IGameRandom random)
+    {
+        MoveCheck check = CheckPillageColony(brave, target);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+
+        Colony colony = ColonyAt(target)!;
+        // The colony's last-resort defender: an unarmed colonist standing for the abstracted population (defence 1).
+        var defender = new Unit(0, Ruleset.Unit(StartingUnitTypeId), target) { OwnerId = colony.OwnerId };
+
+        var attackContext = new AttackContext(Movement: MovementPenaltyFor(brave));
+        double attackPower = CombatModel.AttackPower(OffenceBase(brave), attackContext);
+        double defencePower = CombatModel.DefencePower(DefenceBase(defender), new DefenceContext());
+        brave.MovementLeft = 0; // raiding ends the brave's turn
+
+        CombatResult result = CombatModel.Resolve(CombatModel.WinProbability(attackPower, defencePower), random);
+        if (result is CombatResult.GreatWin or CombatResult.Win)
+        {
+            // Pillage one lootable stack, chosen uniformly (FreeCol's "Pillage choice" draw, restricted to goods).
+            var loot = PillageableGoods(colony).ToList();
+            (string goodsId, int amount) = loot[random.Next(loot.Count)];
+            int take = Math.Min(amount / 2, PillageGoodsCap);
+            if (take > 0) // a 1-unit stack yields 0 (amount/2 == 0): the raid won but carried nothing off — no notice
+            {
+                colony.AddGoods(goodsId, -take);
+                _colonyRaidNotices.Add(new ColonyRaidNotice(brave.OwnerNationId!, colony.Name, goodsId, take, target));
+            }
+        }
+        else
+        {
+            ResolveLoserOutcome(defender, brave, result is CombatResult.GreatLoss); // the brave is dispose-on-combat-loss → slain
+        }
+    }
 
     /// <summary>
     /// The gold a sacked settlement yields (FreeCol <c>RandomRange.getAmount</c>, <c>continuous=false</c>):
@@ -2586,6 +2701,7 @@ public sealed class Game
         // completes the loop back to the player it started on.
         _combatNotices.Clear();     // this turn's AI-initiated raids on the human are collected fresh each round
         _colonyLossNotices.Clear(); // and this turn's AI captures of human colonies
+        _colonyRaidNotices.Clear(); // and this turn's native pillages of human colonies
         int startIndex = _currentPlayerIndex;
         do
         {
@@ -2863,10 +2979,12 @@ public sealed class Game
     private const AlarmLevel RaidAlarmThreshold = AlarmLevel.Displeased;
 
     /// <summary>
-    /// The minimal native AI (slice 1b): each of the nation's units, in stable by-id order, takes ONE action.
-    /// When its home settlement is alarmed enough (<see cref="RaidAlarmThreshold"/>) the brave hunts the nearest
-    /// human unit — attacking when adjacent, else stepping toward it; otherwise it wanders one tile. Every choice
-    /// (the wander pick, the path tiebreak, the combat resolution) draws from the nation's OWN RNG stream via
+    /// The minimal native AI (slice 1b + colony pillage): each of the nation's units, in stable by-id order, takes
+    /// ONE action. When its home settlement is alarmed enough (<see cref="RaidAlarmThreshold"/>) the brave first
+    /// **pillages** an adjacent undefended pillageable human colony (<see cref="AdjacentPillageableHumanColony"/> →
+    /// <see cref="PillageColony"/>, the high-value target); otherwise it hunts the nearest human unit — attacking
+    /// when adjacent, else stepping toward it; otherwise it wanders one tile. Every choice (the wander pick, the
+    /// path tiebreak, the combat resolution, the pillage loot pick) draws from the nation's OWN RNG stream via
     /// <see cref="RandomFor"/>, never the human's stream 0, so the human's seeded game stays byte-stable
     /// (ADR-009). A flat priority switch, not FreeCol's mission planner.
     /// </summary>
@@ -2881,7 +2999,11 @@ public sealed class Game
             }
 
             bool hostile = HomeSettlement(player, brave) is { } home && home.AlarmLevel >= RaidAlarmThreshold;
-            if (hostile && NearestHumanUnit(brave) is { } prey)
+            if (hostile && AdjacentPillageableHumanColony(brave) is { } colonyTile)
+            {
+                PillageColony(brave, colonyTile, RandomFor(player)); // storm an undefended human colony (own stream)
+            }
+            else if (hostile && NearestHumanUnit(brave) is { } prey)
             {
                 if (brave.Position.IsAdjacentTo(prey.Position) && CheckAttack(brave, prey.Position).Allowed)
                 {
@@ -2898,6 +3020,19 @@ public sealed class Game
             }
         }
     }
+
+    /// <summary>
+    /// The tile of an undefended pillageable human colony this brave may raid right now — adjacent, ungarrisoned,
+    /// with lootable goods, as gated by <see cref="CheckPillageColony"/> (ties broken by position), or null if
+    /// none. Human-owned is the same sole target contract as <see cref="NearestHumanUnit"/> (natives raid the
+    /// human only). The sibling of <see cref="AdjacentCapturableHumanColony"/> for the native side.
+    /// </summary>
+    private Position? AdjacentPillageableHumanColony(Unit brave) =>
+        _colonies
+            .Where(c => IsHumanOwned(c) && CheckPillageColony(brave, c.Position).Allowed)
+            .OrderBy(c => c.Position.Y).ThenBy(c => c.Position.X)
+            .Select(c => (Position?)c.Position)
+            .FirstOrDefault();
 
     /// <summary>One legal random neighbour for an idle brave to wander to (drawn from the nation's own stream), or null if hemmed in.</summary>
     private Position? Wander(Player player, Unit brave)

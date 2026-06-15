@@ -19,6 +19,11 @@ namespace CrownAndColony.GameLogic.Specification;
 /// A raw New World good (sugar, tobacco, cotton, furs); their prices (and those
 /// of goods made from them) are capped to curb runaway spikes.
 /// </param>
+/// <param name="IsStorable">
+/// Whether this good can sit in a warehouse and be looted/traded (spec <c>storable</c>, default true).
+/// Bells, crosses and hammers are <c>storable="false"</c> — they accrue toward liberty/immigration/construction
+/// and are never warehoused goods (FreeCol <c>AbstractGoods.isStorable</c>; e.g. excluded from pillage loot).
+/// </param>
 /// <param name="Market">European market seed for this good, or null if it doesn't trade.</param>
 public sealed record GoodsType(
     string Id,
@@ -28,6 +33,7 @@ public sealed record GoodsType(
     bool IsFarmed,
     int? BreedingNumber,
     bool IsNewWorldGoods,
+    bool IsStorable,
     GoodsMarket? Market)
 {
     /// <summary>Short name derived from the id: <c>model.goods.food</c> → <c>food</c>.</summary>

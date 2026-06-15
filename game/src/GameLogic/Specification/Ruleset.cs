@@ -261,6 +261,7 @@ public sealed class Ruleset
                 IsFarmed: (bool?)el.Attribute("is-farmed") ?? false,
                 BreedingNumber: (int?)el.Attribute("breeding-number"),
                 IsNewWorldGoods: (bool?)el.Attribute("new-world-goods") ?? false,
+                IsStorable: (bool?)el.Attribute("storable") ?? true,
                 Market: market is null ? null : new GoodsMarket(
                     InitialAmount: (int?)market.Attribute("initial-amount")
                         ?? throw new RulesetFormatException($"<market> in '{id}' lacks initial-amount."),
