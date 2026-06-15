@@ -38,14 +38,14 @@ The world is a rectangular grid of square tiles, each with one terrain type from
 | L1 Unit | Always | `PositionTests` (adjacency table, 8 neighbours), `GameMapTests` (row-major reads, bounds), `MapGeneratorTests` (seed determinism, border/interior shape) | ✅ |
 | L2 Scenario | Always | walking-skeleton scenarios traverse generated maps with invariants | ✅ |
 | L3 Interaction | Yes (pan/zoom) | camera covered indirectly by main-scene load test; dedicated input tests TODO | ⚠️ partial |
-| L4 Visual | Yes (map screen) | TODO with the visual harness | ⬜ |
+| L4 Visual | Yes (map screen) | `VisualGoldenTests.MapView_SeededWorld_MatchesGolden` — golden `map-seed424242` | ✅ |
 
 - **FreeCol cross-check:** n/a for the placeholder generator (will apply to the Phase 2 generator).
 
 ## 5. Open issues / TODO
 
 - [ ] Rivers, lakes, bonus resources, multiple landmass styles (FreeCol generator features).
-- [ ] L3 camera input tests; L4 map golden.
+- [x] L4 map golden — `map-seed424242` (`VisualGoldenTests.MapView_SeededWorld_MatchesGolden`). [ ] L3 camera (pan/zoom) input tests still TODO.
 
 ## Changelog
 

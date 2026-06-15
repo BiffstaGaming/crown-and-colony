@@ -29,7 +29,7 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 | Sail home | from Europe; arrives in 3 turns at the departure high-seas tile |
 | Off-map units | a sailing/Europe unit cannot be moved on the map |
 
-**Deviations / simplifications:** sailing departs only from the actual high-seas edge tile (FreeCol allows any "high-seas-connected" tile); sail time is the fixed default 3 (FreeCol adds ship modifiers). Recruitment & immigration ([immigration.md](immigration.md)), carrying colonists on ships ([transport.md](transport.md)), and buying units (the spec `price`) all exist. A bought ship enters at the map's high-seas tile; a bought land unit waits on the dock to board a ship. Bought specialists/artillery have no special effect yet (expert yields + combat are future).
+**Deviations / simplifications:** sailing departs only from the actual high-seas edge tile (FreeCol allows any "high-seas-connected" tile); sail time is the fixed default 3 (FreeCol adds ship modifiers). Recruitment & immigration ([immigration.md](immigration.md)), carrying colonists on ships ([transport.md](transport.md)), and buying units (the spec `price`) all exist. A bought ship enters at the map's high-seas tile; a bought land unit waits on the dock to board a ship. Bought artillery already fights (Bombard / artillery-in-the-open offence, demotes to damaged artillery on a loss — see [combat](combat.md)); bought specialists don't yet produce **expert yields** in colonies (the remaining "actually special" gap).
 
 ## 3. Technical design
 
@@ -54,7 +54,8 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 ## 5. Open issues / TODO
 
 - [x] **Magellan's sail-time modifier** (−1 high-seas turn) via `SailTurnsFor` — see [founding-fathers](founding-fathers.md).
-- [ ] Ship combat/sinking; making bought specialists/artillery actually special (expert yields + combat).
+- [x] Ship combat/sinking — shipped (naval combat 1c-3a: `ResolveLoserOutcome`/`SinkShip`/`DamageShip`); see [combat](combat.md).
+- [ ] Making bought **specialists** actually special (expert production yields in colonies).
 - [ ] Europe screen niceties: a richer recruit/immigration display; map-side board/disembark UI.
 
 ## Changelog

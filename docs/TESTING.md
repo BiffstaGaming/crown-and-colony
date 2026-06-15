@@ -38,7 +38,7 @@ GdUnit4Net scene runner: load the actual scene, simulate input, await signals, a
 - Intentional UI change → regenerate goldens via the update script; new goldens are reviewed in the PR like any code change.
 
 ### L5 — Smoke & soak (global, nightly)
-Boot to main menu and into a new game headlessly; autoplay N full AI games; assert zero errors/warnings-as-errors; assert per-turn time stays within the performance budget (budget defined when Phase 1 lands).
+Boot to main menu and into a new game headlessly; autoplay N full AI games; assert zero errors/warnings-as-errors; assert per-turn time stays within the performance budget (average `EndTurn` < 2 ms, enforced by `SoakTests.TurnProcessing_StaysWithinPerformanceBudget`).
 
 ## CI gates (GitHub Actions)
 

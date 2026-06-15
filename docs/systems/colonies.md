@@ -56,7 +56,7 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 
 ## 3. Technical design
 
-- `Colony`: id, name, position, population (mutable internal — grows in Phase 3).
+- `Colony`: id, name, position, population (mutable internal — grows in Phase 3), `OwnerId` (`{ get; internal set; }` — which player holds it; reassigned on **capture**, see [combat](combat.md)).
 - `Game.CheckFoundColony(unit)` → `MoveCheck` oracle; `FoundColony(unit)` enforces and mutates (removes unit, adds colony). Same oracle/command pattern as movement (ADR-006).
 - Save format **v3** adds `Colonies`; pre-v3 saves load with none (tested).
 - Rendering: `ColonyMarker` (`_Draw` house + name via `ThemeDB.FallbackFont`), one per colony under `MapView/ColonyLayer`, reconciled per refresh.
@@ -92,3 +92,4 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 | 2026-06-13 | Economy UI: interactive colony screen (`ColonyPanel.cs`) — staff/unstaff buildings, release field workers, send idle to fields, construction dropdown with costs + stop; all via Game oracles, L3-tested | Phase 3 |
 | 2026-06-13 | Bonus-resource yield modifiers in `TileYield` (+ Henry Hudson's +100% furs); expert-scoped resource bonuses parsed but deferred (no per-colonist identity). No save change | Phase 4 slice 8 |
 | 2026-06-13 | Colonist membership: `JoinColony` (grow a colony, the immigration payoff) and `LeaveColony` (detach a free colonist). No save change | Phase 4 slice 9 |
+| 2026-06-15 | `Colony.OwnerId` added; a colony can change hands by **capture** (winning a land attack on an undefended colony reassigns ownership). Rules/save in [combat](combat.md) | Phase 5 (#6 colony capture) |

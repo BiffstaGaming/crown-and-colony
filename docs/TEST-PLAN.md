@@ -73,7 +73,7 @@ Sugar seeded into the colony store stands in for accumulated production (Journey
 3. **Tax** — with non-zero `startingTax`, credited gold equals integer-truncated post-tax revenue (cross-checks the tax math inside a full journey).
 4. **Round-trip** — gold + moved market preserved.
 
-> **Shipping leg (blocked):** the produce→sell→treasury chain is buildable now via the slice-1 `SellColonyGoods` abstraction. The *load-cargo → sail → voyage-time* leg is blocked on ships sailing to Europe (P4 slice 3) and will be appended to this journey when that ships.
+> **Shipping leg (shipped):** the *load-cargo → sail → sell-in-Europe → return* leg shipped with high-seas sailing (P4 slice 3) and is covered by **Journey 3b** (`Journey3b_LoadSailSellReturn`, incl. a mid-voyage save acid test).
 
 ## 8. Journey 4 — Liberty & sequential elections
 

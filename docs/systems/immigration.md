@@ -5,7 +5,7 @@
 | **Status** | Implemented (accrual + auto-emigration + paid recruitment; on the Europe screen; **per-player** — the foreign-power AI runs it too, FP-5) |
 | **Last verified** | 2026-06-14 @ FP-5 (per-player immigration on the AI's own stream) |
 | **Code** | `game/src/GameLogic/GameSession/Player.cs` (per-player immigration/dock state), `GameSession/Game.cs` (accrual, dock, recruit — `Player`-parameterised), `Specification/UnitType.cs` (recruit weight + person) |
-| **Tests** | `game/tests/GameLogic.Tests/GameSession/ImmigrationTests.cs`, `ForeignPowerEconomyTests.cs` (the AI recruits onto its own dock with correctly-owned units), `Scenarios/JourneyTests.cs` (Journey 5) |
+| **Tests** | `game/tests/GameLogic.Tests/GameSession/ImmigrationTests.cs`, `ForeignPowerEconomyTests.cs` (the AI recruits onto its own dock with correctly-owned units), `Scenarios/JourneyTests.cs` (Journey 6) |
 | **FreeCol reference** | `Player.java` (immigration/`reduceImmigration`/`updateImmigrationRequired`), `Europe.java` (`getCurrentRecruitPrice`, `getImmigration`), `ServerEurope.java` (`generateRecruitablesList`, `increaseRecruitmentDifficulty`), `ServerPlayer.java` (`csEmigrate`), classic `specification.xml` difficulty options |
 | **Related systems** | [europe.md](europe.md) (sailing/trade), [colonies.md](colonies.md) (crosses production), [founding-fathers.md](founding-fathers.md) (the parallel liberty system), [save-load.md](save-load.md) |
 
@@ -75,7 +75,7 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
 | L1 Unit | Always | `ImmigrationTests`: recruit-price formula (5 pinned cases), spec weights + person ability, dock determinism, colonyless +2 accrual, crosses→pool drain, threshold emigration, Europe-penalty clamp, paid-recruit escalation, recruit rejection, save round-trip, pre-v12 load | ✅ |
-| L2 Scenario | Always | `JourneyTests.Journey5` (accrue → emigrate → penalty stall → paid recruit → save acid test); `SoakTests` (25-seed × 200-turn invariants hold with immigrants accumulating) | ✅ |
+| L2 Scenario | Always | `JourneyTests.Journey6_AccrueImmigrationEmigrateThenRecruit` (accrue → emigrate → penalty stall → paid recruit → save acid test); `SoakTests` (25-seed × 200-turn invariants hold with immigrants accumulating) | ✅ |
 | L3 Interaction | Yes (Europe screen) | `EuropePanelTests.RecruitButton_BuysAColonistIntoEurope` (recruit from the dock via the real screen; gold debited) — see [europe.md](europe.md) | ✅ |
 | L4 Visual | UI hidden in goldens | — | — |
 

@@ -64,8 +64,8 @@ Every random event in the game — a battle's outcome, where mountains appear on
 
 ## 5. Open issues / TODO
 
-- [ ] `RandomStreams` registry (stream-id allocation per subsystem) when the second consumer appears.
-- [ ] Save-game integration when the save system exists (Phase 1).
+- [x] Multiple independent streams now exist — the main/economy/human draws on stream 0, native settlement placement on stream 1 (`Game.NativeStreamId`), and each non-human player on `PlayerId + 1` (`Player.RngStreamId`). Allocated ad hoc (no formal `RandomStreams` registry was needed); revisit a registry only if stream-id collisions ever become a risk.
+- [x] Save-game integration — the main `RandomState` is persisted in every save (`SaveGame.RandomStateValue`/`RandomIncrement`) and each non-human player's stream via `SavedPlayer.RngState`/`RngIncrement`; a loaded game resumes the exact sequence.
 
 ## Changelog
 
