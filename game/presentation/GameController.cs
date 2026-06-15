@@ -100,6 +100,11 @@ public partial class GameController : Node2D
             .Concat(_game.ColonyRaidNotices.Select(FormatColonyRaidNotice))
             .Concat(_game.ColonyLossNotices.Select(FormatColonyLossNotice))
             .ToList();
+        if (_game.IsHumanDefeated)
+        {
+            // The AI phase took the human's last colony/unit — surface the defeat after the loss notice that caused it.
+            messages.Add("💀 You have been defeated — your last colony and units are gone.");
+        }
         if (messages.Count > 0)
         {
             _notice = string.Join("   ", messages);

@@ -374,6 +374,21 @@ public sealed class Game
     /// <summary>All colonies, in founding order.</summary>
     public IReadOnlyList<Colony> Colonies => _colonies;
 
+    /// <summary>
+    /// Whether the human has been wiped out — <b>no colonies and no units anywhere</b> (on map, in Europe, or
+    /// aboard). Once true it stays true: a player with nothing left can found nothing and fight no one. The
+    /// presentation surfaces it as a defeat banner; <em>stopping</em> the game on defeat (disabling End Turn / a
+    /// game-over screen) is a presentation-layer follow-up — <see cref="EndTurn"/> deliberately does <b>not</b>
+    /// short-circuit, so the human's stream 0 stays independent of AI actions (ADR-009 byte-stability). This is a
+    /// deliberately <b>conservative</b>
+    /// subset of FreeCol's <c>checkForDeath</c>: we keep the human alive on <em>any</em> surviving unit of any
+    /// type in any location, where FreeCol can declare a colonist-less colonial player dead past 1600 even with a
+    /// unit stranded in Europe (and conversely grants a pre-1600 free recruit). Erring toward "still alive" means
+    /// we never declare defeat falsely; the year/port/free-recruit nuances are not modelled. Pure/computed: no
+    /// stored state, no save-format impact; the presentation surfaces it after a turn resolves.
+    /// </summary>
+    public bool IsHumanDefeated => !_colonies.Any(IsHumanOwned) && !_units.Any(IsHumanOwned);
+
     /// <summary>The colony on a tile, or null.</summary>
     public Colony? ColonyAt(Position p) => _colonies.FirstOrDefault(c => c.Position == p);
 
@@ -2758,7 +2773,10 @@ public sealed class Game
     {
         // One full round around the player ring: each player takes its turn in order (the human, the foreign
         // powers, and the native nations all act), then the shared world advances once. The ring pointer
-        // completes the loop back to the player it started on.
+        // completes the loop back to the player it started on. (A defeated human does NOT short-circuit here: that
+        // would freeze the human's stream-0 evolution and so break the ADR-009 byte-stability invariant — a game
+        // where the AI wipes the human out would diverge from one where it doesn't. Stopping the game on defeat is
+        // a presentation-layer concern, deferred; EndTurn stays AI-action-independent for the human's stream 0.)
         _combatNotices.Clear();     // this turn's AI-initiated raids on the human are collected fresh each round
         _colonyLossNotices.Clear(); // and this turn's AI captures of human colonies
         _colonyRaidNotices.Clear(); // and this turn's native pillages of human colonies

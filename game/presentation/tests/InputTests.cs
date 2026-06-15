@@ -210,6 +210,32 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task WhenTheHumanIsWipedOut_EndTurn_ShowsDefeat()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Found a colony with the human's only unit (so 0 human units, 1 colony), then hand that colony to a rival
+        // via the save layer — leaving the human with no colonies and no units: IsHumanDefeated. End Turn must
+        // surface the defeat in the status bar.
+        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        SaveGame save = SaveGame.From(game);
+        SavedPlayer rival = save.Players!.First(p => !p.IsHuman && p.PlayerType == (int)PlayerType.Colonial);
+        var colonies = save.Colonies!.Select(c => c.Id == colony.Id ? c with { OwnerId = rival.PlayerId } : c).ToList();
+        Game injected = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, injected);
+        AssertThat(injected.IsHumanDefeated).IsTrue(); // sanity: wiped out
+
+        controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+
+        AssertThat(controller.GetNode<Label>("UI/StatusLabel").Text.ToLower()).Contains("defeated");
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task MultipleOwnUnits_AllRender()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
