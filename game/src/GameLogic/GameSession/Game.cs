@@ -92,6 +92,7 @@ public sealed class Game
     private readonly List<CombatNotice> _combatNotices = []; // transient: the most recent turn's AI-vs-human raids (not saved)
     private readonly List<ColonyLossNotice> _colonyLossNotices = []; // transient: the most recent turn's AI captures of human colonies (not saved)
     private readonly List<ColonyRaidNotice> _colonyRaidNotices = []; // transient: the most recent turn's native pillages of human colonies (not saved)
+    private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private readonly Player _human;
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
@@ -363,6 +364,14 @@ public sealed class Game
     /// it after the turn resolves to tell the player "X raided your colony Y and carried off N goods".
     /// </summary>
     public IReadOnlyList<ColonyRaidNotice> ColonyRaidNotices => _colonyRaidNotices;
+
+    /// <summary>
+    /// The native tribute demand currently awaiting the human's accept/refuse, or null if none. Transient per-turn
+    /// UI state — created during a native turn (<see cref="RunNativeTurn"/>), answered via
+    /// <see cref="AcceptPendingDemand"/>/<see cref="RefusePendingDemand"/>, and auto-refused at the next
+    /// <see cref="EndTurn"/> if ignored; never saved.
+    /// </summary>
+    public NativeDemand? PendingDemand => _pendingDemand;
 
     /// <summary>
     /// Sentinel <see cref="CombatNotice.AttackerNationId"/> for a raider that hides its flag (a privateer —
@@ -2780,6 +2789,7 @@ public sealed class Game
         _combatNotices.Clear();     // this turn's AI-initiated raids on the human are collected fresh each round
         _colonyLossNotices.Clear(); // and this turn's AI captures of human colonies
         _colonyRaidNotices.Clear(); // and this turn's native pillages of human colonies
+        RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
         int startIndex = _currentPlayerIndex;
         do
         {
@@ -3069,6 +3079,26 @@ public sealed class Game
     private const AlarmLevel RaidAlarmThreshold = AlarmLevel.Displeased;
 
     /// <summary>
+    /// Native tribute-demand difficulty: FreeCol's <c>model.option.nativeDemands</c> at the default "medium" level
+    /// (<c>specification.xml</c> <c>model.difficulty.medium</c> → 2). Drives the demand amount (dx = difficulty + 1)
+    /// and the alarm relief on accept. A fixed constant for now — we don't model difficulty levels yet (ADR-018
+    /// ruleset-constant debt, task 86d3bb1x3).
+    /// </summary>
+    private const int NativeDemandsDifficulty = 2;
+
+    /// <summary>Demand-amount multiplier: dx = difficulty + 1 (FreeCol <c>IndianDemandMission.capAmount</c>; 3 at medium).</summary>
+    private const int NativeDemandsDx = NativeDemandsDifficulty + 1;
+
+    /// <summary>Minimum goods a demand asks for (FreeCol <c>GOODS_DEMAND_MIN</c>).</summary>
+    private const int NativeDemandMin = 30;
+
+    /// <summary>Maximum goods a demand asks for — one cargo load (FreeCol <c>GoodsContainer.CARGO_SIZE</c>).</summary>
+    private const int NativeDemandMax = 100;
+
+    /// <summary>Alarm relief across the demanding nation's settlements when a demand is paid (FreeCol <c>-(5 - difficulty) * 50</c> = 150 at medium).</summary>
+    private const int NativeDemandAcceptAlarmRelief = (5 - NativeDemandsDifficulty) * 50;
+
+    /// <summary>
     /// The minimal native AI (slice 1b + colony pillage): each of the nation's units, in stable by-id order, takes
     /// ONE action. When its home settlement is alarmed enough (<see cref="RaidAlarmThreshold"/>) the brave first
     /// **pillages** an adjacent undefended pillageable human colony (<see cref="AdjacentPillageableHumanColony"/> →
@@ -3092,6 +3122,11 @@ public sealed class Game
             if (hostile && AdjacentPillageableHumanColony(brave) is { } colonyTile)
             {
                 PillageColony(brave, colonyTile, RandomFor(player)); // storm an undefended human colony (own stream)
+            }
+            else if (hostile && _pendingDemand is null && AdjacentDemandableHumanColony(player, brave) is { } demandColony)
+            {
+                // Can't simply storm it (defended, or only gold/food to take) → shake it down for tribute instead.
+                CreateNativeDemand(player, brave, demandColony);
             }
             else if (hostile && NearestHumanUnit(brave) is { } prey)
             {
@@ -3123,6 +3158,203 @@ public sealed class Game
             .OrderBy(c => c.Position.Y).ThenBy(c => c.Position.X)
             .Select(c => (Position?)c.Position)
             .FirstOrDefault();
+
+    /// <summary>
+    /// An adjacent human colony this brave can shake down for tribute right now — human-owned, next to the brave, and
+    /// with something worth demanding (gold/goods/food) as judged by <see cref="SelectDemand"/> at the nation's alarm
+    /// level — or null if none (ties broken by position). The non-violent sibling of
+    /// <see cref="AdjacentPillageableHumanColony"/>; unlike pillage it does <b>not</b> require the colony to be
+    /// undefended, so a garrisoned town can still be demanded of. Pure (no RNG).
+    /// </summary>
+    private Colony? AdjacentDemandableHumanColony(Player nation, Unit brave)
+    {
+        AlarmLevel level = HomeSettlement(nation, brave)?.AlarmLevel ?? AlarmLevel.Hateful;
+        return _colonies
+            .Where(c => IsHumanOwned(c) && brave.Position.IsAdjacentTo(c.Position) && SelectDemand(c, level) is not null)
+            .OrderBy(c => c.Position.Y).ThenBy(c => c.Position.X)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Caps a demanded amount to FreeCol's range (<c>IndianDemandMission.capAmount</c>):
+    /// <c>clamp(count * dx / 6, GOODS_DEMAND_MIN, CARGO_SIZE)</c> — at medium (dx = 3) this is
+    /// <c>clamp(count / 2, 30, 100)</c>.
+    /// </summary>
+    private static int CapDemand(int count) => Math.Clamp(count * NativeDemandsDx / 6, NativeDemandMin, NativeDemandMax);
+
+    /// <summary>
+    /// Picks what a brave demands of <paramref name="colony"/> at the demanding nation's tension
+    /// <paramref name="level"/> (FreeCol <c>IndianDemandMission.selectGoods</c>), as a (goodsId, amount) pair —
+    /// goodsId null means a gold demand — or null if the colony has nothing to give ("empty-handed"). The ladder:
+    /// <list type="number">
+    /// <item>Content or calmer with enough food banked → that food at the cutoff.</item>
+    /// <item>Displeased or angrier → the priciest non-food, non-military storable stack (by market value).</item>
+    /// <item>else the first present good by category, in order: military → building material → trade → refined.</item>
+    /// <item>else the priciest storable stack.</item>
+    /// <item>else gold: <c>gold/20</c>, or all the gold if that rounds to 0; a broke human yields nothing (null).</item>
+    /// </list>
+    /// Candidates are restricted to <b>storable</b> goods (our model never demands the non-warehoused
+    /// hammers/bells), matching the pillage loot filter. Branch 1 is unreachable under the current Displeased+
+    /// demand gate (a single per-settlement alarm channel stands in for FreeCol's split nation/settlement tension);
+    /// it is implemented and tested for fidelity and would activate if that split is ever modelled. Pure (no RNG).
+    /// <c>internal</c> only so the selection ladder can be unit-tested directly at every tension level (ADR-006).
+    /// </summary>
+    internal (string? GoodsId, int Amount)? SelectDemand(Colony colony, AlarmLevel level)
+    {
+        // (id, count) of the colony's storable goods, count > 0, deterministically ordered (the pillage loot set).
+        var storable = PillageableGoods(colony).ToList();
+        int StackValue(KeyValuePair<string, int> g) => g.Value * Market.BidPrice(g.Key);
+
+        // 1) Calm-and-fed → food at the cutoff.
+        int foodCutoff = CapDemand(colony.Food);
+        if (level <= AlarmLevel.Content && colony.Food >= foodCutoff)
+        {
+            return (Colony.FoodId, foodCutoff);
+        }
+
+        // 2) Angry → the priciest non-food, non-military storable stack.
+        if (level <= AlarmLevel.Displeased)
+        {
+            var angry = storable
+                .Where(g => !Ruleset.Goods(g.Key).IsFood && !Ruleset.Goods(g.Key).IsMilitary)
+                .OrderByDescending(StackValue).ThenBy(g => g.Key, StringComparer.Ordinal)
+                .Cast<KeyValuePair<string, int>?>()
+                .FirstOrDefault();
+            if (angry is { } a)
+            {
+                return (a.Key, CapDemand(a.Value));
+            }
+        }
+
+        // 3) First present good by category, FreeCol's order: military → building material → trade → refined.
+        // FreeCol iterates goods in SPECIFICATION order within each rung (selectGoods uses getGoodsTypeList, first
+        // present), so we do too — it matters for the refined rung when several refined goods are present.
+        if (FirstInSpecOrder(colony, g => g.IsMilitary) is { } military)
+        {
+            return (military.Id, CapDemand(military.Count));
+        }
+        if (FirstInSpecOrder(colony, g => Ruleset.BuildingMaterials.Contains(g.Id)) is { } building)
+        {
+            return (building.Id, CapDemand(building.Count));
+        }
+        if (FirstInSpecOrder(colony, g => g.IsTradeGoods) is { } trade)
+        {
+            return (trade.Id, CapDemand(trade.Count));
+        }
+        if (FirstInSpecOrder(colony, g => g.MadeFrom is not null) is { } refined)
+        {
+            return (refined.Id, CapDemand(refined.Count));
+        }
+
+        // 4) Else the priciest storable stack of anything.
+        var priciest = storable
+            .OrderByDescending(StackValue).ThenBy(g => g.Key, StringComparer.Ordinal)
+            .Cast<KeyValuePair<string, int>?>()
+            .FirstOrDefault();
+        if (priciest is { } p)
+        {
+            return (p.Key, CapDemand(p.Value));
+        }
+
+        // 5) No goods → gold (gold/20, else all the gold); a broke human yields nothing.
+        int gold = HumanPlayer.Gold;
+        if (gold < 1)
+        {
+            return null;
+        }
+        int twentieth = gold / 20;
+        return (null, twentieth == 0 ? gold : twentieth);
+    }
+
+    /// <summary>
+    /// The first storable goods type the colony holds (count &gt; 0) that matches <paramref name="match"/>, iterating
+    /// in <b>specification order</b> — FreeCol's category-rung pick (<c>selectGoods</c> uses <c>getGoodsTypeList()</c>
+    /// order, first present). Returns the (id, count) pair or null.
+    /// </summary>
+    private (string Id, int Count)? FirstInSpecOrder(Colony colony, Func<GoodsType, bool> match)
+    {
+        foreach (GoodsType goods in Ruleset.GoodsTypes)
+        {
+            int count = colony.StoreOf(goods.Id);
+            if (count > 0 && goods.IsStorable && match(goods))
+            {
+                return (goods.Id, count);
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Creates a pending tribute demand from <paramref name="brave"/> against the human <paramref name="colony"/>
+    /// (FreeCol <c>IndianDemandMission</c>): selects the goods/gold + amount via <see cref="SelectDemand"/> at the
+    /// nation's home-settlement alarm level, stores it as the single pending demand, and ends the brave's turn. A
+    /// no-op if a demand is already pending (one human-facing demand per ring — a blocking modal answers one) or the
+    /// colony turns out to have nothing to give. RNG-free (the selection is deterministic), so it never touches the
+    /// human's stream 0 (ADR-009). <c>internal</c> only so a specific demand can be staged deterministically in
+    /// tests (ADR-006).
+    /// </summary>
+    internal void CreateNativeDemand(Player nation, Unit brave, Colony colony)
+    {
+        if (_pendingDemand is not null)
+        {
+            return;
+        }
+        AlarmLevel level = HomeSettlement(nation, brave)?.AlarmLevel ?? AlarmLevel.Hateful;
+        if (SelectDemand(colony, level) is not { } demand)
+        {
+            return; // empty-handed — nothing to take
+        }
+        brave.MovementLeft = 0; // making the demand ends the brave's turn (as a raid would)
+        _pendingDemand = new NativeDemand(
+            nation.NationId!, colony.Id, colony.Name, demand.GoodsId, demand.Amount, colony.Position);
+    }
+
+    /// <summary>
+    /// The human <b>pays</b> the pending tribute demand: transfers the demanded gold/goods out of the colony
+    /// (consumed — we don't model a native treasury or goods-haul, as with pillage), capped at what the colony
+    /// actually holds, then relieves the demanding nation's alarm across all its settlements
+    /// (<see cref="NativeDemandAcceptAlarmRelief"/> = 150). A no-op returning false if no demand is pending, or the
+    /// colony was captured/destroyed (or otherwise no longer human-owned) between the demand and the answer. RNG-free;
+    /// clears the pending demand. (FreeCol <c>ServerPlayer.csCompleteNativeDemand</c>, accept branch.)
+    /// </summary>
+    /// <returns>True if tribute was paid; false if there was nothing to resolve.</returns>
+    public bool AcceptPendingDemand()
+    {
+        if (_pendingDemand is not { } demand)
+        {
+            return false;
+        }
+        _pendingDemand = null;
+        Colony? colony = _colonies.FirstOrDefault(c => c.Id == demand.ColonyId && IsHumanOwned(c));
+        if (colony is null)
+        {
+            return false; // captured/destroyed before the human answered — nothing to pay
+        }
+        if (demand.GoodsId is null)
+        {
+            HumanPlayer.Gold -= Math.Min(demand.Amount, HumanPlayer.Gold); // never below 0
+        }
+        else
+        {
+            colony.AddGoods(demand.GoodsId, -Math.Min(demand.Amount, colony.StoreOf(demand.GoodsId)));
+        }
+        // Appeased across the nation. FreeCol lands the full −150 on the brave's home settlement and propagates a
+        // halved −75 to the others (via player-level tension); we flatten to −150 on every settlement — the same
+        // single-per-settlement-alarm simplification ApplyNativeCombatTension already makes (we model no nation tension).
+        foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == demand.DemandingNationId))
+        {
+            ChangeNativeAlarm(settlement, -NativeDemandAcceptAlarmRelief);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// The human <b>refuses</b> the pending tribute demand (or ends the turn without answering): clears it with no
+    /// transfer and no tension change. FreeCol changes tension only on accept — the refusal's consequence is the
+    /// brave's normal next-turn raid/pillage via the native AI (it is hostile and beside the colony), not a direct
+    /// alarm bump. A no-op if none is pending. RNG-free.
+    /// </summary>
+    public void RefusePendingDemand() => _pendingDemand = null;
 
     /// <summary>One legal random neighbour for an idle brave to wander to (drawn from the nation's own stream), or null if hemmed in.</summary>
     private Position? Wander(Player player, Unit brave)

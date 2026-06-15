@@ -24,6 +24,14 @@ namespace CrownAndColony.GameLogic.Specification;
 /// Bells, crosses and hammers are <c>storable="false"</c> — they accrue toward liberty/immigration/construction
 /// and are never warehoused goods (FreeCol <c>AbstractGoods.isStorable</c>; e.g. excluded from pillage loot).
 /// </param>
+/// <param name="IsMilitary">
+/// A military good — horses and muskets (spec <c>is-military</c>, default false). FreeCol <c>GoodsType.getMilitary</c>;
+/// used by native tribute-demand goods selection (a brave demands military goods first, after the angry-tension band).
+/// </param>
+/// <param name="IsTradeGoods">
+/// Manufactured trade goods (spec <c>trade-goods</c>, default false). FreeCol <c>GoodsType.isTradeGoods</c>;
+/// one rung of the native tribute-demand selection ladder (military → building → trade → refined).
+/// </param>
 /// <param name="Market">European market seed for this good, or null if it doesn't trade.</param>
 public sealed record GoodsType(
     string Id,
@@ -34,6 +42,8 @@ public sealed record GoodsType(
     int? BreedingNumber,
     bool IsNewWorldGoods,
     bool IsStorable,
+    bool IsMilitary,
+    bool IsTradeGoods,
     GoodsMarket? Market)
 {
     /// <summary>Short name derived from the id: <c>model.goods.food</c> → <c>food</c>.</summary>

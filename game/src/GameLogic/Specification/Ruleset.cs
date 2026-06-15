@@ -50,6 +50,18 @@ public sealed class Ruleset
         UnitTypes = _unitById.Values.ToList();
         GoodsTypes = _goodsById.Values.ToList();
         BuildingTypes = _buildingById.Values.ToList();
+        // Building-material goods = every goods id any building requires to construct (classic: hammers + tools).
+        // DEVIATION: FreeCol derives `isBuildingMaterial` over ALL buildable types (buildings + units + roles), so
+        // its set also includes model.goods.food (the freeColonist "costs" 200 food to grow) and the role goods
+        // muskets/horses. We derive from the building subset only — we don't model unit/role required-goods. The
+        // role goods are military (caught earlier in the native tribute-demand ladder), so only FOOD is missing:
+        // under Angry/Hateful FreeCol natives often demand food via this rung where we instead demand the priciest
+        // storable stack (food has no market value, so a trade/raw good wins). Documented in natives.md; a faithful
+        // food-demand would require parsing unit/role required-goods (follow-up).
+        BuildingMaterials = _buildingById.Values
+            .SelectMany(b => b.BuildCost)
+            .Select(g => g.GoodsId)
+            .ToHashSet();
         FoundingFathers = _fatherById.Values.ToList();
         ResourceTypes = _resourceById.Values.ToList();
         NativeNationTypes = _nativeNationById.Values.ToList();
@@ -97,6 +109,13 @@ public sealed class Ruleset
 
     /// <summary>All building types, in specification order.</summary>
     public IReadOnlyList<BuildingType> BuildingTypes { get; }
+
+    /// <summary>
+    /// The set of goods ids that any building requires to construct (classic: <c>model.goods.hammers</c> +
+    /// <c>model.goods.tools</c>) — the "building material" category used by native tribute-demand goods selection
+    /// (FreeCol <c>GoodsType.isBuildingMaterial</c>, derived from buildable required-goods).
+    /// </summary>
+    public IReadOnlySet<string> BuildingMaterials { get; }
 
     /// <summary>Looks up a building type by ruleset id (e.g. <c>model.building.townHall</c>).</summary>
     /// <exception cref="KeyNotFoundException">Unknown id.</exception>
@@ -262,6 +281,8 @@ public sealed class Ruleset
                 BreedingNumber: (int?)el.Attribute("breeding-number"),
                 IsNewWorldGoods: (bool?)el.Attribute("new-world-goods") ?? false,
                 IsStorable: (bool?)el.Attribute("storable") ?? true,
+                IsMilitary: (bool?)el.Attribute("is-military") ?? false,
+                IsTradeGoods: (bool?)el.Attribute("trade-goods") ?? false,
                 Market: market is null ? null : new GoodsMarket(
                     InitialAmount: (int?)market.Attribute("initial-amount")
                         ?? throw new RulesetFormatException($"<market> in '{id}' lacks initial-amount."),

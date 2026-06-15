@@ -156,6 +156,35 @@ public class RulesetTests
     }
 
     [Fact]
+    public void GoodsTypes_ParseMilitaryAndTradeFlags()
+    {
+        // Native tribute-demand goods selection (IndianDemandMission) classifies goods. Spec attributes
+        // is-military / trade-goods (specification.xml: horses+muskets military, tradeGoods trade).
+        Assert.True(Classic.Goods("model.goods.horses").IsMilitary);
+        Assert.True(Classic.Goods("model.goods.muskets").IsMilitary);
+        Assert.True(Classic.Goods("model.goods.tradeGoods").IsTradeGoods);
+
+        // Plain goods carry neither flag (the default).
+        GoodsType food = Classic.Goods("model.goods.food");
+        Assert.False(food.IsMilitary);
+        Assert.False(food.IsTradeGoods);
+        Assert.False(Classic.Goods("model.goods.sugar").IsMilitary);
+        Assert.False(Classic.Goods("model.goods.muskets").IsTradeGoods);
+    }
+
+    [Fact]
+    public void BuildingMaterials_DerivedFromBuildCosts()
+    {
+        // The building-material category (FreeCol GoodsType.isBuildingMaterial) is derived from buildable
+        // required-goods; classic colonies build with hammers (+ tools for upgrades), so both are present and
+        // non-build goods (food/bells) are not.
+        Assert.Contains("model.goods.hammers", Classic.BuildingMaterials);
+        Assert.Contains("model.goods.tools", Classic.BuildingMaterials);
+        Assert.DoesNotContain("model.goods.food", Classic.BuildingMaterials);
+        Assert.DoesNotContain("model.goods.bells", Classic.BuildingMaterials);
+    }
+
+    [Fact]
     public void AbstractUnitTypes_AreNotExposed()
     {
         Assert.Throws<KeyNotFoundException>(() => Classic.Unit("colonist"));
