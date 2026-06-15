@@ -90,6 +90,7 @@ public sealed class Game
     private readonly List<NativeSettlement> _nativeSettlements = [];
     private readonly List<Player> _players = [];
     private readonly List<CombatNotice> _combatNotices = []; // transient: the most recent turn's AI-vs-human raids (not saved)
+    private readonly List<ColonyLossNotice> _colonyLossNotices = []; // transient: the most recent turn's AI captures of human colonies (not saved)
     private readonly Player _human;
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
@@ -347,6 +348,13 @@ public sealed class Game
     /// never saved); the presentation reads it after the turn resolves to notify the player.
     /// </summary>
     public IReadOnlyList<CombatNotice> CombatNotices => _combatNotices;
+
+    /// <summary>
+    /// Human colonies captured by a foreign power during the most recent <see cref="EndTurn"/> (1c-3f). Transient
+    /// per-turn UI scratch (cleared each <c>EndTurn</c>, never saved); the presentation reads it after the turn
+    /// resolves to tell the player "X captured your colony Y".
+    /// </summary>
+    public IReadOnlyList<ColonyLossNotice> ColonyLossNotices => _colonyLossNotices;
 
     /// <summary>
     /// Sentinel <see cref="CombatNotice.AttackerNationId"/> for a raider that hides its flag (a privateer —
@@ -1090,8 +1098,9 @@ public sealed class Game
     /// colony — its people, buildings and stores — to the attacker's owner (<see cref="CaptureColony"/>), a loss
     /// disarms/demotes the repelled attacker. Land-only, and only when the colony has no garrison unit on the tile
     /// (a garrison is fought first via the unit-attack path). Assaulting a rival is an act of war (recorded both
-    /// ways before ownership flips). Plunder gold, the colony/stockade defence bonus, Revere auto-equip of the
-    /// last defender, and foreign-AI-initiated capture are later sub-slices.
+    /// ways before ownership flips). Used by both directions: the human (stream 0) and a foreign power capturing
+    /// an undefended human colony at war (1c-3f, the power's own stream). Plunder gold, the colony/stockade
+    /// defence bonus, and Revere auto-equip of the last defender are later sub-slices.
     /// </summary>
     /// <returns>The graded combat result.</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAttackColony"/>.</exception>
@@ -2575,7 +2584,8 @@ public sealed class Game
         // One full round around the player ring: each player takes its turn in order (the human, the foreign
         // powers, and the native nations all act), then the shared world advances once. The ring pointer
         // completes the loop back to the player it started on.
-        _combatNotices.Clear(); // this turn's AI-initiated raids on the human are collected fresh each round
+        _combatNotices.Clear();     // this turn's AI-initiated raids on the human are collected fresh each round
+        _colonyLossNotices.Clear(); // and this turn's AI captures of human colonies
         int startIndex = _currentPlayerIndex;
         do
         {
@@ -2687,13 +2697,15 @@ public sealed class Game
         u.Location == UnitLocation.InEurope && u.Type.IsPerson && !u.IsAboard && IsOwnedBy(u, player));
 
     /// <summary>
-    /// The minimal foreign-power AI (FP-4 / 1c-2): per unit in stable by-id order. When the power is at
+    /// The minimal foreign-power AI (FP-4 / 1c-2 / 1c-3f): per unit in stable by-id order. When the power is at
     /// <see cref="Stance.War"/> with the human (war only starts when the human attacks it), an <b>armed</b> unit
-    /// retaliates — it hunts the nearest human unit, attacking when adjacent (1c-2). Otherwise a colonist founds
-    /// a colony where it stands while the power has fewer than <see cref="MaxAiColonies"/> colonies, else steps
-    /// one tile toward the nearest unexplored tile; ships and non-founders idle. Every choice draws from the
-    /// player's own RNG stream (ADR-009) — never the human's stream 0 — so the human's game stays byte-stable.
-    /// At war an armed <b>warship</b> hunts the human's nearest ship too (1c-3a′); transports/unarmed ships idle.
+    /// goes on the offensive — an armed <b>land</b> unit beside an <b>undefended</b> human colony captures it
+    /// (1c-3f, the decisive move; a garrisoned colony's defender is fought via the unit-hunt first), otherwise it
+    /// hunts the nearest human unit, attacking when adjacent (1c-2). Otherwise a colonist founds a colony where it
+    /// stands while the power has fewer than <see cref="MaxAiColonies"/> colonies, else steps one tile toward the
+    /// nearest unexplored tile; ships and non-founders idle. Every choice draws from the player's own RNG stream
+    /// (ADR-009) — never the human's stream 0 — so the human's game stays byte-stable. At war an armed
+    /// <b>warship</b> hunts the human's nearest ship too (1c-3a′); transports/unarmed ships idle.
     /// </summary>
     private void RunForeignPowerTurn(Player power)
     {
@@ -2707,20 +2719,29 @@ public sealed class Game
                 continue; // units still in Europe wait (a warship can now act below; an unarmed ship falls through to idle)
             }
 
-            // At war, an armed unit goes after the human's nearest unit instead of expanding (1c-2). Combat draws
-            // from the power's own stream via the internal Attack overload (RaidHumanUnit's foreign sibling).
-            if (atWarWithHuman && unit.MovementLeft > 0 && OffenceBase(unit) > 0
-                && NearestHumanUnit(unit) is { } prey)
+            // At war, an armed unit goes on the offensive instead of expanding. A land unit beside an undefended
+            // human colony captures it (1c-3f — the decisive move, taking priority over chasing a field unit);
+            // otherwise it hunts the human's nearest unit (1c-2 / 1c-3a′). Combat draws from the power's own RNG
+            // stream via the internal Attack/AttackColony overloads (siblings of RaidHumanUnit), never stream 0.
+            if (atWarWithHuman && unit.MovementLeft > 0 && OffenceBase(unit) > 0)
             {
-                if (unit.Position.IsAdjacentTo(prey.Position) && CheckAttack(unit, prey.Position).Allowed)
+                if (!unit.Type.IsNaval && AdjacentCapturableHumanColony(unit) is { } colonyTile)
                 {
-                    AttackHumanUnit(power, unit, prey.Position);
+                    CapturePlayerColony(power, unit, colonyTile);
+                    continue;
                 }
-                else if (StepToward(power, unit, prey.Position) is { } chase)
+                if (NearestHumanUnit(unit) is { } prey)
                 {
-                    MoveUnit(unit, chase); // a hemmed-in attacker simply waits
+                    if (unit.Position.IsAdjacentTo(prey.Position) && CheckAttack(unit, prey.Position).Allowed)
+                    {
+                        AttackHumanUnit(power, unit, prey.Position);
+                    }
+                    else if (StepToward(power, unit, prey.Position) is { } chase)
+                    {
+                        MoveUnit(unit, chase); // a hemmed-in attacker simply waits
+                    }
+                    continue;
                 }
-                continue;
             }
 
             if (!unit.Type.CanFoundColony)
@@ -2752,6 +2773,39 @@ public sealed class Game
         // A privateer flies no flag (FreeCol isOwnerHidden): the victim sees an anonymous raider, not the nation.
         string attackerNation = attacker.Type.Piracy ? UnknownEnemyNationId : power.NationId!;
         _combatNotices.Add(new CombatNotice(attackerNation, defenderTypeId, result, target));
+    }
+
+    /// <summary>
+    /// The tile of an undefended human colony this land unit may capture right now — adjacent and ungarrisoned,
+    /// as gated by <see cref="CheckAttackColony"/> (ties broken by position), or null if none. The
+    /// <see cref="IsHumanOwned(Colony)"/> filter is the same sole contract as <see cref="NearestHumanUnit"/>:
+    /// <see cref="CheckAttackColony"/> alone would also admit another rival's colony, so the human filter keeps
+    /// the AI assaulting only the human. A garrisoned human colony is excluded here (its garrison is fought via
+    /// the unit-hunt first) so it only becomes capturable once undefended.
+    /// </summary>
+    private Position? AdjacentCapturableHumanColony(Unit attacker) =>
+        _colonies
+            .Where(c => IsHumanOwned(c) && CheckAttackColony(attacker, c.Position).Allowed)
+            .OrderBy(c => c.Position.Y).ThenBy(c => c.Position.X)
+            .Select(c => (Position?)c.Position)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// Resolves a foreign power's assault on the undefended human colony at <paramref name="target"/> through the
+    /// power's OWN RNG stream (never stream 0), recording a <see cref="ColonyLossNotice"/> on a win so the
+    /// presentation can tell the player. The colony-capture sibling of <see cref="AttackHumanUnit"/>; it reuses
+    /// the shared <see cref="AttackColony(Unit, Position, Randomness.IGameRandom)"/> resolution — a win hands the
+    /// colony (people/buildings/stores) to the power, a loss disarms/demotes the repelled attacker (no notice).
+    /// The colony name is read before the handover, while it is still the human's.
+    /// </summary>
+    private void CapturePlayerColony(Player power, Unit attacker, Position target)
+    {
+        string colonyName = ColonyAt(target)!.Name; // read before AttackColony hands the colony over
+        CombatResult result = AttackColony(attacker, target, RandomFor(power)); // INTERNAL overload → the power's stream
+        if (result is CombatResult.GreatWin or CombatResult.Win)
+        {
+            _colonyLossNotices.Add(new ColonyLossNotice(power.NationId!, colonyName, target));
+        }
     }
 
     /// <summary>

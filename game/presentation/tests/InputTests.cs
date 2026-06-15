@@ -1,6 +1,8 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
@@ -157,6 +159,54 @@ public class InputTests
 
         var label = controller.GetNode<Label>("UI/StatusLabel");
         AssertThat(label.Text.ToLower()).Contains("raid"); // "raided" (native won) or "fought off … raid" (defended)
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ForeignPowerCapturesUndefendedColony_DuringEndTurn_ShowsALossNotice()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // The human founds an undefended colony; inject a foreign power's artillery beside it and put the two at
+        // war — all via the save layer (the presentation project can't set Unit.OwnerId or stance directly). On
+        // End Turn the at-war power captures the colony, exercising the AI-capture → ColonyLossNotice → status-bar
+        // path. (Three attackers make the capture robust against the seed's combat rolls — any one win suffices.)
+        Unit founder = game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony);
+        Colony colony = game.FoundColony(founder);
+        int humanId = game.HumanPlayer.PlayerId;
+
+        SaveGame save = SaveGame.From(game);
+        SavedPlayer rival = save.Players!.First(p => !p.IsHuman && p.PlayerType == (int)PlayerType.Colonial);
+        int nextId = game.Units.Max(u => u.Id) + 1;
+        List<SavedUnit> attackers = colony.Position.Neighbours()
+            .Where(n => Free(game, n))
+            .Take(3)
+            .Select((n, i) => new SavedUnit(nextId + i, "model.unit.artillery", n.X, n.Y, 1, OwnerId: rival.PlayerId))
+            .ToList();
+
+        // War is symmetric: record it on both the rival and the human.
+        List<SavedPlayer> players = save.Players!.Select(p =>
+            p.PlayerId == rival.PlayerId ? p with { Stances = WithWar(p.Stances, humanId) }
+            : p.PlayerId == humanId ? p with { Stances = WithWar(p.Stances, rival.PlayerId) }
+            : p).ToList();
+        Game injected = (save with { Units = save.Units.Concat(attackers).ToList(), Players = players }).Restore(game.Ruleset);
+        SetGame(controller, injected);
+
+        controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+
+        var label = controller.GetNode<Label>("UI/StatusLabel");
+        AssertThat(label.Text.ToLower()).Contains("captured your colony");
+    }
+
+    private static IReadOnlyDictionary<int, Stance> WithWar(IReadOnlyDictionary<int, Stance>? existing, int other)
+    {
+        var d = existing is null ? new Dictionary<int, Stance>() : new Dictionary<int, Stance>(existing);
+        d[other] = Stance.War;
+        return d;
     }
 
     [TestCase(Timeout = 60000)]

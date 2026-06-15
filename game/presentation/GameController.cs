@@ -93,11 +93,15 @@ public partial class GameController : Node2D
     private void OnEndTurnPressed()
     {
         _game.EndTurn();
-        if (_game.CombatNotices.Count > 0)
+        // Surface what the human suffered during the AI phase (no return value to read, unlike a player-initiated
+        // attack): raids on units (1c-2/1c-3a′) then captures of colonies (1c-3f). Notices are in deterministic
+        // order; show them together.
+        var messages = _game.CombatNotices.Select(FormatCombatNotice)
+            .Concat(_game.ColonyLossNotices.Select(FormatColonyLossNotice))
+            .ToList();
+        if (messages.Count > 0)
         {
-            // Surface raids the human suffered during the AI phase (no return value to read, unlike a
-            // player-initiated attack). Notices are in deterministic by-brave order; show them together.
-            _notice = string.Join("   ", _game.CombatNotices.Select(FormatCombatNotice));
+            _notice = string.Join("   ", messages);
         }
         RefreshView();
     }
@@ -122,9 +126,7 @@ public partial class GameController : Node2D
                 : $"Your {unit} fought off a privateer at {at}.";
         }
 
-        string id = notice.AttackerNationId;
-        string shortName = id[(id.LastIndexOf('.') + 1)..];
-        string nation = char.ToUpperInvariant(shortName[0]) + shortName[1..];
+        string nation = NationLabel(notice.AttackerNationId);
         if (notice.Outcome == CombatResult.Evade)
         {
             return $"Your {unit} evaded a {nation} attack at {at}.";
@@ -132,6 +134,17 @@ public partial class GameController : Node2D
         return attackerWon
             ? (naval ? $"⚔ The {nation} sank your {unit} at {at}!" : $"⚔ The {nation} raided your {unit} at {at}!")
             : $"Your {unit} fought off a {nation} {(naval ? "raider" : "raid")} at {at}.";
+    }
+
+    /// <summary>Turns an AI capture of a human colony into a status-bar message (the colony-loss sibling of <see cref="FormatCombatNotice"/>).</summary>
+    private static string FormatColonyLossNotice(ColonyLossNotice notice) =>
+        $"⚑ The {NationLabel(notice.AttackerNationId)} captured your colony {notice.ColonyName} at ({notice.Position.X},{notice.Position.Y})!";
+
+    /// <summary>The display label for a nation id (e.g. <c>model.nation.dutch</c> → "Dutch").</summary>
+    private static string NationLabel(string nationId)
+    {
+        string shortName = nationId[(nationId.LastIndexOf('.') + 1)..];
+        return char.ToUpperInvariant(shortName[0]) + shortName[1..];
     }
 
     public override void _UnhandledInput(InputEvent @event)
