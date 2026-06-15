@@ -348,6 +348,13 @@ public sealed class Game
     /// </summary>
     public IReadOnlyList<CombatNotice> CombatNotices => _combatNotices;
 
+    /// <summary>
+    /// Sentinel <see cref="CombatNotice.AttackerNationId"/> for a raider that hides its flag (a privateer —
+    /// FreeCol's <c>model.nation.unknownEnemy</c>, which is a no-owner pseudo-nation, not a real one). The
+    /// presentation renders it as an anonymous "privateer" rather than naming the nation behind it.
+    /// </summary>
+    public const string UnknownEnemyNationId = "model.nation.unknownEnemy";
+
     /// <summary>All colonies, in founding order.</summary>
     public IReadOnlyList<Colony> Colonies => _colonies;
 
@@ -839,7 +846,9 @@ public sealed class Game
         // Attacking a rival colonial player's unit declares war and spikes tension, both ways (FreeCol: Europeans
         // go to war on the act of attacking, win or lose). A no-op for native defenders, who stay on the alarm
         // system handled below. This only records the relationship — it does not gate the attack (FP-6a).
-        if (defenderNation is null)
+        // Privateers (model.ability.piracy) are the exception: raiding with one — or being raided by one — provokes
+        // NO stance change (FreeCol csCombat), so privateers can plunder rival shipping deniably (1c-3d).
+        if (defenderNation is null && !attacker.Type.Piracy && !defender.Type.Piracy)
         {
             SetStance(attacker.OwnerId, defender.OwnerId, Stance.War);
             ChangeTension(attacker.OwnerId, defender.OwnerId, TensionWar);
@@ -881,6 +890,8 @@ public sealed class Game
 
         // Native alarm shifts across the defender's whole nation by FreeCol's defenderTension: a European
         // win raises it (the slain brave in the open + a minor insult); a repelled attack lowers it.
+        // (FreeCol also short-circuits this for a piracy attacker, but a privateer can't reach a native today —
+        // the naval-vs-land gate blocks it and natives have no ships — so no `!attacker.Type.Piracy` guard yet.)
         if (defenderNation is not null)
         {
             int slaughter = _units.Any(u => u.Id == defenderId) ? 0 : NativeSettlement.TensionAddUnitDestroyed;
@@ -2604,7 +2615,9 @@ public sealed class Game
         Unit defender = DefenderAt(attacker, target)!;       // human-owned (filtered upstream)
         string defenderTypeId = defender.Type.Id;            // capture before the attack — a beaten loser is removed
         CombatResult result = Attack(attacker, target, RandomFor(power)); // INTERNAL overload → the power's stream
-        _combatNotices.Add(new CombatNotice(power.NationId!, defenderTypeId, result, target));
+        // A privateer flies no flag (FreeCol isOwnerHidden): the victim sees an anonymous raider, not the nation.
+        string attackerNation = attacker.Type.Piracy ? UnknownEnemyNationId : power.NationId!;
+        _combatNotices.Add(new CombatNotice(attackerNation, defenderTypeId, result, target));
     }
 
     /// <summary>

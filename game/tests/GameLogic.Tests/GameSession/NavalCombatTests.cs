@@ -404,4 +404,57 @@ public class NavalCombatTests
         Assert.NotEqual(SaveGame.From(peace).ToJson(), SaveGame.From(war).ToJson()); // the war diverged…
         Assert.Equal(peace.RandomState, war.RandomState);                            // …but stream 0 is untouched
     }
+
+    // ── 1c-3d-i — privateer piracy (attack without war + hidden flag) ──
+
+    [Fact]
+    public void Privateer_RaidsARival_WithoutDeclaringWar()
+    {
+        (Game game, Unit privateer, Unit rival, int foreignId) = TwoShips(Privateer, Caravel);
+
+        game.Attack(privateer, rival.Position, new FixedRandom(0.5)); // a privateer plunders a rival ship deniably
+
+        Assert.NotEqual(Stance.War, game.StanceBetween(game.HumanPlayer.PlayerId, foreignId));
+        Assert.NotEqual(Stance.War, game.StanceBetween(foreignId, game.HumanPlayer.PlayerId));
+    }
+
+    [Fact]
+    public void AttackingAPrivateer_DoesNotDeclareWar()
+    {
+        (Game game, Unit frigate, Unit privateer, int foreignId) = TwoShips(Frigate, Privateer);
+
+        game.Attack(frigate, privateer.Position, new FixedRandom(0.5)); // a privateer defender provokes no war either
+
+        Assert.NotEqual(Stance.War, game.StanceBetween(game.HumanPlayer.PlayerId, foreignId));
+    }
+
+    [Fact]
+    public void NonPirateNavalAttack_StillDeclaresWar()
+    {
+        (Game game, Unit frigate, Unit caravel, int foreignId) = TwoShips(Frigate, Caravel);
+
+        game.Attack(frigate, caravel.Position, new FixedRandom(0.5)); // a regular warship attacking a rival = war
+
+        Assert.Equal(Stance.War, game.StanceBetween(game.HumanPlayer.PlayerId, foreignId));
+    }
+
+    [Fact]
+    public void ForeignPrivateerRaid_HidesItsNationInTheNotice()
+    {
+        Game game = Game.New(Classic, Seed);
+        Position a = game.Map.AllPositions().First(p => Water(game, p) && p.Neighbours().Any(n => Water(game, n)));
+        Position b = a.Neighbours().First(n => Water(game, n));
+        Unit humanShip = game.SpawnUnit(Classic.Unit(Caravel), a);
+        int foreignId = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).PlayerId;
+        Unit privateer = game.SpawnUnit(Classic.Unit(Privateer), b);
+        privateer.OwnerId = foreignId;
+        string nation = game.Players.First(p => p.PlayerId == foreignId).NationId!;
+        game.SetStance(foreignId, game.HumanPlayer.PlayerId, Stance.War);
+        Position shipPos = humanShip.Position;
+
+        game.EndTurn(); // the foreign privateer raids the human ship
+
+        Assert.Contains(game.CombatNotices, n => n.AttackerNationId == Game.UnknownEnemyNationId && n.Position == shipPos);
+        Assert.DoesNotContain(game.CombatNotices, n => n.AttackerNationId == nation); // the flag is hidden
+    }
 }

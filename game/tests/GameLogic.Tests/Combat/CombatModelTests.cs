@@ -59,6 +59,16 @@ public class CombatModelTests
         Assert.Equal(captures, Classic.Unit(id).CaptureGoods);
     }
 
+    [Theory]
+    [InlineData("model.unit.privateer", true)]
+    [InlineData("model.unit.frigate", false)]
+    [InlineData("model.unit.caravel", false)]
+    public void PiracyAbility_MatchesSpec(string id, bool piracy)
+    {
+        // The privateer alone carries piracy (attack without war + hidden flag).
+        Assert.Equal(piracy, Classic.Unit(id).Piracy);
+    }
+
     [Fact]
     public void VeteranSoldier_FoldsItsPercentageModifier()
     {

@@ -105,17 +105,30 @@ public partial class GameController : Node2D
     /// <summary>Turns an AI attack on the human into a status-bar message, from the human defender's point of view.</summary>
     private string FormatCombatNotice(CombatNotice notice)
     {
-        string id = notice.AttackerNationId;
-        string shortName = id[(id.LastIndexOf('.') + 1)..];
-        string nation = char.ToUpperInvariant(shortName[0]) + shortName[1..];
         string unit = _game.Ruleset.Unit(notice.DefenderUnitTypeId).ShortName;
         bool naval = _game.Ruleset.Unit(notice.DefenderUnitTypeId).IsNaval;
         string at = $"({notice.Position.X},{notice.Position.Y})";
+        bool attackerWon = notice.Outcome is CombatResult.GreatWin or CombatResult.Win;
+
+        // A privateer flies no flag — the victim cannot tell whose it was, so name no nation.
+        if (notice.AttackerNationId == Game.UnknownEnemyNationId)
+        {
+            if (notice.Outcome == CombatResult.Evade)
+            {
+                return $"Your {unit} evaded a privateer at {at}.";
+            }
+            return attackerWon
+                ? $"⚔ A privateer sank your {unit} at {at}!"
+                : $"Your {unit} fought off a privateer at {at}.";
+        }
+
+        string id = notice.AttackerNationId;
+        string shortName = id[(id.LastIndexOf('.') + 1)..];
+        string nation = char.ToUpperInvariant(shortName[0]) + shortName[1..];
         if (notice.Outcome == CombatResult.Evade)
         {
             return $"Your {unit} evaded a {nation} attack at {at}.";
         }
-        bool attackerWon = notice.Outcome is CombatResult.GreatWin or CombatResult.Win;
         return attackerWon
             ? (naval ? $"⚔ The {nation} sank your {unit} at {at}!" : $"⚔ The {nation} raided your {unit} at {at}!")
             : $"Your {unit} fought off a {nation} {(naval ? "raider" : "raid")} at {at}.";

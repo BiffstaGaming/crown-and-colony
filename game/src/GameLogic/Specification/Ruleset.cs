@@ -670,7 +670,9 @@ public sealed class Ruleset
                 // through the extends chain like other ints. Default 1 for the non-naval types that never set it.
                 MaxHitPoints: ResolveIntAttribute(el, "hit-points", elements) ?? 1,
                 // captureGoods: a naval raider loots a beaten ship's hold (frigate, privateer, man-o-war).
-                CaptureGoods: ResolveAbility(el, "model.ability.captureGoods", elements));
+                CaptureGoods: ResolveAbility(el, "model.ability.captureGoods", elements),
+                // piracy: a privateer attacks rivals without declaring war, flying no flag.
+                Piracy: ResolveAbility(el, "model.ability.piracy", elements));
         }
 
         if (units.Count == 0)
