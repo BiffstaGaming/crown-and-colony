@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-16 — Colony fortification defence bonus [queue slice 3 · stockade/fort/fortress]
+
+**Requested:** Autonomous overnight — keep shipping the queue. Picked the colony/stockade **defence bonus** (deferred repeatedly in capture/pillage) as the highest-value next slice: it hardens the two colonies-under-attack slices just shipped and is La Salle's prerequisite.
+**Did:** A colony's **fortification** now shields its defender. `BuildingType.DefenceBonus` parses `model.modifier.defence` (stockade **+100**, fort **+150**, fortress **+200**; skips the fort/fortress `delete="true"` markers); `Game.ColonyDefenceBonus(colony)` sums the tier present; applied via `DefenceContext.SettlementDefenceBonus` to the defender in **all three** paths — the main `Attack` (a garrison on the colony tile), `AttackColony` (capture), `PillageColony` (pillage). A unit defending **in** a colony now uses the fortification bonus **instead of** the tile terrain (faithful — FreeCol suppresses terrain in a settlement; fixes a double-count the review flagged). So a walled colony can repel an assault/raid that would overrun an open one.
+**Status:** **541 tests green** (508 L1+L2 incl. +5 `ColonyDefenceBonusTests` + 4 soak + 29 scene); build 0/0; **CI green** (`80ef13a`). Save format **unchanged** (v21; ruleset data, no RNG). Process: research → implement → **2-lens adversarial review** via Workflow → **APPROVE, no fixes required** (the one should-fix — terrain double-count — was applied before triage, which then verified it against FreeCol `SimpleCombatModel`; safety found no defects; confirmed a fresh colony has 0 bonus → no regression).
+**Changed:** `Specification/BuildingType.cs`+`Ruleset.cs` (`DefenceBonus`), `GameSession/Game.cs` (`ColonyDefenceBonus`/`ColonyDefenceBonusAt` + the three defence contexts + terrain suppression); tests `ColonyDefenceBonusTests.cs` (new); docs `combat.md`/`colonies.md`/`natives.md`/`modules/game-logic.md`/`QA-REPORT.md`. Commit `80ef13a`.
+**Decisions:** Bonus applies to all colony defenders; terrain suppressed inside a colony (faithful). No save change. Closes the colony-defence-bonus deferred since 1c-3e and is **La Salle's prerequisite**.
+**Scheduled next:** **La Salle** (free stockade at pop 3 — now a real effect; contained Congress fold + auto-build event) OR **native tribute demands** (`IndianDemandMission`, `86d3bkc3w`). Re-check the live kanban first.
+**Follow-ups:** plunder gold on capture/pillage; Revere auto-equip of the last colony defender; AI step-toward-colony pathing (`86d3bx03d`); human defeat when the last colony falls (`86d3bx04e`, high); the building-grant fathers (need ability-gated buildables).
+**Needs you:** Nothing blocking. Build a **stockade** in colonies near hostile neighbours — walls now genuinely defend (and a fortress more so). Three slices shipped tonight (foreign-AI colony capture, native pillage, colony defence bonus); the concurrent doc-audit agent also worked `main` — no conflicts, all pushes CI-green.
+
 ## 2026-06-15 — Native colony pillage [queue slice 2 · native-AI follow-up]
 
 **Requested:** Autonomous overnight — work the queue; next item: native-AI follow-ups (`86d3bkc3w`) — braves pillage an undefended colony.
