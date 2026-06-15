@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-16 — Human defeat [queue slice 7 · wiped-out detection + HUD banner]
+
+**Requested:** Autonomous overnight — keep shipping. Took the high-priority `86d3bx04e` (a gap my capture/pillage slices made reachable): detect when the human is wiped out and tell them.
+**Did:** **`Game.IsHumanDefeated`** (computed: no human colonies AND no human units anywhere) — a conservative subset of FreeCol `checkForDeath` that keeps the human alive on any surviving unit, so it never false-positives. `GameController.OnEndTurnPressed` shows a "💀 You have been defeated…" banner. **Design call:** the review asked to short-circuit `EndTurn` on defeat; I tried it and it **broke 2 ADR-009 stream-0 byte-stability tests** (freezing the human's stream 0 makes a wiped-out game diverge from a surviving one), so I reverted it — defeat is message-only and *stopping* the game is a presentation follow-up (`86d3c0x3f`). ADR-009 held over UX.
+**Status:** **557 tests green** (523 L1+L2 incl. +4 `HumanDefeatTests` + 4 soak + 30 scene incl. +1 L3); build 0/0; **CI green** (`65481ae`). Save **unchanged** (v21; computed, no RNG). Process: research (FreeCol `checkForDeath`) → implement → **2-lens adversarial review** → tried the should-fix (EndTurn guard) → it broke ADR-009 → reverted → triage re-read & **APPROVE** (nits only).
+**Changed:** `GameSession/Game.cs` (`IsHumanDefeated`), `presentation/GameController.cs` (banner); tests `HumanDefeatTests.cs` (new) + `InputTests.cs` (L3); docs `combat.md`/`players.md`/`turns.md`/`modules/presentation.md`/`modules/game-logic.md`/`QA-REPORT.md`. Commit `65481ae`. Closes `86d3bx04e`.
+**Decisions:** Conservative defeat (never a false positive). **No `EndTurn` short-circuit** — it would break ADR-009 byte-stability; the game-over *flow* (disable End Turn / a screen) belongs in the presentation, deferred to `86d3c0x3f`.
+**Scheduled next:** **native tribute demands** (`IndianDemandMission`, `86d3bkc3w`) OR the **game-over flow** (`86d3c0x3f`, presentation). Re-check the live kanban first.
+**Follow-ups:** native tribute (`86d3bkc3w`); game-over flow (`86d3c0x3f`); native-pillage gold-steal; building-grant fathers (Smith/Stuyvesant); AI piracy; European-diplomacy fathers / Bolívar.
+**Needs you:** Nothing blocking. **Seven slices shipped tonight** — the colonies-under-threat arc is complete and *active*: rivals besiege/capture/loot (and can ultimately defeat) you; tribes pillage; walls defend; you conquer-and-loot back; and you're now told when you've lost. Concurrent doc-audit agent also worked `main` — no conflicts, all pushes CI-green.
+
 ## 2026-06-16 — AI besiege pathing [queue slice 6 · march on the nearest colony]
 
 **Requested:** Autonomous overnight — keep shipping. Took the documented follow-up `86d3bx03d`: make the foreign-AI colony capture manifest in play (it only fired when already adjacent).
