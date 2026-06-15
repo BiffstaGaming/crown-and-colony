@@ -236,6 +236,38 @@ public class InputTests
         AssertThat(marker.OwnerColor).IsEqual(expected); // the nation colour — not the fallback red, not the native constant
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task ClickingANativeSettlement_OpensInteractionPanel_AndSpeakWithChiefVisits()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // A native settlement with a free adjacent land tile; drop a free colonist beside it (spawning a
+        // human unit reveals the settlement tile, so the click below opens the panel rather than trying to move).
+        NativeSettlement settlement = game.NativeSettlements.First(s => s.Position.Neighbours().Any(n => Free(game, n)));
+        Position adj = settlement.Position.Neighbours().First(n => Free(game, n));
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.freeColonist"), adj);
+
+        await ClickTile(runner, controller, adj);                 // select the colonist
+        await ClickTile(runner, controller, settlement.Position); // click the settlement → open the panel
+
+        var panel = controller.GetNode<PanelContainer>("UI/NativeSettlementPanel");
+        AssertThat(panel.Visible).IsTrue();
+
+        // Speak with the chief: the settlement is marked visited, and the action re-gates away on rebuild.
+        var speak = panel.FindChild("Speak", recursive: true, owned: false) as Button;
+        AssertThat(speak).IsNotNull();
+        speak!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(settlement.HasBeenVisited).IsTrue();
+        // The panel rebuilt to reflect the visit (the same rebuild re-gates Speak away).
+        AssertThat(panel.GetNode<Label>("VBox/NativeInfo").Text.ToLower()).Contains("spoken");
+    }
+
     private static void SetGame(GameController controller, Game game) =>
         controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(controller, game);
 

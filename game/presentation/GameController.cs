@@ -3,6 +3,7 @@ using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Combat;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
@@ -37,6 +38,7 @@ public partial class GameController : Node2D
     private Label _statusLabel = null!;
     private PanelContainer _colonyPanel = null!;
     private PanelContainer _europePanel = null!;
+    private PanelContainer _nativePanel = null!;
     private Unit? _selectedUnit;
     private string? _notice;
 
@@ -49,10 +51,12 @@ public partial class GameController : Node2D
         _statusLabel = GetNode<Label>("UI/StatusLabel");
         _colonyPanel = GetNode<PanelContainer>("UI/ColonyPanel");
         _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
+        _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
         GetNode<Button>("UI/EndTurnButton").Pressed += OnEndTurnPressed;
         GetNode<Button>("UI/EuropeButton").Pressed += OpenEuropePanel;
         GetNode<Button>("UI/ColonyPanel/VBox/CloseButton").Pressed += () => _colonyPanel.Hide();
         GetNode<Button>("UI/EuropePanel/VBox/CloseButton").Pressed += () => _europePanel.Hide();
+        GetNode<Button>("UI/NativeSettlementPanel/VBox/CloseButton").Pressed += () => _nativePanel.Hide();
 
         NewGame();
     }
@@ -160,14 +164,16 @@ public partial class GameController : Node2D
         {
             OpenColonyPanel(colony); // only the human's own colonies are the player's to manage
         }
+        else if (_game.NativeSettlementAt(tile) is { } settlement && _game.IsExplored(tile))
+        {
+            // A discovered native settlement → open the interaction panel (speak / learn / attack),
+            // each gated on the selected unit. Replaces the old click-to-attack so peaceful contact is possible.
+            OpenNativeSettlementPanel(settlement, _selectedUnit);
+        }
         else if (_selectedUnit is not null)
         {
             // An adjacent enemy on the clicked tile → attack it; otherwise try to move there.
-            if (_game.NativeSettlementAt(tile) is not null)
-            {
-                AttackSettlementAt(tile);
-            }
-            else if (_game.Units.Any(u => u.IsOnMap && u.Position == tile))
+            if (_game.Units.Any(u => u.IsOnMap && u.Position == tile))
             {
                 AttackUnitAt(tile); // any on-map unit here is an enemy (the player's own were handled above)
             }
@@ -208,22 +214,6 @@ public partial class GameController : Node2D
         };
     }
 
-    /// <summary>Assaults the native settlement on an adjacent tile with the selected unit, reporting the outcome.</summary>
-    private void AttackSettlementAt(Position tile)
-    {
-        MoveCheck check = _game.CheckAttackSettlement(_selectedUnit!, tile);
-        if (!check.Allowed)
-        {
-            _notice = check.Reason;
-            return;
-        }
-        CombatResult result = _game.AttackSettlement(_selectedUnit!, tile);
-        _selectedUnit = null;
-        _notice = result is CombatResult.GreatWin or CombatResult.Win
-            ? "The native settlement was sacked!"
-            : "Your assault was repelled.";
-    }
-
     private void FoundColony()
     {
         if (_selectedUnit is null)
@@ -254,6 +244,24 @@ public partial class GameController : Node2D
     /// <summary>Opens the Europe screen (dock, recruits, ships in port). Public so scene tests can drive it.</summary>
     public void OpenEuropePanel() =>
         ((EuropePanel)_europePanel).Open(_game, RefreshView);
+
+    /// <summary>Opens the native-settlement interaction panel, acting with <paramref name="actingUnit"/> (may be null — the panel then prompts to select one).</summary>
+    public void OpenNativeSettlementPanel(NativeSettlement settlement, Unit? actingUnit)
+    {
+        int actingId = actingUnit?.Id ?? 0;
+        ((NativeSettlementPanel)_nativePanel).Open(_game, settlement, actingId, outcome =>
+        {
+            // A panel action may have spent / upgraded (Learn keeps the id) / destroyed the acting unit — re-resolve
+            // the map selection to the live unit of that id (or clear it if it's gone) so the ring and later clicks
+            // stay valid, and surface the action's outcome in the status bar (the panel may have closed on a sack).
+            _selectedUnit = actingId == 0 ? null : _game.Units.FirstOrDefault(u => u.Id == actingId && u.IsOnMap);
+            if (!string.IsNullOrEmpty(outcome))
+            {
+                _notice = outcome;
+            }
+            RefreshView();
+        });
+    }
 
     private void QuickSave()
     {

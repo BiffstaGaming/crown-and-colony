@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://presentation/GameController.cs" id="1"]
 [ext_resource type="Script" path="res://presentation/MapView.cs" id="2"]
 [ext_resource type="Script" path="res://presentation/CameraController.cs" id="4"]
 [ext_resource type="Script" path="res://presentation/ColonyPanel.cs" id="5"]
 [ext_resource type="Script" path="res://presentation/EuropePanel.cs" id="6"]
+[ext_resource type="Script" path="res://presentation/NativeSettlementPanel.cs" id="7"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -94,6 +95,40 @@ layout_mode = 2
 size_flags_vertical = 3
 
 [node name="CloseButton" type="Button" parent="UI/EuropePanel/VBox"]
+layout_mode = 2
+text = "Close"
+
+[node name="NativeSettlementPanel" type="PanelContainer" parent="UI"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -260.0
+offset_top = -210.0
+offset_right = 260.0
+offset_bottom = 210.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("7")
+
+[node name="VBox" type="VBoxContainer" parent="UI/NativeSettlementPanel"]
+layout_mode = 2
+
+[node name="NativeTitle" type="Label" parent="UI/NativeSettlementPanel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+
+[node name="NativeInfo" type="Label" parent="UI/NativeSettlementPanel/VBox"]
+layout_mode = 2
+
+[node name="Dynamic" type="VBoxContainer" parent="UI/NativeSettlementPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CloseButton" type="Button" parent="UI/NativeSettlementPanel/VBox"]
 layout_mode = 2
 text = "Close"
 

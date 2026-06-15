@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Last verified** | 2026-06-15 @ 1c-3b (scene suite green, 27 L3+L4; the Europe panel now shows a damaged ship's repair countdown and hides its sail/buy controls) |
+| **Last verified** | 2026-06-15 @ native interaction UI (scene suite green, 28 L3+L4; clicking a discovered native settlement opens an interaction panel — speak / learn / attack) |
 | **Location** | `game/presentation/`, `game/scenes/` (project: `game/CrownAndColony.csproj`) |
 | **Layer** | Presentation (Godot) |
 | **Depends on** | `GameLogic`, Godot 4.6 |
@@ -24,6 +24,7 @@ Everything the player sees and touches: scene tree, drawing, camera, input, UI. 
 | `CameraController` | Drag pan + wheel zoom |
 | `ColonyPanel` | Interactive colony screen: staffing, field release, auto-assign, construction choice — built programmatically per open/refresh, all actions via Game oracles |
 | `EuropePanel` | The Europe screen: recruitment dock (recruit), ships in port (sail home, sell cargo, buy goods — a ship **under repair** instead shows its repair countdown and offers no sail/buy controls), colonists on the dock (board), buy/train units, immigration clock — all via Game oracles |
+| `NativeSettlementPanel` | The on-map native-settlement interaction panel: opened by clicking a discovered settlement, offers **speak with chief / learn skill / attack**, each shown only when its `Check…` allows the acting unit; re-resolves the acting unit by id each rebuild (a learned colonist is swapped), hides itself if the settlement is sacked from it. Reads state + forwards to Game oracles only (ADR-006) |
 | `presentation/tests/` | **L3 GdUnit4 + L4 visual tests — live inside this project** because the GdUnit4 adapter requires the test assembly's project to BE the Godot project (official gdUnit4Net layout; ADR-011/015). Run: `dotnet test game/CrownAndColony.csproj` with `gdunit.runsettings` + `GODOT_BIN` set, after a clean `godot --build-solutions` |
 
 ## Key design notes
@@ -46,6 +47,7 @@ Everything the player sees and touches: scene tree, drawing, camera, input, UI. 
 | 2026-06-15 | Native-raid feedback (slice 1b): `OnEndTurnPressed` reads `Game.CombatNotices` and `FormatCombatNotice` renders them into the status bar (from the human defender's view); L3 `NativeRaid_DuringEndTurn_ShowsANoticeInTheStatusBar`. Presentation-only (ADR-006) | Phase 5 slice 1b |
 | 2026-06-15 | Rival/own-unit rendering (slice 1c-1): replaced the single `UnitMarker` node with a reconciled `MapView/UnitLayer` (`SyncUnitMarkers`) drawing every on-map unit the human can see — own units always, foreign powers + braves when in live sight (`IsVisible`); non-human units get an owner ring (`OwnerColorOf`: foreign `EuropeanNation.Color`, native constant), the human's none. +2 L3 + 1 L4 golden (`rendered-units-seed424242`); the 4 `MapView/UnitMarker` L3 tests migrated to `UnitLayer`. Presentation-only | Phase 5 slice 1c-1 |
 | 2026-06-15 | Ship repair UI (slice 1c-3b): `EuropePanel` shows a damaged ship as "under repair (N turns)" and omits its Sail/Buy controls until whole (the logic guards in `SailToNewWorld`/`CheckBuyEuropeGoods`/`CheckBoard` are authoritative — the panel only reads `IsUnderRepair`). +1 L3 `ShipUnderRepair_ShowsNoSailButton`. Presentation reads only (ADR-006) | Phase 5 slice 1c-3b |
+| 2026-06-15 | Native interaction UI (slice 1c-UI): new `NativeSettlementPanel` + `HandleTileClick` routes a discovered-settlement click (fog-gated) to it (was: immediate attack); offers speak/learn/attack gated by `CheckVisit`/`CheckLearnSkill`/`CheckAttackSettlement`; removed the now-unused `AttackSettlementAt`. +1 L3 `ClickingANativeSettlement_OpensInteractionPanel_AndSpeakWithChiefVisits`. Presentation reads only (ADR-006) | Phase 5 slice 1c-UI |
 | 2026-06-14 | `GameController` only selects/renders the **player's** units (native braves are skipped as the HUD unit and on click); camera centres on a player unit → colony → map centre (braves now share the unit list) | Phase 5 slice 5b |
 | 2026-06-13 | Walking-skeleton scene: map view, unit, camera, turn UI, quicksave; GdUnit4 L3 wiring | Phase 1 skeleton |
 | 2026-06-13 | Isometric rendering with FreeCol terrain/unit/settlement art (ADR-014); L4 visual-golden harness | Phase 2 |
