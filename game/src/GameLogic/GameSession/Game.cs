@@ -1123,8 +1123,9 @@ public sealed class Game
     /// (a garrison is fought first via the unit-attack path). Assaulting a rival is an act of war (recorded both
     /// ways before ownership flips). Used by both directions: the human (stream 0) and a foreign power capturing
     /// an undefended human colony at war (1c-3f, the power's own stream). The defender gets the colony's
-    /// fortification bonus (<see cref="ColonyDefenceBonus"/> — a stockade/fort/fortress makes the colony resist).
-    /// Plunder gold and Revere auto-equip of the last defender are later sub-slices.
+    /// fortification bonus (<see cref="ColonyDefenceBonus"/> — a stockade/fort/fortress makes the colony resist),
+    /// and a win sacks the colony's treasury (<see cref="PlunderColony"/>). Revere auto-equip of the last defender
+    /// is a later sub-slice.
     /// </summary>
     /// <returns>The graded combat result.</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAttackColony"/>.</exception>
@@ -1161,6 +1162,7 @@ public sealed class Game
         if (attackerWon)
         {
             ApplyWinnerPromotion(attacker, great, random);
+            PlunderColony(colony, attacker.OwnerId, random); // sack the treasury before the colony changes hands
             CaptureColony(colony, attacker.OwnerId);
         }
         else
@@ -1176,6 +1178,48 @@ public sealed class Game
     /// colony are later sub-slices.
     /// </summary>
     private void CaptureColony(Colony colony, int newOwnerId) => colony.OwnerId = newOwnerId;
+
+    /// <summary>
+    /// Sacks a captured colony's treasury (FreeCol <c>csCaptureColony</c>): the former owner loses, and the
+    /// captor's owner gains, <see cref="ColonyPlunderAmount"/> gold — computed and drawn (from
+    /// <paramref name="random"/>, the captor's stream) <em>before</em> the colony changes hands, while the gold is
+    /// still the former owner's. Capped at the victim's purse so it can't go negative. A no-op if either side is
+    /// not a real player or the victim has no gold. (Plunder on a native <em>pillage</em> — the smaller
+    /// <c>getPlunder/5</c> — stays deferred.)
+    /// </summary>
+    private void PlunderColony(Colony colony, int captorOwnerId, IGameRandom random)
+    {
+        if (PlayerById(colony.OwnerId) is not { } victim || PlayerById(captorOwnerId) is not { } captor)
+        {
+            return;
+        }
+        int plunder = Math.Min(ColonyPlunderAmount(colony, victim, random), victim.Gold);
+        if (plunder <= 0)
+        {
+            return;
+        }
+        victim.Gold -= plunder;
+        captor.Gold += plunder;
+    }
+
+    /// <summary>
+    /// The gold a captured colony yields (FreeCol <c>Colony.getPlunderRange</c> → <c>RandomRange.getAmount</c>,
+    /// <c>continuous=false</c>): with <c>upper = ownerGold × (colonyPop + 1) / (ownerColoniesPop + 1)</c>, the
+    /// payout is <c>rnd[0, upper] + 1</c> (probability 100 — always pays) when <c>upper &gt; 0</c>, else 0; 0 too
+    /// when the owner is broke (FreeCol <c>canBePlundered = checkGold(1)</c>). A single-colony owner's <c>upper</c>
+    /// equals its whole purse, so its treasury can be emptied; a multi-colony owner loses only that colony's share.
+    /// Draws once from <paramref name="random"/> (the captor's stream).
+    /// </summary>
+    private int ColonyPlunderAmount(Colony colony, Player owner, IGameRandom random)
+    {
+        if (owner.Gold < 1)
+        {
+            return 0;
+        }
+        int totalColoniesPop = ColoniesOf(owner).Sum(c => c.Population);
+        int upper = owner.Gold * (colony.Population + 1) / (totalColoniesPop + 1);
+        return upper <= 0 ? 0 : random.Next(upper + 1) + 1; // RandomRange(probability 100, min 1, max upper+1, factor 1)
+    }
 
     /// <summary>The most goods a single native pillage carries off from one stack (FreeCol <c>csPillageColony</c>: <c>min(amount/2, 50)</c>).</summary>
     private const int PillageGoodsCap = 50;

@@ -124,6 +124,8 @@ public class ForeignColonyCaptureTests
         Assert.Equal(power.PlayerId, war.Colonies.First(c => c.Id == warColony.Id).OwnerId);   // the war game really captured…
         Assert.NotEqual(SaveGame.From(peace).ToJson(), SaveGame.From(war).ToJson());           // …so the games diverged…
         Assert.Equal(peace.RandomState, war.RandomState);                                      // …yet stream 0 is untouched
-        Assert.Equal(peace.HumanPlayer.Gold, war.HumanPlayer.Gold);                            // (no plunder yet)
+        // The human starts with 0 gold, so the capture's plunder is a no-op here (a broke victim yields nothing);
+        // the gold-bearing plunder case (and its stream-0 safety) is covered by ColonyPlunderTests.
+        Assert.Equal(peace.HumanPlayer.Gold, war.HumanPlayer.Gold);
     }
 }
