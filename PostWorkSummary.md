@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-15 — Native colony pillage [queue slice 2 · native-AI follow-up]
+
+**Requested:** Autonomous overnight — work the queue; next item: native-AI follow-ups (`86d3bkc3w`) — braves pillage an undefended colony.
+**Did:** A **hostile brave** beside an **undefended** human colony now **pillages** it (carries off goods) instead of capturing — FreeCol `csPillageColony`. `CheckPillageColony`/`PillageColony` (native sibling of `AttackColony`): combat vs a transient unarmed-colonist defender; a **win** steals `min(amount/2, 50)` of one uniformly-chosen **storable** goods stack (`Colony.AddGoods(−take)`; the colony keeps buildings/people/ownership), a **loss** slays the brave. Filtered to storable goods (new `GoodsType.IsStorable` parses spec `storable`) so banked **hammers**/bells/crosses are never looted. `RunNativeTurn` pillages an adjacent pillageable colony before the unit-hunt (nation's own RNG stream). New transient **`ColonyRaidNotice`** → HUD "⚔ The Apache raided Jamestown and carried off 50 tobacco!".
+**Status:** **536 tests green** (503 L1+L2 incl. +9 `NativePillageTests` + 4 soak + 29 scene); build 0/0; **CI green** (`c9a8713`). Save format **unchanged** (v21). Process: FreeCol research → implement → **2-lens adversarial review** (fidelity + determinism/safety) via Workflow → **APPROVE, no must-fix**; applied the review's one should-fix (storable-goods loot filter) + two doc nits + a 40-turn stream-0 horizon + a hammers-not-looted L1 test.
+**Changed:** `GameSession/Game.cs` (`CheckPillageColony`/`PillageColony`/`PillageableGoods`/`AdjacentPillageableHumanColony`/`ColonyRaidNotices` + `RunNativeTurn`), `Combat/ColonyRaidNotice.cs` (new), `Specification/GoodsType.cs`+`Ruleset.cs` (`IsStorable`), `presentation/GameController.cs` (`FormatColonyRaidNotice`); tests `NativePillageTests.cs` (new); docs `natives.md`/`combat.md`/`turns.md`/`modules/game-logic.md`/`modules/presentation.md`/`QA-REPORT.md`. Commit `c9a8713`.
+**Decisions:** Goods-loot subset (faithful uniform pick restricted to modelled targets). Pillage on **any** native win (so our great win is gentler — a tribe never destroys a colony; documented). Filter loot to **storable** goods (hammers excluded). Natives pillage the human only. No save-format change.
+**Scheduled next:** **native tribute demands** (`IndianDemandMission`, `86d3bkc3w`) — the remaining native-AI follow-up; OR a contained building-grant father (Smith/Stuyvesant/La Salle). Re-check the live kanban first.
+**Follow-ups:** native-pillage deferrals (gold steal / building damage / ships / colony-destroy / loot-hauling — documented in natives.md); AI step-toward-colony pathing (`86d3bx03d`); human defeat when the last colony falls (`86d3bx04e`, high).
+**Needs you:** Nothing blocking. Angry tribes now raid your **undefended** colonies for goods (garrison a soldier to stop it). A **concurrent doc-audit agent** also worked `main` tonight (its own commits/CI) — no conflict; my pushes (`67f26f8`, `f0a8ba1`, `c9a8713`) all landed clean and CI-green.
+
 ## 2026-06-15 — Foreign-AI colony capture (two-directional) [queue slice 1 · 1c-3f]
 
 **Requested:** Autonomous overnight — work the queue; first item: make colony capture two-directional (a foreign power at war captures the human's undefended colony) + a colony-loss notice channel.
