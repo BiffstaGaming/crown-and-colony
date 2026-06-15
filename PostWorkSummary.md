@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-15 — Full documentation audit (overnight, concurrent-safe)
+
+**Requested:** "ensure that all documentation is up-to-date while I go to bed" — a full audit of every doc, run alongside the autonomous overnight slice session that is editing the same working tree.
+**Did:** Audited the whole `docs/` tree against the shipped code (the five next-5 slices + the v21 save format) — **62 drift findings**. Fixed and committed every finding in a doc the concurrent session is **not** touching, in two explicit-path commits so the overnight session's uncommitted code/docs were never scooped:
+  - `66e81c0` (5 files): `NEXT-SESSION.md` full rewrite (stale 1b handoff → current overnight handoff + work queue); `founding-fathers.md` (Pocahontas −50% combat→ambient, Drake added, Last-verified); `save-load.md` (v20→v21); `units-movement.md` (Magellan shipped); `transport.md` (ship-loss-drowning shipped).
+  - `78b1b54` (9 files): `immigration.md` (Journey 5→6 ref); `map-terrain.md` (L4 golden green); `ruleset-data.md` (roles/unit-changes/plunder parsed); `randomness.md` (both TODOs closed — multi-stream + save integration); `natives.md` (status/Last-verified → ambient-alarm slice; Pocahontas row); `europe.md` (ship combat shipped, artillery fights, only expert yields remain); `TEST-PLAN.md` (shipping leg → Journey 3b shipped); `TESTING.md` (L5 perf budget now concrete); `colonies.md` (`Colony.OwnerId` + capture changelog).
+  - Also rewrote the **ClickUp Roadmap** (doc `2kz0t3mf-716`) which was garbled/stale at 426 tests / v20 → current (v21, ~521 tests, all shipped slices, Phase 5 detail, overnight queue).
+**Status:** Both commits **pushed to main** (`66e81c0`, `78b1b54`); no code changed, so no test run needed (docs-only). Working tree now contains **only** the overnight session's in-flight colony-capture slice — left untouched. Verified the cold/hot doc split is disjoint by diffing before each commit.
+**Changed:** 14 doc files across the two commits (listed above) + the ClickUp Roadmap page.
+**Decisions:** **Concurrency discipline** — committed only by explicit `git add <path>` (never `-A`), and edited only docs outside the overnight session's hot set (`combat.md`, `QA-REPORT.md`, `diplomacy.md`, `turns.md`, `players.md`, `modules/game-logic.md`, `modules/presentation.md`). Those 7 hot docs carry the remaining drift (see Follow-ups) and are the overnight session's to sync in its own commit — fixing them here would clobber its uncommitted work.
+**Scheduled next:** **resume the autonomous overnight queue** — control returns to the concurrent slice session (currently shipping **foreign-AI colony capture**: `ForeignColonyCaptureTests` + `ColonyLossNotice`). No separate slice owned by this docs pass.
+**Follow-ups:** the **hot-doc drift deferred to the overnight session's commit**: `combat.md` §1 "every defeated ship sinks" (now damage-or-sink) + stale Tests-header cell; `QA-REPORT.md`/`game-logic.md`/`presentation.md` test counts (will settle when the capture slice commits its tests); `players.md` FP-7 save-v20-consolidation wording; `turns.md` missing world-step entries (ambient alarm, repairs); `diplomacy.md` Stance enum / save-v21 mention. None are in a doc I can safely edit while that session is mid-flight.
+**Needs you:** Nothing. All cold-doc drift is fixed and pushed; the remaining items will be carried by the overnight session's next commit. When you wake, `main` docs are current except the 7 files that session is actively rewriting.
+
 ## 2026-06-15 — Ambient native alarm + Pocahontas relocation [next-5 plan, slice 5 — FINAL]
 
 **Requested:** "get to it, do not stop" → the **last** of the committed next-5: ambient native alarm + relocating the Pocahontas −50% placeholder (`86d3bp0ng`), the corrective/fidelity-debt slice.
