@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (multi-player: the human + **active** foreign powers (explore/found + economy AI) + **active native nations** (raid/wander AI, slice 1b); diplomacy **stance/tension recorded** (FP-6a/6b); colonial AI combat + diplomacy *consumption* still ahead) |
-| **Last verified** | 2026-06-15 @ slice 1b (native AI) |
+| **Status** | Implemented (multi-player: the human + **active** foreign powers (explore/found + economy AI, and **AI combat** — at war they hunt the human's units, **capture undefended colonies** and **besiege** them: 1c-2/1c-3a′/1c-3f/besiege) + **active native nations** (raid/wander + colony pillage AI, slice 1b); diplomacy **stance/tension recorded** (FP-6a/6b); a wiped-out human is detected (`IsHumanDefeated`) and the game stops (presentation game-over). Still ahead: AI **declaring** war on its own + diplomacy *consumption* (offers/alliances)) |
+| **Last verified** | 2026-06-16 @ besiege + human defeat + game-over flow |
 | **Code** | `game/src/GameLogic/GameSession/Player.cs` · `game/src/GameLogic/GameSession/Game.cs` · `Units/Unit.cs` (`OwnerId`) · `Colonies/Colony.cs` (`OwnerId`) |
-| **Tests** | `game/tests/GameLogic.Tests/GameSession/ForeignPowerEconomyTests.cs` (FP-5 economy: per-player markets, recruit, byte-stability), `MultiPlayerTests.cs`, `Persistence/SaveGameTests.cs` (`V19Save_LoadsAsSingleHumanPlayer`), `Scenarios/` (soak/journey acid tests), the economy/founding-father/immigration suites |
+| **Tests** | `game/tests/GameLogic.Tests/GameSession/ForeignPowerEconomyTests.cs` (FP-5 economy: per-player markets, recruit, byte-stability), `MultiPlayerTests.cs`, `Combat/ForeignColonyCaptureTests.cs` (war-gated AI capture + besiege + stream-0 stability), `Combat/HumanDefeatTests.cs` (`IsHumanDefeated`), `Persistence/SaveGameTests.cs` (`V19Save_LoadsAsSingleHumanPlayer`), `Scenarios/` (soak/journey acid tests), the economy/founding-father/immigration suites |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/common/model/Player.java` (player-scoped state; note FreeCol's `Player.units` is derived, not authoritative) |
 | **Related systems** | [save-load](save-load.md), [randomness](randomness.md), [founding-fathers](founding-fathers.md), [diplomacy](diplomacy.md), [trade](trade.md), [game-modes](game-modes.md) |
 

@@ -24,7 +24,7 @@ There's one explorer on the map. Click it to select (gold ring), click a neighbo
 | Land unit → water, or naval unit → land | rejected |
 | Target holds an enemy unit (e.g. a native brave) | rejected — *attack* it instead (see [combat](combat.md)) |
 | Target holds a native settlement | rejected — attack / trade / speak from beside it |
-| Target holds a colony you don't own (a colonial unit with a differing `OwnerId`, or any native brave) | rejected — attack it from beside it (1c-1; capturing a rival colony is a later slice) |
+| Target holds a colony you don't own (a colonial unit with a differing `OwnerId`, or any native brave) | rejected as a *move* — instead assault it from beside it: a colonial land unit can **capture** an ungarrisoned rival colony (`AttackColony`), a brave can **pillage** an undefended one (`PillageColony`) — see [combat](combat.md) |
 | 0 movement points left | rejected |
 | cost ≤ movement left | allowed; pay the terrain's move cost |
 | cost > movement left | allowed **for all remaining points** only if near-full movement (`left+2 ≥ max`, where `max` = the unit's full turn movement *including its role bonus*) or small shortfall (`cost ≤ left+2`) or target is a settlement; otherwise rejected |

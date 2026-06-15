@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Last verified** | 2026-06-15 @ native interaction UI (scene suite green, 28 L3+L4; clicking a discovered native settlement opens an interaction panel — speak / learn / attack) |
+| **Last verified** | 2026-06-16 @ game-over flow (scene suite green, 31 L3+L4; a wiped-out human gets a game-over overlay + a disabled End Turn, plus colony-loss/raid notices in the status bar) |
 | **Location** | `game/presentation/`, `game/scenes/` (project: `game/CrownAndColony.csproj`) |
 | **Layer** | Presentation (Godot) |
 | **Depends on** | `GameLogic`, Godot 4.6 |

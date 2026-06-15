@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (founding + min colony spacing, full colony economy, membership join/leave, bonus-resource yields) |
-| **Last verified** | 2026-06-14 @ FP-5 (minimum colony-distance rule) |
-| **Code** | `game/src/GameLogic/Colonies/Colony.cs`, `GameSession/Game.cs` (`CheckFoundColony`/`FoundColony`) · rendering: `game/presentation/ColonyMarker.cs` |
-| **Tests** | `GameTests.FoundColony_*`, `SaveGameTests.RoundTrip_PreservesColonies` |
-| **FreeCol reference** | `Colony.java`, `BuildColonyMessage`, `Player.canClaimToFoundSettlementReason` (adjacent-colony rule, ✅ cross-checked) |
+| **Status** | Implemented (founding + min colony spacing, full colony economy, membership join/leave, bonus-resource yields, ownership + **capture/pillage/plunder**, **fortification defence bonus** [stockade/fort/fortress], **La Salle free stockade**) |
+| **Last verified** | 2026-06-16 @ Phase 5 colony defence bonus + La Salle free stockade |
+| **Code** | `game/src/GameLogic/Colonies/Colony.cs` (incl. `OwnerId`), `GameSession/Game.cs` (`CheckFoundColony`/`FoundColony`; `ColonyDefenceBonus`/`ColonyDefenceBonusAt`; `ApplyFreeBuildings`; capture/plunder `CapturePlayerColony`/`AdjacentCapturableHumanColony`/`PlunderColony`/`ColonyPlunderAmount`), `Specification/BuildingType.cs` (`DefenceBonus`) · rendering: `game/presentation/ColonyMarker.cs` |
+| **Tests** | `GameTests.FoundColony_*`, `SaveGameTests.RoundTrip_PreservesColonies`, `ColonyDefenceBonusTests`, `LaSalleTests`, `ColonyCaptureTests`, `ForeignColonyCaptureTests`, `ColonyPlunderTests` |
+| **FreeCol reference** | `Colony.java` (+ `getPlunderRange`/`canBePillaged`), `BuildColonyMessage`, `Player.canClaimToFoundSettlementReason` (adjacent-colony rule, ✅ cross-checked); building `model.modifier.defence` (fortification bonus); `model.event.freeBuilding`/`csFreeBuilding` (La Salle) |
 | **Related systems** | [units-movement](units-movement.md), [save-load](save-load.md), [ruleset-data](ruleset-data.md) |
 
 ## 1. How it works (plain English)
@@ -74,6 +74,9 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 ## 5. Open issues / TODO
 
 - [x] Minimum colony distance rule (no founding adjacent to an existing colony) — cross-checked vs FreeCol, adopted (FP-5).
+- [x] Colony **ownership + capture/pillage/plunder** (`Colony.OwnerId`; a colony changes hands or loses goods/gold to attack). Rules in [combat](combat.md).
+- [x] Colony **fortification defence bonus** (stockade/fort/fortress → +100/+150/+200%; `Game.ColonyDefenceBonus`). See [combat](combat.md).
+- [x] **La Salle** free stockade at population ≥ 3 (`Game.ApplyFreeBuildings`). See [founding-fathers](founding-fathers.md).
 - [ ] Real colony screen (kanban [P2b] colony screen skeleton → Phase 3 economy UI).
 - [ ] Nation-specific colony name lists when nations exist.
 

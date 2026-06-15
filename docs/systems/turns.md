@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (per-player ring: every colonial player runs the economy; foreign powers also run the AI; native nations run their raid/wander AI (slice 1b); colony economy, liberty/fathers, immigration, high-seas sailing) |
-| **Last verified** | 2026-06-15 @ slice 1b (native AI) |
+| **Status** | Implemented (per-player ring: every colonial player runs the economy; foreign powers also run the combat/economy AI (at war: hunt units / capture colonies / besiege); native nations run their raid/wander + colony-pillage AI; colony economy, liberty/fathers, immigration, high-seas sailing; transient AI-raid/capture/pillage notices drained each round) |
+| **Last verified** | 2026-06-16 @ game-over flow (turn loop unchanged on defeat) |
 | **Code** | `game/src/GameLogic/GameSession/Game.cs` (`EndTurn`, `RunPlayerTurn`, `RunForeignPowerEconomy`, `RunForeignPowerTurn`, `RunNativeTurn`) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/GameTests.cs`, `MultiPlayerTests.cs`, `Scenarios/` |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/server/control/` turn handling (cross-check when economy lands) |
