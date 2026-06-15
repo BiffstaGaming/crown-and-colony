@@ -240,30 +240,17 @@ public class CombatTests
     }
 
     [Fact]
-    public void Pocahontas_HalvesTheNativeAlarmFromACombatWin()
+    public void Pocahontas_DoesNotDampCombatAlarm()
     {
-        // Pocahontas's nativeAlarmModifier (-50%) damps the alarm a win inflicts. (Placeholder hook: FreeCol
-        // damps only ambient proximity alarm, not combat — but combat is our only positive alarm source today.)
+        // Pocahontas's −50% nativeAlarmModifier damps the per-turn AMBIENT alarm (see AmbientAlarmTests), NOT
+        // combat: a combat win raises a settlement's alarm by the full +500 even with Pocahontas elected (FreeCol
+        // applies combat tension raw). The ambient damping is verified in AmbientAlarmTests.
         (Game game, Unit attacker, Unit brave, NativeSettlement home) =
             SetupAttack("model.unit.artillery", null, Pocahontas);
 
         game.Attack(attacker, brave.Position, new FixedRandom(0.0)); // great win, kills the brave
 
-        // Baseline (GreatWin_SlaughtersTheBrave_AndRaisesAlarm) is UNIT_DESTROYED + MINOR = 500; halved → 250.
-        Assert.Equal((NativeSettlement.TensionAddUnitDestroyed + NativeSettlement.TensionAddMinor) / 2, home.Alarm);
-    }
-
-    [Fact]
-    public void Pocahontas_DoesNotDampenTheAlarmDropFromARepelledAttack()
-    {
-        // The −50% applies to alarm GAINS only; a repelled attack's alarm drop lands at full magnitude.
-        (Game game, Unit attacker, Unit brave, NativeSettlement home) =
-            SetupAttack("model.unit.artillery", null, Pocahontas);
-        game.ChangeNativeAlarm(home, 500); // start hostile so the drop is observable
-
-        game.Attack(attacker, brave.Position, new FixedRandom(0.99)); // great loss — the artillery is beaten back
-
-        Assert.Equal(500 - NativeSettlement.TensionAddMinor, home.Alarm); // −100 in full (not −50)
+        Assert.Equal(NativeSettlement.TensionAddUnitDestroyed + NativeSettlement.TensionAddMinor, home.Alarm); // full +500
     }
 
     [Fact]

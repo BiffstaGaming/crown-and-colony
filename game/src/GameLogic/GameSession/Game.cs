@@ -700,10 +700,11 @@ public sealed class Game
         {
             return;
         }
-        int change = ScaleNativeAlarmGain(defenderTension); // Pocahontas damps the gain by -50% (placeholder — see ScaleNativeAlarmGain)
+        // Combat tension is applied RAW (FreeCol): the nativeAlarmModifier (Pocahontas −50%) damps only the
+        // per-turn ambient proximity alarm — see ApplyAmbientNativeAlarm.
         foreach (NativeSettlement s in _nativeSettlements.Where(s => s.NationTypeId == nationTypeId))
         {
-            ChangeNativeAlarm(s, change);
+            ChangeNativeAlarm(s, defenderTension);
         }
     }
 
@@ -2588,6 +2589,7 @@ public sealed class Game
         DetectColonialContacts();   // first sight of a rival colonial power → Peace (FP-6a)
         DecayColonialTension();     // colonial-pair tension cools each turn (mirrors native alarm)
         UpdateColonialStances();    // stance follows tension: war → cease-fire → peace as it cools (FP-6b)
+        ApplyAmbientNativeAlarm();   // natives resent the human's nearby colonies/troops (FreeCol csNewTurn) — before the calm-down
         foreach (NativeSettlement settlement in _nativeSettlements)
         {
             DecayNativeAlarm(settlement);
@@ -2980,14 +2982,10 @@ public sealed class Game
 
     /// <summary>
     /// Scales a positive native-alarm <em>gain</em> by the human's <see cref="NativeAlarmModifierId"/> modifier
-    /// (Pocahontas -50%, read from the spec via the elected father). Gains only — goodwill and decay (negative
-    /// deltas) pass through unchanged.
-    /// <para>
-    /// <b>Placeholder divergence:</b> in FreeCol this modifier damps only the per-turn <em>ambient</em> proximity
-    /// alarm (<c>ServerPlayer.csNewTurn</c>); combat tension is applied <em>raw</em> (<c>csModifyTension</c>). We
-    /// have no ambient-alarm system yet, so combat is our only positive alarm source — applying the modifier here
-    /// gives Pocahontas a tangible ongoing effect. Move it to the ambient path once that lands (tracked on the kanban).
-    /// </para>
+    /// (Pocahontas −50%, read from the spec via the elected father). Gains only — goodwill and decay (negative
+    /// deltas) pass through unchanged. Applied to the per-turn <b>ambient</b> proximity alarm
+    /// (<see cref="ApplyAmbientNativeAlarm"/>), matching FreeCol (<c>ServerPlayer.csNewTurn</c>); combat tension is
+    /// raw (<see cref="ApplyNativeCombatTension"/>).
     /// </summary>
     private int ScaleNativeAlarmGain(int delta)
     {
@@ -3473,6 +3471,55 @@ public sealed class Game
     /// <summary>Each turn a settlement's alarm cools toward 0 (FreeCol tension decay, <c>ServerPlayer</c>: −value/100 − 4).</summary>
     private static void DecayNativeAlarm(NativeSettlement settlement) =>
         settlement.Alarm = Math.Max(0, settlement.Alarm - (settlement.Alarm / 100 + 4));
+
+    /// <summary>Extra tiles beyond a settlement's own radius within which the human's presence stirs alarm (FreeCol <c>ALARM_RADIUS</c>).</summary>
+    private const int NativeAlarmRadius = 2;
+
+    /// <summary>Alarm a human-controlled/used tile contributes to a nearby settlement each turn (FreeCol <c>ALARM_TILE_IN_USE</c>).</summary>
+    private const int AlarmTileInUse = 2;
+
+    /// <summary>Chebyshev (king-move) distance between two tiles — the grid's surrounding-tiles metric.</summary>
+    private static int ChebyshevDistance(Position a, Position b) =>
+        Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
+
+    /// <summary>
+    /// The per-turn <b>ambient</b> native alarm (FreeCol <c>ServerPlayer.csNewTurn</c>): each settlement resents the
+    /// human's nearby footprint. Within <c>settlement radius + <see cref="NativeAlarmRadius"/></c> tiles, every human
+    /// <b>colony</b> adds <see cref="AlarmTileInUse"/> + its population and every human <b>offensive land unit</b> adds
+    /// its type offence; the total is damped by <b>Pocahontas</b>'s <c>nativeAlarmModifier</c> (−50%) — this is that
+    /// modifier's faithful home — then applied. Deterministic (no RNG; stable settlement/colony/unit iteration);
+    /// runs in <see cref="EndTurn"/> just before the alarm decay. (Tile-ownership/control pressure and missionary
+    /// calming are not modelled; alarm is tracked toward the human only, so foreign powers exert none.)
+    /// </summary>
+    private void ApplyAmbientNativeAlarm()
+    {
+        foreach (NativeSettlement settlement in _nativeSettlements)
+        {
+            int radius = Ruleset.Settlement(settlement.SettlementTypeId).ClaimableRadius + NativeAlarmRadius;
+            int pressure = 0;
+            foreach (Colony colony in _colonies.Where(IsHumanOwned))
+            {
+                // FreeCol scores each tile once (if/else-if): a colony tile holding a unit counts as that unit's
+                // military pressure (the unit loop below), not the colony's — so skip a garrisoned colony here.
+                if (ChebyshevDistance(colony.Position, settlement.Position) <= radius
+                    && !_units.Any(u => u.IsOnMap && u.Position == colony.Position))
+                {
+                    pressure += AlarmTileInUse + colony.Population;
+                }
+            }
+            foreach (Unit unit in _units.Where(u => u.IsOnMap && IsHumanOwned(u) && !u.Type.IsNaval))
+            {
+                if (ChebyshevDistance(unit.Position, settlement.Position) <= radius)
+                {
+                    pressure += (int)unit.Type.Offence; // unarmed colonists (offence 0) add nothing, as in FreeCol
+                }
+            }
+            if (pressure > 0)
+            {
+                ChangeNativeAlarm(settlement, ScaleNativeAlarmGain(pressure)); // Pocahontas −50% damps the ambient gain
+            }
+        }
+    }
 
     /// <summary>
     /// Records first contact between colonial players (FP-6a): when one player's explored fog now covers a tile
