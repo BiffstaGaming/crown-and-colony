@@ -28,6 +28,7 @@ public class CombatTests
     private const string Dragoon = "model.role.dragoon";
     private const string Washington = "model.foundingFather.georgeWashington";
     private const string Revere = "model.foundingFather.paulRevere";
+    private const string Pocahontas = "model.foundingFather.pocahontas";
 
     /// <summary>A fixed RNG returning the same NextDouble — forces a chosen combat band (0 → great win, 0.99 → great loss).</summary>
     private sealed class FixedRandom(double value) : IGameRandom
@@ -236,6 +237,33 @@ public class CombatTests
         Assert.Equal(
             NativeSettlement.TensionAddUnitDestroyed + NativeSettlement.TensionAddMinor,
             home.Alarm);
+    }
+
+    [Fact]
+    public void Pocahontas_HalvesTheNativeAlarmFromACombatWin()
+    {
+        // Pocahontas's nativeAlarmModifier (-50%) damps the alarm a win inflicts. (Placeholder hook: FreeCol
+        // damps only ambient proximity alarm, not combat — but combat is our only positive alarm source today.)
+        (Game game, Unit attacker, Unit brave, NativeSettlement home) =
+            SetupAttack("model.unit.artillery", null, Pocahontas);
+
+        game.Attack(attacker, brave.Position, new FixedRandom(0.0)); // great win, kills the brave
+
+        // Baseline (GreatWin_SlaughtersTheBrave_AndRaisesAlarm) is UNIT_DESTROYED + MINOR = 500; halved → 250.
+        Assert.Equal((NativeSettlement.TensionAddUnitDestroyed + NativeSettlement.TensionAddMinor) / 2, home.Alarm);
+    }
+
+    [Fact]
+    public void Pocahontas_DoesNotDampenTheAlarmDropFromARepelledAttack()
+    {
+        // The −50% applies to alarm GAINS only; a repelled attack's alarm drop lands at full magnitude.
+        (Game game, Unit attacker, Unit brave, NativeSettlement home) =
+            SetupAttack("model.unit.artillery", null, Pocahontas);
+        game.ChangeNativeAlarm(home, 500); // start hostile so the drop is observable
+
+        game.Attack(attacker, brave.Position, new FixedRandom(0.99)); // great loss — the artillery is beaten back
+
+        Assert.Equal(500 - NativeSettlement.TensionAddMinor, home.Alarm); // −100 in full (not −50)
     }
 
     [Fact]

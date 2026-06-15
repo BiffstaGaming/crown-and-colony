@@ -663,9 +663,10 @@ public sealed class Game
         {
             return;
         }
+        int change = ScaleNativeAlarmGain(defenderTension); // Pocahontas damps the gain by -50% (placeholder — see ScaleNativeAlarmGain)
         foreach (NativeSettlement s in _nativeSettlements.Where(s => s.NationTypeId == nationTypeId))
         {
-            ChangeNativeAlarm(s, defenderTension);
+            ChangeNativeAlarm(s, change);
         }
     }
 
@@ -2609,11 +2610,16 @@ public sealed class Game
 
         if (player.CurrentFather is not null && player.Liberty >= TotalFoundingFatherCost(player))
         {
+            string elected = player.CurrentFather; // capture before it is cleared
             player.Liberty -= TotalFoundingFatherCost(player);
-            player.CongressList.Add(player.CurrentFather);
+            player.CongressList.Add(elected);
             player.CurrentFather = null;
             player.OfferedFathersList.Clear();
             RefreshDockForRecruitability(player); // a newly-elected father may ban dock recruits (Brewster)
+            if (player.IsHuman && elected == PocahontasId)
+            {
+                ResetAllNativeAlarm(); // FreeCol model.event.resetNativeAlarm — all native anger toward you forgotten
+            }
         }
 
         if (player.CurrentFather is null && player.OfferedFathers.Count == 0)
@@ -2660,6 +2666,44 @@ public sealed class Game
 
     /// <summary>The ability gating which unit types may be recruited (William Brewster denies some).</summary>
     private const string CanRecruitUnitAbility = "model.ability.canRecruitUnit";
+
+    /// <summary>Pocahontas's id — on election she zeroes all native alarm (the <c>resetNativeAlarm</c> event).</summary>
+    private const string PocahontasId = "model.foundingFather.pocahontas";
+
+    /// <summary>The percentage modifier by which Pocahontas damps native-alarm increases (FreeCol <c>NATIVE_ALARM_MODIFIER</c>, −50%).</summary>
+    private const string NativeAlarmModifierId = "model.modifier.nativeAlarmModifier";
+
+    /// <summary>
+    /// Scales a positive native-alarm <em>gain</em> by the human's <see cref="NativeAlarmModifierId"/> modifier
+    /// (Pocahontas -50%, read from the spec via the elected father). Gains only — goodwill and decay (negative
+    /// deltas) pass through unchanged.
+    /// <para>
+    /// <b>Placeholder divergence:</b> in FreeCol this modifier damps only the per-turn <em>ambient</em> proximity
+    /// alarm (<c>ServerPlayer.csNewTurn</c>); combat tension is applied <em>raw</em> (<c>csModifyTension</c>). We
+    /// have no ambient-alarm system yet, so combat is our only positive alarm source — applying the modifier here
+    /// gives Pocahontas a tangible ongoing effect. Move it to the ambient path once that lands (tracked on the kanban).
+    /// </para>
+    /// </summary>
+    private int ScaleNativeAlarmGain(int delta)
+    {
+        if (delta <= 0)
+        {
+            return delta;
+        }
+        FatherModifier? modifier = _human.Congress.Select(Ruleset.Father)
+            .SelectMany(f => f.Modifiers)
+            .FirstOrDefault(m => m.TargetId == NativeAlarmModifierId);
+        return modifier is null ? delta : (int)modifier.ApplyTo(delta);
+    }
+
+    /// <summary>Zeroes every native settlement's alarm toward the human (FreeCol <c>resetNativeAlarm</c> → <c>Tension.TENSION_MIN</c>, the Happy band).</summary>
+    private void ResetAllNativeAlarm()
+    {
+        foreach (NativeSettlement settlement in _nativeSettlements)
+        {
+            settlement.Alarm = 0;
+        }
+    }
 
     /// <summary>
     /// True when any Founding Father elected to the human player's Congress grants <paramref name="abilityId"/>
