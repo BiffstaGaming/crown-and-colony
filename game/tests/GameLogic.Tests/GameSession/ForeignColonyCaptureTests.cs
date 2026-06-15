@@ -107,6 +107,34 @@ public class ForeignColonyCaptureTests
         Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
     }
 
+    private static int Cheb(Position a, Position b) => System.Math.Max(System.Math.Abs(a.X - b.X), System.Math.Abs(a.Y - b.Y));
+
+    [Fact]
+    public void AtWar_WithNoFieldPrey_MarchesOnTheNearestHumanColony()
+    {
+        // The besiege fallback (86d3bx03d): a war-power land unit with no human field unit to chase steps toward
+        // the nearest human colony instead of wandering off to explore. Empty the map of human units (found the
+        // colony with the one on-map unit), then place a foreign artillery two tiles from the colony with a clear
+        // closer step, at war — it should close the distance.
+        Game game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        int humanId = game.HumanPlayer.PlayerId;
+        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        Assert.DoesNotContain(game.PlayerUnits, u => u.IsOnMap); // no field prey for a foreign land unit
+
+        // A free land tile at distance 2 from the colony that has a free-land neighbour at distance 1 (a legal closer step).
+        Position spot = game.Map.AllPositions().First(p =>
+            Cheb(p, colony.Position) == 2 && FreeLand(game, p)
+            && p.Neighbours().Any(n => Cheb(n, colony.Position) == 1 && FreeLand(game, n)));
+        Unit attacker = game.SpawnUnit(Classic.Unit(Artillery), spot);
+        attacker.OwnerId = power.PlayerId;
+        game.SetStance(power.PlayerId, humanId, Stance.War);
+
+        game.EndTurn();
+
+        Assert.True(Cheb(attacker.Position, colony.Position) < 2); // it marched on the colony (closed from distance 2)
+    }
+
     [Fact]
     public void Capture_DoesNotTouchTheHumansStream0()
     {

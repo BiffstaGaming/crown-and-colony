@@ -2878,9 +2878,11 @@ public sealed class Game
     /// <see cref="Stance.War"/> with the human (war only starts when the human attacks it), an <b>armed</b> unit
     /// goes on the offensive — an armed <b>land</b> unit beside an <b>undefended</b> human colony captures it
     /// (1c-3f, the decisive move; a garrisoned colony's defender is fought via the unit-hunt first), otherwise it
-    /// hunts the nearest human unit, attacking when adjacent (1c-2). Otherwise a colonist founds a colony where it
-    /// stands while the power has fewer than <see cref="MaxAiColonies"/> colonies, else steps one tile toward the
-    /// nearest unexplored tile; ships and non-founders idle. Every choice draws from the player's own RNG stream
+    /// hunts the nearest human unit, attacking when adjacent (1c-2); with no field unit to chase, a land unit
+    /// instead <b>marches on the nearest human colony</b> (86d3bx03d besiege fallback) so it closes on a colony to
+    /// capture rather than wandering off. Otherwise a colonist founds a colony where it stands while the power has
+    /// fewer than <see cref="MaxAiColonies"/> colonies, else steps one tile toward the nearest unexplored tile;
+    /// ships and non-founders idle. Every choice draws from the player's own RNG stream
     /// (ADR-009) — never the human's stream 0 — so the human's game stays byte-stable. At war an armed
     /// <b>warship</b> hunts the human's nearest ship too (1c-3a′); transports/unarmed ships idle.
     /// </summary>
@@ -2917,6 +2919,15 @@ public sealed class Game
                     {
                         MoveUnit(unit, chase); // a hemmed-in attacker simply waits
                     }
+                    continue;
+                }
+                // No field unit to chase: a land unit marches on the nearest human colony (the war objective) so it
+                // besieges instead of wandering off to explore (86d3bx03d) — closing on an undefended colony to
+                // capture above, or on a garrison to fight as a field unit. Naval units can't besiege a colony.
+                if (!unit.Type.IsNaval && NearestHumanColony(unit) is { } targetColony
+                    && StepToward(power, unit, targetColony.Position) is { } colonyStep)
+                {
+                    MoveUnit(unit, colonyStep);
                     continue;
                 }
             }
@@ -3117,6 +3128,18 @@ public sealed class Game
         _units.Where(u => u.IsOnMap && IsHumanOwned(u) && u.Type.IsNaval == hunter.Type.IsNaval)
             .OrderBy(u => Chebyshev(u.Position, hunter.Position))
             .ThenBy(u => u.Position.Y).ThenBy(u => u.Position.X)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// The nearest human colony to <paramref name="unit"/> (Chebyshev, ties by position), or null if the human has
+    /// none — the besiege target for a war-power land unit with no field unit to chase (86d3bx03d). Human-owned is
+    /// the same sole contract as <see cref="NearestHumanUnit"/>; pure (no RNG). Targets any human colony (an
+    /// undefended one is then captured on arrival; a garrisoned one's garrison becomes the nearest field unit).
+    /// </summary>
+    private Colony? NearestHumanColony(Unit unit) =>
+        _colonies.Where(IsHumanOwned)
+            .OrderBy(c => Chebyshev(c.Position, unit.Position))
+            .ThenBy(c => c.Position.Y).ThenBy(c => c.Position.X)
             .FirstOrDefault();
 
     /// <summary>The brave's home settlement — the nearest surviving settlement of its own nation (Chebyshev, ties by position), or null if the nation has lost them all.</summary>
