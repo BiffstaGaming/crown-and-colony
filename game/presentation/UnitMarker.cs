@@ -9,6 +9,7 @@ namespace CrownAndColony.Presentation;
 public partial class UnitMarker : Node2D
 {
     private bool _selected;
+    private Color _ownerColor; // default (0,0,0,0) = transparent → no ring (the human's own units)
     private Texture2D? _texture;
 
     /// <summary>Whether the selection ring is shown.</summary>
@@ -18,6 +19,21 @@ public partial class UnitMarker : Node2D
         set
         {
             _selected = value;
+            QueueRedraw();
+        }
+    }
+
+    /// <summary>
+    /// Ground-ring colour identifying the unit's owner — used to mark a unit as "not yours" (a foreign power's
+    /// nation colour, or a native constant). Left transparent (alpha 0) for the human's own units, which then
+    /// render exactly as before. Presentation-only.
+    /// </summary>
+    public Color OwnerColor
+    {
+        get => _ownerColor;
+        set
+        {
+            _ownerColor = value;
             QueueRedraw();
         }
     }
@@ -32,6 +48,15 @@ public partial class UnitMarker : Node2D
 
     public override void _Draw()
     {
+        // Owner ring: a coloured ground ellipse marking a non-yours unit (foreign power / native), drawn just
+        // inside the selection ring so both read at once. Skipped (transparent) for the human's own units.
+        if (_ownerColor.A > 0f)
+        {
+            DrawSetTransform(Vector2.Zero, 0f, new Vector2(1f, 0.5f));
+            DrawArc(Vector2.Zero, MapView.TileH * 0.48f, 0, Mathf.Tau, 40, _ownerColor, 4f);
+            DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+        }
+
         // Selection: gold ellipse on the ground plane (isometric circle).
         if (_selected)
         {

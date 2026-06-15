@@ -31,7 +31,7 @@ public partial class GameController : Node2D
     private ulong _currentSeed;
     private GameVariant _variant = GameVariants.Default;
     private MapView _mapView = null!;
-    private UnitMarker _unitMarker = null!;
+    private Node2D _unitLayer = null!;
     private Node2D _colonyLayer = null!;
     private Node2D _nativeLayer = null!;
     private Label _statusLabel = null!;
@@ -43,7 +43,7 @@ public partial class GameController : Node2D
     public override void _Ready()
     {
         _mapView = GetNode<MapView>("MapView");
-        _unitMarker = GetNode<UnitMarker>("MapView/UnitMarker");
+        _unitLayer = GetNode<Node2D>("MapView/UnitLayer");
         _colonyLayer = GetNode<Node2D>("MapView/ColonyLayer");
         _nativeLayer = GetNode<Node2D>("MapView/NativeLayer");
         _statusLabel = GetNode<Label>("UI/StatusLabel");
@@ -276,16 +276,9 @@ public partial class GameController : Node2D
         _mapView.ShowState(_game.Map, _game.Explored, _game.CurrentlyVisible);
         SyncColonyMarkers();
         SyncNativeMarkers();
+        SyncUnitMarkers();
 
-        Unit? unit = _game.PlayerUnits.FirstOrDefault(u => u.IsOnMap); // never render a native brave as the HUD unit
-        _unitMarker.Visible = unit is not null;
-        if (unit is not null)
-        {
-            _unitMarker.Position = MapView.TileCentre(unit.Position);
-            _unitMarker.Selected = _selectedUnit == unit;
-            _unitMarker.SetUnitType(unit.Type.ShortName);
-        }
-
+        Unit? unit = _game.PlayerUnits.FirstOrDefault(u => u.IsOnMap); // the human's first on-map unit, for the status line
         int inEurope = _game.UnitsInEurope.Count();
         string subject = unit is not null
             ? $"{unit.Type.ShortName} on {_game.Map.TerrainAt(unit.Position).ShortName}, " +
@@ -358,5 +351,74 @@ public partial class GameController : Node2D
             };
             _nativeLayer.AddChild(marker);
         }
+    }
+
+    /// <summary>Owner-ring colour for a native brave (earthy red-brown).</summary>
+    private static readonly Color NativeUnitColor = new(0.78f, 0.36f, 0.20f);
+
+    /// <summary>Owner-ring colour for a rival whose nation has no colour in the ruleset (a plain rival red).</summary>
+    private static readonly Color FallbackRivalColor = new(0.85f, 0.20f, 0.20f);
+
+    /// <summary>
+    /// One <see cref="UnitMarker"/> per on-map unit the human can see, reconciled each refresh (unit counts are
+    /// tiny — same free-all-then-rebuild pattern as the colony/native layers): the human's own units always;
+    /// every non-human unit (a foreign power's or a native brave) only while its tile is in live sight
+    /// (<see cref="GameLogic.GameSession.Game.IsVisible"/> — units move, so this uses live visibility, not the
+    /// remembered/explored fog). Non-human units get an owner-coloured ring; the human's own render without one.
+    /// Presentation-only (ADR-006): reads game state, never mutates it.
+    /// </summary>
+    private void SyncUnitMarkers()
+    {
+        foreach (Node child in _unitLayer.GetChildren())
+        {
+            child.QueueFree();
+        }
+        foreach (Unit unit in _game.Units)
+        {
+            if (!unit.IsOnMap)
+            {
+                continue; // aboard a ship or in Europe — nothing to draw on the map
+            }
+            bool human = !unit.IsNative && unit.OwnerId == _game.HumanPlayer.PlayerId;
+            if (!human && !_game.IsVisible(unit.Position))
+            {
+                continue; // a rival or brave is drawn only while in the human's line of sight (fog)
+            }
+            var marker = new UnitMarker
+            {
+                Position = MapView.TileCentre(unit.Position),
+                Selected = _selectedUnit == unit,
+                OwnerColor = human ? default : OwnerColorOf(unit),
+            };
+            marker.SetUnitType(unit.Type.ShortName);
+            _unitLayer.AddChild(marker);
+        }
+    }
+
+    /// <summary>
+    /// The owner-ring colour for a non-human unit: a foreign power's nation colour from the ruleset, falling
+    /// back to a plain rival red; a native brave uses <see cref="NativeUnitColor"/>. The human's own units pass
+    /// <c>default</c> (transparent → no ring) at the call site, so they render exactly as before.
+    /// </summary>
+    private Color OwnerColorOf(Unit unit)
+    {
+        if (unit.IsNative)
+        {
+            return NativeUnitColor;
+        }
+        string? nationId = _game.Players.FirstOrDefault(p => p.PlayerId == unit.OwnerId)?.NationId;
+        EuropeanNation? nation = nationId is null
+            ? null
+            : _game.Ruleset.EuropeanNations.FirstOrDefault(n => n.Id == nationId);
+        return nation?.Color is { } hex
+            ? Color.FromString(NormalizeHex(hex), FallbackRivalColor)
+            : FallbackRivalColor;
+    }
+
+    /// <summary>Normalises a ruleset colour to Godot's canonical <c>#rrggbb</c> form (e.g. <c>0xff9d3c</c> → <c>#ff9d3c</c>); a parse miss still falls back via <see cref="Color.FromString"/>'s default.</summary>
+    private static string NormalizeHex(string hex)
+    {
+        string bare = hex.Length >= 2 && hex[0] == '0' && (hex[1] == 'x' || hex[1] == 'X') ? hex[2..] : hex.TrimStart('#');
+        return "#" + bare;
     }
 }

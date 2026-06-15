@@ -35,8 +35,8 @@ public class JourneyE2ETests
         // ── select the starting unit by clicking its tile ──
         var unit = game.Units[0];
         await ClickTile(runner, controller, unit.Position);
-        var marker = controller.GetNode<UnitMarker>("MapView/UnitMarker");
-        AssertThat(marker.Selected).IsTrue();
+        int selected = controller.GetNode<Node2D>("MapView/UnitLayer").GetChildren().OfType<UnitMarker>().Count(m => m.Selected);
+        AssertThat(selected).IsEqual(1);
 
         // ── move it to a legal neighbour (guarded) ──
         Position? step = unit.Position.Neighbours()

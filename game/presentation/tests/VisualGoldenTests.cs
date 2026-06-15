@@ -125,6 +125,38 @@ public class VisualGoldenTests
         AssertGolden("remembered-fog-seed424242", actual);
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task MapView_RenderedUnits_MatchesGolden()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+
+        controller.GetWindow().Size = CaptureSize;
+        controller.GetNode<CanvasLayer>("UI").Visible = false;
+        controller.StartNewGame(GoldenSeed);
+        await runner.SimulateFrames(2);
+
+        // The 1c-1 rendering: a second own unit (no ring) and an in-sight native brave (owner ring) beside the
+        // start. Refresh via a click (not End Turn — that would run the native AI and move the brave).
+        var game = GetGame(controller);
+        var humanPos = game.PlayerUnits.First(u => u.IsOnMap).Position;
+        var free = humanPos.Neighbours().Where(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.NativeSettlementAt(n) is null && game.ColonyAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n)).Take(2).ToList();
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.freeColonist"), free[0]);
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.brave"), free[1], game.NativeSettlements.First().NationTypeId);
+
+        // Refresh deterministically via F5 (QuickSave → RefreshView): no End Turn (which would run the native AI
+        // and move the brave) and no screen-space click (whose tile mapping can lag the camera by a frame).
+        controller.GetNode<Camera2D>("Camera").Position = MapView.TileCentre(humanPos);
+        runner.SimulateKeyPressed(Key.F5);
+        await runner.SimulateFrames(3);
+
+        Image actual = controller.GetViewport().GetTexture().GetImage();
+        AssertGolden("rendered-units-seed424242", actual);
+    }
+
     private static CrownAndColony.GameLogic.GameSession.Game GetGame(GameController controller) =>
         (CrownAndColony.GameLogic.GameSession.Game)controller
             .GetType()

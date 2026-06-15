@@ -74,7 +74,9 @@ public class MainSceneTests
         await runner.SimulateFrames(2);
 
         var controller = (GameController)runner.Scene();
-        var marker = controller.GetNode<UnitMarker>("MapView/UnitMarker");
+        var layer = controller.GetNode<Node2D>("MapView/UnitLayer");
+        AssertThat(layer.GetChildCount()).IsEqual(1); // turn 1: just the human's start unit, no rivals/braves in sight
+        var marker = (UnitMarker)layer.GetChild(0);
 
         // The marker must sit at the centre of some diamond: isometric centres
         // land on multiples of half the tile width/height.

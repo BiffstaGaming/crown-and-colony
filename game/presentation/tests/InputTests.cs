@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
+using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 using GdUnit4;
@@ -34,10 +35,10 @@ public class InputTests
         Unit unit = game.Units[0];
         Position start = unit.Position;
 
-        // Click the unit's tile: it becomes selected.
+        // Click the unit's tile: it becomes selected (exactly one marker in the unit layer is selected).
         await ClickTile(runner, controller, start);
-        var marker = controller.GetNode<UnitMarker>("MapView/UnitMarker");
-        AssertThat(marker.Selected).IsTrue();
+        int selected = controller.GetNode<Node2D>("MapView/UnitLayer").GetChildren().OfType<UnitMarker>().Count(m => m.Selected);
+        AssertThat(selected).IsEqual(1);
 
         // Click a legal neighbouring tile: the unit walks there.
         Position target = start.Neighbours().First(n => game.CheckMove(unit, n).Allowed);
@@ -79,8 +80,8 @@ public class InputTests
 
         AssertThat(game.Colonies.Count).IsEqual(1);
         AssertThat(game.PlayerUnits.Count()).IsEqual(0); // founder settled (native braves remain)
-        // The HUD unit marker must hide — it must never show a native brave as the player's unit.
-        AssertThat(controller.GetNode<UnitMarker>("MapView/UnitMarker").Visible).IsFalse();
+        // No unit marker remains: the human has no on-map unit, and no rival/brave is in sight near the new colony.
+        AssertThat(controller.GetNode<Node2D>("MapView/UnitLayer").GetChildCount()).IsEqual(0);
     }
 
     [TestCase(Timeout = 60000)]
@@ -157,6 +158,86 @@ public class InputTests
         var label = controller.GetNode<Label>("UI/StatusLabel");
         AssertThat(label.Text.ToLower()).Contains("raid"); // "raided" (native won) or "fought off … raid" (defended)
     }
+
+    [TestCase(Timeout = 60000)]
+    public async Task MultipleOwnUnits_AllRender()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Spawn a second human-owned unit next to the first, then refresh: the unit layer draws both (the old
+        // single-marker HUD only ever showed the first).
+        Position humanPos = game.PlayerUnits.First(u => u.IsOnMap).Position;
+        Position spot = humanPos.Neighbours().First(n => Free(game, n));
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.freeColonist"), spot);
+
+        await ClickTile(runner, controller, humanPos); // forces a RefreshView (and selects the first unit)
+
+        AssertThat(controller.GetNode<Node2D>("MapView/UnitLayer").GetChildCount()).IsEqual(2);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task NonHumanUnit_RendersOnlyWhenInSight_WithAnOwnerRing()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // A brave adjacent to the human is in sight → drawn (with a non-transparent owner ring); the braves that
+        // spawned far away near their settlements are out of sight → not drawn. So exactly two markers: the
+        // human's own (no ring) and the one visible brave (ring).
+        Position humanPos = game.PlayerUnits.First(u => u.IsOnMap).Position;
+        string nation = game.NativeSettlements.First().NationTypeId;
+        Position nearTile = humanPos.Neighbours().First(n => Free(game, n));
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.brave"), nearTile, nation);
+
+        await ClickTile(runner, controller, humanPos); // refresh
+
+        var markers = controller.GetNode<Node2D>("MapView/UnitLayer").GetChildren().OfType<UnitMarker>().ToList();
+        AssertThat(markers.Count).IsEqual(2); // the human + the in-sight brave; far braves are not drawn
+        AssertThat(markers.Any(m => m.Position == MapView.TileCentre(nearTile) && m.OwnerColor.A > 0f)).IsTrue();
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ForeignUnit_RendersWithItsNationColour()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Inject a foreign colonial unit next to the human via the save layer (the presentation project can't
+        // set Unit.OwnerId directly), reload it into the controller, refresh: it must render with its NATION's
+        // colour ring — exercising OwnerColorOf → NormalizeHex → Color.FromString, which the brave tests skip.
+        Position humanPos = game.PlayerUnits.First(u => u.IsOnMap).Position;
+        Position spot = humanPos.Neighbours().First(n => Free(game, n));
+        SaveGame save = SaveGame.From(game);
+        var rival = save.Players!.First(p => !p.IsHuman && p.PlayerType == (int)PlayerType.Colonial);
+        int uid = game.Units.Max(u => u.Id) + 1;
+        var foreignUnit = new SavedUnit(uid, "model.unit.freeColonist", spot.X, spot.Y, 0, OwnerId: rival.PlayerId);
+        Game injected = (save with { Units = save.Units.Append(foreignUnit).ToList() }).Restore(game.Ruleset);
+        SetGame(controller, injected);
+
+        runner.SimulateKeyPressed(Key.F5); // refresh (no turn advance, no AI movement)
+        await runner.SimulateFrames(2);
+
+        UnitMarker marker = controller.GetNode<Node2D>("MapView/UnitLayer").GetChildren().OfType<UnitMarker>()
+            .First(m => m.Position == MapView.TileCentre(spot));
+        string nationId = injected.Players.First(p => p.PlayerId == rival.PlayerId).NationId!;
+        string hex = injected.Ruleset.EuropeanNations.First(n => n.Id == nationId).Color!;
+        string bare = hex.Length >= 2 && hex[0] == '0' && (hex[1] == 'x' || hex[1] == 'X') ? hex[2..] : hex.TrimStart('#');
+        Color expected = Color.FromString("#" + bare, Colors.Magenta);
+        AssertThat(marker.OwnerColor).IsEqual(expected); // the nation colour — not the fallback red, not the native constant
+    }
+
+    private static void SetGame(GameController controller, Game game) =>
+        controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(controller, game);
 
     private static bool Free(Game game, Position n) =>
         game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater

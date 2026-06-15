@@ -1568,6 +1568,14 @@ public sealed class Game
         {
             return MoveCheck.No("A native settlement holds that tile — attack, trade or speak with it from beside it.");
         }
+        if (ColonyAt(target) is { } colony && (unit.IsNative || colony.OwnerId != unit.OwnerId))
+        {
+            // You may only enter a colony you own (to garrison/join). A native brave owns none, so it is kept
+            // off every colony — including the human's, whose OwnerId 0 would otherwise collide with a brave's
+            // unused OwnerId 0; a colonial unit is blocked from a rival's colony. Capturing a colony is a later
+            // slice, and DefenderAt above already routes a garrisoned tile to "attack instead".
+            return MoveCheck.No("An enemy colony holds that tile — attack it from beside it.");
+        }
 
         int movesLeft = unit.MovementLeft;
         if (movesLeft <= 0)

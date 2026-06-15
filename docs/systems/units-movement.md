@@ -23,6 +23,8 @@ There's one explorer on the map. Click it to select (gold ring), click a neighbo
 | Target not one of the 8 neighbours | rejected (one step at a time) |
 | Land unit → water, or naval unit → land | rejected |
 | Target holds an enemy unit (e.g. a native brave) | rejected — *attack* it instead (see [combat](combat.md)) |
+| Target holds a native settlement | rejected — attack / trade / speak from beside it |
+| Target holds a colony you don't own (a colonial unit with a differing `OwnerId`, or any native brave) | rejected — attack it from beside it (1c-1; capturing a rival colony is a later slice) |
 | 0 movement points left | rejected |
 | cost ≤ movement left | allowed; pay the terrain's move cost |
 | cost > movement left | allowed **for all remaining points** only if near-full movement (`left+2 ≥ max`, where `max` = the unit's full turn movement *including its role bonus*) or small shortfall (`cost ≤ left+2`) or target is a settlement; otherwise rejected |
@@ -70,4 +72,5 @@ There's one explorer on the map. Click it to select (gold ring), click a neighbo
 | 2026-06-13 | FreeCol unit sprites by type short-name (`assets/freecol/units/`), red-disc fallback, iso ground-ellipse selection | Phase 2c |
 | 2026-06-13 | Off-map units (sailing/Europe) can't be moved on the map; units gain a cargo hold — see [europe](europe.md) | Phase 4 |
 | 2026-06-14 | Unit ownership (`OwnerNationId`, `PlayerUnits`/`NativeUnits`) + military roles (`RoleId`/`RoleCount`); can't move onto an enemy tile (attack instead); native units fog-excluded — see [combat](combat.md) | Phase 5 slice 5b |
+| 2026-06-15 | `CheckMove` blocks moving onto a colony you don't own (`ColonyAt(target).OwnerId != unit.OwnerId`) — closes the foreign-colony walk-in; same-owner garrison/join moves unchanged (slice 1c-1) | Phase 5 slice 1c-1 |
 | 2026-06-14 | Role movement bonuses applied: per-turn movement = unit-type base + role `movementBonus` (mounted +9, missionary +3) via `Game.InitialMovement`; partial-move "near full" now measured against the boosted max; `Unit.ResetMovement` removed | FP-5 (`86d3bbvv6`) |

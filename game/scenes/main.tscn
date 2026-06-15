@@ -1,8 +1,7 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://presentation/GameController.cs" id="1"]
 [ext_resource type="Script" path="res://presentation/MapView.cs" id="2"]
-[ext_resource type="Script" path="res://presentation/UnitMarker.cs" id="3"]
 [ext_resource type="Script" path="res://presentation/CameraController.cs" id="4"]
 [ext_resource type="Script" path="res://presentation/ColonyPanel.cs" id="5"]
 [ext_resource type="Script" path="res://presentation/EuropePanel.cs" id="6"]
@@ -17,8 +16,7 @@ script = ExtResource("2")
 
 [node name="ColonyLayer" type="Node2D" parent="MapView"]
 
-[node name="UnitMarker" type="Node2D" parent="MapView"]
-script = ExtResource("3")
+[node name="UnitLayer" type="Node2D" parent="MapView"]
 
 [node name="Camera" type="Camera2D" parent="."]
 script = ExtResource("4")

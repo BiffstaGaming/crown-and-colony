@@ -1,6 +1,6 @@
 # QA Report — Crown & Colony
 
-> **Snapshot** taken 2026-06-15, latest on `main` (*foreign-powers wave FP-1→FP-7 — multi-player + active foreign-power AI with an economy + diplomacy stance/tension (war→cease-fire→peace) + save-format v20 consolidation; an on-map combat UI; + **native AI (slice 1b)** — braves raid the human's units when alarmed (else wander), on the natives' own RNG streams, with a status-bar raid notice; ADR-019*).
+> **Snapshot** taken 2026-06-15, latest on `main` (*foreign-powers wave FP-1→FP-7; on-map combat UI; native AI (slice 1b) — braves raid when alarmed, else wander; + **rival/own-unit rendering (slice 1c-1)** — the map draws every unit the human can see (own units always; foreign powers + braves when in sight, owner-coloured), and `CheckMove` blocks walking onto a colony you don't own; ADR-019*).
 > This is a committed, point-in-time QA snapshot combining **test results** and the **visual goldens** (screenshots) in one place.
 > **End-to-end journeys:** the connected player-journey coverage is specified in [TEST-PLAN.md](TEST-PLAN.md).
 > Regenerate after a green run with `dotnet test` + a `GOLDEN_UPDATE=1` golden pass (see [TESTING.md](TESTING.md)); the goldens below always show the *committed expected* render.
@@ -10,20 +10,20 @@
 
 | Layer | What it checks | Tooling | Count | Status | Where it runs |
 |---|---|---|---:|:--:|---|
-| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 412 | ✅ | every push |
-| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 412 | ✅ | every push |
-| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **412** | ✅ | every push |
+| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 415 | ✅ | every push |
+| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 415 | ✅ | every push |
+| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **415** | ✅ | every push |
 | ↳ of which **E2E journeys** | Connected player journeys, milestone-asserted ([TEST-PLAN.md](TEST-PLAN.md)) | xUnit `[Trait E2E]` | 10 | ✅ | every push |
-| **L3 Interaction** | Real scenes driven by simulated input/signals (incl. 1 scene E2E + the Europe screen + click-to-attack + native-raid notice) | GdUnit4 | 18 | ✅ | every push (CI) |
-| **L4 Visual** | Golden-screenshot diff of the rendered map | GdUnit4 + custom diff | 4 | ✅ | every push (CI) |
+| **L3 Interaction** | Real scenes driven by simulated input/signals (incl. 1 scene E2E + the Europe screen + click-to-attack + native-raid notice + unit rendering + owner colour) | GdUnit4 | 21 | ✅ | every push (CI) |
+| **L4 Visual** | Golden-screenshot diff of the rendered map | GdUnit4 + custom diff | 5 | ✅ | every push (CI) |
 | **L5 Soak** | 25-seed × 200-turn runs (active foreign economies + native AI) + a provoked-native-raid invariant + per-turn perf budget | xUnit | 3 | ✅ | nightly |
-| | | | **437** | **all green** | |
+| | | | **444** | **all green** | |
 
 Reproduce locally (toolchain in [CLAUDE.md](../CLAUDE.md)):
 ```
-dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (412)
+dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (414)
 dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category=Soak"    # L5 (3)
-dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings                 # L3+L4 (22), needs GODOT_BIN
+dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings                 # L3+L4 (26), needs GODOT_BIN
 ```
 
 ## Visual goldens (committed screenshots)
@@ -49,6 +49,11 @@ What it verifies: a discovered native settlement renders — FreeCol indian-sett
 What it verifies: after the colonist moves on, the tiles it leaves render **dimmed** (explored but no longer in sight) while the tiles around the unit stay full-bright.
 
 ![Remembered fog golden](../game/tests/visual/goldens/remembered-fog-seed424242.png)
+
+### Rendered units — `rendered-units-seed424242`
+What it verifies: the slice 1c-1 unit rendering — two of the human's own units draw (the old HUD showed only the first), one selected (gold ring, no owner ring); an in-sight native brave draws with its owner ring (red-disc fallback until native unit art lands). Proves the reconciled unit layer + the visibility gate + owner distinction.
+
+![Rendered units golden](../game/tests/visual/goldens/rendered-units-seed424242.png)
 
 Definitions (scene, seed, tolerance, human-check list): [docs/visual-tests/map-goldens.md](visual-tests/map-goldens.md).
 
