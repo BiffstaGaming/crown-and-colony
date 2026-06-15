@@ -21,9 +21,12 @@ public class NavalCombatTests
 {
     private static readonly Ruleset Classic = Ruleset.LoadClassic();
     private const ulong Seed = 0xC0FFEEUL;
-    private const string Frigate = "model.unit.frigate";   // offence 16
-    private const string Caravel = "model.unit.caravel";   // offence 0 (transport)
-    private const string Privateer = "model.unit.privateer"; // 8/8
+    private const string Frigate = "model.unit.frigate";   // offence 16, captureGoods, space 4
+    private const string Caravel = "model.unit.caravel";   // offence 0 (transport), no captureGoods, space 2
+    private const string Privateer = "model.unit.privateer"; // 8/8, captureGoods, space 2
+    private const string Galleon = "model.unit.galleon";   // offence 0, defence 10 (transport), no captureGoods, space 6
+    private const string Sugar = "model.goods.sugar";
+    private const string Tobacco = "model.goods.tobacco";
 
     /// <summary>A fixed RNG (same NextDouble each call) — forces a chosen combat band.</summary>
     private sealed class FixedRandom(double value) : IGameRandom
@@ -208,6 +211,70 @@ public class NavalCombatTests
         b.Attack(bAtt, bDef.Position);
 
         Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
+    }
+
+    // ── 1c-3c — cargo loot (captureGoods) ──
+
+    [Fact]
+    public void Privateer_LootsACargoShipItDefeats_BeforeItSinks()
+    {
+        (Game game, Unit privateer, Unit galleon, _) = TwoShips(Privateer, Galleon);
+        galleon.AddCargo(Sugar, 200);
+        int galleonId = galleon.Id;
+
+        game.Attack(privateer, galleon.Position, new FixedRandom(0.0)); // great win → galleon sunk
+
+        Assert.DoesNotContain(game.Units, u => u.Id == galleonId); // the prize sank…
+        Assert.Equal(200, privateer.CargoOf(Sugar));               // …but the privateer took its cargo first (space 2 = 200)
+    }
+
+    [Fact]
+    public void DamagingAShip_AlsoLootsItsCargo()
+    {
+        (Game game, Unit frigate, Unit caravel, _) = TwoShips(Frigate, Caravel);
+        caravel.AddCargo(Sugar, 100);
+
+        game.Attack(frigate, caravel.Position, new FixedRandom(0.5)); // normal win → caravel damaged
+
+        Assert.Equal(100, frigate.CargoOf(Sugar)); // looted
+        Assert.Empty(caravel.Cargo);               // the damaged hull keeps nothing
+    }
+
+    [Fact]
+    public void Loot_IsLimitedByTheWinnersFreeHoldSpace()
+    {
+        (Game game, Unit frigate, Unit caravel, _) = TwoShips(Frigate, Caravel);
+        frigate.AddCargo(Tobacco, 300); // 3 of the frigate's 4 slots already full → one free slot
+        caravel.AddCargo(Sugar, 300);   // three slots' worth on offer
+
+        game.Attack(frigate, caravel.Position, new FixedRandom(0.5)); // win → loot what fits
+
+        Assert.Equal(100, frigate.CargoOf(Sugar));  // only the one free slot's worth taken
+        Assert.Equal(300, frigate.CargoOf(Tobacco)); // its own cargo untouched
+    }
+
+    [Fact]
+    public void Loot_TakesAtMostTheWinnersFullCapacity()
+    {
+        // An empty frigate (space 4 = 400) against a galleon carrying 500 takes exactly 400; the rest goes down.
+        (Game game, Unit frigate, Unit galleon, _) = TwoShips(Frigate, Galleon);
+        galleon.AddCargo(Sugar, 500);
+
+        game.Attack(frigate, galleon.Position, new FixedRandom(0.0)); // great win → galleon sunk
+
+        Assert.Equal(400, frigate.CargoOf(Sugar)); // capped at the frigate's 4-slot hold
+    }
+
+    [Fact]
+    public void WinnerWithoutCaptureGoods_DoesNotLoot()
+    {
+        // A plain transport that wins on the defence keeps its hold empty — only captureGoods ships plunder.
+        (Game game, Unit privateer, Unit galleon, _) = TwoShips(Privateer, Galleon);
+        privateer.AddCargo(Sugar, 100);
+
+        game.Attack(privateer, galleon.Position, new FixedRandom(0.7)); // attacker loses → galleon (no captureGoods) wins
+
+        Assert.Empty(galleon.Cargo); // the galleon did not plunder the beaten privateer
     }
 
     // ── 1c-3b — damage + repair ──

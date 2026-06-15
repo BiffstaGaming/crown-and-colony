@@ -1028,11 +1028,13 @@ public sealed class Game
     /// </summary>
     private void ResolveLoserOutcome(Unit winner, Unit loser, bool greatLoss)
     {
-        // 0. A defeated ship is damaged and limps to repair (1c-3b) — UNLESS the defeat was decisive (a great
-        // loss) or it has nowhere to repair, in which case it sinks (FreeCol resolveAttack: sink on great/no
-        // repair location/beached, otherwise damage). Either way it loses its cargo and everyone aboard.
+        // 0. A defeated ship: a naval raider winner first loots what its hold can take (1c-3c), then the ship is
+        // damaged and limps to repair (1c-3b) — UNLESS the defeat was decisive (a great loss) or it has nowhere
+        // to repair, in which case it sinks (FreeCol resolveAttack: loot, then sink on great/no repair
+        // location/beached, otherwise damage). Either way it loses its remaining cargo and everyone aboard.
         if (loser.Type.IsNaval)
         {
+            LootShip(winner, loser);
             if (greatLoss || !CanRepairAtEurope(loser))
             {
                 SinkShip(loser);
@@ -1124,6 +1126,40 @@ public sealed class Game
 
     /// <summary>Turns a damaged ship of this type spends repairing: <c>MaxHitPoints − 1</c> (it limps in at 1 HP, heals +1/turn), floored at 1. Every classic ship is 6 HP → 5 turns.</summary>
     private static int RepairTurnsFor(UnitType type) => Math.Max(1, type.MaxHitPoints - 1);
+
+    /// <summary>
+    /// A naval raider (<c>captureGoods</c> — frigate/privateer/man-o-war) plunders the beaten ship's hold before
+    /// it sinks or limps off (FreeCol <c>csLootShip</c>): goods move into the winner's free hold, by stable goods
+    /// order, as much as fits; anything that doesn't fit is lost when the loser goes down. A no-op for a winner
+    /// without the ability or with no room. Deterministic — no RNG (we auto-take what fits; FreeCol's loot-cargo
+    /// chooser dialog is a single-player nicety with no AI equivalent).
+    /// </summary>
+    private void LootShip(Unit winner, Unit loser)
+    {
+        // FreeCol gates on winner.isNaval() && canCaptureGoods(); the IsNaval check is redundant today (a naval
+        // loser implies a naval winner — cross-domain attack is blocked) but states the invariant at the call site.
+        if (!winner.Type.IsNaval || !winner.Type.CaptureGoods)
+        {
+            return;
+        }
+        foreach ((string goodsId, int amount) in loser.Cargo.OrderBy(kv => kv.Key).ToList())
+        {
+            int free = CargoSlotsFree(winner);
+            if (free <= 0)
+            {
+                break;
+            }
+            // Units of this good that fit: the slack in the winner's existing partial stack of it + brand-new slots.
+            int partial = SlotsFor(winner.CargoOf(goodsId)) * CargoSlotSize - winner.CargoOf(goodsId);
+            int take = Math.Min(amount, partial + (free * CargoSlotSize));
+            if (take <= 0)
+            {
+                continue;
+            }
+            winner.AddCargo(goodsId, take);
+            loser.AddCargo(goodsId, -take);
+        }
+    }
 
     /// <summary>
     /// Whether a defeated ship has somewhere to repair (FreeCol <c>getRepairLocation != null</c>). We model

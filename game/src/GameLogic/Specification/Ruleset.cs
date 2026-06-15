@@ -668,7 +668,9 @@ public sealed class Ruleset
                 Bombard: ResolveAbility(el, "model.ability.bombard", elements),
                 // hit-points: every concrete ship sets 6 directly (the abstract `ship` base omits it); resolved
                 // through the extends chain like other ints. Default 1 for the non-naval types that never set it.
-                MaxHitPoints: ResolveIntAttribute(el, "hit-points", elements) ?? 1);
+                MaxHitPoints: ResolveIntAttribute(el, "hit-points", elements) ?? 1,
+                // captureGoods: a naval raider loots a beaten ship's hold (frigate, privateer, man-o-war).
+                CaptureGoods: ResolveAbility(el, "model.ability.captureGoods", elements));
         }
 
         if (units.Count == 0)

@@ -38,6 +38,7 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <param name="DisposeOnAllEquipmentLost">Losing the last equipment destroys this unit (<c>model.ability.disposeOnAllEquipLost</c>; king's regular).</param>
 /// <param name="DemoteOnAllEquipmentLost">Losing the last equipment demotes this unit's type (<c>model.ability.demoteOnAllEquipLost</c>; colonial regular).</param>
 /// <param name="Bombard">Artillery-style unit (<c>model.ability.bombard</c>): suffers the −75% artillery-in-the-open penalty when fighting outside a settlement.</param>
+/// <param name="CaptureGoods">Naval raider (<c>model.ability.captureGoods</c>; frigate, privateer, man-o-war): a win lets it plunder as much of the beaten ship's cargo as its hold can take, before that ship sinks or limps to repair.</param>
 /// <param name="OffenceAdditive">The pre-role offence base (the attribute + the type's own additive offence modifiers, e.g. king's regular +4), before any percentage. A unit's role additive folds onto this before <see cref="OffenceMultiplier"/>.</param>
 /// <param name="DefenceAdditive">The pre-role defence base (attribute + additive defence modifiers), before any percentage.</param>
 /// <param name="OffenceMultiplier">The post-role offence multiplier from the type's own percentage modifiers (veteran soldier +50% → 1.5), applied after the role additive.</param>
@@ -67,7 +68,8 @@ public sealed record UnitType(
     double DefenceAdditive = 0,
     double OffenceMultiplier = 1,
     double DefenceMultiplier = 1,
-    int MaxHitPoints = 1)
+    int MaxHitPoints = 1,
+    bool CaptureGoods = false)
 {
     /// <summary>Short name derived from the id: <c>model.unit.freeColonist</c> → <c>freeColonist</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];

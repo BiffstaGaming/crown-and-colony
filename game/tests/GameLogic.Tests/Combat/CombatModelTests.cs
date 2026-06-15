@@ -47,6 +47,18 @@ public class CombatModelTests
         Assert.Equal(hitPoints, Classic.Unit(id).MaxHitPoints);
     }
 
+    [Theory]
+    [InlineData("model.unit.frigate", true)]
+    [InlineData("model.unit.privateer", true)]
+    [InlineData("model.unit.manOWar", true)]
+    [InlineData("model.unit.caravel", false)]
+    [InlineData("model.unit.galleon", false)]
+    public void CaptureGoodsAbility_MatchesSpec(string id, bool captures)
+    {
+        // The naval raiders (captureGoods) loot a beaten ship's hold; the pure transports do not.
+        Assert.Equal(captures, Classic.Unit(id).CaptureGoods);
+    }
+
     [Fact]
     public void VeteranSoldier_FoldsItsPercentageModifier()
     {
