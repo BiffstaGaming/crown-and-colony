@@ -1,6 +1,6 @@
 # QA Report — Crown & Colony
 
-> **Snapshot** taken 2026-06-15, latest on `main` (*foreign-powers wave FP-1→FP-7; on-map combat UI; native AI (slice 1b) — braves raid when alarmed, else wander; + **rival/own-unit rendering (slice 1c-1)** — the map draws every unit the human can see (own units always; foreign powers + braves when in sight, owner-coloured), and `CheckMove` blocks walking onto a colony you don't own; ADR-019*).
+> **Snapshot** taken 2026-06-15, latest on `main` (*foreign-powers wave FP-1→FP-7; on-map combat UI; native AI (1b); rival/own-unit rendering + CheckMove colony guard (1c-1); + **foreign-power retaliation combat (slice 1c-2)** — a foreign power at war with the human sends its armed units after the human's units, on the power's own RNG stream; ADR-019*).
 > This is a committed, point-in-time QA snapshot combining **test results** and the **visual goldens** (screenshots) in one place.
 > **End-to-end journeys:** the connected player-journey coverage is specified in [TEST-PLAN.md](TEST-PLAN.md).
 > Regenerate after a green run with `dotnet test` + a `GOLDEN_UPDATE=1` golden pass (see [TESTING.md](TESTING.md)); the goldens below always show the *committed expected* render.
@@ -10,19 +10,19 @@
 
 | Layer | What it checks | Tooling | Count | Status | Where it runs |
 |---|---|---|---:|:--:|---|
-| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 415 | ✅ | every push |
-| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 415 | ✅ | every push |
-| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **415** | ✅ | every push |
+| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 420 | ✅ | every push |
+| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 420 | ✅ | every push |
+| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **420** | ✅ | every push |
 | ↳ of which **E2E journeys** | Connected player journeys, milestone-asserted ([TEST-PLAN.md](TEST-PLAN.md)) | xUnit `[Trait E2E]` | 10 | ✅ | every push |
 | **L3 Interaction** | Real scenes driven by simulated input/signals (incl. 1 scene E2E + the Europe screen + click-to-attack + native-raid notice + unit rendering + owner colour) | GdUnit4 | 21 | ✅ | every push (CI) |
 | **L4 Visual** | Golden-screenshot diff of the rendered map | GdUnit4 + custom diff | 5 | ✅ | every push (CI) |
-| **L5 Soak** | 25-seed × 200-turn runs (active foreign economies + native AI) + a provoked-native-raid invariant + per-turn perf budget | xUnit | 3 | ✅ | nightly |
-| | | | **444** | **all green** | |
+| **L5 Soak** | 25-seed × 200-turn runs (active foreign economies + native AI) + provoked native-raid & foreign-war invariants + per-turn perf budget | xUnit | 4 | ✅ | nightly |
+| | | | **450** | **all green** | |
 
 Reproduce locally (toolchain in [CLAUDE.md](../CLAUDE.md)):
 ```
-dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (414)
-dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category=Soak"    # L5 (3)
+dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (420)
+dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category=Soak"    # L5 (4)
 dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings                 # L3+L4 (26), needs GODOT_BIN
 ```
 

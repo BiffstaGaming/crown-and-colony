@@ -58,7 +58,7 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 
 ## Tests
 
-`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **418 tests** (415 L1+L2 incl. 10 E2E journeys + 3 nightly soak), all green as of 2026-06-15 @ slice 1c-1. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md); 444 across all five layers.)
+`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **424 tests** (420 L1+L2 incl. 10 E2E journeys + 4 nightly soak), all green as of 2026-06-15 @ slice 1c-2. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md); 450 across all five layers.)
 
 ## Changelog
 
@@ -79,4 +79,5 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | 2026-06-15 | FP-6a/6b: diplomacy — per-colonial-pair `Stance`/tension on `Player` (`StanceBetween`/`SetStance`/`ChangeTension`); contact→Peace, attack→War, decay, and the tension→stance machine (`StanceFromTension`/`UpdateColonialStances`: war→cease-fire→peace). Recorded only (no legality/AI-action change). See [diplomacy.md](../systems/diplomacy.md) | FP-6a/6b |
 | 2026-06-15 | Native AI (slice 1b): `RunNativeTurn` (braves raid the human's units when their home settlement is Displeased+, else wander; one action/turn; nation's own RNG stream — human stream 0 byte-stable), `StepToward` pathing helper, `Combat.CombatNotice` + `Game.CombatNotices` transient raid feed, `CaptureUnit` capture-owner hardening. No save-format change. See [natives.md](../systems/natives.md) | Phase 5 slice 1b |
 | 2026-06-15 | Slice 1c-1: `CheckMove` blocks moving onto a colony you don't own (`ColonyAt(target).OwnerId != unit.OwnerId`). Logic-only (the rival/own-unit rendering is presentation — see [presentation.md](presentation.md)); no save/RNG change. See [combat.md](../systems/combat.md), [units-movement.md](../systems/units-movement.md) | Phase 5 slice 1c-1 |
+| 2026-06-15 | Slice 1c-2: `RunForeignPowerTurn` war branch + `AttackHumanUnit` — a power at `War` with the human sends its armed units after the human's nearest unit, combat via the internal `Attack(…, RandomFor(power))` overload (own stream; `CombatNotice` raised). Dormant at peace; no save/stream-0 surface. See [combat.md](../systems/combat.md), [diplomacy.md](../systems/diplomacy.md) | Phase 5 slice 1c-2 |
 | 2026-06-15 | FP-7: save-format v20 consolidation — the legacy flat top-level player fields are no longer written (`Players[]` is the sole source); format version unchanged; flat properties kept read-only for ≤v19 fold + pre-FP-7 v20 back-compat | FP-7 |

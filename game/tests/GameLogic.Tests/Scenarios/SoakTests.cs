@@ -102,6 +102,47 @@ public class SoakTests
     }
 
     [Fact]
+    public void ForeignWar_StaysBounded_Deterministic_AndNeverSoftlocks()
+    {
+        // Hold every foreign power at war with the human for the whole game so the retaliation AI runs at full
+        // pressure: assert it never wedges or runs away (the turn always advances, no negative store/treasury),
+        // and a game-long foreign onslaught is still deterministic and round-trips byte-identically.
+        for (ulong seed = 3000; seed < 3006; seed++)
+        {
+            Game game = Game.New(Classic, seed);
+            Game twin = Game.New(Classic, seed); // determinism witness: same seed, same provocation
+
+            for (int turn = 0; turn < 120; turn++)
+            {
+                DeclareWarOnHuman(game);
+                DeclareWarOnHuman(twin);
+
+                int turnBefore = game.Turn;
+                game.EndTurn();
+                twin.EndTurn();
+
+                Assert.Equal(turnBefore + 1, game.Turn); // no softlock: the world always advances
+                Assert.All(game.Colonies, c => Assert.All(c.Stores.Values, v =>
+                    Assert.True(v >= 0, $"seed {seed}: colony store went negative")));
+                Assert.All(game.Players, p =>
+                    Assert.True(p.Gold >= 0, $"seed {seed}: player {p.PlayerId} treasury went negative"));
+            }
+
+            Assert.Equal(SaveGame.From(game).ToJson(), SaveGame.From(twin).ToJson());     // deterministic under war
+            string json = SaveGame.From(game).ToJson();
+            Assert.Equal(json, SaveGame.From(SaveGame.FromJson(json).Restore(Classic)).ToJson()); // round-trips
+        }
+
+        static void DeclareWarOnHuman(Game game)
+        {
+            foreach (Player power in game.Players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial))
+            {
+                game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.War);
+            }
+        }
+    }
+
+    [Fact]
     public void TurnProcessing_StaysWithinPerformanceBudget()
     {
         // Budget: a turn with an active colony must average < 2 ms (the UI calls

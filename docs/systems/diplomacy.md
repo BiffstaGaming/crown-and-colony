@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Implemented — colonial-colonial **stance + tension recorded** (FP-6a) and the **tension→stance state machine** (war→cease-fire→peace, FP-6b). The AI does not yet *act* on stance (declare/wage war, raids) — that's the rest of FP-6b. |
-| **Last verified** | 2026-06-15 @ FP-6b (tension→stance state machine) |
+| **Status** | Implemented — colonial-colonial **stance + tension recorded** (FP-6a) and the **tension→stance state machine** (war→cease-fire→peace, FP-6b). **Foreign powers now *wage* war** (slice 1c-2): a power at `War` with the human sends its armed units to attack the human's units. The AI does not yet *declare* war on its own (war still starts only from the human's attack) — that's a later slice. |
+| **Last verified** | 2026-06-15 @ slice 1c-2 (foreign retaliation) |
 | **Code** | `game/src/GameLogic/GameSession/Stance.cs`, `GameSession/Game.cs` (`StanceBetween`/`TensionBetween`/`SetStance`/`ChangeTension`/`DetectColonialContacts`/`DecayColonialTension`/`StanceFromTension`/`UpdateColonialStances`), `GameSession/Player.cs` (`Stances`/`Tensions`) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/DiplomacyTests.cs` |
 | **FreeCol reference** | `common/model/Stance.java`, `common/model/Tension.java`, `common/model/Player.java` (stance/tension maps, `setStance`, `makeContact`), `server/model/ServerPlayer.java` (`csChangeStance`) |
@@ -19,7 +19,7 @@ Every European power keeps track of how it feels about every **other** European 
 - **Attacking** a rival's unit makes you **at war** — both ways, immediately — and spikes the grudge to the top. (You don't have to be at war to attack; attacking is what *causes* the war.)
 - Each turn, tension **cools** a little on its own (the same slow fade the native nations' anger uses) — and the relationship **follows the grudge meter**: a war that has cooled enough becomes a **cease-fire** (an uneasy truce), and a cease-fire that keeps cooling drifts back to **peace**. (A flare-up the other way — peace straight to war from tension alone — needs a tension source we don't have yet, so in practice war only starts from an actual attack.)
 
-**Important, this slice:** the relationship is **tracked and it evolves on its own, but the computer players don't *act* on it yet.** Being "at war" with a rival does **not** yet stop you attacking them, make them attack you, or change anything you see on screen — the rivals are still off in their own corner of the map. The computer players *using* stance (deciding to declare and wage war, raids) and the Founding Fathers that care about diplomacy (de Witt, Franklin) are the remaining part of FP-6.
+**Important, this slice:** the relationship is tracked, evolves on its own, and the computer players now **act on War**: if you attack a rival European power (which puts you both at war), its armed units will come after your units (slice 1c-2 — see [combat](combat.md)). What's still missing: a computer player **declaring** war on its own (war only ever starts from *your* attack today — they don't yet pick fights or break the peace), assaulting your *colonies* (1c-3), the diplomacy actions (offer peace/alliance), and the Founding Fathers that care about diplomacy (de Witt, Franklin).
 
 **The native nations are not part of this yet.** Your relationship with each native settlement is still its own separate "alarm" meter ([natives](natives.md)); folding the two systems together is future work.
 
@@ -79,7 +79,8 @@ Every European power keeps track of how it feels about every **other** European 
 
 - [x] Stance + tension data model, contact→Peace, attack→War, decay, persistence (FP-6a).
 - [x] Tension→stance state machine — `CeaseFire` + `StanceFromTension`/`UpdateColonialStances` (war→cease-fire→peace) (FP-6b, this slice).
-- [ ] **FP-6b (rest) — the AI *acts* on stance:** foreign powers/natives decide to declare & wage war from tension/alarm; foreign-power-initiated combat + native raids. (FreeCol's `getStanceFromTension` is wired; what's left is the AI consuming it.)
+- [x] **The AI *wages* war** (slice 1c-2): a foreign power at `War` attacks the human's units (`RunForeignPowerTurn`, on its own RNG stream — see [combat](combat.md)). Native raids off alarm shipped in 1b.
+- [ ] **The AI *declares* war on its own:** a tension source other than the human's attack (e.g. land-taking) so a power can break the peace; foreign-vs-foreign / foreign-vs-native combat.
 - [ ] Foreign/naval combat + assaulting rival colonies (`86d3bek5r`) — adds the colonial-colony attack→war trigger.
 - [ ] Diplomacy actions (offer peace/alliance/cease-fire, incite) and their tension modifiers.
 - [ ] Founding-father diplomacy effects (de Witt, Franklin).
@@ -91,3 +92,4 @@ Every European power keeps track of how it feels about every **other** European 
 |---|---|---|
 | 2026-06-14 | FP-6a: diplomacy foundation — `Stance{Uncontacted,Peace,War}` + per-pair tension on `Player`; `Game` helpers; contact→Peace, attack→War (+1000 tension), per-turn decay; colonial-only (natives stay on alarm); save v20 additive (`Stances`/`Tensions`). Recorded only — no legality/AI change | FP-6a |
 | 2026-06-15 | FP-6b: tension→stance state machine — added `Stance.CeaseFire` (=3, appended); `StanceFromTension` (FreeCol `getStanceFromTension`: war→cease-fire ≤590, cease-fire→peace ≤90, →war >1010, DELTA 10) applied each turn by `UpdateColonialStances` after decay. Deterministic, no RNG, no legality change. Save round-trips the new value (v20, ordinal stable) | FP-6b |
+| 2026-06-15 | Slice 1c-2: the AI now **acts on War** — `RunForeignPowerTurn` sends a power's armed units after the human's nearest unit when `StanceBetween(power, human) == War` (combat on the power's own RNG stream; raises a `CombatNotice`). Still no AI-*declared* war (war starts only from the human's attack). See [combat](combat.md) | Phase 5 slice 1c-2 |

@@ -2389,19 +2389,44 @@ public sealed class Game
         u.Location == UnitLocation.InEurope && u.Type.IsPerson && !u.IsAboard && IsOwnedBy(u, player));
 
     /// <summary>
-    /// The minimal foreign-power AI (FP-4): per unit in stable by-id order, a colonist founds a colony where
-    /// it stands while the power has fewer than <see cref="MaxAiColonies"/> colonies, else steps one tile
-    /// toward the nearest tile the power has not explored; ships and non-founders idle. Choices draw from the
+    /// The minimal foreign-power AI (FP-4 / 1c-2): per unit in stable by-id order. When the power is at
+    /// <see cref="Stance.War"/> with the human (war only starts when the human attacks it), an <b>armed</b> unit
+    /// retaliates — it hunts the nearest human unit, attacking when adjacent (1c-2). Otherwise a colonist founds
+    /// a colony where it stands while the power has fewer than <see cref="MaxAiColonies"/> colonies, else steps
+    /// one tile toward the nearest unexplored tile; ships and non-founders idle. Every choice draws from the
     /// player's own RNG stream (ADR-009) — never the human's stream 0 — so the human's game stays byte-stable.
     /// </summary>
     private void RunForeignPowerTurn(Player power)
     {
-        // Snapshot the owned units (founding removes the founder from _units mid-loop).
+        bool atWarWithHuman = StanceBetween(power.PlayerId, _human.PlayerId) == Stance.War;
+
+        // Snapshot the owned units (founding/combat removes a unit from _units mid-loop).
         foreach (Unit unit in _units.Where(u => IsOwnedBy(u, power)).OrderBy(u => u.Id).ToList())
         {
-            if (!unit.IsOnMap || unit.Type.IsNaval || !unit.Type.CanFoundColony)
+            if (!unit.IsOnMap || unit.Type.IsNaval)
             {
-                continue; // ships and non-founders idle; units still in Europe wait
+                continue; // ships idle; units still in Europe wait
+            }
+
+            // At war, an armed unit goes after the human's nearest unit instead of expanding (1c-2). Combat draws
+            // from the power's own stream via the internal Attack overload (RaidHumanUnit's foreign sibling).
+            if (atWarWithHuman && unit.MovementLeft > 0 && OffenceBase(unit) > 0
+                && NearestHumanUnit(unit) is { } prey)
+            {
+                if (unit.Position.IsAdjacentTo(prey.Position) && CheckAttack(unit, prey.Position).Allowed)
+                {
+                    AttackHumanUnit(power, unit, prey.Position);
+                }
+                else if (StepToward(power, unit, prey.Position) is { } chase)
+                {
+                    MoveUnit(unit, chase); // a hemmed-in attacker simply waits
+                }
+                continue;
+            }
+
+            if (!unit.Type.CanFoundColony)
+            {
+                continue; // non-founders (e.g. an idle soldier at peace) wait
             }
             if (ColoniesOf(power).Count() < MaxAiColonies && CheckFoundColony(unit).Allowed)
             {
@@ -2413,6 +2438,19 @@ public sealed class Game
                 MoveUnit(unit, step);
             }
         }
+    }
+
+    /// <summary>
+    /// Resolves a foreign power's attack on the human unit at <paramref name="target"/> through the power's OWN
+    /// RNG stream (never stream 0), recording a <see cref="CombatNotice"/> for the presentation. The foreign
+    /// sibling of <see cref="RaidHumanUnit"/>: the defender is human-owned (filtered by <see cref="NearestHumanUnit"/>).
+    /// </summary>
+    private void AttackHumanUnit(Player power, Unit attacker, Position target)
+    {
+        Unit defender = DefenderAt(attacker, target)!;       // human-owned (filtered upstream)
+        string defenderTypeId = defender.Type.Id;            // capture before the attack — a beaten loser is removed
+        CombatResult result = Attack(attacker, target, RandomFor(power)); // INTERNAL overload → the power's stream
+        _combatNotices.Add(new CombatNotice(power.NationId!, defenderTypeId, result, target));
     }
 
     /// <summary>
@@ -2517,15 +2555,15 @@ public sealed class Game
     }
 
     /// <summary>
-    /// The nearest on-map human-owned unit to a brave (Chebyshev, ties broken by position), or null if the human
-    /// has none on the map. This filter is the <b>sole contract</b> that keeps braves attacking the human only:
-    /// the engine's <see cref="CheckAttack"/>/<see cref="DefenderAt"/> gate on owner-inequality
-    /// (<see cref="AreEnemies"/>), which would also admit foreign powers and rival tribes, so a brave is only ever
-    /// handed a human target here — never a foreign-power or other-nation unit.
+    /// The nearest on-map human-owned unit to <paramref name="hunter"/> (Chebyshev, ties broken by position), or
+    /// null if the human has none on the map. This filter is the <b>sole contract</b> that keeps the AI attacking
+    /// the human only (both native braves and foreign powers at war use it): the engine's
+    /// <see cref="CheckAttack"/>/<see cref="DefenderAt"/> gate on owner-inequality (<see cref="AreEnemies"/>),
+    /// which would also admit other rivals, so a hunter is only ever handed a human target here.
     /// </summary>
-    private Unit? NearestHumanUnit(Unit brave) =>
+    private Unit? NearestHumanUnit(Unit hunter) =>
         _units.Where(u => u.IsOnMap && IsHumanOwned(u))
-            .OrderBy(u => Chebyshev(u.Position, brave.Position))
+            .OrderBy(u => Chebyshev(u.Position, hunter.Position))
             .ThenBy(u => u.Position.Y).ThenBy(u => u.Position.X)
             .FirstOrDefault();
 
