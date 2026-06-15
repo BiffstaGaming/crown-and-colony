@@ -39,6 +39,9 @@ public partial class GameController : Node2D
     private PanelContainer _colonyPanel = null!;
     private PanelContainer _europePanel = null!;
     private PanelContainer _nativePanel = null!;
+    private Button _endTurnButton = null!;
+    private Control _gameOverScreen = null!;
+    private Label _gameOverMessage = null!;
     private Unit? _selectedUnit;
     private string? _notice;
 
@@ -52,11 +55,15 @@ public partial class GameController : Node2D
         _colonyPanel = GetNode<PanelContainer>("UI/ColonyPanel");
         _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
-        GetNode<Button>("UI/EndTurnButton").Pressed += OnEndTurnPressed;
+        _endTurnButton = GetNode<Button>("UI/EndTurnButton");
+        _gameOverScreen = GetNode<Control>("UI/GameOverScreen");
+        _gameOverMessage = GetNode<Label>("UI/GameOverScreen/Panel/VBox/Message");
+        _endTurnButton.Pressed += OnEndTurnPressed;
         GetNode<Button>("UI/EuropeButton").Pressed += OpenEuropePanel;
         GetNode<Button>("UI/ColonyPanel/VBox/CloseButton").Pressed += () => _colonyPanel.Hide();
         GetNode<Button>("UI/EuropePanel/VBox/CloseButton").Pressed += () => _europePanel.Hide();
         GetNode<Button>("UI/NativeSettlementPanel/VBox/CloseButton").Pressed += () => _nativePanel.Hide();
+        GetNode<Button>("UI/GameOverScreen/Panel/VBox/NewGameButton").Pressed += NewGame;
 
         NewGame();
     }
@@ -371,6 +378,34 @@ public partial class GameController : Node2D
             _notice = null;
         }
         _statusLabel.Text = status;
+
+        UpdateDefeatUi();
+    }
+
+    /// <summary>
+    /// Reflects human defeat in the HUD: a game-over overlay over the map and a disabled, relabelled End Turn
+    /// button. Presentation-only (ADR-006) — defeat is computed by <see cref="Game.IsHumanDefeated"/>; this never
+    /// mutates game state and deliberately does <b>not</b> stop the turn loop (a short-circuit in
+    /// <see cref="Game.EndTurn"/> would freeze the human's RNG stream 0 and break ADR-009 byte-stability — see the
+    /// human-defeat slice). The overlay's full-rect <c>Control</c> swallows map clicks while shown; "New Game"
+    /// (and the N hotkey) start a fresh game, which clears the defeat and hides the overlay.
+    /// </summary>
+    private void UpdateDefeatUi()
+    {
+        bool defeated = _game.IsHumanDefeated;
+        _endTurnButton.Disabled = defeated;
+        _endTurnButton.Text = defeated ? "Game Over" : "End Turn";
+        if (defeated)
+        {
+            _gameOverMessage.Text =
+                $"You have lost your last colony and all your units on turn {_game.Turn}.\nThe colony is over.";
+            // Tidy any panel that happened to be open (e.g. Europe) so it can't be orphaned behind the overlay,
+            // which draws on top of and click-blocks the earlier UI siblings.
+            _colonyPanel.Hide();
+            _europePanel.Hide();
+            _nativePanel.Hide();
+        }
+        _gameOverScreen.Visible = defeated;
     }
 
     /// <summary>One marker per colony, reconciled each refresh (colony count is tiny).</summary>

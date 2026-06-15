@@ -236,6 +236,42 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task WhenTheHumanIsWipedOut_TheGameOverScreenShows_AndEndTurnIsDisabled()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Wipe the human out (same setup as the defeat-notice test above): found a colony with the only unit, then
+        // hand that colony to a rival via the save layer → no human colonies, no human units = IsHumanDefeated.
+        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        SaveGame save = SaveGame.From(game);
+        SavedPlayer rival = save.Players!.First(p => !p.IsHuman && p.PlayerType == (int)PlayerType.Colonial);
+        var colonies = save.Colonies!.Select(c => c.Id == colony.Id ? c with { OwnerId = rival.PlayerId } : c).ToList();
+        Game injected = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, injected);
+
+        // End Turn → RefreshView reflects the defeat: the game-over overlay shows and End Turn is disabled + relabelled.
+        controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+
+        AssertThat(controller.GetNode<Control>("UI/GameOverScreen").Visible).IsTrue();
+        Button endTurn = controller.GetNode<Button>("UI/EndTurnButton");
+        AssertThat(endTurn.Disabled).IsTrue();
+        AssertThat(endTurn.Text.ToLower()).Contains("game over");
+
+        // "New Game" clears the defeat: a fresh, non-defeated game, overlay hidden, End Turn live again.
+        controller.GetNode<Button>("UI/GameOverScreen/Panel/VBox/NewGameButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+
+        AssertThat(GameOf(controller).IsHumanDefeated).IsFalse();
+        AssertThat(controller.GetNode<Control>("UI/GameOverScreen").Visible).IsFalse();
+        AssertThat(controller.GetNode<Button>("UI/EndTurnButton").Disabled).IsFalse();
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task MultipleOwnUnits_AllRender()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
