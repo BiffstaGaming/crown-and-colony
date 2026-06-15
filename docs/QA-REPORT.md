@@ -1,6 +1,6 @@
 # QA Report — Crown & Colony
 
-> **Snapshot** taken 2026-06-16, latest on `main` (*native AI (1b); rival rendering + CheckMove colony guard (1c-1); foreign-power retaliation (1c-2); Pocahontas + Magellan founding-father effects; naval combat (1c-3a); ship damage + repair (1c-3b, save v21); naval cargo loot (1c-3c); native interaction UI; privateer piracy (1c-3d-i); Francis Drake (1c-3d-ii); colonial-colony capture (1c-3e); ambient native alarm; foreign-AI colony capture (1c-3f); native colony pillage; + **colony fortification defence bonus** — a stockade/fort/fortress (+100/+150/+200%) shields a colony's defender against capture, pillage and field attack; ADR-019*).
+> **Snapshot** taken 2026-06-16, latest on `main` (*native AI (1b); rival rendering + CheckMove colony guard (1c-1); foreign-power retaliation (1c-2); Pocahontas + Magellan founding-father effects; naval combat (1c-3a); ship damage + repair (1c-3b, save v21); naval cargo loot (1c-3c); native interaction UI; privateer piracy (1c-3d-i); Francis Drake (1c-3d-ii); colonial-colony capture (1c-3e); ambient native alarm; foreign-AI colony capture (1c-3f); native colony pillage; colony fortification defence bonus (stockade/fort/fortress +100/+150/+200%); + **La Salle** — a free stockade in every colony at population 3; ADR-019*).
 > This is a committed, point-in-time QA snapshot combining **test results** and the **visual goldens** (screenshots) in one place.
 > **End-to-end journeys:** the connected player-journey coverage is specified in [TEST-PLAN.md](TEST-PLAN.md).
 > Regenerate after a green run with `dotnet test` + a `GOLDEN_UPDATE=1` golden pass (see [TESTING.md](TESTING.md)); the goldens below always show the *committed expected* render.
@@ -10,18 +10,18 @@
 
 | Layer | What it checks | Tooling | Count | Status | Where it runs |
 |---|---|---|---:|:--:|---|
-| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 508 | ✅ | every push |
-| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 508 | ✅ | every push |
-| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **508** | ✅ | every push |
+| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 513 | ✅ | every push |
+| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 513 | ✅ | every push |
+| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **513** | ✅ | every push |
 | ↳ of which **E2E journeys** | Connected player journeys, milestone-asserted ([TEST-PLAN.md](TEST-PLAN.md)) | xUnit `[Trait E2E]` | 10 | ✅ | every push |
 | **L3 Interaction** | Real scenes driven by simulated input/signals (incl. 1 scene E2E + the Europe screen + click-to-attack + native-raid notice + foreign-colony-capture notice + unit rendering + owner colour + ship-under-repair + native-settlement panel) | GdUnit4 | 24 | ✅ | every push (CI) |
 | **L4 Visual** | Golden-screenshot diff of the rendered map | GdUnit4 + custom diff | 5 | ✅ | every push (CI) |
 | **L5 Soak** | 25-seed × 200-turn runs (active foreign economies + native AI, native ambient alarm, foreign colony capture, native colony pillage) + provoked native-raid & foreign-war invariants + per-turn perf budget | xUnit | 4 | ✅ | nightly |
-| | | | **541** | **all green** | |
+| | | | **546** | **all green** | |
 
 Reproduce locally (toolchain in [CLAUDE.md](../CLAUDE.md)):
 ```
-dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (508)
+dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (513)
 dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category=Soak"    # L5 (4)
 dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings                 # L3+L4 (29), needs GODOT_BIN
 ```

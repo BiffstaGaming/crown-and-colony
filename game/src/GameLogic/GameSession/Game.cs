@@ -2768,6 +2768,7 @@ public sealed class Game
             RunColonyTurn(player, colony);
         }
         AccumulateLibertyAndElectFathers(player);
+        ApplyFreeBuildings(player); // La Salle: a free stockade in each colony that has reached the required population
         AccumulateImmigrationAndEmigrate(player);
 
         if (!player.IsHuman)
@@ -3096,6 +3097,35 @@ public sealed class Game
         string defenderTypeId = defender.Type.Id;            // capture before the attack — a beaten loser is removed
         CombatResult result = Attack(brave, target, RandomFor(player)); // INTERNAL overload → the nation's stream
         _combatNotices.Add(new CombatNotice(player.NationId!, defenderTypeId, result, target));
+    }
+
+    /// <summary>
+    /// Grants any free buildings the player's elected fathers confer (FreeCol <c>model.event.freeBuilding</c> /
+    /// <c>csFreeBuilding</c>): <b>La Salle</b> gives every colony at or above the building's required population a
+    /// free <c>model.building.stockade</c> (it doesn't already have). Run each turn after election and colony
+    /// growth, so it fires both when the father is elected (existing big colonies) and when a colony later reaches
+    /// the population (FreeCol's per-turn pass). Idempotent (skips a colony that already has the building),
+    /// RNG-free, and iterated in stable colony-id order — so it never perturbs the human's stream 0 (ADR-009).
+    /// The matching <c>buildingPriceBonus −100%</c> (a free <em>manual</em> rebuild) is not modelled — the event
+    /// already grants the stockade outright. A granted stockade persists in the colony's building list (no
+    /// save-format change; older saves without La Salle simply grant nothing).
+    /// </summary>
+    private void ApplyFreeBuildings(Player player)
+    {
+        foreach (string fatherId in player.Congress)
+        {
+            foreach (string buildingId in Ruleset.Father(fatherId).FreeBuildings)
+            {
+                BuildingType building = Ruleset.Building(buildingId);
+                foreach (Colony colony in ColoniesOf(player).OrderBy(c => c.Id))
+                {
+                    if (colony.Population >= building.RequiredPopulation && !colony.HasBuilding(buildingId))
+                    {
+                        colony.AddBuilding(buildingId);
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>

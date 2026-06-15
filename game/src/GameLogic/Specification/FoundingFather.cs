@@ -85,6 +85,10 @@ public sealed record FatherAbility(string Id, bool Value, IReadOnlyList<string> 
 /// <param name="Weight3">Offer weight in the late game (age 3).</param>
 /// <param name="Modifiers">Bonuses this father applies when elected.</param>
 /// <param name="Abilities">Capabilities this father grants/denies when elected.</param>
+/// <param name="FreeBuildings">
+/// Building ids this father grants free to every qualifying colony (FreeCol <c>&lt;event id="model.event.freeBuilding"&gt;</c>):
+/// La Salle grants a free <c>model.building.stockade</c> to each colony of the required population. Empty for most fathers.
+/// </param>
 public sealed record FoundingFather(
     string Id,
     FatherType Type,
@@ -92,7 +96,8 @@ public sealed record FoundingFather(
     int Weight2,
     int Weight3,
     IReadOnlyList<FatherModifier> Modifiers,
-    IReadOnlyList<FatherAbility> Abilities)
+    IReadOnlyList<FatherAbility> Abilities,
+    IReadOnlyList<string> FreeBuildings)
 {
     /// <summary>Short name derived from the id: <c>model.foundingFather.adamSmith</c> → <c>adamSmith</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];

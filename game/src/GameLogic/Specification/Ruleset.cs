@@ -330,7 +330,12 @@ public sealed class Ruleset
                 Weight2: (int?)el.Attribute("weight2") ?? 0,
                 Weight3: (int?)el.Attribute("weight3") ?? 0,
                 Modifiers: el.Elements("modifier").Select(ParseModifier).ToList(),
-                Abilities: el.Elements("ability").Select(ParseAbility).ToList());
+                Abilities: el.Elements("ability").Select(ParseAbility).ToList(),
+                // Free buildings (FreeCol model.event.freeBuilding): La Salle → a free stockade per qualifying colony.
+                FreeBuildings: el.Elements("event")
+                    .Where(e => (string?)e.Attribute("id") == "model.event.freeBuilding")
+                    .Select(e => RequiredAttribute(e, "value"))
+                    .ToList());
         }
 
         var resources = new Dictionary<string, ResourceType>();
