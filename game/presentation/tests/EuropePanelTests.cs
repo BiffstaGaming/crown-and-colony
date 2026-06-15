@@ -83,6 +83,23 @@ public class EuropePanelTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task ShipUnderRepair_ShowsNoSailButton()
+    {
+        // A caravel damaged in combat is in port repairing (5 turns left) — it must not offer a sail button.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units = [new SavedUnit(1, Caravel, 0, 0, 0, (int)UnitLocation.InEurope, RepairTurns: 5)],
+            Explored = [],
+        });
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.Units[0].IsUnderRepair).IsTrue();
+        AssertThat(FindButton(controller, "Sail_1")).IsNull(); // cannot be sailed while repairing
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task SellButton_SellsCargo_AndCreditsTreasury()
     {
         // A caravel in Europe carrying 100 sugar.

@@ -36,6 +36,17 @@ public class CombatModelTests
         Assert.Equal(defence, unit.Defence, 5);
     }
 
+    [Theory]
+    [InlineData("model.unit.caravel", 6)]
+    [InlineData("model.unit.frigate", 6)]
+    [InlineData("model.unit.privateer", 6)]
+    [InlineData("model.unit.galleon", 6)]
+    public void ShipHitPoints_MatchSpec(string id, int hitPoints)
+    {
+        // Drives ship-repair time (MaxHitPoints − 1 turns); every classic ship is 6 → a 5-turn repair.
+        Assert.Equal(hitPoints, Classic.Unit(id).MaxHitPoints);
+    }
+
     [Fact]
     public void VeteranSoldier_FoldsItsPercentageModifier()
     {

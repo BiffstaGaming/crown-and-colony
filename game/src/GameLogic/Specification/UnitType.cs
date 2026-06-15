@@ -42,6 +42,7 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <param name="DefenceAdditive">The pre-role defence base (attribute + additive defence modifiers), before any percentage.</param>
 /// <param name="OffenceMultiplier">The post-role offence multiplier from the type's own percentage modifiers (veteran soldier +50% → 1.5), applied after the role additive.</param>
 /// <param name="DefenceMultiplier">The post-role defence multiplier from the type's own percentage modifiers.</param>
+/// <param name="MaxHitPoints">Full-health hit points (spec <c>hit-points</c>; all classic ships 6). Today only ships use it: a damaged ship limps to repair at 1 HP and recovers +1/turn, so the repair takes <c>MaxHitPoints − 1</c> turns (5 for every classic ship).</param>
 public sealed record UnitType(
     string Id,
     int Movement,
@@ -65,7 +66,8 @@ public sealed record UnitType(
     double OffenceAdditive = 0,
     double DefenceAdditive = 0,
     double OffenceMultiplier = 1,
-    double DefenceMultiplier = 1)
+    double DefenceMultiplier = 1,
+    int MaxHitPoints = 1)
 {
     /// <summary>Short name derived from the id: <c>model.unit.freeColonist</c> → <c>freeColonist</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];

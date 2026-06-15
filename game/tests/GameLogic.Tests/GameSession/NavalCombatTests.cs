@@ -10,11 +10,12 @@ using Xunit;
 namespace CrownAndColony.GameLogic.Tests.GameSession;
 
 /// <summary>
-/// Naval combat (slice 1c-3a, sink-only): a ship attacks an adjacent enemy ship on water; the loser sinks
-/// (taking its cargo + everyone aboard down), the defender may evade, and laden ships fight worse. Reuses the
-/// land-combat spine (Attack/CheckAttack/CombatModel) with naval modifiers; outcomes forced via a fixed RNG.
+/// Naval combat: a ship attacks an adjacent enemy ship on water; the defender may evade, and laden ships fight
+/// worse. Reuses the land-combat spine (Attack/CheckAttack/CombatModel) with naval modifiers; outcomes forced
+/// via a fixed RNG. A beaten ship is <b>damaged</b> — it loses its cargo + everyone aboard and limps to Europe
+/// to repair over five turns (1c-3b) — UNLESS the defeat is decisive (a great loss), when it <b>sinks</b>.
 /// Foreign warships at war hunt the human's ships on the power's own stream (1c-3a′); the human's stream 0 stays
-/// byte-stable. Damage/repair, loot, privateers/Drake, and colony capture are later sub-slices.
+/// byte-stable. Loot, privateers/Drake, and colony capture are later sub-slices.
 /// </summary>
 public class NavalCombatTests
 {
@@ -49,6 +50,9 @@ public class NavalCombatTests
         return (game, attacker, defender, foreignId);
     }
 
+    // Frigate(16) vs Caravel(defence 2): win ≈ 0.923, so the naval bands are GreatWin r<0.092, Win <0.923,
+    // Evade <0.938, Loss <0.992, GreatLoss otherwise. The fixed rolls below pick a specific band.
+
     [Fact]
     public void GreatWin_SinksTheAdjacentEnemyShip()
     {
@@ -58,21 +62,67 @@ public class NavalCombatTests
         CombatResult result = game.Attack(attacker, defender.Position, new FixedRandom(0.0));
 
         Assert.Equal(CombatResult.GreatWin, result);
-        Assert.DoesNotContain(game.Units, u => u.Id == defenderId); // sunk
+        Assert.DoesNotContain(game.Units, u => u.Id == defenderId); // a decisive loss sinks the ship
         Assert.Contains(attacker, game.Units);                       // the victor sails on
     }
 
     [Fact]
-    public void ForcedLoss_TheAttackingShipIsSunk()
+    public void Win_DamagesTheDefender_AndSendsItToEuropeToRepair()
+    {
+        (Game game, Unit attacker, Unit defender, _) = TwoShips(Frigate, Caravel);
+
+        CombatResult result = game.Attack(attacker, defender.Position, new FixedRandom(0.5));
+
+        Assert.Equal(CombatResult.Win, result);
+        Assert.Contains(defender, game.Units);                                  // not sunk — damaged
+        Assert.True(defender.IsUnderRepair);
+        Assert.Equal(UnitLocation.InEurope, defender.Location);                 // limped off the map to repair
+        Assert.Equal(5, defender.RepairTurnsRemaining);                         // hit-points 6 → 5 turns
+        Assert.Equal(0, defender.MovementLeft);
+        Assert.Contains(attacker, game.Units);
+    }
+
+    [Fact]
+    public void Loss_DamagesTheAttacker_NotSunk()
+    {
+        (Game game, Unit attacker, Unit defender, _) = TwoShips(Frigate, Caravel);
+
+        CombatResult result = game.Attack(attacker, defender.Position, new FixedRandom(0.99));
+
+        Assert.Equal(CombatResult.Loss, result);
+        Assert.Contains(attacker, game.Units);                                  // the attacker limps home, not sunk
+        Assert.True(attacker.IsUnderRepair);
+        Assert.Equal(UnitLocation.InEurope, attacker.Location);
+        Assert.Contains(defender, game.Units);
+    }
+
+    [Fact]
+    public void GreatLoss_SinksTheAttacker()
     {
         (Game game, Unit attacker, Unit defender, _) = TwoShips(Frigate, Caravel);
         int attackerId = attacker.Id;
 
-        CombatResult result = game.Attack(attacker, defender.Position, new FixedRandom(0.99));
+        CombatResult result = game.Attack(attacker, defender.Position, new FixedRandom(0.999));
 
-        Assert.True(result is CombatResult.Loss or CombatResult.GreatLoss);
-        Assert.DoesNotContain(game.Units, u => u.Id == attackerId); // the attacker sank
+        Assert.Equal(CombatResult.GreatLoss, result);
+        Assert.DoesNotContain(game.Units, u => u.Id == attackerId); // a decisive loss sinks the attacker
         Assert.Contains(defender, game.Units);
+    }
+
+    [Fact]
+    public void DamagedShip_LosesItsCargoAndPassengers_LikeSinking()
+    {
+        (Game game, Unit attacker, Unit defender, _) = TwoShips(Frigate, Caravel);
+        defender.AddCargo("model.goods.sugar", 50);
+        Unit passenger = game.Units.First(u => !u.Type.IsNaval);
+        passenger.CarrierId = defender.Id;
+        int passengerId = passenger.Id;
+
+        game.Attack(attacker, defender.Position, new FixedRandom(0.5)); // normal win → damaged (not sunk)
+
+        Assert.Contains(defender, game.Units);                          // the hull survives…
+        Assert.Empty(defender.Cargo);                                   // …but the cargo is gone
+        Assert.DoesNotContain(game.Units, u => u.Id == passengerId);    // …and the passenger is lost
     }
 
     [Fact]
@@ -158,6 +208,88 @@ public class NavalCombatTests
         b.Attack(bAtt, bDef.Position);
 
         Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
+    }
+
+    // ── 1c-3b — damage + repair ──
+
+    /// <summary>A human caravel on water adjacent to a foreign frigate that will attack (and beat) it.</summary>
+    private static (Game game, Unit humanShip, Unit foreignFrigate) StageHumanShipUnderAttack()
+    {
+        Game game = Game.New(Classic, Seed);
+        Position a = game.Map.AllPositions().First(p => Water(game, p) && p.Neighbours().Any(n => Water(game, n)));
+        Position b = a.Neighbours().First(n => Water(game, n));
+        Unit humanShip = game.SpawnUnit(Classic.Unit(Caravel), a); // human (OwnerId 0)
+        int foreignId = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).PlayerId;
+        Unit frigate = game.SpawnUnit(Classic.Unit(Frigate), b);
+        frigate.OwnerId = foreignId;
+        return (game, humanShip, frigate);
+    }
+
+    [Fact]
+    public void DamagedShip_RepairsOneTurnAtATime_ThenReturnsToService()
+    {
+        (Game game, Unit humanShip, Unit frigate) = StageHumanShipUnderAttack();
+        game.Attack(frigate, humanShip.Position, new FixedRandom(0.5)); // foreign frigate wins → human ship damaged
+        Assert.Equal(5, humanShip.RepairTurnsRemaining);
+
+        for (int turn = 1; turn <= 4; turn++)
+        {
+            game.EndTurn();
+            Assert.Equal(5 - turn, humanShip.RepairTurnsRemaining);
+            Assert.True(humanShip.IsUnderRepair); // still in dock
+        }
+
+        game.EndTurn(); // the fifth turn completes the repair
+        Assert.Equal(0, humanShip.RepairTurnsRemaining);
+        Assert.False(humanShip.IsUnderRepair);
+        game.SailToNewWorld(humanShip); // back in service — sails without throwing
+        Assert.Equal(UnitLocation.SailingToNewWorld, humanShip.Location);
+    }
+
+    [Fact]
+    public void ShipUnderRepair_CannotSailToNewWorld()
+    {
+        (Game game, Unit humanShip, Unit frigate) = StageHumanShipUnderAttack();
+        game.Attack(frigate, humanShip.Position, new FixedRandom(0.5)); // damaged → in Europe under repair
+
+        Assert.True(humanShip.IsUnderRepair);
+        Assert.Throws<InvalidMoveException>(() => game.SailToNewWorld(humanShip));
+    }
+
+    [Fact]
+    public void DamagedShip_RepairState_SurvivesSaveRoundTrip()
+    {
+        (Game game, Unit humanShip, Unit frigate) = StageHumanShipUnderAttack();
+        game.Attack(frigate, humanShip.Position, new FixedRandom(0.5));
+        int shipId = humanShip.Id;
+
+        Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Unit reloaded = restored.Units.First(u => u.Id == shipId);
+        Assert.Equal(5, reloaded.RepairTurnsRemaining);
+        Assert.Equal(UnitLocation.InEurope, reloaded.Location);
+    }
+
+    [Fact]
+    public void ShipUnderRepair_CannotBeBoardedOrLoaded()
+    {
+        // FreeCol: a ship under forced repair is "not ready to trade" — no boarding, no taking on cargo.
+        (Game game, Unit humanShip, Unit frigate) = StageHumanShipUnderAttack();
+        game.Attack(frigate, humanShip.Position, new FixedRandom(0.5)); // damaged → in Europe under repair
+        Unit colonist = game.Units.First(u => !u.Type.IsNaval && u.OwnerId == 0);
+        colonist.Location = UnitLocation.InEurope; // a colonist on the dock beside the repairing ship
+
+        Assert.False(game.CheckBoard(colonist, humanShip).Allowed);
+        Assert.False(game.CheckBuyEuropeGoods(humanShip, "model.goods.sugar", 100).Allowed);
+    }
+
+    [Fact]
+    public void HealthyFleet_SerializesByteIdenticallyToTheNoRepairCase()
+    {
+        // The repair field is omitted when 0, so an undamaged game is byte-identical to a pre-1c-3b save.
+        Game game = Game.New(Classic, Seed);
+        string json = SaveGame.From(game).ToJson();
+        Assert.DoesNotContain("RepairTurns", json);
     }
 
     // ── 1c-3a′ — foreign-power naval AI ──

@@ -55,6 +55,17 @@ public sealed class Unit
     public int SailTurnsRemaining { get; internal set; }
 
     /// <summary>
+    /// Turns left before a damaged ship is repaired (0 when healthy). A ship beaten in combat (but not
+    /// sunk) limps to a repair location — Europe in our model — at this many turns and recovers one per
+    /// turn (FreeCol's hit-point repair: <c>MaxHitPoints − 1</c> turns, 5 for every classic ship). While
+    /// it is &gt; 0 the ship is under forced repair and cannot act (see <see cref="IsUnderRepair"/>).
+    /// </summary>
+    public int RepairTurnsRemaining { get; internal set; }
+
+    /// <summary>True while a damaged ship is repairing (and so cannot sail or act).</summary>
+    public bool IsUnderRepair => RepairTurnsRemaining > 0;
+
+    /// <summary>
     /// The id of the ship carrying this unit, or null when not aboard. A carried
     /// unit's <see cref="Location"/>/<see cref="Position"/> mirror its carrier's.
     /// </summary>
@@ -114,5 +125,8 @@ public sealed class Unit
             _cargo[goodsId] = next;
         }
     }
+
+    /// <summary>Empties the hold (a sunk or damaged ship loses its goods — FreeCol jettisons cargo on either).</summary>
+    internal void ClearCargo() => _cargo.Clear();
 
 }

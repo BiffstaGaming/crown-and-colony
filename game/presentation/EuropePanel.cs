@@ -91,16 +91,20 @@ public partial class EuropePanel : PanelContainer
         foreach (Unit ship in ships)
         {
             var row = new HBoxContainer();
-            row.AddChild(Grow(new Label
-            {
-                Text = $"{ship.Type.ShortName} — hold {_game.CargoSlotsUsed(ship)}/{_game.CargoCapacity(ship)}",
-            }));
+            // A ship damaged in combat repairs in port and cannot sail until it is whole again.
+            string status = ship.IsUnderRepair
+                ? $" — under repair ({ship.RepairTurnsRemaining} turn{(ship.RepairTurnsRemaining == 1 ? "" : "s")})"
+                : $" — hold {_game.CargoSlotsUsed(ship)}/{_game.CargoCapacity(ship)}";
+            row.AddChild(Grow(new Label { Text = $"{ship.Type.ShortName}{status}" }));
             Unit sh = ship;
-            row.AddChild(ActionButton($"Sail_{ship.Id}", "Sail to New World", () =>
+            if (!ship.IsUnderRepair)
             {
-                _game.SailToNewWorld(sh);
-                Changed();
-            }));
+                row.AddChild(ActionButton($"Sail_{ship.Id}", "Sail to New World", () =>
+                {
+                    _game.SailToNewWorld(sh);
+                    Changed();
+                }));
+            }
             dynamic.AddChild(row);
 
             foreach (Unit passenger in _game.Passengers(ship))
@@ -135,23 +139,26 @@ public partial class EuropePanel : PanelContainer
                 dynamic.AddChild(crow);
             }
 
-            // Buy goods into this ship's hold (100 at a time, at the ask price).
-            var buyOptions = new OptionButton { Name = $"Buy_{ship.Id}" };
-            buyOptions.AddItem("Buy goods…");
-            var buyable = _game.Ruleset.GoodsTypes.Where(g => _game.Market.IsTradeable(g.Id)).ToList();
-            foreach (GoodsType g in buyable)
+            // Buy goods into this ship's hold (100 at a time, at the ask price) — not while it is repairing.
+            if (!ship.IsUnderRepair)
             {
-                buyOptions.AddItem($"{g.ShortName} ×100 ({_game.Market.AskPrice(g.Id) * 100})");
-            }
-            buyOptions.ItemSelected += index =>
-            {
-                if (index > 0 && _game.CheckBuyEuropeGoods(sh, buyable[(int)index - 1].Id, 100).Allowed)
+                var buyOptions = new OptionButton { Name = $"Buy_{ship.Id}" };
+                buyOptions.AddItem("Buy goods…");
+                var buyable = _game.Ruleset.GoodsTypes.Where(g => _game.Market.IsTradeable(g.Id)).ToList();
+                foreach (GoodsType g in buyable)
                 {
-                    _game.BuyEuropeGoods(sh, buyable[(int)index - 1].Id, 100);
-                    Changed();
+                    buyOptions.AddItem($"{g.ShortName} ×100 ({_game.Market.AskPrice(g.Id) * 100})");
                 }
-            };
-            dynamic.AddChild(buyOptions);
+                buyOptions.ItemSelected += index =>
+                {
+                    if (index > 0 && _game.CheckBuyEuropeGoods(sh, buyable[(int)index - 1].Id, 100).Allowed)
+                    {
+                        _game.BuyEuropeGoods(sh, buyable[(int)index - 1].Id, 100);
+                        Changed();
+                    }
+                };
+                dynamic.AddChild(buyOptions);
+            }
         }
 
         // — Colonists waiting on the dock —

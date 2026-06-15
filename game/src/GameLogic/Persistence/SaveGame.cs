@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 20;
+    public const int CurrentVersion = 21;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -43,6 +43,8 @@ public sealed record SaveGame
     /// gained optional unit/colony owner ids (FP-2, additive — null = the human, id 0) and, additively through
     /// the foreign-powers wave, per-player RNG streams (FP-4) and per-player diplomacy stance + tension maps
     /// (FP-6a; omitted when empty, so a no-contact game is byte-identical; older saves load Uncontacted/0).
+    /// v21 added a damaged ship's repair-turns-remaining (1c-3b, additive — omitted when 0/healthy, so a
+    /// fleet with no damaged ship is byte-identical; older saves load 0 = healthy).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -164,7 +166,9 @@ public sealed record SaveGame
                     u.RoleId == Specification.RoleType.DefaultRoleId ? null : u.RoleId,
                     u.RoleCount == 0 ? null : u.RoleCount,
                     // Owner player id omitted for the human (id 0) so human-only saves stay byte-identical (FP-2).
-                    u.OwnerId == 0 ? null : u.OwnerId))
+                    u.OwnerId == 0 ? null : u.OwnerId,
+                    // Repair turns omitted for a healthy ship (0) so an undamaged fleet stays byte-identical (1c-3b).
+                    u.RepairTurnsRemaining == 0 ? null : u.RepairTurnsRemaining))
                 .ToList(),
             Colonies = game.Colonies
                 .Select(c => new SavedColony(
@@ -230,7 +234,8 @@ public sealed record SaveGame
                 u.Owner,                    // pre-v18 → null = colonial-owned
                 u.Role,                     // pre-v18 → null = default role
                 u.RoleCount ?? 0,           // pre-v18 / default role → 0
-                u.OwnerId ?? 0)),           // pre-v20 / human → 0
+                u.OwnerId ?? 0,             // pre-v20 / human → 0
+                u.RepairTurns ?? 0)),       // pre-v21 / healthy ship → 0
             Colonies?.Select(c =>
             {
                 var colony = new CrownAndColony.GameLogic.Colonies.Colony(
@@ -405,12 +410,13 @@ public sealed record SavedNativeSettlement(
 /// <param name="Role">Military role id (null = the unarmed default role; pre-v18 default; v18+).</param>
 /// <param name="RoleCount">Equipment count held for the role (null/0 for the default role; v18+). Nullable so a default-role unit emits no token and serializes identically to v17.</param>
 /// <param name="OwnerId">Owning colonial player id (null = the human, id 0; v20+, FP-2). Foreign-power units carry their player id.</param>
+/// <param name="RepairTurns">Turns left repairing a damaged ship (null/0 = healthy; v21+, 1c-3b). Nullable so a healthy fleet serializes byte-identically to v20.</param>
 public sealed record SavedUnit(
     int Id, string? TypeId, int X, int Y, int MovementLeft,
     int Location = 0, int SailTurns = 0, IReadOnlyDictionary<string, int>? Cargo = null,
     int? CarrierId = null,
     string? Owner = null, string? Role = null, int? RoleCount = null,
-    int? OwnerId = null);
+    int? OwnerId = null, int? RepairTurns = null);
 
 /// <summary>
 /// A player inside a <see cref="SaveGame"/> (v20+). Holds the player-scoped state that used to sit as

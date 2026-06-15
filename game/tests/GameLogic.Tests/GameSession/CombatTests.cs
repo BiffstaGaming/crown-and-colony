@@ -589,14 +589,14 @@ public class CombatTests
     }
 
     [Fact]
-    public void AttackSettlement_DestroyedState_SurvivesASaveRoundTrip_AtV20()
+    public void AttackSettlement_DestroyedState_SurvivesASaveRoundTrip()
     {
         (Game game, Unit attacker, NativeSettlement settlement) = SetupSettlementAttack();
         int before = game.NativeSettlements.Count;
         game.AttackSettlement(attacker, settlement.Position, new FixedRandom(0.0)); // forced great win → destroy + plunder
 
         SaveGame snapshot = SaveGame.From(game);
-        Assert.Equal(20, snapshot.Version);
+        Assert.Equal(SaveGame.CurrentVersion, snapshot.Version);
         Game loaded = SaveGame.FromJson(snapshot.ToJson()).Restore(Classic);
 
         Assert.Equal(before - 1, game.NativeSettlements.Count);                     // exactly one destroyed

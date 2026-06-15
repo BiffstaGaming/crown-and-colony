@@ -876,7 +876,7 @@ public sealed class Game
         Unit winner = attackerWon ? attacker : defender;
         Unit loser = attackerWon ? defender : attacker;
 
-        ResolveLoserOutcome(winner, loser);
+        ResolveLoserOutcome(winner, loser, great);
         ApplyWinnerPromotion(winner, great, random);
 
         // Native alarm shifts across the defender's whole nation by FreeCol's defenderTension: a European
@@ -992,7 +992,8 @@ public sealed class Game
         {
             // The attacker loses to the garrison: disarm/demote/destroy it via the shared precedence.
             // A repelled assault lowers the nation's alarm (the natives prevailed) — across all its settlements.
-            ResolveLoserOutcome(defender, attacker);
+            // (The attacker is a land unit here, so the naval damage/sink branch never applies.)
+            ResolveLoserOutcome(defender, attacker, great);
             bool attackerSlain = !_units.Any(u => u.Id == attackerId);
             ApplyNativeCombatTension(nation, DefenderCombatTension(attackerWon: false, slaughterTension: 0, attackerSlain));
         }
@@ -1025,14 +1026,21 @@ public sealed class Game
     /// (the winner may capture the equipment to arm itself) and may then be killed/demoted on losing its
     /// last equipment; else a capturable unit changes side; else a demotable type steps down; else it dies.
     /// </summary>
-    private void ResolveLoserOutcome(Unit winner, Unit loser)
+    private void ResolveLoserOutcome(Unit winner, Unit loser, bool greatLoss)
     {
-        // 0. A defeated ship sinks (1c-3a, sink-only — damage/repair is a later slice), taking its cargo and
-        // everyone aboard down with it. (FreeCol damages by default and sinks only with no repair location; that
-        // distinction arrives with the repair state.)
+        // 0. A defeated ship is damaged and limps to repair (1c-3b) — UNLESS the defeat was decisive (a great
+        // loss) or it has nowhere to repair, in which case it sinks (FreeCol resolveAttack: sink on great/no
+        // repair location/beached, otherwise damage). Either way it loses its cargo and everyone aboard.
         if (loser.Type.IsNaval)
         {
-            SinkShip(loser);
+            if (greatLoss || !CanRepairAtEurope(loser))
+            {
+                SinkShip(loser);
+            }
+            else
+            {
+                DamageShip(loser);
+            }
             return;
         }
 
@@ -1096,6 +1104,33 @@ public sealed class Game
         _units.RemoveAll(u => u.CarrierId == ship.Id); // passengers go down with the ship
         _units.Remove(ship);
     }
+
+    /// <summary>
+    /// Damages a defeated ship (FreeCol <c>csDamageShip</c>): it loses its cargo and everyone aboard (just
+    /// as if sunk), then limps to its repair location — Europe in our model — where it sits under forced
+    /// repair for <see cref="RepairTurnsFor"/> turns before returning to service. (FreeCol's first choice is
+    /// the nearest own colony with a drydock; we have no drydock building yet, so Europe — FreeCol's fallback
+    /// — is always the repair location. Drydock-colony repair is a later sub-slice.)
+    /// </summary>
+    private void DamageShip(Unit ship)
+    {
+        _units.RemoveAll(u => u.CarrierId == ship.Id); // passengers are lost when the ship is crippled
+        ship.ClearCargo();                              // and so is the hold's cargo
+        ship.Location = UnitLocation.InEurope;          // limps off the map to repair (teleports, as FreeCol does)
+        ship.SailTurnsRemaining = 0;
+        ship.RepairTurnsRemaining = RepairTurnsFor(ship.Type);
+        ship.MovementLeft = 0;                           // spent — and pinned to 0 while repairing (see EndTurn)
+    }
+
+    /// <summary>Turns a damaged ship of this type spends repairing: <c>MaxHitPoints − 1</c> (it limps in at 1 HP, heals +1/turn), floored at 1. Every classic ship is 6 HP → 5 turns.</summary>
+    private static int RepairTurnsFor(UnitType type) => Math.Max(1, type.MaxHitPoints - 1);
+
+    /// <summary>
+    /// Whether a defeated ship has somewhere to repair (FreeCol <c>getRepairLocation != null</c>). We model
+    /// Europe only, which every colonial power has, so this is true for any ship; a hypothetical native-owned
+    /// ship (none exist in the classic ruleset) has no Europe and would sink instead.
+    /// </summary>
+    private bool CanRepairAtEurope(Unit ship) => PlayerById(ship.OwnerId) is { PlayerType: PlayerType.Colonial };
 
     /// <summary>Captures a defeated unit: it changes to the winner's side (with the capture type-change, if any) and is disarmed.</summary>
     private void CaptureUnit(Unit loser, Unit winner)
@@ -1403,7 +1438,8 @@ public sealed class Game
         IReadOnlyList<RestoredPlayer> players,
         IEnumerable<(int id, UnitType type, Position position, int movementLeft,
             UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
-            int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId)> units,
+            int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
+            int repairTurns)> units,
         IEnumerable<Colony>? colonies = null,
         IEnumerable<NativeSettlement>? nativeSettlements = null)
     {
@@ -1425,7 +1461,8 @@ public sealed class Game
 
         foreach ((int id, UnitType type, Position position, int movementLeft,
                   UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
-                  int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId) in units)
+                  int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
+                  int repairTurns) in units)
         {
             var unit = new Unit(id, type, position)
             {
@@ -1437,6 +1474,7 @@ public sealed class Game
                 OwnerId = ownerId,
                 RoleId = roleId ?? RoleType.DefaultRoleId,
                 RoleCount = roleCount,
+                RepairTurnsRemaining = repairTurns,
             };
             foreach ((string goodsId, int amount) in cargo ?? new Dictionary<string, int>())
             {
@@ -1922,6 +1960,10 @@ public sealed class Game
         {
             throw new InvalidMoveException("Only a ship in Europe can sail to the New World.");
         }
+        if (unit.IsUnderRepair)
+        {
+            throw new InvalidMoveException($"The ship is under repair for {unit.RepairTurnsRemaining} more turn(s).");
+        }
         unit.Location = UnitLocation.SailingToNewWorld;
         unit.SailTurnsRemaining = SailTurnsFor(PlayerById(unit.OwnerId)); // Magellan shortens the crossing
         SyncPassengers(unit);
@@ -1993,6 +2035,10 @@ public sealed class Game
         if (ship.Location != UnitLocation.InEurope)
         {
             return MoveCheck.No("Goods are bought once the ship reaches Europe.");
+        }
+        if (ship.IsUnderRepair)
+        {
+            return MoveCheck.No("The ship is under repair and cannot take on cargo."); // FreeCol: not ready to trade
         }
         if (!player.Market.IsTradeable(goodsId))
         {
@@ -2139,6 +2185,10 @@ public sealed class Game
         {
             return MoveCheck.No("The unit is already aboard a ship.");
         }
+        if (ship.IsUnderRepair)
+        {
+            return MoveCheck.No("The ship is under repair and cannot be boarded."); // FreeCol: not ready to trade
+        }
         bool together =
             (unit.Location == UnitLocation.InEurope && ship.Location == UnitLocation.InEurope)
             || (unit.IsOnMap && ship.IsOnMap
@@ -2252,6 +2302,15 @@ public sealed class Game
         }
     }
 
+    /// <summary>Counts down repair on damaged ships; one finishing this turn returns to service (in Europe).</summary>
+    private void AdvanceRepairs()
+    {
+        foreach (Unit unit in _units.Where(u => u.RepairTurnsRemaining > 0))
+        {
+            unit.RepairTurnsRemaining--;
+        }
+    }
+
     /// <summary>Whether the colony may start constructing a building type.</summary>
     public MoveCheck CheckSetBuild(Colony colony, string buildingId)
     {
@@ -2346,6 +2405,7 @@ public sealed class Game
         while (_currentPlayerIndex != startIndex);
 
         AdvanceSailing();
+        AdvanceRepairs();           // damaged ships heal a turn; one finishing now regains its movement below
         DetectColonialContacts();   // first sight of a rival colonial power → Peace (FP-6a)
         DecayColonialTension();     // colonial-pair tension cools each turn (mirrors native alarm)
         UpdateColonialStances();    // stance follows tension: war → cease-fire → peace as it cools (FP-6b)
@@ -2355,7 +2415,8 @@ public sealed class Game
         }
         foreach (Unit unit in _units)
         {
-            unit.MovementLeft = InitialMovement(unit); // base + role bonus (dragoon/scout +9)
+            // A ship still under repair stays pinned at 0 moves (FreeCol forced repair); everyone else resets.
+            unit.MovementLeft = unit.IsUnderRepair ? 0 : InitialMovement(unit); // base + role bonus (dragoon/scout +9)
         }
         Turn++;
     }

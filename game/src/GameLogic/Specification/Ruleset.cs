@@ -665,7 +665,10 @@ public sealed class Ruleset
                 CaptureEquipment: ResolveAbility(el, "model.ability.captureEquipment", elements),
                 DisposeOnAllEquipmentLost: ResolveAbility(el, "model.ability.disposeOnAllEquipLost", elements),
                 DemoteOnAllEquipmentLost: ResolveAbility(el, "model.ability.demoteOnAllEquipLost", elements),
-                Bombard: ResolveAbility(el, "model.ability.bombard", elements));
+                Bombard: ResolveAbility(el, "model.ability.bombard", elements),
+                // hit-points: every concrete ship sets 6 directly (the abstract `ship` base omits it); resolved
+                // through the extends chain like other ints. Default 1 for the non-naval types that never set it.
+                MaxHitPoints: ResolveIntAttribute(el, "hit-points", elements) ?? 1);
         }
 
         if (units.Count == 0)
