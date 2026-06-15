@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-16 — La Salle founding father [queue slice 4 · free stockade at pop 3]
+
+**Requested:** Autonomous overnight — keep shipping. La Salle was the natural next slice: the colony defence bonus just shipped gives his free stockade a real effect, and he's a contained Congress fold.
+**Did:** **La Salle** now grants a **free stockade** to every colony at population ≥ 3 (FreeCol `model.event.freeBuilding`). `FoundingFather.FreeBuildings` parses the event; `Game.ApplyFreeBuildings(player)` runs each turn after election + colony growth — adds any elected father's free building to each owned colony meeting its required population (idempotent, RNG-free, stable colony-id order; for human + foreign powers). The granted stockade then fortifies the colony (+100% defence). No fabricated numbers — faithful to FreeCol `csFreeBuilding`/`canBuild` (population gate; base building).
+**Status:** **546 tests green** (513 L1+L2 incl. +5 `LaSalleTests` + 4 soak + 29 scene); build 0/0; **CI green** (`6c4f35d`). Save format **unchanged** (v21; stockade rides the colony building list, no RNG). Process: research → implement → **2-lens adversarial review** via Workflow → **APPROVE, no findings** (fidelity: faithful on every axis; safety: clean — RNG-free, save-stable, no regression).
+**Changed:** `Specification/FoundingFather.cs`+`Ruleset.cs` (`FreeBuildings`), `GameSession/Game.cs` (`ApplyFreeBuildings` + `RunPlayerTurn` wiring); tests `LaSalleTests.cs` (new); docs `founding-fathers.md`/`combat.md`/`colonies.md`/`modules/game-logic.md`/`QA-REPORT.md`. Commit `6c4f35d`.
+**Decisions:** Per-turn grant pass (covers election + growth, all owners). No save change. Deferred (documented): La Salle's `buildingPriceBonus −100%` (free manual rebuild, redundant) + the stockade `minimumColonySize` modifier.
+**Scheduled next:** **native tribute demands** (`IndianDemandMission`, `86d3bkc3w`) OR the **human-defeat** task (`86d3bx04e`, high — now reachable). Re-check the live kanban first. (Note: the other building-grant fathers — Smith/Stuyvesant — need ability-gated buildables + building effects, a larger slice.)
+**Follow-ups:** native tribute; human defeat (`86d3bx04e`); AI step-toward-colony pathing (`86d3bx03d`); plunder gold; Revere last-defender auto-equip; building-grant fathers (Smith/Stuyvesant); AI-initiated piracy; European-diplomacy fathers / Bolívar (new systems).
+**Needs you:** Nothing blocking. **Four slices shipped tonight** — foreign-AI colony capture, native pillage, colony fortification defence bonus, La Salle. Together: rivals & angry tribes now threaten your colonies, and walls (built or La-Salle-granted) defend them. The concurrent doc-audit agent also worked `main` — no conflicts, all pushes CI-green.
+
 ## 2026-06-16 — Colony fortification defence bonus [queue slice 3 · stockade/fort/fortress]
 
 **Requested:** Autonomous overnight — keep shipping the queue. Picked the colony/stockade **defence bonus** (deferred repeatedly in capture/pillage) as the highest-value next slice: it hardens the two colonies-under-attack slices just shipped and is La Salle's prerequisite.
