@@ -58,7 +58,7 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 
 ## Tests
 
-`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **431 tests** (427 L1+L2 incl. 10 E2E journeys + 4 nightly soak), all green as of 2026-06-15 @ Pocahontas. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md); 457 across all five layers.)
+`game/tests/GameLogic.Tests/` — xUnit, mirrors this project's folder structure. **435 tests** (431 L1+L2 incl. 10 E2E journeys + 4 nightly soak), all green as of 2026-06-15 @ Magellan. (Scene/visual L3+L4 live in the Godot project — see [presentation.md](presentation.md); 461 across all five layers.)
 
 ## Changelog
 
@@ -81,4 +81,5 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 | 2026-06-15 | Slice 1c-1: `CheckMove` blocks moving onto a colony you don't own (`ColonyAt(target).OwnerId != unit.OwnerId`). Logic-only (the rival/own-unit rendering is presentation — see [presentation.md](presentation.md)); no save/RNG change. See [combat.md](../systems/combat.md), [units-movement.md](../systems/units-movement.md) | Phase 5 slice 1c-1 |
 | 2026-06-15 | Slice 1c-2: `RunForeignPowerTurn` war branch + `AttackHumanUnit` — a power at `War` with the human sends its armed units after the human's nearest unit, combat via the internal `Attack(…, RandomFor(power))` overload (own stream; `CombatNotice` raised). Dormant at peace; no save/stream-0 surface. See [combat.md](../systems/combat.md), [diplomacy.md](../systems/diplomacy.md) | Phase 5 slice 1c-2 |
 | 2026-06-15 | Pocahontas founding-father effect: `ResetAllNativeAlarm` on election (human-gated) + `ScaleNativeAlarmGain` (−50% spec-read `nativeAlarmModifier`) at `ApplyNativeCombatTension` (gains only). Rides on the persisted Congress; no save/RNG change. Franklin deferred (European-diplomacy father). See [founding-fathers.md](../systems/founding-fathers.md) | Phase 5 (#3 native fathers) |
+| 2026-06-15 | Ferdinand Magellan: `InitialMovement` folds the owner's Congress `movementBonus` for naval units (+3); `SailTurnsFor(owner)` applies `sailHighSeas` (−1, floored at 1) on departure. Spec-read, naval-gated, rides on the Congress (no save/RNG change). See [founding-fathers.md](../systems/founding-fathers.md), [units-movement.md](../systems/units-movement.md) | Phase 5 (#3 fathers) |
 | 2026-06-15 | FP-7: save-format v20 consolidation — the legacy flat top-level player fields are no longer written (`Players[]` is the sole source); format version unchanged; flat properties kept read-only for ≤v19 fold + pre-FP-7 v20 back-compat | FP-7 |

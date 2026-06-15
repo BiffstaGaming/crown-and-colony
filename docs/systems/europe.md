@@ -34,7 +34,7 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 ## 3. Technical design
 
 - `Unit` gains `Location` (`UnitLocation`: OnMap / SailingToEurope / InEurope / SailingToNewWorld), `SailTurnsRemaining`, and a goods `Cargo` hold (`AddCargo`/`CargoOf`). `IsOnMap` gates map interactions.
-- `Game`: `SailTurns` (3); `CheckSailToEurope`/`SailToEurope`, `SailToNewWorld`, `LoadFromColony`, `SellShipCargo`, `CheckBuyEuropeGoods`/`BuyEuropeGoods`, `UnitsInEurope`. `AdvanceSailing` runs in `EndTurn` (decrement, then dock in Europe or re-enter the map). `CheckMove` rejects off-map units.
+- `Game`: `SailTurns` (3, base); `SailTurnsFor(owner)` shortens the crossing by the owner's Congress `model.modifier.sailHighSeas` (**Ferdinand Magellan** −1, floored at 1) — applied when a ship departs (`SailToEurope`/`SailToNewWorld`). `CheckSailToEurope`, `LoadFromColony`, `SellShipCargo`, `CheckBuyEuropeGoods`/`BuyEuropeGoods`, `UnitsInEurope`. `AdvanceSailing` runs in `EndTurn` (decrement, then dock in Europe or re-enter the map). `CheckMove` rejects off-map units.
 - **Persistence:** save v11 stores each unit's location, sail turns, and cargo; pre-v11 units load on-map with empty holds.
 - **Unit purchase:** `UnitType.Price` (spec `price`; `IsPurchasable = Price > 0`). `Game.CheckBuyUnit`/`BuyUnit` debit gold and dock the unit in Europe; a naval unit's `Position` is set to `EuropeEntryTile()` (the first high-seas tile) so it can sail home. man-o-war (mercenary-only) and the free colonist (recruited) are not purchasable.
 - **Europe screen UI:** `EuropePanel` (a `PanelContainer`, like `ColonyPanel`) renders `UnitsInEurope` + `RecruitDock`/`RecruitPrice`/`Immigration` and forwards clicks to `Recruit`, `Board`, `DisembarkToDock`, `SailToNewWorld`, per-ship cargo `SellShipCargo`, a Buy-goods dropdown (`BuyEuropeGoods`, 100/pick), and a Buy/train-unit dropdown (`BuyUnit`) — all Game oracles, no rules in the scene (ADR-006). Opened from `GameController` (the **Europe** button / **E** key). The map view renders only on-map units; off-map units appear on this screen.
@@ -52,7 +52,8 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 
 ## 5. Open issues / TODO
 
-- [ ] Ship combat/sinking; sail-time modifiers (e.g. Magellan); making bought specialists/artillery actually special (expert yields + combat).
+- [x] **Magellan's sail-time modifier** (−1 high-seas turn) via `SailTurnsFor` — see [founding-fathers](founding-fathers.md).
+- [ ] Ship combat/sinking; making bought specialists/artillery actually special (expert yields + combat).
 - [ ] Europe screen niceties: a richer recruit/immigration display; map-side board/disembark UI.
 
 ## Changelog
@@ -64,4 +65,5 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 | 2026-06-13 | Cargo capacity now enforced; carrying colonists on ships split into [transport.md](transport.md); save v13 | Phase 4 slice 5 |
 | 2026-06-13 | Europe screen UI (`EuropePanel`): dock/recruit, ships in port, board/sail; off-map units rendered here (L3 tested) | Phase 4 slice 6 |
 | 2026-06-13 | Europe screen: per-ship goods trading — Sell cargo + Buy-goods dropdown (L3 tested) | Phase 4 slice 10 |
+| 2026-06-15 | `SailTurnsFor(owner)`: Ferdinand Magellan's `sailHighSeas` (−1) shortens the high-seas crossing (floored at 1); set on departure. Rides on the persisted Congress (no save change). See [founding-fathers](founding-fathers.md) | Phase 5 (#3 fathers) |
 | 2026-06-13 | Buy units in Europe (`UnitType.Price`, `BuyUnit`; high-seas entry for ships) + Buy/train dropdown on the screen (L3 tested) | Phase 4 slice 11 |

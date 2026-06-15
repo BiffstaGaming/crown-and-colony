@@ -1526,12 +1526,21 @@ public sealed class Game
     /// <summary>
     /// A unit's movement points for a fresh turn: its unit-type base plus its role's movement bonus
     /// (FreeCol <c>Unit.getInitialMovesLeft</c> folding <c>model.modifier.movementBonus</c>) — e.g. a
-    /// dragoon/scout/cavalry/mounted brave gets +9 (one extra "move" is 3 points). The role lookup is
-    /// null-safe so minimal rulesets without role data simply get the base. (Nation/Magellan movement
-    /// bonuses are separate, scoped modifiers — deferred with scope evaluation / founding-father effects.)
+    /// dragoon/scout/cavalry/mounted brave gets +9 (one extra "move" is 3 points). For a <b>naval</b> unit it
+    /// also folds the owner's Congress <c>movementBonus</c> — among fathers only <b>Ferdinand Magellan</b> (+3,
+    /// scoped to naval units) carries it, so the <c>IsNaval</c> gate is Magellan's scope. The role lookup is
+    /// null-safe so minimal rulesets without role data simply get the base. (Per-nation movement bonuses are a
+    /// separate scoped modifier, still deferred.)
     /// </summary>
-    private int InitialMovement(Unit unit) =>
-        unit.Type.Movement + (int)(Ruleset.Roles.FirstOrDefault(r => r.Id == unit.RoleId)?.MovementBonus ?? 0);
+    private int InitialMovement(Unit unit)
+    {
+        int moves = unit.Type.Movement + (int)(Ruleset.Roles.FirstOrDefault(r => r.Id == unit.RoleId)?.MovementBonus ?? 0);
+        if (unit.Type.IsNaval && PlayerById(unit.OwnerId) is { } owner)
+        {
+            moves = ApplyGoodsModifiers(owner, MovementBonusId, moves); // Magellan +3 (naval-scoped)
+        }
+        return moves;
+    }
 
     /// <summary>
     /// Whether <paramref name="unit"/> may move to <paramref name="target"/> right now,
@@ -1820,8 +1829,12 @@ public sealed class Game
         return sale.GoldAfterTax;
     }
 
-    /// <summary>Turns a naval unit spends crossing the high seas each way (FreeCol TURNS_TO_SAIL).</summary>
+    /// <summary>Base turns a naval unit spends crossing the high seas each way (FreeCol TURNS_TO_SAIL).</summary>
     public const int SailTurns = 3;
+
+    /// <summary>The crossing length for a ship's owner: <see cref="SailTurns"/> shortened by the owner's Congress <c>sailHighSeas</c> modifier (Ferdinand Magellan −1), floored at 1.</summary>
+    private int SailTurnsFor(Player? owner) =>
+        owner is null ? SailTurns : Math.Max(1, ApplyGoodsModifiers(owner, SailHighSeasId, SailTurns));
 
     /// <summary>The human player's units currently docked in Europe (resolved by owner — FP-2).</summary>
     public IEnumerable<Unit> UnitsInEurope => _units.Where(u => u.Location == UnitLocation.InEurope && IsHumanOwned(u));
@@ -1854,7 +1867,7 @@ public sealed class Game
             throw new InvalidMoveException(check.Reason!);
         }
         unit.Location = UnitLocation.SailingToEurope;
-        unit.SailTurnsRemaining = SailTurns;
+        unit.SailTurnsRemaining = SailTurnsFor(PlayerById(unit.OwnerId)); // Magellan shortens the crossing
         SyncPassengers(unit);
     }
 
@@ -1871,7 +1884,7 @@ public sealed class Game
             throw new InvalidMoveException("Only a ship in Europe can sail to the New World.");
         }
         unit.Location = UnitLocation.SailingToNewWorld;
-        unit.SailTurnsRemaining = SailTurns;
+        unit.SailTurnsRemaining = SailTurnsFor(PlayerById(unit.OwnerId)); // Magellan shortens the crossing
         SyncPassengers(unit);
     }
 
@@ -2672,6 +2685,12 @@ public sealed class Game
 
     /// <summary>The percentage modifier by which Pocahontas damps native-alarm increases (FreeCol <c>NATIVE_ALARM_MODIFIER</c>, −50%).</summary>
     private const string NativeAlarmModifierId = "model.modifier.nativeAlarmModifier";
+
+    /// <summary>The movement-point modifier (additive). Among fathers only Magellan carries it (+3, naval-scoped).</summary>
+    private const string MovementBonusId = "model.modifier.movementBonus";
+
+    /// <summary>The high-seas sail-turn modifier (additive). Magellan's −1 shortens the crossing.</summary>
+    private const string SailHighSeasId = "model.modifier.sailHighSeas";
 
     /// <summary>
     /// Scales a positive native-alarm <em>gain</em> by the human's <see cref="NativeAlarmModifierId"/> modifier

@@ -37,7 +37,7 @@ Each father carries **modifiers** (bonuses) and **abilities** (capabilities) fro
 | Henry Hudson | +100% furs (applied in `TileYield` — see [colonies](colonies.md)) | ✅ applied (slice 8) |
 | George Washington / Paul Revere / Hernán Cortés | combat: auto-promote / auto-arm a colony's last defender / native plunder bonus — see [combat](combat.md) | ✅ applied (5b/5c) |
 | **Pocahontas** | on election, **resets all native alarm to Happy** (`resetNativeAlarm`); permanently **damps native alarm gains by −50%** (`nativeAlarmModifier`) — see [natives](natives.md) | ✅ applied |
-| Ferdinand Magellan | +3 ship movement, −1 sail turn | ⏳ infra ready; deferred to a naval-movement slice |
+| **Ferdinand Magellan** | naval units +3 movement, −1 high-seas sail turn (`movementBonus`/`sailHighSeas`, naval-scoped) — see [units-movement](units-movement.md), [europe](europe.md) | ✅ applied |
 | Adam Smith (factories), Peter Stuyvesant (custom house), La Salle (free stockade) | building unlocks/grants | ⏳ deferred |
 | Benjamin Franklin, Jan de Witt, Francis Drake, Simón Bolívar | European diplomacy (Franklin/de Witt), naval (Drake), Sons-of-Liberty (Bolívar) | ⏳ deferred to their systems |
 
@@ -62,7 +62,7 @@ Each father carries **modifiers** (bonuses) and **abilities** (capabilities) fro
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
 | L1 Unit | Always | `FoundingFatherTests`: 25 fathers / 5 per type parsed; **cost formula vs FreeCol at factor 24 and 40**; offers one-per-category + deterministic; bells→liberty + warehouse drained; ChooseFather validation | ✅ |
-| L2 Scenario | Always | election at the turn liberty reaches 24 (chosen father joins Congress, liberty resets, not re-offered); save round-trip preserves liberty/Congress/offers; pre-v10 compat. **Effects** (`FoundingFatherEffectsTests`): Jefferson +50% bells, Penn +50% crosses, Paine +tax% bells, Brewster's dock ban (50-seed) + `selectRecruit`, election refresh. **Pocahontas** (`NativeFatherEffectsTests`): on-election alarm reset to Happy across all settlements (+ a non-Pocahontas election doesn't reset, reset survives save round-trip, replay-stable); (`CombatTests`) the −50% halves a combat-win alarm gain (250 vs 500) and leaves a repelled-attack alarm drop at full magnitude. **Journey 8**: choose → accrue → elect Jefferson → subsequent bells boosted → survives reload | ✅ |
+| L2 Scenario | Always | election at the turn liberty reaches 24 (chosen father joins Congress, liberty resets, not re-offered); save round-trip preserves liberty/Congress/offers; pre-v10 compat. **Effects** (`FoundingFatherEffectsTests`): Jefferson +50% bells, Penn +50% crosses, Paine +tax% bells, Brewster's dock ban (50-seed) + `selectRecruit`, election refresh. **Pocahontas** (`NativeFatherEffectsTests`): on-election alarm reset to Happy across all settlements (+ a non-Pocahontas election doesn't reset, reset survives save round-trip, replay-stable); (`CombatTests`) the −50% halves a combat-win alarm gain (250 vs 500) and leaves a repelled-attack alarm drop at full magnitude. **Magellan** (`MagellanTests`): a naval unit gets +3 movement and −1 sail turn with Magellan elected (not without), and land units are unaffected (naval scope). **Journey 8**: choose → accrue → elect Jefferson → subsequent bells boosted → survives reload | ✅ |
 | L3 Interaction | No UI yet | — (Congress screen is a later slice) | — |
 | L4 Visual | No screen yet | — | — |
 
@@ -71,7 +71,8 @@ Each father carries **modifiers** (bonuses) and **abilities** (capabilities) fro
 ## 5. Open issues / TODO
 
 - [x] **Native father — Pocahontas** (alarm reset + −50% alarm-gain damping). Combat fathers (Washington/Revere/Cortés) done in 5b/5c.
-- [ ] Apply the remaining **deferred** father effects as their systems land: movement (Magellan) + naval (Drake) → naval slice; buildings (Smith/Stuyvesant/La Salle); **European diplomacy (Benjamin Franklin, Jan de Witt)** → needs monarch/REF wars + inter-European stance + AI diplomatic-trade; Sons-of-Liberty (Bolívar). *(Hudson's +100% furs is applied — slice 8.)*
+- [x] **Ferdinand Magellan** (naval +3 movement / −1 sail turn). [x] Native — Pocahontas. Combat — Washington/Revere/Cortés (5b/5c).
+- [ ] Apply the remaining **deferred** father effects as their systems land: naval combat (Drake) → naval slice; buildings (Smith/Stuyvesant/La Salle); **European diplomacy (Benjamin Franklin, Jan de Witt)** → needs monarch/REF wars + inter-European stance + AI diplomatic-trade; Sons-of-Liberty (Bolívar). *(Hudson's +100% furs is applied — slice 8.)*
 - [ ] Evaluate modifier **scopes** (person/non-person, unit-type) when per-source production modifiers are needed (bonus-resource yields).
 - [ ] `selectRecruit` UI (choose which dock recruit emigrates); real age boundaries with the calendar; difficulty-driven `factor`; Congress / father-choice UI.
 
@@ -83,4 +84,5 @@ Each father carries **modifiers** (bonuses) and **abilities** (capabilities) fro
 | 2026-06-13 | Modifier + ability system; applied father effects (Jefferson/Penn/Paine production, Brewster recruit ban); rest deferred | Phase 4 slice 7 |
 | 2026-06-14 | Military fathers wired into combat: **George Washington** (`automaticPromotion` — every win promotes) and **Paul Revere** (`automaticEquipment` — auto-arm an unarmed colony defender); see [combat](combat.md) | Phase 5 slice 5b |
 | 2026-06-14 | **Hernán Cortés** wired into combat: `plunderNatives` → a sacked native settlement yields its richer "extra" plunder range (treasure-train fee deferred); see [combat](combat.md) | Phase 5 slice 5c |
+| 2026-06-15 | **Ferdinand Magellan** wired into movement/sailing: naval units get +3 movement (`InitialMovement` folds the owner's Congress `movementBonus`, naval-gated) and −1 high-seas sail turn (`SailTurnsFor`, floored at 1). Among fathers only Magellan carries these (spec-read); rides on the persisted Congress (no save/RNG change). See [units-movement](units-movement.md) | Phase 5 (#3 fathers) |
 | 2026-06-15 | **Pocahontas** wired into native interaction: on election, `resetNativeAlarm` zeroes all native alarm toward the human (→ Happy); `nativeAlarmModifier` (−50%, spec-read) permanently damps combat alarm gains (`ScaleNativeAlarmGain` at `ApplyNativeCombatTension`, gains-only). Human-gated, rides on the persisted Congress (no save/RNG change). Franklin deferred (European-diplomacy father). See [natives](natives.md) | Phase 5 (#3 native fathers) |

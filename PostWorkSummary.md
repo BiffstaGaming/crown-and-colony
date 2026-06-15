@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-15 — Magellan founding-father effect [program #3, fathers]
+
+**Requested:** "Begin working and DO NOT stop" → continued #3 with a contained, no-save-bump father (deferring the large 1c-3 naval slice): **Ferdinand Magellan**.
+**Did:** Applied Magellan's two FreeCol effects, both naval-scoped: **+3 movement** for naval units (`InitialMovement` now folds the owner's Congress `model.modifier.movementBonus` — among fathers only Magellan carries it, so the `IsNaval` gate *is* his scope) and **−1 high-seas sail turn** (`SailTurnsFor(owner)` folds `sailHighSeas`, floored at 1; set on departure in `SailToEurope`/`SailToNewWorld`). Both fold per-owner (a foreign power gets it from its *own* Congress), are dormant unless elected, and ride on the persisted Congress — no save-format change, no RNG, no stream-0 touch. The nation-type naval +3 (a separate scoped modifier) stays deferred (no classic power uses that nation type).
+**Status:** **461 tests green** (431 L1+L2 + 4 soak + 26 scene; +4 `MagellanTests`: naval +3 movement only with Magellan; −1 sail turn only with Magellan; land units unaffected; per-power isolation — a foreign power's Magellan boosts its ship, not the human's). Build 0/0. Process: targeted research (pinned that only Magellan among fathers has these modifiers; line-3047 `movementBonus` is a *nation-type*, not a father → safe for the Congress fold) → implement → focused adversarial review → **no must-fix**; applied its 1 should-fix (the per-power isolation test). Caught a test bug during impl — `Units.First(IsNaval)` picked a *foreign* power's ship; fixed to `PlayerUnits` (the human's caravel), which confirmed the code is correct. Pushing to `main`; CI to confirm.
+**Changed:** `GameLogic/GameSession/Game.cs` (`InitialMovement` naval fold, `SailTurnsFor`, `MovementBonusId`/`SailHighSeasId`); tests `MagellanTests.cs` (new); docs `founding-fathers.md`/`units-movement.md`/`europe.md`/`game-logic.md`/`QA-REPORT.md`.
+**Decisions:** Apply movementBonus via the existing `ApplyGoodsModifiers` fold gated on `IsNaval` (Magellan's scope; no general scope-evaluation infra needed since he's the only father with it). `SailTurnsFor` floors at 1. The `movementChange` event (immediate mid-turn refresh) isn't modelled — the bonus applies from the next turn's movement reset (documented divergence, like a freshly-equipped mount).
+**Scheduled next:** **1c-3 — naval combat + privateers + Francis Drake + colonial-colony assault/capture** (`86d3bek5r`) — the large remaining combat piece (save-format bump for ship repair state + a new father). The remaining deferred fathers are Drake (naval, folds into 1c-3), Franklin/de Witt (European diplomacy), Bolívar (SoL), and the building-grant fathers.
+**Follow-ups:** building fathers (Smith/Stuyvesant/La Salle); Bolívar (SoL); European-diplomacy fathers; ambient native alarm (`86d3bp0ng`); native unit art (`86d3bmfcx`).
+**Needs you:** Nothing blocking. Magellan is now a worthwhile exploration pick (faster ships, quicker Atlantic crossings).
+
 ## 2026-06-15 — Pocahontas founding-father effect [program #3, native fathers]
 
 **Requested:** "Begin working and DO NOT stop" → continued to **program #3 (Founding-Father effects)**, taking the native-gated fathers (`86d3b7qxr`) since they're contained, lower-risk than 1c-3 (naval needs a save bump), and de Witt/Franklin were thought unblockable by the new stance.
