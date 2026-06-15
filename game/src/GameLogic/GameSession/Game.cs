@@ -1041,6 +1041,108 @@ public sealed class Game
         return result;
     }
 
+    /// <summary>Whether <paramref name="attacker"/> may assault (to capture) the rival colony on <paramref name="target"/> now.</summary>
+    public MoveCheck CheckAttackColony(Unit attacker, Position target)
+    {
+        if (!attacker.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (attacker.IsNative)
+        {
+            return MoveCheck.No("Native units do not capture colonies."); // braves raid units (1b); colony pillage is a native-AI follow-up
+        }
+        if (attacker.Type.IsNaval)
+        {
+            return MoveCheck.No("A ship cannot assault a colony — land a soldier beside it.");
+        }
+        if (!Map.InBounds(target))
+        {
+            return MoveCheck.No("Target is off the map.");
+        }
+        if (!attacker.Position.IsAdjacentTo(target))
+        {
+            return MoveCheck.No("Attack an adjacent tile.");
+        }
+        if (attacker.MovementLeft <= 0)
+        {
+            return MoveCheck.No("No movement left this turn.");
+        }
+        if (OffenceBase(attacker) <= 0)
+        {
+            return MoveCheck.No($"A {attacker.Type.ShortName} has no offensive strength — arm it first.");
+        }
+        if (ColonyAt(target) is not { } colony || colony.OwnerId == attacker.OwnerId)
+        {
+            return MoveCheck.No("There is no rival colony to assault there.");
+        }
+        if (_units.Any(u => u.IsOnMap && u.Position == target))
+        {
+            return MoveCheck.No("Defeat the colony's defenders first."); // a garrison stands on the tile → attack it as a unit
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Assaults the rival colony on <paramref name="target"/> to capture it (FreeCol <c>csCaptureColony</c>).
+    /// The colony's last-resort defender is an unarmed colonist (the abstracted population); a win hands the
+    /// colony — its people, buildings and stores — to the attacker's owner (<see cref="CaptureColony"/>), a loss
+    /// disarms/demotes the repelled attacker. Land-only, and only when the colony has no garrison unit on the tile
+    /// (a garrison is fought first via the unit-attack path). Assaulting a rival is an act of war (recorded both
+    /// ways before ownership flips). Plunder gold, the colony/stockade defence bonus, Revere auto-equip of the
+    /// last defender, and foreign-AI-initiated capture are later sub-slices.
+    /// </summary>
+    /// <returns>The graded combat result.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAttackColony"/>.</exception>
+    public CombatResult AttackColony(Unit attacker, Position target) => AttackColony(attacker, target, _random);
+
+    /// <summary>The colony-assault resolution drawing from an explicit RNG (the human's stream 0 by default; a foreign power its own; tests inject a fixed RNG).</summary>
+    internal CombatResult AttackColony(Unit attacker, Position target, IGameRandom random)
+    {
+        MoveCheck check = CheckAttackColony(attacker, target);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+
+        Colony colony = ColonyAt(target)!;
+        int formerOwner = colony.OwnerId;
+        // The colony's last-resort defender: an unarmed colonist standing for the abstracted population. (The
+        // colony/stockade defence bonus is deferred with building modifiers; FreeCol also Revere-auto-equips it.)
+        var defender = new Unit(0, Ruleset.Unit(StartingUnitTypeId), target) { OwnerId = formerOwner };
+
+        var attackContext = new AttackContext(Movement: MovementPenaltyFor(attacker));
+        double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext);
+        double defencePower = CombatModel.DefencePower(DefenceBase(defender), new DefenceContext());
+        attacker.MovementLeft = 0; // assaulting ends the attacker's turn (before any promotion swap)
+
+        // Assaulting a rival colony is an act of war, recorded both ways before the colony changes hands.
+        SetStance(attacker.OwnerId, formerOwner, Stance.War);
+        ChangeTension(attacker.OwnerId, formerOwner, TensionWar);
+
+        CombatResult result = CombatModel.Resolve(CombatModel.WinProbability(attackPower, defencePower), random);
+        bool attackerWon = result is CombatResult.GreatWin or CombatResult.Win;
+        bool great = result is CombatResult.GreatWin or CombatResult.GreatLoss;
+
+        if (attackerWon)
+        {
+            ApplyWinnerPromotion(attacker, great, random);
+            CaptureColony(colony, attacker.OwnerId);
+        }
+        else
+        {
+            ResolveLoserOutcome(defender, attacker, great); // the repelled attacker is disarmed/demoted/destroyed
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Hands <paramref name="colony"/> to <paramref name="newOwnerId"/> (FreeCol <c>csChangeOwner</c>): its people,
+    /// buildings and stores transfer intact with the ownership change. Plunder gold and ships caught in a falling
+    /// colony are later sub-slices.
+    /// </summary>
+    private void CaptureColony(Colony colony, int newOwnerId) => colony.OwnerId = newOwnerId;
+
     /// <summary>
     /// The gold a sacked settlement yields (FreeCol <c>RandomRange.getAmount</c>, <c>continuous=false</c>):
     /// the range selected by the attacker's <c>plunderNatives</c> status pays, on a <c>Probability%</c>

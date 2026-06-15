@@ -190,6 +190,10 @@ public partial class GameController : Node2D
             {
                 AttackUnitAt(tile); // any on-map unit here is an enemy (the player's own were handled above)
             }
+            else if (_game.ColonyAt(tile) is { } rival && rival.OwnerId != _game.HumanPlayer.PlayerId && _game.IsExplored(tile))
+            {
+                AttackColonyAt(tile); // a discovered, ungarrisoned rival colony → assault to capture it
+            }
             else
             {
                 MoveCheck check = _game.CheckMove(_selectedUnit, tile);
@@ -225,6 +229,23 @@ public partial class GameController : Node2D
             CombatResult.Evade => $"The enemy evaded your {who}.", // naval: the defender slipped away
             _ => $"Your {who} was beaten back.",
         };
+    }
+
+    /// <summary>Assaults an ungarrisoned rival colony on an adjacent tile to capture it, reporting the outcome.</summary>
+    private void AttackColonyAt(Position tile)
+    {
+        MoveCheck check = _game.CheckAttackColony(_selectedUnit!, tile);
+        if (!check.Allowed)
+        {
+            _notice = check.Reason;
+            return;
+        }
+        string colonyName = _game.ColonyAt(tile)!.Name;
+        CombatResult result = _game.AttackColony(_selectedUnit!, tile);
+        _selectedUnit = null; // the assault ends the unit's turn (and may demote/destroy it on a loss)
+        _notice = result is CombatResult.GreatWin or CombatResult.Win
+            ? $"You captured {colonyName}!"
+            : "Your assault on the colony was repelled.";
     }
 
     private void FoundColony()

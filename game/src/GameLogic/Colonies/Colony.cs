@@ -39,8 +39,8 @@ public sealed class Colony
     /// <summary>Stable per-game identifier.</summary>
     public int Id { get; }
 
-    /// <summary>The owning colonial player's id (FP-2; the human is 0). Foreign powers own colonies from FP-4+.</summary>
-    public int OwnerId { get; }
+    /// <summary>The owning colonial player's id (FP-2; the human is 0). Foreign powers own colonies from FP-4+; capture (1c-3e) reassigns it.</summary>
+    public int OwnerId { get; internal set; }
 
     /// <summary>Display name (e.g. "Jamestown").</summary>
     public string Name { get; }
