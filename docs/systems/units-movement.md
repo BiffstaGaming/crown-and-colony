@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Status** | Implemented (ruleset unit types, naval units, off-map sailing/Europe, cargo + passengers, role movement bonuses) |
-| **Last verified** | 2026-06-14 @ FP-5 (role movement bonuses) |
+| **Last verified** | 2026-06-15 @ Magellan naval movement (+ under-repair 0-movement pin, 1c-3b) |
 | **Code** | `game/src/GameLogic/Units/`, `GameSession/Game.cs` (`InitialMovement`) · rendering: `game/presentation/UnitMarker.cs` |
-| **Tests** | `game/tests/GameLogic.Tests/GameSession/GameTests.cs`, `RoleMovementTests.cs` |
+| **Tests** | `game/tests/GameLogic.Tests/GameSession/GameTests.cs`, `RoleMovementTests.cs`, `MagellanTests.cs` |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/common/model/Unit.java` (`getMoveCost`, `MoveType`) |
 | **Related systems** | [map-terrain](map-terrain.md), [turns](turns.md) |
 

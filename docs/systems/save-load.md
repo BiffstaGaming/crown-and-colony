@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (skeleton scope) |
-| **Last verified** | 2026-06-15 @ FP-7 (flat fields dropped; player state is Players[]-only) |
+| **Status** | Implemented (full game state: multi-player `Players[]`, per-player RNG streams, diplomacy stances/tensions, native settlements + interaction, ship repair; save v21) |
+| **Last verified** | 2026-06-15 @ 1c-3b (save v21: ship repair-turns) |
 | **Code** | `game/src/GameLogic/Persistence/SaveGame.cs` · UI: `GameController` F5/F9 |
 | **Tests** | `game/tests/GameLogic.Tests/Persistence/SaveGameTests.cs`, `Scenarios/` |
 | **FreeCol reference** | n/a — our own format (FreeCol's .fsg is not a compatibility goal) |
@@ -17,7 +17,7 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 
 - A save restores: turn, map (terrain per tile), every unit (id, **type**, position, movement left), **explored tiles (fog of war)**, RNG state.
 - Loading an interrupted game then continuing produces **identical outcomes** to never having saved (tested).
-- Saves carry a format `Version` (currently **20**); older saves still load with sensible defaults for fields that didn't exist yet (see the changelog), and v1 saves default units to free colonists and reveal fog around units.
+- Saves carry a format `Version` (currently **21**); older saves still load with sensible defaults for fields that didn't exist yet (see the changelog), and v1 saves default units to free colonists and reveal fog around units.
 - **Player-scoped state (v20+)** — treasury/tax, the per-player market, liberty/Congress, immigration + the Europe dock, the per-player RNG stream, and explored fog — is stored in a `Players[]` array (the human + the foreign powers + native nations; see [players](players.md)). The load path is chosen by version: a v20+ save reads `Players[]`; a v19-and-earlier save **folds** the old flat top-level fields into a single human player. As of **FP-7** a v20 save writes player state **only** in `Players[]`; the legacy flat top-level fields are no longer written (the format version stays **20** because the v20 load path was already `Players[]`-only, so new v20 saves are just smaller). The flat field *properties* remain on the record (read-only) so ≤v19 saves still fold them into one human player, and pre-FP-7 v20 saves (which carry both) still load via the `Players[]` arm — the flat fields are ignored whenever `Players[]` is present. From **FP-5** these per-player fields actually diverge in real games (each foreign power moves its own market, banks its own gold/liberty/immigration, fills its own dock, advances its own RNG) and all of it round-trips byte-identically — the soak proves a 200-turn active-economy game re-saves identically. On load, each colonial player's Europe dock is **topped up** to its full set: a no-op for a full FP-5 dock (no RNG drawn, so byte-stable), a fresh draw for an older save's empty foreign dock (a foreign power loaded from a pre-FP-5 save can then recruit).
 - Each unit also restores its **owner and equipment** (v18+): the owning native nation (null = the player) and its military role + role count; pre-v18 saves load every unit player-owned and unarmed (tested). Native braves persist through the unit list via the owner field — no separate collection — so a saved game's garrisons come back intact. A ship **damaged in combat** restores its **repair countdown** (v21+): turns left repairing in Europe (0 = healthy); pre-v21 ships load healthy.
 - A save also restores all **native settlements** (v14+): id, owning nation type, settlement type, capital flag, position, size, taught skill, plus their **interaction state** (v16+): alarm, visited flag, skill-consumed flag, and **wanted goods** (v17+). A settlement **destroyed by assault (v19+)** is simply absent from the saved list — there is no new field; its plunder is already folded into the saved gold.

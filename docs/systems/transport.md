@@ -75,7 +75,8 @@ A colonist can't swim the ocean — to move one across the sea you put it **on a
 
 - [x] **Europe screen UI** — done ([europe.md](europe.md)): board passengers onto ships and sail them home from the Europe screen (passengers + free slots shown). *Map-side disembark/board UI (next to a coastal ship) is still to come.*
 - [x] **Colonist in/out of a colony** — done ([colonies](colonies.md)): `JoinColony` grows a colony, `LeaveColony` detaches one. (A one-action embark *from* a colony onto a ship is still future.)
-- [ ] Capacity-aware **auto-loading**; multi-ship cargo transfer; ship loss drowning its passengers.
+- [x] **Ship loss drowns its passengers** — `SinkShip`/`DamageShip` remove every unit aboard a sunk or crippled ship (no orphans); see [combat](combat.md) (naval slices 1c-3a/b).
+- [ ] Capacity-aware **auto-loading**; multi-ship cargo transfer.
 
 ## Changelog
 

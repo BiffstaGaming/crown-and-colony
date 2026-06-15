@@ -1,40 +1,63 @@
 # New-session prompt
 
-Copy the block below into a fresh session. (CLAUDE.md auto-loads, so this focuses on *where we are* and *what to do next*.) Last updated 2026-06-15 — the **foreign-powers wave FP-1→FP-7 is COMPLETE** and combat is now playable on the map; next is **1b — native AI (movement + raids)**, part of Chris's "playable start/middle game" push.
+Copy the block below into a fresh session. (CLAUDE.md auto-loads, so this focuses on *where we are* and *what to do next*.) Last updated 2026-06-15 — the **UI-first conflict + founding-father wave is COMPLETE** (naval combat, colony capture, native AI, ambient alarm, Pocahontas/Magellan/Drake). Set up for **continuous, unattended work** through a prioritized queue.
 
 ---
 
-You're continuing work on **Crown & Colony** (a Godot 4 / C# remake of Sid Meier's Colonization, FreeCol as reference spec). Read `CLAUDE.md` first — locked decisions, the non-standard toolchain paths, working rules. Then catch up via the ClickUp Space "Colonization": the **Session Log (doc 06, newest entry first)**, the **Architecture doc (02 — ADR-019)**, the **Roadmap (doc 01)**, and the **kanban** (`clickup_filter_tasks` on list `901615382059`). `PostWorkSummary.md` (repo root) is the at-a-glance log; `docs/systems/diplomacy.md` + `players.md` are the most relevant system docs.
+You are continuing work on **Crown & Colony**, a faithful Godot 4 / C# remake of Sid Meier's *Colonization* (1994), using **FreeCol** (GPL v2, cloned read-only at `freecol/`) as the reference spec. Repo: `C:\Users\Chris\Code\Colonization` · GitHub `BiffstaGaming/crown-and-colony` · branch `main` · git user `BiffstaGaming`. Read `CLAUDE.md` first (locked decisions, toolchain, working rules).
 
-**Where we are (2026-06-15):** Phases 0–4 complete. **Phase 5 (other powers)** — the native-facing work and the entire **foreign-European-powers / multi-player wave (ADR-019, FP-1→FP-7) are shipped**:
-- `Player` extraction (per-player state incl. its own `Market`) → **owner-id seam** (`Unit.OwnerId`/`Colony.OwnerId`; enemy/fog/abilities by owner) → **European nations** as ruleset data → **inert multi-player** (human + 3 foreign powers + natives as `Player` rows; ring-buffer `EndTurn`) → **FP-4 minimal AI** (land/found/explore) → **FP-5 AI economy** (per-player trade/immigration/recruit/fathers, each on its own RNG stream + market) → **FP-6 diplomacy** (6a recorded stance/tension; 6b tension→stance machine — war→cease-fire→peace, `StanceFromTension`/`UpdateColonialStances`) → **FP-7 save consolidation** (legacy flat player fields dropped; `Players[]` the sole source; every old save v1→v20 still loads).
-- **On-map combat UI** shipped: select a unit, **click an adjacent brave / native settlement to attack** (`GameController.HandleTileClick` → `AttackUnitAt`/`AttackSettlementAt`; outcome in the HUD).
-- **426 tests** (403 L1+L2 incl. 10 E2E + 2 soak + 17 L3 + 4 L4), CI green, **save v20** (consolidated), git clean. The human's stream 0 / RNG-resume / L4 goldens are byte-stable throughout (decisively guarded by `ForeignPowerEconomyTests.HumanStream0_IsUnaffectedByHowMuchTheRivalsDo` + the soak round-trip + `LoadedGame_ContinuesIdenticalRandomSequence`).
+## Mode: autonomous, continuous — keep shipping, don't pause to ask
 
-**Direction (Chris, 2026-06-15):** a **playable start/middle game with good UI + working functionality, before endgame**. The chosen programs are **#1 — AI combat + combat/rival UI** and **#3 — Founding-Father effects**. **Phase 6 (endgame/REF) is deferred.** #1 slice 1a (on-map combat UI) is done.
+Work through the queue below one slice at a time, end-to-end, until told otherwise. Don't pause for approval; when a call is genuinely Chris's, pick the most faithful, reversible, documented option, note it in PostWorkSummary under **Needs you**, and continue. Per-slice push to `main` is authorized. If genuinely blocked, write a blocker note in PostWorkSummary + the Session Log and move to the next queued item. You may use the **Workflow** tool for per-slice adversarial reviews and planning fan-outs (the established process).
 
-**This session: 1b — Native AI (movement + raids).** Make the natives *act* (they are `Player` rows but currently inert), faithful to FreeCol, **each on its own RNG stream** so the human's stream 0 stays byte-stable. Scope:
-- **Wire native units to their native `Player`** (the long-standing carry-over, now a prerequisite): a brave carries `OwnerNationId` and its `OwnerId` is unused (0). Resolve the owning native `Player` (match `NationId == OwnerNationId`, or set `OwnerId`) so the AI can drive a nation's units and draw from that player's `Player.Rng` (`RandomFor(player)`). Native `Player.Rng` is already created at `New`.
-- **`RunPlayerTurn` runs native AI** (it currently early-returns for `PlayerType.Native`). Minimal faithful behaviour: braves move (toward the human's units/colonies when alarmed; wander otherwise) and **raid** — attack an adjacent human unit/colony when settlement alarm/tension is high enough. Use FreeCol's alarm bands for the decision; keep it a flat priority switch (not missions). All draws from the native player's own stream; stable by-id iteration.
-- **Remove the `CheckAttack` "Native units do not attack yet" gate** (Game.cs) so braves can attack; native-initiated combat exercises the capture-unit + Paul Revere auto-equip paths (currently dormant).
-- **Player feedback** (so raids are visible): a HUD notice when the human is attacked / a colony is raided. (Combat against the human currently has no feedback path — add a minimal one.)
-- **Tests:** native-AI determinism (two same-seed games byte-identical), the human stream 0 untouched (extend the stream-0 guard), an **L5 soak** invariant (native raids don't run away / softlock; no negative stores; byte-identical round-trip), and an L3 if there's UI feedback. Balance (raid frequency/aggression) is FreeCol-pinned now and **tuned by Chris's playtest later** — he won't big-playtest until the UI is richer, so don't gate on his feedback.
+## Start of session
 
-**Then:** **1c** — foreign-power combat + rival rendering (rivals drawn when discovered; foreign powers attack at war; **naval/foreign-unit combat `86d3bek5r`**; includes a `CheckMove` guard so a unit can't walk onto an ungarrisoned *foreign* colony — flagged in `combat.md`). **#3** — Founding-Father effects (`86d3b7qxr`; de Witt/Franklin now have stance to read). Likely interleave richer **combat/colony/rival UI** so the start/middle is properly playtestable.
+1. Read the latest ClickUp **Session Log** (doc `2kz0t3mf-816`), the **kanban** (list `901615382059`), the **Roadmap** (doc `2kz0t3mf-716`), and the top of `PostWorkSummary.md`.
+2. `git pull`; confirm a clean `main`.
+3. Set the toolchain (below); confirm the build + L1/L2 tests are green.
+4. Start the next queued slice.
 
-**How to work here (matters most):**
-- **The byte-stability invariant (non-negotiable):** the human draws only from stream 0 (`Game._random`); every non-human player (foreign **and now native**) draws only from its own `Player.Rng` via `RandomFor(player)`. A stray `_random` draw on an AI path corrupts the human's game — the soak round-trip + the stream-0 guard + the L4 goldens are the guards. Iterate players/units in stable by-id order; no `Random`/unordered iteration in AI.
-- **Docs are part of the change** (no-drift): a slice isn't done until its `docs/systems/<x>.md` (both layers + verification + changelog — `natives.md`, `combat.md`, `players.md`, `turns.md` as relevant), `QA-REPORT.md` counts, the kanban status, the **Session Log**, and `PostWorkSummary.md` (with the **scheduled-next** item) are updated *in the same work* — **and the PostWorkSummary entry is pasted into the chat reply, not just the file.**
-- **Process (worked well all wave):** per slice → a research/plan workflow (parallel readers over FreeCol's native-AI + our combat/owner/turn code + a test-blast-radius scan → a concrete plan) → implement → an adversarial review (one thorough agent or a workflow) → fix findings → commit & push to `main` (Chris has authorised per-slice push). Verify FreeCol numbers in `freecol/`.
-- **Definition of done = tests green at every layer + docs synced + CI green.**
+## Current state (HEAD `f96b408`, 2026-06-15)
 
-**Toolchain (this machine — gotchas):**
-- Dot-source `scripts/dev-env.ps1` first (prepends the user-local .NET SDK 10 + sets `GODOT`/`GODOT_BIN`). Use the **PowerShell tool** for all `dotnet`/Godot commands (no `pwsh`; the Bash tool's `pwsh` fails). Use absolute paths (the PowerShell CWD isn't always the repo root).
-- Logic: `dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj` (`--filter "Category!=Soak"` = 403 L1+L2; `--filter "Category=Soak"` = the 2 soak). Scene L3/L4: `& $env:GODOT --headless --path game --import` then `dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings`.
-- **The GdUnit4 scene runner crashes on cold start (`-1073741819` / timeout) — just re-run (ADR-015). CRITICAL: close any running Godot *editor* first** — a live editor on the project collides with the headless runner and causes that crash every time (this, not random flake, was the repeated failure on 2026-06-15). A fresh `--import` then re-run also helps. Visual goldens are committed PNGs; regenerate only deliberately with `GOLDEN_UPDATE=1`.
+- **Save format v21.** Tests: **521 green** = 489 L1+L2 (incl. 10 E2E) + 4 soak + 28 scene (23 L3 + 5 L4).
+- Shipped this wave: native AI raids (1b); rival/own-unit rendering + CheckMove colony guard (1c-1); foreign retaliation (1c-2); naval combat (1c-3a), ship damage+repair (1c-3b, v21), cargo loot (1c-3c), privateer piracy (1c-3d-i), Francis Drake (1c-3d-ii); colonial-colony capture (1c-3e, **human-initiated only**); on-map native interaction UI; ambient native alarm (Pocahontas −50% relocated onto it). Fathers applied: Washington, Revere, Cortés, Pocahontas, Magellan, Drake (+ economy: Jefferson, Penn, Paine, Brewster, Hudson).
 
-**Carry-overs / latent (address when relevant):** the `CheckMove`-onto-foreign-colony guard (do it with 1c); cache an exploration frontier (`StepTowardNearestUnexplored` is O(map)/unit/turn — fine at the 2 ms budget today); synthesize native `Player` rows when loading a pre-FP-3b save; persist `_currentPlayerIndex` if turns ever save mid-ring; the AI doesn't staff cash-crop tiles / refine / buy goods in Europe (no AI shipping yet); nation/Magellan `movementBonus` (scoped modifiers) still unapplied.
+## Work queue (decompose each into a granular kanban task when you start it — rolling-wave; re-check the kanban for Chris's priority order)
 
-**Awaiting Chris's playtest (don't mark done):** the In Review kanban items (FreeCol art, colony screen, economy UI, Europe screen, native settlements). Foreign powers + their economy/diplomacy are off-screen under the human's fog (no rival UI yet); combat now has a minimal click UI. Launch the game if asked (detached): `Start-Process "C:\Users\Chris\Tools\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64.exe" -ArgumentList '--path','C:\Users\Chris\Code\Colonization\game'` — **then close it before running scene tests.**
+1. **Foreign-AI colony capture** — a power at War with an armed land unit beside an undefended human colony captures it (extend `RunForeignPowerTurn` war branch; reuse `AttackColony` on the power's own stream). Needs a **colony-loss notice channel** so the human is told. FreeCol `csCaptureColony`.
+2. **Native-AI follow-ups** (`86d3bkc3w`) — braves pillage/capture an undefended colony (`pillageUnprotectedColony`) + tribute demands (`IndianDemandMission`). Ambient alarm now makes this feel earned.
+3. **Building-grant fathers** — Adam Smith (factories), Stuyvesant (custom house), La Salle (free stockade) — contained Congress folds. **La Salle's stockade should also unlock the colony/stockade defence bonus** deferred in colony capture (needs `BuildingType` defence modifiers).
+4. **Colony-capture follow-ups** — plunder gold (FreeCol `colony.getPlunder`, only if a faithful formula can be pinned), drydock-colony repair (`model.ability.repairUnits`), Revere auto-equip of a colony's last defender, ships in a falling colony.
+5. **AI-initiated piracy** — a foreign power's privateer raids human shipping from peace.
+6. **European-diplomacy fathers** (Franklin/de Witt) — **larger**; needs monarch/REF-war + inter-European stance + AI diplomatic-trade. Scope carefully or defer.
+7. **Simón Bolívar** (Sons-of-Liberty) — needs an SoL/rebel-sentiment system.
 
-Start by reading the latest Session Log + the kanban + `docs/systems/natives.md` & `combat.md`, confirm the build + tests are green, then implement **1b (native AI — movement + raids)**.
+If the queue empties or a front needs design, run a planning Workflow (parallel doc/kanban readers → synthesis → completeness critic) to pick and decompose the next wave.
+
+## Per-slice process (binding)
+
+research (read FreeCol + our code; pin exact numbers from `freecol/`) → implement → **2-lens adversarial review (Workflow)** → fix → **docs in the same commit** → commit & push to `main` → **verify CI green** (`gh run watch`) → mark the kanban task **Shipped** + Session Log page + prepend a `PostWorkSummary.md` entry. **Definition of done = tests green at every required layer + docs synced + CI green.**
+
+## Binding constraints
+
+- **ADR-009 byte-stability (non-negotiable):** the human draws ONLY from RNG stream 0 (`Game._random`); every non-human player ONLY from its own `Player.Rng` via `RandomFor(player)`; AI combat MUST use the internal `Attack(unit, target, IGameRandom)` overload. Stable id/position iteration; no `Random`/`GD.Randf()`/unordered iteration on AI paths. Keep/add a stream-0-untouched test for any AI-touching slice.
+- **ADR-006:** rules in engine-free `GameLogic` (xUnit-tested); Godot only present/route. The presentation test project can't set GameLogic internals — inject via the save layer.
+- **No-drift docs (same commit):** any behavior/formula/API change updates the matching `docs/systems/<x>.md` (BOTH plain-English + technical layers + a changelog row), XML doc comments, `docs/QA-REPORT.md` (counts + snapshot), the ClickUp Session Log, and `PostWorkSummary.md`.
+- **Save format:** new persisted field → additive, default-omitted (nullable + `WhenWritingNull`); bump `SaveGame.CurrentVersion` + the version-pinned tests only when adding a field; prefer reusing existing serialized state.
+- **Faithful-to-FreeCol first; don't gold-plate; don't fabricate numbers** — defer a piece (documented) rather than invent a value.
+
+## Toolchain (this machine — gotchas)
+
+- **.NET SDK 10 (user-local)** is NOT first on PATH; the system `dotnet` can't build. Before any dotnet command, either dot-source `scripts/dev-env.ps1` (PowerShell tool) **or** in the Bash tool: `export DOTNET_ROOT="C:\Users\Chris\.dotnet" && export PATH="C:\Users\Chris\.dotnet:$PATH"`.
+- **Godot 4.6.3 .NET:** `GODOT_BIN = C:\Users\Chris\Tools\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64_console.exe`. After adding any scene node or `.cs`/scene file, run `--headless --path game --import` before scene tests.
+- **Commands:** build `dotnet build game/CrownAndColony.slnx` · L1+L2 `dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"` · soak `--filter "Category=Soak"` · scene `dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings` (needs `GODOT_BIN`). `GameLogic.Tests` is deliberately NOT in the `.slnx`.
+- **GdUnit4 scene runner cold-start crash** (`-1073741819` / timeout, ADR-015) — just re-run (up to ~3×); CI auto-retries. **CRITICAL: close any running Godot *editor* on this project first** — a live editor collides with the headless runner and causes that crash every time. Visual goldens are committed PNGs; regenerate only deliberately (`GOLDEN_UPDATE=1`).
+- **Commits:** bash can't parse PowerShell here-strings — write the message to `.git/COMMIT_x.txt` and `git commit -F`. End every commit message with `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`. Stage the git-tracked `.uid` sidecars import generates.
+- **Workflow tool:** inside template-literal prompts use single quotes for inline code (backticks terminate the string); don't put the literal strings `Math.random`/`Date.now`/`new Date` in prompt text (the determinism validator scans for them — say "unseeded randomness").
+- Launch the game (detached, if asked): `Start-Process "C:\Users\Chris\Tools\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64.exe" -ArgumentList '--path','C:\Users\Chris\Code\Colonization\game'` — **then close it before running scene tests.**
+
+## Reporting (every slice)
+
+Prepend a dated `PostWorkSummary.md` entry (format at the top of that file) **and paste that exact entry into your chat reply**. Write a ClickUp Session Log page (doc `2kz0t3mf-816`) per slice. Kanban = list `901615382059`.
+
+**Begin now:** start-of-session steps, then the first queued slice. Keep going until the queue is empty or you're genuinely blocked.
