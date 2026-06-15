@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-16 — AI besiege pathing [queue slice 6 · march on the nearest colony]
+
+**Requested:** Autonomous overnight — keep shipping. Took the documented follow-up `86d3bx03d`: make the foreign-AI colony capture manifest in play (it only fired when already adjacent).
+**Did:** A war-power **land unit with no field unit to chase** now **marches on the nearest human colony** instead of wandering off to explore. `RunForeignPowerTurn` war branch gains a fallback (reached only when `NearestHumanUnit` is null) that steps toward `NearestHumanColony` via `StepToward`; new pure helper `NearestHumanColony`. So the AI closes on undefended colonies to capture (existing step 1) or on garrisons to fight. Additive — no change when a field prey exists.
+**Status:** **552 tests green** (519 L1+L2 incl. +1 `AtWar_WithNoFieldPrey_MarchesOnTheNearestHumanColony` + 4 soak + 29 scene); build 0/0; **CI green** (`4ed940f`). Save **unchanged** (v21; pure AI movement, power's own stream). Process: research → implement → **2-lens adversarial review** → **APPROVE, no findings** (ADR-009 confirmed: `StepToward` on the power's stream, `NearestHumanColony` pure). *(First workflow attempt hit a script parse error — re-ran a defensively-rewritten script, clean.)*
+**Changed:** `GameSession/Game.cs` (`NearestHumanColony` + war-branch fallback); tests `ForeignColonyCaptureTests.cs`; docs `players.md`/`turns.md`/`combat.md`/`modules/game-logic.md`/`QA-REPORT.md`. Commit `4ed940f`. Closes `86d3bx03d`.
+**Decisions:** Besiege is a **fallback** (only when no field prey), not a scored colony-vs-unit competition (FreeCol scores both — deferred). No save change.
+**Scheduled next:** **native tribute demands** (`IndianDemandMission`, `86d3bkc3w`) OR the **human-defeat** task (`86d3bx04e`, high). Re-check the live kanban first.
+**Follow-ups:** native tribute; human defeat (`86d3bx04e`); native-pillage gold-steal; Revere last-defender auto-equip; full colony-vs-unit target scoring; building-grant fathers (Smith/Stuyvesant); AI piracy; European-diplomacy fathers / Bolívar.
+**Needs you:** Nothing blocking. **Six slices shipped tonight.** The colonies-under-threat arc is complete and now *active*: at-war rivals besiege, capture and loot your undefended colonies; angry tribes pillage them; walls defend them; you conquer-and-loot rivals back. Concurrent doc-audit agent also worked `main` — no conflicts, all pushes CI-green.
+
 ## 2026-06-16 — Colony capture plunder [queue slice 5 · sack the treasury]
 
 **Requested:** Autonomous overnight — keep shipping. Took the deferred **plunder gold on capture** now that I'd pinned the FreeCol `getPlunderRange` formula (found during the pillage research) — a contained, faithful slice building on the capture work.
