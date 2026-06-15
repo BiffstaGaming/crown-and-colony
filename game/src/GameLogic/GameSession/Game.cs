@@ -377,6 +377,17 @@ public sealed class Game
     /// <summary>The colony on a tile, or null.</summary>
     public Colony? ColonyAt(Position p) => _colonies.FirstOrDefault(c => c.Position == p);
 
+    /// <summary>
+    /// The percentage defence bonus a colony's fortifications grant a unit defending in it (FreeCol
+    /// <c>model.modifier.defence</c> on the colony's buildings): stockade +100, fort +150, fortress +200. A colony
+    /// holds at most one fortification tier (fort upgrades the stockade, fortress the fort), so summing the
+    /// per-building bonuses yields just the tier present (0 with no fortification).
+    /// </summary>
+    public int ColonyDefenceBonus(Colony colony) => colony.Buildings.Sum(b => Ruleset.Building(b).DefenceBonus);
+
+    /// <summary>The fortification defence bonus of the colony on a tile (0 if no colony / no fortification) — applied to whoever defends there.</summary>
+    private int ColonyDefenceBonusAt(Position p) => ColonyAt(p) is { } colony ? ColonyDefenceBonus(colony) : 0;
+
     /// <summary>All native settlements on the map.</summary>
     public IReadOnlyList<NativeSettlement> NativeSettlements => _nativeSettlements;
 
@@ -908,8 +919,12 @@ public sealed class Game
             Movement: MovementPenaltyFor(attacker), // snapshot the movement penalty before spending it
             ArtilleryInOpen: !naval && attacker.Type.Bombard, // a land rule (artillery in the open); never for ships
             GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0); // FreeCol cargo penalty is goods only, not passengers
+        // A unit defending in a colony uses the colony's defence (its fortification bonus), NOT the tile terrain —
+        // FreeCol suppresses the terrain modifier inside a settlement (as our native-settlement assault already does).
+        bool inColony = !naval && ColonyAt(target) is not null;
         var defenceContext = new DefenceContext(
-            TerrainDefenceBonus: naval ? 0 : Map.TerrainAt(target).DefenceBonus, // open water has no terrain bonus
+            TerrainDefenceBonus: (naval || inColony) ? 0 : Map.TerrainAt(target).DefenceBonus, // open water / a colony: no terrain bonus
+            SettlementDefenceBonus: naval ? 0 : ColonyDefenceBonusAt(target), // a unit defending in a fortified colony (stockade/fort/fortress)
             GoodsCarried: naval ? GoodsSlotsUsed(defender) : 0);
 
         double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext);
@@ -1107,8 +1122,9 @@ public sealed class Game
     /// disarms/demotes the repelled attacker. Land-only, and only when the colony has no garrison unit on the tile
     /// (a garrison is fought first via the unit-attack path). Assaulting a rival is an act of war (recorded both
     /// ways before ownership flips). Used by both directions: the human (stream 0) and a foreign power capturing
-    /// an undefended human colony at war (1c-3f, the power's own stream). Plunder gold, the colony/stockade
-    /// defence bonus, and Revere auto-equip of the last defender are later sub-slices.
+    /// an undefended human colony at war (1c-3f, the power's own stream). The defender gets the colony's
+    /// fortification bonus (<see cref="ColonyDefenceBonus"/> — a stockade/fort/fortress makes the colony resist).
+    /// Plunder gold and Revere auto-equip of the last defender are later sub-slices.
     /// </summary>
     /// <returns>The graded combat result.</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAttackColony"/>.</exception>
@@ -1125,13 +1141,13 @@ public sealed class Game
 
         Colony colony = ColonyAt(target)!;
         int formerOwner = colony.OwnerId;
-        // The colony's last-resort defender: an unarmed colonist standing for the abstracted population. (The
-        // colony/stockade defence bonus is deferred with building modifiers; FreeCol also Revere-auto-equips it.)
+        // The colony's last-resort defender: an unarmed colonist standing for the abstracted population, shielded
+        // by the colony's fortification bonus below (FreeCol also Revere-auto-equips it — deferred).
         var defender = new Unit(0, Ruleset.Unit(StartingUnitTypeId), target) { OwnerId = formerOwner };
 
         var attackContext = new AttackContext(Movement: MovementPenaltyFor(attacker));
         double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext);
-        double defencePower = CombatModel.DefencePower(DefenceBase(defender), new DefenceContext());
+        double defencePower = CombatModel.DefencePower(DefenceBase(defender), new DefenceContext(SettlementDefenceBonus: ColonyDefenceBonus(colony)));
         attacker.MovementLeft = 0; // assaulting ends the attacker's turn (before any promotion swap)
 
         // Assaulting a rival colony is an act of war, recorded both ways before the colony changes hands.
@@ -1246,7 +1262,7 @@ public sealed class Game
 
         var attackContext = new AttackContext(Movement: MovementPenaltyFor(brave));
         double attackPower = CombatModel.AttackPower(OffenceBase(brave), attackContext);
-        double defencePower = CombatModel.DefencePower(DefenceBase(defender), new DefenceContext());
+        double defencePower = CombatModel.DefencePower(DefenceBase(defender), new DefenceContext(SettlementDefenceBonus: ColonyDefenceBonus(colony)));
         brave.MovementLeft = 0; // raiding ends the brave's turn
 
         CombatResult result = CombatModel.Resolve(CombatModel.WinProbability(attackPower, defencePower), random);

@@ -93,3 +93,4 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 | 2026-06-13 | Bonus-resource yield modifiers in `TileYield` (+ Henry Hudson's +100% furs); expert-scoped resource bonuses parsed but deferred (no per-colonist identity). No save change | Phase 4 slice 8 |
 | 2026-06-13 | Colonist membership: `JoinColony` (grow a colony, the immigration payoff) and `LeaveColony` (detach a free colonist). No save change | Phase 4 slice 9 |
 | 2026-06-15 | `Colony.OwnerId` added; a colony can change hands by **capture** (winning a land attack on an undefended colony reassigns ownership). Rules/save in [combat](combat.md) | Phase 5 (#6 colony capture) |
+| 2026-06-16 | `BuildingType.DefenceBonus` added (parses `model.modifier.defence`): a colony's **stockade/fort/fortress** now grants its defender +100/+150/+200% defence (`Game.ColonyDefenceBonus`) against capture, pillage and field attack. Combat rules in [combat](combat.md) | Phase 5 colony defence bonus |

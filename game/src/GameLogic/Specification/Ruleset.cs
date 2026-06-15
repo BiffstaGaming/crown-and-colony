@@ -302,7 +302,16 @@ public sealed class Ruleset
                         RequiredAttribute(g, "id"),
                         (int?)g.Attribute("value")
                             ?? throw new RulesetFormatException($"required-goods in '{id}' lacks value.")))
-                    .ToList());
+                    .ToList(),
+                // The colony defence bonus (stockade +100, fort +150, fortress +200): the building's own
+                // model.modifier.defence percentage. Skip any `delete="true"` marker (fort/fortress delete the
+                // inherited modifier then re-add their own), taking the valued one. 0 for non-defence buildings.
+                DefenceBonus: el.Elements("modifier")
+                    .Where(m => (string?)m.Attribute("id") == "model.modifier.defence"
+                                && (string?)m.Attribute("delete") != "true")
+                    .Select(m => (int?)m.Attribute("value") ?? 0)
+                    .DefaultIfEmpty(0)
+                    .Last());
         }
 
         var fathers = new Dictionary<string, FoundingFather>();

@@ -10,13 +10,19 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <param name="RequiredPopulation">Minimum colony population to build it.</param>
 /// <param name="Productions">Per-worker (or unattended) conversions, e.g. lumber 3 → hammers 3.</param>
 /// <param name="BuildCost">Goods required to construct it (hammers, tools…).</param>
+/// <param name="DefenceBonus">
+/// Percentage defence bonus this building grants a unit defending in the colony (spec
+/// <c>model.modifier.defence</c>; default 0). Stockade +100, fort +150, fortress +200 — the colony's
+/// fortification tier (FreeCol applies it to the colony's defender, garrison or last colonist).
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
     int Workplaces,
     int RequiredPopulation,
     IReadOnlyList<ProductionEntry> Productions,
-    IReadOnlyList<GoodsOutput> BuildCost)
+    IReadOnlyList<GoodsOutput> BuildCost,
+    int DefenceBonus = 0)
 {
     /// <summary>Short name derived from the id: <c>model.building.townHall</c> → <c>townHall</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
