@@ -272,6 +272,56 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task NativeTributeDemand_DuringEndTurn_OpensThePanel_AndPayingTransfers()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Found a colony and stock it with tobacco via the save layer (Colony.AddGoods is internal to GameLogic);
+        // then, on the restored game, garrison it (so a brave can't pillage → it demands instead) and plant an
+        // enraged brave beside it (SpawnUnit / ChangeNativeAlarm are public).
+        Colony founded = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with { Stores = new Dictionary<string, int> { ["model.goods.tobacco"] = 100 } }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.artillery"), colony.Position); // garrison → not pillageable
+        string nation = game.NativeSettlements.First().NationTypeId;
+        Position adj = colony.Position.Neighbours().First(n => Free(game, n));
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.brave"), adj, nation);
+        foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == nation))
+        {
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // Hateful → it demands
+        }
+
+        // End Turn → the brave raises a tribute demand → the modal opens.
+        controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+
+        var panel = controller.GetNode<PanelContainer>("UI/NativeDemandPanel");
+        AssertThat(panel.Visible).IsTrue();
+        AssertThat(game.PendingDemand).IsNotNull();
+
+        // Pay tribute → the demanded goods leave the colony and the modal closes.
+        int demanded = game.PendingDemand!.Amount;
+        string goodsId = game.PendingDemand!.GoodsId!;
+        int before = colony.StoreOf(goodsId);
+        controller.GetNode<Button>("UI/NativeDemandPanel/VBox/Buttons/PayButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(panel.Visible).IsFalse();
+        AssertThat(game.PendingDemand).IsNull();
+        AssertThat(colony.StoreOf(goodsId)).IsEqual(before - demanded);
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task MultipleOwnUnits_AllRender()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

@@ -39,6 +39,7 @@ public partial class GameController : Node2D
     private PanelContainer _colonyPanel = null!;
     private PanelContainer _europePanel = null!;
     private PanelContainer _nativePanel = null!;
+    private PanelContainer _demandPanel = null!;
     private Button _endTurnButton = null!;
     private Control _gameOverScreen = null!;
     private Label _gameOverMessage = null!;
@@ -55,6 +56,7 @@ public partial class GameController : Node2D
         _colonyPanel = GetNode<PanelContainer>("UI/ColonyPanel");
         _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
+        _demandPanel = GetNode<PanelContainer>("UI/NativeDemandPanel");
         _endTurnButton = GetNode<Button>("UI/EndTurnButton");
         _gameOverScreen = GetNode<Control>("UI/GameOverScreen");
         _gameOverMessage = GetNode<Label>("UI/GameOverScreen/Panel/VBox/Message");
@@ -117,6 +119,22 @@ public partial class GameController : Node2D
             _notice = string.Join("   ", messages);
         }
         RefreshView();
+
+        // A native brave demanded tribute of one of the human's colonies during the AI phase → prompt for a decision
+        // (unless the human was just wiped out — no colony to demand of then anyway). Re-opens with the fresh demand
+        // each turn, or hides if none; an ignored demand is auto-refused by the next EndTurn (engine-side backstop).
+        if (!_game.IsHumanDefeated && _game.PendingDemand is { } demand)
+        {
+            ((NativeDemandPanel)_demandPanel).Open(_game, demand, outcome =>
+            {
+                _notice = outcome;
+                RefreshView();
+            });
+        }
+        else
+        {
+            _demandPanel.Hide();
+        }
     }
 
     /// <summary>Turns an AI attack on the human into a status-bar message, from the human defender's point of view.</summary>
@@ -404,6 +422,7 @@ public partial class GameController : Node2D
             _colonyPanel.Hide();
             _europePanel.Hide();
             _nativePanel.Hide();
+            _demandPanel.Hide();
         }
         _gameOverScreen.Visible = defeated;
     }
