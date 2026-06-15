@@ -98,17 +98,23 @@ public partial class GameController : Node2D
         RefreshView();
     }
 
-    /// <summary>Turns a native raid on the human into a status-bar message, from the human defender's point of view.</summary>
+    /// <summary>Turns an AI attack on the human into a status-bar message, from the human defender's point of view.</summary>
     private string FormatCombatNotice(CombatNotice notice)
     {
         string id = notice.AttackerNationId;
         string shortName = id[(id.LastIndexOf('.') + 1)..];
         string nation = char.ToUpperInvariant(shortName[0]) + shortName[1..];
         string unit = _game.Ruleset.Unit(notice.DefenderUnitTypeId).ShortName;
-        bool nativeWon = notice.Outcome is CombatResult.GreatWin or CombatResult.Win;
-        return nativeWon
-            ? $"⚔ The {nation} raided your {unit} at ({notice.Position.X},{notice.Position.Y})!"
-            : $"Your {unit} fought off a {nation} raid at ({notice.Position.X},{notice.Position.Y}).";
+        bool naval = _game.Ruleset.Unit(notice.DefenderUnitTypeId).IsNaval;
+        string at = $"({notice.Position.X},{notice.Position.Y})";
+        if (notice.Outcome == CombatResult.Evade)
+        {
+            return $"Your {unit} evaded a {nation} attack at {at}.";
+        }
+        bool attackerWon = notice.Outcome is CombatResult.GreatWin or CombatResult.Win;
+        return attackerWon
+            ? (naval ? $"⚔ The {nation} sank your {unit} at {at}!" : $"⚔ The {nation} raided your {unit} at {at}!")
+            : $"Your {unit} fought off a {nation} {(naval ? "raider" : "raid")} at {at}.";
     }
 
     public override void _UnhandledInput(InputEvent @event)
@@ -194,9 +200,12 @@ public partial class GameController : Node2D
         string who = _selectedUnit!.Type.ShortName;
         CombatResult result = _game.Attack(_selectedUnit, tile);
         _selectedUnit = null; // the attack ends the unit's turn (and may demote/destroy it)
-        _notice = result is CombatResult.GreatWin or CombatResult.Win
-            ? $"Your {who} won the battle."
-            : $"Your {who} was beaten back.";
+        _notice = result switch
+        {
+            CombatResult.GreatWin or CombatResult.Win => $"Your {who} won the battle.",
+            CombatResult.Evade => $"The enemy evaded your {who}.", // naval: the defender slipped away
+            _ => $"Your {who} was beaten back.",
+        };
     }
 
     /// <summary>Assaults the native settlement on an adjacent tile with the selected unit, reporting the outcome.</summary>

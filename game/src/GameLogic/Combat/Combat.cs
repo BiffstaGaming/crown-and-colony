@@ -29,6 +29,9 @@ public enum CombatResult
 
     /// <summary>Decisive attacker loss.</summary>
     GreatLoss,
+
+    /// <summary>The defender evaded (naval only): no one is hurt, the attacker's turn is spent. Appended so prior ordinals stay stable.</summary>
+    Evade,
 }
 
 /// <summary>
@@ -41,20 +44,24 @@ public enum CombatResult
 /// <param name="Movement">Movement-spent penalty.</param>
 /// <param name="Amphibious">Attacking from a ship onto land (−75%).</param>
 /// <param name="ArtilleryInOpen">Artillery attacking in the open, not in a settlement (−75%).</param>
+/// <param name="GoodsCarried">Goods units in the (naval) attacker's hold — each unit is a −12.5% cargo penalty.</param>
 public readonly record struct AttackContext(
     bool WithoutAttackBonus = false,
     MovementPenalty Movement = MovementPenalty.None,
     bool Amphibious = false,
-    bool ArtilleryInOpen = false);
+    bool ArtilleryInOpen = false,
+    int GoodsCarried = 0);
 
 /// <summary>Situational modifiers on the defender (all percentages).</summary>
 /// <param name="TerrainDefenceBonus">The defending tile's defence bonus percentage (hills 100, forest 50, …).</param>
 /// <param name="Fortified">The defender is fortified (FreeCol <c>FORTIFIED</c>, +50%).</param>
 /// <param name="SettlementDefenceBonus">A settlement's defence bonus percentage, if defending one.</param>
+/// <param name="GoodsCarried">Goods units in the (naval) defender's hold — each unit is a −12.5% cargo penalty.</param>
 public readonly record struct DefenceContext(
     double TerrainDefenceBonus = 0,
     bool Fortified = false,
-    double SettlementDefenceBonus = 0);
+    double SettlementDefenceBonus = 0,
+    int GoodsCarried = 0);
 
 /// <summary>
 /// FreeCol's combat model (<c>SimpleCombatModel</c>): combines a unit's base offence/defence with
@@ -71,6 +78,7 @@ public static class CombatModel
     private const double AmphibiousPenalty = -0.75;
     private const double ArtilleryInOpenPenalty = -0.75;
     private const double FortifiedBonus = 0.50;        // +50%
+    private const double CargoPenalty = -0.125;        // −12.5% per goods unit carried (naval, both offence & defence)
 
     /// <summary>The attacker's total offence power: base offence times the situational modifiers.</summary>
     public static double AttackPower(double baseOffence, AttackContext context)
@@ -94,6 +102,7 @@ public static class CombatModel
         {
             power *= 1 + ArtilleryInOpenPenalty;
         }
+        power *= System.Math.Max(0, 1 + (CargoPenalty * context.GoodsCarried)); // laden ships attack worse
         return power;
     }
 
@@ -107,6 +116,7 @@ public static class CombatModel
             power *= 1 + FortifiedBonus;
         }
         power *= 1 + (context.SettlementDefenceBonus / 100.0);
+        power *= System.Math.Max(0, 1 + (CargoPenalty * context.GoodsCarried)); // laden ships defend worse
         return power;
     }
 
@@ -135,6 +145,34 @@ public static class CombatModel
         if (r < winProbability)
         {
             return CombatResult.Win;
+        }
+        if (r >= (0.1 * winProbability) + 0.9)
+        {
+            return CombatResult.GreatLoss;
+        }
+        return CombatResult.Loss;
+    }
+
+    /// <summary>
+    /// Resolves one <em>naval</em> round (FreeCol <c>SimpleCombatModel</c> ship-vs-ship): like <see cref="Resolve"/>
+    /// but the first 20% of the loss range is an <see cref="CombatResult.Evade"/> (every ship has
+    /// <c>evadeAttack</c>). Bands: <c>r &lt; 0.1·win</c> great win; <c>&lt; win</c> win; <c>&lt; 0.8·win+0.2</c>
+    /// evade; <c>≥ 0.1·win+0.9</c> great loss; else loss. One draw from <paramref name="random"/> (ADR-009).
+    /// </summary>
+    public static CombatResult ResolveNaval(double winProbability, IGameRandom random)
+    {
+        double r = random.NextDouble();
+        if (r < 0.1 * winProbability)
+        {
+            return CombatResult.GreatWin;
+        }
+        if (r < winProbability)
+        {
+            return CombatResult.Win;
+        }
+        if (r < (0.8 * winProbability) + 0.2)
+        {
+            return CombatResult.Evade;
         }
         if (r >= (0.1 * winProbability) + 0.9)
         {

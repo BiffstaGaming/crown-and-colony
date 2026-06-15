@@ -796,9 +796,15 @@ public sealed class Game
         {
             return MoveCheck.No($"A {attacker.Type.ShortName} has no offensive strength — arm it first.");
         }
-        if (DefenderAt(attacker, target) is null)
+        if (DefenderAt(attacker, target) is not { } defender)
         {
             return MoveCheck.No("There is no enemy to attack there.");
+        }
+        if (defender.Type.IsNaval != attacker.Type.IsNaval)
+        {
+            // Ships and land units don't fight each other directly (FreeCol Unit.canAttack); a ship attacks ships,
+            // a land unit attacks land units. (Ship bombardment of land / forts firing on ships is a later slice.)
+            return MoveCheck.No("Ships and land units cannot attack each other directly.");
         }
         return MoveCheck.Yes(0);
     }
@@ -839,11 +845,16 @@ public sealed class Game
             ChangeTension(attacker.OwnerId, defender.OwnerId, TensionWar);
         }
 
+        // Naval combat (ship vs ship): no terrain bonus on water, a cargo penalty per hold slot, and the
+        // defender may evade. A land unit can't stand on a water tile to defend, so a naval defender ⇒ ship-vs-ship.
+        bool naval = defender.Type.IsNaval;
         var attackContext = new AttackContext(
             Movement: MovementPenaltyFor(attacker), // snapshot the movement penalty before spending it
-            ArtilleryInOpen: attacker.Type.Bombard); // 5b defenders are in the open, never in a settlement
+            ArtilleryInOpen: !naval && attacker.Type.Bombard, // a land rule (artillery in the open); never for ships
+            GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0); // FreeCol cargo penalty is goods only, not passengers
         var defenceContext = new DefenceContext(
-            TerrainDefenceBonus: Map.TerrainAt(target).DefenceBonus);
+            TerrainDefenceBonus: naval ? 0 : Map.TerrainAt(target).DefenceBonus, // open water has no terrain bonus
+            GoodsCarried: naval ? GoodsSlotsUsed(defender) : 0);
 
         double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext);
         double defencePower = CombatModel.DefencePower(DefenceBase(defender), defenceContext);
@@ -852,7 +863,14 @@ public sealed class Game
         // object (UpgradeUnitType copies MovementLeft, so the swapped unit inherits the spent turn).
         attacker.MovementLeft = 0;
 
-        CombatResult result = CombatModel.Resolve(CombatModel.WinProbability(attackPower, defencePower), random);
+        double winProbability = CombatModel.WinProbability(attackPower, defencePower);
+        CombatResult result = naval
+            ? CombatModel.ResolveNaval(winProbability, random)
+            : CombatModel.Resolve(winProbability, random);
+        if (result == CombatResult.Evade)
+        {
+            return result; // the defender dodged: nobody hurt, the attacker's turn already spent (FreeCol csEvadeAttack)
+        }
         bool attackerWon = result is CombatResult.GreatWin or CombatResult.Win;
         bool great = result is CombatResult.GreatWin or CombatResult.GreatLoss;
         Unit winner = attackerWon ? attacker : defender;
@@ -1009,6 +1027,15 @@ public sealed class Game
     /// </summary>
     private void ResolveLoserOutcome(Unit winner, Unit loser)
     {
+        // 0. A defeated ship sinks (1c-3a, sink-only — damage/repair is a later slice), taking its cargo and
+        // everyone aboard down with it. (FreeCol damages by default and sinks only with no repair location; that
+        // distinction arrives with the repair state.)
+        if (loser.Type.IsNaval)
+        {
+            SinkShip(loser);
+            return;
+        }
+
         RoleType loserRole = Ruleset.Role(loser.RoleId);
 
         // 1. Doomed on any combat loss (braves, scouts) → destroyed.
@@ -1056,6 +1083,18 @@ public sealed class Game
         }
 
         _units.Remove(loser);
+    }
+
+    /// <summary>
+    /// Sinks a defeated ship: removes the hull <em>and</em> everyone aboard (passengers drown — FreeCol
+    /// <c>csSinkShip</c>); its goods cargo vanishes with the object (drowned, not looted — looting is a later
+    /// slice). Removing the carried units first also fixes a latent orphan: a bare <c>_units.Remove(ship)</c>
+    /// would otherwise strand passengers with a dangling <c>CarrierId</c> and a stale position.
+    /// </summary>
+    private void SinkShip(Unit ship)
+    {
+        _units.RemoveAll(u => u.CarrierId == ship.Id); // passengers go down with the ship
+        _units.Remove(ship);
     }
 
     /// <summary>Captures a defeated unit: it changes to the winner's side (with the capture type-change, if any) and is disarmed.</summary>
@@ -2061,6 +2100,9 @@ public sealed class Game
         ship.Cargo.Sum(kv => SlotsFor(kv.Value))
         + _units.Where(u => u.CarrierId == ship.Id).Sum(u => u.Type.CarrySlots);
 
+    /// <summary>Hold slots a ship's <em>goods</em> occupy (FreeCol <c>getGoodsSpaceTaken</c>) — excludes passengers. The naval cargo combat penalty applies to goods only.</summary>
+    public int GoodsSlotsUsed(Unit ship) => ship.Cargo.Sum(kv => SlotsFor(kv.Value));
+
     /// <summary>Hold slots still free on a ship (FreeCol <c>getSpaceLeft</c>).</summary>
     public int CargoSlotsFree(Unit ship) => CargoCapacity(ship) - CargoSlotsUsed(ship);
 
@@ -2409,6 +2451,7 @@ public sealed class Game
     /// a colony where it stands while the power has fewer than <see cref="MaxAiColonies"/> colonies, else steps
     /// one tile toward the nearest unexplored tile; ships and non-founders idle. Every choice draws from the
     /// player's own RNG stream (ADR-009) — never the human's stream 0 — so the human's game stays byte-stable.
+    /// At war an armed <b>warship</b> hunts the human's nearest ship too (1c-3a′); transports/unarmed ships idle.
     /// </summary>
     private void RunForeignPowerTurn(Player power)
     {
@@ -2417,9 +2460,9 @@ public sealed class Game
         // Snapshot the owned units (founding/combat removes a unit from _units mid-loop).
         foreach (Unit unit in _units.Where(u => IsOwnedBy(u, power)).OrderBy(u => u.Id).ToList())
         {
-            if (!unit.IsOnMap || unit.Type.IsNaval)
+            if (!unit.IsOnMap)
             {
-                continue; // ships idle; units still in Europe wait
+                continue; // units still in Europe wait (a warship can now act below; an unarmed ship falls through to idle)
             }
 
             // At war, an armed unit goes after the human's nearest unit instead of expanding (1c-2). Combat draws
@@ -2569,14 +2612,15 @@ public sealed class Game
     }
 
     /// <summary>
-    /// The nearest on-map human-owned unit to <paramref name="hunter"/> (Chebyshev, ties broken by position), or
-    /// null if the human has none on the map. This filter is the <b>sole contract</b> that keeps the AI attacking
-    /// the human only (both native braves and foreign powers at war use it): the engine's
-    /// <see cref="CheckAttack"/>/<see cref="DefenderAt"/> gate on owner-inequality (<see cref="AreEnemies"/>),
-    /// which would also admit other rivals, so a hunter is only ever handed a human target here.
+    /// The nearest on-map human-owned unit the <paramref name="hunter"/> can fight (Chebyshev, ties broken by
+    /// position), or null if none. Two filters: (1) human-owned — the <b>sole contract</b> keeping the AI
+    /// attacking the human only (the engine's <see cref="CheckAttack"/>/<see cref="DefenderAt"/> gate on
+    /// owner-inequality would also admit other rivals); (2) <b>same domain</b> — a ship hunts ships, a land unit
+    /// hunts land units (naval and land combat don't mix), so a warship never chases an unreachable land unit and
+    /// a brave never chases a ship.
     /// </summary>
     private Unit? NearestHumanUnit(Unit hunter) =>
-        _units.Where(u => u.IsOnMap && IsHumanOwned(u))
+        _units.Where(u => u.IsOnMap && IsHumanOwned(u) && u.Type.IsNaval == hunter.Type.IsNaval)
             .OrderBy(u => Chebyshev(u.Position, hunter.Position))
             .ThenBy(u => u.Position.Y).ThenBy(u => u.Position.X)
             .FirstOrDefault();

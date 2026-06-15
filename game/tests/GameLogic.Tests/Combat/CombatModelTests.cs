@@ -108,4 +108,25 @@ public class CombatModelTests
     {
         Assert.Equal(expected, CombatModel.Resolve(0.5, new FixedRandom(roll)));
     }
+
+    [Theory]
+    [InlineData(0.00, CombatResult.GreatWin)]  // r < 0.1·win (0.05)
+    [InlineData(0.30, CombatResult.Win)]       // r < win (0.5)
+    [InlineData(0.55, CombatResult.Evade)]     // win ≤ r < 0.8·win+0.2 (0.6) — ships evade
+    [InlineData(0.70, CombatResult.Loss)]      // 0.6 ≤ r < 0.1·win+0.9 (0.95)
+    [InlineData(0.96, CombatResult.GreatLoss)] // r ≥ 0.95
+    public void ResolveNaval_PartitionsTheRange_WithAnEvadeBand(double roll, CombatResult expected)
+    {
+        Assert.Equal(expected, CombatModel.ResolveNaval(0.5, new FixedRandom(roll)));
+    }
+
+    [Fact]
+    public void CargoPenalty_WeakensBothOffenceAndDefence_PerSlot()
+    {
+        // FreeCol's −12.5% per goods slot, on both sides.
+        Assert.Equal(8 * 1.5 * 0.75, CombatModel.AttackPower(8, new AttackContext(GoodsCarried: 2)), 5);  // 2 slots → ×0.75
+        Assert.Equal(8 * 0.75, CombatModel.DefencePower(8, new DefenceContext(GoodsCarried: 2)), 5);
+        Assert.Equal(0, CombatModel.DefencePower(8, new DefenceContext(GoodsCarried: 8)), 5);             // full hold → floored at 0
+        Assert.Equal(8, CombatModel.DefencePower(8, new DefenceContext(GoodsCarried: 0)), 5);             // empty → no penalty
+    }
 }
