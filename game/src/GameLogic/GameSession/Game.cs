@@ -590,19 +590,49 @@ public sealed class Game
     private const string CaptureUnitsAbility = "model.ability.captureUnits";
     private const string CaptureEquipmentAbility = "model.ability.captureEquipment";
     private const string PlunderNativesAbility = "model.ability.plunderNatives"; // Hernán Cortés
+    private const string OffenceModifierId = "model.modifier.offence"; // Francis Drake (+50%, scoped to privateers)
+    private const string DefenceModifierId = "model.modifier.defence";
 
     /// <summary>
     /// A unit's offence base for combat: the type's pre-role additive plus its role's offence, then the
     /// type's own percentage multiplier (so a veteran soldier's +50% applies to base <em>and</em> role —
-    /// FreeCol's single index-ordered fold; the situational percentages come later in <see cref="CombatModel"/>).
+    /// FreeCol's single index-ordered fold; the situational percentages come later in <see cref="CombatModel"/>),
+    /// finally the owner's scoped Founding-Father combat factor (Francis Drake +50% for privateers).
     /// </summary>
     internal double OffenceBase(Unit unit) =>
-        (unit.Type.OffenceAdditive + Ruleset.Role(unit.RoleId).Offence) * unit.Type.OffenceMultiplier;
+        (unit.Type.OffenceAdditive + Ruleset.Role(unit.RoleId).Offence) * unit.Type.OffenceMultiplier
+        * FatherCombatFactor(unit, OffenceModifierId);
 
-    /// <summary>A unit's defence base for combat: the type's pre-role additive plus its (effective) role's defence, then the type's percentage multiplier.</summary>
+    /// <summary>A unit's defence base for combat: the type's pre-role additive plus its (effective) role's defence, the type's percentage multiplier, then the owner's scoped Founding-Father combat factor (Drake).</summary>
     internal double DefenceBase(Unit unit) =>
         (unit.Type.DefenceAdditive + Ruleset.Role(EffectiveCombatRole(unit, defending: true)).Defence)
-        * unit.Type.DefenceMultiplier;
+        * unit.Type.DefenceMultiplier
+        * FatherCombatFactor(unit, DefenceModifierId);
+
+    /// <summary>
+    /// The combat-power factor from the unit owner's elected Founding Fathers whose scoped offence/defence
+    /// modifier (<paramref name="targetId"/>) applies to this unit's type — <b>Francis Drake</b>'s +50% for
+    /// privateers is the only one in the classic ruleset. Folded as a power <em>multiplier</em>: every
+    /// <see cref="CombatModel"/> situational factor is multiplicative, so an index-50 percentage commutes with
+    /// the base and its position is immaterial (correct for percentage/multiplicative modifiers — the only one
+    /// is Drake). Returns 1.0 for a native-owned unit (no Congress) or when no matching father is elected.
+    /// </summary>
+    private double FatherCombatFactor(Unit unit, string targetId)
+    {
+        if (unit.OwnerNationId is not null || PlayerById(unit.OwnerId) is not { } owner)
+        {
+            return 1.0;
+        }
+        double factor = 1.0;
+        foreach (FatherModifier modifier in owner.Congress.Select(Ruleset.Father)
+            .SelectMany(f => f.Modifiers)
+            .Where(m => m.TargetId == targetId && m.AppliesTo(unit.Type.Id))
+            .OrderBy(m => m.Index))
+        {
+            factor = modifier.ApplyTo(factor);
+        }
+        return factor;
+    }
 
     /// <summary>
     /// The role a unit fights in. A defender may be automatically equipped for the fight (FreeCol

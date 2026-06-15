@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-15 — Francis Drake [next-5 plan, slice 3 · 1c-3d-ii]
+
+**Requested:** "get to it, do not stop" → next-5 slice 3: **Francis Drake** (`86d3buvfa`).
+**Did:** Implemented the **first scoped founding-father combat modifier**. Drake gives privateers **+50% offence and +50% defence** (`model.modifier.offence`/`defence`, index 50, scoped to `model.unit.privateer`). New infra: `FatherModifier` gains `ScopeUnitTypes` + `AppliesTo(unitTypeId)` and `ParseModifier` now reads `<scope>` (it previously dropped it); `Game.FatherCombatFactor(unit, targetId)` folds the unit **owner's** elected fathers' scoped offence/defence modifiers into `OffenceBase`/`DefenceBase`. So a privateer owned by a Drake-holder fights at **12/12** instead of 8/8; everyone else is unchanged. Per-owner (a foreign power's Drake boosts *its* privateers, not yours), dormant unless elected, rides the persisted Congress.
+**Status:** **513 tests green** (481 L1+L2 + 4 soak + 28 scene; +4 `DrakeTests`: +50% offence&defence for a privateer / no boost to non-privateers / per-owner isolation / spec-pinned scope). Build 0/0. Save format unchanged (v21); deterministic (no RNG). Process: FreeCol research (pinned Drake's two scoped percentage modifiers; confirmed `CombatModel` is purely multiplicative + Drake is the **only** father with offence/defence modifiers) → implement → **2-lens adversarial review** (fidelity + regression/determinism) → **APPROVE, no must-fix/should-fix** (both reviewers verified the commutativity claim — base-fold == FreeCol's index-50 application since every combat factor multiplies — and confirmed no production-modifier regression).
+**Changed:** `Specification/FoundingFather.cs` (`FatherModifier.ScopeUnitTypes`/`AppliesTo`), `Specification/Ruleset.cs` (`ParseModifier` reads `<scope>`), `GameSession/Game.cs` (`FatherCombatFactor` + `OffenceBase`/`DefenceBase` fold); tests `DrakeTests.cs` (new); docs `founding-fathers.md`/`combat.md`/`game-logic.md`/`QA-REPORT.md`.
+**Decisions:** Fold Drake as a **power multiplier in `OffenceBase`/`DefenceBase`** rather than threading an index-50 step through the combat context — mathematically identical (the combat model is purely multiplicative, so an index-50 percentage commutes with the base) and far simpler; documented. Correct for percentage/multiplicative scoped modifiers (the only one is Drake).
+**Scheduled next:** **slice 4 — 1c-3e-pre colony-tile attack path** (`new`): make a rival colony **tile** an attackable target (today `DefenderAt` is on-tile-units-only and `CheckMove` only blocks entering it) — add a colony-defender resolver. The structural prerequisite for colony **capture** (#6) and future native pillage. Then slice 5 ambient native alarm.
+**Follow-ups:** colony capture (#6, after the attack path); AI-initiated piracy; building-grant fathers (Smith/Stuyvesant/La Salle); European-diplomacy fathers (Franklin/de Witt); Bolívar (SoL).
+**Needs you:** Nothing blocking. Electing Francis Drake now makes your privateers 50% stronger on attack and defence — a real military pick.
+
 ## 2026-06-15 — Privateer piracy [next-5 plan, slice 2 · 1c-3d-i]
 
 **Requested:** "get to it, do not stop" → next-5 slice 2: **privateer piracy** (`86d3buvfa`).

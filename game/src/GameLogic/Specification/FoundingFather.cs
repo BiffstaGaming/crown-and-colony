@@ -52,10 +52,14 @@ public static class ModifierMath
 /// <param name="Type">How it combines with the base value.</param>
 /// <param name="Value">The modifier value (a percentage for <see cref="ModifierType.Percentage"/>).</param>
 /// <param name="Index">Application order — modifiers apply in ascending index (FreeCol <c>modifierIndex</c>).</param>
-public sealed record FatherModifier(string TargetId, ModifierType Type, double Value, int Index)
+/// <param name="ScopeUnitTypes">Unit-type ids this modifier is restricted to (FreeCol <c>&lt;scope&gt;</c>); empty/null = unscoped (applies to all). Francis Drake's combat modifiers scope to <c>model.unit.privateer</c>.</param>
+public sealed record FatherModifier(string TargetId, ModifierType Type, double Value, int Index, IReadOnlyList<string>? ScopeUnitTypes = null)
 {
     /// <summary>Applies this modifier to a running value.</summary>
     public double ApplyTo(double value) => ModifierMath.Apply(Type, value, Value);
+
+    /// <summary>Whether this modifier applies to a unit of <paramref name="unitTypeId"/> (unscoped modifiers apply to all).</summary>
+    public bool AppliesTo(string unitTypeId) => ScopeUnitTypes is not { Count: > 0 } || ScopeUnitTypes.Contains(unitTypeId);
 }
 
 /// <summary>

@@ -578,7 +578,13 @@ public sealed class Ruleset
             _ => ModifierType.Additive,
         },
         Value: (double?)m.Attribute("value") ?? 0,
-        Index: (int?)m.Attribute("index") ?? 0);
+        Index: (int?)m.Attribute("index") ?? 0,
+        // <scope type="model.unit.privateer"/> children restrict the modifier (Francis Drake → privateers only).
+        ScopeUnitTypes: m.Elements("scope")
+            .Select(s => (string?)s.Attribute("type"))
+            .Where(t => t is not null)
+            .Select(t => t!)
+            .ToList());
 
     private static FatherAbility ParseAbility(XElement a) => new(
         Id: RequiredAttribute(a, "id"),
