@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-16 — Colony capture plunder [queue slice 5 · sack the treasury]
+
+**Requested:** Autonomous overnight — keep shipping. Took the deferred **plunder gold on capture** now that I'd pinned the FreeCol `getPlunderRange` formula (found during the pillage research) — a contained, faithful slice building on the capture work.
+**Did:** A winning colony assault now **sacks the former owner's treasury**. `Game.PlunderColony` runs in the `AttackColony` win branch before the handover; `ColonyPlunderAmount` = FreeCol `getPlunderRange` (`upper = ownerGold×(colonyPop+1)/(coloniesPop+1)`, payout `rnd[0,upper]+1`, 0 if the owner is broke), capped at the victim's purse (no negative gold), transferred former-owner → captor. The draw is on the **captor's** stream — human stream 0 for a human capture, the power's own stream for a foreign-AI capture — so foreign capture never touches the human's stream 0 (ADR-009, triage-confirmed).
+**Status:** **551 tests green** (518 L1+L2 incl. +5 `ColonyPlunderTests` + 4 soak + 29 scene); build 0/0; **CI green** (`d9b2923`). Save **unchanged** (v21; gold already serialized). Process: research → implement → **2-lens adversarial review** → **APPROVE** (3 nits, none blocking; ADR-009 intact). Applied both recommended polish items (documented the conservation-preserving 1-gold cap deviation; fixed a stale test comment).
+**Changed:** `GameSession/Game.cs` (`PlunderColony`/`ColonyPlunderAmount` + win-branch); tests `ColonyPlunderTests.cs` (new) + `ForeignColonyCaptureTests.cs` (comment); docs `combat.md`/`modules/game-logic.md`/`QA-REPORT.md`. Commit `d9b2923`.
+**Decisions:** Cap at the victim's purse (conservation-preserving; documented divergence from FreeCol's mint-1-at-boundary). No save change. Deferred: native-pillage gold-steal (`getPlunder/5`); Revere auto-equip.
+**Scheduled next:** **native tribute demands** (`IndianDemandMission`, `86d3bkc3w`) OR the **human-defeat** task (`86d3bx04e`, high). Re-check the live kanban first.
+**Follow-ups:** native tribute; human defeat (`86d3bx04e`); native-pillage gold-steal; AI step-toward-colony pathing (`86d3bx03d`); Revere last-defender auto-equip; building-grant fathers (Smith/Stuyvesant); AI piracy; European-diplomacy fathers / Bolívar.
+**Needs you:** Nothing blocking. **Five slices shipped tonight.** The colonies-under-threat arc is now whole: rivals capture **and loot** your undefended colonies, angry tribes pillage them, walls (built or La-Salle-granted) defend them, and you conquer-and-loot rivals in return. Concurrent doc-audit agent also worked `main` — no conflicts, all pushes CI-green.
+
 ## 2026-06-16 — La Salle founding father [queue slice 4 · free stockade at pop 3]
 
 **Requested:** Autonomous overnight — keep shipping. La Salle was the natural next slice: the colony defence bonus just shipped gives his free stockade a real effect, and he's a contained Congress fold.
