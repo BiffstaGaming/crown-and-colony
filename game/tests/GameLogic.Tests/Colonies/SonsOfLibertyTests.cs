@@ -222,6 +222,53 @@ public class SonsOfLibertyTests
         Assert.Equal(baseHammers + 2, boosted);
     }
 
+    // ── H. Bell upkeep — a colony nets bells minus consumption (the first two colonists are free) ────────────
+
+    [Fact]
+    public void BellUpkeep_FirstTwoColonistsAreFree_EachBeyondConsumesOne()
+    {
+        // One unattended town-hall bell/turn; the only variable is population (upkeep = max(0, pop−2)).
+        int LibertyGained(int population)
+        {
+            Game game = ColonyOnPlains(population);
+            SaveGame save = SaveGame.From(game);
+            SavedColony c = save.Colonies!.Single() with
+            {
+                Population = population, Workers = null,
+                Stores = new Dictionary<string, int> { ["model.goods.food"] = 50 }, // fed; no growth/starvation
+            };
+            Game restored = (save with { Colonies = [c] }).Restore(Classic);
+            Colony colony = restored.Colonies[0];
+            int before = colony.Liberty;
+            restored.EndTurn();
+            return colony.Liberty - before;
+        }
+
+        Assert.Equal(1, LibertyGained(2)); // 1 bell − 0 upkeep
+        Assert.Equal(0, LibertyGained(3)); // 1 bell − 1 upkeep
+    }
+
+    [Fact]
+    public void BellUpkeep_AColonyThatOutgrowsItsBells_LosesLiberty()
+    {
+        // pop 5, only the unattended town-hall bell (1) vs upkeep 3 → net −2/turn; banked Sons of Liberty erodes.
+        Game game = ColonyOnPlains(population: 5);
+        SaveGame save = SaveGame.From(game);
+        SavedColony c = save.Colonies!.Single() with
+        {
+            Population = 5, Workers = null,
+            Stores = new Dictionary<string, int> { ["model.goods.food"] = 30 },
+            Liberty = 400, // SoL 40
+        };
+        Game restored = (save with { Colonies = [c] }).Restore(Classic);
+        Colony colony = restored.Colonies[0];
+        int before = colony.Liberty;
+
+        restored.EndTurn();
+
+        Assert.True(colony.Liberty < before, "a colony consuming more bells than it makes loses liberty (SoL can fall)");
+    }
+
     private static Game ColonyOnPlains(int population)
     {
         var save = new SaveGame

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (Slice A model + bar, Slice B production bonus; bell upkeep deferred) |
+| **Status** | Implemented (model + bar + production bonus + bell upkeep + Simón Bolívar) |
 | **Last verified** | 2026-06-16 @ Slice B — production bonus applied to tile + building output (579 L1+L2 incl. soak + scene suite green) |
 | **Code** | `game/src/GameLogic/Colonies/Colony.cs` (liberty + SoL properties), `game/src/GameLogic/GameSession/Game.cs` (`AccumulateLibertyAndElectFathers`) |
 | **Tests** | `game/tests/GameLogic.Tests/Colonies/SonsOfLibertyTests.cs`, `game/presentation/tests/ColonyPanelTests.cs` (the bar) |
@@ -36,10 +36,11 @@ Every colony has a mood. As its town hall produces **liberty bells**, the coloni
 | royalists > 10 | **−2** |
 | royalists > 6 (and ≤ 10) | **−1** |
 | otherwise | **0** (a small colony — ≤ 6 royalists — never gets a penalty regardless of low SoL) |
-| bells produced this turn `b` (FF-modified) | colony liberty `+= b`; floored at 0; clamped to `200·P` once SoL reaches 100 |
+| Bolívar (`model.modifier.SoL`) in the owner's Congress | SoL% gets **+20** (added after the conversion, before the clamp) |
+| net bells this turn `n = (FF-modified gross) − max(0, P−2)` | colony liberty `+= n` (floored at 0; clamped to `200·P` once SoL ≥ 100); player founding-father pool `+= n` (floored at 0) |
 
 **Deviations from original 1994 / FreeCol behavior:**
-- **No bell upkeep yet.** FreeCol nets bell **consumption** (each colonist past the first two eats 1 bell/turn) before banking, so a big low-bell colony can *lose* liberty. We bank the gross (FF-modified) figure — so SoL only rises. The net-of-upkeep accumulation (which also shifts founding-father election timing) is a separate deferred refinement; until then the `AddLiberty` floor-at-0 path exists but isn't exercised by the turn loop.
+- **Bell upkeep is in.** Each colonist past the first two consumes 1 bell/turn (FreeCol `unitsThatUseNoBells` = 2), netted off before banking — so a colony that outgrows its bell output *loses* liberty and its SoL falls. A growing colony must **staff its town hall** to keep electing fathers; the net figure also feeds the player's founding-father pool (floored at 0), so it shifts election timing for large colonies. (No `model.difficulty` model yet → the "2 free colonists" constant is hardcoded, as on every classic level.)
 - **Production bonus display (tile badges).** The bonus is applied to actual colony output (Slice B), but the colony-screen *tile badges* still show each tile's base yield (the bonus is reflected in the SoL bar, not per-tile). Showing the effective per-tile yield is a presentation follow-up.
 - **Government limits are medium-difficulty.** FreeCol's `badGovernmentLimit`/`veryBadGovernmentLimit` (and the bonus limits) are *difficulty options* and differ per level (veryEasy 8/12 … medium **6/10** … veryHard 4/8). We hardcode **medium** (the classic default), consistent with the other tuning constants; they must become data-driven when a difficulty system lands.
 - **Simón Bolívar (+20 SoL)** — implemented as a standing modifier: `Colony.SolModifierBonus` (the owner's Congress `model.modifier.SoL` sum) is added to the SoL percentage after the liberty→% conversion (FreeCol's order), refreshed from Congress on election/founding/load. Not a one-time liberty bake, so it stays correct as colonies grow/starve. See [founding-fathers](founding-fathers.md).
@@ -63,7 +64,7 @@ Every colony has a mood. As its town hall produces **liberty bells**, the coloni
 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
-| L1 Unit | Always | `SonsOfLibertyTests` — SoL% (half/full/over/truncate/empty), rebel+tory split (sum=pop), bonus tiers incl. the 6/10 penalty pins, `AddLiberty` floor + 100%-cap, per-turn accumulation tracking the player pool, v22 save round-trip (+ omitted-when-0, pre-v22 loads 0), **the bonus reaching tile + building output (+2/worker)** | ✅ |
+| L1 Unit | Always | `SonsOfLibertyTests` — SoL% (half/full/over/truncate/empty), rebel+tory split (sum=pop), bonus tiers incl. the 6/10 penalty pins, `AddLiberty` floor + 100%-cap, per-turn accumulation tracking the player pool, v22 save round-trip (+ omitted-when-0, pre-v22 loads 0), the bonus reaching tile + building output (+2/worker), **bell upkeep (first two colonists free; a colony outgrowing its bells loses liberty)** | ✅ |
 | L2 Scenario | When economy-touching | Existing economy suites unchanged (bonus is 0 below goodGovernment, so pop≤6/SoL-0 colonies are byte-identical — verified zero churn) | ✅ |
 | L3 Interaction | The bar | `ColonyPanelTests.SonsOfLibertyBar_ShowsRebelsRoyalistsAndBonus_FromColonyLiberty` (pop 5 / liberty 600 → Rebels 3, 60%, Bonus +1, Royalists 2, 40%) | ✅ |
 | L4 Visual | Optional | — | ⬜ |
@@ -73,5 +74,6 @@ Every colony has a mood. As its town hall produces **liberty bells**, the coloni
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-16 | **Bell upkeep + Bolívar.** Banking now nets bell **upkeep** (each colonist past the first two eats 1 bell — `AccumulateLibertyAndElectFathers`), so a colony that outgrows its bell output loses liberty (SoL falls) and the player's founding-father pool nets it too (floored at 0). **Simón Bolívar** grants a standing **+20 SoL%** to his player's colonies (`Colony.SolModifierBonus` from Congress, folded into `SonsOfLiberty`). +4 L1 (2 upkeep + the Bolívar suite in `FoundingFatherEffectsTests`). Journey 4 re-derived (a growing colony must staff its town hall to keep electing fathers — faithful). | Phase 5 (Sons of Liberty) |
 | 2026-06-16 | **Slice B — production bonus applied.** `Colony.ProductionBonus` (+2/+1/0/−1/−2) now adds to each attended worker's output in `RunColonyTurn` (tile workers) and `RunBuildingProduction` (building workers), floored at 0; the unattended colony square + town-hall bell are excluded. Zero churn on the 579 existing tests (bonus is 0 below goodGovernment, which every existing test colony is) + soak green (floor-at-0 prevents negative production). +2 L1 application tests. **Bell upkeep still deferred** (broader FF-timing change). | Phase 5 (Sons of Liberty) |
 | 2026-06-16 | **Slice A — model + bar.** Per-colony `Liberty` (save v22) + `SonsOfLiberty`/`RebelCount`/`ToryCount`/`ProductionBonus` computed properties; banked alongside the founding-father pool in `AccumulateLibertyAndElectFathers` (same figure to both). Colony-screen Rebels/Population/Royalists band + SoL% + production-bonus + a membership meter (presentation reads the properties only, ADR-006). Bonus **computed but not applied** → zero economy churn. +25 L1 `SonsOfLibertyTests` + 1 L3. No upkeep yet. | Phase 5 colony UI |

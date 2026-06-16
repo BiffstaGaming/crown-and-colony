@@ -38,6 +38,9 @@ public sealed class Game
     /// <summary>The warehouse goods id for liberty bells.</summary>
     private const string BellsId = "model.goods.bells";
 
+    /// <summary>Colonists who consume no bell upkeep — the first two are free; each beyond eats 1 bell/turn (FreeCol <c>unitsThatUseNoBells</c>, 2 on all classic difficulties). A colony must staff its town hall to outpace this as it grows.</summary>
+    private const int UnitsThatUseNoBells = 2;
+
     /// <summary>The terrain a ship sets sail to Europe from (the map's outer edge).</summary>
     private const string HighSeasId = "model.tile.highSeas";
 
@@ -3476,11 +3479,15 @@ public sealed class Game
             if (bells > 0)
             {
                 colony.AddGoods(BellsId, -bells); // bells become liberty, not tradeable stock
-                int liberty = ApplyGoodsModifiers(player, BellsId, bells); // founding-father bonuses (Jefferson, Paine)
-                player.Liberty += liberty; // banked toward the next founding father
-                colony.AddLiberty(liberty); // the colony's own Sons-of-Liberty liberty (FreeCol feeds both pools the same figure)
+                // Net of bell upkeep: the founding-father bonus (Jefferson/Paine) applies to the gross production,
+                // then each colonist past the first two consumes 1 bell — so a colony that grows faster than its bell
+                // output loses liberty (its Sons of Liberty can fall). FreeCol feeds the same net figure to both pools.
+                int net = ApplyGoodsModifiers(player, BellsId, bells) - Math.Max(0, colony.Population - UnitsThatUseNoBells);
+                player.Liberty += net;   // banked toward the next founding father
+                colony.AddLiberty(net);  // the colony's own Sons-of-Liberty liberty (AddLiberty floors at 0)
             }
         }
+        player.Liberty = Math.Max(0, player.Liberty); // a net-negative bell turn can't push the founding-father pool below 0
 
         if (player.CurrentFather is not null && player.Liberty >= TotalFoundingFatherCost(player))
         {

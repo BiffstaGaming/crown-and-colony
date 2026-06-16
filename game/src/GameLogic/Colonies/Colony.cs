@@ -98,10 +98,10 @@ public sealed class Colony
     public string? CurrentBuild { get; internal set; }
 
     /// <summary>
-    /// Accumulated liberty points from bell production (FreeCol <c>Colony.liberty</c>). Drives
-    /// <see cref="SonsOfLiberty"/>. Floored at 0; persisted (SaveGame v22). NOTE: this first cut accumulates the
-    /// same (founding-father-modified) bell figure the player pool gets, with no bell upkeep yet — so SoL only
-    /// rises; the FreeCol net-of-upkeep accumulation (which lets SoL fall) lands with the production-bonus slice.
+    /// Accumulated liberty points from <b>net</b> bell production (gross bells − upkeep; FreeCol <c>Colony.liberty</c>).
+    /// Drives <see cref="SonsOfLiberty"/>. Floored at 0; persisted (SaveGame v22). Each turn the colony banks the same
+    /// founding-father-modified figure the player pool gets, less bell upkeep — so a colony that outgrows its bell
+    /// output loses liberty and its Sons of Liberty can fall.
     /// </summary>
     public int Liberty { get; internal set; }
 

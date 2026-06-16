@@ -180,11 +180,13 @@ public class FoundingFatherEffectsTests
     [Fact]
     public void ElectingBolivar_BumpsExistingColoniesImmediately()
     {
-        Game game = SoLColony(congress: null, currentFather: Bolivar, playerLiberty: 23); // tips election this turn
+        // Player liberty already over the first father's cost, so Bolívar is elected this turn regardless of the
+        // (unstaffed) colony's bell upkeep.
+        Game game = SoLColony(congress: null, currentFather: Bolivar, playerLiberty: 100);
         Assert.Equal(25, game.Colonies[0].SonsOfLiberty); // before election
         game.EndTurn();
         Assert.Contains(Bolivar, game.Congress);
-        Assert.True(game.Colonies[0].SonsOfLiberty >= 45, "the elected Bolívar grants the standing +20 at once");
+        Assert.True(game.Colonies[0].SonsOfLiberty >= 40, "the elected Bolívar grants the standing +20 at once");
     }
 
     /// <summary>A pop-5 colony seeded with <paramref name="liberty"/> colony liberty (default 250 → base SoL 25), optionally food-stocked to grow.</summary>

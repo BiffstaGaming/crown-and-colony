@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
@@ -278,9 +279,18 @@ public class JourneyTests
     public void Journey4_TwoSequentialFatherElectionsWithCostEscalation()
     {
         var game = Game.New(Classic, seed: 42);
-        game.FoundColony(game.Units[0]);
+        Colony colony = game.FoundColony(game.Units[0]);
 
-        // M1 — first election: choose a father, accrue 1 liberty/turn (town hall), elect at 24.
+        // A lone food-farming colony grows and stalls liberty (bell upkeep outpaces its single unattended bell);
+        // staff the town hall instead — the colony square feeds the one colonist, and statesmen make the bells that
+        // elect fathers (faithful: a colony must produce liberty to keep accruing it).
+        foreach (Position field in new List<Position>(colony.TileWorkers.Keys))
+        {
+            game.UnassignWork(colony, field);
+        }
+        game.AssignBuildingWork(colony, "model.building.townHall");
+
+        // M1 — first election: choose a father, accrue bells from the staffed town hall, elect at cost 24.
         string father1 = game.OfferedFathers[0];
         game.ChooseFather(father1);
         for (int t = 0; t < 60 && game.Congress.Count == 0; t++)
