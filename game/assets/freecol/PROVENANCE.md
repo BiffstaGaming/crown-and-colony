@@ -19,8 +19,14 @@ variants omitted).
 **UI skin** (`ui/bg_paper_brown.png`, 291×295) — the colony window's brown
 parchment background, tiled as the panel fill so the map can't show through.
 Copied unmodified from FreeCol `data/base/resources/images/ui/bg_paper_brown.png`
-(GPL v2, ADR-014). The decorative carved-wood border and the lighter inner
-parchment are not yet adopted.
+(GPL v2, ADR-014).
+
+**UI border** (`ui/colony_border.png`, 194×194 nine-patch) — the colony
+window's carved-wood frame. **Composited** (not unmodified) from FreeCol's
+`data/base/resources/images/ui/border/carvedwood/carvedwoodenborder-{nw,n,ne,w,e,sw,s,se}.png`
+edge/corner pieces, assembled into one 23px-margin nine-patch for Godot's
+`NinePatchRect` — a mechanical layout of the GPL pieces, itself GPL v2 (ADR-014).
+The lighter inner parchment is not yet adopted.
 
 Per ADR-013, any of these may be replaced individually later; keep this file
 and the Asset Register current when that happens. FreeCol also ships 4×

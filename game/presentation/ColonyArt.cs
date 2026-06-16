@@ -76,6 +76,9 @@ public static class ColonyArt
     /// <summary>The colony window's brown parchment skin (FreeCol <c>bg_paper_brown</c>), tiled as the panel fill; null if the asset is absent (the panel then falls back to a solid fill).</summary>
     public static Texture2D? PanelParchment() => Load("ui/bg_paper_brown.png");
 
+    /// <summary>The colony window's carved-wood frame — FreeCol's <c>carvedwoodenborder</c> edge/corner pieces composited into one 194×194 nine-patch (23px margins); null if absent.</summary>
+    public static Texture2D? ColonyBorder() => Load("ui/colony_border.png");
+
     /// <summary>The colony settlement sprite drawn at the centre of the tiles grid.</summary>
     public static Texture2D? ColonyIcon() => Load("settlements/small.png");
 

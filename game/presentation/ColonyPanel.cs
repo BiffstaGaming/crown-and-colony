@@ -29,6 +29,17 @@ public partial class ColonyPanel : PanelContainer
     private static readonly string[] ArmRoles =
         ["model.role.soldier", "model.role.dragoon", "model.role.scout", "model.role.pioneer"];
 
+    /// <summary>Wires the carved-wood frame (a sibling <c>NinePatchRect</c>) to follow the panel's visibility — it overlays the parchment edge, drawn on top with its centre cut out so the content shows through.</summary>
+    public override void _Ready()
+    {
+        if (GetParent().GetNodeOrNull<NinePatchRect>("ColonyBorder") is { } border)
+        {
+            border.Texture = ColonyArt.ColonyBorder();
+            border.Visible = Visible;
+            VisibilityChanged += () => border.Visible = Visible;
+        }
+    }
+
     /// <summary>Opens the panel for a colony. <paramref name="onChange"/> runs after every action.</summary>
     public void Open(Game game, Colony colony, Action onChange)
     {
@@ -67,11 +78,11 @@ public partial class ColonyPanel : PanelContainer
                 AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Tile,
                 AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Tile,
             };
-            skin.SetContentMarginAll(16);
+            skin.SetContentMarginAll(26); // inset so the content clears the 23px carved-wood frame
             return skin;
         }
         var flat = new StyleBoxFlat { BgColor = new Color(0.18f, 0.12f, 0.07f) }; // warm parchment-brown fallback
-        flat.SetContentMarginAll(16);
+        flat.SetContentMarginAll(26);
         return flat;
     }
 
