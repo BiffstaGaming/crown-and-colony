@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-16 — Click-to-move tile workers [playtest fix · "can't move colonists around each tile"]
+
+**Requested:** Chris (playing the new parchment colony screen): "looks better but i cant move the colonists around each tile."
+**Did:** Root cause — with one worker and **0 idle**, the free-tile *Work…* pickers were hidden (gated on idle>0), so there was no visible way to relocate the worker (only the tiny ✕ release, then a picker appears — undiscoverable). Added FreeCol's **drag-a-colonist gesture, click-based** (so it stays testable): each surrounding tile now has a transparent whole-tile hit button (`Tile_x_y`, layered *under* the ✕/picker so those keep their clicks). **Click a worked tile** → pick the colonist up (it highlights yellow + a hint appears); **click a free tile** → move it there (best-yield good); **click the colony centre** → send it idle; clicking a free tile with an idle colonist drops it straight on. The ✕ release + good-picker stay for explicit control.
+**Status:** **CI green** (`a5c24c3`); **38 scene** (+1 L3 `ClickingAWorkedTileThenAFreeTile_MovesTheColonist`) + 552 logic green. Verified visually at 1920×1040 (held-highlight + hint render). Presentation-only (ADR-006) over existing `AssignWork`/`UnassignWork`; best-good via `TileWorkOptions` (a rules query); no logic/save/RNG change.
+**Changed:** `presentation/ColonyPanel.cs` (`_heldFrom` + `OnTileClicked` + per-tile `Tile_x_y` hit buttons + `_heldFrom` reset in `Open`), `ColonyPanelTests.cs` (+1); docs `colonies.md`/`presentation.md`/`QA-REPORT.md`. Commit `a5c24c3`.
+**Decisions:** Click-to-move (pick-up → drop) over true Godot drag-and-drop — same gesture, but EmitSignal-testable and no headless-DnD-pipeline risk. Kept ✕/picker for fine control (choose a *specific* good, e.g. lumber vs grain on a forest tile). Drop-on-town = idle (intuitive); idle-drop-on-tile = assign.
+**Scheduled next:** Chris's playtest steer; otherwise the deferred **per-colony SoL model + Rebels/Royalists bar** (`86d3c3j7z`, the one FreeCol element still missing) or back to the autonomous queue.
+**Follow-ups:** per-colony SoL + bar; FreeCol decorative wood border; route production bar through a real net-production oracle; per-colonist identity (`86d3b6nrz`); (optional) true drag-and-drop + drag colonists to/from buildings & the outside-row.
+**Needs you:** **Try it** — relaunched; open a colony, click the colonist on its tile, then click another tile to move it (or the town centre to free it). Tell me if the gesture feels right or you'd prefer literal drag-and-drop. The Rebels/Royalists SoL bar is still the one missing FreeCol piece (needs a GameLogic change first).
+
 ## 2026-06-16 — Colony screen: bug fixes + FreeCol parchment fidelity pass [playtest screenshot → research workflow]
 
 **Requested:** Chris played the new colony screen and sent a screenshot at his real ~1960px window — it had the map showing through the panel and the bottom bars stranded in a void, and still looked "Godot-default" not FreeCol.
