@@ -224,6 +224,40 @@ public class ColonyPanelTests
         AssertThat(colony.IdleColonists).IsEqual(0);
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task SonsOfLibertyBar_ShowsRebelsRoyalistsAndBonus_FromColonyLiberty()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Inject a known liberty + population via the save layer (Colony.Liberty is internal to GameLogic):
+        // pop 5 + liberty 600 → SoL 60% → 3 rebels, 2 royalists, +1 production bonus.
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!
+            .Select(c => c.Id == founded.Id ? c with { Population = 5, Liberty = 600 } : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+        PanelContainer panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+
+        AssertThat(LabelText(panel, "RebelCount")).IsEqual("Rebels: 3");
+        AssertThat(LabelText(panel, "RebelPercent")).IsEqual("60%");
+        AssertThat(LabelText(panel, "PopulationCount")).IsEqual("Population: 5");
+        AssertThat(LabelText(panel, "ProductionBonus")).IsEqual("Bonus: +1");
+        AssertThat(LabelText(panel, "RoyalistCount")).IsEqual("Royalists: 2");
+        AssertThat(LabelText(panel, "RoyalistPercent")).IsEqual("40%");
+    }
+
+    private static string LabelText(PanelContainer panel, string name) =>
+        ((Label)panel.FindChild(name, recursive: true, owned: false)).Text;
+
     private static Button TileButton(PanelContainer panel, Position tile) =>
         (Button)panel.FindChild($"Tile_{tile.X}_{tile.Y}", recursive: true, owned: false);
 

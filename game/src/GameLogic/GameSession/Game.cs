@@ -3473,7 +3473,9 @@ public sealed class Game
             if (bells > 0)
             {
                 colony.AddGoods(BellsId, -bells); // bells become liberty, not tradeable stock
-                player.Liberty += ApplyGoodsModifiers(player, BellsId, bells); // founding-father bonuses (Jefferson, Paine)
+                int liberty = ApplyGoodsModifiers(player, BellsId, bells); // founding-father bonuses (Jefferson, Paine)
+                player.Liberty += liberty; // banked toward the next founding father
+                colony.AddLiberty(liberty); // the colony's own Sons-of-Liberty liberty (FreeCol feeds both pools the same figure)
             }
         }
 

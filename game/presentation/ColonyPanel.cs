@@ -217,7 +217,7 @@ public partial class ColonyPanel : PanelContainer
         // horizontal expander in the row, mirroring FreeCol's [fill][474!] columns.
         var col = new VBoxContainer { CustomMinimumSize = new Vector2(500, 0), SizeFlagsHorizontal = SizeFlags.Fill };
         col.AddThemeConstantOverride("separation", 8);
-        col.AddChild(PopulationStrip());
+        col.AddChild(SonsOfLibertyBar());
         Control tiles = IsometricTiles();
         tiles.SizeFlagsHorizontal = SizeFlags.ShrinkCenter; // centre the fixed-size tile view in the column
         col.AddChild(tiles);
@@ -226,24 +226,55 @@ public partial class ColonyPanel : PanelContainer
     }
 
     /// <summary>
-    /// FreeCol's population strip is a row of colonist portraits, not text — we mirror that here (the population
-    /// <em>count</em> already shows in the info line). One sprite per colonist, capped so a big colony doesn't
-    /// overflow. Sons-of-Liberty / Rebels / Royalists are deliberately omitted: the model has no per-colony liberty
-    /// data yet (ADR-006 — presentation must not invent rules), tracked as a separate follow-up.
+    /// FreeCol's population / Sons-of-Liberty band: Rebels (count + SoL%) · Population (+ the production bonus) ·
+    /// Royalists (count + 100−SoL%), over a two-segment SoL meter. Reads the colony's computed SoL properties only
+    /// (ADR-006 — the rules live in <see cref="Colony"/>); the rebel/royalist nation shields are a deferred follow-up
+    /// (no coat-of-arms art imported yet).
     /// </summary>
-    private Control PopulationStrip()
+    private Control SonsOfLibertyBar()
     {
-        const int cap = 12;
-        var row = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        for (int i = 0; i < Math.Min(_colony.Population, cap); i++)
+        int sol = _colony.SonsOfLiberty;
+        int bonus = _colony.ProductionBonus;
+
+        var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        box.AddThemeConstantOverride("separation", 3);
+
+        var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, Alignment = BoxContainer.AlignmentMode.Center };
+        row.AddThemeConstantOverride("separation", 24);
+        row.AddChild(StatCell($"Rebels: {_colony.RebelCount}", "RebelCount", $"{sol}%", "RebelPercent"));
+
+        var centre = new VBoxContainer();
+        centre.AddChild(new Label { Name = "PopulationCount", Text = $"Population: {_colony.Population}", HorizontalAlignment = HorizontalAlignment.Center });
+        var bonusLabel = new Label { Name = "ProductionBonus", Text = $"Bonus: {(bonus >= 0 ? "+" : "")}{bonus}", HorizontalAlignment = HorizontalAlignment.Center };
+        if (bonus < 0)
         {
-            row.AddChild(IconRect(ColonyArt.UnitIcon("freeColonist"), 32, 40));
+            bonusLabel.AddThemeColorOverride("font_color", Negative);
         }
-        if (_colony.Population > cap)
-        {
-            row.AddChild(new Label { Text = $"+{_colony.Population - cap}", VerticalAlignment = VerticalAlignment.Center });
-        }
-        return row;
+        centre.AddChild(bonusLabel);
+        row.AddChild(centre);
+
+        row.AddChild(StatCell($"Royalists: {_colony.ToryCount}", "RoyalistCount", $"{100 - sol}%", "RoyalistPercent"));
+        box.AddChild(row);
+        box.AddChild(SolMeter(sol));
+        return box;
+    }
+
+    private static Control StatCell(string topText, string topName, string bottomText, string bottomName)
+    {
+        var cell = new VBoxContainer();
+        cell.AddChild(new Label { Name = topName, Text = topText, HorizontalAlignment = HorizontalAlignment.Center });
+        cell.AddChild(new Label { Name = bottomName, Text = bottomText, HorizontalAlignment = HorizontalAlignment.Center });
+        return cell;
+    }
+
+    /// <summary>A thin two-segment Sons-of-Liberty meter: a gold rebel fill proportioned to the SoL%, a dark royalist remainder.</summary>
+    private static Control SolMeter(int solPercent)
+    {
+        var meter = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 10) };
+        meter.AddThemeConstantOverride("separation", 0);
+        meter.AddChild(new ColorRect { Color = new Color(0.79f, 0.64f, 0.29f), SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsStretchRatio = Math.Max(solPercent, 0) });
+        meter.AddChild(new ColorRect { Color = new Color(0.29f, 0.18f, 0.10f), SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsStretchRatio = Math.Max(100 - solPercent, 0) });
+        return meter;
     }
 
     /// <summary>The tile a picked-up colonist was lifted from (click-to-move), or null when nothing is held.</summary>

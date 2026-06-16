@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 21;
+    public const int CurrentVersion = 22;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -45,6 +45,8 @@ public sealed record SaveGame
     /// (FP-6a; omitted when empty, so a no-contact game is byte-identical; older saves load Uncontacted/0).
     /// v21 added a damaged ship's repair-turns-remaining (1c-3b, additive — omitted when 0/healthy, so a
     /// fleet with no damaged ship is byte-identical; older saves load 0 = healthy).
+    /// v22 added a colony's accumulated liberty for per-colony Sons-of-Liberty (additive — omitted when 0, so a
+    /// colony with no banked liberty is byte-identical; ≤v21 saves load 0 = SoL 0%, production bonus 0).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -180,7 +182,9 @@ public sealed record SaveGame
                     c.Buildings.ToList(),
                     c.BuildingWorkers.Count > 0 ? new Dictionary<string, int>(c.BuildingWorkers) : null,
                     c.CurrentBuild,
-                    c.OwnerId == 0 ? null : c.OwnerId))
+                    c.OwnerId == 0 ? null : c.OwnerId,
+                    // Liberty omitted for a colony with none (0) so a no-liberty colony stays byte-identical (v22).
+                    c.Liberty == 0 ? null : c.Liberty))
                 .ToList(),
             Resources = game.Map.Resources.Count > 0
                 ? game.Map.Resources
@@ -266,6 +270,7 @@ public sealed record SaveGame
                     colony.SetBuildingWorkers(buildingId, workers);
                 }
                 colony.CurrentBuild = c.CurrentBuild;
+                colony.Liberty = c.Liberty ?? 0; // ≤v21 saves had no liberty → SoL 0%
                 return colony;
             }),
             NativeSettlements?.Select(s => new NativeSettlement(
@@ -357,6 +362,7 @@ public sealed record SaveGame
 /// <param name="BuildingWorkers">Building staffing (null when none).</param>
 /// <param name="CurrentBuild">Building under construction (null when idle / pre-v7).</param>
 /// <param name="OwnerId">Owning colonial player id (null = the human, id 0; v20+, FP-2).</param>
+/// <param name="Liberty">Accumulated Sons-of-Liberty points (null = 0; v22, additive).</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
     IReadOnlyDictionary<string, int>? Stores = null,
@@ -364,7 +370,8 @@ public sealed record SavedColony(
     IReadOnlyList<string>? Buildings = null,
     IReadOnlyDictionary<string, int>? BuildingWorkers = null,
     string? CurrentBuild = null,
-    int? OwnerId = null);
+    int? OwnerId = null,
+    int? Liberty = null);
 
 /// <summary>A bonus resource on a tile inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Index">Row-major tile index (<c>y * MapWidth + x</c>).</param>

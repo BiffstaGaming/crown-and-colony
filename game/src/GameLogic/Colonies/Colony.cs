@@ -21,6 +21,22 @@ public sealed class Colony
     /// </summary>
     public const string FoodId = "model.goods.food";
 
+    /// <summary>Liberty points one rebel colonist represents (FreeCol <c>Colony.LIBERTY_PER_REBEL</c> = 200; a real code constant, not a difficulty option).</summary>
+    public const int LibertyPerRebel = 200;
+
+    // Government thresholds for the production bonus. These four are FreeCol *difficulty options*, and they DIFFER by
+    // difficulty (veryEasy 8/12 … medium 6/10 … veryHard 4/8). We hardcode the **medium** values — the classic
+    // default — because we don't model difficulty levels yet (same choice as the native-demand tuning). When a
+    // difficulty system lands, these must become data-driven.
+    /// <summary>SoL% at/above which government is "very good" → +2 per worker (FreeCol medium <c>veryGoodGovernmentLimit</c>).</summary>
+    public const int VeryGoodGovernmentLimit = 100;
+    /// <summary>SoL% at/above which government is "good" → +1 per worker (FreeCol medium <c>goodGovernmentLimit</c>).</summary>
+    public const int GoodGovernmentLimit = 50;
+    /// <summary>Tory count above which government is "bad" → −1 per worker (FreeCol medium <c>badGovernmentLimit</c>).</summary>
+    public const int BadGovernmentLimit = 6;
+    /// <summary>Tory count above which government is "very bad" → −2 per worker (FreeCol medium <c>veryBadGovernmentLimit</c>).</summary>
+    public const int VeryBadGovernmentLimit = 10;
+
     private readonly Dictionary<string, int> _stores = [];
     private readonly Dictionary<Position, string> _tileWorkers = [];
     private readonly List<string> _buildings = [];
@@ -81,6 +97,41 @@ public sealed class Colony
     /// <summary>Building type currently under construction (null when idle).</summary>
     public string? CurrentBuild { get; internal set; }
 
+    /// <summary>
+    /// Accumulated liberty points from bell production (FreeCol <c>Colony.liberty</c>). Drives
+    /// <see cref="SonsOfLiberty"/>. Floored at 0; persisted (SaveGame v22). NOTE: this first cut accumulates the
+    /// same (founding-father-modified) bell figure the player pool gets, with no bell upkeep yet — so SoL only
+    /// rises; the FreeCol net-of-upkeep accumulation (which lets SoL fall) lands with the production-bonus slice.
+    /// </summary>
+    public int Liberty { get; internal set; }
+
+    /// <summary>
+    /// Sons-of-Liberty membership, 0–100 (FreeCol <c>calculateSoLPercentage</c>):
+    /// <c>floor(liberty·100 / (200·population))</c>, clamped 0–100; 0 for an empty colony. Player-level SoL
+    /// modifiers (Simón Bolívar +20) aren't folded in yet — that father is unimplemented.
+    /// </summary>
+    public int SonsOfLiberty =>
+        Population <= 0 ? 0 : Math.Clamp(Liberty * 100 / (LibertyPerRebel * Population), 0, 100);
+
+    /// <summary>Colonists who are rebels: <c>floor(SoL% · population / 100)</c> (FreeCol <c>calculateRebelCount</c>; integer arithmetic — bit-identical to its float floor, ADR-009).</summary>
+    public int RebelCount => SonsOfLiberty * Population / 100;
+
+    /// <summary>Colonists who are royalists/tories: <c>population − rebels</c> (FreeCol <c>calculateToryCount</c>).</summary>
+    public int ToryCount => Population - RebelCount;
+
+    /// <summary>
+    /// Per-producing-worker production bonus, −2..+2 (FreeCol <c>calculateProductionBonus</c>): SoL ≥ 100 → +2;
+    /// SoL ≥ 50 → +1; else by tory count: &gt; 10 → −2, &gt; 6 → −1, else 0 (the penalty tiers gate on absolute tory
+    /// count, so a small colony never gets one regardless of low SoL). <b>Computed only — not yet applied to output</b>
+    /// (the economy effect lands with the production-bonus slice).
+    /// </summary>
+    public int ProductionBonus =>
+        SonsOfLiberty >= VeryGoodGovernmentLimit ? 2
+        : SonsOfLiberty >= GoodGovernmentLimit ? 1
+        : ToryCount > VeryBadGovernmentLimit ? -2
+        : ToryCount > BadGovernmentLimit ? -1
+        : 0;
+
     internal void AddBuilding(string buildingId) => _buildings.Add(buildingId);
 
     /// <summary>Swaps an upgraded building for its successor, preserving staffing.</summary>
@@ -113,6 +164,20 @@ public sealed class Colony
     /// <summary>Adds goods to the store (negative removes; floor at 0).</summary>
     internal void AddGoods(string goodsId, int amount) =>
         _stores[goodsId] = Math.Max(0, StoreOf(goodsId) + amount);
+
+    /// <summary>
+    /// Adds bell production to liberty (negative on a future deficit turn), floored at 0. At 100% SoL the
+    /// accumulation is capped to exactly <c>200·population</c> (FreeCol <c>bellAccumulationCapped</c>), so it never
+    /// overshoots — the cap reads the population already settled for this turn (growth/starvation run before banking).
+    /// </summary>
+    internal void AddLiberty(int amount)
+    {
+        Liberty = Math.Max(0, Liberty + amount);
+        if (SonsOfLiberty >= 100)
+        {
+            Liberty = LibertyPerRebel * Population;
+        }
+    }
 
     /// <summary>Removes food. Returns the shortfall (0 when the store covered it all).</summary>
     internal int ConsumeFood(int amount)
