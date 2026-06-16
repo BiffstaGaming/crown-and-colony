@@ -44,12 +44,14 @@ public enum CombatResult
 /// <param name="Movement">Movement-spent penalty.</param>
 /// <param name="Amphibious">Attacking from a ship onto land (−75%).</param>
 /// <param name="ArtilleryInOpen">Artillery attacking in the open, not in a settlement (−75%).</param>
+/// <param name="AmbushBonus">Ambush offence bonus — the defender's terrain defence percentage, gained as offence when ambushing from concealing terrain (FreeCol <c>AMBUSH_BONUS</c>).</param>
 /// <param name="GoodsCarried">Goods units in the (naval) attacker's hold — each unit is a −12.5% cargo penalty.</param>
 public readonly record struct AttackContext(
     bool WithoutAttackBonus = false,
     MovementPenalty Movement = MovementPenalty.None,
     bool Amphibious = false,
     bool ArtilleryInOpen = false,
+    double AmbushBonus = 0,
     int GoodsCarried = 0);
 
 /// <summary>Situational modifiers on the defender (all percentages).</summary>
@@ -106,6 +108,10 @@ public static class CombatModel
         if (context.ArtilleryInOpen)
         {
             power *= 1 + ArtilleryInOpenPenalty;
+        }
+        if (context.AmbushBonus != 0)
+        {
+            power *= 1 + (context.AmbushBonus / 100.0); // strike from cover: gain the defender's terrain bonus as offence
         }
         power *= System.Math.Max(0, 1 + (CargoPenalty * context.GoodsCarried)); // laden ships attack worse
         return power;

@@ -968,11 +968,18 @@ public sealed class Game
         // FreeCol suppresses the terrain modifier inside a settlement (as our native-settlement assault already does).
         bool inColony = !naval && ColonyAt(target) is not null;
         bool attackerInColony = ColonyAt(attacker.Position) is not null;
+        // Ambush (FreeCol canAmbush + getOffensiveModifiers): a native attacker striking in the open from — or at a
+        // defender on — concealing forest/hills negates the defender's terrain cover by gaining it as offence. Both
+        // units on a tile outside a settlement, the defender not dug in, the attacker native (the indian ambushBonus;
+        // the REF ambushPenalty is P6). The bonus is the defender's own tile defence percentage.
+        bool ambush = !naval && !inColony && !attackerInColony && attacker.IsNative && !defender.IsFortified
+            && (Map.TerrainAt(attacker.Position).AmbushTerrain || Map.TerrainAt(target).AmbushTerrain);
         var attackContext = new AttackContext(
             Movement: MovementPenaltyFor(attacker), // snapshot the movement penalty before spending it
             // Artillery is brittle attacking IN THE OPEN (−75%): only when neither unit is in a settlement and the
             // gun isn't dug in (FreeCol getOffensiveModifiers). Battering a colony/garrison, it keeps full power.
             ArtilleryInOpen: !naval && attacker.Type.Bombard && !attackerInColony && !attacker.IsFortified && !inColony,
+            AmbushBonus: ambush ? Map.TerrainAt(target).DefenceBonus : 0,
             GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0); // FreeCol cargo penalty is goods only, not passengers
         var defenceContext = new DefenceContext(
             TerrainDefenceBonus: (naval || inColony) ? 0 : Map.TerrainAt(target).DefenceBonus, // open water / a colony: no terrain bonus

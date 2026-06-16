@@ -1004,7 +1004,10 @@ public sealed class Ruleset
             // Combat defence bonus a unit gains while on this terrain (percentage modifier).
             DefenceBonus: (double?)el.Elements("modifier")
                 .FirstOrDefault(m => (string?)m.Attribute("id") == "model.modifier.defence")
-                ?.Attribute("value") ?? 0);
+                ?.Attribute("value") ?? 0,
+            // Concealing terrain (forests + hills) that enables an ambush.
+            AmbushTerrain: el.Elements("ability")
+                .Any(a => (string?)a.Attribute("id") == "model.ability.ambushTerrain" && ((bool?)a.Attribute("value") ?? true)));
     }
 
     /// <summary>

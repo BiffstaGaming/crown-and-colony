@@ -22,6 +22,11 @@ namespace CrownAndColony.GameLogic.Specification;
 /// Percentage defence bonus a unit gains while standing here in combat (spec
 /// <c>model.modifier.defence</c>): plains 0, marsh/swamp 25, most forest 50, rainForest 75, hills 100.
 /// </param>
+/// <param name="AmbushTerrain">
+/// Concealing terrain that enables an ambush (spec <c>model.ability.ambushTerrain</c>: all forests and hills).
+/// A native attacker striking from — or at a defender standing on — such terrain negates the defender's terrain
+/// cover by gaining it as offence (FreeCol <c>Unit.canAmbush</c>; see [combat](combat.md)).
+/// </param>
 public sealed record TerrainType(
     string Id,
     int MoveCost,
@@ -34,7 +39,8 @@ public sealed record TerrainType(
     IReadOnlyList<ProductionEntry> Productions,
     GenRanges? Gen,
     IReadOnlyList<ResourceChance> Resources,
-    double DefenceBonus = 0)
+    double DefenceBonus = 0,
+    bool AmbushTerrain = false)
 {
     /// <summary>Short name derived from the id: <c>model.tile.plains</c> → <c>plains</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
