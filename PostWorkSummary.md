@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 — Terrain ambush bonus (forest & hills) [continuing the backlog; combat-modifier follow-on]
+
+**Requested:** "Continue working through the backlog." (Same flow; next combat-modifier slice.)
+**Did:** Implemented the **terrain ambush** rule (`86d3c9tp0`, `1c9a7b1`): a **native** attacker striking in the open from — or at a defender standing on — concealing **forest/hills** negates the defender's terrain cover by gaining it as an **offence bonus** (FreeCol `Unit.canAmbush`). Scoped from the FreeCol source: the `ambushBonus` ability sits on the **indian nation-type** (so every native has it) and `ambushPenalty` on the **REF** (deferred to P6) — so for P5 the gate is simply `attacker.IsNative` + both in the open + defender not dug-in + either tile concealing. `TerrainType.AmbushTerrain` parsed from `model.ability.ambushTerrain`; `AttackContext.AmbushBonus` = the defender's terrain defence %.
+**Status:** **671 L1+L2 + 4 soak green** (668 → 671; +3 — `AmbushTests` parse + an integration flip [a brave overruns a colonist in forest by negating the +50% cover, but a dug-in colonist denies the ambush], `CombatModelTests` arithmetic). No RNG, no save change. ClickUp `86d3c9tp0` → In Review.
+**Changed:** GameLogic `Specification/TerrainType.cs`/`Ruleset.cs`, `Combat/Combat.cs`, `GameSession/Game.cs`; tests `AmbushTests.cs` (new), `CombatModelTests.cs`; docs `combat.md` (both layers) + `ruleset-data.md`. Commit `1c9a7b1`.
+**Decisions:** Bounded to the native-attacker side (P5); the REF `ambushPenalty` mirror is documented as a P6 follow-on (no REF units exist until the War of Independence). Modeled "attacker has ambushBonus" as `IsNative` (faithful — the ability is inherited by every native nation from the abstract indian nation-type).
+**Scheduled next:** another P5 GameLogic slice (candidates: `86d3c9p1u` factory-tier production bonus — factories are now buildable; `86d3c9pgj` on-the-job colonist upgrades; `86d3c9q1z` indentured-servant/petty-criminal promotion ladder).
+**Follow-ups:** REF `ambushPenalty` (P6); the standing deferrals (ship construction, build-menu-offers-units, custom-house export fork).
+**Needs you:** **Review the In-Review tasks** (now 11). The custom-house **export design fork** and the two open questions (**monarch P5?**, **founding-father factor 24 → 40?**) are the decisions that unblock specific next work.
+
 ## 2026-06-17 — Artillery combat modifiers: in-the-open + against-raid [continuing the backlog; faithful-combat follow-on to build-units]
 
 **Requested:** "Continue working through the backlog." (Same prompt as the build-units slice; this is the natural combat follow-on now that artillery is buildable.)
