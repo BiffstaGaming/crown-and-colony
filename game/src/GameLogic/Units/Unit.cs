@@ -19,6 +19,28 @@ public enum UnitLocation
     SailingToNewWorld,
 }
 
+/// <summary>
+/// A unit's standing order (FreeCol <c>Unit.UnitState</c>, the subset that affects play on the map).
+/// <see cref="Active"/> is the default: free to act. <see cref="Fortifying"/> is the one-turn dig-in that
+/// becomes <see cref="Fortified"/> at the next turn reset (FreeCol ages FORTIFYING → FORTIFIED), granting a
+/// +50% defence bonus. <see cref="Sentry"/> rests the unit (skipped when cycling, no orders prompt) until
+/// something happens. Moving or attacking clears the order back to <see cref="Active"/>.
+/// </summary>
+public enum UnitOrders
+{
+    /// <summary>Free to act (the default).</summary>
+    Active,
+
+    /// <summary>Digging in this turn; becomes <see cref="Fortified"/> at the next turn reset.</summary>
+    Fortifying,
+
+    /// <summary>Dug in: +50% defence (FreeCol <c>model.modifier.fortified</c>).</summary>
+    Fortified,
+
+    /// <summary>Resting until something happens (skipped when cycling units).</summary>
+    Sentry,
+}
+
 /// <summary>A unit on the map. Its capabilities come from its ruleset <see cref="UnitType"/>.</summary>
 public sealed class Unit
 {
@@ -64,6 +86,16 @@ public sealed class Unit
 
     /// <summary>True while a damaged ship is repairing (and so cannot sail or act).</summary>
     public bool IsUnderRepair => RepairTurnsRemaining > 0;
+
+    /// <summary>
+    /// The unit's standing order (active / fortifying / fortified / sentry). Only <see cref="GameSession.Game"/>
+    /// mutates it: <c>Fortify</c>/<c>Sentry</c>/<c>ClearOrders</c> set it, the per-turn reset ages
+    /// <see cref="UnitOrders.Fortifying"/> → <see cref="UnitOrders.Fortified"/>, and moving clears it.
+    /// </summary>
+    public UnitOrders Orders { get; internal set; } = UnitOrders.Active;
+
+    /// <summary>True when dug in (FreeCol FORTIFIED): the unit defends at +50% (see <see cref="Combat.CombatModel"/>).</summary>
+    public bool IsFortified => Orders == UnitOrders.Fortified;
 
     /// <summary>
     /// The id of the ship carrying this unit, or null when not aboard. A carried

@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 22;
+    public const int CurrentVersion = 23;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -170,7 +170,9 @@ public sealed record SaveGame
                     // Owner player id omitted for the human (id 0) so human-only saves stay byte-identical (FP-2).
                     u.OwnerId == 0 ? null : u.OwnerId,
                     // Repair turns omitted for a healthy ship (0) so an undamaged fleet stays byte-identical (1c-3b).
-                    u.RepairTurnsRemaining == 0 ? null : u.RepairTurnsRemaining))
+                    u.RepairTurnsRemaining == 0 ? null : u.RepairTurnsRemaining,
+                    // Standing order omitted for an active unit (0) so a no-orders game stays byte-identical to v22.
+                    u.Orders == UnitOrders.Active ? null : (int)u.Orders))
                 .ToList(),
             Colonies = game.Colonies
                 .Select(c => new SavedColony(
@@ -239,7 +241,8 @@ public sealed record SaveGame
                 u.Role,                     // pre-v18 → null = default role
                 u.RoleCount ?? 0,           // pre-v18 / default role → 0
                 u.OwnerId ?? 0,             // pre-v20 / human → 0
-                u.RepairTurns ?? 0)),       // pre-v21 / healthy ship → 0
+                u.RepairTurns ?? 0,         // pre-v21 / healthy ship → 0
+                (UnitOrders)(u.Orders ?? 0))), // pre-v23 / active → Active
             Colonies?.Select(c =>
             {
                 var colony = new CrownAndColony.GameLogic.Colonies.Colony(
@@ -418,12 +421,13 @@ public sealed record SavedNativeSettlement(
 /// <param name="RoleCount">Equipment count held for the role (null/0 for the default role; v18+). Nullable so a default-role unit emits no token and serializes identically to v17.</param>
 /// <param name="OwnerId">Owning colonial player id (null = the human, id 0; v20+, FP-2). Foreign-power units carry their player id.</param>
 /// <param name="RepairTurns">Turns left repairing a damaged ship (null/0 = healthy; v21+, 1c-3b). Nullable so a healthy fleet serializes byte-identically to v20.</param>
+/// <param name="Orders">Standing order (<see cref="Units.UnitOrders"/> ordinal: 0 = active, 1 = fortifying, 2 = fortified, 3 = sentry; null/0 = active; v23+). Nullable so an active unit serializes byte-identically to v22.</param>
 public sealed record SavedUnit(
     int Id, string? TypeId, int X, int Y, int MovementLeft,
     int Location = 0, int SailTurns = 0, IReadOnlyDictionary<string, int>? Cargo = null,
     int? CarrierId = null,
     string? Owner = null, string? Role = null, int? RoleCount = null,
-    int? OwnerId = null, int? RepairTurns = null);
+    int? OwnerId = null, int? RepairTurns = null, int? Orders = null);
 
 /// <summary>
 /// A player inside a <see cref="SaveGame"/> (v20+). Holds the player-scoped state that used to sit as

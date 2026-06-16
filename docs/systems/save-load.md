@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (full game state: multi-player `Players[]`, per-player RNG streams, diplomacy stances/tensions, native settlements + interaction, ship repair, per-colony liberty; save v22) |
-| **Last verified** | 2026-06-16 @ Sons-of-Liberty Slice A (save v22: colony liberty) |
+| **Status** | Implemented (full game state: multi-player `Players[]`, per-player RNG streams, diplomacy stances/tensions, native settlements + interaction, ship repair, per-colony liberty, unit standing orders; save v23) |
+| **Last verified** | 2026-06-16 @ unit orders (save v23: fortify/sentry state) |
 | **Code** | `game/src/GameLogic/Persistence/SaveGame.cs` · UI: `GameController` F5/F9 |
 | **Tests** | `game/tests/GameLogic.Tests/Persistence/SaveGameTests.cs`, `Scenarios/` |
 | **FreeCol reference** | n/a — our own format (FreeCol's .fsg is not a compatibility goal) |
@@ -79,3 +79,4 @@ Press **F5** to save, **F9** to load. A save captures everything — the map, th
 | 2026-06-15 | **FP-7: save-format v20 consolidation** — the legacy flat top-level player fields (gold/tax/market/liberty/Congress/fathers/immigration/dock/explored) are **no longer written**; player state lives only in `Players[]`. Format version stays 20 (its load path was already `Players[]`-only); new v20 saves are smaller. The flat properties remain (read-only) so ≤v19 saves still fold and pre-FP-7 v20 saves still load — verified by `NewSave_OmitsLegacyFlatPlayerFields`, `LegacyV20Save_WithFlatFieldsAndPlayers_LoadsFromPlayersIgnoringFlatFields`, `OldSaveVersion_WithFlatFields_FoldsToOneHuman` (v9/12/19), `HumanState_RoundTripsThroughPlayersOnly` | FP-7 |
 | 2026-06-15 | Format **v21** (additive): `SavedUnit.RepairTurns` — a damaged ship's turns-left-repairing (1c-3b). Omitted via `WhenWritingNull` when 0, so an undamaged fleet is byte-identical to v20; pre-v21 saves load every ship healthy. A damaged ship's repair state round-trips (tested `DamagedShip_RepairState_SurvivesSaveRoundTrip`). See [combat](combat.md) | Phase 5 slice 1c-3b |
 | 2026-06-16 | Format **v22** (additive): `SavedColony.Liberty` — a colony's accumulated Sons-of-Liberty points. Omitted via `WhenWritingNull` when 0, so a no-liberty colony is byte-identical to v21; ≤v21 saves load 0 (SoL 0%). Round-trips (tested `SonsOfLibertyTests.Liberty_SurvivesSaveLoad` + omitted-when-0 + pre-v22-loads-0). See [sons-of-liberty](sons-of-liberty.md) | Phase 5 (Sons of Liberty) |
+| 2026-06-16 | Format **v23** (additive): `SavedUnit.Orders` — a unit's fortify/sentry standing order. Omitted when *Active*, so a no-orders game is byte-identical to v22; pre-v23 saves load every unit Active. A *Fortified* defender's +50% bonus round-trips (tested `UnitOrdersTests.OrderState_RoundTripsThroughSaveLoad` + all-active-omits-token + pre-v23-loads-Active). See [units-movement](units-movement.md) | Phase 5 (`86d3c9pfh`) |

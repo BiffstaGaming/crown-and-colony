@@ -951,6 +951,7 @@ public sealed class Game
         bool inColony = !naval && ColonyAt(target) is not null;
         var defenceContext = new DefenceContext(
             TerrainDefenceBonus: (naval || inColony) ? 0 : Map.TerrainAt(target).DefenceBonus, // open water / a colony: no terrain bonus
+            Fortified: !naval && defender.IsFortified, // a dug-in land defender resists at +50% (FreeCol FORTIFIED)
             SettlementDefenceBonus: naval ? 0 : ColonyDefenceBonusAt(target), // a unit defending in a fortified colony (stockade/fort/fortress)
             GoodsCarried: naval ? GoodsSlotsUsed(defender) : 0);
 
@@ -1846,7 +1847,7 @@ public sealed class Game
         IEnumerable<(int id, UnitType type, Position position, int movementLeft,
             UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
             int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
-            int repairTurns)> units,
+            int repairTurns, UnitOrders orders)> units,
         IEnumerable<Colony>? colonies = null,
         IEnumerable<NativeSettlement>? nativeSettlements = null)
     {
@@ -1869,7 +1870,7 @@ public sealed class Game
         foreach ((int id, UnitType type, Position position, int movementLeft,
                   UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
                   int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
-                  int repairTurns) in units)
+                  int repairTurns, UnitOrders orders) in units)
         {
             var unit = new Unit(id, type, position)
             {
@@ -1882,6 +1883,7 @@ public sealed class Game
                 RoleId = roleId ?? RoleType.DefaultRoleId,
                 RoleCount = roleCount,
                 RepairTurnsRemaining = repairTurns,
+                Orders = orders,
             };
             foreach ((string goodsId, int amount) in cargo ?? new Dictionary<string, int>())
             {
@@ -2109,11 +2111,94 @@ public sealed class Game
 
         unit.Position = target;
         unit.MovementLeft -= check.Cost;
+        unit.Orders = UnitOrders.Active; // moving wakes a fortified/sentry unit (FreeCol clears the state on a move)
         RevealForOwner(unit); // the mover lifts its own owner's fog (mirrors SpawnUnit)
         if (unit.Type.IsCarrier)
         {
             SyncPassengers(unit); // any colonists aboard move with the ship
         }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="unit"/> may be ordered to fortify (dig in for a +50% defence bonus). A land
+    /// unit on the map, not under repair; ships sentry instead of fortifying (FreeCol fortify is a land order).
+    /// </summary>
+    public MoveCheck CheckFortify(Unit unit)
+    {
+        if (!unit.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (unit.Type.IsNaval)
+        {
+            return MoveCheck.No("A ship cannot fortify (set it to sentry instead).");
+        }
+        if (unit.Orders is UnitOrders.Fortifying or UnitOrders.Fortified)
+        {
+            return MoveCheck.No("The unit is already fortifying.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Orders a unit to fortify: it spends the rest of its turn digging in (FreeCol FORTIFYING), and at the
+    /// next turn it becomes <see cref="UnitOrders.Fortified"/> — a +50% defence bonus until it is moved.
+    /// </summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckFortify"/>.</exception>
+    public void Fortify(Unit unit)
+    {
+        MoveCheck check = CheckFortify(unit);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        unit.Orders = UnitOrders.Fortifying;
+        unit.MovementLeft = 0; // fortifying consumes the turn (you can't dig in and then march)
+    }
+
+    /// <summary>Whether <paramref name="unit"/> may be set to sentry (rest until something happens).</summary>
+    public MoveCheck CheckSentry(Unit unit) =>
+        unit.IsOnMap ? MoveCheck.Yes(0) : MoveCheck.No("The unit is at sea or in Europe.");
+
+    /// <summary>Sets a unit to sentry — it rests (skipped when cycling units) until woken by a move or cleared.</summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckSentry"/>.</exception>
+    public void Sentry(Unit unit)
+    {
+        MoveCheck check = CheckSentry(unit);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        unit.Orders = UnitOrders.Sentry;
+        unit.MovementLeft = 0; // resting consumes the turn
+    }
+
+    /// <summary>Clears a unit's standing order back to active (it does not refund the spent movement).</summary>
+    public void ClearOrders(Unit unit) => unit.Orders = UnitOrders.Active;
+
+    /// <summary>
+    /// Whether <paramref name="unit"/> may be disbanded (permanently removed). A carrier still holding
+    /// passengers cannot be disbanded — unload them first so they are not orphaned at sea.
+    /// </summary>
+    public MoveCheck CheckDisband(Unit unit)
+    {
+        if (unit.Type.IsCarrier && _units.Any(u => u.CarrierId == unit.Id))
+        {
+            return MoveCheck.No("Unload the ship's passengers before disbanding it.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>Disbands a unit — it leaves the game for good (its hold, if any, is lost with it).</summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckDisband"/>.</exception>
+    public void Disband(Unit unit)
+    {
+        MoveCheck check = CheckDisband(unit);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        _units.Remove(unit);
     }
 
     /// <summary>
@@ -2832,6 +2917,10 @@ public sealed class Game
         }
         foreach (Unit unit in _units)
         {
+            if (unit.Orders == UnitOrders.Fortifying)
+            {
+                unit.Orders = UnitOrders.Fortified; // a turn spent digging in completes (FreeCol ages FORTIFYING → FORTIFIED)
+            }
             // A ship still under repair stays pinned at 0 moves (FreeCol forced repair); everyone else resets.
             unit.MovementLeft = unit.IsUnderRepair ? 0 : InitialMovement(unit); // base + role bonus (dragoon/scout +9)
         }

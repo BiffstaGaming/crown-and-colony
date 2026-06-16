@@ -121,8 +121,8 @@ public class NativeSettlementTests
     [Fact]
     public void SaveVersion_IsCurrent()
     {
-        Assert.Equal(22, SaveGame.CurrentVersion);
-        Assert.Equal(22, SaveGame.From(Game.New(Classic, Seed)).Version);
+        Assert.Equal(23, SaveGame.CurrentVersion);
+        Assert.Equal(23, SaveGame.From(Game.New(Classic, Seed)).Version);
     }
 
     private static int Chebyshev(Position a, Position b) =>
