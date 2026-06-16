@@ -20,6 +20,11 @@ namespace CrownAndColony.GameLogic.Specification;
 /// additive, summed up the <c>extends</c> chain; default 0). Depot 100, warehouse 200, expansion 300 — a colony
 /// holds one of these tiers, capping each storable good (FreeCol <c>Settlement.getWarehouseCapacity</c>).
 /// </param>
+/// <param name="BellBonus">
+/// Percentage boost this building gives the colony's bell output (spec <c>model.goods.bells</c> percentage;
+/// default 0). Printing press +50, newspaper +100 (the newspaper deletes + redefines the inherited modifier —
+/// own-valued one taken, like <see cref="DefenceBonus"/>). Speeds Sons-of-Liberty + founding-father progress.
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -28,7 +33,8 @@ public sealed record BuildingType(
     IReadOnlyList<ProductionEntry> Productions,
     IReadOnlyList<GoodsOutput> BuildCost,
     int DefenceBonus = 0,
-    int WarehouseStorage = 0)
+    int WarehouseStorage = 0,
+    int BellBonus = 0)
 {
     /// <summary>Short name derived from the id: <c>model.building.townHall</c> → <c>townHall</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];

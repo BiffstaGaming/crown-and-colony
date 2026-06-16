@@ -412,6 +412,13 @@ public sealed class Game
     /// </summary>
     public int ColonyDefenceBonus(Colony colony) => colony.Buildings.Sum(b => Ruleset.Building(b).DefenceBonus);
 
+    /// <summary>
+    /// The percentage bell-output bonus from a colony's bell-press buildings (FreeCol <c>model.goods.bells</c>):
+    /// printing press +50, newspaper +100. A colony holds at most one (newspaper upgrades the press), so the sum
+    /// is the tier present (0 with neither). Boosts the bells that become Sons-of-Liberty + founding-father liberty.
+    /// </summary>
+    public int BellProductionBonus(Colony colony) => colony.Buildings.Sum(b => Ruleset.Building(b).BellBonus);
+
     /// <summary>The fortification defence bonus of the colony on a tile (0 if no colony / no fortification) — applied to whoever defends there.</summary>
     private int ColonyDefenceBonusAt(Position p) => ColonyAt(p) is { } colony ? ColonyDefenceBonus(colony) : 0;
 
@@ -3623,10 +3630,12 @@ public sealed class Game
             if (bells > 0)
             {
                 colony.AddGoods(BellsId, -bells); // bells become liberty, not tradeable stock
-                // Net of bell upkeep: the founding-father bonus (Jefferson/Paine) applies to the gross production,
-                // then each colonist past the first two consumes 1 bell — so a colony that grows faster than its bell
-                // output loses liberty (its Sons of Liberty can fall). FreeCol feeds the same net figure to both pools.
-                int net = ApplyGoodsModifiers(player, BellsId, bells) - Math.Max(0, colony.Population - UnitsThatUseNoBells);
+                // The colony's printing press / newspaper boosts its bell output first (+50% / +100%), then the
+                // founding-father bonus (Jefferson/Paine) applies, then each colonist past the first two consumes
+                // 1 bell of upkeep — so a colony that grows faster than its bell output loses liberty (its Sons of
+                // Liberty can fall). FreeCol feeds the same net figure to both pools.
+                int boosted = bells + (bells * BellProductionBonus(colony) / 100); // printing press / newspaper
+                int net = ApplyGoodsModifiers(player, BellsId, boosted) - Math.Max(0, colony.Population - UnitsThatUseNoBells);
                 player.Liberty += net;   // banked toward the next founding father
                 colony.AddLiberty(net);  // the colony's own Sons-of-Liberty liberty (AddLiberty floors at 0)
             }

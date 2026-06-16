@@ -336,7 +336,16 @@ public sealed class Ruleset
                 // Warehouse capacity: the model.modifier.warehouseStorage additive, summed up the extends chain
                 // (depot 100; warehouse extends depot → 200; expansion extends warehouse → 300) — FreeCol resolves
                 // an extending building's modifiers cumulatively, unlike the redefined (delete+readd) defence one.
-                WarehouseStorage: SumModifierUpChain(el, "model.modifier.warehouseStorage", buildingElements));
+                WarehouseStorage: SumModifierUpChain(el, "model.modifier.warehouseStorage", buildingElements),
+                // Bell-production bonus (printing press +50, newspaper +100): the building's own model.goods.bells
+                // percentage modifier, taking the valued (non-delete) one — the newspaper deletes the inherited 50
+                // and re-adds 100, the same redefine pattern as the defence modifier above.
+                BellBonus: el.Elements("modifier")
+                    .Where(m => (string?)m.Attribute("id") == "model.goods.bells"
+                                && (string?)m.Attribute("delete") != "true")
+                    .Select(m => (int?)m.Attribute("value") ?? 0)
+                    .DefaultIfEmpty(0)
+                    .Last());
         }
 
         var fathers = new Dictionary<string, FoundingFather>();
