@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-16 — Sons of Liberty, Slice A [queue · per-colony liberty model + colony-screen bar]
+
+**Requested:** "Can you start working on the next items" — took the top queue item: per-colony Sons of Liberty (the main remaining FreeCol colony gap).
+**Did:** A 5-agent research Workflow pinned FreeCol's exact SoL model → design → **adversarial critique** (caught 3 real issues) → implemented the critique's endorsed **two-slice split**. **Slice A (GameLogic-first):** `Colony.Liberty` (stored, save **v22**) + computed `SonsOfLiberty`%/`RebelCount`/`ToryCount`/`ProductionBonus` (FreeCol formulas: SoL = `floor(liberty·100/(200·pop))`; rebels = `SoL·pop/100`; bonus SoL≥100 +2 / ≥50 +1 / tories>10 −2 / tories>6 −1 at **medium**-difficulty limits 6/10); `AddLiberty` floors at 0 + caps at `200·pop` at 100%. Banks the **same** FF-modified bell figure to both the colony's liberty and the player's founding-father pool. **Presentation:** the colony screen's left column gains FreeCol's **Rebels · Population · Royalists** band + SoL% + production bonus + a gold/dark membership meter (replacing the portraits).
+**Status:** **CI green** (`91d539c`); **577 L1+L2 (+25 `SonsOfLibertyTests`) + 39 scene (+1 L3)**; visually verified (pop 5 / SoL 60% → 3 rebels, 2 royalists, +1). **Slice A is pure-additive** — the production bonus is computed + displayed but **not yet applied** to output, so the economy is byte-identical (only 4 save-version pins changed). RNG-free (ADR-009); bar is read-only (ADR-006).
+**Changed:** GameLogic `Colony.cs`/`Game.cs`/`SaveGame.cs` (+`SonsOfLibertyTests.cs`, 4 version pins); presentation `ColonyPanel.cs` (+`ColonyPanelTests.cs`); new `docs/systems/sons-of-liberty.md` (both layers) + `colonies.md`/`presentation.md`/`game-logic.md`/`save-load.md`/`QA-REPORT.md`. Commit `91d539c`.
+**Decisions:** Government limits are **medium-difficulty** (FreeCol's differ per level — design's "uniform 6/10" was wrong-for-the-right-reason; hardcoded medium, pinned by tests). Both liberty pools get the same figure (FreeCol `modifyLiberty`). Integer `RebelCount` (ADR-009). Two-slice split to quarantine the economy-touching production bonus.
+**Scheduled next:** **Slice B** (`86d3c5pqx`, Ready) — apply the production bonus + add bell upkeep (net banking), with the L2 yield-delta re-derivation + L5 soak before/after. (Or Chris's steer — the bar is a visible milestone worth a playtest first.)
+**Follow-ups:** Slice B production bonus (`86d3c5pqx`); FreeCol decorative wood border (`86d3c3j7z`, In Review); Bolívar SoL modifier; the InputTests window-leak flake (`task_337b84d0`); per-colonist identity (`86d3b6nrz`).
+**Needs you:** Nothing blocking — open a colony to see the new SoL band (Rebels/Population/Royalists + meter). Heads-up: **Slice B changes the economy** (the production bonus + bell upkeep shift colony yields and founding-father timing) — that's the next slice; say if you'd rather review the bar first or have me push straight on.
+
 ## 2026-06-16 — Colony screen: parchment theme + resize-safe layout [playtest · "resize seems wrong" + "super unpolished"]
 
 **Requested:** Chris (playtesting): "if i resize the game window, everything in the colony seems wrong?" then "It's fine.. but its super unpolished."
