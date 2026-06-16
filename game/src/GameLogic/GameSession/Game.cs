@@ -3978,9 +3978,15 @@ public sealed class Game
             }
             foreach (GoodsOutput output in entry.Outputs)
             {
-                colony.AddGoods(
-                    Ruleset.StorageIdOf(output.GoodsId),
-                    (int)Math.Floor(output.Amount * multiplier * fraction));
+                int amount = (int)Math.Floor(output.Amount * multiplier * fraction);
+                if (!entry.Unattended)
+                {
+                    // Sons-of-Liberty production bonus: +bonus per attended worker (multiplier == workers here),
+                    // floored at 0 so a penalty can't make a building produce negative. The unattended town-hall
+                    // bell entry is excluded (FreeCol bonuses only worker production).
+                    amount = Math.Max(0, amount + workers * colony.ProductionBonus);
+                }
+                colony.AddGoods(Ruleset.StorageIdOf(output.GoodsId), amount);
             }
         }
     }
@@ -4027,10 +4033,11 @@ public sealed class Game
             }
         }
 
-        // 1b. Worked tiles produce their assigned goods.
+        // 1b. Worked tiles produce their assigned goods, each worker getting the colony's Sons-of-Liberty
+        //     production bonus (+2/+1/0/−1/−2 per worker, floored at 0 so a bad-government penalty can't go negative).
         foreach ((Position tile, string goodsId) in colony.TileWorkers)
         {
-            colony.AddGoods(Ruleset.StorageIdOf(goodsId), TileYield(owner, tile, goodsId));
+            colony.AddGoods(Ruleset.StorageIdOf(goodsId), Math.Max(0, TileYield(owner, tile, goodsId) + colony.ProductionBonus));
         }
 
         // 1c. Buildings produce: unattended entries always run (town hall bell);

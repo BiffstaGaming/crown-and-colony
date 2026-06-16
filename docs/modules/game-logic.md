@@ -66,6 +66,7 @@ The entire rules engine of Crown & Colony: every game rule, calculation, and sta
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-16 | **Sons of Liberty (Slice B)**: `Colony.ProductionBonus` now adds to each attended worker's output — `RunColonyTurn` tile workers + `RunBuildingProduction` building workers, floored at 0 (the unattended colony square + town-hall bell excluded). Zero churn on the 579 existing tests + soak (bonus is 0 below goodGovernment, which every test colony is). +2 L1 application tests. Bell upkeep still deferred. See [sons-of-liberty.md](../systems/sons-of-liberty.md) | Phase 5 (Sons of Liberty) |
 | 2026-06-16 | **Per-colony Sons of Liberty (Slice A)**: `Colony.Liberty` (stored, save v22) + computed `SonsOfLiberty`/`RebelCount`/`ToryCount`/`ProductionBonus` (FreeCol formulas; medium-difficulty limits 6/10; integer-only, RNG-free); `AddLiberty` (floor-0 + 100%-SoL cap). `Game.AccumulateLibertyAndElectFathers` now banks the same FF-modified bell figure to both the colony's liberty and the player's founding-father pool. **Bonus computed but not applied** to output (zero economy churn). +25 L1 `SonsOfLibertyTests`. See [sons-of-liberty.md](../systems/sons-of-liberty.md) | Phase 5 (Sons of Liberty) |
 | 2026-06-13 | Project created with Randomness namespace | Phase 0 scaffold |
 | 2026-06-13 | Phases 1–3: ruleset parsing, map/units/turns/save, fog, colonies + full economy (stores, tile/building work, construction, growth) | Phases 1–3 |

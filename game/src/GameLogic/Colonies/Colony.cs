@@ -122,8 +122,8 @@ public sealed class Colony
     /// <summary>
     /// Per-producing-worker production bonus, −2..+2 (FreeCol <c>calculateProductionBonus</c>): SoL ≥ 100 → +2;
     /// SoL ≥ 50 → +1; else by tory count: &gt; 10 → −2, &gt; 6 → −1, else 0 (the penalty tiers gate on absolute tory
-    /// count, so a small colony never gets one regardless of low SoL). <b>Computed only — not yet applied to output</b>
-    /// (the economy effect lands with the production-bonus slice).
+    /// count, so a small colony never gets one regardless of low SoL). Added to each attended worker's tile/building
+    /// output (floored at 0) in <see cref="GameSession.Game"/>'s colony turn.
     /// </summary>
     public int ProductionBonus =>
         SonsOfLiberty >= VeryGoodGovernmentLimit ? 2

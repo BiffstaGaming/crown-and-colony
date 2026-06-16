@@ -10,9 +10,8 @@ namespace CrownAndColony.GameLogic.Tests.Colonies;
 /// <summary>
 /// L1 unit tests for per-colony Sons of Liberty (FreeCol <c>Colony.calculateSoLPercentage</c> /
 /// <c>calculateRebelCount</c> / <c>calculateProductionBonus</c>): the membership %, rebel/tory split, the
-/// production-bonus tiers (medium-difficulty government limits 6/10), liberty accumulation + the 100%-SoL cap, and
-/// the v22 save round-trip. The production bonus is computed here but not yet applied to output (that is a later
-/// slice), so these never touch the economy goldens.
+/// production-bonus tiers (medium-difficulty government limits 6/10), liberty accumulation + the 100%-SoL cap, the
+/// v22 save round-trip, and (Slice B) the bonus reaching tile + building output (+N per attended worker, floored).
 /// </summary>
 public class SonsOfLibertyTests
 {
@@ -168,6 +167,59 @@ public class SonsOfLibertyTests
             Colonies = [new SavedColony(1, "Old", 0, 0, 1)],
         };
         Assert.Equal(0, save.Restore(Classic).Colonies[0].Liberty);
+    }
+
+    // ── G. The production bonus reaches output (Slice B) ────────────────────────────────────────────────────
+
+    [Fact]
+    public void ProductionBonus_PlusTwoAtFullSoL_AddsToATileWorkersOutput()
+    {
+        // Same colony + worker; the only variable is the SoL bonus (compare a base run vs a full-SoL run).
+        int CottonGained(int liberty)
+        {
+            Game game = ColonyOnPlains(population: 1);
+            Colony colony = game.Colonies[0];
+            Position tile = colony.Position.Neighbours().First(n => game.TileWorkOptions(n).Any(o => o.GoodsId == "model.goods.cotton"));
+            game.AssignWork(colony, tile, "model.goods.cotton");
+            colony.Liberty = liberty;
+            int before = colony.StoreOf("model.goods.cotton");
+            game.EndTurn();
+            return colony.StoreOf("model.goods.cotton") - before;
+        }
+
+        int baseCotton = CottonGained(liberty: 0);                       // SoL 0 → +0
+        int boosted = CottonGained(liberty: Colony.LibertyPerRebel);     // pop 1 → SoL 100 → +2
+        Assert.True(baseCotton > 0, "the worker should produce cotton");
+        Assert.Equal(baseCotton + 2, boosted);
+    }
+
+    [Fact]
+    public void ProductionBonus_AddsPerWorker_ToBuildingOutput()
+    {
+        // One carpenter, plenty of lumber + food; the only variable is the SoL bonus.
+        int HammersGained(int liberty)
+        {
+            Game game = ColonyOnPlains(population: 2);
+            SaveGame save = SaveGame.From(game);
+            SavedColony c = save.Colonies!.Single() with
+            {
+                Population = 2,
+                Workers = null,
+                BuildingWorkers = new Dictionary<string, int> { ["model.building.carpenterHouse"] = 1 },
+                Stores = new Dictionary<string, int> { ["model.goods.lumber"] = 200, ["model.goods.food"] = 200 },
+                Liberty = liberty,
+            };
+            Game restored = (save with { Colonies = [c] }).Restore(Classic);
+            Colony colony = restored.Colonies[0];
+            int before = colony.StoreOf("model.goods.hammers");
+            restored.EndTurn();
+            return colony.StoreOf("model.goods.hammers") - before;
+        }
+
+        int baseHammers = HammersGained(liberty: 0);     // SoL 0 → +0
+        int boosted = HammersGained(liberty: 400);       // pop 2 → SoL 100 → +2 per worker (1 worker)
+        Assert.True(baseHammers > 0, "the carpenter should produce hammers");
+        Assert.Equal(baseHammers + 2, boosted);
     }
 
     private static Game ColonyOnPlains(int population)
