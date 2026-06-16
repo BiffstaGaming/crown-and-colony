@@ -32,7 +32,15 @@ public partial class ColonyPanel : PanelContainer
         Show();
     }
 
-    private void Changed()
+    /// <summary>
+    /// Signals a finished action. The rebuild is <b>deferred</b> (to the next idle frame) so a control is never freed
+    /// inside its own signal callback: <see cref="Rebuild"/> frees every child, and freeing an <c>OptionButton</c>
+    /// mid-<c>ItemSelected</c> — while its popup is still closing — crashes Godot (use-after-free). Running it after
+    /// the callback returns avoids that. The game-state change has already happened synchronously by the time this runs.
+    /// </summary>
+    private void Changed() => Callable.From(ApplyChange).CallDeferred();
+
+    private void ApplyChange()
     {
         _onChange();
         Rebuild();
