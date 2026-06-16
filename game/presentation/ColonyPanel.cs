@@ -85,11 +85,47 @@ public partial class ColonyPanel : PanelContainer
         }
         if (_colony.IdleColonists > 0)
         {
-            dynamic.AddChild(ActionButton("AutoAssign", "Send idle colonists to the fields", () =>
+            dynamic.AddChild(ActionButton("AutoAssign", "Send idle colonists to the fields (food)", () =>
             {
                 _game.AutoAssignIdleToFood(_colony);
                 Changed();
             }));
+
+            // Manual per-tile assignment: every free surrounding tile offers its producible goods (lumber, ore,
+            // cotton, furs, grain, …) so an idle colonist can be put to work on something other than food.
+            foreach (Position tile in _colony.Position.Neighbours()
+                .Where(n => !_colony.TileWorkers.ContainsKey(n))
+                .OrderBy(n => n.Y).ThenBy(n => n.X))
+            {
+                IReadOnlyList<(string GoodsId, int Yield)> options = _game.TileWorkOptions(tile);
+                if (options.Count == 0)
+                {
+                    continue; // water / off-map / barren — nothing to work here
+                }
+                var row = new HBoxContainer();
+                row.AddChild(new Label
+                {
+                    Text = $"({tile.X},{tile.Y}) {_game.Map.TerrainAt(tile).ShortName}",
+                    SizeFlagsHorizontal = SizeFlags.ExpandFill,
+                });
+                var picker = new OptionButton { Name = $"Work_{tile.X}_{tile.Y}" };
+                picker.AddItem("Work…");
+                foreach ((string goodsId, int yield) in options)
+                {
+                    picker.AddItem($"{Short(goodsId)} {yield}/turn");
+                }
+                Position t = tile;
+                picker.ItemSelected += index =>
+                {
+                    if (index > 0)
+                    {
+                        _game.AssignWork(_colony, t, options[(int)index - 1].GoodsId);
+                        Changed();
+                    }
+                };
+                row.AddChild(picker);
+                dynamic.AddChild(row);
+            }
         }
 
         // — Buildings —

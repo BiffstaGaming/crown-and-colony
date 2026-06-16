@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (founding + min colony spacing, full colony economy, membership join/leave, bonus-resource yields, ownership + **capture/pillage/plunder**, **fortification defence bonus** [stockade/fort/fortress], **La Salle free stockade**) |
-| **Last verified** | 2026-06-16 @ Phase 5 colony defence bonus + La Salle free stockade |
+| **Last verified** | 2026-06-16 @ colony tile-work picker (assign colonists to non-food tile goods) |
 | **Code** | `game/src/GameLogic/Colonies/Colony.cs` (incl. `OwnerId`), `GameSession/Game.cs` (`CheckFoundColony`/`FoundColony`; `ColonyDefenceBonus`/`ColonyDefenceBonusAt`; `ApplyFreeBuildings`; capture/plunder `CapturePlayerColony`/`AdjacentCapturableHumanColony`/`PlunderColony`/`ColonyPlunderAmount`), `Specification/BuildingType.cs` (`DefenceBonus`) · rendering: `game/presentation/ColonyMarker.cs` |
 | **Tests** | `GameTests.FoundColony_*`, `SaveGameTests.RoundTrip_PreservesColonies`, `ColonyDefenceBonusTests`, `LaSalleTests`, `ColonyCaptureTests`, `ForeignColonyCaptureTests`, `ColonyPlunderTests` |
 | **FreeCol reference** | `Colony.java` (+ `getPlunderRange`/`canBePillaged`), `BuildColonyMessage`, `Player.canClaimToFoundSettlementReason` (adjacent-colony rule, ✅ cross-checked); building `model.modifier.defence` (fortification bonus); `model.event.freeBuilding`/`csFreeBuilding` (La Salle) |
@@ -12,6 +12,8 @@
 ## 1. How it works (plain English)
 
 Select a colonist and press **B** to found a colony where it stands. The colonist settles down and becomes the colony's first inhabitant (it leaves the map). Colonies show as a small house with their name; click one to see its vitals in the status bar. Names come from a classic colonial list (Jamestown, Plymouth, …) in founding order.
+
+**Putting colonists to work.** Click your colony to open its screen. Each colonist either works one of the eight surrounding tiles (growing food, or a raw good — lumber, ore, cotton, furs) or staffs a building (turning raw goods into bells, hammers, cloth, …). New colonists report to the best food tile automatically; to change that, **Release** a worker to free it, then either **send idle colonists to the fields** (a food shortcut) or pick a specific tile and choose **what** it should produce — that's how you put someone on **lumber** (which the carpenter then turns into hammers for building) rather than food.
 
 ## 2. Detailed rules
 
@@ -44,8 +46,8 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 **Tile workers (economy slice 2):**
 - Colonists work the 8 tiles around the colony, one colonist per tile, each producing **one chosen goods type** at the terrain's best attended yield (`Game.TileYield`); ocean tiles fish.
 - **Bonus-resource yields (slice 8):** a tile's special deposit boosts what's produced there — `TileYield` applies the resource's spec modifiers (e.g. minerals +3 ore, prime sugar ×2), then the player's Founding-Father goods modifiers (Henry Hudson +100% furs), in ascending modifier-index order. A resource never *enables* a good the terrain can't already make. Expert-scoped resource bonuses (an extra bonus when an expert works the tile) are parsed but **not applied** — we don't track which colonist works a tile yet. See [ruleset-data](ruleset-data.md) (`ResourceType`) and [founding-fathers](founding-fathers.md) (the modifier system).
-- `CheckAssignWork`/`AssignWork`/`UnassignWork` oracles; rejects: off-map, non-adjacent, tile taken, no idle colonist, terrain can't produce the goods.
-- Founding and growth **auto-assign** to the best free grain tile (deterministic tie-break); the player can rearrange (re-assignment UI is the economy-UI slice).
+- `CheckAssignWork`/`AssignWork`/`UnassignWork` oracles; rejects: off-map, non-adjacent, tile taken, no idle colonist, terrain can't produce the goods. **`TileWorkOptions(tile)`** lists what a tile can produce when worked — its terrain's attended outputs that yield > 0 (lumber/furs/grain on forest, ore on hills, grain/cotton on plains, fish on ocean), each with its yield, sorted by yield — feeding the colony screen's per-tile work picker (a rules query, ADR-006).
+- Founding and growth **auto-assign** to the best free grain tile (deterministic tie-break); the player can **rearrange via the colony screen** — release a worker, send idle colonists to food (the auto-assign shortcut), **or assign an idle colonist to a specific surrounding tile for a chosen good** (the per-tile picker — lumber/ore/cotton/furs/…, not just food). This unblocks the raw → refined chain (e.g. lumber → carpenter → hammers).
 - Idle colonists produce nothing (building jobs are a later slice).
 
 **Colonist membership (slice 9):**
@@ -68,7 +70,7 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 |---|---|---|---|
 | L1 Unit | Always | found-on-settleable consumes unit/creates colony; rejections (ship, mountains, occupied tile, **adjacent to an existing colony** — `FoundColony_Rejected_AdjacentToAnExistingColony`); **resource yields** (`ResourceYieldTests`: resource boosts, expert-scope skipped, no-enable guard, Hudson ×2 furs, resource+father stack order) | ✅ |
 | L2 Scenario | Always | save/load round-trip preserves colonies; pre-v3 compat; production uses the boosted resource yield (`ResourceYieldTests.Production_UsesTheBoostedYield`); **join/leave** (`ColonyMembershipTests`: grow on join, detach a free colonist, keep ≥1, trim a job; round-trip) + `JourneyTests.Journey9` (ship a recruit home → join → colony grows) | ✅ |
-| L3 Interaction | Yes | `InputTests` (B founds), `MainSceneTests` (panel opens/closes), `ColonyPanelTests` (staff/unstaff buttons, release field worker, construction dropdown + stop) | ✅ |
+| L3 Interaction | Yes | `InputTests` (B founds), `MainSceneTests` (panel opens/closes), `ColonyPanelTests` (staff/unstaff buttons, release field worker, construction dropdown + stop, **per-tile work picker assigns a colonist to a non-food good**) | ✅ |
 | L4 Visual | Yes (marker) | colony golden (`colony-seed424242`) | ✅ |
 
 ## 5. Open issues / TODO
@@ -84,6 +86,7 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-16 | **Colony tile-work picker**: `Game.TileWorkOptions(tile)` (a tile's attended producible goods + yields, sorted) feeds a new per-tile picker in `ColonyPanel` — an idle colonist can now be assigned to a **specific surrounding tile for a chosen good** (lumber/ore/cotton/furs/…), not just the food auto-assign. Closes the deferred re-assignment UI; unblocks the raw → refined chain (lumber → hammers). Presentation + a pure oracle (ADR-006); no save/RNG change. +1 L1 `TileWorkerTests` + 1 L3 `ColonyPanelTests`. | Phase 5 colony UI |
 | 2026-06-13 | Founding (B key), colony marker, save v3 | Phase 2b |
 | 2026-06-14 | Minimum colony spacing: `CheckFoundColony` rejects a tile adjacent to an existing colony (FreeCol `canClaimToFoundSettlementReason`); resolves the long-standing TODO. Applies to the human and the AI | FP-5 |
 | 2026-06-13 | FreeCol settlement art; colony panel (click colony → name, population, terrain, colony-square yield; Close button). `GameController.OpenColonyPanel` is the public entry; L3-tested | Phase 2c |

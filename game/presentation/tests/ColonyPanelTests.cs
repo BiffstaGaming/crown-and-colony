@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.World;
 using GdUnit4;
 using Godot;
 using static GdUnit4.Assertions;
@@ -69,6 +70,37 @@ public class ColonyPanelTests
         stop!.EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
         AssertThat(colony.CurrentBuild).IsNull();
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task TileWorkPicker_AssignsAColonist_ToANonFoodTileGood()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+
+        // The founder starts farming food — release it via the panel so there's an idle colonist (and the
+        // per-tile work pickers appear).
+        FindButton(controller, "Release_")!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(colony.IdleColonists).IsEqual(1);
+
+        // Find a free surrounding tile that can produce a NON-FOOD good (lumber / ore / cotton / furs / …).
+        Position tile = colony.Position.Neighbours()
+            .First(n => game.TileWorkOptions(n).Any(o => !game.Ruleset.Goods(o.GoodsId).IsFood));
+        var opts = game.TileWorkOptions(tile);
+        int optionIndex = opts.ToList().FindIndex(o => !game.Ruleset.Goods(o.GoodsId).IsFood);
+        string goodsId = opts[optionIndex].GoodsId;
+
+        // Drive that tile's picker → select the non-food good (item 0 is the "Work…" placeholder).
+        var picker = controller.GetNode<PanelContainer>("UI/ColonyPanel")
+            .FindChild($"Work_{tile.X}_{tile.Y}", recursive: true, owned: false) as OptionButton;
+        AssertThat(picker).IsNotNull();
+        picker!.EmitSignal(OptionButton.SignalName.ItemSelected, (long)(optionIndex + 1));
+        await runner.SimulateFrames(1);
+
+        // The idle colonist now works that tile producing the chosen non-food good.
+        AssertThat(colony.TileWorkers.ContainsKey(tile)).IsTrue();
+        AssertThat(colony.TileWorkers[tile]).IsEqual(goodsId);
+        AssertThat(colony.IdleColonists).IsEqual(0);
     }
 
     private static async Task<(ISceneRunner, GameController, Game, Colony)> OpenPanel()

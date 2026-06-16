@@ -3882,6 +3882,31 @@ public sealed class Game
     public void UnassignWork(Colony colony, Position tile) => colony.RemoveWorker(tile);
 
     /// <summary>
+    /// The goods a colonist could produce by working <paramref name="tile"/> — its terrain's <b>attended</b>
+    /// production outputs that currently yield more than 0 (so a colony's surrounding forest offers lumber/furs/grain,
+    /// hills offer ore, plains offer grain/cotton, …), each paired with its yield. Sorted by yield (descending) then
+    /// goods id, for a stable, useful order in the colony screen's tile-work picker. Empty for water / off-map /
+    /// barren tiles. A rules query (ADR-006) — the presentation renders these options and calls <see cref="AssignWork"/>.
+    /// </summary>
+    public IReadOnlyList<(string GoodsId, int Yield)> TileWorkOptions(Position tile)
+    {
+        if (!Map.InBounds(tile))
+        {
+            return [];
+        }
+        return Map.TerrainAt(tile).Productions
+            .Where(p => !p.Unattended)
+            .SelectMany(p => p.Outputs)
+            .Select(o => o.GoodsId)
+            .Distinct()
+            .Select(id => (GoodsId: id, Yield: TileYield(tile, id)))
+            .Where(t => t.Yield > 0)
+            .OrderByDescending(t => t.Yield)
+            .ThenBy(t => t.GoodsId, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
     /// Auto-assigns idle colonists to the best unworked food tiles (highest grain
     /// yield, deterministic tie-break). Runs on founding and growth; also available
     /// to the player ("send idle colonists to the fields").

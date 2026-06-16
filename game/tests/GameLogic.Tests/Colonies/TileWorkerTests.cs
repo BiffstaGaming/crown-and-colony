@@ -119,6 +119,32 @@ public class TileWorkerTests
     }
 
     [Fact]
+    public void TileWorkOptions_ListEachTilesProducibleGoods_WithYields_SortedByYield()
+    {
+        // The colony screen's per-tile work picker is fed by this oracle.
+        Game game = ColonyOnCross(population: 1);
+
+        // Mountains corner → ore is a workable (non-food) good, the case this slice unblocks.
+        var mountains = game.TileWorkOptions(new Position(2, 2));
+        Assert.Contains(mountains, o => o.GoodsId == Ore);
+        Assert.All(mountains, o => Assert.True(o.Yield > 0));
+        // Each option's yield matches what CheckAssignWork/TileYield would award.
+        Assert.All(mountains, o => Assert.Equal(game.TileYield(new Position(2, 2), o.GoodsId), o.Yield));
+        // Sorted by yield, descending.
+        Assert.Equal(mountains.Select(o => o.Yield).OrderByDescending(y => y), mountains.Select(o => o.Yield));
+
+        // Ocean corner → fishing (food) is offered — water tiles are workable, not empty.
+        Assert.Contains(game.TileWorkOptions(new Position(0, 0)), o => o.GoodsId == Fish);
+
+        // A plains field → grain is offered.
+        Assert.Contains(game.TileWorkOptions(new Position(0, 1)), o => o.GoodsId == Grain);
+
+        // Off-map tiles offer nothing.
+        Assert.Empty(game.TileWorkOptions(new Position(-1, -1)));
+        Assert.Empty(game.TileWorkOptions(new Position(99, 99)));
+    }
+
+    [Fact]
     public void SaveRoundTrip_PreservesWorkers_AndPreV5LoadsNone()
     {
         Game game = ColonyOnCross(population: 2);
