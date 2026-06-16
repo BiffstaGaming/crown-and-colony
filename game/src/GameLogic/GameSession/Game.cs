@@ -1503,19 +1503,65 @@ public sealed class Game
 
     /// <summary>
     /// Damages a defeated ship (FreeCol <c>csDamageShip</c>): it loses its cargo and everyone aboard (just
-    /// as if sunk), then limps to its repair location — Europe in our model — where it sits under forced
-    /// repair for <see cref="RepairTurnsFor"/> turns before returning to service. (FreeCol's first choice is
-    /// the nearest own colony with a drydock; we have no drydock building yet, so Europe — FreeCol's fallback
-    /// — is always the repair location. Drydock-colony repair is a later sub-slice.)
+    /// as if sunk), then limps to its repair location, where it sits under forced repair for
+    /// <see cref="RepairTurnsFor"/> turns before returning to service. FreeCol's <c>getRepairLocation</c> is
+    /// the nearest owned colony with a drydock/shipyard, falling back to Europe: we now model both — a damaged
+    /// ship teleports to a water tile beside that colony (still on the map) if its owner has one (see
+    /// <see cref="RepairBerthFor"/>), otherwise it limps off to Europe.
     /// </summary>
     private void DamageShip(Unit ship)
     {
-        _units.RemoveAll(u => u.CarrierId == ship.Id); // passengers are lost when the ship is crippled
+        Position? berth = RepairBerthFor(ship);         // chosen from where it was beaten, before it moves
+        _units.RemoveAll(u => u.CarrierId == ship.Id);  // passengers are lost when the ship is crippled
         ship.ClearCargo();                              // and so is the hold's cargo
-        ship.Location = UnitLocation.InEurope;          // limps off the map to repair (teleports, as FreeCol does)
+        if (berth is { } tile)
+        {
+            ship.Location = UnitLocation.OnMap;          // repairs in its own port (teleports to the colony's dock)
+            ship.Position = tile;
+        }
+        else
+        {
+            ship.Location = UnitLocation.InEurope;       // no home drydock → limps off the map to Europe
+        }
         ship.SailTurnsRemaining = 0;
         ship.RepairTurnsRemaining = RepairTurnsFor(ship.Type);
         ship.MovementLeft = 0;                           // spent — and pinned to 0 while repairing (see EndTurn)
+    }
+
+    /// <summary>True when the colony can repair ships — it has a drydock or shipyard (<c>model.ability.repairUnits</c>).</summary>
+    private bool ColonyRepairsShips(Colony colony) =>
+        colony.Buildings.Any(b => Ruleset.Building(b).RepairsNavalUnits);
+
+    /// <summary>
+    /// The water tile a damaged ship limps to for repair: one beside the nearest owned colony with a
+    /// drydock/shipyard (Chebyshev distance from where it was beaten, ties broken by colony id). Null when the
+    /// owner has no repairing colony — then the ship repairs in Europe (FreeCol <c>Unit.getRepairLocation</c>:
+    /// the nearest repairing colony, else Europe). A repairing colony is always coastal (drydock requires
+    /// <c>hasPort</c>), so a water neighbour always exists.
+    /// </summary>
+    private Position? RepairBerthFor(Unit ship)
+    {
+        if (PlayerById(ship.OwnerId) is not { } owner)
+        {
+            return null;
+        }
+        Colony? nearest = ColoniesOf(owner)
+            .Where(ColonyRepairsShips)
+            .OrderBy(c => Chebyshev(c.Position, ship.Position))
+            .ThenBy(c => c.Id)
+            .FirstOrDefault();
+        if (nearest is null)
+        {
+            return null;
+        }
+        foreach (Position n in nearest.Position.Neighbours())
+        {
+            if (Map.InBounds(n) && Map.TerrainAt(n).IsWater)
+            {
+                return n;
+            }
+        }
+        return null; // unreachable: a drydock colony is coastal
     }
 
     /// <summary>Turns a damaged ship of this type spends repairing: <c>MaxHitPoints − 1</c> (it limps in at 1 HP, heals +1/turn), floored at 1. Every classic ship is 6 HP → 5 turns.</summary>
@@ -2874,7 +2920,7 @@ public sealed class Game
         }
     }
 
-    /// <summary>Counts down repair on damaged ships; one finishing this turn returns to service (in Europe).</summary>
+    /// <summary>Counts down repair on damaged ships; one finishing this turn returns to service (in Europe, or on the map at its home drydock colony).</summary>
     private void AdvanceRepairs()
     {
         foreach (Unit unit in _units.Where(u => u.RepairTurnsRemaining > 0))

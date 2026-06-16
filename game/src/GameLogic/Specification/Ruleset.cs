@@ -349,7 +349,9 @@ public sealed class Ruleset
                 // Build-gating abilities (factory tier → buildFactory, custom house → buildCustomHouse, docks →
                 // hasPort), collected down the extends chain so drydock/shipyard inherit docks' hasPort (FreeCol
                 // BuildableType.getRequiredAbilities; nearest definition wins for a re-stated id).
-                RequiredAbilities: CollectRequiredAbilitiesUpChain(el, buildingElements));
+                RequiredAbilities: CollectRequiredAbilitiesUpChain(el, buildingElements),
+                // Ship repair: drydock grants model.ability.repairUnits, shipyard inherits it up the extends chain.
+                RepairsNavalUnits: ResolveAbility(el, "model.ability.repairUnits", buildingElements));
         }
 
         var fathers = new Dictionary<string, FoundingFather>();

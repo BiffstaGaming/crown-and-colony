@@ -32,6 +32,11 @@ namespace CrownAndColony.GameLogic.Specification;
 /// (Adam Smith), the custom house needs <c>buildCustomHouse</c> (Stuyvesant), docks/drydock/shipyard need a
 /// coastal colony (<c>hasPort</c>). FreeCol <c>Colony.getNoBuildReason</c> MISSING_ABILITY.
 /// </param>
+/// <param name="RepairsNavalUnits">
+/// Whether this building lets the colony repair damaged ships (spec <c>model.ability.repairUnits</c>, resolved
+/// down the <c>extends</c> chain; drydock grants it, shipyard inherits it). A damaged ship limps to the nearest
+/// owned colony with this ability rather than all the way to Europe (FreeCol <c>Unit.getRepairLocation</c>).
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -42,7 +47,8 @@ public sealed record BuildingType(
     int DefenceBonus = 0,
     int WarehouseStorage = 0,
     int BellBonus = 0,
-    IReadOnlyDictionary<string, bool>? RequiredAbilities = null)
+    IReadOnlyDictionary<string, bool>? RequiredAbilities = null,
+    bool RepairsNavalUnits = false)
 {
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
 
