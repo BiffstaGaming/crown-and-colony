@@ -255,6 +255,36 @@ public class ColonyPanelTests
         AssertThat(LabelText(panel, "RoyalistPercent")).IsEqual("40%");
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task TileBadges_ShowTheSonsOfLibertyBoostedYield()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+        Position worked = founded.TileWorkers.Keys.First();
+        int boosted = game.TileYield(worked, founded.TileWorkers[worked]) + 2; // base + the +2 SoL bonus
+
+        // Full Sons of Liberty (liberty = 200·pop → SoL 100 → +2) via the save layer (Colony.Liberty is internal).
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!
+            .Select(c => c.Id == founded.Id ? c with { Liberty = Colony.LibertyPerRebel * c.Population } : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(colony.ProductionBonus).IsEqual(2);
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+        var tilesView = controller.GetNode<PanelContainer>("UI/ColonyPanel")
+            .FindChild("TilesView", recursive: true, owned: false) as Control;
+        bool badgeShowsBoosted = tilesView!.FindChildren("*", recursive: true, owned: false)
+            .OfType<Label>().Any(l => l.Text.EndsWith($" {boosted}")); // the worked-tile badge shows the effective yield
+        AssertThat(badgeShowsBoosted).IsTrue();
+    }
+
     private static string LabelText(PanelContainer panel, string name) =>
         ((Label)panel.FindChild(name, recursive: true, owned: false)).Text;
 

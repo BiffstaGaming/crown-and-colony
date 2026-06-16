@@ -110,6 +110,9 @@ public partial class ColonyPanel : PanelContainer
 
     private static string Short(string id) => id[(id.LastIndexOf('.') + 1)..];
 
+    /// <summary>A tile's per-worker yield as the colony actually banks it — the base plus the Sons-of-Liberty production bonus, floored at 0 (mirrors the production turn).</summary>
+    private int EffectiveYield(int baseYield) => Math.Max(0, baseYield + _colony.ProductionBonus);
+
     /// <summary>
     /// A human display name for a ruleset short-name, by splitting camelCase and capitalising — pure presentation
     /// (ADR-006: no model data). e.g. <c>tobacconistHouse</c> → "Tobacconist House". Used for label text only; the
@@ -349,7 +352,7 @@ public partial class ColonyPanel : PanelContainer
                         colonist.Modulate = new Color(1f, 0.9f, 0.3f); // picked up — highlight the held colonist
                     }
                     Place(view, colonist, topLeft + new Vector2(52, 8));
-                    Place(view, Badge($"{Display(Short(good))} {_game.TileYield(tile, good)}"), topLeft + new Vector2(44, 0));
+                    Place(view, Badge($"{Display(Short(good))} {EffectiveYield(_game.TileYield(tile, good))}"), topLeft + new Vector2(44, 0));
                     Position worked = tile;
                     var release = new Button { Name = $"Release_{tile.X}_{tile.Y}", Text = "✕", CustomMinimumSize = new Vector2(24, 20) };
                     release.Pressed += () => { _game.UnassignWork(_colony, worked); _heldFrom = null; Changed(); };
@@ -361,7 +364,7 @@ public partial class ColonyPanel : PanelContainer
                     picker.AddItem("Work…");
                     foreach ((string goodsId, int yield) in options)
                     {
-                        picker.AddItem($"{Display(Short(goodsId))} {yield}");
+                        picker.AddItem($"{Display(Short(goodsId))} {EffectiveYield(yield)}");
                     }
                     Position free = tile;
                     picker.ItemSelected += index =>
