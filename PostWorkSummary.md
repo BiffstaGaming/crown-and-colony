@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 — Documentation sweep + next-slice scoping (session wrap at 96% weekly)
+
+**Requested:** "Do just the next slice, then ensure all documentation is updated before session limits are hit (96% weekly)."
+**Did:** Scoped the next slice and found the readily-available candidates are **blocked by foundational prerequisites** (the queued on-the-job colonist upgrade needs per-colonist work identity `86d3b6nrz`; ocean fish-bonus is map-gen tile-improvements; ships-in-captured-colony + ship construction need a "ship moored at a colony" location; promotion ladder + teaching need the schoolhouse/education system). Also confirmed the **factory-tier production bonus is already handled** (the +50% is baked into the spec production entries our `RunBuildingProduction` applies). Given no clean small *unblocked* slice and the explicit budget priority on docs, did the **documentation sweep** instead of risking a half-finished/blocked slice: wrote a comprehensive **ClickUp Session Log** entry (`2kz0t3mf-3576`) covering all 11 slices of this session + the prerequisite-clustering finding + open questions + the In-Review queue (the Session Log had no entry for this whole implementation session); fixed a stale `ruleset-data.md` Last-verified header; verified every system doc's Last-verified is current, save pins coherent (v24), and no stray placeholder task ids.
+**Status:** **All docs synced** (repo + ClickUp); **675 tests green** (671 L1+L2 + 4 soak); repo clean + pushed (`06197ad`). No code change this turn.
+**Changed:** `docs/systems/ruleset-data.md` (Last-verified); ClickUp Session Log doc `2kz0t3mf-816` (new page `2kz0t3mf-3576`). Commit `06197ad`.
+**Decisions:** Prioritised the documentation safety-net over starting a blocked/large slice near the budget limit (honoring "ensure all documentation is updated before session limits are hit"). Recorded the key finding for the next session: **pick a foundational prerequisite next** (per-colonist work identity is the highest-leverage — it unblocks several economy slices) rather than hunting for more small leaf slices.
+**Scheduled next:** **Per-colonist work identity** (`86d3b6nrz`) — model which colonist works which tile/building, unblocking on-the-job upgrades, expert-scoped yields, and the promotion ladder. (Or a Chris-chosen alternative.)
+**Follow-ups:** the foundational prereqs above; the standing deferrals (ship construction, build-menu-offers-units, custom-house export, faithful `isCoastland`, REF `ambushPenalty`).
+**Needs you:** **Review the In-Review queue** (~11 tasks this session). Three decisions gate specific next work: the **custom-house export fork** (toggle-vs-auto + boycotts), **monarch P5 vs P6**, and **founding-father factor 24 → 40**.
+
 ## 2026-06-17 — Terrain ambush bonus (forest & hills) [continuing the backlog; combat-modifier follow-on]
 
 **Requested:** "Continue working through the backlog." (Same flow; next combat-modifier slice.)
