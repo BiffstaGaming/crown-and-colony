@@ -585,6 +585,7 @@ public sealed class Ruleset
                 Offence: SumModifier("model.modifier.offence"),
                 Defence: SumModifier("model.modifier.defence"),
                 MovementBonus: SumModifier("model.modifier.movementBonus"),
+                LineOfSightBonus: SumModifier("model.modifier.lineOfSightBonus"),
                 RequiredGoods: el.Elements("required-goods")
                     .Select(g => new RoleRequiredGoods(
                         RequiredAttribute(g, "id"),

@@ -27,7 +27,8 @@ public sealed record RoleChange(string From, string Capture);
 /// <param name="ExpertUnit">The expert unit type for this role (e.g. soldier → veteran soldier), or null.</param>
 /// <param name="Offence">Offence the role adds, summed from its index-30 additive offence modifiers (soldier +2).</param>
 /// <param name="Defence">Defence the role adds, summed from its index-30 additive defence modifiers (soldier +1).</param>
-/// <param name="MovementBonus">Movement the role adds (dragoon/scout +9); parsed for completeness, not yet applied to movement.</param>
+/// <param name="MovementBonus">Movement the role adds (dragoon/scout +9), folded into a unit's fresh moves (FreeCol <c>Unit.getInitialMovesLeft</c>).</param>
+/// <param name="LineOfSightBonus">Sight radius the role adds (scout +1), folded into the unit's fog reveal (FreeCol <c>model.modifier.lineOfSightBonus</c>).</param>
 /// <param name="RequiredGoods">The equipment the role needs per count (empty for the unarmed default role).</param>
 /// <param name="RequiredAbilities">Abilities a unit must (not) have to take the role (<c>native</c>, <c>refUnit</c>, <c>canBeEquipped</c>).</param>
 /// <param name="GrantedAbilities">Abilities the role grants while held (<c>armed</c>, <c>mounted</c>, <c>disposeOnCombatLoss</c>, <c>captureUnits</c>).</param>
@@ -40,6 +41,7 @@ public sealed record RoleType(
     double Offence,
     double Defence,
     double MovementBonus,
+    double LineOfSightBonus,
     IReadOnlyList<RoleRequiredGoods> RequiredGoods,
     IReadOnlyDictionary<string, bool> RequiredAbilities,
     IReadOnlyDictionary<string, bool> GrantedAbilities,

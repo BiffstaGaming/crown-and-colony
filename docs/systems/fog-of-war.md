@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (explored vs. currently-visible) |
-| **Last verified** | 2026-06-13 @ Phase 5 (fog upgrade) |
+| **Last verified** | 2026-06-17 @ scout line-of-sight bonus (`86d3c9upk`) |
 | **Code** | `game/src/GameLogic/GameSession/Game.cs` (`Explored`/`Reveal`, `CurrentlyVisible`/`IsVisible`) · rendering: `game/presentation/MapView.cs` |
 | **Tests** | `GameTests.FogOfWar_*`, `VisibilityTests`, `SaveGameTests.RoundTrip_PreservesExploredTilesExactly` |
 | **FreeCol reference** | `Tile.exploredBy` / player `canSee` — cross-check when multiple players exist |
@@ -11,13 +11,13 @@
 
 ## 1. How it works (plain English)
 
-The world starts hidden. Your units and colonies light up the map — each reveals the tiles around it (its "line of sight", 1 tile for a colonist or a colony). There are now **two** states beyond darkness: tiles you can **see right now** (in sight of one of your units or colonies) render fully, and tiles you've **seen before but no longer can** render **dimmed** — you remember the land, but anything moving there (a foreign unit) is hidden until you look again. Everywhere you've never been stays black. You start knowing only the 3×3 patch around your colonist.
+The world starts hidden. Your units and colonies light up the map — each reveals the tiles around it (its "line of sight", 1 tile for a colonist or a colony). A **scout** sees further: mounting a colonist as a scout adds **+1** to its sight, so it lights up two tiles in every direction — that's what makes scouts the explorers. There are now **two** states beyond darkness: tiles you can **see right now** (in sight of one of your units or colonies) render fully, and tiles you've **seen before but no longer can** render **dimmed** — you remember the land, but anything moving there (a foreign unit) is hidden until you look again. Everywhere you've never been stays black. You start knowing only the 3×3 patch around your colonist.
 
 ## 2. Detailed rules
 
 | Event | Effect |
 |---|---|
-| Unit spawned / moved | All tiles within its line-of-sight radius (square, per type) become explored |
+| Unit spawned / moved | All tiles within its line-of-sight radius (square; its type's sight **plus its role's `lineOfSightBonus`** — scout +1) become explored |
 | Colony founded | Its surroundings (radius `ColonySightRadius` = 1) become explored |
 | Once explored | Stays explored forever (no re-hiding) |
 | Currently visible | Tiles within sight of an on-map unit **or** a colony, right now — recomputed from positions each query (a subset of explored) |
@@ -29,7 +29,7 @@ The world starts hidden. Your units and colonies light up the map — each revea
 ## 3. Technical design
 
 - `Game._explored` (`HashSet<Position>`), exposed read-only (`Explored`, `IsExplored`); `Reveal(unit)` / `RevealAround(centre, radius)` called on spawn, every move, and colony founding — exploration is game state (persists, drives rules).
-- `Game.CurrentlyVisible` (computed `IReadOnlySet<Position>`) and `IsVisible(p)` derive the in-sight set from current on-map units (their `LineOfSight`) and colonies (`ColonySightRadius`) on each query — never stored, so never stale; always ⊆ explored.
+- `Game.CurrentlyVisible` (computed `IReadOnlySet<Position>`) and `IsVisible(p)` derive the in-sight set from current on-map units (their **effective** sight, `Game.LineOfSightOf` = `UnitType.LineOfSight` + the role's `RoleType.LineOfSightBonus`) and colonies (`ColonySightRadius`) on each query — never stored, so never stale; always ⊆ explored. `Reveal` uses the same effective radius, so a scout explores +1 tile too.
 - Save format v2 stores explored tiles as row-major indexes (`y*W+x`); v1 saves (no list) reveal around units on load. Visible is **not** saved (derived).
 - Rendering: `MapView.ShowState(map, explored, visible)` draws unexplored tiles as near-black, explored-but-not-visible tiles dimmed (a grey modulate on the sprites), and visible tiles at full brightness. Native settlements are the first hidden entities to consume this: `GameController.SyncNativeMarkers` draws a settlement only if `IsExplored(its tile)` (see [natives](natives.md)). With exploration-only fog, a settlement once seen stays drawn — the explored-vs-visible upgrade (P5.2) will dim it when out of current sight.
 
@@ -37,7 +37,7 @@ The world starts hidden. Your units and colonies light up the map — each revea
 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
-| L1 Unit | Always | new game reveals ≤3×3; moving grows explored; `VisibilityTests` (visible = sight set, ⊆ explored, shrinks when you move on, colony keeps its surroundings visible) | ✅ |
+| L1 Unit | Always | new game reveals ≤3×3; moving grows explored; `VisibilityTests` (visible = sight set, ⊆ explored, shrinks when you move on, colony keeps its surroundings visible); **`ScoutSightTests`** (the scout role parses `lineOfSightBonus` +1, the default role 0; a scout sees a tile two away that a plain colonist can't) | ✅ |
 | L2 Scenario | Always | wander scenario asserts unit always on explored ground | ✅ |
 | L3 Interaction | Rendering only | covered by scene load test | ✅ |
 | L4 Visual | Yes | `remembered-fog-seed424242` golden (dimmed explored-but-unseen tiles) | ✅ |
@@ -45,7 +45,7 @@ The world starts hidden. Your units and colonies light up the map — each revea
 ## 5. Open issues / TODO
 
 - [x] Explored-but-not-visible dimming (Phase 5 fog upgrade). Hidden foreign units follow naturally — renderers already skip non-visible entities (only explored native settlements draw).
-- [ ] Larger sight radii (scout 2) once roles/types with higher line-of-sight are in play; per-type colony line of sight.
+- [x] **Larger sight radii** (`86d3c9upk`): the scout role's `lineOfSightBonus` (+1) is folded into the fog reveal (`Game.LineOfSightOf`), so a scout sees two tiles out. *(Follow-up: the seasoned-scout's extra **exploration traits** — better Lost-City-Rumour outcomes — wait on the Lost City Rumours system; per-type **colony** line of sight is still a flat radius 1.)*
 
 ## Changelog
 
@@ -54,3 +54,4 @@ The world starts hidden. Your units and colonies light up the map — each revea
 | 2026-06-13 | Exploration fog: reveal on spawn/move, persisted in saves (v2) | Phase 2a |
 | 2026-06-13 | Explored vs. currently-visible: `CurrentlyVisible`/`IsVisible` (units + colonies), dimmed remembered tiles in `MapView`; `VisibilityTests` + `remembered-fog` golden | Phase 5 (fog upgrade) |
 | 2026-06-14 | Native units (braves) are excluded from `CurrentlyVisible`/`IsVisible` and don't reveal/explore — only the player's own units and colonies lift fog | Phase 5 slice 5b |
+| 2026-06-17 | **Scout line-of-sight bonus** (`86d3c9upk`): a unit's sight is now its type `LineOfSight` + its role's `lineOfSightBonus` (`Game.LineOfSightOf`); the scout role grants +1 (parsed into `RoleType.LineOfSightBonus`), so a scout sees/reveals two tiles out. Deterministic, no save change. +2 L1 (`ScoutSightTests`) | Phase 5 (`86d3c9upk`) |

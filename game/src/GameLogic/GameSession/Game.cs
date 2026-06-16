@@ -1726,7 +1726,7 @@ public sealed class Game
             {
                 if (unit.IsOnMap && IsHumanOwned(unit)) // only the human's own units lift the human's fog
                 {
-                    visible.UnionWith(TilesInRange(unit.Position, unit.Type.LineOfSight));
+                    visible.UnionWith(TilesInRange(unit.Position, LineOfSightOf(unit)));
                 }
             }
             foreach (Colony colony in _colonies)
@@ -1742,7 +1742,7 @@ public sealed class Game
 
     /// <summary>Whether a tile is currently in sight (not merely explored).</summary>
     public bool IsVisible(Position p) =>
-        _units.Any(u => u.IsOnMap && IsHumanOwned(u) && InSight(u.Position, p, u.Type.LineOfSight))
+        _units.Any(u => u.IsOnMap && IsHumanOwned(u) && InSight(u.Position, p, LineOfSightOf(u)))
         || _colonies.Any(c => IsHumanOwned(c) && InSight(c.Position, p, ColonySightRadius));
 
     private static bool InSight(Position centre, Position p, int radius) =>
@@ -4693,7 +4693,14 @@ public sealed class Game
     private void Reveal(Unit unit) => Reveal(_human, unit);
 
     /// <summary>Reveals all tiles within the unit's line of sight for <paramref name="player"/>.</summary>
-    private void Reveal(Player player, Unit unit) => RevealAround(player, unit.Position, unit.Type.LineOfSight);
+    private void Reveal(Player player, Unit unit) => RevealAround(player, unit.Position, LineOfSightOf(unit));
+
+    /// <summary>
+    /// A unit's effective sight radius: its type's <see cref="UnitType.LineOfSight"/> plus its role's
+    /// <see cref="RoleType.LineOfSightBonus"/> (a scout sees +1 tile further, FreeCol <c>model.modifier.lineOfSightBonus</c>).
+    /// </summary>
+    private int LineOfSightOf(Unit unit) =>
+        unit.Type.LineOfSight + (int)Ruleset.Role(unit.RoleId).LineOfSightBonus;
 
     /// <summary>
     /// Reveals a unit's surroundings into its <em>owning colonial player's</em> fog — the human's for a human
