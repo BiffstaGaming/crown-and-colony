@@ -251,26 +251,26 @@ public partial class ColonyPanel : PanelContainer
     /// </summary>
     private Control TileCell(Position tile, bool isCentre)
     {
-        var cell = new PanelContainer { CustomMinimumSize = new Vector2(150, 92) };
+        var cell = new PanelContainer { CustomMinimumSize = new Vector2(150, 116) };
         var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         cell.AddChild(box);
 
+        // The tile drawn in real FreeCol art: the terrain diamond, with the colony sprite (centre) or a colonist
+        // sprite (worked tile) on top.
+        box.AddChild(TileArt(tile, isCentre));
+
         if (isCentre)
         {
-            box.AddChild(Centered($"🏛 {_colony.Name}"));
-            box.AddChild(Centered($"pop {_colony.Population}"));
+            box.AddChild(Centered(_colony.Name));
             return cell;
         }
         if (!_game.Map.InBounds(tile))
         {
-            box.AddChild(Centered("—"));
             return cell;
         }
-
-        box.AddChild(Centered($"{_game.Map.TerrainAt(tile).ShortName} ({tile.X},{tile.Y})"));
         if (_colony.TileWorkers.TryGetValue(tile, out string? good))
         {
-            box.AddChild(Centered($"{Short(good)} {_game.TileYield(tile, good)}/turn"));
+            box.AddChild(Centered($"{Short(good)} {_game.TileYield(tile, good)}"));
             Position worked = tile;
             box.AddChild(ActionButton($"Release_{tile.X}_{tile.Y}", "Release", () =>
             {
@@ -298,6 +298,44 @@ public partial class ColonyPanel : PanelContainer
             box.AddChild(picker);
         }
         return cell;
+    }
+
+    /// <summary>The tile's art: the terrain diamond (base + forest/elevation overlay), with the colony settlement sprite at the centre, or a colonist sprite on a worked tile, stacked on top (later stacks draw over earlier ones).</summary>
+    private Control TileArt(Position tile, bool isCentre)
+    {
+        var art = new Control { CustomMinimumSize = new Vector2(128, 64) };
+        if (_game.Map.InBounds(tile))
+        {
+            foreach (Texture2D tex in ColonyArt.TerrainTextures(_game.Map.TerrainAt(tile).ShortName))
+            {
+                Stack(art, tex);
+            }
+        }
+        if (isCentre)
+        {
+            Stack(art, ColonyArt.ColonyIcon());
+        }
+        else if (_colony.TileWorkers.ContainsKey(tile))
+        {
+            Stack(art, ColonyArt.UnitIcon("freeColonist"));
+        }
+        return art;
+    }
+
+    private static void Stack(Control art, Texture2D? texture)
+    {
+        if (texture is null)
+        {
+            return;
+        }
+        var rect = new TextureRect
+        {
+            Texture = texture,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        art.AddChild(rect);
+        rect.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
     }
 
     private static Label Centered(string text) =>
