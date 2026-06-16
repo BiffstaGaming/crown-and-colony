@@ -37,6 +37,17 @@ namespace CrownAndColony.GameLogic.Specification;
 /// down the <c>extends</c> chain; drydock grants it, shipyard inherits it). A damaged ship limps to the nearest
 /// owned colony with this ability rather than all the way to Europe (FreeCol <c>Unit.getRepairLocation</c>).
 /// </param>
+/// <param name="BuildableUnitTypeIds">
+/// Unit-type ids this building lets the colony construct (spec <c>model.ability.build</c> with a
+/// <c>&lt;scope type="…"/&gt;</c>, collected down the <c>extends</c> chain): carpenter's house → wagon train,
+/// armory → artillery (magazine/arsenal inherit it). Drives the unit build-ability gate (FreeCol
+/// <c>UnitType.canBeBuiltInColony</c> MISSING_BUILD_ABILITY).
+/// </param>
+/// <param name="BuildsNavalUnits">
+/// Whether this building grants the build ability scoped to <c>model.ability.navalUnit</c> (spec
+/// <c>model.ability.build</c> with <c>&lt;scope ability-id="model.ability.navalUnit"/&gt;</c>) — the shipyard,
+/// which enables building any ship. (Ship construction is not yet wired up; this is parsed for completeness.)
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -48,13 +59,19 @@ public sealed record BuildingType(
     int WarehouseStorage = 0,
     int BellBonus = 0,
     IReadOnlyDictionary<string, bool>? RequiredAbilities = null,
-    bool RepairsNavalUnits = false)
+    bool RepairsNavalUnits = false,
+    IReadOnlySet<string>? BuildableUnitTypeIds = null,
+    bool BuildsNavalUnits = false)
 {
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
+    private static readonly IReadOnlySet<string> NoUnits = new HashSet<string>();
 
     /// <summary>Short name derived from the id: <c>model.building.townHall</c> → <c>townHall</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
 
     /// <summary>Abilities required to build this, id → required value (an empty map when unconditional).</summary>
     public IReadOnlyDictionary<string, bool> RequiredAbilitiesOrEmpty => RequiredAbilities ?? NoAbilities;
+
+    /// <summary>Unit-type ids this building lets the colony construct (an empty set when it enables none).</summary>
+    public IReadOnlySet<string> BuildableUnitTypeIdsOrEmpty => BuildableUnitTypeIds ?? NoUnits;
 }

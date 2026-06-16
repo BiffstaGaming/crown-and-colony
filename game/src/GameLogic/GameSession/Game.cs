@@ -2060,7 +2060,15 @@ public sealed class Game
     /// Creates a new unit at a position. A player unit reveals its surroundings; a native-owned unit
     /// (a brave, <paramref name="ownerNationId"/> set) does not — natives don't lift the player's fog.
     /// </summary>
-    public Unit SpawnUnit(UnitType type, Position position, string? ownerNationId = null)
+    public Unit SpawnUnit(UnitType type, Position position, string? ownerNationId = null) =>
+        SpawnUnit(type, position, ownerId: 0, ownerNationId);
+
+    /// <summary>
+    /// Spawns a unit owned by a specific colonial player (FreeCol gives a colony-built unit the colony's owner).
+    /// The owner is set <em>before</em> fog is lifted, so a foreign power's new unit reveals its own fog, not the
+    /// human's. The public overload keeps the default human owner (0).
+    /// </summary>
+    internal Unit SpawnUnit(UnitType type, Position position, int ownerId, string? ownerNationId = null)
     {
         if (!Map.InBounds(position))
         {
@@ -2073,7 +2081,7 @@ public sealed class Game
                 : "Land units cannot be placed on water.");
         }
 
-        var unit = new Unit(_nextUnitId++, type, position) { OwnerNationId = ownerNationId };
+        var unit = new Unit(_nextUnitId++, type, position) { OwnerId = ownerId, OwnerNationId = ownerNationId };
         _units.Add(unit);
         RevealForOwner(unit); // a unit lifts its own owner's fog (the human's, or a foreign power's; natives none)
         return unit;
@@ -2929,157 +2937,255 @@ public sealed class Game
         }
     }
 
-    /// <summary>Whether the colony may start constructing a building type.</summary>
-    public MoveCheck CheckSetBuild(Colony colony, string buildingId)
+    /// <summary>
+    /// A resolved construction target — a building <em>or</em> a buildable land unit — exposing the facts the
+    /// build path needs (FreeCol <c>BuildableType</c>). A queued id resolves to one of these via
+    /// <see cref="ResolveBuildable"/>; buildings and units then share one gate (<see cref="BuildRefusal"/>).
+    /// </summary>
+    private sealed record Buildable(
+        string Id,
+        string ShortName,
+        IReadOnlyList<GoodsOutput> BuildCost,
+        int RequiredPopulation,
+        IReadOnlyDictionary<string, bool> RequiredAbilities,
+        bool IsUnit,
+        string? UpgradesFrom,
+        UnitType? Unit);
+
+    /// <summary>
+    /// Resolves a construction id to a building or a buildable <b>land</b> unit; <c>null</c> when the id is
+    /// neither (unknown, a non-buildable type, or a ship — naval construction needs a shipyard's water-scoped
+    /// build ability and a water berth, deferred, so ships are excluded here to keep the colony tile valid).
+    /// </summary>
+    private Buildable? ResolveBuildable(string id)
     {
-        BuildingType building = Ruleset.Building(buildingId);
-        if (colony.HasBuilding(buildingId))
+        if (Ruleset.FindBuilding(id) is { } b)
         {
-            return MoveCheck.No($"The colony already has a {building.ShortName}.");
+            return new Buildable(b.Id, b.ShortName, b.BuildCost, b.RequiredPopulation, b.RequiredAbilitiesOrEmpty, IsUnit: false, b.UpgradesFrom, Unit: null);
         }
-        if (building.BuildCost.Count == 0)
+        if (Ruleset.FindBuildableUnit(id) is { IsNaval: false } u)
         {
-            return MoveCheck.No($"The {building.ShortName} cannot be constructed.");
+            return new Buildable(u.Id, u.ShortName, u.BuildCostOrEmpty, u.RequiredPopulation, u.RequiredAbilitiesOrEmpty, IsUnit: true, UpgradesFrom: null, Unit: u);
         }
-        if (building.UpgradesFrom is not null && !colony.HasBuilding(building.UpgradesFrom))
-        {
-            return MoveCheck.No($"A {building.ShortName} upgrades an existing building the colony lacks.");
-        }
-        if (colony.Population < building.RequiredPopulation)
-        {
-            return MoveCheck.No(
-                $"The {building.ShortName} needs a population of {building.RequiredPopulation}.");
-        }
-        if (RequiredAbilityRefusal(colony, building) is { } reason)
-        {
-            return MoveCheck.No(reason);
-        }
-        return MoveCheck.Yes(0);
+        return null;
     }
 
     /// <summary>
-    /// A reason the colony cannot build <paramref name="building"/> because it fails one of the building's
-    /// <c>required-ability</c> gates (factory tier → Adam Smith's <c>buildFactory</c>, custom house →
-    /// Stuyvesant's <c>buildCustomHouse</c>, docks/drydock/shipyard → a coastal colony's <c>hasPort</c>);
-    /// <c>null</c> when every requirement is met (FreeCol <c>Colony.getNoBuildReason</c> MISSING_ABILITY/COASTAL).
+    /// The reason a colony cannot start <paramref name="target"/> (FreeCol <c>Colony.getNoBuildReason</c>), or
+    /// <c>null</c> when it may. Buildings are one-per-colony and may be an upgrade; a unit can be built any number
+    /// of times (so the already-built/already-queued and upgrade gates apply to buildings only). <paramref name="queueing"/>
+    /// also accepts an upgrade predecessor that sits earlier in the queue (not yet standing).
     /// </summary>
-    private string? RequiredAbilityRefusal(Colony colony, BuildingType building)
+    private string? BuildRefusal(Colony colony, Buildable target, bool queueing)
     {
-        foreach ((string abilityId, bool required) in building.RequiredAbilitiesOrEmpty)
+        if (target.BuildCost.Count == 0)
         {
-            if (ColonyHasAbility(colony, abilityId) != required)
+            return $"The {target.ShortName} cannot be constructed.";
+        }
+        if (!target.IsUnit)
+        {
+            if (colony.HasBuilding(target.Id))
             {
-                if (abilityId == HasPortAbility)
-                {
-                    return $"A {building.ShortName} can only be built in a coastal colony.";
-                }
-                FoundingFather? father = Ruleset.FoundingFathers
-                    .FirstOrDefault(f => f.Abilities.Any(a => a.Id == abilityId && a.Value));
-                return father is not null
-                    ? $"The {building.ShortName} needs the {father.ShortName} Founding Father."
-                    : $"The {building.ShortName} requires an ability the colony lacks ({abilityId}).";
+                return $"The colony already has a {target.ShortName}.";
+            }
+            if (queueing && colony.BuildQueue.Contains(target.Id))
+            {
+                return $"The {target.ShortName} is already queued.";
+            }
+            if (target.UpgradesFrom is { } parent
+                && !colony.HasBuilding(parent) && !(queueing && colony.BuildQueue.Contains(parent)))
+            {
+                return $"A {target.ShortName} upgrades a building the colony has not built or queued.";
+            }
+        }
+        if (colony.Population < target.RequiredPopulation)
+        {
+            return $"The {target.ShortName} needs a population of {target.RequiredPopulation}.";
+        }
+        if (RequiredAbilityRefusal(colony, target.ShortName, target.RequiredAbilities) is { } abilityReason)
+        {
+            return abilityReason;
+        }
+        if (target.IsUnit && target.Unit is { } unit)
+        {
+            // LIMIT_EXCEEDED then MISSING_BUILD_ABILITY (FreeCol getNoBuildReason order, after MISSING_ABILITY).
+            if (!UnitBuildLimitOk(colony, unit))
+            {
+                return $"You cannot build more {target.ShortName}s — one per colony.";
+            }
+            if (!ColonyCanBuildUnit(colony, unit))
+            {
+                BuildingType? enabler = Ruleset.BuildingTypes.FirstOrDefault(b => b.BuildableUnitTypeIdsOrEmpty.Contains(unit.Id));
+                return enabler is not null
+                    ? $"A {target.ShortName} needs a {enabler.ShortName} in the colony."
+                    : $"The {target.ShortName} cannot be built in this colony.";
             }
         }
         return null;
     }
 
-    /// <summary>Sets the colony's construction to a single building (null stops construction), replacing the queue.</summary>
-    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckSetBuild"/>.</exception>
-    public void SetBuild(Colony colony, string? buildingId)
+    /// <summary>
+    /// True when one of the colony's buildings grants the build ability scoped to <paramref name="unit"/> (FreeCol
+    /// <c>UnitType.canBeBuiltInColony</c>): carpenter's house → wagon train (a free base building, so every colony
+    /// qualifies), armory → artillery, shipyard → any naval unit. A unit with no enabling building is MISSING_BUILD_ABILITY.
+    /// </summary>
+    private bool ColonyCanBuildUnit(Colony colony, UnitType unit) =>
+        colony.Buildings.Select(Ruleset.Building)
+            .Any(b => b.BuildableUnitTypeIdsOrEmpty.Contains(unit.Id) || (unit.IsNaval && b.BuildsNavalUnits));
+
+    /// <summary>
+    /// True when building one more <paramref name="unit"/> stays within its spec <c>&lt;limit&gt;</c> (FreeCol
+    /// <c>Limit.evaluate</c>): the classic wagon-train cap is <c>units lt settlements</c> at player scope — the
+    /// owner's wagon trains must stay fewer than their colonies (at most one per colony). Unlimited unit / a limit
+    /// over operands we do not evaluate → always allowed.
+    /// </summary>
+    private bool UnitBuildLimitOk(Colony colony, UnitType unit)
     {
-        if (buildingId is not null)
+        if (unit.BuildLimit is not { } limit || PlayerById(colony.OwnerId) is not { } owner)
         {
-            MoveCheck check = CheckSetBuild(colony, buildingId);
+            return true;
+        }
+        if (limit.LeftOperand != "units" || limit.RightOperand != "settlements")
+        {
+            return true; // only the classic units-vs-settlements form is evaluated; anything else is treated as no cap
+        }
+        int owned = _units.Count(u => u.OwnerId == owner.PlayerId && u.OwnerNationId is null && u.Type.Id == unit.Id);
+        int colonies = ColoniesOf(owner).Count();
+        return limit.Operator switch
+        {
+            "lt" => owned < colonies,
+            "le" => owned <= colonies,
+            "gt" => owned > colonies,
+            "ge" => owned >= colonies,
+            "eq" => owned == colonies,
+            _ => true,
+        };
+    }
+
+    /// <summary>
+    /// A reason the colony fails one of the buildable's <c>required-ability</c> gates (factory tier → Adam
+    /// Smith's <c>buildFactory</c>, custom house → Stuyvesant's <c>buildCustomHouse</c>, docks/drydock/shipyard →
+    /// a coastal colony's <c>hasPort</c>); <c>null</c> when met (FreeCol MISSING_ABILITY/COASTAL).
+    /// </summary>
+    private string? RequiredAbilityRefusal(Colony colony, string shortName, IReadOnlyDictionary<string, bool> requiredAbilities)
+    {
+        foreach ((string abilityId, bool required) in requiredAbilities)
+        {
+            if (ColonyHasAbility(colony, abilityId) != required)
+            {
+                if (abilityId == HasPortAbility)
+                {
+                    return $"A {shortName} can only be built in a coastal colony.";
+                }
+                FoundingFather? father = Ruleset.FoundingFathers
+                    .FirstOrDefault(f => f.Abilities.Any(a => a.Id == abilityId && a.Value));
+                return father is not null
+                    ? $"The {shortName} needs the {father.ShortName} Founding Father."
+                    : $"The {shortName} requires an ability the colony lacks ({abilityId}).";
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Whether the colony may start constructing a building or buildable unit right now.</summary>
+    public MoveCheck CheckSetBuild(Colony colony, string buildableId) =>
+        ResolveBuildable(buildableId) is { } target && BuildRefusal(colony, target, queueing: false) is var reason
+            ? (reason is null ? MoveCheck.Yes(0) : MoveCheck.No(reason))
+            : MoveCheck.No($"'{buildableId}' cannot be constructed.");
+
+    /// <summary>Sets the colony's construction to a single building or unit (null stops construction), replacing the queue.</summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckSetBuild"/>.</exception>
+    public void SetBuild(Colony colony, string? buildableId)
+    {
+        if (buildableId is not null)
+        {
+            MoveCheck check = CheckSetBuild(colony, buildableId);
             if (!check.Allowed)
             {
                 throw new InvalidMoveException(check.Reason!);
             }
         }
-        colony.SetBuildQueue(buildingId is null ? [] : [buildingId]);
+        colony.SetBuildQueue(buildableId is null ? [] : [buildableId]);
     }
 
     /// <summary>
-    /// Whether a building may be appended to the colony's construction queue — costed, not already built or
-    /// queued, population met, and (for an upgrade) its predecessor already present or earlier in the queue.
+    /// Whether a building or unit may be appended to the colony's construction queue. Same gate as
+    /// <see cref="CheckSetBuild"/>, but an upgrade predecessor may sit earlier in the queue; a building already
+    /// built or queued is refused, while a unit may be queued any number of times (build three artillery).
     /// </summary>
-    public MoveCheck CheckEnqueueBuild(Colony colony, string buildingId)
-    {
-        BuildingType building = Ruleset.Building(buildingId);
-        if (building.BuildCost.Count == 0)
-        {
-            return MoveCheck.No($"The {building.ShortName} cannot be constructed.");
-        }
-        if (colony.HasBuilding(buildingId) || colony.BuildQueue.Contains(buildingId))
-        {
-            return MoveCheck.No($"The {building.ShortName} is already built or queued.");
-        }
-        if (colony.Population < building.RequiredPopulation)
-        {
-            return MoveCheck.No($"The {building.ShortName} needs a population of {building.RequiredPopulation}.");
-        }
-        if (building.UpgradesFrom is not null
-            && !colony.HasBuilding(building.UpgradesFrom) && !colony.BuildQueue.Contains(building.UpgradesFrom))
-        {
-            return MoveCheck.No($"A {building.ShortName} upgrades a building the colony has not built or queued.");
-        }
-        if (RequiredAbilityRefusal(colony, building) is { } reason)
-        {
-            return MoveCheck.No(reason);
-        }
-        return MoveCheck.Yes(0);
-    }
+    public MoveCheck CheckEnqueueBuild(Colony colony, string buildableId) =>
+        ResolveBuildable(buildableId) is { } target && BuildRefusal(colony, target, queueing: true) is var reason
+            ? (reason is null ? MoveCheck.Yes(0) : MoveCheck.No(reason))
+            : MoveCheck.No($"'{buildableId}' cannot be constructed.");
 
-    /// <summary>Appends a building to the colony's construction queue (built after the items already queued).</summary>
+    /// <summary>Appends a building or unit to the colony's construction queue (built after the items already queued).</summary>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckEnqueueBuild"/>.</exception>
-    public void EnqueueBuild(Colony colony, string buildingId)
+    public void EnqueueBuild(Colony colony, string buildableId)
     {
-        MoveCheck check = CheckEnqueueBuild(colony, buildingId);
+        MoveCheck check = CheckEnqueueBuild(colony, buildableId);
         if (!check.Allowed)
         {
             throw new InvalidMoveException(check.Reason!);
         }
-        colony.EnqueueBuild(buildingId);
+        colony.EnqueueBuild(buildableId);
     }
 
     /// <summary>Building types the colony could start constructing right now.</summary>
     public IEnumerable<BuildingType> Buildables(Colony colony) =>
         Ruleset.BuildingTypes.Where(b => CheckSetBuild(colony, b.Id).Allowed);
 
+    /// <summary>Land unit types the colony could start constructing right now (artillery, wagon train).</summary>
+    public IEnumerable<UnitType> BuildableUnits(Colony colony) =>
+        Ruleset.BuildableUnitTypes.Where(u => !u.IsNaval && CheckSetBuild(colony, u.Id).Allowed);
+
     /// <summary>
-    /// Advances the colony's construction queue: any front item that became un-buildable (already built, or its
-    /// upgrade predecessor is gone) is skipped without spending materials, then the front item is completed if the
-    /// stores cover its cost — one per turn — and the queue advances so the next item accumulates next turn
-    /// (FreeCol <c>csNextBuildable</c>).
+    /// Advances the colony's construction queue (FreeCol <c>csNextBuildable</c> + completion): any front item that
+    /// is no longer buildable — an unknown id, a building already built or whose upgrade predecessor is gone, a
+    /// unit over its limit or missing its build-ability — is skipped without spending materials (same gate as
+    /// <see cref="CheckSetBuild"/>); then the front item is completed if the stores cover its cost, one per turn.
+    /// A completed <b>unit</b> musters on the colony tile under the colony's owner; a building is added (or
+    /// replaces its predecessor). The queue then advances — except a <b>lone queued unit repeats</b> (FreeCol
+    /// <c>CompletionAction.REMOVE_EXCEPT_LAST</c>): the colony keeps churning it out until stopped or capped.
     /// </summary>
     private void RunConstruction(Colony colony)
     {
-        while (colony.CurrentBuild is { } buildingId)
+        while (colony.CurrentBuild is { } buildableId)
         {
-            BuildingType building = Ruleset.Building(buildingId);
-            bool invalid = colony.HasBuilding(buildingId)
-                || (building.UpgradesFrom is not null && !colony.HasBuilding(building.UpgradesFrom));
-            if (invalid)
+            if (ResolveBuildable(buildableId) is not { } target)
             {
-                colony.AdvanceBuild(); // drop a now-impossible item and try the next
+                colony.AdvanceBuild(); // an unresolvable id can never build — drop it and try the next
                 continue;
             }
-            if (building.BuildCost.Any(c => colony.StoreOf(Ruleset.StorageIdOf(c.GoodsId)) < c.Amount))
+            if (target.BuildCost.Any(c => colony.StoreOf(Ruleset.StorageIdOf(c.GoodsId)) < c.Amount))
             {
-                return; // keep saving materials for the front item
+                return; // not yet affordable — keep saving (FreeCol re-validates the front item only once its goods are in store)
             }
-            foreach (GoodsOutput cost in building.BuildCost)
+            if (BuildRefusal(colony, target, queueing: false) is not null)
+            {
+                colony.AdvanceBuild(); // affordable but no longer buildable (already built, upgrade gone, unit capped/un-enabled) → skip without spending
+                continue;
+            }
+            foreach (GoodsOutput cost in target.BuildCost)
             {
                 colony.AddGoods(Ruleset.StorageIdOf(cost.GoodsId), -cost.Amount);
             }
-            if (building.UpgradesFrom is not null)
+            bool repeats = target.IsUnit && colony.BuildQueue.Count == 1; // a lone queued unit is rebuilt next turn
+            if (target.IsUnit)
             {
-                colony.ReplaceBuilding(building.UpgradesFrom, building.Id);
+                SpawnUnit(Ruleset.Unit(target.Id), colony.Position, colony.OwnerId); // a built unit musters at the colony
+            }
+            else if (target.UpgradesFrom is { } upgraded)
+            {
+                colony.ReplaceBuilding(upgraded, target.Id);
             }
             else
             {
-                colony.AddBuilding(building.Id);
+                colony.AddBuilding(target.Id);
             }
-            colony.AdvanceBuild(); // front complete → the next item becomes current
+            if (!repeats)
+            {
+                colony.AdvanceBuild(); // front complete → the next item becomes current (a lone unit stays to repeat)
+            }
             return; // one build per turn
         }
     }

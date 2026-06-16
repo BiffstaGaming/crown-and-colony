@@ -75,15 +75,33 @@ public class BuildQueueTests
         Game game = PlainsColony(out Colony colony);
         // Queue the warehouse twice via the model, then build it the first time → the second is now invalid.
         colony.SetBuildQueue([Warehouse, Warehouse]);
-        colony.AddGoods(Hammers, 80); // exactly one warehouse — nothing left for a second
+        colony.AddGoods(Hammers, 160); // enough for two — but the second is redundant once the first is built
 
         game.EndTurn(); // builds warehouse #1, advances to #2 (one build per turn)
         Assert.True(colony.HasBuilding(Warehouse));
         Assert.Equal([Warehouse], colony.BuildQueue);
-        Assert.Equal(0, colony.StoreOf(Hammers));
+        Assert.Equal(80, colony.StoreOf(Hammers));
 
-        game.EndTurn(); // #2 is now already-built → skipped without needing materials
+        // FreeCol re-validates the front item only once it is affordable: #2 is now affordable AND already built,
+        // so it is dropped without spending its 80 hammers.
+        game.EndTurn();
         Assert.Empty(colony.BuildQueue);
+        Assert.Equal(80, colony.StoreOf(Hammers)); // the skip spent nothing
+    }
+
+    [Fact]
+    public void ATransientlyUnbuildableItem_IsKeptWhileUnaffordable_NotDropped()
+    {
+        // Regression (FreeCol csNextBuildable runs only when the front item is affordable): a building queued
+        // before the colony can build it — here a stockade (needs population 3) at population 1 with no hammers —
+        // must NOT be silently dropped on idle turns. It waits, exactly as FreeCol does.
+        Game game = PlainsColony(out Colony colony);
+        colony.SetBuildQueue(["model.building.stockade"]); // requires population 3; colony is pop 1, produces no hammers
+
+        game.EndTurn();
+        game.EndTurn();
+
+        Assert.Equal(["model.building.stockade"], colony.BuildQueue); // still queued, not lost
     }
 
     [Fact]

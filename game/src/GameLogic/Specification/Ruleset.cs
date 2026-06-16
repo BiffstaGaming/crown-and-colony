@@ -124,6 +124,25 @@ public sealed class Ruleset
             ? b
             : throw new KeyNotFoundException($"Unknown building type '{id}'.");
 
+    /// <summary>Looks up a building type by id without throwing; returns null when no such building exists (used to tell a queued building id from a unit id).</summary>
+    public BuildingType? FindBuilding(string id) => _buildingById.GetValueOrDefault(id);
+
+    /// <summary>
+    /// Looks up a <em>colony-constructable</em> unit type by id; null when the id is not one. A build-queue unit
+    /// is one that needs a <b>building material</b> (hammers/tools) — this excludes the free colonist, whose
+    /// <c>required-goods food=200</c> is the born-in-colony growth threshold (a separate mechanism), not a
+    /// build-menu item (FreeCol keeps colonists in a distinct population queue).
+    /// </summary>
+    public UnitType? FindBuildableUnit(string id) =>
+        _unitById.TryGetValue(id, out var u) && IsColonyBuildableUnit(u) ? u : null;
+
+    /// <summary>Unit types that can be constructed in a colony (artillery, wagon train, ships), in specification order.</summary>
+    public IEnumerable<UnitType> BuildableUnitTypes => UnitTypes.Where(IsColonyBuildableUnit);
+
+    /// <summary>A unit the colony build queue can hold: it costs a building material (hammers/tools) and is not a person (colonist).</summary>
+    private bool IsColonyBuildableUnit(UnitType unit) =>
+        !unit.IsPerson && unit.BuildCostOrEmpty.Any(c => BuildingMaterials.Contains(c.GoodsId));
+
     /// <summary>All Founding Fathers, in specification order.</summary>
     public IReadOnlyList<FoundingFather> FoundingFathers { get; }
 
@@ -351,7 +370,12 @@ public sealed class Ruleset
                 // BuildableType.getRequiredAbilities; nearest definition wins for a re-stated id).
                 RequiredAbilities: CollectRequiredAbilitiesUpChain(el, buildingElements),
                 // Ship repair: drydock grants model.ability.repairUnits, shipyard inherits it up the extends chain.
-                RepairsNavalUnits: ResolveAbility(el, "model.ability.repairUnits", buildingElements));
+                RepairsNavalUnits: ResolveAbility(el, "model.ability.repairUnits", buildingElements),
+                // Unit construction: model.ability.build scopes (carpenter's house → wagon train, armory →
+                // artillery, shipyard → any naval unit), collected down the extends chain (magazine/arsenal inherit
+                // armory's artillery scope) — drives the unit build-ability gate.
+                BuildableUnitTypeIds: CollectBuildUnitTypeScopes(el, buildingElements),
+                BuildsNavalUnits: GrantsNavalBuildScope(el, buildingElements));
         }
 
         var fathers = new Dictionary<string, FoundingFather>();
@@ -733,7 +757,26 @@ public sealed class Ruleset
                 // captureGoods: a naval raider loots a beaten ship's hold (frigate, privateer, man-o-war).
                 CaptureGoods: ResolveAbility(el, "model.ability.captureGoods", elements),
                 // piracy: a privateer attacks rivals without declaring war, flying no flag.
-                Piracy: ResolveAbility(el, "model.ability.piracy", elements));
+                Piracy: ResolveAbility(el, "model.ability.piracy", elements),
+                // Colony construction: the unit's own required-goods (artillery hammers 192 + tools 40, wagon
+                // train hammers 40); required-population (FreeCol default 1) and required-abilities (collected
+                // down the extends chain, as for buildings — ships' navalUnit-scoped build gate rides here).
+                BuildCost: el.Elements("required-goods")
+                    .Select(g => new GoodsOutput(
+                        RequiredAttribute(g, "id"),
+                        (int?)g.Attribute("value")
+                            ?? throw new RulesetFormatException($"required-goods in unit '{id}' lacks value.")))
+                    .ToList(),
+                RequiredPopulation: ResolveIntAttribute(el, "required-population", elements) ?? 1,
+                RequiredAbilities: CollectRequiredAbilitiesUpChain(el, elements),
+                // Build cap (classic: the wagon-train limit "units lt settlements" at player scope — at most one
+                // wagon train per colony). Only the units/settlements operands are evaluated (see UnitBuildLimit).
+                BuildLimit: el.Element("limit") is { } lim
+                    ? new UnitBuildLimit(
+                        (string?)lim.Attribute("operator") ?? "lt",
+                        (string?)lim.Element("left-hand-side")?.Attribute("operand-type") ?? "",
+                        (string?)lim.Element("right-hand-side")?.Attribute("operand-type") ?? "")
+                    : null);
         }
 
         if (units.Count == 0)
@@ -849,6 +892,52 @@ public sealed class Ruleset
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// Collects the unit-type ids a building enables constructing — the <c>&lt;scope type="…"/&gt;</c> of every
+    /// <c>model.ability.build</c> ability (value true) down the whole <c>extends</c> chain (so magazine/arsenal
+    /// inherit armory's artillery scope, lumber mill carpenter's-house's wagon-train scope). FreeCol
+    /// <c>UnitType.canBeBuiltInColony</c> matches a colony's scoped build ability to the target unit.
+    /// </summary>
+    private static IReadOnlySet<string> CollectBuildUnitTypeScopes(XElement el, Dictionary<string, XElement> elements)
+    {
+        var result = new HashSet<string>();
+        for (XElement? current = el; current is not null; current = ParentOf(current, elements))
+        {
+            foreach (XElement ability in current.Elements("ability")
+                .Where(a => (string?)a.Attribute("id") == "model.ability.build" && ((bool?)a.Attribute("value") ?? true)))
+            {
+                foreach (XElement scope in ability.Elements("scope"))
+                {
+                    if ((string?)scope.Attribute("type") is { } unitTypeId)
+                    {
+                        result.Add(unitTypeId);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// True when a building grants <c>model.ability.build</c> scoped to <c>model.ability.navalUnit</c> (the
+    /// shipyard) anywhere up its <c>extends</c> chain — it can construct any ship. (Ship construction is deferred,
+    /// so this is parsed for completeness only.)
+    /// </summary>
+    private static bool GrantsNavalBuildScope(XElement el, Dictionary<string, XElement> elements)
+    {
+        for (XElement? current = el; current is not null; current = ParentOf(current, elements))
+        {
+            if (current.Elements("ability")
+                .Where(a => (string?)a.Attribute("id") == "model.ability.build" && ((bool?)a.Attribute("value") ?? true))
+                .SelectMany(a => a.Elements("scope"))
+                .Any(s => (string?)s.Attribute("ability-id") == "model.ability.navalUnit"))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>True when any element in the extends chain sets the ability to true (nearest wins).</summary>
