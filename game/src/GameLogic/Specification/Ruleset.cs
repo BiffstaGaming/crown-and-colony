@@ -332,7 +332,11 @@ public sealed class Ruleset
                                 && (string?)m.Attribute("delete") != "true")
                     .Select(m => (int?)m.Attribute("value") ?? 0)
                     .DefaultIfEmpty(0)
-                    .Last());
+                    .Last(),
+                // Warehouse capacity: the model.modifier.warehouseStorage additive, summed up the extends chain
+                // (depot 100; warehouse extends depot → 200; expansion extends warehouse → 300) — FreeCol resolves
+                // an extending building's modifiers cumulatively, unlike the redefined (delete+readd) defence one.
+                WarehouseStorage: SumModifierUpChain(el, "model.modifier.warehouseStorage", buildingElements));
         }
 
         var fathers = new Dictionary<string, FoundingFather>();
@@ -790,6 +794,23 @@ public sealed class Ruleset
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Sums an additive modifier's value across the whole extends chain (cumulative inheritance) — used for
+    /// <c>model.modifier.warehouseStorage</c>, where an extending building <em>adds to</em> its parent's value
+    /// (depot 100 → warehouse 200 → expansion 300), unlike a redefined modifier.
+    /// </summary>
+    private static int SumModifierUpChain(XElement el, string modifierId, Dictionary<string, XElement> elements)
+    {
+        int total = 0;
+        for (XElement? current = el; current is not null; current = ParentOf(current, elements))
+        {
+            total += current.Elements("modifier")
+                .Where(m => (string?)m.Attribute("id") == modifierId)
+                .Sum(m => (int?)m.Attribute("value") ?? 0);
+        }
+        return total;
     }
 
     /// <summary>True when any element in the extends chain sets the ability to true (nearest wins).</summary>

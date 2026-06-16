@@ -212,6 +212,8 @@ public class ColonyEconomyTests
             game.EndTurn();
         }
         Assert.Equal(1, colony.Population);
-        Assert.Equal(2 * 250, colony.StoreOf(Cotton)); // 250 ticks, cotton untouched by appetite
+        // Cotton (2/turn, untouched by appetite) piles up to the depot's warehouse capacity (100) and the
+        // overflow then spills each turn — FreeCol's warehouse waste — so it stabilises at the cap, not 2×250.
+        Assert.Equal(100, colony.StoreOf(Cotton));
     }
 }

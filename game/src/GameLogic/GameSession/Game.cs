@@ -4174,6 +4174,12 @@ public sealed class Game
         // 1d. Construction completes when materials are saved up.
         RunConstruction(colony);
 
+        // 1e. Warehouse overflow: a storable good produced past the colony's capacity is wasted this turn
+        //     (FreeCol csNewTurnWarnings — getWarehouseCapacity). Non-storable goods (bells/crosses/hammers,
+        //     which accrue toward liberty/immigration/construction) and food (consumed/grown, never warehoused
+        //     to a cap here) are exempt. Run after construction so a build isn't starved of materials it consumes.
+        SpillWarehouseOverflow(colony);
+
         // 2. Colonists eat; an unfed colonist starves (population floors at 1 —
         //    colony destruction is a later rule). Assignments shrink to match.
         int shortfall = colony.ConsumeFood(colony.Population * Colony.FoodPerColonist);
@@ -4190,6 +4196,37 @@ public sealed class Game
             colony.ConsumeFood(Colony.FoodForGrowth);
             colony.Population++;
             AutoAssignIdleToFood(colony);
+        }
+    }
+
+    /// <summary>
+    /// A colony's warehouse capacity per storable good — the sum of its buildings' <c>warehouseStorage</c>
+    /// (depot 100, warehouse 200, expansion 300; FreeCol <c>Settlement.getWarehouseCapacity</c>). Every colony
+    /// has a depot (a free base building), so this is ≥ 100.
+    /// </summary>
+    internal int WarehouseCapacity(Colony colony) =>
+        colony.Buildings.Sum(b => Ruleset.Building(b).WarehouseStorage);
+
+    /// <summary>
+    /// Discards each storable good held above the colony's warehouse capacity (FreeCol's warehouse waste).
+    /// Food (consumed/grown) and non-storable goods (bells/crosses/hammers) are exempt. A guard skips a colony
+    /// with no capacity data (0) so a malformed/legacy colony never silently loses everything.
+    /// </summary>
+    private void SpillWarehouseOverflow(Colony colony)
+    {
+        int capacity = WarehouseCapacity(colony);
+        if (capacity <= 0)
+        {
+            return;
+        }
+        foreach (string goodsId in colony.Stores.Keys.ToList())
+        {
+            GoodsType goods = Ruleset.Goods(goodsId);
+            int held = colony.StoreOf(goodsId);
+            if (goods.IsStorable && !goods.IsFood && held > capacity)
+            {
+                colony.AddGoods(goodsId, capacity - held); // drop the overflow to the cap
+            }
         }
     }
 

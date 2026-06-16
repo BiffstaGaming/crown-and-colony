@@ -15,6 +15,11 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <c>model.modifier.defence</c>; default 0). Stockade +100, fort +150, fortress +200 — the colony's
 /// fortification tier (FreeCol applies it to the colony's defender, garrison or last colonist).
 /// </param>
+/// <param name="WarehouseStorage">
+/// Warehouse capacity this building grants, in goods per type (spec <c>model.modifier.warehouseStorage</c>,
+/// additive, summed up the <c>extends</c> chain; default 0). Depot 100, warehouse 200, expansion 300 — a colony
+/// holds one of these tiers, capping each storable good (FreeCol <c>Settlement.getWarehouseCapacity</c>).
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -22,7 +27,8 @@ public sealed record BuildingType(
     int RequiredPopulation,
     IReadOnlyList<ProductionEntry> Productions,
     IReadOnlyList<GoodsOutput> BuildCost,
-    int DefenceBonus = 0)
+    int DefenceBonus = 0,
+    int WarehouseStorage = 0)
 {
     /// <summary>Short name derived from the id: <c>model.building.townHall</c> → <c>townHall</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
