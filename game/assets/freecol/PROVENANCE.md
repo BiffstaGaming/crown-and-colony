@@ -8,7 +8,13 @@ in the Asset Register (ClickUp doc 05).
 
 Contents: terrain base diamonds (`terrain/<type>/center*.png`, 128×64),
 hills/mountains elevation overlays, generic forest overlays
-(`forest/<type>/<type>.png`), and fog art (`terrain/unexplored/`).
+(`forest/<type>/<type>.png`), fog art (`terrain/unexplored/`), unit sprites
+(`units/`), settlement sprites (`settlements/`), bonus-resource icons (`bonus/`),
+**building images** (`buildings/*.png` — 42 base building sprites for the colony
+screen) and **goods icons** (`goods/*.png` — 22 goods icons for the colony
+screen's production/warehouse bars). All copied unmodified from the same FreeCol
+`data/default/resources/images/{buildings,goods}/` (national/`size2`/`size9`
+variants omitted).
 
 Per ADR-013, any of these may be replaced individually later; keep this file
 and the Asset Register current when that happens. FreeCol also ships 4×

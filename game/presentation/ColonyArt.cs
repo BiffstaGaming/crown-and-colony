@@ -54,8 +54,34 @@ public static class ColonyArt
         return result;
     }
 
+    // Our camelCase building ids → FreeCol's (often pluralised) building image file names.
+    private static readonly Dictionary<string, string> BuildingFile = new()
+    {
+        ["townHall"] = "townhall", ["carpenterHouse"] = "carpenters_house", ["lumberMill"] = "lumber_mill",
+        ["church"] = "church", ["chapel"] = "chapel", ["cathedral"] = "cathedral",
+        ["blacksmithHouse"] = "blacksmiths_house", ["blacksmithShop"] = "blacksmiths_shop", ["ironWorks"] = "ironworks",
+        ["armory"] = "armory", ["magazine"] = "magazine", ["arsenal"] = "arsenal",
+        ["weaverHouse"] = "weavers_house", ["weaverShop"] = "weavers_shop", ["textileMill"] = "textile_mill",
+        ["tobacconistHouse"] = "tobacconists_house", ["tobacconistShop"] = "tobacconists_shop", ["cigarFactory"] = "cigar_factory",
+        ["distillerHouse"] = "distillers_house", ["rumDistillery"] = "rum_distillery", ["rumFactory"] = "rum_factory",
+        ["furTraderHouse"] = "fur_traders_house", ["furTradingPost"] = "fur_traders_shop", ["furFactory"] = "fur_factory",
+        ["docks"] = "docks", ["drydock"] = "drydock", ["shipyard"] = "shipyard", ["stables"] = "stable",
+        ["printingPress"] = "printing_press", ["newspaper"] = "newspaper",
+        ["schoolhouse"] = "schoolhouse", ["college"] = "college", ["university"] = "university",
+        ["stockade"] = "stockade", ["fort"] = "fort", ["fortress"] = "fortress",
+        ["warehouse"] = "warehouse", ["warehouseExpansion"] = "warehouse_expansion",
+        ["customHouse"] = "custom_house", ["depot"] = "depot",
+    };
+
     /// <summary>The colony settlement sprite drawn at the centre of the tiles grid.</summary>
     public static Texture2D? ColonyIcon() => Load("settlements/small.png");
+
+    /// <summary>A building's FreeCol image (falls back to the generic <c>default.png</c> for an unmapped building).</summary>
+    public static Texture2D? BuildingImage(string buildingShortName) =>
+        Load($"buildings/{BuildingFile.GetValueOrDefault(buildingShortName, "default")}.png");
+
+    /// <summary>A goods icon for the production/warehouse bars (FreeCol's goods files share our short names).</summary>
+    public static Texture2D? GoodsIcon(string goodsShortName) => Load($"goods/{goodsShortName}.png");
 
     /// <summary>A unit sprite (e.g. a colonist on a worked tile), or null if that type has no art.</summary>
     public static Texture2D? UnitIcon(string shortName) => Load($"units/{shortName}.png");

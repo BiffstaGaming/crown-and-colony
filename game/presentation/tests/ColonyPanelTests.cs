@@ -183,19 +183,23 @@ public class ColonyPanelTests
     }
 
     [TestCase(Timeout = 60000)]
-    public async Task ColonyScreen_ShowsTheThreeByThreeTilesGrid_WithTheColonyAtCentre()
+    public async Task ColonyScreen_DrawsTheSurroundingTilesAsArt_AndTheBuildingsAsAGrid()
     {
         (_, GameController controller, _, Colony colony) = await OpenPanel();
+        PanelContainer panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
 
-        GridContainer grid = controller.GetNode<PanelContainer>("UI/ColonyPanel")
-            .FindChildren("*", recursive: true, owned: false).OfType<GridContainer>().First();
-        AssertThat(grid.Columns).IsEqual(3);
-        AssertThat(grid.GetChildCount()).IsEqual(9); // the 3×3 ring around the colony
+        // The surrounding tiles are drawn as FreeCol terrain diamonds (real art, not text) in the isometric view.
+        var tilesView = panel.FindChild("TilesView", recursive: true, owned: false) as Control;
+        AssertThat(tilesView).IsNotNull();
+        int terrainArt = tilesView!.FindChildren("*", recursive: true, owned: false)
+            .OfType<TextureRect>().Count(t => t.Texture is not null);
+        AssertThat(terrainArt >= 9).IsTrue(); // at least the 3×3 ring of terrain tiles is rendered as textures
 
-        // The centre cell (row-major index 4) is the colony itself.
-        bool centreNamesColony = grid.GetChild(4).FindChildren("*", recursive: true, owned: false)
-            .OfType<Label>().Any(l => l.Text.Contains(colony.Name));
-        AssertThat(centreNamesColony).IsTrue();
+        // The colony's buildings render as a 4-wide grid of building-image cells.
+        var buildings = panel.FindChild("BuildingsGrid", recursive: true, owned: false) as GridContainer;
+        AssertThat(buildings).IsNotNull();
+        AssertThat(buildings!.Columns).IsEqual(4);
+        AssertThat(buildings.GetChildCount()).IsEqual(colony.Buildings.Count);
     }
 
     private static Game GameOf(GameController controller) =>

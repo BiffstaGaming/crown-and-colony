@@ -11,16 +11,23 @@ using Godot;
 namespace CrownAndColony.Presentation;
 
 /// <summary>
-/// The colony screen (Phase 3 economy UI): population, stores, and interactive
-/// management — staff/unstaff buildings, release field workers, auto-assign
-/// idle colonists, and choose what to construct. All actions go through the
-/// Game oracles (ADR-006); the panel only renders state and forwards clicks.
+/// The colony screen, laid out after FreeCol's: a top production bar, an isometric view of the colony's surrounding
+/// tiles (with colonists on the tiles they work), the buildings as images with their workers, the warehouse goods
+/// bar, the construction panel, and the units outside the colony. All actions go through Game oracles (ADR-006);
+/// the panel renders state (FreeCol GPL art via <see cref="ColonyArt"/>) and forwards clicks. Built programmatically
+/// per open/refresh; the rebuild is deferred (see <see cref="Changed"/>) so a control is never freed mid-signal.
 /// </summary>
 public partial class ColonyPanel : PanelContainer
 {
     private Game _game = null!;
     private Colony _colony = null!;
     private Action _onChange = () => { };
+
+    private static readonly Color Negative = new(0.9f, 0.3f, 0.25f);
+
+    /// <summary>The roles a colonist standing in a colony can be armed into from the colony's stores.</summary>
+    private static readonly string[] ArmRoles =
+        ["model.role.soldier", "model.role.dragoon", "model.role.scout", "model.role.pioneer"];
 
     /// <summary>Opens the panel for a colony. <paramref name="onChange"/> runs after every action.</summary>
     public void Open(Game game, Colony colony, Action onChange)
@@ -33,10 +40,9 @@ public partial class ColonyPanel : PanelContainer
     }
 
     /// <summary>
-    /// Signals a finished action. The rebuild is <b>deferred</b> (to the next idle frame) so a control is never freed
-    /// inside its own signal callback: <see cref="Rebuild"/> frees every child, and freeing an <c>OptionButton</c>
-    /// mid-<c>ItemSelected</c> — while its popup is still closing — crashes Godot (use-after-free). Running it after
-    /// the callback returns avoids that. The game-state change has already happened synchronously by the time this runs.
+    /// Signals a finished action. The rebuild is <b>deferred</b> so a control is never freed inside its own signal
+    /// callback (freeing an OptionButton mid-<c>ItemSelected</c>, popup still closing, crashes Godot). The game-state
+    /// change has already happened synchronously.
     /// </summary>
     private void Changed() => Callable.From(ApplyChange).CallDeferred();
 
@@ -46,13 +52,6 @@ public partial class ColonyPanel : PanelContainer
         Rebuild();
     }
 
-    private static string Short(string id) => id[(id.LastIndexOf('.') + 1)..];
-
-    /// <summary>The roles a colonist standing in a colony can be armed into from the colony's stores (CheckEquipRole gates affordability).</summary>
-    private static readonly string[] ArmRoles =
-        ["model.role.soldier", "model.role.dragoon", "model.role.scout", "model.role.pioneer"];
-
-    /// <summary>Re-resolves the live unit of <paramref name="unitId"/> (an action may have spent/changed it), applies <paramref name="action"/>, then refreshes.</summary>
     private void Act(int unitId, Action<Unit> action)
     {
         if (_game.Units.FirstOrDefault(u => u.Id == unitId) is { } unit)
@@ -62,164 +61,169 @@ public partial class ColonyPanel : PanelContainer
         Changed();
     }
 
+    private static string Short(string id) => id[(id.LastIndexOf('.') + 1)..];
+
     private void Rebuild()
     {
         GetNode<Label>("VBox/ColonyTitle").Text = _colony.Name;
         GetNode<Label>("VBox/ColonyInfo").Text =
             $"Population: {_colony.Population} ({_colony.IdleColonists} idle)   |   " +
-            $"Food: {_colony.Food}/{Colony.FoodForGrowth}   |   " +
-            $"Defence: +{_game.ColonyDefenceBonus(_colony)}%";
-        BuildDynamicSections();
-    }
+            $"Food: {_colony.Food}/{Colony.FoodForGrowth}   |   Defence: +{_game.ColonyDefenceBonus(_colony)}%";
 
-    private void BuildDynamicSections()
-    {
-        var dynamic = GetNode<VBoxContainer>("VBox/Scroll/Dynamic");
-        foreach (Node child in dynamic.GetChildren())
+        var root = GetNode<VBoxContainer>("VBox/Scroll/Dynamic");
+        foreach (Node child in root.GetChildren())
         {
-            child.Free(); // immediate — Rebuild reuses names
+            child.Free();
         }
 
-        // — Surrounding tiles: the 3×3 around the colony, the centre being the colony itself. Each worked tile
-        //   shows its good + a Release; each free tile (when there's an idle colonist) offers a work picker. —
-        dynamic.AddChild(SectionLabel("Surrounding tiles"));
-        var grid = new GridContainer { Columns = 3 };
+        root.AddChild(ProductionBar());
+
+        var main = new HBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
+        main.AddChild(LeftColumn());
+        main.AddChild(BuildingsColumn());
+        root.AddChild(main);
+
+        root.AddChild(SectionLabel("Outside the colony"));
+        root.AddChild(OutsideArea());
+        root.AddChild(SectionLabel("Warehouse"));
+        root.AddChild(WarehouseBar());
+    }
+
+    // ── Top: the colony's net production, FreeCol's production row ───────────────────────────────────────────
+
+    private Control ProductionBar()
+    {
+        var bar = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        bar.AddChild(new Label { Text = "Producing: " });
+        foreach ((string good, int net) in NetProduction().OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            if (net == 0)
+            {
+                continue;
+            }
+            var cell = new VBoxContainer();
+            cell.AddChild(IconRect(ColonyArt.GoodsIcon(Short(good)), 28, 28));
+            cell.AddChild(new Label { Text = (net > 0 ? "+" : "") + net, HorizontalAlignment = HorizontalAlignment.Center, Modulate = net < 0 ? Negative : Colors.White });
+            bar.AddChild(cell);
+        }
+        return bar;
+    }
+
+    /// <summary>A colony's per-turn net production: each tile worker's yield + the colony-centre auto-yield, less food eaten.</summary>
+    private Dictionary<string, int> NetProduction()
+    {
+        var net = new Dictionary<string, int>();
+        void Add(string good, int amount)
+        {
+            string stored = _game.Ruleset.StorageIdOf(good);
+            net[stored] = net.GetValueOrDefault(stored) + amount;
+        }
+        foreach ((Position tile, string good) in _colony.TileWorkers)
+        {
+            Add(good, _game.TileYield(tile, good));
+        }
+        foreach (ProductionEntry p in _game.Map.TerrainAt(_colony.Position).Productions.Where(p => p.Unattended))
+        {
+            foreach (GoodsOutput o in p.Outputs)
+            {
+                Add(o.GoodsId, o.Amount);
+            }
+        }
+        Add(Colony.FoodId, -_colony.Population * Colony.FoodPerColonist);
+        return net;
+    }
+
+    // ── Left: the isometric surrounding tiles + the construction panel ──────────────────────────────────────
+
+    // The isometric tile diamonds, enlarged 1.25× from the map's 128×64 so the colony view reads like FreeCol's.
+    private const int TileW = 160;
+    private const int TileH = 80;
+
+    private Control LeftColumn()
+    {
+        var col = new VBoxContainer { CustomMinimumSize = new Vector2(560, 0) };
+        col.AddChild(IsometricTiles());
+        col.AddChild(ConstructionPanel());
+        return col;
+    }
+
+    /// <summary>The colony's 3×3 surrounding tiles drawn as overlapping FreeCol diamonds, the colony at the centre, a colonist on each worked tile, with its yield and a tiny work control.</summary>
+    private Control IsometricTiles()
+    {
+        var view = new Control { Name = "TilesView", CustomMinimumSize = new Vector2(540, 344) };
+        var centre = new Vector2(270, 152);
+        var half = new Vector2(TileW / 2, TileH / 2);
         for (int dy = -1; dy <= 1; dy++)
         {
             for (int dx = -1; dx <= 1; dx++)
             {
-                grid.AddChild(TileCell(new Position(_colony.Position.X + dx, _colony.Position.Y + dy), dx == 0 && dy == 0));
-            }
-        }
-        dynamic.AddChild(grid);
-        if (_colony.IdleColonists > 0)
-        {
-            dynamic.AddChild(ActionButton("AutoAssign", "Auto-assign idle colonists to food", () =>
-            {
-                _game.AutoAssignIdleToFood(_colony);
-                Changed();
-            }));
-        }
-
-        // — Buildings —
-        dynamic.AddChild(SectionLabel("Buildings"));
-        foreach (string buildingId in _colony.Buildings)
-        {
-            BuildingType building = _game.Ruleset.Building(buildingId);
-            int workers = _colony.BuildingWorkers.GetValueOrDefault(buildingId);
-            var row = new HBoxContainer();
-            row.AddChild(new Label
-            {
-                Text = $"{building.ShortName} ({workers}/{building.Workplaces})",
-                SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            });
-            string id = buildingId;
-            if (_game.CheckAssignBuildingWork(_colony, buildingId).Allowed)
-            {
-                row.AddChild(ActionButton($"Staff_{building.ShortName}", "+", () =>
+                Position tile = new(_colony.Position.X + dx, _colony.Position.Y + dy);
+                Vector2 topLeft = centre + new Vector2((dx - dy) * (TileW / 2), (dx + dy) * (TileH / 2)) - half;
+                if (_game.Map.InBounds(tile))
                 {
-                    _game.AssignBuildingWork(_colony, id);
-                    Changed();
-                }));
-            }
-            if (workers > 0)
-            {
-                row.AddChild(ActionButton($"Unstaff_{building.ShortName}", "−", () =>
+                    foreach (Texture2D tex in ColonyArt.TerrainTextures(_game.Map.TerrainAt(tile).ShortName))
+                    {
+                        Place(view, IconRect(tex, TileW, TileH), topLeft);
+                    }
+                }
+                if (dx == 0 && dy == 0)
                 {
-                    _game.UnassignBuildingWork(_colony, id);
-                    Changed();
-                }));
-            }
-            dynamic.AddChild(row);
-        }
-
-        // — Warehouse (the colony's stored goods) —
-        dynamic.AddChild(SectionLabel("Warehouse"));
-        string stores = _colony.Stores.Where(kv => kv.Value > 0)
-            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
-            .Select(kv => $"{Short(kv.Key)} {kv.Value}")
-            .DefaultIfEmpty("(empty)")
-            .Aggregate((a, b) => $"{a},   {b}");
-        dynamic.AddChild(new Label { Text = stores, AutowrapMode = TextServer.AutowrapMode.WordSmart });
-
-        // — Colonists (move people in and out of the colony, and arm them) —
-        dynamic.AddChild(SectionLabel("Colonists"));
-
-        // In → out: detach a free colonist onto the colony tile (it's then selectable on the map to move out or arm).
-        if (_game.CheckLeaveColony(_colony).Allowed)
-        {
-            dynamic.AddChild(ActionButton("LeaveColony", "Send a colonist out", () =>
-            {
-                _game.LeaveColony(_colony);
-                Changed();
-            }));
-        }
-
-        // One row per human unit on or beside the colony, carrying whatever it can do here: join the population
-        // (out → in), or — standing in the colony — arm itself from the colony's goods (soldier/dragoon/scout/
-        // pioneer) or disarm back to a plain colonist. Each action is a Game oracle (ADR-006).
-        foreach (Unit unit in _game.PlayerUnits
-            .Where(u => u.IsOnMap && (u.Position == _colony.Position || u.Position.IsAdjacentTo(_colony.Position)))
-            .OrderBy(u => u.Id))
-        {
-            var buttons = new System.Collections.Generic.List<Button>();
-            int uid = unit.Id;
-
-            if (_game.CheckJoinColony(unit, _colony).Allowed)
-            {
-                buttons.Add(ActionButton($"Join_{uid}", "Join colony", () => Act(uid, u => _game.JoinColony(u, _colony))));
-            }
-            foreach (string roleId in ArmRoles)
-            {
-                if (_game.CheckEquipRole(unit, _colony, roleId).Allowed)
+                    Place(view, IconRect(ColonyArt.ColonyIcon(), 120, 80), topLeft + new Vector2(20, 0));
+                    continue;
+                }
+                if (!_game.Map.InBounds(tile))
                 {
-                    string r = roleId;
-                    buttons.Add(ActionButton($"Equip_{uid}_{Short(roleId)}", $"Arm {Short(roleId)}", () => Act(uid, u => _game.EquipRole(u, _colony, r))));
+                    continue;
+                }
+                if (_colony.TileWorkers.TryGetValue(tile, out string? good))
+                {
+                    Place(view, IconRect(ColonyArt.UnitIcon("freeColonist"), 56, 56), topLeft + new Vector2(52, 8));
+                    Place(view, Badge($"{Short(good)} {_game.TileYield(tile, good)}"), topLeft + new Vector2(44, 0));
+                    Position worked = tile;
+                    var release = new Button { Name = $"Release_{tile.X}_{tile.Y}", Text = "✕", CustomMinimumSize = new Vector2(24, 20) };
+                    release.Pressed += () => { _game.UnassignWork(_colony, worked); Changed(); };
+                    Place(view, release, topLeft + new Vector2(64, 50));
+                }
+                else if (_colony.IdleColonists > 0 && _game.TileWorkOptions(tile) is { Count: > 0 } options)
+                {
+                    var picker = new OptionButton { Name = $"Work_{tile.X}_{tile.Y}", CustomMinimumSize = new Vector2(104, 24) };
+                    picker.AddItem("Work…");
+                    foreach ((string goodsId, int yield) in options)
+                    {
+                        picker.AddItem($"{Short(goodsId)} {yield}");
+                    }
+                    Position free = tile;
+                    picker.ItemSelected += index =>
+                    {
+                        if (index > 0)
+                        {
+                            _game.AssignWork(_colony, free, options[(int)index - 1].GoodsId);
+                            Changed();
+                        }
+                    };
+                    Place(view, picker, topLeft + new Vector2(28, 28));
                 }
             }
-            if (!unit.HasDefaultRole && _game.CheckEquipRole(unit, _colony, RoleType.DefaultRoleId).Allowed)
-            {
-                buttons.Add(ActionButton($"Disarm_{uid}", "Disarm", () => Act(uid, u => _game.EquipRole(u, _colony, RoleType.DefaultRoleId))));
-            }
-            if (buttons.Count == 0)
-            {
-                continue; // nothing this unit can do here right now
-            }
-
-            var row = new HBoxContainer();
-            string role = unit.HasDefaultRole ? "" : $" ({Short(unit.RoleId)})";
-            row.AddChild(new Label
-            {
-                Text = $"{unit.Type.ShortName}{role} at ({unit.Position.X},{unit.Position.Y})",
-                SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            });
-            foreach (Button button in buttons)
-            {
-                row.AddChild(button);
-            }
-            dynamic.AddChild(row);
         }
+        return view;
+    }
 
-        // — Construction —
-        dynamic.AddChild(SectionLabel("Construction"));
+    private Control ConstructionPanel()
+    {
+        var box = new VBoxContainer();
+        box.AddChild(SectionLabel("Construction"));
         if (_colony.CurrentBuild is not null)
         {
             BuildingType target = _game.Ruleset.Building(_colony.CurrentBuild);
-            string cost = target.BuildCost
-                .Select(c => $"{Short(c.GoodsId)} {_colony.StoreOf(_game.Ruleset.StorageIdOf(c.GoodsId))}/{c.Amount}")
-                .Aggregate((a, b) => $"{a}, {b}");
+            string cost = string.Join(", ", target.BuildCost
+                .Select(c => $"{Short(c.GoodsId)} {_colony.StoreOf(_game.Ruleset.StorageIdOf(c.GoodsId))}/{c.Amount}"));
             var row = new HBoxContainer();
-            row.AddChild(new Label
-            {
-                Text = $"Building {target.ShortName} ({cost})",
-                SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            });
-            row.AddChild(ActionButton("StopBuild", "Stop", () =>
-            {
-                _game.SetBuild(_colony, null);
-                Changed();
-            }));
-            dynamic.AddChild(row);
+            row.AddChild(IconRect(ColonyArt.BuildingImage(target.ShortName), 48, 36));
+            row.AddChild(new Label { Text = $"Building {target.ShortName} ({cost})", SizeFlagsHorizontal = SizeFlags.ExpandFill });
+            var stop = new Button { Name = "StopBuild", Text = "Stop" };
+            stop.Pressed += () => { _game.SetBuild(_colony, null); Changed(); };
+            row.AddChild(stop);
+            box.AddChild(row);
         }
         else
         {
@@ -228,8 +232,7 @@ public partial class ColonyPanel : PanelContainer
             var buildables = _game.Buildables(_colony).ToList();
             foreach (BuildingType b in buildables)
             {
-                string cost = b.BuildCost.Select(c => $"{c.Amount} {Short(c.GoodsId)}")
-                    .Aggregate((a, x) => $"{a} + {x}");
+                string cost = string.Join(" + ", b.BuildCost.Select(c => $"{c.Amount} {Short(c.GoodsId)}"));
                 options.AddItem($"{b.ShortName} ({cost})");
             }
             options.ItemSelected += index =>
@@ -240,117 +243,161 @@ public partial class ColonyPanel : PanelContainer
                     Changed();
                 }
             };
-            dynamic.AddChild(options);
+            box.AddChild(options);
         }
+        return box;
     }
 
-    /// <summary>
-    /// One cell of the 3×3 surrounding-tiles grid: the colony itself at the centre, or a tile showing its terrain
-    /// and — when worked — its good + a Release button (<c>Release_x_y</c>), or — when free with an idle colonist
-    /// available — a work picker (<c>Work_x_y</c>: <see cref="Game.TileWorkOptions"/> → <see cref="Game.AssignWork"/>).
-    /// </summary>
-    private Control TileCell(Position tile, bool isCentre)
+    // ── Right: the colony's buildings as FreeCol images, with their workers ─────────────────────────────────
+
+    private Control BuildingsColumn()
     {
-        var cell = new PanelContainer { CustomMinimumSize = new Vector2(150, 116) };
+        var scroll = new ScrollContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+        var grid = new GridContainer { Columns = 4, Name = "BuildingsGrid", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        foreach (string buildingId in _colony.Buildings)
+        {
+            grid.AddChild(BuildingCell(buildingId));
+        }
+        scroll.AddChild(grid);
+        return scroll;
+    }
+
+    private Control BuildingCell(string buildingId)
+    {
+        BuildingType building = _game.Ruleset.Building(buildingId);
+        int workers = _colony.BuildingWorkers.GetValueOrDefault(buildingId);
+        var cell = new PanelContainer { CustomMinimumSize = new Vector2(150, 132) };
         var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         cell.AddChild(box);
 
-        // The tile drawn in real FreeCol art: the terrain diamond, with the colony sprite (centre) or a colonist
-        // sprite (worked tile) on top.
-        box.AddChild(TileArt(tile, isCentre));
+        box.AddChild(IconRect(ColonyArt.BuildingImage(building.ShortName), 144, 80));
+        box.AddChild(new Label { Text = $"{building.ShortName} ({workers}/{building.Workplaces})", HorizontalAlignment = HorizontalAlignment.Center });
 
-        if (isCentre)
+        var controls = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        if (_game.CheckAssignBuildingWork(_colony, buildingId).Allowed)
         {
-            box.AddChild(Centered(_colony.Name));
-            return cell;
+            var add = new Button { Name = $"Staff_{building.ShortName}", Text = "+" };
+            add.Pressed += () => { _game.AssignBuildingWork(_colony, buildingId); Changed(); };
+            controls.AddChild(add);
         }
-        if (!_game.Map.InBounds(tile))
+        if (workers > 0)
         {
-            return cell;
+            var remove = new Button { Name = $"Unstaff_{building.ShortName}", Text = "−" };
+            remove.Pressed += () => { _game.UnassignBuildingWork(_colony, buildingId); Changed(); };
+            controls.AddChild(remove);
         }
-        if (_colony.TileWorkers.TryGetValue(tile, out string? good))
-        {
-            box.AddChild(Centered($"{Short(good)} {_game.TileYield(tile, good)}"));
-            Position worked = tile;
-            box.AddChild(ActionButton($"Release_{tile.X}_{tile.Y}", "Release", () =>
-            {
-                _game.UnassignWork(_colony, worked);
-                Changed();
-            }));
-        }
-        else if (_colony.IdleColonists > 0 && _game.TileWorkOptions(tile) is { Count: > 0 } options)
-        {
-            var picker = new OptionButton { Name = $"Work_{tile.X}_{tile.Y}" };
-            picker.AddItem("Work…");
-            foreach ((string goodsId, int yield) in options)
-            {
-                picker.AddItem($"{Short(goodsId)} {yield}");
-            }
-            Position free = tile;
-            picker.ItemSelected += index =>
-            {
-                if (index > 0)
-                {
-                    _game.AssignWork(_colony, free, options[(int)index - 1].GoodsId);
-                    Changed();
-                }
-            };
-            box.AddChild(picker);
-        }
+        box.AddChild(controls);
         return cell;
     }
 
-    /// <summary>The tile's art: the terrain diamond (base + forest/elevation overlay), with the colony settlement sprite at the centre, or a colonist sprite on a worked tile, stacked on top (later stacks draw over earlier ones).</summary>
-    private Control TileArt(Position tile, bool isCentre)
+    // ── Bottom: units outside the colony, and the warehouse goods bar ───────────────────────────────────────
+
+    private Control OutsideArea()
     {
-        var art = new Control { CustomMinimumSize = new Vector2(128, 64) };
-        if (_game.Map.InBounds(tile))
+        var box = new VBoxContainer();
+        if (_game.CheckLeaveColony(_colony).Allowed)
         {
-            foreach (Texture2D tex in ColonyArt.TerrainTextures(_game.Map.TerrainAt(tile).ShortName))
+            var leave = new Button { Name = "LeaveColony", Text = "Send a colonist out" };
+            leave.Pressed += () => { _game.LeaveColony(_colony); Changed(); };
+            box.AddChild(leave);
+        }
+        foreach (Unit unit in _game.PlayerUnits
+            .Where(u => u.IsOnMap && (u.Position == _colony.Position || u.Position.IsAdjacentTo(_colony.Position)))
+            .OrderBy(u => u.Id))
+        {
+            var buttons = new List<Button>();
+            int uid = unit.Id;
+            if (_game.CheckJoinColony(unit, _colony).Allowed)
             {
-                Stack(art, tex);
+                buttons.Add(MakeButton($"Join_{uid}", "Join colony", () => Act(uid, u => _game.JoinColony(u, _colony))));
             }
+            foreach (string roleId in ArmRoles)
+            {
+                if (_game.CheckEquipRole(unit, _colony, roleId).Allowed)
+                {
+                    string r = roleId;
+                    buttons.Add(MakeButton($"Equip_{uid}_{Short(roleId)}", $"Arm {Short(roleId)}", () => Act(uid, u => _game.EquipRole(u, _colony, r))));
+                }
+            }
+            if (!unit.HasDefaultRole && _game.CheckEquipRole(unit, _colony, RoleType.DefaultRoleId).Allowed)
+            {
+                buttons.Add(MakeButton($"Disarm_{uid}", "Disarm", () => Act(uid, u => _game.EquipRole(u, _colony, RoleType.DefaultRoleId))));
+            }
+            if (buttons.Count == 0)
+            {
+                continue;
+            }
+            var row = new HBoxContainer();
+            row.AddChild(IconRect(ColonyArt.UnitIcon(unit.Type.ShortName), 36, 36));
+            string role = unit.HasDefaultRole ? "" : $" ({Short(unit.RoleId)})";
+            row.AddChild(new Label { Text = $"{unit.Type.ShortName}{role} at ({unit.Position.X},{unit.Position.Y})", SizeFlagsHorizontal = SizeFlags.ExpandFill });
+            foreach (Button button in buttons)
+            {
+                row.AddChild(button);
+            }
+            box.AddChild(row);
         }
-        if (isCentre)
-        {
-            Stack(art, ColonyArt.ColonyIcon());
-        }
-        else if (_colony.TileWorkers.ContainsKey(tile))
-        {
-            Stack(art, ColonyArt.UnitIcon("freeColonist"));
-        }
-        return art;
+        return box;
     }
 
-    private static void Stack(Control art, Texture2D? texture)
+    private Control WarehouseBar()
     {
-        if (texture is null)
+        var bar = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        var stored = _colony.Stores.Where(kv => kv.Value > 0).OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList();
+        if (stored.Count == 0)
         {
-            return;
+            bar.AddChild(new Label { Text = "(empty)" });
+            return bar;
         }
-        var rect = new TextureRect
+        foreach ((string good, int amount) in stored)
         {
-            Texture = texture,
-            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-        };
-        art.AddChild(rect);
-        rect.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+            var cell = new VBoxContainer();
+            cell.AddChild(IconRect(ColonyArt.GoodsIcon(Short(good)), 28, 28));
+            cell.AddChild(new Label { Text = amount.ToString(), HorizontalAlignment = HorizontalAlignment.Center });
+            bar.AddChild(cell);
+        }
+        return bar;
     }
 
-    private static Label Centered(string text) =>
-        new() { Text = text, HorizontalAlignment = HorizontalAlignment.Center };
+    // ── Small UI helpers ────────────────────────────────────────────────────────────────────────────────────
+
+    private static TextureRect IconRect(Texture2D? texture, int width, int height) => new()
+    {
+        Texture = texture,
+        StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+        CustomMinimumSize = new Vector2(width, height),
+        Size = new Vector2(width, height),
+        MouseFilter = Control.MouseFilterEnum.Ignore,
+    };
+
+    /// <summary>Places a free-positioned child at <paramref name="pos"/> inside a layout-free <see cref="Control"/>; a control with no explicit size (a button/picker) is grown to its minimum so it renders.</summary>
+    private static void Place(Control parent, Control child, Vector2 pos)
+    {
+        parent.AddChild(child);
+        child.Position = pos;
+        if (child.Size == Vector2.Zero)
+        {
+            child.Size = child.GetCombinedMinimumSize();
+        }
+    }
+
+    private static Label Badge(string text) => new()
+    {
+        Text = text,
+        Modulate = Colors.White,
+        HorizontalAlignment = HorizontalAlignment.Center,
+    };
+
+    private static Button MakeButton(string name, string text, Action onPressed)
+    {
+        var button = new Button { Name = name, Text = text };
+        button.Pressed += onPressed;
+        return button;
+    }
 
     private static Label SectionLabel(string text) => new()
     {
         Text = $"— {text} —",
         HorizontalAlignment = HorizontalAlignment.Center,
     };
-
-    private static Button ActionButton(string name, string text, Action onPressed)
-    {
-        var button = new Button { Name = name, Text = text };
-        button.Pressed += onPressed;
-        return button;
-    }
 }
