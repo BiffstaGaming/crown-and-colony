@@ -108,6 +108,15 @@ public class CombatModelTests
     }
 
     [Fact]
+    public void DefencePower_AppliesTheArtilleryModifiers()
+    {
+        // Artillery (def 5) caught defending in the open: −75% → 1.25.
+        Assert.Equal(1.25, CombatModel.DefencePower(5, new DefenceContext(ArtilleryInOpen: true)), 5);
+        // Artillery (def 5) behind a stockade (+100% settlement) repelling a native raid (+100%): 5 × 2 × 2 = 20.
+        Assert.Equal(20.0, CombatModel.DefencePower(5, new DefenceContext(SettlementDefenceBonus: 100, ArtilleryAgainstRaid: true)), 5);
+    }
+
+    [Fact]
     public void RolePower_FoldsIntoTheBase()
     {
         // A unit's role offence/defence adds to its type base before the situational percentages (index 30).

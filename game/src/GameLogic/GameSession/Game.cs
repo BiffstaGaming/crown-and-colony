@@ -964,17 +964,24 @@ public sealed class Game
         // Naval combat (ship vs ship): no terrain bonus on water, a cargo penalty per hold slot, and the
         // defender may evade. A land unit can't stand on a water tile to defend, so a naval defender ⇒ ship-vs-ship.
         bool naval = defender.Type.IsNaval;
-        var attackContext = new AttackContext(
-            Movement: MovementPenaltyFor(attacker), // snapshot the movement penalty before spending it
-            ArtilleryInOpen: !naval && attacker.Type.Bombard, // a land rule (artillery in the open); never for ships
-            GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0); // FreeCol cargo penalty is goods only, not passengers
         // A unit defending in a colony uses the colony's defence (its fortification bonus), NOT the tile terrain —
         // FreeCol suppresses the terrain modifier inside a settlement (as our native-settlement assault already does).
         bool inColony = !naval && ColonyAt(target) is not null;
+        bool attackerInColony = ColonyAt(attacker.Position) is not null;
+        var attackContext = new AttackContext(
+            Movement: MovementPenaltyFor(attacker), // snapshot the movement penalty before spending it
+            // Artillery is brittle attacking IN THE OPEN (−75%): only when neither unit is in a settlement and the
+            // gun isn't dug in (FreeCol getOffensiveModifiers). Battering a colony/garrison, it keeps full power.
+            ArtilleryInOpen: !naval && attacker.Type.Bombard && !attackerInColony && !attacker.IsFortified && !inColony,
+            GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0); // FreeCol cargo penalty is goods only, not passengers
         var defenceContext = new DefenceContext(
             TerrainDefenceBonus: (naval || inColony) ? 0 : Map.TerrainAt(target).DefenceBonus, // open water / a colony: no terrain bonus
             Fortified: !naval && defender.IsFortified, // a dug-in land defender resists at +50% (FreeCol FORTIFIED)
             SettlementDefenceBonus: naval ? 0 : ColonyDefenceBonusAt(target), // a unit defending in a fortified colony (stockade/fort/fortress)
+            // Artillery caught defending in the open is brittle too (−75%, unless dug in); but behind a colony's
+            // walls against a NATIVE raid it doubles (+100%, FreeCol ARTILLERY_AGAINST_RAID).
+            ArtilleryInOpen: !naval && defender.Type.Bombard && !inColony && !defender.IsFortified,
+            ArtilleryAgainstRaid: !naval && inColony && defender.Type.Bombard && attacker.IsNative,
             GoodsCarried: naval ? GoodsSlotsUsed(defender) : 0);
 
         double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext);

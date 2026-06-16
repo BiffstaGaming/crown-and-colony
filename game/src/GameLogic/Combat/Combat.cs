@@ -56,11 +56,15 @@ public readonly record struct AttackContext(
 /// <param name="TerrainDefenceBonus">The defending tile's defence bonus percentage (hills 100, forest 50, …).</param>
 /// <param name="Fortified">The defender is fortified (FreeCol <c>FORTIFIED</c>, +50%).</param>
 /// <param name="SettlementDefenceBonus">A settlement's defence bonus percentage, if defending one.</param>
+/// <param name="ArtilleryInOpen">Artillery defending in the open, not in a settlement and not dug in (−75%, FreeCol <c>ARTILLERY_IN_THE_OPEN</c>).</param>
+/// <param name="ArtilleryAgainstRaid">Artillery defending a settlement against a native raid (+100%, FreeCol <c>ARTILLERY_AGAINST_RAID</c>).</param>
 /// <param name="GoodsCarried">Goods units in the (naval) defender's hold — each unit is a −12.5% cargo penalty.</param>
 public readonly record struct DefenceContext(
     double TerrainDefenceBonus = 0,
     bool Fortified = false,
     double SettlementDefenceBonus = 0,
+    bool ArtilleryInOpen = false,
+    bool ArtilleryAgainstRaid = false,
     int GoodsCarried = 0);
 
 /// <summary>
@@ -77,6 +81,7 @@ public static class CombatModel
     private const double BigMovementPenalty = -0.66;   // 1 move left
     private const double AmphibiousPenalty = -0.75;
     private const double ArtilleryInOpenPenalty = -0.75;
+    private const double ArtilleryAgainstRaidBonus = 1.00; // +100% — artillery defending a colony against a native raid
     private const double FortifiedBonus = 0.50;        // +50%
     private const double CargoPenalty = -0.125;        // −12.5% per goods unit carried (naval, both offence & defence)
 
@@ -116,6 +121,14 @@ public static class CombatModel
             power *= 1 + FortifiedBonus;
         }
         power *= 1 + (context.SettlementDefenceBonus / 100.0);
+        if (context.ArtilleryInOpen)
+        {
+            power *= 1 + ArtilleryInOpenPenalty; // artillery caught defending in the field is brittle (−75%)
+        }
+        if (context.ArtilleryAgainstRaid)
+        {
+            power *= 1 + ArtilleryAgainstRaidBonus; // but artillery behind a colony's walls shreds a native raid (+100%)
+        }
         power *= System.Math.Max(0, 1 + (CargoPenalty * context.GoodsCarried)); // laden ships defend worse
         return power;
     }
