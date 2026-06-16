@@ -37,6 +37,7 @@ public partial class ColonyPanel : PanelContainer
         _onChange = onChange;
         _heldFrom = null;
         EnsureOpaqueBackground();
+        Theme = ColonyTheme.Get(); // cohesive parchment/wood styling cascades to every child
         Rebuild();
         Show();
     }
@@ -98,6 +99,26 @@ public partial class ColonyPanel : PanelContainer
 
     private static string Short(string id) => id[(id.LastIndexOf('.') + 1)..];
 
+    /// <summary>
+    /// A human display name for a ruleset short-name, by splitting camelCase and capitalising — pure presentation
+    /// (ADR-006: no model data). e.g. <c>tobacconistHouse</c> → "Tobacconist House". Used for label text only; the
+    /// control <c>Name</c>s the tests query still use <see cref="Short"/>.
+    /// </summary>
+    private static string Display(string shortName)
+    {
+        var sb = new System.Text.StringBuilder(shortName.Length + 4);
+        for (int i = 0; i < shortName.Length; i++)
+        {
+            char c = shortName[i];
+            if (i > 0 && char.IsUpper(c) && !char.IsUpper(shortName[i - 1]))
+            {
+                sb.Append(' ');
+            }
+            sb.Append(i == 0 ? char.ToUpperInvariant(c) : c);
+        }
+        return sb.ToString();
+    }
+
     private void Rebuild()
     {
         GetNode<Label>("VBox/ColonyTitle").Text = _colony.Name;
@@ -112,26 +133,27 @@ public partial class ColonyPanel : PanelContainer
             child.Free();
         }
 
-        // Three bands stacked in the Dynamic VBox (which fills the panel — main.tscn sets its vertical ExpandFill):
-        //  1) the production strip (natural height),
-        //  2) the MIDDLE row — the ONLY child with vertical ExpandFill, so it absorbs all the slack and the bands
-        //     below it can never be stranded in a void,
-        //  3) the outside-units + warehouse bars (natural height) pinned beneath it.
-        root.AddChild(ProductionBar());
+        // All bands live inside a content "card" that sizes to its content and CENTRES (ShrinkCenter): on wide
+        // windows it sits centred with balanced parchment margins instead of spraying across the width; on windows
+        // narrower than the content the Scroll's horizontal-auto mode (main.tscn) gives a scrollbar rather than a
+        // hard right-edge clip. This is the resize fix — the grid stays a fixed 4 columns (test-locked).
+        var card = new VBoxContainer { Name = "ContentCard", SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
+        card.AddThemeConstantOverride("separation", 10);
 
-        // The middle row takes its natural height; with no in-port/cargo band to fill a tall middle (FreeCol has one,
-        // we don't yet), the content stacks compactly from the top and the panel's parchment fills the space below the
-        // warehouse — cleaner than a gap floating mid-screen.
-        var middle = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        middle.AddThemeConstantOverride("separation", 12);
+        card.AddChild(ProductionBar());
+
+        var middle = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
+        middle.AddThemeConstantOverride("separation", 16);
         middle.AddChild(LeftColumn());      // fixed-width band (tiles + construction)
-        middle.AddChild(BuildingsColumn()); // expands to fill the remaining width
-        root.AddChild(middle);
+        middle.AddChild(BuildingsColumn()); // the 4-wide buildings grid
+        card.AddChild(middle);
 
-        root.AddChild(SectionLabel("Outside the colony"));
-        root.AddChild(OutsideArea());
-        root.AddChild(SectionLabel("Warehouse"));
-        root.AddChild(WarehouseBar());
+        card.AddChild(SectionLabel("Outside the colony"));
+        card.AddChild(OutsideArea());
+        card.AddChild(SectionLabel("Warehouse"));
+        card.AddChild(WarehouseBar());
+
+        root.AddChild(card);
     }
 
     // ── Top: the colony's net production, FreeCol's production row ───────────────────────────────────────────
@@ -148,7 +170,12 @@ public partial class ColonyPanel : PanelContainer
             }
             var cell = new VBoxContainer();
             cell.AddChild(IconRect(ColonyArt.GoodsIcon(Short(good)), 28, 28));
-            cell.AddChild(new Label { Text = (net > 0 ? "+" : "") + net, HorizontalAlignment = HorizontalAlignment.Center, Modulate = net < 0 ? Negative : Colors.White });
+            var amount = new Label { Text = (net > 0 ? "+" : "") + net, HorizontalAlignment = HorizontalAlignment.Center };
+            if (net < 0)
+            {
+                amount.AddThemeColorOverride("font_color", Negative); // theme ink is dark; flag shortfalls in red
+            }
+            cell.AddChild(amount);
             bar.AddChild(cell);
         }
         return bar;
@@ -188,7 +215,7 @@ public partial class ColonyPanel : PanelContainer
     {
         // A fixed-width band (NOT expand) so the buildings column to its right takes the elastic width — one
         // horizontal expander in the row, mirroring FreeCol's [fill][474!] columns.
-        var col = new VBoxContainer { CustomMinimumSize = new Vector2(560, 0), SizeFlagsHorizontal = SizeFlags.Fill };
+        var col = new VBoxContainer { CustomMinimumSize = new Vector2(500, 0), SizeFlagsHorizontal = SizeFlags.Fill };
         col.AddThemeConstantOverride("separation", 8);
         col.AddChild(PopulationStrip());
         Control tiles = IsometricTiles();
@@ -231,8 +258,8 @@ public partial class ColonyPanel : PanelContainer
     /// </summary>
     private Control IsometricTiles()
     {
-        var view = new Control { Name = "TilesView", CustomMinimumSize = new Vector2(540, 344) };
-        var centre = new Vector2(270, 152);
+        var view = new Control { Name = "TilesView", CustomMinimumSize = new Vector2(500, 344) };
+        var centre = new Vector2(250, 152);
         var half = new Vector2(TileW / 2, TileH / 2);
         if (_heldFrom is not null)
         {
@@ -280,7 +307,7 @@ public partial class ColonyPanel : PanelContainer
                         colonist.Modulate = new Color(1f, 0.9f, 0.3f); // picked up — highlight the held colonist
                     }
                     Place(view, colonist, topLeft + new Vector2(52, 8));
-                    Place(view, Badge($"{Short(good)} {_game.TileYield(tile, good)}"), topLeft + new Vector2(44, 0));
+                    Place(view, Badge($"{Display(Short(good))} {_game.TileYield(tile, good)}"), topLeft + new Vector2(44, 0));
                     Position worked = tile;
                     var release = new Button { Name = $"Release_{tile.X}_{tile.Y}", Text = "✕", CustomMinimumSize = new Vector2(24, 20) };
                     release.Pressed += () => { _game.UnassignWork(_colony, worked); _heldFrom = null; Changed(); };
@@ -292,7 +319,7 @@ public partial class ColonyPanel : PanelContainer
                     picker.AddItem("Work…");
                     foreach ((string goodsId, int yield) in options)
                     {
-                        picker.AddItem($"{Short(goodsId)} {yield}");
+                        picker.AddItem($"{Display(Short(goodsId))} {yield}");
                     }
                     Position free = tile;
                     picker.ItemSelected += index =>
@@ -349,10 +376,10 @@ public partial class ColonyPanel : PanelContainer
         {
             BuildingType target = _game.Ruleset.Building(_colony.CurrentBuild);
             string cost = string.Join(", ", target.BuildCost
-                .Select(c => $"{Short(c.GoodsId)} {_colony.StoreOf(_game.Ruleset.StorageIdOf(c.GoodsId))}/{c.Amount}"));
+                .Select(c => $"{Display(Short(c.GoodsId))} {_colony.StoreOf(_game.Ruleset.StorageIdOf(c.GoodsId))}/{c.Amount}"));
             var row = new HBoxContainer();
             row.AddChild(IconRect(ColonyArt.BuildingImage(target.ShortName), 48, 36));
-            row.AddChild(new Label { Text = $"Building {target.ShortName} ({cost})", SizeFlagsHorizontal = SizeFlags.ExpandFill });
+            row.AddChild(new Label { Text = $"Building {Display(target.ShortName)} ({cost})", SizeFlagsHorizontal = SizeFlags.ExpandFill });
             var stop = new Button { Name = "StopBuild", Text = "Stop" };
             stop.Pressed += () => { _game.SetBuild(_colony, null); Changed(); };
             row.AddChild(stop);
@@ -365,8 +392,8 @@ public partial class ColonyPanel : PanelContainer
             var buildables = _game.Buildables(_colony).ToList();
             foreach (BuildingType b in buildables)
             {
-                string cost = string.Join(" + ", b.BuildCost.Select(c => $"{c.Amount} {Short(c.GoodsId)}"));
-                options.AddItem($"{b.ShortName} ({cost})");
+                string cost = string.Join(" + ", b.BuildCost.Select(c => $"{c.Amount} {Display(Short(c.GoodsId))}"));
+                options.AddItem($"{Display(b.ShortName)} ({cost})");
             }
             options.ItemSelected += index =>
             {
@@ -385,10 +412,9 @@ public partial class ColonyPanel : PanelContainer
 
     private Control BuildingsColumn()
     {
-        // The elastic column: it takes the width left by the fixed LeftColumn, with the 4-wide buildings grid centred
-        // in it (ShrinkCenter — not ExpandFill, which would stretch the cells into a void). The whole screen already
-        // scrolls (VBox/Scroll), so no inner scroll is needed; a bottom spacer absorbs this column's vertical slack.
-        var col = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        // The 4-wide buildings grid, sized to its content (the content card centres the whole row). The screen already
+        // scrolls (VBox/Scroll), so no inner scroll is needed.
+        var col = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
         var grid = new GridContainer { Columns = 4, Name = "BuildingsGrid", SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
         grid.AddThemeConstantOverride("h_separation", 8);
         grid.AddThemeConstantOverride("v_separation", 8);
@@ -404,12 +430,23 @@ public partial class ColonyPanel : PanelContainer
     {
         BuildingType building = _game.Ruleset.Building(buildingId);
         int workers = _colony.BuildingWorkers.GetValueOrDefault(buildingId);
-        var cell = new PanelContainer { CustomMinimumSize = new Vector2(150, 132) };
+        var cell = new PanelContainer { ThemeTypeVariation = "BuildingCell", CustomMinimumSize = new Vector2(142, 0) };
         var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        box.AddThemeConstantOverride("separation", 2);
         cell.AddChild(box);
 
-        box.AddChild(IconRect(ColonyArt.BuildingImage(building.ShortName), 144, 80));
-        box.AddChild(new Label { Text = $"{building.ShortName} ({workers}/{building.Workplaces})", HorizontalAlignment = HorizontalAlignment.Center });
+        box.AddChild(IconRect(ColonyArt.BuildingImage(building.ShortName), 124, 70));
+        // Display name wraps to (at most) two reserved lines so long names like "Tobacconist House" don't spill the
+        // cell, and every cell stays the same height.
+        var label = new Label
+        {
+            Text = $"{Display(building.ShortName)} ({workers}/{building.Workplaces})",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            CustomMinimumSize = new Vector2(124, 36),
+        };
+        label.AddThemeFontSizeOverride("font_size", 13);
+        box.AddChild(label);
 
         var controls = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
         if (_game.CheckAssignBuildingWork(_colony, buildingId).Allowed)
@@ -454,7 +491,7 @@ public partial class ColonyPanel : PanelContainer
                 if (_game.CheckEquipRole(unit, _colony, roleId).Allowed)
                 {
                     string r = roleId;
-                    buttons.Add(MakeButton($"Equip_{uid}_{Short(roleId)}", $"Arm {Short(roleId)}", () => Act(uid, u => _game.EquipRole(u, _colony, r))));
+                    buttons.Add(MakeButton($"Equip_{uid}_{Short(roleId)}", $"Arm {Display(Short(roleId))}", () => Act(uid, u => _game.EquipRole(u, _colony, r))));
                 }
             }
             if (!unit.HasDefaultRole && _game.CheckEquipRole(unit, _colony, RoleType.DefaultRoleId).Allowed)
@@ -467,8 +504,8 @@ public partial class ColonyPanel : PanelContainer
             }
             var row = new HBoxContainer();
             row.AddChild(IconRect(ColonyArt.UnitIcon(unit.Type.ShortName), 36, 36));
-            string role = unit.HasDefaultRole ? "" : $" ({Short(unit.RoleId)})";
-            row.AddChild(new Label { Text = $"{unit.Type.ShortName}{role} at ({unit.Position.X},{unit.Position.Y})", SizeFlagsHorizontal = SizeFlags.ExpandFill });
+            string role = unit.HasDefaultRole ? "" : $" ({Display(Short(unit.RoleId))})";
+            row.AddChild(new Label { Text = $"{Display(unit.Type.ShortName)}{role} at ({unit.Position.X},{unit.Position.Y})", SizeFlagsHorizontal = SizeFlags.ExpandFill });
             foreach (Button button in buttons)
             {
                 row.AddChild(button);
@@ -519,12 +556,16 @@ public partial class ColonyPanel : PanelContainer
         }
     }
 
-    private static Label Badge(string text) => new()
+    // A tile overlay caption (e.g. "Grain 4"): forced light text with a dark halo so it reads on any terrain — the
+    // theme's default dark-ink Label colour would vanish against the diamonds.
+    private static Label Badge(string text)
     {
-        Text = text,
-        Modulate = Colors.White,
-        HorizontalAlignment = HorizontalAlignment.Center,
-    };
+        var label = new Label { Text = text, HorizontalAlignment = HorizontalAlignment.Center };
+        label.AddThemeColorOverride("font_color", Colors.White);
+        label.AddThemeColorOverride("font_outline_color", new Color(0, 0, 0, 0.9f));
+        label.AddThemeConstantOverride("outline_size", 4);
+        return label;
+    }
 
     private static Button MakeButton(string name, string text, Action onPressed)
     {
@@ -533,9 +574,13 @@ public partial class ColonyPanel : PanelContainer
         return button;
     }
 
-    private static Label SectionLabel(string text) => new()
+    /// <summary>A section divider: an engraved wood rule above a centred, header-styled caption.</summary>
+    private static Control SectionLabel(string text)
     {
-        Text = $"— {text} —",
-        HorizontalAlignment = HorizontalAlignment.Center,
-    };
+        var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        box.AddThemeConstantOverride("separation", 2);
+        box.AddChild(new HSeparator());
+        box.AddChild(new Label { Text = text, ThemeTypeVariation = "SectionHeader", HorizontalAlignment = HorizontalAlignment.Center });
+        return box;
+    }
 }
