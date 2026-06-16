@@ -58,8 +58,8 @@ public sealed class Colony
     /// <summary>The owning colonial player's id (FP-2; the human is 0). Foreign powers own colonies from FP-4+; capture (1c-3e) reassigns it.</summary>
     public int OwnerId { get; internal set; }
 
-    /// <summary>Display name (e.g. "Jamestown").</summary>
-    public string Name { get; }
+    /// <summary>Display name (e.g. "Jamestown"). Settable via <see cref="GameSession.Game.RenameColony"/>.</summary>
+    public string Name { get; internal set; }
 
     /// <summary>Map tile the colony occupies.</summary>
     public Position Position { get; }

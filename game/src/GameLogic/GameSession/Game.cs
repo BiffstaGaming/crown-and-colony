@@ -2335,6 +2335,61 @@ public sealed class Game
         return unit;
     }
 
+    /// <summary>Renames a colony (FreeCol <c>renameObject</c> on a <c>Nameable</c>); the name must be non-blank.</summary>
+    /// <exception cref="ArgumentException">The name is blank.</exception>
+    public void RenameColony(Colony colony, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("A colony name cannot be blank.", nameof(name));
+        }
+        colony.Name = name.Trim();
+    }
+
+    /// <summary>
+    /// Whether a colony may be abandoned (given up and disposed). Faithful to FreeCol: you abandon the **last**
+    /// colonist (reduce a bigger colony first with <see cref="LeaveColony"/>), and a colony with a fortification
+    /// (stockade/fort/fortress) cannot be abandoned.
+    /// </summary>
+    public MoveCheck CheckAbandonColony(Colony colony)
+    {
+        if (colony.Population > 1)
+        {
+            return MoveCheck.No("Send the other colonists out before abandoning the colony.");
+        }
+        if (ColonyDefenceBonus(colony) > 0)
+        {
+            return MoveCheck.No("A fortified colony (stockade/fort/fortress) cannot be abandoned.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Abandons a colony: it is removed from the map and its last colonist walks out as a free colonist on the
+    /// colony's tile (FreeCol <c>abandonSettlement</c>).
+    /// </summary>
+    /// <returns>The departed colonist, standing where the colony was.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAbandonColony"/>.</exception>
+    public Unit AbandonColony(Colony colony)
+    {
+        MoveCheck check = CheckAbandonColony(colony);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        var unit = new Unit(_nextUnitId++, Ruleset.Unit(StartingUnitTypeId), colony.Position)
+        {
+            OwnerId = colony.OwnerId,
+        };
+        DisposeColony(colony);
+        _units.Add(unit);
+        RevealForOwner(unit);
+        return unit;
+    }
+
+    /// <summary>Removes a colony from the game (its tile-work assignments go with it; any garrison units stay on the tile).</summary>
+    private void DisposeColony(Colony colony) => _colonies.Remove(colony);
+
     /// <summary>
     /// Whether an idle colonist may be put to work in one of the colony's buildings.
     /// </summary>
@@ -4180,8 +4235,10 @@ public sealed class Game
         //     to a cap here) are exempt. Run after construction so a build isn't starved of materials it consumes.
         SpillWarehouseOverflow(colony);
 
-        // 2. Colonists eat; an unfed colonist starves (population floors at 1 —
-        //    colony destruction is a later rule). Assignments shrink to match.
+        // 2. Colonists eat; an unfed colonist starves (population floors at 1). Note: the classic colony-centre
+        //    tile always yields ≥ 2 food (desert/arctic 2, plains 3…), exactly a lone colonist's appetite, so a
+        //    size-1 colony never starves in normal play — FreeCol's "last colonist starves → colony disposed"
+        //    rule only fires once food production can drop below that (disasters), deferred with that system.
         int shortfall = colony.ConsumeFood(colony.Population * Colony.FoodPerColonist);
         if (shortfall > 0 && colony.Population > 1)
         {
