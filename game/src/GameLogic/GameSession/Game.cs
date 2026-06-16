@@ -1305,11 +1305,11 @@ public sealed class Game
     /// the goods-stack pick — never the human's stream 0 (ADR-009).
     /// </summary>
     /// <remarks>
-    /// Faithful subset: we model the **goods-loot** pillage outcome only, and the loot is destroyed (the brave
-    /// does not carry it off — no native goods-hauling/settlement-restock model; FreeCol's brave does
-    /// <c>attacker.add(goods)</c>). FreeCol also picks (uniformly) a building to burn, a ship on the colony tile to
-    /// sink/damage, or gold to steal (<c>colony.getPlunder/5</c>); those are deferred (no building-destruction
-    /// model; colony gold plunder shares the deferred colony-capture plunder formula). We also pillage on **any**
+    /// Faithful subset: the goods loot is destroyed (the brave does not carry it off — no native
+    /// goods-hauling/settlement-restock model; FreeCol's brave does <c>attacker.add(goods)</c>). We model the
+    /// **goods-stack** and **gold** pillage options (gold = FreeCol <c>max(1, colony.getPlunder/5)</c>, capped at the
+    /// owner's purse, via <see cref="ColonyPlunderAmount"/>); FreeCol's other uniform choices — a building to burn or
+    /// a ship on the colony tile to sink/damage — are deferred (no building-destruction model). We also pillage on **any**
     /// native win, where FreeCol gates pillage on a non-great win and lets a **great** win kill a colonist or
     /// destroy the colony — so our great win is *gentler* than FreeCol's (a tribe never destroys a colony here);
     /// the colonist-kill/destroy path and the attacker's tension easing are deferred (no population-on-combat
@@ -1336,14 +1336,30 @@ public sealed class Game
         CombatResult result = CombatModel.Resolve(CombatModel.WinProbability(attackPower, defencePower), random);
         if (result is CombatResult.GreatWin or CombatResult.Win)
         {
-            // Pillage one lootable stack, chosen uniformly (FreeCol's "Pillage choice" draw, restricted to goods).
+            // FreeCol's "Pillage choice": one option, uniformly, over {burnable buildings, ships, lootable goods
+            // stacks, + gold if the owner can be plundered}. We model the goods stacks + the gold option (buildings
+            // and ships are deferred); gold is the LAST option (matching FreeCol's order), added only when the owner
+            // has gold to take, so a pick of index < goodsCount is a goods stack (the existing pillage tests' index 0).
             var loot = PillageableGoods(colony).ToList();
-            (string goodsId, int amount) = loot[random.Next(loot.Count)];
-            int take = Math.Min(amount / 2, PillageGoodsCap);
-            if (take > 0) // a 1-unit stack yields 0 (amount/2 == 0): the raid won but carried nothing off — no notice
+            bool canPlunderGold = HumanPlayer.Gold > 0; // the colony is human-owned (CheckPillageColony gated)
+            int pick = random.Next(loot.Count + (canPlunderGold ? 1 : 0));
+            if (pick < loot.Count)
             {
-                colony.AddGoods(goodsId, -take);
-                _colonyRaidNotices.Add(new ColonyRaidNotice(brave.OwnerNationId!, colony.Name, goodsId, take, target));
+                (string goodsId, int amount) = loot[pick];
+                int take = Math.Min(amount / 2, PillageGoodsCap);
+                if (take > 0) // a 1-unit stack yields 0 (amount/2 == 0): the raid won but carried nothing off — no notice
+                {
+                    colony.AddGoods(goodsId, -take);
+                    _colonyRaidNotices.Add(new ColonyRaidNotice(brave.OwnerNationId!, colony.Name, goodsId, take, target));
+                }
+            }
+            else
+            {
+                // Steal gold: FreeCol max(1, colony.getPlunder/5), capped at the owner's purse (no negative balance).
+                // ColonyPlunderAmount draws from the nation's stream (the same `random`) — never the human's stream 0.
+                int plunder = Math.Min(Math.Max(1, ColonyPlunderAmount(colony, HumanPlayer, random) / 5), HumanPlayer.Gold);
+                HumanPlayer.Gold -= plunder;
+                _colonyRaidNotices.Add(new ColonyRaidNotice(brave.OwnerNationId!, colony.Name, null, plunder, target));
             }
         }
         else

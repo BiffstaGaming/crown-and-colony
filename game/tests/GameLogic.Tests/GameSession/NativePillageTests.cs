@@ -36,6 +36,15 @@ public class NativePillageTests
         public RandomState SaveState() => new(0, 0);
     }
 
+    /// <summary>Forces a brave win and the LAST loot option (the gold option, which sorts after the goods stacks), with a max plunder draw.</summary>
+    private sealed class GoldOptionRandom : IGameRandom
+    {
+        public int Next(int maxExclusive) => maxExclusive - 1; // the last loot option = gold; also the top of the plunder range
+        public int Next(int minInclusive, int maxExclusive) => maxExclusive - 1;
+        public double NextDouble() => 0.0;                     // force a brave win
+        public RandomState SaveState() => new(0, 0);
+    }
+
     private static bool FreeLand(Game g, Position p) =>
         g.Map.InBounds(p) && !g.Map.TerrainAt(p).IsWater
         && g.ColonyAt(p) is null && g.NativeSettlementAt(p) is null
@@ -83,6 +92,41 @@ public class NativePillageTests
         Assert.Equal(100, colony.StoreOf(Tobacco));                       // nothing taken
         Assert.Empty(game.ColonyRaidNotices);
         Assert.DoesNotContain(game.Units, u => u.Id == braveId);          // the brave is dispose-on-combat-loss → slain
+    }
+
+    [Fact]
+    public void Pillage_CanStealGold_WhenTheLootPickLandsOnTheGoldOption()
+    {
+        // FreeCol's pillage choice has an extra "steal gold" option after the goods stacks (csPillageColony:
+        // max(1, colony.getPlunder/5)). With one goods stack + a human purse, the gold option is the last index;
+        // GoldOptionRandom picks it and takes the top of the plunder range.
+        (Game game, Colony colony, Unit brave) = Stage(seed: 7); // tobacco 100 → one goods stack
+        game.HumanPlayer.Gold = 1000;
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.PillageColony(brave, colony.Position, new GoldOptionRandom());
+
+        Assert.True(game.HumanPlayer.Gold < goldBefore);             // gold was stolen…
+        Assert.Equal(100, colony.StoreOf(Tobacco));                 // …and the goods left untouched (one option per raid)
+        ColonyRaidNotice notice = Assert.Single(game.ColonyRaidNotices);
+        Assert.Null(notice.GoodsId);                                // a gold raid carries a null goods id
+        Assert.True(notice.Amount >= 1);                            // at least 1 gold (FreeCol max(1, …))
+        Assert.Equal(goldBefore - game.HumanPlayer.Gold, notice.Amount); // the notice reports exactly what was taken
+    }
+
+    [Fact]
+    public void Pillage_HasNoGoldOption_WhenTheOwnerIsBroke()
+    {
+        // With the owner broke, canBePlundered is false → no gold option; the "last" pick falls on the goods stack.
+        (Game game, Colony colony, Unit brave) = Stage(seed: 7);
+        game.HumanPlayer.Gold = 0;
+
+        game.PillageColony(brave, colony.Position, new GoldOptionRandom()); // would pick gold if it existed
+
+        Assert.Equal(50, colony.StoreOf(Tobacco));                  // goods stolen instead (no gold option)
+        ColonyRaidNotice notice = Assert.Single(game.ColonyRaidNotices);
+        Assert.Equal(Tobacco, notice.GoodsId);                      // a goods raid, not gold
+        Assert.Equal(0, game.HumanPlayer.Gold);                     // no gold to take
     }
 
     [Fact]
@@ -161,12 +205,12 @@ public class NativePillageTests
     public void NativePillage_DoesNotTouchTheHumansStream0()
     {
         // Same seed + same staged colony/brave in both; only one game's natives are enraged. With a winning seed
-        // the brave survives and pillages turn after turn — including the colony's FOOD once EndTurn production
-        // stocks it (food sorts before tobacco and is a valid loot target) — across a long horizon that spans
-        // colony food growth. The raiding game's save diverges yet the human's stream 0 and scoped state stay
-        // byte-identical: no native path (combat band or loot pick) draws from stream 0, and stealing food never
-        // feeds back into a stream-0 draw (ADR-009). This long horizon is the regression net for any future
-        // food→growth→stream-0 coupling the safety review flagged.
+        // the brave survives and pillages turn after turn — goods (incl. the colony's FOOD once EndTurn production
+        // stocks it) AND sometimes gold (the loot pick's extra option) — across a long horizon. The raiding game's
+        // save diverges yet the human's RNG cursor (stream 0) stays byte-identical: no native path (combat band,
+        // loot pick, or the gold-plunder draw) touches stream 0 (ADR-009). The human's GOLD may now legitimately
+        // diverge (gold-steal debits it), but its immigration/dock — which no pillage path touches — stay identical,
+        // and crucially no stolen gold/goods feeds back into a stream-0 draw.
         (Game calm, _, _) = Stage(seed: 13);
         (Game raiding, _, Unit brave) = Stage(seed: 13);
         foreach (NativeSettlement s in raiding.NativeSettlements.Where(s => s.NationTypeId == brave.OwnerNationId))
@@ -182,8 +226,7 @@ public class NativePillageTests
 
         Assert.NotEqual(SaveGame.From(calm).ToJson(), SaveGame.From(raiding).ToJson()); // the raid genuinely diverged…
         Assert.Equal(calm.RandomState, raiding.RandomState);                            // …yet stream 0 is untouched
-        Assert.Equal(calm.HumanPlayer.Gold, raiding.HumanPlayer.Gold);
-        Assert.Equal(calm.HumanPlayer.Immigration, raiding.HumanPlayer.Immigration);
-        Assert.Equal(calm.HumanPlayer.RecruitDock, raiding.HumanPlayer.RecruitDock);
+        Assert.Equal(calm.HumanPlayer.Immigration, raiding.HumanPlayer.Immigration);    // pillage touches neither immigration…
+        Assert.Equal(calm.HumanPlayer.RecruitDock, raiding.HumanPlayer.RecruitDock);    // …nor the recruit dock (only gold/goods)
     }
 }

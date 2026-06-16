@@ -18,12 +18,12 @@ namespace CrownAndColony.GameLogic.Combat;
 /// </remarks>
 /// <param name="AttackerNationId">The raiding native nation type id (e.g. <c>model.nationType.apache</c>).</param>
 /// <param name="ColonyName">The pillaged colony's name.</param>
-/// <param name="GoodsId">The goods type carried off (e.g. <c>model.goods.tobacco</c>).</param>
-/// <param name="Amount">How much of that goods was stolen.</param>
+/// <param name="GoodsId">The goods type carried off (e.g. <c>model.goods.tobacco</c>), or <c>null</c> when the raid stole <b>gold</b>.</param>
+/// <param name="Amount">How much of that goods (or gold) was stolen.</param>
 /// <param name="Position">The tile the colony stands on.</param>
 public readonly record struct ColonyRaidNotice(
     string AttackerNationId,
     string ColonyName,
-    string GoodsId,
+    string? GoodsId,
     int Amount,
     Position Position);

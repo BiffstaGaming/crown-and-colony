@@ -171,9 +171,11 @@ public partial class GameController : Node2D
     private static string FormatColonyLossNotice(ColonyLossNotice notice) =>
         $"⚑ The {NationLabel(notice.AttackerNationId)} captured your colony {notice.ColonyName} at ({notice.Position.X},{notice.Position.Y})!";
 
-    /// <summary>Turns a native pillage of a human colony into a status-bar message (the goods-raid sibling of <see cref="FormatColonyLossNotice"/>).</summary>
+    /// <summary>Turns a native pillage of a human colony into a status-bar message (the goods-raid sibling of <see cref="FormatColonyLossNotice"/>). A null <c>GoodsId</c> means gold was stolen.</summary>
     private string FormatColonyRaidNotice(ColonyRaidNotice notice) =>
-        $"⚔ The {NationLabel(notice.AttackerNationId)} raided {notice.ColonyName} and carried off {notice.Amount} {_game.Ruleset.Goods(notice.GoodsId).ShortName}!";
+        notice.GoodsId is { } goodsId
+            ? $"⚔ The {NationLabel(notice.AttackerNationId)} raided {notice.ColonyName} and carried off {notice.Amount} {_game.Ruleset.Goods(goodsId).ShortName}!"
+            : $"⚔ The {NationLabel(notice.AttackerNationId)} raided {notice.ColonyName} and made off with {notice.Amount} gold!";
 
     /// <summary>The display label for a nation id (e.g. <c>model.nation.dutch</c> → "Dutch").</summary>
     private static string NationLabel(string nationId)
