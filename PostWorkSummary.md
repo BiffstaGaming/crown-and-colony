@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-16 — Colony screen: parchment theme + resize-safe layout [playtest · "resize seems wrong" + "super unpolished"]
+
+**Requested:** Chris (playtesting): "if i resize the game window, everything in the colony seems wrong?" then "It's fine.. but its super unpolished."
+**Did:** Reproduced the resize bug (captured at 1100/1280/1600px — below ~1280 the fixed ~1160px content overflowed and clipped the buildings + cut the bottom bars). Ran a **5-agent research Workflow** (FreeCol fonts + Godot theming + our gaps) → design → **adversarial critique**, then implemented with the critique's fixes. **(1) `ColonyTheme` (new):** a cached `Theme` assigned to `ColonyPanel` so it cascades — wood-toned buttons/dropdowns/popup, a bordered-parchment `BuildingCell` variation, dark-ink labels with a light halo, engraved separators, title/section-header size+colour hierarchy (leaves the parchment `panel` slot alone). **(2) Resize fix:** bands now live in a content card that sizes-to-content + `ShrinkCenter`s, with `Scroll` set to horizontal-auto — centres with margins on wide windows, scrolls (not clips) when narrow; trimmed the tile view (500px) + cells (142px) so **1280 fits cleanly**. **(3) Polish:** uniform cells with wrapping **Title-Case** names (`Display` camelCase-splitter, label-only), real section headers, readable tile badges, red shortfalls.
+**Status:** **CI green** (`b7b38a3`); 38 scene + 552 logic green; verified visually at 1100/1280/1600px. Presentation-only (ADR-006); no logic/save/RNG change.
+**Changed:** `presentation/ColonyTheme.cs` (new), `presentation/ColonyPanel.cs` (theme + content card + `Display` + cell/section styling), `scenes/main.tscn` (`ColonyTitle` variation, `Scroll` horizontal-auto); docs `presentation.md`/`colonies.md`. Commit `b7b38a3`.
+**Decisions:** **Did NOT adopt FreeCol's ShadowedBlack font** — the critique caught that it ships with **no stated licence** (the README/TTF have none; a GPL claim would be fabricated). Hierarchy is size+colour on the engine font until a licence-verified period face is sourced. Kept `Columns=4` (test-locked at the 1152 headless default); resize handled by centre-and-scroll, not responsive columns. Spawned a task chip for a **pre-existing** InputTests run-order flake (VisualGoldenTests leaks a 1024×600 window → 2 map-click tests land one tile off; passes isolated + on CI retry).
+**Scheduled next:** Chris's playtest steer; otherwise the deferred **per-colony SoL model + Rebels/Royalists bar** (`86d3c3j7z`) or back to the autonomous queue.
+**Follow-ups:** licence-verified period font; per-colony SoL + bar; FreeCol decorative wood border; the InputTests window-leak flake (`task_337b84d0`); route production bar through a real net-production oracle; per-colonist identity (`86d3b6nrz`).
+**Needs you:** **Try the resize now** — it centres on wide windows and scrolls instead of clipping when narrow, and the controls/cells/headers are themed (wood + parchment). If you want the authentic period **font**, I need you to OK sourcing a licence-clear one (FreeCol's wasn't licensed). The Rebels/Royalists SoL bar is still the one missing FreeCol piece (needs a GameLogic change first).
+
 ## 2026-06-16 — Click-to-move tile workers [playtest fix · "can't move colonists around each tile"]
 
 **Requested:** Chris (playing the new parchment colony screen): "looks better but i cant move the colonists around each tile."
