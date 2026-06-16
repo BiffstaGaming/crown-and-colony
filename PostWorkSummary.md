@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 — Scout line-of-sight bonus + doc sweep [one more slice, then docs]
+
+**Requested:** "1 more slice, ensure documentation is up to date."
+**Did:** Shipped the **scout line-of-sight bonus** (`86d3c9upk`, `e0b469f`) — a clean, deterministic, unblocked slice (the colonist-upgrade ladder I'd queued stays blocked on per-colonist identity). A unit's fog reveal now uses its **effective** sight = its type `LineOfSight` + its **role's** `lineOfSightBonus`, so a **scout sees one tile further** (radius 2 vs the colonist's 1), matching FreeCol `Unit.getLineOfSight`. `RoleType.LineOfSightBonus` parsed from `model.modifier.lineOfSightBonus` (scout +1); `Game.LineOfSightOf(unit)` used in `Reveal`/`CurrentlyVisible`/`IsVisible`. Then did the **doc sweep**: updated `fog-of-war.md` (both layers + changelog; closed its "larger sight radii" open issue) and `ruleset-data.md`; fixed a stale `RoleType.MovementBonus` comment; refreshed the **ClickUp Session Log** (now 12 slices). The seasoned-scout LCR exploration traits are deferred (Lost City Rumours not built).
+**Status:** **673 L1+L2 + 4 soak green** (671 → 673; +2 `ScoutSightTests`). No RNG, no save change. ClickUp `86d3c9upk` → In Review. Repo clean + pushed; all docs synced (repo + ClickUp Session Log + PostWorkSummary).
+**Changed:** GameLogic `Specification/RoleType.cs`/`Ruleset.cs`, `GameSession/Game.cs` (+`ScoutSightTests.cs`); docs `fog-of-war.md`, `ruleset-data.md`; ClickUp Session Log page `2kz0t3mf-3576`. Commit `e0b469f`.
+**Decisions:** Picked the scout-LoS slice as the one clearly-small, deterministic, *unblocked* gap left (the easy P5 leaf slices are exhausted; the rest cluster behind foundational prerequisites — see the prior entry / Session Log).
+**Scheduled next:** a **foundational prerequisite** — **per-colonist work identity** (`86d3b6nrz`) is the highest-leverage (unblocks on-the-job upgrades, expert-scoped yields, the promotion ladder), or a Chris-chosen alternative.
+**Follow-ups:** the foundational prereqs (per-colonist identity, ship-at-colony location, schoolhouse, LCR, monarch/war); standing deferrals (ship construction, build-menu-offers-units, custom-house export, faithful `isCoastland`, REF `ambushPenalty`, seasoned-scout LCR traits).
+**Needs you:** **Review the In-Review queue** (~12 tasks). Three decisions gate specific next work: the **custom-house export fork**, **monarch P5 vs P6**, **founding-father factor 24 → 40**.
+
 ## 2026-06-17 — Documentation sweep + next-slice scoping (session wrap at 96% weekly)
 
 **Requested:** "Do just the next slice, then ensure all documentation is updated before session limits are hit (96% weekly)."
