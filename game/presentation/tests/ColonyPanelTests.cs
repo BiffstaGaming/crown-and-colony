@@ -1,8 +1,10 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 using GdUnit4;
@@ -146,6 +148,45 @@ public class ColonyPanelTests
         AssertThat(game.Units.Count(u => u.IsOnMap)).IsEqual(onMapBefore + 1); // a free colonist appeared on the map
         AssertThat(game.Units.Any(u => u.IsOnMap && u.Position == colony.Position && u.Type.Id == "model.unit.freeColonist")).IsTrue();
     }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ArmButton_EquipsAColonistAsASoldier_UsingTheColonysMuskets()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Stock 50 muskets and stand a free colonist in the colony, via the save layer (Colony.AddGoods + Unit.OwnerId
+        // are internal to GameLogic), then reload into the controller.
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with { Stores = new Dictionary<string, int> { ["model.goods.muskets"] = 50 } } : c).ToList();
+        int uid = game.Units.Max(u => u.Id) + 1;
+        var colonist = new SavedUnit(uid, "model.unit.freeColonist", founded.Position.X, founded.Position.Y, 0, OwnerId: 0);
+        game = (save with { Colonies = colonies, Units = save.Units.Append(colonist).ToList() }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        var arm = FindButton(controller, $"Equip_{uid}_soldier");
+        AssertThat(arm).IsNotNull();
+        arm!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.Units.First(u => u.Id == uid).RoleId).IsEqual("model.role.soldier"); // armed
+        AssertThat(colony.StoreOf("model.goods.muskets")).IsEqual(0);                          // 50 muskets consumed
+    }
+
+    private static Game GameOf(GameController controller) =>
+        (Game)controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(controller)!;
+
+    private static void SetGame(GameController controller, Game game) =>
+        controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(controller, game);
 
     private static Position FreeNeighbour(Game game, Colony colony) =>
         colony.Position.Neighbours().First(n =>

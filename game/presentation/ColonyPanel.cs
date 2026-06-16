@@ -40,6 +40,20 @@ public partial class ColonyPanel : PanelContainer
 
     private static string Short(string id) => id[(id.LastIndexOf('.') + 1)..];
 
+    /// <summary>The roles a colonist standing in a colony can be armed into from the colony's stores (CheckEquipRole gates affordability).</summary>
+    private static readonly string[] ArmRoles =
+        ["model.role.soldier", "model.role.dragoon", "model.role.scout", "model.role.pioneer"];
+
+    /// <summary>Re-resolves the live unit of <paramref name="unitId"/> (an action may have spent/changed it), applies <paramref name="action"/>, then refreshes.</summary>
+    private void Act(int unitId, Action<Unit> action)
+    {
+        if (_game.Units.FirstOrDefault(u => u.Id == unitId) is { } unit)
+        {
+            action(unit);
+        }
+        Changed();
+    }
+
     private void Rebuild()
     {
         GetNode<Label>("VBox/ColonyTitle").Text = _colony.Name;
@@ -174,26 +188,48 @@ public partial class ColonyPanel : PanelContainer
             }));
         }
 
-        // Out → in: a human person-unit standing on or beside the colony can join its population.
+        // One row per human unit on or beside the colony, carrying whatever it can do here: join the population
+        // (out → in), or — standing in the colony — arm itself from the colony's goods (soldier/dragoon/scout/
+        // pioneer) or disarm back to a plain colonist. Each action is a Game oracle (ADR-006).
         foreach (Unit unit in _game.PlayerUnits
-            .Where(u => u.IsOnMap && _game.CheckJoinColony(u, _colony).Allowed)
+            .Where(u => u.IsOnMap && (u.Position == _colony.Position || u.Position.IsAdjacentTo(_colony.Position)))
             .OrderBy(u => u.Id))
         {
+            var buttons = new System.Collections.Generic.List<Button>();
+            int uid = unit.Id;
+
+            if (_game.CheckJoinColony(unit, _colony).Allowed)
+            {
+                buttons.Add(ActionButton($"Join_{uid}", "Join colony", () => Act(uid, u => _game.JoinColony(u, _colony))));
+            }
+            foreach (string roleId in ArmRoles)
+            {
+                if (_game.CheckEquipRole(unit, _colony, roleId).Allowed)
+                {
+                    string r = roleId;
+                    buttons.Add(ActionButton($"Equip_{uid}_{Short(roleId)}", $"Arm {Short(roleId)}", () => Act(uid, u => _game.EquipRole(u, _colony, r))));
+                }
+            }
+            if (!unit.HasDefaultRole && _game.CheckEquipRole(unit, _colony, RoleType.DefaultRoleId).Allowed)
+            {
+                buttons.Add(ActionButton($"Disarm_{uid}", "Disarm", () => Act(uid, u => _game.EquipRole(u, _colony, RoleType.DefaultRoleId))));
+            }
+            if (buttons.Count == 0)
+            {
+                continue; // nothing this unit can do here right now
+            }
+
             var row = new HBoxContainer();
+            string role = unit.HasDefaultRole ? "" : $" ({Short(unit.RoleId)})";
             row.AddChild(new Label
             {
-                Text = $"{unit.Type.ShortName} at ({unit.Position.X},{unit.Position.Y})",
+                Text = $"{unit.Type.ShortName}{role} at ({unit.Position.X},{unit.Position.Y})",
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,
             });
-            int uid = unit.Id;
-            row.AddChild(ActionButton($"Join_{uid}", "Join colony", () =>
+            foreach (Button button in buttons)
             {
-                if (_game.Units.FirstOrDefault(u => u.Id == uid) is { } u)
-                {
-                    _game.JoinColony(u, _colony);
-                }
-                Changed();
-            }));
+                row.AddChild(button);
+            }
             dynamic.AddChild(row);
         }
 

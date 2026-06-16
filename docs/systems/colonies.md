@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (founding + min colony spacing, full colony economy, membership join/leave, bonus-resource yields, ownership + **capture/pillage/plunder**, **fortification defence bonus** [stockade/fort/fortress], **La Salle free stockade**) |
-| **Last verified** | 2026-06-16 @ colony tile-work picker + join/leave colony buttons |
+| **Last verified** | 2026-06-16 @ colony screen: tile-work picker + join/leave + arm colonists |
 | **Code** | `game/src/GameLogic/Colonies/Colony.cs` (incl. `OwnerId`), `GameSession/Game.cs` (`CheckFoundColony`/`FoundColony`; `ColonyDefenceBonus`/`ColonyDefenceBonusAt`; `ApplyFreeBuildings`; capture/plunder `CapturePlayerColony`/`AdjacentCapturableHumanColony`/`PlunderColony`/`ColonyPlunderAmount`), `Specification/BuildingType.cs` (`DefenceBonus`) · rendering: `game/presentation/ColonyMarker.cs` |
 | **Tests** | `GameTests.FoundColony_*`, `SaveGameTests.RoundTrip_PreservesColonies`, `ColonyDefenceBonusTests`, `LaSalleTests`, `ColonyCaptureTests`, `ForeignColonyCaptureTests`, `ColonyPlunderTests` |
 | **FreeCol reference** | `Colony.java` (+ `getPlunderRange`/`canBePillaged`), `BuildColonyMessage`, `Player.canClaimToFoundSettlementReason` (adjacent-colony rule, ✅ cross-checked); building `model.modifier.defence` (fortification bonus); `model.event.freeBuilding`/`csFreeBuilding` (La Salle) |
@@ -16,6 +16,8 @@ Select a colonist and press **B** to found a colony where it stands. The colonis
 **Putting colonists to work.** Click your colony to open its screen. Each colonist either works one of the eight surrounding tiles (growing food, or a raw good — lumber, ore, cotton, furs) or staffs a building (turning raw goods into bells, hammers, cloth, …). New colonists report to the best food tile automatically; to change that, **Release** a worker to free it, then either **send idle colonists to the fields** (a food shortcut) or pick a specific tile and choose **what** it should produce — that's how you put someone on **lumber** (which the carpenter then turns into hammers for building) rather than food.
 
 **Moving colonists in and out.** The colony screen's **Colonists** section moves people across the colony wall: **Send a colonist out** detaches a free colonist onto the colony's tile (click that tile to select it and march it off, or arm it), and any of your colonists standing on or beside the colony gets a **Join colony** button to fold into its population (the unit leaves the map, +1 population). A colony must always keep at least one colonist.
+
+**Arming colonists.** A colonist standing **in** the colony can be equipped from the colony's own stores — **Arm soldier** (50 muskets), **Arm dragoon** (50 muskets + 50 horses), **Arm scout** (50 horses) or **Arm pioneer** (tools) — and **Disarm** back to a plain colonist (refunding the gear). The buttons appear only when the colony actually holds the goods. That's how you raise a defender at home: send a colonist out onto the colony tile, then arm it.
 
 ## 2. Detailed rules
 
@@ -72,7 +74,7 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 |---|---|---|---|
 | L1 Unit | Always | found-on-settleable consumes unit/creates colony; rejections (ship, mountains, occupied tile, **adjacent to an existing colony** — `FoundColony_Rejected_AdjacentToAnExistingColony`); **resource yields** (`ResourceYieldTests`: resource boosts, expert-scope skipped, no-enable guard, Hudson ×2 furs, resource+father stack order) | ✅ |
 | L2 Scenario | Always | save/load round-trip preserves colonies; pre-v3 compat; production uses the boosted resource yield (`ResourceYieldTests.Production_UsesTheBoostedYield`); **join/leave** (`ColonyMembershipTests`: grow on join, detach a free colonist, keep ≥1, trim a job; round-trip) + `JourneyTests.Journey9` (ship a recruit home → join → colony grows) | ✅ |
-| L3 Interaction | Yes | `InputTests` (B founds), `MainSceneTests` (panel opens/closes), `ColonyPanelTests` (staff/unstaff buttons, release field worker, construction dropdown + stop, per-tile work picker assigns a colonist to a non-food good, **Join button folds an adjacent colonist into the population, Send-a-colonist-out detaches a free colonist**) | ✅ |
+| L3 Interaction | Yes | `InputTests` (B founds), `MainSceneTests` (panel opens/closes), `ColonyPanelTests` (staff/unstaff buttons, release field worker, construction dropdown + stop, per-tile work picker assigns a colonist to a non-food good, Join button folds an adjacent colonist into the population, Send-a-colonist-out detaches a free colonist, **Arm button equips a colonist as a soldier from the colony's muskets**) | ✅ |
 | L4 Visual | Yes (marker) | colony golden (`colony-seed424242`) | ✅ |
 
 ## 5. Open issues / TODO
@@ -90,6 +92,7 @@ Goods enter the warehouse under their spec `stored-as` id — grain/fish/meat al
 |---|---|---|
 | 2026-06-16 | **Colony tile-work picker**: `Game.TileWorkOptions(tile)` (a tile's attended producible goods + yields, sorted) feeds a new per-tile picker in `ColonyPanel` — an idle colonist can now be assigned to a **specific surrounding tile for a chosen good** (lumber/ore/cotton/furs/…), not just the food auto-assign. Closes the deferred re-assignment UI; unblocks the raw → refined chain (lumber → hammers). Presentation + a pure oracle (ADR-006); no save/RNG change. +1 L1 `TileWorkerTests` + 1 L3 `ColonyPanelTests`. | Phase 5 colony UI |
 | 2026-06-16 | **Join/leave colony in the UI**: `ColonyPanel` gains a *Colonists* section — a **Join colony** button per eligible on/adjacent human unit (`JoinColony`, out→in) and a **Send a colonist out** button (`LeaveColony`, in→out, detaches a free colonist onto the colony tile). Wires the already-shipped join/leave logic (no logic change); `GameController.RefreshView` now drops a stale `_selectedUnit` (a joined unit is removed). Presentation only (ADR-006); no save/RNG change. +2 L3 `ColonyPanelTests`. | Phase 5 colony UI |
+| 2026-06-16 | **Arm colonists in the UI**: the *Colonists* section's per-unit row now also offers **Arm soldier/dragoon/scout/pioneer** + **Disarm** for a colonist standing in the colony (`CheckEquipRole`/`EquipRole`, gated on the colony holding the goods) — wires the already-shipped equip logic. Presentation only (ADR-006); no save/RNG change. +1 L3 `ColonyPanelTests`. | Phase 5 colony UI |
 | 2026-06-13 | Founding (B key), colony marker, save v3 | Phase 2b |
 | 2026-06-14 | Minimum colony spacing: `CheckFoundColony` rejects a tile adjacent to an existing colony (FreeCol `canClaimToFoundSettlementReason`); resolves the long-standing TODO. Applies to the human and the AI | FP-5 |
 | 2026-06-13 | FreeCol settlement art; colony panel (click colony → name, population, terrain, colony-square yield; Close button). `GameController.OpenColonyPanel` is the public entry; L3-tested | Phase 2c |
