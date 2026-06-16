@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-16 — Five-slice batch [queue · Sons of Liberty complete + Bolívar + colony-screen finish]
+
+**Requested:** "Move ahead with 5 next slices."
+**Did:** Five slices, each end-to-end + CI-green. **(1) SoL production bonus** (`3410461`) — `Colony.ProductionBonus` adds to each attended worker's output (tiles + buildings, floored at 0). **(2) Simón Bolívar** (`8a327b2`) — +20 SoL% as a **standing modifier** (`Colony.SolModifierBonus` from Congress; the research critique caught that a one-time liberty "bake" diverges after population changes). **(3) Bell upkeep** (`eaebfd6`) — banking nets bell consumption (each colonist past 2 eats 1 bell), so SoL can now *fall* and a growing colony must staff its town hall (faithful). **(4) Carved-wood border** (`5b28cb8`) — composited FreeCol's `carvedwoodenborder` into a nine-patch overlaid on the panel; the colony window frames like FreeCol's. **(5) Effective tile yields** (`3b51543`) — badges + picker show base + the SoL bonus, matching production. **Bonus:** Henry Hudson (+100% furs) was found **already shipped** — audited + confirmed.
+**Status:** **626 tests green** (586 L1+L2 incl. 4 soak + 40 scene); all 5 commits CI-green (the 5th finishing as I write). Two research+critique Workflows drove the gameplay slices; both critiques caught real defects fixed before coding. Save v22 unchanged (Bolívar/upkeep are stateless/derived). The **Sons-of-Liberty system is now fully implemented** (liberty + upkeep → SoL% → rebels/royalists → production bonus → bar + Bolívar), and the **FreeCol colony screen is visually complete** (parchment + wood frame).
+**Changed:** GameLogic `Colony.cs`/`Game.cs` (+`SonsOfLibertyTests`/`FoundingFatherEffectsTests`/`JourneyTests`); presentation `ColonyPanel.cs`/`ColonyArt.cs`/`main.tscn` (+`ColonyPanelTests`); `assets/freecol/ui/colony_border.png`; docs `sons-of-liberty.md`/`founding-fathers.md`/`colonies.md`/`presentation.md`/`game-logic.md`/`save-load.md`/`QA-REPORT.md`/PROVENANCE. ClickUp Session Log + tasks.
+**Decisions:** Bolívar = standing modifier (faithful, survives pop changes). Bell upkeep done properly after first judging it too churny (the 2 test fixes proved tractable + faithful). **Colony-screen L4 goldens deliberately deferred** — the screen is text-heavy and fonts render differently across platforms (the reason the existing goldens hide the UI); needs a licence-clear bundled font first.
+**Scheduled next:** Chris's steer / the autonomous queue. Candidates: L4 UI goldens (after a font), wire FF goods-modifiers into building production (William Penn crosses is inert), building-grant fathers (Adam Smith / Stuyvesant).
+**Follow-ups:** L4 UI goldens (+font); Penn-crosses (building-output FF modifiers); lighter inner-parchment; Adam Smith/Stuyvesant; Bolívar difficulty constants.
+**Needs you:** **Take a look** — relaunching now. The colony screen is framed in carved wood with the Sons-of-Liberty bar live: produce bells (staff the town hall) to raise membership → +1/+2 production once you hit 50%/100%; let a colony outgrow its bells and it slides toward bad government (−1/−2). Elect Simón Bolívar for an instant +20%.
+
 ## 2026-06-16 — Sons of Liberty, Slice A [queue · per-colony liberty model + colony-screen bar]
 
 **Requested:** "Can you start working on the next items" — took the top queue item: per-colony Sons of Liberty (the main remaining FreeCol colony gap).
