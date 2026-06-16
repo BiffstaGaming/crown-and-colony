@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-16 — Colony management UI [playtest-driven · tile picker + join/leave/arm]
+
+**Requested:** Live playtest — Chris launched the game, couldn't put a colonist on lumber or move colonists in/out of a colony, and asked me to "go get ALL work done inside a colony complete."
+**Did:** Found that the *logic* for it all existed + was tested but had **no UI**. Shipped 3 presentation slices completing colony management: (1) **tile-work picker** (`dd27e87`) — `Game.TileWorkOptions(tile)` (pure rules query) feeds a per-tile `OptionButton` so an idle colonist can work a **specific** surrounding tile for a chosen good (lumber/ore/cotton/…), not just food; unblocks lumber → carpenter → hammers. (2) **Join/Leave** (`0cb5c7b`) — a *Colonists* panel section: **Send a colonist out** (`LeaveColony`) + a **Join colony** button per eligible on/adjacent unit (`JoinColony`); `RefreshView` clears a stale `_selectedUnit`. (3) **Arm** (`e9b017a`) — one unified row per nearby unit: Join, **Arm soldier/dragoon/scout/pioneer** + **Disarm** (`EquipRole`, gated on the colony's goods).
+**Status:** **588 tests green** (548 L1+L2 incl. +1 `TileWorkerTests` + 4 soak + 36 scene incl. +5 L3 `ColonyPanelTests`); build 0/0; **CI green** all three (`dd27e87`,`0cb5c7b`,`e9b017a`). **All presentation-only (ADR-006)** — calls existing Game oracles; `TileWorkOptions` is the one new (pure) method. **No save/RNG change (v21).** Reviewed **inline** (the 2-lens review Workflow is spend-limited) — all APPROVE. (GdUnit cold-start flake hit the full scene suite twice; clean on re-run.)
+**Changed:** `Game.cs` (`TileWorkOptions`), `ColonyPanel.cs` (pickers + Colonists section + `Act`/`ArmRoles`), `GameController.cs` (`_selectedUnit` guard); `TileWorkerTests.cs`, `ColonyPanelTests.cs`; docs `colonies.md`/`presentation.md`/`game-logic.md`/`QA-REPORT.md`. Tasks `86d3c2ey3` + `86d3c2r5k` (Shipped).
+**Decisions:** Completed colony management on the **current count-based model** (colonists are a fungible population count + job assignments). Unified the Colonists rows (one per unit, all actions) in the arm slice. Left colonist appears on the colony tile (selectable — `HandleTileClick` selects a unit before opening the panel), so no logic change.
+**Scheduled next:** Chris's steer — relaunch on the new build to use it (F5 → relaunch → F9), and/or the **per-colonist identity** refactor (`86d3b6nrz`) for *full* fidelity (typed colonists preserved across moves, expert yields, drag a specific colonist).
+**Follow-ups:** per-colonist identity (`86d3b6nrz`, the big one); the autonomous queue (building-grant fathers, drydock repair, AI target scoring, …); tribute refinements (`86d3c18n8`).
+**Needs you:** **Account monthly spend limit is hit** (Workflow subagents fail) — raise it at claude.ai/settings/usage to resume multi-agent reviews; main loop unaffected (reviews run inline). Also: the game window you have open is the **old build** — restart it (I can do the relaunch) to use the new colony controls. Colony management is now functionally complete on the count model; the deeper typed-colonist version is `86d3b6nrz` if you want it.
+
 ## 2026-06-16 — Native-pillage gold-steal [queue slice 10 · csPillageColony gold option]
 
 **Requested:** Autonomous overnight — keep shipping. Took the next contained queue item: add gold to `PillageColony`'s loot pick (`getPlunder/5`), with the plunder formula already pinned.
