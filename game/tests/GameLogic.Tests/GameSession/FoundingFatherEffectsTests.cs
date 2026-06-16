@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
@@ -131,6 +132,68 @@ public class FoundingFatherEffectsTests
 
         Assert.Contains(Brewster, game.Congress);
         Assert.DoesNotContain(game.RecruitDock, id => id == Servant || id == Criminal);
+    }
+
+    // ───────────────────────── Simón Bolívar's +20 Sons of Liberty ─────────────────────────
+
+    private const string Bolivar = "model.foundingFather.simonBolivar";
+
+    [Fact]
+    public void Ruleset_Bolivar_CarriesTheSoLModifier()
+    {
+        FoundingFather bolivar = Classic.Father(Bolivar);
+        Assert.Contains(bolivar.Modifiers, m => m.TargetId == "model.modifier.SoL" && (int)m.Value == 20);
+    }
+
+    [Fact]
+    public void Bolivar_AddsTwentyPoints_ToEveryColonysSoL()
+    {
+        // pop 5, liberty 250 → base SoL 25; with Bolívar in Congress it reads 45.
+        Assert.Equal(25, SoLColony(congress: null).Colonies[0].SonsOfLiberty);
+        Assert.Equal(45, SoLColony(congress: [Bolivar]).Colonies[0].SonsOfLiberty);
+    }
+
+    [Fact]
+    public void Bolivar_IsAStandingModifier_NotABake_SurvivesPopulationGrowth()
+    {
+        // The faithful test: Bolívar's +20 is applied to the percentage every read, so when the colony grows the
+        // SoL recomputes from liberty at the new population (a one-time liberty bake would drift here).
+        Game game = SoLColony(congress: [Bolivar], food: 210); // seeded to grow this turn
+        Colony colony = game.Colonies[0];
+        Assert.Equal(45, colony.SonsOfLiberty); // pop 5
+
+        game.EndTurn();
+
+        Assert.Equal(6, colony.Population); // grew
+        int expected = System.Math.Clamp(colony.Liberty * 100 / (200 * 6) + 20, 0, 100);
+        Assert.Equal(expected, colony.SonsOfLiberty); // recomputed at pop 6 (≈40), not a stale baked value
+        Assert.True(colony.SonsOfLiberty < 45, "SoL drops as population grows — the modifier recomputes");
+    }
+
+    [Fact]
+    public void Bolivar_ClampsSoLAtOneHundred()
+    {
+        // pop 5, liberty 900 → base SoL 90; +20 would be 110 but clamps to 100.
+        Assert.Equal(100, SoLColony(congress: [Bolivar], liberty: 900).Colonies[0].SonsOfLiberty);
+    }
+
+    [Fact]
+    public void ElectingBolivar_BumpsExistingColoniesImmediately()
+    {
+        Game game = SoLColony(congress: null, currentFather: Bolivar, playerLiberty: 23); // tips election this turn
+        Assert.Equal(25, game.Colonies[0].SonsOfLiberty); // before election
+        game.EndTurn();
+        Assert.Contains(Bolivar, game.Congress);
+        Assert.True(game.Colonies[0].SonsOfLiberty >= 45, "the elected Bolívar grants the standing +20 at once");
+    }
+
+    /// <summary>A pop-5 colony seeded with <paramref name="liberty"/> colony liberty (default 250 → base SoL 25), optionally food-stocked to grow.</summary>
+    private static Game SoLColony(IReadOnlyList<string>? congress, int liberty = 250, int food = 0, string? currentFather = null, int playerLiberty = 0)
+    {
+        var stores = food > 0 ? new Dictionary<string, int> { ["model.goods.food"] = food } : null;
+        return Plains3x3(
+            new SavedColony(1, "Liberty", 1, 1, 5, Stores: stores, Liberty: liberty),
+            congress, tax: 0, currentFather: currentFather, liberty: playerLiberty);
     }
 
     // ───────────────────────── fixtures ─────────────────────────

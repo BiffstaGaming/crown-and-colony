@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (liberty accrual + election + a modifier/ability system; the effects that touch existing systems are applied) |
-| **Last verified** | 2026-06-16 @ Phase 5 (La Salle free stockade) |
+| **Last verified** | 2026-06-16 @ Simón Bolívar (+20 Sons-of-Liberty, standing modifier) |
 | **Code** | `game/src/GameLogic/GameSession/Game.cs` (liberty/Congress/offers, `HasAbility`, `ApplyGoodsModifiers`, `FatherCombatFactor`, `ScaleNativeAlarmGain`, `ApplyFreeBuildings`), `Specification/FoundingFather.cs` (`FatherModifier` incl. `ScopeUnitTypes`, `FatherAbility`, `FreeBuildings`) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/FoundingFatherTests.cs`, `FoundingFatherEffectsTests.cs`, `NativeFatherEffectsTests.cs` (Pocahontas), `MagellanTests.cs`, `DrakeTests.cs`, `LaSalleTests.cs`, `AmbientAlarmTests.cs` (Pocahontas ambient damping), `Scenarios/JourneyTests.cs` (Journey 8) |
 | **FreeCol reference** | `Player.java` (`getTotalFoundingFatherCost` line 1544), `Modifier.java`/`FeatureContainer.applyModifiers`, `<founding-father>` spec elements |
@@ -40,8 +40,9 @@ Each father carries **modifiers** (bonuses) and **abilities** (capabilities) fro
 | **Ferdinand Magellan** | naval units +3 movement, −1 high-seas sail turn (`movementBonus`/`sailHighSeas`, naval-scoped) — see [units-movement](units-movement.md), [europe](europe.md) | ✅ applied |
 | **Francis Drake** | **+50% offence and +50% defence for privateers** (`model.modifier.offence`/`defence`, index 50, scoped to `model.unit.privateer`) — see [combat](combat.md) | ✅ applied |
 | **La Salle** | a **free `model.building.stockade`** in every colony at population ≥ 3 (`model.event.freeBuilding`) — the stockade fortifies the colony, see [combat](combat.md) | ✅ applied |
+| **Simón Bolívar** | **+20 Sons-of-Liberty %** in every one of his player's colonies (`model.modifier.SoL`, additive) — a standing modifier on each colony's SoL%, refreshed from Congress on election/founding/load, see [sons-of-liberty](sons-of-liberty.md) | ✅ applied |
 | Adam Smith (factories), Peter Stuyvesant (custom house) | building unlocks (factory tier / custom house) — need ability-gated buildables | ⏳ deferred |
-| Benjamin Franklin, Jan de Witt, Simón Bolívar | European diplomacy (Franklin/de Witt), Sons-of-Liberty (Bolívar) | ⏳ deferred to their systems |
+| Benjamin Franklin, Jan de Witt | European diplomacy (foreign trade / shared prices) | ⏳ deferred to [diplomacy](diplomacy.md) |
 
 **Pocahontas (native peacemaker)** — the political father who calms the natives. Two effects, both faithful to FreeCol on our per-settlement alarm model:
 - **On election:** every native settlement's alarm toward you drops to **0 (Happy)** — the `model.event.resetNativeAlarm` event (`ServerPlayer.java`). All grievances forgotten; braves fall below the raid threshold and stop attacking. *(Deviations: FreeCol also sets a native-nation `Stance.PEACE` object and only resets settlements you've **contacted** — we have neither a native-nation stance type nor fine contact-tracking, so we reset **all** settlements; the alarm-to-0 yields the same observable "no raids".)*
@@ -86,6 +87,7 @@ Each father carries **modifiers** (bonuses) and **abilities** (capabilities) fro
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-16 | **Simón Bolívar** applied: +20 Sons-of-Liberty % to every one of his player's colonies (`model.modifier.SoL`), as a standing modifier (`Colony.SolModifierBonus` from Congress, refreshed on election/founding/load) — survives population changes, not a one-time bake. +5 L1. See [sons-of-liberty](sons-of-liberty.md) | Phase 5 (founding fathers) |
 | 2026-06-13 | Liberty accrual from bells, cost formula, weighted offers, election; save v10 | Phase 4 slice 2 |
 | 2026-06-13 | Modifier + ability system; applied father effects (Jefferson/Penn/Paine production, Brewster recruit ban); rest deferred | Phase 4 slice 7 |
 | 2026-06-14 | Military fathers wired into combat: **George Washington** (`automaticPromotion` — every win promotes) and **Paul Revere** (`automaticEquipment` — auto-arm an unarmed colony defender); see [combat](combat.md) | Phase 5 slice 5b |

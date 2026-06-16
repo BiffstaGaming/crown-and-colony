@@ -106,12 +106,20 @@ public sealed class Colony
     public int Liberty { get; internal set; }
 
     /// <summary>
+    /// The owner's standing Sons-of-Liberty percentage modifier from Congress (Simón Bolívar's <c>model.modifier.SoL</c>
+    /// = +20), folded into <see cref="SonsOfLiberty"/> after the liberty→% conversion exactly as FreeCol does. Derived
+    /// from the owner's Congress (not persisted) — <see cref="GameSession.Game"/> refreshes it on election, founding,
+    /// and load. 0 for a player without such a father.
+    /// </summary>
+    public int SolModifierBonus { get; internal set; }
+
+    /// <summary>
     /// Sons-of-Liberty membership, 0–100 (FreeCol <c>calculateSoLPercentage</c>):
-    /// <c>floor(liberty·100 / (200·population))</c>, clamped 0–100; 0 for an empty colony. Player-level SoL
-    /// modifiers (Simón Bolívar +20) aren't folded in yet — that father is unimplemented.
+    /// <c>floor(liberty·100 / (200·population))</c>, plus the owner's standing <see cref="SolModifierBonus"/>
+    /// (applied to the percentage, after the conversion — FreeCol's order), clamped 0–100; 0 for an empty colony.
     /// </summary>
     public int SonsOfLiberty =>
-        Population <= 0 ? 0 : Math.Clamp(Liberty * 100 / (LibertyPerRebel * Population), 0, 100);
+        Population <= 0 ? 0 : Math.Clamp(Liberty * 100 / (LibertyPerRebel * Population) + SolModifierBonus, 0, 100);
 
     /// <summary>Colonists who are rebels: <c>floor(SoL% · population / 100)</c> (FreeCol <c>calculateRebelCount</c>; integer arithmetic — bit-identical to its float floor, ADR-009).</summary>
     public int RebelCount => SonsOfLiberty * Population / 100;

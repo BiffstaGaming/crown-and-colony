@@ -1917,6 +1917,8 @@ public sealed class Game
                 }
             }
         }
+
+        game.RefreshSonsOfLibertyModifiers(); // re-derive each colony's standing SoL bonus from its owner's Congress (Bolívar)
         return game;
     }
 
@@ -2171,6 +2173,7 @@ public sealed class Game
         }
 
         _colonies.Add(colony);
+        colony.SolModifierBonus = SolModifierFor(PlayerById(colony.OwnerId) ?? _human); // inherit the owner's standing SoL bonus (Bolívar)
         _units.Remove(unit);
         // The colony keeps its surroundings explored — for its owner (the human, or a foreign founder; FP-4).
         RevealAround(PlayerById(colony.OwnerId) ?? _human, colony.Position, ColonySightRadius);
@@ -3487,6 +3490,7 @@ public sealed class Game
             player.CurrentFather = null;
             player.OfferedFathersList.Clear();
             RefreshDockForRecruitability(player); // a newly-elected father may ban dock recruits (Brewster)
+            RefreshSonsOfLibertyModifiers();       // a newly-elected father may grant a standing SoL bonus (Bolívar +20)
             if (player.IsHuman && elected == PocahontasId)
             {
                 ResetAllNativeAlarm(); // FreeCol model.event.resetNativeAlarm — all native anger toward you forgotten
@@ -3532,6 +3536,26 @@ public sealed class Game
         }
     }
 
+    /// <summary>The player's standing Sons-of-Liberty %-modifier from Congress (Simón Bolívar's +20, FreeCol <c>model.modifier.SoL</c> additive); 0 without such a father.</summary>
+    private int SolModifierFor(Player player) =>
+        player.Congress
+            .SelectMany(f => Ruleset.Father(f).Modifiers)
+            .Where(m => m.TargetId == SonsOfLibertyModifierId)
+            .Sum(m => (int)m.Value);
+
+    /// <summary>
+    /// Refreshes every colony's <see cref="Colony.SolModifierBonus"/> from its owner's Congress. Bolívar's +20 is a
+    /// standing modifier on the SoL percentage (FreeCol), not a one-time liberty bake, so it is re-derived whenever
+    /// Congress could have changed — on election and on load — and stays correct as colonies grow or starve.
+    /// </summary>
+    private void RefreshSonsOfLibertyModifiers()
+    {
+        foreach (Colony colony in _colonies)
+        {
+            colony.SolModifierBonus = PlayerById(colony.OwnerId) is { } owner ? SolModifierFor(owner) : 0;
+        }
+    }
+
     /// <summary>The ability by which Thomas Paine adds the tax rate as a bell bonus.</summary>
     private const string AddTaxToBellsAbility = "model.ability.addTaxToBells";
 
@@ -3540,6 +3564,9 @@ public sealed class Game
 
     /// <summary>Pocahontas's id — on election she zeroes all native alarm (the <c>resetNativeAlarm</c> event).</summary>
     private const string PocahontasId = "model.foundingFather.pocahontas";
+
+    /// <summary>The Sons-of-Liberty percentage modifier (additive). Among fathers only Simón Bolívar carries it (+20, applied to every one of his player's colonies' SoL%).</summary>
+    private const string SonsOfLibertyModifierId = "model.modifier.SoL";
 
     /// <summary>The percentage modifier by which Pocahontas damps native-alarm increases (FreeCol <c>NATIVE_ALARM_MODIFIER</c>, −50%).</summary>
     private const string NativeAlarmModifierId = "model.modifier.nativeAlarmModifier";
