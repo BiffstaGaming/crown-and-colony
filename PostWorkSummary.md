@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 — Artillery combat modifiers: in-the-open + against-raid [continuing the backlog; faithful-combat follow-on to build-units]
+
+**Requested:** "Continue working through the backlog." (Same prompt as the build-units slice; this is the natural combat follow-on now that artillery is buildable.)
+**Did:** Made artillery combat faithful to FreeCol `SimpleCombatModel` (`86d3c9trh`, `c07d0cc`). **(1)** The attacker **artillery-in-the-open −75%** was over-applied — FreeCol fires it only when the *defender* is not in a settlement (and the gun isn't in a settlement / dug in), so **artillery now batters a colony at full power** (the colony-buster) instead of being wrongly weak against it. **(2)** Added the **defender** artillery-in-the-open −75% (a gun caught defending in the field). **(3)** Added **artillery-against-raid +100%** (a gun defending a colony against a native attacker doubles its defence). Verified FreeCol combines same-index modifiers **multiplicatively** (sequential `applyModifiers`), so our existing `CombatModel` math was already faithful — this slice is purely correct **gating**.
+**Status:** **668 L1+L2 + 4 soak green** (665 → 668; +3 — `CombatModelTests` exact-arithmetic + 2 `ColonyDefenceBonusTests` integration flips). No RNG, no save change. ClickUp `86d3c9trh` → In Review. Also reconciled the **drydock-repair duplicate** (`86d3c9qrn` → Cancelled; the work shipped as `86d3caxe6`).
+**Changed:** GameLogic `Combat/Combat.cs` (`DefenceContext` + `DefencePower`), `GameSession/Game.cs` (the field-`Attack` gating); tests `CombatModelTests.cs`, `ColonyDefenceBonusTests.cs` (+ an existing fortress test re-pinned to a non-artillery raider — it had relied on the old over-applied penalty); docs `combat.md` (both layers). Commit `c07d0cc`.
+**Decisions:** Implemented faithfully via direct FreeCol-source reading (I read `SimpleCombatModel.getOffensiveModifiers`/`getDefensiveModifiers` + `FeatureContainer.applyModifiers` rather than running a workflow, since the rule is small and exactly pinned). The fortress test had to change because the **old behavior was unfaithful** (it penalised artillery battering a colony) — the new test uses a brave raider so the fortress bonus stays the deciding factor.
+**Scheduled next:** another P5 GameLogic slice (candidates: `86d3c9tp0` terrain ambush bonus/penalty for forest & hills — a clean combat-modifier follow-on; `86d3c9p1u` factory-tier production bonus — now factories are buildable; or `86d3c9pgj` on-the-job colonist upgrades). Custom-house export still parked on the toggle-vs-auto design fork.
+**Follow-ups:** ship construction (needs a "ship moored at a colony" location); a colony build menu that offers units; the standing deferrals.
+**Needs you:** **Review the In-Review tasks** (now 10). The custom-house **export design fork** and the two standing open questions (**monarch as P5?**, **founding-father factor 24 → 40?**) are the decisions that would unblock specific next work.
+
 ## 2026-06-17 — Build land units in a colony (artillery + wagon train) [ultracode: multi-agent understand → implement → adversarial review]
 
 **Requested:** "You did not keep going until the session limit. Continue working through the backlog." (Ultracode on — optimize for exhaustive correctness, use workflows.)
