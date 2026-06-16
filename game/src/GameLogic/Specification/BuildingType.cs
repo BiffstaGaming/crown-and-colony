@@ -25,6 +25,13 @@ namespace CrownAndColony.GameLogic.Specification;
 /// default 0). Printing press +50, newspaper +100 (the newspaper deletes + redefines the inherited modifier —
 /// own-valued one taken, like <see cref="DefenceBonus"/>). Speeds Sons-of-Liberty + founding-father progress.
 /// </param>
+/// <param name="RequiredAbilities">
+/// Abilities the colony must satisfy before this building may be constructed (spec <c>required-ability</c>,
+/// id → required value; inherited down the <c>extends</c> chain so drydock/shipyard keep docks' <c>hasPort</c>).
+/// Empty for an unconditional building. Classic gates: the factory tier + arsenal need <c>buildFactory</c>
+/// (Adam Smith), the custom house needs <c>buildCustomHouse</c> (Stuyvesant), docks/drydock/shipyard need a
+/// coastal colony (<c>hasPort</c>). FreeCol <c>Colony.getNoBuildReason</c> MISSING_ABILITY.
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -34,8 +41,14 @@ public sealed record BuildingType(
     IReadOnlyList<GoodsOutput> BuildCost,
     int DefenceBonus = 0,
     int WarehouseStorage = 0,
-    int BellBonus = 0)
+    int BellBonus = 0,
+    IReadOnlyDictionary<string, bool>? RequiredAbilities = null)
 {
+    private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
+
     /// <summary>Short name derived from the id: <c>model.building.townHall</c> → <c>townHall</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
+
+    /// <summary>Abilities required to build this, id → required value (an empty map when unconditional).</summary>
+    public IReadOnlyDictionary<string, bool> RequiredAbilitiesOrEmpty => RequiredAbilities ?? NoAbilities;
 }

@@ -249,6 +249,20 @@ public sealed class Game
     private bool AbilityForUnit(Unit unit, string abilityId) =>
         unit.OwnerNationId is null && PlayerById(unit.OwnerId) is { } owner && HasAbilityFor(owner, abilityId);
 
+    /// <summary>True when at least one in-bounds neighbour of the colony's tile is water (it has a port / is coastal).</summary>
+    private bool IsColonyCoastal(Colony colony) =>
+        colony.Position.Neighbours().Any(n => Map.InBounds(n) && Map.TerrainAt(n).IsWater);
+
+    /// <summary>
+    /// True when the colony satisfies a build-gating ability: <c>hasPort</c> resolves to its coastal status, every
+    /// other ability to a Founding Father granted to the colony's owner (FreeCol aggregates colony abilities; the
+    /// build gate only consults the port + father sources today — see [docs]/systems/colonies.md).
+    /// </summary>
+    private bool ColonyHasAbility(Colony colony, string abilityId) =>
+        abilityId == HasPortAbility
+            ? IsColonyCoastal(colony)
+            : PlayerById(colony.OwnerId) is { } owner && HasAbilityFor(owner, abilityId);
+
     /// <summary>The colonies owned by <paramref name="player"/> (the human owns all colonies until foreign powers found their own).</summary>
     private IEnumerable<Colony> ColoniesOf(Player player) => _colonies.Where(c => c.OwnerId == player.PlayerId);
 
@@ -653,6 +667,7 @@ public sealed class Game
     private const string PlunderNativesAbility = "model.ability.plunderNatives"; // Hernán Cortés
     private const string OffenceModifierId = "model.modifier.offence"; // Francis Drake (+50%, scoped to privateers)
     private const string DefenceModifierId = "model.modifier.defence";
+    private const string HasPortAbility = "model.ability.hasPort"; // a coastal colony — docks/drydock/shipyard gate
 
     /// <summary>
     /// A unit's offence base for combat: the type's pre-role additive plus its role's offence, then the
@@ -2889,7 +2904,37 @@ public sealed class Game
             return MoveCheck.No(
                 $"The {building.ShortName} needs a population of {building.RequiredPopulation}.");
         }
+        if (RequiredAbilityRefusal(colony, building) is { } reason)
+        {
+            return MoveCheck.No(reason);
+        }
         return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// A reason the colony cannot build <paramref name="building"/> because it fails one of the building's
+    /// <c>required-ability</c> gates (factory tier → Adam Smith's <c>buildFactory</c>, custom house →
+    /// Stuyvesant's <c>buildCustomHouse</c>, docks/drydock/shipyard → a coastal colony's <c>hasPort</c>);
+    /// <c>null</c> when every requirement is met (FreeCol <c>Colony.getNoBuildReason</c> MISSING_ABILITY/COASTAL).
+    /// </summary>
+    private string? RequiredAbilityRefusal(Colony colony, BuildingType building)
+    {
+        foreach ((string abilityId, bool required) in building.RequiredAbilitiesOrEmpty)
+        {
+            if (ColonyHasAbility(colony, abilityId) != required)
+            {
+                if (abilityId == HasPortAbility)
+                {
+                    return $"A {building.ShortName} can only be built in a coastal colony.";
+                }
+                FoundingFather? father = Ruleset.FoundingFathers
+                    .FirstOrDefault(f => f.Abilities.Any(a => a.Id == abilityId && a.Value));
+                return father is not null
+                    ? $"The {building.ShortName} needs the {father.ShortName} Founding Father."
+                    : $"The {building.ShortName} requires an ability the colony lacks ({abilityId}).";
+            }
+        }
+        return null;
     }
 
     /// <summary>Sets the colony's construction to a single building (null stops construction), replacing the queue.</summary>
@@ -2930,6 +2975,10 @@ public sealed class Game
             && !colony.HasBuilding(building.UpgradesFrom) && !colony.BuildQueue.Contains(building.UpgradesFrom))
         {
             return MoveCheck.No($"A {building.ShortName} upgrades a building the colony has not built or queued.");
+        }
+        if (RequiredAbilityRefusal(colony, building) is { } reason)
+        {
+            return MoveCheck.No(reason);
         }
         return MoveCheck.Yes(0);
     }

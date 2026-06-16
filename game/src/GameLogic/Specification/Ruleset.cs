@@ -345,7 +345,11 @@ public sealed class Ruleset
                                 && (string?)m.Attribute("delete") != "true")
                     .Select(m => (int?)m.Attribute("value") ?? 0)
                     .DefaultIfEmpty(0)
-                    .Last());
+                    .Last(),
+                // Build-gating abilities (factory tier → buildFactory, custom house → buildCustomHouse, docks →
+                // hasPort), collected down the extends chain so drydock/shipyard inherit docks' hasPort (FreeCol
+                // BuildableType.getRequiredAbilities; nearest definition wins for a re-stated id).
+                RequiredAbilities: CollectRequiredAbilitiesUpChain(el, buildingElements));
         }
 
         var fathers = new Dictionary<string, FoundingFather>();
@@ -820,6 +824,29 @@ public sealed class Ruleset
                 .Sum(m => (int?)m.Attribute("value") ?? 0);
         }
         return total;
+    }
+
+    /// <summary>
+    /// Collects a building's <c>required-ability</c> entries (id → required value) down the whole <c>extends</c>
+    /// chain — a child building inherits its parent's requirements (drydock/shipyard keep docks' <c>hasPort</c>),
+    /// and a re-stated id on the nearer element wins (FreeCol <c>BuildableType.getRequiredAbilities</c>).
+    /// </summary>
+    private static IReadOnlyDictionary<string, bool> CollectRequiredAbilitiesUpChain(
+        XElement el, Dictionary<string, XElement> elements)
+    {
+        var result = new Dictionary<string, bool>();
+        for (XElement? current = el; current is not null; current = ParentOf(current, elements))
+        {
+            foreach (XElement ability in current.Elements("required-ability"))
+            {
+                string id = RequiredAttribute(ability, "id");
+                if (!result.ContainsKey(id)) // leaf → root: the nearer (already-seen) definition wins
+                {
+                    result[id] = (bool?)ability.Attribute("value") ?? true;
+                }
+            }
+        }
+        return result;
     }
 
     /// <summary>True when any element in the extends chain sets the ability to true (nearest wins).</summary>
