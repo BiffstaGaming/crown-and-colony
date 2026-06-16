@@ -14,16 +14,16 @@
 | **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 548 | ✅ | every push |
 | **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **548** | ✅ | every push |
 | ↳ of which **E2E journeys** | Connected player journeys, milestone-asserted ([TEST-PLAN.md](TEST-PLAN.md)) | xUnit `[Trait E2E]` | 10 | ✅ | every push |
-| **L3 Interaction** | Real scenes driven by simulated input/signals (incl. 1 scene E2E + the Europe screen + click-to-attack + native-raid notice + foreign-colony-capture notice + human-defeat banner + game-over overlay + unit rendering + owner colour + ship-under-repair + native-settlement panel + native-tribute-demand modal + colony tile-work picker + join/leave colony + arm colonist + FreeCol-art colony screen: isometric tiles + buildings image grid) | GdUnit4 | 32 | ✅ | every push (CI) |
+| **L3 Interaction** | Real scenes driven by simulated input/signals (incl. 1 scene E2E + the Europe screen + click-to-attack + native-raid notice + foreign-colony-capture notice + human-defeat banner + game-over overlay + unit rendering + owner colour + ship-under-repair + native-settlement panel + native-tribute-demand modal + colony tile-work picker + join/leave colony + arm colonist + click-to-move tile workers + FreeCol-art colony screen: parchment skin + isometric tiles + buildings image grid) | GdUnit4 | 33 | ✅ | every push (CI) |
 | **L4 Visual** | Golden-screenshot diff of the rendered map | GdUnit4 + custom diff | 5 | ✅ | every push (CI) |
 | **L5 Soak** | 25-seed × 200-turn runs (active foreign economies + native AI, native ambient alarm, foreign colony capture, native colony pillage) + provoked native-raid & foreign-war invariants + per-turn perf budget | xUnit | 4 | ✅ | nightly |
-| | | | **589** | **all green** | |
+| | | | **590** | **all green** | |
 
 Reproduce locally (toolchain in [CLAUDE.md](../CLAUDE.md)):
 ```
 dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (548)
 dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category=Soak"    # L5 (4)
-dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings                 # L3+L4 (37), needs GODOT_BIN
+dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings                 # L3+L4 (38), needs GODOT_BIN
 ```
 
 ## Visual goldens (committed screenshots)

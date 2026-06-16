@@ -202,6 +202,31 @@ public class ColonyPanelTests
         AssertThat(buildings.GetChildCount()).IsEqual(colony.Buildings.Count);
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task ClickingAWorkedTileThenAFreeTile_MovesTheColonist()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+        PanelContainer panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+
+        // The founder is auto-assigned to a food tile. Click it to pick the colonist up, then click a free,
+        // producible neighbour to drop it there (click-to-move).
+        Position from = colony.TileWorkers.Keys.First();
+        Position to = colony.Position.Neighbours().First(n =>
+            !colony.TileWorkers.ContainsKey(n) && game.TileWorkOptions(n).Count > 0);
+
+        TileButton(panel, from).EmitSignal(BaseButton.SignalName.Pressed); // pick up
+        await runner.SimulateFrames(1);
+        TileButton(panel, to).EmitSignal(BaseButton.SignalName.Pressed);   // drop → move
+        await runner.SimulateFrames(1);
+
+        AssertThat(colony.TileWorkers.ContainsKey(from)).IsFalse(); // left the old tile
+        AssertThat(colony.TileWorkers.ContainsKey(to)).IsTrue();    // now works the new one
+        AssertThat(colony.IdleColonists).IsEqual(0);
+    }
+
+    private static Button TileButton(PanelContainer panel, Position tile) =>
+        (Button)panel.FindChild($"Tile_{tile.X}_{tile.Y}", recursive: true, owned: false);
+
     private static Game GameOf(GameController controller) =>
         (Game)controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(controller)!;
 

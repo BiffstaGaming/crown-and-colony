@@ -35,6 +35,7 @@ public partial class ColonyPanel : PanelContainer
         _game = game;
         _colony = colony;
         _onChange = onChange;
+        _heldFrom = null;
         EnsureOpaqueBackground();
         Rebuild();
         Show();
@@ -218,41 +219,71 @@ public partial class ColonyPanel : PanelContainer
         return row;
     }
 
-    /// <summary>The colony's 3×3 surrounding tiles drawn as overlapping FreeCol diamonds, the colony at the centre, a colonist on each worked tile, with its yield and a tiny work control.</summary>
+    /// <summary>The tile a picked-up colonist was lifted from (click-to-move), or null when nothing is held.</summary>
+    private Position? _heldFrom;
+
+    /// <summary>
+    /// The colony's 3×3 surrounding tiles as overlapping FreeCol diamonds: the colony at the centre, a colonist on
+    /// each worked tile. <b>Click-to-move</b> (FreeCol's drag-a-colonist gesture, click-based so it stays testable):
+    /// click a worked tile to pick its colonist up (it highlights), then click a free tile to send it there (the
+    /// tile's best-yield good) or the colony centre to send it idle. The per-tile ✕ release and the *Work…* good
+    /// picker remain for explicit control / choosing a specific good.
+    /// </summary>
     private Control IsometricTiles()
     {
         var view = new Control { Name = "TilesView", CustomMinimumSize = new Vector2(540, 344) };
         var centre = new Vector2(270, 152);
         var half = new Vector2(TileW / 2, TileH / 2);
+        if (_heldFrom is not null)
+        {
+            Place(view, new Label { Text = "Click a tile to move the colonist — the colony centre sends it idle" }, new Vector2(8, 0));
+        }
         for (int dy = -1; dy <= 1; dy++)
         {
             for (int dx = -1; dx <= 1; dx++)
             {
                 Position tile = new(_colony.Position.X + dx, _colony.Position.Y + dy);
                 Vector2 topLeft = centre + new Vector2((dx - dy) * (TileW / 2), (dx + dy) * (TileH / 2)) - half;
-                if (_game.Map.InBounds(tile))
+                if (!_game.Map.InBounds(tile))
                 {
-                    foreach (Texture2D tex in ColonyArt.TerrainTextures(_game.Map.TerrainAt(tile).ShortName))
-                    {
-                        Place(view, IconRect(tex, TileW, TileH), topLeft);
-                    }
+                    continue;
                 }
+                foreach (Texture2D tex in ColonyArt.TerrainTextures(_game.Map.TerrainAt(tile).ShortName))
+                {
+                    Place(view, IconRect(tex, TileW, TileH), topLeft);
+                }
+
+                // A transparent whole-tile hit button drives click-to-move. Added before the small ✕/picker controls
+                // so those (placed after → higher z) still receive their own clicks; clicks anywhere else on the tile
+                // fall through to this.
+                Position clicked = tile;
+                var hit = new Button
+                {
+                    Name = $"Tile_{tile.X}_{tile.Y}",
+                    Flat = true,
+                    Modulate = new Color(1, 1, 1, 0),
+                    CustomMinimumSize = new Vector2(TileW, TileH),
+                };
+                hit.Pressed += () => OnTileClicked(clicked);
+                Place(view, hit, topLeft);
+
                 if (dx == 0 && dy == 0)
                 {
                     Place(view, IconRect(ColonyArt.ColonyIcon(), 120, 80), topLeft + new Vector2(20, 0));
                     continue;
                 }
-                if (!_game.Map.InBounds(tile))
-                {
-                    continue;
-                }
                 if (_colony.TileWorkers.TryGetValue(tile, out string? good))
                 {
-                    Place(view, IconRect(ColonyArt.UnitIcon("freeColonist"), 56, 56), topLeft + new Vector2(52, 8));
+                    TextureRect colonist = IconRect(ColonyArt.UnitIcon("freeColonist"), 56, 56);
+                    if (_heldFrom == tile)
+                    {
+                        colonist.Modulate = new Color(1f, 0.9f, 0.3f); // picked up — highlight the held colonist
+                    }
+                    Place(view, colonist, topLeft + new Vector2(52, 8));
                     Place(view, Badge($"{Short(good)} {_game.TileYield(tile, good)}"), topLeft + new Vector2(44, 0));
                     Position worked = tile;
                     var release = new Button { Name = $"Release_{tile.X}_{tile.Y}", Text = "✕", CustomMinimumSize = new Vector2(24, 20) };
-                    release.Pressed += () => { _game.UnassignWork(_colony, worked); Changed(); };
+                    release.Pressed += () => { _game.UnassignWork(_colony, worked); _heldFrom = null; Changed(); };
                     Place(view, release, topLeft + new Vector2(64, 50));
                 }
                 else if (_colony.IdleColonists > 0 && _game.TileWorkOptions(tile) is { Count: > 0 } options)
@@ -277,6 +308,37 @@ public partial class ColonyPanel : PanelContainer
             }
         }
         return view;
+    }
+
+    /// <summary>Click-to-move worker management for a clicked surrounding tile (see <see cref="IsometricTiles"/>).</summary>
+    private void OnTileClicked(Position tile)
+    {
+        bool isCentre = tile == _colony.Position;
+        if (_heldFrom is { } from)
+        {
+            if (tile != from)
+            {
+                if (isCentre)
+                {
+                    _game.UnassignWork(_colony, from); // drop on the town → send the colonist idle
+                }
+                else if (!_colony.TileWorkers.ContainsKey(tile) && _game.TileWorkOptions(tile) is { Count: > 0 } target)
+                {
+                    _game.UnassignWork(_colony, from);
+                    _game.AssignWork(_colony, tile, target[0].GoodsId); // move → the new tile's best-yield good
+                }
+            }
+            _heldFrom = null;
+        }
+        else if (_colony.TileWorkers.ContainsKey(tile))
+        {
+            _heldFrom = tile; // pick the colonist up
+        }
+        else if (!isCentre && _colony.IdleColonists > 0 && _game.TileWorkOptions(tile) is { Count: > 0 } free)
+        {
+            _game.AssignWork(_colony, tile, free[0].GoodsId); // no one held + an idle colonist → put it to work here
+        }
+        Changed();
     }
 
     private Control ConstructionPanel()
