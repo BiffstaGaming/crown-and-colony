@@ -40,16 +40,37 @@ public partial class ColonyPanel : PanelContainer
         Show();
     }
 
+    private static StyleBox? _panelBackground;
+
     /// <summary>
-    /// Gives the panel a solid, opaque background so the map (drawn behind the UI layer) never shows through. The
-    /// default <see cref="PanelContainer"/> stylebox is effectively transparent here, which let the map bleed across
-    /// the colony screen. A warm dark fill with inner padding stands in until the FreeCol parchment skin is adopted.
+    /// Gives the panel an opaque background so the map (drawn behind the UI layer) never shows through. The default
+    /// <see cref="PanelContainer"/> stylebox is effectively transparent here, which let the map bleed across the
+    /// colony screen. Prefers FreeCol's tiled brown parchment skin; falls back to a warm solid fill if the asset is
+    /// absent (so it is opaque in CI even before the parchment is imported). Built once and shared.
     /// </summary>
     private void EnsureOpaqueBackground()
     {
-        var bg = new StyleBoxFlat { BgColor = new Color(0.12f, 0.10f, 0.08f) };
-        bg.SetContentMarginAll(16);
-        AddThemeStyleboxOverride("panel", bg);
+        _panelBackground ??= BuildPanelBackground();
+        AddThemeStyleboxOverride("panel", _panelBackground);
+    }
+
+    private static StyleBox BuildPanelBackground()
+    {
+        if (ColonyArt.PanelParchment() is { } parchment)
+        {
+            var skin = new StyleBoxTexture
+            {
+                Texture = parchment,
+                // Tile, don't stretch: bg_paper_brown is only 291×295; stretched across a ~1900px panel it blurs.
+                AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Tile,
+                AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Tile,
+            };
+            skin.SetContentMarginAll(16);
+            return skin;
+        }
+        var flat = new StyleBoxFlat { BgColor = new Color(0.18f, 0.12f, 0.07f) }; // warm parchment-brown fallback
+        flat.SetContentMarginAll(16);
+        return flat;
     }
 
     /// <summary>
@@ -84,20 +105,27 @@ public partial class ColonyPanel : PanelContainer
             $"Food: {_colony.Food}/{Colony.FoodForGrowth}   |   Defence: +{_game.ColonyDefenceBonus(_colony)}%";
 
         var root = GetNode<VBoxContainer>("VBox/Scroll/Dynamic");
+        root.AddThemeConstantOverride("separation", 8);
         foreach (Node child in root.GetChildren())
         {
             child.Free();
         }
 
+        // Three bands stacked in the Dynamic VBox (which fills the panel — main.tscn sets its vertical ExpandFill):
+        //  1) the production strip (natural height),
+        //  2) the MIDDLE row — the ONLY child with vertical ExpandFill, so it absorbs all the slack and the bands
+        //     below it can never be stranded in a void,
+        //  3) the outside-units + warehouse bars (natural height) pinned beneath it.
         root.AddChild(ProductionBar());
 
-        // Two equal halves that fill the panel width — tiles + construction on the left, buildings on the right.
-        // No vertical expand here: the bottom bars (units + warehouse) must sit directly beneath this row, not be
-        // shoved to the foot of a tall scroll viewport.
-        var main = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        main.AddChild(LeftColumn());
-        main.AddChild(BuildingsColumn());
-        root.AddChild(main);
+        // The middle row takes its natural height; with no in-port/cargo band to fill a tall middle (FreeCol has one,
+        // we don't yet), the content stacks compactly from the top and the panel's parchment fills the space below the
+        // warehouse — cleaner than a gap floating mid-screen.
+        var middle = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        middle.AddThemeConstantOverride("separation", 12);
+        middle.AddChild(LeftColumn());      // fixed-width band (tiles + construction)
+        middle.AddChild(BuildingsColumn()); // expands to fill the remaining width
+        root.AddChild(middle);
 
         root.AddChild(SectionLabel("Outside the colony"));
         root.AddChild(OutsideArea());
@@ -109,7 +137,7 @@ public partial class ColonyPanel : PanelContainer
 
     private Control ProductionBar()
     {
-        var bar = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        var bar = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         bar.AddChild(new Label { Text = "Producing: " });
         foreach ((string good, int net) in NetProduction().OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
@@ -157,12 +185,37 @@ public partial class ColonyPanel : PanelContainer
 
     private Control LeftColumn()
     {
-        var col = new VBoxContainer { CustomMinimumSize = new Vector2(560, 0), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        // A fixed-width band (NOT expand) so the buildings column to its right takes the elastic width — one
+        // horizontal expander in the row, mirroring FreeCol's [fill][474!] columns.
+        var col = new VBoxContainer { CustomMinimumSize = new Vector2(560, 0), SizeFlagsHorizontal = SizeFlags.Fill };
+        col.AddThemeConstantOverride("separation", 8);
+        col.AddChild(PopulationStrip());
         Control tiles = IsometricTiles();
-        tiles.SizeFlagsHorizontal = SizeFlags.ShrinkCenter; // centre the fixed-size tile view in the half-width column
+        tiles.SizeFlagsHorizontal = SizeFlags.ShrinkCenter; // centre the fixed-size tile view in the column
         col.AddChild(tiles);
         col.AddChild(ConstructionPanel());
         return col;
+    }
+
+    /// <summary>
+    /// FreeCol's population strip is a row of colonist portraits, not text — we mirror that here (the population
+    /// <em>count</em> already shows in the info line). One sprite per colonist, capped so a big colony doesn't
+    /// overflow. Sons-of-Liberty / Rebels / Royalists are deliberately omitted: the model has no per-colony liberty
+    /// data yet (ADR-006 — presentation must not invent rules), tracked as a separate follow-up.
+    /// </summary>
+    private Control PopulationStrip()
+    {
+        const int cap = 12;
+        var row = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        for (int i = 0; i < Math.Min(_colony.Population, cap); i++)
+        {
+            row.AddChild(IconRect(ColonyArt.UnitIcon("freeColonist"), 32, 40));
+        }
+        if (_colony.Population > cap)
+        {
+            row.AddChild(new Label { Text = $"+{_colony.Population - cap}", VerticalAlignment = VerticalAlignment.Center });
+        }
+        return row;
     }
 
     /// <summary>The colony's 3×3 surrounding tiles drawn as overlapping FreeCol diamonds, the colony at the centre, a colonist on each worked tile, with its yield and a tiny work control.</summary>
@@ -270,10 +323,13 @@ public partial class ColonyPanel : PanelContainer
 
     private Control BuildingsColumn()
     {
-        // A half-width column with the buildings grid centred in it; the whole screen already scrolls (VBox/Scroll),
-        // so no inner scroll is needed.
+        // The elastic column: it takes the width left by the fixed LeftColumn, with the 4-wide buildings grid centred
+        // in it (ShrinkCenter — not ExpandFill, which would stretch the cells into a void). The whole screen already
+        // scrolls (VBox/Scroll), so no inner scroll is needed; a bottom spacer absorbs this column's vertical slack.
         var col = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         var grid = new GridContainer { Columns = 4, Name = "BuildingsGrid", SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
+        grid.AddThemeConstantOverride("h_separation", 8);
+        grid.AddThemeConstantOverride("v_separation", 8);
         foreach (string buildingId in _colony.Buildings)
         {
             grid.AddChild(BuildingCell(buildingId));
@@ -362,7 +418,7 @@ public partial class ColonyPanel : PanelContainer
 
     private Control WarehouseBar()
     {
-        var bar = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        var bar = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         var stored = _colony.Stores.Where(kv => kv.Value > 0).OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList();
         if (stored.Count == 0)
         {

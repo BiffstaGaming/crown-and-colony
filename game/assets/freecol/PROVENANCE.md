@@ -16,6 +16,12 @@ screen's production/warehouse bars). All copied unmodified from the same FreeCol
 `data/default/resources/images/{buildings,goods}/` (national/`size2`/`size9`
 variants omitted).
 
+**UI skin** (`ui/bg_paper_brown.png`, 291×295) — the colony window's brown
+parchment background, tiled as the panel fill so the map can't show through.
+Copied unmodified from FreeCol `data/base/resources/images/ui/bg_paper_brown.png`
+(GPL v2, ADR-014). The decorative carved-wood border and the lighter inner
+parchment are not yet adopted.
+
 Per ADR-013, any of these may be replaced individually later; keep this file
 and the Asset Register current when that happens. FreeCol also ships 4×
 high-resolution variants (`*.size9.png`) — adopt when zoom quality calls for it.

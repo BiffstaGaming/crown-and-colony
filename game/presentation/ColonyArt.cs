@@ -73,6 +73,9 @@ public static class ColonyArt
         ["customHouse"] = "custom_house", ["depot"] = "depot",
     };
 
+    /// <summary>The colony window's brown parchment skin (FreeCol <c>bg_paper_brown</c>), tiled as the panel fill; null if the asset is absent (the panel then falls back to a solid fill).</summary>
+    public static Texture2D? PanelParchment() => Load("ui/bg_paper_brown.png");
+
     /// <summary>The colony settlement sprite drawn at the centre of the tiles grid.</summary>
     public static Texture2D? ColonyIcon() => Load("settlements/small.png");
 
