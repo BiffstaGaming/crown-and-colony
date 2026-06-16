@@ -57,90 +57,40 @@ public partial class ColonyPanel : PanelContainer
     private void Rebuild()
     {
         GetNode<Label>("VBox/ColonyTitle").Text = _colony.Name;
-
-        TerrainType terrain = _game.Map.TerrainAt(_colony.Position);
-        string stores = _colony.Stores.Where(kv => kv.Value > 0)
-            .Select(kv => $"{Short(kv.Key)} {kv.Value}")
-            .DefaultIfEmpty("(empty)")
-            .Aggregate((a, b) => $"{a}, {b}");
         GetNode<Label>("VBox/ColonyInfo").Text =
             $"Population: {_colony.Population} ({_colony.IdleColonists} idle)   |   " +
-            $"Terrain: {terrain.ShortName}\n" +
-            $"Stores: {stores}\n" +
-            $"Food for next colonist: {_colony.Food}/{Colony.FoodForGrowth}";
-
+            $"Food: {_colony.Food}/{Colony.FoodForGrowth}   |   " +
+            $"Defence: +{_game.ColonyDefenceBonus(_colony)}%";
         BuildDynamicSections();
     }
 
     private void BuildDynamicSections()
     {
-        var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
+        var dynamic = GetNode<VBoxContainer>("VBox/Scroll/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
             child.Free(); // immediate — Rebuild reuses names
         }
 
-        // — Field workers —
-        dynamic.AddChild(SectionLabel("Fields"));
-        foreach ((Position tile, string goods) in _colony.TileWorkers.OrderBy(w => (w.Key.Y, w.Key.X)))
+        // — Surrounding tiles: the 3×3 around the colony, the centre being the colony itself. Each worked tile
+        //   shows its good + a Release; each free tile (when there's an idle colonist) offers a work picker. —
+        dynamic.AddChild(SectionLabel("Surrounding tiles"));
+        var grid = new GridContainer { Columns = 3 };
+        for (int dy = -1; dy <= 1; dy++)
         {
-            var row = new HBoxContainer();
-            row.AddChild(new Label
+            for (int dx = -1; dx <= 1; dx++)
             {
-                Text = $"({tile.X},{tile.Y}) {Short(goods)} {_game.TileYield(tile, goods)}/turn",
-                SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            });
-            Position t = tile;
-            row.AddChild(ActionButton($"Release_{tile.X}_{tile.Y}", "Release", () =>
-            {
-                _game.UnassignWork(_colony, t);
-                Changed();
-            }));
-            dynamic.AddChild(row);
+                grid.AddChild(TileCell(new Position(_colony.Position.X + dx, _colony.Position.Y + dy), dx == 0 && dy == 0));
+            }
         }
+        dynamic.AddChild(grid);
         if (_colony.IdleColonists > 0)
         {
-            dynamic.AddChild(ActionButton("AutoAssign", "Send idle colonists to the fields (food)", () =>
+            dynamic.AddChild(ActionButton("AutoAssign", "Auto-assign idle colonists to food", () =>
             {
                 _game.AutoAssignIdleToFood(_colony);
                 Changed();
             }));
-
-            // Manual per-tile assignment: every free surrounding tile offers its producible goods (lumber, ore,
-            // cotton, furs, grain, …) so an idle colonist can be put to work on something other than food.
-            foreach (Position tile in _colony.Position.Neighbours()
-                .Where(n => !_colony.TileWorkers.ContainsKey(n))
-                .OrderBy(n => n.Y).ThenBy(n => n.X))
-            {
-                IReadOnlyList<(string GoodsId, int Yield)> options = _game.TileWorkOptions(tile);
-                if (options.Count == 0)
-                {
-                    continue; // water / off-map / barren — nothing to work here
-                }
-                var row = new HBoxContainer();
-                row.AddChild(new Label
-                {
-                    Text = $"({tile.X},{tile.Y}) {_game.Map.TerrainAt(tile).ShortName}",
-                    SizeFlagsHorizontal = SizeFlags.ExpandFill,
-                });
-                var picker = new OptionButton { Name = $"Work_{tile.X}_{tile.Y}" };
-                picker.AddItem("Work…");
-                foreach ((string goodsId, int yield) in options)
-                {
-                    picker.AddItem($"{Short(goodsId)} {yield}/turn");
-                }
-                Position t = tile;
-                picker.ItemSelected += index =>
-                {
-                    if (index > 0)
-                    {
-                        _game.AssignWork(_colony, t, options[(int)index - 1].GoodsId);
-                        Changed();
-                    }
-                };
-                row.AddChild(picker);
-                dynamic.AddChild(row);
-            }
         }
 
         // — Buildings —
@@ -175,7 +125,16 @@ public partial class ColonyPanel : PanelContainer
             dynamic.AddChild(row);
         }
 
-        // — Colonists (move people in and out of the colony) —
+        // — Warehouse (the colony's stored goods) —
+        dynamic.AddChild(SectionLabel("Warehouse"));
+        string stores = _colony.Stores.Where(kv => kv.Value > 0)
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => $"{Short(kv.Key)} {kv.Value}")
+            .DefaultIfEmpty("(empty)")
+            .Aggregate((a, b) => $"{a},   {b}");
+        dynamic.AddChild(new Label { Text = stores, AutowrapMode = TextServer.AutowrapMode.WordSmart });
+
+        // — Colonists (move people in and out of the colony, and arm them) —
         dynamic.AddChild(SectionLabel("Colonists"));
 
         // In → out: detach a free colonist onto the colony tile (it's then selectable on the map to move out or arm).
@@ -276,6 +235,65 @@ public partial class ColonyPanel : PanelContainer
             dynamic.AddChild(options);
         }
     }
+
+    /// <summary>
+    /// One cell of the 3×3 surrounding-tiles grid: the colony itself at the centre, or a tile showing its terrain
+    /// and — when worked — its good + a Release button (<c>Release_x_y</c>), or — when free with an idle colonist
+    /// available — a work picker (<c>Work_x_y</c>: <see cref="Game.TileWorkOptions"/> → <see cref="Game.AssignWork"/>).
+    /// </summary>
+    private Control TileCell(Position tile, bool isCentre)
+    {
+        var cell = new PanelContainer { CustomMinimumSize = new Vector2(150, 92) };
+        var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        cell.AddChild(box);
+
+        if (isCentre)
+        {
+            box.AddChild(Centered($"🏛 {_colony.Name}"));
+            box.AddChild(Centered($"pop {_colony.Population}"));
+            return cell;
+        }
+        if (!_game.Map.InBounds(tile))
+        {
+            box.AddChild(Centered("—"));
+            return cell;
+        }
+
+        box.AddChild(Centered($"{_game.Map.TerrainAt(tile).ShortName} ({tile.X},{tile.Y})"));
+        if (_colony.TileWorkers.TryGetValue(tile, out string? good))
+        {
+            box.AddChild(Centered($"{Short(good)} {_game.TileYield(tile, good)}/turn"));
+            Position worked = tile;
+            box.AddChild(ActionButton($"Release_{tile.X}_{tile.Y}", "Release", () =>
+            {
+                _game.UnassignWork(_colony, worked);
+                Changed();
+            }));
+        }
+        else if (_colony.IdleColonists > 0 && _game.TileWorkOptions(tile) is { Count: > 0 } options)
+        {
+            var picker = new OptionButton { Name = $"Work_{tile.X}_{tile.Y}" };
+            picker.AddItem("Work…");
+            foreach ((string goodsId, int yield) in options)
+            {
+                picker.AddItem($"{Short(goodsId)} {yield}");
+            }
+            Position free = tile;
+            picker.ItemSelected += index =>
+            {
+                if (index > 0)
+                {
+                    _game.AssignWork(_colony, free, options[(int)index - 1].GoodsId);
+                    Changed();
+                }
+            };
+            box.AddChild(picker);
+        }
+        return cell;
+    }
+
+    private static Label Centered(string text) =>
+        new() { Text = text, HorizontalAlignment = HorizontalAlignment.Center };
 
     private static Label SectionLabel(string text) => new()
     {

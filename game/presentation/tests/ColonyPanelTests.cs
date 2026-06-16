@@ -182,6 +182,22 @@ public class ColonyPanelTests
         AssertThat(colony.StoreOf("model.goods.muskets")).IsEqual(0);                          // 50 muskets consumed
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task ColonyScreen_ShowsTheThreeByThreeTilesGrid_WithTheColonyAtCentre()
+    {
+        (_, GameController controller, _, Colony colony) = await OpenPanel();
+
+        GridContainer grid = controller.GetNode<PanelContainer>("UI/ColonyPanel")
+            .FindChildren("*", recursive: true, owned: false).OfType<GridContainer>().First();
+        AssertThat(grid.Columns).IsEqual(3);
+        AssertThat(grid.GetChildCount()).IsEqual(9); // the 3×3 ring around the colony
+
+        // The centre cell (row-major index 4) is the colony itself.
+        bool centreNamesColony = grid.GetChild(4).FindChildren("*", recursive: true, owned: false)
+            .OfType<Label>().Any(l => l.Text.Contains(colony.Name));
+        AssertThat(centreNamesColony).IsTrue();
+    }
+
     private static Game GameOf(GameController controller) =>
         (Game)controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(controller)!;
 
