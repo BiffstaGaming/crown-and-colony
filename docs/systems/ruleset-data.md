@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (terrain incl. `<gen>` envelopes + resources + defence bonus, unit types incl. offence/defence, goods types incl. market/`stored-as`/`made-from`, building types, founding fathers incl. modifiers/abilities, resource types, native nation + settlement types, European nations + nation-types) |
-| **Last verified** | 2026-06-14 @ FP-3a |
+| **Last verified** | 2026-06-17 @ unit build fields + building/terrain ambush + build abilities (`86d3c9tp0`) |
 | **Code** | `game/src/GameLogic/Specification/` |
 | **Tests** | `game/tests/GameLogic.Tests/Specification/RulesetTests.cs`, `NativeNationTypeTests.cs`, `EuropeanNationTypeTests.cs` |
 | **FreeCol reference** | `freecol/data/rules/classic/specification.xml` (copied to `game/data/rules/classic/`) |
