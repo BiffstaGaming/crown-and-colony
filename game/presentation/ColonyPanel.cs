@@ -35,8 +35,21 @@ public partial class ColonyPanel : PanelContainer
         _game = game;
         _colony = colony;
         _onChange = onChange;
+        EnsureOpaqueBackground();
         Rebuild();
         Show();
+    }
+
+    /// <summary>
+    /// Gives the panel a solid, opaque background so the map (drawn behind the UI layer) never shows through. The
+    /// default <see cref="PanelContainer"/> stylebox is effectively transparent here, which let the map bleed across
+    /// the colony screen. A warm dark fill with inner padding stands in until the FreeCol parchment skin is adopted.
+    /// </summary>
+    private void EnsureOpaqueBackground()
+    {
+        var bg = new StyleBoxFlat { BgColor = new Color(0.12f, 0.10f, 0.08f) };
+        bg.SetContentMarginAll(16);
+        AddThemeStyleboxOverride("panel", bg);
     }
 
     /// <summary>
@@ -78,7 +91,10 @@ public partial class ColonyPanel : PanelContainer
 
         root.AddChild(ProductionBar());
 
-        var main = new HBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
+        // Two equal halves that fill the panel width — tiles + construction on the left, buildings on the right.
+        // No vertical expand here: the bottom bars (units + warehouse) must sit directly beneath this row, not be
+        // shoved to the foot of a tall scroll viewport.
+        var main = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         main.AddChild(LeftColumn());
         main.AddChild(BuildingsColumn());
         root.AddChild(main);
@@ -141,8 +157,10 @@ public partial class ColonyPanel : PanelContainer
 
     private Control LeftColumn()
     {
-        var col = new VBoxContainer { CustomMinimumSize = new Vector2(560, 0) };
-        col.AddChild(IsometricTiles());
+        var col = new VBoxContainer { CustomMinimumSize = new Vector2(560, 0), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        Control tiles = IsometricTiles();
+        tiles.SizeFlagsHorizontal = SizeFlags.ShrinkCenter; // centre the fixed-size tile view in the half-width column
+        col.AddChild(tiles);
         col.AddChild(ConstructionPanel());
         return col;
     }
@@ -252,14 +270,16 @@ public partial class ColonyPanel : PanelContainer
 
     private Control BuildingsColumn()
     {
-        var scroll = new ScrollContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-        var grid = new GridContainer { Columns = 4, Name = "BuildingsGrid", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        // A half-width column with the buildings grid centred in it; the whole screen already scrolls (VBox/Scroll),
+        // so no inner scroll is needed.
+        var col = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        var grid = new GridContainer { Columns = 4, Name = "BuildingsGrid", SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
         foreach (string buildingId in _colony.Buildings)
         {
             grid.AddChild(BuildingCell(buildingId));
         }
-        scroll.AddChild(grid);
-        return scroll;
+        col.AddChild(grid);
+        return col;
     }
 
     private Control BuildingCell(string buildingId)
