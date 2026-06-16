@@ -2892,7 +2892,7 @@ public sealed class Game
         return MoveCheck.Yes(0);
     }
 
-    /// <summary>Sets what the colony is constructing (null stops construction).</summary>
+    /// <summary>Sets the colony's construction to a single building (null stops construction), replacing the queue.</summary>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckSetBuild"/>.</exception>
     public void SetBuild(Colony colony, string? buildingId)
     {
@@ -2904,7 +2904,46 @@ public sealed class Game
                 throw new InvalidMoveException(check.Reason!);
             }
         }
-        colony.CurrentBuild = buildingId;
+        colony.SetBuildQueue(buildingId is null ? [] : [buildingId]);
+    }
+
+    /// <summary>
+    /// Whether a building may be appended to the colony's construction queue — costed, not already built or
+    /// queued, population met, and (for an upgrade) its predecessor already present or earlier in the queue.
+    /// </summary>
+    public MoveCheck CheckEnqueueBuild(Colony colony, string buildingId)
+    {
+        BuildingType building = Ruleset.Building(buildingId);
+        if (building.BuildCost.Count == 0)
+        {
+            return MoveCheck.No($"The {building.ShortName} cannot be constructed.");
+        }
+        if (colony.HasBuilding(buildingId) || colony.BuildQueue.Contains(buildingId))
+        {
+            return MoveCheck.No($"The {building.ShortName} is already built or queued.");
+        }
+        if (colony.Population < building.RequiredPopulation)
+        {
+            return MoveCheck.No($"The {building.ShortName} needs a population of {building.RequiredPopulation}.");
+        }
+        if (building.UpgradesFrom is not null
+            && !colony.HasBuilding(building.UpgradesFrom) && !colony.BuildQueue.Contains(building.UpgradesFrom))
+        {
+            return MoveCheck.No($"A {building.ShortName} upgrades a building the colony has not built or queued.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>Appends a building to the colony's construction queue (built after the items already queued).</summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckEnqueueBuild"/>.</exception>
+    public void EnqueueBuild(Colony colony, string buildingId)
+    {
+        MoveCheck check = CheckEnqueueBuild(colony, buildingId);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        colony.EnqueueBuild(buildingId);
     }
 
     /// <summary>Building types the colony could start constructing right now.</summary>
@@ -2912,34 +2951,42 @@ public sealed class Game
         Ruleset.BuildingTypes.Where(b => CheckSetBuild(colony, b.Id).Allowed);
 
     /// <summary>
-    /// Completes construction when the stores cover the cost: materials are
-    /// consumed and the building appears (replacing the one it upgrades).
+    /// Advances the colony's construction queue: any front item that became un-buildable (already built, or its
+    /// upgrade predecessor is gone) is skipped without spending materials, then the front item is completed if the
+    /// stores cover its cost — one per turn — and the queue advances so the next item accumulates next turn
+    /// (FreeCol <c>csNextBuildable</c>).
     /// </summary>
     private void RunConstruction(Colony colony)
     {
-        if (colony.CurrentBuild is null)
+        while (colony.CurrentBuild is { } buildingId)
         {
-            return;
+            BuildingType building = Ruleset.Building(buildingId);
+            bool invalid = colony.HasBuilding(buildingId)
+                || (building.UpgradesFrom is not null && !colony.HasBuilding(building.UpgradesFrom));
+            if (invalid)
+            {
+                colony.AdvanceBuild(); // drop a now-impossible item and try the next
+                continue;
+            }
+            if (building.BuildCost.Any(c => colony.StoreOf(Ruleset.StorageIdOf(c.GoodsId)) < c.Amount))
+            {
+                return; // keep saving materials for the front item
+            }
+            foreach (GoodsOutput cost in building.BuildCost)
+            {
+                colony.AddGoods(Ruleset.StorageIdOf(cost.GoodsId), -cost.Amount);
+            }
+            if (building.UpgradesFrom is not null)
+            {
+                colony.ReplaceBuilding(building.UpgradesFrom, building.Id);
+            }
+            else
+            {
+                colony.AddBuilding(building.Id);
+            }
+            colony.AdvanceBuild(); // front complete → the next item becomes current
+            return; // one build per turn
         }
-        BuildingType building = Ruleset.Building(colony.CurrentBuild);
-        if (building.BuildCost.Any(c => colony.StoreOf(Ruleset.StorageIdOf(c.GoodsId)) < c.Amount))
-        {
-            return; // keep saving materials
-        }
-
-        foreach (GoodsOutput cost in building.BuildCost)
-        {
-            colony.AddGoods(Ruleset.StorageIdOf(cost.GoodsId), -cost.Amount);
-        }
-        if (building.UpgradesFrom is not null)
-        {
-            colony.ReplaceBuilding(building.UpgradesFrom, building.Id);
-        }
-        else
-        {
-            colony.AddBuilding(building.Id);
-        }
-        colony.CurrentBuild = null;
     }
 
     /// <summary>

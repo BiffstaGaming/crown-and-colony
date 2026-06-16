@@ -94,8 +94,32 @@ public sealed class Colony
     /// <summary>Whether the colony has a building.</summary>
     public bool HasBuilding(string buildingId) => _buildings.Contains(buildingId);
 
-    /// <summary>Building type currently under construction (null when idle).</summary>
-    public string? CurrentBuild { get; internal set; }
+    private readonly List<string> _buildQueue = [];
+
+    /// <summary>The colony's ordered construction queue (buildable ids; empty when idle). The front is built first.</summary>
+    public IReadOnlyList<string> BuildQueue => _buildQueue;
+
+    /// <summary>Building type currently under construction — the front of <see cref="BuildQueue"/> (null when idle).</summary>
+    public string? CurrentBuild => _buildQueue.Count > 0 ? _buildQueue[0] : null;
+
+    /// <summary>Replaces the whole construction queue (empty clears it). Validation lives in <see cref="GameSession.Game"/>.</summary>
+    internal void SetBuildQueue(IEnumerable<string> ids)
+    {
+        _buildQueue.Clear();
+        _buildQueue.AddRange(ids);
+    }
+
+    /// <summary>Appends a buildable to the end of the construction queue.</summary>
+    internal void EnqueueBuild(string id) => _buildQueue.Add(id);
+
+    /// <summary>Removes the front item (its construction finished or it became invalid).</summary>
+    internal void AdvanceBuild()
+    {
+        if (_buildQueue.Count > 0)
+        {
+            _buildQueue.RemoveAt(0);
+        }
+    }
 
     /// <summary>
     /// Accumulated liberty points from <b>net</b> bell production (gross bells − upkeep; FreeCol <c>Colony.liberty</c>).

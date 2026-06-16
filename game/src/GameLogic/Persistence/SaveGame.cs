@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 23;
+    public const int CurrentVersion = 24;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -186,7 +186,9 @@ public sealed record SaveGame
                     c.CurrentBuild,
                     c.OwnerId == 0 ? null : c.OwnerId,
                     // Liberty omitted for a colony with none (0) so a no-liberty colony stays byte-identical (v22).
-                    c.Liberty == 0 ? null : c.Liberty))
+                    c.Liberty == 0 ? null : c.Liberty,
+                    // The queued tail after the front; omitted for a 0/1-item queue so it stays byte-identical to v23.
+                    c.BuildQueue.Count > 1 ? c.BuildQueue.Skip(1).ToList() : null))
                 .ToList(),
             Resources = game.Map.Resources.Count > 0
                 ? game.Map.Resources
@@ -272,7 +274,10 @@ public sealed record SaveGame
                 {
                     colony.SetBuildingWorkers(buildingId, workers);
                 }
-                colony.CurrentBuild = c.CurrentBuild;
+                // Rebuild the construction queue: the front (CurrentBuild) then the saved tail (v24; absent → ≤1 item).
+                colony.SetBuildQueue(
+                    (c.CurrentBuild is null ? Enumerable.Empty<string>() : [c.CurrentBuild])
+                        .Concat(c.BuildQueueRest ?? []));
                 colony.Liberty = c.Liberty ?? 0; // ≤v21 saves had no liberty → SoL 0%
                 return colony;
             }),
@@ -363,9 +368,10 @@ public sealed record SaveGame
 /// <param name="Workers">Tile work assignments (null in pre-v5 saves / when none).</param>
 /// <param name="Buildings">Building type ids (null in pre-v6 saves → free base set re-derived).</param>
 /// <param name="BuildingWorkers">Building staffing (null when none).</param>
-/// <param name="CurrentBuild">Building under construction (null when idle / pre-v7).</param>
+/// <param name="CurrentBuild">Building under construction — the front of the build queue (null when idle / pre-v7).</param>
 /// <param name="OwnerId">Owning colonial player id (null = the human, id 0; v20+, FP-2).</param>
 /// <param name="Liberty">Accumulated Sons-of-Liberty points (null = 0; v22, additive).</param>
+/// <param name="BuildQueueRest">Queued buildables after the front (<see cref="CurrentBuild"/>); null/omitted for a 0- or 1-item queue (v24, additive — a colony with no queued tail serializes byte-identically to v23).</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
     IReadOnlyDictionary<string, int>? Stores = null,
@@ -374,7 +380,8 @@ public sealed record SavedColony(
     IReadOnlyDictionary<string, int>? BuildingWorkers = null,
     string? CurrentBuild = null,
     int? OwnerId = null,
-    int? Liberty = null);
+    int? Liberty = null,
+    IReadOnlyList<string>? BuildQueueRest = null);
 
 /// <summary>A bonus resource on a tile inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Index">Row-major tile index (<c>y * MapWidth + x</c>).</param>
