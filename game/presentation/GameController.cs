@@ -374,6 +374,13 @@ public partial class GameController : Node2D
 
     private void RefreshView()
     {
+        // Drop a stale selection: the selected unit may have just joined a colony (or been removed in combat),
+        // so it's no longer in the game — leaving it dangling would mis-route the next map click.
+        if (_selectedUnit is not null && !_game.Units.Contains(_selectedUnit))
+        {
+            _selectedUnit = null;
+        }
+
         _mapView.ShowState(_game.Map, _game.Explored, _game.CurrentlyVisible);
         SyncColonyMarkers();
         SyncNativeMarkers();

@@ -4,6 +4,7 @@ using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 using Godot;
 
@@ -157,6 +158,42 @@ public partial class ColonyPanel : PanelContainer
                     Changed();
                 }));
             }
+            dynamic.AddChild(row);
+        }
+
+        // — Colonists (move people in and out of the colony) —
+        dynamic.AddChild(SectionLabel("Colonists"));
+
+        // In → out: detach a free colonist onto the colony tile (it's then selectable on the map to move out or arm).
+        if (_game.CheckLeaveColony(_colony).Allowed)
+        {
+            dynamic.AddChild(ActionButton("LeaveColony", "Send a colonist out", () =>
+            {
+                _game.LeaveColony(_colony);
+                Changed();
+            }));
+        }
+
+        // Out → in: a human person-unit standing on or beside the colony can join its population.
+        foreach (Unit unit in _game.PlayerUnits
+            .Where(u => u.IsOnMap && _game.CheckJoinColony(u, _colony).Allowed)
+            .OrderBy(u => u.Id))
+        {
+            var row = new HBoxContainer();
+            row.AddChild(new Label
+            {
+                Text = $"{unit.Type.ShortName} at ({unit.Position.X},{unit.Position.Y})",
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            });
+            int uid = unit.Id;
+            row.AddChild(ActionButton($"Join_{uid}", "Join colony", () =>
+            {
+                if (_game.Units.FirstOrDefault(u => u.Id == uid) is { } u)
+                {
+                    _game.JoinColony(u, _colony);
+                }
+                Changed();
+            }));
             dynamic.AddChild(row);
         }
 

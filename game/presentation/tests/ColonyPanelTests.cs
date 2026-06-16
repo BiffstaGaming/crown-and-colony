@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 using GdUnit4;
 using Godot;
@@ -102,6 +103,55 @@ public class ColonyPanelTests
         AssertThat(colony.TileWorkers[tile]).IsEqual(goodsId);
         AssertThat(colony.IdleColonists).IsEqual(0);
     }
+
+    [TestCase(Timeout = 60000)]
+    public async Task JoinButton_AddsAnAdjacentColonist_ToThePopulation()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+
+        // A free colonist standing beside the colony, then re-open the panel so it lists the joinable unit.
+        Position adj = FreeNeighbour(game, colony);
+        Unit joiner = game.SpawnUnit(game.Ruleset.Unit("model.unit.freeColonist"), adj);
+        int joinerId = joiner.Id;
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        var join = FindButton(controller, $"Join_{joinerId}");
+        AssertThat(join).IsNotNull();
+        join!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(colony.Population).IsEqual(2);
+        AssertThat(game.Units.Any(u => u.Id == joinerId)).IsFalse(); // the colonist joined → off the map
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task LeaveButton_DetachesAFreeColonist_OntoTheMap()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+
+        // Grow to population 2 (join a colonist) so one may leave; re-open so the Leave button renders.
+        game.JoinColony(game.SpawnUnit(game.Ruleset.Unit("model.unit.freeColonist"), FreeNeighbour(game, colony)), colony);
+        AssertThat(colony.Population).IsEqual(2);
+        int onMapBefore = game.Units.Count(u => u.IsOnMap);
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        var leave = FindButton(controller, "LeaveColony");
+        AssertThat(leave).IsNotNull();
+        leave!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(colony.Population).IsEqual(1);
+        AssertThat(game.Units.Count(u => u.IsOnMap)).IsEqual(onMapBefore + 1); // a free colonist appeared on the map
+        AssertThat(game.Units.Any(u => u.IsOnMap && u.Position == colony.Position && u.Type.Id == "model.unit.freeColonist")).IsTrue();
+    }
+
+    private static Position FreeNeighbour(Game game, Colony colony) =>
+        colony.Position.Neighbours().First(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.ColonyAt(n) is null && game.NativeSettlementAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n));
 
     private static async Task<(ISceneRunner, GameController, Game, Colony)> OpenPanel()
     {
