@@ -19,6 +19,16 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 (overnight) — Colony fort/fortress bombardment of enemy ships (86d3c9tkk) [overnight autonomous run, item 2]
+
+**Requested:** Overnight continuous backlog run (item 2).
+**Did:** Shipped **colony bombardment** (`86d3c9tkk`, `8f4d8c6`). At the start of each colonial player's turn, a coastal colony with a **fort/fortress** (`BuildingType.BombardsShips` ← `model.ability.bombardShips`) and **artillery on its tile** fires on adjacent enemy/pirate ships at sea — power `min(48, Σ artillery offence)`, one-sided (no counterattack): great win (or no-repair) **sinks**, win **damages** (reusing `SinkShip`/`DamageShip`, no loot), else nothing. Targets = enemy naval units at war, plus **privateers** at any stance; own/peaceful ships spared. Per-owner RNG (`BombardEnemyShips(player)` in `RunPlayerTurn`); **no save change**. Adversarial review: 0 confirmed findings.
+**Status:** **734 L1+L2 + 4 soak green** (+8 `ColonyBombardmentTests`). Soak byte-stable (incl. the foreign-war soak — foreign bombardment draws the power's own stream). Committed `8f4d8c6`, pushed. ClickUp `86d3c9tkk` → In Review.
+**Changed:** GameLogic `Specification/BuildingType.cs`+`Ruleset.cs` (`BombardsShips`), `GameSession/Game.cs` (`BombardEnemyShips`/`IsBombardTarget`/`BombardShip` + the turn hook); tests `ColonyBombardmentTests.cs` (new). Docs `combat.md` (both layers + verification + changelog), `ruleset-data.md`.
+**Decisions:** One-sided only (classic models no ship→colony bombardment); fort-without-artillery / landlocked never bombard (0 power skip / no adjacent water); bombard notice/message is presentation (deferred).
+**Scheduled next (overnight):** `86d3c9tzv` — amphibious-capture exclusion + DefenderAt power ranking (check: capture-on-amphibious may already be excluded).
+**Needs you:** Nothing — autonomous overnight run continuing.
+
 ## 2026-06-17 (overnight) — Treasure finds from Lost City Rumours: RUINS + CIBOLA (86d3c9t1e) [overnight autonomous run, item 1]
 
 **Requested:** "Continuously work through the backlog for 6 hours" (overnight; Chris asleep from ~20:23). Item 1.
