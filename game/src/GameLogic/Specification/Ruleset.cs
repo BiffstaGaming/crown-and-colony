@@ -759,6 +759,8 @@ public sealed class Ruleset
                 CaptureGoods: ResolveAbility(el, "model.ability.captureGoods", elements),
                 // piracy: a privateer attacks rivals without declaring war, flying no flag.
                 Piracy: ResolveAbility(el, "model.ability.piracy", elements),
+                // carryTreasure: a treasure train holds plundered/discovered gold to cash in.
+                CarryTreasure: ResolveAbility(el, "model.ability.carryTreasure", elements),
                 // Colony construction: the unit's own required-goods (artillery hammers 192 + tools 40, wagon
                 // train hammers 40); required-population (FreeCol default 1) and required-abilities (collected
                 // down the extends chain, as for buildings — ships' navalUnit-scoped build gate rides here).

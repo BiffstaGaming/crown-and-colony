@@ -81,7 +81,9 @@ The more land a map has, the more rumours appear (roughly one per 35 land tiles)
 - [x] **Fountain of Youth** (`86d3c9ujx`): `FOUNTAIN_OF_YOUTH` added to the table → `GenerateFountainRecruits` lands `dx`=8 immigrants on the owner's Europe dock (reuses `DrawRecruitType`/`CreateEuropeRecruit`; no save field).
 - [ ] **Scout / De Soto exploration bias** (refinement of `86d3c9uhj`): the seasoned-scout `exploreLostCityRumour` modifier + `expertScout` never-vanish gate, and De Soto's `rumoursAlwaysPositive`. Needs unit-type ability/modifier parsing.
 - [ ] **Strange-mounds prompt** (`86d3c9umy`): add `MOUNDS`/`BURIAL_GROUND` to the table + the generation-time MOUNDS pre-set for native-owned tiles. **Native tile ownership now exists** (`GameMap.IsNativeOwned`/`NativeOwnerOf`, see [natives](natives.md)), so the burial-ground gate (`tile is native-owned` → bad sub-list = BURIAL_GROUND 25 + EXPEDITION_VANISHES 75, normalised) is ready to wire; the burial-ground native-war *effect* (hateful alarm + war) is the documented later refinement.
-- [ ] **Treasure trains** (`86d3c9ryj`/`86d3c9rzu`/`86d3c9t1e`): add `RUINS`/`CIBOLA` to the table → the treasure-train unit (save **v26** for the carried amount), spawn-on-sack replacing instant plunder, and cashing in (King's transport cut + tax, or sail it home).
+- [x] **Treasure train unit + spawn-on-sack** (`86d3c9ryj`): the treasure-train unit + carried amount (save **v27**); sacking a native settlement now spawns one instead of instant gold; capturable. See [treasure-train](treasure-train.md).
+- [ ] **Treasure trains from LCR** (`86d3c9t1e`): add `RUINS`/`CIBOLA` to the LCR table → spawn a treasure train (now unblocked — the v27 amount exists) — RUINS gives gold under 500 or a train at ≥500, CIBOLA a big train.
+- [ ] **Cash in a treasure train** (`86d3c9rzu`): King's transport cut (60%, Cortés-free) + tax, or sail it home.
 - [ ] Map **rumour markers** + the outcome message/prompt (presentation).
 
 ## Changelog

@@ -22,6 +22,9 @@ public sealed class Game
     /// <summary>The native warrior unit type spawned to garrison native settlements (FreeCol <c>model.unit.brave</c>).</summary>
     public const string BraveUnitTypeId = "model.unit.brave";
 
+    /// <summary>The treasure-train unit spawned when a sacked settlement (or a lost-city find) yields treasure (FreeCol <c>model.unit.treasureTrain</c>).</summary>
+    public const string TreasureTrainUnitTypeId = "model.unit.treasureTrain";
+
     /// <summary>
     /// Braves spawned per native settlement (Phase 5 slice 5b — a documented simplification; FreeCol
     /// scales a settlement's military strength to its size). They are native-owned defenders.
@@ -1240,7 +1243,14 @@ public sealed class Game
         if (attackerWon)
         {
             ApplyWinnerPromotion(attacker, great, random); // promotion draw (if any) before the plunder draws
-            _human.Gold += ComputePlunder(type, hasPlunderAbility, random); // the attacker is the human in FP-1 (combat becomes player-aware in FP-6)
+            // Sacking the settlement yields treasure as a TREASURE TRAIN on the razed tile (FreeCol csDestroySettlement),
+            // NOT instant gold — the attacker must escort it to a colony to cash it in. The plunder draw is unchanged
+            // (same RNG sequence as the old instant-gold path), so determinism/byte-stability holds (ADR-009).
+            int plunder = ComputePlunder(type, hasPlunderAbility, random);
+            if (plunder > 0)
+            {
+                SpawnUnit(Ruleset.Unit(TreasureTrainUnitTypeId), target, attacker.OwnerId).SetTreasureAmount(plunder);
+            }
             _nativeSettlements.Remove(settlement); // destroyed
             ClaimNativeLand(); // the razed settlement releases its land claim (surviving same-nation settlements keep theirs)
 
@@ -1825,6 +1835,7 @@ public sealed class Game
         {
             upgraded.AddCargo(goodsId, amount);
         }
+        upgraded.SetTreasureAmount(unit.TreasureAmount); // carry any treasure across the swap (defensive; treasure trains have no type change today)
         int index = _units.IndexOf(unit);
         if (index >= 0)
         {
@@ -2079,7 +2090,7 @@ public sealed class Game
         IEnumerable<(int id, UnitType type, Position position, int movementLeft,
             UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
             int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
-            int repairTurns, UnitOrders orders)> units,
+            int repairTurns, UnitOrders orders, int treasureAmount)> units,
         IEnumerable<Colony>? colonies = null,
         IEnumerable<NativeSettlement>? nativeSettlements = null)
     {
@@ -2102,7 +2113,7 @@ public sealed class Game
         foreach ((int id, UnitType type, Position position, int movementLeft,
                   UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
                   int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
-                  int repairTurns, UnitOrders orders) in units)
+                  int repairTurns, UnitOrders orders, int treasureAmount) in units)
         {
             var unit = new Unit(id, type, position)
             {
@@ -2117,6 +2128,7 @@ public sealed class Game
                 RepairTurnsRemaining = repairTurns,
                 Orders = orders,
             };
+            unit.SetTreasureAmount(treasureAmount); // internal method, like AddCargo — set after the initializer
             foreach ((string goodsId, int amount) in cargo ?? new Dictionary<string, int>())
             {
                 unit.AddCargo(goodsId, amount);

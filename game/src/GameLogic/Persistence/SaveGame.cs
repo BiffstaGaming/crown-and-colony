@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 26;
+    public const int CurrentVersion = 27;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -50,9 +50,10 @@ public sealed record SaveGame
     /// v23 added a unit's standing order (fortify/sentry; omitted when Active). v24 added a colony's build-queue
     /// tail beyond the front item (omitted for a ≤1-item queue). v25 added Lost City Rumour tile positions
     /// (omitted when none). v26 added tiles bought/taken from the natives (<see cref="ClaimedTiles"/>; omitted
-    /// when none, so a game with no land purchases stays byte-identical to v25). Each of v23–v26 is additive +
-    /// omitted-when-empty, so a feature-free game round-trips byte-identically to the prior version and older
-    /// saves load with the feature absent.
+    /// when none, so a game with no land purchases stays byte-identical to v25). v27 added a unit's carried treasure
+    /// (<see cref="SavedUnit.TreasureAmount"/>; omitted when 0 → a non-treasure unit is byte-identical to v26).
+    /// Each of v23–v27 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -184,7 +185,9 @@ public sealed record SaveGame
                     // Repair turns omitted for a healthy ship (0) so an undamaged fleet stays byte-identical (1c-3b).
                     u.RepairTurnsRemaining == 0 ? null : u.RepairTurnsRemaining,
                     // Standing order omitted for an active unit (0) so a no-orders game stays byte-identical to v22.
-                    u.Orders == UnitOrders.Active ? null : (int)u.Orders))
+                    u.Orders == UnitOrders.Active ? null : (int)u.Orders,
+                    // Treasure carried omitted for the common 0 so every non-treasure unit stays byte-identical to v26.
+                    u.TreasureAmount == 0 ? null : u.TreasureAmount))
                 .ToList(),
             Colonies = game.Colonies
                 .Select(c => new SavedColony(
@@ -266,7 +269,8 @@ public sealed record SaveGame
                 u.RoleCount ?? 0,           // pre-v18 / default role → 0
                 u.OwnerId ?? 0,             // pre-v20 / human → 0
                 u.RepairTurns ?? 0,         // pre-v21 / healthy ship → 0
-                (UnitOrders)(u.Orders ?? 0))), // pre-v23 / active → Active
+                (UnitOrders)(u.Orders ?? 0), // pre-v23 / active → Active
+                u.TreasureAmount ?? 0)),    // pre-v27 / non-treasure → 0
             Colonies?.Select(c =>
             {
                 var colony = new CrownAndColony.GameLogic.Colonies.Colony(
@@ -451,12 +455,13 @@ public sealed record SavedNativeSettlement(
 /// <param name="OwnerId">Owning colonial player id (null = the human, id 0; v20+, FP-2). Foreign-power units carry their player id.</param>
 /// <param name="RepairTurns">Turns left repairing a damaged ship (null/0 = healthy; v21+, 1c-3b). Nullable so a healthy fleet serializes byte-identically to v20.</param>
 /// <param name="Orders">Standing order (<see cref="Units.UnitOrders"/> ordinal: 0 = active, 1 = fortifying, 2 = fortified, 3 = sentry; null/0 = active; v23+). Nullable so an active unit serializes byte-identically to v22.</param>
+/// <param name="TreasureAmount">Gold carried by a treasure train (null/0 = none; v27+). Nullable so a non-treasure unit serializes byte-identically to v26.</param>
 public sealed record SavedUnit(
     int Id, string? TypeId, int X, int Y, int MovementLeft,
     int Location = 0, int SailTurns = 0, IReadOnlyDictionary<string, int>? Cargo = null,
     int? CarrierId = null,
     string? Owner = null, string? Role = null, int? RoleCount = null,
-    int? OwnerId = null, int? RepairTurns = null, int? Orders = null);
+    int? OwnerId = null, int? RepairTurns = null, int? Orders = null, int? TreasureAmount = null);
 
 /// <summary>
 /// A player inside a <see cref="SaveGame"/> (v20+). Holds the player-scoped state that used to sit as

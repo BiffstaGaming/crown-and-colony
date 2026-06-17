@@ -428,11 +428,14 @@ public class CombatTests
         Assert.Equal((xp, xmin, xmax, xf), (extraRange.Probability, extraRange.Minimum, extraRange.Maximum, extraRange.Factor));
     }
 
+    private const string TreasureTrain = "model.unit.treasureTrain";
+
     [Fact]
-    public void AttackSettlement_GreatWin_DestroysAndPlunders()
+    public void AttackSettlement_GreatWin_DestroysAndSpawnsATreasureTrain()
     {
         (Game game, Unit attacker, NativeSettlement settlement) = SetupSettlementAttack();
         Position pos = settlement.Position;
+        int goldBefore = game.Gold;
 
         SettlementPlunder baseRange = Classic.Settlement(settlement.SettlementTypeId).PlunderRange(false)!;
         CombatResult result = game.AttackSettlement(attacker, pos, new FixedRandom(0.0)); // great win; all plunder rolls 0
@@ -440,38 +443,48 @@ public class CombatTests
         Assert.Equal(CombatResult.GreatWin, result);
         Assert.Null(game.NativeSettlementAt(pos));                  // settlement destroyed
         Assert.DoesNotContain(settlement, game.NativeSettlements);
+        // The plunder is NOW a treasure train on the razed tile, not instant gold (FreeCol csDestroySettlement).
+        Assert.Equal(goldBefore, game.Gold);
+        Unit train = game.Units.Single(u => u.Type.Id == TreasureTrain);
+        Assert.Equal(pos, train.Position);
+        Assert.Equal(0, train.OwnerId);                            // owned by the human attacker
         // base range, all rolls 0: probability gate passes, range roll 0 → (0 + min) × factor.
-        Assert.Equal(baseRange.Minimum * baseRange.Factor, game.Gold);
+        Assert.Equal(baseRange.Minimum * baseRange.Factor, train.TreasureAmount);
     }
 
     [Fact]
-    public void AttackSettlement_PlunderProbabilityFails_NoGold()
+    public void AttackSettlement_PlunderProbabilityFails_SpawnsNoTreasureTrain()
     {
         (Game game, Unit attacker, NativeSettlement settlement) =
             SetupSettlementAttack(capital: false);
         // Only test a settlement whose base plunder is a sub-100 probability (camp 20 / village 50).
         int prob = Classic.Settlement(settlement.SettlementTypeId).PlunderRange(false)!.Probability;
+        int goldBefore = game.Gold;
         var rng = new ScriptedRandom(0.0, prob); // probability roll == prob → NOT < prob → no plunder
 
         game.AttackSettlement(attacker, settlement.Position, rng);
 
         Assert.Null(game.NativeSettlementAt(settlement.Position)); // still destroyed
-        Assert.Equal(0, game.Gold);                                // but no plunder
+        Assert.Equal(goldBefore, game.Gold);                       // no plunder, no gold
+        Assert.DoesNotContain(game.Units, u => u.Type.Id == TreasureTrain); // and no treasure train
     }
 
     [Fact]
-    public void AttackSettlement_WithCortes_UsesTheRicherExtraRange()
+    public void AttackSettlement_WithCortes_TreasureTrainUsesTheRicherExtraRange()
     {
         (Game game, Unit attacker, NativeSettlement settlement) =
             SetupSettlementAttack(Artillery, capital: false, Cortes);
         SettlementPlunder extra = Classic.Settlement(settlement.SettlementTypeId).PlunderRange(true)!;
         // extra range is probability 100 (no probability draw); range roll 1 → (1 + min) × factor.
         int expected = (1 + extra.Minimum) * extra.Factor;
+        int goldBefore = game.Gold;
         var rng = new ScriptedRandom(0.0, 1);
 
         game.AttackSettlement(attacker, settlement.Position, rng);
 
-        Assert.Equal(expected, game.Gold); // the .extra-range value (Cortés grants model.ability.plunderNatives)
+        Assert.Equal(goldBefore, game.Gold); // still no instant gold — the richer plunder rides the treasure train
+        Unit train = game.Units.Single(u => u.Type.Id == TreasureTrain);
+        Assert.Equal(expected, train.TreasureAmount); // the .extra-range value (Cortés grants model.ability.plunderNatives)
     }
 
     [Fact]
