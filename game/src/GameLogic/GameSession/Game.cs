@@ -89,6 +89,10 @@ public sealed class Game
     /// </summary>
     private const ulong NativeStreamId = 1;
 
+    /// <summary>RNG stream reserved for Lost City Rumour placement — a high id above every per-player stream
+    /// (<c>Player.RngStreamId</c> = playerId + 1) so rumour scatter never correlates with or shifts another stream.</summary>
+    private const ulong LcrStreamId = 100;
+
     private readonly List<Unit> _units = [];
     private readonly List<Colony> _colonies = [];
     private readonly List<NativeSettlement> _nativeSettlements = [];
@@ -1828,6 +1832,19 @@ public sealed class Game
             {
                 game.InitRecruitDock(ai);
             }
+        }
+
+        // Lost City Rumours, on their own reserved RNG stream (gen-time only, never resumed — like map gen and
+        // native placement, so the human's stream 0 stays byte-identical). Kept clear of every settlement, unit,
+        // and the player's 3×3 start area (FreeCol removes rumours around a starting colony). The reward is rolled
+        // only when a unit explores one (a later slice) — placement just marks the tiles.
+        var lcrRandom = new Pcg32Random(seed, LcrStreamId);
+        var lcrExcluded = new HashSet<Position>(start.Neighbours().Append(start));
+        lcrExcluded.UnionWith(game._nativeSettlements.Select(s => s.Position));
+        lcrExcluded.UnionWith(game._units.Where(u => u.IsOnMap).Select(u => u.Position));
+        foreach (Position p in LostCityRumourGenerator.Place(map, lcrExcluded, lcrRandom))
+        {
+            map.AddRumour(p);
         }
 
         game.GenerateOffers(human); // Congress choices available from the first turn

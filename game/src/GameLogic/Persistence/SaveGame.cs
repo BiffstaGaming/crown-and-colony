@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 24;
+    public const int CurrentVersion = 25;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -89,6 +89,9 @@ public sealed record SaveGame
 
     /// <summary>Bonus resources by row-major tile index. Null in pre-v8 saves (none).</summary>
     public IReadOnlyList<SavedResource>? Resources { get; init; }
+
+    /// <summary>Tiles holding an unexplored Lost City Rumour, by row-major tile index (v25; null/omitted when none, so a rumour-free game stays byte-identical to v24).</summary>
+    public IReadOnlyList<int>? Rumours { get; init; }
 
     /// <summary>Legacy ≤v19 / pre-FP-7 read-only player treasury (v9+). Player state lives in <see cref="Players"/> (v20+); no longer written as of FP-7. Nullable so new saves omit it.</summary>
     public int? Gold { get; init; }
@@ -196,6 +199,10 @@ public sealed record SaveGame
                     .OrderBy(r => r.Index)
                     .ToList()
                 : null,
+            // Lost City Rumours by row-major index; omitted when none so a rumour-free game stays byte-identical to v24.
+            Rumours = game.Map.Rumours.Count > 0
+                ? game.Map.Rumours.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList()
+                : null,
             // Player-scoped state: authoritative in (and written only to) Players[]. The legacy flat
             // top-level fields are no longer written as of FP-7 — they remain readable for ≤v19 / pre-FP-7
             // v20 saves (the fold path), but the v20 load path was always Players[]-only, so the format
@@ -222,7 +229,8 @@ public sealed record SaveGame
             MapWidth, MapHeight, terrain,
             Resources?.ToDictionary(
                 r => new Position(r.Index % MapWidth, r.Index / MapWidth),
-                r => r.ResourceId));
+                r => r.ResourceId),
+            Rumours?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList());
         return Game.Restore(
             ruleset,
             map,
