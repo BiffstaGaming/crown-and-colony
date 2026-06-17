@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-18 — Colony-worker identity refactor: slice 1 (UnitType expert-production parse) + overnight-run wrap (86d3b6nrz) [item 9]
+
+**Requested:** After the overnight backlog run, I asked whether to (a) start the colony-model refactor, (b) take riskier map-gen/AI items, or (c) consolidate. **You chose: start the colony-model refactor.**
+**Did:** Designed the refactor via an understand+design workflow (architecture + 6-slice plan) and shipped **slice 1** (`86d3b6nrz`, `22ffe91`) — the safe, parse-only foundation.
+- `UnitType.ExpertProduction` (the `expert-production` good) + `ProductionModifiers` (the unit's own index-30 `<modifier id="model.goods.*">` children) now parse, modelled as `UnitProductionModifier(GoodsId, Type, Value, Index)` with `ApplyTo`. Expert farmer +2 grain, expert fur trapper ×2 furs, indentured −1 / petty −2 on the 9 manufactured goods.
+- **Parse-only — nothing reads it yet**, so zero runtime/save effect.
+**Status:** **792 L1+L2 + 4 soak green** (+7 `UnitProductionModifierTests`); build clean; byte-stable. Committed `22ffe91`, pushed. ClickUp `86d3b6nrz` → In Development.
+**Architecture (the design's call — your review welcome):** an **additive sparse-overlay**, not a roster rewrite — keep `Population`/`_tileWorkers`/`_buildingWorkers` as the source of truth and layer a *sparse* worker-TYPE overlay (absent ⇒ free colonist), so every slice stays independently CI-green and a free-colonist-only game stays byte-identical. One save bump (**v30**, omitted-when-all-free).
+**Remaining slices (each CI-green, committable):** 2 = colony worker-type overlay + **save v30** round-trip (model foundation; production still type-blind); 3 = tile yield folds the expert modifier (first visible value — expert farmer +2 etc.); 4 = resource expert-scope modifiers apply (the parsed-but-skipped ones); 5 = building per-worker fold (expert ×2 / indentured−1 / petty−2 — highest risk, last); 6 = leave/abandon emit the departing worker's real type.
+**Scheduled next:** **slice 2** (worker-type overlay + save v30) — paused for your nod since it's the save-format + architecture change you'd reserved; I'll proceed on your "go".
+**Needs you:** **(1) Confirm the sparse-overlay architecture + the v30 save bump** before I build slice 2 (or say "go" and I'll proceed). **(2) Still-open from the overnight run:** the food-export fidelity call (custom house), the burial-ground/strange-mounds interim behaviours, and the apparent **duplicate `86d3c7y…` task cluster** mirroring shipped `86d3c9…` work (worth a bulk cleanup on your board).
+**Overnight run recap (20:23→~02:23, then paused on my question):** shipped **6 CI-green features** — custom house (export model + auto-sell), strange mounds + burial ground, horse breeding, Europe Train/Purchase + artillery price escalation, scout speaks with chief — plus **slice 1** of this refactor, and **closed 2 stale tasks** (`86d3c7ybm` artillery-combat, `86d3c9nyd` build-artillery — both already shipped). Every slice: tests + adversarial review + docs, soak green, pushed.
+
 ## 2026-06-17 (overnight) — Scout speaks with chief: full weighted outcomes (86d3c9tf0) [overnight autonomous run, item 8]
 
 **Requested:** Overnight continuous backlog run (item 8). Ultracode on.
