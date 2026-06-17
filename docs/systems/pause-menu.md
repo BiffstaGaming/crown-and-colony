@@ -82,4 +82,4 @@ While you're playing, pressing **Esc** brings up a pause menu over the (now froz
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-17 | Slice C — in-game pause menu (Esc → Resume / Settings / Quit to Main Menu / Quit to Desktop); pauses the tree; reuses `SettingsScreen` as an overlay | 895f958 |
-| 2026-06-17 | Slice D — added the `pause-menu` L4 golden (UI font bundled) | (pending) |
+| 2026-06-17 | Slice D — added the `pause-menu` L4 golden (UI font bundled) | 0106d9c |

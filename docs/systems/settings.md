@@ -81,4 +81,4 @@ A **Settings** screen, opened from the main menu or the in-game pause menu, lets
 |---|---|---|
 | 2026-06-17 | Slice B — settings screen + persistence: `SettingsModel` (L1) + `SettingsService` autoload (`user://settings.cfg`) + Video/Audio UI; wired the menu's Settings button | 11da6fa |
 | 2026-06-17 | Slice C — made `SettingsScreen` a reusable overlay (emits `Closed`, no self-navigation); menu + pause menu host it | 895f958 |
-| 2026-06-17 | Slice D — bundled UI font (Cardo) cascades here; added the `settings-screen` L4 golden | (pending) |
+| 2026-06-17 | Slice D — bundled UI font (Cardo) cascades here; added the `settings-screen` L4 golden | 0106d9c |
