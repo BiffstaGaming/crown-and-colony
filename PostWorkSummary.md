@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 (overnight) — Scout speaks with chief: full weighted outcomes (86d3c9tf0) [overnight autonomous run, item 8]
+
+**Requested:** Overnight continuous backlog run (item 8). Ultracode on.
+**Did:** Shipped **scout speaks with chief** (`86d3c9tf0`, `0c6e86e`), adversarially reviewed (1 confirmed high bug, fixed before commit). Replaces the flat simplified "Visit" with FreeCol's full `scoutSpeakToChief` for **scout-role** units; non-scouts keep the simplified visit.
+- `SettlementType.Gifts` parses the `<gifts>` RandomRange. `Visit` branches on the unit's role → `ScoutSpeakToChief`: **die** at a Hateful tribe; else one roll → **trained** into a seasoned scout (always if the chief teaches scouting, else 1-in-10), **tales** (wider reveal), or **beads** (gold from the gifts range, **+10%** for an expert scout).
+- Internal `Visit(…, IGameRandom)` overload added for scripted tests (the `Attack` pattern). No save change (draws on the owner's existing stream).
+**Status:** **785 L1+L2 + 4 soak green** (+7 `ScoutSpeakToChiefTests`). Build clean. Committed `0c6e86e`, pushed. ClickUp `86d3c9tf0` → In Review.
+**Changed:** GameLogic `Specification/NativeNationType.cs` (`SettlementGifts` + `SettlementType.Gifts`) + `Ruleset.cs` (parse), `GameSession/Game.cs` (`ScoutSpeakToChief`/`VisitAsColonist`/`GiftsAmount` + the role branch + the RNG overload). Tests `ScoutSpeakToChiefTests.cs` (new). Docs `natives.md` (both layers + deviations), `ruleset-data.md`.
+**Decisions:** **(1)** scout-role gets the rich outcomes; non-scout keeps the simplified flat gift (FreeCol reserves chief audiences for scouts — documented interim). **Review fix (high):** beads use FreeCol's **continuous** RandomRange (`rnd[0,(Max−Min+1)×Factor)+Min×Factor`), not the discrete plunder formula I first copied — different distribution *and* RNG draw bound; tests now pin the continuous form. Documented deviations: no native-gold deduction (no native treasury), fixed reveal radius, "already-scouted → nothing" = `CheckVisit` refusal, expert trigger `rnd==0 || teaches-scouting`.
+**Scheduled next (overnight):** continue self-contained P5 GameLogic features (verify-not-redo where a task may be stale). Will scope item 9 from the backlog.
+**Follow-ups:** a richer **outcome result/message** for the UI (engine returns gold only — can't distinguish tales/expert/die for the player); a faithful **native-treasury** deduction if/when natives hold gold. Still parked for your steer: `86d3b6nrz` colony-model refactor.
+**Needs you:** Nothing blocking — run continuing. (Open confirmations still pending from items 4–6: food-export fidelity, burial-ground/strange-mounds interim behaviours, and whether to start `86d3b6nrz`.)
+
 ## 2026-06-17 (overnight) — Europe Train/Purchase split + artillery price escalation (86d3c9qgy) [overnight autonomous run, item 7]
 
 **Requested:** Overnight continuous backlog run (item 7). Ultracode on.
