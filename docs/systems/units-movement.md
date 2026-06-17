@@ -45,6 +45,8 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
 
   **Moving wakes a unit** — `MoveUnit` resets a fortified/sentry unit to *Active*, so you trade the dig-in bonus for the move (FreeCol clears the state on a move). The order persists across save/load (v23, omitted for an *Active* unit so a no-orders game stays byte-identical).
 
+  **Stepping onto a Lost City Rumour explores it** — after a `MoveUnit` *or* `Disembark` of a colonial land unit lands on a rumour tile, `Game` investigates it (see [lost-city-rumours](lost-city-rumours.md)). The outcome can **consume** the unit (an expedition vanishes) or **replace its type** (a learned skill), so a caller must treat the moved unit as possibly gone/transformed after the call returns.
+
 **Deviations from original / FreeCol:** ✅ **cross-check done (2026-06-13).** The partial-movement rule above is FreeCol's exactly (`Unit.getMoveCost`, Unit.java:2227). Not yet implemented from that method: tile-improvement cost changes (roads/rivers — arrive with improvements) and the settlement-target clause (no settlements yet). For 3-MP units the rule is equivalent to the old skeleton behaviour; it differs for faster units (pinned by test).
 
 ## 3. Technical design

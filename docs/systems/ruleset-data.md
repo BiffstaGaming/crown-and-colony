@@ -45,7 +45,7 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 ## 5. Open issues / TODO
 
 - [x] European **`<nation>`** + **`<european-nation-type>`** parsed (FP-3a): the four colonial powers + their REFs, advantages (abilities/modifiers), starting units (extends-resolved), and per-nation classic colony names — see [players](players.md). *(Native nation types + settlement templates: see [natives](natives.md).)*
-- [x] Unit **roles** parsed (`<roles>` → `RoleType`: required-goods, downgrade, granted/required abilities, `role-change` capture) and **unit-change types** (`UnitChange`: promotion/demotion/capture) — slice 5b; settlement `<plunder>` ranges — slice 5c.
+- [x] Unit **roles** parsed (`<roles>` → `RoleType`: required-goods, downgrade, granted/required abilities, `role-change` capture) and **unit-change types** (`UnitChange`: promotion/demotion/capture; `lostCity` consumed by [lost-city-rumours](lost-city-rumours.md) — the parser already reads every `<unit-change-type>` generically, `UnitChangeTypeIds.LostCity` just names it) — slice 5b; settlement `<plunder>` ranges — slice 5c.
 
 ## Changelog
 

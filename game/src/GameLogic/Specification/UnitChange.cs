@@ -22,4 +22,7 @@ public static class UnitChangeTypeIds
 
     /// <summary>An <c>owner-change</c> transition: a captured unit changes side (veteran soldier → free colonist).</summary>
     public const string Capture = "model.unitChange.capture";
+
+    /// <summary>A skill learned by exploring a Lost City Rumour (free colonist / indentured servant / petty criminal → seasoned scout).</summary>
+    public const string LostCity = "model.unitChange.lostCity";
 }

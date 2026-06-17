@@ -2,16 +2,26 @@
 
 | | |
 |---|---|
-| **Status** | In development — **placement + per-tile model + save (v25)** done; exploring a rumour to roll a reward is the next slice |
-| **Last verified** | 2026-06-17 @ LCR placement (`86d3c9uex`) |
-| **Code** | `game/src/GameLogic/World/LostCityRumourGenerator.cs`, `World/GameMap.cs` (`HasRumour`/`Rumours`/`AddRumour`/`RemoveRumour`), `GameSession/Game.cs` (`Game.New` placement step, `LcrStreamId`), `Persistence/SaveGame.cs` (`Rumours`, v25) |
+| **Status** | In development — **placement + save (v25)** and the **core outcome table** (explore trigger + nothing / vanish / tribal-chief gold / learn / colonist) done; Fountain of Youth, strange mounds, and the treasure finds are the next slices |
+| **Last verified** | 2026-06-17 @ LCR outcome resolution (`86d3c9uhj`) |
+| **Code** | `game/src/GameLogic/World/LostCityRumourGenerator.cs`, `World/GameMap.cs` (`HasRumour`/`Rumours`/`AddRumour`/`RemoveRumour`), `GameSession/Game.cs` (`Game.New` placement step + `LcrStreamId`; `TryExploreRumour`/`ExploreRumour`/`ChooseRumourType`/`WeightedPick`; the `MoveUnit`/`Disembark` hooks), `Specification/UnitChange.cs` (`UnitChangeTypeIds.LostCity`), `Persistence/SaveGame.cs` (`Rumours`, v25) |
 | **Tests** | `game/tests/GameLogic.Tests/World/LostCityRumourTests.cs` |
-| **FreeCol reference** | `SimpleMapGenerator.makeLostCityRumours`, `LostCityRumour.java`, `Tile.hasLostCityRumour`/`removeLostCityRumour`, `EuropeanStartingPositionsGenerator` (start-area removal) |
-| **Related systems** | [map-terrain](map-terrain.md), [save-load](save-load.md), [fog-of-war](fog-of-war.md) |
+| **FreeCol reference** | `SimpleMapGenerator.makeLostCityRumours`, `LostCityRumour.chooseType`, `ServerUnit.csExploreLostCityRumour`, `RandomChoice.getWeightedRandom`/`normalize`, `Tile.hasLostCityRumour`/`removeLostCityRumour`, `EuropeanStartingPositionsGenerator` (start-area removal) |
+| **Related systems** | [map-terrain](map-terrain.md), [save-load](save-load.md), [fog-of-war](fog-of-war.md), [units-movement](units-movement.md), [combat](combat.md) |
 
 ## 1. How it works (plain English)
 
-Scattered across the new world are **mysterious ruins** — Lost City Rumours. At the start of every game a handful of land tiles are quietly seeded with one (you won't see them through the fog until you get close). They sit out in the wilderness, never on a settlement, never on top of a unit, never right on your doorstep, and never up in the frozen polar fringe. **Walking a land unit onto a rumour tile investigates it** — and *that's* when the dice are rolled: it might be nothing, a gift of gold, a learned skill, a band of new colonists, a vanished expedition, a burial ground that enrages the natives, or — the dream — a city of gold and a treasure train. (That reward roll is the **next** slice; for now the rumours are placed, persist in saves, and are cleared when explored.)
+Scattered across the new world are **mysterious ruins** — Lost City Rumours. At the start of every game a handful of land tiles are quietly seeded with one (you won't see them through the fog until you get close). They sit out in the wilderness, never on a settlement, never on top of a unit, never right on your doorstep, and never up in the frozen polar fringe.
+
+**Walking a land unit onto a rumour tile investigates it** — and *that's* when the dice are rolled. Right now the possible results are:
+
+- **Nothing** — just an empty ruin.
+- **A tribal chief's gift** — a handful of gold (40–119) lands in your treasury.
+- **A learned skill** — a plain colonist (or an indentured servant / petty criminal) emerges a **seasoned scout**.
+- **New colonists** — a free colonist joins you, standing on the tile.
+- **The expedition vanishes** — the exploring unit is lost for good. (This is the rare bad outcome.)
+
+The dream results — a **Fountain of Youth**, **strange mounds**, and the **cities of gold / ancient ruins** that hand you a treasure train — aren't wired up yet; they arrive in the next few slices. Whatever the result, the rumour is a one-shot: investigating it clears it from the map for good. Only your own colonists explore — a native brave walking over a rumour leaves it untouched.
 
 The more land a map has, the more rumours appear (roughly one per 35 land tiles).
 
@@ -20,37 +30,60 @@ The more land a map has, the more rumours appear (roughly one per 35 land tiles)
 - **How many:** target = `width × height × 45% / 35` (FreeCol's "a rumour every `rumourNumber`=35 land tiles", using our generator's ~45%-land estimate in place of FreeCol's `landMass` option). On the default 36×24 map that's **11**. The actual number can be fewer if eligible tiles run out (never more).
 - **Where a rumour may sit:** dry **land**; not on a tile that already has a rumour; not on a **settlement** (colony or native); not on a tile holding a **unit**; not in the **polar rows** (FreeCol `Map.isPolar`: the top and bottom three rows); not in the player's **3×3 start area** (FreeCol removes rumours around a starting colony).
 - **Placement is once, at game start**, and is **deterministic for a seed** — the same seed always produces the same rumour tiles.
-- **Exploring** a rumour removes it (one-shot); a consumed rumour never comes back and is absent from later saves. *(The explore trigger + the reward table are the next slice.)*
+- **Exploring** a rumour removes it (one-shot); a consumed rumour never comes back and is absent from later saves.
 
-**Deviations from original / FreeCol:** the **count estimate** uses our ~45%-land fraction rather than FreeCol's `landMass`=25% option (we have no such option; 45% matches the land our continents actually grow, so the count matches what the player sees — faithful to FreeCol's *intent*, a rumour per 35 land tiles, not to the 25 constant). We skip FreeCol's `SLOSH` edge-inset sampler — our maps already keep a watery margin, so uniform sampling over land tiles gives the same inset effect. A rumour is a **type-less flag** at this stage (FreeCol leaves the type undetermined until explored too); the FreeCol generation-time *MOUNDS* pre-set for native-owned tiles is deferred to the outcomes work.
+### Exploring a rumour (the outcome roll)
+
+- **Trigger:** a **colonial (non-native) land unit** that *moves onto* (or *disembarks onto*) a tile holding a rumour investigates it immediately (FreeCol fires on any move where `newTile.hasLostCityRumour() && owner.isEuropean()`). A native brave never explores; a ship never can (rumours are on land). The roll uses the **owner's** RNG stream (the human's, or an AI power's own) so one player exploring never disturbs another's economy.
+- **The weighted table** (FreeCol `LostCityRumour.chooseType`, classic **medium** difficulty — *good 48% / bad 23% / neutral 29%*):
+  - **Good** (weight ×48): a unit that *can learn* splits **Learn 30 / Tribal-chief 30 / Colonist 20**; a unit that cannot (an expert, a soldier, artillery, …) splits **Tribal-chief 50 / Colonist 30**.
+  - **Bad** (a flat weight of 100, per FreeCol normalising the bad sub-list to 100): **Expedition vanishes**. (The burial ground needs native-owned tiles, not modelled yet, so the vanishing expedition is the whole bad side — exactly how FreeCol degrades it with no burial available.)
+  - **Neutral** (weight ×29): **Nothing**.
+- **The outcomes:**
+  - **Nothing** — no effect.
+  - **Tribal chief** — gold = `random(0…dx·10) + dx·5` with `dx = 10 − rumourDifficulty`; medium `dx = 8`, so **40–119 gold** to the unit's owner.
+  - **Learn** — the unit's `model.unitChange.lostCity` change applies (free colonist / indentured servant / petty criminal → **seasoned scout**), keeping its id and remaining movement.
+  - **Colonist** — a **free colonist** (the only classic unit with `model.ability.foundInLostCity`) musters on the tile under the explorer's owner.
+  - **Expedition vanishes** — the exploring unit is removed from the game.
+- A learnable unit can only *learn* if it has a `lostCity` change; an expert has none, so its good rolls fall to tribal-chief / colonist (FreeCol's `allowLearn` gate).
+
+**Deviations from original / FreeCol:** the **count estimate** uses our ~45%-land fraction rather than FreeCol's `landMass`=25% option (we have no such option; 45% matches the land our continents actually grow, so the count matches what the player sees — faithful to FreeCol's *intent*, a rumour per 35 land tiles, not to the 25 constant). We skip FreeCol's `SLOSH` edge-inset sampler — our maps already keep a watery margin, so uniform sampling over land tiles gives the same inset effect. **Difficulty constants** are hardcoded to classic **medium** (`badRumour=23`, `goodRumour=48`, `rumourDifficulty=2`→`dx=8`), matching the project's medium baseline (the founding-father factor is likewise medium = 40); the Ruleset parses no difficulty options yet, so a per-level value is a later refinement. We do **not** replicate Java's RNG bit-sequence — faithfulness is to the *rules and weights*, drawn through our seeded RNG (ADR-009). **Deferred outcomes** (intentionally absent from the table until their slices land): **Fountain of Youth** (`86d3c9ujx`), **strange mounds** + native-owned tiles & burial ground (`86d3c9umy`), and the treasure finds **ruins / cibola** (`86d3c9ryj…`, need the save-v26 treasure amount). The **seasoned-scout exploration bonus** and **Hernando de Soto's** always-positive ability (good-outcome bias) are a deferred refinement. While those good outcomes are absent, the table re-weights toward the shipped ones — so "nothing" is slightly likelier than in full FreeCol until they're added.
 
 ## 3. Technical design
 
 - **Placement** lives in `Game.New` (not `MapGenerator.Generate`): it runs **after** the map, the starting unit, native settlements and foreign powers are placed, so it can exclude every occupied tile and the start area. `LostCityRumourGenerator.Place(map, excluded, random)` returns the chosen positions (eligible land tiles, shuffled by the seeded RNG, take `target`); `Game.New` folds them in via `map.AddRumour`.
 - **Determinism (ADR-009):** placement draws from a **dedicated stream** — `new Pcg32Random(seed, LcrStreamId)` with `LcrStreamId = 100`, a reserved id **above every per-player stream** (`Player.RngStreamId = playerId + 1`, so foreign powers occupy 2,3,4…). Because the scatter never touches the human's stream 0 (`_random`), every economy/combat/immigration draw — and the L5 soak's byte-stability — is unchanged. The stream is **gen-time only**: it is never saved or resumed (like map gen and native placement); a loaded game rebuilds rumours from the saved tile list, not by re-scattering.
 - **Tile model:** `GameMap` holds a sparse `HashSet<Position> _rumours`, parallel to `_resources` — `HasRumour(p)`/`Rumours` (read) and `AddRumour`/`RemoveRumour` (internal: place at gen, consume on explore). A rumour is **not** stored on `TerrainType` (immutable rule-data).
-- **Save (v25, additive):** `SaveGame.Rumours` is a row-major `int[]` of rumour tile indexes, **omitted when empty** so a rumour-free game stays byte-identical to v24 and pre-v25 saves load with none. `From` writes `game.Map.Rumours.Select(p => p.Y·W + p.X)`; `Restore` decodes them into the `GameMap` ctor's `rumours` param (no value needed — presence only).
+- **Save (v25, additive):** `SaveGame.Rumours` is a row-major `int[]` of rumour tile indexes, **omitted when empty** so a rumour-free game stays byte-identical to v24 and pre-v25 saves load with none. `From` writes `game.Map.Rumours.Select(p => p.Y·W + p.X)`; `Restore` decodes them into the `GameMap` ctor's `rumours` param (no value needed — presence only). **No save bump for the outcome slice:** exploring only mutates already-saved state — units (spawned/removed/upgraded), player gold, and the v25 rumour set (a consumed tile drops out) — so a save round-trips unchanged. (The treasure finds will add a per-unit treasure amount → save **v26**, a later slice.)
+
+- **Outcome resolution** lives in `Game.cs` (it touches units, gold and the map, like combat):
+  - **Trigger.** `MoveUnit` and `Disembark` call `TryExploreRumour(unit, target)` *after* the move/landing completes. It gates on a colonial (`!IsNative`) **land** (`!IsNaval`) unit on a `Map.HasRumour(target)` tile, then resolves via `ExploreRumour(unit, target, RandomFor(owner))`. Mirroring FreeCol's `csMove`, the explore runs once the unit has arrived and its fog has lifted.
+  - **Per-owner RNG (ADR-009).** The reward draws from `RandomFor(owner)` — the human's stream 0, a foreign power's own stream — exactly as combat threads `IGameRandom` through its internal `Attack*` overloads. The human path consumes stream 0 (its *own* exploration), AI paths their own streams, so an AI exploring never shifts the human's economy and vice-versa. The L5 soak (whose autoplay now steps on rumours) stays byte-stable and the determinism-twin runs match.
+  - **Choosing + resolving.** `ChooseRumourType` builds the weighted `(type, weight)` list (good/bad/neutral as above) and `WeightedPick` selects it (FreeCol `getWeightedRandom`: a single entry returns with no draw, otherwise `random.Next(total)` walks the cumulative weights). `ExploreRumour` then applies the effect (`_units.Remove` / `Player.Gold +=` / `UpgradeUnitType` / `SpawnUnit(type, target, ownerId)`) and finally `Map.RemoveRumour(target)`. `UpgradeUnitType` replaces the unit object (same id), so callers must treat the passed reference as spent — both hooks call the explore last and touch the unit no further.
+  - **Difficulty constants.** `RumourBadPercent=23`, `RumourGoodPercent=48`, `RumourDifficultyDx=8` (`10 − rumourDifficulty(2)`) are private consts pinned to classic medium; `FoundInLostCityUnitTypeId="model.unit.freeColonist"`; the learn change is `UnitChangeTypeIds.LostCity` (`model.unitChange.lostCity`, already parsed by `Ruleset`).
 
 ## 4. Verification
 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
-| L1 Unit | Always | `LostCityRumourTests`: scatter on land at the target count, deterministic-for-seed, exclusions (water / polar rows / start 3×3 / settlements / units / no-dup), over-constrained map tolerated without throwing, `GameMap` add/has/remove, save round-trip (v25), rumour-free game omits the token + a v24-style save loads with none | ✅ |
-| L2 Scenario | Always | the L5 soak (byte-stable across interrupted-vs-uninterrupted runs) confirms placement leaks no non-determinism and never shifts the human's stream 0 | ✅ |
-| L3 Interaction | No UI yet | rumour markers on the map are a later presentation slice | — |
+| L1 Unit | Always | `LostCityRumourTests`: **placement** — scatter on land at the target count, deterministic-for-seed, exclusions (water / polar rows / start 3×3 / settlements / units / no-dup), over-constrained map tolerated, `GameMap` add/has/remove, save round-trip (v25) + token-omitted/back-compat. **Outcomes** — each result pinned by a scripted weighted roll (vanish removes the unit; tribal-chief gold 40/119 by formula; learn upgrades a free colonist → seasoned scout keeping its id; colonist musters a free colonist on the tile; nothing leaves units+gold untouched), the `allowLearn` gate (a non-learnable expert's low roll gives gold not a skill), and the triggers (move onto a rumour, amphibious disembark onto one, and a native brave leaving it untouched) | ✅ |
+| L2 Scenario | Always | the L5 soak now exercises live exploration (autoplay units step on rumours): all invariants hold, gold never negative, save→load→save byte-identical, and the determinism-twin runs match — confirming resolution leaks no non-determinism and each owner's stream stays isolated | ✅ |
+| L3 Interaction | No UI yet | rumour markers + the outcome message/prompt on the map are a later presentation slice | — |
 | L4 Visual | No screen yet | — | — |
 
 ## 5. Open issues / TODO
 
 - [x] **Placement + per-tile flag + save** (`86d3c9uex`).
-- [ ] **Explore trigger + outcome resolution** (`86d3c9uhj`): the move-onto-tile hook + the weighted reward table (nothing / vanish / tribal-chief gold / learn / colonist / burial-ground / ruins / cibola / fountain-of-youth), drawn per-player (`RandomFor(owner)`), with scout / Hernando de Soto good-outcome bias.
-- [ ] **Fountain of Youth** (`86d3c9ujx`): an immigration burst onto the Europe dock.
-- [ ] **Strange-mounds prompt** (`86d3c9umy`) + the generation-time MOUNDS pre-set for native-owned tiles.
-- [ ] **Treasure trains** (`86d3c9ryj`/`86d3c9rzu`/`86d3c9t1e`): the treasure-train unit (save bump for the carried amount), spawn-on-sack replacing instant plunder, and cashing in (King's transport cut + tax, or sail it home).
-- [ ] Map **rumour markers** (presentation).
+- [x] **Explore trigger + core outcome table** (`86d3c9uhj`): the move/disembark-onto-tile hook + the weighted reward table (nothing / vanish / tribal-chief gold / learn / colonist), drawn per-owner (`RandomFor(owner)`). Deferred from this slice: burial-ground (needs native tile ownership), the treasure finds, FoY/mounds, and the scout / Hernando de Soto good-outcome bias (below).
+- [ ] **Scout / De Soto exploration bias** (refinement of `86d3c9uhj`): the seasoned-scout `exploreLostCityRumour` modifier + `expertScout` never-vanish gate, and De Soto's `rumoursAlwaysPositive`. Needs unit-type ability/modifier parsing.
+- [ ] **Fountain of Youth** (`86d3c9ujx`): add `FOUNTAIN_OF_YOUTH` to the table → an immigration burst onto the Europe dock.
+- [ ] **Strange-mounds prompt** (`86d3c9umy`): add `MOUNDS`/`BURIAL_GROUND` + the generation-time MOUNDS pre-set for native-owned tiles (and native tile ownership).
+- [ ] **Treasure trains** (`86d3c9ryj`/`86d3c9rzu`/`86d3c9t1e`): add `RUINS`/`CIBOLA` to the table → the treasure-train unit (save **v26** for the carried amount), spawn-on-sack replacing instant plunder, and cashing in (King's transport cut + tax, or sail it home).
+- [ ] Map **rumour markers** + the outcome message/prompt (presentation).
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-17 | **LCR core outcome resolution** (`86d3c9uhj`): `MoveUnit`/`Disembark` now investigate a rumour a colonial land unit steps onto (`TryExploreRumour`), rolling the FreeCol `chooseType` weighted table (classic medium: good 48 / bad 23 / neutral 29) restricted to the shipped outcomes — **nothing / expedition-vanishes / tribal-chief gold (40–119) / learn (→ seasoned scout) / colonist (found free colonist)**. Draws per-owner via `RandomFor(owner)`; `UnitChangeTypeIds.LostCity` added. No save bump (only already-saved state changes). +10 L1; 690 + soak green (byte-stable, twin-deterministic). FoY/mounds/treasure + the scout/De Soto bias are the next slices. | Phase 5 (`86d3c9uhj`) |
 | 2026-06-17 | **LCR placement + model + save** (`86d3c9uex`): `LostCityRumourGenerator` scatters ~`land/35` rumours at `Game.New` from a dedicated RNG stream (`LcrStreamId`=100, off the human's stream 0) clear of settlements/units/start/polar; `GameMap` gains `HasRumour`/`Rumours`/`AddRumour`/`RemoveRumour`; save **v25** adds the additive `Rumours` index list (omitted when none). +7 L1; 684 + soak green (byte-stable). Outcomes/treasure are the next slices. | Phase 5 (`86d3c9uex`) |

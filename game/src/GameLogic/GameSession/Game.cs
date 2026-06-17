@@ -2225,6 +2225,7 @@ public sealed class Game
         {
             SyncPassengers(unit); // any colonists aboard move with the ship
         }
+        TryExploreRumour(unit, target); // a land unit stepping onto a Lost City Rumour investigates it (may consume/transform the unit)
     }
 
     /// <summary>
@@ -2918,6 +2919,7 @@ public sealed class Game
         unit.Position = target;
         unit.MovementLeft = 0; // disembarking ends the unit's turn
         Reveal(unit);
+        TryExploreRumour(unit, target); // an amphibious landing onto a Lost City Rumour investigates it too (FreeCol explores on any move)
     }
 
     /// <summary>Takes a carried unit off its ship back onto the Europe dock.</summary>
@@ -2935,6 +2937,184 @@ public sealed class Game
         }
         unit.CarrierId = null;
         unit.Location = UnitLocation.InEurope;
+    }
+
+    // ===== Lost City Rumours — outcome resolution (86d3c9uhj) =================================================
+    // Walking a colonial land unit onto a rumour tile investigates it (FreeCol ServerUnit.csMove fires
+    // csExploreLostCityRumour when newTile.hasLostCityRumour() && owner.isEuropean()). The type is rolled now
+    // from a weighted table (FreeCol LostCityRumour.chooseType) and resolved (csExploreLostCityRumour), then the
+    // rumour is consumed (one-shot). Placement is the prior slice (86d3c9uex); see docs/systems/lost-city-rumours.md.
+
+    /// <summary>The Lost City Rumour outcomes this slice resolves (a subset of FreeCol's <c>RumourType</c>).
+    /// Deferred to their own slices and so absent from the weighted table here: <c>FOUNTAIN_OF_YOUTH</c>
+    /// (<c>86d3c9ujx</c>), <c>MOUNDS</c> + native-owned tiles (<c>86d3c9umy</c>), and the treasure finds
+    /// <c>RUINS</c>/<c>CIBOLA</c> (<c>86d3c9ryj…</c>, need the save-v26 treasure amount). <c>BURIAL_GROUND</c> is
+    /// likewise absent until native tile ownership exists — with no native-owned tiles the bad side is only the
+    /// vanishing expedition, exactly as FreeCol degrades it.</summary>
+    internal enum LostCityRumourType
+    {
+        /// <summary>Nothing of note — the rumour is spent for no effect.</summary>
+        Nothing,
+
+        /// <summary>The expedition vanishes — the exploring unit is lost.</summary>
+        ExpeditionVanishes,
+
+        /// <summary>A tribal chief's gift of gold.</summary>
+        TribalChief,
+
+        /// <summary>The unit learns a skill (free colonist / indentured servant / petty criminal → seasoned scout).</summary>
+        Learn,
+
+        /// <summary>A band of colonists joins — a free colonist musters on the tile.</summary>
+        Colonist,
+    }
+
+    /// <summary>Bad-outcome chance, classic <b>medium</b> difficulty (<c>model.option.badRumour</c>); see the difficulty note below.</summary>
+    private const int RumourBadPercent = 23;
+
+    /// <summary>Good-outcome chance, classic <b>medium</b> difficulty (<c>model.option.goodRumour</c>).</summary>
+    private const int RumourGoodPercent = 48;
+
+    /// <summary>
+    /// FreeCol's <c>dx = 10 − rumourDifficulty</c> reward-scale: classic <b>medium</b> sets
+    /// <c>model.option.rumourDifficulty=2</c>, so <c>dx = 8</c>. We hardcode the <b>medium</b> tier to match the
+    /// rest of the project's classic baseline (the founding-father factor is likewise pinned to medium = 40);
+    /// the Ruleset does not parse difficulty options yet, so a difficulty-driven value is a later refinement.
+    /// </summary>
+    private const int RumourDifficultyDx = 8;
+
+    /// <summary>The unit a COLONIST rumour musters: the only classic unit with <c>model.ability.foundInLostCity</c>.</summary>
+    private const string FoundInLostCityUnitTypeId = "model.unit.freeColonist";
+
+    /// <summary>
+    /// Investigates a Lost City Rumour if <paramref name="unit"/> just stepped onto one: a colonial (non-native)
+    /// <b>land</b> unit on a tile that holds a rumour. Draws from the owner's RNG stream (<see cref="RandomFor"/>)
+    /// — the human's stream 0, an AI power's own stream — so one player exploring never shifts another's economy
+    /// (ADR-009). A naval unit can never stand on a (land) rumour tile, so the gate is belt-and-braces.
+    /// </summary>
+    private void TryExploreRumour(Unit unit, Position target)
+    {
+        if (unit.IsNative || unit.Type.IsNaval || !Map.HasRumour(target))
+        {
+            return; // natives never explore (FreeCol: European only); ships can't reach a land rumour
+        }
+        if (PlayerById(unit.OwnerId) is { } owner)
+        {
+            ExploreRumour(unit, target, RandomFor(owner));
+        }
+    }
+
+    /// <summary>
+    /// Rolls and resolves the rumour on <paramref name="target"/> for the exploring <paramref name="unit"/>,
+    /// then consumes the rumour (one-shot — FreeCol <c>removeLostCityRumour</c>). Returns the outcome (for tests).
+    /// The reward roll draws from the supplied <see cref="IGameRandom"/> (combat is the precedent: per-owner
+    /// streams). May remove the unit (an expedition vanishes) or replace it (a learned skill upgrades its type),
+    /// so callers must not reuse the reference afterwards.
+    /// </summary>
+    internal LostCityRumourType ExploreRumour(Unit unit, Position target, IGameRandom random)
+    {
+        LostCityRumourType outcome = ChooseRumourType(unit, random);
+        switch (outcome)
+        {
+            case LostCityRumourType.ExpeditionVanishes:
+                _units.Remove(unit); // the expedition is lost
+                break;
+            case LostCityRumourType.TribalChief:
+                // FreeCol: randomInt(0, dx·10) + dx·5 → medium dx=8 gives 40–119 gold to the owner.
+                int gift = random.Next(RumourDifficultyDx * 10) + RumourDifficultyDx * 5;
+                if (PlayerById(unit.OwnerId) is { } owner)
+                {
+                    owner.Gold += gift;
+                }
+                break;
+            case LostCityRumourType.Learn:
+                // Only learnable units reach LEARN (gated in ChooseRumourType); the change is guaranteed present.
+                if (Ruleset.GetUnitChange(UnitChangeTypeIds.LostCity, unit.Type.Id) is { } change)
+                {
+                    UpgradeUnitType(unit, change.To); // free colonist / indentured servant / petty criminal → seasoned scout
+                }
+                break;
+            case LostCityRumourType.Colonist:
+                SpawnUnit(Ruleset.Unit(FoundInLostCityUnitTypeId), target, unit.OwnerId); // a found colonist musters on the tile
+                break;
+            case LostCityRumourType.Nothing:
+            default:
+                break; // no effect (the player-facing message is presentation)
+        }
+        Map.RemoveRumour(target); // consumed regardless of outcome
+        return outcome;
+    }
+
+    /// <summary>
+    /// Picks a rumour type by the FreeCol <c>LostCityRumour.chooseType</c> weighted split (good / bad / neutral),
+    /// restricted to the outcomes this slice ships. Good outcomes are weighted ×<see cref="RumourGoodPercent"/>:
+    /// a learnable unit can LEARN (30) / TRIBAL_CHIEF (30) / COLONIST (20); a non-learnable one TRIBAL_CHIEF (50)
+    /// / COLONIST (30). The bad side (EXPEDITION_VANISHES) carries FreeCol's normalised weight of 100 (the burial
+    /// ground needs native tile ownership, not modelled yet). NOTHING takes the neutral remainder ×100. The
+    /// seasoned-scout exploration bonus and Hernando de Soto's always-positive ability are a later refinement.
+    /// </summary>
+    private LostCityRumourType ChooseRumourType(Unit unit, IGameRandom random)
+    {
+        bool canLearn = Ruleset.GetUnitChange(UnitChangeTypeIds.LostCity, unit.Type.Id) is not null;
+        int neutral = Math.Max(0, 100 - RumourBadPercent - RumourGoodPercent);
+
+        var choices = new List<(LostCityRumourType Type, int Weight)>();
+        if (RumourGoodPercent > 0)
+        {
+            if (canLearn)
+            {
+                choices.Add((LostCityRumourType.Learn, 30 * RumourGoodPercent));
+                choices.Add((LostCityRumourType.TribalChief, 30 * RumourGoodPercent));
+                choices.Add((LostCityRumourType.Colonist, 20 * RumourGoodPercent));
+            }
+            else
+            {
+                choices.Add((LostCityRumourType.TribalChief, 50 * RumourGoodPercent));
+                choices.Add((LostCityRumourType.Colonist, 30 * RumourGoodPercent));
+            }
+        }
+        if (RumourBadPercent > 0)
+        {
+            // FreeCol normalises the bad sub-list to a total weight of 100; with only the vanishing expedition
+            // available (no native-owned tiles → no burial ground) that single entry takes the whole 100.
+            choices.Add((LostCityRumourType.ExpeditionVanishes, 100));
+        }
+        if (neutral > 0)
+        {
+            choices.Add((LostCityRumourType.Nothing, 100 * neutral));
+        }
+
+        return WeightedPick(choices, random);
+    }
+
+    /// <summary>
+    /// Cumulative weighted draw (FreeCol <c>RandomChoice.getWeightedRandom</c>): a single choice is returned with
+    /// no RNG draw; otherwise <c>random.Next(total)</c> selects proportionally. An empty/zero-weight list (no
+    /// possible outcome) falls back to NOTHING.
+    /// </summary>
+    private static LostCityRumourType WeightedPick(
+        IReadOnlyList<(LostCityRumourType Type, int Weight)> choices, IGameRandom random)
+    {
+        int total = choices.Sum(c => c.Weight);
+        if (total <= 0)
+        {
+            return LostCityRumourType.Nothing;
+        }
+        if (choices.Count == 1)
+        {
+            return choices[0].Type;
+        }
+        int roll = random.Next(total);
+        int cumulative = 0;
+        foreach ((LostCityRumourType type, int weight) in choices)
+        {
+            cumulative += weight;
+            if (roll < cumulative)
+            {
+                return type;
+            }
+        }
+        return choices[^1].Type;
     }
 
     /// <summary>Advances sailing units; arrivals dock in Europe or re-enter the map.</summary>
