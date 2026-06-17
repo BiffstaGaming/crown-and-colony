@@ -104,6 +104,7 @@ public sealed class Game
     private readonly List<ColonyLossNotice> _colonyLossNotices = []; // transient: the most recent turn's AI captures of human colonies (not saved)
     private readonly List<ColonyRaidNotice> _colonyRaidNotices = []; // transient: the most recent turn's native pillages of human colonies (not saved)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
+    private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
     private readonly Player _human;
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
@@ -410,6 +411,50 @@ public sealed class Game
     /// <see cref="EndTurn"/> if ignored; never saved.
     /// </summary>
     public NativeDemand? PendingDemand => _pendingDemand;
+
+    /// <summary>A strange-mounds rumour awaiting the human's investigate/decline choice: the exploring unit + its tile.</summary>
+    /// <param name="UnitId">The unit standing on the mounds (it bears the risk if the expedition vanishes).</param>
+    /// <param name="Tile">The rumour tile to investigate or leave be.</param>
+    public sealed record PendingMoundsDecision(int UnitId, Position Tile);
+
+    /// <summary>
+    /// The strange-mounds rumour currently awaiting the human's investigate/decline choice, or null if none.
+    /// Transient per-turn UI state — set when a human unit steps onto a strange-mounds rumour
+    /// (<see cref="TryExploreRumour"/>), answered via <see cref="InvestigatePendingMounds"/> /
+    /// <see cref="DeclinePendingMounds"/>; never saved (a save mid-prompt reloads with the rumour un-explored).
+    /// (An AI explorer auto-investigates and never sets this.)
+    /// </summary>
+    public PendingMoundsDecision? PendingMounds => _pendingMounds;
+
+    /// <summary>
+    /// Investigates the <see cref="PendingMounds"/> rumour on the human's stream and clears the pending state,
+    /// returning the resolved outcome (FreeCol's "investigate these strange mounds?" → yes). A no-op returning
+    /// <see cref="LostCityRumourType.Nothing"/> if nothing is pending or the unit is gone.
+    /// </summary>
+    internal LostCityRumourType InvestigatePendingMounds()
+    {
+        if (_pendingMounds is not { } pending)
+        {
+            return LostCityRumourType.Nothing;
+        }
+        _pendingMounds = null;
+        if (_units.FirstOrDefault(u => u.Id == pending.UnitId) is not { } unit)
+        {
+            Map.RemoveRumour(pending.Tile); // the explorer is gone — just consume the rumour
+            return LostCityRumourType.Nothing;
+        }
+        return InvestigateMounds(unit, pending.Tile, _random);
+    }
+
+    /// <summary>Declines the <see cref="PendingMounds"/> rumour (removes it, no effect) and clears the pending state (FreeCol decline).</summary>
+    internal void DeclinePendingMounds()
+    {
+        if (_pendingMounds is { } pending)
+        {
+            _pendingMounds = null;
+            DeclineMounds(pending.Tile);
+        }
+    }
 
     /// <summary>
     /// Sentinel <see cref="CombatNotice.AttackerNationId"/> for a raider that hides its flag (a privateer —
@@ -3327,6 +3372,12 @@ public sealed class Game
 
         /// <summary>A city of gold (Cibola) — a large treasure train.</summary>
         Cibola,
+
+        /// <summary>Strange mounds on native-owned land — the explorer may investigate (a re-rolled outcome) or leave them be (decline). Native tiles only.</summary>
+        Mounds,
+
+        /// <summary>A desecrated native burial ground — the owning nation's settlements turn hateful (max alarm). Native tiles only.</summary>
+        BurialGround,
     }
 
     /// <summary>Bad-outcome chance, classic <b>medium</b> difficulty (<c>model.option.badRumour</c>); see the difficulty note below.</summary>
@@ -3361,9 +3412,28 @@ public sealed class Game
         {
             return; // natives never explore (FreeCol: European only); ships can't reach a land rumour
         }
-        if (PlayerById(unit.OwnerId) is { } owner)
+        if (PlayerById(unit.OwnerId) is not { } owner)
         {
-            ExploreRumour(unit, target, RandomFor(owner));
+            return;
+        }
+        if (owner.IsHuman && _pendingMounds is not null)
+        {
+            return; // the human still owes an investigate/decline answer on an earlier strange-mounds — don't roll another
+                    // rumour (or re-roll this one) until it's resolved. AI explorers never set _pendingMounds, so they're unaffected.
+        }
+        if (ExploreRumour(unit, target, RandomFor(owner)) != LostCityRumourType.Mounds)
+        {
+            return; // a non-mounds rumour is fully resolved by the peek
+        }
+        // Strange mounds need an investigate/decline decision. A human is prompted (the rumour waits on the tile);
+        // an AI / foreign power has no UI, so it auto-investigates inline on its own stream (keeps the soak headless).
+        if (owner.IsHuman)
+        {
+            _pendingMounds = new PendingMoundsDecision(unit.Id, target);
+        }
+        else
+        {
+            InvestigateMounds(unit, target, RandomFor(owner));
         }
     }
 
@@ -3376,7 +3446,35 @@ public sealed class Game
     /// </summary>
     internal LostCityRumourType ExploreRumour(Unit unit, Position target, IGameRandom random)
     {
-        LostCityRumourType outcome = ChooseRumourType(unit, random);
+        LostCityRumourType outcome = ChooseRumourType(unit, target, random);
+
+        // Resolve-time native gate (FreeCol ServerUnit.csExploreLostCityRumour): MOUNDS / BURIAL_GROUND on a tile
+        // the natives don't own degrade to NOTHING. Belt-and-braces — conditional-add already keeps them off the
+        // table on non-native tiles, but this matches FreeCol and guards a future gen-time mounds pre-stamp.
+        if ((outcome is LostCityRumourType.Mounds or LostCityRumourType.BurialGround) && !Map.IsNativeOwned(target))
+        {
+            outcome = LostCityRumourType.Nothing;
+        }
+
+        // Strange mounds: stop here. The explorer must choose investigate vs decline (the caller prompts the human
+        // or auto-investigates an AI) — the rumour is left in place and nothing is resolved on this peek.
+        if (outcome == LostCityRumourType.Mounds)
+        {
+            return LostCityRumourType.Mounds;
+        }
+
+        ResolveOutcome(unit, target, outcome, random);
+        Map.RemoveRumour(target); // consumed regardless of outcome
+        return outcome;
+    }
+
+    /// <summary>
+    /// Applies a resolved rumour outcome's effect (shared by the direct <see cref="ExploreRumour"/> and the
+    /// strange-mounds <see cref="InvestigateMounds"/>). Does <b>not</b> remove the rumour (the caller does) and never
+    /// receives <see cref="LostCityRumourType.Mounds"/> (that is the prompt sentinel, never a resolved effect).
+    /// </summary>
+    private void ResolveOutcome(Unit unit, Position target, LostCityRumourType outcome, IGameRandom random)
+    {
         switch (outcome)
         {
             case LostCityRumourType.ExpeditionVanishes:
@@ -3422,12 +3520,99 @@ public sealed class Game
                 // FreeCol: a city of gold → rand(0, dx·600) + dx·300 as a treasure train (medium dx=8 → 2400–7199).
                 SpawnTreasureTrain(target, unit.OwnerId, random.Next(RumourDifficultyDx * 600) + (RumourDifficultyDx * 300));
                 break;
+            case LostCityRumourType.BurialGround:
+                ApplyBurialGround(target); // the owning nation turns hateful
+                break;
             case LostCityRumourType.Nothing:
             default:
                 break; // no effect (the player-facing message is presentation)
         }
-        Map.RemoveRumour(target); // consumed regardless of outcome
+    }
+
+    /// <summary>
+    /// Investigates a strange-mounds rumour (FreeCol <c>csExploreLostCityRumour</c>'s mounds degradation loop):
+    /// re-rolls the rumour table until it lands an outcome mounds can yield, then resolves it and consumes the
+    /// rumour. The exploring unit's owner stream supplies the draws (per-owner determinism, ADR-009).
+    /// </summary>
+    internal LostCityRumourType InvestigateMounds(Unit unit, Position target, IGameRandom random)
+    {
+        if (!Map.HasRumour(target))
+        {
+            return LostCityRumourType.Nothing; // already consumed (e.g. by another unit before the decision was answered) — no reward, no draw
+        }
+        LostCityRumourType outcome = DegradeMounds(unit, target, random);
+        ResolveOutcome(unit, target, outcome, random);
+        Map.RemoveRumour(target);
         return outcome;
+    }
+
+    /// <summary>
+    /// The FreeCol mounds degradation loop (<c>ServerUnit</c> lines 474–508): re-rolls <see cref="ChooseRumourType"/>
+    /// until an acceptable outcome appears. NOTHING is accepted only the <b>second</b> time it is rolled; the
+    /// vanishing expedition and the tribal chief are accepted at once; RUINS is accepted and draws one extra
+    /// "ruins+burial" value (a faithful quirk — the draw never changes the outcome, it stays RUINS); a burial ground
+    /// is accepted on native land (always true inside mounds); FoY / LEARN / colonist / mounds / Cibola are re-rolled.
+    /// Uncapped, exactly as FreeCol (it terminates quickly — most outcomes accept immediately).
+    /// </summary>
+    private LostCityRumourType DegradeMounds(Unit unit, Position target, IGameRandom random)
+    {
+        bool sawNothing = false;
+        while (true)
+        {
+            LostCityRumourType t = ChooseRumourType(unit, target, random);
+            switch (t)
+            {
+                case LostCityRumourType.Nothing:
+                    if (sawNothing)
+                    {
+                        return LostCityRumourType.Nothing; // accept the second NOTHING
+                    }
+                    sawNothing = true; // the first NOTHING re-rolls
+                    break;
+                case LostCityRumourType.ExpeditionVanishes:
+                case LostCityRumourType.TribalChief:
+                    return t;
+                case LostCityRumourType.Ruins:
+                    // FreeCol draws a "Ruins+Burial" value here; whether it passes or falls through, the outcome
+                    // still resolves as RUINS (the fall-through sets only `done`, never the type). We consume the
+                    // draw for byte-fidelity and return RUINS regardless.
+                    random.Next(100);
+                    return LostCityRumourType.Ruins;
+                case LostCityRumourType.BurialGround:
+                    if (Map.IsNativeOwned(target))
+                    {
+                        return LostCityRumourType.BurialGround; // always reached inside mounds (native-owned)
+                    }
+                    break; // (unreachable here) re-roll
+                default:
+                    break; // FoY / Learn / Colonist / Mounds / Cibola → re-roll
+            }
+        }
+    }
+
+    /// <summary>
+    /// Declines to investigate a strange-mounds rumour (FreeCol <c>InGameController.declineMounds</c>): the rumour is
+    /// simply removed, with no effect and <b>no RNG draw</b>. (Unlike the generic explore confirm, declining mounds
+    /// consumes the rumour — you don't get a second look.)
+    /// </summary>
+    internal void DeclineMounds(Position target) => Map.RemoveRumour(target);
+
+    /// <summary>
+    /// A desecrated burial ground (FreeCol <c>csNativeBurialGround</c>): the natives who own the tile turn hateful.
+    /// FreeCol sets the nation's tension to HATEFUL and forces war; we have no native-vs-colonial stance model, so we
+    /// raise every settlement of the owning nation to maximum alarm — the nation-wide hostility analogue used by the
+    /// other land-grievance acts (cf. <c>ClaimLandByStealing</c>). No gold or unit change.
+    /// </summary>
+    private void ApplyBurialGround(Position target)
+    {
+        if (Map.NativeOwnerOf(target) is not { } nation)
+        {
+            return; // gated upstream to native-owned tiles; guard is belt-and-braces
+        }
+        foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == nation))
+        {
+            ChangeNativeAlarm(settlement, NativeSettlement.MaxAlarm); // clamps to max (hateful)
+        }
     }
 
     /// <summary>Musters a treasure train on <paramref name="target"/> carrying <paramref name="amount"/> gold, owned by <paramref name="ownerId"/> (FreeCol spawns a treasure train for a rich plunder/find — see [treasure-train.md]).</summary>
@@ -3465,9 +3650,10 @@ public sealed class Game
     /// the neutral remainder ×100. MOUNDS (8), the seasoned-scout exploration bonus and Hernando de Soto's
     /// always-positive ability are later refinements.
     /// </summary>
-    private LostCityRumourType ChooseRumourType(Unit unit, IGameRandom random)
+    private LostCityRumourType ChooseRumourType(Unit unit, Position target, IGameRandom random)
     {
         bool canLearn = Ruleset.GetUnitChange(UnitChangeTypeIds.LostCity, unit.Type.Id) is not null;
+        bool nativeOwned = Map.IsNativeOwned(target); // gates the native-only outcomes (strange mounds + burial ground)
         int neutral = Math.Max(0, 100 - RumourBadPercent - RumourGoodPercent);
 
         var choices = new List<(LostCityRumourType Type, int Weight)>();
@@ -3490,15 +3676,34 @@ public sealed class Game
                 choices.Add((LostCityRumourType.Colonist, 30 * RumourGoodPercent));
             }
             // The treasure finds are available to any explorer (FreeCol adds them outside the learn split): ancient
-            // RUINS (6) and a city of gold CIBOLA (4). MOUNDS (8) stays deferred to the strange-mounds slice.
+            // RUINS (6) and a city of gold CIBOLA (4).
             choices.Add((LostCityRumourType.Ruins, 6 * RumourGoodPercent));
             choices.Add((LostCityRumourType.Cibola, 4 * RumourGoodPercent));
+            if (nativeOwned)
+            {
+                // Strange MOUNDS (FreeCol weight 8) — only possible on native-owned land (off it they degrade to
+                // NOTHING at resolve). Conditional-add: a wilderness rumour's table stays byte-identical (ADR-009).
+                choices.Add((LostCityRumourType.Mounds, 8 * RumourGoodPercent));
+            }
         }
         if (RumourBadPercent > 0)
         {
-            // FreeCol normalises the bad sub-list to a total weight of 100; with only the vanishing expedition
-            // available (no native-owned tiles → no burial ground) that single entry takes the whole 100.
-            choices.Add((LostCityRumourType.ExpeditionVanishes, 100));
+            if (nativeOwned)
+            {
+                // On native land the bad sub-list is BURIAL_GROUND + EXPEDITION_VANISHES, normalised to a total of
+                // 100 (FreeCol RandomChoice.normalize of 25·bad / 75·bad → 25 / 75) — the same 100-weight footprint
+                // the lone vanishing expedition occupies off native land, so only the GOOD side's mounds shift the total.
+                choices.AddRange(NormalizeTo100(
+                [
+                    (LostCityRumourType.BurialGround, 25 * RumourBadPercent),
+                    (LostCityRumourType.ExpeditionVanishes, 75 * RumourBadPercent),
+                ]));
+            }
+            else
+            {
+                // No native-owned tile → no burial ground; the vanishing expedition takes the whole normalised 100.
+                choices.Add((LostCityRumourType.ExpeditionVanishes, 100));
+            }
         }
         if (neutral > 0)
         {
@@ -3506,6 +3711,21 @@ public sealed class Game
         }
 
         return WeightedPick(choices, random);
+    }
+
+    /// <summary>
+    /// Rescales a weighted sub-list so its weights sum to 100, rounding each element (FreeCol
+    /// <c>RandomChoice.normalize(list, 100)</c>). Blends the bad-outcome sub-list (burial ground + vanishing
+    /// expedition) into the main rumour table at the same 100-weight footprint the flat vanishing expedition occupies
+    /// off native land — so adding the burial ground never shifts the bad total, only the good side's mounds does.
+    /// </summary>
+    private static List<(LostCityRumourType Type, int Weight)> NormalizeTo100(
+        IReadOnlyList<(LostCityRumourType Type, int Weight)> sub)
+    {
+        int subtotal = sub.Sum(c => c.Weight);
+        return subtotal <= 0
+            ? [.. sub]
+            : [.. sub.Select(c => (c.Type, (int)Math.Round(100.0 * c.Weight / subtotal)))];
     }
 
     /// <summary>
@@ -3840,6 +4060,7 @@ public sealed class Game
         _colonyLossNotices.Clear(); // and this turn's AI captures of human colonies
         _colonyRaidNotices.Clear(); // and this turn's native pillages of human colonies
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
+        DeclinePendingMounds();     // an unanswered strange-mounds prompt counts as "leave them be" — clears it before the AI turns so it can't strand or block exploration across the round
         int startIndex = _currentPlayerIndex;
         do
         {

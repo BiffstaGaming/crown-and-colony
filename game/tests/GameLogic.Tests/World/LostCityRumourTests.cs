@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
@@ -362,5 +363,270 @@ public class LostCityRumourTests
         game.MoveUnit(brave, to);
 
         Assert.True(game.Map.HasRumour(to)); // a brave leaves the rumour untouched
+    }
+
+    // ---- Strange mounds + burial ground (86d3c9umy) ----
+    //
+    // On NATIVE-OWNED land the table also offers MOUNDS (weight 8) and a BURIAL_GROUND/EXPEDITION_VANISHES bad pair
+    // (normalised to 25/75, the same 100-weight footprint the lone vanish takes off native land). For a learnable
+    // free colonist on a native tile the cumulative ranges are: FoY [0,96) | Learn [96,1536) | Chief [1536,2976) |
+    // Colonist [2976,3936) | Ruins [3936,4224) | Cibola [4224,4416) | MOUNDS [4416,4800) | Burial [4800,4825) |
+    // Vanish [4825,4900) | Nothing [4900,7800). MOUNDS pauses for an investigate/decline choice; investigate runs
+    // FreeCol's degradation loop. (Off native land the table is byte-identical to before — the conditional-add guard,
+    // proved by the non-native boundary tests above still passing with roll 4416 == Vanish.)
+
+    /// <summary>A human free colonist on a rumour tile the natives own (so MOUNDS/BURIAL_GROUND are possible); returns the owning nation id.</summary>
+    private static (Game Game, Unit Unit, Position Tile, string Nation) MoundsExplorer(string unitTypeId = FreeColonist)
+    {
+        (Game game, Unit unit, Position tile) = ExplorerOnRumour(unitTypeId);
+        string nation = game.NativeSettlements.First().NationTypeId;
+        game.Map.SetNativeOwner(tile, nation);
+        return (game, unit, tile, nation);
+    }
+
+    [Fact]
+    public void Explore_OnNativeLand_RollingMounds_Pauses_LeavingTheRumourForADecision()
+    {
+        (Game game, Unit unit, Position tile, _) = MoundsExplorer();
+        int unitsBefore = game.Units.Count;
+        int goldBefore = game.HumanPlayer.Gold;
+
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4416)); // 4416 → MOUNDS (native table)
+
+        Assert.Equal(Game.LostCityRumourType.Mounds, outcome);
+        Assert.True(game.Map.HasRumour(tile));        // NOT consumed — it awaits investigate/decline
+        Assert.Equal(unitsBefore, game.Units.Count);  // no effect on the peek
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);
+    }
+
+    [Fact]
+    public void DeclineMounds_RemovesTheRumour_WithNoEffect()
+    {
+        (Game game, Unit unit, Position tile, _) = MoundsExplorer();
+        game.ExploreRumour(unit, tile, new ScriptedRandom(4416)); // reveal the mounds
+        int unitsBefore = game.Units.Count;
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.DeclineMounds(tile); // takes no IGameRandom — structurally cannot draw
+
+        Assert.False(game.Map.HasRumour(tile));
+        Assert.Equal(unitsBefore, game.Units.Count);
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);
+    }
+
+    [Fact]
+    public void InvestigateMounds_AcceptsTribalChief_ResolvingAndConsumingTheRumour()
+    {
+        (Game game, Unit unit, Position tile, _) = MoundsExplorer();
+        int goldBefore = game.HumanPlayer.Gold;
+
+        // loop draw 1536 → Chief (accepted at once); then the chief gold roll (0 → dx·5 = 40). Exactly two draws.
+        Game.LostCityRumourType outcome = game.InvestigateMounds(unit, tile, new ScriptedRandom(1536, 0));
+
+        Assert.Equal(Game.LostCityRumourType.TribalChief, outcome);
+        Assert.Equal(goldBefore + 40, game.HumanPlayer.Gold);
+        Assert.False(game.Map.HasRumour(tile));
+    }
+
+    [Fact]
+    public void InvestigateMounds_RejectsTheFirstNothing_AcceptsTheSecond()
+    {
+        (Game game, Unit unit, Position tile, _) = MoundsExplorer();
+
+        // 4900 → Nothing (first, rerolled), 4900 → Nothing (second, accepted). Exactly two draws — a third would
+        // empty the queue and throw, pinning the sticky-second-NOTHING rule.
+        Game.LostCityRumourType outcome = game.InvestigateMounds(unit, tile, new ScriptedRandom(4900, 4900));
+
+        Assert.Equal(Game.LostCityRumourType.Nothing, outcome);
+        Assert.False(game.Map.HasRumour(tile));
+    }
+
+    [Theory]
+    [InlineData(0)]   // the ruins+burial roll < badPercent (FreeCol's fall-through branch)…
+    [InlineData(99)]  // …and >= badPercent (the plain-ruins branch) — both still resolve as RUINS
+    public void InvestigateMounds_Ruins_ConsumesTheBurialRoll_ButStaysRuins(int burialRoll)
+    {
+        (Game game, Unit unit, Position tile, string nation) = MoundsExplorer();
+        int goldBefore = game.HumanPlayer.Gold;
+
+        // 3936 → Ruins; then the "ruins+burial" roll (consumed, never changes the outcome); then amount 0 → 50 gold.
+        Game.LostCityRumourType outcome = game.InvestigateMounds(unit, tile, new ScriptedRandom(3936, burialRoll, 0));
+
+        Assert.Equal(Game.LostCityRumourType.Ruins, outcome);           // never BurialGround (FreeCol quirk)
+        Assert.Equal(goldBefore + 50, game.HumanPlayer.Gold);          // a small ruins → straight gold
+        Assert.All(game.NativeSettlements.Where(s => s.NationTypeId == nation),
+            s => Assert.NotEqual(NativeSettlement.MaxAlarm, s.Alarm));  // no burial-ground anger
+        Assert.False(game.Map.HasRumour(tile));
+    }
+
+    [Fact]
+    public void InvestigateMounds_BurialGround_RaisesTheOwningNationToMaxAlarm_NoGoldNoUnit()
+    {
+        (Game game, Unit unit, Position tile, string nation) = MoundsExplorer();
+        int unitsBefore = game.Units.Count;
+        int goldBefore = game.HumanPlayer.Gold;
+
+        Game.LostCityRumourType outcome = game.InvestigateMounds(unit, tile, new ScriptedRandom(4800)); // 4800 → Burial
+
+        Assert.Equal(Game.LostCityRumourType.BurialGround, outcome);
+        Assert.All(game.NativeSettlements.Where(s => s.NationTypeId == nation),
+            s => Assert.Equal(NativeSettlement.MaxAlarm, s.Alarm)); // the desecrated nation turns hateful
+        Assert.Equal(unitsBefore, game.Units.Count);               // no unit lost
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);           // no gold
+        Assert.False(game.Map.HasRumour(tile));
+    }
+
+    [Fact]
+    public void InvestigateMounds_RerollsAnUnacceptableOutcome_ThenAccepts()
+    {
+        (Game game, Unit unit, Position tile, _) = MoundsExplorer();
+        int goldBefore = game.HumanPlayer.Gold;
+
+        // 4224 → Cibola (a default outcome mounds can't yield → rerolled); 1536 → Chief; gold roll. Three draws.
+        Game.LostCityRumourType outcome = game.InvestigateMounds(unit, tile, new ScriptedRandom(4224, 1536, 0));
+
+        Assert.Equal(Game.LostCityRumourType.TribalChief, outcome);
+        Assert.Equal(goldBefore + 40, game.HumanPlayer.Gold);
+        Assert.False(game.Map.HasRumour(tile));
+    }
+
+    [Fact]
+    public void Explore_OnNativeLand_CanRollBurialGroundDirectly_AndResolvesItAtOnce()
+    {
+        (Game game, Unit unit, Position tile, string nation) = MoundsExplorer();
+
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4800)); // 4800 → Burial (direct, not via mounds)
+
+        Assert.Equal(Game.LostCityRumourType.BurialGround, outcome);
+        Assert.All(game.NativeSettlements.Where(s => s.NationTypeId == nation),
+            s => Assert.Equal(NativeSettlement.MaxAlarm, s.Alarm));
+        Assert.False(game.Map.HasRumour(tile)); // a direct (non-mounds) outcome is consumed immediately
+    }
+
+    [Fact]
+    public void Explore_MoundsOrBurial_OnNonNativeLand_NeverHappens()
+    {
+        // The conditional-add guard: off native land the table has no MOUNDS/BURIAL, so the roll 4416 that is MOUNDS
+        // on native land is the vanishing expedition off it (matching Explore_ExpeditionVanishes_… above).
+        (Game game, Unit unit, Position tile) = ExplorerOnRumour(); // NOT native-owned
+
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4416));
+
+        Assert.Equal(Game.LostCityRumourType.ExpeditionVanishes, outcome);
+        Assert.NotEqual(Game.LostCityRumourType.Mounds, outcome);
+    }
+
+    [Fact]
+    public void PendingMoundsWrappers_AreNoOps_WhenNothingIsPending()
+    {
+        Game game = Game.New(Classic, Seed);
+        Assert.Null(game.PendingMounds);
+        Assert.Equal(Game.LostCityRumourType.Nothing, game.InvestigatePendingMounds());
+        game.DeclinePendingMounds(); // no throw, no state
+        Assert.Null(game.PendingMounds);
+    }
+
+    [Fact]
+    public void MovingHumanUnitOntoNativeOwnedRumour_EitherResolvesItOrRaisesAMoundsPrompt()
+    {
+        Game game = Game.New(Classic, Seed);
+        Unit unit = game.PlayerUnits.First(u => u.IsOnMap && !u.Type.IsNaval);
+        Position to = unit.Position.Neighbours().First(n => game.CheckMove(unit, n).Allowed);
+        string nation = game.NativeSettlements.First().NationTypeId;
+        game.Map.AddRumour(to);
+        game.Map.SetNativeOwner(to, nation);
+
+        game.MoveUnit(unit, to); // explored on the human's stream 0
+
+        // Whatever the roll, the wiring holds: a human's MOUNDS pauses for a decision; anything else resolves at once.
+        if (game.PendingMounds is { } pending)
+        {
+            Assert.Equal(to, pending.Tile);
+            Assert.True(game.Map.HasRumour(to));   // left in place, awaiting the choice
+            game.DeclinePendingMounds();
+            Assert.False(game.Map.HasRumour(to));  // declining consumes it
+        }
+        else
+        {
+            Assert.False(game.Map.HasRumour(to));  // a non-mounds outcome was resolved + consumed on arrival
+        }
+    }
+
+    [Fact]
+    public void InvestigateMounds_OnAnAlreadyConsumedTile_IsANoOp_NoRewardNoDraw()
+    {
+        // Guards the stale-tile double-reward: if the rumour was consumed (e.g. by another unit) before the decision
+        // was answered, investigating grants nothing and draws no RNG (an empty ScriptedRandom would throw on a draw).
+        (Game game, Unit unit, Position tile, _) = MoundsExplorer();
+        game.Map.RemoveRumour(tile);
+        int goldBefore = game.HumanPlayer.Gold;
+        int unitsBefore = game.Units.Count;
+
+        Game.LostCityRumourType outcome = game.InvestigateMounds(unit, tile, new ScriptedRandom());
+
+        Assert.Equal(Game.LostCityRumourType.Nothing, outcome);
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);
+        Assert.Equal(unitsBefore, game.Units.Count);
+    }
+
+    /// <summary>Searches seeds for a fresh game where the human's first move onto a native-owned rumour rolls MOUNDS (deterministic).</summary>
+    private static (Game Game, Unit Unit, Position Tile)? FindHumanMoundsPrompt(ulong seed)
+    {
+        Game game = Game.New(Classic, seed);
+        string nation = game.NativeSettlements.First().NationTypeId;
+        Unit unit = game.PlayerUnits.First(u => u.IsOnMap && !u.Type.IsNaval);
+        Position? dest = null;
+        foreach (Position n in unit.Position.Neighbours())
+        {
+            if (game.CheckMove(unit, n).Allowed) { dest = n; break; }
+        }
+        if (dest is not { } to)
+        {
+            return null;
+        }
+        game.Map.AddRumour(to);
+        game.Map.SetNativeOwner(to, nation);
+        game.MoveUnit(unit, to);
+        return game.PendingMounds is not null ? (game, unit, to) : null;
+    }
+
+    [Fact]
+    public void HumanPendingMounds_BlocksFurtherExploration_AndIsAutoDeclinedAtEndTurn()
+    {
+        (Game Game, Unit Unit, Position Tile)? found = null;
+        for (ulong s = 1; s <= 400 && found is null; s++)
+        {
+            found = FindHumanMoundsPrompt(s);
+        }
+        Assert.NotNull(found); // a MOUNDS roll exists well within the window (~5% of native-tile rolls)
+        (Game game, Unit unit, Position tile) = found!.Value;
+
+        Assert.Equal(tile, game.PendingMounds!.Tile);
+        Assert.True(game.Map.HasRumour(tile)); // left in place, awaiting the choice
+
+        // Re-entry guard: while the decision is outstanding, another human unit stepping onto a fresh native rumour
+        // does NOT explore it (no re-roll, no second pending).
+        string nation = game.NativeSettlements.First().NationTypeId;
+        if (game.PlayerUnits.FirstOrDefault(u => u.IsOnMap && !u.Type.IsNaval && u.Id != unit.Id) is { } other)
+        {
+            Position? dest2 = null;
+            foreach (Position n in other.Position.Neighbours())
+            {
+                if (game.CheckMove(other, n).Allowed) { dest2 = n; break; }
+            }
+            if (dest2 is { } to2 && !game.Map.HasRumour(to2))
+            {
+                game.Map.AddRumour(to2);
+                game.Map.SetNativeOwner(to2, nation);
+                game.MoveUnit(other, to2);
+                Assert.True(game.Map.HasRumour(to2));         // blocked — the pending decision gates exploration
+                Assert.Equal(tile, game.PendingMounds!.Tile); // still the original prompt, not overwritten
+            }
+        }
+
+        // EndTurn auto-declines an unanswered prompt: it clears, and the rumour is consumed (FreeCol session timeout).
+        game.EndTurn();
+        Assert.Null(game.PendingMounds);
+        Assert.False(game.Map.HasRumour(tile));
     }
 }
