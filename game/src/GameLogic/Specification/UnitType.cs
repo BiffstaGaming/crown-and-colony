@@ -61,6 +61,11 @@ namespace CrownAndColony.GameLogic.Specification;
 /// A cap on how many of this unit a player may build (spec <c>&lt;limit&gt;</c>). Classic: the wagon train is
 /// capped at one per colony (<c>units &lt; settlements</c> at player scope). Null for an uncapped unit.
 /// </param>
+/// <param name="Skill">
+/// The skill level taught/embodied by this unit (spec <c>skill</c>; 0 for a plain colonist, ship or artillery,
+/// ≥1 for an expert/specialist). In Europe a priced unit with skill &gt; 0 is <b>trained</b>, one with skill 0 is
+/// <b>purchased</b> (FreeCol <c>Specification.getUnitTypesTrainedInEurope</c>/<c>…PurchasedInEurope</c>).
+/// </param>
 public sealed record UnitType(
     string Id,
     int Movement,
@@ -92,7 +97,8 @@ public sealed record UnitType(
     IReadOnlyList<GoodsOutput>? BuildCost = null,
     int RequiredPopulation = 1,
     IReadOnlyDictionary<string, bool>? RequiredAbilities = null,
-    UnitBuildLimit? BuildLimit = null)
+    UnitBuildLimit? BuildLimit = null,
+    int Skill = 0)
 {
     private static readonly IReadOnlyList<GoodsOutput> NoCost = [];
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
@@ -114,6 +120,16 @@ public sealed record UnitType(
 
     /// <summary>Can this unit type be bought/trained in Europe for gold? (<see cref="Price"/> &gt; 0).</summary>
     public bool IsPurchasable => Price > 0;
+
+    /// <summary>A priced unit with a <see cref="Skill"/> — a specialist <b>trained</b> in Europe (expert farmer, master carpenter…), FreeCol <c>getUnitTypesTrainedInEurope</c>.</summary>
+    public bool IsTrainedInEurope => Price > 0 && Skill > 0;
+
+    /// <summary>
+    /// A priced unit with no skill — <b>purchased</b> in Europe (ships, artillery), FreeCol <c>getUnitTypesPurchasedInEurope</c>.
+    /// (FreeCol gates on <c>!hasSkill()</c> — skill <em>attribute absent</em>; we fold absent → 0, so this differs only for a
+    /// hypothetical priced unit declared with explicit <c>skill="0"</c>, which no classic unit is. Revisit if variant data adds one.)
+    /// </summary>
+    public bool IsPurchasedInEurope => Price > 0 && Skill <= 0;
 
     /// <summary>
     /// Effective hold slots this unit takes when carried (FreeCol

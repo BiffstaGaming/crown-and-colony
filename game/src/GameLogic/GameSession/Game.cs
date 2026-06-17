@@ -2452,6 +2452,13 @@ public sealed class Game
                 player.TensionMap[otherId] = tension;
             }
         }
+        if (saved.UnitPrices is not null)
+        {
+            foreach ((string unitTypeId, int price) in saved.UnitPrices)
+            {
+                player.UnitPriceMap[unitTypeId] = price; // escalated Europe purchase prices (artillery)
+            }
+        }
         if (!saved.IsHuman)
         {
             player.Rng = saved.Rng is { } rng
@@ -3141,6 +3148,22 @@ public sealed class Game
     /// <summary>Whether the player can buy a <paramref name="unitTypeId"/> in Europe right now.</summary>
     public MoveCheck CheckBuyUnit(string unitTypeId) => CheckBuyUnit(_human, unitTypeId);
 
+    /// <summary>The Europe unit whose purchase price escalates (FreeCol <c>priceIncreasePerType</c> — artillery is the only classic one).</summary>
+    private const string ArtilleryUnitTypeId = "model.unit.artillery";
+
+    /// <summary>Gold added to a player's artillery price after each artillery purchase (classic-medium <c>model.option.priceIncrease.artillery</c>; hardcoded pending ruleset-option parsing — see the difficulty-system task).</summary>
+    private const int ArtilleryPriceIncrease = 100;
+
+    /// <summary>This player's current Europe price for a unit type — its escalated override (artillery) or the ruleset base.</summary>
+    private static int EuropeUnitPrice(Player player, UnitType type) =>
+        player.UnitPriceOverrides.GetValueOrDefault(type.Id, type.Price);
+
+    /// <summary>The unit types <b>trained</b> in this player's Europe (priced specialists, skill &gt; 0), in ruleset order (FreeCol <c>getUnitTypesTrainedInEurope</c>).</summary>
+    public IReadOnlyList<UnitType> UnitTypesTrainedInEurope() => [.. Ruleset.UnitTypes.Where(t => t.IsTrainedInEurope)];
+
+    /// <summary>The unit types <b>purchased</b> in this player's Europe (priced, no skill — ships + artillery), in ruleset order (FreeCol <c>getUnitTypesPurchasedInEurope</c>).</summary>
+    public IReadOnlyList<UnitType> UnitTypesPurchasedInEurope() => [.. Ruleset.UnitTypes.Where(t => t.IsPurchasedInEurope)];
+
     /// <summary>Whether <paramref name="player"/> can buy a <paramref name="unitTypeId"/> in Europe right now.</summary>
     internal MoveCheck CheckBuyUnit(Player player, string unitTypeId)
     {
@@ -3149,11 +3172,12 @@ public sealed class Game
         {
             return MoveCheck.No($"A {type.ShortName} cannot be bought in Europe.");
         }
-        if (player.Gold < type.Price)
+        int price = EuropeUnitPrice(player, type);
+        if (player.Gold < price)
         {
-            return MoveCheck.No($"Not enough gold (need {type.Price}).");
+            return MoveCheck.No($"Not enough gold (need {price}).");
         }
-        return MoveCheck.Yes(type.Price);
+        return MoveCheck.Yes(price);
     }
 
     /// <summary>
@@ -3174,6 +3198,12 @@ public sealed class Game
         }
         player.Gold -= check.Cost;
         UnitType type = Ruleset.Unit(unitTypeId);
+        // Artillery's price ratchets +100 for this player per purchase (FreeCol increasePrice; ships/specialists stay
+        // flat). The override starts from the price just paid, so 500 → 600 → 700…
+        if (unitTypeId == ArtilleryUnitTypeId)
+        {
+            player.UnitPriceMap[unitTypeId] = check.Cost + ArtilleryPriceIncrease;
+        }
         var unit = new Unit(_nextUnitId++, type, type.IsNaval ? EuropeEntryTile() : new Position(0, 0))
         {
             Location = UnitLocation.InEurope,

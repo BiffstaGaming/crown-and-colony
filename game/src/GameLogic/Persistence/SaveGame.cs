@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 28;
+    public const int CurrentVersion = 29;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -54,8 +54,10 @@ public sealed record SaveGame
     /// (<see cref="SavedUnit.TreasureAmount"/>; omitted when 0 → a non-treasure unit is byte-identical to v26). v28
     /// added the game-wide custom-house auto-export mode (<see cref="AutoExportMode"/>, omitted for the PerGood
     /// default) and per-colony custom-house export settings (<see cref="SavedColony.Exports"/>, only non-default
-    /// goods, omitted when none).
-    /// Each of v23–v28 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// goods, omitted when none). v29 added per-player escalated Europe purchase prices
+    /// (<see cref="SavedPlayer.UnitPrices"/>, omitted when none have escalated → a game where no one has bought
+    /// artillery is byte-identical to v28).
+    /// Each of v23–v29 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
@@ -356,7 +358,7 @@ public sealed record SaveGame
         p.RecruitDock,
         p.Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
         p.RngState is { } s && p.RngIncrement is { } inc ? new RandomState(s, inc) : null,
-        p.Stances, p.Tensions);
+        p.Stances, p.Tensions, p.UnitPrices);
 
     /// <summary>
     /// Folds the legacy flat top-level fields into the single human player — taken for a ≤v19 save, or any save
@@ -388,7 +390,8 @@ public sealed record SaveGame
             p.Explored.Select(pos => pos.Y * map.Width + pos.X).OrderBy(i => i).ToList(),
             rng?.State, rng?.Increment,
             p.Stances.Count > 0 ? new Dictionary<int, Stance>(p.Stances) : null,
-            p.Tensions.Count > 0 ? new Dictionary<int, int>(p.Tensions) : null);
+            p.Tensions.Count > 0 ? new Dictionary<int, int>(p.Tensions) : null,
+            p.UnitPriceOverrides.Count > 0 ? new Dictionary<string, int>(p.UnitPriceOverrides) : null);
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -513,6 +516,7 @@ public sealed record SavedUnit(
 /// <param name="RngIncrement">That stream's increment (paired with <paramref name="RngState"/>; null = the human / no stream).</param>
 /// <param name="Stances">This player's diplomatic stance toward each other player it has met, by their player id (v20 additive, FP-6a; null/omitted when it has met no one). An ordinal of <see cref="GameSession.Stance"/>.</param>
 /// <param name="Tensions">This player's tension toward each other player, by their player id (v20 additive, FP-6a; null/omitted when all zero).</param>
+/// <param name="UnitPrices">This player's escalated Europe purchase prices by unit-type id (v29 additive; null/omitted when none have escalated, so a game where nobody has bought artillery stays byte-identical to v28). Today only artillery escalates.</param>
 public sealed record SavedPlayer(
     int PlayerId, string? NationId, bool IsHuman, int PlayerType,
     int Gold = 0, int Tax = 0,
@@ -525,4 +529,5 @@ public sealed record SavedPlayer(
     IReadOnlyList<int>? Explored = null,
     ulong? RngState = null, ulong? RngIncrement = null,
     IReadOnlyDictionary<int, Stance>? Stances = null,
-    IReadOnlyDictionary<int, int>? Tensions = null);
+    IReadOnlyDictionary<int, int>? Tensions = null,
+    IReadOnlyDictionary<string, int>? UnitPrices = null);

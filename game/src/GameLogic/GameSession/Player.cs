@@ -40,6 +40,7 @@ public sealed class Player
     private readonly HashSet<Position> _explored = [];
     private readonly Dictionary<int, Stance> _stance = [];   // this player's directional view of each other player (FP-6a)
     private readonly Dictionary<int, int> _tension = [];     // this player's tension toward each other player (0..MaxTension)
+    private readonly Dictionary<string, int> _unitPrices = []; // this player's escalated Europe purchase prices (artillery); absent = the ruleset base
 
     /// <summary>Creates a player with its own market; callers seed the remaining state via the internal setters.</summary>
     internal Player(int playerId, string? nationId, bool isHuman, PlayerType playerType, Market market)
@@ -122,6 +123,12 @@ public sealed class Player
     /// <summary>This player's tension toward each other player, by their <see cref="PlayerId"/> (0..<see cref="Game.MaxTension"/>; an absent entry = 0).</summary>
     public IReadOnlyDictionary<int, int> Tensions => _tension;
 
+    /// <summary>This player's <b>escalated</b> Europe purchase prices by unit-type id (FreeCol per-player <c>unitPrices</c>): an absent entry means the ruleset base price still applies. Today only artillery escalates (+100 per purchase).</summary>
+    public IReadOnlyDictionary<string, int> UnitPriceOverrides => _unitPrices;
+
+    /// <summary>Mutable view of <see cref="UnitPriceOverrides"/> for the Europe-pricing rules on <see cref="Game"/>.</summary>
+    internal Dictionary<string, int> UnitPriceMap => _unitPrices;
+
     /// <summary>Mutable view of <see cref="Congress"/> for the rules on <see cref="Game"/>.</summary>
     internal List<string> CongressList => _congress;
 
@@ -171,4 +178,5 @@ public sealed record RestoredPlayer(
     IEnumerable<Position>? Explored,
     RandomState? Rng = null,
     IReadOnlyDictionary<int, Stance>? Stances = null,
-    IReadOnlyDictionary<int, int>? Tensions = null);
+    IReadOnlyDictionary<int, int>? Tensions = null,
+    IReadOnlyDictionary<string, int>? UnitPrices = null);

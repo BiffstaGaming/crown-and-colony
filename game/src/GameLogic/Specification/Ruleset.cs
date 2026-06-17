@@ -787,7 +787,9 @@ public sealed class Ruleset
                         (string?)lim.Attribute("operator") ?? "lt",
                         (string?)lim.Element("left-hand-side")?.Attribute("operand-type") ?? "",
                         (string?)lim.Element("right-hand-side")?.Attribute("operand-type") ?? "")
-                    : null);
+                    : null,
+                // Skill level (0 = plain colonist / ship / artillery; ≥1 = expert) — splits Europe Train vs Purchase.
+                Skill: ResolveIntAttribute(el, "skill", elements) ?? 0);
         }
 
         if (units.Count == 0)
