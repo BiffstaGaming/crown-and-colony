@@ -375,7 +375,9 @@ public sealed class Ruleset
                 // artillery, shipyard → any naval unit), collected down the extends chain (magazine/arsenal inherit
                 // armory's artillery scope) — drives the unit build-ability gate.
                 BuildableUnitTypeIds: CollectBuildUnitTypeScopes(el, buildingElements),
-                BuildsNavalUnits: GrantsNavalBuildScope(el, buildingElements));
+                BuildsNavalUnits: GrantsNavalBuildScope(el, buildingElements),
+                // Ship bombardment: the fort grants model.ability.bombardShips, the fortress inherits it.
+                BombardsShips: ResolveAbility(el, "model.ability.bombardShips", buildingElements));
         }
 
         var fathers = new Dictionary<string, FoundingFather>();

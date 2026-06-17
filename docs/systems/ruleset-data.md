@@ -52,6 +52,7 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-17 | Unit ability flag `carryTreasure` (`UnitType.CarryTreasure`; the treasure train) — see [treasure-train](treasure-train.md) | Phase 5 (`86d3c9ryj`) |
+| 2026-06-17 | Building ability flag `bombardShips` (`BuildingType.BombardsShips`; fort grants, fortress inherits) — see [combat](combat.md) | Phase 5 (`86d3c9tkk`) |
 | 2026-06-13 | Terrain-type parsing, embedded classic ruleset | Phase 1 skeleton |
 | 2026-06-13 | Unit types (with `extends` inheritance + ability resolution); terrain `<gen>` climate envelopes | Phase 2a |
 | 2026-06-13 | Goods types: `is-food`, `stored-as` (grain/fish/meat → food), `made-from` (chains data), `is-farmed`; `Ruleset.StorageIdOf` | Phase 3 |

@@ -48,6 +48,11 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <c>model.ability.build</c> with <c>&lt;scope ability-id="model.ability.navalUnit"/&gt;</c>) — the shipyard,
 /// which enables building any ship. (Ship construction is not yet wired up; this is parsed for completeness.)
 /// </param>
+/// <param name="BombardsShips">
+/// Whether this building lets the colony bombard adjacent enemy ships at the start of its owner's turn (spec
+/// <c>model.ability.bombardShips</c>, resolved down the <c>extends</c> chain; the fort grants it, the fortress
+/// inherits it). FreeCol <c>Settlement.canBombardEnemyShip</c>.
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -61,7 +66,8 @@ public sealed record BuildingType(
     IReadOnlyDictionary<string, bool>? RequiredAbilities = null,
     bool RepairsNavalUnits = false,
     IReadOnlySet<string>? BuildableUnitTypeIds = null,
-    bool BuildsNavalUnits = false)
+    bool BuildsNavalUnits = false,
+    bool BombardsShips = false)
 {
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
     private static readonly IReadOnlySet<string> NoUnits = new HashSet<string>();

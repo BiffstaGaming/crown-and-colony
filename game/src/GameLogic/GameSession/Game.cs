@@ -1844,6 +1844,80 @@ public sealed class Game
     /// </summary>
     private bool CanRepairAtEurope(Unit ship) => PlayerById(ship.OwnerId) is { PlayerType: PlayerType.Colonial };
 
+    // ===== Colony fort/fortress bombardment of adjacent enemy ships (86d3c9tkk) ==============================
+    // At the start of each colonial player's turn, every colony with a fort/fortress (the bombardShips ability) and
+    // artillery on its tile fires on adjacent enemy/pirate ships at sea — one-sided, no counterattack (FreeCol
+    // ServerPlayer.csBombardEnemyShips). Reuses the naval damage/sink path; draws from the owner's own RNG stream.
+
+    /// <summary>FreeCol <c>SimpleCombatModel.MAXIMUM_BOMBARD_POWER</c>: the on-tile artillery offence is capped here.</summary>
+    private const int MaxBombardPower = 48;
+
+    /// <summary>
+    /// Each of <paramref name="player"/>'s fort/fortress colonies with artillery on its tile bombards every adjacent
+    /// enemy-or-pirate ship at sea (FreeCol <c>csBombardEnemyShips</c>, run at turn start). Bombard power is the summed
+    /// offence of the on-tile artillery, capped at <see cref="MaxBombardPower"/>; the ship is damaged or sunk with no
+    /// return fire. Deterministic on the owner's stream (the human's 0, an AI power's own); a landlocked colony has no
+    /// adjacent water (so no targets), and a colony with no artillery has 0 power (so it is skipped).
+    /// </summary>
+    private void BombardEnemyShips(Player player) => BombardEnemyShips(player, RandomFor(player));
+
+    /// <summary>Colony bombardment drawing from an explicit RNG (tests inject a fixed RNG; the turn path uses the owner's stream).</summary>
+    internal void BombardEnemyShips(Player player, IGameRandom random)
+    {
+        foreach (Colony colony in ColoniesOf(player).OrderBy(c => c.Id).ToList())
+        {
+            if (!colony.Buildings.Any(b => Ruleset.Building(b).BombardsShips))
+            {
+                continue; // no fort/fortress → no bombardment
+            }
+            int power = Math.Min(MaxBombardPower, (int)_units
+                .Where(u => u.IsOnMap && u.Position == colony.Position && IsOwnedBy(u, player) && u.Type.Bombard)
+                .Sum(OffenceBase));
+            if (power <= 0)
+            {
+                continue; // a fort with no artillery on its tile cannot bombard
+            }
+            // Targets in a stable order (neighbour-tile order, then unit id): collected first, since a hit removes the ship.
+            var targets = colony.Position.Neighbours()
+                .Where(n => Map.InBounds(n) && Map.TerrainAt(n).IsWater)
+                .SelectMany(n => _units.Where(u => u.IsOnMap && u.Position == n && IsBombardTarget(player, u)))
+                .OrderBy(u => u.Id)
+                .ToList();
+            foreach (Unit ship in targets)
+            {
+                BombardShip(ship, power, random);
+            }
+        }
+    }
+
+    /// <summary>Whether <paramref name="ship"/> is a valid bombard target for <paramref name="colonyOwner"/>: an enemy naval unit — at war, or a pirate (privateer) regardless of stance — not the owner's own.</summary>
+    private bool IsBombardTarget(Player colonyOwner, Unit ship) =>
+        ship.Type.IsNaval
+        && !IsOwnedBy(ship, colonyOwner)
+        && (ship.Type.Piracy || StanceBetween(colonyOwner.PlayerId, ship.OwnerId) == Stance.War);
+
+    /// <summary>
+    /// Resolves one bombard against <paramref name="ship"/> (one-sided — no counterattack): <paramref name="power"/>
+    /// vs the ship's defence (with its cargo penalty). A win damages the ship (it limps to repair); a great win — or a
+    /// ship with nowhere to repair — sinks it (FreeCol <c>csBombard</c> → damage/sink, no loot). A miss leaves it unharmed.
+    /// </summary>
+    private void BombardShip(Unit ship, int power, IGameRandom random)
+    {
+        double defence = CombatModel.DefencePower(DefenceBase(ship), new DefenceContext(GoodsCarried: GoodsSlotsUsed(ship)));
+        CombatResult result = CombatModel.ResolveNaval(CombatModel.WinProbability(power, defence), random);
+        if (result is CombatResult.GreatWin or CombatResult.Win)
+        {
+            if (result is CombatResult.GreatWin || !CanRepairAtEurope(ship))
+            {
+                SinkShip(ship);
+            }
+            else
+            {
+                DamageShip(ship);
+            }
+        }
+    }
+
     /// <summary>Captures a defeated unit: it changes to the winner's side (with the capture type-change, if any) and is disarmed.</summary>
     private void CaptureUnit(Unit loser, Unit winner)
     {
@@ -3761,6 +3835,8 @@ public sealed class Game
         {
             return; // future-proofing: any PlayerType that is neither Native nor Colonial takes no turn
         }
+
+        BombardEnemyShips(player); // fort/fortress colonies fire on adjacent enemy ships first (FreeCol csStartTurn)
 
         foreach (Colony colony in ColoniesOf(player))
         {
