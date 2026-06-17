@@ -1147,7 +1147,14 @@ public sealed class Ruleset
                     Factor: (int?)p.Attribute("factor") ?? 0,
                     RequiresPlunderAbility:
                         (bool?)p.Element("scope")?.Attribute("ability-value") ?? false))
-                .ToList());
+                .ToList(),
+            Gifts: el.Elements("gifts")
+                .Select(g => new SettlementGifts(
+                    Probability: (int?)g.Attribute("probability") ?? 0,
+                    Minimum: (int?)g.Attribute("minimum") ?? 0,
+                    Maximum: (int?)g.Attribute("maximum") ?? 0,
+                    Factor: (int?)g.Attribute("factor") ?? 0))
+                .FirstOrDefault());
     }
 
     /// <summary>The chain of indian-nation-type elements from <paramref name="el"/> up its extends ancestors (leaf → root).</summary>

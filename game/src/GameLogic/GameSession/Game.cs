@@ -725,6 +725,12 @@ public sealed class Game
     private const int GiftMinimum = 10;
     private const int GiftMaximum = 80;
 
+    /// <summary>The scout role id — a scout-role unit gets the full chief audience (FreeCol <c>scoutSpeakToChief</c>); other colonists get the basic visit.</summary>
+    private const string ScoutRoleId = "model.role.scout";
+
+    /// <summary>The expert-scout unit type (FreeCol <c>model.ability.expertScout</c>) a chief may train a scout into — the scout role's expert unit.</summary>
+    private const string SeasonedScoutUnitTypeId = "model.unit.seasonedScout";
+
     /// <summary>
     /// Unit types that can be taught a skill at a native settlement (FreeCol: the free
     /// colonist and indentured servant only — experts and petty criminals cannot). A
@@ -768,17 +774,23 @@ public sealed class Game
     }
 
     /// <summary>
-    /// Speaks with a settlement's chief (first contact): reveals the surrounding lands
-    /// ("tales") and, unless the settlement is hateful, gives a small gold gift. Marks the
-    /// settlement visited and ends the unit's turn. (Scout-specific outcomes — larger beads,
-    /// learning by chance, danger — are a later slice.)
+    /// Speaks with a settlement's chief (first contact). A <b>scout-role</b> unit gets FreeCol's full
+    /// <c>scoutSpeakToChief</c> outcomes (a hateful tribe kills it; else a chance to be trained into a seasoned
+    /// scout, otherwise "tales" — a wider map reveal — or "beads" — a gold gift from the settlement type's
+    /// <c>&lt;gifts&gt;</c> range, +10% for an expert scout). Any other colonist gets the basic visit (tales + a
+    /// small flat gift unless hateful — a documented simplification; FreeCol reserves chief audiences for scouts).
+    /// Marks the settlement visited and ends the unit's turn.
     /// </summary>
-    /// <returns>The gold gifted (0 if the settlement gave none).</returns>
+    /// <returns>The gold gained (0 for tales/expert/nothing, or a slain scout).</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckVisit"/>.</exception>
     public int Visit(Unit unit, NativeSettlement settlement) => Visit(_human, unit, settlement);
 
-    /// <summary>Speaks with a settlement's chief on behalf of <paramref name="player"/> (the unit's owner).</summary>
-    internal int Visit(Player player, Unit unit, NativeSettlement settlement)
+    /// <summary>Speaks with a settlement's chief on behalf of <paramref name="player"/> (the unit's owner), on its own stream.</summary>
+    internal int Visit(Player player, Unit unit, NativeSettlement settlement) =>
+        Visit(player, unit, settlement, RandomFor(player));
+
+    /// <summary>Speaks with a settlement's chief, drawing from the supplied <see cref="IGameRandom"/> (the per-owner stream; the overload exists for scripted tests, like <see cref="Attack(Unit, Position, IGameRandom)"/>).</summary>
+    internal int Visit(Player player, Unit unit, NativeSettlement settlement, IGameRandom random)
     {
         MoveCheck check = CheckVisit(unit, settlement);
         if (!check.Allowed)
@@ -787,15 +799,89 @@ public sealed class Game
         }
 
         settlement.HasBeenVisited = true;
+        return unit.RoleId == ScoutRoleId
+            ? ScoutSpeakToChief(player, unit, settlement, random)
+            : VisitAsColonist(player, unit, settlement, random);
+    }
+
+    /// <summary>The basic chief visit for a non-scout colonist: reveal the surrounding lands + a small flat gift unless hateful.</summary>
+    private int VisitAsColonist(Player player, Unit unit, NativeSettlement settlement, IGameRandom random)
+    {
         RevealAround(player, settlement.Position, TalesRevealRadius); // tales of nearby lands
         int gift = 0;
         if (settlement.AlarmLevel != AlarmLevel.Hateful)
         {
-            gift = RandomFor(player).Next(GiftMinimum, GiftMaximum + 1); // the visitor's own stream (the human is 0)
+            gift = random.Next(GiftMinimum, GiftMaximum + 1); // the visitor's own stream (the human is 0)
             player.Gold += gift;
         }
         unit.MovementLeft = 0; // speaking ends the unit's turn
         return gift;
+    }
+
+    /// <summary>
+    /// A scout's audience with the chief (FreeCol <c>InGameController.scoutSpeakToChief</c>): a <b>hateful</b> tribe
+    /// slays the scout; otherwise one "scouting" roll decides — the scout may be <b>trained</b> into a seasoned scout
+    /// (always if the chief teaches scouting, else a 1-in-10 chance), else <b>tales</b> (a wider reveal — taken 1-in-3
+    /// of the time or when the type gives no beads) or <b>beads</b> (gold from the type's <c>&lt;gifts&gt;</c> range,
+    /// +10% for an already-expert scout). Draws from <paramref name="random"/>. (We don't deduct the gold from a native
+    /// treasury — natives hold none, as with treasure plunder.)
+    /// </summary>
+    private int ScoutSpeakToChief(Player player, Unit unit, NativeSettlement settlement, IGameRandom random)
+    {
+        // Hateful natives kill the scout outright.
+        if (settlement.AlarmLevel == AlarmLevel.Hateful)
+        {
+            _units.Remove(unit);
+            return 0;
+        }
+
+        unit.MovementLeft = 0; // the audience ends the scout's turn
+        SettlementType type = Ruleset.Settlement(settlement.SettlementTypeId);
+        int rnd = random.Next(10); // FreeCol "scouting" roll
+
+        // Trained into a seasoned scout — always if this chief teaches scouting, otherwise a 1-in-10 chance.
+        bool teachesScouting = settlement.LearnableSkill == SeasonedScoutUnitTypeId;
+        if (unit.Type.Id != SeasonedScoutUnitTypeId && (teachesScouting || rnd == 0))
+        {
+            UpgradeUnitType(unit, SeasonedScoutUnitTypeId);
+            RevealAround(player, settlement.Position, TalesRevealRadius);
+            return 0;
+        }
+
+        // Otherwise beads (gold) or tales (a wider reveal). Tales when there are no beads or 1-in-3 of the time.
+        int gold = GiftsAmount(type, random);
+        if (gold <= 0 || rnd <= 3)
+        {
+            RevealAround(player, settlement.Position, TalesRevealRadius); // "tales of nearby lands"
+            return 0;
+        }
+        if (unit.Type.Id == SeasonedScoutUnitTypeId)
+        {
+            gold = gold * 11 / 10; // an expert scout haggles 10% more (FreeCol)
+        }
+        player.Gold += gold;
+        RevealAround(player, settlement.Position, TalesRevealRadius);
+        return gold;
+    }
+
+    /// <summary>
+    /// The chief's "beads" gift from a settlement type's <c>&lt;gifts&gt;</c> range, gated by the probability roll
+    /// (0 when the type has no gifts). FreeCol's <c>scoutSpeakToChief</c> uses the <b>continuous</b> RandomRange path
+    /// (<c>getAmount(…, true)</c>): a fine-grained roll across the whole <c>[Min×Factor, (Max+1)×Factor)</c> band —
+    /// unlike the <b>discrete</b> plunder path (<see cref="ComputePlunder"/>, <c>(rnd+Min)×Factor</c>), so gifts and
+    /// plunder draw differently on purpose.
+    /// </summary>
+    private static int GiftsAmount(SettlementType type, IGameRandom random)
+    {
+        if (type.Gifts is not { } gifts)
+        {
+            return 0;
+        }
+        if (gifts.Probability < 100 && (gifts.Probability <= 0 || random.Next(100) >= gifts.Probability))
+        {
+            return 0;
+        }
+        return random.Next((gifts.Maximum - gifts.Minimum + 1) * gifts.Factor) + (gifts.Minimum * gifts.Factor);
     }
 
     /// <summary>Whether <paramref name="unit"/> may learn <paramref name="settlement"/>'s skill now.</summary>
