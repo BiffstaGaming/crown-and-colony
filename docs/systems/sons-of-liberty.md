@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (model + bar + production bonus + bell upkeep + Simón Bolívar) |
-| **Last verified** | 2026-06-16 @ printing press / newspaper bell multiplier (`86d3c9p33`) |
+| **Last verified** | 2026-06-18 @ per-worker building bonus + rebel-factor (`86d3b6nrz` slice 5) |
 | **Code** | `game/src/GameLogic/Colonies/Colony.cs` (liberty + SoL properties), `game/src/GameLogic/GameSession/Game.cs` (`AccumulateLibertyAndElectFathers`) |
 | **Tests** | `game/tests/GameLogic.Tests/Colonies/SonsOfLibertyTests.cs`, `game/presentation/tests/ColonyPanelTests.cs` (the bar) |
 | **FreeCol reference** | `freecol/src/.../common/model/Colony.java` (`calculateSoLPercentage`/`calculateRebelCount`/`calculateToryCount`/`calculateProductionBonus`/`modifyLiberty`, L1251–1352), `freecol/data/rules/classic/specification.xml` (government limits, `model.difficulty.medium`) |
@@ -16,7 +16,7 @@ Every colony has a mood. As its town hall produces **liberty bells**, the coloni
 **The rules, in plain words:**
 - Each colonist needs **200 liberty** to count as a rebel. So a colony's SoL% = its banked liberty ÷ (200 × population), as a percentage (capped at 100%).
 - **Rebels** = that percentage of the population (rounded down); everyone else is a **royalist**.
-- High membership makes the colony work harder; very low membership in a big colony makes it sulk. At **50%+** every worker produces **+1**, at **100%** **+2**; if a colony has **more than 6** royalists it's "bad government" (**−1** per worker), more than **10** royalists is "very bad" (**−2**). This applies to every colonist working a tile or a building (never below 0).
+- High membership makes the colony work harder; very low membership in a big colony makes it sulk. At **50%+** every worker produces **+1**, at **100%** **+2**; if a colony has **more than 6** royalists it's "bad government" (**−1** per worker), more than **10** royalists is "very bad" (**−2**). This applies to every colonist working a tile or a building, floored so no one ever produces below 0 — **per worker**, so in a building a productive colonist keeps its output even when a co-worker is dragged to 0. In a **building** the bonus is added to a worker's output *before* its expert bonus, so a master who **doubles** a good doubles the liberty bonus too; and the **lumber mill, cathedral (×2) and the factory tier (×1.5)** scale the bonus up — good government rewards those buildings more (their `rebel-factor`).
 - Liberty also still flows to your **founding-father** progress, exactly as before — the same bells feed both your colony's mood and your nation's congress.
 
 **Worked example:**
@@ -56,6 +56,8 @@ Every colony has a mood. As its town hall produces **liberty bells**, the coloni
 
 **Integration points:** `Game.AccumulateLibertyAndElectFathers` (once per colonial player, **after** all `RunColonyTurn` calls so population is settled) drains each colony's freshly produced bells, banks the FF-modified figure to `player.Liberty` (founding fathers — unchanged), and calls `colony.AddLiberty(sameFigure)`. The 100%-cap reads the already-settled population.
 
+**Production-bonus application:** the bonus reaches output in `Game`'s colony turn. **Tiles** add it per worker after the tile yield, floored at 0 (`Math.Max(0, TileYield + ProductionBonus)`). **Buildings** (`RunBuildingProduction`, 86d3b6nrz slice 5) fold it into each worker's base *before* the unit's index-30 expert modifier (FreeCol `COLONY_PRODUCTION_INDEX = 20 < EXPERT_PRODUCTION_INDEX = 30`), scaled by the building's `rebel-factor` (`rebelBonus = floor(ProductionBonus × BuildingType.RebelFactor)`, default 1; lumber mill/cathedral 2, factory 1.5), then floors **each worker** at 0 before summing — so a multiplicative expert multiplies the bonus, the boosted buildings get more of it, and a negative bonus can't push another worker's output below 0. The bonus rides the same input-scarcity ratio as the rest of the output. The unattended town-hall bell and the colony-centre tile are excluded (FreeCol bonuses only worker production). See [colonies](colonies.md) §3.
+
 **Persistence:** `SavedColony.Liberty` (`int?`, save **v22**, additive — omitted when 0, so a no-liberty colony is byte-identical to v21; ≤v21 saves load 0 = SoL 0%).
 
 **Determinism (ADR-009):** RNG-free — reads `Liberty` + `Population` only, all integer arithmetic, advances no PCG stream. Stream-stable; cannot perturb byte-stable replay.
@@ -71,6 +73,8 @@ Every colony has a mood. As its town hall produces **liberty bells**, the coloni
 | L5 Soak | When economy-touching | The 200-turn soak stays green with the bonus applied — the floor-at-0 guards prevent negative production; no new starvation | ✅ |
 
 ## Changelog
+
+| 2026-06-18 | **Building production bonus made FreeCol-faithful** (`86d3b6nrz` slice 5): the per-worker building SoL bonus is now folded into each worker's output **before** its index-30 expert modifier and scaled by the building's `rebel-factor` (new `BuildingType.RebelFactor`; lumber mill/cathedral 2, factory tier 1.5), and floored **per worker** instead of pooled. So a multiplicative expert multiplies the bonus (master distiller at +1 → 8 rum, was 7), rebel-factor buildings get more of it (lumber mill at +1 → +2/worker), and a −2 bonus no longer wipes a productive colonist's output when a co-worker floors. The tile path was already correct. Driven by a 10-agent adversarial review of the per-worker production fold. Zero churn where `ProductionBonus == 0` or `RebelFactor == 1` with no multiplicative expert (every prior test colony); +5 L1 in `BuildingWorkerTypeProductionTests`. See [colonies](colonies.md). | Phase 3 (`86d3b6nrz` slice 5) |
 
 | Date | Change | Commit |
 |---|---|---|

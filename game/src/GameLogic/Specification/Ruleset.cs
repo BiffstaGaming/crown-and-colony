@@ -383,7 +383,11 @@ public sealed class Ruleset
                 // Horse breeding: pasture/country sets breedingDivisor 50 / breedingFactor 2; stables multiplies the
                 // divisor by 0.5 → 25 (resolved additive-then-multiplicative up the extends chain). 0 = not a breeder.
                 BreedingDivisor: ResolveScalarModifierUpChain(el, "model.modifier.breedingDivisor", buildingElements),
-                BreedingFactor: ResolveScalarModifierUpChain(el, "model.modifier.breedingFactor", buildingElements));
+                BreedingFactor: ResolveScalarModifierUpChain(el, "model.modifier.breedingFactor", buildingElements),
+                // Rebel factor: the Sons-of-Liberty production bonus is multiplied by this before it is added to a
+                // worker's output (lumber mill / cathedral ×2, factory tier ×1.5; default 1, nearest definition wins
+                // up the extends chain). FreeCol ProductionUtils.getRebelProductionModifiersForBuilding.
+                RebelFactor: ResolveDoubleAttribute(el, "rebel-factor", buildingElements) ?? 1.0);
         }
 
         var fathers = new Dictionary<string, FoundingFather>();
@@ -879,6 +883,19 @@ public sealed class Ruleset
         for (XElement? current = el; current is not null; current = ParentOf(current, elements))
         {
             if ((int?)current.Attribute(name) is int value)
+            {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static double? ResolveDoubleAttribute(
+        XElement el, string name, Dictionary<string, XElement> elements)
+    {
+        for (XElement? current = el; current is not null; current = ParentOf(current, elements))
+        {
+            if ((double?)current.Attribute(name) is double value)
             {
                 return value;
             }

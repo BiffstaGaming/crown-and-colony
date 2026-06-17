@@ -5441,14 +5441,9 @@ public sealed class Game
     private void RunBuildingProduction(Colony colony, BuildingType building, int foodProducedThisTurn)
     {
         int workers = colony.BuildingWorkers.GetValueOrDefault(building.Id);
+        IReadOnlyList<string> occupants = colony.BuildingOccupants(building.Id);
         foreach (ProductionEntry entry in building.Productions)
         {
-            int multiplier = entry.Unattended ? 1 : workers;
-            if (multiplier == 0)
-            {
-                continue;
-            }
-
             // Auto-production breeding (horses): a herd-size growth formula — gated at the breeding number, capped at
             // the warehouse, eating only surplus food — not the generic per-worker conversion (FreeCol autoProduction).
             if (building.BreedingDivisor > 0 && entry.Outputs.Count == 1
@@ -5458,33 +5453,66 @@ public sealed class Game
                 continue;
             }
 
-            // Scale by the scarcest input (classic conversions are 1:1, but the
-            // ratio is honoured generically).
-            double fraction = 1.0;
+            if (!entry.Unattended && workers == 0)
+            {
+                continue; // an attended entry with nobody assigned produces nothing
+            }
+
+            // Per-good output total (86d3b6nrz slice 5), faithful to FreeCol BuildingProductionCalculator: each worker's
+            // own output is its base plus the Sons-of-Liberty bonus (additive, index 20), then its unit type's index-30
+            // expert modifier, then floored at 0 — and the building's total is the sum over its occupants (the non-free
+            // overlay padded with free colonists to the worker count). The SoL bonus is `floor(ProductionBonus ×
+            // rebel-factor)` per worker (lumber mill / cathedral ×2, factory tier ×1.5); folding it BEFORE the index-30
+            // step means a multiplicative expert (master distiller ×2 rum) multiplies the bonus too, and the per-worker
+            // floor means a bad government can't turn a productive colonist negative. An unattended entry (town-hall
+            // bell, church crosses) is a flat single unit — no worker, no bonus. An all-free, bonus-free building sums
+            // to base × workers, identical to the old scalar path.
+            int rebelBonus = entry.Unattended ? 0 : (int)Math.Floor(colony.ProductionBonus * building.RebelFactor);
+            Dictionary<string, int> outputTotals = new(entry.Outputs.Count);
+            foreach (GoodsOutput output in entry.Outputs)
+            {
+                outputTotals[output.GoodsId] = entry.Unattended
+                    ? output.Amount
+                    : occupants.Sum(t => ApplyWorkerProductionModifiers(t, output.GoodsId, output.Amount + rebelBonus));
+            }
+
+            // Input consumption / scarcity follow FreeCol's minimumRatio: each input is wanted in proportion to the
+            // worker-modified output (ratio = the primary output's modified total over its base), then the whole
+            // conversion is scaled down by the scarcest input. Two FreeCol details stop a 1:1 conversion losing a unit
+            // to representational error: the required input is FLOORED to an integer before the short-supply test, and
+            // the finals get a tiny EPSILON before flooring. The bonus is inside the output total, so inputs scale with
+            // the bonus-inclusive output (FreeCol charges input for the rebel-bonus production) and there is no separate
+            // flat output add. Unattended / base-zero entries fall back to a ratio of the worker count — the old integer
+            // multiplier for the all-free case (so an all-free, bonus-free building is byte-identical).
+            const double Epsilon = 0.0001; // FreeCol BuildingProductionCalculator flooring nudge
+            int primaryBase = !entry.Unattended && entry.Outputs.Count > 0 ? entry.Outputs[0].Amount : 0;
+            double ratio = primaryBase > 0
+                ? (double)outputTotals[entry.Outputs[0].GoodsId] / primaryBase
+                : (entry.Unattended ? 1.0 : workers);
+            double scarcity = 1.0;
             foreach (GoodsOutput input in entry.Inputs)
             {
-                int wanted = input.Amount * multiplier;
+                long required = (long)Math.Floor(input.Amount * ratio);
                 int available = colony.StoreOf(Ruleset.StorageIdOf(input.GoodsId));
-                fraction = Math.Min(fraction, wanted == 0 ? 1.0 : Math.Min(1.0, available / (double)wanted));
+                if (required > 0 && available < required)
+                {
+                    scarcity = Math.Min(scarcity, (double)available / required);
+                }
             }
 
             foreach (GoodsOutput input in entry.Inputs)
             {
                 colony.AddGoods(
                     Ruleset.StorageIdOf(input.GoodsId),
-                    -(int)Math.Floor(input.Amount * multiplier * fraction));
+                    -(int)Math.Floor(input.Amount * ratio * scarcity + Epsilon));
             }
             foreach (GoodsOutput output in entry.Outputs)
             {
-                int amount = (int)Math.Floor(output.Amount * multiplier * fraction);
-                if (!entry.Unattended)
-                {
-                    // Sons-of-Liberty production bonus: +bonus per attended worker (multiplier == workers here),
-                    // floored at 0 so a penalty can't make a building produce negative. The unattended town-hall
-                    // bell entry is excluded (FreeCol bonuses only worker production).
-                    amount = Math.Max(0, amount + workers * colony.ProductionBonus);
-                }
-                colony.AddGoods(Ruleset.StorageIdOf(output.GoodsId), amount);
+                // Each good's own worker-modified total, scaled by the (≤1) input-scarcity factor — the SoL bonus is
+                // already folded in per worker, so a starved building scales the bonus down with the rest (FreeCol).
+                colony.AddGoods(
+                    Ruleset.StorageIdOf(output.GoodsId),
+                    (int)Math.Floor(outputTotals[output.GoodsId] * scarcity + Epsilon));
             }
         }
     }

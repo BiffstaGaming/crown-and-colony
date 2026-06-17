@@ -127,6 +127,26 @@ public sealed class Colony
     /// <summary>The unit-type id of the colonist working <paramref name="tile"/> — its overlay entry, or a free colonist by default.</summary>
     public string WorkerTypeAt(Position tile) => _tileWorkerTypes.GetValueOrDefault(tile, FreeColonistTypeId);
 
+    /// <summary>
+    /// The unit-type ids of a building's workers — the non-free occupants from the overlay plus free colonists padded
+    /// to the building's worker count. Order is non-free-then-free; production sums over it (commutative), so order is
+    /// immaterial. An all-free building yields a list of free colonists of length = its worker count.
+    /// </summary>
+    public IReadOnlyList<string> BuildingOccupants(string buildingId)
+    {
+        int count = _buildingWorkers.GetValueOrDefault(buildingId);
+        var occupants = new List<string>(count);
+        if (_buildingWorkerTypes.TryGetValue(buildingId, out List<string>? nonFree))
+        {
+            occupants.AddRange(nonFree);
+        }
+        while (occupants.Count < count)
+        {
+            occupants.Add(FreeColonistTypeId);
+        }
+        return occupants;
+    }
+
     private readonly List<string> _buildQueue = [];
 
     /// <summary>The colony's ordered construction queue (buildable ids; empty when idle). The front is built first.</summary>

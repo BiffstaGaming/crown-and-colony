@@ -67,6 +67,12 @@ namespace CrownAndColony.GameLogic.Specification;
 /// Herd-growth multiplier for an auto-production breeder (spec <c>model.modifier.breedingFactor</c>, country 2;
 /// default 0). The <c>× factor</c> term in the breeding formula (see <see cref="BreedingDivisor"/>).
 /// </param>
+/// <param name="RebelFactor">
+/// Multiplier applied to the colony's Sons-of-Liberty production bonus before it is folded into a worker's output
+/// here (spec <c>rebel-factor</c> attribute; default 1, nearest definition wins up the <c>extends</c> chain). The
+/// lumber mill and cathedral set 2, the factory tier 1.5 — so good government boosts those buildings more. FreeCol
+/// <c>ProductionUtils.getRebelProductionModifiersForBuilding</c> (<c>floor(productionBonus × rebelFactor)</c>).
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -84,7 +90,8 @@ public sealed record BuildingType(
     bool BombardsShips = false,
     bool GrantsExport = false,
     int BreedingDivisor = 0,
-    int BreedingFactor = 0)
+    int BreedingFactor = 0,
+    double RebelFactor = 1.0)
 {
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
     private static readonly IReadOnlySet<string> NoUnits = new HashSet<string>();
