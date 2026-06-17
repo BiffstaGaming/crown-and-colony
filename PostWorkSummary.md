@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 — In-Review queue cleared + 3 design decisions + founding-father factor 40 [Chris review session]
+
+**Requested:** Go through the In-Review queue item by item; then make 3 gating decisions.
+**Did:** **(1) Reviewed + Shipped all 19 In-Review tasks** — 11 from this session's backlog push (each approved individually) + 8 older P2–P5 UI/art/native features (bulk-approved as already-playtested). The In-Review column is now empty. **(2) Recorded 3 design decisions from Chris** (durable here per the no-knowledge-only-in-chat rule):
+- **Custom-house export → build BOTH modes, selectable via a setting** — the original-style **auto-export everything over 50** *and* FreeCol's **per-good export toggle**. (Affects tasks `86d3c9rx2` auto-sell + `86d3c9ru3` building/settings; both get built, with a setting choosing the mode. Boycott interaction still waits on the war system.)
+- **Monarch system → P6 (endgame)** — crown interference (tax demands, war/peace declarations, mercenaries, REF build-up) comes with the endgame, not now. **Follow-up: re-tag the ~10 monarch `[P5]` tasks to `[P6]`** (`86d3c9qvr`/`r2m`/`r4w`/`r68`/`r7j`/`rag`/`rep`/`rk6`/… — mechanical, deferred to save budget; the decision is what's locked).
+- **Founding-father factor → 40** (shipped, below).
+**(3) Shipped the factor change** (`86d3c9y1p`, `582aeb0`): `FoundingFatherFactor` 24 → **40** (classic medium) — fathers are now a deliberate long-game investment, not a snowball (first father 40, escalation 161/241/321/…). Difficulty-options system will later drive it per level. Three scenario tests re-pinned to the new costs; the cost-formula unit test already covered factor 40.
+**Status:** **677 logic + 4 soak green** (byte-stable — the soak's foreign-economy check is an OR that holds at the slower father pace). No save change, no RNG change. ClickUp: 19 → Shipped, `86d3c9y1p` → Shipped. All docs synced (`founding-fathers.md` both layers + changelog).
+**Changed:** GameLogic `GameSession/Game.cs` (one constant) + 3 test re-pins; docs `founding-fathers.md`. Commit `582aeb0`.
+**Decisions:** see (2) above. The factor=40 ripple was small (loops in the scenario tests were generously bounded; "one short" seeds moved 23→39, escalation 97→161).
+**Scheduled next:** the **custom-house export** slice (now unblocked by the "both + setting" decision — though a per-good toggle UI + a setting need a place to live), or a **foundational prerequisite** (per-colonist work identity `86d3b6nrz`). Monarch is now P6.
+**Follow-ups:** re-tag the monarch tasks `[P5]→[P6]`; the foundational prereqs; standing deferrals.
+**Needs you:** Nothing blocking — the 3 gating decisions are made. When ready, pick the next build target (custom-house export, or per-colonist identity).
+
 ## 2026-06-17 — Scout line-of-sight bonus + doc sweep [one more slice, then docs]
 
 **Requested:** "1 more slice, ensure documentation is up to date."
