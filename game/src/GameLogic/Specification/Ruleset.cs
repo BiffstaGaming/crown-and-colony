@@ -657,6 +657,17 @@ public sealed class Ruleset
             .Select(t => t!)
             .ToList());
 
+    private static UnitProductionModifier ParseUnitProductionModifier(XElement m) => new(
+        GoodsId: RequiredAttribute(m, "id"),
+        Type: (string?)m.Attribute("type") switch
+        {
+            "multiplicative" => ModifierType.Multiplicative,
+            "percentage" => ModifierType.Percentage,
+            _ => ModifierType.Additive,
+        },
+        Value: (double?)m.Attribute("value") ?? 0,
+        Index: (int?)m.Attribute("index") ?? 0);
+
     private static FatherModifier ParseModifier(XElement m) => new(
         TargetId: RequiredAttribute(m, "id"),
         Type: (string?)m.Attribute("type") switch
@@ -789,7 +800,15 @@ public sealed class Ruleset
                         (string?)lim.Element("right-hand-side")?.Attribute("operand-type") ?? "")
                     : null,
                 // Skill level (0 = plain colonist / ship / artillery; ≥1 = expert) — splits Europe Train vs Purchase.
-                Skill: ResolveIntAttribute(el, "skill", elements) ?? 0);
+                Skill: ResolveIntAttribute(el, "skill", elements) ?? 0,
+                // The goods this unit is the expert producer of (expert farmer → grain); null for a non-expert.
+                ExpertProduction: (string?)el.Attribute("expert-production"),
+                // Per-goods production modifiers (expert bonus / indentured-petty penalty): the unit's own
+                // <modifier id="model.goods.*"> children (index 30). Goods-id filtered so combat modifiers stay out.
+                ProductionModifiers: el.Elements("modifier")
+                    .Where(m => ((string?)m.Attribute("id"))?.StartsWith("model.goods.") == true)
+                    .Select(ParseUnitProductionModifier)
+                    .ToList());
         }
 
         if (units.Count == 0)

@@ -1,6 +1,23 @@
 namespace CrownAndColony.GameLogic.Specification;
 
 /// <summary>
+/// A per-goods production modifier a unit type carries (FreeCol unit-type <c>&lt;modifier id="model.goods.*"
+/// index="30"&gt;</c>): an expert's bonus on the good it's expert at (expert farmer +2 grain, expert fur trapper ×2
+/// furs) or an indentured servant / petty criminal penalty (−1 / −2 on manufactured goods). Folded into a colony
+/// worker's tile/building output once per-colonist unit identity lands (<c>86d3b6nrz</c>); the index orders it
+/// after the bonus-resource modifier (index 10) and before founding-father modifiers (index 40).
+/// </summary>
+/// <param name="GoodsId">The goods this modifies (e.g. <c>model.goods.grain</c>).</param>
+/// <param name="Type">How it combines with the running yield (additive / multiplicative / percentage).</param>
+/// <param name="Value">The modifier value (e.g. +2, ×2, −1).</param>
+/// <param name="Index">Application order (FreeCol <c>modifierIndex</c>; unit production is index 30).</param>
+public sealed record UnitProductionModifier(string GoodsId, ModifierType Type, double Value, int Index)
+{
+    /// <summary>Applies this modifier to a running production value.</summary>
+    public double ApplyTo(double value) => ModifierMath.Apply(Type, value, Value);
+}
+
+/// <summary>
 /// A unit type from the ruleset (free colonist, caravel, …) — immutable rule
 /// data with inherited attributes already resolved (the spec uses
 /// <c>extends</c> chains; abstract parents are not exposed).
@@ -66,6 +83,16 @@ namespace CrownAndColony.GameLogic.Specification;
 /// ≥1 for an expert/specialist). In Europe a priced unit with skill &gt; 0 is <b>trained</b>, one with skill 0 is
 /// <b>purchased</b> (FreeCol <c>Specification.getUnitTypesTrainedInEurope</c>/<c>…PurchasedInEurope</c>).
 /// </param>
+/// <param name="ExpertProduction">
+/// The goods this unit is the expert producer of (spec <c>expert-production</c>; e.g. expert farmer → grain),
+/// or null for a non-expert. Used to suggest/teach the matching expertise; the production <em>bonus</em> itself is
+/// carried by <see cref="ProductionModifiers"/>.
+/// </param>
+/// <param name="ProductionModifiers">
+/// This unit's per-goods production modifiers (spec <c>&lt;modifier id="model.goods.*" index="30"&gt;</c>): an
+/// expert's bonus on its good, or an indentured/petty penalty on manufactured goods. Empty for a plain colonist.
+/// Folded into colony output once per-colonist identity lands (<c>86d3b6nrz</c>); see <see cref="UnitProductionModifier"/>.
+/// </param>
 public sealed record UnitType(
     string Id,
     int Movement,
@@ -98,10 +125,13 @@ public sealed record UnitType(
     int RequiredPopulation = 1,
     IReadOnlyDictionary<string, bool>? RequiredAbilities = null,
     UnitBuildLimit? BuildLimit = null,
-    int Skill = 0)
+    int Skill = 0,
+    string? ExpertProduction = null,
+    IReadOnlyList<UnitProductionModifier>? ProductionModifiers = null)
 {
     private static readonly IReadOnlyList<GoodsOutput> NoCost = [];
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
+    private static readonly IReadOnlyList<UnitProductionModifier> NoProductionModifiers = [];
 
     /// <summary>Short name derived from the id: <c>model.unit.freeColonist</c> → <c>freeColonist</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
@@ -111,6 +141,9 @@ public sealed record UnitType(
 
     /// <summary>Abilities required to build this unit, id → required value (empty when unconditional).</summary>
     public IReadOnlyDictionary<string, bool> RequiredAbilitiesOrEmpty => RequiredAbilities ?? NoAbilities;
+
+    /// <summary>This unit's per-goods production modifiers, or an empty list when it has none (a plain colonist).</summary>
+    public IReadOnlyList<UnitProductionModifier> ProductionModifiersOrEmpty => ProductionModifiers ?? NoProductionModifiers;
 
     /// <summary>True when this unit can be constructed in a colony (it has a build cost).</summary>
     public bool IsBuildable => BuildCostOrEmpty.Count > 0;
