@@ -874,7 +874,15 @@ public sealed class Ruleset
                     .Select(ParseUnitProductionModifier)
                     .ToList(),
                 // Experience cap toward an on-the-job expert upgrade (classic: only the free colonist sets 200).
-                MaximumExperience: ResolveIntAttribute(el, "maximum-experience", elements) ?? 0);
+                MaximumExperience: ResolveIntAttribute(el, "maximum-experience", elements) ?? 0,
+                // Expert scout (seasoned scout): never triggers the vanishing-expedition rumour outcome.
+                ExpertScout: ResolveAbility(el, "model.ability.expertScout", elements),
+                // Lost City Rumour exploration bonus % (seasoned scout +10): tilts rumour odds toward good.
+                ExploreLostCityRumourBonus: el.Elements("modifier")
+                    .Where(m => (string?)m.Attribute("id") == "model.modifier.exploreLostCityRumour")
+                    .Select(m => (int?)m.Attribute("value") ?? 0)
+                    .DefaultIfEmpty(0)
+                    .Last());
         }
 
         if (units.Count == 0)

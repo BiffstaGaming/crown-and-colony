@@ -99,6 +99,15 @@ public sealed record UnitProductionModifier(string GoodsId, ModifierType Type, d
 /// experience-upgrade). The per-turn upgrade chance peaks at <c>maximum-experience / (100·maxExp/probability)</c>
 /// once the cap is reached (FreeCol <c>ServerUnit</c> experience upgrade). 0 disables the upgrade for this type.
 /// </param>
+/// <param name="ExpertScout">
+/// An expert scout (spec <c>model.ability.expertScout</c>; classic: the seasoned scout). Such a unit <b>never</b>
+/// triggers the "expedition vanishes" Lost City Rumour outcome (FreeCol <c>LostCityRumour.chooseType</c> allowVanish).
+/// </param>
+/// <param name="ExploreLostCityRumourBonus">
+/// This unit's Lost City Rumour exploration bonus as a percentage (spec <c>model.modifier.exploreLostCityRumour</c>;
+/// classic: the seasoned scout +10, every other type 0). Tilts a rumour's odds toward good: the good chance is scaled
+/// ×<c>(1 + bonus/100)</c> and the bad chance ÷ it (FreeCol <c>Modifier.EXPLORE_LOST_CITY_RUMOUR</c>).
+/// </param>
 public sealed record UnitType(
     string Id,
     int Movement,
@@ -134,7 +143,9 @@ public sealed record UnitType(
     int Skill = 0,
     string? ExpertProduction = null,
     IReadOnlyList<UnitProductionModifier>? ProductionModifiers = null,
-    int MaximumExperience = 0)
+    int MaximumExperience = 0,
+    bool ExpertScout = false,
+    int ExploreLostCityRumourBonus = 0)
 {
     private static readonly IReadOnlyList<GoodsOutput> NoCost = [];
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();

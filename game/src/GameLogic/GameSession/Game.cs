@@ -1023,6 +1023,7 @@ public sealed class Game
     private const string CaptureUnitsAbility = "model.ability.captureUnits";
     private const string CaptureEquipmentAbility = "model.ability.captureEquipment";
     private const string PlunderNativesAbility = "model.ability.plunderNatives"; // Hernán Cortés
+    private const string RumoursAlwaysPositiveAbility = "model.ability.rumoursAlwaysPositive"; // Hernando de Soto
     private const string OffenceModifierId = "model.modifier.offence"; // Francis Drake (+50%, scoped to privateers)
     private const string DefenceModifierId = "model.modifier.defence";
     private const string HasPortAbility = "model.ability.hasPort"; // a coastal colony — docks/drydock/shipyard gate
@@ -3762,69 +3763,88 @@ public sealed class Game
     }
 
     /// <summary>
-    /// Picks a rumour type by the FreeCol <c>LostCityRumour.chooseType</c> weighted split (good / bad / neutral),
-    /// restricted to the outcomes shipped so far. Good outcomes are weighted ×<see cref="RumourGoodPercent"/>:
-    /// FOUNTAIN_OF_YOUTH (2, always available to a colonial explorer); then a learnable unit LEARN (30) /
-    /// TRIBAL_CHIEF (30) / COLONIST (20), a non-learnable one TRIBAL_CHIEF (50) / COLONIST (30); then the treasure
-    /// finds RUINS (6) and CIBOLA (4) for any explorer. The bad side (EXPEDITION_VANISHES) carries FreeCol's
-    /// normalised weight of 100 (the burial ground needs native tile ownership, not modelled yet). NOTHING takes
-    /// the neutral remainder ×100. MOUNDS (8), the seasoned-scout exploration bonus and Hernando de Soto's
-    /// always-positive ability are later refinements.
+    /// Picks a rumour type by the FreeCol <c>LostCityRumour.chooseType</c> weighted split (good / bad / neutral).
+    /// Good outcomes are weighted ×<c>percentGood</c>: FOUNTAIN_OF_YOUTH (2, colonial explorer); then a learnable
+    /// unit LEARN (30) / TRIBAL_CHIEF (30) / COLONIST (20), a non-learnable one TRIBAL_CHIEF (50) / COLONIST (30);
+    /// strange MOUNDS (8, native land only); then the treasure finds RUINS (6) and CIBOLA (4). The bad sub-list —
+    /// BURIAL_GROUND (25, native land only) and EXPEDITION_VANISHES (75, unless an expert scout) — is normalised to
+    /// 100; NOTHING takes the neutral remainder ×100. The base good/bad percentages (<see cref="RumourGoodPercent"/>
+    /// 48 / <see cref="RumourBadPercent"/> 23) are tilted by three modifiers, exactly as FreeCol: an <b>expert scout</b>
+    /// never vanishes (and if that removes all bad, the bad chance drops to 0); <b>Hernando de Soto</b>
+    /// (<c>rumoursAlwaysPositive</c>) forces 100% good; otherwise a unit's <see cref="UnitType.ExploreLostCityRumourBonus"/>
+    /// scales good ×<c>(1+bonus/100)</c> and bad ÷ it (seasoned scout +10%).
     /// </summary>
     private LostCityRumourType ChooseRumourType(Unit unit, Position target, IGameRandom random)
     {
         bool canLearn = Ruleset.GetUnitChange(UnitChangeTypeIds.LostCity, unit.Type.Id) is not null;
-        bool nativeOwned = Map.IsNativeOwned(target); // gates the native-only outcomes (strange mounds + burial ground)
-        int neutral = Math.Max(0, 100 - RumourBadPercent - RumourGoodPercent);
+        bool allowBurial = Map.IsNativeOwned(target); // burial ground (and strange mounds) need native-owned land
+        bool allowVanish = !unit.Type.ExpertScout;    // an expert scout (seasoned scout) never vanishes
+
+        int percentBad = RumourBadPercent;
+        int percentGood = RumourGoodPercent;
+        if (!allowBurial && !allowVanish)
+        {
+            percentBad = 0; // no bad outcome is possible — an expert scout off native land (FreeCol degenerate case)
+        }
+        else if (AbilityForUnit(unit, RumoursAlwaysPositiveAbility))
+        {
+            percentBad = 0; // Hernando de Soto: every rumour is good
+            percentGood = 100;
+        }
+        else
+        {
+            // The unit's own exploration bonus (seasoned scout +10%): good ×mod, bad ÷mod (Java Math.round = floor(x+0.5)).
+            double mod = 1.0 + unit.Type.ExploreLostCityRumourBonus / 100.0;
+            percentBad = (int)Math.Floor(percentBad / mod + 0.5);
+            percentGood = (int)Math.Floor(percentGood * mod + 0.5);
+        }
+        int neutral = Math.Max(0, 100 - percentBad - percentGood);
 
         var choices = new List<(LostCityRumourType Type, int Weight)>();
-        if (RumourGoodPercent > 0)
+        if (percentGood > 0)
         {
             // Fountain of Youth (weight 2, listed first to mirror FreeCol's chooseType). FreeCol allowFoY is
             // "owner is COLONIAL"; today every explorer here is colonial (natives are excluded upstream, and the
             // only player types are colonial + native), so it is unconditional. When the REF lands (P6) — European
             // but not colonial — this must gate on a colonial owner (an IsColonialPlayer(unit.OwnerId) check).
-            choices.Add((LostCityRumourType.FountainOfYouth, 2 * RumourGoodPercent));
+            choices.Add((LostCityRumourType.FountainOfYouth, 2 * percentGood));
             if (canLearn)
             {
-                choices.Add((LostCityRumourType.Learn, 30 * RumourGoodPercent));
-                choices.Add((LostCityRumourType.TribalChief, 30 * RumourGoodPercent));
-                choices.Add((LostCityRumourType.Colonist, 20 * RumourGoodPercent));
+                choices.Add((LostCityRumourType.Learn, 30 * percentGood));
+                choices.Add((LostCityRumourType.TribalChief, 30 * percentGood));
+                choices.Add((LostCityRumourType.Colonist, 20 * percentGood));
             }
             else
             {
-                choices.Add((LostCityRumourType.TribalChief, 50 * RumourGoodPercent));
-                choices.Add((LostCityRumourType.Colonist, 30 * RumourGoodPercent));
+                choices.Add((LostCityRumourType.TribalChief, 50 * percentGood));
+                choices.Add((LostCityRumourType.Colonist, 30 * percentGood));
             }
             // The treasure finds are available to any explorer (FreeCol adds them outside the learn split): ancient
             // RUINS (6) and a city of gold CIBOLA (4).
-            choices.Add((LostCityRumourType.Ruins, 6 * RumourGoodPercent));
-            choices.Add((LostCityRumourType.Cibola, 4 * RumourGoodPercent));
-            if (nativeOwned)
-            {
-                // Strange MOUNDS (FreeCol weight 8) — only possible on native-owned land (off it they degrade to
-                // NOTHING at resolve). Conditional-add: a wilderness rumour's table stays byte-identical (ADR-009).
-                choices.Add((LostCityRumourType.Mounds, 8 * RumourGoodPercent));
-            }
+            choices.Add((LostCityRumourType.Ruins, 6 * percentGood));
+            choices.Add((LostCityRumourType.Cibola, 4 * percentGood));
+            // Strange MOUNDS (FreeCol weight 8): added UNCONDITIONALLY (FreeCol chooseType has no native-owned gate
+            // here). Off native-owned land a MOUNDS roll degrades to NOTHING at resolve (ExploreRumour, with no extra
+            // RNG draw) — so its 8·good weight stays in the denominator and the full distribution matches FreeCol
+            // exactly, rather than inflating the other outcomes by omitting it.
+            choices.Add((LostCityRumourType.Mounds, 8 * percentGood));
         }
-        if (RumourBadPercent > 0)
+        if (percentBad > 0)
         {
-            if (nativeOwned)
+            // The bad sub-list, normalised to a total of 100 (FreeCol RandomChoice.normalize): burial ground only on
+            // native land, the vanishing expedition unless an expert scout. With both, 25 / 75; with one, that one
+            // takes the whole 100 (so off native land a regular unit's bad is the lone vanishing expedition at 100,
+            // and an expert scout on native land can only ever hit the burial ground).
+            var bad = new List<(LostCityRumourType Type, int Weight)>();
+            if (allowBurial)
             {
-                // On native land the bad sub-list is BURIAL_GROUND + EXPEDITION_VANISHES, normalised to a total of
-                // 100 (FreeCol RandomChoice.normalize of 25·bad / 75·bad → 25 / 75) — the same 100-weight footprint
-                // the lone vanishing expedition occupies off native land, so only the GOOD side's mounds shift the total.
-                choices.AddRange(NormalizeTo100(
-                [
-                    (LostCityRumourType.BurialGround, 25 * RumourBadPercent),
-                    (LostCityRumourType.ExpeditionVanishes, 75 * RumourBadPercent),
-                ]));
+                bad.Add((LostCityRumourType.BurialGround, 25 * percentBad));
             }
-            else
+            if (allowVanish)
             {
-                // No native-owned tile → no burial ground; the vanishing expedition takes the whole normalised 100.
-                choices.Add((LostCityRumourType.ExpeditionVanishes, 100));
+                bad.Add((LostCityRumourType.ExpeditionVanishes, 75 * percentBad));
             }
+            choices.AddRange(NormalizeTo100(bad));
         }
         if (neutral > 0)
         {

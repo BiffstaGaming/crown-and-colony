@@ -163,7 +163,7 @@ public class LostCityRumourTests
         (Game game, Unit unit, Position tile) = ExplorerOnRumour();
         int id = unit.Id;
 
-        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4416)); // 4416 → vanish
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4800)); // 4800 → vanish (MOUNDS now holds [4416,4800))
 
         Assert.Equal(Game.LostCityRumourType.ExpeditionVanishes, outcome);
         Assert.DoesNotContain(game.Units, u => u.Id == id);
@@ -222,7 +222,7 @@ public class LostCityRumourTests
         int unitsBefore = game.Units.Count;
         int goldBefore = game.HumanPlayer.Gold;
 
-        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4516)); // 4516 → nothing
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4900)); // 4900 → nothing (vanish now [4800,4900))
 
         Assert.Equal(Game.LostCityRumourType.Nothing, outcome);
         Assert.Equal(unitsBefore, game.Units.Count);
@@ -303,6 +303,51 @@ public class LostCityRumourTests
         Assert.Equal(Game.LostCityRumourType.Cibola, outcome);
         Unit train = game.Units.Single(u => u.Type.Id == TreasureTrain);
         Assert.Equal(2400, train.TreasureAmount);
+    }
+
+    // ---- Scout + de Soto modifiers (86d3c9uhj) ----
+
+    private const string DeSoto = "model.foundingFather.hernandoDeSoto";
+
+    private static Game ElectDeSoto()
+    {
+        SaveGame save = SaveGame.From(Game.New(Classic, Seed));
+        return (save with { Players = save.Players!.Select(p => p with { Congress = new[] { DeSoto } }).ToList() })
+            .Restore(Classic);
+    }
+
+    [Fact]
+    public void SeasonedScout_NeverVanishes_WhereAFreeColonistWould()
+    {
+        // The exact same draw (4800, the vanish slot off native land) that vanishes a free colonist cannot vanish a
+        // seasoned scout: the expert scout removes EXPEDITION_VANISHES from the table, and off native land (no burial)
+        // that leaves no bad outcome at all.
+        (Game free, Unit colonist, Position t1) = ExplorerOnRumour();
+        Assert.Equal(Game.LostCityRumourType.ExpeditionVanishes, free.ExploreRumour(colonist, t1, new ScriptedRandom(4800)));
+
+        (Game scoutGame, Unit scout, Position t2) = ExplorerOnRumour(SeasonedScout);
+        int scoutId = scout.Id;
+        Game.LostCityRumourType outcome = scoutGame.ExploreRumour(scout, t2, new ScriptedRandom(4800));
+
+        Assert.NotEqual(Game.LostCityRumourType.ExpeditionVanishes, outcome);
+        Assert.Contains(scoutGame.Units, u => u.Id == scoutId); // the scout survived
+    }
+
+    [Fact]
+    public void DeSoto_ForcesAGoodOutcome_WhereARegularColonistWouldGetNothing()
+    {
+        // Draw 5000 lands a regular colonist in NOTHING off native land; Hernando de Soto makes the whole table good,
+        // so the same draw lands a tribal-chief gift instead.
+        (Game regular, Unit plain, Position rt) = ExplorerOnRumour();
+        Assert.Equal(Game.LostCityRumourType.Nothing, regular.ExploreRumour(plain, rt, new ScriptedRandom(5000)));
+
+        Game game = ElectDeSoto();
+        Position tile = game.PlayerUnits.First().Position;
+        Unit unit = game.SpawnUnit(Classic.Unit(FreeColonist), tile);
+        game.Map.AddRumour(tile);
+
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(5000, 0));
+        Assert.Equal(Game.LostCityRumourType.TribalChief, outcome);
     }
 
     // ---- Explore trigger (move / disembark) ----
@@ -504,16 +549,19 @@ public class LostCityRumourTests
     }
 
     [Fact]
-    public void Explore_MoundsOrBurial_OnNonNativeLand_NeverHappens()
+    public void Explore_MoundsOrBurial_OnNonNativeLand_DegradeToNothing()
     {
-        // The conditional-add guard: off native land the table has no MOUNDS/BURIAL, so the roll 4416 that is MOUNDS
-        // on native land is the vanishing expedition off it (matching Explore_ExpeditionVanishes_… above).
+        // MOUNDS is on the table unconditionally (FreeCol), but off native-owned land a MOUNDS/BURIAL roll degrades to
+        // NOTHING at resolve — so the explorer never actually faces strange mounds or a burial ground in the wilderness
+        // (no prompt, no harm), while its weight stays in the denominator. Roll 4416 lands in the MOUNDS slot off native land.
         (Game game, Unit unit, Position tile) = ExplorerOnRumour(); // NOT native-owned
+        int id = unit.Id;
 
         Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4416));
 
-        Assert.Equal(Game.LostCityRumourType.ExpeditionVanishes, outcome);
-        Assert.NotEqual(Game.LostCityRumourType.Mounds, outcome);
+        Assert.Equal(Game.LostCityRumourType.Nothing, outcome); // degraded — never MOUNDS/BURIAL off native land
+        Assert.Contains(game.Units, u => u.Id == id);           // not lost (it resolves as a harmless nothing)
+        Assert.False(game.Map.HasRumour(tile));                 // rumour consumed
     }
 
     [Fact]
