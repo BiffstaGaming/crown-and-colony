@@ -123,11 +123,14 @@ public class LostCityRumourTests
         Assert.Empty(loaded.Map.Rumours);
     }
 
-    // ---- Outcome resolution (86d3c9uhj) ----
+    // ---- Outcome resolution (86d3c9uhj, + Fountain of Youth 86d3c9ujx) ----
     //
-    // The weighted table (FreeCol LostCityRumour.chooseType) at classic medium (good 48 / bad 23 / neutral 29).
-    // For a LEARNABLE explorer the cumulative weights are Learn 1440 | TribalChief 1440 | Colonist 960 |
-    // ExpeditionVanishes 100 | Nothing 2900 (total 6840); a scripted weighted-pick roll selects a known outcome.
+    // The weighted table (FreeCol LostCityRumour.chooseType) at classic medium (good 48 / bad 23 / neutral 29),
+    // good outcomes listed FoY-first as in FreeCol. For a LEARNABLE explorer the cumulative ranges are
+    //   FoY [0,96) | Learn [96,1536) | TribalChief [1536,2976) | Colonist [2976,3936) |
+    //   ExpeditionVanishes [3936,4036) | Nothing [4036,6936)   (total 6936).
+    // A non-learnable explorer drops Learn and widens Chief: FoY [0,96) | Chief [96,2496) | Colonist [2496,3936) | …
+    // A scripted weighted-pick roll lands a known outcome.
 
     /// <summary>Deterministic RNG returning a scripted sequence of Next(..) values (weighted-pick roll, then gold).</summary>
     private sealed class ScriptedRandom(params int[] values) : IGameRandom
@@ -159,7 +162,7 @@ public class LostCityRumourTests
         (Game game, Unit unit, Position tile) = ExplorerOnRumour();
         int id = unit.Id;
 
-        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(3840)); // 3840 → vanish
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(3936)); // 3936 → vanish
 
         Assert.Equal(Game.LostCityRumourType.ExpeditionVanishes, outcome);
         Assert.DoesNotContain(game.Units, u => u.Id == id);
@@ -174,7 +177,7 @@ public class LostCityRumourTests
         (Game game, Unit unit, Position tile) = ExplorerOnRumour();
         int before = game.HumanPlayer.Gold;
 
-        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(1440, goldRoll)); // 1440 → chief
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(1536, goldRoll)); // 1536 → chief
 
         Assert.Equal(Game.LostCityRumourType.TribalChief, outcome);
         Assert.Equal(before + expectedGift, game.HumanPlayer.Gold);
@@ -187,7 +190,7 @@ public class LostCityRumourTests
         (Game game, Unit unit, Position tile) = ExplorerOnRumour(); // a free colonist can learn
         int id = unit.Id;
 
-        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(0)); // 0 → learn
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(96)); // 96 → learn
 
         Assert.Equal(Game.LostCityRumourType.Learn, outcome);
         Unit learned = game.Units.Single(u => u.Id == id);
@@ -201,7 +204,7 @@ public class LostCityRumourTests
         (Game game, Unit unit, Position tile) = ExplorerOnRumour();
         int before = game.Units.Count;
 
-        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(2880)); // 2880 → colonist
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(2976)); // 2976 → colonist
 
         Assert.Equal(Game.LostCityRumourType.Colonist, outcome);
         Assert.Equal(before + 1, game.Units.Count);
@@ -218,7 +221,7 @@ public class LostCityRumourTests
         int unitsBefore = game.Units.Count;
         int goldBefore = game.HumanPlayer.Gold;
 
-        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(3940)); // 3940 → nothing
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4036)); // 4036 → nothing
 
         Assert.Equal(Game.LostCityRumourType.Nothing, outcome);
         Assert.Equal(unitsBefore, game.Units.Count);
@@ -229,13 +232,31 @@ public class LostCityRumourTests
     [Fact]
     public void Explore_ANonLearnableUnit_NeverLearns_TheLowRollGivesGoldInstead()
     {
-        // An expert farmer has no model.unitChange.lostCity, so its good list starts at TRIBAL_CHIEF (weight 50):
-        // the roll that would be LEARN for a free colonist gives the chief's gift instead — the allowLearn gate.
+        // An expert farmer has no model.unitChange.lostCity, so after FoY its good list is TRIBAL_CHIEF (weight 50)
+        // then COLONIST: the roll 96 that is LEARN for a free colonist gives the chief's gift instead (allowLearn gate).
         (Game game, Unit unit, Position tile) = ExplorerOnRumour(ExpertFarmer);
 
-        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(0, 0)); // 0 → chief (not learn)
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(96, 0)); // 96 → chief (not learn)
 
         Assert.Equal(Game.LostCityRumourType.TribalChief, outcome);
+    }
+
+    [Fact]
+    public void Explore_FountainOfYouth_LandsAnImmigrantBurstOnTheEuropeDock()
+    {
+        (Game game, Unit unit, Position tile) = ExplorerOnRumour();
+        int before = game.Units.Count(u => u.OwnerId == 0 && !u.IsNative && u.Location == UnitLocation.InEurope);
+
+        // roll 0 → Fountain of Youth; then dx (=8) recruit draws (each value picks a recruitable type). Exactly
+        // nine scripted values (1 type roll + 8 draws) pins dx=8: a wrong count would over/under-run the queue.
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(0, 0, 0, 0, 0, 0, 0, 0, 0));
+
+        Assert.Equal(Game.LostCityRumourType.FountainOfYouth, outcome);
+        int after = game.Units.Count(u => u.OwnerId == 0 && !u.IsNative && u.Location == UnitLocation.InEurope);
+        Assert.Equal(before + 8, after); // dx = 8 immigrants at classic medium
+        Assert.All(game.Units.Where(u => u.Location == UnitLocation.InEurope && u.OwnerId == 0),
+            u => Assert.True(u.Type.RecruitProbability > 0)); // each is a recruitable type
+        Assert.False(game.Map.HasRumour(tile));
     }
 
     // ---- Explore trigger (move / disembark) ----

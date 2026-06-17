@@ -2945,12 +2945,11 @@ public sealed class Game
     // from a weighted table (FreeCol LostCityRumour.chooseType) and resolved (csExploreLostCityRumour), then the
     // rumour is consumed (one-shot). Placement is the prior slice (86d3c9uex); see docs/systems/lost-city-rumours.md.
 
-    /// <summary>The Lost City Rumour outcomes this slice resolves (a subset of FreeCol's <c>RumourType</c>).
-    /// Deferred to their own slices and so absent from the weighted table here: <c>FOUNTAIN_OF_YOUTH</c>
-    /// (<c>86d3c9ujx</c>), <c>MOUNDS</c> + native-owned tiles (<c>86d3c9umy</c>), and the treasure finds
-    /// <c>RUINS</c>/<c>CIBOLA</c> (<c>86d3c9ryj…</c>, need the save-v26 treasure amount). <c>BURIAL_GROUND</c> is
-    /// likewise absent until native tile ownership exists — with no native-owned tiles the bad side is only the
-    /// vanishing expedition, exactly as FreeCol degrades it.</summary>
+    /// <summary>The Lost City Rumour outcomes resolved so far (a subset of FreeCol's <c>RumourType</c>).
+    /// Deferred to their own slices and so absent from the weighted table here: <c>MOUNDS</c> + native-owned
+    /// tiles (<c>86d3c9umy</c>) and the treasure finds <c>RUINS</c>/<c>CIBOLA</c> (<c>86d3c9ryj…</c>, need the
+    /// save-v26 treasure amount). <c>BURIAL_GROUND</c> is likewise absent until native tile ownership exists —
+    /// with no native-owned tiles the bad side is only the vanishing expedition, exactly as FreeCol degrades it.</summary>
     internal enum LostCityRumourType
     {
         /// <summary>Nothing of note — the rumour is spent for no effect.</summary>
@@ -2967,6 +2966,9 @@ public sealed class Game
 
         /// <summary>A band of colonists joins — a free colonist musters on the tile.</summary>
         Colonist,
+
+        /// <summary>A Fountain of Youth — a burst of <c>dx</c> immigrants arrives on the owner's Europe dock.</summary>
+        FountainOfYouth,
     }
 
     /// <summary>Bad-outcome chance, classic <b>medium</b> difficulty (<c>model.option.badRumour</c>); see the difficulty note below.</summary>
@@ -3037,6 +3039,9 @@ public sealed class Game
             case LostCityRumourType.Colonist:
                 SpawnUnit(Ruleset.Unit(FoundInLostCityUnitTypeId), target, unit.OwnerId); // a found colonist musters on the tile
                 break;
+            case LostCityRumourType.FountainOfYouth:
+                GenerateFountainRecruits(unit.OwnerId, random); // a burst of dx immigrants arrives on the owner's Europe dock
+                break;
             case LostCityRumourType.Nothing:
             default:
                 break; // no effect (the player-facing message is presentation)
@@ -3046,12 +3051,34 @@ public sealed class Game
     }
 
     /// <summary>
+    /// A Fountain of Youth: lands <see cref="RumourDifficultyDx"/> fresh immigrants on the owner's Europe dock
+    /// (FreeCol <c>ServerEurope.generateFountainRecruits(dx)</c>). Each is an independent weighted recruit draw
+    /// (<see cref="DrawRecruitType(Player, IGameRandom)"/> → <see cref="CreateEuropeRecruit"/> off <paramref name="random"/>,
+    /// the exploring unit's owner stream) — they arrive as units <em>in Europe</em>, not as the three dock
+    /// <em>candidates</em>, so the player still ships them over. FreeCol lets the human pick each immigrant; we
+    /// generate them directly (its AI path) until a select-recruit flow exists. A no-op for a player with no
+    /// recruitable unit types (minimal rulesets).
+    /// </summary>
+    private void GenerateFountainRecruits(int ownerId, IGameRandom random)
+    {
+        if (PlayerById(ownerId) is not { } owner || !Ruleset.UnitTypes.Any(t => IsRecruitable(owner, t)))
+        {
+            return;
+        }
+        for (int i = 0; i < RumourDifficultyDx; i++)
+        {
+            CreateEuropeRecruit(owner, DrawRecruitType(owner, random));
+        }
+    }
+
+    /// <summary>
     /// Picks a rumour type by the FreeCol <c>LostCityRumour.chooseType</c> weighted split (good / bad / neutral),
-    /// restricted to the outcomes this slice ships. Good outcomes are weighted ×<see cref="RumourGoodPercent"/>:
-    /// a learnable unit can LEARN (30) / TRIBAL_CHIEF (30) / COLONIST (20); a non-learnable one TRIBAL_CHIEF (50)
-    /// / COLONIST (30). The bad side (EXPEDITION_VANISHES) carries FreeCol's normalised weight of 100 (the burial
-    /// ground needs native tile ownership, not modelled yet). NOTHING takes the neutral remainder ×100. The
-    /// seasoned-scout exploration bonus and Hernando de Soto's always-positive ability are a later refinement.
+    /// restricted to the outcomes shipped so far. Good outcomes are weighted ×<see cref="RumourGoodPercent"/>:
+    /// FOUNTAIN_OF_YOUTH (2, always available to a colonial explorer); then a learnable unit LEARN (30) /
+    /// TRIBAL_CHIEF (30) / COLONIST (20), a non-learnable one TRIBAL_CHIEF (50) / COLONIST (30). The bad side
+    /// (EXPEDITION_VANISHES) carries FreeCol's normalised weight of 100 (the burial ground needs native tile
+    /// ownership, not modelled yet). NOTHING takes the neutral remainder ×100. The seasoned-scout exploration
+    /// bonus and Hernando de Soto's always-positive ability are a later refinement.
     /// </summary>
     private LostCityRumourType ChooseRumourType(Unit unit, IGameRandom random)
     {
@@ -3061,6 +3088,11 @@ public sealed class Game
         var choices = new List<(LostCityRumourType Type, int Weight)>();
         if (RumourGoodPercent > 0)
         {
+            // Fountain of Youth (weight 2, listed first to mirror FreeCol's chooseType). FreeCol allowFoY is
+            // "owner is COLONIAL"; today every explorer here is colonial (natives are excluded upstream, and the
+            // only player types are colonial + native), so it is unconditional. When the REF lands (P6) — European
+            // but not colonial — this must gate on a colonial owner (an IsColonialPlayer(unit.OwnerId) check).
+            choices.Add((LostCityRumourType.FountainOfYouth, 2 * RumourGoodPercent));
             if (canLearn)
             {
                 choices.Add((LostCityRumourType.Learn, 30 * RumourGoodPercent));
@@ -4356,11 +4388,15 @@ public sealed class Game
     /// A weighted-random recruitable unit type id for <paramref name="player"/> (FreeCol
     /// <c>ServerEurope.generateRecruitablesList</c>): each type's <see cref="UnitType.RecruitProbability"/> is its weight.
     /// </summary>
-    private string DrawRecruitType(Player player)
+    private string DrawRecruitType(Player player) => DrawRecruitType(player, RandomFor(player));
+
+    /// <summary>As <see cref="DrawRecruitType(Player)"/> but drawing from an explicit RNG (the Fountain of Youth
+    /// threads the exploring unit's owner stream so its burst stays on one stream, same as the type roll).</summary>
+    private string DrawRecruitType(Player player, IGameRandom random)
     {
         var pool = Ruleset.UnitTypes.Where(t => IsRecruitable(player, t)).ToList();
         int total = pool.Sum(u => u.RecruitProbability);
-        int roll = RandomFor(player).Next(total);
+        int roll = random.Next(total);
         foreach (UnitType type in pool)
         {
             roll -= type.RecruitProbability;
