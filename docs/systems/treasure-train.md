@@ -15,7 +15,7 @@ When you **sack a native settlement** and there's treasure to be had, you don't 
 
 **Cashing in.** Bring the train to one of your colonies and the **King offers to ship the treasure to Europe for you — for a fat cut (60%)**. Whatever's left is then **taxed** at your usual rate, and the rest lands in your treasury; the train is used up. If you'd rather not hand the King 60%, you can **carry the treasure across the Atlantic yourself** on a galleon and cash it in **fee-free** in Europe (only the tax applies). And if **Hernán Cortés** sits in your Congress, the King ships it for **nothing** — full value, fee-free, anywhere.
 
-The cities of gold (Cibola) and rich ruins you'll find in Lost City Rumours will hand you treasure trains the same way — that wiring comes with the treasure-rumour slice.
+The cities of gold (Cibola) and rich ruins you'll find in Lost City Rumours hand you treasure trains the same way (see [lost-city-rumours](lost-city-rumours.md)).
 
 *(The slow part you still do by hand: there's no "load the train onto a galleon" button yet, so the fee-free Europe route arrives with that cargo wiring; cashing in **at a colony** — paying the King's cut — works now.)*
 
@@ -51,7 +51,7 @@ The cities of gold (Cibola) and rich ruins you'll find in Lost City Rumours will
 
 - [x] **Treasure train unit + spawn-on-sack + capturability + save v27** (`86d3c9ryj`).
 - [x] **Cash in a treasure train** (`86d3c9rzu`): at an owned colony the King ships it for a **60%** cut (Cortés-free), then the monarch's **tax** applies to the remainder; in Europe there's no fee. The train is consumed.
-- [ ] **Treasure from Lost City Rumours** (`86d3c9t1e`): wire `RUINS`/`CIBOLA` into the LCR table to spawn a treasure train (now unblocked — the v27 amount exists).
+- [x] **Treasure from Lost City Rumours** (`86d3c9t1e`): `RUINS` (gold < 500, else a treasure train) and `CIBOLA` (a big treasure train) spawn trains via the v27 amount (shared `SpawnTreasureTrain`). See [lost-city-rumours](lost-city-rumours.md).
 - [ ] **Load a treasure train onto a galleon** (treasure-as-cargo) so it can be sailed to Europe for the fee-free cash-in (the in-Europe cash-in branch already works; only the load/sail route is missing).
 - [ ] AI cashing-in / valuing in-transit treasure (with FP-6 settlement-sacking AI).
 - [ ] Map **treasure-train marker** + cash-in prompt (presentation).
@@ -60,5 +60,6 @@ The cities of gold (Cibola) and rich ruins you'll find in Lost City Rumours will
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-17 | **Treasure from Lost City Rumours** (`86d3c9t1e`): the LCR `RUINS`/`CIBOLA` outcomes now spawn treasure trains (shared `Game.SpawnTreasureTrain`); RUINS < 500 pays gold, else a train; CIBOLA a big train. No save change. See [lost-city-rumours](lost-city-rumours.md). | Phase 5 (`86d3c9t1e`) |
 | 2026-06-17 | **Cash in a treasure train** (`86d3c9rzu`): `CheckCashInTreasureTrain`/`CashInTreasureTrain` at an owner-held colony or in Europe; nets `(amount − fee) × (100 − tax)/100`, fee = `TreasureTransportFeePercent(60)% × amount` reduced by Hernán Cortés's `treasureTransportFee −100%` (free), 0 in Europe; the train is consumed. No RNG, no save change. +6 L1; 721 + soak green. LCR ruins/Cibola + the load-onto-galleon route remain. | Phase 5 (`86d3c9rzu`) |
 | 2026-06-17 | **Treasure train unit + spawn-on-sack + capture + save v27** (`86d3c9ryj`): `model.unit.treasureTrain` parses (`CarryTreasure`); `Unit.TreasureAmount`; sacking a native settlement with plunder > 0 spawns a treasure train carrying it (replaces the instant-gold plunder in `AttackSettlement` — same RNG draw, soak byte-stable); an undefended train is captured (with its amount) via the existing `CanBeCaptured` path; save **v27** adds `SavedUnit.TreasureAmount` (omitted when 0). +5 L1 (+3 `CombatTests` migrated); 715 + soak green. Cash-in is the next slice. | Phase 5 (`86d3c9ryj`) |

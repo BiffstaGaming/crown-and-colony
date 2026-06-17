@@ -1326,7 +1326,7 @@ public sealed class Game
             int plunder = ComputePlunder(type, hasPlunderAbility, random);
             if (plunder > 0)
             {
-                SpawnUnit(Ruleset.Unit(TreasureTrainUnitTypeId), target, attacker.OwnerId).SetTreasureAmount(plunder);
+                SpawnTreasureTrain(target, attacker.OwnerId, plunder);
             }
             _nativeSettlements.Remove(settlement); // destroyed
             ClaimNativeLand(); // the razed settlement releases its land claim (surviving same-nation settlements keep theirs)
@@ -3171,9 +3171,10 @@ public sealed class Game
 
     /// <summary>The Lost City Rumour outcomes resolved so far (a subset of FreeCol's <c>RumourType</c>).
     /// Deferred to their own slices and so absent from the weighted table here: <c>MOUNDS</c> + native-owned
-    /// tiles (<c>86d3c9umy</c>) and the treasure finds <c>RUINS</c>/<c>CIBOLA</c> (<c>86d3c9ryj…</c>, need the
-    /// save-v26 treasure amount). <c>BURIAL_GROUND</c> is likewise absent until native tile ownership exists —
-    /// with no native-owned tiles the bad side is only the vanishing expedition, exactly as FreeCol degrades it.</summary>
+    /// tiles + the strange-mounds prompt (<c>86d3c9umy</c>). <c>BURIAL_GROUND</c> is likewise absent until native
+    /// tile ownership wiring lands — with no native-owned rumour tiles the bad side is only the vanishing
+    /// expedition, exactly as FreeCol degrades it. (The treasure finds <c>RUINS</c>/<c>CIBOLA</c> now ship — they
+    /// spawn a treasure train via the v27 amount.)</summary>
     internal enum LostCityRumourType
     {
         /// <summary>Nothing of note — the rumour is spent for no effect.</summary>
@@ -3193,6 +3194,12 @@ public sealed class Game
 
         /// <summary>A Fountain of Youth — a burst of <c>dx</c> immigrants arrives on the owner's Europe dock.</summary>
         FountainOfYouth,
+
+        /// <summary>Ancient ruins — a modest find: gold if small, otherwise a treasure train.</summary>
+        Ruins,
+
+        /// <summary>A city of gold (Cibola) — a large treasure train.</summary>
+        Cibola,
     }
 
     /// <summary>Bad-outcome chance, classic <b>medium</b> difficulty (<c>model.option.badRumour</c>); see the difficulty note below.</summary>
@@ -3211,6 +3218,9 @@ public sealed class Game
 
     /// <summary>The unit a COLONIST rumour musters: the only classic unit with <c>model.ability.foundInLostCity</c>.</summary>
     private const string FoundInLostCityUnitTypeId = "model.unit.freeColonist";
+
+    /// <summary>Below this a RUINS find pays straight gold; at or above it spawns a treasure train (FreeCol <c>csExploreLostCityRumour</c> RUINS, the <c>&lt; 500</c> branch).</summary>
+    private const int RumourSmallRuinsThreshold = 500;
 
     /// <summary>
     /// Investigates a Lost City Rumour if <paramref name="unit"/> just stepped onto one: a colonial (non-native)
@@ -3266,6 +3276,25 @@ public sealed class Game
             case LostCityRumourType.FountainOfYouth:
                 GenerateFountainRecruits(unit.OwnerId, random); // a burst of dx immigrants arrives on the owner's Europe dock
                 break;
+            case LostCityRumourType.Ruins:
+                // FreeCol: rand(0, dx·2)·300 + 50 → a small find (< 500) is gold; a larger one becomes a treasure train.
+                int ruins = (random.Next(RumourDifficultyDx * 2) * 300) + 50;
+                if (ruins < RumourSmallRuinsThreshold)
+                {
+                    if (PlayerById(unit.OwnerId) is { } ruinsOwner)
+                    {
+                        ruinsOwner.Gold += ruins;
+                    }
+                }
+                else
+                {
+                    SpawnTreasureTrain(target, unit.OwnerId, ruins);
+                }
+                break;
+            case LostCityRumourType.Cibola:
+                // FreeCol: a city of gold → rand(0, dx·600) + dx·300 as a treasure train (medium dx=8 → 2400–7199).
+                SpawnTreasureTrain(target, unit.OwnerId, random.Next(RumourDifficultyDx * 600) + (RumourDifficultyDx * 300));
+                break;
             case LostCityRumourType.Nothing:
             default:
                 break; // no effect (the player-facing message is presentation)
@@ -3273,6 +3302,10 @@ public sealed class Game
         Map.RemoveRumour(target); // consumed regardless of outcome
         return outcome;
     }
+
+    /// <summary>Musters a treasure train on <paramref name="target"/> carrying <paramref name="amount"/> gold, owned by <paramref name="ownerId"/> (FreeCol spawns a treasure train for a rich plunder/find — see [treasure-train.md]).</summary>
+    private void SpawnTreasureTrain(Position target, int ownerId, int amount) =>
+        SpawnUnit(Ruleset.Unit(TreasureTrainUnitTypeId), target, ownerId).SetTreasureAmount(amount);
 
     /// <summary>
     /// A Fountain of Youth: lands <see cref="RumourDifficultyDx"/> fresh immigrants on the owner's Europe dock
@@ -3299,10 +3332,11 @@ public sealed class Game
     /// Picks a rumour type by the FreeCol <c>LostCityRumour.chooseType</c> weighted split (good / bad / neutral),
     /// restricted to the outcomes shipped so far. Good outcomes are weighted ×<see cref="RumourGoodPercent"/>:
     /// FOUNTAIN_OF_YOUTH (2, always available to a colonial explorer); then a learnable unit LEARN (30) /
-    /// TRIBAL_CHIEF (30) / COLONIST (20), a non-learnable one TRIBAL_CHIEF (50) / COLONIST (30). The bad side
-    /// (EXPEDITION_VANISHES) carries FreeCol's normalised weight of 100 (the burial ground needs native tile
-    /// ownership, not modelled yet). NOTHING takes the neutral remainder ×100. The seasoned-scout exploration
-    /// bonus and Hernando de Soto's always-positive ability are a later refinement.
+    /// TRIBAL_CHIEF (30) / COLONIST (20), a non-learnable one TRIBAL_CHIEF (50) / COLONIST (30); then the treasure
+    /// finds RUINS (6) and CIBOLA (4) for any explorer. The bad side (EXPEDITION_VANISHES) carries FreeCol's
+    /// normalised weight of 100 (the burial ground needs native tile ownership, not modelled yet). NOTHING takes
+    /// the neutral remainder ×100. MOUNDS (8), the seasoned-scout exploration bonus and Hernando de Soto's
+    /// always-positive ability are later refinements.
     /// </summary>
     private LostCityRumourType ChooseRumourType(Unit unit, IGameRandom random)
     {
@@ -3328,6 +3362,10 @@ public sealed class Game
                 choices.Add((LostCityRumourType.TribalChief, 50 * RumourGoodPercent));
                 choices.Add((LostCityRumourType.Colonist, 30 * RumourGoodPercent));
             }
+            // The treasure finds are available to any explorer (FreeCol adds them outside the learn split): ancient
+            // RUINS (6) and a city of gold CIBOLA (4). MOUNDS (8) stays deferred to the strange-mounds slice.
+            choices.Add((LostCityRumourType.Ruins, 6 * RumourGoodPercent));
+            choices.Add((LostCityRumourType.Cibola, 4 * RumourGoodPercent));
         }
         if (RumourBadPercent > 0)
         {

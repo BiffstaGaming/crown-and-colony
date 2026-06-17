@@ -123,14 +123,14 @@ public class LostCityRumourTests
         Assert.Empty(loaded.Map.Rumours);
     }
 
-    // ---- Outcome resolution (86d3c9uhj, + Fountain of Youth 86d3c9ujx) ----
+    // ---- Outcome resolution (86d3c9uhj, + Fountain of Youth 86d3c9ujx, + treasure finds 86d3c9t1e) ----
     //
     // The weighted table (FreeCol LostCityRumour.chooseType) at classic medium (good 48 / bad 23 / neutral 29),
     // good outcomes listed FoY-first as in FreeCol. For a LEARNABLE explorer the cumulative ranges are
-    //   FoY [0,96) | Learn [96,1536) | TribalChief [1536,2976) | Colonist [2976,3936) |
-    //   ExpeditionVanishes [3936,4036) | Nothing [4036,6936)   (total 6936).
-    // A non-learnable explorer drops Learn and widens Chief: FoY [0,96) | Chief [96,2496) | Colonist [2496,3936) | …
-    // A scripted weighted-pick roll lands a known outcome.
+    //   FoY [0,96) | Learn [96,1536) | TribalChief [1536,2976) | Colonist [2976,3936) | Ruins [3936,4224) |
+    //   Cibola [4224,4416) | ExpeditionVanishes [4416,4516) | Nothing [4516,7416)   (total 7416).
+    // A non-learnable explorer drops Learn, widens Chief: FoY [0,96) | Chief [96,2496) | Colonist [2496,3936) |
+    //   Ruins [3936,4224) | … (same treasure/bad/neutral tail). A scripted weighted-pick roll lands a known outcome.
 
     /// <summary>Deterministic RNG returning a scripted sequence of Next(..) values (weighted-pick roll, then gold).</summary>
     private sealed class ScriptedRandom(params int[] values) : IGameRandom
@@ -162,7 +162,7 @@ public class LostCityRumourTests
         (Game game, Unit unit, Position tile) = ExplorerOnRumour();
         int id = unit.Id;
 
-        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(3936)); // 3936 → vanish
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4416)); // 4416 → vanish
 
         Assert.Equal(Game.LostCityRumourType.ExpeditionVanishes, outcome);
         Assert.DoesNotContain(game.Units, u => u.Id == id);
@@ -221,7 +221,7 @@ public class LostCityRumourTests
         int unitsBefore = game.Units.Count;
         int goldBefore = game.HumanPlayer.Gold;
 
-        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4036)); // 4036 → nothing
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4516)); // 4516 → nothing
 
         Assert.Equal(Game.LostCityRumourType.Nothing, outcome);
         Assert.Equal(unitsBefore, game.Units.Count);
@@ -257,6 +257,51 @@ public class LostCityRumourTests
         Assert.All(game.Units.Where(u => u.Location == UnitLocation.InEurope && u.OwnerId == 0),
             u => Assert.True(u.Type.RecruitProbability > 0)); // each is a recruitable type
         Assert.False(game.Map.HasRumour(tile));
+    }
+
+    private const string TreasureTrain = "model.unit.treasureTrain";
+
+    [Fact]
+    public void Explore_Ruins_SmallFind_PaysGold_NoTrain()
+    {
+        (Game game, Unit unit, Position tile) = ExplorerOnRumour();
+        int goldBefore = game.HumanPlayer.Gold;
+
+        // 3936 → Ruins; amount roll 0 → 0×300 + 50 = 50 (< 500) → straight gold.
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(3936, 0));
+
+        Assert.Equal(Game.LostCityRumourType.Ruins, outcome);
+        Assert.Equal(goldBefore + 50, game.HumanPlayer.Gold);
+        Assert.DoesNotContain(game.Units, u => u.Type.Id == TreasureTrain); // small find → gold, no train
+    }
+
+    [Fact]
+    public void Explore_Ruins_RichFind_SpawnsATreasureTrain()
+    {
+        (Game game, Unit unit, Position tile) = ExplorerOnRumour();
+        int goldBefore = game.HumanPlayer.Gold;
+
+        // 3936 → Ruins; amount roll 5 → 5×300 + 50 = 1550 (≥ 500) → a treasure train.
+        game.ExploreRumour(unit, tile, new ScriptedRandom(3936, 5));
+
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold); // no instant gold — it's a train
+        Unit train = game.Units.Single(u => u.Type.Id == TreasureTrain);
+        Assert.Equal(tile, train.Position);
+        Assert.Equal(0, train.OwnerId);
+        Assert.Equal(1550, train.TreasureAmount);
+    }
+
+    [Fact]
+    public void Explore_Cibola_SpawnsABigTreasureTrain()
+    {
+        (Game game, Unit unit, Position tile) = ExplorerOnRumour();
+
+        // 4224 → Cibola; amount roll 0 → 0 + dx×300 = 2400.
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4224, 0));
+
+        Assert.Equal(Game.LostCityRumourType.Cibola, outcome);
+        Unit train = game.Units.Single(u => u.Type.Id == TreasureTrain);
+        Assert.Equal(2400, train.TreasureAmount);
     }
 
     // ---- Explore trigger (move / disembark) ----
