@@ -580,6 +580,83 @@ public sealed class Game
         }
     }
 
+    // ===== Treasure-train cash-in (86d3c9rzu) =================================================================
+    // Escort a treasure train to a colony (or Europe) to bank its gold (FreeCol Unit.canCashInTreasureTrain /
+    // getTransportFee + the cash-in handler): at a colony the King ships it across for a transport cut, then the
+    // monarch's tax applies; carry it to Europe yourself (a galleon) to skip the King's fee.
+
+    /// <summary>The King's cut to ship treasure to Europe (FreeCol <c>model.option.treasureTransportFee</c>; <b>60%</b>,
+    /// classic-medium — the tier this project standardises on, like <see cref="LandPriceFactor"/>=60. Difficulty options
+    /// are not yet data-driven, so this is hardcoded; revisit when they are).</summary>
+    private const int TreasureTransportFeePercent = 60;
+
+    /// <summary>The father modifier id scaling the transport fee — Hernán Cortés's −100% ships treasure for free.</summary>
+    private const string TreasureTransportFeeModifierId = "model.modifier.treasureTransportFee";
+
+    /// <summary>The King's fee to ship <paramref name="train"/>'s treasure to Europe: <see cref="TreasureTransportFeePercent"/>% of the amount, less Hernán Cortés's <c>treasureTransportFee</c> modifier (−100% → free).</summary>
+    private int TransportFee(Player owner, Unit train) =>
+        ApplyGoodsModifiers(owner, TreasureTransportFeeModifierId, TreasureTransportFeePercent * train.TreasureAmount / 100);
+
+    /// <summary>
+    /// The gold <paramref name="owner"/> nets cashing in <paramref name="train"/>: the carried amount less the King's
+    /// <see cref="TransportFee"/> (0 if the train is already in Europe — you carried it yourself), then the monarch's
+    /// tax on the remainder. Integer-truncated, like the rest of the economy.
+    /// </summary>
+    private int CashInValue(Player owner, Unit train)
+    {
+        int fee = train.Location == UnitLocation.InEurope ? 0 : TransportFee(owner, train);
+        return (train.TreasureAmount - fee) * (100 - owner.TaxRate) / 100;
+    }
+
+    /// <summary>The gold the human would net by cashing in <paramref name="train"/> where it stands (0 if it can't here).</summary>
+    public int CashInValue(Unit train) =>
+        CheckCashInTreasureTrain(train).Allowed && PlayerById(train.OwnerId) is { } owner ? CashInValue(owner, train) : 0;
+
+    /// <summary>
+    /// Whether <paramref name="train"/> may be cashed in where it stands: it must be a treasure-carrying unit with
+    /// gold aboard, standing at a colony its owner holds (FreeCol requires a port connected to Europe — we have no
+    /// connectivity graph, so any owned colony qualifies) or docked in Europe. The check's cost carries the net gold.
+    /// </summary>
+    public MoveCheck CheckCashInTreasureTrain(Unit train)
+    {
+        if (!train.Type.CarryTreasure)
+        {
+            return MoveCheck.No("That is not a treasure train.");
+        }
+        if (train.TreasureAmount <= 0)
+        {
+            return MoveCheck.No("The treasure train carries no gold.");
+        }
+        bool atOwnColony = train.IsOnMap && ColonyAt(train.Position) is { } colony && colony.OwnerId == train.OwnerId;
+        bool inEurope = train.Location == UnitLocation.InEurope;
+        if (!atOwnColony && !inEurope)
+        {
+            return MoveCheck.No("Bring the treasure train to one of your colonies (or to Europe) to cash it in.");
+        }
+        return PlayerById(train.OwnerId) is { } owner ? MoveCheck.Yes(CashInValue(owner, train)) : MoveCheck.No("The treasure train has no owner.");
+    }
+
+    /// <summary>
+    /// Cashes in <paramref name="train"/>: banks the net gold (<see cref="CashInValue(Unit)"/>) to its owner and the
+    /// train leaves the game (FreeCol disposes it on cash-in). At a colony the King takes his transport cut; in Europe
+    /// there is no fee. The monarch's tax applies to the remainder either way.
+    /// </summary>
+    /// <exception cref="InvalidMoveException">Not cashable here; see <see cref="CheckCashInTreasureTrain"/>.</exception>
+    public void CashInTreasureTrain(Unit train)
+    {
+        MoveCheck check = CheckCashInTreasureTrain(train);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        if (PlayerById(train.OwnerId) is { } owner)
+        {
+            owner.Gold += CashInValue(owner, train);
+        }
+        train.SetTreasureAmount(0); // the treasure is spent — also stops a stale reference re-cashing it (it credits gold)
+        _units.Remove(train); // the treasure train leaves the game
+    }
+
     /// <summary>
     /// Tiles a settlement's chief reveals when you first speak ("tales of nearby lands";
     /// scaled down from FreeCol's <c>TALES_RADIUS</c> = 6 for our smaller default map).

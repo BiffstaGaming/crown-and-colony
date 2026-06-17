@@ -1,4 +1,5 @@
 using System.Linq;
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Randomness;
@@ -107,5 +108,116 @@ public class TreasureTrainTests
         Game game = Game.New(Classic, Seed);
         Assert.All(game.Units, u => Assert.Equal(0, u.TreasureAmount));
         Assert.DoesNotContain("TreasureAmount", SaveGame.From(game).ToJson()); // byte-identical to v26 with no treasure
+    }
+
+    // ---- Cash-in (86d3c9rzu) ----
+
+    private const string Cortes = "model.foundingFather.hernanCortes";
+
+    /// <summary>A human colony with a human-owned treasure train standing on it, carrying <paramref name="amount"/>.</summary>
+    private static (Game game, Unit train, Colony colony) TrainAtColony(int amount)
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        game.HumanPlayer.TaxRate = 0; // isolate the King's transport cut from the monarch tax
+        Unit train = game.SpawnUnit(Classic.Unit(TreasureTrain), colony.Position);
+        train.SetTreasureAmount(amount);
+        return (game, train, colony);
+    }
+
+    [Fact]
+    public void CashIn_AtAColony_BanksTheAmountLessTheKingsCut()
+    {
+        (Game game, Unit train, _) = TrainAtColony(1000);
+        int goldBefore = game.HumanPlayer.Gold;
+        int id = train.Id;
+
+        Assert.Equal(400, game.CashInValue(train));   // 1000 − 60% transport fee, no tax → 400
+        game.CashInTreasureTrain(train);
+
+        Assert.Equal(goldBefore + 400, game.HumanPlayer.Gold);
+        Assert.DoesNotContain(game.Units, u => u.Id == id); // the train is spent
+    }
+
+    [Fact]
+    public void CashIn_TaxesTheRemainderAfterTheKingsCut()
+    {
+        (Game game, Unit train, _) = TrainAtColony(1000);
+        game.HumanPlayer.TaxRate = 25; // (1000 − 600) × (100 − 25)/100 = 300
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.CashInTreasureTrain(train);
+
+        Assert.Equal(goldBefore + 300, game.HumanPlayer.Gold);
+    }
+
+    [Fact]
+    public void CashIn_WithHernanCortes_PaysNoKingsCut()
+    {
+        (Game game, Unit train, _) = TrainAtColony(1000);
+        game.HumanPlayer.CongressList.Add(Cortes); // treasureTransportFee −100% → free transport
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.CashInTreasureTrain(train);
+
+        Assert.Equal(goldBefore + 1000, game.HumanPlayer.Gold); // full amount (no fee, no tax)
+    }
+
+    [Fact]
+    public void CashIn_InEurope_PaysNoKingsCut()
+    {
+        (Game game, Unit train, _) = TrainAtColony(1000);
+        train.Location = UnitLocation.InEurope; // carried home yourself → the King takes no fee
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.CashInTreasureTrain(train);
+
+        Assert.Equal(goldBefore + 1000, game.HumanPlayer.Gold);
+    }
+
+    [Fact]
+    public void CashIn_AwayFromAColony_IsRefused()
+    {
+        Game game = Game.New(Classic, Seed);
+        Position open = game.Map.AllPositions().First(p => !game.Map.TerrainAt(p).IsWater
+            && game.ColonyAt(p) is null && game.NativeSettlementAt(p) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p));
+        Unit train = game.SpawnUnit(Classic.Unit(TreasureTrain), open);
+        train.SetTreasureAmount(500);
+
+        Assert.False(game.CheckCashInTreasureTrain(train).Allowed);
+        Assert.Throws<InvalidMoveException>(() => game.CashInTreasureTrain(train));
+        Assert.Contains(game.Units, u => u.Id == train.Id); // not consumed
+    }
+
+    [Fact]
+    public void CashIn_CannotBeRepeated_OnTheSameTrain()
+    {
+        (Game game, Unit train, _) = TrainAtColony(1000);
+        game.CashInTreasureTrain(train);
+        int goldAfter = game.HumanPlayer.Gold;
+
+        Assert.False(game.CheckCashInTreasureTrain(train).Allowed);    // spent — its treasure is 0
+        Assert.Throws<InvalidMoveException>(() => game.CashInTreasureTrain(train));
+        Assert.Equal(goldAfter, game.HumanPlayer.Gold);               // no double credit
+    }
+
+    [Fact]
+    public void CashIn_AtARivalColony_IsRefused()
+    {
+        (Game game, Unit train, Colony colony) = TrainAtColony(1000);
+        colony.OwnerId = 99; // a colony the train's owner (0) does not hold
+
+        Assert.False(game.CheckCashInTreasureTrain(train).Allowed);
+        Assert.Throws<InvalidMoveException>(() => game.CashInTreasureTrain(train));
+    }
+
+    [Fact]
+    public void CheckCashIn_PreviewsTheNetGold()
+    {
+        (Game game, Unit train, _) = TrainAtColony(1000);
+        MoveCheck check = game.CheckCashInTreasureTrain(train);
+        Assert.True(check.Allowed);
+        Assert.Equal(400, check.Cost); // the net the player would bank (preview)
     }
 }
