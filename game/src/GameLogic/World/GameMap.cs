@@ -8,6 +8,7 @@ public sealed class GameMap
     private readonly TerrainType[] _terrain;
     private readonly Dictionary<Position, string> _resources;
     private readonly HashSet<Position> _rumours;
+    private readonly Dictionary<Position, string> _nativeOwners = []; // tile → owning native nation type id (derived, not saved)
 
     /// <summary>Creates a map from a row-major terrain array (length must be Width × Height).</summary>
     /// <param name="width">Map width in tiles.</param>
@@ -68,6 +69,24 @@ public sealed class GameMap
 
     /// <summary>Removes a Lost City Rumour from a tile once it has been explored (one-shot).</summary>
     internal void RemoveRumour(Position p) => _rumours.Remove(p);
+
+    /// <summary>True when a tile is claimed by a native nation (within a native settlement's claim radius).</summary>
+    public bool IsNativeOwned(Position p) => _nativeOwners.ContainsKey(p);
+
+    /// <summary>The native nation type id owning a tile (e.g. <c>model.nationType.apache</c>), or null if unclaimed.</summary>
+    public string? NativeOwnerOf(Position p) => _nativeOwners.GetValueOrDefault(p);
+
+    /// <summary>All tiles claimed by a native nation, keyed by tile (sparse). Derived at game start / on load, never saved.</summary>
+    public IReadOnlyDictionary<Position, string> NativeOwners => _nativeOwners;
+
+    /// <summary>Claims a tile for a native nation (derivation at game start / on load; later, a purchase transfer).</summary>
+    internal void SetNativeOwner(Position p, string nationTypeId) => _nativeOwners[p] = nationTypeId;
+
+    /// <summary>Releases a tile's native claim (land bought, taken, or the owning settlement gone).</summary>
+    internal void ClearNativeOwner(Position p) => _nativeOwners.Remove(p);
+
+    /// <summary>Drops every native land claim (before a full re-derivation when the settlements change).</summary>
+    internal void ClearNativeOwners() => _nativeOwners.Clear();
 
     /// <summary>All positions on the map, row by row.</summary>
     public IEnumerable<Position> AllPositions()

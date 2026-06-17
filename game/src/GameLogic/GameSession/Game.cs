@@ -449,6 +449,24 @@ public sealed class Game
         _nativeSettlements.FirstOrDefault(s => s.Position == p);
 
     /// <summary>
+    /// Re-derives native land ownership from the current settlements (FreeCol <c>Tile.owner</c>): the tiles in each
+    /// settlement's <see cref="Specification.SettlementType.ClaimableRadius"/> become owned by its nation. Pure +
+    /// deterministic (no RNG) — so rather than being saved it is run at game start, on load, and whenever the
+    /// settlements change (e.g. one is destroyed in combat, releasing its claim). <b>Idempotent</b>: it clears the
+    /// existing claims first, so calling it again rebuilds the same map. See <see cref="World.NativeLandClaimGenerator"/>.
+    /// Consumed by the Lost City Rumour burial-ground gate and, later, native land purchase (<c>86d3c9tha</c>) and
+    /// settle/work-on-native-land tension.
+    /// </summary>
+    private void ClaimNativeLand()
+    {
+        Map.ClearNativeOwners(); // rebuild from scratch so a removed settlement's claim is dropped
+        foreach ((Position p, string nation) in NativeLandClaimGenerator.Claim(Map, _nativeSettlements, Ruleset))
+        {
+            Map.SetNativeOwner(p, nation);
+        }
+    }
+
+    /// <summary>
     /// Tiles a settlement's chief reveals when you first speak ("tales of nearby lands";
     /// scaled down from FreeCol's <c>TALES_RADIUS</c> = 6 for our smaller default map).
     /// </summary>
@@ -1113,6 +1131,7 @@ public sealed class Game
             ApplyWinnerPromotion(attacker, great, random); // promotion draw (if any) before the plunder draws
             _human.Gold += ComputePlunder(type, hasPlunderAbility, random); // the attacker is the human in FP-1 (combat becomes player-aware in FP-6)
             _nativeSettlements.Remove(settlement); // destroyed
+            ClaimNativeLand(); // the razed settlement releases its land claim (surviving same-nation settlements keep theirs)
 
             if (capital)
             {
@@ -1800,6 +1819,8 @@ public sealed class Game
             game._nextSettlementId = Math.Max(game._nextSettlementId, settlement.Id + 1);
         }
 
+        game.ClaimNativeLand(); // each native settlement claims the land in its radius (FreeCol Tile.owner)
+
         // Garrison each settlement with native braves on adjacent open land (unarmed defenders the
         // player can attack in the open field; the settlement tile itself is assaulted in slice 5c).
         // Placement is deterministic and consumes no RNG draw, so neither the economy stream (0) nor
@@ -2004,6 +2025,8 @@ public sealed class Game
             game._nativeSettlements.Add(settlement);
             game._nextSettlementId = Math.Max(game._nextSettlementId, settlement.Id + 1);
         }
+
+        game.ClaimNativeLand(); // re-derive native tile ownership from the restored settlements (never saved)
 
         // Fog: union each player's explored tiles; a pre-fog save (v1, explored null) re-derives its
         // fog by revealing around that player's units, mirroring the original load fallback.
