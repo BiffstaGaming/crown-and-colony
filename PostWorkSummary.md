@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 (overnight) — Strange mounds + burial ground LCR outcomes (86d3c9umy) [overnight autonomous run, item 5]
+
+**Requested:** Overnight continuous backlog run (item 5). Ultracode on.
+**Did:** Shipped **strange mounds + burial ground** (`86d3c9umy`, `995c4dc`) — completing the LCR reward spectrum — designed by an understand+design workflow and adversarially reviewed (the review caught 2 real pending-state bugs, both fixed before commit).
+- On **native-owned land** the rumour table conditional-adds **MOUNDS** (weight 8) and the normalised **BurialGround 25 / ExpeditionVanishes 75** bad pair; off native land it's **byte-identical** (the determinism guard — wilderness explores unchanged, soak twin-deterministic).
+- Stepping onto strange mounds raises a transient **`PendingMounds`** prompt (human investigate/decline) or **auto-investigates** for an AI on its own stream. Investigating runs FreeCol's **degradation loop** (`DegradeMounds`: sticky second-NOTHING, the ruins-stays-ruins fall-through quirk, uncapped); declining removes the rumour draw-free; a **burial ground** raises the owning nation to **max alarm** (`ApplyBurialGround`).
+- **No save bump** (PendingMounds is transient). Shared `ResolveOutcome` extracted; `ChooseRumourType` gained the tile + `NormalizeTo100`.
+**Status:** **762 L1+L2 + 4 soak green** (+14 `LostCityRumourTests`). Soak twin-deterministic, invariants hold (conditional-add kept it byte-stable off native land; burial alarm clamped). Solution builds. Committed `995c4dc`, pushed. ClickUp `86d3c9umy` → In Review.
+**Changed:** GameLogic `GameSession/Game.cs` (enum + `ChooseRumourType`/`NormalizeTo100`/`ResolveOutcome`/`ExploreRumour` peek + `InvestigateMounds`/`DegradeMounds`/`DeclineMounds`/`ApplyBurialGround` + `PendingMounds` transient + wrappers + `TryExploreRumour` wiring + `EndTurn` auto-decline). Tests `LostCityRumourTests.cs`. Docs `lost-city-rumours.md` (both layers).
+**Decisions:** **(1) Include burial ground** (the degradation loop is meaningless without it). **(2) Conditional-add** MOUNDS/burial only on native tiles → determinism-safe. **(3) Two-phase, no save bump** (transient PendingMounds; a save mid-prompt reloads with the tile un-explored). **(4) Burial = nation-wide max alarm**, not a war stance (we model no native-vs-colonial war). **Review fixes:** a pending decision blocks further human exploration (re-entry guard) + auto-declines at EndTurn; `InvestigateMounds` no-ops on an already-consumed tile (stale-tile guard) — so one rumour → one resolution.
+**Scheduled next (overnight):** evaluate the remaining "Ready for Development" items — likely `86d3c9pgj` (on-the-job experience upgrades) or its blocker `86d3b6nrz` (per-colonist unit identity, the colony-model refactor). Will scope at the start of item 6.
+**Follow-ups:** **`86d3cqqu5`** — Strange-mounds **decision-panel UI** (Godot prompt reading `PendingMounds` + outcome message surfacing); the engine API + AI auto-investigate are done, only the human's on-screen prompt is missing (until it ships, a human's mounds auto-declines at EndTurn). Deferred refinements (in the doc): the gen-time MOUNDS pre-stamp (would need save v29) + the burial-ground war stance.
+**Needs you:** **Two interim behaviours to confirm** (both reversible): (a) until the decision-panel UI ships, a human stepping on strange mounds **auto-declines at EndTurn** (no investigate option yet); (b) a desecrated burial ground makes the nation **max-alarm/hateful** rather than formally declaring war (we have no native war stance). Plus the earlier **food-export** question still stands (custom house). Otherwise: nothing — run continuing.
+
 ## 2026-06-17 (overnight) — Custom house: export model + per-turn auto-sell (86d3c9ru3 + 86d3c9rx2) [overnight autonomous run, item 4]
 
 **Requested:** Overnight continuous backlog run (item 4). Ultracode on.
