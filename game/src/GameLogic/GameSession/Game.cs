@@ -964,11 +964,37 @@ public sealed class Game
                 .Where(a => a.Id == AutomaticEquipmentAbility && a.Value)
                 .SelectMany(a => a.ScopeTypes);
 
-    /// <summary>The strongest enemy of <paramref name="attacker"/> standing on a tile, or null.</summary>
-    private Unit? DefenderAt(Unit attacker, Position p) =>
+    /// <summary>
+    /// The strongest enemy of <paramref name="attacker"/> standing on a tile, or null. Ranked by full <em>computed</em>
+    /// defence power (terrain / fortify / settlement / naval-cargo), not raw base defence — FreeCol
+    /// <c>Unit.betterDefender</c> picks the best actual defender, so a dug-in or walled weaker unit can outrank a
+    /// stronger one in the open. Ties broken by unit id for determinism (ADR-009).
+    /// </summary>
+    internal Unit? DefenderAt(Unit attacker, Position p) =>
         _units.Where(u => u.IsOnMap && AreEnemies(attacker, u) && u.Position == p)
-            .OrderByDescending(DefenceBase)
+            .OrderByDescending(u => DefencePowerOf(attacker, u, p))
+            .ThenBy(u => u.Id)
             .FirstOrDefault();
+
+    /// <summary>
+    /// The full defence power a unit would defend <paramref name="target"/> with against <paramref name="attacker"/>
+    /// (FreeCol <c>SimpleCombatModel.getDefencePower</c>): the same context the attack resolution builds — terrain
+    /// cover (none on water / in a settlement), the dig-in bonus, the colony's fortification bonus, the artillery
+    /// in-the-open penalty / against-raid bonus, and the naval cargo penalty.
+    /// </summary>
+    private double DefencePowerOf(Unit attacker, Unit defender, Position target)
+    {
+        bool naval = defender.Type.IsNaval;
+        bool inColony = !naval && ColonyAt(target) is not null;
+        var context = new DefenceContext(
+            TerrainDefenceBonus: (naval || inColony) ? 0 : Map.TerrainAt(target).DefenceBonus,
+            Fortified: !naval && defender.IsFortified,
+            SettlementDefenceBonus: naval ? 0 : ColonyDefenceBonusAt(target),
+            ArtilleryInOpen: !naval && defender.Type.Bombard && !inColony && !defender.IsFortified,
+            ArtilleryAgainstRaid: !naval && inColony && defender.Type.Bombard && attacker.IsNative,
+            GoodsCarried: naval ? GoodsSlotsUsed(defender) : 0);
+        return CombatModel.DefencePower(DefenceBase(defender), context);
+    }
 
     /// <summary>A free, in-bounds land tile adjacent to a centre (no settlement or unit on it), or null.</summary>
     private Position? FreeAdjacentLand(Position centre) =>
@@ -1195,18 +1221,9 @@ public sealed class Game
             ArtilleryInOpen: !naval && attacker.Type.Bombard && !attackerInColony && !attacker.IsFortified && !inColony,
             AmbushBonus: ambush ? Map.TerrainAt(target).DefenceBonus : 0,
             GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0); // FreeCol cargo penalty is goods only, not passengers
-        var defenceContext = new DefenceContext(
-            TerrainDefenceBonus: (naval || inColony) ? 0 : Map.TerrainAt(target).DefenceBonus, // open water / a colony: no terrain bonus
-            Fortified: !naval && defender.IsFortified, // a dug-in land defender resists at +50% (FreeCol FORTIFIED)
-            SettlementDefenceBonus: naval ? 0 : ColonyDefenceBonusAt(target), // a unit defending in a fortified colony (stockade/fort/fortress)
-            // Artillery caught defending in the open is brittle too (−75%, unless dug in); but behind a colony's
-            // walls against a NATIVE raid it doubles (+100%, FreeCol ARTILLERY_AGAINST_RAID).
-            ArtilleryInOpen: !naval && defender.Type.Bombard && !inColony && !defender.IsFortified,
-            ArtilleryAgainstRaid: !naval && inColony && defender.Type.Bombard && attacker.IsNative,
-            GoodsCarried: naval ? GoodsSlotsUsed(defender) : 0);
-
         double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext);
-        double defencePower = CombatModel.DefencePower(DefenceBase(defender), defenceContext);
+        // The defender's full power (terrain/fortify/settlement/artillery/cargo) — the same figure DefenderAt ranks by.
+        double defencePower = DefencePowerOf(attacker, defender, target);
 
         // Attacking ends the attacker's turn now — before any promotion/demotion that swaps the unit
         // object (UpgradeUnitType copies MovementLeft, so the swapped unit inherits the spent turn).
@@ -1708,7 +1725,10 @@ public sealed class Game
             return;
         }
 
-        // 3. A capturable unit changes side (and may downgrade its type on capture).
+        // 3. A capturable unit changes side (and may downgrade its type on capture). FreeCol also requires
+        // !combatIsAmphibious here (a unit beaten by an assault fired straight off a ship is slain, not captured) —
+        // omitted because we model no amphibious assault yet (CheckAttack requires the attacker be on the map, not
+        // aboard), so this branch is never reached amphibiously. The guard lands with amphibious assault (86d3c9tzv).
         if (loser.Type.CanBeCaptured && CanCaptureUnits(winner))
         {
             CaptureUnit(loser, winner);

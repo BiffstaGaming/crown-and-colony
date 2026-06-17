@@ -640,4 +640,27 @@ public class CombatTests
         Assert.True(loadedBrave.IsNative);
         Assert.Equal(brave.OwnerNationId, loadedBrave.OwnerNationId);
     }
+
+    [Fact]
+    public void DefenderAt_RanksByComputedPower_NotBaseDefence()
+    {
+        // Two enemy units stacked on one tile: a damaged artillery (base defence 3, but −75% caught in the open →
+        // 0.75) and a fortified free colonist (base defence 1, +50% → 1.5). FreeCol betterDefender picks the higher
+        // computed power, so the colonist defends even though the gun has the higher BASE defence.
+        Game game = Game.New(Classic, Seed);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        game.SetStance(game.HumanPlayer.PlayerId, power.PlayerId, Stance.War);
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.War);
+        Position tile = game.Map.AllPositions().First(p => !game.Map.TerrainAt(p).IsWater
+            && game.ColonyAt(p) is null && game.NativeSettlementAt(p) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p));
+
+        Unit gun = game.SpawnUnit(Classic.Unit("model.unit.damagedArtillery"), tile, power.PlayerId);
+        Unit fortified = game.SpawnUnit(Classic.Unit(FreeColonist), tile, power.PlayerId);
+        fortified.Orders = UnitOrders.Fortified;
+        Unit attacker = game.PlayerUnits.First(u => u.IsOnMap); // any human enemy (DefenderAt ignores offence/adjacency)
+
+        Assert.True(game.DefenceBase(gun) > game.DefenceBase(fortified)); // the gun has the higher BASE defence…
+        Assert.Equal(fortified.Id, game.DefenderAt(attacker, tile)!.Id);  // …but the fortified colonist defends (higher power)
+    }
 }
