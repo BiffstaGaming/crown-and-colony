@@ -4,13 +4,17 @@ using Godot;
 namespace CrownAndColony.Presentation;
 
 /// <summary>
-/// The settings / options screen, reached from the main menu's Settings button. It edits the live application
-/// settings held by the <see cref="SettingsService"/> autoload — every change applies to the engine immediately;
-/// <b>Back</b> saves to disk and returns to the menu. Same FreeCol map backdrop + parchment/wood framing as the main
-/// menu (presentation-only, ADR-006).
+/// The settings / options screen, shown as an overlay by the main menu and the in-game pause menu. It edits the live
+/// application settings held by the <see cref="SettingsService"/> autoload — every change applies to the engine
+/// immediately; <b>Back</b> saves to disk and emits <see cref="Closed"/> for the host to dismiss it. Same FreeCol map
+/// backdrop + parchment/wood framing as the main menu (presentation-only, ADR-006).
 /// </summary>
 public partial class SettingsScreen : Control
 {
+    /// <summary>Emitted when the player presses Back (after settings are saved). The host removes the overlay.</summary>
+    [Signal]
+    public delegate void ClosedEventHandler();
+
     private const string BackdropPath = "res://assets/freecol/ui/map.jpg";
 
     private SettingsService _service = null!;
@@ -103,11 +107,11 @@ public partial class SettingsScreen : Control
         _service.UpdateAndApply(set);
     }
 
-    /// <summary>Persists the settings and returns to the main menu.</summary>
+    /// <summary>Persists the settings and asks the host to dismiss the screen (via the <see cref="Closed"/> signal).</summary>
     private void OnBack()
     {
         _service.Save();
-        GetTree().ChangeSceneToFile(MainMenu.MenuScenePath);
+        EmitSignal(SignalName.Closed);
     }
 
     private static string Percent(float linear) => $"{Mathf.RoundToInt(linear * 100f)}%";

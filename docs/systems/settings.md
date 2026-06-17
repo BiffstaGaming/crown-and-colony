@@ -3,17 +3,17 @@
 | | |
 |---|---|
 | **Status** | In development (Slice B shipped — video + audio) |
-| **Last verified** | 2026-06-17 @ 11da6fa |
+| **Last verified** | 2026-06-17 @ (pending) |
 | **Code** | `game/src/GameLogic/App/SettingsModel.cs` (pure), `game/presentation/SettingsService.cs` (autoload), `game/presentation/SettingsScreen.cs` + `game/scenes/SettingsScreen.tscn` |
 | **Tests** | `game/tests/GameLogic.Tests/App/SettingsModelTests.cs` (L1); `game/presentation/tests/SettingsScreenTests.cs` (L3) |
 | **FreeCol reference** | FreeCol's client options dialog (conceptual — we ship a minimal subset) |
-| **Related systems** | [main-menu.md](main-menu.md) (entry point) |
+| **Related systems** | [main-menu.md](main-menu.md) (entry point), [pause-menu.md](pause-menu.md) (also hosts it) |
 
 ## 1. How it works (plain English)
 
 *Audience: anyone — no jargon.*
 
-A **Settings** screen, opened from the main menu, lets you change how the game looks and sounds. Your choices take effect immediately and are remembered the next time you play.
+A **Settings** screen, opened from the main menu or the in-game pause menu, lets you change how the game looks and sounds. Your choices take effect immediately and are remembered the next time you play.
 
 **The rules, in plain words:**
 - **Video** — Window Mode (Windowed or Fullscreen) and VSync (on/off).
@@ -52,7 +52,7 @@ A **Settings** screen, opened from the main menu, lets you change how the game l
 
 **Autoload:** `SettingsService` (`/root/Settings`, registered in `project.godot`) owns the live `SettingsModel`. On `_Ready` it ensures the Music/SFX audio buses exist, `Load`s `user://settings.cfg` into the model, and `Apply`s it to the engine. API: `Settings` (the live model), `UpdateAndApply(mutate)` (mutate → clamp → apply, no save), `Save()`, `Apply()`.
 
-**UI:** `SettingsScreen` (`Control`) resolves the autoload (falling back to a transient `SettingsService` child if absent), populates its controls, and on each control change calls `UpdateAndApply` (live). A `_populating` guard stops the change handlers firing while controls are set programmatically. **Back** calls `Save()` then `ChangeSceneToFile(MainMenu.MenuScenePath)`. Look is shared with the menu via `ColonyTheme` + `ColonyArt.ParchmentSkin()` + the carved-wood border.
+**UI:** `SettingsScreen` (`Control`) is a reusable **overlay**: a host (the main menu or the pause menu) instantiates it as a child and removes it when it emits `Closed`. It resolves the autoload (falling back to a transient `SettingsService` child if absent), populates its controls, and on each control change calls `UpdateAndApply` (live). A `_populating` guard stops the change handlers firing while controls are set programmatically. **Back** calls `Save()` then emits `Closed` — it does not change scenes itself, so the host (and a paused game beneath the pause menu) is preserved. Look is shared with the menu via `ColonyTheme` + `ColonyArt.ParchmentSkin()` + the carved-wood border.
 
 **Audio buses:** the default project has only **Master**. `SettingsService.EnsureAudioBuses` creates **Music** and **SFX** (routed to Master) at startup so all three volume sliders drive real buses, ready for the audio [ART] task to route players through them.
 
@@ -73,10 +73,11 @@ A **Settings** screen, opened from the main menu, lets you change how the game l
 - [ ] **L4 golden** for the settings screen — blocked on a licence-clear UI font (ClickUp `86d3c9y32`).
 - [ ] Route music/SFX players through the Music/SFX buses when audio assets land (ClickUp `86d3c9xu1` / `86d3c9xrp`).
 - [ ] Possible later additions: resolution picker, gameplay options tab, key rebinding, language.
-- [ ] Reuse this screen from the in-game pause menu (separate slice) — may move from a full scene to an overlay then.
+- [x] Reused by the in-game pause menu as an overlay (Slice C — see [pause-menu.md](pause-menu.md)).
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-17 | Slice B — settings screen + persistence: `SettingsModel` (L1) + `SettingsService` autoload (`user://settings.cfg`) + Video/Audio UI; wired the menu's Settings button | 11da6fa |
+| 2026-06-17 | Slice C — made `SettingsScreen` a reusable overlay (emits `Closed`, no self-navigation); menu + pause menu host it | (pending) |

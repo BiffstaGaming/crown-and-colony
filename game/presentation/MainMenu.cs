@@ -53,8 +53,13 @@ public partial class MainMenu : Control
     /// <summary>Starts a new game by loading the in-game scene (which builds a fresh game, as the app did on boot before).</summary>
     private void OnNewGame() => GetTree().ChangeSceneToFile(GameScenePath);
 
-    /// <summary>Opens the settings / options screen.</summary>
-    private void OnSettings() => GetTree().ChangeSceneToFile(SettingsScenePath);
+    /// <summary>Opens the settings screen as an overlay; removes it again when the player presses Back.</summary>
+    private void OnSettings()
+    {
+        var settings = GD.Load<PackedScene>(SettingsScenePath).Instantiate<SettingsScreen>();
+        settings.Closed += settings.QueueFree;
+        AddChild(settings);
+    }
 
     /// <summary>Exits the application.</summary>
     private void OnQuit() => GetTree().Quit();

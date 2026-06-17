@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 — Title screen Slice C shipped (in-game pause menu)
+
+**Requested:** "Move onto the next work" (after reviewing the menu + settings).
+**Did:**
+- **`PauseMenu`** added to the game scene (`main.tscn` UI, hidden): **Esc** opens it over a **paused** game (`GetTree().Paused`); **Resume / Settings / Quit to Main Menu / Quit to Desktop**. Same parchment/wood look. Rendered a preview over a live game.
+- **Made `SettingsScreen` a reusable overlay**: it now emits a **`Closed`** signal on Back (after saving) instead of changing scenes. Both the **main menu** and the **pause menu** host it as an overlay — so opening settings mid-game keeps the (paused) game alive underneath.
+- Pause node uses `ProcessMode.Always` so Esc + buttons work while the rest of the tree is frozen; **additive** to `main.tscn` (GameController untouched).
+- Docs: new `docs/systems/pause-menu.md` (both layers) + updated `settings.md` + `main-menu.md`.
+**Status:** **L3 presentation 54 green** (+6: 5 PauseMenuTests + 1 menu settings-overlay). **No regression** in the core game-scene tests or visual goldens despite editing `main.tscn`. Build + import clean. L1+L2 unchanged (685). L4 golden deferred (`86d3c9y32`).
+**Changed:** presentation `PauseMenu.cs` (new), `SettingsScreen.cs` (Closed signal), `MainMenu.cs` (settings overlay), `scenes/main.tscn` (PauseMenu node + ext_resource); tests `PauseMenuTests.cs` (new) + `MainMenuTests.cs`; docs `pause-menu.md` (new) + `settings.md` + `main-menu.md`. Commit (pending). [worktree `feature/title-settings`]
+**Decisions:** `SettingsScreen` → overlay (Closed signal) so it's reusable from menu + pause and preserves a paused game (a scene change would rebuild the game). Esc ignored while the settings overlay is up (use its Back). Pause via tree-pause + `ProcessMode.Always` — additive, no GameController change.
+**Scheduled next:** the title/settings arc is now feature-complete (boot→menu→game→pause→menu loop closed). Recommend **merge `feature/title-settings` → `main`**; otherwise the next in-lane slice is **Load Game** (`86d3c9y5y`, needs the save-load dialog UI) or the **New Game setup** screen (`86d3c9y08` difficulty dep).
+**Follow-ups:** L4 goldens once `86d3c9y32` lands; optionally let Esc also close the settings overlay; add Save/Load to the pause menu when the save-load UI exists.
+**Needs you:** Eyeball the pause menu (preview in chat). **Merge decision** — this branch (3 slices) is a clean, self-contained unit ready for `main`.
+
 ## 2026-06-17 — Title screen Slice B shipped (Settings + persistence)
 
 **Requested:** Continue Slice B — the settings/options screen + persistence.

@@ -3,11 +3,11 @@
 | | |
 |---|---|
 | **Status** | In development (Slice A shipped — shell only) |
-| **Last verified** | 2026-06-17 @ 11da6fa |
+| **Last verified** | 2026-06-17 @ (pending) |
 | **Code** | `game/presentation/MainMenu.cs`, `game/scenes/MainMenu.tscn` |
 | **Tests** | `game/presentation/tests/MainMenuTests.cs` (L3) |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/client/gui/panel/MainPanel.java` (opening-menu layout); `freecol/data/base/resources/images/ui/` (art) |
-| **Related systems** | [settings.md](settings.md) (Settings button), [colonies.md](colonies.md) (shared parchment/wood theme), [save-load.md](save-load.md) (Load Game, later) |
+| **Related systems** | [settings.md](settings.md) (Settings overlay), [pause-menu.md](pause-menu.md) (Quit to Main Menu target), [colonies.md](colonies.md) (shared theme), [save-load.md](save-load.md) (Load Game, later) |
 
 ## 1. How it works (plain English)
 
@@ -34,7 +34,7 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 |---|---|
 | App launches | `MainMenu.tscn` loads (it is the project's `run/main_scene`) |
 | Click **New Game** | The scene changes to `scenes/main.tscn`, which builds a fresh game (the prior boot behaviour) |
-| Click **Settings** | The scene changes to `scenes/SettingsScreen.tscn` (see [settings.md](settings.md)) |
+| Click **Settings** | Opens the `SettingsScreen` overlay (see [settings.md](settings.md)); its Back closes it |
 | Click **Quit** | `SceneTree.Quit()` — the application exits |
 | **Load Game** button | Disabled (greyed) until the save-load dialog UI ships |
 
@@ -86,3 +86,4 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 |---|---|---|
 | 2026-06-17 | Slice A — main-menu shell: scene + script, FreeCol map backdrop + wood/parchment frame, New Game/Quit wired, Load/Settings disabled; L3 tests; boot scene switched to the menu | 17f00a6 |
 | 2026-06-17 | Slice B — Settings button wired to `SettingsScreen`; parchment skin hoisted to `ColonyArt.ParchmentSkin()` | 11da6fa |
+| 2026-06-17 | Slice C — Settings now opens `SettingsScreen` as an overlay (was a scene change), to match the pause menu's reuse | (pending) |

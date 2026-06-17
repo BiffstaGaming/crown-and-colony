@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Threading.Tasks;
 using CrownAndColony.Presentation;
 using GdUnit4;
@@ -73,5 +74,18 @@ public class MainMenuTests
         var instance = GD.Load<PackedScene>(MainMenu.GameScenePath).Instantiate();
         AssertThat(instance).IsInstanceOf<GameController>();
         instance.Free();
+    }
+
+    [TestCase]
+    public async Task SettingsButton_OpensTheSettingsScreenAsAnOverlay()
+    {
+        ISceneRunner runner = ISceneRunner.Load(MenuScene);
+        await runner.SimulateFrames(2);
+        var menu = runner.Scene();
+
+        menu.GetNode<Button>("Panel/VBox/SettingsButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(menu.GetChildren().OfType<SettingsScreen>().Any()).IsTrue();
     }
 }
