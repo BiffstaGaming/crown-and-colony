@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 (overnight) — Horse-breeding production formula (86d3c9nwr) [overnight autonomous run, item 6]
+
+**Requested:** Overnight continuous backlog run (item 6). Ultracode on.
+**Did:** Shipped the **horse-breeding formula** (`86d3c9nwr`, `2b27394`), adversarially reviewed (2 confirmed findings, both fixed before commit). The Ready queue's remaining items are all blocked by the colony-model refactor `86d3b6nrz`, which Chris flagged as *needing his architectural steer* (low priority) — so rather than pre-empt that design overnight I pulled this self-contained, faithful, architecture-independent feature.
+- `Game.RunBreeding` replaces the old **flat 1 horse/turn** with FreeCol's auto-production formula `((herd−1)/divisor + 1) × factor` — gated at the breeding number (2), stopping at the warehouse cap, eating only surplus food. Pasture divisor 50 / factor 2; stables halves the divisor → 25 (breeds twice as fast).
+- `BuildingType.BreedingDivisor`/`BreedingFactor` parse off `model.modifier.breedingDivisor`/`breedingFactor` via a new `ResolveScalarModifierUpChain` (additive-then-multiplicative up the `extends` chain).
+- **No save/RNG change** (horses are an already-stored good).
+**Status:** **771 L1+L2 + 4 soak green** (+10 `HorseBreedingTests` + the updated pasture test). Solution builds. Committed `2b27394`, pushed. ClickUp `86d3c9nwr` → In Review.
+**Changed:** GameLogic `Specification/BuildingType.cs` + `Ruleset.cs` (`BreedingDivisor`/`Factor` + `ResolveScalarModifierUpChain`), `GameSession/Game.cs` (`RunBreeding`; `RunColonyTurn` tallies this-turn food + threads it; `RunBuildingProduction` signature). Tests `HorseBreedingTests.cs` (new) + `BuildingTests.cs`. Docs `colonies.md` (both layers), `ruleset-data.md`.
+**Decisions:** **(1) Parse the divisor/factor from the spec modifiers** (not hardcode) — cleaner + faithful. **Review fixes:** **(2)** the surplus base is **half of this turn's food *production*** (centre + tiles), threaded from `RunColonyTurn` — **not** stored-carryover-minus-ration (the medium-severity FreeCol divergence the review caught); so a herd can't grow off a stockpile and colonists are never starved. **(3)** added an **L2 twin-determinism + save-round-trip drift test** because the soak never holds horses (no acquisition path) and so never exercised breeding.
+**Scheduled next (overnight):** continue self-contained, architecture-independent P5 GameLogic features (the colony-model refactor `86d3b6nrz` and its dependents stay parked for Chris). Candidate: `86d3c9p1u` (factory-tier production bonus) or `86d3c9nyd` (build artillery in a colony) — will scope at the start of item 7.
+**Follow-ups:** `86d3b6nrz` per-colonist unit identity (the colony-model blocker — **needs Chris's architectural steer**; unblocks `86d3c9pgj`/`86d3c9q1z`). `86d3cqqu5` strange-mounds decision-panel UI. `86d3bb1x3` move breeding/monarch constants to ruleset data.
+**Needs you:** **`86d3b6nrz` is the gateway to several Ready items but I've parked it for your architectural call** — let me know if you'd like me to proceed on it or keep pulling self-contained features. (Plus the still-open food-export and burial-ground/strange-mounds interim-behaviour confirmations from items 4–5.) Otherwise: nothing — run continuing.
+
 ## 2026-06-17 (overnight) — Strange mounds + burial ground LCR outcomes (86d3c9umy) [overnight autonomous run, item 5]
 
 **Requested:** Overnight continuous backlog run (item 5). Ultracode on.
