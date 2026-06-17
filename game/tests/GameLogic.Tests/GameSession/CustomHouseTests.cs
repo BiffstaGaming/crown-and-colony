@@ -94,4 +94,123 @@ public class CustomHouseTests
         Assert.DoesNotContain("AutoExportMode", json); // PerGood default omitted
         Assert.DoesNotContain("Exports", json);        // no toggled goods
     }
+
+    // ---- Per-turn auto-sell (86d3c9rx2) ----
+    //
+    // Exercised end-to-end through EndTurn (the human's RunColonyTurn runs the customs sale after the warehouse
+    // spill). A non-food exported good is sold down to its retain level, so its post-turn store == the level
+    // regardless of how much the colony produced; gold rising proves a sale happened (a warehouse spill credits none).
+
+    private const string Ore = "model.goods.ore";
+    private const string Food = "model.goods.food";
+
+    /// <summary>A human colony that has built a custom house (so it has the export ability), plus its game.</summary>
+    private static (Game Game, Colony Colony) CustomHouseColony()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundColony(game);
+        colony.AddBuilding(CustomHouse);
+        return (game, colony);
+    }
+
+    [Fact]
+    public void AutoSell_WithoutACustomHouse_SellsNothing()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundColony(game);            // no custom house
+        game.SetColonyExport(colony, Sugar, exported: true); // flagged, but nothing acts on it
+        colony.AddGoods(Sugar, 90);
+
+        game.EndTurn();
+
+        Assert.True(colony.StoreOf(Sugar) >= 90);     // never auto-sold down to the level (50) without the building
+    }
+
+    [Fact]
+    public void AutoSell_PerGood_SellsAFlaggedGoodDownToItsLevel()
+    {
+        (Game game, Colony colony) = CustomHouseColony();
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 50);
+        colony.AddGoods(Sugar, 90);
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.EndTurn();
+
+        Assert.Equal(50, colony.StoreOf(Sugar));          // surplus over the level is shipped to Europe
+        Assert.True(game.HumanPlayer.Gold > goldBefore);  // …for gold (a spill would credit nothing)
+    }
+
+    [Fact]
+    public void AutoSell_PerGood_LeavesUnflaggedGoodsAlone()
+    {
+        (Game game, Colony colony) = CustomHouseColony();
+        game.SetColonyExport(colony, Ore, exported: true, exportLevel: 50); // ore flagged
+        colony.AddGoods(Ore, 90);
+        colony.AddGoods(Sugar, 90);                                         // sugar NOT flagged
+
+        game.EndTurn();
+
+        Assert.Equal(50, colony.StoreOf(Ore));        // the flagged good sells
+        Assert.True(colony.StoreOf(Sugar) >= 90);     // the unflagged good is untouched
+    }
+
+    [Fact]
+    public void AutoSell_DoesNotSellAtOrBelowTheLevel()
+    {
+        (Game game, Colony colony) = CustomHouseColony();
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 100);
+        colony.AddGoods(Sugar, 30);                    // below the retain level → no surplus
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.EndTurn();
+
+        Assert.True(colony.StoreOf(Sugar) < 100);     // stayed below the level (nothing shipped)
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);
+    }
+
+    [Fact]
+    public void AutoSell_ExportAllOverLevel_SellsEverySurplus_ButProtectsFood()
+    {
+        (Game game, Colony colony) = CustomHouseColony();
+        game.SetAutoExportMode(AutoExportMode.ExportAllOverLevel); // no per-good flag needed
+        colony.AddGoods(Sugar, 90);                                // non-food → eligible
+        colony.AddGoods(Food, 150 - colony.Food);                 // food → protected, and below the 200 growth bar
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.EndTurn();
+
+        Assert.Equal(50, colony.StoreOf(Sugar));         // sold down to the default retain level
+        Assert.True(colony.Food > 100);                  // food is NOT auto-dumped (growth protected)
+        Assert.True(game.HumanPlayer.Gold > goldBefore);
+    }
+
+    [Fact]
+    public void AutoSell_PerGood_CanExportFood_WhenExplicitlyFlagged()
+    {
+        (Game game, Colony colony) = CustomHouseColony();
+        game.SetColonyExport(colony, Food, exported: true, exportLevel: 50); // FreeCol-faithful: food is exportable
+        colony.AddGoods(Food, 150 - colony.Food);                            // below the 200 growth bar, above the level
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.EndTurn();
+
+        Assert.True(colony.Food < 100);                  // food was shipped down toward the level (then eaten)
+        Assert.True(game.HumanPlayer.Gold > goldBefore);
+    }
+
+    [Fact]
+    public void AutoSell_FoodExport_DoesNotBlockGrowth()
+    {
+        // The customs sale runs AFTER eat/grow (FreeCol order), so a colony at the growth threshold still births its
+        // colonist even with food flagged for export — the sale only ships whatever food is left after the birth.
+        // (With the sale before growth, the food would be sold down to 50 first and the colony would never grow.)
+        (Game game, Colony colony) = CustomHouseColony();
+        game.SetColonyExport(colony, Food, exported: true, exportLevel: 50);
+        colony.AddGoods(Food, 205 - colony.Food);        // at/over the 200 growth bar
+        int popBefore = colony.Population;
+
+        game.EndTurn();
+
+        Assert.Equal(popBefore + 1, colony.Population);  // grew first; the food sale didn't starve growth
+    }
 }

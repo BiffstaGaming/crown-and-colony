@@ -5159,6 +5159,13 @@ public sealed class Game
             colony.Population++;
             AutoAssignIdleToFood(colony);
         }
+
+        // 4. Custom house: a colony with the export ability auto-sells each eligible good's surplus over its retain
+        //    level to the owner's European market. Runs LAST — after the colony has eaten and grown (FreeCol
+        //    ServerColony.csNewTurn does the customs sale after the food/birth step) — so flagging food for export
+        //    can't rob this turn's growth of the food it would otherwise consume. No-op without a custom house, and —
+        //    in the default PerGood mode with no toggles — sells nothing, so the L5 soak stays byte-stable.
+        AutoSellExports(owner, colony);
     }
 
     /// <summary>
@@ -5188,6 +5195,46 @@ public sealed class Game
             if (goods.IsStorable && !goods.IsFood && held > capacity)
             {
                 colony.AddGoods(goodsId, capacity - held); // drop the overflow to the cap
+            }
+        }
+    }
+
+    /// <summary>
+    /// The per-turn custom-house auto-sell (FreeCol <c>ServerColony.csNewTurn</c>'s customs sale): if the colony has
+    /// the export ability (a custom house), each eligible storable, tradeable good's surplus above its retain level
+    /// is sold to <paramref name="owner"/>'s European market — the same after-tax, price-moving path as a manual sale
+    /// (<see cref="SellColonyGoods(Player, Colony, string, int)"/>). Eligibility follows <see cref="AutoExportMode"/>:
+    /// in <see cref="GameSession.AutoExportMode.PerGood"/> only goods flagged <c>Exported</c> sell (food included if
+    /// flagged — FreeCol-faithful); in <see cref="GameSession.AutoExportMode.ExportAllOverLevel"/> every sellable good
+    /// does <b>except food</b> (auto-dumping food would halt growth). Goods are iterated in stable id order for
+    /// determinism (ADR-009); a colony with no custom house — and the default PerGood mode with no toggles — sells
+    /// nothing, so the soak stays byte-stable. (No boycott check yet — FreeCol's <c>canTrade(CUSTOM_HOUSE)</c> gate is
+    /// deferred with the boycott system.)
+    /// </summary>
+    private void AutoSellExports(Player owner, Colony colony)
+    {
+        if (!ColonyHasExportAbility(colony))
+        {
+            return;
+        }
+        bool exportAll = AutoExportMode == AutoExportMode.ExportAllOverLevel;
+        foreach (string goodsId in colony.Stores.Keys.OrderBy(g => g, StringComparer.Ordinal).ToList())
+        {
+            GoodsType goods = Ruleset.Goods(goodsId);
+            if (!goods.IsStorable || !owner.Market.IsTradeable(goodsId))
+            {
+                continue; // hammers/bells/crosses have no market — never auto-sold
+            }
+            Colony.ExportSetting setting = colony.ExportOf(goodsId);
+            bool eligible = exportAll ? !goods.IsFood : setting.Exported; // export-all protects food; per-good honours the flag
+            if (!eligible)
+            {
+                continue;
+            }
+            int surplus = colony.StoreOf(goodsId) - setting.ExportLevel;
+            if (surplus > 0)
+            {
+                SellColonyGoods(owner, colony, goodsId, surplus);
             }
         }
     }
