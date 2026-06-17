@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-18 — Colony-worker identity refactor COMPLETE: slices 3–6 (86d3b6nrz) — Shipped
+
+**Requested:** "go" — proceed through the remaining colony-refactor slices.
+**Did:** Finished the whole 6-slice per-colonist unit-identity refactor (the colony-model blocker). Slices 3–6 this session; **task `86d3b6nrz` → Shipped**.
+- **Slice 3** (`d202d54`) — tile yield folds the worker's index-30 modifier: expert farmer +2 grain / fisherman +3 fish / fur trapper ×2 furs, after the resource bonus (10), before founding-father (40); indentured/petty unchanged on raw tiles; `LandPrice` unaffected.
+- **Slice 4** (`2532aeb`) — expert-**scoped** bonus-resource modifiers now apply (`Game.ApplyScopedResourceModifiers`): a `game`/`oasis` resource gives an expert farmer a further +2 grain over the unscoped +2; unlocks the parsed-but-skipped scoped modifiers. Added `GameMap.SetResource` (scenario/test seam).
+- **Slice 5** (`1d7324c`) — per-worker **building** production (master carpenter +3 / indentured −1 / petty −2, summed). Made FreeCol-faithful by a **10-agent adversarial review**: the SoL bonus now folds in per worker *before* the index-30 modifier (multiplicative expert multiplies it), scaled by new `BuildingType.RebelFactor` (lumber mill/cathedral ×2, factory ×1.5), floored per worker; inputs follow FreeCol `minimumRatio` (floored-required + EPSILON). An earlier inline review caught a float-floor input-conjuring bug too.
+- **Slice 6** (`8975217`) — leave/abandon emit the departing colonist's **real type** (`Colony.RemoveOneColonist`): a lone expert farmer leaves as an expert farmer; free preferred so specialists keep working; conservation-tested.
+**Status:** **828 L1+L2 + 4 soak green**, build clean, each slice CI-green-on-push. Soak byte-stable (all-free colonies). Free-colonist-only games byte-identical throughout.
+**Changed:** GameLogic `GameSession/Game.cs` (tile+building production, scoped resources, `RemoveOneColonist` wiring), `Colonies/Colony.cs` (`BuildingOccupants`, `RemoveOneColonist`), `Specification/{Ruleset,BuildingType,ResourceType,UnitType}.cs` (rebel-factor parse + `ResolveDoubleAttribute`), `World/GameMap.cs`. Tests `BuildingWorkerTypeProductionTests.cs` (new, +15), `ExpertTileYieldTests.cs`, `ColonyWorkerTypeTests.cs` (+5). Docs `colonies.md`, `sons-of-liberty.md`, `ruleset-data.md`. Commits `d202d54`/`2532aeb`/`1d7324c`/`8975217`.
+**Decisions:** Folded the SoL fidelity fix (order/rebel-factor/per-worker-floor) **into slice 5** rather than shipping a known high-severity divergence then patching — so slice 5 is correct from the start and bisectable. Faithful-to-FreeCol beats the "byte-identical-to-old" net where the old code itself diverged (input now charges for the SoL-bonus production); only nonzero-`ProductionBonus` colonies change, all tests stayed green.
+**Scheduled next:** **`86d3c9pgj` — On-the-job experience upgrades (free colonist → expert)** (P5, *ready for development*) — now unblocked by the worker-identity overlay; a natural follow-on (a colonist working a good gains experience and upgrades to its expert type).
+**Follow-ups:** Also newly unblocked — promotion-ladder wiring (`86d3c9q1z`), schoolhouse teaching, clear-skill downgrades. Long-standing: food-export FreeCol-vs-1994 call; strange-mounds/burial-ground interim behaviours; the duplicate `86d3c7y…` task cluster; auto-generate QA-REPORT from CI.
+**Needs you:** **Heads-up — the 6-hour overnight window is well over (~07:00) and the colony refactor you chose is fully done + shipped.** You're awake and working the repo in parallel, so I've **stopped here to check in** rather than start a fresh feature unprompted. Say "go" / "continue" to take `86d3c9pgj` next, or point me at another item.
+
 ## 2026-06-18 — Colony-worker identity refactor: slice 2 (worker-type overlay + save v30) (86d3b6nrz) [item 10]
 
 **Requested:** "Move onto Slice 2."
