@@ -75,6 +75,22 @@ public class ExpertTileYieldTests
         Assert.Equal(Yield(game, Free, grain, Grain), Yield(game, "model.unit.expertOreMiner", grain, Grain));
     }
 
+    // ---- Slice 4: expert-scoped bonus-resource modifiers ----
+
+    [Fact]
+    public void ExpertFarmer_AlsoGetsTheExpertScopedResourceBonus()
+    {
+        Game game = Game.New(Classic, Seed);
+        Position tile = game.Map.AllPositions().First(p => game.TileYieldPotential(p, Grain) > 0 && game.Map.ResourceAt(p) is null);
+        int plain = Yield(game, Free, tile, Grain); // no resource yet
+
+        game.Map.SetResource(tile, "model.resource.game"); // grain +2 unscoped + grain +2 scoped to the expert farmer
+
+        Assert.Equal(plain + 2, Yield(game, Free, tile, Grain));                          // free: the unscoped +2 only
+        Assert.Equal(plain + 2, Yield(game, "model.unit.expertOreMiner", tile, Grain));   // wrong expert: unscoped +2, no scoped/unit
+        Assert.Equal(plain + 2 + 2 + 2, Yield(game, "model.unit.expertFarmer", tile, Grain)); // unscoped +2, scoped +2, unit +2
+    }
+
     // ---- End-to-end: the colony turn folds the worker type into production ----
 
     [Fact]

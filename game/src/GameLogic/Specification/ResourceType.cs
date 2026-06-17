@@ -4,8 +4,9 @@ namespace CrownAndColony.GameLogic.Specification;
 /// A yield bonus a bonus-resource grants to a goods type (FreeCol resource-type
 /// <c>&lt;modifier&gt;</c>): e.g. a minerals deposit's +3 ore, or a prime-sugar
 /// tile's ×2 sugar. A modifier scoped to a unit type (e.g. an expert-farmer bonus)
-/// applies only when that expert works the tile — not yet modelled, so those are
-/// kept but reported as scoped.
+/// applies only when that expert works the tile — folded in at the colony turn by
+/// <c>Game.TileYield(player, workerType, …)</c> (86d3b6nrz slice 4); the unscoped
+/// ones apply to any colonist (in <c>TileYieldPotential</c>).
 /// </summary>
 /// <param name="GoodsId">The goods this boosts (e.g. <c>model.goods.ore</c>).</param>
 /// <param name="Type">How it combines with the tile's base yield.</param>

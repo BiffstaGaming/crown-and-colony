@@ -62,6 +62,9 @@ public sealed class GameMap
     /// <summary>All tiles carrying a bonus resource.</summary>
     public IReadOnlyDictionary<Position, string> Resources => _resources;
 
+    /// <summary>Places a bonus resource on a tile (gen-time placement is via the ctor; this serves scenario setup/tests).</summary>
+    internal void SetResource(Position p, string resourceId) => _resources[p] = resourceId;
+
     /// <summary>True when a tile holds an unexplored Lost City Rumour.</summary>
     public bool HasRumour(Position p) => _rumours.Contains(p);
 

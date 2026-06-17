@@ -5232,7 +5232,32 @@ public sealed class Game
     /// </summary>
     internal int TileYield(Player player, string workerTypeId, Position tile, string goodsId) =>
         ApplyGoodsModifiers(player, goodsId,
-            ApplyWorkerProductionModifiers(workerTypeId, goodsId, TileYieldPotential(tile, goodsId)));
+            ApplyWorkerProductionModifiers(workerTypeId, goodsId,
+                ApplyScopedResourceModifiers(workerTypeId, tile, goodsId, TileYieldPotential(tile, goodsId))));
+
+    /// <summary>
+    /// Applies a tile's bonus-resource modifiers <b>scoped to the working unit type</b> (FreeCol resource
+    /// <c>&lt;modifier&gt;</c> with a <c>&lt;scope type="…"/&gt;</c>) — the ones <see cref="TileYieldPotential"/>
+    /// deliberately skips because they need a worker identity. E.g. a <c>game</c> resource gives every farmer +2 grain
+    /// (unscoped, already in the potential) <em>and</em> an expert farmer a further +2 (scoped, here). Index-ordered,
+    /// on the resource-boosted potential (index 10) — before the unit's own production modifiers (index 30). A free
+    /// colonist, or a type the scope doesn't match, gets nothing extra.
+    /// </summary>
+    private int ApplyScopedResourceModifiers(string workerTypeId, Position tile, string goodsId, int value)
+    {
+        if (Map.ResourceAt(tile) is not { } resourceId)
+        {
+            return value;
+        }
+        double yield = value;
+        foreach (ResourceModifier modifier in Ruleset.Resource(resourceId).Modifiers
+                     .Where(m => m.GoodsId == goodsId && !m.IsUnscoped && m.ScopeUnitTypes.Contains(workerTypeId))
+                     .OrderBy(m => m.Index))
+        {
+            yield = modifier.ApplyTo(yield);
+        }
+        return (int)yield;
+    }
 
     /// <summary>
     /// Folds a worker type's index-30 <see cref="UnitType.ProductionModifiers"/> for <paramref name="goodsId"/> into a
