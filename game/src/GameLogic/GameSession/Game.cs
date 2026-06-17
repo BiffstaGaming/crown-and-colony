@@ -2892,9 +2892,11 @@ public sealed class Game
             : MoveCheck.No("A colony must keep at least one colonist.");
 
     /// <summary>
-    /// Detaches a colonist from a colony onto the colony's own tile. Our colony model
-    /// is a population count, so the detached unit is a generic free colonist (expert
-    /// colonists are not tracked inside a colony).
+    /// Detaches a colonist from a colony onto the colony's own tile. The departing colonist's <b>real unit type</b> is
+    /// emitted (86d3b6nrz slice 6): a free colonist if the colony has one to spare (specialists keep working), else a
+    /// specialist walks out as its own type — so an all-expert colony never silently turns an expert into a free
+    /// colonist. <see cref="Colony.RemoveOneColonist"/> picks the colonist and keeps the colony's counts + overlay
+    /// consistent.
     /// </summary>
     /// <returns>The detached unit, standing on the colony tile.</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckLeaveColony"/>.</exception>
@@ -2905,9 +2907,8 @@ public sealed class Game
         {
             throw new InvalidMoveException(check.Reason!);
         }
-        colony.Population--;
-        TrimAssignments(colony); // the lost colonist vacates a job if every colonist was working
-        var unit = new Unit(_nextUnitId++, Ruleset.Unit(StartingUnitTypeId), colony.Position)
+        string departingType = colony.RemoveOneColonist(); // pops the colonist + vacates its job, returning its type
+        var unit = new Unit(_nextUnitId++, Ruleset.Unit(departingType), colony.Position)
         {
             OwnerId = colony.OwnerId, // the detached colonist belongs to the colony's owner (the human is 0)
         };
@@ -2946,8 +2947,9 @@ public sealed class Game
     }
 
     /// <summary>
-    /// Abandons a colony: it is removed from the map and its last colonist walks out as a free colonist on the
-    /// colony's tile (FreeCol <c>abandonSettlement</c>).
+    /// Abandons a colony: it is removed from the map and its last colonist walks out on the colony's tile as its
+    /// <b>real unit type</b> — a lone expert farmer leaves as an expert farmer, not a free colonist (86d3b6nrz slice 6;
+    /// FreeCol <c>abandonSettlement</c>).
     /// </summary>
     /// <returns>The departed colonist, standing where the colony was.</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAbandonColony"/>.</exception>
@@ -2958,7 +2960,8 @@ public sealed class Game
         {
             throw new InvalidMoveException(check.Reason!);
         }
-        var unit = new Unit(_nextUnitId++, Ruleset.Unit(StartingUnitTypeId), colony.Position)
+        string departingType = colony.RemoveOneColonist(); // the last colonist's real type
+        var unit = new Unit(_nextUnitId++, Ruleset.Unit(departingType), colony.Position)
         {
             OwnerId = colony.OwnerId,
         };

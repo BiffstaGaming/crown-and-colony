@@ -22,6 +22,8 @@ public class ColonyWorkerTypeTests
     private const string ExpertOreMiner = "model.unit.expertOreMiner";
     private const string MasterCarpenter = "model.unit.masterCarpenter";
     private const string TownHall = "model.building.townHall";
+    private const string Carpenter = "model.building.carpenterHouse";
+    private const string Free = "model.unit.freeColonist";
 
     private static Colony FoundFreeColony(Game game) =>
         game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
@@ -83,5 +85,111 @@ public class ColonyWorkerTypeTests
         Assert.Empty(r.TileWorkerTypes);
         Assert.Empty(r.BuildingWorkerTypes);
         Assert.Empty(r.IdleWorkerTypes);
+    }
+
+    // ---- Slice 6: leave / abandon emit the departing colonist's real type ----
+
+    [Fact]
+    public void AbandoningALoneExpert_WalksOutAsThatExpert()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundFreeColony(game); // pop 1, founder auto-assigned to a tile
+        Position tile = colony.TileWorkers.Keys.First();
+        colony.SetWorker(tile, colony.TileWorkers[tile], ExpertFarmer); // the sole colonist is now an expert farmer
+
+        Unit departed = game.AbandonColony(colony);
+
+        Assert.Equal(ExpertFarmer, departed.Type.Id); // not a free colonist
+        Assert.DoesNotContain(colony, game.Colonies);
+    }
+
+    [Fact]
+    public void AbandoningALoneBuildingExpert_WalksOutAsThatExpert()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundFreeColony(game);
+        foreach (Position t in colony.TileWorkers.Keys.ToList())
+        {
+            game.UnassignWork(colony, t); // founder → idle, then into the carpenter's house as a master carpenter
+        }
+        colony.AssignBuildingWorker(Carpenter, MasterCarpenter);
+
+        Unit departed = game.AbandonColony(colony);
+
+        Assert.Equal(MasterCarpenter, departed.Type.Id);
+    }
+
+    [Fact]
+    public void Leaving_PrefersTheFreeColonist_KeepingTheExpertWorking()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundFreeColony(game);
+        colony.Population = 2; // an expert farmer on the tile + one free idle colonist
+        Position tile = colony.TileWorkers.Keys.First();
+        colony.SetWorker(tile, colony.TileWorkers[tile], ExpertFarmer);
+
+        Unit departed = game.LeaveColony(colony);
+
+        Assert.Equal(Free, departed.Type.Id);                             // the spare free colonist left
+        Assert.Equal(1, colony.Population);
+        Assert.Contains(ExpertFarmer, colony.TileWorkerTypes.Values);     // the expert stayed, still on its tile
+    }
+
+    [Fact]
+    public void LeavingAnAllExpertColony_SendsOutAnIdleExpert_BeforeDisturbingAWorkingOne()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundFreeColony(game);
+        colony.Population = 2;
+        Position tile = colony.TileWorkers.Keys.First();
+        colony.SetWorker(tile, colony.TileWorkers[tile], ExpertFarmer); // working expert
+        colony.AddIdleColonist(ExpertOreMiner);                         // idle expert
+
+        Unit departed = game.LeaveColony(colony);
+
+        Assert.Equal(ExpertOreMiner, departed.Type.Id);                  // no free colonist → the idle expert leaves
+        Assert.Equal(1, colony.Population);
+        Assert.Contains(ExpertFarmer, colony.TileWorkerTypes.Values);    // the working expert is undisturbed
+        Assert.DoesNotContain(ExpertOreMiner, colony.IdleWorkerTypes);
+    }
+
+    [Fact]
+    public void Leaving_ConservesTheColonysTypeMultiset()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundFreeColony(game);
+        colony.Population = 3; // expert farmer (tile) + master carpenter (town hall) + a free idle colonist
+        Position tile = colony.TileWorkers.Keys.First();
+        colony.SetWorker(tile, colony.TileWorkers[tile], ExpertFarmer);
+        colony.AssignBuildingWorker(TownHall, MasterCarpenter);
+
+        List<string> before = TypeMultiset(colony);
+        Unit departed = game.LeaveColony(colony);
+        List<string> after = TypeMultiset(colony);
+        after.Add(departed.Type.Id);
+
+        before.Sort();
+        after.Sort();
+        Assert.Equal(before, after); // the colony's mix of types plus the colonist who left equals the original mix
+    }
+
+    /// <summary>Every colonist's unit type in a colony — tile workers, building occupants (free-padded), idle (free-padded).</summary>
+    private static List<string> TypeMultiset(Colony colony)
+    {
+        var types = new List<string>();
+        foreach (Position t in colony.TileWorkers.Keys)
+        {
+            types.Add(colony.WorkerTypeAt(t));
+        }
+        foreach (string b in colony.BuildingWorkers.Keys)
+        {
+            types.AddRange(colony.BuildingOccupants(b));
+        }
+        types.AddRange(colony.IdleWorkerTypes);
+        for (int i = colony.IdleWorkerTypes.Count; i < colony.IdleColonists; i++)
+        {
+            types.Add(Free);
+        }
+        return types;
     }
 }

@@ -337,8 +337,9 @@ public sealed class Colony
     /// Trims the worker-type overlay so it never exceeds the count model (FreeCol has no equivalent — this guards
     /// the sparse overlay against the count-reducing flows, leave/abandon/starve/trim, that don't thread an exact
     /// departing colonist). Drops excess entries deterministically: orphaned tiles, then over-full buildings, then
-    /// idle beyond <see cref="IdleColonists"/>. The dropped non-free colonist is treated as departed (slice-6 work
-    /// will make leave/abandon emit its real type instead of a free colonist).
+    /// idle beyond <see cref="IdleColonists"/>. A safety net for count-reducing flows that don't pick an exact
+    /// colonist (starvation, job trimming); the deliberate leave/abandon path uses <see cref="RemoveOneColonist"/>,
+    /// which picks the departing colonist and emits its real type.
     /// </summary>
     internal void ReconcileWorkerTypes()
     {
@@ -363,6 +364,61 @@ public sealed class Colony
         {
             _idleWorkerTypes.RemoveAt(_idleWorkerTypes.Count - 1);
         }
+    }
+
+    /// <summary>
+    /// Removes one colonist (for "send a colonist out" / abandon) and returns its unit type, conserving the colony's
+    /// mix of specialists (86d3b6nrz slice 6). Mirrors the colony's own count-reduction order so the colonist emitted
+    /// is exactly the one the roster loses: an idle colonist first (a free one before a specialist), else the last
+    /// building's worker, else the last tile's worker (and within a building/tile a free colonist before a specialist).
+    /// Decrements <see cref="Population"/> and updates the counts and overlay together, leaving them consistent — a
+    /// free departure leaves the overlay untouched. The caller emits a unit of the returned type.
+    /// </summary>
+    internal string RemoveOneColonist()
+    {
+        if (IdleColonists > 0)
+        {
+            Population--;
+            // A free idle colonist leaves unless every remaining idle slot is a specialist.
+            if (_idleWorkerTypes.Count > IdleColonists)
+            {
+                string type = _idleWorkerTypes[^1];
+                _idleWorkerTypes.RemoveAt(_idleWorkerTypes.Count - 1);
+                return type;
+            }
+            return FreeColonistTypeId;
+        }
+
+        // Everyone is employed: a worker leaves, vacating the last building job, then the last tile job (the order
+        // TrimAssignments uses). In each spot a free colonist leaves before a specialist (count > overlay ⇒ a free one).
+        if (_buildingWorkers.Count > 0)
+        {
+            string building = _buildingWorkers.Keys.Last();
+            int count = _buildingWorkers[building];
+            Population--;
+            SetBuildingWorkers(building, count - 1);
+            if (_buildingWorkerTypes.TryGetValue(building, out List<string>? list) && list.Count >= count)
+            {
+                string type = list[^1];
+                list.RemoveAt(list.Count - 1);
+                if (list.Count == 0)
+                {
+                    _buildingWorkerTypes.Remove(building);
+                }
+                return type;
+            }
+            return FreeColonistTypeId;
+        }
+        if (_tileWorkers.Count > 0)
+        {
+            Position tile = _tileWorkers.Keys.OrderBy(p => p.Y).ThenBy(p => p.X).Last();
+            Population--;
+            _tileWorkers.Remove(tile);
+            return _tileWorkerTypes.Remove(tile, out string? type) ? type : FreeColonistTypeId;
+        }
+
+        Population--; // no idle and no workers (unreachable for Population > 0) — a free colonist leaves
+        return FreeColonistTypeId;
     }
 
     /// <summary>Adds goods to the store (negative removes; floor at 0).</summary>
