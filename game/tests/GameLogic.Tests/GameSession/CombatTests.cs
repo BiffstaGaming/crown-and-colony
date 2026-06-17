@@ -310,6 +310,21 @@ public class CombatTests
         Assert.Equal(Soldier, winner.RoleId); // promotion keeps the role
     }
 
+    [Theory] // the criminal/servant rungs of the promotion ladder, end-to-end through a combat win (86d3c9q1z)
+    [InlineData("model.unit.pettyCriminal", "model.unit.indenturedServant")]
+    [InlineData("model.unit.indenturedServant", FreeColonist)]
+    public void GreatWin_WalksTheCriminalAndServantLadderRungs(string from, string to)
+    {
+        (Game game, Unit attacker, Unit brave, _) = SetupAttack(from, Soldier);
+        int id = attacker.Id;
+
+        game.Attack(attacker, brave.Position, new FixedRandom(0.0)); // great win → promotion roll succeeds
+
+        Unit winner = game.Units.First(u => u.Id == id);
+        Assert.Equal(to, winner.Type.Id); // petty criminal → indentured servant → free colonist (then → veteran soldier)
+        Assert.Equal(Soldier, winner.RoleId);
+    }
+
     [Fact]
     public void Washington_PromotesEvenANonGreatWin()
     {
