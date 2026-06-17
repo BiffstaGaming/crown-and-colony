@@ -4,6 +4,7 @@
 |---|---|
 | **Golden files** | `map-seed424242.png`, `colony-seed424242.png`, `native-settlement-seed424242.png`, `remembered-fog-seed424242.png` (in `game/tests/visual/goldens/`) |
 | **Test** | `game/presentation/tests/VisualGoldenTests.cs` (GdUnit4, runs with the L3 suite) |
+| **Compare helper** | `game/presentation/tests/GoldenAssert.cs` (extracted 2026-06-18; now shared with the [menu/UI goldens](menu-goldens.md)) |
 | **Scene** | `res://scenes/main.tscn`, UI layer hidden (map-only capture for cross-platform stability) |
 | **Resolution** | 1024×600 window capture |
 | **Seed / fixture** | `StartNewGame(424242)`; colony golden additionally founds a colony at the start tile + one End Turn; native-settlement golden reveals the first native settlement (by tile order), recentres the camera on it; remembered-fog golden steps the colonist one tile onto a land neighbour so the origin dims |

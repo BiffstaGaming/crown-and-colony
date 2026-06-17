@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-18 — Documentation sync for the title/settings arc
+
+**Requested:** Ensure documentation is up to date with the changes I made.
+**Did:**
+- **Repo (no-drift catch-up):** `docs/modules/presentation.md` (the 6 new screens + `GoldenAssert` + `ColonyArt.ParchmentSkin` + GameController save/load + the Cardo font; 66 scene tests; 6 changelog rows + Last-verified); `docs/modules/game-logic.md` (`App.SettingsModel` row + changelog); **new** `docs/visual-tests/menu-goldens.md` (the 4 UI goldens); `docs/visual-tests/map-goldens.md` (shared `GoldenAssert`); `docs/QA-REPORT.md` (UI-golden gap resolved + the 4 front-end golden images).
+- **ClickUp:** new **Session Log** page (durable record of the 6-slice arc + merge, `2kz0t3mf-3716`); **Asset Register** (Cardo OFL font + `map.jpg` backdrop + the carved-wood border now recorded as adopted); **Godot Knowledge Base** (a new "UI / front-end patterns" section — tree-pause + `ProcessMode.Always` overlays, `ConfigFile` settings autoload, audio-bus volumes, OFL font bundling, the reusable-overlay `Closed` pattern, UI goldens — plus a worktree-teardown gotcha).
+**Status:** docs-only — no code/test change. The per-system docs (`main-menu`/`settings`/`pause-menu`/`info-popup`/`save-load-ui`) already shipped with their slices.
+**Changed:** `docs/modules/{presentation,game-logic}.md`, `docs/visual-tests/{menu-goldens (new),map-goldens}.md`, `docs/QA-REPORT.md`, `PostWorkSummary.md`; ClickUp docs 04 (Godot KB) / 05 (Asset Register) / 06 (Session Log).
+**Decisions:** Left `game-logic.md`'s headline test-count / save-version and the QA-REPORT L1+L2 count as-is — they're stale w.r.t. the **other** workstream's GameLogic growth (its doc debt to reconcile); I added only my `SettingsModel` row and flagged CI as the live source.
+**Scheduled next:** — the title/settings arc is complete, merged, and documented.
+**Follow-ups:** the other workstream to reconcile `game-logic.md` / QA-REPORT counts for its colony-worker/treasure/custom-house work; long-standing — auto-generate QA-REPORT from CI.
+**Needs you:** Nothing — docs synced.
+
 ## 2026-06-17 — Title screen Slice F shipped (Save/Load dialog)
 
 **Requested:** the chosen batch's last item — the save-slot dialog (`86d3c9y5y`).
