@@ -19,6 +19,37 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 — Title screen Slice A shipped (FreeCol-styled main menu)
+
+**Requested:** Build Slice A (main-menu shell) with a proper FreeCol-like UI, using assets (importing if needed).
+**Did:**
+- New boot scene **`scenes/MainMenu.tscn`** + **`presentation/MainMenu.cs`**: antique New-World map backdrop + dark vignette + a centre carved-wood-framed parchment panel with the "Crown & Colony" title and four buttons (New Game / Load Game / Settings / Quit). Rendered a preview PNG to eyeball it — looks cohesive with the colony screen.
+- **Reused the shipped colony look** (`ColonyTheme` wood buttons + `ColonyArt` parchment/border) instead of inventing a new theme — cohesion + zero new theme code.
+- **Imported one new GPL v2 asset**: FreeCol's `ui/map.jpg` (1600×1200 antique map, their actual opening-canvas image) → `assets/freecol/ui/`, recorded in `PROVENANCE.md`. Deliberately did **not** adopt FreeCol's wordmark — the title is our own text.
+- **New Game** → `ChangeSceneToFile("res://scenes/main.tscn")` (parity with the old boot); **Quit** → `SceneTree.Quit()`; Load/Settings disabled until their slices. Switched `project.godot` `run/main_scene` → the menu.
+- Docs: new `docs/systems/main-menu.md` (both layers + verification table + changelog).
+**Status:** **Presentation suite 44/44 green** (incl. 4 new `MainMenuTests`); `dotnet build` clean; headless import clean. L4 menu golden **deferred** (UI-font task `86d3c9y32`).
+**Changed:** `presentation/MainMenu.cs`(+`.uid`), `scenes/MainMenu.tscn`, `presentation/tests/MainMenuTests.cs`(+`.uid`), `assets/freecol/ui/map.jpg`(+`.import`), `assets/freecol/PROVENANCE.md`, `project.godot`, `docs/systems/main-menu.md`. Commit (pending). [worktree `feature/title-settings`]
+**Decisions:** Backdrop = FreeCol `map.jpg`. Kept the L3 New-Game test to wiring + valid-target assertions (firing `ChangeSceneToFile` would free the scene out from under the gdunit runner). Reverted the import's LF→CRLF churn on ~130 unrelated `.import` files — committed only the menu's files.
+**Scheduled next:** **Slice B — settings/options screen + persistence** (`86d3ck67h`): `SettingsModel` POCO (L1) + `SettingsService` autoload (`user://settings.cfg`) + video/audio UI, then wire the Settings button.
+**Follow-ups:** Load Game wiring (`86d3c9y5y`); in-game pause menu; New Game setup screen (needs `86d3c9y08`); L4 golden once `86d3c9y32` lands; dedupe `BuildParchmentSkin` vs `ColonyPanel`; repo hygiene — the import emits untracked `.cs.uid` for several existing files (a `.gitattributes`/commit pass).
+**Needs you:** Eyeball the menu (preview in chat). Merge `feature/title-settings` → `main` when ready, or keep stacking slices on the branch.
+
+## 2026-06-17 — Title/settings parallel workstream kicked off (worktree + scope + tasks)
+
+**Requested:** Can the main title/settings be built without impacting the other session working through `docs/NEXT-SESSION.md`? If safe: open a new worktree+branch, start scoping, and check whether ClickUp tasks exist.
+**Did:**
+- Confirmed it's safe: title/settings is **~all new presentation files** (`game/presentation/**`, `game/scenes/**`); the other session lives in `game/src/GameLogic/**` + `docs/systems/**`. Only shared touch-points: `project.godot`, `PostWorkSummary.md`, `docs/NEXT-SESSION.md`, ClickUp.
+- Opened an **isolated git worktree** on branch **`feature/title-settings`** (off `origin/main` @ `82d4b27`) at `.claude/worktrees/feature+title-settings` — separate working dir / branch / build output, so the two sessions never collide until merge.
+- Scanned the full board (~180 tasks): **no** existing title/menu or settings task. Created two **[P7]** tasks (Ready for Development) with full scope + slice plan: main-menu shell (`86d3ck64f`), settings+persistence (`86d3ck67h`).
+- Produced the architecture scope (boot-scene swap, scene-flow, `SettingsModel` POCO + `ConfigFile` autoload, 5-layer test plan, slice A/B/C order).
+**Status:** Setup + scoping only — **no code, no build/test run** (nothing changed). Worktree clean on `feature/title-settings` @ `82d4b27`.
+**Changed:** This `PostWorkSummary.md` entry (uncommitted, will land with Slice A). ClickUp: +2 tasks.
+**Decisions:** (1) Isolate via **git worktree**, not same-dir — avoids `git add -A` cross-contamination + concurrent-build races on shared `obj`/`bin`/`.godot`. (2) **App settings ≠ game-rule options** — the settings screen is client prefs (video/audio); per-game toggles (custom-house mode `86d3c9ru3`, difficulty `86d3c9y08`) live on a separate game-options surface, decoupled from the P5 batch. (3) L4 menu visual goldens **deferred** — blocked on the UI-font task `86d3c9y32`.
+**Scheduled next:** **Slice A — main-menu shell** (`86d3ck64f`): `MainMenu.tscn` + `MainMenu.cs`, swap `run/main_scene`, New Game→game / Settings / Load / Quit buttons, L3 scene test.
+**Follow-ups:** Slice B settings+persistence (`86d3ck67h`); in-game pause menu; New Game setup screen (needs difficulty `86d3c9y08`); merge `feature/title-settings`→`main` when CI-green (expect a trivial PostWorkSummary top-of-file reconcile vs the other session).
+**Needs you:** Confirm the **[P7]** bucket is right (or re-bucket in ClickUp), and whether to **build Slice A now** in this session or hand the worktree to a fresh session.
+
 ## 2026-06-17 — 15-item batch kicked off: monarch→P6 re-tag + Lost City Rumour placement (slice 1 of the LCR arc)
 
 **Requested:** "Do the re-tag, then pick out 15 new items from the Backlog and begin working on them."
