@@ -375,7 +375,15 @@ public sealed class Ruleset
                 // artillery, shipyard → any naval unit), collected down the extends chain (magazine/arsenal inherit
                 // armory's artillery scope) — drives the unit build-ability gate.
                 BuildableUnitTypeIds: CollectBuildUnitTypeScopes(el, buildingElements),
-                BuildsNavalUnits: GrantsNavalBuildScope(el, buildingElements));
+                BuildsNavalUnits: GrantsNavalBuildScope(el, buildingElements),
+                // Ship bombardment: the fort grants model.ability.bombardShips, the fortress inherits it.
+                BombardsShips: ResolveAbility(el, "model.ability.bombardShips", buildingElements),
+                // Auto-export: the custom house grants model.ability.export (per-turn auto-sell).
+                GrantsExport: ResolveAbility(el, "model.ability.export", buildingElements),
+                // Horse breeding: pasture/country sets breedingDivisor 50 / breedingFactor 2; stables multiplies the
+                // divisor by 0.5 → 25 (resolved additive-then-multiplicative up the extends chain). 0 = not a breeder.
+                BreedingDivisor: ResolveScalarModifierUpChain(el, "model.modifier.breedingDivisor", buildingElements),
+                BreedingFactor: ResolveScalarModifierUpChain(el, "model.modifier.breedingFactor", buildingElements));
         }
 
         var fathers = new Dictionary<string, FoundingFather>();
@@ -649,6 +657,17 @@ public sealed class Ruleset
             .Select(t => t!)
             .ToList());
 
+    private static UnitProductionModifier ParseUnitProductionModifier(XElement m) => new(
+        GoodsId: RequiredAttribute(m, "id"),
+        Type: (string?)m.Attribute("type") switch
+        {
+            "multiplicative" => ModifierType.Multiplicative,
+            "percentage" => ModifierType.Percentage,
+            _ => ModifierType.Additive,
+        },
+        Value: (double?)m.Attribute("value") ?? 0,
+        Index: (int?)m.Attribute("index") ?? 0);
+
     private static FatherModifier ParseModifier(XElement m) => new(
         TargetId: RequiredAttribute(m, "id"),
         Type: (string?)m.Attribute("type") switch
@@ -759,6 +778,8 @@ public sealed class Ruleset
                 CaptureGoods: ResolveAbility(el, "model.ability.captureGoods", elements),
                 // piracy: a privateer attacks rivals without declaring war, flying no flag.
                 Piracy: ResolveAbility(el, "model.ability.piracy", elements),
+                // carryTreasure: a treasure train holds plundered/discovered gold to cash in.
+                CarryTreasure: ResolveAbility(el, "model.ability.carryTreasure", elements),
                 // Colony construction: the unit's own required-goods (artillery hammers 192 + tools 40, wagon
                 // train hammers 40); required-population (FreeCol default 1) and required-abilities (collected
                 // down the extends chain, as for buildings — ships' navalUnit-scoped build gate rides here).
@@ -777,7 +798,17 @@ public sealed class Ruleset
                         (string?)lim.Attribute("operator") ?? "lt",
                         (string?)lim.Element("left-hand-side")?.Attribute("operand-type") ?? "",
                         (string?)lim.Element("right-hand-side")?.Attribute("operand-type") ?? "")
-                    : null);
+                    : null,
+                // Skill level (0 = plain colonist / ship / artillery; ≥1 = expert) — splits Europe Train vs Purchase.
+                Skill: ResolveIntAttribute(el, "skill", elements) ?? 0,
+                // The goods this unit is the expert producer of (expert farmer → grain); null for a non-expert.
+                ExpertProduction: (string?)el.Attribute("expert-production"),
+                // Per-goods production modifiers (expert bonus / indentured-petty penalty): the unit's own
+                // <modifier id="model.goods.*"> children (index 30). Goods-id filtered so combat modifiers stay out.
+                ProductionModifiers: el.Elements("modifier")
+                    .Where(m => ((string?)m.Attribute("id"))?.StartsWith("model.goods.") == true)
+                    .Select(ParseUnitProductionModifier)
+                    .ToList());
         }
 
         if (units.Count == 0)
@@ -870,6 +901,34 @@ public sealed class Ruleset
                 .Sum(m => (int?)m.Attribute("value") ?? 0);
         }
         return total;
+    }
+
+    /// <summary>
+    /// Resolves a scalar modifier across the whole <c>extends</c> chain by folding it onto a base of 0 with FreeCol's
+    /// modifier semantics — all <c>additive</c> values summed, then all <c>multiplicative</c> values multiplied
+    /// (commutative, so chain order is irrelevant). Used for <c>model.modifier.breedingDivisor</c>, where the pasture
+    /// sets an additive 50 and the stables (which extends it) multiplies by 0.5 → 25. 0 when the modifier is absent.
+    /// </summary>
+    private static int ResolveScalarModifierUpChain(XElement el, string modifierId, Dictionary<string, XElement> elements)
+    {
+        double additive = 0.0;
+        double multiplicative = 1.0;
+        for (XElement? current = el; current is not null; current = ParentOf(current, elements))
+        {
+            foreach (XElement m in current.Elements("modifier").Where(m => (string?)m.Attribute("id") == modifierId))
+            {
+                double value = (double?)m.Attribute("value") ?? 0.0;
+                if ((string?)m.Attribute("type") == "multiplicative")
+                {
+                    multiplicative *= value;
+                }
+                else
+                {
+                    additive += value;
+                }
+            }
+        }
+        return (int)Math.Round(additive * multiplicative);
     }
 
     /// <summary>
@@ -1107,7 +1166,14 @@ public sealed class Ruleset
                     Factor: (int?)p.Attribute("factor") ?? 0,
                     RequiresPlunderAbility:
                         (bool?)p.Element("scope")?.Attribute("ability-value") ?? false))
-                .ToList());
+                .ToList(),
+            Gifts: el.Elements("gifts")
+                .Select(g => new SettlementGifts(
+                    Probability: (int?)g.Attribute("probability") ?? 0,
+                    Minimum: (int?)g.Attribute("minimum") ?? 0,
+                    Maximum: (int?)g.Attribute("maximum") ?? 0,
+                    Factor: (int?)g.Attribute("factor") ?? 0))
+                .FirstOrDefault());
     }
 
     /// <summary>The chain of indian-nation-type elements from <paramref name="el"/> up its extends ancestors (leaf → root).</summary>

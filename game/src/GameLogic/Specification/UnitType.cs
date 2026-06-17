@@ -1,6 +1,23 @@
 namespace CrownAndColony.GameLogic.Specification;
 
 /// <summary>
+/// A per-goods production modifier a unit type carries (FreeCol unit-type <c>&lt;modifier id="model.goods.*"
+/// index="30"&gt;</c>): an expert's bonus on the good it's expert at (expert farmer +2 grain, expert fur trapper ×2
+/// furs) or an indentured servant / petty criminal penalty (−1 / −2 on manufactured goods). Folded into a colony
+/// worker's tile/building output once per-colonist unit identity lands (<c>86d3b6nrz</c>); the index orders it
+/// after the bonus-resource modifier (index 10) and before founding-father modifiers (index 40).
+/// </summary>
+/// <param name="GoodsId">The goods this modifies (e.g. <c>model.goods.grain</c>).</param>
+/// <param name="Type">How it combines with the running yield (additive / multiplicative / percentage).</param>
+/// <param name="Value">The modifier value (e.g. +2, ×2, −1).</param>
+/// <param name="Index">Application order (FreeCol <c>modifierIndex</c>; unit production is index 30).</param>
+public sealed record UnitProductionModifier(string GoodsId, ModifierType Type, double Value, int Index)
+{
+    /// <summary>Applies this modifier to a running production value.</summary>
+    public double ApplyTo(double value) => ModifierMath.Apply(Type, value, Value);
+}
+
+/// <summary>
 /// A unit type from the ruleset (free colonist, caravel, …) — immutable rule
 /// data with inherited attributes already resolved (the spec uses
 /// <c>extends</c> chains; abstract parents are not exposed).
@@ -40,6 +57,7 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <param name="Bombard">Artillery-style unit (<c>model.ability.bombard</c>): suffers the −75% artillery-in-the-open penalty when fighting outside a settlement.</param>
 /// <param name="CaptureGoods">Naval raider (<c>model.ability.captureGoods</c>; frigate, privateer, man-o-war): a win lets it plunder as much of the beaten ship's cargo as its hold can take, before that ship sinks or limps to repair.</param>
 /// <param name="Piracy">Privateer (<c>model.ability.piracy</c>): it can attack a rival colonial power <em>without declaring war</em>, and its nationality is hidden from its victims (it flies no flag).</param>
+/// <param name="CarryTreasure">Treasure train (<c>model.ability.carryTreasure</c>): it carries plundered/discovered gold (<see cref="Units.Unit.TreasureAmount"/>) to be cashed in at a colony or in Europe.</param>
 /// <param name="OffenceAdditive">The pre-role offence base (the attribute + the type's own additive offence modifiers, e.g. king's regular +4), before any percentage. A unit's role additive folds onto this before <see cref="OffenceMultiplier"/>.</param>
 /// <param name="DefenceAdditive">The pre-role defence base (attribute + additive defence modifiers), before any percentage.</param>
 /// <param name="OffenceMultiplier">The post-role offence multiplier from the type's own percentage modifiers (veteran soldier +50% → 1.5), applied after the role additive.</param>
@@ -59,6 +77,21 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <param name="BuildLimit">
 /// A cap on how many of this unit a player may build (spec <c>&lt;limit&gt;</c>). Classic: the wagon train is
 /// capped at one per colony (<c>units &lt; settlements</c> at player scope). Null for an uncapped unit.
+/// </param>
+/// <param name="Skill">
+/// The skill level taught/embodied by this unit (spec <c>skill</c>; 0 for a plain colonist, ship or artillery,
+/// ≥1 for an expert/specialist). In Europe a priced unit with skill &gt; 0 is <b>trained</b>, one with skill 0 is
+/// <b>purchased</b> (FreeCol <c>Specification.getUnitTypesTrainedInEurope</c>/<c>…PurchasedInEurope</c>).
+/// </param>
+/// <param name="ExpertProduction">
+/// The goods this unit is the expert producer of (spec <c>expert-production</c>; e.g. expert farmer → grain),
+/// or null for a non-expert. Used to suggest/teach the matching expertise; the production <em>bonus</em> itself is
+/// carried by <see cref="ProductionModifiers"/>.
+/// </param>
+/// <param name="ProductionModifiers">
+/// This unit's per-goods production modifiers (spec <c>&lt;modifier id="model.goods.*" index="30"&gt;</c>): an
+/// expert's bonus on its good, or an indentured/petty penalty on manufactured goods. Empty for a plain colonist.
+/// Folded into colony output once per-colonist identity lands (<c>86d3b6nrz</c>); see <see cref="UnitProductionModifier"/>.
 /// </param>
 public sealed record UnitType(
     string Id,
@@ -87,13 +120,18 @@ public sealed record UnitType(
     int MaxHitPoints = 1,
     bool CaptureGoods = false,
     bool Piracy = false,
+    bool CarryTreasure = false,
     IReadOnlyList<GoodsOutput>? BuildCost = null,
     int RequiredPopulation = 1,
     IReadOnlyDictionary<string, bool>? RequiredAbilities = null,
-    UnitBuildLimit? BuildLimit = null)
+    UnitBuildLimit? BuildLimit = null,
+    int Skill = 0,
+    string? ExpertProduction = null,
+    IReadOnlyList<UnitProductionModifier>? ProductionModifiers = null)
 {
     private static readonly IReadOnlyList<GoodsOutput> NoCost = [];
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
+    private static readonly IReadOnlyList<UnitProductionModifier> NoProductionModifiers = [];
 
     /// <summary>Short name derived from the id: <c>model.unit.freeColonist</c> → <c>freeColonist</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
@@ -104,6 +142,9 @@ public sealed record UnitType(
     /// <summary>Abilities required to build this unit, id → required value (empty when unconditional).</summary>
     public IReadOnlyDictionary<string, bool> RequiredAbilitiesOrEmpty => RequiredAbilities ?? NoAbilities;
 
+    /// <summary>This unit's per-goods production modifiers, or an empty list when it has none (a plain colonist).</summary>
+    public IReadOnlyList<UnitProductionModifier> ProductionModifiersOrEmpty => ProductionModifiers ?? NoProductionModifiers;
+
     /// <summary>True when this unit can be constructed in a colony (it has a build cost).</summary>
     public bool IsBuildable => BuildCostOrEmpty.Count > 0;
 
@@ -112,6 +153,16 @@ public sealed record UnitType(
 
     /// <summary>Can this unit type be bought/trained in Europe for gold? (<see cref="Price"/> &gt; 0).</summary>
     public bool IsPurchasable => Price > 0;
+
+    /// <summary>A priced unit with a <see cref="Skill"/> — a specialist <b>trained</b> in Europe (expert farmer, master carpenter…), FreeCol <c>getUnitTypesTrainedInEurope</c>.</summary>
+    public bool IsTrainedInEurope => Price > 0 && Skill > 0;
+
+    /// <summary>
+    /// A priced unit with no skill — <b>purchased</b> in Europe (ships, artillery), FreeCol <c>getUnitTypesPurchasedInEurope</c>.
+    /// (FreeCol gates on <c>!hasSkill()</c> — skill <em>attribute absent</em>; we fold absent → 0, so this differs only for a
+    /// hypothetical priced unit declared with explicit <c>skill="0"</c>, which no classic unit is. Revisit if variant data adds one.)
+    /// </summary>
+    public bool IsPurchasedInEurope => Price > 0 && Skill <= 0;
 
     /// <summary>
     /// Effective hold slots this unit takes when carried (FreeCol

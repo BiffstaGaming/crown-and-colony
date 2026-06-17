@@ -103,8 +103,7 @@ public class BuildingTests
     [Fact]
     public void Pasture_BreedsHorses_OnlyWhenTwoArePresent()
     {
-        // The country building auto-converts food→horses, gated by the
-        // breeding number: no horses appear from an empty stable.
+        // The country building auto-breeds horses, gated by the breeding number: no foals from an empty stable.
         Game game = FoundedColony();
         Colony colony = game.Colonies[0];
         colony.AddGoods("model.goods.food", 50);
@@ -115,7 +114,8 @@ public class BuildingTests
         colony.AddGoods("model.goods.horses", 2);
         int foodBefore = colony.Food;
         game.EndTurn();
-        Assert.Equal(3, colony.StoreOf("model.goods.horses")); // bred one
+        // FreeCol formula: ((2-1)/50 + 1) * 2 = 2 foals (country divisor 50, factor 2) → herd of 4.
+        Assert.Equal(4, colony.StoreOf("model.goods.horses"));
         Assert.True(colony.Food < foodBefore + 10, "breeding must consume food");
     }
 

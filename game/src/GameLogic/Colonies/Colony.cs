@@ -41,6 +41,15 @@ public sealed class Colony
     private readonly Dictionary<Position, string> _tileWorkers = [];
     private readonly List<string> _buildings = [];
     private readonly Dictionary<string, int> _buildingWorkers = [];
+    private readonly Dictionary<string, ExportSetting> _exports = [];
+
+    /// <summary>The custom-house export setting for one good (FreeCol <c>ExportData</c>): whether it auto-exports and the amount to retain.</summary>
+    /// <param name="Exported">Whether the custom house auto-sells this good's surplus.</param>
+    /// <param name="ExportLevel">The amount to keep in the warehouse before exporting the rest.</param>
+    public readonly record struct ExportSetting(bool Exported, int ExportLevel);
+
+    /// <summary>The default retain level for a good not yet configured (FreeCol <c>ExportData.EXPORT_LEVEL_DEFAULT</c>).</summary>
+    public const int DefaultExportLevel = 50;
 
     /// <summary>Creates a colony owned by a colonial player (the human is 0; ADR-019).</summary>
     public Colony(int id, string name, Position position, int population, int ownerId = 0)
@@ -217,5 +226,30 @@ public sealed class Colony
         int take = Math.Min(amount, Food);
         AddGoods(FoodId, -take);
         return amount - take;
+    }
+
+    /// <summary>All non-default custom-house export settings (good id → setting), sparse — a default good is absent.</summary>
+    public IReadOnlyDictionary<string, ExportSetting> Exports => _exports;
+
+    /// <summary>The export setting for a good — its stored setting, or the default (not exported, retain <see cref="DefaultExportLevel"/>).</summary>
+    public ExportSetting ExportOf(string goodsId) =>
+        _exports.GetValueOrDefault(goodsId, new ExportSetting(false, DefaultExportLevel));
+
+    /// <summary>
+    /// Sets a good's custom-house export setting (the level is floored at 0). A setting equal to the default
+    /// (not exported, retain <see cref="DefaultExportLevel"/>) is <em>removed</em>, so an untouched/reset good
+    /// leaves no trace and the save stays byte-stable.
+    /// </summary>
+    internal void SetExport(string goodsId, bool exported, int exportLevel)
+    {
+        int level = Math.Max(0, exportLevel);
+        if (!exported && level == DefaultExportLevel)
+        {
+            _exports.Remove(goodsId);
+        }
+        else
+        {
+            _exports[goodsId] = new ExportSetting(exported, level);
+        }
     }
 }

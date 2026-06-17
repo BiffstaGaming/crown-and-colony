@@ -45,12 +45,19 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 ## 5. Open issues / TODO
 
 - [x] European **`<nation>`** + **`<european-nation-type>`** parsed (FP-3a): the four colonial powers + their REFs, advantages (abilities/modifiers), starting units (extends-resolved), and per-nation classic colony names — see [players](players.md). *(Native nation types + settlement templates: see [natives](natives.md).)*
-- [x] Unit **roles** parsed (`<roles>` → `RoleType`: required-goods, downgrade, granted/required abilities, `role-change` capture) and **unit-change types** (`UnitChange`: promotion/demotion/capture) — slice 5b; settlement `<plunder>` ranges — slice 5c.
+- [x] Unit **roles** parsed (`<roles>` → `RoleType`: required-goods, downgrade, granted/required abilities, `role-change` capture) and **unit-change types** (`UnitChange`: promotion/demotion/capture; `lostCity` consumed by [lost-city-rumours](lost-city-rumours.md) — the parser already reads every `<unit-change-type>` generically, `UnitChangeTypeIds.LostCity` just names it) — slice 5b; settlement `<plunder>` ranges — slice 5c.
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-18 | Unit `expert-production` + index-30 goods `<modifier>`s (`UnitType.ExpertProduction` + `ProductionModifiers` = `UnitProductionModifier(GoodsId/Type/Value/Index)`) — the expert bonus / indentured-petty penalty; parse-only foundation for the colony-worker-identity refactor (see [colonies](colonies.md)) | Phase 5 (`86d3b6nrz` slice 1) |
+| 2026-06-17 | Settlement-type `<gifts>` RandomRange (`SettlementType.Gifts` = `SettlementGifts(probability/min/max/factor)`) — a scout's chief "beads" (see [natives](natives.md)) | Phase 5 (`86d3c9tf0`) |
+| 2026-06-17 | Unit `skill` attribute (`UnitType.Skill`; 0 colonist/ship/artillery, ≥1 expert) → `IsTrainedInEurope`/`IsPurchasedInEurope` Europe partition (see [europe](europe.md)) | Phase 5 (`86d3c9qgy`) |
+| 2026-06-17 | Building breeding modifiers `breedingDivisor`/`breedingFactor` (`BuildingType.BreedingDivisor`/`BreedingFactor`; resolved additive-then-multiplicative up the `extends` chain via `ResolveScalarModifierUpChain` — pasture 50/2, stables ×0.5 → 25/2) — drives horse breeding (see [colonies](colonies.md)) | Phase 5 (`86d3c9nwr`) |
+| 2026-06-17 | Building ability flag `export` (`BuildingType.GrantsExport`; the custom house) — see [custom-house](custom-house.md) | Phase 5 (`86d3c9ru3`) |
+| 2026-06-17 | Unit ability flag `carryTreasure` (`UnitType.CarryTreasure`; the treasure train) — see [treasure-train](treasure-train.md) | Phase 5 (`86d3c9ryj`) |
+| 2026-06-17 | Building ability flag `bombardShips` (`BuildingType.BombardsShips`; fort grants, fortress inherits) — see [combat](combat.md) | Phase 5 (`86d3c9tkk`) |
 | 2026-06-13 | Terrain-type parsing, embedded classic ruleset | Phase 1 skeleton |
 | 2026-06-13 | Unit types (with `extends` inheritance + ability resolution); terrain `<gen>` climate envelopes | Phase 2a |
 | 2026-06-13 | Goods types: `is-food`, `stored-as` (grain/fish/meat → food), `made-from` (chains data), `is-farmed`; `Ruleset.StorageIdOf` | Phase 3 |

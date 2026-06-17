@@ -161,4 +161,16 @@ public sealed class Unit
     /// <summary>Empties the hold (a sunk or damaged ship loses its goods — FreeCol jettisons cargo on either).</summary>
     internal void ClearCargo() => _cargo.Clear();
 
+    private int _treasureAmount;
+
+    /// <summary>
+    /// The gold this unit carries as a <b>treasure train</b> (FreeCol <c>Unit.treasureAmount</c>) — the plunder
+    /// from a sacked native settlement or a lost-city find, cashed in at a colony or in Europe. 0 for every other
+    /// unit. Only a unit whose type has <see cref="Specification.UnitType.CarryTreasure"/> ever carries a positive
+    /// amount; capturing the train carries the amount to the captor (the same <see cref="Unit"/> object changes side).
+    /// </summary>
+    public int TreasureAmount => _treasureAmount;
+
+    /// <summary>Sets the carried treasure (negative floors to 0); only <see cref="GameSession.Game"/> mutates it.</summary>
+    internal void SetTreasureAmount(int amount) => _treasureAmount = Math.Max(0, amount);
 }

@@ -170,6 +170,6 @@ public class NativeTradeTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
         Assert.Equal(wanted, restored.NativeSettlements.First(s => s.Id == first.Id).WantedGoods);
-        Assert.Equal(25, SaveGame.CurrentVersion);
+        Assert.Equal(29, SaveGame.CurrentVersion);
     }
 }

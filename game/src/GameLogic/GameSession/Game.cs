@@ -22,6 +22,9 @@ public sealed class Game
     /// <summary>The native warrior unit type spawned to garrison native settlements (FreeCol <c>model.unit.brave</c>).</summary>
     public const string BraveUnitTypeId = "model.unit.brave";
 
+    /// <summary>The treasure-train unit spawned when a sacked settlement (or a lost-city find) yields treasure (FreeCol <c>model.unit.treasureTrain</c>).</summary>
+    public const string TreasureTrainUnitTypeId = "model.unit.treasureTrain";
+
     /// <summary>
     /// Braves spawned per native settlement (Phase 5 slice 5b — a documented simplification; FreeCol
     /// scales a settlement's military strength to its size). They are native-owned defenders.
@@ -101,6 +104,7 @@ public sealed class Game
     private readonly List<ColonyLossNotice> _colonyLossNotices = []; // transient: the most recent turn's AI captures of human colonies (not saved)
     private readonly List<ColonyRaidNotice> _colonyRaidNotices = []; // transient: the most recent turn's native pillages of human colonies (not saved)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
+    private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
     private readonly Player _human;
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
@@ -126,6 +130,15 @@ public sealed class Game
 
     /// <summary>Current turn number, starting at 1.</summary>
     public int Turn { get; private set; }
+
+    /// <summary>
+    /// How custom houses decide what to auto-sell (a game-wide play preference; <see cref="GameSession.AutoExportMode.PerGood"/>
+    /// by default — opt-in per good, faithful to FreeCol). Set via <see cref="SetAutoExportMode"/> (a settings hook; UI deferred).
+    /// </summary>
+    public AutoExportMode AutoExportMode { get; private set; } = AutoExportMode.PerGood;
+
+    /// <summary>Sets the game-wide custom-house auto-export mode (a settings operation; persisted in the save).</summary>
+    public void SetAutoExportMode(AutoExportMode mode) => AutoExportMode = mode;
 
     /// <summary>All players in the game (the human today; foreign powers and natives join from FP-3).</summary>
     public IReadOnlyList<Player> Players => _players;
@@ -268,6 +281,10 @@ public sealed class Game
             ? IsColonyCoastal(colony)
             : PlayerById(colony.OwnerId) is { } owner && HasAbilityFor(owner, abilityId);
 
+    /// <summary>True when the colony has a building that grants the auto-export ability (a custom house) — a per-colony capability, not a Congress perk.</summary>
+    private bool ColonyHasExportAbility(Colony colony) =>
+        colony.Buildings.Any(b => Ruleset.Building(b).GrantsExport);
+
     /// <summary>The colonies owned by <paramref name="player"/> (the human owns all colonies until foreign powers found their own).</summary>
     private IEnumerable<Colony> ColoniesOf(Player player) => _colonies.Where(c => c.OwnerId == player.PlayerId);
 
@@ -395,6 +412,50 @@ public sealed class Game
     /// </summary>
     public NativeDemand? PendingDemand => _pendingDemand;
 
+    /// <summary>A strange-mounds rumour awaiting the human's investigate/decline choice: the exploring unit + its tile.</summary>
+    /// <param name="UnitId">The unit standing on the mounds (it bears the risk if the expedition vanishes).</param>
+    /// <param name="Tile">The rumour tile to investigate or leave be.</param>
+    public sealed record PendingMoundsDecision(int UnitId, Position Tile);
+
+    /// <summary>
+    /// The strange-mounds rumour currently awaiting the human's investigate/decline choice, or null if none.
+    /// Transient per-turn UI state — set when a human unit steps onto a strange-mounds rumour
+    /// (<see cref="TryExploreRumour"/>), answered via <see cref="InvestigatePendingMounds"/> /
+    /// <see cref="DeclinePendingMounds"/>; never saved (a save mid-prompt reloads with the rumour un-explored).
+    /// (An AI explorer auto-investigates and never sets this.)
+    /// </summary>
+    public PendingMoundsDecision? PendingMounds => _pendingMounds;
+
+    /// <summary>
+    /// Investigates the <see cref="PendingMounds"/> rumour on the human's stream and clears the pending state,
+    /// returning the resolved outcome (FreeCol's "investigate these strange mounds?" → yes). A no-op returning
+    /// <see cref="LostCityRumourType.Nothing"/> if nothing is pending or the unit is gone.
+    /// </summary>
+    internal LostCityRumourType InvestigatePendingMounds()
+    {
+        if (_pendingMounds is not { } pending)
+        {
+            return LostCityRumourType.Nothing;
+        }
+        _pendingMounds = null;
+        if (_units.FirstOrDefault(u => u.Id == pending.UnitId) is not { } unit)
+        {
+            Map.RemoveRumour(pending.Tile); // the explorer is gone — just consume the rumour
+            return LostCityRumourType.Nothing;
+        }
+        return InvestigateMounds(unit, pending.Tile, _random);
+    }
+
+    /// <summary>Declines the <see cref="PendingMounds"/> rumour (removes it, no effect) and clears the pending state (FreeCol decline).</summary>
+    internal void DeclinePendingMounds()
+    {
+        if (_pendingMounds is { } pending)
+        {
+            _pendingMounds = null;
+            DeclineMounds(pending.Tile);
+        }
+    }
+
     /// <summary>
     /// Sentinel <see cref="CombatNotice.AttackerNationId"/> for a raider that hides its flag (a privateer —
     /// FreeCol's <c>model.nation.unknownEnemy</c>, which is a no-owner pseudo-nation, not a real one). The
@@ -449,6 +510,212 @@ public sealed class Game
         _nativeSettlements.FirstOrDefault(s => s.Position == p);
 
     /// <summary>
+    /// Re-derives native land ownership from the current settlements (FreeCol <c>Tile.owner</c>): the tiles in each
+    /// settlement's <see cref="Specification.SettlementType.ClaimableRadius"/> become owned by its nation. Pure +
+    /// deterministic (no RNG) — so rather than being saved it is run at game start, on load, and whenever the
+    /// settlements change (e.g. one is destroyed in combat, releasing its claim). <b>Idempotent</b>: it clears the
+    /// existing claims first, so calling it again rebuilds the same map. See <see cref="World.NativeLandClaimGenerator"/>.
+    /// Tiles the player has already <b>bought or taken</b> (<see cref="World.GameMap.ClaimedFromNatives"/>) are
+    /// subtracted afterwards, so a purchased tile never reverts to native ownership across re-derivation.
+    /// Consumed by the Lost City Rumour burial-ground gate and native land purchase (<c>86d3c9tha</c>).
+    /// </summary>
+    private void ClaimNativeLand()
+    {
+        Map.ClearNativeOwners(); // rebuild from scratch so a removed settlement's claim is dropped
+        foreach ((Position p, string nation) in NativeLandClaimGenerator.Claim(Map, _nativeSettlements, Ruleset))
+        {
+            Map.SetNativeOwner(p, nation);
+        }
+        foreach (Position p in Map.ClaimedFromNatives)
+        {
+            Map.ClearNativeOwner(p); // a bought/taken tile stays the player's, never re-claimed by the natives
+        }
+    }
+
+    // ===== Native land purchase (86d3c9tha) ===================================================================
+    // A native-owned tile is bought (gold to the tribe) or taken (+alarm) before the player uses it; Peter Minuit
+    // makes it free + peaceful (FreeCol Player.getLandPrice / ServerPlayer.csClaimLand). The found/work TRIGGER is
+    // deferred — the pay-vs-steal choice is a UI dialog — so these are explicit operations for now.
+
+    /// <summary>Land-price factor (FreeCol <c>model.option.landPriceFactor</c>; <b>60</b> = the classic-medium tier
+    /// this project standardises on, cf. the founding-father factor 40 decision). Difficulty options are not yet
+    /// data-driven (the Ruleset parses no <c>&lt;difficulty&gt;</c> group), so this is hardcoded; revisit when they are.</summary>
+    private const int LandPriceFactor = 60;
+
+    /// <summary>The flat addend in the land price (FreeCol <c>getLandPrice</c> <c>+ 100</c>).</summary>
+    private const int LandPriceBase = 100;
+
+    /// <summary>Alarm added to the robbed nation when land is <em>taken</em> rather than bought (FreeCol <c>Tension.TENSION_ADD_LAND_TAKEN</c>).</summary>
+    private const int LandTakenAlarm = 200;
+
+    /// <summary>The father modifier id scaling the land price — Peter Minuit's −100% makes native land free.</summary>
+    private const string LandPaymentModifierId = "model.modifier.landPaymentModifier";
+
+    /// <summary>The gold price for the human to buy the native-owned <paramref name="tile"/> (0 if it is not native land).</summary>
+    public int LandPrice(Position tile) => LandPrice(_human, tile);
+
+    /// <summary>
+    /// What <paramref name="player"/> must pay a native nation for <paramref name="tile"/> (FreeCol
+    /// <c>Player.getLandPrice</c>): <see cref="LandPriceFactor"/> × the tile's potential yield of every
+    /// <em>non-food</em> good + <see cref="LandPriceBase"/>, then the player's <see cref="LandPaymentModifierId"/>
+    /// modifier (Peter Minuit −100% → 0). Returns <b>0</b> when the tile is not native-owned (unclaimed or already
+    /// bought; natives are never a colonial player, so the buyer can never already own it).
+    /// </summary>
+    internal int LandPrice(Player player, Position tile)
+    {
+        if (!Map.IsNativeOwned(tile))
+        {
+            return 0;
+        }
+        // The price values the land's POTENTIAL output (FreeCol getPotentialProduction with a null owner) — NOT
+        // the acting player's father-boosted yield, so e.g. Henry Hudson's +furs never inflates what land costs.
+        int raw = (LandPriceFactor * Ruleset.GoodsTypes.Where(g => !g.IsFood).Sum(g => TileYieldPotential(tile, g.Id)))
+                  + LandPriceBase;
+        // The landPaymentModifier scales the price — Peter Minuit's −100% makes it free. ApplyGoodsModifiers stacks
+        // every matching modifier by index (FreeCol applyModifiers), consistent with the rest of the codebase.
+        return ApplyGoodsModifiers(player, LandPaymentModifierId, raw);
+    }
+
+    /// <summary>Whether the human may claim (buy or take) the native-owned <paramref name="tile"/>; the check's cost is the buy price.</summary>
+    public MoveCheck CheckClaimLand(Position tile) => CheckClaimLand(_human, tile);
+
+    /// <summary>Whether <paramref name="player"/> may claim <paramref name="tile"/> from the natives (it must be native-owned).</summary>
+    internal MoveCheck CheckClaimLand(Player player, Position tile)
+    {
+        if (!Map.InBounds(tile))
+        {
+            return MoveCheck.No("Tile is off the map.");
+        }
+        if (!Map.IsNativeOwned(tile))
+        {
+            return MoveCheck.No("That land is not claimed by a native nation.");
+        }
+        if (NativeSettlementAt(tile) is not null)
+        {
+            return MoveCheck.No("The natives will not sell the ground their settlement stands on."); // FreeCol: a settlement tile is not for sale
+        }
+        return MoveCheck.Yes(LandPrice(player, tile));
+    }
+
+    /// <summary>Buys the native-owned <paramref name="tile"/> for the human: pays the <see cref="LandPrice(Position)"/> (free under Peter Minuit), and the tile becomes the player's for good.</summary>
+    /// <exception cref="InvalidMoveException">Not native land, or not enough gold.</exception>
+    public void ClaimLandByPaying(Position tile) => ClaimLandByPaying(_human, tile);
+
+    /// <summary>Buys <paramref name="tile"/> from the natives for <paramref name="player"/> (see <see cref="ClaimLandByPaying(Position)"/>).</summary>
+    internal void ClaimLandByPaying(Player player, Position tile)
+    {
+        MoveCheck check = CheckClaimLand(player, tile);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        int price = LandPrice(player, tile);
+        if (player.Gold < price)
+        {
+            throw new InvalidMoveException($"Not enough gold to buy this land (need {price}).");
+        }
+        player.Gold -= price; // FreeCol credits the native owner; we keep no native treasury, so the gold simply leaves
+        Map.ClaimFromNatives(tile);
+    }
+
+    /// <summary>Takes the native-owned <paramref name="tile"/> for the human by force: no gold changes hands, but the robbed nation's settlements gain <see cref="LandTakenAlarm"/> alarm.</summary>
+    /// <exception cref="InvalidMoveException">Not native land.</exception>
+    public void ClaimLandByStealing(Position tile) => ClaimLandByStealing(_human, tile);
+
+    /// <summary>Takes <paramref name="tile"/> from the natives for <paramref name="player"/> (see <see cref="ClaimLandByStealing(Position)"/>).</summary>
+    internal void ClaimLandByStealing(Player player, Position tile)
+    {
+        MoveCheck check = CheckClaimLand(player, tile);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        string nation = Map.NativeOwnerOf(tile)!; // the robbed nation, recorded before the claim clears ownership
+        Map.ClaimFromNatives(tile);
+        foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == nation))
+        {
+            ChangeNativeAlarm(settlement, LandTakenAlarm); // FreeCol TENSION_ADD_LAND_TAKEN, nation-wide (ownership is tracked per nation)
+        }
+    }
+
+    // ===== Treasure-train cash-in (86d3c9rzu) =================================================================
+    // Escort a treasure train to a colony (or Europe) to bank its gold (FreeCol Unit.canCashInTreasureTrain /
+    // getTransportFee + the cash-in handler): at a colony the King ships it across for a transport cut, then the
+    // monarch's tax applies; carry it to Europe yourself (a galleon) to skip the King's fee.
+
+    /// <summary>The King's cut to ship treasure to Europe (FreeCol <c>model.option.treasureTransportFee</c>; <b>60%</b>,
+    /// classic-medium — the tier this project standardises on, like <see cref="LandPriceFactor"/>=60. Difficulty options
+    /// are not yet data-driven, so this is hardcoded; revisit when they are).</summary>
+    private const int TreasureTransportFeePercent = 60;
+
+    /// <summary>The father modifier id scaling the transport fee — Hernán Cortés's −100% ships treasure for free.</summary>
+    private const string TreasureTransportFeeModifierId = "model.modifier.treasureTransportFee";
+
+    /// <summary>The King's fee to ship <paramref name="train"/>'s treasure to Europe: <see cref="TreasureTransportFeePercent"/>% of the amount, less Hernán Cortés's <c>treasureTransportFee</c> modifier (−100% → free).</summary>
+    private int TransportFee(Player owner, Unit train) =>
+        ApplyGoodsModifiers(owner, TreasureTransportFeeModifierId, TreasureTransportFeePercent * train.TreasureAmount / 100);
+
+    /// <summary>
+    /// The gold <paramref name="owner"/> nets cashing in <paramref name="train"/>: the carried amount less the King's
+    /// <see cref="TransportFee"/> (0 if the train is already in Europe — you carried it yourself), then the monarch's
+    /// tax on the remainder. Integer-truncated, like the rest of the economy.
+    /// </summary>
+    private int CashInValue(Player owner, Unit train)
+    {
+        int fee = train.Location == UnitLocation.InEurope ? 0 : TransportFee(owner, train);
+        return (train.TreasureAmount - fee) * (100 - owner.TaxRate) / 100;
+    }
+
+    /// <summary>The gold the human would net by cashing in <paramref name="train"/> where it stands (0 if it can't here).</summary>
+    public int CashInValue(Unit train) =>
+        CheckCashInTreasureTrain(train).Allowed && PlayerById(train.OwnerId) is { } owner ? CashInValue(owner, train) : 0;
+
+    /// <summary>
+    /// Whether <paramref name="train"/> may be cashed in where it stands: it must be a treasure-carrying unit with
+    /// gold aboard, standing at a colony its owner holds (FreeCol requires a port connected to Europe — we have no
+    /// connectivity graph, so any owned colony qualifies) or docked in Europe. The check's cost carries the net gold.
+    /// </summary>
+    public MoveCheck CheckCashInTreasureTrain(Unit train)
+    {
+        if (!train.Type.CarryTreasure)
+        {
+            return MoveCheck.No("That is not a treasure train.");
+        }
+        if (train.TreasureAmount <= 0)
+        {
+            return MoveCheck.No("The treasure train carries no gold.");
+        }
+        bool atOwnColony = train.IsOnMap && ColonyAt(train.Position) is { } colony && colony.OwnerId == train.OwnerId;
+        bool inEurope = train.Location == UnitLocation.InEurope;
+        if (!atOwnColony && !inEurope)
+        {
+            return MoveCheck.No("Bring the treasure train to one of your colonies (or to Europe) to cash it in.");
+        }
+        return PlayerById(train.OwnerId) is { } owner ? MoveCheck.Yes(CashInValue(owner, train)) : MoveCheck.No("The treasure train has no owner.");
+    }
+
+    /// <summary>
+    /// Cashes in <paramref name="train"/>: banks the net gold (<see cref="CashInValue(Unit)"/>) to its owner and the
+    /// train leaves the game (FreeCol disposes it on cash-in). At a colony the King takes his transport cut; in Europe
+    /// there is no fee. The monarch's tax applies to the remainder either way.
+    /// </summary>
+    /// <exception cref="InvalidMoveException">Not cashable here; see <see cref="CheckCashInTreasureTrain"/>.</exception>
+    public void CashInTreasureTrain(Unit train)
+    {
+        MoveCheck check = CheckCashInTreasureTrain(train);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        if (PlayerById(train.OwnerId) is { } owner)
+        {
+            owner.Gold += CashInValue(owner, train);
+        }
+        train.SetTreasureAmount(0); // the treasure is spent — also stops a stale reference re-cashing it (it credits gold)
+        _units.Remove(train); // the treasure train leaves the game
+    }
+
+    /// <summary>
     /// Tiles a settlement's chief reveals when you first speak ("tales of nearby lands";
     /// scaled down from FreeCol's <c>TALES_RADIUS</c> = 6 for our smaller default map).
     /// </summary>
@@ -457,6 +724,12 @@ public sealed class Game
     /// <summary>Min/max gold in a settlement's first-contact gift (FreeCol <c>IndianSettlement.GIFT_MINIMUM/MAXIMUM</c>).</summary>
     private const int GiftMinimum = 10;
     private const int GiftMaximum = 80;
+
+    /// <summary>The scout role id — a scout-role unit gets the full chief audience (FreeCol <c>scoutSpeakToChief</c>); other colonists get the basic visit.</summary>
+    private const string ScoutRoleId = "model.role.scout";
+
+    /// <summary>The expert-scout unit type (FreeCol <c>model.ability.expertScout</c>) a chief may train a scout into — the scout role's expert unit.</summary>
+    private const string SeasonedScoutUnitTypeId = "model.unit.seasonedScout";
 
     /// <summary>
     /// Unit types that can be taught a skill at a native settlement (FreeCol: the free
@@ -501,17 +774,23 @@ public sealed class Game
     }
 
     /// <summary>
-    /// Speaks with a settlement's chief (first contact): reveals the surrounding lands
-    /// ("tales") and, unless the settlement is hateful, gives a small gold gift. Marks the
-    /// settlement visited and ends the unit's turn. (Scout-specific outcomes — larger beads,
-    /// learning by chance, danger — are a later slice.)
+    /// Speaks with a settlement's chief (first contact). A <b>scout-role</b> unit gets FreeCol's full
+    /// <c>scoutSpeakToChief</c> outcomes (a hateful tribe kills it; else a chance to be trained into a seasoned
+    /// scout, otherwise "tales" — a wider map reveal — or "beads" — a gold gift from the settlement type's
+    /// <c>&lt;gifts&gt;</c> range, +10% for an expert scout). Any other colonist gets the basic visit (tales + a
+    /// small flat gift unless hateful — a documented simplification; FreeCol reserves chief audiences for scouts).
+    /// Marks the settlement visited and ends the unit's turn.
     /// </summary>
-    /// <returns>The gold gifted (0 if the settlement gave none).</returns>
+    /// <returns>The gold gained (0 for tales/expert/nothing, or a slain scout).</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckVisit"/>.</exception>
     public int Visit(Unit unit, NativeSettlement settlement) => Visit(_human, unit, settlement);
 
-    /// <summary>Speaks with a settlement's chief on behalf of <paramref name="player"/> (the unit's owner).</summary>
-    internal int Visit(Player player, Unit unit, NativeSettlement settlement)
+    /// <summary>Speaks with a settlement's chief on behalf of <paramref name="player"/> (the unit's owner), on its own stream.</summary>
+    internal int Visit(Player player, Unit unit, NativeSettlement settlement) =>
+        Visit(player, unit, settlement, RandomFor(player));
+
+    /// <summary>Speaks with a settlement's chief, drawing from the supplied <see cref="IGameRandom"/> (the per-owner stream; the overload exists for scripted tests, like <see cref="Attack(Unit, Position, IGameRandom)"/>).</summary>
+    internal int Visit(Player player, Unit unit, NativeSettlement settlement, IGameRandom random)
     {
         MoveCheck check = CheckVisit(unit, settlement);
         if (!check.Allowed)
@@ -520,15 +799,89 @@ public sealed class Game
         }
 
         settlement.HasBeenVisited = true;
+        return unit.RoleId == ScoutRoleId
+            ? ScoutSpeakToChief(player, unit, settlement, random)
+            : VisitAsColonist(player, unit, settlement, random);
+    }
+
+    /// <summary>The basic chief visit for a non-scout colonist: reveal the surrounding lands + a small flat gift unless hateful.</summary>
+    private int VisitAsColonist(Player player, Unit unit, NativeSettlement settlement, IGameRandom random)
+    {
         RevealAround(player, settlement.Position, TalesRevealRadius); // tales of nearby lands
         int gift = 0;
         if (settlement.AlarmLevel != AlarmLevel.Hateful)
         {
-            gift = RandomFor(player).Next(GiftMinimum, GiftMaximum + 1); // the visitor's own stream (the human is 0)
+            gift = random.Next(GiftMinimum, GiftMaximum + 1); // the visitor's own stream (the human is 0)
             player.Gold += gift;
         }
         unit.MovementLeft = 0; // speaking ends the unit's turn
         return gift;
+    }
+
+    /// <summary>
+    /// A scout's audience with the chief (FreeCol <c>InGameController.scoutSpeakToChief</c>): a <b>hateful</b> tribe
+    /// slays the scout; otherwise one "scouting" roll decides — the scout may be <b>trained</b> into a seasoned scout
+    /// (always if the chief teaches scouting, else a 1-in-10 chance), else <b>tales</b> (a wider reveal — taken 1-in-3
+    /// of the time or when the type gives no beads) or <b>beads</b> (gold from the type's <c>&lt;gifts&gt;</c> range,
+    /// +10% for an already-expert scout). Draws from <paramref name="random"/>. (We don't deduct the gold from a native
+    /// treasury — natives hold none, as with treasure plunder.)
+    /// </summary>
+    private int ScoutSpeakToChief(Player player, Unit unit, NativeSettlement settlement, IGameRandom random)
+    {
+        // Hateful natives kill the scout outright.
+        if (settlement.AlarmLevel == AlarmLevel.Hateful)
+        {
+            _units.Remove(unit);
+            return 0;
+        }
+
+        unit.MovementLeft = 0; // the audience ends the scout's turn
+        SettlementType type = Ruleset.Settlement(settlement.SettlementTypeId);
+        int rnd = random.Next(10); // FreeCol "scouting" roll
+
+        // Trained into a seasoned scout — always if this chief teaches scouting, otherwise a 1-in-10 chance.
+        bool teachesScouting = settlement.LearnableSkill == SeasonedScoutUnitTypeId;
+        if (unit.Type.Id != SeasonedScoutUnitTypeId && (teachesScouting || rnd == 0))
+        {
+            UpgradeUnitType(unit, SeasonedScoutUnitTypeId);
+            RevealAround(player, settlement.Position, TalesRevealRadius);
+            return 0;
+        }
+
+        // Otherwise beads (gold) or tales (a wider reveal). Tales when there are no beads or 1-in-3 of the time.
+        int gold = GiftsAmount(type, random);
+        if (gold <= 0 || rnd <= 3)
+        {
+            RevealAround(player, settlement.Position, TalesRevealRadius); // "tales of nearby lands"
+            return 0;
+        }
+        if (unit.Type.Id == SeasonedScoutUnitTypeId)
+        {
+            gold = gold * 11 / 10; // an expert scout haggles 10% more (FreeCol)
+        }
+        player.Gold += gold;
+        RevealAround(player, settlement.Position, TalesRevealRadius);
+        return gold;
+    }
+
+    /// <summary>
+    /// The chief's "beads" gift from a settlement type's <c>&lt;gifts&gt;</c> range, gated by the probability roll
+    /// (0 when the type has no gifts). FreeCol's <c>scoutSpeakToChief</c> uses the <b>continuous</b> RandomRange path
+    /// (<c>getAmount(…, true)</c>): a fine-grained roll across the whole <c>[Min×Factor, (Max+1)×Factor)</c> band —
+    /// unlike the <b>discrete</b> plunder path (<see cref="ComputePlunder"/>, <c>(rnd+Min)×Factor</c>), so gifts and
+    /// plunder draw differently on purpose.
+    /// </summary>
+    private static int GiftsAmount(SettlementType type, IGameRandom random)
+    {
+        if (type.Gifts is not { } gifts)
+        {
+            return 0;
+        }
+        if (gifts.Probability < 100 && (gifts.Probability <= 0 || random.Next(100) >= gifts.Probability))
+        {
+            return 0;
+        }
+        return random.Next((gifts.Maximum - gifts.Minimum + 1) * gifts.Factor) + (gifts.Minimum * gifts.Factor);
     }
 
     /// <summary>Whether <paramref name="unit"/> may learn <paramref name="settlement"/>'s skill now.</summary>
@@ -755,11 +1108,37 @@ public sealed class Game
                 .Where(a => a.Id == AutomaticEquipmentAbility && a.Value)
                 .SelectMany(a => a.ScopeTypes);
 
-    /// <summary>The strongest enemy of <paramref name="attacker"/> standing on a tile, or null.</summary>
-    private Unit? DefenderAt(Unit attacker, Position p) =>
+    /// <summary>
+    /// The strongest enemy of <paramref name="attacker"/> standing on a tile, or null. Ranked by full <em>computed</em>
+    /// defence power (terrain / fortify / settlement / naval-cargo), not raw base defence — FreeCol
+    /// <c>Unit.betterDefender</c> picks the best actual defender, so a dug-in or walled weaker unit can outrank a
+    /// stronger one in the open. Ties broken by unit id for determinism (ADR-009).
+    /// </summary>
+    internal Unit? DefenderAt(Unit attacker, Position p) =>
         _units.Where(u => u.IsOnMap && AreEnemies(attacker, u) && u.Position == p)
-            .OrderByDescending(DefenceBase)
+            .OrderByDescending(u => DefencePowerOf(attacker, u, p))
+            .ThenBy(u => u.Id)
             .FirstOrDefault();
+
+    /// <summary>
+    /// The full defence power a unit would defend <paramref name="target"/> with against <paramref name="attacker"/>
+    /// (FreeCol <c>SimpleCombatModel.getDefencePower</c>): the same context the attack resolution builds — terrain
+    /// cover (none on water / in a settlement), the dig-in bonus, the colony's fortification bonus, the artillery
+    /// in-the-open penalty / against-raid bonus, and the naval cargo penalty.
+    /// </summary>
+    private double DefencePowerOf(Unit attacker, Unit defender, Position target)
+    {
+        bool naval = defender.Type.IsNaval;
+        bool inColony = !naval && ColonyAt(target) is not null;
+        var context = new DefenceContext(
+            TerrainDefenceBonus: (naval || inColony) ? 0 : Map.TerrainAt(target).DefenceBonus,
+            Fortified: !naval && defender.IsFortified,
+            SettlementDefenceBonus: naval ? 0 : ColonyDefenceBonusAt(target),
+            ArtilleryInOpen: !naval && defender.Type.Bombard && !inColony && !defender.IsFortified,
+            ArtilleryAgainstRaid: !naval && inColony && defender.Type.Bombard && attacker.IsNative,
+            GoodsCarried: naval ? GoodsSlotsUsed(defender) : 0);
+        return CombatModel.DefencePower(DefenceBase(defender), context);
+    }
 
     /// <summary>A free, in-bounds land tile adjacent to a centre (no settlement or unit on it), or null.</summary>
     private Position? FreeAdjacentLand(Position centre) =>
@@ -986,18 +1365,9 @@ public sealed class Game
             ArtilleryInOpen: !naval && attacker.Type.Bombard && !attackerInColony && !attacker.IsFortified && !inColony,
             AmbushBonus: ambush ? Map.TerrainAt(target).DefenceBonus : 0,
             GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0); // FreeCol cargo penalty is goods only, not passengers
-        var defenceContext = new DefenceContext(
-            TerrainDefenceBonus: (naval || inColony) ? 0 : Map.TerrainAt(target).DefenceBonus, // open water / a colony: no terrain bonus
-            Fortified: !naval && defender.IsFortified, // a dug-in land defender resists at +50% (FreeCol FORTIFIED)
-            SettlementDefenceBonus: naval ? 0 : ColonyDefenceBonusAt(target), // a unit defending in a fortified colony (stockade/fort/fortress)
-            // Artillery caught defending in the open is brittle too (−75%, unless dug in); but behind a colony's
-            // walls against a NATIVE raid it doubles (+100%, FreeCol ARTILLERY_AGAINST_RAID).
-            ArtilleryInOpen: !naval && defender.Type.Bombard && !inColony && !defender.IsFortified,
-            ArtilleryAgainstRaid: !naval && inColony && defender.Type.Bombard && attacker.IsNative,
-            GoodsCarried: naval ? GoodsSlotsUsed(defender) : 0);
-
         double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext);
-        double defencePower = CombatModel.DefencePower(DefenceBase(defender), defenceContext);
+        // The defender's full power (terrain/fortify/settlement/artillery/cargo) — the same figure DefenderAt ranks by.
+        double defencePower = DefencePowerOf(attacker, defender, target);
 
         // Attacking ends the attacker's turn now — before any promotion/demotion that swaps the unit
         // object (UpgradeUnitType copies MovementLeft, so the swapped unit inherits the spent turn).
@@ -1111,8 +1481,16 @@ public sealed class Game
         if (attackerWon)
         {
             ApplyWinnerPromotion(attacker, great, random); // promotion draw (if any) before the plunder draws
-            _human.Gold += ComputePlunder(type, hasPlunderAbility, random); // the attacker is the human in FP-1 (combat becomes player-aware in FP-6)
+            // Sacking the settlement yields treasure as a TREASURE TRAIN on the razed tile (FreeCol csDestroySettlement),
+            // NOT instant gold — the attacker must escort it to a colony to cash it in. The plunder draw is unchanged
+            // (same RNG sequence as the old instant-gold path), so determinism/byte-stability holds (ADR-009).
+            int plunder = ComputePlunder(type, hasPlunderAbility, random);
+            if (plunder > 0)
+            {
+                SpawnTreasureTrain(target, attacker.OwnerId, plunder);
+            }
             _nativeSettlements.Remove(settlement); // destroyed
+            ClaimNativeLand(); // the razed settlement releases its land claim (surviving same-nation settlements keep theirs)
 
             if (capital)
             {
@@ -1491,7 +1869,10 @@ public sealed class Game
             return;
         }
 
-        // 3. A capturable unit changes side (and may downgrade its type on capture).
+        // 3. A capturable unit changes side (and may downgrade its type on capture). FreeCol also requires
+        // !combatIsAmphibious here (a unit beaten by an assault fired straight off a ship is slain, not captured) —
+        // omitted because we model no amphibious assault yet (CheckAttack requires the attacker be on the map, not
+        // aboard), so this branch is never reached amphibiously. The guard lands with amphibious assault (86d3c9tzv).
         if (loser.Type.CanBeCaptured && CanCaptureUnits(winner))
         {
             CaptureUnit(loser, winner);
@@ -1627,6 +2008,80 @@ public sealed class Game
     /// </summary>
     private bool CanRepairAtEurope(Unit ship) => PlayerById(ship.OwnerId) is { PlayerType: PlayerType.Colonial };
 
+    // ===== Colony fort/fortress bombardment of adjacent enemy ships (86d3c9tkk) ==============================
+    // At the start of each colonial player's turn, every colony with a fort/fortress (the bombardShips ability) and
+    // artillery on its tile fires on adjacent enemy/pirate ships at sea — one-sided, no counterattack (FreeCol
+    // ServerPlayer.csBombardEnemyShips). Reuses the naval damage/sink path; draws from the owner's own RNG stream.
+
+    /// <summary>FreeCol <c>SimpleCombatModel.MAXIMUM_BOMBARD_POWER</c>: the on-tile artillery offence is capped here.</summary>
+    private const int MaxBombardPower = 48;
+
+    /// <summary>
+    /// Each of <paramref name="player"/>'s fort/fortress colonies with artillery on its tile bombards every adjacent
+    /// enemy-or-pirate ship at sea (FreeCol <c>csBombardEnemyShips</c>, run at turn start). Bombard power is the summed
+    /// offence of the on-tile artillery, capped at <see cref="MaxBombardPower"/>; the ship is damaged or sunk with no
+    /// return fire. Deterministic on the owner's stream (the human's 0, an AI power's own); a landlocked colony has no
+    /// adjacent water (so no targets), and a colony with no artillery has 0 power (so it is skipped).
+    /// </summary>
+    private void BombardEnemyShips(Player player) => BombardEnemyShips(player, RandomFor(player));
+
+    /// <summary>Colony bombardment drawing from an explicit RNG (tests inject a fixed RNG; the turn path uses the owner's stream).</summary>
+    internal void BombardEnemyShips(Player player, IGameRandom random)
+    {
+        foreach (Colony colony in ColoniesOf(player).OrderBy(c => c.Id).ToList())
+        {
+            if (!colony.Buildings.Any(b => Ruleset.Building(b).BombardsShips))
+            {
+                continue; // no fort/fortress → no bombardment
+            }
+            int power = Math.Min(MaxBombardPower, (int)_units
+                .Where(u => u.IsOnMap && u.Position == colony.Position && IsOwnedBy(u, player) && u.Type.Bombard)
+                .Sum(OffenceBase));
+            if (power <= 0)
+            {
+                continue; // a fort with no artillery on its tile cannot bombard
+            }
+            // Targets in a stable order (neighbour-tile order, then unit id): collected first, since a hit removes the ship.
+            var targets = colony.Position.Neighbours()
+                .Where(n => Map.InBounds(n) && Map.TerrainAt(n).IsWater)
+                .SelectMany(n => _units.Where(u => u.IsOnMap && u.Position == n && IsBombardTarget(player, u)))
+                .OrderBy(u => u.Id)
+                .ToList();
+            foreach (Unit ship in targets)
+            {
+                BombardShip(ship, power, random);
+            }
+        }
+    }
+
+    /// <summary>Whether <paramref name="ship"/> is a valid bombard target for <paramref name="colonyOwner"/>: an enemy naval unit — at war, or a pirate (privateer) regardless of stance — not the owner's own.</summary>
+    private bool IsBombardTarget(Player colonyOwner, Unit ship) =>
+        ship.Type.IsNaval
+        && !IsOwnedBy(ship, colonyOwner)
+        && (ship.Type.Piracy || StanceBetween(colonyOwner.PlayerId, ship.OwnerId) == Stance.War);
+
+    /// <summary>
+    /// Resolves one bombard against <paramref name="ship"/> (one-sided — no counterattack): <paramref name="power"/>
+    /// vs the ship's defence (with its cargo penalty). A win damages the ship (it limps to repair); a great win — or a
+    /// ship with nowhere to repair — sinks it (FreeCol <c>csBombard</c> → damage/sink, no loot). A miss leaves it unharmed.
+    /// </summary>
+    private void BombardShip(Unit ship, int power, IGameRandom random)
+    {
+        double defence = CombatModel.DefencePower(DefenceBase(ship), new DefenceContext(GoodsCarried: GoodsSlotsUsed(ship)));
+        CombatResult result = CombatModel.ResolveNaval(CombatModel.WinProbability(power, defence), random);
+        if (result is CombatResult.GreatWin or CombatResult.Win)
+        {
+            if (result is CombatResult.GreatWin || !CanRepairAtEurope(ship))
+            {
+                SinkShip(ship);
+            }
+            else
+            {
+                DamageShip(ship);
+            }
+        }
+    }
+
     /// <summary>Captures a defeated unit: it changes to the winner's side (with the capture type-change, if any) and is disarmed.</summary>
     private void CaptureUnit(Unit loser, Unit winner)
     {
@@ -1695,6 +2150,7 @@ public sealed class Game
         {
             upgraded.AddCargo(goodsId, amount);
         }
+        upgraded.SetTreasureAmount(unit.TreasureAmount); // carry any treasure across the swap (defensive; treasure trains have no type change today)
         int index = _units.IndexOf(unit);
         if (index >= 0)
         {
@@ -1799,6 +2255,8 @@ public sealed class Game
             game._nativeSettlements.Add(settlement);
             game._nextSettlementId = Math.Max(game._nextSettlementId, settlement.Id + 1);
         }
+
+        game.ClaimNativeLand(); // each native settlement claims the land in its radius (FreeCol Tile.owner)
 
         // Garrison each settlement with native braves on adjacent open land (unarmed defenders the
         // player can attack in the open field; the settlement tile itself is assaulted in slice 5c).
@@ -1947,12 +2405,13 @@ public sealed class Game
         IEnumerable<(int id, UnitType type, Position position, int movementLeft,
             UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
             int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
-            int repairTurns, UnitOrders orders)> units,
+            int repairTurns, UnitOrders orders, int treasureAmount)> units,
         IEnumerable<Colony>? colonies = null,
-        IEnumerable<NativeSettlement>? nativeSettlements = null)
+        IEnumerable<NativeSettlement>? nativeSettlements = null,
+        AutoExportMode autoExportMode = AutoExportMode.PerGood)
     {
         Player human = BuildPlayer(ruleset, players.Single(p => p.IsHuman), randomState);
-        var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn, human);
+        var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn, human) { AutoExportMode = autoExportMode };
         foreach (RestoredPlayer rp in players.Where(p => !p.IsHuman))
         {
             game._players.Add(BuildPlayer(ruleset, rp, randomState));
@@ -1970,7 +2429,7 @@ public sealed class Game
         foreach ((int id, UnitType type, Position position, int movementLeft,
                   UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
                   int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
-                  int repairTurns, UnitOrders orders) in units)
+                  int repairTurns, UnitOrders orders, int treasureAmount) in units)
         {
             var unit = new Unit(id, type, position)
             {
@@ -1985,6 +2444,7 @@ public sealed class Game
                 RepairTurnsRemaining = repairTurns,
                 Orders = orders,
             };
+            unit.SetTreasureAmount(treasureAmount); // internal method, like AddCargo — set after the initializer
             foreach ((string goodsId, int amount) in cargo ?? new Dictionary<string, int>())
             {
                 unit.AddCargo(goodsId, amount);
@@ -2004,6 +2464,8 @@ public sealed class Game
             game._nativeSettlements.Add(settlement);
             game._nextSettlementId = Math.Max(game._nextSettlementId, settlement.Id + 1);
         }
+
+        game.ClaimNativeLand(); // re-derive native tile ownership from the restored settlements (never saved)
 
         // Fog: union each player's explored tiles; a pre-fog save (v1, explored null) re-derives its
         // fog by revealing around that player's units, mirroring the original load fallback.
@@ -2074,6 +2536,13 @@ public sealed class Game
             foreach ((int otherId, int tension) in saved.Tensions)
             {
                 player.TensionMap[otherId] = tension;
+            }
+        }
+        if (saved.UnitPrices is not null)
+        {
+            foreach ((string unitTypeId, int price) in saved.UnitPrices)
+            {
+                player.UnitPriceMap[unitTypeId] = price; // escalated Europe purchase prices (artillery)
             }
         }
         if (!saved.IsHuman)
@@ -2225,6 +2694,7 @@ public sealed class Game
         {
             SyncPassengers(unit); // any colonists aboard move with the ship
         }
+        TryExploreRumour(unit, target); // a land unit stepping onto a Lost City Rumour investigates it (may consume/transform the unit)
     }
 
     /// <summary>
@@ -2334,8 +2804,9 @@ public sealed class Game
         }
         // Minimum colony spacing (FreeCol Player.canClaimToFoundSettlementReason: tile.getAdjacentColonies()
         // must be empty): no colony may be founded on a tile adjacent to an existing colony, so colony
-        // footprints never touch. Native settlements do not block founding (FreeCol treats that as a land
-        // claim, not a hard bar; we don't model land price).
+        // footprints never touch. Native-owned tiles do not block founding here: the land-claim API exists
+        // (LandPrice / ClaimLandByPaying / ClaimLandByStealing), but the founding/working TRIGGER — being forced
+        // to buy-or-steal the tile first — is deferred pending the pay-vs-steal UI choice (see natives.md).
         if (unit.Position.Neighbours().Any(n => Map.InBounds(n) && ColonyAt(n) is not null))
         {
             return MoveCheck.No("A colony cannot be founded next to another colony.");
@@ -2564,6 +3035,25 @@ public sealed class Game
         return sale.GoldAfterTax;
     }
 
+    /// <summary>
+    /// Sets a colony's custom-house export setting for a good (FreeCol <c>setGoodsLevels</c>): whether its surplus
+    /// auto-sells and the level to retain (<paramref name="exportLevel"/> null keeps the current level). The good
+    /// must be storable and tradeable (have a European market) — <b>food included</b>, which FreeCol's custom house
+    /// can export (opt-in; it defaults off). Non-tradeable goods (hammers/bells/crosses) and non-storables are refused.
+    /// Used in <see cref="AutoExportMode.PerGood"/> mode; the export-all mode ignores per-good settings (and protects
+    /// food). (Setting is allowed regardless of whether the custom house is built — the auto-sell only acts when it is.)
+    /// </summary>
+    /// <exception cref="InvalidMoveException">The good cannot be exported (non-tradeable / non-storable).</exception>
+    public void SetColonyExport(Colony colony, string goodsId, bool exported, int? exportLevel = null)
+    {
+        GoodsType goods = Ruleset.Goods(goodsId);
+        if (!goods.IsTradeable || !goods.IsStorable)
+        {
+            throw new InvalidMoveException($"{goodsId} cannot be exported through the custom house.");
+        }
+        colony.SetExport(goodsId, exported, exportLevel ?? colony.ExportOf(goodsId).ExportLevel);
+    }
+
     /// <summary>Base turns a naval unit spends crossing the high seas each way (FreeCol TURNS_TO_SAIL).</summary>
     public const int SailTurns = 3;
 
@@ -2744,6 +3234,22 @@ public sealed class Game
     /// <summary>Whether the player can buy a <paramref name="unitTypeId"/> in Europe right now.</summary>
     public MoveCheck CheckBuyUnit(string unitTypeId) => CheckBuyUnit(_human, unitTypeId);
 
+    /// <summary>The Europe unit whose purchase price escalates (FreeCol <c>priceIncreasePerType</c> — artillery is the only classic one).</summary>
+    private const string ArtilleryUnitTypeId = "model.unit.artillery";
+
+    /// <summary>Gold added to a player's artillery price after each artillery purchase (classic-medium <c>model.option.priceIncrease.artillery</c>; hardcoded pending ruleset-option parsing — see the difficulty-system task).</summary>
+    private const int ArtilleryPriceIncrease = 100;
+
+    /// <summary>This player's current Europe price for a unit type — its escalated override (artillery) or the ruleset base.</summary>
+    private static int EuropeUnitPrice(Player player, UnitType type) =>
+        player.UnitPriceOverrides.GetValueOrDefault(type.Id, type.Price);
+
+    /// <summary>The unit types <b>trained</b> in this player's Europe (priced specialists, skill &gt; 0), in ruleset order (FreeCol <c>getUnitTypesTrainedInEurope</c>).</summary>
+    public IReadOnlyList<UnitType> UnitTypesTrainedInEurope() => [.. Ruleset.UnitTypes.Where(t => t.IsTrainedInEurope)];
+
+    /// <summary>The unit types <b>purchased</b> in this player's Europe (priced, no skill — ships + artillery), in ruleset order (FreeCol <c>getUnitTypesPurchasedInEurope</c>).</summary>
+    public IReadOnlyList<UnitType> UnitTypesPurchasedInEurope() => [.. Ruleset.UnitTypes.Where(t => t.IsPurchasedInEurope)];
+
     /// <summary>Whether <paramref name="player"/> can buy a <paramref name="unitTypeId"/> in Europe right now.</summary>
     internal MoveCheck CheckBuyUnit(Player player, string unitTypeId)
     {
@@ -2752,11 +3258,12 @@ public sealed class Game
         {
             return MoveCheck.No($"A {type.ShortName} cannot be bought in Europe.");
         }
-        if (player.Gold < type.Price)
+        int price = EuropeUnitPrice(player, type);
+        if (player.Gold < price)
         {
-            return MoveCheck.No($"Not enough gold (need {type.Price}).");
+            return MoveCheck.No($"Not enough gold (need {price}).");
         }
-        return MoveCheck.Yes(type.Price);
+        return MoveCheck.Yes(price);
     }
 
     /// <summary>
@@ -2777,6 +3284,12 @@ public sealed class Game
         }
         player.Gold -= check.Cost;
         UnitType type = Ruleset.Unit(unitTypeId);
+        // Artillery's price ratchets +100 for this player per purchase (FreeCol increasePrice; ships/specialists stay
+        // flat). The override starts from the price just paid, so 500 → 600 → 700…
+        if (unitTypeId == ArtilleryUnitTypeId)
+        {
+            player.UnitPriceMap[unitTypeId] = check.Cost + ArtilleryPriceIncrease;
+        }
         var unit = new Unit(_nextUnitId++, type, type.IsNaval ? EuropeEntryTile() : new Position(0, 0))
         {
             Location = UnitLocation.InEurope,
@@ -2918,6 +3431,7 @@ public sealed class Game
         unit.Position = target;
         unit.MovementLeft = 0; // disembarking ends the unit's turn
         Reveal(unit);
+        TryExploreRumour(unit, target); // an amphibious landing onto a Lost City Rumour investigates it too (FreeCol explores on any move)
     }
 
     /// <summary>Takes a carried unit off its ship back onto the Europe dock.</summary>
@@ -2935,6 +3449,429 @@ public sealed class Game
         }
         unit.CarrierId = null;
         unit.Location = UnitLocation.InEurope;
+    }
+
+    // ===== Lost City Rumours — outcome resolution (86d3c9uhj) =================================================
+    // Walking a colonial land unit onto a rumour tile investigates it (FreeCol ServerUnit.csMove fires
+    // csExploreLostCityRumour when newTile.hasLostCityRumour() && owner.isEuropean()). The type is rolled now
+    // from a weighted table (FreeCol LostCityRumour.chooseType) and resolved (csExploreLostCityRumour), then the
+    // rumour is consumed (one-shot). Placement is the prior slice (86d3c9uex); see docs/systems/lost-city-rumours.md.
+
+    /// <summary>The Lost City Rumour outcomes resolved so far (a subset of FreeCol's <c>RumourType</c>).
+    /// Deferred to their own slices and so absent from the weighted table here: <c>MOUNDS</c> + native-owned
+    /// tiles + the strange-mounds prompt (<c>86d3c9umy</c>). <c>BURIAL_GROUND</c> is likewise absent until native
+    /// tile ownership wiring lands — with no native-owned rumour tiles the bad side is only the vanishing
+    /// expedition, exactly as FreeCol degrades it. (The treasure finds <c>RUINS</c>/<c>CIBOLA</c> now ship — they
+    /// spawn a treasure train via the v27 amount.)</summary>
+    internal enum LostCityRumourType
+    {
+        /// <summary>Nothing of note — the rumour is spent for no effect.</summary>
+        Nothing,
+
+        /// <summary>The expedition vanishes — the exploring unit is lost.</summary>
+        ExpeditionVanishes,
+
+        /// <summary>A tribal chief's gift of gold.</summary>
+        TribalChief,
+
+        /// <summary>The unit learns a skill (free colonist / indentured servant / petty criminal → seasoned scout).</summary>
+        Learn,
+
+        /// <summary>A band of colonists joins — a free colonist musters on the tile.</summary>
+        Colonist,
+
+        /// <summary>A Fountain of Youth — a burst of <c>dx</c> immigrants arrives on the owner's Europe dock.</summary>
+        FountainOfYouth,
+
+        /// <summary>Ancient ruins — a modest find: gold if small, otherwise a treasure train.</summary>
+        Ruins,
+
+        /// <summary>A city of gold (Cibola) — a large treasure train.</summary>
+        Cibola,
+
+        /// <summary>Strange mounds on native-owned land — the explorer may investigate (a re-rolled outcome) or leave them be (decline). Native tiles only.</summary>
+        Mounds,
+
+        /// <summary>A desecrated native burial ground — the owning nation's settlements turn hateful (max alarm). Native tiles only.</summary>
+        BurialGround,
+    }
+
+    /// <summary>Bad-outcome chance, classic <b>medium</b> difficulty (<c>model.option.badRumour</c>); see the difficulty note below.</summary>
+    private const int RumourBadPercent = 23;
+
+    /// <summary>Good-outcome chance, classic <b>medium</b> difficulty (<c>model.option.goodRumour</c>).</summary>
+    private const int RumourGoodPercent = 48;
+
+    /// <summary>
+    /// FreeCol's <c>dx = 10 − rumourDifficulty</c> reward-scale: classic <b>medium</b> sets
+    /// <c>model.option.rumourDifficulty=2</c>, so <c>dx = 8</c>. We hardcode the <b>medium</b> tier to match the
+    /// rest of the project's classic baseline (the founding-father factor is likewise pinned to medium = 40);
+    /// the Ruleset does not parse difficulty options yet, so a difficulty-driven value is a later refinement.
+    /// </summary>
+    private const int RumourDifficultyDx = 8;
+
+    /// <summary>The unit a COLONIST rumour musters: the only classic unit with <c>model.ability.foundInLostCity</c>.</summary>
+    private const string FoundInLostCityUnitTypeId = "model.unit.freeColonist";
+
+    /// <summary>Below this a RUINS find pays straight gold; at or above it spawns a treasure train (FreeCol <c>csExploreLostCityRumour</c> RUINS, the <c>&lt; 500</c> branch).</summary>
+    private const int RumourSmallRuinsThreshold = 500;
+
+    /// <summary>
+    /// Investigates a Lost City Rumour if <paramref name="unit"/> just stepped onto one: a colonial (non-native)
+    /// <b>land</b> unit on a tile that holds a rumour. Draws from the owner's RNG stream (<see cref="RandomFor"/>)
+    /// — the human's stream 0, an AI power's own stream — so one player exploring never shifts another's economy
+    /// (ADR-009). A naval unit can never stand on a (land) rumour tile, so the gate is belt-and-braces.
+    /// </summary>
+    private void TryExploreRumour(Unit unit, Position target)
+    {
+        if (unit.IsNative || unit.Type.IsNaval || !Map.HasRumour(target))
+        {
+            return; // natives never explore (FreeCol: European only); ships can't reach a land rumour
+        }
+        if (PlayerById(unit.OwnerId) is not { } owner)
+        {
+            return;
+        }
+        if (owner.IsHuman && _pendingMounds is not null)
+        {
+            return; // the human still owes an investigate/decline answer on an earlier strange-mounds — don't roll another
+                    // rumour (or re-roll this one) until it's resolved. AI explorers never set _pendingMounds, so they're unaffected.
+        }
+        if (ExploreRumour(unit, target, RandomFor(owner)) != LostCityRumourType.Mounds)
+        {
+            return; // a non-mounds rumour is fully resolved by the peek
+        }
+        // Strange mounds need an investigate/decline decision. A human is prompted (the rumour waits on the tile);
+        // an AI / foreign power has no UI, so it auto-investigates inline on its own stream (keeps the soak headless).
+        if (owner.IsHuman)
+        {
+            _pendingMounds = new PendingMoundsDecision(unit.Id, target);
+        }
+        else
+        {
+            InvestigateMounds(unit, target, RandomFor(owner));
+        }
+    }
+
+    /// <summary>
+    /// Rolls and resolves the rumour on <paramref name="target"/> for the exploring <paramref name="unit"/>,
+    /// then consumes the rumour (one-shot — FreeCol <c>removeLostCityRumour</c>). Returns the outcome (for tests).
+    /// The reward roll draws from the supplied <see cref="IGameRandom"/> (combat is the precedent: per-owner
+    /// streams). May remove the unit (an expedition vanishes) or replace it (a learned skill upgrades its type),
+    /// so callers must not reuse the reference afterwards.
+    /// </summary>
+    internal LostCityRumourType ExploreRumour(Unit unit, Position target, IGameRandom random)
+    {
+        LostCityRumourType outcome = ChooseRumourType(unit, target, random);
+
+        // Resolve-time native gate (FreeCol ServerUnit.csExploreLostCityRumour): MOUNDS / BURIAL_GROUND on a tile
+        // the natives don't own degrade to NOTHING. Belt-and-braces — conditional-add already keeps them off the
+        // table on non-native tiles, but this matches FreeCol and guards a future gen-time mounds pre-stamp.
+        if ((outcome is LostCityRumourType.Mounds or LostCityRumourType.BurialGround) && !Map.IsNativeOwned(target))
+        {
+            outcome = LostCityRumourType.Nothing;
+        }
+
+        // Strange mounds: stop here. The explorer must choose investigate vs decline (the caller prompts the human
+        // or auto-investigates an AI) — the rumour is left in place and nothing is resolved on this peek.
+        if (outcome == LostCityRumourType.Mounds)
+        {
+            return LostCityRumourType.Mounds;
+        }
+
+        ResolveOutcome(unit, target, outcome, random);
+        Map.RemoveRumour(target); // consumed regardless of outcome
+        return outcome;
+    }
+
+    /// <summary>
+    /// Applies a resolved rumour outcome's effect (shared by the direct <see cref="ExploreRumour"/> and the
+    /// strange-mounds <see cref="InvestigateMounds"/>). Does <b>not</b> remove the rumour (the caller does) and never
+    /// receives <see cref="LostCityRumourType.Mounds"/> (that is the prompt sentinel, never a resolved effect).
+    /// </summary>
+    private void ResolveOutcome(Unit unit, Position target, LostCityRumourType outcome, IGameRandom random)
+    {
+        switch (outcome)
+        {
+            case LostCityRumourType.ExpeditionVanishes:
+                _units.Remove(unit); // the expedition is lost
+                break;
+            case LostCityRumourType.TribalChief:
+                // FreeCol: randomInt(0, dx·10) + dx·5 → medium dx=8 gives 40–119 gold to the owner.
+                int gift = random.Next(RumourDifficultyDx * 10) + RumourDifficultyDx * 5;
+                if (PlayerById(unit.OwnerId) is { } owner)
+                {
+                    owner.Gold += gift;
+                }
+                break;
+            case LostCityRumourType.Learn:
+                // Only learnable units reach LEARN (gated in ChooseRumourType); the change is guaranteed present.
+                if (Ruleset.GetUnitChange(UnitChangeTypeIds.LostCity, unit.Type.Id) is { } change)
+                {
+                    UpgradeUnitType(unit, change.To); // free colonist / indentured servant / petty criminal → seasoned scout
+                }
+                break;
+            case LostCityRumourType.Colonist:
+                SpawnUnit(Ruleset.Unit(FoundInLostCityUnitTypeId), target, unit.OwnerId); // a found colonist musters on the tile
+                break;
+            case LostCityRumourType.FountainOfYouth:
+                GenerateFountainRecruits(unit.OwnerId, random); // a burst of dx immigrants arrives on the owner's Europe dock
+                break;
+            case LostCityRumourType.Ruins:
+                // FreeCol: rand(0, dx·2)·300 + 50 → a small find (< 500) is gold; a larger one becomes a treasure train.
+                int ruins = (random.Next(RumourDifficultyDx * 2) * 300) + 50;
+                if (ruins < RumourSmallRuinsThreshold)
+                {
+                    if (PlayerById(unit.OwnerId) is { } ruinsOwner)
+                    {
+                        ruinsOwner.Gold += ruins;
+                    }
+                }
+                else
+                {
+                    SpawnTreasureTrain(target, unit.OwnerId, ruins);
+                }
+                break;
+            case LostCityRumourType.Cibola:
+                // FreeCol: a city of gold → rand(0, dx·600) + dx·300 as a treasure train (medium dx=8 → 2400–7199).
+                SpawnTreasureTrain(target, unit.OwnerId, random.Next(RumourDifficultyDx * 600) + (RumourDifficultyDx * 300));
+                break;
+            case LostCityRumourType.BurialGround:
+                ApplyBurialGround(target); // the owning nation turns hateful
+                break;
+            case LostCityRumourType.Nothing:
+            default:
+                break; // no effect (the player-facing message is presentation)
+        }
+    }
+
+    /// <summary>
+    /// Investigates a strange-mounds rumour (FreeCol <c>csExploreLostCityRumour</c>'s mounds degradation loop):
+    /// re-rolls the rumour table until it lands an outcome mounds can yield, then resolves it and consumes the
+    /// rumour. The exploring unit's owner stream supplies the draws (per-owner determinism, ADR-009).
+    /// </summary>
+    internal LostCityRumourType InvestigateMounds(Unit unit, Position target, IGameRandom random)
+    {
+        if (!Map.HasRumour(target))
+        {
+            return LostCityRumourType.Nothing; // already consumed (e.g. by another unit before the decision was answered) — no reward, no draw
+        }
+        LostCityRumourType outcome = DegradeMounds(unit, target, random);
+        ResolveOutcome(unit, target, outcome, random);
+        Map.RemoveRumour(target);
+        return outcome;
+    }
+
+    /// <summary>
+    /// The FreeCol mounds degradation loop (<c>ServerUnit</c> lines 474–508): re-rolls <see cref="ChooseRumourType"/>
+    /// until an acceptable outcome appears. NOTHING is accepted only the <b>second</b> time it is rolled; the
+    /// vanishing expedition and the tribal chief are accepted at once; RUINS is accepted and draws one extra
+    /// "ruins+burial" value (a faithful quirk — the draw never changes the outcome, it stays RUINS); a burial ground
+    /// is accepted on native land (always true inside mounds); FoY / LEARN / colonist / mounds / Cibola are re-rolled.
+    /// Uncapped, exactly as FreeCol (it terminates quickly — most outcomes accept immediately).
+    /// </summary>
+    private LostCityRumourType DegradeMounds(Unit unit, Position target, IGameRandom random)
+    {
+        bool sawNothing = false;
+        while (true)
+        {
+            LostCityRumourType t = ChooseRumourType(unit, target, random);
+            switch (t)
+            {
+                case LostCityRumourType.Nothing:
+                    if (sawNothing)
+                    {
+                        return LostCityRumourType.Nothing; // accept the second NOTHING
+                    }
+                    sawNothing = true; // the first NOTHING re-rolls
+                    break;
+                case LostCityRumourType.ExpeditionVanishes:
+                case LostCityRumourType.TribalChief:
+                    return t;
+                case LostCityRumourType.Ruins:
+                    // FreeCol draws a "Ruins+Burial" value here; whether it passes or falls through, the outcome
+                    // still resolves as RUINS (the fall-through sets only `done`, never the type). We consume the
+                    // draw for byte-fidelity and return RUINS regardless.
+                    random.Next(100);
+                    return LostCityRumourType.Ruins;
+                case LostCityRumourType.BurialGround:
+                    if (Map.IsNativeOwned(target))
+                    {
+                        return LostCityRumourType.BurialGround; // always reached inside mounds (native-owned)
+                    }
+                    break; // (unreachable here) re-roll
+                default:
+                    break; // FoY / Learn / Colonist / Mounds / Cibola → re-roll
+            }
+        }
+    }
+
+    /// <summary>
+    /// Declines to investigate a strange-mounds rumour (FreeCol <c>InGameController.declineMounds</c>): the rumour is
+    /// simply removed, with no effect and <b>no RNG draw</b>. (Unlike the generic explore confirm, declining mounds
+    /// consumes the rumour — you don't get a second look.)
+    /// </summary>
+    internal void DeclineMounds(Position target) => Map.RemoveRumour(target);
+
+    /// <summary>
+    /// A desecrated burial ground (FreeCol <c>csNativeBurialGround</c>): the natives who own the tile turn hateful.
+    /// FreeCol sets the nation's tension to HATEFUL and forces war; we have no native-vs-colonial stance model, so we
+    /// raise every settlement of the owning nation to maximum alarm — the nation-wide hostility analogue used by the
+    /// other land-grievance acts (cf. <c>ClaimLandByStealing</c>). No gold or unit change.
+    /// </summary>
+    private void ApplyBurialGround(Position target)
+    {
+        if (Map.NativeOwnerOf(target) is not { } nation)
+        {
+            return; // gated upstream to native-owned tiles; guard is belt-and-braces
+        }
+        foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == nation))
+        {
+            ChangeNativeAlarm(settlement, NativeSettlement.MaxAlarm); // clamps to max (hateful)
+        }
+    }
+
+    /// <summary>Musters a treasure train on <paramref name="target"/> carrying <paramref name="amount"/> gold, owned by <paramref name="ownerId"/> (FreeCol spawns a treasure train for a rich plunder/find — see [treasure-train.md]).</summary>
+    private void SpawnTreasureTrain(Position target, int ownerId, int amount) =>
+        SpawnUnit(Ruleset.Unit(TreasureTrainUnitTypeId), target, ownerId).SetTreasureAmount(amount);
+
+    /// <summary>
+    /// A Fountain of Youth: lands <see cref="RumourDifficultyDx"/> fresh immigrants on the owner's Europe dock
+    /// (FreeCol <c>ServerEurope.generateFountainRecruits(dx)</c>). Each is an independent weighted recruit draw
+    /// (<see cref="DrawRecruitType(Player, IGameRandom)"/> → <see cref="CreateEuropeRecruit"/> off <paramref name="random"/>,
+    /// the exploring unit's owner stream) — they arrive as units <em>in Europe</em>, not as the three dock
+    /// <em>candidates</em>, so the player still ships them over. FreeCol lets the human pick each immigrant; we
+    /// generate them directly (its AI path) until a select-recruit flow exists. A no-op for a player with no
+    /// recruitable unit types (minimal rulesets).
+    /// </summary>
+    private void GenerateFountainRecruits(int ownerId, IGameRandom random)
+    {
+        if (PlayerById(ownerId) is not { } owner || !Ruleset.UnitTypes.Any(t => IsRecruitable(owner, t)))
+        {
+            return;
+        }
+        for (int i = 0; i < RumourDifficultyDx; i++)
+        {
+            CreateEuropeRecruit(owner, DrawRecruitType(owner, random));
+        }
+    }
+
+    /// <summary>
+    /// Picks a rumour type by the FreeCol <c>LostCityRumour.chooseType</c> weighted split (good / bad / neutral),
+    /// restricted to the outcomes shipped so far. Good outcomes are weighted ×<see cref="RumourGoodPercent"/>:
+    /// FOUNTAIN_OF_YOUTH (2, always available to a colonial explorer); then a learnable unit LEARN (30) /
+    /// TRIBAL_CHIEF (30) / COLONIST (20), a non-learnable one TRIBAL_CHIEF (50) / COLONIST (30); then the treasure
+    /// finds RUINS (6) and CIBOLA (4) for any explorer. The bad side (EXPEDITION_VANISHES) carries FreeCol's
+    /// normalised weight of 100 (the burial ground needs native tile ownership, not modelled yet). NOTHING takes
+    /// the neutral remainder ×100. MOUNDS (8), the seasoned-scout exploration bonus and Hernando de Soto's
+    /// always-positive ability are later refinements.
+    /// </summary>
+    private LostCityRumourType ChooseRumourType(Unit unit, Position target, IGameRandom random)
+    {
+        bool canLearn = Ruleset.GetUnitChange(UnitChangeTypeIds.LostCity, unit.Type.Id) is not null;
+        bool nativeOwned = Map.IsNativeOwned(target); // gates the native-only outcomes (strange mounds + burial ground)
+        int neutral = Math.Max(0, 100 - RumourBadPercent - RumourGoodPercent);
+
+        var choices = new List<(LostCityRumourType Type, int Weight)>();
+        if (RumourGoodPercent > 0)
+        {
+            // Fountain of Youth (weight 2, listed first to mirror FreeCol's chooseType). FreeCol allowFoY is
+            // "owner is COLONIAL"; today every explorer here is colonial (natives are excluded upstream, and the
+            // only player types are colonial + native), so it is unconditional. When the REF lands (P6) — European
+            // but not colonial — this must gate on a colonial owner (an IsColonialPlayer(unit.OwnerId) check).
+            choices.Add((LostCityRumourType.FountainOfYouth, 2 * RumourGoodPercent));
+            if (canLearn)
+            {
+                choices.Add((LostCityRumourType.Learn, 30 * RumourGoodPercent));
+                choices.Add((LostCityRumourType.TribalChief, 30 * RumourGoodPercent));
+                choices.Add((LostCityRumourType.Colonist, 20 * RumourGoodPercent));
+            }
+            else
+            {
+                choices.Add((LostCityRumourType.TribalChief, 50 * RumourGoodPercent));
+                choices.Add((LostCityRumourType.Colonist, 30 * RumourGoodPercent));
+            }
+            // The treasure finds are available to any explorer (FreeCol adds them outside the learn split): ancient
+            // RUINS (6) and a city of gold CIBOLA (4).
+            choices.Add((LostCityRumourType.Ruins, 6 * RumourGoodPercent));
+            choices.Add((LostCityRumourType.Cibola, 4 * RumourGoodPercent));
+            if (nativeOwned)
+            {
+                // Strange MOUNDS (FreeCol weight 8) — only possible on native-owned land (off it they degrade to
+                // NOTHING at resolve). Conditional-add: a wilderness rumour's table stays byte-identical (ADR-009).
+                choices.Add((LostCityRumourType.Mounds, 8 * RumourGoodPercent));
+            }
+        }
+        if (RumourBadPercent > 0)
+        {
+            if (nativeOwned)
+            {
+                // On native land the bad sub-list is BURIAL_GROUND + EXPEDITION_VANISHES, normalised to a total of
+                // 100 (FreeCol RandomChoice.normalize of 25·bad / 75·bad → 25 / 75) — the same 100-weight footprint
+                // the lone vanishing expedition occupies off native land, so only the GOOD side's mounds shift the total.
+                choices.AddRange(NormalizeTo100(
+                [
+                    (LostCityRumourType.BurialGround, 25 * RumourBadPercent),
+                    (LostCityRumourType.ExpeditionVanishes, 75 * RumourBadPercent),
+                ]));
+            }
+            else
+            {
+                // No native-owned tile → no burial ground; the vanishing expedition takes the whole normalised 100.
+                choices.Add((LostCityRumourType.ExpeditionVanishes, 100));
+            }
+        }
+        if (neutral > 0)
+        {
+            choices.Add((LostCityRumourType.Nothing, 100 * neutral));
+        }
+
+        return WeightedPick(choices, random);
+    }
+
+    /// <summary>
+    /// Rescales a weighted sub-list so its weights sum to 100, rounding each element (FreeCol
+    /// <c>RandomChoice.normalize(list, 100)</c>). Blends the bad-outcome sub-list (burial ground + vanishing
+    /// expedition) into the main rumour table at the same 100-weight footprint the flat vanishing expedition occupies
+    /// off native land — so adding the burial ground never shifts the bad total, only the good side's mounds does.
+    /// </summary>
+    private static List<(LostCityRumourType Type, int Weight)> NormalizeTo100(
+        IReadOnlyList<(LostCityRumourType Type, int Weight)> sub)
+    {
+        int subtotal = sub.Sum(c => c.Weight);
+        return subtotal <= 0
+            ? [.. sub]
+            : [.. sub.Select(c => (c.Type, (int)Math.Round(100.0 * c.Weight / subtotal)))];
+    }
+
+    /// <summary>
+    /// Cumulative weighted draw (FreeCol <c>RandomChoice.getWeightedRandom</c>): a single choice is returned with
+    /// no RNG draw; otherwise <c>random.Next(total)</c> selects proportionally. An empty/zero-weight list (no
+    /// possible outcome) falls back to NOTHING.
+    /// </summary>
+    private static LostCityRumourType WeightedPick(
+        IReadOnlyList<(LostCityRumourType Type, int Weight)> choices, IGameRandom random)
+    {
+        int total = choices.Sum(c => c.Weight);
+        if (total <= 0)
+        {
+            return LostCityRumourType.Nothing;
+        }
+        if (choices.Count == 1)
+        {
+            return choices[0].Type;
+        }
+        int roll = random.Next(total);
+        int cumulative = 0;
+        foreach ((LostCityRumourType type, int weight) in choices)
+        {
+            cumulative += weight;
+            if (roll < cumulative)
+            {
+                return type;
+            }
+        }
+        return choices[^1].Type;
     }
 
     /// <summary>Advances sailing units; arrivals dock in Europe or re-enter the map.</summary>
@@ -3239,6 +4176,7 @@ public sealed class Game
         _colonyLossNotices.Clear(); // and this turn's AI captures of human colonies
         _colonyRaidNotices.Clear(); // and this turn's native pillages of human colonies
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
+        DeclinePendingMounds();     // an unanswered strange-mounds prompt counts as "leave them be" — clears it before the AI turns so it can't strand or block exploration across the round
         int startIndex = _currentPlayerIndex;
         do
         {
@@ -3287,6 +4225,8 @@ public sealed class Game
         {
             return; // future-proofing: any PlayerType that is neither Native nor Colonial takes no turn
         }
+
+        BombardEnemyShips(player); // fort/fortress colonies fire on adjacent enemy ships first (FreeCol csStartTurn)
 
         foreach (Colony colony in ColoniesOf(player))
         {
@@ -4176,11 +5116,15 @@ public sealed class Game
     /// A weighted-random recruitable unit type id for <paramref name="player"/> (FreeCol
     /// <c>ServerEurope.generateRecruitablesList</c>): each type's <see cref="UnitType.RecruitProbability"/> is its weight.
     /// </summary>
-    private string DrawRecruitType(Player player)
+    private string DrawRecruitType(Player player) => DrawRecruitType(player, RandomFor(player));
+
+    /// <summary>As <see cref="DrawRecruitType(Player)"/> but drawing from an explicit RNG (the Fountain of Youth
+    /// threads the exploring unit's owner stream so its burst stays on one stream, same as the type roll).</summary>
+    private string DrawRecruitType(Player player, IGameRandom random)
     {
         var pool = Ruleset.UnitTypes.Where(t => IsRecruitable(player, t)).ToList();
         int total = pool.Sum(u => u.RecruitProbability);
-        int roll = RandomFor(player).Next(total);
+        int roll = random.Next(total);
         foreach (UnitType type in pool)
         {
             roll -= type.RecruitProbability;
@@ -4274,7 +5218,17 @@ public sealed class Game
     /// goods modifiers (e.g. Henry Hudson's +100% furs). 0 when the terrain can't produce the goods at all
     /// (a resource never enables a new good).
     /// </summary>
-    internal int TileYield(Player player, Position tile, string goodsId)
+    internal int TileYield(Player player, Position tile, string goodsId) =>
+        ApplyGoodsModifiers(player, goodsId, TileYieldPotential(tile, goodsId)); // father modifiers stack on the potential
+
+    /// <summary>
+    /// The tile's <b>potential</b> yield of one goods type — the terrain's best attended output plus any on-tile
+    /// bonus-resource boost, but <em>without</em> any player's Founding-Father goods modifiers (FreeCol
+    /// <c>Tile.getPotentialProduction</c> with a null owner). This is the player-independent figure native land is
+    /// valued from (see <see cref="LandPrice(Player, Position)"/>); <see cref="TileYield(Player, Position, string)"/>
+    /// folds the acting player's fathers on top of it for actual colony production. 0 when the terrain can't make it.
+    /// </summary>
+    internal int TileYieldPotential(Position tile, string goodsId)
     {
         int baseYield = Map.TerrainAt(tile).Productions
             .Where(p => !p.Unattended)
@@ -4301,8 +5255,7 @@ public sealed class Game
             }
         }
 
-        // Founding-father goods modifiers stack on top (higher index, applied last).
-        return ApplyGoodsModifiers(player, goodsId, (int)yield);
+        return (int)yield;
     }
 
     /// <summary>
@@ -4406,7 +5359,7 @@ public sealed class Game
     /// One building's turn: unattended output plus per-worker conversion of
     /// warehouse inputs to outputs (scaled down when inputs run short).
     /// </summary>
-    private void RunBuildingProduction(Colony colony, BuildingType building)
+    private void RunBuildingProduction(Colony colony, BuildingType building, int foodProducedThisTurn)
     {
         int workers = colony.BuildingWorkers.GetValueOrDefault(building.Id);
         foreach (ProductionEntry entry in building.Productions)
@@ -4417,13 +5370,12 @@ public sealed class Game
                 continue;
             }
 
-            // Breeding gate (FreeCol autoProduction): goods with a breeding
-            // number (horses) only multiply when enough are already stabled.
-            bool breedingBlocked = entry.Outputs.Any(o =>
-                Ruleset.GoodsTypes.FirstOrDefault(g => g.Id == o.GoodsId)?.BreedingNumber
-                    is int needed && colony.StoreOf(Ruleset.StorageIdOf(o.GoodsId)) < needed);
-            if (breedingBlocked)
+            // Auto-production breeding (horses): a herd-size growth formula — gated at the breeding number, capped at
+            // the warehouse, eating only surplus food — not the generic per-worker conversion (FreeCol autoProduction).
+            if (building.BreedingDivisor > 0 && entry.Outputs.Count == 1
+                && Ruleset.Goods(entry.Outputs[0].GoodsId).BreedingNumber is int breedingNumber)
             {
+                RunBreeding(colony, building, entry, breedingNumber, foodProducedThisTurn);
                 continue;
             }
 
@@ -4459,6 +5411,48 @@ public sealed class Game
     }
 
     /// <summary>
+    /// Auto-production horse breeding (FreeCol <c>BuildingProductionCalculator</c> autoProduction): a pasture/stables
+    /// grows the herd by <c>((herd−1)/divisor + 1) × factor</c> each turn — faster the larger the herd, faster again
+    /// with a stables (divisor halved, 50 → 25) — gated at the goods' breeding number (no foals below it), stopping at
+    /// the warehouse cap, and eating only <b>this turn's surplus food</b> — half of what the colony <em>produced</em>
+    /// this turn (<c>consumeOnlySurplusProduction</c> 0.5), never its stored carryover — so the foals are limited by
+    /// the food the colony is actually making and the herd can't be grown off a stockpile. Deterministic (no RNG).
+    /// </summary>
+    private void RunBreeding(Colony colony, BuildingType building, ProductionEntry entry, int breedingNumber, int foodProducedThisTurn)
+    {
+        string horsesId = Ruleset.StorageIdOf(entry.Outputs[0].GoodsId);
+        int herd = colony.StoreOf(horsesId);
+        int capacity = WarehouseCapacity(colony);
+        if (herd < breedingNumber || herd >= capacity || building.BreedingDivisor <= 0)
+        {
+            return; // no foals below the breeding number, at/over the warehouse cap, or without a divisor
+        }
+
+        // Herd-growth formula (integer division — the classic curve), then never overflow the warehouse.
+        int bred = Math.Min(
+            ((herd - 1) / building.BreedingDivisor + 1) * building.BreedingFactor,
+            capacity - herd);
+
+        // Horses are made-from food at the entry's input ratio (classic 1 food : 1 horse); breeding may eat only HALF
+        // of this turn's food production (consumeOnlySurplusProduction 0.5), leaving the rest (plus any carryover) for
+        // the colonists — so it can't starve the colony and a herd can't grow off a stockpile alone.
+        int foodPerFoal = entry.Inputs.Count == 1 ? Math.Max(1, entry.Inputs[0].Amount) : 0;
+        if (foodPerFoal > 0)
+        {
+            bred = Math.Min(bred, foodProducedThisTurn / 2 / foodPerFoal);
+        }
+        if (bred <= 0)
+        {
+            return;
+        }
+        if (foodPerFoal > 0)
+        {
+            colony.AddGoods(Ruleset.StorageIdOf(entry.Inputs[0].GoodsId), -bred * foodPerFoal);
+        }
+        colony.AddGoods(horsesId, bred);
+    }
+
+    /// <summary>
     /// Drops assignments until they fit the population: building workers are
     /// pulled before field workers (deterministic order — last building, then
     /// last tile in row-major order).
@@ -4491,12 +5485,20 @@ public sealed class Game
     {
         // 1a. The colony square works itself (unattended yield). Goods enter
         //     the warehouse under their stored-as id: grain/fish → food.
+        // Track this turn's gross FOOD production (centre + worked tiles) — horse breeding may eat only a share of
+        // it (FreeCol consumeOnlySurplusProduction), never the colony's stored carryover.
+        int foodThisTurn = 0;
         TerrainType terrain = Map.TerrainAt(colony.Position);
         foreach (ProductionEntry entry in terrain.Productions.Where(p => p.Unattended))
         {
             foreach (GoodsOutput output in entry.Outputs)
             {
-                colony.AddGoods(Ruleset.StorageIdOf(output.GoodsId), output.Amount);
+                string storageId = Ruleset.StorageIdOf(output.GoodsId);
+                colony.AddGoods(storageId, output.Amount);
+                if (storageId == Colony.FoodId)
+                {
+                    foodThisTurn += output.Amount;
+                }
             }
         }
 
@@ -4504,15 +5506,21 @@ public sealed class Game
         //     production bonus (+2/+1/0/−1/−2 per worker, floored at 0 so a bad-government penalty can't go negative).
         foreach ((Position tile, string goodsId) in colony.TileWorkers)
         {
-            colony.AddGoods(Ruleset.StorageIdOf(goodsId), Math.Max(0, TileYield(owner, tile, goodsId) + colony.ProductionBonus));
+            string storageId = Ruleset.StorageIdOf(goodsId);
+            int produced = Math.Max(0, TileYield(owner, tile, goodsId) + colony.ProductionBonus);
+            colony.AddGoods(storageId, produced);
+            if (storageId == Colony.FoodId)
+            {
+                foodThisTurn += produced;
+            }
         }
 
         // 1c. Buildings produce: unattended entries always run (town hall bell);
         //     worker entries convert inputs to outputs per colonist, limited by
-        //     what the warehouse holds.
+        //     what the warehouse holds. Horse breeding (auto-production) may eat only this turn's surplus food.
         foreach (string buildingId in colony.Buildings)
         {
-            RunBuildingProduction(colony, Ruleset.Building(buildingId));
+            RunBuildingProduction(colony, Ruleset.Building(buildingId), foodThisTurn);
         }
 
         // 1d. Construction completes when materials are saved up.
@@ -4543,6 +5551,13 @@ public sealed class Game
             colony.Population++;
             AutoAssignIdleToFood(colony);
         }
+
+        // 4. Custom house: a colony with the export ability auto-sells each eligible good's surplus over its retain
+        //    level to the owner's European market. Runs LAST — after the colony has eaten and grown (FreeCol
+        //    ServerColony.csNewTurn does the customs sale after the food/birth step) — so flagging food for export
+        //    can't rob this turn's growth of the food it would otherwise consume. No-op without a custom house, and —
+        //    in the default PerGood mode with no toggles — sells nothing, so the L5 soak stays byte-stable.
+        AutoSellExports(owner, colony);
     }
 
     /// <summary>
@@ -4572,6 +5587,46 @@ public sealed class Game
             if (goods.IsStorable && !goods.IsFood && held > capacity)
             {
                 colony.AddGoods(goodsId, capacity - held); // drop the overflow to the cap
+            }
+        }
+    }
+
+    /// <summary>
+    /// The per-turn custom-house auto-sell (FreeCol <c>ServerColony.csNewTurn</c>'s customs sale): if the colony has
+    /// the export ability (a custom house), each eligible storable, tradeable good's surplus above its retain level
+    /// is sold to <paramref name="owner"/>'s European market — the same after-tax, price-moving path as a manual sale
+    /// (<see cref="SellColonyGoods(Player, Colony, string, int)"/>). Eligibility follows <see cref="AutoExportMode"/>:
+    /// in <see cref="GameSession.AutoExportMode.PerGood"/> only goods flagged <c>Exported</c> sell (food included if
+    /// flagged — FreeCol-faithful); in <see cref="GameSession.AutoExportMode.ExportAllOverLevel"/> every sellable good
+    /// does <b>except food</b> (auto-dumping food would halt growth). Goods are iterated in stable id order for
+    /// determinism (ADR-009); a colony with no custom house — and the default PerGood mode with no toggles — sells
+    /// nothing, so the soak stays byte-stable. (No boycott check yet — FreeCol's <c>canTrade(CUSTOM_HOUSE)</c> gate is
+    /// deferred with the boycott system.)
+    /// </summary>
+    private void AutoSellExports(Player owner, Colony colony)
+    {
+        if (!ColonyHasExportAbility(colony))
+        {
+            return;
+        }
+        bool exportAll = AutoExportMode == AutoExportMode.ExportAllOverLevel;
+        foreach (string goodsId in colony.Stores.Keys.OrderBy(g => g, StringComparer.Ordinal).ToList())
+        {
+            GoodsType goods = Ruleset.Goods(goodsId);
+            if (!goods.IsStorable || !owner.Market.IsTradeable(goodsId))
+            {
+                continue; // hammers/bells/crosses have no market — never auto-sold
+            }
+            Colony.ExportSetting setting = colony.ExportOf(goodsId);
+            bool eligible = exportAll ? !goods.IsFood : setting.Exported; // export-all protects food; per-good honours the flag
+            if (!eligible)
+            {
+                continue;
+            }
+            int surplus = colony.StoreOf(goodsId) - setting.ExportLevel;
+            if (surplus > 0)
+            {
+                SellColonyGoods(owner, colony, goodsId, surplus);
             }
         }
     }

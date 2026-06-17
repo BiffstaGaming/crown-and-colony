@@ -60,6 +60,17 @@ public sealed record SettlementPlunder(
     int Probability, int Minimum, int Maximum, int Factor, bool RequiresPlunderAbility);
 
 /// <summary>
+/// The <c>&lt;gifts&gt;</c> range a settlement type's chief gives a scout ("beads"; FreeCol <c>RandomRange</c>):
+/// the gold is <c>(rnd[0,Maximum−Minimum] + Minimum) × Factor</c>, paid only when a <see cref="Probability"/>% roll
+/// passes (100 = always). Bigger from capitals/cities (camp 2–3 ×100, capital city 5–10 ×300).
+/// </summary>
+/// <param name="Probability">Percent chance the gift is non-zero (100 = always).</param>
+/// <param name="Minimum">Smallest range multiple.</param>
+/// <param name="Maximum">Largest range multiple.</param>
+/// <param name="Factor">Gold per range multiple.</param>
+public sealed record SettlementGifts(int Probability, int Minimum, int Maximum, int Factor);
+
+/// <summary>
 /// A native settlement type from the ruleset (FreeCol <c>&lt;settlement&gt;</c>):
 /// the camp / village / city templates — each with a capital variant — that define
 /// how big a settlement is, how much land it claims, and how well it defends.
@@ -83,6 +94,10 @@ public sealed record SettlementPlunder(
 /// <c>&lt;plunder&gt;</c>). The attacker picks one by its <c>plunderNatives</c> status —
 /// see <see cref="PlunderRange"/>.
 /// </param>
+/// <param name="Gifts">
+/// The "beads" gift range a scout's chief gives (FreeCol <c>&lt;gifts&gt;</c>; null when the type has none) —
+/// see <see cref="SettlementGifts"/>.
+/// </param>
 public sealed record SettlementType(
     string Id,
     bool Capital,
@@ -95,7 +110,8 @@ public sealed record SettlementType(
     int TradeBonus,
     int ConvertThreshold,
     double DefenceModifier,
-    IReadOnlyList<SettlementPlunder> Plunder)
+    IReadOnlyList<SettlementPlunder> Plunder,
+    SettlementGifts? Gifts = null)
 {
     /// <summary>Short name derived from the id: <c>model.settlement.camp</c> → <c>camp</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];

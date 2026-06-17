@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 25;
+    public const int CurrentVersion = 29;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -47,6 +47,18 @@ public sealed record SaveGame
     /// fleet with no damaged ship is byte-identical; older saves load 0 = healthy).
     /// v22 added a colony's accumulated liberty for per-colony Sons-of-Liberty (additive — omitted when 0, so a
     /// colony with no banked liberty is byte-identical; ≤v21 saves load 0 = SoL 0%, production bonus 0).
+    /// v23 added a unit's standing order (fortify/sentry; omitted when Active). v24 added a colony's build-queue
+    /// tail beyond the front item (omitted for a ≤1-item queue). v25 added Lost City Rumour tile positions
+    /// (omitted when none). v26 added tiles bought/taken from the natives (<see cref="ClaimedTiles"/>; omitted
+    /// when none, so a game with no land purchases stays byte-identical to v25). v27 added a unit's carried treasure
+    /// (<see cref="SavedUnit.TreasureAmount"/>; omitted when 0 → a non-treasure unit is byte-identical to v26). v28
+    /// added the game-wide custom-house auto-export mode (<see cref="AutoExportMode"/>, omitted for the PerGood
+    /// default) and per-colony custom-house export settings (<see cref="SavedColony.Exports"/>, only non-default
+    /// goods, omitted when none). v29 added per-player escalated Europe purchase prices
+    /// (<see cref="SavedPlayer.UnitPrices"/>, omitted when none have escalated → a game where no one has bought
+    /// artillery is byte-identical to v28).
+    /// Each of v23–v29 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -92,6 +104,12 @@ public sealed record SaveGame
 
     /// <summary>Tiles holding an unexplored Lost City Rumour, by row-major tile index (v25; null/omitted when none, so a rumour-free game stays byte-identical to v24).</summary>
     public IReadOnlyList<int>? Rumours { get; init; }
+
+    /// <summary>Tiles the player has bought or taken from the natives, by row-major tile index (v26; null/omitted when none, so a game with no land purchases stays byte-identical to v25). The native-ownership re-derivation honours these so a claimed tile never reverts to the natives.</summary>
+    public IReadOnlyList<int>? ClaimedTiles { get; init; }
+
+    /// <summary>The game-wide custom-house auto-export mode (v28; null/omitted for the <see cref="GameSession.AutoExportMode.PerGood"/> default, so a default game stays byte-identical to v27). Stored as the enum ordinal.</summary>
+    public AutoExportMode? AutoExportMode { get; init; }
 
     /// <summary>Legacy ≤v19 / pre-FP-7 read-only player treasury (v9+). Player state lives in <see cref="Players"/> (v20+); no longer written as of FP-7. Nullable so new saves omit it.</summary>
     public int? Gold { get; init; }
@@ -175,7 +193,9 @@ public sealed record SaveGame
                     // Repair turns omitted for a healthy ship (0) so an undamaged fleet stays byte-identical (1c-3b).
                     u.RepairTurnsRemaining == 0 ? null : u.RepairTurnsRemaining,
                     // Standing order omitted for an active unit (0) so a no-orders game stays byte-identical to v22.
-                    u.Orders == UnitOrders.Active ? null : (int)u.Orders))
+                    u.Orders == UnitOrders.Active ? null : (int)u.Orders,
+                    // Treasure carried omitted for the common 0 so every non-treasure unit stays byte-identical to v26.
+                    u.TreasureAmount == 0 ? null : u.TreasureAmount))
                 .ToList(),
             Colonies = game.Colonies
                 .Select(c => new SavedColony(
@@ -191,7 +211,11 @@ public sealed record SaveGame
                     // Liberty omitted for a colony with none (0) so a no-liberty colony stays byte-identical (v22).
                     c.Liberty == 0 ? null : c.Liberty,
                     // The queued tail after the front; omitted for a 0/1-item queue so it stays byte-identical to v23.
-                    c.BuildQueue.Count > 1 ? c.BuildQueue.Skip(1).ToList() : null))
+                    c.BuildQueue.Count > 1 ? c.BuildQueue.Skip(1).ToList() : null,
+                    // Custom-house export settings; only non-default goods are stored, omitted when none (v28).
+                    c.Exports.Count > 0
+                        ? c.Exports.ToDictionary(kv => kv.Key, kv => new SavedExport(kv.Value.Exported, kv.Value.ExportLevel))
+                        : null))
                 .ToList(),
             Resources = game.Map.Resources.Count > 0
                 ? game.Map.Resources
@@ -203,6 +227,12 @@ public sealed record SaveGame
             Rumours = game.Map.Rumours.Count > 0
                 ? game.Map.Rumours.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList()
                 : null,
+            // Tiles bought/taken from the natives by row-major index; omitted when none (byte-identical to v25).
+            ClaimedTiles = game.Map.ClaimedFromNatives.Count > 0
+                ? game.Map.ClaimedFromNatives.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList()
+                : null,
+            // Custom-house auto-export mode; omitted for the PerGood default so a default game stays byte-identical to v27.
+            AutoExportMode = game.AutoExportMode == GameSession.AutoExportMode.PerGood ? null : game.AutoExportMode,
             // Player-scoped state: authoritative in (and written only to) Players[]. The legacy flat
             // top-level fields are no longer written as of FP-7 — they remain readable for ≤v19 / pre-FP-7
             // v20 saves (the fold path), but the v20 load path was always Players[]-only, so the format
@@ -230,7 +260,8 @@ public sealed record SaveGame
             Resources?.ToDictionary(
                 r => new Position(r.Index % MapWidth, r.Index / MapWidth),
                 r => r.ResourceId),
-            Rumours?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList());
+            Rumours?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList(),
+            ClaimedTiles?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList());
         return Game.Restore(
             ruleset,
             map,
@@ -252,7 +283,8 @@ public sealed record SaveGame
                 u.RoleCount ?? 0,           // pre-v18 / default role → 0
                 u.OwnerId ?? 0,             // pre-v20 / human → 0
                 u.RepairTurns ?? 0,         // pre-v21 / healthy ship → 0
-                (UnitOrders)(u.Orders ?? 0))), // pre-v23 / active → Active
+                (UnitOrders)(u.Orders ?? 0), // pre-v23 / active → Active
+                u.TreasureAmount ?? 0)),    // pre-v27 / non-treasure → 0
             Colonies?.Select(c =>
             {
                 var colony = new CrownAndColony.GameLogic.Colonies.Colony(
@@ -287,6 +319,10 @@ public sealed record SaveGame
                     (c.CurrentBuild is null ? Enumerable.Empty<string>() : [c.CurrentBuild])
                         .Concat(c.BuildQueueRest ?? []));
                 colony.Liberty = c.Liberty ?? 0; // ≤v21 saves had no liberty → SoL 0%
+                foreach ((string goods, SavedExport export) in c.Exports ?? new Dictionary<string, SavedExport>())
+                {
+                    colony.SetExport(goods, export.Exported, export.Level); // custom-house export settings (v28; pre-v28 → none)
+                }
                 return colony;
             }),
             NativeSettlements?.Select(s => new NativeSettlement(
@@ -297,7 +333,8 @@ public sealed record SaveGame
                 HasBeenVisited = s.HasBeenVisited,
                 SkillConsumed = s.SkillConsumed,
                 WantedGoods = s.WantedGoods ?? [],
-            }));
+            }),
+            AutoExportMode.GetValueOrDefault()); // pre-v28 / omitted → PerGood (the enum's 0 default)
     }
 
     /// <summary>
@@ -321,7 +358,7 @@ public sealed record SaveGame
         p.RecruitDock,
         p.Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
         p.RngState is { } s && p.RngIncrement is { } inc ? new RandomState(s, inc) : null,
-        p.Stances, p.Tensions);
+        p.Stances, p.Tensions, p.UnitPrices);
 
     /// <summary>
     /// Folds the legacy flat top-level fields into the single human player — taken for a ≤v19 save, or any save
@@ -353,7 +390,8 @@ public sealed record SaveGame
             p.Explored.Select(pos => pos.Y * map.Width + pos.X).OrderBy(i => i).ToList(),
             rng?.State, rng?.Increment,
             p.Stances.Count > 0 ? new Dictionary<int, Stance>(p.Stances) : null,
-            p.Tensions.Count > 0 ? new Dictionary<int, int>(p.Tensions) : null);
+            p.Tensions.Count > 0 ? new Dictionary<int, int>(p.Tensions) : null,
+            p.UnitPriceOverrides.Count > 0 ? new Dictionary<string, int>(p.UnitPriceOverrides) : null);
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -380,6 +418,7 @@ public sealed record SaveGame
 /// <param name="OwnerId">Owning colonial player id (null = the human, id 0; v20+, FP-2).</param>
 /// <param name="Liberty">Accumulated Sons-of-Liberty points (null = 0; v22, additive).</param>
 /// <param name="BuildQueueRest">Queued buildables after the front (<see cref="CurrentBuild"/>); null/omitted for a 0- or 1-item queue (v24, additive — a colony with no queued tail serializes byte-identically to v23).</param>
+/// <param name="Exports">Custom-house export settings by good (only non-default goods; null/omitted when none; v28, additive).</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
     IReadOnlyDictionary<string, int>? Stores = null,
@@ -389,7 +428,13 @@ public sealed record SavedColony(
     string? CurrentBuild = null,
     int? OwnerId = null,
     int? Liberty = null,
-    IReadOnlyList<string>? BuildQueueRest = null);
+    IReadOnlyList<string>? BuildQueueRest = null,
+    IReadOnlyDictionary<string, SavedExport>? Exports = null);
+
+/// <summary>A colony's custom-house export setting for one good (v28+; only non-default goods are stored).</summary>
+/// <param name="Exported">Whether the good auto-exports.</param>
+/// <param name="Level">The amount to retain before exporting the surplus.</param>
+public sealed record SavedExport(bool Exported, int Level);
 
 /// <summary>A bonus resource on a tile inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Index">Row-major tile index (<c>y * MapWidth + x</c>).</param>
@@ -437,12 +482,13 @@ public sealed record SavedNativeSettlement(
 /// <param name="OwnerId">Owning colonial player id (null = the human, id 0; v20+, FP-2). Foreign-power units carry their player id.</param>
 /// <param name="RepairTurns">Turns left repairing a damaged ship (null/0 = healthy; v21+, 1c-3b). Nullable so a healthy fleet serializes byte-identically to v20.</param>
 /// <param name="Orders">Standing order (<see cref="Units.UnitOrders"/> ordinal: 0 = active, 1 = fortifying, 2 = fortified, 3 = sentry; null/0 = active; v23+). Nullable so an active unit serializes byte-identically to v22.</param>
+/// <param name="TreasureAmount">Gold carried by a treasure train (null/0 = none; v27+). Nullable so a non-treasure unit serializes byte-identically to v26.</param>
 public sealed record SavedUnit(
     int Id, string? TypeId, int X, int Y, int MovementLeft,
     int Location = 0, int SailTurns = 0, IReadOnlyDictionary<string, int>? Cargo = null,
     int? CarrierId = null,
     string? Owner = null, string? Role = null, int? RoleCount = null,
-    int? OwnerId = null, int? RepairTurns = null, int? Orders = null);
+    int? OwnerId = null, int? RepairTurns = null, int? Orders = null, int? TreasureAmount = null);
 
 /// <summary>
 /// A player inside a <see cref="SaveGame"/> (v20+). Holds the player-scoped state that used to sit as
@@ -470,6 +516,7 @@ public sealed record SavedUnit(
 /// <param name="RngIncrement">That stream's increment (paired with <paramref name="RngState"/>; null = the human / no stream).</param>
 /// <param name="Stances">This player's diplomatic stance toward each other player it has met, by their player id (v20 additive, FP-6a; null/omitted when it has met no one). An ordinal of <see cref="GameSession.Stance"/>.</param>
 /// <param name="Tensions">This player's tension toward each other player, by their player id (v20 additive, FP-6a; null/omitted when all zero).</param>
+/// <param name="UnitPrices">This player's escalated Europe purchase prices by unit-type id (v29 additive; null/omitted when none have escalated, so a game where nobody has bought artillery stays byte-identical to v28). Today only artillery escalates.</param>
 public sealed record SavedPlayer(
     int PlayerId, string? NationId, bool IsHuman, int PlayerType,
     int Gold = 0, int Tax = 0,
@@ -482,4 +529,5 @@ public sealed record SavedPlayer(
     IReadOnlyList<int>? Explored = null,
     ulong? RngState = null, ulong? RngIncrement = null,
     IReadOnlyDictionary<int, Stance>? Stances = null,
-    IReadOnlyDictionary<int, int>? Tensions = null);
+    IReadOnlyDictionary<int, int>? Tensions = null,
+    IReadOnlyDictionary<string, int>? UnitPrices = null);
