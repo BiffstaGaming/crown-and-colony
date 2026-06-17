@@ -68,12 +68,12 @@ While you're playing, pressing **Esc** brings up a pause menu over the (now froz
 | L1 Unit | n/a (no game logic) | — | — |
 | L2 Scenario | n/a | — | — |
 | L3 Interaction | Yes (has UI) | `PauseMenuTests` — starts hidden/unpaused; Open pauses+shows, Resume unpauses; Resume button closes; Settings opens the overlay and Back closes it; Quit-to-Menu wired to a valid menu scene | ✅ |
-| L4 Visual | Deferred | golden blocked on the UI-font task (ClickUp `86d3c9y32`) | ⬜ |
+| L4 Visual | Yes (has a screen) | `pause-menu` golden (`MenuGoldenTests`) | ✅ |
 | L5 Soak | Covered by global suite | — | — |
 
 ## 5. Open issues / TODO
 
-- [ ] **L4 golden** for the pause menu — blocked on a licence-clear UI font (ClickUp `86d3c9y32`).
+- [x] **L4 golden** for the pause menu (`MenuGoldenTests` → `pause-menu`) — added with the bundled font (Slice D).
 - [ ] Optionally let Esc close the settings overlay too (currently only its Back button does).
 - [ ] **Save/Load** entries here once the save-load dialog UI lands (ClickUp `86d3c9y5y`).
 
@@ -82,3 +82,4 @@ While you're playing, pressing **Esc** brings up a pause menu over the (now froz
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-17 | Slice C — in-game pause menu (Esc → Resume / Settings / Quit to Main Menu / Quit to Desktop); pauses the tree; reuses `SettingsScreen` as an overlay | 895f958 |
+| 2026-06-17 | Slice D — added the `pause-menu` L4 golden (UI font bundled) | (pending) |

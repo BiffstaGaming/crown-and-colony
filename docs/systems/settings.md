@@ -65,12 +65,12 @@ A **Settings** screen, opened from the main menu or the in-game pause menu, lets
 | L1 Unit | Yes (pure model) | `SettingsModelTests` — defaults, `Clamp`, dictionary round-trip, missing/garbage-safe parse | ✅ |
 | L2 Scenario | n/a | — | — |
 | L3 Interaction | Yes (has UI) | `SettingsScreenTests` — controls render/populate; Master slider applies to the Master bus + updates its label; Music/SFX buses exist; save→load disk round-trip | ✅ |
-| L4 Visual | Deferred | golden blocked on the UI-font task (ClickUp `86d3c9y32`) | ⬜ |
+| L4 Visual | Yes (has a screen) | `settings-screen` golden (`MenuGoldenTests`) | ✅ |
 | L5 Soak | Covered by global suite | — | — |
 
 ## 5. Open issues / TODO
 
-- [ ] **L4 golden** for the settings screen — blocked on a licence-clear UI font (ClickUp `86d3c9y32`).
+- [x] **L4 golden** for the settings screen (`MenuGoldenTests` → `settings-screen`) — added with the bundled font (Slice D).
 - [ ] Route music/SFX players through the Music/SFX buses when audio assets land (ClickUp `86d3c9xu1` / `86d3c9xrp`).
 - [ ] Possible later additions: resolution picker, gameplay options tab, key rebinding, language.
 - [x] Reused by the in-game pause menu as an overlay (Slice C — see [pause-menu.md](pause-menu.md)).
@@ -81,3 +81,4 @@ A **Settings** screen, opened from the main menu or the in-game pause menu, lets
 |---|---|---|
 | 2026-06-17 | Slice B — settings screen + persistence: `SettingsModel` (L1) + `SettingsService` autoload (`user://settings.cfg`) + Video/Audio UI; wired the menu's Settings button | 11da6fa |
 | 2026-06-17 | Slice C — made `SettingsScreen` a reusable overlay (emits `Closed`, no self-navigation); menu + pause menu host it | 895f958 |
+| 2026-06-17 | Slice D — bundled UI font (Cardo) cascades here; added the `settings-screen` L4 golden | (pending) |

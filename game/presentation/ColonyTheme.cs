@@ -10,9 +10,9 @@ namespace CrownAndColony.Presentation;
 /// </summary>
 /// <remarks>
 /// It deliberately does NOT register a <c>PanelContainer/panel</c> stylebox: the panel's own opaque parchment skin
-/// (<c>ColonyPanel.EnsureOpaqueBackground</c>, a local override) owns that slot and always wins anyway. No custom
-/// font is bundled — FreeCol's ShadowedBlack ships with no stated licence, so the hierarchy here is size + colour on
-/// the engine default font; a verified period font can be adopted later.
+/// (<c>ColonyPanel.EnsureOpaqueBackground</c>, a local override) owns that slot and always wins anyway. The UI font
+/// is <b>Cardo</b> (SIL OFL, <c>assets/fonts/</c>) set as the theme default, with size + colour layered on top for the
+/// hierarchy. (FreeCol's ShadowedBlack ships with no stated licence, so it is not used.)
 /// </remarks>
 public static class ColonyTheme
 {
@@ -28,6 +28,9 @@ public static class ColonyTheme
     private static readonly Color Gold = Color.FromString("#C9A24B", Colors.Goldenrod);
     private static readonly Color TextOnWood = Color.FromString("#F2E2C2", Colors.White);
 
+    /// <summary>The bundled UI font (SIL OFL — see <c>assets/fonts/PROVENANCE.md</c>); loaded if present, else the engine default.</summary>
+    private const string UiFontPath = "res://assets/fonts/Cardo-Regular.ttf";
+
     private static Theme? _cached;
 
     /// <summary>The shared colony theme, built once and cached.</summary>
@@ -36,6 +39,10 @@ public static class ColonyTheme
     private static Theme Build()
     {
         var theme = new Theme { DefaultFontSize = 15 };
+        if (ResourceLoader.Exists(UiFontPath))
+        {
+            theme.DefaultFont = GD.Load<FontFile>(UiFontPath); // cascades to every control; null-guarded for CI before import
+        }
         StyleButtons(theme);
         StyleOptionButtonAndPopup(theme);
         StyleBuildingCell(theme);

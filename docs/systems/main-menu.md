@@ -67,14 +67,14 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 | L1 Unit | n/a (no game logic) | — | — |
 | L2 Scenario | n/a (no game logic) | — | — |
 | L3 Interaction | Yes (has UI) | `MainMenuTests` — title + four buttons present; enabled/disabled states; theme/parchment/border art applied; New Game wired to a valid game scene | ✅ |
-| L4 Visual | Deferred | golden blocked on the UI-font task (ClickUp `86d3c9y32`) — see Open issues | ⬜ |
+| L4 Visual | Yes (has a screen) | `main-menu` golden (`MenuGoldenTests`) | ✅ |
 | L5 Soak | Covered by global suite | — | — |
 
 - **FreeCol cross-check:** layout/style compared against `MainPanel.java` (parchment background, centred title, stacked buttons, wood styling). We omit Multiplayer/Map Editor/About by design.
 
 ## 5. Open issues / TODO
 
-- [ ] **L4 golden** for the menu — blocked on bundling a licence-clear UI font (ClickUp `86d3c9y32`); add once goldens for UI are unblocked.
+- [x] **L4 golden** for the menu (`MenuGoldenTests` → `main-menu`) — added once the UI font was bundled (Slice D).
 - [ ] **Load Game** wiring → save-load dialog UI (ClickUp `86d3c9y5y`).
 - [x] **Settings** wiring → settings screen (Slice B — see [settings.md](settings.md)).
 - [ ] In-game **pause menu** (Esc → Resume / Settings / Save / Quit to menu) — separate slice.
@@ -87,3 +87,4 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 | 2026-06-17 | Slice A — main-menu shell: scene + script, FreeCol map backdrop + wood/parchment frame, New Game/Quit wired, Load/Settings disabled; L3 tests; boot scene switched to the menu | 17f00a6 |
 | 2026-06-17 | Slice B — Settings button wired to `SettingsScreen`; parchment skin hoisted to `ColonyArt.ParchmentSkin()` | 11da6fa |
 | 2026-06-17 | Slice C — Settings now opens `SettingsScreen` as an overlay (was a scene change), to match the pause menu's reuse | 895f958 |
+| 2026-06-17 | Slice D — bundled UI font (Cardo) cascades here via `ColonyTheme`; added the `main-menu` L4 golden | (pending) |

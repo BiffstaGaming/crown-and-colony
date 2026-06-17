@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 — Title screen Slice D shipped (bundled UI font + menu goldens)
+
+**Requested:** Fold in more similar-type screens with minimal merge conflicts — Chris chose UI font, generic popup, save/load. (This is the font slice.)
+**Did:**
+- **Bundled a period UI font** — **Cardo** (SIL OFL, GPL-compatible) → `assets/fonts/`, set as `ColonyTheme`'s default so it cascades to **every** screen (menu/settings/pause + the colony screen). Provenance + OFL text recorded. Replaces Godot's default sans with a proper colonial serif. Previewed.
+- **Added L4 visual goldens** for the three new screens (`MenuGoldenTests`: `main-menu`, `settings-screen`, `pause-menu`) — feasible now that text rendering is font-consistent. Extracted the golden-compare into a shared `GoldenAssert` helper and refactored `VisualGoldenTests` to reuse it (no behaviour change). Settings golden pins defaults for determinism; pause golden uses the seeded world.
+- Docs: L4 rows + open issues + changelogs updated in `main-menu.md` / `settings.md` / `pause-menu.md`; new `assets/fonts/PROVENANCE.md`.
+**Status:** **L3+L4 presentation 57 green** (+3 menu goldens; the 5 map goldens still pass after the `GoldenAssert` refactor). Build + import clean. L1+L2 unchanged (685). Menu goldens use a slightly looser tolerance (2%) for cross-platform text AA.
+**Changed:** assets `fonts/Cardo-Regular.ttf`(+`.import`) + `Cardo-OFL.txt` + `PROVENANCE.md`; presentation `ColonyTheme.cs` (font); tests `GoldenAssert.cs` (new) + `MenuGoldenTests.cs` (new) + `VisualGoldenTests.cs` (use helper); goldens `tests/visual/goldens/{main-menu,settings-screen,pause-menu}.png`; docs ×3. Commit (pending). [worktree `feature/title-settings`]
+**Decisions:** Single font (Cardo) for now — legible + period (the on-the-nose IM Fell English 404'd on the mirror; a display/title face can come later). Menu goldens generated on Windows at 2% tolerance; cross-platform text AA may need a one-time CI regen (`GOLDEN_UPDATE=1`) — documented.
+**Scheduled next:** **Slice E — generic info/event popup** (`86d3c9xgn`), then **Slice F — Save/Load dialog** (`86d3c9y5y`).
+**Follow-ups:** add the font to the ClickUp Asset Register (doc 05); optional title/display font; if CI text goldens flake, regen there; the colony screen now also uses Cardo (free improvement).
+**Needs you:** Eyeball the font (menu + settings previews in chat). The merge decision still stands once the batch wraps.
+
 ## 2026-06-17 — Title screen Slice C shipped (in-game pause menu)
 
 **Requested:** "Move onto the next work" (after reviewing the menu + settings).

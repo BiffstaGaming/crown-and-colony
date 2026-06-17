@@ -1,0 +1,83 @@
+using System.Threading.Tasks;
+using CrownAndColony.GameLogic.App;
+using CrownAndColony.Presentation;
+using GdUnit4;
+using Godot;
+using static GdUnit4.Assertions;
+
+namespace CrownAndColony.Presentation.Tests;
+
+/// <summary>
+/// L4 visual goldens for the menu/UI screens (docs/TESTING.md) — now feasible because the UI font is bundled
+/// (`ColonyTheme` uses Cardo, SIL OFL), so text rendering is consistent rather than platform-default. A slightly
+/// looser tolerance than the map goldens absorbs cross-platform font antialiasing. Regenerate with `GOLDEN_UPDATE=1`.
+/// </summary>
+[TestSuite]
+[RequireGodotRuntime]
+public class MenuGoldenTests
+{
+    private static readonly Vector2I CaptureSize = new(1024, 600);
+
+    // Text frames vary a little more across platforms (font rasterisation) than the map-tile goldens do.
+    private const double TextTolerance = 0.02;
+
+    [TestCase(Timeout = 60000)]
+    public async Task MainMenu_MatchesGolden()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");
+        var scene = (Control)runner.Scene();
+        scene.GetWindow().Size = CaptureSize;
+        await runner.SimulateFrames(5);
+
+        GoldenAssert.Assert("main-menu", scene.GetViewport().GetTexture().GetImage(), TextTolerance);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task SettingsScreen_MatchesGolden()
+    {
+        ResetSettingsToDefaults(); // the screen mirrors the live settings — pin them so the golden is deterministic
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/SettingsScreen.tscn");
+        var scene = (Control)runner.Scene();
+        scene.GetWindow().Size = CaptureSize;
+        await runner.SimulateFrames(5);
+
+        GoldenAssert.Assert("settings-screen", scene.GetViewport().GetTexture().GetImage(), TextTolerance);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task PauseMenu_MatchesGolden()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.GetWindow().Size = CaptureSize;
+        controller.StartNewGame(424242); // same deterministic world as the map goldens, dimmed behind the panel
+        await runner.SimulateFrames(3);
+
+        var pause = controller.GetNode<PauseMenu>("UI/PauseMenu");
+        pause.Open();
+        await runner.SimulateFrames(4);
+        Image actual = controller.GetViewport().GetTexture().GetImage();
+        pause.Resume(); // unpause before asserting, so a failure can't leave the shared tree paused
+
+        GoldenAssert.Assert("pause-menu", actual, TextTolerance);
+    }
+
+    // Forces the settings autoload back to its default values (other tests may have changed/persisted them), so the
+    // settings-screen golden always captures the default control positions.
+    private static void ResetSettingsToDefaults()
+    {
+        if (Engine.GetMainLoop() is SceneTree tree
+            && tree.Root.GetNodeOrNull<SettingsService>("Settings") is { } service)
+        {
+            var defaults = new SettingsModel();
+            service.UpdateAndApply(s =>
+            {
+                s.WindowMode = defaults.WindowMode;
+                s.VSync = defaults.VSync;
+                s.MasterVolume = defaults.MasterVolume;
+                s.MusicVolume = defaults.MusicVolume;
+                s.SfxVolume = defaults.SfxVolume;
+            });
+        }
+    }
+}
