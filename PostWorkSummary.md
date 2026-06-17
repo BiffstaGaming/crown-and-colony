@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 — 15-item batch kicked off: monarch→P6 re-tag + Lost City Rumour placement (slice 1 of the LCR arc)
+
+**Requested:** "Do the re-tag, then pick out 15 new items from the Backlog and begin working on them."
+**Did:** **(1)** Re-tagged the **8 monarch/tax `[P5]` tasks → `[P6]`** (`86d3c9qvr`/`r2m`/`r4w`/`r68`/`r7j`/`rag`/`rep`/`rk6`) per the endgame decision. **(2)** Picked **15 backlog items** and moved them into the active column (Ready for Development; first → In Development) — a strategically sequenced batch: ship-first combat/economy (`86d3c9tkk` fort bombardment, `86d3c9tha` land purchase, `86d3c9tzv` amphibious/defender-ranking), the decided custom house (`86d3c9ru3`/`86d3c9rx2`), the **Lost City Rumours → treasure arc** (`86d3c9uex`/`uhj`/`ujx`/`umy` + treasure `86d3c9ryj`/`rzu`/`t1e`), and the foundational **per-colonist work identity** (`86d3b6nrz`) + its dependents (`86d3c9pgj`/`86d3c9q1z`). **(3)** Ran an exhaustive **multi-agent understand workflow** (4 readers + adversarial critic) over the whole LCR→treasure arc, then **shipped the first slice — LCR placement** (`86d3c9uex`, `bf12bcf`): rumours scattered on land at game start (~`width·height·45%/35`), clear of water/polar/settlements/units/start, deterministic for a seed; `GameMap` rumour set; save **v25** (additive `Rumours` index list, omitted when none).
+**Status:** **684 L1+L2 + 4 soak green** (677 → 684; +7 `LostCityRumourTests`). The soak stays byte-stable — confirming the **critical determinism design** held: placement draws from a **dedicated `LcrStreamId=100` stream** (the workflow critic caught that a naive `=2` would collide with the first AI's `PlayerId+1` stream), so the human's stream 0 is untouched. ClickUp: `86d3c9uex` → Shipped, `86d3c9uhj` (LCR outcomes) → In Development.
+**Changed:** GameLogic `World/LostCityRumourGenerator.cs` (new), `World/GameMap.cs`, `GameSession/Game.cs`, `Persistence/SaveGame.cs` (+`LostCityRumourTests.cs`, 6 version-pin bumps); docs new `lost-city-rumours.md` (both layers) + `save-load.md` v25. Commit `bf12bcf`.
+**Decisions:** Sequenced the LCR arc per the workflow critic: slice 1 = placement only (type-less flag, smallest save field); outcomes (slice 2) hook MoveUnit + Disembark drawing from `RandomFor(owner)`; treasure outcomes wait for a `SavedUnit` treasure-amount field (v26) so a treasure train never loses its gold; MOUNDS gen-time type deferred to keep slice 1's save a bare int. Count uses our ~45% land (vs FreeCol's 25% estimate) to match generated maps — documented.
+**Scheduled next:** **LCR outcome resolution** (`86d3c9uhj`) — the move-onto-tile explore trigger + the weighted reward table (nothing/vanish/tribal-chief gold/learn/colonist/burial-ground/ruins…), per-player RNG, scout/De Soto good-outcome bias. Then down the batch (fountain of youth → treasure trains → custom house → fort bombardment → per-colonist identity).
+**Follow-ups:** the rest of the 15-item batch; rumour **map markers** (presentation); the standing deferrals.
+**Needs you:** Nothing blocking — working the batch. (The full LCR→treasure arc plan from the workflow is captured in `lost-city-rumours.md` §5.)
+
 ## 2026-06-17 — In-Review queue cleared + 3 design decisions + founding-father factor 40 [Chris review session]
 
 **Requested:** Go through the In-Review queue item by item; then make 3 gating decisions.
