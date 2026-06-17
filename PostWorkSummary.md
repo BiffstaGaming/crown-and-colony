@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-18 — Colony-worker identity refactor: slice 2 (worker-type overlay + save v30) (86d3b6nrz) [item 10]
+
+**Requested:** "Move onto Slice 2."
+**Did:** Shipped **slice 2** (`86d3b6nrz`, `9114fbc`) — the colony-model foundation (the save-format + architecture part you'd reserved), adversarially reviewed (**0 confirmed bugs**). (Note: your **title/settings UI arc** merged into main first — `a804549`/`3c8f019`; my slice 2 landed cleanly on top, linear history, clean tree.)
+- Each colony worker now carries a `UnitType` identity via a **sparse non-free overlay** over the count model (`_tileWorkerTypes` / `_buildingWorkerTypes` / `_idleWorkerTypes`; absent ⇒ free colonist) — each specialist in exactly one. The count model stays the authority; `ReconcileWorkerTypes` keeps the overlay ≤ the counts after the count-reducing flows.
+- Membership threads types: `FoundColony`/`JoinColony` seed the unit's type; `AutoAssignIdleToFood`/`AssignWork` place a **matching expert** (its `ExpertProduction` == the tile's good) or a free colonist; building assign/unassign carry/pop a type.
+- **Save v30** (additive, omitted-when-all-free) → a free-colonist-only game is byte-identical to v29; pre-v30 loads all-free. **Production is still type-blind** in this slice.
+**Status:** **800 L1+L2 + 4 soak green** (+3 `ColonyWorkerTypeTests`); soak byte-stable; build clean. Committed `9114fbc`, pushed.
+**Changed:** GameLogic `Colonies/Colony.cs` (overlay + ops + reconcile), `GameSession/Game.cs` (membership wiring + `PickIdleWorkerFor`), `Persistence/SaveGame.cs` (v30). Tests `ColonyWorkerTypeTests.cs`. Docs `colonies.md`, `save-load.md`.
+**Decisions:** sparse-overlay (keep counts) over a full roster rewrite → minimal blast radius, every slice independently green. Review empirically probed overlay-consistency across all membership flows + round-trip + byte-identity (no bugs).
+**Scheduled next:** **slice 3** — tile yield folds the worker's expert modifier (the first visible value: expert farmer +2 grain, fisherman +3, fur trapper ×2; indentured/petty unchanged on raw tiles). **Paused** — you're actively working the repo in parallel, so I'm holding off editing `Game.cs`/`Colony.cs` for slice 3 until you say go (avoids us colliding on the same files).
+**Needs you:** **Say "go" for slice 3** (or "run 3–6") when you're at a point where I can edit the colony/yield code without colliding with your front-end work. Still-open: food-export / burial-ground interim calls + the duplicate `86d3c7y…` task cluster.
+
 ## 2026-06-18 — Documentation sync for the title/settings arc
 
 **Requested:** Ensure documentation is up to date with the changes I made.
