@@ -43,6 +43,17 @@ public sealed class Colony
     private readonly Dictionary<string, int> _buildingWorkers = [];
     private readonly Dictionary<string, ExportSetting> _exports = [];
 
+    // Per-colonist unit-type overlay (86d3b6nrz): the count model above (Population/_tileWorkers/_buildingWorkers)
+    // stays the authority for HOW MANY workers and WHERE; these sparse maps annotate which of them are NON-FREE
+    // specialists (an absent entry = a free colonist). Each non-free colonist is in exactly one of: a tile, a
+    // building, or the idle pool. Kept ≤ the counts by ReconcileWorkerTypes; omitted-when-all-free in the save (v30).
+    private readonly Dictionary<Position, string> _tileWorkerTypes = [];        // tile → its non-free worker's type
+    private readonly Dictionary<string, List<string>> _buildingWorkerTypes = []; // building → its non-free occupants' types
+    private readonly List<string> _idleWorkerTypes = [];                          // non-free colonists with no assignment
+
+    /// <summary>The unit-type id of a plain colonist — the implicit default for any worker without an overlay entry.</summary>
+    public const string FreeColonistTypeId = "model.unit.freeColonist";
+
     /// <summary>The custom-house export setting for one good (FreeCol <c>ExportData</c>): whether it auto-exports and the amount to retain.</summary>
     /// <param name="Exported">Whether the custom house auto-sells this good's surplus.</param>
     /// <param name="ExportLevel">The amount to keep in the warehouse before exporting the rest.</param>
@@ -102,6 +113,19 @@ public sealed class Colony
 
     /// <summary>Whether the colony has a building.</summary>
     public bool HasBuilding(string buildingId) => _buildings.Contains(buildingId);
+
+    /// <summary>Non-free tile workers by tile (sparse — a tile worked by a free colonist is absent). 86d3b6nrz.</summary>
+    public IReadOnlyDictionary<Position, string> TileWorkerTypes => _tileWorkerTypes;
+
+    /// <summary>Non-free building occupants by building id (sparse — an all-free building is absent), unordered (production is a commutative sum).</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> BuildingWorkerTypes =>
+        _buildingWorkerTypes.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value);
+
+    /// <summary>Non-free colonists with no current assignment (free idle colonists are implicit in <see cref="IdleColonists"/>).</summary>
+    public IReadOnlyList<string> IdleWorkerTypes => _idleWorkerTypes;
+
+    /// <summary>The unit-type id of the colonist working <paramref name="tile"/> — its overlay entry, or a free colonist by default.</summary>
+    public string WorkerTypeAt(Position tile) => _tileWorkerTypes.GetValueOrDefault(tile, FreeColonistTypeId);
 
     private readonly List<string> _buildQueue = [];
 
@@ -175,7 +199,7 @@ public sealed class Colony
 
     internal void AddBuilding(string buildingId) => _buildings.Add(buildingId);
 
-    /// <summary>Swaps an upgraded building for its successor, preserving staffing.</summary>
+    /// <summary>Swaps an upgraded building for its successor, preserving staffing (count + worker-type overlay).</summary>
     internal void ReplaceBuilding(string oldId, string newId)
     {
         int index = _buildings.IndexOf(oldId);
@@ -183,6 +207,10 @@ public sealed class Colony
         if (_buildingWorkers.Remove(oldId, out int workers))
         {
             _buildingWorkers[newId] = workers;
+        }
+        if (_buildingWorkerTypes.Remove(oldId, out List<string>? occupants))
+        {
+            _buildingWorkerTypes[newId] = occupants;
         }
     }
 
@@ -198,9 +226,124 @@ public sealed class Colony
         }
     }
 
-    internal void SetWorker(Position tile, string goodsId) => _tileWorkers[tile] = goodsId;
+    /// <summary>Assigns a free colonist to a tile (the type-blind path: tests/incidental callers). Use the typed overload from the real assignment flows.</summary>
+    internal void SetWorker(Position tile, string goodsId) => SetWorker(tile, goodsId, FreeColonistTypeId);
 
-    internal void RemoveWorker(Position tile) => _tileWorkers.Remove(tile);
+    /// <summary>Assigns a colonist of <paramref name="type"/> (from the idle pool) to <paramref name="tile"/>, recording a non-free type in the overlay.</summary>
+    internal void SetWorker(Position tile, string goodsId, string type)
+    {
+        _tileWorkers[tile] = goodsId;
+        if (type == FreeColonistTypeId)
+        {
+            _tileWorkerTypes.Remove(tile);
+        }
+        else
+        {
+            _tileWorkerTypes[tile] = type;
+            RemoveOneIdle(type); // the colonist moved idle → tile
+        }
+    }
+
+    /// <summary>Returns a tile's worker to the idle pool (its non-free type, if any, rejoins the idle overlay).</summary>
+    internal void RemoveWorker(Position tile)
+    {
+        if (_tileWorkerTypes.Remove(tile, out string? type))
+        {
+            _idleWorkerTypes.Add(type);
+        }
+        _tileWorkers.Remove(tile);
+    }
+
+    /// <summary>Adds a colonist of <paramref name="type"/> to the colony's idle pool (founding / joining / growth). Free colonists are implicit.</summary>
+    internal void AddIdleColonist(string type)
+    {
+        if (type != FreeColonistTypeId)
+        {
+            _idleWorkerTypes.Add(type);
+        }
+    }
+
+    /// <summary>Assigns a colonist of <paramref name="type"/> (from idle) into a building, bumping the count and overlay.</summary>
+    internal void AssignBuildingWorker(string buildingId, string type)
+    {
+        SetBuildingWorkers(buildingId, _buildingWorkers.GetValueOrDefault(buildingId) + 1);
+        if (type != FreeColonistTypeId)
+        {
+            if (!_buildingWorkerTypes.TryGetValue(buildingId, out List<string>? list))
+            {
+                _buildingWorkerTypes[buildingId] = list = [];
+            }
+            list.Add(type);
+            RemoveOneIdle(type); // the colonist moved idle → building
+        }
+    }
+
+    /// <summary>Returns one of a building's workers to the idle pool (a non-free occupant rejoins idle; else a free colonist).</summary>
+    internal void UnassignBuildingWorker(string buildingId)
+    {
+        int count = _buildingWorkers.GetValueOrDefault(buildingId);
+        if (count <= 0)
+        {
+            return;
+        }
+        if (_buildingWorkerTypes.TryGetValue(buildingId, out List<string>? list) && list.Count > 0)
+        {
+            string type = list[^1];
+            list.RemoveAt(list.Count - 1);
+            if (list.Count == 0)
+            {
+                _buildingWorkerTypes.Remove(buildingId);
+            }
+            _idleWorkerTypes.Add(type);
+        }
+        SetBuildingWorkers(buildingId, count - 1);
+    }
+
+    /// <summary>Restores a building's non-free occupant types from a save (the count is restored separately via <see cref="SetBuildingWorkers"/>).</summary>
+    internal void RestoreBuildingWorkerTypes(string buildingId, IEnumerable<string> types) =>
+        _buildingWorkerTypes[buildingId] = [.. types];
+
+    /// <summary>Removes one occurrence of <paramref name="type"/> from the idle overlay (a no-op when absent).</summary>
+    private void RemoveOneIdle(string type)
+    {
+        int i = _idleWorkerTypes.LastIndexOf(type);
+        if (i >= 0)
+        {
+            _idleWorkerTypes.RemoveAt(i);
+        }
+    }
+
+    /// <summary>
+    /// Trims the worker-type overlay so it never exceeds the count model (FreeCol has no equivalent — this guards
+    /// the sparse overlay against the count-reducing flows, leave/abandon/starve/trim, that don't thread an exact
+    /// departing colonist). Drops excess entries deterministically: orphaned tiles, then over-full buildings, then
+    /// idle beyond <see cref="IdleColonists"/>. The dropped non-free colonist is treated as departed (slice-6 work
+    /// will make leave/abandon emit its real type instead of a free colonist).
+    /// </summary>
+    internal void ReconcileWorkerTypes()
+    {
+        foreach (Position tile in _tileWorkerTypes.Keys.Where(t => !_tileWorkers.ContainsKey(t)).ToList())
+        {
+            _tileWorkerTypes.Remove(tile);
+        }
+        foreach (string building in _buildingWorkerTypes.Keys.ToList())
+        {
+            List<string> list = _buildingWorkerTypes[building];
+            int cap = _buildingWorkers.GetValueOrDefault(building);
+            while (list.Count > cap)
+            {
+                list.RemoveAt(list.Count - 1);
+            }
+            if (list.Count == 0)
+            {
+                _buildingWorkerTypes.Remove(building);
+            }
+        }
+        while (_idleWorkerTypes.Count > IdleColonists)
+        {
+            _idleWorkerTypes.RemoveAt(_idleWorkerTypes.Count - 1);
+        }
+    }
 
     /// <summary>Adds goods to the store (negative removes; floor at 0).</summary>
     internal void AddGoods(string goodsId, int amount) =>

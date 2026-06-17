@@ -2842,6 +2842,7 @@ public sealed class Game
         _colonies.Add(colony);
         colony.SolModifierBonus = SolModifierFor(PlayerById(colony.OwnerId) ?? _human); // inherit the owner's standing SoL bonus (Bolívar)
         _units.Remove(unit);
+        colony.AddIdleColonist(unit.Type.Id); // the founding colonist keeps its identity (an expert founds as an expert)
         // The colony keeps its surroundings explored — for its owner (the human, or a foreign founder; FP-4).
         RevealAround(PlayerById(colony.OwnerId) ?? _human, colony.Position, ColonySightRadius);
         AutoAssignIdleToFood(colony);
@@ -2879,6 +2880,7 @@ public sealed class Game
             throw new InvalidMoveException(check.Reason!);
         }
         colony.Population++;
+        colony.AddIdleColonist(unit.Type.Id); // the joining colonist keeps its identity
         _units.Remove(unit);
         AutoAssignIdleToFood(colony);
     }
@@ -2999,12 +3001,12 @@ public sealed class Game
         {
             throw new InvalidMoveException(check.Reason!);
         }
-        colony.SetBuildingWorkers(buildingId, colony.BuildingWorkers.GetValueOrDefault(buildingId) + 1);
+        colony.AssignBuildingWorker(buildingId, PickIdleBuildingWorker(colony));
     }
 
     /// <summary>Returns one of a building's workers to the idle pool.</summary>
     public void UnassignBuildingWork(Colony colony, string buildingId) =>
-        colony.SetBuildingWorkers(buildingId, colony.BuildingWorkers.GetValueOrDefault(buildingId) - 1);
+        colony.UnassignBuildingWorker(buildingId);
 
     /// <summary>
     /// Sells goods from a colony's warehouse to the European market, crediting the
@@ -5297,7 +5299,7 @@ public sealed class Game
         {
             throw new InvalidMoveException(check.Reason!);
         }
-        colony.SetWorker(tile, goodsId);
+        colony.SetWorker(tile, goodsId, PickIdleWorkerFor(colony, goodsId));
     }
 
     /// <summary>Returns a tile's worker to the idle pool.</summary>
@@ -5351,9 +5353,32 @@ public sealed class Game
             {
                 return; // nowhere productive left — colonist stays idle
             }
-            colony.SetWorker(best.Value.tile, grain);
+            colony.SetWorker(best.Value.tile, grain, PickIdleWorkerFor(colony, grain));
         }
     }
+
+    /// <summary>
+    /// The idle colonist to send to a tile producing <paramref name="goodsId"/> (86d3b6nrz): the matching expert
+    /// (its <see cref="UnitType.ExpertProduction"/> == the good) if one is idle, else a free colonist, else any idle
+    /// specialist (so none is silently lost). Slice 2 is type-blind; this pick gains effect when tile yield folds the
+    /// worker type (slice 3) — an expert auto-lands on its own good's tile.
+    /// </summary>
+    private string PickIdleWorkerFor(Colony colony, string goodsId)
+    {
+        if (colony.IdleWorkerTypes.FirstOrDefault(t => Ruleset.Unit(t).ExpertProduction == goodsId) is { } expert)
+        {
+            return expert;
+        }
+        return colony.IdleColonists - colony.IdleWorkerTypes.Count > 0 || colony.IdleWorkerTypes.Count == 0
+            ? Colony.FreeColonistTypeId
+            : colony.IdleWorkerTypes[0];
+    }
+
+    /// <summary>The idle colonist to send to a building: a free colonist if one is idle (keep specialists for their own tiles), else any idle specialist.</summary>
+    private static string PickIdleBuildingWorker(Colony colony) =>
+        colony.IdleColonists - colony.IdleWorkerTypes.Count > 0 || colony.IdleWorkerTypes.Count == 0
+            ? Colony.FreeColonistTypeId
+            : colony.IdleWorkerTypes[0];
 
     /// <summary>
     /// One building's turn: unattended output plus per-worker conversion of
@@ -5475,9 +5500,10 @@ public sealed class Game
             }
             else
             {
-                return;
+                break;
             }
         }
+        colony.ReconcileWorkerTypes(); // keep the worker-type overlay ≤ the trimmed counts (86d3b6nrz)
     }
 
     /// <summary>One colony's production-eat-grow step (its <paramref name="owner"/>'s fathers fold into tile yields).</summary>
