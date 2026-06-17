@@ -79,6 +79,30 @@ public static class ColonyArt
     /// <summary>The colony window's carved-wood frame — FreeCol's <c>carvedwoodenborder</c> edge/corner pieces composited into one 194×194 nine-patch (23px margins); null if absent.</summary>
     public static Texture2D? ColonyBorder() => Load("ui/colony_border.png");
 
+    /// <summary>
+    /// A parchment panel skin for menu-style screens: FreeCol's brown parchment tiled (not stretched — the tile is
+    /// only 291×295), inset 26px so content clears the 23px carved-wood frame. Falls back to a warm solid fill if the
+    /// asset is absent (keeps the panel opaque in CI). Shared by the main-menu and settings screens; the colony screen
+    /// keeps its own equivalent (<c>ColonyPanel.BuildPanelBackground</c>).
+    /// </summary>
+    public static StyleBox ParchmentSkin()
+    {
+        if (PanelParchment() is { } parchment)
+        {
+            var skin = new StyleBoxTexture
+            {
+                Texture = parchment,
+                AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Tile,
+                AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Tile,
+            };
+            skin.SetContentMarginAll(26);
+            return skin;
+        }
+        var flat = new StyleBoxFlat { BgColor = new Color(0.18f, 0.12f, 0.07f) };
+        flat.SetContentMarginAll(26);
+        return flat;
+    }
+
     /// <summary>The colony settlement sprite drawn at the centre of the tiles grid.</summary>
     public static Texture2D? ColonyIcon() => Load("settlements/small.png");
 

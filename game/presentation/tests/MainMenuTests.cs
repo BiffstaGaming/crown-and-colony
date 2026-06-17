@@ -32,7 +32,7 @@ public class MainMenuTests
     }
 
     [TestCase]
-    public async Task NewGameAndQuit_AreEnabled_LaterSliceButtons_AreDisabled()
+    public async Task NewGameQuitAndSettings_AreEnabled_LoadGame_StaysDisabled()
     {
         ISceneRunner runner = ISceneRunner.Load(MenuScene);
         await runner.SimulateFrames(2);
@@ -40,9 +40,9 @@ public class MainMenuTests
 
         AssertThat(scene.GetNode<Button>("Panel/VBox/NewGameButton").Disabled).IsFalse();
         AssertThat(scene.GetNode<Button>("Panel/VBox/QuitButton").Disabled).IsFalse();
-        // Load Game (ClickUp 86d3c9y5y) and Settings (86d3ck67h) ship in later slices.
+        AssertThat(scene.GetNode<Button>("Panel/VBox/SettingsButton").Disabled).IsFalse(); // wired in Slice B
+        // Load Game waits on the save-load dialog UI (ClickUp 86d3c9y5y).
         AssertThat(scene.GetNode<Button>("Panel/VBox/LoadGameButton").Disabled).IsTrue();
-        AssertThat(scene.GetNode<Button>("Panel/VBox/SettingsButton").Disabled).IsTrue();
     }
 
     [TestCase]

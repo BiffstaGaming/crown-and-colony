@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 — Title screen Slice B shipped (Settings + persistence)
+
+**Requested:** Continue Slice B — the settings/options screen + persistence.
+**Did:**
+- **`SettingsModel`** (pure C#, `GameLogic/App`): video (window mode, vsync) + audio (master/music/sfx) with defaults, `Clamp`, and dictionary round-trip — **5 L1 tests**.
+- **`SettingsService`** autoload (`/root/Settings`): loads `user://settings.cfg` at boot, applies to the engine (window mode, vsync, audio-bus volumes), creates Music/SFX buses (routed to Master), saves on demand.
+- **`SettingsScreen`** scene + script (same map/parchment/wood look as the menu): Video + Audio controls, **apply-on-change live**, **Back saves + returns**. Rendered a preview — cohesive with the menu.
+- Wired the menu's **Settings** button → settings screen (now enabled). Hoisted the parchment skin to **`ColonyArt.ParchmentSkin()`** (dedups menu + settings; the colony screen keeps its own).
+- Docs: new `docs/systems/settings.md` (both layers + verification) + updated `main-menu.md`.
+**Status:** **L1+L2 685 green** (+5 SettingsModel), **L3 presentation 48 green** (+4 SettingsScreenTests incl. a save→load disk round-trip). Build + headless import clean. L4 golden deferred (`86d3c9y32`).
+**Changed:** GameLogic `App/SettingsModel.cs` (+test); presentation `SettingsService.cs`, `SettingsScreen.cs`, `scenes/SettingsScreen.tscn`, `ColonyArt.cs` (+`ParchmentSkin`), `MainMenu.cs`/`.tscn` (wire Settings), `project.godot` (autoload); docs `settings.md` (new) + `main-menu.md`. Commit (pending). [worktree `feature/title-settings`]
+**Decisions:** App settings live in `GameLogic/App` (pure → strong L1), separate from per-game rule options. Music/SFX buses created at startup so all sliders are real before audio assets exist. SettingsScreen is a full scene (Back→menu) — may become a reusable overlay when the pause menu lands.
+**Scheduled next:** **Load Game wiring** (`86d3c9y5y`, needs the save-load dialog UI) or the **in-game pause menu** — or pause to merge `feature/title-settings` → `main`.
+**Follow-ups:** route music/SFX players through the new buses when audio lands (`86d3c9xu1`/`86d3c9xrp`); L4 goldens once `86d3c9y32` lands; resolution/gameplay-options later; reuse settings from the pause menu.
+**Needs you:** Eyeball the settings screen (preview in chat). Decide: keep stacking slices, or merge the branch.
+
 ## 2026-06-17 — Title screen Slice A shipped (FreeCol-styled main menu)
 
 **Requested:** Build Slice A (main-menu shell) with a proper FreeCol-like UI, using assets (importing if needed).

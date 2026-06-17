@@ -11,6 +11,10 @@ run/main_scene="res://scenes/MainMenu.tscn"
 config/features=PackedStringArray("4.6", "C#")
 config/icon="res://icon.svg"
 
+[autoload]
+
+Settings="*res://presentation/SettingsService.cs"
+
 [dotnet]
 
 project/assembly_name="CrownAndColony"

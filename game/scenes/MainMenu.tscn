@@ -80,8 +80,6 @@ text = "Load Game"
 
 [node name="SettingsButton" type="Button" parent="Panel/VBox"]
 layout_mode = 2
-disabled = true
-tooltip_text = "Coming soon"
 text = "Settings"
 
 [node name="QuitButton" type="Button" parent="Panel/VBox"]
