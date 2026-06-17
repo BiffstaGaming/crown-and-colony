@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 (overnight) — Europe Train/Purchase split + artillery price escalation (86d3c9qgy) [overnight autonomous run, item 7]
+
+**Requested:** Overnight continuous backlog run (item 7). Ultracode on.
+**Did:** First **verified `86d3c7ybm` (artillery-in-the-open + against-raid) was already shipped** (the ClickUp status was stale — the combat code has all three facets + tests; moved it to **Shipped** with a comment, didn't redo it). Then shipped **Europe Train/Purchase + artillery price escalation** (`86d3c9qgy`, `f63fd3f`), adversarially reviewed (**0 confirmed bugs**).
+- `UnitType.Skill` (parsed) splits priced Europe units: **trained** specialists (skill > 0) vs **purchased** ships/artillery (skill 0) — `Game.UnitTypesTrainedInEurope()`/`UnitTypesPurchasedInEurope()`.
+- **Artillery price escalation**: each player's `UnitPriceOverrides` map makes buying artillery ratchet its price **+100 per purchase** (500→600→700), per player; ships/specialists flat. `EuropeUnitPrice` feeds `CheckBuyUnit`/`BuyUnit`.
+- **Save v29** (additive): `SavedPlayer.UnitPrices`, omitted when empty → byte-identical to v28 until a price escalates.
+**Status:** **778 L1+L2 + 4 soak green** (+7 `EuropePurchaseTests`). Build clean. Committed `f63fd3f`, pushed. ClickUp `86d3c9qgy` → In Review; `86d3c7ybm` → Shipped (already-done).
+**Changed:** GameLogic `Specification/UnitType.cs` + `Ruleset.cs` (`Skill` + partition helpers), `GameSession/Player.cs` (per-player price map), `GameSession/Game.cs` (`EuropeUnitPrice`/escalation/partition), `Persistence/SaveGame.cs` + `Player.cs` (v29 round-trip). Tests `EuropePurchaseTests.cs` (new). Docs `europe.md` (both layers), `save-load.md` (v29), `ruleset-data.md` (skill).
+**Decisions:** **(1)** the +100 increase is hardcoded classic-medium (`model.option.priceIncrease.artillery`) pending ruleset-option parsing. **(2)** per-player price map (faithful — FreeCol escalates per player). **(3)** Review note: our `Skill<=0` purchased-predicate folds absent→0 (differs from FreeCol's `!hasSkill()` only for a hypothetical priced `skill="0"` unit, none in classic — documented for variant work).
+**Scheduled next (overnight):** continue self-contained P5 GameLogic features (verifying-not-redoing where a task may be stale). Will scope item 8 from the backlog.
+**Follow-ups:** the on-screen **two-list Europe dropdown** (Train vs Purchase) — the GameLogic split exists; the panel still shows one combined list (presentation). Moving the artillery +100 into ruleset difficulty options (`86d3bb1x3` / `86d3c9y08`). Still parked for your steer: `86d3b6nrz` colony-model refactor.
+**Needs you:** Nothing blocking — run continuing. (Open confirmations still pending from items 4–6: food-export fidelity, burial-ground/strange-mounds interim behaviours, and whether to start `86d3b6nrz`.)
+
 ## 2026-06-17 (overnight) — Horse-breeding production formula (86d3c9nwr) [overnight autonomous run, item 6]
 
 **Requested:** Overnight continuous backlog run (item 6). Ultracode on.
