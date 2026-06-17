@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | In development (Slice C shipped) |
-| **Last verified** | 2026-06-17 @ (pending) |
+| **Last verified** | 2026-06-17 @ 895f958 |
 | **Code** | `game/presentation/PauseMenu.cs`, `game/scenes/main.tscn` (`UI/PauseMenu`) |
 | **Tests** | `game/presentation/tests/PauseMenuTests.cs` (L3) |
 | **FreeCol reference** | conceptual (in-game menu) |
@@ -81,4 +81,4 @@ While you're playing, pressing **Esc** brings up a pause menu over the (now froz
 
 | Date | Change | Commit |
 |---|---|---|
-| 2026-06-17 | Slice C — in-game pause menu (Esc → Resume / Settings / Quit to Main Menu / Quit to Desktop); pauses the tree; reuses `SettingsScreen` as an overlay | (pending) |
+| 2026-06-17 | Slice C — in-game pause menu (Esc → Resume / Settings / Quit to Main Menu / Quit to Desktop); pauses the tree; reuses `SettingsScreen` as an overlay | 895f958 |
