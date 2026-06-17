@@ -27,7 +27,7 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 - Tests: L3 `InfoPopupTests` (Show displays text; OK emits `Closed` + frees) + an `info-popup` L4 golden (over the menu).
 - Docs: new `docs/systems/info-popup.md`.
 **Status:** **L3+L4 presentation 59 green** (+2). Build + import clean. L1+L2 unchanged (685).
-**Changed:** presentation `InfoPopup.cs` (new) + `scenes/InfoPopup.tscn` (new); tests `InfoPopupTests.cs` (new) + `MenuGoldenTests.cs` (+golden); golden `tests/visual/goldens/info-popup.png`; docs `info-popup.md` (new). Commit (pending). [worktree `feature/title-settings`]
+**Changed:** presentation `InfoPopup.cs` (new) + `scenes/InfoPopup.tscn` (new); tests `InfoPopupTests.cs` (new) + `MenuGoldenTests.cs` (+golden); golden `tests/visual/goldens/info-popup.png`; docs `info-popup.md` (new). Commit `dc9a560`. [worktree `feature/title-settings`]
 **Decisions:** Info-only (single OK), not a yes/no confirm (a confirm sibling can come later). Fixed-size panel (short notices). No Esc/Enter dismissal yet (avoids clashing with the pause menu's Esc). First consumer = the Save/Load dialog (Slice F).
 **Scheduled next:** **Slice F — Save/Load dialog** (`86d3c9y5y`): a slot list backing the menu's Load Game + a pause-menu Save/Load, reusing this popup for notices.
 **Follow-ups:** a confirm-dialog sibling; the ClickUp Asset Register font entry.

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented |
-| **Last verified** | 2026-06-17 @ (pending) |
+| **Last verified** | 2026-06-17 @ dc9a560 |
 | **Code** | `game/presentation/InfoPopup.cs`, `game/scenes/InfoPopup.tscn` |
 | **Tests** | `game/presentation/tests/InfoPopupTests.cs` (L3); `MenuGoldenTests` → `info-popup` (L4) |
 | **FreeCol reference** | conceptual (information dialog) |
@@ -70,4 +70,4 @@ A small **information popup** the game uses to tell you something one-off — "G
 
 | Date | Change | Commit |
 |---|---|---|
-| 2026-06-17 | Slice E — reusable info popup (title + message + OK) with a static `Show` helper; L3 test + `info-popup` golden | (pending) |
+| 2026-06-17 | Slice E — reusable info popup (title + message + OK) with a static `Show` helper; L3 test + `info-popup` golden | dc9a560 |
