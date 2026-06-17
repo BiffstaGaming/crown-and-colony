@@ -379,7 +379,11 @@ public sealed class Ruleset
                 // Ship bombardment: the fort grants model.ability.bombardShips, the fortress inherits it.
                 BombardsShips: ResolveAbility(el, "model.ability.bombardShips", buildingElements),
                 // Auto-export: the custom house grants model.ability.export (per-turn auto-sell).
-                GrantsExport: ResolveAbility(el, "model.ability.export", buildingElements));
+                GrantsExport: ResolveAbility(el, "model.ability.export", buildingElements),
+                // Horse breeding: pasture/country sets breedingDivisor 50 / breedingFactor 2; stables multiplies the
+                // divisor by 0.5 → 25 (resolved additive-then-multiplicative up the extends chain). 0 = not a breeder.
+                BreedingDivisor: ResolveScalarModifierUpChain(el, "model.modifier.breedingDivisor", buildingElements),
+                BreedingFactor: ResolveScalarModifierUpChain(el, "model.modifier.breedingFactor", buildingElements));
         }
 
         var fathers = new Dictionary<string, FoundingFather>();
@@ -876,6 +880,34 @@ public sealed class Ruleset
                 .Sum(m => (int?)m.Attribute("value") ?? 0);
         }
         return total;
+    }
+
+    /// <summary>
+    /// Resolves a scalar modifier across the whole <c>extends</c> chain by folding it onto a base of 0 with FreeCol's
+    /// modifier semantics — all <c>additive</c> values summed, then all <c>multiplicative</c> values multiplied
+    /// (commutative, so chain order is irrelevant). Used for <c>model.modifier.breedingDivisor</c>, where the pasture
+    /// sets an additive 50 and the stables (which extends it) multiplies by 0.5 → 25. 0 when the modifier is absent.
+    /// </summary>
+    private static int ResolveScalarModifierUpChain(XElement el, string modifierId, Dictionary<string, XElement> elements)
+    {
+        double additive = 0.0;
+        double multiplicative = 1.0;
+        for (XElement? current = el; current is not null; current = ParentOf(current, elements))
+        {
+            foreach (XElement m in current.Elements("modifier").Where(m => (string?)m.Attribute("id") == modifierId))
+            {
+                double value = (double?)m.Attribute("value") ?? 0.0;
+                if ((string?)m.Attribute("type") == "multiplicative")
+                {
+                    multiplicative *= value;
+                }
+                else
+                {
+                    additive += value;
+                }
+            }
+        }
+        return (int)Math.Round(additive * multiplicative);
     }
 
     /// <summary>

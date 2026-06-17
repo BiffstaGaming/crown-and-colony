@@ -51,6 +51,7 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-17 | Building breeding modifiers `breedingDivisor`/`breedingFactor` (`BuildingType.BreedingDivisor`/`BreedingFactor`; resolved additive-then-multiplicative up the `extends` chain via `ResolveScalarModifierUpChain` — pasture 50/2, stables ×0.5 → 25/2) — drives horse breeding (see [colonies](colonies.md)) | Phase 5 (`86d3c9nwr`) |
 | 2026-06-17 | Building ability flag `export` (`BuildingType.GrantsExport`; the custom house) — see [custom-house](custom-house.md) | Phase 5 (`86d3c9ru3`) |
 | 2026-06-17 | Unit ability flag `carryTreasure` (`UnitType.CarryTreasure`; the treasure train) — see [treasure-train](treasure-train.md) | Phase 5 (`86d3c9ryj`) |
 | 2026-06-17 | Building ability flag `bombardShips` (`BuildingType.BombardsShips`; fort grants, fortress inherits) — see [combat](combat.md) | Phase 5 (`86d3c9tkk`) |

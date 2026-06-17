@@ -5243,7 +5243,7 @@ public sealed class Game
     /// One building's turn: unattended output plus per-worker conversion of
     /// warehouse inputs to outputs (scaled down when inputs run short).
     /// </summary>
-    private void RunBuildingProduction(Colony colony, BuildingType building)
+    private void RunBuildingProduction(Colony colony, BuildingType building, int foodProducedThisTurn)
     {
         int workers = colony.BuildingWorkers.GetValueOrDefault(building.Id);
         foreach (ProductionEntry entry in building.Productions)
@@ -5254,13 +5254,12 @@ public sealed class Game
                 continue;
             }
 
-            // Breeding gate (FreeCol autoProduction): goods with a breeding
-            // number (horses) only multiply when enough are already stabled.
-            bool breedingBlocked = entry.Outputs.Any(o =>
-                Ruleset.GoodsTypes.FirstOrDefault(g => g.Id == o.GoodsId)?.BreedingNumber
-                    is int needed && colony.StoreOf(Ruleset.StorageIdOf(o.GoodsId)) < needed);
-            if (breedingBlocked)
+            // Auto-production breeding (horses): a herd-size growth formula — gated at the breeding number, capped at
+            // the warehouse, eating only surplus food — not the generic per-worker conversion (FreeCol autoProduction).
+            if (building.BreedingDivisor > 0 && entry.Outputs.Count == 1
+                && Ruleset.Goods(entry.Outputs[0].GoodsId).BreedingNumber is int breedingNumber)
             {
+                RunBreeding(colony, building, entry, breedingNumber, foodProducedThisTurn);
                 continue;
             }
 
@@ -5296,6 +5295,48 @@ public sealed class Game
     }
 
     /// <summary>
+    /// Auto-production horse breeding (FreeCol <c>BuildingProductionCalculator</c> autoProduction): a pasture/stables
+    /// grows the herd by <c>((herd−1)/divisor + 1) × factor</c> each turn — faster the larger the herd, faster again
+    /// with a stables (divisor halved, 50 → 25) — gated at the goods' breeding number (no foals below it), stopping at
+    /// the warehouse cap, and eating only <b>this turn's surplus food</b> — half of what the colony <em>produced</em>
+    /// this turn (<c>consumeOnlySurplusProduction</c> 0.5), never its stored carryover — so the foals are limited by
+    /// the food the colony is actually making and the herd can't be grown off a stockpile. Deterministic (no RNG).
+    /// </summary>
+    private void RunBreeding(Colony colony, BuildingType building, ProductionEntry entry, int breedingNumber, int foodProducedThisTurn)
+    {
+        string horsesId = Ruleset.StorageIdOf(entry.Outputs[0].GoodsId);
+        int herd = colony.StoreOf(horsesId);
+        int capacity = WarehouseCapacity(colony);
+        if (herd < breedingNumber || herd >= capacity || building.BreedingDivisor <= 0)
+        {
+            return; // no foals below the breeding number, at/over the warehouse cap, or without a divisor
+        }
+
+        // Herd-growth formula (integer division — the classic curve), then never overflow the warehouse.
+        int bred = Math.Min(
+            ((herd - 1) / building.BreedingDivisor + 1) * building.BreedingFactor,
+            capacity - herd);
+
+        // Horses are made-from food at the entry's input ratio (classic 1 food : 1 horse); breeding may eat only HALF
+        // of this turn's food production (consumeOnlySurplusProduction 0.5), leaving the rest (plus any carryover) for
+        // the colonists — so it can't starve the colony and a herd can't grow off a stockpile alone.
+        int foodPerFoal = entry.Inputs.Count == 1 ? Math.Max(1, entry.Inputs[0].Amount) : 0;
+        if (foodPerFoal > 0)
+        {
+            bred = Math.Min(bred, foodProducedThisTurn / 2 / foodPerFoal);
+        }
+        if (bred <= 0)
+        {
+            return;
+        }
+        if (foodPerFoal > 0)
+        {
+            colony.AddGoods(Ruleset.StorageIdOf(entry.Inputs[0].GoodsId), -bred * foodPerFoal);
+        }
+        colony.AddGoods(horsesId, bred);
+    }
+
+    /// <summary>
     /// Drops assignments until they fit the population: building workers are
     /// pulled before field workers (deterministic order — last building, then
     /// last tile in row-major order).
@@ -5328,12 +5369,20 @@ public sealed class Game
     {
         // 1a. The colony square works itself (unattended yield). Goods enter
         //     the warehouse under their stored-as id: grain/fish → food.
+        // Track this turn's gross FOOD production (centre + worked tiles) — horse breeding may eat only a share of
+        // it (FreeCol consumeOnlySurplusProduction), never the colony's stored carryover.
+        int foodThisTurn = 0;
         TerrainType terrain = Map.TerrainAt(colony.Position);
         foreach (ProductionEntry entry in terrain.Productions.Where(p => p.Unattended))
         {
             foreach (GoodsOutput output in entry.Outputs)
             {
-                colony.AddGoods(Ruleset.StorageIdOf(output.GoodsId), output.Amount);
+                string storageId = Ruleset.StorageIdOf(output.GoodsId);
+                colony.AddGoods(storageId, output.Amount);
+                if (storageId == Colony.FoodId)
+                {
+                    foodThisTurn += output.Amount;
+                }
             }
         }
 
@@ -5341,15 +5390,21 @@ public sealed class Game
         //     production bonus (+2/+1/0/−1/−2 per worker, floored at 0 so a bad-government penalty can't go negative).
         foreach ((Position tile, string goodsId) in colony.TileWorkers)
         {
-            colony.AddGoods(Ruleset.StorageIdOf(goodsId), Math.Max(0, TileYield(owner, tile, goodsId) + colony.ProductionBonus));
+            string storageId = Ruleset.StorageIdOf(goodsId);
+            int produced = Math.Max(0, TileYield(owner, tile, goodsId) + colony.ProductionBonus);
+            colony.AddGoods(storageId, produced);
+            if (storageId == Colony.FoodId)
+            {
+                foodThisTurn += produced;
+            }
         }
 
         // 1c. Buildings produce: unattended entries always run (town hall bell);
         //     worker entries convert inputs to outputs per colonist, limited by
-        //     what the warehouse holds.
+        //     what the warehouse holds. Horse breeding (auto-production) may eat only this turn's surplus food.
         foreach (string buildingId in colony.Buildings)
         {
-            RunBuildingProduction(colony, Ruleset.Building(buildingId));
+            RunBuildingProduction(colony, Ruleset.Building(buildingId), foodThisTurn);
         }
 
         // 1d. Construction completes when materials are saved up.

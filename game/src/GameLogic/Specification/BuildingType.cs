@@ -58,6 +58,15 @@ namespace CrownAndColony.GameLogic.Specification;
 /// the <c>extends</c> chain) — the custom house declares it (building it is gated on Stuyvesant's
 /// <c>buildCustomHouse</c>). FreeCol <c>Ability.EXPORT</c>; drives the per-turn custom-house auto-sell.
 /// </param>
+/// <param name="BreedingDivisor">
+/// Herd-growth divisor for an auto-production breeder (spec <c>model.modifier.breedingDivisor</c>, resolved
+/// additive-then-multiplicative down the <c>extends</c> chain: pasture/country 50, stables ×0.5 → 25; default 0 =
+/// not a breeder). Drives the FreeCol horse-breeding formula <c>((herd−1)/divisor + 1) × factor</c>.
+/// </param>
+/// <param name="BreedingFactor">
+/// Herd-growth multiplier for an auto-production breeder (spec <c>model.modifier.breedingFactor</c>, country 2;
+/// default 0). The <c>× factor</c> term in the breeding formula (see <see cref="BreedingDivisor"/>).
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -73,7 +82,9 @@ public sealed record BuildingType(
     IReadOnlySet<string>? BuildableUnitTypeIds = null,
     bool BuildsNavalUnits = false,
     bool BombardsShips = false,
-    bool GrantsExport = false)
+    bool GrantsExport = false,
+    int BreedingDivisor = 0,
+    int BreedingFactor = 0)
 {
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
     private static readonly IReadOnlySet<string> NoUnits = new HashSet<string>();
