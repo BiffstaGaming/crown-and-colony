@@ -53,6 +53,11 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <c>model.ability.bombardShips</c>, resolved down the <c>extends</c> chain; the fort grants it, the fortress
 /// inherits it). FreeCol <c>Settlement.canBombardEnemyShip</c>.
 /// </param>
+/// <param name="GrantsExport">
+/// Whether this building grants the colony the auto-export ability (spec <c>model.ability.export</c>, resolved down
+/// the <c>extends</c> chain) — the custom house declares it (building it is gated on Stuyvesant's
+/// <c>buildCustomHouse</c>). FreeCol <c>Ability.EXPORT</c>; drives the per-turn custom-house auto-sell.
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -67,7 +72,8 @@ public sealed record BuildingType(
     bool RepairsNavalUnits = false,
     IReadOnlySet<string>? BuildableUnitTypeIds = null,
     bool BuildsNavalUnits = false,
-    bool BombardsShips = false)
+    bool BombardsShips = false,
+    bool GrantsExport = false)
 {
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
     private static readonly IReadOnlySet<string> NoUnits = new HashSet<string>();

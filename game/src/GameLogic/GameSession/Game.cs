@@ -130,6 +130,15 @@ public sealed class Game
     /// <summary>Current turn number, starting at 1.</summary>
     public int Turn { get; private set; }
 
+    /// <summary>
+    /// How custom houses decide what to auto-sell (a game-wide play preference; <see cref="GameSession.AutoExportMode.PerGood"/>
+    /// by default — opt-in per good, faithful to FreeCol). Set via <see cref="SetAutoExportMode"/> (a settings hook; UI deferred).
+    /// </summary>
+    public AutoExportMode AutoExportMode { get; private set; } = AutoExportMode.PerGood;
+
+    /// <summary>Sets the game-wide custom-house auto-export mode (a settings operation; persisted in the save).</summary>
+    public void SetAutoExportMode(AutoExportMode mode) => AutoExportMode = mode;
+
     /// <summary>All players in the game (the human today; foreign powers and natives join from FP-3).</summary>
     public IReadOnlyList<Player> Players => _players;
 
@@ -270,6 +279,10 @@ public sealed class Game
         abilityId == HasPortAbility
             ? IsColonyCoastal(colony)
             : PlayerById(colony.OwnerId) is { } owner && HasAbilityFor(owner, abilityId);
+
+    /// <summary>True when the colony has a building that grants the auto-export ability (a custom house) — a per-colony capability, not a Congress perk.</summary>
+    private bool ColonyHasExportAbility(Colony colony) =>
+        colony.Buildings.Any(b => Ruleset.Building(b).GrantsExport);
 
     /// <summary>The colonies owned by <paramref name="player"/> (the human owns all colonies until foreign powers found their own).</summary>
     private IEnumerable<Colony> ColoniesOf(Player player) => _colonies.Where(c => c.OwnerId == player.PlayerId);
@@ -2263,10 +2276,11 @@ public sealed class Game
             int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
             int repairTurns, UnitOrders orders, int treasureAmount)> units,
         IEnumerable<Colony>? colonies = null,
-        IEnumerable<NativeSettlement>? nativeSettlements = null)
+        IEnumerable<NativeSettlement>? nativeSettlements = null,
+        AutoExportMode autoExportMode = AutoExportMode.PerGood)
     {
         Player human = BuildPlayer(ruleset, players.Single(p => p.IsHuman), randomState);
-        var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn, human);
+        var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn, human) { AutoExportMode = autoExportMode };
         foreach (RestoredPlayer rp in players.Where(p => !p.IsHuman))
         {
             game._players.Add(BuildPlayer(ruleset, rp, randomState));
@@ -2881,6 +2895,25 @@ public sealed class Game
         SaleResult sale = player.Market.Sell(goodsId, amount, player.TaxRate);
         player.Gold += sale.GoldAfterTax;
         return sale.GoldAfterTax;
+    }
+
+    /// <summary>
+    /// Sets a colony's custom-house export setting for a good (FreeCol <c>setGoodsLevels</c>): whether its surplus
+    /// auto-sells and the level to retain (<paramref name="exportLevel"/> null keeps the current level). The good
+    /// must be storable and tradeable (have a European market) — <b>food included</b>, which FreeCol's custom house
+    /// can export (opt-in; it defaults off). Non-tradeable goods (hammers/bells/crosses) and non-storables are refused.
+    /// Used in <see cref="AutoExportMode.PerGood"/> mode; the export-all mode ignores per-good settings (and protects
+    /// food). (Setting is allowed regardless of whether the custom house is built — the auto-sell only acts when it is.)
+    /// </summary>
+    /// <exception cref="InvalidMoveException">The good cannot be exported (non-tradeable / non-storable).</exception>
+    public void SetColonyExport(Colony colony, string goodsId, bool exported, int? exportLevel = null)
+    {
+        GoodsType goods = Ruleset.Goods(goodsId);
+        if (!goods.IsTradeable || !goods.IsStorable)
+        {
+            throw new InvalidMoveException($"{goodsId} cannot be exported through the custom house.");
+        }
+        colony.SetExport(goodsId, exported, exportLevel ?? colony.ExportOf(goodsId).ExportLevel);
     }
 
     /// <summary>Base turns a naval unit spends crossing the high seas each way (FreeCol TURNS_TO_SAIL).</summary>

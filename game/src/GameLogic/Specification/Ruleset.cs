@@ -377,7 +377,9 @@ public sealed class Ruleset
                 BuildableUnitTypeIds: CollectBuildUnitTypeScopes(el, buildingElements),
                 BuildsNavalUnits: GrantsNavalBuildScope(el, buildingElements),
                 // Ship bombardment: the fort grants model.ability.bombardShips, the fortress inherits it.
-                BombardsShips: ResolveAbility(el, "model.ability.bombardShips", buildingElements));
+                BombardsShips: ResolveAbility(el, "model.ability.bombardShips", buildingElements),
+                // Auto-export: the custom house grants model.ability.export (per-turn auto-sell).
+                GrantsExport: ResolveAbility(el, "model.ability.export", buildingElements));
         }
 
         var fathers = new Dictionary<string, FoundingFather>();

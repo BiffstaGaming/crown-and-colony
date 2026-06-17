@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 27;
+    public const int CurrentVersion = 28;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -51,8 +51,11 @@ public sealed record SaveGame
     /// tail beyond the front item (omitted for a ≤1-item queue). v25 added Lost City Rumour tile positions
     /// (omitted when none). v26 added tiles bought/taken from the natives (<see cref="ClaimedTiles"/>; omitted
     /// when none, so a game with no land purchases stays byte-identical to v25). v27 added a unit's carried treasure
-    /// (<see cref="SavedUnit.TreasureAmount"/>; omitted when 0 → a non-treasure unit is byte-identical to v26).
-    /// Each of v23–v27 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// (<see cref="SavedUnit.TreasureAmount"/>; omitted when 0 → a non-treasure unit is byte-identical to v26). v28
+    /// added the game-wide custom-house auto-export mode (<see cref="AutoExportMode"/>, omitted for the PerGood
+    /// default) and per-colony custom-house export settings (<see cref="SavedColony.Exports"/>, only non-default
+    /// goods, omitted when none).
+    /// Each of v23–v28 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
@@ -102,6 +105,9 @@ public sealed record SaveGame
 
     /// <summary>Tiles the player has bought or taken from the natives, by row-major tile index (v26; null/omitted when none, so a game with no land purchases stays byte-identical to v25). The native-ownership re-derivation honours these so a claimed tile never reverts to the natives.</summary>
     public IReadOnlyList<int>? ClaimedTiles { get; init; }
+
+    /// <summary>The game-wide custom-house auto-export mode (v28; null/omitted for the <see cref="GameSession.AutoExportMode.PerGood"/> default, so a default game stays byte-identical to v27). Stored as the enum ordinal.</summary>
+    public AutoExportMode? AutoExportMode { get; init; }
 
     /// <summary>Legacy ≤v19 / pre-FP-7 read-only player treasury (v9+). Player state lives in <see cref="Players"/> (v20+); no longer written as of FP-7. Nullable so new saves omit it.</summary>
     public int? Gold { get; init; }
@@ -203,7 +209,11 @@ public sealed record SaveGame
                     // Liberty omitted for a colony with none (0) so a no-liberty colony stays byte-identical (v22).
                     c.Liberty == 0 ? null : c.Liberty,
                     // The queued tail after the front; omitted for a 0/1-item queue so it stays byte-identical to v23.
-                    c.BuildQueue.Count > 1 ? c.BuildQueue.Skip(1).ToList() : null))
+                    c.BuildQueue.Count > 1 ? c.BuildQueue.Skip(1).ToList() : null,
+                    // Custom-house export settings; only non-default goods are stored, omitted when none (v28).
+                    c.Exports.Count > 0
+                        ? c.Exports.ToDictionary(kv => kv.Key, kv => new SavedExport(kv.Value.Exported, kv.Value.ExportLevel))
+                        : null))
                 .ToList(),
             Resources = game.Map.Resources.Count > 0
                 ? game.Map.Resources
@@ -219,6 +229,8 @@ public sealed record SaveGame
             ClaimedTiles = game.Map.ClaimedFromNatives.Count > 0
                 ? game.Map.ClaimedFromNatives.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList()
                 : null,
+            // Custom-house auto-export mode; omitted for the PerGood default so a default game stays byte-identical to v27.
+            AutoExportMode = game.AutoExportMode == GameSession.AutoExportMode.PerGood ? null : game.AutoExportMode,
             // Player-scoped state: authoritative in (and written only to) Players[]. The legacy flat
             // top-level fields are no longer written as of FP-7 — they remain readable for ≤v19 / pre-FP-7
             // v20 saves (the fold path), but the v20 load path was always Players[]-only, so the format
@@ -305,6 +317,10 @@ public sealed record SaveGame
                     (c.CurrentBuild is null ? Enumerable.Empty<string>() : [c.CurrentBuild])
                         .Concat(c.BuildQueueRest ?? []));
                 colony.Liberty = c.Liberty ?? 0; // ≤v21 saves had no liberty → SoL 0%
+                foreach ((string goods, SavedExport export) in c.Exports ?? new Dictionary<string, SavedExport>())
+                {
+                    colony.SetExport(goods, export.Exported, export.Level); // custom-house export settings (v28; pre-v28 → none)
+                }
                 return colony;
             }),
             NativeSettlements?.Select(s => new NativeSettlement(
@@ -315,7 +331,8 @@ public sealed record SaveGame
                 HasBeenVisited = s.HasBeenVisited,
                 SkillConsumed = s.SkillConsumed,
                 WantedGoods = s.WantedGoods ?? [],
-            }));
+            }),
+            AutoExportMode.GetValueOrDefault()); // pre-v28 / omitted → PerGood (the enum's 0 default)
     }
 
     /// <summary>
@@ -398,6 +415,7 @@ public sealed record SaveGame
 /// <param name="OwnerId">Owning colonial player id (null = the human, id 0; v20+, FP-2).</param>
 /// <param name="Liberty">Accumulated Sons-of-Liberty points (null = 0; v22, additive).</param>
 /// <param name="BuildQueueRest">Queued buildables after the front (<see cref="CurrentBuild"/>); null/omitted for a 0- or 1-item queue (v24, additive — a colony with no queued tail serializes byte-identically to v23).</param>
+/// <param name="Exports">Custom-house export settings by good (only non-default goods; null/omitted when none; v28, additive).</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
     IReadOnlyDictionary<string, int>? Stores = null,
@@ -407,7 +425,13 @@ public sealed record SavedColony(
     string? CurrentBuild = null,
     int? OwnerId = null,
     int? Liberty = null,
-    IReadOnlyList<string>? BuildQueueRest = null);
+    IReadOnlyList<string>? BuildQueueRest = null,
+    IReadOnlyDictionary<string, SavedExport>? Exports = null);
+
+/// <summary>A colony's custom-house export setting for one good (v28+; only non-default goods are stored).</summary>
+/// <param name="Exported">Whether the good auto-exports.</param>
+/// <param name="Level">The amount to retain before exporting the surplus.</param>
+public sealed record SavedExport(bool Exported, int Level);
 
 /// <summary>A bonus resource on a tile inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Index">Row-major tile index (<c>y * MapWidth + x</c>).</param>
