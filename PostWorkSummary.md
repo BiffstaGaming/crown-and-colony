@@ -19,6 +19,16 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 (overnight) — Treasure finds from Lost City Rumours: RUINS + CIBOLA (86d3c9t1e) [overnight autonomous run, item 1]
+
+**Requested:** "Continuously work through the backlog for 6 hours" (overnight; Chris asleep from ~20:23). Item 1.
+**Did:** Shipped **RUINS + CIBOLA** LCR outcomes (`86d3c9t1e`, `461dbff`) — completing the LCR reward spectrum except mounds. Added both to the weighted table (Ruins 6×goodPct, Cibola 4×goodPct) and resolved them: **Ruins** = `rand(0…dx·2)·300+50` (medium 50–4550) → straight gold if < 500, else a **treasure train**; **Cibola** = `rand(0…dx·600)+dx·300` (2400–7199) → a big **treasure train**. New `SpawnTreasureTrain` helper (also adopted by the settlement-sack spawn). Per-owner RNG; **no save bump** (treasure amount is v27). Adversarial review: 0 confirmed findings.
+**Status:** **726 L1+L2 + 4 soak green** (+3 LCR tests; boundaries re-pinned Vanish 4416/Nothing 4516). Soak byte-stable. Committed `461dbff`, pushed. ClickUp `86d3c9t1e` → In Review.
+**Changed:** GameLogic `GameSession/Game.cs` (enum + RUINS/CIBOLA resolver + `SpawnTreasureTrain` + weights); `World/LostCityRumourTests.cs` (+3). Docs `lost-city-rumours.md` + `treasure-train.md` (both layers + changelogs).
+**Decisions:** Cibola's finite "seven cities" fall-through to ruins **not modelled** (no NameCache — every cibola is a city of gold; documented). MOUNDS still deferred to `86d3c9umy`.
+**Scheduled next (overnight):** `86d3c9tkk` — colony fort/fortress bombards adjacent enemy ships (combat, per-owner RNG, reuses `DamageShip`).
+**Needs you:** Nothing — autonomous overnight run continuing.
+
 ## 2026-06-17 — Treasure trains: spawn-on-sack + cash-in (the next 2 items) [ultracode: understand+design workflow → implement → per-slice adversarial review]
 
 **Requested:** "Move onto the next 2 items." (Ultracode on.)
