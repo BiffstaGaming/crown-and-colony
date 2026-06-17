@@ -454,8 +454,9 @@ public sealed class Game
     /// deterministic (no RNG) — so rather than being saved it is run at game start, on load, and whenever the
     /// settlements change (e.g. one is destroyed in combat, releasing its claim). <b>Idempotent</b>: it clears the
     /// existing claims first, so calling it again rebuilds the same map. See <see cref="World.NativeLandClaimGenerator"/>.
-    /// Consumed by the Lost City Rumour burial-ground gate and, later, native land purchase (<c>86d3c9tha</c>) and
-    /// settle/work-on-native-land tension.
+    /// Tiles the player has already <b>bought or taken</b> (<see cref="World.GameMap.ClaimedFromNatives"/>) are
+    /// subtracted afterwards, so a purchased tile never reverts to native ownership across re-derivation.
+    /// Consumed by the Lost City Rumour burial-ground gate and native land purchase (<c>86d3c9tha</c>).
     /// </summary>
     private void ClaimNativeLand()
     {
@@ -463,6 +464,116 @@ public sealed class Game
         foreach ((Position p, string nation) in NativeLandClaimGenerator.Claim(Map, _nativeSettlements, Ruleset))
         {
             Map.SetNativeOwner(p, nation);
+        }
+        foreach (Position p in Map.ClaimedFromNatives)
+        {
+            Map.ClearNativeOwner(p); // a bought/taken tile stays the player's, never re-claimed by the natives
+        }
+    }
+
+    // ===== Native land purchase (86d3c9tha) ===================================================================
+    // A native-owned tile is bought (gold to the tribe) or taken (+alarm) before the player uses it; Peter Minuit
+    // makes it free + peaceful (FreeCol Player.getLandPrice / ServerPlayer.csClaimLand). The found/work TRIGGER is
+    // deferred — the pay-vs-steal choice is a UI dialog — so these are explicit operations for now.
+
+    /// <summary>Land-price factor (FreeCol <c>model.option.landPriceFactor</c>; <b>60</b> = the classic-medium tier
+    /// this project standardises on, cf. the founding-father factor 40 decision). Difficulty options are not yet
+    /// data-driven (the Ruleset parses no <c>&lt;difficulty&gt;</c> group), so this is hardcoded; revisit when they are.</summary>
+    private const int LandPriceFactor = 60;
+
+    /// <summary>The flat addend in the land price (FreeCol <c>getLandPrice</c> <c>+ 100</c>).</summary>
+    private const int LandPriceBase = 100;
+
+    /// <summary>Alarm added to the robbed nation when land is <em>taken</em> rather than bought (FreeCol <c>Tension.TENSION_ADD_LAND_TAKEN</c>).</summary>
+    private const int LandTakenAlarm = 200;
+
+    /// <summary>The father modifier id scaling the land price — Peter Minuit's −100% makes native land free.</summary>
+    private const string LandPaymentModifierId = "model.modifier.landPaymentModifier";
+
+    /// <summary>The gold price for the human to buy the native-owned <paramref name="tile"/> (0 if it is not native land).</summary>
+    public int LandPrice(Position tile) => LandPrice(_human, tile);
+
+    /// <summary>
+    /// What <paramref name="player"/> must pay a native nation for <paramref name="tile"/> (FreeCol
+    /// <c>Player.getLandPrice</c>): <see cref="LandPriceFactor"/> × the tile's potential yield of every
+    /// <em>non-food</em> good + <see cref="LandPriceBase"/>, then the player's <see cref="LandPaymentModifierId"/>
+    /// modifier (Peter Minuit −100% → 0). Returns <b>0</b> when the tile is not native-owned (unclaimed or already
+    /// bought; natives are never a colonial player, so the buyer can never already own it).
+    /// </summary>
+    internal int LandPrice(Player player, Position tile)
+    {
+        if (!Map.IsNativeOwned(tile))
+        {
+            return 0;
+        }
+        // The price values the land's POTENTIAL output (FreeCol getPotentialProduction with a null owner) — NOT
+        // the acting player's father-boosted yield, so e.g. Henry Hudson's +furs never inflates what land costs.
+        int raw = (LandPriceFactor * Ruleset.GoodsTypes.Where(g => !g.IsFood).Sum(g => TileYieldPotential(tile, g.Id)))
+                  + LandPriceBase;
+        // The landPaymentModifier scales the price — Peter Minuit's −100% makes it free. ApplyGoodsModifiers stacks
+        // every matching modifier by index (FreeCol applyModifiers), consistent with the rest of the codebase.
+        return ApplyGoodsModifiers(player, LandPaymentModifierId, raw);
+    }
+
+    /// <summary>Whether the human may claim (buy or take) the native-owned <paramref name="tile"/>; the check's cost is the buy price.</summary>
+    public MoveCheck CheckClaimLand(Position tile) => CheckClaimLand(_human, tile);
+
+    /// <summary>Whether <paramref name="player"/> may claim <paramref name="tile"/> from the natives (it must be native-owned).</summary>
+    internal MoveCheck CheckClaimLand(Player player, Position tile)
+    {
+        if (!Map.InBounds(tile))
+        {
+            return MoveCheck.No("Tile is off the map.");
+        }
+        if (!Map.IsNativeOwned(tile))
+        {
+            return MoveCheck.No("That land is not claimed by a native nation.");
+        }
+        if (NativeSettlementAt(tile) is not null)
+        {
+            return MoveCheck.No("The natives will not sell the ground their settlement stands on."); // FreeCol: a settlement tile is not for sale
+        }
+        return MoveCheck.Yes(LandPrice(player, tile));
+    }
+
+    /// <summary>Buys the native-owned <paramref name="tile"/> for the human: pays the <see cref="LandPrice(Position)"/> (free under Peter Minuit), and the tile becomes the player's for good.</summary>
+    /// <exception cref="InvalidMoveException">Not native land, or not enough gold.</exception>
+    public void ClaimLandByPaying(Position tile) => ClaimLandByPaying(_human, tile);
+
+    /// <summary>Buys <paramref name="tile"/> from the natives for <paramref name="player"/> (see <see cref="ClaimLandByPaying(Position)"/>).</summary>
+    internal void ClaimLandByPaying(Player player, Position tile)
+    {
+        MoveCheck check = CheckClaimLand(player, tile);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        int price = LandPrice(player, tile);
+        if (player.Gold < price)
+        {
+            throw new InvalidMoveException($"Not enough gold to buy this land (need {price}).");
+        }
+        player.Gold -= price; // FreeCol credits the native owner; we keep no native treasury, so the gold simply leaves
+        Map.ClaimFromNatives(tile);
+    }
+
+    /// <summary>Takes the native-owned <paramref name="tile"/> for the human by force: no gold changes hands, but the robbed nation's settlements gain <see cref="LandTakenAlarm"/> alarm.</summary>
+    /// <exception cref="InvalidMoveException">Not native land.</exception>
+    public void ClaimLandByStealing(Position tile) => ClaimLandByStealing(_human, tile);
+
+    /// <summary>Takes <paramref name="tile"/> from the natives for <paramref name="player"/> (see <see cref="ClaimLandByStealing(Position)"/>).</summary>
+    internal void ClaimLandByStealing(Player player, Position tile)
+    {
+        MoveCheck check = CheckClaimLand(player, tile);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        string nation = Map.NativeOwnerOf(tile)!; // the robbed nation, recorded before the claim clears ownership
+        Map.ClaimFromNatives(tile);
+        foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == nation))
+        {
+            ChangeNativeAlarm(settlement, LandTakenAlarm); // FreeCol TENSION_ADD_LAND_TAKEN, nation-wide (ownership is tracked per nation)
         }
     }
 
@@ -2358,8 +2469,9 @@ public sealed class Game
         }
         // Minimum colony spacing (FreeCol Player.canClaimToFoundSettlementReason: tile.getAdjacentColonies()
         // must be empty): no colony may be founded on a tile adjacent to an existing colony, so colony
-        // footprints never touch. Native settlements do not block founding (FreeCol treats that as a land
-        // claim, not a hard bar; we don't model land price).
+        // footprints never touch. Native-owned tiles do not block founding here: the land-claim API exists
+        // (LandPrice / ClaimLandByPaying / ClaimLandByStealing), but the founding/working TRIGGER — being forced
+        // to buy-or-steal the tile first — is deferred pending the pay-vs-steal UI choice (see natives.md).
         if (unit.Position.Neighbours().Any(n => Map.InBounds(n) && ColonyAt(n) is not null))
         {
             return MoveCheck.No("A colony cannot be founded next to another colony.");
@@ -4513,7 +4625,17 @@ public sealed class Game
     /// goods modifiers (e.g. Henry Hudson's +100% furs). 0 when the terrain can't produce the goods at all
     /// (a resource never enables a new good).
     /// </summary>
-    internal int TileYield(Player player, Position tile, string goodsId)
+    internal int TileYield(Player player, Position tile, string goodsId) =>
+        ApplyGoodsModifiers(player, goodsId, TileYieldPotential(tile, goodsId)); // father modifiers stack on the potential
+
+    /// <summary>
+    /// The tile's <b>potential</b> yield of one goods type — the terrain's best attended output plus any on-tile
+    /// bonus-resource boost, but <em>without</em> any player's Founding-Father goods modifiers (FreeCol
+    /// <c>Tile.getPotentialProduction</c> with a null owner). This is the player-independent figure native land is
+    /// valued from (see <see cref="LandPrice(Player, Position)"/>); <see cref="TileYield(Player, Position, string)"/>
+    /// folds the acting player's fathers on top of it for actual colony production. 0 when the terrain can't make it.
+    /// </summary>
+    internal int TileYieldPotential(Position tile, string goodsId)
     {
         int baseYield = Map.TerrainAt(tile).Productions
             .Where(p => !p.Unattended)
@@ -4540,8 +4662,7 @@ public sealed class Game
             }
         }
 
-        // Founding-father goods modifiers stack on top (higher index, applied last).
-        return ApplyGoodsModifiers(player, goodsId, (int)yield);
+        return (int)yield;
     }
 
     /// <summary>

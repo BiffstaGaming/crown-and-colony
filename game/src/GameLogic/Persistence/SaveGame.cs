@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 25;
+    public const int CurrentVersion = 26;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -47,6 +47,12 @@ public sealed record SaveGame
     /// fleet with no damaged ship is byte-identical; older saves load 0 = healthy).
     /// v22 added a colony's accumulated liberty for per-colony Sons-of-Liberty (additive — omitted when 0, so a
     /// colony with no banked liberty is byte-identical; ≤v21 saves load 0 = SoL 0%, production bonus 0).
+    /// v23 added a unit's standing order (fortify/sentry; omitted when Active). v24 added a colony's build-queue
+    /// tail beyond the front item (omitted for a ≤1-item queue). v25 added Lost City Rumour tile positions
+    /// (omitted when none). v26 added tiles bought/taken from the natives (<see cref="ClaimedTiles"/>; omitted
+    /// when none, so a game with no land purchases stays byte-identical to v25). Each of v23–v26 is additive +
+    /// omitted-when-empty, so a feature-free game round-trips byte-identically to the prior version and older
+    /// saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -92,6 +98,9 @@ public sealed record SaveGame
 
     /// <summary>Tiles holding an unexplored Lost City Rumour, by row-major tile index (v25; null/omitted when none, so a rumour-free game stays byte-identical to v24).</summary>
     public IReadOnlyList<int>? Rumours { get; init; }
+
+    /// <summary>Tiles the player has bought or taken from the natives, by row-major tile index (v26; null/omitted when none, so a game with no land purchases stays byte-identical to v25). The native-ownership re-derivation honours these so a claimed tile never reverts to the natives.</summary>
+    public IReadOnlyList<int>? ClaimedTiles { get; init; }
 
     /// <summary>Legacy ≤v19 / pre-FP-7 read-only player treasury (v9+). Player state lives in <see cref="Players"/> (v20+); no longer written as of FP-7. Nullable so new saves omit it.</summary>
     public int? Gold { get; init; }
@@ -203,6 +212,10 @@ public sealed record SaveGame
             Rumours = game.Map.Rumours.Count > 0
                 ? game.Map.Rumours.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList()
                 : null,
+            // Tiles bought/taken from the natives by row-major index; omitted when none (byte-identical to v25).
+            ClaimedTiles = game.Map.ClaimedFromNatives.Count > 0
+                ? game.Map.ClaimedFromNatives.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList()
+                : null,
             // Player-scoped state: authoritative in (and written only to) Players[]. The legacy flat
             // top-level fields are no longer written as of FP-7 — they remain readable for ≤v19 / pre-FP-7
             // v20 saves (the fold path), but the v20 load path was always Players[]-only, so the format
@@ -230,7 +243,8 @@ public sealed record SaveGame
             Resources?.ToDictionary(
                 r => new Position(r.Index % MapWidth, r.Index / MapWidth),
                 r => r.ResourceId),
-            Rumours?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList());
+            Rumours?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList(),
+            ClaimedTiles?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList());
         return Game.Restore(
             ruleset,
             map,
