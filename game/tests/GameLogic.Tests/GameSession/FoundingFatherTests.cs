@@ -80,15 +80,15 @@ public class FoundingFatherTests
         string target = game.OfferedFathers[0];
         game.ChooseFather(target);
 
-        // Town hall yields 1 liberty/turn; the first father costs 24.
-        for (int turn = 0; turn < 23; turn++)
+        // Town hall yields 1 liberty/turn; the first father costs 40 (classic medium factor).
+        for (int turn = 0; turn < 39; turn++)
         {
             game.EndTurn();
         }
-        Assert.Empty(game.Congress);        // 23 liberty < 24
+        Assert.Empty(game.Congress);        // 39 liberty < 40
         Assert.Equal(target, game.CurrentFather);
 
-        game.EndTurn();                     // 24th liberty → elect
+        game.EndTurn();                     // 40th liberty → elect
         Assert.Contains(target, game.Congress);
         Assert.Equal(0, game.Liberty);      // cost consumed
         Assert.Null(game.CurrentFather);    // ready to choose the next

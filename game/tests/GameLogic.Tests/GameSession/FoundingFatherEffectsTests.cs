@@ -125,9 +125,9 @@ public class FoundingFatherEffectsTests
     [Fact]
     public void ElectingBrewster_RefreshesTheDock()
     {
-        // Brewster chosen, one liberty short of the first father's cost; a town-hall
+        // Brewster chosen, one liberty short of the first father's cost (40); a town-hall
         // colony tips it over the threshold this turn.
-        Game game = BellColony(congress: null, tax: 0, currentFather: Brewster, liberty: 23);
+        Game game = BellColony(congress: null, tax: 0, currentFather: Brewster, liberty: 39);
         game.EndTurn();
 
         Assert.Contains(Brewster, game.Congress);

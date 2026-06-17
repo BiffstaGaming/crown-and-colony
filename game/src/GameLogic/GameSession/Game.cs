@@ -45,11 +45,12 @@ public sealed class Game
     private const string HighSeasId = "model.tile.highSeas";
 
     /// <summary>
-    /// Liberty multiplier in the Founding Father cost formula. Classic "other"
-    /// difficulty = 24 (spec <c>model.option.foundingFatherFactor</c>);
-    /// difficulty-based values arrive with the difficulty system.
+    /// Liberty multiplier in the Founding Father cost formula. Classic <b>medium</b> difficulty = <b>40</b>
+    /// (spec <c>model.option.foundingFatherFactor</c>) — the value the base game is balanced around, so fathers
+    /// are a deliberate long-game investment rather than a snowball. (Difficulty-driven values, e.g. "other" = 24,
+    /// arrive with the difficulty-options system.)
     /// </summary>
-    public const int FoundingFatherFactor = 24;
+    public const int FoundingFatherFactor = 40;
 
     /// <summary>The warehouse goods id for religious crosses (immigration points).</summary>
     private const string CrossesId = "model.goods.crosses";

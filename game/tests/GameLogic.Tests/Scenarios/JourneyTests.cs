@@ -290,7 +290,7 @@ public class JourneyTests
         }
         game.AssignBuildingWork(colony, "model.building.townHall");
 
-        // M1 — first election: choose a father, accrue bells from the staffed town hall, elect at cost 24.
+        // M1 — first election: choose a father, accrue bells from the staffed town hall, elect at cost 40.
         string father1 = game.OfferedFathers[0];
         game.ChooseFather(father1);
         for (int t = 0; t < 60 && game.Congress.Count == 0; t++)
@@ -298,11 +298,11 @@ public class JourneyTests
             game.EndTurn();
         }
         Assert.Equal(new[] { father1 }, game.Congress.ToArray());
-        Assert.True(game.Liberty < 24, "liberty resets after election");
+        Assert.True(game.Liberty < 40, "liberty resets after election");
         Assert.DoesNotContain(father1, game.OfferedFathers);
 
-        // M2 — cost escalation asserted directly (count 1 → 2·2·24+1 = 97).
-        Assert.Equal(97, game.TotalFoundingFatherCost());
+        // M2 — cost escalation asserted directly (count 1 → 2·2·40+1 = 161).
+        Assert.Equal(161, game.TotalFoundingFatherCost());
 
         // M3 — second election: the next father costs more and both are retained.
         string father2 = game.OfferedFathers[0];
@@ -465,17 +465,17 @@ public class JourneyTests
                 new SavedColony(1, "Capital", 1, 1, 1,
                     BuildingWorkers: new Dictionary<string, int> { ["model.building.townHall"] = 1 }),
             ],
-            Liberty = 23,
+            Liberty = 39,
             CurrentFather = "model.foundingFather.thomasJefferson",
         };
         Game game = save.Restore(Classic);
         Assert.Empty(game.Congress);
 
         // M1 — the election turn: 4 bells (unmodified, he's not in yet) tips liberty over
-        //      the 24 cost and Jefferson is elected; liberty resets with the surplus.
+        //      the 40 cost and Jefferson is elected; liberty resets with the surplus.
         game.EndTurn();
         Assert.Contains("model.foundingFather.thomasJefferson", game.Congress);
-        Assert.Equal(3, game.Liberty); // 23 + 4 − 24
+        Assert.Equal(3, game.Liberty); // 39 + 4 − 40
 
         // M2 — now elected, the same 4 bells become 6 liberty (+50%): the bonus took effect.
         game.EndTurn();

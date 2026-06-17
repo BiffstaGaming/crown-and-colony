@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (liberty accrual + election + a modifier/ability system; the effects that touch existing systems are applied) |
-| **Last verified** | 2026-06-16 @ Simón Bolívar (+20 Sons-of-Liberty, standing modifier) |
+| **Last verified** | 2026-06-17 @ founding-father factor 24 → 40 (classic medium) (`86d3c9y1p`) |
 | **Code** | `game/src/GameLogic/GameSession/Game.cs` (liberty/Congress/offers, `HasAbility`, `ApplyGoodsModifiers`, `FatherCombatFactor`, `ScaleNativeAlarmGain`, `ApplyFreeBuildings`), `Specification/FoundingFather.cs` (`FatherModifier` incl. `ScopeUnitTypes`, `FatherAbility`, `FreeBuildings`) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/FoundingFatherTests.cs`, `FoundingFatherEffectsTests.cs`, `NativeFatherEffectsTests.cs` (Pocahontas), `MagellanTests.cs`, `DrakeTests.cs`, `LaSalleTests.cs`, `AmbientAlarmTests.cs` (Pocahontas ambient damping), `Scenarios/JourneyTests.cs` (Journey 8) |
 | **FreeCol reference** | `Player.java` (`getTotalFoundingFatherCost` line 1544), `Modifier.java`/`FeatureContainer.applyModifiers`, `<founding-father>` spec elements |
@@ -13,14 +13,14 @@
 
 Your colonies' town halls ring **liberty bells**; every bell becomes a **liberty point** for your nation. Spend enough liberty and a **Founding Father** joins your Continental Congress — a famous figure who (eventually) grants a lasting bonus. Each round you're **offered one candidate per category** (trade, exploration, military, political, religious); you pick which to recruit, and they're elected the turn your banked liberty reaches their cost. The more fathers you already have, the more liberty the next one costs.
 
-**Worked example:** a new colony's town hall makes 1 bell a turn, so you bank 1 liberty a turn. The first father costs 24 — so after 24 turns, the candidate you chose joins Congress, your liberty resets, and a fresh slate of candidates is offered.
+**Worked example:** a new colony's town hall makes 1 bell a turn, so you bank 1 liberty a turn. The first father costs 40 — so after 40 turns, the candidate you chose joins Congress, your liberty resets, and a fresh slate of candidates is offered. (Staff the town hall with statesmen for several bells a turn and elect fathers far quicker.)
 
 ## 2. Detailed rules
 
 - **Liberty** = total bells produced (bells are consumed into liberty each turn, not stockpiled as goods).
-- **Cost of the next father** (FreeCol `getTotalFoundingFatherCost`, verified vs source): with `factor` = 24 (classic),
-  - first father (none elected yet): `factor` → **24**
-  - thereafter: `2 × (elected + 1) × factor + 1` → **97, 145, 193, 241, …**
+- **Cost of the next father** (FreeCol `getTotalFoundingFatherCost`, verified vs source): with `factor` = **40** (classic **medium**, the value the base game is balanced around),
+  - first father (none elected yet): `factor` → **40**
+  - thereafter: `2 × (elected + 1) × factor + 1` → **161, 241, 321, 401, …**
 - **Offers:** one father per category that still has an un-elected candidate with a non-zero weight for the current age; the candidate is drawn by **seeded weight** (each father has age-1/2/3 weights). Already-elected fathers are never re-offered.
 - **Election:** when your chosen father's cost is met, they join Congress, that cost is subtracted from liberty, and a new offer set is generated.
 
@@ -54,7 +54,7 @@ Each father carries **modifiers** (bonuses) and **abilities** (capabilities) fro
 
 **Franklin is deferred (a European-diplomacy father, not a native one).** Despite the original task's "natives offer peace" framing, FreeCol's Benjamin Franklin is purely European: `ignoreEuropeanWars` (the monarch can't drag you into European wars), `alwaysOfferedPeace` (the European AI always accepts your peace offer), and `peaceTreaty +50%` (offered peace holds). Faithful delivery needs a monarch/REF-war system, inter-European stance, and an AI diplomatic-trade flow — none of which exist — so Franklin is deferred to the European-diplomacy bucket (with de Witt). A "natives never raid" Franklin rule would be a fabrication that duplicates Pocahontas.
 
-**Deviations / simplifications:** modifier **scopes** (e.g. `person`/non-person) are not yet evaluated — a father's goods modifier applies to the colony's whole production of that goods, which matches the player-visible result for the applied fathers (each of these goods has a single production source). Production modifiers are applied at the **drain** point (bells→liberty, crosses→immigration), which equals the per-colony total (one truncation, as FreeCol). **Age** (which weights apply) uses simple turn bands (1–99 / 100–199 / 200+) until the calendar exists; FreeCol keys age off the in-game year. The `factor` is fixed at 24 until the difficulty system lands.
+**Deviations / simplifications:** modifier **scopes** (e.g. `person`/non-person) are not yet evaluated — a father's goods modifier applies to the colony's whole production of that goods, which matches the player-visible result for the applied fathers (each of these goods has a single production source). Production modifiers are applied at the **drain** point (bells→liberty, crosses→immigration), which equals the per-colony total (one truncation, as FreeCol). **Age** (which weights apply) uses simple turn bands (1–99 / 100–199 / 200+) until the calendar exists; FreeCol keys age off the in-game year. The `factor` is fixed at **40** (classic **medium**) until the difficulty-options system lands and can drive it per level (e.g. "other" = 24).
 
 ## 3. Technical design
 
@@ -69,7 +69,7 @@ Each father carries **modifiers** (bonuses) and **abilities** (capabilities) fro
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
 | L1 Unit | Always | `FoundingFatherTests`: 25 fathers / 5 per type parsed; **cost formula vs FreeCol at factor 24 and 40**; offers one-per-category + deterministic; bells→liberty + warehouse drained; ChooseFather validation | ✅ |
-| L2 Scenario | Always | election at the turn liberty reaches 24 (chosen father joins Congress, liberty resets, not re-offered); save round-trip preserves liberty/Congress/offers; pre-v10 compat. **Effects** (`FoundingFatherEffectsTests`): Jefferson +50% bells, Penn +50% crosses, Paine +tax% bells, Brewster's dock ban (50-seed) + `selectRecruit`, election refresh. **Pocahontas** (`NativeFatherEffectsTests`): on-election alarm reset to Happy across all settlements (+ a non-Pocahontas election doesn't reset, reset survives save round-trip, replay-stable); (`AmbientAlarmTests`) the −50% halves the per-turn **ambient** alarm gain (a nearby artillery's +7 footprint becomes +3, erased by the −4 decay), and (`CombatTests.Pocahontas_DoesNotDampCombatAlarm`) a combat win still raises alarm by the full +500 (combat tension is raw). **Magellan** (`MagellanTests`): a naval unit gets +3 movement and −1 sail turn with Magellan elected (not without), and land units are unaffected (naval scope). **Drake** (`DrakeTests`): a privateer gets +50% offence and +50% defence with Drake elected (not without); non-privateers/other owners unaffected; modifiers scoped to the privateer in-spec. **La Salle** (`LaSalleTests`): `FreeBuildings` pins the stockade in-spec; a colony at population 3 with La Salle gets a free stockade on End Turn (and `ColonyDefenceBonus` 100); no grant below population 3 or without the father; the grant is RNG-free (stream 0 untouched with-vs-without). **Journey 8**: choose → accrue → elect Jefferson → subsequent bells boosted → survives reload | ✅ |
+| L2 Scenario | Always | election at the turn liberty reaches 40 (chosen father joins Congress, liberty resets, not re-offered); save round-trip preserves liberty/Congress/offers; pre-v10 compat. **Effects** (`FoundingFatherEffectsTests`): Jefferson +50% bells, Penn +50% crosses, Paine +tax% bells, Brewster's dock ban (50-seed) + `selectRecruit`, election refresh. **Pocahontas** (`NativeFatherEffectsTests`): on-election alarm reset to Happy across all settlements (+ a non-Pocahontas election doesn't reset, reset survives save round-trip, replay-stable); (`AmbientAlarmTests`) the −50% halves the per-turn **ambient** alarm gain (a nearby artillery's +7 footprint becomes +3, erased by the −4 decay), and (`CombatTests.Pocahontas_DoesNotDampCombatAlarm`) a combat win still raises alarm by the full +500 (combat tension is raw). **Magellan** (`MagellanTests`): a naval unit gets +3 movement and −1 sail turn with Magellan elected (not without), and land units are unaffected (naval scope). **Drake** (`DrakeTests`): a privateer gets +50% offence and +50% defence with Drake elected (not without); non-privateers/other owners unaffected; modifiers scoped to the privateer in-spec. **La Salle** (`LaSalleTests`): `FreeBuildings` pins the stockade in-spec; a colony at population 3 with La Salle gets a free stockade on End Turn (and `ColonyDefenceBonus` 100); no grant below population 3 or without the father; the grant is RNG-free (stream 0 untouched with-vs-without). **Journey 8**: choose → accrue → elect Jefferson → subsequent bells boosted → survives reload | ✅ |
 | L3 Interaction | No UI yet | — (Congress screen is a later slice) | — |
 | L4 Visual | No screen yet | — | — |
 
@@ -87,6 +87,7 @@ Each father carries **modifiers** (bonuses) and **abilities** (capabilities) fro
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-17 | **Founding-father factor 24 → 40** (`86d3c9y1p`, Chris's call): `FoundingFatherFactor` now the classic **medium** value (the cost the base game is balanced around) — fathers are a deliberate long-game investment, not a snowball. First father 40 (was 24); escalation 161/241/321/… A difficulty-options system will later drive it per level ("other" = 24). Deterministic, no save change; soak byte-stable. Three scenario tests re-pinned to the new costs (the formula test already covered factor 40). | Phase 5 (`86d3c9y1p`) |
 | 2026-06-16 | **Simón Bolívar** applied: +20 Sons-of-Liberty % to every one of his player's colonies (`model.modifier.SoL`), as a standing modifier (`Colony.SolModifierBonus` from Congress, refreshed on election/founding/load) — survives population changes, not a one-time bake. +5 L1. See [sons-of-liberty](sons-of-liberty.md) | Phase 5 (founding fathers) |
 | 2026-06-13 | Liberty accrual from bells, cost formula, weighted offers, election; save v10 | Phase 4 slice 2 |
 | 2026-06-13 | Modifier + ability system; applied father effects (Jefferson/Penn/Paine production, Brewster recruit ban); rest deferred | Phase 4 slice 7 |
