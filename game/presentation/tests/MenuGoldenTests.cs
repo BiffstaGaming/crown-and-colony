@@ -62,6 +62,20 @@ public class MenuGoldenTests
         GoldenAssert.Assert("pause-menu", actual, TextTolerance);
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task InfoPopup_MatchesGolden()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");
+        var scene = (Control)runner.Scene();
+        scene.GetWindow().Size = CaptureSize;
+        await runner.SimulateFrames(3);
+
+        InfoPopup.Show(scene, "Notice", "This is an example event message shown to the player.");
+        await runner.SimulateFrames(3);
+
+        GoldenAssert.Assert("info-popup", scene.GetViewport().GetTexture().GetImage(), TextTolerance);
+    }
+
     // Forces the settings autoload back to its default values (other tests may have changed/persisted them), so the
     // settings-screen golden always captures the default control positions.
     private static void ResetSettingsToDefaults()
