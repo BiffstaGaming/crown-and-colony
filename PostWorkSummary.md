@@ -19,6 +19,16 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 (overnight) — DefenderAt power ranking + amphibious-capture note (86d3c9tzv) [overnight autonomous run, item 3]
+
+**Requested:** Overnight continuous backlog run (item 3).
+**Did:** Shipped the DefenderAt fidelity fix (`86d3c9tzv`, `ef7a480`). `DefenderAt` now ranks stacked tile defenders by **full computed defence power** (new `DefencePowerOf` — terrain/fortify/settlement/artillery/cargo), not raw `DefenceBase` (FreeCol `betterDefender`); `Attack` reuses the helper so selection + resolution agree (behaviour-preserving — exact-outcome `CombatTests` unchanged). The **amphibious-capture exclusion** is **documented-deferred**: we model no amphibious assault (`CheckAttack` requires the attacker on the map, not aboard), so the capture branch is never reached amphibiously; the guard lands with amphibious assault.
+**Status:** **735 L1+L2 + 4 soak green** (+1 `CombatTests`: a damaged artillery with higher base but the in-open penalty loses defender priority to a fortified colonist). No save/RNG change. Committed `ef7a480`, pushed. ClickUp `86d3c9tzv` → In Review (amphibious half deferred-pending-amphibious-assault).
+**Changed:** GameLogic `GameSession/Game.cs` (`DefenderAt` + `DefencePowerOf`; `Attack` reuse; capture-branch note); tests `CombatTests.cs` (+1). Docs `combat.md`.
+**Decisions:** Skipped a separate workflow review (small refactor, already verified — exact-outcome combat tests + soak byte-stability prove behaviour-preservation; new ranking has a dedicated test).
+**Scheduled next (overnight):** **Custom house** (`86d3c9ru3` building + `86d3c9rx2` auto-sell) — Chris's decision: build BOTH the original auto-export-over-50 and a per-good toggle, selectable via a setting.
+**Needs you:** Nothing — autonomous overnight run continuing.
+
 ## 2026-06-17 (overnight) — Colony fort/fortress bombardment of enemy ships (86d3c9tkk) [overnight autonomous run, item 2]
 
 **Requested:** Overnight continuous backlog run (item 2).
