@@ -5224,6 +5224,35 @@ public sealed class Game
         ApplyGoodsModifiers(player, goodsId, TileYieldPotential(tile, goodsId)); // father modifiers stack on the potential
 
     /// <summary>
+    /// The yield when a colonist of <paramref name="workerTypeId"/> works the tile (86d3b6nrz): the resource-boosted
+    /// <see cref="TileYieldPotential"/> (index 10), then the worker type's own production modifier (index 30 — an
+    /// expert's bonus on its good, e.g. expert farmer +2 grain / fur trapper ×2 furs), then the player's
+    /// founding-father modifiers (index 40). Faithful to FreeCol's modifier ordering; a free colonist (or any type
+    /// with no modifier for this good) yields the plain figure.
+    /// </summary>
+    internal int TileYield(Player player, string workerTypeId, Position tile, string goodsId) =>
+        ApplyGoodsModifiers(player, goodsId,
+            ApplyWorkerProductionModifiers(workerTypeId, goodsId, TileYieldPotential(tile, goodsId)));
+
+    /// <summary>
+    /// Folds a worker type's index-30 <see cref="UnitType.ProductionModifiers"/> for <paramref name="goodsId"/> into a
+    /// running production value (ascending index, floored at 0). A free colonist — or a specialist working a good it
+    /// isn't expert at — leaves the value unchanged. Indentured/petty penalties bite only on the manufactured goods
+    /// they list (no raw-tile modifier, so tile yields are unchanged for them; the penalty lands in building production).
+    /// </summary>
+    private int ApplyWorkerProductionModifiers(string workerTypeId, string goodsId, int value)
+    {
+        double yield = value;
+        foreach (UnitProductionModifier modifier in Ruleset.Unit(workerTypeId).ProductionModifiersOrEmpty
+                     .Where(m => m.GoodsId == goodsId)
+                     .OrderBy(m => m.Index))
+        {
+            yield = modifier.ApplyTo(yield);
+        }
+        return Math.Max(0, (int)yield);
+    }
+
+    /// <summary>
     /// The tile's <b>potential</b> yield of one goods type — the terrain's best attended output plus any on-tile
     /// bonus-resource boost, but <em>without</em> any player's Founding-Father goods modifiers (FreeCol
     /// <c>Tile.getPotentialProduction</c> with a null owner). This is the player-independent figure native land is
@@ -5533,7 +5562,8 @@ public sealed class Game
         foreach ((Position tile, string goodsId) in colony.TileWorkers)
         {
             string storageId = Ruleset.StorageIdOf(goodsId);
-            int produced = Math.Max(0, TileYield(owner, tile, goodsId) + colony.ProductionBonus);
+            // The working colonist's type folds its expert bonus into the yield (free colonist → no change).
+            int produced = Math.Max(0, TileYield(owner, colony.WorkerTypeAt(tile), tile, goodsId) + colony.ProductionBonus);
             colony.AddGoods(storageId, produced);
             if (storageId == Colony.FoodId)
             {
