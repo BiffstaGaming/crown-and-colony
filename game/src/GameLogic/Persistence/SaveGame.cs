@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 30;
+    public const int CurrentVersion = 31;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -60,7 +60,9 @@ public sealed record SaveGame
     /// (<see cref="SavedWorker.UnitTypeId"/>), a building's non-free occupants (<see cref="SavedColony.BuildingWorkerTypes"/>)
     /// and the non-free idle colonists (<see cref="SavedColony.IdleWorkerTypes"/>) — all omitted when the worker is a
     /// free colonist, so a free-colonist-only game stays byte-identical to v29; pre-v30 saves load every worker free.
-    /// Each of v23–v30 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// v31 added a tile worker's accrued on-the-job experience (<see cref="SavedWorker.Experience"/>, omitted when 0, so
+    /// a game where no colonist has accrued experience is byte-identical to v30; pre-v31 saves load every worker at 0).
+    /// Each of v23–v31 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
@@ -205,7 +207,10 @@ public sealed record SaveGame
                     c.Id, c.Name, c.Position.X, c.Position.Y, c.Population,
                     c.Stores.Count > 0 ? new Dictionary<string, int>(c.Stores) : null,
                     c.TileWorkers.Count > 0
-                        ? c.TileWorkers.Select(w => new SavedWorker(w.Key.X, w.Key.Y, w.Value, c.TileWorkerTypes.GetValueOrDefault(w.Key))).ToList()
+                        ? c.TileWorkers.Select(w => new SavedWorker(
+                            w.Key.X, w.Key.Y, w.Value,
+                            c.TileWorkerTypes.GetValueOrDefault(w.Key),
+                            c.TileWorkerExperienceAt(w.Key) is var xp && xp > 0 ? xp : null)).ToList()
                         : null,
                     c.Buildings.ToList(),
                     c.BuildingWorkers.Count > 0 ? new Dictionary<string, int>(c.BuildingWorkers) : null,
@@ -307,8 +312,10 @@ public sealed record SaveGame
                 foreach (SavedWorker worker in c.Workers ?? [])
                 {
                     // Tile workers first (the idle pool is empty here, so the type just stamps the tile overlay).
-                    colony.SetWorker(new Position(worker.X, worker.Y), worker.GoodsId,
+                    var workerTile = new Position(worker.X, worker.Y);
+                    colony.SetWorker(workerTile, worker.GoodsId,
                         worker.UnitTypeId ?? CrownAndColony.GameLogic.Colonies.Colony.FreeColonistTypeId);
+                    colony.SetTileWorkerExperience(workerTile, worker.Experience ?? 0); // v31; pre-v31 ⇒ 0
                 }
                 // Pre-v6 saves carry no buildings: re-derive the free base set.
                 var buildings = c.Buildings
@@ -472,7 +479,8 @@ public sealed record SavedResource(int Index, string ResourceId);
 /// <param name="Y">Worked tile row.</param>
 /// <param name="GoodsId">Goods being produced there.</param>
 /// <param name="UnitTypeId">The worker's unit-type id when it is NOT a free colonist (v30; null/omitted for a free colonist, so an all-free game is byte-identical to v29).</param>
-public sealed record SavedWorker(int X, int Y, string GoodsId, string? UnitTypeId = null);
+/// <param name="Experience">A free colonist's accrued on-the-job experience toward an expert upgrade (v31; null/omitted when 0, so a game with no accrued experience is byte-identical to v30).</param>
+public sealed record SavedWorker(int X, int Y, string GoodsId, string? UnitTypeId = null, int? Experience = null);
 
 /// <summary>A native settlement inside a <see cref="SaveGame"/> (v14+).</summary>
 /// <param name="Id">Settlement id.</param>

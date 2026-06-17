@@ -93,6 +93,12 @@ public sealed record UnitProductionModifier(string GoodsId, ModifierType Type, d
 /// expert's bonus on its good, or an indentured/petty penalty on manufactured goods. Empty for a plain colonist.
 /// Folded into colony output once per-colonist identity lands (<c>86d3b6nrz</c>); see <see cref="UnitProductionModifier"/>.
 /// </param>
+/// <param name="MaximumExperience">
+/// The cap on the experience a working colonist of this type may accumulate toward an on-the-job expert upgrade
+/// (spec <c>maximum-experience</c>; classic: only the free colonist sets 200, every other type 0 = cannot
+/// experience-upgrade). The per-turn upgrade chance peaks at <c>maximum-experience / (100·maxExp/probability)</c>
+/// once the cap is reached (FreeCol <c>ServerUnit</c> experience upgrade). 0 disables the upgrade for this type.
+/// </param>
 public sealed record UnitType(
     string Id,
     int Movement,
@@ -127,7 +133,8 @@ public sealed record UnitType(
     UnitBuildLimit? BuildLimit = null,
     int Skill = 0,
     string? ExpertProduction = null,
-    IReadOnlyList<UnitProductionModifier>? ProductionModifiers = null)
+    IReadOnlyList<UnitProductionModifier>? ProductionModifiers = null,
+    int MaximumExperience = 0)
 {
     private static readonly IReadOnlyList<GoodsOutput> NoCost = [];
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();

@@ -25,4 +25,7 @@ public static class UnitChangeTypeIds
 
     /// <summary>A skill learned by exploring a Lost City Rumour (free colonist / indentured servant / petty criminal → seasoned scout).</summary>
     public const string LostCity = "model.unitChange.lostCity";
+
+    /// <summary>An on-the-job upgrade from accumulated work experience (free colonist → the matching expert for the good it works).</summary>
+    public const string Experience = "model.unitChange.experience";
 }

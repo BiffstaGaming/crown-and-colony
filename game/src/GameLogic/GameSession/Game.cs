@@ -5615,7 +5615,10 @@ public sealed class Game
 
         // 1b. Worked tiles produce their assigned goods, each worker getting the colony's Sons-of-Liberty
         //     production bonus (+2/+1/0/−1/−2 per worker, floored at 0 so a bad-government penalty can't go negative).
-        foreach ((Position tile, string goodsId) in colony.TileWorkers)
+        //     Iterated row-major so the per-tile experience roll (86d3c9pgj) draws from the owner's seeded RNG in a
+        //     fixed order (ADR-009) — production itself is order-insensitive (AddGoods accumulates).
+        IGameRandom rng = RandomFor(owner);
+        foreach ((Position tile, string goodsId) in colony.TileWorkers.OrderBy(w => w.Key.Y).ThenBy(w => w.Key.X))
         {
             string storageId = Ruleset.StorageIdOf(goodsId);
             // The working colonist's type folds its expert bonus into the yield (free colonist → no change).
@@ -5625,6 +5628,8 @@ public sealed class Game
             {
                 foodThisTurn += produced;
             }
+            // On-the-job experience: a free colonist accrues this turn's output and may upgrade to the good's expert.
+            AccrueAndRollExperience(colony, tile, goodsId, produced, rng);
         }
 
         // 1c. Buildings produce: unattended entries always run (town hall bell);
@@ -5670,6 +5675,37 @@ public sealed class Game
         //    can't rob this turn's growth of the food it would otherwise consume. No-op without a custom house, and —
         //    in the default PerGood mode with no toggles — sells nothing, so the L5 soak stays byte-stable.
         AutoSellExports(owner, colony);
+    }
+
+    /// <summary>
+    /// On-the-job experience (86d3c9pgj, FreeCol <c>model.unitChange.experience</c>): a colonist working a tile accrues
+    /// this turn's production as experience (capped at its type's <see cref="UnitType.MaximumExperience"/>) and then
+    /// rolls a per-turn chance to upgrade in place to the tile good's matching expert. The chance is
+    /// <c>experience / (100·maxExp/probability)</c>, peaking at the spec probability (classic 4%) once experience caps
+    /// — matching FreeCol's <c>ServerUnit</c> roll. Fully data-driven: a worker type with no <c>maximum-experience</c>
+    /// or no experience <c>&lt;unit-type-change&gt;</c> to the good's expert (every classic type except the free
+    /// colonist) is ineligible and draws <b>no</b> RNG, so it never perturbs the deterministic stream.
+    /// </summary>
+    internal void AccrueAndRollExperience(Colony colony, Position tile, string goodsId, int produced, IGameRandom rng)
+    {
+        string workerType = colony.WorkerTypeAt(tile);
+        if (Ruleset.ExpertForProducing(goodsId) is not { } expertType || expertType == workerType)
+        {
+            return; // the good has no expert, or this worker already is it
+        }
+        int maxExperience = Ruleset.Unit(workerType).MaximumExperience;
+        int probability = Ruleset.ExperienceUpgradeProbability(workerType, expertType);
+        if (maxExperience <= 0 || probability <= 0)
+        {
+            return; // this worker type cannot experience-upgrade to that expert (no RNG drawn)
+        }
+
+        colony.AddTileWorkerExperience(tile, produced, maxExperience);
+        int maxValue = 100 * maxExperience / probability; // classic: 100·200/4 = 5000 → peak chance 200/5000 = 4%/turn
+        if (maxValue > 0 && rng.Next(maxValue) < Math.Min(colony.TileWorkerExperienceAt(tile), maxExperience))
+        {
+            colony.UpgradeTileWorker(tile, expertType);
+        }
     }
 
     /// <summary>

@@ -20,6 +20,8 @@ public sealed class Ruleset
     private readonly Dictionary<string, SettlementType> _settlementById;
     private readonly Dictionary<string, RoleType> _roleById;
     private readonly Dictionary<string, Dictionary<string, UnitChange>> _unitChangeByType;
+    private readonly Dictionary<string, Dictionary<string, int>> _experienceUpgradeByFrom; // from-type → (expert-to-type → probability)
+    private readonly Dictionary<string, string> _expertForProducing; // goods id → the unit type that is its expert
     private readonly Dictionary<string, EuropeanNation> _europeanNationById;
 
     private Ruleset(
@@ -33,6 +35,7 @@ public sealed class Ruleset
         Dictionary<string, SettlementType> settlementById,
         Dictionary<string, RoleType> roleById,
         Dictionary<string, Dictionary<string, UnitChange>> unitChangeByType,
+        Dictionary<string, Dictionary<string, int>> experienceUpgradeByFrom,
         Dictionary<string, EuropeanNation> europeanNationById)
     {
         _terrainById = terrainById;
@@ -45,7 +48,19 @@ public sealed class Ruleset
         _settlementById = settlementById;
         _roleById = roleById;
         _unitChangeByType = unitChangeByType;
+        _experienceUpgradeByFrom = experienceUpgradeByFrom;
         _europeanNationById = europeanNationById;
+        // Reverse the expert→good mapping into good→expert (FreeCol Specification.getExpertForProducing): the unit type
+        // whose expert-production is a given good (grain → expert farmer, fish → expert fisherman, …). First definition
+        // wins on the (classic-impossible) duplicate.
+        _expertForProducing = [];
+        foreach (UnitType unit in _unitById.Values)
+        {
+            if (unit.ExpertProduction is { } good)
+            {
+                _expertForProducing.TryAdd(good, unit.Id);
+            }
+        }
         TerrainTypes = _terrainById.Values.ToList();
         UnitTypes = _unitById.Values.ToList();
         GoodsTypes = _goodsById.Values.ToList();
@@ -209,6 +224,26 @@ public sealed class Ruleset
         && byFrom.TryGetValue(fromUnitId, out var change)
             ? change
             : null;
+
+    /// <summary>
+    /// The probability (0–100, the spec <c>probability</c>) that a working colonist of <paramref name="fromUnitId"/>
+    /// experience-upgrades to <paramref name="toExpertId"/> — 0 when no such on-the-job upgrade exists. Classic: every
+    /// free-colonist → raw-goods-expert row is 4. Used by the colony turn's experience roll (FreeCol
+    /// <c>model.unitChange.experience</c>). Distinct from <see cref="GetUnitChange"/>, which keeps only one row per
+    /// source type and so cannot answer per-target experience probabilities.
+    /// </summary>
+    public int ExperienceUpgradeProbability(string fromUnitId, string toExpertId) =>
+        _experienceUpgradeByFrom.TryGetValue(fromUnitId, out var toMap)
+        && toMap.TryGetValue(toExpertId, out int probability)
+            ? probability
+            : 0;
+
+    /// <summary>
+    /// The unit type that is the expert producer of <paramref name="goodsId"/> (FreeCol
+    /// <c>Specification.getExpertForProducing</c>): grain → expert farmer, fish → expert fisherman,
+    /// cotton → master cotton planter, … or null when no unit type is its expert.
+    /// </summary>
+    public string? ExpertForProducing(string goodsId) => _expertForProducing.GetValueOrDefault(goodsId);
 
     /// <summary>
     /// The role a victor in <paramref name="winnerRoleId"/> upgrades to by capturing the equipment of a
@@ -429,6 +464,8 @@ public sealed class Ruleset
         Dictionary<string, RoleType> roles = ParseRoles(root.Element("roles"));
         Dictionary<string, Dictionary<string, UnitChange>> unitChanges =
             ParseUnitChanges(root.Element("unit-change-types"));
+        Dictionary<string, Dictionary<string, int>> experienceUpgrades =
+            ParseExperienceUpgrades(root.Element("unit-change-types"));
 
         Dictionary<string, EuropeanNationType> europeanNationTypes =
             ParseEuropeanNationTypes(root.Element("european-nation-types"));
@@ -437,7 +474,7 @@ public sealed class Ruleset
 
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, nativeNations, settlements,
-            roles, unitChanges, europeanNations);
+            roles, unitChanges, experienceUpgrades, europeanNations);
     }
 
     /// <summary>
@@ -645,6 +682,29 @@ public sealed class Ruleset
         return byType;
     }
 
+    /// <summary>
+    /// Parses the <c>model.unitChange.experience</c> change-type into a [from-unit id][to-expert id] → probability map.
+    /// Unlike <see cref="ParseUnitChanges"/> (which keys on <c>from</c> and so keeps only one row per source type),
+    /// this keeps <b>every</b> from→to row — the classic experience set has nine rows all sharing
+    /// <c>from="model.unit.freeColonist"</c>, one per raw-goods expert, which the by-from map would collapse to one.
+    /// </summary>
+    private static Dictionary<string, Dictionary<string, int>> ParseExperienceUpgrades(XElement? section)
+    {
+        var byFrom = new Dictionary<string, Dictionary<string, int>>();
+        XElement? experience = section?.Elements("unit-change-type")
+            .FirstOrDefault(t => (string?)t.Attribute("id") == UnitChangeTypeIds.Experience);
+        foreach (XElement change in experience?.Elements("unit-type-change") ?? [])
+        {
+            string from = RequiredAttribute(change, "from");
+            if (!byFrom.TryGetValue(from, out Dictionary<string, int>? toMap))
+            {
+                byFrom[from] = toMap = [];
+            }
+            toMap[RequiredAttribute(change, "to")] = (int?)change.Attribute("probability") ?? 0;
+        }
+        return byFrom;
+    }
+
     private static ResourceModifier ParseResourceModifier(XElement m) => new(
         GoodsId: RequiredAttribute(m, "id"),
         Type: (string?)m.Attribute("type") switch
@@ -812,7 +872,9 @@ public sealed class Ruleset
                 ProductionModifiers: el.Elements("modifier")
                     .Where(m => ((string?)m.Attribute("id"))?.StartsWith("model.goods.") == true)
                     .Select(ParseUnitProductionModifier)
-                    .ToList());
+                    .ToList(),
+                // Experience cap toward an on-the-job expert upgrade (classic: only the free colonist sets 200).
+                MaximumExperience: ResolveIntAttribute(el, "maximum-experience", elements) ?? 0);
         }
 
         if (units.Count == 0)

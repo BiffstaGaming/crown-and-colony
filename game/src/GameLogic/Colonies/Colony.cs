@@ -50,6 +50,7 @@ public sealed class Colony
     private readonly Dictionary<Position, string> _tileWorkerTypes = [];        // tile → its non-free worker's type
     private readonly Dictionary<string, List<string>> _buildingWorkerTypes = []; // building → its non-free occupants' types
     private readonly List<string> _idleWorkerTypes = [];                          // non-free colonists with no assignment
+    private readonly Dictionary<Position, int> _tileWorkerExperience = [];        // tile → its free-colonist worker's accrued on-the-job experience (86d3c9pgj; absent ⇒ 0, cleared when the occupant leaves/changes)
 
     /// <summary>The unit-type id of a plain colonist — the implicit default for any worker without an overlay entry.</summary>
     public const string FreeColonistTypeId = "model.unit.freeColonist";
@@ -126,6 +127,12 @@ public sealed class Colony
 
     /// <summary>The unit-type id of the colonist working <paramref name="tile"/> — its overlay entry, or a free colonist by default.</summary>
     public string WorkerTypeAt(Position tile) => _tileWorkerTypes.GetValueOrDefault(tile, FreeColonistTypeId);
+
+    /// <summary>On-the-job experience a free colonist working <paramref name="tile"/> has accrued toward an expert upgrade (86d3c9pgj; 0 by default).</summary>
+    public int TileWorkerExperienceAt(Position tile) => _tileWorkerExperience.GetValueOrDefault(tile);
+
+    /// <summary>Accrued tile-worker experience by tile (sparse — a tile with no/zero experience is absent). 86d3c9pgj.</summary>
+    public IReadOnlyDictionary<Position, int> TileWorkerExperience => _tileWorkerExperience;
 
     /// <summary>
     /// The unit-type ids of a building's workers — the non-free occupants from the overlay plus free colonists padded
@@ -253,6 +260,7 @@ public sealed class Colony
     internal void SetWorker(Position tile, string goodsId, string type)
     {
         _tileWorkers[tile] = goodsId;
+        _tileWorkerExperience.Remove(tile); // a (re)assigned tile starts the new occupant's experience at 0 (FreeCol resets on a work change)
         if (type == FreeColonistTypeId)
         {
             _tileWorkerTypes.Remove(tile);
@@ -272,6 +280,33 @@ public sealed class Colony
             _idleWorkerTypes.Add(type);
         }
         _tileWorkers.Remove(tile);
+        _tileWorkerExperience.Remove(tile); // experience belongs to the (tile, occupant) — it leaves with the worker
+    }
+
+    /// <summary>Adds <paramref name="amount"/> on-the-job experience to <paramref name="tile"/>'s worker, clamped to <paramref name="cap"/> (86d3c9pgj).</summary>
+    internal void AddTileWorkerExperience(Position tile, int amount, int cap) =>
+        _tileWorkerExperience[tile] = Math.Min(_tileWorkerExperience.GetValueOrDefault(tile) + amount, cap);
+
+    /// <summary>Restores a tile worker's accrued experience from a save (skips 0 to keep the map sparse). 86d3c9pgj.</summary>
+    internal void SetTileWorkerExperience(Position tile, int experience)
+    {
+        if (experience > 0)
+        {
+            _tileWorkerExperience[tile] = experience;
+        }
+    }
+
+    /// <summary>
+    /// Promotes <paramref name="tile"/>'s worker in place to <paramref name="expertType"/> (an on-the-job experience
+    /// upgrade, 86d3c9pgj): sets the overlay type and clears the accrued experience, leaving the count model
+    /// (<see cref="Population"/>, the tile assignment, the idle pool) untouched. Distinct from
+    /// <see cref="SetWorker(Position, string, string)"/>, which draws a colonist from the idle pool — here the same
+    /// colonist stays put, just becomes an expert.
+    /// </summary>
+    internal void UpgradeTileWorker(Position tile, string expertType)
+    {
+        _tileWorkerTypes[tile] = expertType;
+        _tileWorkerExperience.Remove(tile);
     }
 
     /// <summary>Adds a colonist of <paramref name="type"/> to the colony's idle pool (founding / joining / growth). Free colonists are implicit.</summary>
@@ -347,6 +382,10 @@ public sealed class Colony
         {
             _tileWorkerTypes.Remove(tile);
         }
+        foreach (Position tile in _tileWorkerExperience.Keys.Where(t => !_tileWorkers.ContainsKey(t)).ToList())
+        {
+            _tileWorkerExperience.Remove(tile); // accrued experience belongs to a present tile worker (86d3c9pgj)
+        }
         foreach (string building in _buildingWorkerTypes.Keys.ToList())
         {
             List<string> list = _buildingWorkerTypes[building];
@@ -414,6 +453,7 @@ public sealed class Colony
             Position tile = _tileWorkers.Keys.OrderBy(p => p.Y).ThenBy(p => p.X).Last();
             Population--;
             _tileWorkers.Remove(tile);
+            _tileWorkerExperience.Remove(tile);
             return _tileWorkerTypes.Remove(tile, out string? type) ? type : FreeColonistTypeId;
         }
 
