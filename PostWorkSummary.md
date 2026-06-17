@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-18 — "Next 5 items" run: experience + promotion-ladder + LCR modifiers (3 shipped, 1 verified, 1 assessed)
+
+**Requested:** "Continue on with the next 5 items" (the actionable board items I'd listed).
+**Did:** Worked the board's actionable queue, GameLogic-first, each with an understand/design + adversarial-review workflow, full tests + docs, committed CI-green:
+- **`86d3c9pgj` On-the-job experience upgrades — SHIPPED** (`7ed46d2`): a free colonist working a tile accrues production as experience (cap 200) and rolls `xp/5000` (peak 4%) to upgrade in place to the tile good's expert. Closed two ruleset gaps (`maximum-experience` unparsed; the 9 experience `<unit-type-change>` rows collapsed on `from`). Save **v31**. 4-agent design + 5-agent review (0 bugs). +29 L1/L2.
+- **`86d3c9q1z` Promotion-ladder wiring — IN REVIEW (your call)** (`3bb7044`): the combat ladder already walks petty→indentured→free→veteran→colonial-regular (generic `ApplyWinnerPromotion`); added the missing end-to-end test of the lower rungs. The criminal/servant→colonist **work** route is the **schoolhouse/education** task (separate, not started); FreeCol has no experience rung for them. Left In Review — Ship it as "combat done" or keep it open on the schoolhouse dep.
+- **`86d3c9uhj` LCR scout + de Soto modifiers — SHIPPED** (`4041675`): expert-scout never-vanish, de Soto all-good, seasoned-scout +10% explore bonus. 10-agent review also caught + fixed a **pre-existing ~5% distortion** (MOUNDS was conditional-added on native land only; FreeCol adds it unconditionally and degrades off-native to NOTHING at resolve — now matched). +2 L1.
+- **`86d3bex51` (FP-6) AI combat + diplomacy — ASSESSED, not started.** Items #4 and #5 collapse to one thing: #5 (`86d3b7qwm`) is the **umbrella epic** for foreign powers (FP-1…7), and #4 is its active slice **FP-6**. The diplomacy infra exists (`Stance`, `StanceFromTension`, tension API); the two gaps are (a) seek-and-destroy target scoring at ranges 8/12/16, (b) driving `DetermineStances` per turn + making `AreEnemies` **stance-aware** — (b) changes all combat targeting + the human's ability to attack, a broad design-heavy change. Recorded a full assessment on the task.
+**Status:** **861 L1+L2 + 4 soak green**, build clean throughout; 3 commits pushed (`7ed46d2`, `3bb7044`, `4041675`). Save v30→v31.
+**Decisions:** Took the LCR MOUNDS fidelity fix even though it changes the off-native soak trajectory — the soak asserts twin-determinism + round-trip (not a frozen baseline), so it stays green; FreeCol fidelity beats preserving a wrong distribution. Did **not** start FP-6 at the tail of a long run — its `AreEnemies`/stance change is broad enough to deserve its own design+review session, and rushing it would undercut the quality bar.
+**Scheduled next:** **`86d3bex51` (FP-6) — start with gap (a), seek-and-destroy target scoring** (self-contained, AI-mission-internal), then gap (b) the stance-aware `AreEnemies` + per-turn `DetermineStances` as its own carefully-reviewed change. Then FP-7 (save consolidation) closes the foreign-powers epic.
+**Follow-ups:** `86d3c9q1z` needs your Ship/keep-open call; the **schoolhouse/education** task would unblock the criminal/servant work rung; LCR **UI** (rumour markers + outcome prompt) is the only remaining LCR piece.
+**Needs you:** Nothing blocking — 3 shipped + CI-green. Two light calls when you're around: (1) Ship or keep-open `86d3c9q1z`; (2) confirm you want me to take **FP-6** next (it's a big AI/diplomacy slice — I'll give it a full design+review pass).
+
 ## 2026-06-18 — Colony-worker identity refactor COMPLETE: slices 3–6 (86d3b6nrz) — Shipped
 
 **Requested:** "go" — proceed through the remaining colony-refactor slices.
