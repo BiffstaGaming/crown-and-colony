@@ -74,14 +74,31 @@ public class PauseMenuTests
 
         pause.GetNode<Button>("Panel/VBox/SettingsButton").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
-        var settings = pause.GetChildren().OfType<SettingsScreen>().FirstOrDefault();
+        var settings = pause.GetParent().GetChildren().OfType<SettingsScreen>().FirstOrDefault();
         AssertThat(settings).IsNotNull();
 
         settings!.GetNode<Button>("Panel/VBox/BackButton").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(2);
-        AssertThat(pause.GetChildren().OfType<SettingsScreen>().Any()).IsFalse();
+        AssertThat(pause.GetParent().GetChildren().OfType<SettingsScreen>().Any()).IsFalse();
 
         pause.Resume(); // leave the shared tree unpaused for the next test
+    }
+
+    [TestCase]
+    public async Task SaveButton_OpensTheSaveLoadDialog()
+    {
+        ISceneRunner runner = ISceneRunner.Load(GameScene);
+        await runner.SimulateFrames(2);
+        var pause = runner.Scene().GetNode<PauseMenu>("UI/PauseMenu");
+        pause.Open();
+        await runner.SimulateFrames(1);
+
+        pause.GetNode<Button>("Panel/VBox/SaveButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        // The dialog is added to the UI layer (the pause menu's parent), over the paused game.
+        AssertThat(pause.GetParent().GetChildren().OfType<SaveLoadDialog>().Any()).IsTrue();
+
+        pause.Resume(); // leave the shared tree unpaused
     }
 
     [TestCase]

@@ -7,7 +7,7 @@
 | **Code** | `game/presentation/InfoPopup.cs`, `game/scenes/InfoPopup.tscn` |
 | **Tests** | `game/presentation/tests/InfoPopupTests.cs` (L3); `MenuGoldenTests` → `info-popup` (L4) |
 | **FreeCol reference** | conceptual (information dialog) |
-| **Related systems** | [main-menu.md](main-menu.md), [save-load.md](save-load.md) (first consumer) |
+| **Related systems** | [main-menu.md](main-menu.md), [save-load-ui.md](save-load-ui.md) (first consumer — Save/Load confirmations) |
 
 ## 1. How it works (plain English)
 
@@ -48,7 +48,7 @@ A small **information popup** the game uses to tell you something one-off — "G
 
 **Usage:** the static `InfoPopup.Show(Node host, string title, string message)` instantiates `InfoPopup.tscn`, adds it as a child of `host`, configures it, and frees it on `Closed` — a one-liner for any screen. Callers may also observe `Closed` on the returned instance.
 
-**Integration points:** none yet wired into game flow; its first consumer is the Save/Load dialog (see [save-load.md](save-load.md)). **Persistence:** none.
+**Integration points:** the pause menu's **Save/Load** confirm with it (see [save-load-ui.md](save-load-ui.md)) — its first consumer. **Persistence:** none.
 
 ## 4. Verification
 

@@ -3,20 +3,21 @@
 | | |
 |---|---|
 | **Status** | In development (Slice C shipped) |
-| **Last verified** | 2026-06-17 @ 895f958 |
+| **Last verified** | 2026-06-17 @ (pending) |
 | **Code** | `game/presentation/PauseMenu.cs`, `game/scenes/main.tscn` (`UI/PauseMenu`) |
 | **Tests** | `game/presentation/tests/PauseMenuTests.cs` (L3) |
 | **FreeCol reference** | conceptual (in-game menu) |
-| **Related systems** | [main-menu.md](main-menu.md) (Quit to Main Menu target), [settings.md](settings.md) (Settings overlay) |
+| **Related systems** | [main-menu.md](main-menu.md) (Quit to Main Menu target), [settings.md](settings.md) (Settings overlay), [save-load-ui.md](save-load-ui.md) (Save/Load), [info-popup.md](info-popup.md) (confirmations) |
 
 ## 1. How it works (plain English)
 
 *Audience: anyone — no jargon.*
 
-While you're playing, pressing **Esc** brings up a pause menu over the (now frozen) game. From it you can resume, open settings, go back to the main menu, or quit to the desktop.
+While you're playing, pressing **Esc** brings up a pause menu over the (now frozen) game. From it you can resume, save or load your game, open settings, go back to the main menu, or quit to the desktop.
 
 **The rules, in plain words:**
 - **Esc** opens the menu and pauses the game; **Esc** again (or **Resume**) closes it and unpauses.
+- **Save Game** / **Load Game** open the save-slot dialog (the game stays paused); a popup confirms a save.
 - **Settings** opens the options screen on top — the game stays paused underneath; closing it returns you to the pause menu.
 - **Quit to Main Menu** leaves the game and returns to the title screen.
 - **Quit to Desktop** closes the game.
@@ -24,7 +25,7 @@ While you're playing, pressing **Esc** brings up a pause menu over the (now froz
 **Worked example:**
 > Mid-game you press **Esc**: the map dims and a "Paused" panel appears; the game is frozen. You open **Settings**, lower the music, press **Back** — you're back at the pause menu, game still paused. You press **Resume**; play continues exactly where you left off. Later you press **Esc → Quit to Main Menu** and you're back at the title screen.
 
-**What the player sees and does:** an Esc-summoned panel (Resume, Settings, Quit to Main Menu, Quit to Desktop) over a dimmed, paused game.
+**What the player sees and does:** an Esc-summoned panel (Resume, Save Game, Load Game, Settings, Quit to Main Menu, Quit to Desktop) over a dimmed, paused game.
 
 ## 2. Detailed rules
 
@@ -34,13 +35,15 @@ While you're playing, pressing **Esc** brings up a pause menu over the (now froz
 |---|---|
 | **Esc** while playing | Pause menu shown; `GetTree().Paused = true` |
 | **Esc** while the pause menu is open | Resume (hide + unpause) |
-| **Esc** while the settings overlay is open | Ignored — use the settings **Back** button |
+| **Esc** while a sub-overlay (settings / save-load) is open | Ignored — use that overlay's **Back** button |
 | **Resume** | Hide + unpause |
+| **Save Game** | Opens the save-slot dialog (Save mode); choosing a slot saves the game there and confirms with an info popup (see [save-load-ui.md](save-load-ui.md)) |
+| **Load Game** | Opens the save-slot dialog (Load mode); choosing a save loads it, unpauses, and confirms with an info popup |
 | **Settings** | Opens the `SettingsScreen` overlay (game stays paused); its **Back** returns to the pause menu |
 | **Quit to Main Menu** | Unpause, then `ChangeSceneToFile` the main menu |
 | **Quit to Desktop** | `SceneTree.Quit()` |
 
-- While paused, the game (map clicks, hotkeys, AI) is frozen; only the pause menu and the settings overlay respond.
+- While paused, the game (map clicks, hotkeys, AI) is frozen; only the pause menu and its overlays (settings / save-load) respond.
 - The pause panel + its dim backdrop block mouse input to the game beneath.
 
 **Deviations from original 1994 / FreeCol behavior:** a modern convenience; the 1994 game had no single Esc pause menu. No gameplay effect.
@@ -53,13 +56,13 @@ While you're playing, pressing **Esc** brings up a pause menu over the (now froz
 
 **Pause mechanism:** `Open()` sets `GetTree().Paused = true` and shows the panel; `Resume()` clears it and hides. The `PauseMenu` node is authored with `process_mode = Always` (3) in `main.tscn`, so it keeps receiving input while the rest of the tree (which is `Pausable`/`Inherit`, including `GameController`) is frozen — that is what lets Esc both *open* (un-paused) and *close* (paused) the menu, and the buttons work while paused.
 
-**Input:** `_UnhandledInput` toggles on `ui_cancel` (Esc) and calls `GetViewport().SetInputAsHandled()`. It is suppressed while the settings overlay is up (tracked by a field) so Esc doesn't dismiss the pause menu out from under it.
+**Input:** `_UnhandledInput` toggles on `ui_cancel` (Esc) and calls `GetViewport().SetInputAsHandled()`. It is suppressed while any sub-overlay (settings or save/load) is up — tracked by a single `_overlay` field — so Esc can't dismiss the pause menu out from under it.
 
-**Settings reuse:** `OpenSettings` instantiates `SettingsScreen` (set to `ProcessMode.Always`), adds it as a child (drawn on top), and connects its `Closed` signal to free it. The game remains paused throughout. See [settings.md](settings.md).
+**Sub-overlays:** Settings, Save and Load all open via `TrackOverlay`, which adds the overlay to the **UI layer** with `ProcessMode.Always` (so it works while the tree is paused), records it as `_overlay`, and frees it on its `Closed` signal. **Save/Load** delegate the file work to the host `GameController` (`SaveTo`/`LoadFrom`) and confirm with an [InfoPopup](info-popup.md); a load also unpauses. See [settings.md](settings.md) and [save-load-ui.md](save-load-ui.md).
 
 **Look:** shares `ColonyTheme` + `ColonyArt.ParchmentSkin()` + the carved-wood border with the other menus.
 
-**Integration points:** added to `main.tscn` under `UI` (additive — `GameController` is untouched; the visual goldens hide the `UI` layer and the panel starts hidden, so nothing regressed). **Quit to Main Menu** uses `MainMenu.MenuScenePath`. **Persistence:** none.
+**Integration points:** the pause-menu node is additive to `main.tscn` under `UI` (the visual goldens hide the `UI` layer and the panel starts hidden, so nothing regressed). Save/Load call `GameController.SaveTo`/`LoadFrom`; **Quit to Main Menu** uses `MainMenu.MenuScenePath`. **Persistence:** none of its own (save files live under the save/load feature).
 
 ## 4. Verification
 
@@ -75,7 +78,7 @@ While you're playing, pressing **Esc** brings up a pause menu over the (now froz
 
 - [x] **L4 golden** for the pause menu (`MenuGoldenTests` → `pause-menu`) — added with the bundled font (Slice D).
 - [ ] Optionally let Esc close the settings overlay too (currently only its Back button does).
-- [ ] **Save/Load** entries here once the save-load dialog UI lands (ClickUp `86d3c9y5y`).
+- [x] **Save/Load** entries (Slice F — see [save-load-ui.md](save-load-ui.md)).
 
 ## Changelog
 
@@ -83,3 +86,4 @@ While you're playing, pressing **Esc** brings up a pause menu over the (now froz
 |---|---|---|
 | 2026-06-17 | Slice C — in-game pause menu (Esc → Resume / Settings / Quit to Main Menu / Quit to Desktop); pauses the tree; reuses `SettingsScreen` as an overlay | 895f958 |
 | 2026-06-17 | Slice D — added the `pause-menu` L4 golden (UI font bundled) | 0106d9c |
+| 2026-06-17 | Slice F — added Save Game / Load Game (save-slot dialog + info popup); overlays unified into one `_overlay` in the UI layer; `pause-menu` golden regenerated | (pending) |

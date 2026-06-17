@@ -33,17 +33,29 @@ public class MainMenuTests
     }
 
     [TestCase]
-    public async Task NewGameQuitAndSettings_AreEnabled_LoadGame_StaysDisabled()
+    public async Task AllFourButtons_AreEnabled()
     {
         ISceneRunner runner = ISceneRunner.Load(MenuScene);
         await runner.SimulateFrames(2);
         var scene = runner.Scene();
 
         AssertThat(scene.GetNode<Button>("Panel/VBox/NewGameButton").Disabled).IsFalse();
+        AssertThat(scene.GetNode<Button>("Panel/VBox/LoadGameButton").Disabled).IsFalse(); // wired in Slice F
+        AssertThat(scene.GetNode<Button>("Panel/VBox/SettingsButton").Disabled).IsFalse();
         AssertThat(scene.GetNode<Button>("Panel/VBox/QuitButton").Disabled).IsFalse();
-        AssertThat(scene.GetNode<Button>("Panel/VBox/SettingsButton").Disabled).IsFalse(); // wired in Slice B
-        // Load Game waits on the save-load dialog UI (ClickUp 86d3c9y5y).
-        AssertThat(scene.GetNode<Button>("Panel/VBox/LoadGameButton").Disabled).IsTrue();
+    }
+
+    [TestCase]
+    public async Task LoadGameButton_OpensTheSaveLoadDialog()
+    {
+        ISceneRunner runner = ISceneRunner.Load(MenuScene);
+        await runner.SimulateFrames(2);
+        var menu = runner.Scene();
+
+        menu.GetNode<Button>("Panel/VBox/LoadGameButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(menu.GetChildren().OfType<SaveLoadDialog>().Any()).IsTrue();
     }
 
     [TestCase]

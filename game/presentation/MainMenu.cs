@@ -11,8 +11,8 @@ namespace CrownAndColony.Presentation;
 /// </summary>
 /// <remarks>
 /// Presentation-only (ADR-006): the menu owns no game rules. <b>New Game</b> simply loads the in-game scene, which
-/// builds a fresh game exactly as the app did on boot before this screen existed. <b>Settings</b> opens the options
-/// screen. <b>Load Game</b> is wired in a later slice (ClickUp <c>86d3c9y5y</c>); its button stays disabled until then.
+/// builds a fresh game exactly as the app did on boot before this screen existed. <b>Load Game</b> opens the save-slot
+/// dialog and boots the chosen save; <b>Settings</b> opens the options screen.
 /// </remarks>
 public partial class MainMenu : Control
 {
@@ -46,12 +46,26 @@ public partial class MainMenu : Control
         }
 
         GetNode<Button>("Panel/VBox/NewGameButton").Pressed += OnNewGame;
+        GetNode<Button>("Panel/VBox/LoadGameButton").Pressed += OnLoadGame;
         GetNode<Button>("Panel/VBox/SettingsButton").Pressed += OnSettings;
         GetNode<Button>("Panel/VBox/QuitButton").Pressed += OnQuit;
     }
 
     /// <summary>Starts a new game by loading the in-game scene (which builds a fresh game, as the app did on boot before).</summary>
     private void OnNewGame() => GetTree().ChangeSceneToFile(GameScenePath);
+
+    /// <summary>Opens the save-slot dialog; choosing a save boots the game scene loaded from it.</summary>
+    private void OnLoadGame()
+    {
+        var dialog = GD.Load<PackedScene>(SaveLoadDialog.ScenePath).Instantiate<SaveLoadDialog>();
+        dialog.Closed += dialog.QueueFree;
+        AddChild(dialog);
+        dialog.Open(SaveLoadDialog.Mode.Load, path =>
+        {
+            GameController.PendingLoadPath = path;
+            GetTree().ChangeSceneToFile(GameScenePath);
+        });
+    }
 
     /// <summary>Opens the settings screen as an overlay; removes it again when the player presses Back.</summary>
     private void OnSettings()

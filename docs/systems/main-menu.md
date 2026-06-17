@@ -3,11 +3,11 @@
 | | |
 |---|---|
 | **Status** | In development (Slice A shipped — shell only) |
-| **Last verified** | 2026-06-17 @ 895f958 |
+| **Last verified** | 2026-06-17 @ (pending) |
 | **Code** | `game/presentation/MainMenu.cs`, `game/scenes/MainMenu.tscn` |
 | **Tests** | `game/presentation/tests/MainMenuTests.cs` (L3) |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/client/gui/panel/MainPanel.java` (opening-menu layout); `freecol/data/base/resources/images/ui/` (art) |
-| **Related systems** | [settings.md](settings.md) (Settings overlay), [pause-menu.md](pause-menu.md) (Quit to Main Menu target), [colonies.md](colonies.md) (shared theme), [save-load.md](save-load.md) (Load Game, later) |
+| **Related systems** | [save-load-ui.md](save-load-ui.md) (Load Game dialog), [settings.md](settings.md) (Settings overlay), [pause-menu.md](pause-menu.md) (Quit to Main Menu target), [colonies.md](colonies.md) (shared theme) |
 
 ## 1. How it works (plain English)
 
@@ -17,14 +17,14 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 
 **The rules, in plain words:**
 - **New Game** starts a fresh game (the same game you used to get on launch).
+- **Load Game** opens the save-slot dialog and boots the save you pick (see [save-load-ui.md](save-load-ui.md)).
 - **Settings** opens the options screen (see [settings.md](settings.md)).
-- **Load Game** is shown but greyed out — it switches on in a later slice.
 - **Quit** closes the game.
 
 **Worked example:**
-> You double-click the game. The map-backed menu appears with the title "Crown & Colony". You click **New Game**; the title screen is replaced by the map and your starting unit, turn 1 — exactly the game that used to appear immediately on launch. **Settings** opens the options screen; **Load Game** will list your saves in a future build.
+> You double-click the game. The map-backed menu appears with the title "Crown & Colony". You click **New Game**; the title screen is replaced by the map and your starting unit, turn 1 — exactly the game that used to appear immediately on launch. **Load Game** lists your saved games; **Settings** opens the options screen.
 
-**What the player sees and does:** one screen, four buttons (New Game, Load Game, Settings, Quit); New Game, Settings and Quit are active, Load Game is disabled until its feature lands.
+**What the player sees and does:** one screen, four working buttons — New Game, Load Game, Settings, Quit.
 
 ## 2. Detailed rules
 
@@ -34,9 +34,9 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 |---|---|
 | App launches | `MainMenu.tscn` loads (it is the project's `run/main_scene`) |
 | Click **New Game** | The scene changes to `scenes/main.tscn`, which builds a fresh game (the prior boot behaviour) |
+| Click **Load Game** | Opens the save-slot dialog (see [save-load-ui.md](save-load-ui.md)); choosing a save sets `GameController.PendingLoadPath` and boots the game scene from it |
 | Click **Settings** | Opens the `SettingsScreen` overlay (see [settings.md](settings.md)); its Back closes it |
 | Click **Quit** | `SceneTree.Quit()` — the application exits |
-| **Load Game** button | Disabled (greyed) until the save-load dialog UI ships |
 
 **Deviations from original 1994 / FreeCol behavior:** the FreeCol opening menu also offers Multiplayer, Map Editor and About; we ship only the single-player essentials for now. We deliberately do **not** reuse FreeCol's "FreeCol" wordmark image — the title is rendered as our own "Crown & Colony" text in the shared theme.
 
@@ -75,7 +75,7 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 ## 5. Open issues / TODO
 
 - [x] **L4 golden** for the menu (`MenuGoldenTests` → `main-menu`) — added once the UI font was bundled (Slice D).
-- [ ] **Load Game** wiring → save-load dialog UI (ClickUp `86d3c9y5y`).
+- [x] **Load Game** wiring → save-slot dialog (Slice F — see [save-load-ui.md](save-load-ui.md)).
 - [x] **Settings** wiring → settings screen (Slice B — see [settings.md](settings.md)).
 - [ ] In-game **pause menu** (Esc → Resume / Settings / Save / Quit to menu) — separate slice.
 - [ ] **New Game setup** screen (nation / difficulty / map) — needs the difficulty system (ClickUp `86d3c9y08`).
@@ -88,3 +88,4 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 | 2026-06-17 | Slice B — Settings button wired to `SettingsScreen`; parchment skin hoisted to `ColonyArt.ParchmentSkin()` | 11da6fa |
 | 2026-06-17 | Slice C — Settings now opens `SettingsScreen` as an overlay (was a scene change), to match the pause menu's reuse | 895f958 |
 | 2026-06-17 | Slice D — bundled UI font (Cardo) cascades here via `ColonyTheme`; added the `main-menu` L4 golden | 0106d9c |
+| 2026-06-17 | Slice F — Load Game wired to the save-slot dialog (button enabled); `main-menu` golden regenerated | (pending) |

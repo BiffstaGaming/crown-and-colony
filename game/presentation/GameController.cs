@@ -21,6 +21,15 @@ public partial class GameController : Node2D
 {
     private const string QuickSavePath = "user://quicksave.json";
 
+    /// <summary>Directory holding the named save slots (created on first save). The save/load dialog reads it.</summary>
+    public const string SavesDir = "user://saves";
+
+    /// <summary>
+    /// Set by the main menu's Load Game before it switches to this scene: the save to load on boot instead of starting
+    /// a new game. Consumed (and cleared) in <see cref="_Ready"/>. Static because it must survive the scene change.
+    /// </summary>
+    public static string? PendingLoadPath { get; set; }
+
     /// <summary>
     /// New-game seed. 0 (default) = pick a random seed per game; set non-zero to
     /// pin the world (tests, bug reproduction — ADR-009).
@@ -67,7 +76,15 @@ public partial class GameController : Node2D
         GetNode<Button>("UI/NativeSettlementPanel/VBox/CloseButton").Pressed += () => _nativePanel.Hide();
         GetNode<Button>("UI/GameOverScreen/Panel/VBox/NewGameButton").Pressed += NewGame;
 
-        NewGame();
+        if (PendingLoadPath is { } loadPath)
+        {
+            PendingLoadPath = null;
+            LoadFrom(loadPath); // entered from the main menu's Load Game
+        }
+        else
+        {
+            NewGame();
+        }
     }
 
     private void NewGame()
@@ -370,6 +387,23 @@ public partial class GameController : Node2D
         StartGame(save.Restore(_variant.LoadRuleset()));
         _notice = "Game loaded.";
         RefreshView();
+    }
+
+    /// <summary>Saves the current game to <paramref name="path"/> (creating the saves directory if needed). Used by the save/load dialog.</summary>
+    public void SaveTo(string path)
+    {
+        DirAccess.MakeDirRecursiveAbsolute(SavesDir);
+        using var file = FileAccess.Open(path, FileAccess.ModeFlags.Write);
+        file.StoreString(SaveGame.From(_game, _variant.Id).ToJson());
+    }
+
+    /// <summary>Loads a game from <paramref name="path"/> under the save's own variant ruleset (ADR-018). Used by the save/load dialog and the boot-time pending load.</summary>
+    public void LoadFrom(string path)
+    {
+        using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);
+        SaveGame save = SaveGame.FromJson(file.GetAsText());
+        _variant = GameVariants.Resolve(save.Variant);
+        StartGame(save.Restore(_variant.LoadRuleset()));
     }
 
     private void RefreshView()

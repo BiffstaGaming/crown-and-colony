@@ -74,8 +74,6 @@ text = "New Game"
 
 [node name="LoadGameButton" type="Button" parent="Panel/VBox"]
 layout_mode = 2
-disabled = true
-tooltip_text = "Coming soon"
 text = "Load Game"
 
 [node name="SettingsButton" type="Button" parent="Panel/VBox"]

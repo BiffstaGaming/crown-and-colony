@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-17 — Title screen Slice F shipped (Save/Load dialog)
+
+**Requested:** the chosen batch's last item — the save-slot dialog (`86d3c9y5y`).
+**Did:**
+- **`SaveLoadDialog`** — a 5-slot overlay (`user://saves/slotN.json`), each slot showing "empty" or "Turn N"; empty slots disabled in Load mode. Choosing a slot delegates to the host and closes.
+- **Main menu Load Game** now works: opens the dialog → sets `GameController.PendingLoadPath` + boots the game scene from the chosen save.
+- **Pause menu** gained **Save Game** + **Load Game**: dialog → `GameController.SaveTo`/`LoadFrom`, with an **InfoPopup** confirming (load also unpauses). Pause overlays unified into one `_overlay` in the UI layer.
+- **`GameController`**: added `SaveTo`/`LoadFrom`/`SavesDir` + static `PendingLoadPath`. **Read-only** use of `SaveGame` — no format change, no `save-load.md`/GameLogic edit → conflict-free with the other session's v26 treasure work.
+- Docs: new `docs/systems/save-load-ui.md`; updated `main-menu.md` / `pause-menu.md` / `info-popup.md`. Regenerated the `main-menu` (Load enabled) + `pause-menu` (6 buttons) goldens.
+**Status:** **L3+L4 presentation 66 green** (+7). Build + import clean. L1+L2 unchanged (685). Previews eyeballed (dialog + 6-button pause).
+**Changed:** presentation `SaveLoadDialog.cs` (new) + `scenes/SaveLoadDialog.tscn` (new), `GameController.cs` (save/load + pending-load), `MainMenu.cs`/`.tscn` (Load enabled+wired), `PauseMenu.cs` (Save/Load + overlay unify) + `scenes/main.tscn` (2 buttons, taller panel); tests `SaveLoadTests.cs` (new) + `MainMenuTests.cs` + `PauseMenuTests.cs`; goldens `main-menu.png`/`pause-menu.png` regenerated; docs ×4. Commit (pending). [worktree `feature/title-settings`]
+**Decisions:** Read-only `SaveGame` use (conflict-free with v26). 5 fixed slots (named saves later). No overwrite-confirm yet (needs a yes/no dialog). Save/load delegate to the host so the dialog stays generic. Save-load-dialog L4 golden deferred (slot state is disk-dependent).
+**Scheduled next:** the chosen batch (font + popup + save/load) is **complete** — the whole title/settings arc (6 slices) is feature-complete. Recommend **merge `feature/title-settings` → `main`**.
+**Follow-ups:** overwrite-confirm dialog; named saves / timestamps; deterministic save-load golden fixture; surface F5 quicksave as a slot; ClickUp Asset Register font entry.
+**Needs you:** Eyeball the dialog + pause menu (previews in chat). **Merge decision** — the branch (6 slices) is a complete, self-contained unit ready for `main`.
+
 ## 2026-06-17 — Title screen Slice E shipped (reusable info popup)
 
 **Requested:** continue the chosen batch — the generic info/event popup.
