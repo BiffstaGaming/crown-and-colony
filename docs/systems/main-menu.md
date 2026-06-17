@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | In development (Slice A shipped — shell only) |
-| **Last verified** | 2026-06-17 @ (pending) |
+| **Last verified** | 2026-06-17 @ 11da6fa |
 | **Code** | `game/presentation/MainMenu.cs`, `game/scenes/MainMenu.tscn` |
 | **Tests** | `game/presentation/tests/MainMenuTests.cs` (L3) |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/client/gui/panel/MainPanel.java` (opening-menu layout); `freecol/data/base/resources/images/ui/` (art) |
@@ -85,4 +85,4 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 | Date | Change | Commit |
 |---|---|---|
 | 2026-06-17 | Slice A — main-menu shell: scene + script, FreeCol map backdrop + wood/parchment frame, New Game/Quit wired, Load/Settings disabled; L3 tests; boot scene switched to the menu | 17f00a6 |
-| 2026-06-17 | Slice B — Settings button wired to `SettingsScreen`; parchment skin hoisted to `ColonyArt.ParchmentSkin()` | (pending) |
+| 2026-06-17 | Slice B — Settings button wired to `SettingsScreen`; parchment skin hoisted to `ColonyArt.ParchmentSkin()` | 11da6fa |

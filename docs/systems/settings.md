@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | In development (Slice B shipped — video + audio) |
-| **Last verified** | 2026-06-17 @ (pending) |
+| **Last verified** | 2026-06-17 @ 11da6fa |
 | **Code** | `game/src/GameLogic/App/SettingsModel.cs` (pure), `game/presentation/SettingsService.cs` (autoload), `game/presentation/SettingsScreen.cs` + `game/scenes/SettingsScreen.tscn` |
 | **Tests** | `game/tests/GameLogic.Tests/App/SettingsModelTests.cs` (L1); `game/presentation/tests/SettingsScreenTests.cs` (L3) |
 | **FreeCol reference** | FreeCol's client options dialog (conceptual — we ship a minimal subset) |
@@ -79,4 +79,4 @@ A **Settings** screen, opened from the main menu, lets you change how the game l
 
 | Date | Change | Commit |
 |---|---|---|
-| 2026-06-17 | Slice B — settings screen + persistence: `SettingsModel` (L1) + `SettingsService` autoload (`user://settings.cfg`) + Video/Audio UI; wired the menu's Settings button | (pending) |
+| 2026-06-17 | Slice B — settings screen + persistence: `SettingsModel` (L1) + `SettingsService` autoload (`user://settings.cfg`) + Video/Audio UI; wired the menu's Settings button | 11da6fa |
