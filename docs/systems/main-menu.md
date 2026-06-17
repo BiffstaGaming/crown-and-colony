@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | In development (Slice A shipped — shell only) |
-| **Last verified** | 2026-06-17 @ (pending) |
+| **Last verified** | 2026-06-17 @ 4b71ede |
 | **Code** | `game/presentation/MainMenu.cs`, `game/scenes/MainMenu.tscn` |
 | **Tests** | `game/presentation/tests/MainMenuTests.cs` (L3) |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/client/gui/panel/MainPanel.java` (opening-menu layout); `freecol/data/base/resources/images/ui/` (art) |
@@ -88,4 +88,4 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 | 2026-06-17 | Slice B — Settings button wired to `SettingsScreen`; parchment skin hoisted to `ColonyArt.ParchmentSkin()` | 11da6fa |
 | 2026-06-17 | Slice C — Settings now opens `SettingsScreen` as an overlay (was a scene change), to match the pause menu's reuse | 895f958 |
 | 2026-06-17 | Slice D — bundled UI font (Cardo) cascades here via `ColonyTheme`; added the `main-menu` L4 golden | 0106d9c |
-| 2026-06-17 | Slice F — Load Game wired to the save-slot dialog (button enabled); `main-menu` golden regenerated | (pending) |
+| 2026-06-17 | Slice F — Load Game wired to the save-slot dialog (button enabled); `main-menu` golden regenerated | 4b71ede |

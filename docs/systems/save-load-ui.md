@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (Slice F) |
-| **Last verified** | 2026-06-17 @ (pending) |
+| **Last verified** | 2026-06-17 @ 4b71ede |
 | **Code** | `game/presentation/SaveLoadDialog.cs`, `game/scenes/SaveLoadDialog.tscn`; `game/presentation/GameController.cs` (`SaveTo`/`LoadFrom`/`PendingLoadPath`) |
 | **Tests** | `game/presentation/tests/SaveLoadTests.cs` (L3) |
 | **FreeCol reference** | conceptual (load/save game dialog) |
@@ -83,4 +83,4 @@ A **save-slot dialog** lets you keep up to five saved games and pick between the
 
 | Date | Change | Commit |
 |---|---|---|
-| 2026-06-17 | Slice F — five-slot save/load dialog; menu Load Game + pause Save/Load wired; `GameController.SaveTo`/`LoadFrom`/`PendingLoadPath` | (pending) |
+| 2026-06-17 | Slice F — five-slot save/load dialog; menu Load Game + pause Save/Load wired; `GameController.SaveTo`/`LoadFrom`/`PendingLoadPath` | 4b71ede |
