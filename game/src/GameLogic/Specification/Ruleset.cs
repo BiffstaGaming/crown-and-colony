@@ -590,9 +590,15 @@ public sealed class Ruleset
                 .Select(o => ParseInt((string?)o.Attribute("value")))
                 .FirstOrDefault(v => v is not null) ?? fallback;
 
+        GovernmentLimits medium = GovernmentLimits.ClassicMedium;
         return new DifficultyOptions(
             FoundingFatherFactor: IntOption("model.option.foundingFatherFactor", DifficultyOptions.ClassicMedium.FoundingFatherFactor),
-            UnitsThatUseNoBells: IntOption("model.option.unitsThatUseNoBells", DifficultyOptions.ClassicMedium.UnitsThatUseNoBells));
+            UnitsThatUseNoBells: IntOption("model.option.unitsThatUseNoBells", DifficultyOptions.ClassicMedium.UnitsThatUseNoBells),
+            Government: new GovernmentLimits(
+                VeryGood: IntOption("model.option.veryGoodGovernmentLimit", medium.VeryGood),
+                Good: IntOption("model.option.goodGovernmentLimit", medium.Good),
+                Bad: IntOption("model.option.badGovernmentLimit", medium.Bad),
+                VeryBad: IntOption("model.option.veryBadGovernmentLimit", medium.VeryBad)));
     }
 
     /// <summary>

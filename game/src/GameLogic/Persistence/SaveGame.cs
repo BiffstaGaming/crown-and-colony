@@ -305,7 +305,10 @@ public sealed record SaveGame
             Colonies?.Select(c =>
             {
                 var colony = new CrownAndColony.GameLogic.Colonies.Colony(
-                    c.Id, c.Name, new Position(c.X, c.Y), c.Population, c.OwnerId ?? 0);
+                    c.Id, c.Name, new Position(c.X, c.Y), c.Population, c.OwnerId ?? 0)
+                {
+                    Government = ruleset.Difficulty.Government, // production-bonus thresholds from the difficulty level (re-derived, not persisted)
+                };
                 foreach ((string goods, int amount) in
                          c.Stores ?? new Dictionary<string, int>())
                 {

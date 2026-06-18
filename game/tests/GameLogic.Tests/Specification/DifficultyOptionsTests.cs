@@ -1,6 +1,8 @@
 using System.Xml.Linq;
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.World;
 using Xunit;
 
 namespace CrownAndColony.GameLogic.Tests.Specification;
@@ -94,5 +96,39 @@ public class DifficultyOptionsTests
         // The first father costs `factor` (40) — same as before the const was routed through Ruleset.Difficulty.
         Game game = Game.New(Ruleset.LoadClassic(), 0xC0FFEEUL);
         Assert.Equal(40, game.TotalFoundingFatherCost());
+    }
+
+    // ── Government limits (slice 2) ──────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParseDifficulty_ReadsGovernmentLimits_ByTheirOwnIds()
+    {
+        // Non-default values prove each of the four ids is actually read (not silently falling back to ClassicMedium).
+        XElement root = XElement.Parse(
+            "<freecol-specification><optionGroup id='model.difficulty.medium'>" +
+            "  <integerOption id='model.option.veryGoodGovernmentLimit' value='99' />" +
+            "  <integerOption id='model.option.goodGovernmentLimit' value='55' />" +
+            "  <integerOption id='model.option.badGovernmentLimit' value='5' />" +
+            "  <integerOption id='model.option.veryBadGovernmentLimit' value='9' />" +
+            "</optionGroup></freecol-specification>");
+        Assert.Equal(new GovernmentLimits(VeryGood: 99, Good: 55, Bad: 5, VeryBad: 9), Ruleset.ParseDifficulty(root).Government);
+    }
+
+    [Fact]
+    public void ClassicRuleset_ParsesTheMediumGovernmentLimits()
+    {
+        Assert.Equal(new GovernmentLimits(VeryGood: 100, Good: 50, Bad: 6, VeryBad: 10), Ruleset.LoadClassic().Difficulty.Government);
+    }
+
+    [Fact]
+    public void GovernmentLimits_DriveTheColonyProductionBonus()
+    {
+        // 6 tories, SoL 0. At medium (bad limit 6) that is not "bad government" (6 is not > 6) → bonus 0.
+        var colony = new Colony(1, "Gov", new Position(0, 0), population: 6);
+        Assert.Equal(0, colony.ProductionBonus);
+
+        // A harder level tightens the bad limit to 5 → 6 tories now trip "bad government" → −1. Proves the routing.
+        colony.Government = new GovernmentLimits(VeryGood: 100, Good: 50, Bad: 5, VeryBad: 9);
+        Assert.Equal(-1, colony.ProductionBonus);
     }
 }

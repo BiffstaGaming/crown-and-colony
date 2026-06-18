@@ -26,9 +26,14 @@ namespace CrownAndColony.GameLogic.Specification;
 /// Colonists who consume no bell upkeep — beyond this each eats 1 bell/turn (spec
 /// <c>model.option.unitsThatUseNoBells</c>; 2 on every classic level).
 /// </param>
+/// <param name="Government">
+/// The Sons-of-Liberty / tory thresholds for the colony production bonus (spec <c>*GovernmentLimit</c> options; the
+/// tory-penalty limits tighten on harder levels). See [sons-of-liberty].
+/// </param>
 public sealed record DifficultyOptions(
     int FoundingFatherFactor,
-    int UnitsThatUseNoBells)
+    int UnitsThatUseNoBells,
+    GovernmentLimits Government)
 {
     /// <summary>
     /// The classic <c>model.difficulty.medium</c> values — the fallback when a spec omits the difficulty group or a
@@ -36,5 +41,6 @@ public sealed record DifficultyOptions(
     /// </summary>
     public static readonly DifficultyOptions ClassicMedium = new(
         FoundingFatherFactor: 40,
-        UnitsThatUseNoBells: 2);
+        UnitsThatUseNoBells: 2,
+        Government: GovernmentLimits.ClassicMedium);
 }

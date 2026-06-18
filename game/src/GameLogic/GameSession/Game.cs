@@ -2838,7 +2838,10 @@ public sealed class Game
 
         IReadOnlyList<string> names = ColonyNamesFor(unit.OwnerId);
         string name = names[(_nextColonyId - 1) % names.Count];
-        var colony = new Colony(_nextColonyId++, name, unit.Position, population: 1, ownerId: unit.OwnerId);
+        var colony = new Colony(_nextColonyId++, name, unit.Position, population: 1, ownerId: unit.OwnerId)
+        {
+            Government = Ruleset.Difficulty.Government, // production-bonus thresholds from the difficulty level
+        };
 
         // Every colony starts with the free base buildings (no build cost, not
         // an upgrade) — town hall, carpenter's house, the artisan houses, etc.

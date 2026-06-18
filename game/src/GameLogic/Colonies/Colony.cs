@@ -1,3 +1,4 @@
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
 
 namespace CrownAndColony.GameLogic.Colonies;
@@ -24,18 +25,13 @@ public sealed class Colony
     /// <summary>Liberty points one rebel colonist represents (FreeCol <c>Colony.LIBERTY_PER_REBEL</c> = 200; a real code constant, not a difficulty option).</summary>
     public const int LibertyPerRebel = 200;
 
-    // Government thresholds for the production bonus. These four are FreeCol *difficulty options*, and they DIFFER by
-    // difficulty (veryEasy 8/12 … medium 6/10 … veryHard 4/8). We hardcode the **medium** values — the classic
-    // default — because we don't model difficulty levels yet (same choice as the native-demand tuning). When a
-    // difficulty system lands, these must become data-driven.
-    /// <summary>SoL% at/above which government is "very good" → +2 per worker (FreeCol medium <c>veryGoodGovernmentLimit</c>).</summary>
-    public const int VeryGoodGovernmentLimit = 100;
-    /// <summary>SoL% at/above which government is "good" → +1 per worker (FreeCol medium <c>goodGovernmentLimit</c>).</summary>
-    public const int GoodGovernmentLimit = 50;
-    /// <summary>Tory count above which government is "bad" → −1 per worker (FreeCol medium <c>badGovernmentLimit</c>).</summary>
-    public const int BadGovernmentLimit = 6;
-    /// <summary>Tory count above which government is "very bad" → −2 per worker (FreeCol medium <c>veryBadGovernmentLimit</c>).</summary>
-    public const int VeryBadGovernmentLimit = 10;
+    /// <summary>
+    /// The government thresholds for <see cref="ProductionBonus"/>, from the difficulty level. Set from
+    /// <c>Ruleset.Difficulty.Government</c> when the colony is founded or loaded; defaults to the classic medium
+    /// tier so a colony built without a ruleset (tests) behaves as before. A plain value (no <see cref="Ruleset"/>
+    /// dependency) — see [difficulty]. <c>internal set</c>: only the game/save layer assigns it.
+    /// </summary>
+    internal GovernmentLimits Government { get; set; } = GovernmentLimits.ClassicMedium;
 
     private readonly Dictionary<string, int> _stores = [];
     private readonly Dictionary<Position, string> _tileWorkers = [];
@@ -219,10 +215,10 @@ public sealed class Colony
     /// output (floored at 0) in <see cref="GameSession.Game"/>'s colony turn.
     /// </summary>
     public int ProductionBonus =>
-        SonsOfLiberty >= VeryGoodGovernmentLimit ? 2
-        : SonsOfLiberty >= GoodGovernmentLimit ? 1
-        : ToryCount > VeryBadGovernmentLimit ? -2
-        : ToryCount > BadGovernmentLimit ? -1
+        SonsOfLiberty >= Government.VeryGood ? 2
+        : SonsOfLiberty >= Government.Good ? 1
+        : ToryCount > Government.VeryBad ? -2
+        : ToryCount > Government.Bad ? -1
         : 0;
 
     internal void AddBuilding(string buildingId) => _buildings.Add(buildingId);

@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | In development (slice 1: the parse + overlay infrastructure and the founding-father factor + units-that-use-no-bells are routed through it; the rest of the ~17 tuning constants follow in later slices) |
-| **Last verified** | 2026-06-18 @ difficulty parse + FF-factor routing (`86d3c9y08` slice 1) |
-| **Code** | `game/src/GameLogic/Specification/DifficultyOptions.cs`; `Specification/Ruleset.cs` (`ParseDifficulty`, `Difficulty` property); consumers read `Ruleset.Difficulty.*` |
+| **Status** | In development (slices 1–2: the parse + overlay infrastructure, the founding-father factor, units-that-use-no-bells, and the four government limits are routed through it; the rest of the ~17 tuning constants follow in later slices) |
+| **Last verified** | 2026-06-18 @ government limits routed (`86d3c9y08` slice 2) |
+| **Code** | `game/src/GameLogic/Specification/DifficultyOptions.cs`, `Specification/GovernmentLimits.cs`; `Specification/Ruleset.cs` (`ParseDifficulty`, `Difficulty` property); consumers read `Ruleset.Difficulty.*` (`Colony.Government` carries the limits) |
 | **Tests** | `game/tests/GameLogic.Tests/Specification/DifficultyOptionsTests.cs` |
 | **FreeCol reference** | `Specification.applyDifficultyLevel`/`getInteger` (`Specification.java` ~1185), spec `optionGroup id="difficultyLevels"` (`specification.xml` ~3398) with `model.difficulty.veryEasy…veryHard`; default `model.difficulty.medium` (`FreeCol.java` `DIFFICULTY_DEFAULT`) |
 | **Related systems** | [founding-fathers](founding-fathers.md), [sons-of-liberty](sons-of-liberty.md), [natives](natives.md), [immigration](immigration.md), [ruleset-data](ruleset-data.md), [game-modes](game-modes.md) |
@@ -29,7 +29,7 @@ Until now these numbers were scattered through the C# as hard-coded constants. T
 
 - **The levels** live under the spec `optionGroup id="difficultyLevels"` (which is `recursive="false"`, so its options are *not* flattened into the global option map — a level must be selected and overlaid). Each of `model.difficulty.{veryEasy,easy,medium,hard,veryHard}` restates the full option set across six fixed subgroups: `immigration`, `natives`, `monarch`, `government`, `other`, `cheat`. **There is no inheritance between levels** — each value is concrete per level.
 - **Selection / overlay:** a chosen level's `model.option.*` values are read straight into `DifficultyOptions`. The default is `model.difficulty.medium`. (FreeCol overlays the level onto the base options by whole-option, last-write-wins by id; because there is no cross-level inheritance, reading the selected level's subtree directly is equivalent.)
-- **Routed so far (slice 1):** `model.option.foundingFatherFactor` (24/32/40/48/56 across the levels — see [founding-fathers](founding-fathers.md)) and `model.option.unitsThatUseNoBells` (2 on every classic level — bell upkeep, see [sons-of-liberty](sons-of-liberty.md)).
+- **Routed so far (slices 1–2):** `model.option.foundingFatherFactor` (24/32/40/48/56 across the levels — see [founding-fathers](founding-fathers.md)); `model.option.unitsThatUseNoBells` (2 on every classic level — bell upkeep); and the **four government limits** `veryGood`/`good`/`bad`/`veryBad GovernmentLimit` (medium 100/50/6/10; the tory-penalty limits tighten on harder levels) → `Ruleset.Difficulty.Government` (a `GovernmentLimits` value), carried on `Colony.Government` and read by `Colony.ProductionBonus` — see [sons-of-liberty](sons-of-liberty.md).
 - **Fallbacks:** a selected level absent from the spec → all values from `DifficultyOptions.ClassicMedium`; an individual option absent from an otherwise-present level → that one value from `ClassicMedium`.
 
 | Input / condition | Result |
@@ -43,7 +43,7 @@ Until now these numbers were scattered through the C# as hard-coded constants. T
 **Deviations from original 1994 / FreeCol behavior:**
 - **Public surface is typed, not string-keyed.** FreeCol reads options by id (`getInteger("model.option.foundingFatherFactor")`); we expose strongly-typed properties on `DifficultyOptions` (`Ruleset.Difficulty.FoundingFatherFactor`) for compile-time call sites and per-option XML docs. The by-id lookup is an implementation detail of the parser.
 - **Selection is not yet persisted.** The level is fixed at medium; a player-selectable, save-persisted level (with an additive save-version bump) is a later slice. Until then a save carries no level — it always reloads at medium (which is correct while medium is the only level used).
-- **Only two constants are routed so far.** The remaining ~15 (government limits, native land-price/demands/rumour, immigration increments, treasure-transport fee, the base-`gameOptions` immigration trio) are still hard-coded at their medium values and move across in later slices — each behaviour-preserving at the default, since every one already holds its medium value.
+- **Not all constants are routed yet.** Slices 1–2 routed the founding-father factor, units-that-use-no-bells, and the four government limits. The remaining ~11 (native land-price/demands/rumour, immigration increments, the rumour percentages, treasure-transport fee, the base-`gameOptions` immigration trio) are still hard-coded at their medium values and move across in later slices — each behaviour-preserving at the default, since every one already holds its medium value.
 
 ## 3. Technical design
 
@@ -70,7 +70,7 @@ Until now these numbers were scattered through the C# as hard-coded constants. T
 
 ## 5. Open issues / TODO
 
-- [ ] **Slice 2** — route the four **government limits** into `Colony.ProductionBonus` (pass a `GovernmentLimits` value in; remove the "must become data-driven" debt note). See [sons-of-liberty](sons-of-liberty.md).
+- [x] **Slice 2** — the four **government limits** routed into `Colony.ProductionBonus` via `Colony.Government` (a `GovernmentLimits` value set from `Ruleset.Difficulty`; no `Ruleset` dep on `Colony`); the "must become data-driven" debt note resolved. See [sons-of-liberty](sons-of-liberty.md).
 - [ ] **Slice 3** — route the **natives** group (`landPriceFactor`, `nativeDemands` raw, `rumourDifficulty` raw). See [natives](natives.md), [lost-city-rumours](lost-city-rumours.md).
 - [ ] **Slice 4** — a `percentageOption` parser variant + route `badRumour`/`goodRumour` and the remaining immigration integers (`crossesIncrement`, `lowerCapIncrease`, `priceIncrease.artillery`, `recruitPriceIncrease`).
 - [ ] **Slice 5** — `treasureTransportFee`; split the base-`gameOptions` immigration trio (`initialImmigration`/`europeanUnitImmigrationPenalty`/`playerImmigrationBonus`) into a `GameOptions` bundle (they are not difficulty-scoped).
@@ -80,4 +80,5 @@ Until now these numbers were scattered through the C# as hard-coded constants. T
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-18 | **Slice 2 — government limits** (`86d3c9y08`): the four `*GovernmentLimit` options routed into a `GovernmentLimits` value on `DifficultyOptions.Government`, carried by `Colony.Government` (set from `Ruleset.Difficulty` at founding/load) and read by `Colony.ProductionBonus` — the colony stays free of a `Ruleset` dependency. Removed the four hardcoded `Colony` consts + the "must become data-driven" debt note. Behaviour-preserving at medium (100/50/6/10); no save change; soak byte-stable. +3 L1 (parse-by-id with non-default values, real-spec medium, end-to-end bonus shift). | Phase (`86d3c9y08` slice 2) |
 | 2026-06-18 | **Difficulty-level system, slice 1** (`86d3c9y08`): `DifficultyOptions` record + `Ruleset.ParseDifficulty` (selects a named level's subtree, default medium, with per-option fallback to `ClassicMedium`) + `Ruleset.Difficulty`. Routed the **founding-father factor** and **units-that-use-no-bells** off their Game.cs consts. Behaviour-preserving at the default level (medium = the old 40/2); no save change; soak byte-stable. Corrected the inaccurate "24 = other difficulty" comments (24 is veryEasy). +8 L1 (`DifficultyOptionsTests`). | Phase (`86d3c9y08` slice 1) |
