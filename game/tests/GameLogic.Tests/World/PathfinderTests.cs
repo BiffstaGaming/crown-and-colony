@@ -59,12 +59,13 @@ public class PathfinderTests
     [Fact]
     public void RoutesAroundExpensiveTerrain()
     {
-        // Direct (0,0)→(1,0)M→(2,0) costs 9+3=12; the plains detour (0,0)→(1,1)→(2,0) costs 3+3=6.
+        // Direct (0,0)→(1,0)M→(2,0) costs 9+3=12; the plains detour (0,0)→(1,1)→(2,0) costs 3+3=6 — the least-cost
+        // route, pinned exactly (not merely "avoids the mountain").
         GameMap map = FromRows("LML", "LLL");
-        IReadOnlyList<Position> path = Path(map, new Position(0, 0), new Position(2, 0));
 
-        Assert.DoesNotContain(new Position(1, 0), path); // never enters the mountain
-        Assert.Equal(new Position(2, 0), path[^1]);
+        Assert.Equal(
+            new[] { new Position(1, 1), new Position(2, 0) },
+            Path(map, new Position(0, 0), new Position(2, 0)));
     }
 
     [Fact]
@@ -102,16 +103,19 @@ public class PathfinderTests
     }
 
     [Fact]
-    public void IsDeterministic_AndTieBreaksLowerYThenX()
+    public void TieBreak_IsLowerYThenLowerX_PathsPinnedEndToEnd()
     {
-        // (0,0)→(2,0) on open plains: two equal-cost 2-step routes. The (f,g,Y,X) tie-break takes the first step
-        // with the lower Y (the straight (1,0)), not the diagonal (1,1).
         GameMap map = FromRows("LLL", "LLL", "LLL");
-        IReadOnlyList<Position> a = Path(map, new Position(0, 0), new Position(2, 0));
-        IReadOnlyList<Position> b = Path(map, new Position(0, 0), new Position(2, 0));
 
-        Assert.Equal(a, b);                       // byte-stable across runs
-        Assert.Equal(new Position(1, 0), a[0]);   // lower-Y first step wins the tie
-        Assert.Equal(2, a.Count);
+        // (0,0)→(2,0): the equal-cost first steps (1,0)[Y0] and (1,1)[Y1] tie on f,g — lower Y wins.
+        Assert.Equal(
+            new[] { new Position(1, 0), new Position(2, 0) },
+            Path(map, new Position(0, 0), new Position(2, 0)));
+
+        // (1,0)→(1,2): the equal-cost first steps (0,1)/(1,1)/(2,1) all share Y=1 — lower X (0,1) wins, exercising
+        // the X component of the (f,g,Y,X) key that the previous case never touched.
+        Assert.Equal(
+            new[] { new Position(0, 1), new Position(1, 2) },
+            Path(map, new Position(1, 0), new Position(1, 2)));
     }
 }

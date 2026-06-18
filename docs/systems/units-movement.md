@@ -57,7 +57,10 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
   | Reached the destination | the goto **clears** (`GotoOutcome.Reached`) |
   | Ran out of movement mid-route | stops; goto **kept**, resumes next turn (`OutOfMoves`) |
   | No route this turn (blocker/fog) | stops; goto **kept**, retries next turn (`NoPath`) |
-  | A step consumes/transforms the unit (e.g. a rumour) | the goto ends (`NotGoing`) |
+  | A step lands on an unresolved Lost City Rumour (a strange-mounds prompt) | stops **on the rumour tile** so the player decides there (FreeCol: exploring a rumour ends the move); goto **kept** (`Interrupted`) |
+  | A step consumes/transforms the unit (e.g. an expedition vanishes) | the goto ends (`NotGoing`) |
+
+  A goto routes **around** enemies and settlements (impassable tiles), so it never auto-attacks — if the only route is blocked it stops with `NoPath` and waits.
 
   The route is found by a deterministic, **RNG-free** A* (`Pathfinder`) over the terrain move-cost model, restricted to tiles the owner has **explored** (so a goto never routes through the unknown), recomputed **every step** so it adapts to revealed terrain and moved units. A unit only ever steps where `CheckMove` allows, so the goto obeys every normal movement rule.
 

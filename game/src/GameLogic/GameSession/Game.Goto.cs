@@ -118,6 +118,14 @@ public sealed partial class Game
                 unit.Destination = null;
                 return new GotoAdvance(GotoOutcome.Reached, steps);
             }
+            if (Map.HasRumour(unit.Position))
+            {
+                // The unit is on an unresolved Lost City Rumour — a strange-mounds prompt left on the tile by the
+                // step that landed here (or a pending one it started on). Stop so the player decides with the unit
+                // standing on the rumour, as in FreeCol (exploring a rumour ends the move). The goto is kept and
+                // resumes once the rumour is cleared.
+                return new GotoAdvance(GotoOutcome.Interrupted, steps);
+            }
             IReadOnlyList<Position> path = FindPath(unit, goal);
             if (path.Count == 0)
             {
@@ -191,14 +199,11 @@ public enum GotoOutcome
     /// <summary>The unit ran out of movement; the goto is kept and resumes next turn.</summary>
     OutOfMoves,
 
-    /// <summary>An enemy or settlement blocks the next step; the unit stops adjacent, goto kept.</summary>
-    Blocked,
-
-    /// <summary>The unit made contact with an enemy on its path; it stops, goto kept.</summary>
-    EnemyContact,
-
     /// <summary>No route to the destination this turn (terrain/fog/blockers); the goto is kept.</summary>
     NoPath,
+
+    /// <summary>A step landed on (or the unit started on) an unresolved Lost City Rumour; it stops there, goto kept.</summary>
+    Interrupted,
 }
 
 /// <summary>The result of advancing a unit along its goto for one turn.</summary>
