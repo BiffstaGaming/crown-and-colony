@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-18 — Calendar: turn → year/season mapping (86d3c9xvu) — Shipped
+
+**Requested:** "Continue through the backlog without stopping" (you out ~the hour, everything timestamped). I picked a contained, foundational, soak-safe item over opening the big Missionaries subsystem at depth.
+**Did:** Shipped the **turn→year/season calendar** (`86d3c9xvu`, ARCH high) — a faithful port of FreeCol `Turn.getTurnYear`/`getTurnSeason`. Turn 1 = 1492; one turn per year until 1600, then two turns per year (Spring/Autumn).
+- `Specification/Calendar.cs` — pure record (`StartingYear`/`SeasonYear`/`Seasons`) + `YearForTurn`/`SeasonForTurn`/`Label`/`SeasonName`/`HasSeason`.
+- `Ruleset.ParseCalendar` reads the spec `gameOptions.years` (1492/1600/2), each option defaulting to classic if absent — proven *parsed-not-hardcoded* by a non-default-spec test.
+- `Game.CurrentYear`/`CurrentSeason`/`CalendarLabel` derive from `Turn`; HUD status bar shows the label ("Turn 1 (1492)" → "Turn 109 (Spring 1600)").
+- 3-agent adversarial review (formula fidelity / parse robustness / integration+soak+docs) came back clean bar one backwards doc-prose sentence, fixed in-slice.
+**Status:** **926 L1/L2 + 4 soak green**, build clean; pushed `bbd5642`. **No save change** (year is derived from the saved `Turn` → soak byte-stable); no RNG (ADR-009).
+**Changed:** new `Specification/Calendar.cs` + `Specification/CalendarTests.cs`; `Ruleset.cs`, `GameSession/Game.cs`, `presentation/GameController.cs`; `docs/systems/turns.md` (both layers + changelog + Last-verified).
+**Decisions:** The year rides the **dev status bar** for now; a polished classic-style HUD year panel is a new low-pri follow-up (`86d3cz54z`). Founding-father ages still use turn bands — deliberately left to its own task.
+**Scheduled next:** **`86d3c9xy3` — founding-father ages by year**: now directly unblocked by the calendar — switch `Game.CurrentAge` from the crude turn bands (`Turn<100?1:…`) to the year-based `ages` option (1600,1700). Small, GameLogic-only, testable; changes which fathers are offered (soak trajectory shifts but stays twin-deterministic), so a quick review + a noted soak re-pin.
+**Follow-ups:** `86d3cz54z` (polished HUD year panel, low); `86d3c9xy3` (ages-by-year, next). Earlier In-Review calls still open for your return: `86d3c9q1z` (promotion ladder — ship?), FP-6 gap (b) (stance-aware combat — needs your playtest).
+**Needs you (minor):** glance at the status-bar date next playtest ("Spring/Autumn YEAR" readability) — nothing behavioural changed.
+
 ## 2026-06-18 — Schoolhouse/college/university teaching system (86d3c9p7f) — Shipped
 
 **Requested:** "Continue onto the next work … out for the next hour, continue through the backlog without stopping." (You also said "Go gap (b)" just before, then redirected — so I set FP-6 gap (b) aside as the human-facing one that needs your playtest, and took a clean unattended item instead.)
