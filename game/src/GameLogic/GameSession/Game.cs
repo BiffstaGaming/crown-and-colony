@@ -639,17 +639,14 @@ public sealed class Game
     // getTransportFee + the cash-in handler): at a colony the King ships it across for a transport cut, then the
     // monarch's tax applies; carry it to Europe yourself (a galleon) to skip the King's fee.
 
-    /// <summary>The King's cut to ship treasure to Europe (FreeCol <c>model.option.treasureTransportFee</c>; <b>60%</b>,
-    /// classic-medium — the tier this project standardises on. Still hardcoded — it moves into
-    /// <see cref="Specification.DifficultyOptions"/> in difficulty slice 5; revisit then.</summary>
-    private const int TreasureTransportFeePercent = 60;
-
     /// <summary>The father modifier id scaling the transport fee — Hernán Cortés's −100% ships treasure for free.</summary>
     private const string TreasureTransportFeeModifierId = "model.modifier.treasureTransportFee";
 
-    /// <summary>The King's fee to ship <paramref name="train"/>'s treasure to Europe: <see cref="TreasureTransportFeePercent"/>% of the amount, less Hernán Cortés's <c>treasureTransportFee</c> modifier (−100% → free).</summary>
+    /// <summary>The King's fee to ship <paramref name="train"/>'s treasure to Europe: the difficulty's
+    /// <see cref="Specification.DifficultyOptions.TreasureTransportFee"/>% of the amount (medium 60), less Hernán
+    /// Cortés's <c>treasureTransportFee</c> modifier (−100% → free).</summary>
     private int TransportFee(Player owner, Unit train) =>
-        ApplyGoodsModifiers(owner, TreasureTransportFeeModifierId, TreasureTransportFeePercent * train.TreasureAmount / 100);
+        ApplyGoodsModifiers(owner, TreasureTransportFeeModifierId, Ruleset.Difficulty.TreasureTransportFee * train.TreasureAmount / 100);
 
     /// <summary>
     /// The gold <paramref name="owner"/> nets cashing in <paramref name="train"/>: the carried amount less the King's

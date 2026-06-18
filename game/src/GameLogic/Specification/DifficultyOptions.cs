@@ -49,6 +49,7 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <param name="RecruitPriceIncrease">Base recruit-price rise per paid recruit (spec <c>model.option.recruitPriceIncrease</c>; veryEasy 20 else 30). See [europe].</param>
 /// <param name="RecruitLowerCapIncrease">Recruit-price-floor rise per paid recruit (spec <c>model.option.lowerCapIncrease</c>; medium 0). See [europe].</param>
 /// <param name="ArtilleryPriceIncrease">Added to the artillery purchase price after each artillery bought (spec <c>model.option.priceIncrease.artillery</c>; medium 100). See [europe].</param>
+/// <param name="TreasureTransportFee">The King's cut (percent) to ship a treasure train to Europe (spec <c>model.option.treasureTransportFee</c>; medium 60). See [treasure-train].</param>
 public sealed record DifficultyOptions(
     int FoundingFatherFactor,
     int UnitsThatUseNoBells,
@@ -61,7 +62,8 @@ public sealed record DifficultyOptions(
     int CrossesIncrement,
     int RecruitPriceIncrease,
     int RecruitLowerCapIncrease,
-    int ArtilleryPriceIncrease)
+    int ArtilleryPriceIncrease,
+    int TreasureTransportFee)
 {
     /// <summary>
     /// The classic <c>model.difficulty.medium</c> values — the fallback when a spec omits the difficulty group or a
@@ -79,5 +81,6 @@ public sealed record DifficultyOptions(
         CrossesIncrement: 2,
         RecruitPriceIncrease: 30,
         RecruitLowerCapIncrease: 0,
-        ArtilleryPriceIncrease: 100);
+        ArtilleryPriceIncrease: 100,
+        TreasureTransportFee: 60);
 }

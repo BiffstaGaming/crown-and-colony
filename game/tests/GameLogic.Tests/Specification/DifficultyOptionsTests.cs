@@ -193,4 +193,22 @@ public class DifficultyOptionsTests
         Assert.Equal(0, d.RecruitLowerCapIncrease);
         Assert.Equal(100, d.ArtilleryPriceIncrease);
     }
+
+    // ── Treasure-transport fee (slice 5) ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParseDifficulty_ReadsTheTreasureTransportFee_ByItsOwnId()
+    {
+        XElement root = XElement.Parse(
+            "<freecol-specification><optionGroup id='model.difficulty.medium'>" +
+            "  <integerOption id='model.option.treasureTransportFee' value='50' />" +
+            "</optionGroup></freecol-specification>");
+        Assert.Equal(50, Ruleset.ParseDifficulty(root).TreasureTransportFee);
+    }
+
+    [Fact]
+    public void ClassicRuleset_ParsesTheTreasureTransportFee()
+    {
+        Assert.Equal(60, Ruleset.LoadClassic().Difficulty.TreasureTransportFee);
+    }
 }
