@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 32;
+    public const int CurrentVersion = 33;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -64,7 +64,10 @@ public sealed record SaveGame
     /// a game where no colonist has accrued experience is byte-identical to v30; pre-v31 saves load every worker at 0).
     /// v32 added per-school accrued training turns (<see cref="SavedColony.SchoolTraining"/>, omitted when no school is
     /// mid-training, so a non-teaching game is byte-identical to v31; pre-v32 saves load with no training in progress).
-    /// Each of v23–v32 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// v33 added a settlement's resident missionary (<see cref="SavedNativeSettlement.MissionOwnerId"/> +
+    /// <see cref="SavedNativeSettlement.MissionIsExpert"/>, both omitted when the settlement has no mission, so a
+    /// mission-free game is byte-identical to v32; pre-v33 saves load with no missions).
+    /// Each of v23–v33 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
@@ -261,7 +264,8 @@ public sealed record SaveGame
                         s.Id, s.NationTypeId, s.SettlementTypeId, s.IsCapital,
                         s.Position.X, s.Position.Y, s.Size, s.LearnableSkill,
                         s.Alarm, s.HasBeenVisited, s.SkillConsumed,
-                        s.WantedGoods.Count > 0 ? s.WantedGoods.ToList() : null))
+                        s.WantedGoods.Count > 0 ? s.WantedGoods.ToList() : null,
+                        s.MissionOwnerId, s.HasMission ? s.MissionIsExpert : null)) // omitted when no mission
                     .ToList()
                 : null,
         };
@@ -372,6 +376,8 @@ public sealed record SaveGame
                 HasBeenVisited = s.HasBeenVisited,
                 SkillConsumed = s.SkillConsumed,
                 WantedGoods = s.WantedGoods ?? [],
+                MissionOwnerId = s.MissionOwnerId,           // v33; pre-v33 → null = no mission
+                MissionIsExpert = s.MissionIsExpert ?? false, // v33; default free-colonist missionary
             }),
             AutoExportMode.GetValueOrDefault()); // pre-v28 / omitted → PerGood (the enum's 0 default)
     }
@@ -507,11 +513,14 @@ public sealed record SavedWorker(int X, int Y, string GoodsId, string? UnitTypeI
 /// <param name="HasBeenVisited">Whether the chief has been spoken with (v16+).</param>
 /// <param name="SkillConsumed">Whether the skill has been taught/consumed (v16+).</param>
 /// <param name="WantedGoods">Goods the settlement most wants to buy, most-wanted first (v17+).</param>
+/// <param name="MissionOwnerId">Colonial player id whose missionary resides here (v33+; null = no mission, omitted).</param>
+/// <param name="MissionIsExpert">Whether the resident missionary is a jesuit (v33+; null when no mission, omitted).</param>
 public sealed record SavedNativeSettlement(
     int Id, string NationTypeId, string SettlementTypeId, bool IsCapital,
     int X, int Y, int Size, string? LearnableSkill = null,
     int Alarm = 0, bool HasBeenVisited = false, bool SkillConsumed = false,
-    IReadOnlyList<string>? WantedGoods = null);
+    IReadOnlyList<string>? WantedGoods = null,
+    int? MissionOwnerId = null, bool? MissionIsExpert = null);
 
 /// <summary>A unit inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Id">Unit id.</param>

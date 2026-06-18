@@ -797,6 +797,77 @@ public sealed class Game
             : VisitAsColonist(player, unit, settlement, random);
     }
 
+    /// <summary>The role ability a unit must carry to found a mission (FreeCol <c>model.role.missionary</c> grants it).</summary>
+    private const string EstablishMissionAbility = "model.ability.establishMission";
+
+    /// <summary>Alarm a settlement sheds when a mission is established (FreeCol <c>ServerIndianSettlement.ALARM_NEW_MISSIONARY</c> = −100 goodwill).</summary>
+    private const int AlarmNewMissionary = 100;
+
+    /// <summary>
+    /// Whether <paramref name="unit"/> may attempt to establish a mission at <paramref name="settlement"/> (FreeCol
+    /// <c>InGameController.establishMission</c>): an on-map unit in the missionary role, with movement left, on or
+    /// adjacent to the settlement. The settlement's <b>alarm does not gate the command</b> — establishing at an
+    /// Angry/Hateful tribe is a legal action that simply gets the missionary killed (mirrors how a hateful tribe
+    /// legally kills a visiting scout); <see cref="EstablishMission(Player, Unit, NativeSettlement)"/> decides
+    /// install-vs-destroy. An existing mission (even another player's) is replaced.
+    /// </summary>
+    public MoveCheck CheckEstablishMission(Unit unit, NativeSettlement settlement)
+    {
+        if (!unit.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (!Ruleset.Role(unit.RoleId).GrantedAbilities.GetValueOrDefault(EstablishMissionAbility))
+        {
+            return MoveCheck.No($"A {unit.Type.ShortName} is not a missionary.");
+        }
+        if (unit.MovementLeft <= 0)
+        {
+            return MoveCheck.No("No movement left this turn.");
+        }
+        if (unit.Position != settlement.Position && !unit.Position.IsAdjacentTo(settlement.Position))
+        {
+            return MoveCheck.No("Move next to the settlement to establish a mission.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Establishes a mission at <paramref name="settlement"/> with the human's missionary <paramref name="unit"/>
+    /// (FreeCol <c>InGameController.establishMission</c>). If the tribe is <b>Angry or Hateful</b> the missionary is
+    /// <b>killed</b> (consumed, no mission); otherwise the mission is installed (the settlement records the owner +
+    /// whether the missionary was a jesuit), the settlement's <b>alarm eases by 100</b> as goodwill (FreeCol
+    /// <c>ALARM_NEW_MISSIONARY</c>), the surrounding tiles are revealed at the missionary's line of sight, and the
+    /// missionary is consumed into the settlement (FreeCol holds it as the settlement's missionary, not an on-map
+    /// unit). Draws <b>no</b> randomness (ADR-009) — the whole mission mechanic is RNG-free.
+    /// </summary>
+    /// <returns><c>true</c> if the mission was installed; <c>false</c> if the missionary was killed.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckEstablishMission"/>.</exception>
+    public bool EstablishMission(Unit unit, NativeSettlement settlement) => EstablishMission(_human, unit, settlement);
+
+    /// <summary>Establishes a mission on behalf of <paramref name="player"/> (the unit's owner). RNG-free.</summary>
+    internal bool EstablishMission(Player player, Unit unit, NativeSettlement settlement)
+    {
+        MoveCheck check = CheckEstablishMission(unit, settlement);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+
+        if (settlement.AlarmLevel >= AlarmLevel.Angry)
+        {
+            _units.Remove(unit); // an Angry/Hateful tribe kills the missionary (FreeCol csRemove)
+            return false;
+        }
+
+        settlement.MissionOwnerId = player.PlayerId;
+        settlement.MissionIsExpert = unit.Type.Id == Ruleset.Role(unit.RoleId).ExpertUnit; // jesuit (the role's expert unit) vs ordinary colonist
+        ChangeNativeAlarm(settlement, -AlarmNewMissionary); // a new mission eases tension (FreeCol ALARM_NEW_MISSIONARY −100, clamped at 0)
+        RevealAround(player, settlement.Position, LineOfSightOf(unit)); // missionary line-of-sight reveal
+        _units.Remove(unit); // the missionary is installed as the settlement's resident, not left on the map
+        return true;
+    }
+
     /// <summary>The basic chief visit for a non-scout colonist: reveal the surrounding lands + a small flat gift unless hateful.</summary>
     private int VisitAsColonist(Player player, Unit unit, NativeSettlement settlement, IGameRandom random)
     {

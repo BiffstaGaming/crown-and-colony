@@ -128,6 +128,23 @@ public sealed class NativeSettlement
     public bool SkillConsumed { get; internal set; }
 
     /// <summary>
+    /// The colonial player id whose missionary resides here (FreeCol's per-settlement missionary), or <c>null</c> for
+    /// no mission. At most one mission per settlement; set by <c>Game.EstablishMission</c> when a missionary is
+    /// installed (alarm Displeased or calmer). See [natives].
+    /// </summary>
+    public int? MissionOwnerId { get; internal set; }
+
+    /// <summary>
+    /// Whether the resident missionary is an expert (a jesuit, skill 3) rather than an ordinary colonist (skill 0) —
+    /// captured at establish-time so the per-turn conversion skill term is recoverable without a unit reference.
+    /// Only meaningful while <see cref="HasMission"/>.
+    /// </summary>
+    public bool MissionIsExpert { get; internal set; }
+
+    /// <summary>Whether a colonial player's missionary resides here.</summary>
+    public bool HasMission => MissionOwnerId is not null;
+
+    /// <summary>
     /// The goods this settlement most wants to buy (FreeCol <c>wantedGoods</c>, up to 3,
     /// most-wanted first). Selling a wanted good earns a premium (150/125/110%).
     /// </summary>
