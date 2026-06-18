@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-18 — Difficulty-level system, slices 1+2 (86d3c9y08) — In Development
+
+**Requested:** "Continue through the backlog without stopping." Started the highest-leverage remaining ARCH foundation: parse the spec's `difficultyLevels` and read tuning numbers from the selected level instead of scattered hardcoded constants.
+**Did:** Scoped via a 4-agent understand+design workflow (the spec has five self-contained levels — no inheritance — each restating the full option set under six subgroups; default = medium), then shipped two CI-green slices:
+- **Slice 1** (`d758882`): `DifficultyOptions` record + `Ruleset.ParseDifficulty` (selects the chosen level's subtree *first*, then reads within it — an unscoped search would wrongly pick `veryEasy`; per-option + absent-level fallback to `ClassicMedium`) + `Ruleset.Difficulty`. Routed the **founding-father factor** and **units-that-use-no-bells**. New `docs/systems/difficulty.md` (both layers). Fixed the inaccurate "24 = other difficulty" comments (24 is veryEasy).
+- **Slice 2** (`62feee6`): the **four government limits** → `GovernmentLimits` value on `DifficultyOptions.Government`, carried by `Colony.Government` (set from `Ruleset.Difficulty` at founding/load) and read by `Colony.ProductionBonus`. Colony stays free of a `Ruleset` dependency; removed the four consts + the "must become data-driven" debt note.
+- Each slice had its own 2-agent adversarial review; findings (all low/nit doc-sync + a drift-guard test) folded in.
+**Status:** **952 L1/L2 + 4 soak green**, build clean; pushed `d758882`, `62feee6`. **No save change** (difficulty re-derived from the ruleset at load); no RNG. **Behaviour-preserving at the default level** (medium values equal the old consts) → soak byte-stable.
+**Changed:** new `Specification/{DifficultyOptions,GovernmentLimits}.cs` + `DifficultyOptionsTests.cs`; `Ruleset.cs`, `GameSession/Game.cs`, `Colonies/Colony.cs`, `Persistence/SaveGame.cs`, `FoundingFatherTests.cs`; new `docs/systems/difficulty.md`, plus `founding-fathers.md` + `sons-of-liberty.md` (both layers + changelogs).
+**Decisions:** Confirmed **no FF-factor discrepancy** — spec medium `foundingFatherFactor` = **40** = your pinned value (routing it is a no-op). Proceeded on the recommended defaults (default level = medium; typed `Ruleset.Difficulty.X` accessor; selection/persistence deferred to slice 6) — flag if you'd prefer otherwise.
+**Scheduled next:** **`86d3c9y08` slice 3 — the natives group** (`landPriceFactor`, `nativeDemands`, `rumourDifficulty` — store the raw spec value, keep the `10−x`/derived transforms in code). Then slice 4 (percentage options + remaining immigration), slice 5 (treasure-fee + base-`gameOptions` trio).
+**Follow-ups / Needs you:** **Slice 6** (player-selectable + **persisted** difficulty level) **needs your steer** on the new-game UI flow + carries an additive save-version bump — I'll stop the epic before it. Also still open from earlier: `86d3c9q1z` (promotion ladder — ship?), FP-6 gap (b) (stance-aware combat — playtest), `86d3cz54z` (polished HUD year panel, low).
+
 ## 2026-06-18 — Founding-father ages key off the calendar year (86d3c9xy3) — Shipped
 
 **Requested:** "Continue through the backlog without stopping." Took the item the calendar just unblocked.
