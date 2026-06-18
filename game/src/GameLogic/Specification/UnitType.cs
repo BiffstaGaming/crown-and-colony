@@ -108,6 +108,12 @@ public sealed record UnitProductionModifier(string GoodsId, ModifierType Type, d
 /// classic: the seasoned scout +10, every other type 0). Tilts a rumour's odds toward good: the good chance is scaled
 /// ×<c>(1 + bonus/100)</c> and the bad chance ÷ it (FreeCol <c>Modifier.EXPLORE_LOST_CITY_RUMOUR</c>).
 /// </param>
+/// <param name="SkillTaught">
+/// The unit type this expert teaches in a school, when it differs from itself (spec <c>skill-taught</c>; <b>not</b>
+/// inherited down the <c>extends</c> chain — it defaults to the type itself). Classic has exactly one override: a
+/// colonial regular teaches <c>veteranSoldier</c>. Use <see cref="SkillTaughtOrSelf"/> for the resolved value
+/// (FreeCol <c>UnitType.getSkillTaught</c>, keying education's target type).
+/// </param>
 public sealed record UnitType(
     string Id,
     int Movement,
@@ -145,7 +151,8 @@ public sealed record UnitType(
     IReadOnlyList<UnitProductionModifier>? ProductionModifiers = null,
     int MaximumExperience = 0,
     bool ExpertScout = false,
-    int ExploreLostCityRumourBonus = 0)
+    int ExploreLostCityRumourBonus = 0,
+    string? SkillTaught = null)
 {
     private static readonly IReadOnlyList<GoodsOutput> NoCost = [];
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
@@ -162,6 +169,9 @@ public sealed record UnitType(
 
     /// <summary>This unit's per-goods production modifiers, or an empty list when it has none (a plain colonist).</summary>
     public IReadOnlyList<UnitProductionModifier> ProductionModifiersOrEmpty => ProductionModifiers ?? NoProductionModifiers;
+
+    /// <summary>The unit type this expert teaches in a school — <see cref="SkillTaught"/> if set, else itself (FreeCol <c>getSkillTaught</c>).</summary>
+    public string SkillTaughtOrSelf => SkillTaught ?? Id;
 
     /// <summary>True when this unit can be constructed in a colony (it has a build cost).</summary>
     public bool IsBuildable => BuildCostOrEmpty.Count > 0;

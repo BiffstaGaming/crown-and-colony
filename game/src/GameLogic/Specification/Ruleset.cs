@@ -21,6 +21,7 @@ public sealed class Ruleset
     private readonly Dictionary<string, RoleType> _roleById;
     private readonly Dictionary<string, Dictionary<string, UnitChange>> _unitChangeByType;
     private readonly Dictionary<string, Dictionary<string, int>> _experienceUpgradeByFrom; // from-type → (expert-to-type → probability)
+    private readonly Dictionary<string, Dictionary<string, int>> _educationByFrom; // from-type → (to-type → base turns of training)
     private readonly Dictionary<string, string> _expertForProducing; // goods id → the unit type that is its expert
     private readonly Dictionary<string, EuropeanNation> _europeanNationById;
 
@@ -36,6 +37,7 @@ public sealed class Ruleset
         Dictionary<string, RoleType> roleById,
         Dictionary<string, Dictionary<string, UnitChange>> unitChangeByType,
         Dictionary<string, Dictionary<string, int>> experienceUpgradeByFrom,
+        Dictionary<string, Dictionary<string, int>> educationByFrom,
         Dictionary<string, EuropeanNation> europeanNationById)
     {
         _terrainById = terrainById;
@@ -49,6 +51,7 @@ public sealed class Ruleset
         _roleById = roleById;
         _unitChangeByType = unitChangeByType;
         _experienceUpgradeByFrom = experienceUpgradeByFrom;
+        _educationByFrom = educationByFrom;
         _europeanNationById = europeanNationById;
         // Reverse the expert→good mapping into good→expert (FreeCol Specification.getExpertForProducing): the unit type
         // whose expert-production is a given good (grain → expert farmer, fish → expert fisherman, …). First definition
@@ -246,6 +249,49 @@ public sealed class Ruleset
     public string? ExpertForProducing(string goodsId) => _expertForProducing.GetValueOrDefault(goodsId);
 
     /// <summary>
+    /// The unit type a student of <paramref name="studentTypeId"/> becomes after ONE schooling cycle under a teacher of
+    /// <paramref name="teacherTypeId"/> (FreeCol <c>UnitType.getTeachingType</c>), or null if the teacher cannot raise
+    /// that student. The teacher imparts its <see cref="UnitType.SkillTaughtOrSelf"/>: a student already at/above that
+    /// skill is ineligible; one already eligible for the taught type directly learns it (free colonist → expert ore
+    /// miner); a lower student climbs ONE rung first (petty criminal → indentured servant → free colonist), recursing
+    /// so each cycle advances a single step toward the teacher's expertise.
+    /// </summary>
+    public UnitType? GetTeachingType(string teacherTypeId, string studentTypeId)
+    {
+        string taught = Unit(teacherTypeId).SkillTaughtOrSelf;
+        int taughtLevel = Unit(taught).Skill;
+        if (Unit(studentTypeId).Skill >= taughtLevel || !_educationByFrom.TryGetValue(studentTypeId, out var rungs))
+        {
+            return null;
+        }
+        if (rungs.ContainsKey(taught))
+        {
+            return Unit(taught); // the student can learn the teacher's expertise directly this cycle
+        }
+        // Otherwise climb one rung whose own ladder can eventually reach the taught type (criminal → servant → free).
+        foreach (string to in rungs.Keys.Where(t => Unit(t).Skill < taughtLevel).OrderBy(t => t, StringComparer.Ordinal))
+        {
+            if (GetTeachingType(teacherTypeId, to) is not null)
+            {
+                return Unit(to);
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The base number of turns a teacher of <paramref name="teacherTypeId"/> needs to raise a student of
+    /// <paramref name="studentTypeId"/> one rung (FreeCol <c>Specification.getNeededTurnsOfTraining</c>; classic 4/6/8),
+    /// or 0 if the teacher cannot teach that student. The caller applies the Sons-of-Liberty reduction (floored at 1).
+    /// </summary>
+    public int NeededTurnsOfTraining(string teacherTypeId, string studentTypeId) =>
+        GetTeachingType(teacherTypeId, studentTypeId) is { } learn
+        && _educationByFrom.TryGetValue(studentTypeId, out var rungs)
+        && rungs.TryGetValue(learn.Id, out int turns)
+            ? turns
+            : 0;
+
+    /// <summary>
     /// The role a victor in <paramref name="winnerRoleId"/> upgrades to by capturing the equipment of a
     /// defeated unit in <paramref name="loserRoleId"/>, or null if none is available to that owner
     /// (FreeCol <c>Unit.canCaptureEquipment</c>): the military role whose <c>role-change</c> matches, gated
@@ -422,7 +468,11 @@ public sealed class Ruleset
                 // Rebel factor: the Sons-of-Liberty production bonus is multiplied by this before it is added to a
                 // worker's output (lumber mill / cathedral ×2, factory tier ×1.5; default 1, nearest definition wins
                 // up the extends chain). FreeCol ProductionUtils.getRebelProductionModifiersForBuilding.
-                RebelFactor: ResolveDoubleAttribute(el, "rebel-factor", buildingElements) ?? 1.0);
+                RebelFactor: ResolveDoubleAttribute(el, "rebel-factor", buildingElements) ?? 1.0,
+                // Teaching: a school's highest teachable skill (schoolhouse 1 / college 2 / university 4) + the teach
+                // ability (declared on the schoolhouse, inherited down the extends chain by college/university).
+                MaximumSkill: ResolveIntAttribute(el, "maximum-skill", buildingElements) ?? 0,
+                Teaches: ResolveAbility(el, "model.ability.teach", buildingElements));
         }
 
         var fathers = new Dictionary<string, FoundingFather>();
@@ -466,6 +516,8 @@ public sealed class Ruleset
             ParseUnitChanges(root.Element("unit-change-types"));
         Dictionary<string, Dictionary<string, int>> experienceUpgrades =
             ParseExperienceUpgrades(root.Element("unit-change-types"));
+        Dictionary<string, Dictionary<string, int>> educationTurns =
+            ParseEducationTurns(root.Element("unit-change-types"));
 
         Dictionary<string, EuropeanNationType> europeanNationTypes =
             ParseEuropeanNationTypes(root.Element("european-nation-types"));
@@ -474,7 +526,7 @@ public sealed class Ruleset
 
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, nativeNations, settlements,
-            roles, unitChanges, experienceUpgrades, europeanNations);
+            roles, unitChanges, experienceUpgrades, educationTurns, europeanNations);
     }
 
     /// <summary>
@@ -705,6 +757,29 @@ public sealed class Ruleset
         return byFrom;
     }
 
+    /// <summary>
+    /// Parses the <c>model.unitChange.education</c> change-type into a [from-unit id][to-unit id] → base training-turns
+    /// map (the schooling ladder). Like <see cref="ParseExperienceUpgrades"/>, it keeps <b>every</b> from→to row — the
+    /// criminal→servant and servant→free rungs (unique <c>from</c>) plus the many free-colonist→expert rows the by-from
+    /// <see cref="ParseUnitChanges"/> map would collapse to one.
+    /// </summary>
+    private static Dictionary<string, Dictionary<string, int>> ParseEducationTurns(XElement? section)
+    {
+        var byFrom = new Dictionary<string, Dictionary<string, int>>();
+        XElement? education = section?.Elements("unit-change-type")
+            .FirstOrDefault(t => (string?)t.Attribute("id") == UnitChangeTypeIds.Education);
+        foreach (XElement change in education?.Elements("unit-type-change") ?? [])
+        {
+            string from = RequiredAttribute(change, "from");
+            if (!byFrom.TryGetValue(from, out Dictionary<string, int>? toMap))
+            {
+                byFrom[from] = toMap = [];
+            }
+            toMap[RequiredAttribute(change, "to")] = (int?)change.Attribute("turns") ?? 0;
+        }
+        return byFrom;
+    }
+
     private static ResourceModifier ParseResourceModifier(XElement m) => new(
         GoodsId: RequiredAttribute(m, "id"),
         Type: (string?)m.Attribute("type") switch
@@ -882,7 +957,10 @@ public sealed class Ruleset
                     .Where(m => (string?)m.Attribute("id") == "model.modifier.exploreLostCityRumour")
                     .Select(m => (int?)m.Attribute("value") ?? 0)
                     .DefaultIfEmpty(0)
-                    .Last());
+                    .Last(),
+                // The skill this unit teaches in a school, when overridden (own attribute, NOT inherited — defaults to
+                // the type itself; classic only the colonial regular sets it, to veteranSoldier).
+                SkillTaught: (string?)el.Attribute("skill-taught"));
         }
 
         if (units.Count == 0)

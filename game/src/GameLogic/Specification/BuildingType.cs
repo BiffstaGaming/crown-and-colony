@@ -73,6 +73,16 @@ namespace CrownAndColony.GameLogic.Specification;
 /// lumber mill and cathedral set 2, the factory tier 1.5 — so good government boosts those buildings more. FreeCol
 /// <c>ProductionUtils.getRebelProductionModifiersForBuilding</c> (<c>floor(productionBonus × rebelFactor)</c>).
 /// </param>
+/// <param name="MaximumSkill">
+/// The highest unit <see cref="UnitType.Skill"/> an expert may teach from this building (spec <c>maximum-skill</c>;
+/// schoolhouse 1, college 2, university 4; 0 = not a school). An over-skilled expert (e.g. an elder statesman, skill 3,
+/// in a schoolhouse) cannot teach there. FreeCol <c>Building.canAddType</c> / <c>getNoAddReason</c> MAXIMUM_SKILL.
+/// </param>
+/// <param name="Teaches">
+/// Whether this building can teach (spec <c>model.ability.teach</c>, inherited down the <c>extends</c> chain — only the
+/// schoolhouse declares it; college and university inherit it). The schoolhouse/college/university trio; FreeCol
+/// <c>Ability.CAN_TEACH</c>.
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -91,7 +101,9 @@ public sealed record BuildingType(
     bool GrantsExport = false,
     int BreedingDivisor = 0,
     int BreedingFactor = 0,
-    double RebelFactor = 1.0)
+    double RebelFactor = 1.0,
+    int MaximumSkill = 0,
+    bool Teaches = false)
 {
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
     private static readonly IReadOnlySet<string> NoUnits = new HashSet<string>();
