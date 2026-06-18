@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-18 — FP-6a: scored seek-and-destroy AI targeting (86d3bex51) — Shipped
+
+**Requested:** "Continue on with your next lot of backlog work." (= the scheduled-next: FP-6.)
+**Did:** Shipped **FP-6 gap (a)** (`86d3bex51`, `e209a7f`) — the foreign-power war AI now picks targets by a FreeCol `UnitSeekAndDestroyMission` **score** over human unit-tiles **and** colonies within an escalating Chebyshev range (8/12/16), instead of hunting the single nearest unit. Score `1020 − 100·d` + truncated `100·(off−def)` per unit-tile (+1000 treasure, +500 naval-on-land) / rounded `50·off + pop − 200·stockadeLevel` per colony. Pure scoring (stable order + strict-max, no RNG → human stream 0 untouched; combat/move still on `RandomFor(power)`).
+- Designed via a **3-agent understand+design workflow** (FreeCol formulas + the Chebyshev/no-pathfinder adaptation).
+- A **14-agent adversarial review** caught + I fixed **four** issues in-slice: a **HIGH regression** (a garrisoned colony was scored as a doomed capture → the unit failed `CheckAttackColony` and wandered off without fighting the garrison; now garrisons are fought first); naval + non-founder-land **idle regressions** (now pursue a target beyond range 16 instead of idling); the **colony fortification penalty** corrected to FreeCol's `−200·stockade level` (was the defence-bonus % 100/150/200); and documented the `OffenceBase`/per-role-ladder/expert-soldier approximations.
+**Status:** **866 L1+L2 + 4 soak green**, build clean; pushed `e209a7f`. Soak inert (offensive only fires at war with the human → byte-stable). +6 L1 (`ForeignCombatTests` + a strengthened `ForeignColonyCaptureTests` garrison test).
+**Changed:** `GameSession/Game.cs` (`PickAttackTarget`/`BestTargetWithin`/`ScoreUnitTarget`/`ScoreColonyTarget`/`StockadeLevel` + the `RunForeignPowerTurn` splice with garrison-first, scored pick, out-of-range pursuit, besiege fallback). Tests `ForeignCombatTests.cs`, `ForeignColonyCaptureTests.cs`. Docs `diplomacy.md` (both layers + verification + changelog).
+**Decisions:** Folded all four review fixes into the FP-6a commit (the garrison regression especially must not ship). Kept it **human-target only** — gap (b) (stance-aware `AreEnemies`) is deliberately separate.
+**Scheduled next:** **FP-6 gap (b)** (`86d3bex51`, still In Development): make `AreEnemies` stance-aware (combat respects Peace/War, not raw owner-inequality) + let the AI **declare war from accumulated tension** (a non-attack tension source). Broad — changes all combat targeting + the human's ability to attack rivals; deserves its own understand→design→adversarial-review slice **and a playtest** (it changes the human's experience). Then **FP-7** (save-format multi-player consolidation) closes the foreign-powers epic `86d3b7qwm`.
+**Follow-ups:** `86d3c9q1z` (promotion ladder) still awaits your Ship/keep-open call; schoolhouse/education task; LCR UI.
+**Needs you:** Nothing blocking — shipped + CI-green. When you're around: confirm you want **gap (b)** next (it's the design-heavy half — I'll give it a full design+review pass and flag the human-facing change for your playtest before it lands), or redirect me.
+
 ## 2026-06-18 — "Next 5 items" run: experience + promotion-ladder + LCR modifiers (3 shipped, 1 verified, 1 assessed)
 
 **Requested:** "Continue on with the next 5 items" (the actionable board items I'd listed).
