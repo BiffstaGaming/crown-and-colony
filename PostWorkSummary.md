@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-18 — Founding-father ages key off the calendar year (86d3c9xy3) — Shipped
+
+**Requested:** "Continue through the backlog without stopping." Took the item the calendar just unblocked.
+**Did:** Shipped **ages-by-year** (`86d3c9xy3`) — `Game.CurrentAge` now derives from the calendar `CurrentYear` against the spec `model.option.ages` thresholds (classic 1600/1700) instead of the turn-band heuristic (1–99/100–199/200+). Faithful to FreeCol `Specification.getAge`: age 1→1599, age 2 from 1600, age 3 from 1700 (turns 1–108/109–308/309+). The old bands flipped the boundaries ~9 and ~109 turns early.
+- `Ruleset.FatherAgeYears` (parsed from `model.option.ages`, full FreeCol `badAges` fallback: not exactly two ints, or any year before the starting year → 1600/1700) + `Ruleset.AgeForYear` (1-based, feeds `WeightForAge`).
+- Single use site (`GenerateOffers`); a killer end-to-end test proves year-keying (age still 1 at 1599/turn 108 — bands would say 2 — flips at 1600/turn 109).
+- 2-agent adversarial review: one low FreeCol-parity gap (the pre-start clamp) folded in; one cosmetic doc-stamp nit noted (no-drift satisfied).
+**Status:** **940 L1/L2 + 4 soak green**, build clean; pushed `9d325a4`. **No save change** (derived from `Turn`); no RNG. Soak twin-determinism holds despite the offer-timing shift.
+**Changed:** `Specification/Ruleset.cs`, `GameSession/Game.cs`, `Specification/CalendarTests.cs`; `docs/systems/founding-fathers.md` (both layers + changelog + Last-verified) + `turns.md` cross-refs.
+**Decisions:** Year-keying is exactly boundary-equivalent to FreeCol's turn-threshold `getAge` (since `YearForTurn` is monotonic) — chose the year comparison as it directly reuses the calendar. No playtest needed (internal offer-weighting, no visible UI).
+**Scheduled next:** **`86d3c9y08` — difficulty-level system** (ARCH high): parse the spec `difficultyLevels` option groups + apply a selected level, replacing hardcoded constants (starting with the founding-father `factor`, currently pinned 40). Highest-leverage remaining ARCH foundation — I'll scope it with a design workflow first (ultracode). Larger than the last two; may land as a first slice + a handoff plan for your steer on the default level.
+**Follow-ups:** `86d3cz54z` (polished HUD year panel, low). In-Review for your return: `86d3c9q1z` (promotion ladder — ship?), FP-6 gap (b) (stance-aware combat — playtest).
+**Needs you:** Nothing blocking. The difficulty system will want your call on the **default difficulty level** (FreeCol default = "medium") — I'll default to that and flag it.
+
 ## 2026-06-18 — Calendar: turn → year/season mapping (86d3c9xvu) — Shipped
 
 **Requested:** "Continue through the backlog without stopping" (you out ~the hour, everything timestamped). I picked a contained, foundational, soak-safe item over opening the big Missionaries subsystem at depth.
