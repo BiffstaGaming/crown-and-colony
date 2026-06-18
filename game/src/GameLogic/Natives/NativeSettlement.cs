@@ -145,6 +145,13 @@ public sealed class NativeSettlement
     public bool HasMission => MissionOwnerId is not null;
 
     /// <summary>
+    /// Accrued convert progress while a mission is installed (FreeCol <c>convertProgress</c>): each turn it gains
+    /// <c>(missionary skill + 6) + 2% of alarm</c>, and at the settlement type's convert threshold (classic 100) a
+    /// brave converts into an Indian Convert worker and this resets. 0 with no mission.
+    /// </summary>
+    public int ConvertProgress { get; internal set; }
+
+    /// <summary>
     /// The goods this settlement most wants to buy (FreeCol <c>wantedGoods</c>, up to 3,
     /// most-wanted first). Selling a wanted good earns a premium (150/125/110%).
     /// </summary>

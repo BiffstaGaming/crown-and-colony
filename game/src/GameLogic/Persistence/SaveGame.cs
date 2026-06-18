@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 33;
+    public const int CurrentVersion = 34;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -67,7 +67,9 @@ public sealed record SaveGame
     /// v33 added a settlement's resident missionary (<see cref="SavedNativeSettlement.MissionOwnerId"/> +
     /// <see cref="SavedNativeSettlement.MissionIsExpert"/>, both omitted when the settlement has no mission, so a
     /// mission-free game is byte-identical to v32; pre-v33 saves load with no missions).
-    /// Each of v23–v33 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// v34 added a mission's accrued <see cref="SavedNativeSettlement.ConvertProgress"/> (omitted when 0, so a game
+    /// with no banked convert progress is byte-identical to v33; pre-v34 saves load at 0).
+    /// Each of v23–v34 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
@@ -265,7 +267,8 @@ public sealed record SaveGame
                         s.Position.X, s.Position.Y, s.Size, s.LearnableSkill,
                         s.Alarm, s.HasBeenVisited, s.SkillConsumed,
                         s.WantedGoods.Count > 0 ? s.WantedGoods.ToList() : null,
-                        s.MissionOwnerId, s.HasMission ? s.MissionIsExpert : null)) // omitted when no mission
+                        s.MissionOwnerId, s.HasMission ? s.MissionIsExpert : null, // omitted when no mission
+                        s.ConvertProgress != 0 ? s.ConvertProgress : null))        // omitted when no progress banked
                     .ToList()
                 : null,
         };
@@ -378,6 +381,7 @@ public sealed record SaveGame
                 WantedGoods = s.WantedGoods ?? [],
                 MissionOwnerId = s.MissionOwnerId,           // v33; pre-v33 → null = no mission
                 MissionIsExpert = s.MissionIsExpert ?? false, // v33; default free-colonist missionary
+                ConvertProgress = s.ConvertProgress ?? 0,    // v34; pre-v34 → 0
             }),
             AutoExportMode.GetValueOrDefault()); // pre-v28 / omitted → PerGood (the enum's 0 default)
     }
@@ -515,12 +519,14 @@ public sealed record SavedWorker(int X, int Y, string GoodsId, string? UnitTypeI
 /// <param name="WantedGoods">Goods the settlement most wants to buy, most-wanted first (v17+).</param>
 /// <param name="MissionOwnerId">Colonial player id whose missionary resides here (v33+; null = no mission, omitted).</param>
 /// <param name="MissionIsExpert">Whether the resident missionary is a jesuit (v33+; null when no mission, omitted).</param>
+/// <param name="ConvertProgress">Accrued convert progress under a mission (v34+; null/omitted when 0).</param>
 public sealed record SavedNativeSettlement(
     int Id, string NationTypeId, string SettlementTypeId, bool IsCapital,
     int X, int Y, int Size, string? LearnableSkill = null,
     int Alarm = 0, bool HasBeenVisited = false, bool SkillConsumed = false,
     IReadOnlyList<string>? WantedGoods = null,
-    int? MissionOwnerId = null, bool? MissionIsExpert = null);
+    int? MissionOwnerId = null, bool? MissionIsExpert = null,
+    int? ConvertProgress = null);
 
 /// <summary>A unit inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Id">Unit id.</param>

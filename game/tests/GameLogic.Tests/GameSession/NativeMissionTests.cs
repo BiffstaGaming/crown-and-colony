@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
@@ -11,9 +12,11 @@ using Xunit;
 namespace CrownAndColony.GameLogic.Tests.GameSession;
 
 /// <summary>
-/// Missionaries — establish a mission (<c>86d3c9t6e</c> slice 1, FreeCol <c>InGameController.establishMission</c>):
-/// a missionary-role unit on/adjacent to a native settlement installs a mission if the tribe is Displeased or calmer,
-/// or is killed if Angry/Hateful. RNG-free; the mission link persists (save v33).
+/// Missionaries (<c>86d3c9t6e</c>): slice 1 — establish a mission (FreeCol <c>InGameController.establishMission</c>):
+/// a missionary-role unit installs a mission if the tribe is Displeased or calmer, or is killed if Angry/Hateful.
+/// Slice 2 — per-turn convert accrual (FreeCol <c>ServerIndianSettlement.csStartTurn</c>): a mission gains
+/// <c>(skill+6)+2%·alarm</c> progress and, at threshold 100, converts a brave into an Indian Convert at the owner's
+/// nearest colony within 10. All RNG-free; mission state persists (save v34).
 /// </summary>
 public class NativeMissionTests
 {
@@ -149,7 +152,7 @@ public class NativeMissionTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
         NativeSettlement r = restored.NativeSettlements.Single(s => s.Id == settlement.Id);
 
-        Assert.Equal(33, SaveGame.CurrentVersion);
+        Assert.Equal(34, SaveGame.CurrentVersion);
         Assert.Equal(game.HumanPlayer.PlayerId, r.MissionOwnerId); // owner survives
         Assert.True(r.MissionIsExpert);                            // jesuit-ness survives
     }
@@ -161,5 +164,101 @@ public class NativeMissionTests
         string json = SaveGame.From(game).ToJson();
         Assert.DoesNotContain("MissionOwnerId", json);  // additive: omitted → byte-identical to v32
         Assert.DoesNotContain("MissionIsExpert", json);
+        Assert.DoesNotContain("ConvertProgress", json); // v34, also omitted-when-0
     }
+
+    // ── Convert accrual + spawn (slice 2) ────────────────────────────────────────────────────────────────────────
+
+    /// <summary>A mission installed, then a human colony founded on a free land tile beside the settlement (within 10).</summary>
+    private static (Game Game, NativeSettlement Settlement, Colony Colony) MissionWithNearbyColony()
+    {
+        (Game game, NativeSettlement settlement, Unit jesuit) = MissionaryAtSettlement(Jesuit);
+        game.EstablishMission(jesuit, settlement); // consumes the missionary, freeing its tile
+        Position colonyTile = settlement.Position.Neighbours()
+            .First(n => game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater && game.Colonies.All(c => c.Position != n));
+        Colony colony = game.FoundColony(game.SpawnUnit(Classic.Unit(FreeColonist), colonyTile));
+        settlement.Size = 5;
+        return (game, settlement, colony);
+    }
+
+    [Theory]
+    [InlineData(FreeColonist, 500, 16)] // (0 + 6) + 500*2/100 = 16
+    [InlineData(Jesuit, 500, 19)]       // (3 + 6) + 10 = 19
+    [InlineData(FreeColonist, 0, 6)]    // no alarm term
+    public void ProcessMissions_AccruesConvertProgress_PerTheFormula(string unitType, int alarm, int expected)
+    {
+        (Game game, NativeSettlement settlement, Unit missionary) = MissionaryAtSettlement(unitType);
+        game.EstablishMission(missionary, settlement);
+        game.ChangeNativeAlarm(settlement, alarm); // set after establish (establish eased it to 0)
+
+        game.ProcessMissions();
+        Assert.Equal(expected, settlement.ConvertProgress); // below threshold → banked, no convert
+    }
+
+    [Fact]
+    public void ProcessMissions_SpawnsAConvert_AtThreshold()
+    {
+        (Game game, NativeSettlement settlement, Colony colony) = MissionWithNearbyColony();
+        settlement.ConvertProgress = 95; // one jesuit turn (+9 at alarm 0) crosses the 100 threshold
+
+        game.ProcessMissions();
+
+        Assert.Equal(0, settlement.ConvertProgress);  // reset on convert
+        Assert.Equal(4, settlement.Size);             // a brave left
+        Assert.Contains(game.Units, u => u.Type.Id == IndianConvertTypeId
+            && u.OwnerId == game.HumanPlayer.PlayerId && u.Position == colony.Position);
+    }
+
+    [Fact]
+    public void ProcessMissions_DoesNotConvert_WhenTheSettlementIsTooSmall()
+    {
+        (Game game, NativeSettlement settlement, Colony _) = MissionWithNearbyColony();
+        settlement.Size = 2;             // FreeCol won't convert a settlement of size ≤ 2
+        settlement.ConvertProgress = 95;
+
+        game.ProcessMissions();
+
+        Assert.True(settlement.ConvertProgress >= 100);  // banked, not reset
+        Assert.DoesNotContain(game.Units, u => u.Type.Id == IndianConvertTypeId);
+    }
+
+    [Fact]
+    public void ProcessMissions_DoesNotConvert_WithNoColonyInRange()
+    {
+        (Game game, NativeSettlement settlement, Unit jesuit) = MissionaryAtSettlement(Jesuit);
+        game.EstablishMission(jesuit, settlement); // a mission, but no colony anywhere
+        settlement.Size = 5;
+        settlement.ConvertProgress = 95;
+
+        game.ProcessMissions();
+
+        Assert.True(settlement.ConvertProgress >= 100); // banked (no colony to receive the convert)
+        Assert.DoesNotContain(game.Units, u => u.Type.Id == IndianConvertTypeId);
+    }
+
+    [Fact]
+    public void ProcessMissions_DrawsNoRandomness_EvenWhenConverting()
+    {
+        (Game game, NativeSettlement settlement, Colony _) = MissionWithNearbyColony();
+        settlement.ConvertProgress = 95;
+        var before = game.RandomState;
+        game.ProcessMissions();
+        Assert.Equal(before, game.RandomState); // accrual + spawn are RNG-free (ADR-009)
+    }
+
+    [Fact]
+    public void ConvertProgress_RoundTripsThroughSave_V34()
+    {
+        (Game game, NativeSettlement settlement, Unit jesuit) = MissionaryAtSettlement(Jesuit);
+        game.EstablishMission(jesuit, settlement);
+        settlement.ConvertProgress = 47; // banked (no colony in range)
+
+        Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+        NativeSettlement r = restored.NativeSettlements.Single(s => s.Id == settlement.Id);
+
+        Assert.Equal(34, SaveGame.CurrentVersion);
+        Assert.Equal(47, r.ConvertProgress);
+    }
+
+    private const string IndianConvertTypeId = "model.unit.indianConvert";
 }

@@ -803,6 +803,21 @@ public sealed class Game
     /// <summary>Alarm a settlement sheds when a mission is established (FreeCol <c>ServerIndianSettlement.ALARM_NEW_MISSIONARY</c> = −100 goodwill).</summary>
     private const int AlarmNewMissionary = 100;
 
+    /// <summary>The native unit a mission converts (FreeCol <c>model.unit.indianConvert</c>).</summary>
+    public const string IndianConvertUnitTypeId = "model.unit.indianConvert";
+
+    /// <summary>Flat convert progress a mission accrues per turn (FreeCol <c>model.modifier.conversionSkill</c> +6, on the colonist base type).</summary>
+    private const int ConversionSkillBonus = 6;
+
+    /// <summary>The expert (jesuit) missionary's extra skill term (FreeCol jesuit <c>skill</c> 3; an ordinary colonist is 0).</summary>
+    private const int JesuitConversionSkill = 3;
+
+    /// <summary>Percent of the settlement's alarm added to convert progress each turn (FreeCol <c>model.modifier.conversionAlarmRate</c> +2%).</summary>
+    private const int ConversionAlarmRatePercent = 2;
+
+    /// <summary>Furthest a colony may be from a converting settlement to receive the convert (FreeCol <c>ServerIndianSettlement.MAX_CONVERT_DISTANCE</c> = 10, Chebyshev).</summary>
+    private const int MaxConvertDistance = 10;
+
     /// <summary>
     /// Whether <paramref name="unit"/> may attempt to establish a mission at <paramref name="settlement"/> (FreeCol
     /// <c>InGameController.establishMission</c>): an on-map unit in the missionary role, with movement left, on or
@@ -866,6 +881,42 @@ public sealed class Game
         RevealAround(player, settlement.Position, LineOfSightOf(unit)); // missionary line-of-sight reveal
         _units.Remove(unit); // the missionary is installed as the settlement's resident, not left on the map
         return true;
+    }
+
+    /// <summary>
+    /// Per-turn convert accrual for every installed mission (FreeCol <c>ServerIndianSettlement.csStartTurn</c>): a
+    /// settlement with a mission gains <c>(missionary skill + 6) + 2% of its alarm</c> convert progress, and when
+    /// that reaches the settlement type's threshold (classic 100) — with the settlement still big enough (size &gt; 2)
+    /// and a colony of the mission's owner within <see cref="MaxConvertDistance"/> — a brave converts: the progress
+    /// resets, the settlement shrinks by one, and an <see cref="IndianConvertUnitTypeId"/> musters at that colony for
+    /// the owner. Otherwise the progress banks. Runs in <see cref="EndTurn"/> before the alarm decay (so it reads the
+    /// alarm the turn produced, matching FreeCol). <b>Draws no randomness</b> (ADR-009): we don't pick an individual
+    /// brave (we have no brave-resident model), so the whole step is deterministic — the human's stream 0 is untouched.
+    /// </summary>
+    internal void ProcessMissions()
+    {
+        foreach (NativeSettlement settlement in _nativeSettlements)
+        {
+            if (!settlement.HasMission || PlayerById(settlement.MissionOwnerId!.Value) is not { } owner)
+            {
+                continue;
+            }
+
+            int skill = settlement.MissionIsExpert ? JesuitConversionSkill : 0;
+            int alarm = Math.Min(settlement.Alarm, NativeSettlement.MaxAlarm);
+            settlement.ConvertProgress += (skill + ConversionSkillBonus) + alarm * ConversionAlarmRatePercent / 100;
+
+            int threshold = Ruleset.Settlement(settlement.SettlementTypeId).ConvertThreshold;
+            if (settlement.ConvertProgress < threshold || settlement.Size <= 2
+                || NearestColonyOf(owner, settlement.Position, MaxConvertDistance) is not { } colony)
+            {
+                continue; // bank the accrued progress (FreeCol's below-threshold / too-small / no-colony path)
+            }
+
+            settlement.ConvertProgress = 0;
+            settlement.Size -= 1; // a brave converts and leaves (we don't model individual braves — a documented simplification)
+            SpawnUnit(Ruleset.Unit(IndianConvertUnitTypeId), colony.Position, owner.PlayerId); // musters at the colony, lifts the owner's fog
+        }
     }
 
     /// <summary>The basic chief visit for a non-scout colonist: reveal the surrounding lands + a small flat gift unless hateful.</summary>
@@ -4276,6 +4327,7 @@ public sealed class Game
         DecayColonialTension();     // colonial-pair tension cools each turn (mirrors native alarm)
         UpdateColonialStances();    // stance follows tension: war → cease-fire → peace as it cools (FP-6b)
         ApplyAmbientNativeAlarm();   // natives resent the human's nearby colonies/troops (FreeCol csNewTurn) — before the calm-down
+        ProcessMissions();           // missions accrue converts on the alarm this turn produced (FreeCol csStartTurn) — before the decay
         foreach (NativeSettlement settlement in _nativeSettlements)
         {
             DecayNativeAlarm(settlement);
@@ -5006,6 +5058,14 @@ public sealed class Game
     private Colony? NearestHumanColony(Unit unit) =>
         _colonies.Where(IsHumanOwned)
             .OrderBy(c => Chebyshev(c.Position, unit.Position))
+            .ThenBy(c => c.Position.Y).ThenBy(c => c.Position.X)
+            .FirstOrDefault();
+
+    /// <summary>The nearest colony of <paramref name="owner"/> within <paramref name="maxDistance"/> (Chebyshev) of <paramref name="origin"/>, or null (used to muster a mission convert; the owner may be any colonial player).</summary>
+    private Colony? NearestColonyOf(Player owner, Position origin, int maxDistance) =>
+        ColoniesOf(owner)
+            .Where(c => Chebyshev(c.Position, origin) <= maxDistance)
+            .OrderBy(c => Chebyshev(c.Position, origin))
             .ThenBy(c => c.Position.Y).ThenBy(c => c.Position.X)
             .FirstOrDefault();
 
