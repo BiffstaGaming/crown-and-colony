@@ -39,9 +39,11 @@ public sealed class Ruleset
         Dictionary<string, Dictionary<string, int>> experienceUpgradeByFrom,
         Dictionary<string, Dictionary<string, int>> educationByFrom,
         Dictionary<string, EuropeanNation> europeanNationById,
-        Calendar calendar)
+        Calendar calendar,
+        IReadOnlyList<int> fatherAgeYears)
     {
         Calendar = calendar;
+        FatherAgeYears = fatherAgeYears;
         _terrainById = terrainById;
         _unitById = unitById;
         _goodsById = goodsById;
@@ -95,6 +97,21 @@ public sealed class Ruleset
     /// <see cref="GameSession.Game.CurrentYear"/>/<see cref="GameSession.Game.CurrentSeason"/> read it for the current turn.
     /// </summary>
     public Calendar Calendar { get; }
+
+    /// <summary>
+    /// The in-game year thresholds at which the founding-father age weighting changes (classic <c>1600, 1700</c>,
+    /// from the spec <c>model.option.ages</c>), ascending. There are <c>NUMBER_OF_AGES − 1 = 2</c> of them, giving
+    /// three ages. <see cref="AgeForYear"/> turns a year into the 1-based age.
+    /// </summary>
+    public IReadOnlyList<int> FatherAgeYears { get; }
+
+    /// <summary>
+    /// The 1-based founding-father age (1, 2 or 3) for an in-game <paramref name="year"/>, per <see cref="FatherAgeYears"/>:
+    /// a year before the first threshold is age 1, before the second age 2, otherwise age 3 (classic: &lt;1600 → 1,
+    /// 1600–1699 → 2, ≥1700 → 3). This is the same boundary as FreeCol <c>Specification.getAge</c> (which is 0-based);
+    /// ours is 1-based to feed <see cref="FoundingFather.WeightForAge"/>.
+    /// </summary>
+    public int AgeForYear(int year) => 1 + FatherAgeYears.Count(threshold => year >= threshold);
 
     /// <summary>All terrain types, in specification order.</summary>
     public IReadOnlyList<TerrainType> TerrainTypes { get; }
@@ -535,10 +552,44 @@ public sealed class Ruleset
             root.Element("nations"), europeanNationTypes, ParseColonyNames(colonyNames));
 
         Calendar calendar = ParseCalendar(root);
+        IReadOnlyList<int> fatherAgeYears = ParseFatherAgeYears(root, calendar.StartingYear);
 
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, nativeNations, settlements,
-            roles, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar);
+            roles, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears);
+    }
+
+    /// <summary>
+    /// Parses the spec <c>model.option.ages</c> text option (classic <c>"1600,1700"</c>) into the two ascending
+    /// founding-father age-year thresholds. Faithful to FreeCol's <c>Specification.clean</c> "badAges" handling:
+    /// the option must yield exactly <c>NUMBER_OF_AGES − 1 = 2</c> integer years, each at or after
+    /// <paramref name="startingYear"/> (FreeCol rejects a year that converts to turn &lt; 1), otherwise it falls back
+    /// to the classic <c>1600, 1700</c>; out-of-order years are sorted ascending.
+    /// </summary>
+    internal static IReadOnlyList<int> ParseFatherAgeYears(XElement root, int startingYear)
+    {
+        int[] fallback = [1600, 1700];
+        string? raw = root.Descendants("textOption")
+            .Where(o => (string?)o.Attribute("id") == "model.option.ages")
+            .Select(o => (string?)o.Attribute("value") ?? (string?)o.Attribute("defaultValue"))
+            .FirstOrDefault(v => v is not null);
+        if (raw is null)
+        {
+            return fallback;
+        }
+
+        int[] years = raw.Split(',')
+            .Select(s => ParseInt(s.Trim()))
+            .Where(v => v is not null)
+            .Select(v => v!.Value)
+            .ToArray();
+        if (years.Length != 2 || years.Any(y => y < startingYear)) // FreeCol's badAges: count + the turn-≥-1 (year-≥-start) clamp
+        {
+            return fallback;
+        }
+
+        Array.Sort(years);
+        return years;
     }
 
     /// <summary>

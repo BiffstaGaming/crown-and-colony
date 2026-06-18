@@ -361,10 +361,11 @@ public sealed class Game
     internal int RecruitLowerCap => _human.RecruitLowerCap;
 
     /// <summary>
-    /// Game age (1–3) used to weight which fathers are offered. Simplified
-    /// turn bands until the calendar exists; FreeCol keys age off the year.
+    /// Game age (1–3) used to weight which fathers are offered, keyed off the calendar <see cref="CurrentYear"/>
+    /// against the spec age thresholds (classic 1600/1700) — FreeCol <c>Specification.getAge</c>. So age 1 runs to
+    /// 1599, age 2 from 1600, age 3 from 1700 (turns 1–108 / 109–308 / 309+).
     /// </summary>
-    public int CurrentAge => Turn < 100 ? 1 : Turn < 200 ? 2 : 3;
+    public int CurrentAge => Ruleset.AgeForYear(CurrentYear);
 
     /// <summary>
     /// Liberty needed to elect the next father (FreeCol <c>getTotalFoundingFatherCost</c>):

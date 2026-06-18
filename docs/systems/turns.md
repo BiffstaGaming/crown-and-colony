@@ -47,7 +47,7 @@ Each player takes its turn in ring order (`RunPlayerTurn`); then the **world ste
 
 Before `seasonYear` one turn is one year and there is no season (`CurrentSeason` is `-1`). From `seasonYear` on, `seasons` turns share a year. `Game.CurrentYear`/`CurrentSeason`/`CalendarLabel` expose the current turn's values; the HUD status bar shows the label.
 
-**Deviations from original / FreeCol:** the calendar (1492 start, two seasons from 1600) now matches FreeCol; the **founding-father ages** still use simple turn bands (`CurrentAge`) rather than the year-based `ages` option (1600,1700) — a separate task (`86d3c9xy3`). The dedicated classic-style HUD year display (today the dev status bar shows "Turn N (label)") is a presentation follow-up. The foreign-power AI is a minimal flat switch + a minimal economy (ADR-019), not FreeCol missions/`ColonyPlan`; the native AI is likewise a flat raid/wander switch, not FreeCol's mission planner (gifts, tribute demands, colony pillage, growth deferred — see [natives](natives.md)). Foreign-power combat/diplomacy *action* on stance is still ahead.
+**Deviations from original / FreeCol:** the calendar (1492 start, two seasons from 1600) now matches FreeCol, and the **founding-father ages** now key off the year too (`CurrentAge` via `Ruleset.AgeForYear` against the `ages` option 1600/1700 — `86d3c9xy3`). The dedicated classic-style HUD year display (today the dev status bar shows "Turn N (label)") is a presentation follow-up. The foreign-power AI is a minimal flat switch + a minimal economy (ADR-019), not FreeCol missions/`ColonyPlan`; the native AI is likewise a flat raid/wander switch, not FreeCol's mission planner (gifts, tribute demands, colony pillage, growth deferred — see [natives](natives.md)). Foreign-power combat/diplomacy *action* on stance is still ahead.
 
 ## 3. Technical design
 
@@ -68,7 +68,7 @@ Before `seasonYear` one turn is one year and there is no season (`CurrentSeason`
 ## 5. Open issues / TODO
 
 - [x] Calendar year/season mapping (`86d3c9xvu`) — turn→year/season per FreeCol, parsed from `gameOptions.years`; status bar shows it.
-- [ ] Founding-father **ages by year** (`86d3c9xy3`) — switch `CurrentAge` from turn bands to the year-based `ages` option (1600,1700) now that the calendar exists.
+- [x] Founding-father **ages by year** (`86d3c9xy3`) — `CurrentAge` keys off the year against the `ages` option (1600,1700); see [founding-fathers](founding-fathers.md).
 - [ ] Dedicated classic-style HUD year display (a polished panel rather than the dev status bar).
 - [ ] Turn-order pipeline refinements as systems land.
 

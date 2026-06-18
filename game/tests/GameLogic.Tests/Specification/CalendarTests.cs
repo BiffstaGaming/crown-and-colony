@@ -134,4 +134,67 @@ public class CalendarTests
         Assert.Equal(1493, game.CurrentYear);
         Assert.Equal("1493", game.CalendarLabel);
     }
+
+    // ── Founding-father ages by year (86d3c9xy3) ─────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(1492, 1)]
+    [InlineData(1599, 1)]   // last age-1 year
+    [InlineData(1600, 2)]   // age 2 from 1600
+    [InlineData(1699, 2)]
+    [InlineData(1700, 3)]   // age 3 from 1700
+    [InlineData(1850, 3)]
+    public void AgeForYear_MatchesTheSpecThresholds(int year, int expectedAge) =>
+        Assert.Equal(expectedAge, Ruleset.LoadClassic().AgeForYear(year));
+
+    [Fact]
+    public void ClassicRuleset_ParsesTheAgeThresholds()
+    {
+        Assert.Equal(new[] { 1600, 1700 }, Ruleset.LoadClassic().FatherAgeYears);
+    }
+
+    [Fact]
+    public void ParseFatherAgeYears_ReadsNonDefaultSortedSpecValues()
+    {
+        // Out-of-order on purpose — FreeCol sorts ascending; the value attribute wins over defaultValue.
+        XElement root = XElement.Parse(
+            "<freecol-specification><options><optionGroup id='gameOptions.years'>" +
+            "  <textOption id='model.option.ages' value='1750,1650' defaultValue='1600,1700' />" +
+            "</optionGroup></options></freecol-specification>");
+        Assert.Equal(new[] { 1650, 1750 }, Ruleset.ParseFatherAgeYears(root, 1492));
+    }
+
+    [Theory]
+    [InlineData("<freecol-specification />")]                                                       // option absent
+    [InlineData("<freecol-specification><textOption id='model.option.ages' defaultValue='1600' /></freecol-specification>")]        // wrong count
+    [InlineData("<freecol-specification><textOption id='model.option.ages' defaultValue='x,y' /></freecol-specification>")]         // non-numeric
+    [InlineData("<freecol-specification><textOption id='model.option.ages' defaultValue='1400,1500' /></freecol-specification>")]   // before the starting year (FreeCol's turn<1 clamp)
+    public void ParseFatherAgeYears_FallsBackToClassicOnBadInput(string xml) =>
+        Assert.Equal(new[] { 1600, 1700 }, Ruleset.ParseFatherAgeYears(XElement.Parse(xml), 1492));
+
+    [Fact]
+    public void ParseFatherAgeYears_ReadsTheDefaultValueAttribute()
+    {
+        // The real classic spec uses defaultValue (not value) for model.option.ages.
+        XElement root = XElement.Parse(
+            "<freecol-specification><textOption id='model.option.ages' defaultValue='1600,1700' /></freecol-specification>");
+        Assert.Equal(new[] { 1600, 1700 }, Ruleset.ParseFatherAgeYears(root, 1492));
+    }
+
+    [Fact]
+    public void Game_CurrentAge_FollowsTheYear_NotTurnBands()
+    {
+        // The killer test: under the old turn bands age would already be 2 at turn 100; year-keyed it stays age 1
+        // through 1599 (turn 108) and flips to 2 only at 1600 (turn 109).
+        Game game = Game.New(Ruleset.LoadClassic(), 0xC0FFEEUL);
+        Assert.Equal(1, game.CurrentAge); // 1492
+
+        while (game.Turn < 108) game.EndTurn();
+        Assert.Equal(1599, game.CurrentYear);
+        Assert.Equal(1, game.CurrentAge); // still age 1 at 1599 (turn 108) — turn bands would say age 2
+
+        game.EndTurn();
+        Assert.Equal(1600, game.CurrentYear);
+        Assert.Equal(2, game.CurrentAge); // flips to age 2 at 1600 (turn 109)
+    }
 }
