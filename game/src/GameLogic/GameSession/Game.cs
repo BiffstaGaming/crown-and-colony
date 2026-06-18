@@ -4425,6 +4425,12 @@ public sealed class Game
             }
         }
 
+        // Plan each colony's construction (build the highest-value building when nothing is queued).
+        foreach (Colony colony in ColoniesOf(power).OrderBy(c => c.Id))
+        {
+            RunForeignColonyBuildPlan(colony);
+        }
+
         // Recruit while gold allows, capped so colonists do not pile up in Europe (ships are idle until FP-6).
         while (OwnPersonsInEurope(power) < AiMaxEuropeRecruits
                && power.RecruitDock.Count > 0
@@ -6047,6 +6053,89 @@ public sealed class Game
             {
                 AssignWork(owner, colony, tile, good);
             }
+        }
+    }
+
+    /// <summary>The build level of a building type — its depth in the <c>UpgradesFrom</c> chain (a base building is 1, FreeCol <c>BuildingType.getLevel</c>).</summary>
+    private int BuildingLevel(BuildingType b) => 1 + (b.UpgradesFrom is { } prev ? BuildingLevel(Ruleset.Building(prev)) : 0);
+
+    /// <summary>Whether the colony's adjacent tiles can farm <paramref name="goodsId"/> at all (the input-makeable-locally test).</summary>
+    private bool ColonyCanFarm(Colony colony, string goodsId) =>
+        colony.Position.Neighbours().Any(n => Map.InBounds(n) && TileYieldPotential(n, goodsId) > 0);
+
+    /// <summary>
+    /// The build-priority weight of a building (FreeCol <c>ColonyPlan</c> class weights): the max over the classes it
+    /// belongs to — production/building 0.9, storage 0.85, liberty 0.75, export 0.6, military 0.4, fortify 0.3,
+    /// refined-production 0.25, teach 0.2, breeding/repair 0.1 — each × its support (1.0, except liberty 0.01 at full
+    /// SoL). 0 if it fits no class. <b>Deviation:</b> FreeCol's per-AI-advantage ×1.1/1.2 nudges are not applied.
+    /// </summary>
+    internal double BuildingBuildWeight(Colony colony, BuildingType b)
+    {
+        double w = 0;
+        void Match(double weight, double support) => w = Math.Max(w, weight * support);
+        if (b.DefenceBonus > 0 || b.BombardsShips) { Match(0.3, 1.0); }                                  // FORTIFY
+        if (b.GrantsExport) { Match(0.6, 1.0); }                                                          // EXPORT
+        if (b.BellBonus > 0) { Match(0.75, colony.SonsOfLiberty >= 100 ? 0.01 : 1.0); }                   // LIBERTY (printing press / newspaper)
+        if (b.WarehouseStorage > 0) { Match(0.85, 1.0); }                                                 // STORAGE
+        if (b.Teaches) { Match(0.2, 1.0); }                                                               // TEACH
+        if (b.RepairsNavalUnits) { Match(0.1, 1.0); }                                                     // REPAIR
+        if (b.BreedingDivisor > 0) { Match(0.1, 1.0); }                                                   // BREEDING
+        foreach (string outGood in b.Productions.SelectMany(p => p.Outputs).Select(o => o.GoodsId).Distinct())
+        {
+            GoodsType g = Ruleset.Goods(outGood);
+            if (g.IsMilitary) { Match(0.4, 1.0); }                                                        // MILITARY (armory → muskets)
+            else if (Ruleset.BuildingMaterials.Contains(outGood) && !g.IsStorable) { Match(0.9, 1.0); }   // BUILDING (carpenter → hammers)
+            else if (outGood == BellsId) { Match(0.75, colony.SonsOfLiberty >= 100 ? 0.01 : 1.0); }       // LIBERTY (a bell-producing building)
+            else if (outGood == CrossesId) { Match(0.05, 1.0); }                                          // IMMIGRATION (church / chapel → crosses)
+            else if (g.MadeFrom is { } input && ColonyCanFarm(colony, input)) { Match(0.25, 1.0); }       // PRODUCTION (refinery for a locally-farmed raw)
+        }
+        return w;
+    }
+
+    /// <summary>
+    /// Plans a foreign-power colony's construction (FreeCol <c>ColonyPlan.updateBuildableTypes</c>, building subset):
+    /// when nothing is queued, build the highest-value building — value = <see cref="BuildingBuildWeight"/> ÷
+    /// difficulty, where difficulty = <c>max(1, sqrt(Σ shortfall of required goods × (input farmable here ? 1 : 5)))</c>.
+    /// Buildings above the colony's size-profile level are skipped, except defence/export (always considered). Reuses
+    /// <see cref="SetBuild"/>/<see cref="RunConstruction"/>; an in-progress build is left alone. RNG-free. Buildable
+    /// <b>units</b> (artillery/wagons) are a later increment.
+    /// </summary>
+    internal void RunForeignColonyBuildPlan(Colony colony)
+    {
+        if (colony.CurrentBuild is not null)
+        {
+            return; // don't churn an in-progress build
+        }
+        int maxLevel = colony.Population <= 2 ? 1 : colony.Population <= 4 ? 2 : colony.Population <= 8 ? 3 : 4;
+
+        BuildingType? best = null;
+        double bestValue = 0;
+        foreach (BuildingType b in Buildables(colony))
+        {
+            bool levelExempt = b.DefenceBonus > 0 || b.BombardsShips || b.GrantsExport;
+            if (!levelExempt && BuildingLevel(b) > maxLevel)
+            {
+                continue;
+            }
+            double weight = BuildingBuildWeight(colony, b);
+            if (weight <= 0)
+            {
+                continue;
+            }
+            int difficulty = b.BuildCost
+                .Where(c => colony.StoreOf(Ruleset.StorageIdOf(c.GoodsId)) < c.Amount)
+                .Sum(c => (c.Amount - colony.StoreOf(Ruleset.StorageIdOf(c.GoodsId)))
+                          * (ColonyCanFarm(colony, Ruleset.Goods(c.GoodsId).MadeFrom ?? c.GoodsId) ? 1 : 5));
+            double value = weight / Math.Max(1.0, Math.Sqrt(difficulty));
+            if (value > bestValue || (value == bestValue && best is not null && string.CompareOrdinal(b.Id, best.Id) < 0))
+            {
+                best = b;
+                bestValue = value;
+            }
+        }
+        if (best is not null)
+        {
+            SetBuild(colony, best.Id);
         }
     }
 

@@ -114,6 +114,66 @@ public class AiColonyEconomyTests
         Assert.Equal(before, game.RandomState); // pure ordinal/yield ranking (ADR-009)
     }
 
+    // ── Build-queue planner (increment 4) ────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void BuildQueue_QueuesABuild_WhenTheColonyIsIdle()
+    {
+        (Game game, Colony colony) = IdleColony();
+        colony.Population = 4;          // enough population to unlock buildables
+        game.SetBuild(colony, null);   // ensure nothing is queued
+        Assert.True(game.Buildables(colony).Any(), "no buildables for a size-4 colony — test premise broke");
+
+        game.RunForeignColonyBuildPlan(colony);
+
+        Assert.NotNull(colony.CurrentBuild); // it queued the highest-value building
+    }
+
+    [Fact]
+    public void BuildQueue_DoesNotDisturbAnInProgressBuild()
+    {
+        (Game game, Colony colony) = IdleColony();
+        colony.Population = 4;
+        string chosen = game.Buildables(colony).First().Id;
+        game.SetBuild(colony, chosen);
+
+        game.RunForeignColonyBuildPlan(colony);
+
+        Assert.Equal(chosen, colony.CurrentBuild); // left alone
+    }
+
+    [Fact]
+    public void BuildQueue_ValuesAnImmigrationBuilding_AboveZero()
+    {
+        // A crosses-producing building (church/chapel) must be buildable — it has weight 0.05 (the IMMIGRATION class),
+        // not 0 (which would make the AI never build it). Regression for the review's medium finding.
+        (Game game, Colony colony) = IdleColony();
+        BuildingType crossBuilding = Classic.BuildingTypes.First(b =>
+            b.Productions.SelectMany(p => p.Outputs).Any(o => Classic.StorageIdOf(o.GoodsId) == "model.goods.crosses"));
+        Assert.True(game.BuildingBuildWeight(colony, crossBuilding) > 0);
+    }
+
+    [Fact]
+    public void BuildQueue_ValuesStorageAboveBreeding()
+    {
+        // Sanity on the class-weight ranking: a warehouse (STORAGE 0.85) outranks a breeding building (0.1).
+        (Game game, Colony colony) = IdleColony();
+        BuildingType warehouse = Classic.BuildingTypes.First(b => b.WarehouseStorage > 0);
+        BuildingType breeder = Classic.BuildingTypes.First(b => b.BreedingDivisor > 0);
+        Assert.True(game.BuildingBuildWeight(colony, warehouse) > game.BuildingBuildWeight(colony, breeder));
+    }
+
+    [Fact]
+    public void BuildQueue_DrawsNoRandomness()
+    {
+        (Game game, Colony colony) = IdleColony();
+        colony.Population = 4;
+        game.SetBuild(colony, null);
+        var before = game.RandomState;
+        game.RunForeignColonyBuildPlan(colony);
+        Assert.Equal(before, game.RandomState); // pure weight/difficulty ranking (ADR-009)
+    }
+
     [Fact]
     public void ForeignPowerEconomy_StaffsAForeignColonysTiles()
     {
