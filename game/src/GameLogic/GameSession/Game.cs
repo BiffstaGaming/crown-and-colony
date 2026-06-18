@@ -5890,6 +5890,38 @@ public sealed class Game
     }
 
     /// <summary>One colony's production-eat-grow step (its <paramref name="owner"/>'s fathers fold into tile yields).</summary>
+    /// <summary>
+    /// A colony's <b>net food</b> for the current turn under its present assignments (FreeCol
+    /// <c>getAdjustedNetProductionOf(food)</c>, the figure the survival check uses): the colony-centre tile's
+    /// unattended food + each food-tile worker's yield (folding <paramref name="owner"/>'s fathers and the colony's
+    /// Sons-of-Liberty production bonus, floored at 0), minus what the colonists eat (<see cref="Colony.Population"/> ×
+    /// <see cref="Colony.FoodPerColonist"/>). Mirrors the production + consumption in <see cref="RunColonyTurn"/>;
+    /// horse breeding is excluded (it eats only this turn's <em>surplus</em>, never starving colonists). A pure read —
+    /// no RNG, no mutation — used by the foreign-power colony worker planner to balance cash crops against starvation.
+    /// </summary>
+    internal int ColonyNetFood(Player owner, Colony colony)
+    {
+        int produced = 0;
+        foreach (ProductionEntry entry in Map.TerrainAt(colony.Position).Productions.Where(p => p.Unattended))
+        {
+            foreach (GoodsOutput output in entry.Outputs)
+            {
+                if (Ruleset.StorageIdOf(output.GoodsId) == Colony.FoodId)
+                {
+                    produced += output.Amount;
+                }
+            }
+        }
+        foreach ((Position tile, string goodsId) in colony.TileWorkers)
+        {
+            if (Ruleset.StorageIdOf(goodsId) == Colony.FoodId)
+            {
+                produced += Math.Max(0, TileYield(owner, colony.WorkerTypeAt(tile), tile, goodsId) + colony.ProductionBonus);
+            }
+        }
+        return produced - colony.Population * Colony.FoodPerColonist;
+    }
+
     private void RunColonyTurn(Player owner, Colony colony)
     {
         // 1a. The colony square works itself (unattended yield). Goods enter
