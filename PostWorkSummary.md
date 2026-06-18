@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-18 — Difficulty-level system, slices 3–5 (86d3c9y08) — difficulty-scoped routing COMPLETE
+
+**Requested:** "Begin on all of those items" (the next-5 list). This is **item 1** — finishing the difficulty epic. Working the five in order; this entry covers difficulty slices 3–5.
+**Did:** Routed every remaining **difficulty-level-scoped** tuning constant off its hardcoded Game.cs/Colony.cs const into `Ruleset.Difficulty.*`, in three CI-green slices:
+- **Slice 3** (`16ee7d0`): natives group — `landPriceFactor`, raw `nativeDemands`, raw `rumourDifficulty`. The derived constants became instance computed properties keeping the raw spec value in the option and the transform in code (`RumourDifficultyDx = 10−x`, `NativeDemandsDx = x+1`, `NativeDemandAcceptAlarmRelief = (5−x)·50`); `CapDemand` static→instance.
+- **Slice 4** (`323aa74`): a new `PctOption` parser (over `percentageOption`) + the rumour percentages `badRumour`/`goodRumour`, plus the immigration/recruit/artillery increments (`crossesIncrement`/`recruitPriceIncrease`/`lowerCapIncrease`/`priceIncrease.artillery`, the last a dotted id).
+- **Slice 5** (`175d28a`): the `treasureTransportFee`. **This completes the difficulty-scoped routing.**
+- Each slice had its own 2-agent adversarial review — slices 3 & 5 **zero findings**, slice 4 one pre-existing doc nit (folded).
+**Status:** **958 L1/L2 + 4 soak green**, build clean; pushed `16ee7d0`, `323aa74`, `175d28a`. **No save change**; no RNG. **Behaviour-preserving at the default level** (medium == the old consts) → soak byte-stable throughout.
+**Changed:** `Specification/{DifficultyOptions,Ruleset}.cs`, `GameSession/Game.cs`, `Persistence`(none), `DifficultyOptionsTests.cs`, `JourneyTests.cs`; docs `difficulty.md`, `natives.md`, `lost-city-rumours.md`, `immigration.md`, `europe.md`, `treasure-train.md` (all both-layer + changelogs + Last-verified).
+**Decisions:** The **base-`gameOptions` immigration trio** (`initialImmigration`/`europeanUnitImmigrationPenalty`/`playerImmigrationBonus`) was **split out** into its own task **`86d3d335r`** — those options aren't difficulty-scoped, and `initialImmigration` is a `Player` field-initializer default needing a separate rework. Raw-value-in-option + transform-in-code is the rule for all derived constants.
+**Scheduled next:** **`86d3c9t6e` — Missionaries + native conversion** (item 2 of the next-5): establish a mission in a native settlement + harvest converts. Launching its understand+design workflow first (ultracode).
+**Follow-ups / Needs you:** **Difficulty slice 6** (player-selectable + **persisted** level) **needs your new-game-UI steer** + a save bump — a non-medium level already works programmatically (`ParseDifficulty(root, levelId)`); slice 6 just surfaces/persists it. Also: `86d3d335r` (the gameOptions trio), and the standing In-Review calls (`86d3c9q1z` promotion ladder ship?, FP-6 gap (b) playtest).
+
 ## 2026-06-18 — Difficulty-level system, slices 1+2 (86d3c9y08) — In Development
 
 **Requested:** "Continue through the backlog without stopping." Started the highest-leverage remaining ARCH foundation: parse the spec's `difficultyLevels` and read tuning numbers from the selected level instead of scattered hardcoded constants.
