@@ -50,9 +50,6 @@ public sealed class Game
     /// <summary>Immigration points needed for the first emigrant (spec <c>model.option.initialImmigration</c>, classic 15).</summary>
     public const int InitialImmigration = 15;
 
-    /// <summary>Added to the immigration target after each emigrant (spec <c>crossesIncrement</c>, classic medium 2).</summary>
-    public const int CrossesIncrement = 2;
-
     /// <summary>Immigration lost per person idling in Europe each turn (spec <c>europeanUnitImmigrationPenalty</c>, classic −4).</summary>
     public const int EuropeUnitImmigrationPenalty = -4;
 
@@ -68,11 +65,6 @@ public sealed class Game
     /// <summary>Recruit-price floor (FreeCol <c>Europe.LOWER_CAP_INITIAL</c>, classic 80).</summary>
     public const int InitialRecruitLowerCap = 80;
 
-    /// <summary>Base recruit price rise per paid recruit (spec <c>recruitPriceIncrease</c>, classic medium 30).</summary>
-    public const int RecruitPriceIncrease = 30;
-
-    /// <summary>Recruit-price-floor rise per paid recruit (spec <c>lowerCapIncrease</c>, classic 0).</summary>
-    public const int RecruitLowerCapIncrease = 0;
 
     /// <summary>
     /// RNG stream id for native settlement placement (ADR-009). A separate stream
@@ -330,7 +322,7 @@ public sealed class Game
     /// <summary>Immigration points banked toward the human player's next emigrant (crosses + the Europe contribution).</summary>
     public int Immigration => _human.Immigration;
 
-    /// <summary>Immigration points needed to produce the human player's next emigrant (rises by <see cref="CrossesIncrement"/> each time).</summary>
+    /// <summary>Immigration points needed to produce the human player's next emigrant (rises by the difficulty's <see cref="Specification.DifficultyOptions.CrossesIncrement"/> each time).</summary>
     public int ImmigrationRequired => _human.ImmigrationRequired;
 
     /// <summary>The unit types waiting on the human player's Europe recruitment dock (one id per <see cref="RecruitSlots"/> slot).</summary>
@@ -3250,8 +3242,6 @@ public sealed class Game
     /// <summary>The Europe unit whose purchase price escalates (FreeCol <c>priceIncreasePerType</c> — artillery is the only classic one).</summary>
     private const string ArtilleryUnitTypeId = "model.unit.artillery";
 
-    /// <summary>Gold added to a player's artillery price after each artillery purchase (classic-medium <c>model.option.priceIncrease.artillery</c>; hardcoded pending ruleset-option parsing — see the difficulty-system task).</summary>
-    private const int ArtilleryPriceIncrease = 100;
 
     /// <summary>This player's current Europe price for a unit type — its escalated override (artillery) or the ruleset base.</summary>
     private static int EuropeUnitPrice(Player player, UnitType type) =>
@@ -3301,7 +3291,7 @@ public sealed class Game
         // flat). The override starts from the price just paid, so 500 → 600 → 700…
         if (unitTypeId == ArtilleryUnitTypeId)
         {
-            player.UnitPriceMap[unitTypeId] = check.Cost + ArtilleryPriceIncrease;
+            player.UnitPriceMap[unitTypeId] = check.Cost + Ruleset.Difficulty.ArtilleryPriceIncrease;
         }
         var unit = new Unit(_nextUnitId++, type, type.IsNaval ? EuropeEntryTile() : new Position(0, 0))
         {
@@ -3509,11 +3499,6 @@ public sealed class Game
         BurialGround,
     }
 
-    /// <summary>Bad-outcome chance, classic <b>medium</b> difficulty (<c>model.option.badRumour</c>); see the difficulty note below.</summary>
-    private const int RumourBadPercent = 23;
-
-    /// <summary>Good-outcome chance, classic <b>medium</b> difficulty (<c>model.option.goodRumour</c>).</summary>
-    private const int RumourGoodPercent = 48;
 
     /// <summary>
     /// FreeCol's <c>dx = 10 − rumourDifficulty</c> reward-scale, from the difficulty level: classic <b>medium</b> sets
@@ -3774,8 +3759,9 @@ public sealed class Game
     /// unit LEARN (30) / TRIBAL_CHIEF (30) / COLONIST (20), a non-learnable one TRIBAL_CHIEF (50) / COLONIST (30);
     /// strange MOUNDS (8, native land only); then the treasure finds RUINS (6) and CIBOLA (4). The bad sub-list —
     /// BURIAL_GROUND (25, native land only) and EXPEDITION_VANISHES (75, unless an expert scout) — is normalised to
-    /// 100; NOTHING takes the neutral remainder ×100. The base good/bad percentages (<see cref="RumourGoodPercent"/>
-    /// 48 / <see cref="RumourBadPercent"/> 23) are tilted by three modifiers, exactly as FreeCol: an <b>expert scout</b>
+    /// 100; NOTHING takes the neutral remainder ×100. The difficulty's base good/bad percentages
+    /// (<see cref="Specification.DifficultyOptions.RumourGoodPercent"/> 48 / <see cref="Specification.DifficultyOptions.RumourBadPercent"/> 23)
+    /// are tilted by three modifiers, exactly as FreeCol: an <b>expert scout</b>
     /// never vanishes (and if that removes all bad, the bad chance drops to 0); <b>Hernando de Soto</b>
     /// (<c>rumoursAlwaysPositive</c>) forces 100% good; otherwise a unit's <see cref="UnitType.ExploreLostCityRumourBonus"/>
     /// scales good ×<c>(1+bonus/100)</c> and bad ÷ it (seasoned scout +10%).
@@ -3786,8 +3772,8 @@ public sealed class Game
         bool allowBurial = Map.IsNativeOwned(target); // burial ground (and strange mounds) need native-owned land
         bool allowVanish = !unit.Type.ExpertScout;    // an expert scout (seasoned scout) never vanishes
 
-        int percentBad = RumourBadPercent;
-        int percentGood = RumourGoodPercent;
+        int percentBad = Ruleset.Difficulty.RumourBadPercent;
+        int percentGood = Ruleset.Difficulty.RumourGoodPercent;
         if (!allowBurial && !allowVanish)
         {
             percentBad = 0; // no bad outcome is possible — an expert scout off native land (FreeCol degenerate case)
@@ -5254,7 +5240,7 @@ public sealed class Game
         {
             Emigrate(player, RandomFor(player).Next(player.RecruitDock.Count));
             ReduceImmigration(player);
-            player.ImmigrationRequired += CrossesIncrement;
+            player.ImmigrationRequired += Ruleset.Difficulty.CrossesIncrement;
         }
     }
 
@@ -5367,11 +5353,11 @@ public sealed class Game
             throw new InvalidMoveException(check.Reason!);
         }
         player.Gold -= check.Cost;                          // price read before the base rises
-        player.BaseRecruitPrice += RecruitPriceIncrease;    // increaseRecruitmentDifficulty
-        player.RecruitLowerCap += RecruitLowerCapIncrease;
+        player.BaseRecruitPrice += Ruleset.Difficulty.RecruitPriceIncrease;    // increaseRecruitmentDifficulty
+        player.RecruitLowerCap += Ruleset.Difficulty.RecruitLowerCapIncrease;
         Unit recruit = Emigrate(player, slot);              // extract precedes the immigration cut (as in FreeCol)
         ReduceImmigration(player);
-        player.ImmigrationRequired += CrossesIncrement;
+        player.ImmigrationRequired += Ruleset.Difficulty.CrossesIncrement;
         return recruit;
     }
 

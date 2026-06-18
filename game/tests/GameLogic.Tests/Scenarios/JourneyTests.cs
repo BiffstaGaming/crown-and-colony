@@ -370,7 +370,7 @@ public class JourneyTests
         Assert.Equal(goldBefore - price, game.Gold);
         Assert.Equal(2, game.UnitsInEurope.Count()); // emigrant + recruit
         Assert.Equal(Game.RecruitSlots, game.RecruitDock.Count);
-        Assert.Equal(price + Game.RecruitPriceIncrease, game.RecruitPrice); // 200 → 230
+        Assert.Equal(price + game.Ruleset.Difficulty.RecruitPriceIncrease, game.RecruitPrice); // 200 → 230 (medium)
 
         // M5 — acid test: the whole immigration + dock + Europe state round-trips identically.
         string json = SaveGame.From(game).ToJson();

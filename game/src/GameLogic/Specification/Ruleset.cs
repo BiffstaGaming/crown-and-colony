@@ -590,6 +590,14 @@ public sealed class Ruleset
                 .Select(o => ParseInt((string?)o.Attribute("value")))
                 .FirstOrDefault(v => v is not null) ?? fallback;
 
+        // Percentages are a distinct element (<percentageOption>) but carry the same `value` attribute.
+        int PctOption(string id, int fallback) =>
+            level.Descendants("percentageOption")
+                .Where(o => (string?)o.Attribute("id") == id)
+                .Select(o => ParseInt((string?)o.Attribute("value")))
+                .FirstOrDefault(v => v is not null) ?? fallback;
+
+        DifficultyOptions m = DifficultyOptions.ClassicMedium;
         GovernmentLimits medium = GovernmentLimits.ClassicMedium;
         return new DifficultyOptions(
             FoundingFatherFactor: IntOption("model.option.foundingFatherFactor", DifficultyOptions.ClassicMedium.FoundingFatherFactor),
@@ -599,9 +607,15 @@ public sealed class Ruleset
                 Good: IntOption("model.option.goodGovernmentLimit", medium.Good),
                 Bad: IntOption("model.option.badGovernmentLimit", medium.Bad),
                 VeryBad: IntOption("model.option.veryBadGovernmentLimit", medium.VeryBad)),
-            LandPriceFactor: IntOption("model.option.landPriceFactor", DifficultyOptions.ClassicMedium.LandPriceFactor),
-            NativeDemands: IntOption("model.option.nativeDemands", DifficultyOptions.ClassicMedium.NativeDemands),
-            RumourDifficulty: IntOption("model.option.rumourDifficulty", DifficultyOptions.ClassicMedium.RumourDifficulty));
+            LandPriceFactor: IntOption("model.option.landPriceFactor", m.LandPriceFactor),
+            NativeDemands: IntOption("model.option.nativeDemands", m.NativeDemands),
+            RumourDifficulty: IntOption("model.option.rumourDifficulty", m.RumourDifficulty),
+            RumourBadPercent: PctOption("model.option.badRumour", m.RumourBadPercent),
+            RumourGoodPercent: PctOption("model.option.goodRumour", m.RumourGoodPercent),
+            CrossesIncrement: IntOption("model.option.crossesIncrement", m.CrossesIncrement),
+            RecruitPriceIncrease: IntOption("model.option.recruitPriceIncrease", m.RecruitPriceIncrease),
+            RecruitLowerCapIncrease: IntOption("model.option.lowerCapIncrease", m.RecruitLowerCapIncrease),
+            ArtilleryPriceIncrease: IntOption("model.option.priceIncrease.artillery", m.ArtilleryPriceIncrease));
     }
 
     /// <summary>

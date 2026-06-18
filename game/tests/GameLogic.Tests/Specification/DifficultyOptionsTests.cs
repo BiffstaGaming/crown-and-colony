@@ -158,4 +158,39 @@ public class DifficultyOptionsTests
         Assert.Equal(2, d.NativeDemands);
         Assert.Equal(2, d.RumourDifficulty);
     }
+
+    // ── Percentage + remaining immigration options (slice 4) ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParseDifficulty_ReadsPercentageAndImmigrationOptions_ByTheirOwnIds()
+    {
+        XElement root = XElement.Parse(
+            "<freecol-specification><optionGroup id='model.difficulty.medium'>" +
+            "  <percentageOption id='model.option.badRumour' value='30' />" +
+            "  <percentageOption id='model.option.goodRumour' value='40' />" +
+            "  <integerOption id='model.option.crossesIncrement' value='3' />" +
+            "  <integerOption id='model.option.recruitPriceIncrease' value='20' />" +
+            "  <integerOption id='model.option.lowerCapIncrease' value='5' />" +
+            "  <integerOption id='model.option.priceIncrease.artillery' value='150' />" +
+            "</optionGroup></freecol-specification>");
+        DifficultyOptions d = Ruleset.ParseDifficulty(root);
+        Assert.Equal(30, d.RumourBadPercent);          // percentageOption — read via PctOption, not the integer path
+        Assert.Equal(40, d.RumourGoodPercent);
+        Assert.Equal(3, d.CrossesIncrement);
+        Assert.Equal(20, d.RecruitPriceIncrease);
+        Assert.Equal(5, d.RecruitLowerCapIncrease);
+        Assert.Equal(150, d.ArtilleryPriceIncrease);   // dotted id matched as an opaque string
+    }
+
+    [Fact]
+    public void ClassicRuleset_ParsesThePercentageAndImmigrationOptions()
+    {
+        DifficultyOptions d = Ruleset.LoadClassic().Difficulty;
+        Assert.Equal(23, d.RumourBadPercent);
+        Assert.Equal(48, d.RumourGoodPercent);
+        Assert.Equal(2, d.CrossesIncrement);
+        Assert.Equal(30, d.RecruitPriceIncrease);
+        Assert.Equal(0, d.RecruitLowerCapIncrease);
+        Assert.Equal(100, d.ArtilleryPriceIncrease);
+    }
 }

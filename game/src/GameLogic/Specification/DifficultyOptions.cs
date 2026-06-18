@@ -43,13 +43,25 @@ namespace CrownAndColony.GameLogic.Specification;
 /// The raw lost-city-rumour difficulty (spec <c>model.option.rumourDifficulty</c>; medium 2). Reward scaling uses
 /// <c>dx = 10 − RumourDifficulty</c> (the transform stays in code). See [lost-city-rumours].
 /// </param>
+/// <param name="RumourBadPercent">Base bad-outcome chance for a lost-city rumour (spec <c>model.option.badRumour</c>, a percentage; medium 23). See [lost-city-rumours].</param>
+/// <param name="RumourGoodPercent">Base good-outcome chance for a lost-city rumour (spec <c>model.option.goodRumour</c>, a percentage; medium 48). See [lost-city-rumours].</param>
+/// <param name="CrossesIncrement">Added to the immigration target after each emigrant (spec <c>model.option.crossesIncrement</c>; medium 2). See [immigration].</param>
+/// <param name="RecruitPriceIncrease">Base recruit-price rise per paid recruit (spec <c>model.option.recruitPriceIncrease</c>; veryEasy 20 else 30). See [europe].</param>
+/// <param name="RecruitLowerCapIncrease">Recruit-price-floor rise per paid recruit (spec <c>model.option.lowerCapIncrease</c>; medium 0). See [europe].</param>
+/// <param name="ArtilleryPriceIncrease">Added to the artillery purchase price after each artillery bought (spec <c>model.option.priceIncrease.artillery</c>; medium 100). See [europe].</param>
 public sealed record DifficultyOptions(
     int FoundingFatherFactor,
     int UnitsThatUseNoBells,
     GovernmentLimits Government,
     int LandPriceFactor,
     int NativeDemands,
-    int RumourDifficulty)
+    int RumourDifficulty,
+    int RumourBadPercent,
+    int RumourGoodPercent,
+    int CrossesIncrement,
+    int RecruitPriceIncrease,
+    int RecruitLowerCapIncrease,
+    int ArtilleryPriceIncrease)
 {
     /// <summary>
     /// The classic <c>model.difficulty.medium</c> values — the fallback when a spec omits the difficulty group or a
@@ -61,5 +73,11 @@ public sealed record DifficultyOptions(
         Government: GovernmentLimits.ClassicMedium,
         LandPriceFactor: 60,
         NativeDemands: 2,
-        RumourDifficulty: 2);
+        RumourDifficulty: 2,
+        RumourBadPercent: 23,
+        RumourGoodPercent: 48,
+        CrossesIncrement: 2,
+        RecruitPriceIncrease: 30,
+        RecruitLowerCapIncrease: 0,
+        ArtilleryPriceIncrease: 100);
 }

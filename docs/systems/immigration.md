@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (accrual + auto-emigration + paid recruitment; on the Europe screen; **per-player** — the foreign-power AI runs it too, FP-5) |
-| **Last verified** | 2026-06-14 @ FP-5 (per-player immigration on the AI's own stream) |
+| **Last verified** | 2026-06-18 @ crosses/recruit increments routed through the difficulty system (`86d3c9y08` slice 4) |
 | **Code** | `game/src/GameLogic/GameSession/Player.cs` (per-player immigration/dock state), `GameSession/Game.cs` (accrual, dock, recruit — `Player`-parameterised), `Specification/UnitType.cs` (recruit weight + person) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/ImmigrationTests.cs`, `ForeignPowerEconomyTests.cs` (the AI recruits onto its own dock with correctly-owned units), `Scenarios/JourneyTests.cs` (Journey 6) |
 | **FreeCol reference** | `Player.java` (immigration/`reduceImmigration`/`updateImmigrationRequired`), `Europe.java` (`getCurrentRecruitPrice`, `getImmigration`), `ServerEurope.java` (`generateRecruitablesList`, `increaseRecruitmentDifficulty`), `ServerPlayer.java` (`csEmigrate`), classic `specification.xml` difficulty options |
@@ -79,18 +79,19 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 | L3 Interaction | Yes (Europe screen) | `EuropePanelTests.RecruitButton_BuysAColonistIntoEurope` (recruit from the dock via the real screen; gold debited) — see [europe.md](europe.md) | ✅ |
 | L4 Visual | UI hidden in goldens | — | — |
 
-- **FreeCol cross-check:** every number pinned against source, not the task brief — `initialImmigration=15`, `crossesIncrement=2`, `europeanUnitImmigrationPenalty=−4`, `playerImmigrationBonus=2`, `recruitPriceIncrease=30`, `lowerCapIncrease=0` (medium difficulty in `specification.xml`); `RECRUIT_PRICE_INITIAL=200`, `LOWER_CAP_INITIAL=80`, `MIGRANT_COUNT=3` (`Europe.java`/`MigrationType`). The recruit pool follows the spec's `recruit-probability` (so indentured servants and petty criminals are in it at weight 20, which the original task brief omitted).
+- **FreeCol cross-check:** every number pinned against source, not the task brief — `initialImmigration=15`, `crossesIncrement=2`, `europeanUnitImmigrationPenalty=−4`, `playerImmigrationBonus=2`, `recruitPriceIncrease=30`, `lowerCapIncrease=0` (medium difficulty in `specification.xml`); `RECRUIT_PRICE_INITIAL=200`, `LOWER_CAP_INITIAL=80`, `MIGRANT_COUNT=3` (`Europe.java`/`MigrationType`). The difficulty-driven ones — `crossesIncrement`, `recruitPriceIncrease`, `lowerCapIncrease` — now read from `Ruleset.Difficulty` (default medium 2/30/0; see [difficulty](difficulty.md)); `initialImmigration`/`europeanUnitImmigrationPenalty`/`playerImmigrationBonus` live in the base `gameOptions` group and move into the difficulty system's `GameOptions` bundle in slice 5. The recruit pool follows the spec's `recruit-probability` (so indentured servants and petty criminals are in it at weight 20, which the original task brief omitted).
 
 ## 5. Open issues / TODO
 
 - [x] **Europe screen UI** — done ([europe.md](europe.md)): the dock, prices, immigration clock and a recruit button are on the Europe screen.
 - [x] **Carry recruits home** — done in [transport.md](transport.md): board a recruit onto a ship and sail it to the New World.
 - [x] **William Brewster's recruit ban** — done ([founding-fathers.md](founding-fathers.md)): elected, he keeps servants/criminals off the dock. (His `selectRecruit` *slot choice* still needs a UI hook.)
-- [ ] **Fountain of Youth** burst immigration and the survival auto-recruit are not modelled.
+- [x] **Fountain of Youth** burst immigration — done (`86d3c9ujx`): `Game.GenerateFountainRecruits` lands `dx` (medium 8) fresh recruits on the owner's Europe dock — see [lost-city-rumours](lost-city-rumours.md). Remaining: the human's per-emigrant *select-recruit* pick and the survival auto-recruit.
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-18 | **Crosses/recruit increments routed through the difficulty system** (`86d3c9y08` slice 4): `crossesIncrement`, `recruitPriceIncrease`, `lowerCapIncrease` now read `Ruleset.Difficulty.*` (default medium 2/30/0) instead of hardcoded consts. Behaviour-preserving at medium; no save change; soak byte-stable. (The base-`gameOptions` trio `initialImmigration`/`europeanUnitImmigrationPenalty`/`playerImmigrationBonus` is slice 5.) See [difficulty](difficulty.md). | Phase (`86d3c9y08` slice 4) |
 | 2026-06-13 | Immigration accrual (crosses + Europe formula), 3-slot dock, weighted recruit draw, escalating recruit price, auto-emigration; save v12 | Phase 4 slice 4 |
 | 2026-06-14 | FP-5: immigration/recruitment run **per player** — accrual + dock draws + emigrate use `RandomFor(player)`; the foreign-power AI recruits onto its own dock (capped), recruited/bought units carry the owner id; foreign docks seeded at New + topped up on load | FP-5 |
