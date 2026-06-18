@@ -38,8 +38,10 @@ public sealed class Ruleset
         Dictionary<string, Dictionary<string, UnitChange>> unitChangeByType,
         Dictionary<string, Dictionary<string, int>> experienceUpgradeByFrom,
         Dictionary<string, Dictionary<string, int>> educationByFrom,
-        Dictionary<string, EuropeanNation> europeanNationById)
+        Dictionary<string, EuropeanNation> europeanNationById,
+        Calendar calendar)
     {
+        Calendar = calendar;
         _terrainById = terrainById;
         _unitById = unitById;
         _goodsById = goodsById;
@@ -87,6 +89,12 @@ public sealed class Ruleset
         Roles = _roleById.Values.ToList();
         EuropeanNations = _europeanNationById.Values.ToList();
     }
+
+    /// <summary>
+    /// The turn→year/season calendar parsed from the spec <c>gameOptions.years</c> group (classic 1492/1600/2).
+    /// <see cref="GameSession.Game.CurrentYear"/>/<see cref="GameSession.Game.CurrentSeason"/> read it for the current turn.
+    /// </summary>
+    public Calendar Calendar { get; }
 
     /// <summary>All terrain types, in specification order.</summary>
     public IReadOnlyList<TerrainType> TerrainTypes { get; }
@@ -526,10 +534,37 @@ public sealed class Ruleset
         Dictionary<string, EuropeanNation> europeanNations = ParseEuropeanNations(
             root.Element("nations"), europeanNationTypes, ParseColonyNames(colonyNames));
 
+        Calendar calendar = ParseCalendar(root);
+
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, nativeNations, settlements,
-            roles, unitChanges, experienceUpgrades, educationTurns, europeanNations);
+            roles, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar);
     }
+
+    /// <summary>
+    /// Parses the spec <c>gameOptions.years</c> option group into a <see cref="Specification.Calendar"/>
+    /// (<c>startingYear</c>/<c>seasonYear</c>/<c>seasons</c>). Any option absent falls back to the classic default,
+    /// so a spec without the group still yields a working 1492/1600/2 calendar.
+    /// </summary>
+    internal static Calendar ParseCalendar(XElement root)
+    {
+        int YearsOption(string id, int fallback) =>
+            root.Descendants("integerOption")
+                .Where(o => (string?)o.Attribute("id") == id)
+                .Select(o => ParseInt((string?)o.Attribute("value")))
+                .FirstOrDefault(v => v is not null) ?? fallback;
+
+        return new Calendar(
+            StartingYear: YearsOption("model.option.startingYear", Calendar.Classic.StartingYear),
+            SeasonYear: YearsOption("model.option.seasonYear", Calendar.Classic.SeasonYear),
+            Seasons: YearsOption("model.option.seasons", Calendar.Classic.Seasons));
+    }
+
+    /// <summary>Parses an integer attribute value, returning <c>null</c> for a missing or non-numeric string.</summary>
+    private static int? ParseInt(string? value) =>
+        int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int n)
+            ? n
+            : null;
 
     /// <summary>
     /// Parses the <c>&lt;european-nation-types&gt;</c> section, resolving <c>extends</c> chains: starting

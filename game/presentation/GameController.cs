@@ -431,7 +431,7 @@ public partial class GameController : Node2D
                     ? $"{inEurope} in Europe — press E"
                     : "no units";
         string status =
-            $"Turn {_game.Turn}   |   {subject}   |   seed {_currentSeed}" +
+            $"Turn {_game.Turn} ({_game.CalendarLabel})   |   {subject}   |   seed {_currentSeed}" +
             "   |   B build colony, N new map, F5 save, F9 load";
         if (_notice is not null)
         {

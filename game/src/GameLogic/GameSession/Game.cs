@@ -132,6 +132,24 @@ public sealed class Game
     public int Turn { get; private set; }
 
     /// <summary>
+    /// The in-game year of the current turn (turn 1 = 1492), per the ruleset <see cref="Specification.Calendar"/>.
+    /// One turn per year until 1600, then two turns per year.
+    /// </summary>
+    public int CurrentYear => Ruleset.Calendar.YearForTurn(Turn);
+
+    /// <summary>
+    /// The 0-based season of the current turn (0 = Spring, 1 = Autumn in classic), or <c>-1</c> in the
+    /// one-turn-per-year era before 1600 (no season).
+    /// </summary>
+    public int CurrentSeason => Ruleset.Calendar.SeasonForTurn(Turn);
+
+    /// <summary>
+    /// The calendar label for the current turn — a bare year (<c>"1492"</c>) before 1600, or a season-prefixed
+    /// year (<c>"Spring 1600"</c>) afterwards. The HUD shows this in place of a bare turn counter.
+    /// </summary>
+    public string CalendarLabel => Ruleset.Calendar.Label(Turn);
+
+    /// <summary>
     /// How custom houses decide what to auto-sell (a game-wide play preference; <see cref="GameSession.AutoExportMode.PerGood"/>
     /// by default — opt-in per good, faithful to FreeCol). Set via <see cref="SetAutoExportMode"/> (a settings hook; UI deferred).
     /// </summary>
