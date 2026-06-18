@@ -545,11 +545,6 @@ public sealed class Game
     // makes it free + peaceful (FreeCol Player.getLandPrice / ServerPlayer.csClaimLand). The found/work TRIGGER is
     // deferred — the pay-vs-steal choice is a UI dialog — so these are explicit operations for now.
 
-    /// <summary>Land-price factor (FreeCol <c>model.option.landPriceFactor</c>; <b>60</b> = the classic-medium tier
-    /// this project standardises on, cf. the founding-father factor 40 decision). Difficulty options are not yet
-    /// data-driven (the Ruleset parses no <c>&lt;difficulty&gt;</c> group), so this is hardcoded; revisit when they are.</summary>
-    private const int LandPriceFactor = 60;
-
     /// <summary>The flat addend in the land price (FreeCol <c>getLandPrice</c> <c>+ 100</c>).</summary>
     private const int LandPriceBase = 100;
 
@@ -564,8 +559,9 @@ public sealed class Game
 
     /// <summary>
     /// What <paramref name="player"/> must pay a native nation for <paramref name="tile"/> (FreeCol
-    /// <c>Player.getLandPrice</c>): <see cref="LandPriceFactor"/> × the tile's potential yield of every
-    /// <em>non-food</em> good + <see cref="LandPriceBase"/>, then the player's <see cref="LandPaymentModifierId"/>
+    /// <c>Player.getLandPrice</c>): the difficulty's <see cref="Specification.DifficultyOptions.LandPriceFactor"/> ×
+    /// the tile's potential yield of every <em>non-food</em> good + <see cref="LandPriceBase"/>, then the player's
+    /// <see cref="LandPaymentModifierId"/>
     /// modifier (Peter Minuit −100% → 0). Returns <b>0</b> when the tile is not native-owned (unclaimed or already
     /// bought; natives are never a colonial player, so the buyer can never already own it).
     /// </summary>
@@ -577,7 +573,7 @@ public sealed class Game
         }
         // The price values the land's POTENTIAL output (FreeCol getPotentialProduction with a null owner) — NOT
         // the acting player's father-boosted yield, so e.g. Henry Hudson's +furs never inflates what land costs.
-        int raw = (LandPriceFactor * Ruleset.GoodsTypes.Where(g => !g.IsFood).Sum(g => TileYieldPotential(tile, g.Id)))
+        int raw = (Ruleset.Difficulty.LandPriceFactor * Ruleset.GoodsTypes.Where(g => !g.IsFood).Sum(g => TileYieldPotential(tile, g.Id)))
                   + LandPriceBase;
         // The landPaymentModifier scales the price — Peter Minuit's −100% makes it free. ApplyGoodsModifiers stacks
         // every matching modifier by index (FreeCol applyModifiers), consistent with the rest of the codebase.
@@ -652,8 +648,8 @@ public sealed class Game
     // monarch's tax applies; carry it to Europe yourself (a galleon) to skip the King's fee.
 
     /// <summary>The King's cut to ship treasure to Europe (FreeCol <c>model.option.treasureTransportFee</c>; <b>60%</b>,
-    /// classic-medium — the tier this project standardises on, like <see cref="LandPriceFactor"/>=60. Difficulty options
-    /// are not yet data-driven, so this is hardcoded; revisit when they are).</summary>
+    /// classic-medium — the tier this project standardises on. Still hardcoded — it moves into
+    /// <see cref="Specification.DifficultyOptions"/> in difficulty slice 5; revisit then.</summary>
     private const int TreasureTransportFeePercent = 60;
 
     /// <summary>The father modifier id scaling the transport fee — Hernán Cortés's −100% ships treasure for free.</summary>
@@ -3520,12 +3516,11 @@ public sealed class Game
     private const int RumourGoodPercent = 48;
 
     /// <summary>
-    /// FreeCol's <c>dx = 10 − rumourDifficulty</c> reward-scale: classic <b>medium</b> sets
-    /// <c>model.option.rumourDifficulty=2</c>, so <c>dx = 8</c>. We hardcode the <b>medium</b> tier to match the
-    /// rest of the project's classic baseline (the founding-father factor is likewise pinned to medium = 40);
-    /// the Ruleset does not parse difficulty options yet, so a difficulty-driven value is a later refinement.
+    /// FreeCol's <c>dx = 10 − rumourDifficulty</c> reward-scale, from the difficulty level: classic <b>medium</b> sets
+    /// <c>model.option.rumourDifficulty=2</c>, so <c>dx = 8</c>. The raw option lives on
+    /// <see cref="Specification.DifficultyOptions.RumourDifficulty"/>; the <c>10 − x</c> transform stays here.
     /// </summary>
-    private const int RumourDifficultyDx = 8;
+    private int RumourDifficultyDx => 10 - Ruleset.Difficulty.RumourDifficulty;
 
     /// <summary>The unit a COLONIST rumour musters: the only classic unit with <c>model.ability.foundInLostCity</c>.</summary>
     private const string FoundInLostCityUnitTypeId = "model.unit.freeColonist";
@@ -4532,16 +4527,10 @@ public sealed class Game
     /// </summary>
     private const AlarmLevel RaidAlarmThreshold = AlarmLevel.Displeased;
 
-    /// <summary>
-    /// Native tribute-demand difficulty: FreeCol's <c>model.option.nativeDemands</c> at the default "medium" level
-    /// (<c>specification.xml</c> <c>model.difficulty.medium</c> → 2). Drives the demand amount (dx = difficulty + 1)
-    /// and the alarm relief on accept. A fixed constant for now — we don't model difficulty levels yet (ADR-018
-    /// ruleset-constant debt, task 86d3bb1x3).
-    /// </summary>
-    private const int NativeDemandsDifficulty = 2;
-
-    /// <summary>Demand-amount multiplier: dx = difficulty + 1 (FreeCol <c>IndianDemandMission.capAmount</c>; 3 at medium).</summary>
-    private const int NativeDemandsDx = NativeDemandsDifficulty + 1;
+    /// <summary>Demand-amount multiplier: <c>dx = nativeDemands + 1</c> (FreeCol <c>IndianDemandMission.capAmount</c>;
+    /// 3 at medium). The raw <c>model.option.nativeDemands</c> lives on
+    /// <see cref="Specification.DifficultyOptions.NativeDemands"/>; the <c>+ 1</c> transform stays here.</summary>
+    private int NativeDemandsDx => Ruleset.Difficulty.NativeDemands + 1;
 
     /// <summary>Minimum goods a demand asks for (FreeCol <c>GOODS_DEMAND_MIN</c>).</summary>
     private const int NativeDemandMin = 30;
@@ -4549,8 +4538,10 @@ public sealed class Game
     /// <summary>Maximum goods a demand asks for — one cargo load (FreeCol <c>GoodsContainer.CARGO_SIZE</c>).</summary>
     private const int NativeDemandMax = 100;
 
-    /// <summary>Alarm relief across the demanding nation's settlements when a demand is paid (FreeCol <c>-(5 - difficulty) * 50</c> = 150 at medium).</summary>
-    private const int NativeDemandAcceptAlarmRelief = (5 - NativeDemandsDifficulty) * 50;
+    /// <summary>Alarm relief across the demanding nation's settlements when a demand is paid (FreeCol
+    /// <c>-(5 - nativeDemands) * 50</c> = 150 at medium); the difficulty value is
+    /// <see cref="Specification.DifficultyOptions.NativeDemands"/>.</summary>
+    private int NativeDemandAcceptAlarmRelief => (5 - Ruleset.Difficulty.NativeDemands) * 50;
 
     /// <summary>
     /// The minimal native AI (slice 1b + colony pillage): each of the nation's units, in stable by-id order, takes
@@ -4634,7 +4625,7 @@ public sealed class Game
     /// <c>clamp(count * dx / 6, GOODS_DEMAND_MIN, CARGO_SIZE)</c> — at medium (dx = 3) this is
     /// <c>clamp(count / 2, 30, 100)</c>.
     /// </summary>
-    private static int CapDemand(int count) => Math.Clamp(count * NativeDemandsDx / 6, NativeDemandMin, NativeDemandMax);
+    private int CapDemand(int count) => Math.Clamp(count * NativeDemandsDx / 6, NativeDemandMin, NativeDemandMax);
 
     /// <summary>
     /// Picks what a brave demands of <paramref name="colony"/> at the demanding nation's tension

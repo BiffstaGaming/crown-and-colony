@@ -30,10 +30,26 @@ namespace CrownAndColony.GameLogic.Specification;
 /// The Sons-of-Liberty / tory thresholds for the colony production bonus (spec <c>*GovernmentLimit</c> options; the
 /// tory-penalty limits tighten on harder levels). See [sons-of-liberty].
 /// </param>
+/// <param name="LandPriceFactor">
+/// Multiplier on a native tile's potential non-food yield in the land price (spec <c>model.option.landPriceFactor</c>;
+/// 40/50/60/70/80 by level, medium 60). See [natives].
+/// </param>
+/// <param name="NativeDemands">
+/// The raw native tribute-demand difficulty (spec <c>model.option.nativeDemands</c>; 0–4 by level, medium 2). The
+/// demand amount uses <c>dx = NativeDemands + 1</c> and the accept-alarm relief uses <c>(5 − NativeDemands)·50</c> —
+/// those transforms stay in code; this stores the raw value. See [natives].
+/// </param>
+/// <param name="RumourDifficulty">
+/// The raw lost-city-rumour difficulty (spec <c>model.option.rumourDifficulty</c>; medium 2). Reward scaling uses
+/// <c>dx = 10 − RumourDifficulty</c> (the transform stays in code). See [lost-city-rumours].
+/// </param>
 public sealed record DifficultyOptions(
     int FoundingFatherFactor,
     int UnitsThatUseNoBells,
-    GovernmentLimits Government)
+    GovernmentLimits Government,
+    int LandPriceFactor,
+    int NativeDemands,
+    int RumourDifficulty)
 {
     /// <summary>
     /// The classic <c>model.difficulty.medium</c> values — the fallback when a spec omits the difficulty group or a
@@ -42,5 +58,8 @@ public sealed record DifficultyOptions(
     public static readonly DifficultyOptions ClassicMedium = new(
         FoundingFatherFactor: 40,
         UnitsThatUseNoBells: 2,
-        Government: GovernmentLimits.ClassicMedium);
+        Government: GovernmentLimits.ClassicMedium,
+        LandPriceFactor: 60,
+        NativeDemands: 2,
+        RumourDifficulty: 2);
 }

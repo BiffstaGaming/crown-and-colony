@@ -598,7 +598,10 @@ public sealed class Ruleset
                 VeryGood: IntOption("model.option.veryGoodGovernmentLimit", medium.VeryGood),
                 Good: IntOption("model.option.goodGovernmentLimit", medium.Good),
                 Bad: IntOption("model.option.badGovernmentLimit", medium.Bad),
-                VeryBad: IntOption("model.option.veryBadGovernmentLimit", medium.VeryBad)));
+                VeryBad: IntOption("model.option.veryBadGovernmentLimit", medium.VeryBad)),
+            LandPriceFactor: IntOption("model.option.landPriceFactor", DifficultyOptions.ClassicMedium.LandPriceFactor),
+            NativeDemands: IntOption("model.option.nativeDemands", DifficultyOptions.ClassicMedium.NativeDemands),
+            RumourDifficulty: IntOption("model.option.rumourDifficulty", DifficultyOptions.ClassicMedium.RumourDifficulty));
     }
 
     /// <summary>

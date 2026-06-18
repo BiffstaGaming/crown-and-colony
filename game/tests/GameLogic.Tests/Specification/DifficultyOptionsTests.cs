@@ -131,4 +131,31 @@ public class DifficultyOptionsTests
         colony.Government = new GovernmentLimits(VeryGood: 100, Good: 50, Bad: 5, VeryBad: 9);
         Assert.Equal(-1, colony.ProductionBonus);
     }
+
+    // ── Natives group (slice 3) ──────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParseDifficulty_ReadsTheNativesGroupOptions_ByTheirOwnIds()
+    {
+        // Non-default values prove each id is read (the derived dx/relief transforms stay in code, not the option).
+        XElement root = XElement.Parse(
+            "<freecol-specification><optionGroup id='model.difficulty.medium'>" +
+            "  <integerOption id='model.option.landPriceFactor' value='70' />" +
+            "  <integerOption id='model.option.nativeDemands' value='3' />" +
+            "  <integerOption id='model.option.rumourDifficulty' value='1' />" +
+            "</optionGroup></freecol-specification>");
+        DifficultyOptions d = Ruleset.ParseDifficulty(root);
+        Assert.Equal(70, d.LandPriceFactor);
+        Assert.Equal(3, d.NativeDemands);  // raw — the +1 demand-dx and (5−x)·50 relief transforms live in Game
+        Assert.Equal(1, d.RumourDifficulty); // raw — the 10−x reward-dx transform lives in Game
+    }
+
+    [Fact]
+    public void ClassicRuleset_ParsesTheNativesGroupOptions()
+    {
+        DifficultyOptions d = Ruleset.LoadClassic().Difficulty;
+        Assert.Equal(60, d.LandPriceFactor);
+        Assert.Equal(2, d.NativeDemands);
+        Assert.Equal(2, d.RumourDifficulty);
+    }
 }
