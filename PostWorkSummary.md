@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-19 — AI colony economy, increments 2+3 (86d3c9vmr) — worker planner COMPLETE
+
+**Requested:** "continue" → you chose **full FreeCol fidelity** for the AI economy; built up CI+soak-green.
+**Did:** Completed the **worker-planner sub-feature** — foreign-power colonies now staff their tiles like a real economy.
+- **inc 2** (`13b69f5`): `ColonyNetFood` production-query (pure; centre + worked food-tile yields − consumption).
+- **inc 3** (`9e1c9dd`): `PlanColonyTileWork` (in `RunForeignPowerEconomy`) — a faithful tile subset of FreeCol `ColonyPlan`: rank top-2 cash raws by Σ yield × sale price; greedy **food-first-then-cash** (grain **and fish**); matching experts via `PickIdleWorkerFor`; **diff-applied** so a stable tile keeps its worker's on-the-job experience; per-tile yields precomputed once → within the <2 ms EndTurn budget.
+- **3-lens HARD adversarial review** (per your steer) folded real findings: a **medium** — fish/ocean food was ignored (coastal colonies under-fed), now fixed; the refined-price average dropped (no refined production yet); the one-turn lag documented; `ColonyNetFood` doc claims corrected; + a foreign-power **integration** test. The **perf soak** caught a high-SoL barren-tile bug (a positive bonus must not make a barren tile workable), fixed.
+**Status:** **990 L1/L2 + 4 soak green** (twin-determinism + invariants + **perf**), build clean; pushed `13b69f5`, `9e1c9dd` (+ inc 1 `bb5cad9` earlier). **RNG-free** → human stream 0 byte-identical; no save change. +8 L1 (`AiColonyEconomyTests`).
+**Changed:** `GameSession/Game.cs` (ColonyNetFood, CentreFoodProduction, PlanColonyTileWork, the seams, the RunForeignPowerEconomy wiring); `AiColonyEconomyTests.cs`; `docs/systems/players.md` (§2/§3 both layers + verification + changelog + Last-verified).
+**Decisions:** Full-fidelity, built in increments; tile workers first (the core economy); the food guard uses a projected net-food (the live `ColonyNetFood` is the query for the later Europe increment). Building workers / build-queue / Europe / national-advantage / marginal getBestWorker are the remaining increments; MaxAiColonies stays 1 (lift deferred).
+**Scheduled next:** **`86d3c9vmr` increment 4 — AI build-queue** (rank `Buildables` by FreeCol weight×support/difficulty, reuse `SetBuild`/`RunConstruction`), then increment 5 (Europe train/buy). Continuing per "continue."
+**Needs you:** nothing blocking. The AI now visibly staffs its colonies — worth an eyeball next playtest (it's human-observable). Standing items unchanged: difficulty slice 6 + `86d3d335r`; missionaries slice 3 (UI); `86d3c9q1z` (ship?); FP-6 gap (b) (playtest).
+
 ## 2026-06-18 — AI colony economy, increment 1 (86d3c9vmr) — owner-scoped assignment seams; PAUSED for steer
 
 **Requested:** "Begin on all of those items" → item 3; you chose **full FreeCol fidelity** for the AI economy.
