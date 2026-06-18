@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-18 — Schoolhouse/college/university teaching system (86d3c9p7f) — Shipped
+
+**Requested:** "Continue onto the next work … out for the next hour, continue through the backlog without stopping." (You also said "Go gap (b)" just before, then redirected — so I set FP-6 gap (b) aside as the human-facing one that needs your playtest, and took a clean unattended item instead.)
+**Did:** Shipped the **schoolhouse/college/university teaching system** (`86d3c9p7f`), in two CI-green slices — it was hard-blocked on the per-colonist worker overlay I shipped earlier, now unblocked.
+- **Slice 1 — data** (`bb5fb90`): `BuildingType.MaximumSkill`/`MinimumSkill`/`Teaches`; `UnitType.SkillTaught`/`SkillTaughtOrSelf` (colonial regular → veteran soldier); the `model.unitChange.education` table parsed by `(from,to)→turns` (recovering all rows past the by-`from` collapse); `Ruleset.GetTeachingType` (one rung per cycle toward the teacher's expertise) + `NeededTurnsOfTraining` (4/6/8). +19 L1.
+- **Slice 2 — behaviour** (`a356cab`): `Game.RunSchoolTeaching` (in the colony turn after growth; **no RNG**) raises the colony's least-skilled colonist criminal→servant→free→expertise over the spec turns, reduced by the SoL bonus (floor 1); `Colony._schoolTrainingTurns` + in-place upgrade mutators; save **v32** (additive). +32 L1/L2.
+- Designed via a 3-agent understand+design workflow; a **14-agent adversarial review** drove three in-slice fixes (parse `minimum-skill` for teacher eligibility; never teach a colonist sitting *in* a school — the medium finding; documented the per-school-progress + trade-tie-break deviations).
+**Status:** **898 L1+L2 + 4 soak green**, build clean; pushed `bb5fb90`, `a356cab`. Save v31→v32. Deterministic (no RNG); soak inert (no AI-staffed schools) → byte-stable.
+**Changed:** `Specification/{BuildingType,UnitType,UnitChange,Ruleset}.cs`, `Colonies/Colony.cs`, `GameSession/Game.cs`, `Persistence/SaveGame.cs`; tests `EducationDataTests.cs` + `SchoolTeachingTests.cs`; new doc `docs/systems/education-schools.md` (both layers); `ruleset-data.md`, `save-load.md`.
+**Decisions:** Single training counter per school + per-school (not per-bound-student) progress are documented first-cut deviations (small impact); the full per-student bind + per-teacher parallel training + trade tie-break + assign-a-teacher UI gate are noted follow-ups.
+**Scheduled next:** **`86d3c9t6e` — Missionaries + native conversion** (P5, **high**): a major missing native-interaction system (establish a mission in a native settlement; harvest converts), GameLogic-first + testable, no playtest needed — a good continue-while-you're-out item. (Alternatives if you'd rather: the `86d3c9xvu` calendar, or `86d3c9vmr` AI colony-economy depth.)
+**Follow-ups:** **`86d3c9q1z`** promotion ladder is now fully unblocked (combat ✓ + education ✓) — awaits your Ship/keep-open call; **FP-6 gap (b)** (stance-aware combat) still parked for your playtest.
+**Needs you:** Nothing blocking — shipped + CI-green. When back: the two In-Review calls (`86d3c9q1z` ship?, FP-6 gap (b) go?), else I keep grinding the backlog.
+
 ## 2026-06-18 — FP-6a: scored seek-and-destroy AI targeting (86d3bex51) — Shipped
 
 **Requested:** "Continue on with your next lot of backlog work." (= the scheduled-next: FP-6.)
