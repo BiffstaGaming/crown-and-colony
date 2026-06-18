@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (ruleset unit types, naval units, off-map sailing/Europe, cargo + passengers, role movement bonuses, standing orders: fortify/sentry/clear-orders/disband) |
-| **Last verified** | 2026-06-16 @ unit orders (fortify/sentry/clear/disband, save v23, `86d3c9pfh`) |
-| **Code** | `game/src/GameLogic/Units/` (`Unit.Orders`/`UnitOrders`), `GameSession/Game.cs` (`InitialMovement`, `Fortify`/`Sentry`/`ClearOrders`/`Disband` + their `Check*`) · rendering: `game/presentation/UnitMarker.cs` |
-| **Tests** | `game/tests/GameLogic.Tests/GameSession/GameTests.cs`, `RoleMovementTests.cs`, `MagellanTests.cs`, `UnitOrdersTests.cs` |
-| **FreeCol reference** | `freecol/src/net/sf/freecol/common/model/Unit.java` (`getMoveCost`, `MoveType`) |
+| **Status** | Implemented (ruleset unit types, naval units, off-map sailing/Europe, cargo + passengers, role movement bonuses, standing orders: fortify/sentry/clear-orders/disband, goto/multi-turn move orders + pathfinding + unit cycling) |
+| **Last verified** | 2026-06-19 @ goto / multi-turn moves + cycling (save v36, `86d3c9pfy`) |
+| **Code** | `game/src/GameLogic/Units/` (`Unit.Orders`/`UnitOrders`, `Unit.Destination`), `GameSession/Game.cs` (`InitialMovement`, `Fortify`/`Sentry`/`ClearOrders`/`Disband` + their `Check*`), `GameSession/Game.Goto.cs` (goto oracle/mutator, `ProcessGotos`, `NextUnitToMove`), `World/Pathfinder.cs` (A*) · rendering: `game/presentation/UnitMarker.cs` |
+| **Tests** | `game/tests/GameLogic.Tests/GameSession/GameTests.cs`, `RoleMovementTests.cs`, `MagellanTests.cs`, `UnitOrdersTests.cs`, `GotoTests.cs`, `World/PathfinderTests.cs` |
+| **FreeCol reference** | `freecol/src/net/sf/freecol/common/model/Unit.java` (`getMoveCost`, `MoveType`, `setDestination`), `Map.java` (`searchMap`) |
 | **Related systems** | [map-terrain](map-terrain.md), [turns](turns.md) |
 
 ## 1. How it works (plain English)
@@ -14,6 +14,8 @@
 There's one explorer on the map. Click it to select (gold ring), click a neighbouring tile to walk there. Rough ground (forests, hills) uses up the turn faster than open plains; water is off-limits. When the unit can't move any further, end the turn and it's refreshed.
 
 You can also give a unit a **standing order** instead of moving it. **Fortify** a unit and it spends a turn digging in; from then on it defends **half again as hard** (+50%) — invaluable for a soldier guarding a colony or a chokepoint. **Sentry** rests a unit until something happens (so it stops asking for orders). **Clear orders** wakes a fortified or resting unit, and **disband** removes a unit you no longer want for good. Moving a fortified unit wakes it — you trade the defensive bonus for the march.
+
+**Go to.** You can point a unit at a far-off tile and tell it to **go there** ("goto"). It finds the cheapest route through ground it has already explored and walks itself toward the destination a bit each turn, all on its own, until it arrives — then the order clears. If something blocks the way (an enemy steps onto the route, or it simply runs out of road it can see) it waits and tries again next turn; moving it by hand cancels the trip. While a unit is travelling on a goto it no longer stops to ask you for orders, so the game **cycles** straight to the next unit that still needs your attention — and tells you when none are left and the turn can end.
 
 **Worked example:** the unit has 3 movement points. Stepping onto plains costs 3 — one move per turn. Stepping onto a forest costs 6, which the unit doesn't have… but a unit with any movement left may always make one move, so it steps in and is left with 0.
 
@@ -47,6 +49,20 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
 
   **Stepping onto a Lost City Rumour explores it** — after a `MoveUnit` *or* `Disembark` of a colonial land unit lands on a rumour tile, `Game` investigates it (see [lost-city-rumours](lost-city-rumours.md)). The outcome can **consume** the unit (an expedition vanishes) or **replace its type** (a learned skill), so a caller must treat the moved unit as possibly gone/transformed after the call returns.
 
+- **Goto / multi-turn move orders** (`86d3c9pfy`, FreeCol `Unit.setDestination` + `Map.searchMap`): a unit carries an optional `Destination` (a map tile). It is set via the oracle/mutator pair `CheckSetDestination`/`SetDestination` (rejected when off-map, the unit's own tile, water-for-a-land-unit/land-for-a-ship, an unexplored target, or no route exists) and cleared by `ClearDestination`, by **arrival**, or by **any manual `MoveUnit`** (FreeCol `setDestination(null)`).
+
+  | Goto step | Result |
+  |---|---|
+  | Each of the player's goto units, on its turn (`ProcessGotos`, before the movement reset) | walks toward its destination as far as this turn's movement allows |
+  | Reached the destination | the goto **clears** (`GotoOutcome.Reached`) |
+  | Ran out of movement mid-route | stops; goto **kept**, resumes next turn (`OutOfMoves`) |
+  | No route this turn (blocker/fog) | stops; goto **kept**, retries next turn (`NoPath`) |
+  | A step consumes/transforms the unit (e.g. a rumour) | the goto ends (`NotGoing`) |
+
+  The route is found by a deterministic, **RNG-free** A* (`Pathfinder`) over the terrain move-cost model, restricted to tiles the owner has **explored** (so a goto never routes through the unknown), recomputed **every step** so it adapts to revealed terrain and moved units. A unit only ever steps where `CheckMove` allows, so the goto obeys every normal movement rule.
+
+  **Unit cycling** (`NextUnitToMove`/`HasUnitsToMove`): the next of a player's units still needing orders this turn (lowest id first), skipping those with no moves left, those resting (fortifying/fortified/sentry), those on a goto (they auto-advance), and any off the map. The presentation layer drives selection from this oracle; the goto/cycling **input UI** (shift-click / G-key, the route overlay) is a separate P7 task.
+
 **Deviations from original / FreeCol:** ✅ **cross-check done (2026-06-13).** The partial-movement rule above is FreeCol's exactly (`Unit.getMoveCost`, Unit.java:2227). Not yet implemented from that method: tile-improvement cost changes (roads/rivers — arrive with improvements) and the settlement-target clause (no settlements yet). For 3-MP units the rule is equivalent to the old skeleton behaviour; it differs for faster units (pinned by test).
 
 ## 3. Technical design
@@ -57,14 +73,15 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
 - Selection is presentation state (`GameController._selectedUnit`), not game state.
 - `UnitMarker`: `_Draw` disc + selection ring; positioned via `MapView.TileCentre`.
 - **Orders** (`Unit.Orders`, a `UnitOrders` enum): `Game.Fortify`/`Sentry`/`ClearOrders`/`Disband` follow the `CheckX`/`X` + `MoveCheck`/`InvalidMoveException` pattern. The per-turn reset in `EndTurn` ages `Fortifying → Fortified` before resetting movement; `MoveUnit` resets `Orders` to `Active`. Combat reads `Unit.IsFortified` into `DefenceContext.Fortified` in the field-`Attack` path (see [combat](combat.md) §3). Save: `SavedUnit.Orders` (v23) is nullable and omitted for an *Active* unit, so an all-active game serializes byte-identically to v22 and a pre-v23 save loads every unit *Active*.
+- **Goto** (`Unit.Destination`, a `Position?`; `GameSession/Game.Goto.cs`): `Pathfinder.FindPath(map, start, goal, passable)` is a pure deterministic A* — open set keyed by the total order `(f, g, Y, X)` so the path is byte-stable, enter-cost = `TerrainType.MoveCost`, diagonals free, Chebyshev×3 admissible heuristic, **no RNG**. `Game.CanPathEnter` supplies the `passable` predicate (the `CheckMove` blocking rules minus adjacency/movement, plus the owner-`Explored` fog gate). `CheckSetDestination`/`SetDestination`/`ClearDestination` are the ADR-006 set surface; `AdvanceDestination` returns a `GotoAdvance{Outcome, StepsTaken}` and walks the unit via `MoveUnit` (re-asserting the destination after each step, since `MoveUnit` clears it). `ProcessGotos(player)` runs in `RunPlayerTurn` (before the world's movement reset), advancing the player's goto units in id order; it is a no-op when none have a goto, so it draws no randomness and leaves every RNG stream byte-identical (ADR-009). `NextUnitToMove`/`HasUnitsToMove` are the cycling oracles. Save: `SavedUnit.DestX`/`DestY` (v36) are nullable and omitted when no goto, so a goto-free game serializes byte-identically to v35 and a pre-v36 save loads with no destination.
 
 ## 4. Verification
 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
-| L1 Unit | Always | `GameTests`: legal move spends points; rejects non-adjacent/off-map/water/exhausted; spawn validation. `RoleMovementTests`: dragoon/scout reset to base + 9, foot/default unchanged. `UnitOrdersTests`: fortify → fortifying (0 moves) → fortified on the next turn; moving wakes it; ships can't fortify; **a fortified defender repels an attack an active one loses** (combat wiring, computed flip draw); sentry rests + clear-orders/disband; disband refused for a carrier with passengers; order state round-trips (v23) + byte-identical when all-active + pre-v23 loads Active | ✅ |
-| L2 Scenario | Always | 10-turn wander with per-move invariants; deterministic twin games | ✅ |
-| L3 Interaction | Yes | `InputTests`: click-select + click-to-move (simulated mouse, camera-aware); marker placement | ✅ |
+| L1 Unit | Always | `GameTests`: legal move spends points; rejects non-adjacent/off-map/water/exhausted; spawn validation. `RoleMovementTests`: dragoon/scout reset to base + 9, foot/default unchanged. `UnitOrdersTests`: fortify → fortifying (0 moves) → fortified on the next turn; moving wakes it; ships can't fortify; **a fortified defender repels an attack an active one loses** (combat wiring, computed flip draw); sentry rests + clear-orders/disband; disband refused for a carrier with passengers; order state round-trips (v23) + byte-identical when all-active + pre-v23 loads Active. `PathfinderTests`: least-cost route, diagonal preference, cost-aware + impassable detours, no-path, byte-stable (Y-then-X) tie-break. `GotoTests`: set/clear oracle rejects invalid + allows reachable; advance reaches+clears / out-of-moves keeps / not-going; manual move clears; v36 round-trip + omit-when-none + pre-v36 loads no-goto; cycling order + skip rules | ✅ |
+| L2 Scenario | Always | 10-turn wander with per-move invariants; deterministic twin games; `GotoTests.Goto_WalksTheUnitAcrossMultipleTurns` (a goto unit advances across `EndTurn`s and arrives) | ✅ |
+| L3 Interaction | Yes | `InputTests`: click-select + click-to-move (simulated mouse, camera-aware); marker placement. Goto/cycling input (shift-click / G-key, route overlay) deferred to P7 | ✅ |
 | L4 Visual | Yes | TODO with visual harness | ⬜ |
 
 - **FreeCol cross-check:** ✅ partial-movement rule matches `Unit.getMoveCost`; rejection branch pinned with a synthetic 12-MP unit (`PartialMovement_BigShortfall_MidTurn_Rejected`); small-shortfall branch pinned with a caravel.
@@ -73,11 +90,12 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
 
 - [x] Role movement bonuses (dragoon/scout/cavalry +9, pioneer +3) applied at the per-turn reset (FP-5, `86d3bbvv6`).
 - [x] Standing orders — fortify (+50% defence), sentry, clear-orders, disband (`86d3c9pfh`, save v23). Presentation hotkeys/buttons (F = fortify, etc.) + skipping sentry units when cycling are the **follow-up presentation slice** (the GameLogic + combat wiring + save are done).
+- [x] Goto / multi-turn move orders + pathfinding + unit cycling — GameLogic done (`86d3c9pfy`, save v36): `Unit.Destination`, the `Pathfinder` A*, the set/advance oracle/mutator, `ProcessGotos`, `NextUnitToMove`. **Skipping sentry/goto units when cycling is now in GameLogic** (`NextUnitToMove`). The **goto/cycling input UI** (shift-click / G-key, route preview overlay, select-next-unit input) is the **P7 presentation slice**.
 - [ ] Nation-type (naval +3) and Magellan (+3) movement bonuses — scoped `movementBonus` modifiers, deferred with scope evaluation / founding-father effects.
-- [ ] Tile-improvement movement costs (roads/rivers) with the improvements system.
+- [ ] Tile-improvement movement costs (roads/rivers) with the improvements system — will also speed goto routes (the `Pathfinder` heuristic assumes a minimum enter cost of 3; revisit then).
 - [ ] Settlement-target movement clause when colonies exist.
-- [ ] Multiple player units / unit cycling UI.
-- [ ] L3 click-to-move test; L4 golden with unit + selection ring.
+- [ ] Naval / Europe / settlement goto destinations (only on-map land/own-colony tiles for now) — need a naval cost model.
+- [ ] L4 golden with unit + selection ring.
 
 ## Changelog
 
@@ -92,3 +110,4 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
 | 2026-06-15 | Ferdinand Magellan: `InitialMovement` folds the owner's Congress `movementBonus` for naval units (+3); see [founding-fathers](founding-fathers.md) | Phase 5 (#3 fathers) |
 | 2026-06-14 | Role movement bonuses applied: per-turn movement = unit-type base + role `movementBonus` (mounted +9, missionary +3) via `Game.InitialMovement`; partial-move "near full" now measured against the boosted max; `Unit.ResetMovement` removed | FP-5 (`86d3bbvv6`) |
 | 2026-06-16 | Standing orders (`Unit.Orders`/`UnitOrders`): fortify (Fortifying → Fortified at the next reset = +50% field defence, wired into `DefenceContext.Fortified`), sentry, clear-orders, disband (carrier-with-passengers guarded); moving wakes a unit; save **v23** (omitted when Active). +12 L1/L2 (`UnitOrdersTests`) | Phase 5 (`86d3c9pfh`) |
+| 2026-06-19 | **Goto / multi-turn moves + cycling**: `Unit.Destination`; deterministic RNG-free A* `Pathfinder` (byte-stable `(f,g,Y,X)` order, fog-gated, recomputed each step); `CheckSetDestination`/`SetDestination`/`ClearDestination` + `AdvanceDestination`/`ProcessGotos` (in `RunPlayerTurn` before the move reset; reached clears, out-of-moves/no-path keep); `NextUnitToMove`/`HasUnitsToMove` cycling (skips spent/resting/goto/off-map); manual move clears the goto; save **v36** (DestX/DestY omitted when none). +15 L1/L2 (`GotoTests`, `PathfinderTests`). Goto/cycling input UI = P7 | Phase 5 (`86d3c9pfy`) |

@@ -14,7 +14,7 @@ namespace CrownAndColony.GameLogic.GameSession;
 /// All mutations of game state go through methods on this class so rules are
 /// enforced in one place.
 /// </summary>
-public sealed class Game
+public sealed partial class Game
 {
     /// <summary>The starting unit's type for a new game.</summary>
     public const string StartingUnitTypeId = "model.unit.freeColonist";
@@ -2521,7 +2521,7 @@ public sealed class Game
         IEnumerable<(int id, UnitType type, Position position, int movementLeft,
             UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
             int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
-            int repairTurns, UnitOrders orders, int treasureAmount)> units,
+            int repairTurns, UnitOrders orders, int treasureAmount, Position? destination)> units,
         IEnumerable<Colony>? colonies = null,
         IEnumerable<NativeSettlement>? nativeSettlements = null,
         AutoExportMode autoExportMode = AutoExportMode.PerGood)
@@ -2545,7 +2545,7 @@ public sealed class Game
         foreach ((int id, UnitType type, Position position, int movementLeft,
                   UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
                   int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
-                  int repairTurns, UnitOrders orders, int treasureAmount) in units)
+                  int repairTurns, UnitOrders orders, int treasureAmount, Position? destination) in units)
         {
             var unit = new Unit(id, type, position)
             {
@@ -2559,6 +2559,7 @@ public sealed class Game
                 RoleCount = roleCount,
                 RepairTurnsRemaining = repairTurns,
                 Orders = orders,
+                Destination = destination,
             };
             unit.SetTreasureAmount(treasureAmount); // internal method, like AddCargo — set after the initializer
             foreach ((string goodsId, int amount) in cargo ?? new Dictionary<string, int>())
@@ -2805,6 +2806,7 @@ public sealed class Game
         unit.Position = target;
         unit.MovementLeft -= check.Cost;
         unit.Orders = UnitOrders.Active; // moving wakes a fortified/sentry unit (FreeCol clears the state on a move)
+        unit.Destination = null;         // a manual move cancels any standing goto (FreeCol setDestination(null))
         RevealForOwner(unit); // the mover lifts its own owner's fog (mirrors SpawnUnit)
         if (unit.Type.IsCarrier)
         {
@@ -4364,6 +4366,8 @@ public sealed class Game
         }
 
         BombardEnemyShips(player); // fort/fortress colonies fire on adjacent enemy ships first (FreeCol csStartTurn)
+
+        ProcessGotos(player); // walk any units on a standing goto toward their destination (no-op when none — RNG-free)
 
         foreach (Colony colony in ColoniesOf(player))
         {

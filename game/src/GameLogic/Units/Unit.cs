@@ -98,6 +98,17 @@ public sealed class Unit
     public bool IsFortified => Orders == UnitOrders.Fortified;
 
     /// <summary>
+    /// The standing "go to" map destination (FreeCol <c>Unit.destination</c>), or null when the unit has no goto.
+    /// While set, the unit pathfinds toward it automatically each turn (see <see cref="GameSession.Game"/>'s
+    /// <c>ProcessGotos</c>); reaching it, or any manual move, clears it. Only the destination endpoint is stored —
+    /// the path is recomputed every turn so it adapts to revealed terrain and moved units.
+    /// </summary>
+    public Position? Destination { get; internal set; }
+
+    /// <summary>True when the unit has a standing goto destination.</summary>
+    public bool IsGoingTo => Destination is not null;
+
+    /// <summary>
     /// The id of the ship carrying this unit, or null when not aboard. A carried
     /// unit's <see cref="Location"/>/<see cref="Position"/> mirror its carrier's.
     /// </summary>
