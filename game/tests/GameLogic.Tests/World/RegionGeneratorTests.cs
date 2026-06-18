@@ -49,7 +49,8 @@ public class RegionGeneratorTests
     [Fact]
     public void PolarBands_ClaimLandInTheTopTwoAndBottomThreeRows()
     {
-        // Height 8: arctic = rows [0,2); antarctic = rows [8-2-1, 8) = [5,8). Land there → polar; water → ocean.
+        // Authoritative test for L2 named assertion #1 (both bands), with hand-placed polar land the generator's
+        // water margin never produces. Height 8: arctic = rows [0,2); antarctic = rows [8-2-1, 8) = [5,8).
         GameMap map = FromRows(
             "LLLLL", // y0 arctic
             "LLLLL", // y1 arctic
@@ -148,6 +149,35 @@ public class RegionGeneratorTests
         Assert.NotEqual(block.Id, lone.Id);             // the lone mountain is separate
         Assert.Equal(8, block.ScoreValue);              // 2 × 4 tiles
         Assert.Equal(2, lone.ScoreValue);               // 2 × 1 tile
+    }
+
+    [Fact]
+    public void MountainRegions_IncludeHills_AndMergeAdjacentHillAndMountain()
+    {
+        // The mountain pass keys on IsElevation, true for BOTH hills and mountains: an adjacent hill+mountain
+        // form one region; a lone hill is its own mountain region. (Hills are the commoner elevation terrain.)
+        GameMap map = FromRows(
+            "OOOOOOO", // y0
+            "OOOOOOO", // y1
+            "OOOOOOO", // y2
+            "OOMHOOO", // y3  mountain (2,3) + hill (3,3), adjacent
+            "OOOOOOO", // y4
+            "OOOOHOO", // y5  lone hill (4,5)
+            "OOOOOOO", // y6
+            "OOOOOOO", // y7
+            "OOOOOOO", // y8
+            "OOOOOOO");// y9
+
+        Region mh = RegionAt(map, 2, 3);
+        Assert.Equal(RegionType.Mountain, mh.Type);
+        Assert.Equal(RegionType.Mountain, RegionAt(map, 3, 3).Type); // the hill is a mountain region too
+        Assert.Equal(mh.Id, RegionAt(map, 3, 3).Id);                 // hill merges with the adjacent mountain
+        Assert.Equal(4, mh.ScoreValue);                              // 2 × 2 tiles
+
+        Region loneHill = RegionAt(map, 4, 5);
+        Assert.Equal(RegionType.Mountain, loneHill.Type);
+        Assert.NotEqual(mh.Id, loneHill.Id);
+        Assert.Equal(2, loneHill.ScoreValue);                        // 2 × 1 tile
     }
 
     // ── Land regions ─────────────────────────────────────────────────────────────────────────────────────
@@ -276,17 +306,14 @@ public class RegionGeneratorTests
             b.AllPositions().Select(b.RegionIdAt));
         Assert.Equal(a.Regions, b.Regions);
 
-        // L2 named assertion #1 on a real map: land in the polar rows is arctic/antarctic.
-        foreach (Position p in a.AllPositions().Where(p => !a.TerrainAt(p).IsWater))
-        {
-            if (p.Y < 2)
-            {
-                Assert.Equal("model.region.arctic", a.RegionOf(p)!.Key);
-            }
-            else if (p.Y >= a.Height - 3)
-            {
-                Assert.Equal("model.region.antarctic", a.RegionOf(p)!.Key);
-            }
-        }
+        // L2 named assertion #1 on a real map — the antarctic half. The generator's vertical water margin
+        // forbids land in rows 0-1 (MapGenerator.GrowContinent), so a generated map has NO arctic land: the
+        // arctic rule is pinned by the L1 fixture PolarBands_ClaimLandInTheTopTwoAndBottomThreeRows. Row
+        // Height-3 CAN hold land, so the antarctic band is genuinely populated — assert it non-vacuously.
+        Assert.DoesNotContain(a.AllPositions(), p => !a.TerrainAt(p).IsWater && p.Y < 2); // no arctic land generated
+        Assert.Contains(a.Regions, r => r.Key == "model.region.arctic");                  // region still exists in the table
+        var antarcticLand = a.AllPositions().Where(p => !a.TerrainAt(p).IsWater && p.Y >= a.Height - 3).ToList();
+        Assert.NotEmpty(antarcticLand); // the assertion below is not vacuous
+        Assert.All(antarcticLand, p => Assert.Equal("model.region.antarctic", a.RegionOf(p)!.Key));
     }
 }

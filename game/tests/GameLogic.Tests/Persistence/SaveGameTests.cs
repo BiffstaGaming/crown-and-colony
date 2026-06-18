@@ -93,18 +93,12 @@ public class SaveGameTests
             game.Map.AllPositions().Select(game.Map.RegionIdAt),
             loaded.Map.AllPositions().Select(loaded.Map.RegionIdAt));
         Assert.Equal(game.Map.Regions, loaded.Map.Regions); // table (incl. score/key/parent) restored verbatim
-        // The named L2 assertions still hold after a reload.
-        foreach (Position p in loaded.Map.AllPositions().Where(p => !loaded.Map.TerrainAt(p).IsWater))
-        {
-            if (p.Y < 2)
-            {
-                Assert.Equal("model.region.arctic", loaded.Map.RegionOf(p)!.Key);
-            }
-            else if (p.Y >= loaded.Map.Height - 3)
-            {
-                Assert.Equal("model.region.antarctic", loaded.Map.RegionOf(p)!.Key);
-            }
-        }
+        // Concrete spot-check that a polar rule survives the reload (full per-tile equality above already
+        // proves preservation; the generator produces antarctic — not arctic — land, so we check that band).
+        var antarcticLand = loaded.Map.AllPositions()
+            .Where(p => !loaded.Map.TerrainAt(p).IsWater && p.Y >= loaded.Map.Height - 3).ToList();
+        Assert.NotEmpty(antarcticLand);
+        Assert.All(antarcticLand, p => Assert.Equal("model.region.antarctic", loaded.Map.RegionOf(p)!.Key));
     }
 
     [Fact]
@@ -138,17 +132,15 @@ public class SaveGameTests
     }
 
     [Fact]
-    public void RegionlessMap_OmitsRegionTokens_ByteIdenticalToV34()
+    public void RegionFields_WhenNull_AreOmittedFromTheJson()
     {
-        // Omit-when-default: a save built from a map with no region layer writes no region tokens.
-        TerrainType plains = Classic.Terrain("model.tile.plains");
-        var bareMap = new GameMap(2, 2, [plains, plains, plains, plains]); // no SetRegions → empty region table
-        var game = Game.New(Classic, seed: 5);
-        SaveGame save = SaveGame.From(game) with { RegionIds = null, Regions = null };
+        // Omit-when-default mechanism (DefaultIgnoreCondition.WhenWritingNull): when a save has no region layer
+        // the JSON carries no region tokens. A real generated game ALWAYS has a region layer (see
+        // GeneratedGame_PersistsRegions), so this omit path only ever guards a (hypothetical) regionless map.
+        string bareJson = (SaveGame.From(Game.New(Classic, seed: 5)) with { RegionIds = null, Regions = null }).ToJson();
 
-        Assert.Empty(bareMap.Regions);
-        Assert.DoesNotContain("\"RegionIds\"", save.ToJson());
-        Assert.DoesNotContain("\"Regions\"", save.ToJson());
+        Assert.DoesNotContain("\"RegionIds\"", bareJson);
+        Assert.DoesNotContain("\"Regions\"", bareJson);
     }
 
     [Fact]

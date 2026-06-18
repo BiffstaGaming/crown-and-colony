@@ -51,6 +51,14 @@ public class RulesetTests
         Assert.False(mountains.IsWater);
     }
 
+    [Fact]
+    public void Hills_AreElevation_Too()
+    {
+        // Both hills and mountains are IsElevation — the region generator's mountain pass keys on it
+        // (see RegionGeneratorTests.MountainRegions_IncludeHills_AndMergeAdjacentHillAndMountain).
+        Assert.True(Classic.Terrain("model.tile.hills").IsElevation);
+    }
+
     [Theory]
     [InlineData("model.tile.ocean", true)]
     [InlineData("model.tile.highSeas", true)]
