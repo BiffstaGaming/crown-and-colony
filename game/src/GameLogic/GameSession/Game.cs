@@ -4355,20 +4355,45 @@ public sealed class Game
                     CapturePlayerColony(power, unit, colonyTile);
                     continue;
                 }
-                if (NearestHumanUnit(unit) is { } prey)
+                // Scored seek-and-destroy (FP-6a): pick the best human unit-tile OR colony within an escalating
+                // Chebyshev range (FreeCol's 8/12/16 ladder) by the `UnitSeekAndDestroyMission` heuristic — value
+                // minus distance, weak/valuable/treasure targets favoured, fortifications avoided — instead of just
+                // hunting the nearest unit. Attack when adjacent + legal, else step toward it.
+                if (PickAttackTarget(unit) is { } target)
                 {
-                    if (unit.Position.IsAdjacentTo(prey.Position) && CheckAttack(unit, prey.Position).Allowed)
+                    bool adjacent = unit.Position.IsAdjacentTo(target.Position);
+                    if (target.IsColony)
                     {
-                        AttackHumanUnit(power, unit, prey.Position);
+                        if (adjacent && CheckAttackColony(unit, target.Position).Allowed)
+                        {
+                            CapturePlayerColony(power, unit, target.Position);
+                        }
+                        else if (StepToward(power, unit, target.Position) is { } toColony)
+                        {
+                            MoveUnit(unit, toColony);
+                        }
                     }
-                    else if (StepToward(power, unit, prey.Position) is { } chase)
+                    else if (adjacent && CheckAttack(unit, target.Position).Allowed)
+                    {
+                        AttackHumanUnit(power, unit, target.Position);
+                    }
+                    else if (StepToward(power, unit, target.Position) is { } chase)
                     {
                         MoveUnit(unit, chase); // a hemmed-in attacker simply waits
                     }
                     continue;
                 }
-                // No field unit to chase: a land unit marches on the nearest human colony (the war objective) so it
-                // besieges instead of wandering off to explore (86d3bx03d) — closing on an undefended colony to
+                // Nothing scored within the seek range (every human target is >16 tiles off): close on the nearest
+                // human unit at ANY distance so a war unit — a warship, or a non-founder land unit like artillery —
+                // pursues rather than idling (the uncapped chase the pre-FP-6a AI used; the scored pick above is the
+                // preferred behaviour, this is the out-of-range fallback). Same-domain + human-only via NearestHumanUnit.
+                if (NearestHumanUnit(unit) is { } distantPrey && StepToward(power, unit, distantPrey.Position) is { } pursue)
+                {
+                    MoveUnit(unit, pursue);
+                    continue;
+                }
+                // With no human field unit anywhere, a land unit marches on the nearest human colony (the war objective)
+                // so it besieges instead of wandering off to explore (86d3bx03d) — closing on an undefended colony to
                 // capture above, or on a garrison to fight as a field unit. Naval units can't besiege a colony.
                 if (!unit.Type.IsNaval && NearestHumanColony(unit) is { } targetColony
                     && StepToward(power, unit, targetColony.Position) is { } colonyStep)
@@ -4784,13 +4809,131 @@ public sealed class Game
         return steps.Count == 0 ? null : steps[RandomFor(player).Next(steps.Count)];
     }
 
+    /// <summary>A scored seek-and-destroy target for the foreign-power war AI (FP-6a): a human unit's tile or a human colony, with its score.</summary>
+    internal readonly record struct ScoredTarget(Position Position, bool IsColony, int Score);
+
+    /// <summary>FreeCol <c>UnitSeekAndDestroyMission</c> base target value (1020) and the per-distance penalty (100·turns; we use Chebyshev tiles for turns).</summary>
+    private const int SeekBaseValue = 1020;
+    private const int SeekDistancePenalty = 100;
+
+    /// <summary>The offensive seek-and-destroy range ladder (FreeCol's 8/12/16): the first gate yielding any eligible target wins.</summary>
+    private static readonly int[] SeekRangeLadder = [8, 12, 16];
+
+    /// <summary>
+    /// The best scored attack target for an armed foreign-power unit at war with the human (FP-6a, FreeCol
+    /// <c>UnitSeekAndDestroyMission</c> + <c>getSeekAndDestroyMission</c>'s 8/12/16 ladder): searches human unit-tiles
+    /// (same domain) and — for a land unit — human colonies within an escalating Chebyshev range, scoring each by
+    /// <see cref="ScoreUnitTarget"/> / <see cref="ScoreColonyTarget"/> (value minus distance; weak/valuable/treasure
+    /// targets favoured; fortifications avoided). The first range gate that yields any target wins; ties resolve by a
+    /// stable candidate order (units by id, colonies by position) with no RNG, so the human's stream 0 is untouched.
+    /// Null when nothing is reachable within the widest gate (the caller then besieges the nearest colony, as before).
+    /// </summary>
+    internal ScoredTarget? PickAttackTarget(Unit unit)
+    {
+        foreach (int range in SeekRangeLadder)
+        {
+            if (BestTargetWithin(unit, range) is { } best)
+            {
+                return best;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>The strict-max scored target within a Chebyshev <paramref name="range"/>, or null if none is eligible (see <see cref="PickAttackTarget"/>).</summary>
+    private ScoredTarget? BestTargetWithin(Unit unit, int range)
+    {
+        ScoredTarget? best = null;
+        // Human unit-tile candidates (same domain), one per occupied tile (scored vs its strongest defender), in stable
+        // id order so the first top-scorer wins on a tie.
+        foreach (Position tile in _units
+                     .Where(u => u.IsOnMap && IsHumanOwned(u) && u.Type.IsNaval == unit.Type.IsNaval
+                                 && Chebyshev(u.Position, unit.Position) <= range)
+                     .OrderBy(u => u.Id)
+                     .Select(u => u.Position)
+                     .Distinct())
+        {
+            int score = ScoreUnitTarget(unit, tile);
+            if (score != int.MinValue && (best is null || score > best.Value.Score))
+            {
+                best = new ScoredTarget(tile, IsColony: false, score);
+            }
+        }
+        // Human colony candidates — a land unit only (naval can't besiege/capture), in stable position order. A
+        // GARRISONED colony is excluded (its garrison is a unit-tile candidate, fought first — like the adjacent path):
+        // scoring it as a capture target would let it outscore its own garrison, then `CheckAttackColony` rejects the
+        // capture and the unit wanders off without ever engaging (the seek-and-destroy garrison-first rule).
+        if (!unit.Type.IsNaval)
+        {
+            foreach (Colony colony in _colonies
+                         .Where(c => IsHumanOwned(c) && Chebyshev(c.Position, unit.Position) <= range
+                                     && !_units.Any(u => u.IsOnMap && u.Position == c.Position))
+                         .OrderBy(c => c.Position.Y).ThenBy(c => c.Position.X))
+            {
+                int score = ScoreColonyTarget(unit, colony);
+                if (best is null || score > best.Value.Score)
+                {
+                    best = new ScoredTarget(colony.Position, IsColony: true, score);
+                }
+            }
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// Scores a human unit-tile as a seek-and-destroy target (FreeCol <c>scoreUnitPath</c>): <c>1020 − 100·d</c> plus
+    /// the <b>truncated</b> relative-power term <c>(int)(100·(off − def))</c> against the tile's strongest defender,
+    /// plus +1000 per treasure train on the tile and +500 for a naval defender caught on land. <see cref="int.MinValue"/>
+    /// (skip) when the attacker has no offence or the tile has no fightable defender.
+    /// </summary>
+    private int ScoreUnitTarget(Unit attacker, Position tile)
+    {
+        double off = OffenceBase(attacker);
+        if (off <= 0 || DefenderAt(attacker, tile) is not { } defender)
+        {
+            return int.MinValue;
+        }
+        int score = SeekBaseValue - SeekDistancePenalty * Chebyshev(attacker.Position, tile);
+        score += (int)(100 * (off - DefencePowerOf(attacker, defender, tile))); // truncate, per FreeCol
+        score += 1000 * _units.Count(u => u.IsOnMap && u.Position == tile && IsHumanOwned(u) && u.TreasureAmount > 0);
+        if (defender.Type.IsNaval && !Map.TerrainAt(tile).IsWater)
+        {
+            score += 500; // a ship caught on a land tile is an easy kill (FreeCol)
+        }
+        return score;
+    }
+
+    /// <summary>
+    /// Scores a human colony as a seek-and-destroy target (FreeCol <c>scoreSettlementPath</c> + <c>calculateSettlementValue</c>):
+    /// <c>1020 − 100·d</c> plus the <b>rounded</b> <c>round(50·off)</c> attacker-strength term, plus the colony's
+    /// population (loot), minus <c>200 × stockade level</c> (stockade 1 / fort 2 / fortress 3 → 200/400/600 — avoid
+    /// fortifications, matching FreeCol exactly; note this is the settlement-VALUE penalty, distinct from the combat
+    /// defence-bonus %). The settlement term rounds where the unit term truncates — a real FreeCol asymmetry.
+    /// </summary>
+    private int ScoreColonyTarget(Unit attacker, Colony colony)
+    {
+        int score = SeekBaseValue - SeekDistancePenalty * Chebyshev(attacker.Position, colony.Position);
+        score += (int)Math.Round(50 * OffenceBase(attacker), MidpointRounding.AwayFromZero); // round, per FreeCol
+        score += colony.Population;
+        score -= 200 * StockadeLevel(colony); // FreeCol Colony.calculateSettlementValue: −200·stockade level
+        return score;
+    }
+
+    /// <summary>A colony's fortification tier (FreeCol stockade <c>level</c>): stockade 1, fort 2, fortress 3, none 0.</summary>
+    private static int StockadeLevel(Colony colony) =>
+        colony.HasBuilding("model.building.fortress") ? 3
+        : colony.HasBuilding("model.building.fort") ? 2
+        : colony.HasBuilding("model.building.stockade") ? 1
+        : 0;
+
     /// <summary>
     /// The nearest on-map human-owned unit the <paramref name="hunter"/> can fight (Chebyshev, ties broken by
     /// position), or null if none. Two filters: (1) human-owned — the <b>sole contract</b> keeping the AI
     /// attacking the human only (the engine's <see cref="CheckAttack"/>/<see cref="DefenderAt"/> gate on
     /// owner-inequality would also admit other rivals); (2) <b>same domain</b> — a ship hunts ships, a land unit
     /// hunts land units (naval and land combat don't mix), so a warship never chases an unreachable land unit and
-    /// a brave never chases a ship.
+    /// a brave never chases a ship. (Still used by the native raid AI; the foreign-power war AI now uses the scored
+    /// <see cref="PickAttackTarget"/>.)
     /// </summary>
     private Unit? NearestHumanUnit(Unit hunter) =>
         _units.Where(u => u.IsOnMap && IsHumanOwned(u) && u.Type.IsNaval == hunter.Type.IsNaval)

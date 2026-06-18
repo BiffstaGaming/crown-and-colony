@@ -85,13 +85,17 @@ public class ForeignColonyCaptureTests
         // A unit standing on the colony tile means CheckAttackColony refuses the assault, so the foreign unit
         // hunts the garrison instead. The colony cannot change hands while defended — whatever the fight's outcome.
         (Game game, Colony colony, Player power, int humanId) = Stage(seed: 7, atWar: true);
-        Unit garrison = game.SpawnUnit(Classic.Unit(Artillery), colony.Position); // a human defender on the tile
+        Position pos = colony.Position;
+        Unit garrison = game.SpawnUnit(Classic.Unit(Artillery), pos); // a human defender on the tile
         Assert.Equal(humanId, garrison.OwnerId);
 
         game.EndTurn();
 
         Assert.Equal(humanId, game.Colonies.First(c => c.Id == colony.Id).OwnerId); // not captured while defended
         Assert.Empty(game.ColonyLossNotices);
+        // The garrison is actually FOUGHT, not bypassed: the scorer must rank the garrisoned colony as a unit-tile
+        // target (its garrison) rather than a capture target, so the adjacent foreign unit attacks it (FP-6a fix).
+        Assert.Contains(game.CombatNotices, n => n.AttackerNationId == power.NationId && n.Position == pos);
     }
 
     [Fact]

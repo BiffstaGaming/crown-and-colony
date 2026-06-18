@@ -116,4 +116,126 @@ public class ForeignCombatTests
         Assert.Equal(peace.HumanPlayer.Gold, war.HumanPlayer.Gold);
         Assert.Equal(peace.HumanPlayer.RecruitDock, war.HumanPlayer.RecruitDock);
     }
+
+    // ---- FP-6a: scored seek-and-destroy target selection ----
+
+    private static int Cheb(Position a, Position b) => System.Math.Max(System.Math.Abs(a.X - b.X), System.Math.Abs(a.Y - b.Y));
+
+    private static bool FreeLandTile(Game g, Position p) =>
+        g.Map.InBounds(p) && !g.Map.TerrainAt(p).IsWater && g.ColonyAt(p) is null
+        && g.NativeSettlementAt(p) is null && !g.Units.Any(u => u.IsOnMap && u.Position == p);
+
+    /// <summary>The nearest free land tile at least <paramref name="minDist"/> Chebyshev tiles from <paramref name="from"/>.</summary>
+    private static Position FreeLandAtLeast(Game g, Position from, int minDist) =>
+        g.Map.AllPositions().Where(p => Cheb(p, from) >= minDist && FreeLandTile(g, p))
+            .OrderBy(p => Cheb(p, from)).ThenBy(p => p.Y).ThenBy(p => p.X).First();
+
+    /// <summary>A war foreign power with an armed soldier on an open central tile, the human's lone map unit cleared into a far colony.</summary>
+    private static (Game game, Player power, Unit soldier, Position at) Battlefield(ulong seed)
+    {
+        Game game = Game.New(Classic, seed);
+        Unit start = game.PlayerUnits.First(u => u.IsOnMap);
+        Position startPos = start.Position;
+        if (game.CheckFoundColony(start).Allowed)
+        {
+            game.FoundColony(start); // clear the human's only map unit; its colony sits >20 tiles from the battlefield (out of seek range)
+        }
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        Position at = game.Map.AllPositions()
+            .Where(p => FreeLandTile(game, p) && Cheb(p, startPos) >= 20
+                        && p.Neighbours().Count(n => FreeLandTile(game, n)) >= 6)
+            .OrderBy(p => p.Y).ThenBy(p => p.X).First();
+        Unit soldier = game.SpawnUnit(Classic.Unit(VeteranSoldier), at);
+        soldier.OwnerId = power.PlayerId;
+        soldier.RoleId = SoldierRole;
+        soldier.RoleCount = 1;
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.War);
+        return (game, power, soldier, at);
+    }
+
+    [Fact]
+    public void ScoredTarget_PrefersTheNearerOfTwoEqualUnits()
+    {
+        (Game game, _, Unit soldier, Position at) = Battlefield(7);
+        Position near = FreeLandAtLeast(game, at, 2);
+        Position far = FreeLandAtLeast(game, at, 7);
+        game.SpawnUnit(Classic.Unit(VeteranSoldier), far);  // human-owned (SpawnUnit defaults to the human)
+        game.SpawnUnit(Classic.Unit(VeteranSoldier), near);
+
+        Game.ScoredTarget? target = game.PickAttackTarget(soldier);
+
+        Assert.NotNull(target);
+        Assert.False(target!.Value.IsColony);
+        Assert.Equal(near, target.Value.Position); // the −100·distance term dominates between equal-value units
+    }
+
+    [Fact]
+    public void ScoredTarget_TreasureTrain_OutweighsACloserPlainUnit()
+    {
+        (Game game, _, Unit soldier, Position at) = Battlefield(7);
+        Position near = FreeLandAtLeast(game, at, 2);
+        Position farther = FreeLandAtLeast(game, at, 5);
+        game.SpawnUnit(Classic.Unit(VeteranSoldier), near); // closer, plain
+        game.SpawnUnit(Classic.Unit("model.unit.treasureTrain"), farther).SetTreasureAmount(600); // +1000 bump
+
+        Game.ScoredTarget? target = game.PickAttackTarget(soldier);
+
+        Assert.NotNull(target);
+        Assert.Equal(farther, target!.Value.Position); // the treasure bump beats the small extra distance
+    }
+
+    [Fact]
+    public void ScoredTarget_EscalatesRange_FindingAFarTargetOnlyWhenNothingIsCloser()
+    {
+        (Game game, _, Unit soldier, Position at) = Battlefield(7);
+        Position far = FreeLandAtLeast(game, at, 9); // beyond the first gate (8), within the second (12)
+        Assert.True(Cheb(far, at) is > 8 and <= 12, $"expected the far tile in (8,12], was {Cheb(far, at)}");
+        Unit farUnit = game.SpawnUnit(Classic.Unit(VeteranSoldier), far);
+
+        // Alone, the far unit is found only because the ladder widens past range 8.
+        Game.ScoredTarget? farOnly = game.PickAttackTarget(soldier);
+        Assert.NotNull(farOnly);
+        Assert.Equal(far, farOnly!.Value.Position);
+
+        // Add a unit inside the first gate: now the near one wins and the far one is never considered.
+        Position near = FreeLandAtLeast(game, at, 3);
+        game.SpawnUnit(Classic.Unit(VeteranSoldier), near);
+        Assert.Equal(near, game.PickAttackTarget(soldier)!.Value.Position);
+    }
+
+    [Fact]
+    public void ScoredTarget_Warship_ScoresOnlyShips_NeverLandUnitsOrColonies()
+    {
+        (Game game, Player power, _, Position at) = Battlefield(7);
+        // A war warship near the same battlefield: a land unit nearby must NOT be a candidate (wrong domain).
+        Position water = game.Map.AllPositions()
+            .Where(p => game.Map.InBounds(p) && game.Map.TerrainAt(p).IsWater && !game.Units.Any(u => u.IsOnMap && u.Position == p))
+            .OrderBy(p => Cheb(p, at)).ThenBy(p => p.Y).ThenBy(p => p.X).First();
+        Unit frigate = game.SpawnUnit(Classic.Unit("model.unit.frigate"), water);
+        frigate.OwnerId = power.PlayerId;
+        game.SpawnUnit(Classic.Unit(VeteranSoldier), FreeLandAtLeast(game, water, 2)); // a human land unit nearby
+
+        Assert.Null(game.PickAttackTarget(frigate)); // no human ship in range; the land unit + colonies are not naval candidates
+    }
+
+    [Fact]
+    public void AtWar_ANonFounderLandUnit_PursuesADistantPrey_InsteadOfIdling()
+    {
+        // Out-of-seek-range fallback (review fix): a war artillery (a non-founder armed land unit) whose only human
+        // target is beyond range 16 must close on it, not idle. Pre-fix it fell through to "non-founder → wait".
+        Game game = Game.New(Classic, 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        Unit prey = game.PlayerUnits.First(u => u.IsOnMap); // the human's lone colonist; no human colonies founded
+        Position at = game.Map.AllPositions()
+            .Where(p => FreeLandTile(game, p) && Cheb(p, prey.Position) > 16)
+            .OrderBy(p => Cheb(p, prey.Position)).ThenBy(p => p.Y).ThenBy(p => p.X).First();
+        Unit gun = game.SpawnUnit(Classic.Unit("model.unit.artillery"), at);
+        gun.OwnerId = power.PlayerId;
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.War);
+        int before = Cheb(gun.Position, prey.Position);
+
+        game.EndTurn();
+
+        Assert.True(Cheb(gun.Position, prey.Position) < before, "a war land unit should pursue a distant prey, not idle");
+    }
 }
