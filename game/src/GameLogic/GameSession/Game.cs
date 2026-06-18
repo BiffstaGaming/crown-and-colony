@@ -5600,7 +5600,15 @@ public sealed class Game
     /// Whether a colonist of <paramref name="colony"/> may be put to work on
     /// <paramref name="tile"/> producing <paramref name="goodsId"/>.
     /// </summary>
-    public MoveCheck CheckAssignWork(Colony colony, Position tile, string goodsId)
+    public MoveCheck CheckAssignWork(Colony colony, Position tile, string goodsId) =>
+        CheckAssignWork(_human, colony, tile, goodsId);
+
+    /// <summary>
+    /// <inheritdoc cref="CheckAssignWork(Colony, Position, string)"/> evaluated for <paramref name="player"/> (the
+    /// colony's owner), so the tile yield folds <em>that</em> player's founding fathers — the foreign-power AI must
+    /// rank tiles by its own yields, not the human's (the public overload delegates here with the human).
+    /// </summary>
+    internal MoveCheck CheckAssignWork(Player player, Colony colony, Position tile, string goodsId)
     {
         if (!Map.InBounds(tile))
         {
@@ -5618,7 +5626,7 @@ public sealed class Game
         {
             return MoveCheck.No("No idle colonists.");
         }
-        int yield = TileYield(tile, goodsId);
+        int yield = TileYield(player, tile, goodsId);
         if (yield <= 0)
         {
             return MoveCheck.No($"That tile cannot produce {goodsId[(goodsId.LastIndexOf('.') + 1)..]}.");
@@ -5627,10 +5635,14 @@ public sealed class Game
     }
 
     /// <summary>Puts an idle colonist to work on a tile producing one goods type.</summary>
-    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAssignWork"/>.</exception>
-    public void AssignWork(Colony colony, Position tile, string goodsId)
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAssignWork(Colony, Position, string)"/>.</exception>
+    public void AssignWork(Colony colony, Position tile, string goodsId) =>
+        AssignWork(_human, colony, tile, goodsId);
+
+    /// <summary>Puts an idle colonist to work on behalf of <paramref name="player"/> (the colony owner), gating on that player's yields.</summary>
+    internal void AssignWork(Player player, Colony colony, Position tile, string goodsId)
     {
-        MoveCheck check = CheckAssignWork(colony, tile, goodsId);
+        MoveCheck check = CheckAssignWork(player, colony, tile, goodsId);
         if (!check.Allowed)
         {
             throw new InvalidMoveException(check.Reason!);
@@ -5646,9 +5658,12 @@ public sealed class Game
     /// production outputs that currently yield more than 0 (so a colony's surrounding forest offers lumber/furs/grain,
     /// hills offer ore, plains offer grain/cotton, …), each paired with its yield. Sorted by yield (descending) then
     /// goods id, for a stable, useful order in the colony screen's tile-work picker. Empty for water / off-map /
-    /// barren tiles. A rules query (ADR-006) — the presentation renders these options and calls <see cref="AssignWork"/>.
+    /// barren tiles. A rules query (ADR-006) — the presentation renders these options and calls <see cref="AssignWork(Colony, Position, string)"/>.
     /// </summary>
-    public IReadOnlyList<(string GoodsId, int Yield)> TileWorkOptions(Position tile)
+    public IReadOnlyList<(string GoodsId, int Yield)> TileWorkOptions(Position tile) => TileWorkOptions(_human, tile);
+
+    /// <summary><inheritdoc cref="TileWorkOptions(Position)"/> with yields folding <paramref name="player"/>'s fathers (the AI ranks tiles by its own yields).</summary>
+    internal IReadOnlyList<(string GoodsId, int Yield)> TileWorkOptions(Player player, Position tile)
     {
         if (!Map.InBounds(tile))
         {
@@ -5659,7 +5674,7 @@ public sealed class Game
             .SelectMany(p => p.Outputs)
             .Select(o => o.GoodsId)
             .Distinct()
-            .Select(id => (GoodsId: id, Yield: TileYield(tile, id)))
+            .Select(id => (GoodsId: id, Yield: TileYield(player, tile, id)))
             .Where(t => t.Yield > 0)
             .OrderByDescending(t => t.Yield)
             .ThenBy(t => t.GoodsId, StringComparer.Ordinal)
@@ -5671,14 +5686,18 @@ public sealed class Game
     /// yield, deterministic tie-break). Runs on founding and growth; also available
     /// to the player ("send idle colonists to the fields").
     /// </summary>
-    public void AutoAssignIdleToFood(Colony colony)
+    public void AutoAssignIdleToFood(Colony colony) =>
+        AutoAssignIdleToFood(PlayerById(colony.OwnerId) ?? _human, colony);
+
+    /// <summary><inheritdoc cref="AutoAssignIdleToFood(Colony)"/> ranking grain by <paramref name="player"/>'s yields (so a foreign power uses its own fathers, not the human's — a correctness fix for AI colonies).</summary>
+    internal void AutoAssignIdleToFood(Player player, Colony colony)
     {
         const string grain = "model.goods.grain";
         while (colony.IdleColonists > 0)
         {
             var best = colony.Position.Neighbours()
                 .Where(n => Map.InBounds(n) && !colony.TileWorkers.ContainsKey(n))
-                .Select(n => (tile: n, yield: TileYield(n, grain)))
+                .Select(n => (tile: n, yield: TileYield(player, n, grain)))
                 .Where(t => t.yield > 0)
                 .OrderByDescending(t => t.yield)
                 .ThenBy(t => t.tile.Y)
