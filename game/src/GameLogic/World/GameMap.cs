@@ -10,6 +10,8 @@ public sealed class GameMap
     private readonly HashSet<Position> _rumours;
     private readonly Dictionary<Position, string> _nativeOwners = []; // tile → owning native nation type id (derived, not saved)
     private readonly HashSet<Position> _claimedFromNatives; // tiles bought/taken from the natives — a SAVED override the derivation honours
+    private int[]? _regionIds; // dense row-major region id per tile (index y*Width+x); null until assigned, NoRegion = unassigned tile
+    private IReadOnlyList<Region> _regions = []; // the region table, indexed by region id (Regions[i].Id == i)
 
     /// <summary>Creates a map from a row-major terrain array (length must be Width × Height).</summary>
     /// <param name="width">Map width in tiles.</param>
@@ -18,11 +20,15 @@ public sealed class GameMap
     /// <param name="resources">Bonus resources by tile (sparse; null = none).</param>
     /// <param name="rumours">Tiles holding a Lost City Rumour (sparse; null = none). Restored from the save here; placed at game start by the LCR generator.</param>
     /// <param name="claimedFromNatives">Tiles the player has bought or taken from the natives (sparse; null = none). Restored from the save here; the native-land claim re-derivation honours this override so a claimed tile never reverts to native ownership.</param>
+    /// <param name="regionIds">Row-major region id per tile (length Width × Height; null = no region layer yet). Restored from a v35+ save; otherwise the region generator re-derives it after construction.</param>
+    /// <param name="regions">The region table indexed by region id (null = none). Restored alongside <paramref name="regionIds"/>.</param>
     public GameMap(
         int width, int height, IReadOnlyList<TerrainType> terrain,
         IReadOnlyDictionary<Position, string>? resources = null,
         IReadOnlyCollection<Position>? rumours = null,
-        IReadOnlyCollection<Position>? claimedFromNatives = null)
+        IReadOnlyCollection<Position>? claimedFromNatives = null,
+        IReadOnlyList<int>? regionIds = null,
+        IReadOnlyList<Region>? regions = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
@@ -31,6 +37,11 @@ public sealed class GameMap
             throw new ArgumentException(
                 $"Terrain array length {terrain.Count} does not match {width}x{height} map.", nameof(terrain));
         }
+        if (regionIds is not null && regionIds.Count != width * height)
+        {
+            throw new ArgumentException(
+                $"Region id array length {regionIds.Count} does not match {width}x{height} map.", nameof(regionIds));
+        }
 
         Width = width;
         Height = height;
@@ -38,6 +49,8 @@ public sealed class GameMap
         _resources = resources is null ? [] : new Dictionary<Position, string>(resources);
         _rumours = rumours is null ? [] : [.. rumours];
         _claimedFromNatives = claimedFromNatives is null ? [] : [.. claimedFromNatives];
+        _regionIds = regionIds is null ? null : [.. regionIds];
+        _regions = regions is null ? [] : [.. regions];
     }
 
     /// <summary>Map width in tiles.</summary>
@@ -106,6 +119,46 @@ public sealed class GameMap
     {
         _claimedFromNatives.Add(p);
         _nativeOwners.Remove(p);
+    }
+
+    /// <summary>Sentinel returned by <see cref="RegionIdAt"/> for a tile with no region (no layer yet, or unassigned).</summary>
+    public const int NoRegion = -1;
+
+    /// <summary>The region table, indexed by region id (empty until the region generator runs).</summary>
+    public IReadOnlyList<Region> Regions => _regions;
+
+    /// <summary>
+    /// The region id of a tile, or <see cref="NoRegion"/> when the map has no region layer yet or the tile is
+    /// unassigned. Resolve to the <see cref="Region"/> itself via <see cref="RegionOf"/>.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Position is off the map.</exception>
+    public int RegionIdAt(Position p) =>
+        InBounds(p)
+            ? _regionIds is null ? NoRegion : _regionIds[p.Y * Width + p.X]
+            : throw new ArgumentOutOfRangeException(nameof(p), p, "Position is off the map.");
+
+    /// <summary>The region a tile belongs to, or null when it has none (see <see cref="RegionIdAt"/>).</summary>
+    /// <exception cref="ArgumentOutOfRangeException">Position is off the map.</exception>
+    public Region? RegionOf(Position p)
+    {
+        int id = RegionIdAt(p);
+        return id >= 0 && id < _regions.Count ? _regions[id] : null;
+    }
+
+    /// <summary>
+    /// Installs the region layer computed by the region generator (game-start generation and the on-load
+    /// re-derivation). <paramref name="regionIds"/> is row-major (length Width × Height); <paramref name="regions"/>
+    /// is indexed by region id.
+    /// </summary>
+    internal void SetRegions(int[] regionIds, IReadOnlyList<Region> regions)
+    {
+        if (regionIds.Length != Width * Height)
+        {
+            throw new ArgumentException(
+                $"Region id array length {regionIds.Length} does not match {Width}x{Height} map.", nameof(regionIds));
+        }
+        _regionIds = regionIds;
+        _regions = [.. regions];
     }
 
     /// <summary>All positions on the map, row by row.</summary>

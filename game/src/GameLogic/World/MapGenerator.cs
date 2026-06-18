@@ -60,7 +60,13 @@ public static class MapGenerator
             }
         }
 
-        return new GameMap(width, height, terrain, resources);
+        var map = new GameMap(width, height, terrain, resources);
+
+        // Partition the finished terrain into named regions (polar, ocean, mountain, land). Pure and RNG-free,
+        // so it consumes no randomness and leaves the map RNG state untouched — see RegionGenerator.
+        (int[] regionIds, IReadOnlyList<Region> regions) = RegionGenerator.Assign(map);
+        map.SetRegions(regionIds, regions);
+        return map;
     }
 
     private static string PickWeightedResource(IReadOnlyList<ResourceChance> table, IGameRandom random)
