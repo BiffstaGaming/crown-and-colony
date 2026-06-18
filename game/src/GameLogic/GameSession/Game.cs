@@ -4400,6 +4400,13 @@ public sealed class Game
             power.CurrentFather = power.OfferedFathers[RandomFor(power).Next(power.OfferedFathers.Count)];
         }
 
+        // Plan each colony's tile workers (staff cash crops + food) before selling — so worked tiles, not just the
+        // unattended centre, feed the sell loop. RNG-free; diff-applied to preserve on-tile experience.
+        foreach (Colony colony in ColoniesOf(power).OrderBy(c => c.Id))
+        {
+            PlanColonyTileWork(power, colony);
+        }
+
         // Sell the surplus of each tradeable good (the colony centre and worked tiles yield cash crops/ore
         // unattended) to the power's own market. Food is kept so the colony never starves itself for gold.
         foreach (Colony colony in ColoniesOf(power).OrderBy(c => c.Id))
@@ -5901,17 +5908,7 @@ public sealed class Game
     /// </summary>
     internal int ColonyNetFood(Player owner, Colony colony)
     {
-        int produced = 0;
-        foreach (ProductionEntry entry in Map.TerrainAt(colony.Position).Productions.Where(p => p.Unattended))
-        {
-            foreach (GoodsOutput output in entry.Outputs)
-            {
-                if (Ruleset.StorageIdOf(output.GoodsId) == Colony.FoodId)
-                {
-                    produced += output.Amount;
-                }
-            }
-        }
+        int produced = CentreFoodProduction(colony);
         foreach ((Position tile, string goodsId) in colony.TileWorkers)
         {
             if (Ruleset.StorageIdOf(goodsId) == Colony.FoodId)
@@ -5920,6 +5917,137 @@ public sealed class Game
             }
         }
         return produced - colony.Population * Colony.FoodPerColonist;
+    }
+
+    /// <summary>The colony-centre tile's unattended food production (always worked, no colonist needed).</summary>
+    private int CentreFoodProduction(Colony colony) =>
+        Map.TerrainAt(colony.Position).Productions.Where(p => p.Unattended)
+            .SelectMany(p => p.Outputs)
+            .Where(o => Ruleset.StorageIdOf(o.GoodsId) == Colony.FoodId)
+            .Sum(o => o.Amount);
+
+    /// <summary>
+    /// Plans a foreign-power colony's <b>tile</b> workers (FreeCol <c>ColonyPlan.updateRawMaterials</c> +
+    /// <c>assignWorkers</c>, tile subset): rank the tradeable, tile-farmed, non-food raws by Σ neighbour yield ×
+    /// market sale price (averaged with the refined good's price when one exists, FreeCol's weighting), take the top
+    /// two, then greedily fill — produce those cash raws while net food stays positive, falling back to grain
+    /// otherwise (so the colony never plans itself into starvation), landing the matching expert on each good via
+    /// <see cref="PickIdleWorkerFor"/>. The plan is <b>diff-applied</b>: a tile already worked with the planned good
+    /// is left untouched, so a colonist keeps accruing on-the-job experience (<c>86d3c9pgj</c>) on a stable tile
+    /// instead of being churned each turn. Building workers are left as-is (a later increment). <b>RNG-free</b> (pure
+    /// ordinal/yield ranking) → the human's stream 0 is untouched (ADR-009). The Sons-of-Liberty
+    /// <see cref="Colony.ProductionBonus"/> is invariant to assignment in our model (it keys off population + liberty,
+    /// not the worked-unit count), so FreeCol's production-bonus guard does not apply. All per-tile yields are
+    /// computed once into a small matrix (the modifier fold is the cost), so re-planning every turn stays cheap.
+    /// <b>Deviation:</b> FreeCol's ×1.2 national-advantage multiplier in the ranking is not yet applied (a minor
+    /// tie-break refinement).
+    /// </summary>
+    internal void PlanColonyTileWork(Player owner, Colony colony)
+    {
+        int tileSlots = colony.Population - colony.BuildingWorkers.Values.Sum();
+        if (tileSlots <= 0)
+        {
+            return;
+        }
+
+        List<Position> neighbours = colony.Position.Neighbours().Where(Map.InBounds).ToList();
+        List<GoodsType> cashRaws = Ruleset.GoodsTypes.Where(g => g.IsFarmed && !g.IsFood && g.IsTradeable).ToList();
+        List<string> foodGoods = Ruleset.GoodsTypes.Where(g => g.IsFarmed && g.IsFood).Select(g => g.Id).ToList(); // grain (land) + fish (ocean)
+
+        // Precompute each neighbour's player-folded yield for every candidate good (cash raws + food goods) ONCE —
+        // the modifier fold (TileYield) is the cost, and both the ranking and the greedy read these same numbers.
+        var yield = new Dictionary<(Position Tile, string Good), int>();
+        foreach (Position n in neighbours)
+        {
+            foreach (string good in cashRaws.Select(r => r.Id).Concat(foodGoods))
+            {
+                yield[(n, good)] = TileYield(owner, n, good);
+            }
+        }
+
+        // Rank the cash raws (top-2 by Σ yield × market sale price), ties by ordinal id. FreeCol averages a raw's
+        // price with its refined good's only when the colony actually produces that refined good — our tile planner
+        // makes no refined goods yet, so we weight by the raw's own sale price (the refined-average arrives with the
+        // building-worker increment).
+        List<string> produce = cashRaws
+            .Select(raw => (id: raw.Id, value: neighbours.Sum(n => yield[(n, raw.Id)]) * owner.Market.BidPrice(raw.Id)))
+            .Where(t => t.value > 0)
+            .OrderByDescending(t => t.value)
+            .ThenBy(t => t.id, StringComparer.Ordinal)
+            .Take(2)
+            .Select(t => t.id)
+            .ToList();
+
+        int centreFood = CentreFoodProduction(colony);
+        var target = new Dictionary<Position, string>();
+        int produceIdx = 0;
+
+        // Effective output of a tile that CAN produce the good (base yield > 0), with the SoL bonus on top, floored.
+        // The base-yield gate matters: a positive ProductionBonus must never make a barren tile look workable (which
+        // would then be rejected by AssignWork's "cannot produce" check) — the bonus only lifts real production.
+        int Output(Position t, string good) => yield[(t, good)] <= 0 ? 0 : Math.Max(0, yield[(t, good)] + colony.ProductionBonus);
+        int NetFood() => centreFood
+            + target.Where(kv => Ruleset.StorageIdOf(kv.Value) == Colony.FoodId).Sum(kv => Output(kv.Key, kv.Value))
+            - colony.Population * Colony.FoodPerColonist;
+        Position? BestTileFor(string good) => neighbours
+            .Where(n => !target.ContainsKey(n) && yield[(n, good)] > 0)
+            .OrderByDescending(n => Output(n, good)).ThenBy(n => n.Y).ThenBy(n => n.X)
+            .Select(n => (Position?)n)
+            .FirstOrDefault();
+        // The best (tile, food good) across every farmed food good — grain on land, fish on ocean — so a coastal
+        // colony feeds itself from fish, not only grain (FreeCol's food plans include both).
+        (Position Tile, string Good)? BestFood() => neighbours
+            .Where(n => !target.ContainsKey(n))
+            .SelectMany(n => foodGoods.Where(g => yield[(n, g)] > 0).Select(g => (Tile: n, Good: g)))
+            .OrderByDescending(x => Output(x.Tile, x.Good)).ThenBy(x => x.Tile.Y).ThenBy(x => x.Tile.X).ThenBy(x => x.Good, StringComparer.Ordinal)
+            .Select(x => ((Position Tile, string Good)?)x)
+            .FirstOrDefault();
+
+        while (target.Count < tileSlots)
+        {
+            Position? pick = null;
+            string? pickGood = null;
+            if (NetFood() > 0 && produce.Count > 0) // fed enough → grow the cash economy
+            {
+                for (int i = 0; i < produce.Count; i++)
+                {
+                    string good = produce[(produceIdx + i) % produce.Count];
+                    if (BestTileFor(good) is { } tile)
+                    {
+                        pick = tile;
+                        pickGood = good;
+                        produceIdx = (produceIdx + i + 1) % produce.Count; // round-robin the produced good to the back
+                        break;
+                    }
+                }
+            }
+            if (pick is null && BestFood() is { } food) // not fed (or no cash tile) → grow food (grain or fish)
+            {
+                pick = food.Tile;
+                pickGood = food.Good;
+            }
+            if (pick is null)
+            {
+                break; // nothing left to work
+            }
+            target[pick.Value] = pickGood!;
+        }
+
+        // Diff-apply: free tiles whose plan changed (preserving experience on stable tiles), then fill the rest.
+        foreach ((Position tile, string good) in colony.TileWorkers.ToList())
+        {
+            if (!target.TryGetValue(tile, out string? planned) || planned != good)
+            {
+                UnassignWork(colony, tile);
+            }
+        }
+        foreach ((Position tile, string good) in target.OrderBy(kv => kv.Key.Y).ThenBy(kv => kv.Key.X))
+        {
+            if (!colony.TileWorkers.ContainsKey(tile))
+            {
+                AssignWork(owner, colony, tile, good);
+            }
+        }
     }
 
     private void RunColonyTurn(Player owner, Colony colony)

@@ -62,4 +62,71 @@ public class AiColonyEconomyTests
         game.ColonyNetFood(game.HumanPlayer, colony);
         Assert.Equal(before, game.RandomState); // no RNG drawn
     }
+
+    // ── Worker planner (increment 3) ─────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void PlanColonyTileWork_StaffsIdleColonistsOntoTiles()
+    {
+        (Game game, Colony colony) = IdleColony();
+        colony.Population = 4; // four colonists, all idle after IdleColony cleared the tiles
+
+        game.PlanColonyTileWork(game.HumanPlayer, colony);
+
+        Assert.True(colony.TileWorkers.Count > 0);                 // it staffed tiles (was all idle)
+        Assert.True(colony.TileWorkers.Count <= colony.Population); // never more than the population
+    }
+
+    [Fact]
+    public void PlanColonyTileWork_WorksFoodFirst_SoTheColonyDoesNotStarve()
+    {
+        (Game game, Colony colony) = IdleColony();
+        colony.Population = 4; // 4 mouths eat 8 food; the centre alone can't feed them → food must be worked
+
+        game.PlanColonyTileWork(game.HumanPlayer, colony);
+
+        Assert.Contains(colony.TileWorkers, w => Classic.StorageIdOf(w.Value) == Colony.FoodId); // at least one food tile
+    }
+
+    [Fact]
+    public void PlanColonyTileWork_PreservesAStableTilesWorker_AndItsExperience()
+    {
+        (Game game, Colony colony) = IdleColony();
+        colony.Population = 4;
+        game.PlanColonyTileWork(game.HumanPlayer, colony);
+
+        // Pick a planned tile, give its worker some on-the-job experience, then re-plan the (unchanged) colony.
+        (Position tile, string good) = colony.TileWorkers.First();
+        colony.SetTileWorkerExperience(tile, 50);
+        game.PlanColonyTileWork(game.HumanPlayer, colony);
+
+        Assert.True(colony.TileWorkers.ContainsKey(tile) && colony.TileWorkers[tile] == good); // same tile + good (deterministic plan)
+        Assert.Equal(50, colony.TileWorkerExperienceAt(tile)); // experience survived (diff-applied, not churned)
+    }
+
+    [Fact]
+    public void PlanColonyTileWork_DrawsNoRandomness()
+    {
+        (Game game, Colony colony) = IdleColony();
+        colony.Population = 4;
+        var before = game.RandomState;
+        game.PlanColonyTileWork(game.HumanPlayer, colony);
+        Assert.Equal(before, game.RandomState); // pure ordinal/yield ranking (ADR-009)
+    }
+
+    [Fact]
+    public void ForeignPowerEconomy_StaffsAForeignColonysTiles()
+    {
+        // Integration: the planner must actually run for a foreign power through RunForeignPowerEconomy (not just
+        // when called directly on the human) — guards against the EndTurn wiring being removed/guarded out.
+        Game game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        for (int i = 0; i < 30; i++)
+        {
+            game.EndTurn(); // by ~turn 30 the power founds a colony (cf. ForeignPowerEconomyTests)
+        }
+
+        Colony colony = game.Colonies.First(c => c.OwnerId == power.PlayerId);
+        Assert.True(colony.TileWorkers.Count > 0); // the planner staffed its tiles (centre-only/idle before 86d3c9vmr)
+    }
 }
