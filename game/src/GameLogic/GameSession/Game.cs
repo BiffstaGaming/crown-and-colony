@@ -41,19 +41,8 @@ public sealed class Game
     /// <summary>The warehouse goods id for liberty bells.</summary>
     private const string BellsId = "model.goods.bells";
 
-    /// <summary>Colonists who consume no bell upkeep — the first two are free; each beyond eats 1 bell/turn (FreeCol <c>unitsThatUseNoBells</c>, 2 on all classic difficulties). A colony must staff its town hall to outpace this as it grows.</summary>
-    private const int UnitsThatUseNoBells = 2;
-
     /// <summary>The terrain a ship sets sail to Europe from (the map's outer edge).</summary>
     private const string HighSeasId = "model.tile.highSeas";
-
-    /// <summary>
-    /// Liberty multiplier in the Founding Father cost formula. Classic <b>medium</b> difficulty = <b>40</b>
-    /// (spec <c>model.option.foundingFatherFactor</c>) — the value the base game is balanced around, so fathers
-    /// are a deliberate long-game investment rather than a snowball. (Difficulty-driven values, e.g. "other" = 24,
-    /// arrive with the difficulty-options system.)
-    /// </summary>
-    public const int FoundingFatherFactor = 40;
 
     /// <summary>The warehouse goods id for religious crosses (immigration points).</summary>
     private const string CrossesId = "model.goods.crosses";
@@ -380,7 +369,7 @@ public sealed class Game
 
     /// <summary>Liberty needed to elect <paramref name="player"/>'s next father.</summary>
     private int TotalFoundingFatherCost(Player player) =>
-        FoundingFatherCost(player.Congress.Count, FoundingFatherFactor);
+        FoundingFatherCost(player.Congress.Count, Ruleset.Difficulty.FoundingFatherFactor);
 
     /// <summary>Chooses which offered father the human player recruits toward.</summary>
     /// <exception cref="InvalidMoveException">The father is not currently offered.</exception>
@@ -5042,7 +5031,7 @@ public sealed class Game
                 // 1 bell of upkeep — so a colony that grows faster than its bell output loses liberty (its Sons of
                 // Liberty can fall). FreeCol feeds the same net figure to both pools.
                 int boosted = bells + (bells * BellProductionBonus(colony) / 100); // printing press / newspaper
-                int net = ApplyGoodsModifiers(player, BellsId, boosted) - Math.Max(0, colony.Population - UnitsThatUseNoBells);
+                int net = ApplyGoodsModifiers(player, BellsId, boosted) - Math.Max(0, colony.Population - Ruleset.Difficulty.UnitsThatUseNoBells);
                 player.Liberty += net;   // banked toward the next founding father
                 colony.AddLiberty(net);  // the colony's own Sons-of-Liberty liberty (AddLiberty floors at 0)
             }

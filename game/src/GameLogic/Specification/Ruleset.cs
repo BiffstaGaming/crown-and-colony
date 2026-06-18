@@ -40,10 +40,12 @@ public sealed class Ruleset
         Dictionary<string, Dictionary<string, int>> educationByFrom,
         Dictionary<string, EuropeanNation> europeanNationById,
         Calendar calendar,
-        IReadOnlyList<int> fatherAgeYears)
+        IReadOnlyList<int> fatherAgeYears,
+        DifficultyOptions difficulty)
     {
         Calendar = calendar;
         FatherAgeYears = fatherAgeYears;
+        Difficulty = difficulty;
         _terrainById = terrainById;
         _unitById = unitById;
         _goodsById = goodsById;
@@ -112,6 +114,12 @@ public sealed class Ruleset
     /// ours is 1-based to feed <see cref="FoundingFather.WeightForAge"/>.
     /// </summary>
     public int AgeForYear(int year) => 1 + FatherAgeYears.Count(threshold => year >= threshold);
+
+    /// <summary>
+    /// The selected difficulty level's tuning numbers (default <c>model.difficulty.medium</c>), parsed from the spec.
+    /// Balance constants read these instead of hardcoding values.
+    /// </summary>
+    public DifficultyOptions Difficulty { get; }
 
     /// <summary>All terrain types, in specification order.</summary>
     public IReadOnlyList<TerrainType> TerrainTypes { get; }
@@ -553,10 +561,38 @@ public sealed class Ruleset
 
         Calendar calendar = ParseCalendar(root);
         IReadOnlyList<int> fatherAgeYears = ParseFatherAgeYears(root, calendar.StartingYear);
+        DifficultyOptions difficulty = ParseDifficulty(root);
 
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, nativeNations, settlements,
-            roles, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears);
+            roles, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears, difficulty);
+    }
+
+    /// <summary>
+    /// Parses a difficulty level (default <c>model.difficulty.medium</c>) into <see cref="DifficultyOptions"/>.
+    /// Unlike the other option parses, difficulty options are restated under <em>every</em> level group, so this
+    /// FIRST selects the chosen level's subtree, THEN reads option values within it — reading over the whole document
+    /// would pick up the first level (<c>veryEasy</c>). A missing level, or a missing option within it, falls back to
+    /// <see cref="DifficultyOptions.ClassicMedium"/>. (FreeCol <c>Specification.applyDifficultyLevel</c>.)
+    /// </summary>
+    internal static DifficultyOptions ParseDifficulty(XElement root, string levelId = "model.difficulty.medium")
+    {
+        XElement? level = root.Descendants("optionGroup")
+            .FirstOrDefault(g => (string?)g.Attribute("id") == levelId);
+        if (level is null)
+        {
+            return DifficultyOptions.ClassicMedium;
+        }
+
+        int IntOption(string id, int fallback) =>
+            level.Descendants("integerOption")
+                .Where(o => (string?)o.Attribute("id") == id)
+                .Select(o => ParseInt((string?)o.Attribute("value")))
+                .FirstOrDefault(v => v is not null) ?? fallback;
+
+        return new DifficultyOptions(
+            FoundingFatherFactor: IntOption("model.option.foundingFatherFactor", DifficultyOptions.ClassicMedium.FoundingFatherFactor),
+            UnitsThatUseNoBells: IntOption("model.option.unitsThatUseNoBells", DifficultyOptions.ClassicMedium.UnitsThatUseNoBells));
     }
 
     /// <summary>

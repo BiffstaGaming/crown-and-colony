@@ -25,7 +25,7 @@ public class FoundingFatherTests
 
     [Theory]
     // FreeCol getTotalFoundingFatherCost: count==0 ? factor : 2*(count+1)*factor+1.
-    // Verified against Player.java:1544. Factor 24 = classic "other" difficulty.
+    // Verified against Player.java:1544. Factor 24 = classic veryEasy; 40 = medium (the default).
     [InlineData(24, new[] { 24, 97, 145, 193, 241 })]
     [InlineData(40, new[] { 40, 161, 241, 321, 401 })]
     public void CostFormula_MatchesFreeCol(int factor, int[] expected)
