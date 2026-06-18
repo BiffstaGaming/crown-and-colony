@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-18 — Missionaries + native conversion: slice 1 (86d3c9t6e) — establish a mission
+
+**Requested:** "Begin on all of those items" (the next-5). This is **item 2** — working the five in order.
+**Did:** Designed the whole missionary feature via a 4-agent understand+design workflow (pinned every FreeCol constant; caught that `model.option.nativeConvertProbability` is the *combat*-convert path, not this — not parsed), then shipped **slice 1: establish a mission**.
+- `Game.CheckEstablishMission`/`EstablishMission` (ADR-006, **RNG-free**): a missionary-role unit (`model.ability.establishMission`) on/adjacent to a settlement establishes a mission — **installed** at Happy/Content/Displeased (alarm ≤ 700: records owner + jesuit-ness via the role's expert-unit, eases alarm −100 goodwill (`ALARM_NEW_MISSIONARY`), reveals at the missionary's LoS, consumes the unit into the settlement); **killed** at Angry/Hateful.
+- `NativeSettlement.MissionOwnerId`/`MissionIsExpert`/`HasMission`; save **v33** (omit-when-none → byte-identical to v32; pre-v33 → no missions).
+- 2-agent adversarial review: one **medium** (the −100 goodwill — implemented) + one low (role-driven expert test, applied) + a 701-boundary nit (added), all folded.
+**Status:** **974 L1/L2 + 4 soak green**, build clean; pushed `7887a34`. Save v32→**v33**; version-pin tests bumped. RNG-free; soak byte-stable (no AI missionaries). +16 L1 (`NativeMissionTests`).
+**Changed:** `Natives/NativeSettlement.cs`, `GameSession/Game.cs`, `Persistence/SaveGame.cs`, `NativeMissionTests.cs` (+ the version-pin bumps); docs `natives.md` (both layers + verification + changelog) + `save-load.md` (v33).
+**Decisions:** AI doesn't staff missionaries yet (soak stays inert/byte-stable); establish-mission UI deferred to slice 3; convert spawn will be RNG-free (Size−1, no individual-brave pick); alarm capped at our 1000 (vs FreeCol 1100, ≤2/turn diff at max); replace-existing-mission allowed (faithful).
+**Scheduled next:** **`86d3c9t6e` slice 2 — convert accrual + `indianConvert` spawn** (per-turn `(skill+6)+0.02·alarm` in `EndTurn` before alarm decay; threshold 100; spawn at the owner's nearest colony within 10; save v34 for `ConvertProgress`; RNG-free). Then slice 3 (UI), then items 3–5 of the next-5 (AI economy, map regions, goto).
+**Follow-ups / Needs you:** still standing — difficulty slice 6 (`86d3c9y08`, new-game UI steer) + the gameOptions trio (`86d3d335r`); `86d3c9q1z` (promotion ladder — ship?), FP-6 gap (b) (playtest).
+
 ## 2026-06-18 — Difficulty-level system, slices 3–5 (86d3c9y08) — difficulty-scoped routing COMPLETE
 
 **Requested:** "Begin on all of those items" (the next-5 list). This is **item 1** — finishing the difficulty epic. Working the five in order; this entry covers difficulty slices 3–5.
