@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-19 — Map regions (86d3c9w12) — every tile gets a geographic region; SHIPPED
+
+**Requested:** "continue" → next-5 **item 4: map regions** (the foundational world-model piece P6 region-discovery + faithful native placement build on).
+**Did:** Built the whole feature in 5 CI-green slices + an adversarial-review pass. A new **RNG-free `RegionGenerator`** partitions every tile of the finished map into exactly one region, faithful to FreeCol `ServerRegion.requireFixedRegions` + `TerrainGenerator.createLandRegions/createMountains`:
+- **Polar bands** — arctic rows `[0,2)`, antarctic rows `[H-3,H)` (POLAR_HEIGHT=2; the genuine FreeCol 2/3-row asymmetry, read from source not the synthesis), land only, score 0.
+- **Oceans** — Pacific (west) + Atlantic (east), each split N/S, 8-dir flood-fill from each quadrant's outer-column seed in 3 escalating bounds (quadrant→half→map); parent ocean carries the score (Pacific 100); enclosed water → own ocean region (coverage guarantee).
+- **Mountains** — contiguous hill/mountain (`IsElevation`) land → one region each, score 2×size (derived from terrain, not FreeCol's range-walk — documented deviation).
+- **Land** — per-landmass (8-dir), split at LAND_REGION_MAX_SIZE=75 via bounded BFS, score `max(size/totalLand×1000, 5)`.
+- Data model: `RegionType` enum (ordinal-serialized, River reserved), `Region` record (Id/Type/Score/Key?/ParentId?), `GameMap` dense region layer (RegionIdAt/RegionOf/Regions + SetRegions + optional ctor params, resource/rumour sparse-layer convention). Wired into `MapGenerator.Generate` (re-derived each game start).
+- **Save v35** (additive, omit-when-default): `RegionIds` (row-major) + `Regions` table; pre-v35 saves re-derive deterministically on load (native-claim pattern). 15 version pins 34→35.
+**Review:** 4-lens adversarial workflow (correctness / fidelity / determinism+saves / tests+docs), each finding independently verified. **Region logic confirmed correct**; 4 test/doc-quality findings folded — vacuous arctic L2 assertion made honest (generator's water margin means no arctic land; antarctic asserted non-vacuously, arctic rule pinned by the L1 hand fixture), regionless-omit test rewritten to genuinely test the WhenWritingNull mechanism, save-load.md stale "v27"→v35, + hills→Mountain-region coverage (the commoner elevation terrain was unpinned).
+**Status:** **1026 L1/L2 + 4 soak green** (twin-determinism confirms human stream 0 byte-identical with region persistence), build clean (0 warnings); pushed `39f1e82`, `6d57bce`, `5391693`, all CI ✓. RNG-free.
+**Changed:** new `World/RegionType.cs`, `Region.cs`, `RegionGenerator.cs`; `World/GameMap.cs`, `World/MapGenerator.cs`, `Persistence/SaveGame.cs`; tests `RegionTests.cs`, `RegionGeneratorTests.cs`, `SaveGameTests.cs`, `RulesetTests.cs` (+15 pin bumps); docs `systems/map-terrain.md` (both layers + verification + changelog) + `save-load.md` (v35).
+**Decisions:** RNG-free (region assignment is a pure function of terrain, like native claims) so it can't perturb ADR-009 streams. **Persisted** regions (save v35) rather than re-derive-only — the task's "Done means: persist in saves"; it also anchors stable ids for P6 discovery state (re-derive fallback covers old saves). Read the polar-band asymmetry from FreeCol source (the design synthesis had guessed it).
+**Scheduled next:** **next-5 item 5 — goto / multi-turn moves (`86d3c9pfy`)** (the last of the "begin on all" five). Will design via a workflow then build CI-green slices.
+**Follow-ups:** AI-economy `86d3c9vmr` Europe-spend (FP-6-gated, recommended deferred) + refinements (building workers, marginal getBestWorker, MaxAiColonies lift); map-regions next consumers — native placement via region bounds + region discovery (both P6).
+**Needs you:** Nothing blocking — map regions is internal (no player-facing change yet: no rendering, native placement still uses the old bands), so no playtest needed; shipped straight to done. Standing In-Review items unchanged: difficulty slice 6 + `86d3d335r`; missionaries slice 3 (UI); `86d3c9q1z` (ship?); FP-6 gap (b) (playtest).
+
 ## 2026-06-19 — AI colony economy, increment 4 (86d3c9vmr) — build-queue
 
 **Requested:** "continue" → AI-economy increment 4.
