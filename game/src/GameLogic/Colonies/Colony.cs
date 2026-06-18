@@ -51,6 +51,7 @@ public sealed class Colony
     private readonly Dictionary<string, List<string>> _buildingWorkerTypes = []; // building → its non-free occupants' types
     private readonly List<string> _idleWorkerTypes = [];                          // non-free colonists with no assignment
     private readonly Dictionary<Position, int> _tileWorkerExperience = [];        // tile → its free-colonist worker's accrued on-the-job experience (86d3c9pgj; absent ⇒ 0, cleared when the occupant leaves/changes)
+    private readonly Dictionary<string, int> _schoolTrainingTurns = [];           // school building id → turns accrued toward the current least-skilled student (86d3c9p7f; absent ⇒ 0)
 
     /// <summary>The unit-type id of a plain colonist — the implicit default for any worker without an overlay entry.</summary>
     public const string FreeColonistTypeId = "model.unit.freeColonist";
@@ -297,16 +298,83 @@ public sealed class Colony
     }
 
     /// <summary>
-    /// Promotes <paramref name="tile"/>'s worker in place to <paramref name="expertType"/> (an on-the-job experience
-    /// upgrade, 86d3c9pgj): sets the overlay type and clears the accrued experience, leaving the count model
+    /// Promotes <paramref name="tile"/>'s worker in place to <paramref name="newType"/> (an on-the-job experience
+    /// upgrade 86d3c9pgj, or a schooling upgrade 86d3c9p7f): sets the overlay type — or clears it when the new type is
+    /// a free colonist (the servant→free schooling rung) — and clears the accrued experience, leaving the count model
     /// (<see cref="Population"/>, the tile assignment, the idle pool) untouched. Distinct from
     /// <see cref="SetWorker(Position, string, string)"/>, which draws a colonist from the idle pool — here the same
-    /// colonist stays put, just becomes an expert.
+    /// colonist stays put, just changes type.
     /// </summary>
-    internal void UpgradeTileWorker(Position tile, string expertType)
+    internal void UpgradeTileWorker(Position tile, string newType)
     {
-        _tileWorkerTypes[tile] = expertType;
+        if (newType == FreeColonistTypeId)
+        {
+            _tileWorkerTypes.Remove(tile);
+        }
+        else
+        {
+            _tileWorkerTypes[tile] = newType;
+        }
         _tileWorkerExperience.Remove(tile);
+    }
+
+    /// <summary>
+    /// Promotes one building occupant of <paramref name="currentType"/> in <paramref name="buildingId"/> to
+    /// <paramref name="newType"/> in place (a schooling upgrade, 86d3c9p7f), leaving the worker count untouched: a
+    /// non-free student's overlay entry is replaced (or removed when promoted to a free colonist); a free student
+    /// (no overlay entry — an implicit free-padded slot) gains one. Same idea as <see cref="UpgradeTileWorker"/> for a
+    /// building occupant; occupants of one type are interchangeable, so any one of <paramref name="currentType"/> is taken.
+    /// </summary>
+    internal void UpgradeBuildingWorker(string buildingId, string currentType, string newType)
+    {
+        if (currentType != FreeColonistTypeId && _buildingWorkerTypes.TryGetValue(buildingId, out List<string>? list))
+        {
+            list.Remove(currentType);
+            if (list.Count == 0)
+            {
+                _buildingWorkerTypes.Remove(buildingId);
+            }
+        }
+        if (newType != FreeColonistTypeId)
+        {
+            if (!_buildingWorkerTypes.TryGetValue(buildingId, out List<string>? l))
+            {
+                _buildingWorkerTypes[buildingId] = l = [];
+            }
+            l.Add(newType);
+        }
+    }
+
+    /// <summary>Promotes one idle colonist of <paramref name="currentType"/> to <paramref name="newType"/> (a schooling upgrade, 86d3c9p7f); a free idle is implicit, so promoting it adds an overlay entry and promoting to free removes one.</summary>
+    internal void UpgradeIdleWorker(string currentType, string newType)
+    {
+        RemoveOneIdle(currentType); // no-op for a free colonist (implicit in the idle count)
+        if (newType != FreeColonistTypeId)
+        {
+            _idleWorkerTypes.Add(newType);
+        }
+    }
+
+    /// <summary>Accrued training turns toward the current student in a school building (86d3c9p7f; 0 by default).</summary>
+    public int SchoolTrainingTurnsAt(string buildingId) => _schoolTrainingTurns.GetValueOrDefault(buildingId);
+
+    /// <summary>Accrued school training turns by building id (sparse — a school not currently teaching is absent). 86d3c9p7f.</summary>
+    public IReadOnlyDictionary<string, int> SchoolTrainingTurns => _schoolTrainingTurns;
+
+    /// <summary>Adds one turn of accrued training to a school building (86d3c9p7f).</summary>
+    internal void AddSchoolTrainingTurn(string buildingId) =>
+        _schoolTrainingTurns[buildingId] = _schoolTrainingTurns.GetValueOrDefault(buildingId) + 1;
+
+    /// <summary>Resets a school building's accrued training (no eligible student this turn, or a student just graduated). 86d3c9p7f.</summary>
+    internal void ResetSchoolTraining(string buildingId) => _schoolTrainingTurns.Remove(buildingId);
+
+    /// <summary>Restores a school building's accrued training from a save (skips 0 to keep the map sparse). 86d3c9p7f.</summary>
+    internal void RestoreSchoolTraining(string buildingId, int turns)
+    {
+        if (turns > 0)
+        {
+            _schoolTrainingTurns[buildingId] = turns;
+        }
     }
 
     /// <summary>Adds a colonist of <paramref name="type"/> to the colony's idle pool (founding / joining / growth). Free colonists are implicit.</summary>
@@ -402,6 +470,10 @@ public sealed class Colony
         while (_idleWorkerTypes.Count > IdleColonists)
         {
             _idleWorkerTypes.RemoveAt(_idleWorkerTypes.Count - 1);
+        }
+        foreach (string building in _schoolTrainingTurns.Keys.Where(b => !_buildings.Contains(b)).ToList())
+        {
+            _schoolTrainingTurns.Remove(building); // accrued training belongs to a present school building (86d3c9p7f)
         }
     }
 

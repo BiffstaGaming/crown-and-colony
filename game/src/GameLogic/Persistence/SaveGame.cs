@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 31;
+    public const int CurrentVersion = 32;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -62,7 +62,9 @@ public sealed record SaveGame
     /// free colonist, so a free-colonist-only game stays byte-identical to v29; pre-v30 saves load every worker free.
     /// v31 added a tile worker's accrued on-the-job experience (<see cref="SavedWorker.Experience"/>, omitted when 0, so
     /// a game where no colonist has accrued experience is byte-identical to v30; pre-v31 saves load every worker at 0).
-    /// Each of v23–v31 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// v32 added per-school accrued training turns (<see cref="SavedColony.SchoolTraining"/>, omitted when no school is
+    /// mid-training, so a non-teaching game is byte-identical to v31; pre-v32 saves load with no training in progress).
+    /// Each of v23–v32 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
@@ -229,7 +231,8 @@ public sealed record SaveGame
                     c.BuildingWorkerTypes.Count > 0
                         ? c.BuildingWorkerTypes.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value.ToList())
                         : null,
-                    c.IdleWorkerTypes.Count > 0 ? c.IdleWorkerTypes.ToList() : null))
+                    c.IdleWorkerTypes.Count > 0 ? c.IdleWorkerTypes.ToList() : null,
+                    c.SchoolTrainingTurns.Count > 0 ? new Dictionary<string, int>(c.SchoolTrainingTurns) : null))
                 .ToList(),
             Resources = game.Map.Resources.Count > 0
                 ? game.Map.Resources
@@ -351,6 +354,10 @@ public sealed record SaveGame
                 {
                     colony.AddIdleColonist(type);
                 }
+                foreach ((string buildingId, int turns) in c.SchoolTraining ?? new Dictionary<string, int>())
+                {
+                    colony.RestoreSchoolTraining(buildingId, turns); // v32; pre-v32 → no training in progress
+                }
                 colony.ReconcileWorkerTypes(); // belt-and-braces: the overlay never exceeds the restored counts
                 return colony;
             }),
@@ -450,6 +457,7 @@ public sealed record SaveGame
 /// <param name="Exports">Custom-house export settings by good (only non-default goods; null/omitted when none; v28, additive).</param>
 /// <param name="BuildingWorkerTypes">Per building, its NON-FREE occupant unit-type ids (v30; null/omitted when every building worker is a free colonist). The free occupants are implicit (count − non-free).</param>
 /// <param name="IdleWorkerTypes">The colony's NON-FREE idle colonists' unit-type ids (v30; null/omitted when all idle are free colonists).</param>
+/// <param name="SchoolTraining">Per school building, the accrued training turns toward its current student (v32; null/omitted when no school is mid-training, so a non-teaching game is byte-identical to v31).</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
     IReadOnlyDictionary<string, int>? Stores = null,
@@ -462,7 +470,8 @@ public sealed record SavedColony(
     IReadOnlyList<string>? BuildQueueRest = null,
     IReadOnlyDictionary<string, SavedExport>? Exports = null,
     IReadOnlyDictionary<string, IReadOnlyList<string>>? BuildingWorkerTypes = null,
-    IReadOnlyList<string>? IdleWorkerTypes = null);
+    IReadOnlyList<string>? IdleWorkerTypes = null,
+    IReadOnlyDictionary<string, int>? SchoolTraining = null);
 
 /// <summary>A colony's custom-house export setting for one good (v28+; only non-default goods are stored).</summary>
 /// <param name="Exported">Whether the good auto-exports.</param>

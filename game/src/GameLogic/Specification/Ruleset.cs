@@ -469,10 +469,12 @@ public sealed class Ruleset
                 // worker's output (lumber mill / cathedral ×2, factory tier ×1.5; default 1, nearest definition wins
                 // up the extends chain). FreeCol ProductionUtils.getRebelProductionModifiersForBuilding.
                 RebelFactor: ResolveDoubleAttribute(el, "rebel-factor", buildingElements) ?? 1.0,
-                // Teaching: a school's highest teachable skill (schoolhouse 1 / college 2 / university 4) + the teach
-                // ability (declared on the schoolhouse, inherited down the extends chain by college/university).
+                // Teaching: a school's skill window (schoolhouse 1..1 / college 1..2 / university 1..4; the floor + the
+                // teach ability are declared on the schoolhouse and inherited down the extends chain) — only an expert
+                // within the window teaches.
                 MaximumSkill: ResolveIntAttribute(el, "maximum-skill", buildingElements) ?? 0,
-                Teaches: ResolveAbility(el, "model.ability.teach", buildingElements));
+                Teaches: ResolveAbility(el, "model.ability.teach", buildingElements),
+                MinimumSkill: ResolveIntAttribute(el, "minimum-skill", buildingElements) ?? 0);
         }
 
         var fathers = new Dictionary<string, FoundingFather>();

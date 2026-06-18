@@ -83,6 +83,11 @@ namespace CrownAndColony.GameLogic.Specification;
 /// schoolhouse declares it; college and university inherit it). The schoolhouse/college/university trio; FreeCol
 /// <c>Ability.CAN_TEACH</c>.
 /// </param>
+/// <param name="MinimumSkill">
+/// The lowest unit <see cref="UnitType.Skill"/> that may occupy this building (spec <c>minimum-skill</c>; the school
+/// trio set 1, inherited down the <c>extends</c> chain — so only an expert teaches, never a free colonist/servant/
+/// criminal; default 0 = no floor). FreeCol <c>Building.getNoAddReason</c> MINIMUM_SKILL.
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -103,7 +108,8 @@ public sealed record BuildingType(
     int BreedingFactor = 0,
     double RebelFactor = 1.0,
     int MaximumSkill = 0,
-    bool Teaches = false)
+    bool Teaches = false,
+    int MinimumSkill = 0)
 {
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
     private static readonly IReadOnlySet<string> NoUnits = new HashSet<string>();
