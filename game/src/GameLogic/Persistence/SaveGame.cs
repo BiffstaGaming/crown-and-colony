@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 34;
+    public const int CurrentVersion = 35;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -69,7 +69,10 @@ public sealed record SaveGame
     /// mission-free game is byte-identical to v32; pre-v33 saves load with no missions).
     /// v34 added a mission's accrued <see cref="SavedNativeSettlement.ConvertProgress"/> (omitted when 0, so a game
     /// with no banked convert progress is byte-identical to v33; pre-v34 saves load at 0).
-    /// Each of v23–v34 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// v35 added the map's geographic regions (<see cref="RegionIds"/> + <see cref="Regions"/>; omitted when the map
+    /// has no region layer, so a regionless fixture is byte-identical to v34). A pre-v35 save (or any save without a
+    /// region layer) re-derives regions deterministically on load via <see cref="World.RegionGenerator"/>.
+    /// Each of v23–v35 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
@@ -119,6 +122,12 @@ public sealed record SaveGame
 
     /// <summary>Tiles the player has bought or taken from the natives, by row-major tile index (v26; null/omitted when none, so a game with no land purchases stays byte-identical to v25). The native-ownership re-derivation honours these so a claimed tile never reverts to the natives.</summary>
     public IReadOnlyList<int>? ClaimedTiles { get; init; }
+
+    /// <summary>The region id of every tile, row-major (<c>y * MapWidth + x</c>) (v35; null/omitted when the map has no region layer, so a regionless fixture stays byte-identical to v34). Indexes into <see cref="Regions"/>; a pre-v35 save re-derives the layer on load.</summary>
+    public IReadOnlyList<int>? RegionIds { get; init; }
+
+    /// <summary>The map's region table, indexed by region id (v35; null/omitted alongside <see cref="RegionIds"/>).</summary>
+    public IReadOnlyList<SavedRegion>? Regions { get; init; }
 
     /// <summary>The game-wide custom-house auto-export mode (v28; null/omitted for the <see cref="GameSession.AutoExportMode.PerGood"/> default, so a default game stays byte-identical to v27). Stored as the enum ordinal.</summary>
     public AutoExportMode? AutoExportMode { get; init; }
@@ -253,6 +262,16 @@ public sealed record SaveGame
             ClaimedTiles = game.Map.ClaimedFromNatives.Count > 0
                 ? game.Map.ClaimedFromNatives.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList()
                 : null,
+            // Geographic regions: a row-major region id per tile + the region table. Omitted when the map has no
+            // region layer (a regionless fixture stays byte-identical to v34); a real generated map always has one.
+            RegionIds = game.Map.Regions.Count > 0
+                ? game.Map.AllPositions().Select(game.Map.RegionIdAt).ToList()
+                : null,
+            Regions = game.Map.Regions.Count > 0
+                ? game.Map.Regions
+                    .Select(r => new SavedRegion(r.Id, (int)r.Type, r.ScoreValue, r.Key, r.ParentId))
+                    .ToList()
+                : null,
             // Custom-house auto-export mode; omitted for the PerGood default so a default game stays byte-identical to v27.
             AutoExportMode = game.AutoExportMode == GameSession.AutoExportMode.PerGood ? null : game.AutoExportMode,
             // Player-scoped state: authoritative in (and written only to) Players[]. The legacy flat
@@ -285,7 +304,17 @@ public sealed record SaveGame
                 r => new Position(r.Index % MapWidth, r.Index / MapWidth),
                 r => r.ResourceId),
             Rumours?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList(),
-            ClaimedTiles?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList());
+            ClaimedTiles?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList(),
+            RegionIds,
+            Regions?.Select(r => new Region(r.Id, (RegionType)r.Type, r.ScoreValue, r.Key, r.ParentId)).ToList());
+
+        // Pre-v35 saves (and any save without a persisted region layer) re-derive regions deterministically from
+        // the terrain — exactly the layer the generator would have produced (mirrors the native-land re-derivation).
+        if (map.Regions.Count == 0)
+        {
+            (int[] regionIds, IReadOnlyList<Region> regions) = RegionGenerator.Assign(map);
+            map.SetRegions(regionIds, regions);
+        }
         return Game.Restore(
             ruleset,
             map,
@@ -495,6 +524,14 @@ public sealed record SavedExport(bool Exported, int Level);
 /// <param name="Index">Row-major tile index (<c>y * MapWidth + x</c>).</param>
 /// <param name="ResourceId">Ruleset resource id.</param>
 public sealed record SavedResource(int Index, string ResourceId);
+
+/// <summary>A map <see cref="Region"/> inside a <see cref="SaveGame"/> (v35).</summary>
+/// <param name="Id">Region id (indexed by <see cref="SaveGame.RegionIds"/>).</param>
+/// <param name="Type">The <see cref="RegionType"/> enum ordinal.</param>
+/// <param name="ScoreValue">Discovery score.</param>
+/// <param name="Key">Fixed-region key (e.g. <c>model.region.arctic</c>); null/omitted for a dynamic land/mountain region.</param>
+/// <param name="ParentId">Parent region id (an ocean quadrant's parent ocean); null/omitted at the top level.</param>
+public sealed record SavedRegion(int Id, int Type, int ScoreValue, string? Key = null, int? ParentId = null);
 
 /// <summary>A colonist's tile assignment inside a <see cref="SavedColony"/>.</summary>
 /// <param name="X">Worked tile column.</param>

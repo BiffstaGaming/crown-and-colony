@@ -81,6 +81,77 @@ public class SaveGameTests
     }
 
     [Fact]
+    public void RoundTrip_PreservesEveryTilesRegionAndScore()
+    {
+        // Map regions (86d3c9w12) slice 5: a v35 save restores the region of every tile and the region table.
+        var game = Game.New(Classic, seed: 99);
+        game.EndTurn();
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(
+            game.Map.AllPositions().Select(game.Map.RegionIdAt),
+            loaded.Map.AllPositions().Select(loaded.Map.RegionIdAt));
+        Assert.Equal(game.Map.Regions, loaded.Map.Regions); // table (incl. score/key/parent) restored verbatim
+        // The named L2 assertions still hold after a reload.
+        foreach (Position p in loaded.Map.AllPositions().Where(p => !loaded.Map.TerrainAt(p).IsWater))
+        {
+            if (p.Y < 2)
+            {
+                Assert.Equal("model.region.arctic", loaded.Map.RegionOf(p)!.Key);
+            }
+            else if (p.Y >= loaded.Map.Height - 3)
+            {
+                Assert.Equal("model.region.antarctic", loaded.Map.RegionOf(p)!.Key);
+            }
+        }
+    }
+
+    [Fact]
+    public void GeneratedGame_PersistsRegions_InTheSave()
+    {
+        // A real generated map always carries a region layer, so the save emits it (omit-when-default only
+        // suppresses regionless fixtures).
+        SaveGame save = SaveGame.From(Game.New(Classic, seed: 42));
+
+        Assert.NotNull(save.RegionIds);
+        Assert.NotNull(save.Regions);
+        Assert.Equal(save.MapWidth * save.MapHeight, save.RegionIds!.Count);
+        Assert.Contains(save.Regions!, r => r.Key == "model.region.pacific" && r.ScoreValue == 100);
+    }
+
+    [Fact]
+    public void PreV35Save_WithoutRegions_ReDerivesThemDeterministically()
+    {
+        // A pre-v35 save has no region layer; loading must re-derive exactly the layer a fresh generation
+        // produces for the same terrain (mirrors the native-land claim re-derivation).
+        var game = Game.New(Classic, seed: 7);
+        SaveGame v34 = SaveGame.From(game) with { Version = 34, RegionIds = null, Regions = null };
+
+        Game loaded = SaveGame.FromJson(v34.ToJson()).Restore(Classic);
+
+        Assert.NotEmpty(loaded.Map.Regions);
+        Assert.Equal(
+            game.Map.AllPositions().Select(game.Map.RegionIdAt),  // the layer the original game generated
+            loaded.Map.AllPositions().Select(loaded.Map.RegionIdAt)); // == re-derived on load
+        Assert.Equal(game.Map.Regions, loaded.Map.Regions);
+    }
+
+    [Fact]
+    public void RegionlessMap_OmitsRegionTokens_ByteIdenticalToV34()
+    {
+        // Omit-when-default: a save built from a map with no region layer writes no region tokens.
+        TerrainType plains = Classic.Terrain("model.tile.plains");
+        var bareMap = new GameMap(2, 2, [plains, plains, plains, plains]); // no SetRegions → empty region table
+        var game = Game.New(Classic, seed: 5);
+        SaveGame save = SaveGame.From(game) with { RegionIds = null, Regions = null };
+
+        Assert.Empty(bareMap.Regions);
+        Assert.DoesNotContain("\"RegionIds\"", save.ToJson());
+        Assert.DoesNotContain("\"Regions\"", save.ToJson());
+    }
+
+    [Fact]
     public void FreshGame_HumanDefaultUnits_OmitRoleAndOwnerTokens()
     {
         var game = Game.New(Classic, seed: 5);

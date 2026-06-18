@@ -62,7 +62,7 @@ public class ColonyWorkerTypeTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
         Colony r = restored.Colonies.Single(c => c.Id == colony.Id);
 
-        Assert.Equal(34, SaveGame.CurrentVersion);
+        Assert.Equal(35, SaveGame.CurrentVersion);
         Assert.Equal(ExpertFarmer, r.WorkerTypeAt(tile));
         Assert.Contains(MasterCarpenter, r.BuildingWorkerTypes[TownHall]);
         Assert.Contains(ExpertOreMiner, r.IdleWorkerTypes);
