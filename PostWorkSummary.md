@@ -19,6 +19,16 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-19 — AI colony economy, increment 4 (86d3c9vmr) — build-queue
+
+**Requested:** "continue" → AI-economy increment 4.
+**Did:** Shipped the **build-queue** — foreign-power colonies now choose what to build (`RunForeignColonyBuildPlan` in `RunForeignPowerEconomy`, the building subset of FreeCol `ColonyPlan.updateBuildableTypes`): when nothing is queued, build the highest-value building — class weight (production 0.9 … breeding 0.1, classified from `BuildingType` flags + produced goods) ÷ difficulty (√ required-goods shortfall, ×5 for non-local inputs), level-gated by colony size (defence/export exempt), in-progress builds left alone. Reuses `SetBuild`/`RunConstruction`.
+**Status:** **995 L1/L2 + 4 soak green** (twin-determinism + invariants + perf), build clean; pushed `33ad8ba`. RNG-free → human stream 0 byte-identical; no save change. +5 L1.
+**Review:** 2-lens — a **medium** (church/chapel produce crosses → scored 0 → AI never built them; added the IMMIGRATION 0.05 + bell-producer LIBERTY branches) + documented the docks/`produceInWater` (FISH) + PRODUCTION-set deviations.
+**Changed:** `GameSession/Game.cs` (`BuildingLevel`/`ColonyCanFarm`/`BuildingBuildWeight`/`RunForeignColonyBuildPlan` + wiring); `AiColonyEconomyTests.cs`; `docs/systems/players.md` (§2/§3 + changelog + Last-verified).
+**Scheduled next:** **`86d3c9vmr` increment 5 — Europe train/buy** (colony wishes + spend order; reuse `BuyUnit`/`Recruit`). Then 4b (buildable units artillery/wagon) + the deeper refinements (building workers, marginal `getBestWorker`, MaxAiColonies lift).
+**Needs you:** nothing blocking. The AI now staffs **and builds** in its colonies — human-observable, worth an eyeball next playtest. Standing items unchanged.
+
 ## 2026-06-19 — AI colony economy, increments 2+3 (86d3c9vmr) — worker planner COMPLETE
 
 **Requested:** "continue" → you chose **full FreeCol fidelity** for the AI economy; built up CI+soak-green.
