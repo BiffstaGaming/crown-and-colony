@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-18 — Missionaries + native conversion: slice 2 (86d3c9t6e) — convert accrual; mechanic COMPLETE
+
+**Requested:** "Begin on all of those items" (the next-5) — item 2, continued.
+**Did:** Shipped **slice 2: convert accrual + spawn**, completing the missionary GameLogic core (establish → harvest converts).
+- `Game.ProcessMissions` (in `EndTurn` after `ApplyAmbientNativeAlarm`, **before** the alarm decay — reads the turn's alarm, matching FreeCol `csStartTurn`): per installed mission `ConvertProgress += (skill+6) + 2%·alarm` (skill 3 jesuit / 0 colonist); at the spec threshold (classic 100), with Size > 2 and a colony of the owner within 10, a brave **converts** — progress resets, the settlement shrinks by one, and a `model.unit.indianConvert` musters on the colony tile for the owner (fog-correct). Otherwise it banks.
+- `NativeSettlement.ConvertProgress`; `NearestColonyOf(owner, origin, maxDistance)` (owner-scoped, range-bounded); conversion consts with FreeCol refs. Save **v34** (omit-when-0).
+- 2-agent adversarial review: one nit (the same-landmass `isConnectedTo` simplification — documented), folded.
+**Status:** **982 L1/L2 + 4 soak green**, build clean; pushed `8301d8a`. Save v33→**v34**; pins bumped. **RNG-free** (Size-decrement, no individual-brave pick) → soak byte-stable (inert in the all-free soak). +8 L1.
+**Changed:** `Natives/NativeSettlement.cs`, `GameSession/Game.cs`, `Persistence/SaveGame.cs`, `NativeMissionTests.cs` (+ pin bumps); docs `natives.md` (both layers + verification + changelog) + `save-load.md` (v34).
+**Decisions:** convert = Size−1 + spawn, RNG-free (no brave-resident model); convert musters on the colony tile (stacking); alarm capped at our 1000; `NearestColonyOf` skips FreeCol's same-landmass rule (immaterial — single continent).
+**Scheduled next:** **`86d3c9vmr` — AI colony economy depth** (item 3 of the next-5): worker-assignment + build-queue + Europe train/buy for the foreign-power AI. Launching its understand+design workflow first (ultracode). *(Missionaries slice 3 = the establish-mission UI, a presentation/L3 task needing your playtest — deferred with AI-staffed missions.)*
+**Follow-ups / Needs you:** **begin-on-all status — item 1 (difficulty) complete; item 2 (missionaries) GameLogic core complete (UI = slice 3 pending your playtest); items 3–5 (AI economy → map regions → goto) ahead.** Standing In-Review/decision calls unchanged: difficulty slice 6 (new-game UI steer) + `86d3d335r`; `86d3c9q1z` (ship?); FP-6 gap (b) (playtest).
+
 ## 2026-06-18 — Missionaries + native conversion: slice 1 (86d3c9t6e) — establish a mission
 
 **Requested:** "Begin on all of those items" (the next-5). This is **item 2** — working the five in order.
