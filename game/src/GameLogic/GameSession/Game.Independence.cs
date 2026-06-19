@@ -1,6 +1,8 @@
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Trade;
 using CrownAndColony.GameLogic.Units;
+using CrownAndColony.GameLogic.World;
 
 namespace CrownAndColony.GameLogic.GameSession;
 
@@ -126,9 +128,76 @@ public sealed partial class Game
         }
     }
 
-    /// <summary>The Royal Expeditionary Force's turn — it sails in and assaults the rebel (filled in the REF-combat slice).</summary>
+    /// <summary>
+    /// The Royal Expeditionary Force's turn (item 8): bring any units still mustering in Europe ashore near a rebel
+    /// port, then prosecute the war. The REF is at war with the rebel (who is the human), so it reuses the
+    /// foreign-power war AI — hunting and assaulting the rebel's units and colonies — drawing entirely from its OWN
+    /// RNG stream (<see cref="RandomFor"/>), never the human's stream 0 (ADR-009).
+    /// </summary>
     private void RunRefTurn(Player refPlayer)
     {
-        // REF arrival + War-of-Independence combat lands in item 8 (86d3c9v8k); the REF takes no action yet.
+        LandRefUnits(refPlayer);
+        RunForeignPowerTurn(refPlayer); // the rebel == the human, so the at-war hunt/assault logic targets it
+    }
+
+    /// <summary>Brings the REF's in-Europe units ashore, each onto the nearest empty tile (land for land units, water for ships) around a rebel's connected-port colonies.</summary>
+    private void LandRefUnits(Player refPlayer)
+    {
+        var targets = _players
+            .Where(p => StanceBetween(refPlayer.PlayerId, p.PlayerId) == Stance.War)
+            .SelectMany(ColoniesOf)
+            .Where(IsColonyCoastal)
+            .OrderBy(c => c.Id)
+            .ToList();
+        if (targets.Count == 0)
+        {
+            return; // no rebel port to invade
+        }
+
+        foreach (Unit unit in _units
+            .Where(u => IsOwnedBy(u, refPlayer) && u.Location == UnitLocation.InEurope)
+            .OrderBy(u => u.Id)
+            .ToList())
+        {
+            if (FindLandingTile(targets, unit.Type.IsNaval) is { } spot)
+            {
+                unit.Position = spot;
+                unit.Location = UnitLocation.OnMap;
+                RevealForOwner(unit);
+            }
+            // Units that don't fit this turn wait in Europe and land next turn.
+        }
+    }
+
+    /// <summary>The first empty tile (in expanding rings around the targets) matching the unit's domain, or null if none within reach.</summary>
+    private Position? FindLandingTile(IReadOnlyList<Colony> targets, bool naval)
+    {
+        foreach (Colony colony in targets)
+        {
+            for (int radius = 1; radius <= 4; radius++)
+            {
+                for (int dy = -radius; dy <= radius; dy++)
+                {
+                    for (int dx = -radius; dx <= radius; dx++)
+                    {
+                        if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != radius)
+                        {
+                            continue; // only the ring at this radius
+                        }
+                        var p = new Position(colony.Position.X + dx, colony.Position.Y + dy);
+                        if (!Map.InBounds(p) || Map.TerrainAt(p).IsWater != naval)
+                        {
+                            continue;
+                        }
+                        if (ColonyAt(p) is not null || NativeSettlementAt(p) is not null || _units.Any(u => u.IsOnMap && u.Position == p))
+                        {
+                            continue; // occupied
+                        }
+                        return p;
+                    }
+                }
+            }
+        }
+        return null;
     }
 }

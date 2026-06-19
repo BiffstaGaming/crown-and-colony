@@ -131,4 +131,69 @@ public class IndependenceTests
         Assert.DoesNotContain("\"DeclaredIndependenceTurn\"", json);
         Assert.DoesNotContain("\"InterventionBells\"", json);
     }
+
+    // ── Item 8: REF arrival + War-of-Independence combat ─────────────────────────────────────────────────
+
+    private static Player Ref(Game game) => game.Players.Single(p => p.PlayerType == PlayerType.RoyalExpeditionaryForce);
+
+    [Fact]
+    public void Ref_SailsIn_AndLandsNearTheRebel()
+    {
+        (Game game, _) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer);
+        Player refP = Ref(game);
+        Assert.All(game.Units.Where(u => u.OwnerId == refP.PlayerId), u => Assert.Equal(UnitLocation.InEurope, u.Location));
+
+        game.EndTurn(); // RunRefTurn lands the invasion
+
+        Assert.Contains(game.Units, u => u.OwnerId == refP.PlayerId && u.IsOnMap);
+    }
+
+    [Fact]
+    public void RefRebelWar_DoesNotCoolOverTime()
+    {
+        (Game game, _) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer);
+        Player refP = Ref(game);
+
+        for (int i = 0; i < 3; i++)
+        {
+            game.EndTurn(); // the colonial-diplomacy decay must not reach the REF/rebel pair
+        }
+
+        Assert.Equal(Stance.War, game.StanceBetween(refP.PlayerId, game.HumanPlayer.PlayerId));
+    }
+
+    [Fact]
+    public void Rebellion_IsDeterministic_AcrossTwinGames()
+    {
+        // The whole war (REF landing + combat) draws only from the REF's own stream and the human's stream 0,
+        // both seeded — twin games stay byte-identical (ADR-009; the REF never perturbs an unrelated stream).
+        (Game a, _) = RebellionReady(7777);
+        (Game b, _) = RebellionReady(7777);
+        a.DeclareIndependence(a.HumanPlayer);
+        b.DeclareIndependence(b.HumanPlayer);
+        for (int i = 0; i < 5; i++)
+        {
+            a.EndTurn();
+            b.EndTurn();
+        }
+        Assert.Equal(a.RandomState, b.RandomState);
+    }
+
+    [Fact]
+    public void InFlightWar_RoundTripsSaveLoad()
+    {
+        (Game game, _) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer);
+        game.EndTurn(); // REF on the map, war under way
+        Player refP = Ref(game);
+        int refOnMap = game.Units.Count(u => u.OwnerId == refP.PlayerId && u.IsOnMap);
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+        Player loadedRef = Ref(loaded);
+
+        Assert.Equal(refOnMap, loaded.Units.Count(u => u.OwnerId == loadedRef.PlayerId && u.IsOnMap));
+        Assert.Equal(Stance.War, loaded.StanceBetween(loadedRef.PlayerId, loaded.HumanPlayer.PlayerId));
+    }
 }
