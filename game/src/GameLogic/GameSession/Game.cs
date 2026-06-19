@@ -2633,6 +2633,7 @@ public sealed partial class Game
             BaseRecruitPrice = saved.BaseRecruitPrice,
             RecruitLowerCap = saved.RecruitLowerCap,
             MonarchDispleasure = saved.MonarchDispleasure,
+            SupportSeaGranted = saved.SupportSeaGranted,
         };
         if (saved.Congress is not null)
         {

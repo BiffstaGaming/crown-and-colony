@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | In progress — tick+chooser (1), tax (2), tea party (3), mercenary offers + DISPLEASURE (4). Support/REF land in later items. |
-| **Last verified** | 2026-06-19 @ mercenary offers + displeasure (`86d3c9rep`, save v38) |
+| **Status** | In progress — tick+chooser (1), tax (2), tea party (3), mercenaries+DISPLEASURE (4), SUPPORT_LAND/SEA (5). REF + independence land in later items. |
+| **Last verified** | 2026-06-19 @ SUPPORT_LAND/SEA (`86d3c9rag`, save v39) |
 | **Code** | `game/src/GameLogic/GameSession/Game.Monarch.cs`, `MonarchAction.cs`; `Randomness/RandomChoice.cs` |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/MonarchTests.cs` |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/common/model/Monarch.java` (`getActionChoices`, `actionIsValid`), the server monarch tick |
@@ -55,6 +55,11 @@ This first piece is the King *deciding* — the weighted dice-roll each turn tha
 - **Accept** → pay the gold, the veterans appear on your **Europe dock**. **Decline an offer you could afford** → the King is **displeased** (`DISPLEASURE`): he offers **no more mercenaries or military support** for the rest of the game.
 - *Faithful-subset:* the mercenary force is veteran soldiers (the classic land mercenary); the naval man-o-war mercenary and full ability-driven type selection are simplified (TODO `86d3c9rg6`).
 
+### Free military support (item 5)
+
+- **SUPPORT_SEA** (offered after a **privateer raid**, if not already granted and the King isn't displeased) grants **one free naval ship** on your Europe dock — a **one-shot** (`SupportSeaGranted`). **SUPPORT_LAND** grants free land troops (medium support level 2 = **2 mounted veterans**). Both are free and immediate (no demand).
+- *Reachability:* `SUPPORT_LAND` is **never offered at medium** (the chooser only lists it when `dx < 3`); `SUPPORT_SEA` needs a privateer raid, which arrives with privateer combat later. Both handlers + validity gates are implemented and tested (forced via the handler) for fidelity now.
+
 **Deviations from original / FreeCol:** the chooser, weights, grace and validity gates are FreeCol's exactly. The action *effects* are wired in their own slices (this item is the decision only). `monarchMeddling`/`maximumTax` are temporary code constants pending the ruleset-constants pass (`86d3c9rg6`).
 
 ## 3. Technical design
@@ -84,7 +89,7 @@ This first piece is the King *deciding* — the weighted dice-roll each turn tha
 - [x] RAISE_TAX demand + tax mutation (`86d3c9r2m`) — accept/reject oracle.
 - [x] Boston Tea Party + boycott/arrears + pay-to-lift (`86d3c9r4w`, save v37).
 - [x] Monarch + Hessian mercenary offers + DISPLEASURE (`86d3c9rep`, save v38).
-- [ ] Monarch SUPPORT_LAND / SUPPORT_SEA (`86d3c9rag`).
+- [x] Monarch SUPPORT_LAND / SUPPORT_SEA (`86d3c9rag`, save v39).
 - [ ] REF build-up (ADD_TO_REF + Force) (`86d3c9v4j`).
 - [ ] Declare Independence + continental muster (`86d3c9v28`).
 - [ ] REF arrival + War of Independence combat (`86d3c9v8k`).
@@ -99,3 +104,4 @@ This first piece is the King *deciding* — the weighted dice-roll each turn tha
 | 2026-06-19 | **Tax mutation**: RAISE_TAX opens a `PendingMonarchDemand` (`RaiseTaxAmount`, `GetMostValuableGoods`) answered by `RespondToMonarch` (accept raises; reject-goods-gone forces +3; goods-present reject = tea party, item 3); LOWER_TAX/WAIVE_TAX dispatched. Tax reuses `Player.TaxRate` (no save bump) | P6 (`86d3c9r2m`) |
 | 2026-06-19 | **Boston Tea Party + boycott**: goods-present reject dumps the goods, boycotts the good (`Market.Arrears` = salePrice×300, gates selling), surges bells (+50% for 25 turns decaying), tax unchanged; `CheckPayArrears`/`PayArrears` lift it. Save **v37** (`SavedPlayer.Arrears` + `SavedColony.TeaPartyBellTurns`, omit-when-default) | P6 (`86d3c9r4w`) |
 | 2026-06-19 | **Mercenary offers + DISPLEASURE**: MONARCH/HESSIAN_MERCENARIES offer veteran soldiers (`LoadMercenaries`, price ×65% trimmed to affordable) into a `PendingMonarchDemand`; accept spends gold + spawns them in Europe, decline-when-affordable sets `Player.MonarchDispleasure` (gates future mercenaries/support). `ForceEntry`. Save **v38** (`SavedPlayer.MonarchDispleasure`, omit-when-false) | P6 (`86d3c9rep`) |
+| 2026-06-19 | **Free support**: SUPPORT_SEA grants a free naval ship (one-shot, `Player.SupportSeaGranted`), SUPPORT_LAND grants 2 mounted veterans (`GetSupport`/`GrantSupport`); both free + immediate. SUPPORT_LAND never offered at medium, SUPPORT_SEA needs a privateer raid (`AttackedByPrivateers`). Save **v39** (`SavedPlayer.SupportSeaGranted`, omit-when-false) | P6 (`86d3c9rag`) |

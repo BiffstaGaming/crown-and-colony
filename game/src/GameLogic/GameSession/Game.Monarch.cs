@@ -37,6 +37,8 @@ public sealed partial class Game
     private const string MercenaryUnitTypeId = "model.unit.veteranSoldier";
     private const string MercenarySoldierRoleId = "model.role.soldier";
     private const string MercenaryDragoonRoleId = "model.role.dragoon";
+    private const string NavalSupportUnitTypeId = "model.unit.frigate"; // SUPPORT_SEA free naval aid (faithful-subset naval supportUnit)
+    private const int SupportLandMountedUnits = 2; // GameOptions.MONARCH_SUPPORT level 2 (medium) → 2 mounted veterans
 
     private PendingMonarchDemand? _pendingMonarchDemand; // transient: a monarch demand awaiting the human's accept/reject (not saved, like _pendingDemand)
 
@@ -51,8 +53,8 @@ public sealed partial class Game
     /// turn, so nothing is persisted for it and stream 0 is untouched.</summary>
     private const ulong MonarchStreamId = 101;
 
-    /// <summary>True once a privateer has attacked the human this game (gates SUPPORT_SEA). Set with the support slice (item 5).</summary>
-    private bool AttackedByPrivateers { get; set; }
+    /// <summary>True once a privateer has attacked the human this game (gates SUPPORT_SEA). Set by the privateer-combat hook (not yet built — privateers arrive later); transient/derived, not persisted.</summary>
+    internal bool AttackedByPrivateers { get; set; }
 
     /// <summary>
     /// Whether the Monarch could legally take <paramref name="action"/> right now (FreeCol <c>Monarch.actionIsValid</c>)
@@ -170,8 +172,14 @@ public sealed partial class Game
                     _pendingMonarchDemand = new PendingMonarchDemand(action, Offer: offer.Force, Price: offer.Price);
                 }
                 break;
-            // SUPPORT_SEA/LAND -> item 5 (86d3c9rag); ADD_TO_REF -> item 6 (86d3c9v4j);
-            // DECLARE_WAR/PEACE -> monarch diplomacy slice. Unwired = no-op.
+            case MonarchAction.SupportSea:
+                GrantSupport(GetSupport(naval: true)); // free naval aid after privateer raids
+                _human.SupportSeaGranted = true;       // one-shot
+                break;
+            case MonarchAction.SupportLand:
+                GrantSupport(GetSupport(naval: false)); // free land aid (unreachable via the chooser at medium; handler kept for fidelity)
+                break;
+            // ADD_TO_REF -> item 6 (86d3c9v4j); DECLARE_WAR/PEACE -> monarch diplomacy slice. Unwired = no-op.
             default:
                 break;
         }
@@ -268,6 +276,27 @@ public sealed partial class Game
             remaining -= take;
         }
         return (trimmed, affordable * unitPrice);
+    }
+
+    /// <summary>
+    /// The free military aid a SUPPORT action grants (FreeCol <c>Monarch.getSupport</c>): SUPPORT_SEA = one naval
+    /// support ship; SUPPORT_LAND at the medium support level (2) = two mounted veterans. RNG-free at medium (the
+    /// composition is fixed).
+    /// </summary>
+    internal IReadOnlyList<ForceEntry> GetSupport(bool naval) => naval
+        ? [new ForceEntry(NavalSupportUnitTypeId, null, 1)]
+        : [new ForceEntry(MercenaryUnitTypeId, MercenaryDragoonRoleId, SupportLandMountedUnits)];
+
+    /// <summary>Delivers a free force to the human's Europe dock (the King's military support — no gold cost).</summary>
+    private void GrantSupport(IReadOnlyList<ForceEntry> force)
+    {
+        foreach (ForceEntry entry in force)
+        {
+            for (int i = 0; i < entry.Count; i++)
+            {
+                SpawnInEurope(entry.UnitTypeId, entry.RoleId, _human.PlayerId);
+            }
+        }
     }
 
     /// <summary>Creates a unit on a player's Europe dock in the given role (mercenary/support delivery, mirrors <see cref="BuyUnit(string)"/>).</summary>

@@ -394,4 +394,57 @@ public class MonarchTests
 
         Assert.True(loaded.HumanPlayer.MonarchDispleasure);
     }
+
+    // ── Item 5: SUPPORT_LAND / SUPPORT_SEA free aid ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void SupportSea_GrantsAFreeNavalShip_OnceAndForFree()
+    {
+        Game game = FoundedGame();
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.DispatchMonarchAction(MonarchAction.SupportSea, new Pcg32Random(1));
+
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);                                  // free aid
+        Assert.Equal(1, game.UnitsInEurope.Count(u => u.Type.Id == "model.unit.frigate")); // a frigate on the dock
+        Assert.True(game.HumanPlayer.SupportSeaGranted);
+        Assert.False(game.MonarchActionIsValid(MonarchAction.SupportSea));                // one-shot — now gated off
+    }
+
+    [Fact]
+    public void SupportSea_ValidityGate_NeedsPrivateerRaid_NotYetGranted_NotDispleased()
+    {
+        Game game = FoundedGame();
+        Assert.False(game.MonarchActionIsValid(MonarchAction.SupportSea)); // no privateer raid yet
+        game.AttackedByPrivateers = true;
+        Assert.True(game.MonarchActionIsValid(MonarchAction.SupportSea));
+        game.HumanPlayer.MonarchDispleasure = true;
+        Assert.False(game.MonarchActionIsValid(MonarchAction.SupportSea)); // displeased King gives nothing
+    }
+
+    [Fact]
+    public void SupportLand_GrantsTwoMountedVeterans_ButIsNeverOfferedAtMedium()
+    {
+        Game game = FoundedGame();
+        // The handler delivers the level-2 composition (2 mounted veterans), free.
+        game.DispatchMonarchAction(MonarchAction.SupportLand, new Pcg32Random(1));
+        Assert.Equal(2, game.UnitsInEurope.Count(u =>
+            u.Type.Id == "model.unit.veteranSoldier" && u.RoleId == "model.role.dragoon"));
+
+        // …but the chooser never offers it at medium difficulty (dx == 3).
+        game.AttackedByPrivateers = true;
+        Assert.DoesNotContain(MonarchAction.SupportLand, game.GetMonarchActionChoices(50).Select(c => c.Action));
+    }
+
+    [Fact]
+    public void SupportSeaGranted_PersistsAcrossSaveLoad()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.SupportSeaGranted = true;
+
+        Game loaded = CrownAndColony.GameLogic.Persistence.SaveGame
+            .FromJson(CrownAndColony.GameLogic.Persistence.SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.True(loaded.HumanPlayer.SupportSeaGranted);
+    }
 }
