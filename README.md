@@ -28,6 +28,10 @@ dotnet test  game/CrownAndColony.slnx     # run the logic test suite
 godot --path game                          # open in Godot (editor or play)
 ```
 
+On a dev machine with the toolchain configured (see `scripts/dev-env.ps1`), the PowerShell
+launcher `scripts/run-game.ps1` loads the environment and launches the game in one step
+(`-Build` to clean-build first, `-NoConsole` for a windowed run with no log console).
+
 ## License
 
 GPL v2 — see [LICENSE](LICENSE). Art/audio assets may carry their own GPL-compatible licenses (CC0/CC BY etc.); see the asset credits once assets land.

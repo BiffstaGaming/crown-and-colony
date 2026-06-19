@@ -9,6 +9,9 @@ $env:PATH = "$env:DOTNET_ROOT;$env:PATH"
 $env:GODOT = "C:\Users\Chris\Tools\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64_console.exe"
 # Used by the GdUnit4 test adapter (L3 tests).
 $env:GODOT_BIN = $env:GODOT
+# Windowed build (no attached console) - use to play without a log window. The
+# _console exe above shows engine/C# logs in the terminal; this one does not.
+$env:GODOT_GUI = "C:\Users\Chris\Tools\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64.exe"
 
 Write-Output "dotnet: $((Get-Command dotnet).Source) ($(dotnet --version))"
 Write-Output "godot:  $env:GODOT"

@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-19 — One-command local launcher + "Running locally" wiki page
+
+**Requested:** "Update one of the Wiki Documents to give the command to launch this locally — I hate having to ask you each time to run the game for me."
+**Did:** Made launching the game a single command and documented it where Chris will look:
+- **`scripts/run-game.ps1`** (new): dot-sources `dev-env.ps1` then runs `godot --path game`. Defaults to the *console* Godot build (logs/`GD.Print`/errors visible in the terminal); `-Build` clean-builds the C# first, `-NoConsole` uses the windowed build, and extra args pass straight through to Godot. So launching is now just **`.\scripts\run-game.ps1`** from the repo root.
+- **`scripts/dev-env.ps1`**: added `$env:GODOT_GUI` (the windowed exe) alongside the existing `$env:GODOT` (console exe), so both builds are reachable from the env.
+- **ClickUp "04 Godot Knowledge Base"**: new page **"Running & building locally"** (`2kz0t3mf-3736`) — the one-command launcher, the by-hand equivalent, build/test recipes, and the machine toolchain paths. (Added as a new page rather than editing the dense "Practices" page, which a full-replace update would have risked mangling.)
+- **README.md**: a brief, machine-path-free pointer to the launcher under "Building from source".
+**Status:** Verified by execution — `dotnet build` clean (0/0) and **`.\scripts\run-game.ps1 --headless --quit-after 120` boots the game to a clean exit (code 0)** on Godot 4.6.3.stable.mono + .NET SDK 10.0.301. (The fix for an em-dash that PowerShell 5.1 mis-read under the ANSI codepage: scripts are now pure ASCII.)
+**Changed:** `scripts/run-game.ps1` (new), `scripts/dev-env.ps1`, `README.md`, `PostWorkSummary.md`; ClickUp KB page `2kz0t3mf-3736`.
+**Decisions:** console build as the default launch (a dev wants to see errors); machine-specific paths stay out of the public README (they live in `dev-env.ps1` + the private ClickUp wiki). A side-effect of the discovery workflow: its agents failed on the account's monthly spend limit, so the recon was done directly in the main loop instead.
+**Scheduled next:** Awaiting Chris's steer (the P6 endgame arc is complete; likely next is the P7 War-of-Independence UI or an In-Review P5 item). Nothing auto-started.
+**Follow-ups:** README's `dotnet test ...slnx` line claims it "runs the logic test suite", but `GameLogic.Tests` is deliberately not in the `.slnx` — that line is inaccurate (minor, pre-existing; flag for a future doc tidy).
+**Needs you:** Nothing — `.\scripts\run-game.ps1` launches the game; the command is in the Godot Knowledge Base wiki page. Try it and tell me if your machine differs.
+
 ## 2026-06-19 — P6 independence endgame arc — ALL 10/10 SHIPPED + full-arc adversarial review folded; DONE
 
 **Requested:** "finish off that list without ANY further prompts" — complete the entire 10-item P6 independence-endgame arc autonomously, then adversarially review the whole arc and fold the findings.
