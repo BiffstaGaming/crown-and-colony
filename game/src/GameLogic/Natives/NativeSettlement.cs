@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using CrownAndColony.GameLogic.World;
 
 namespace CrownAndColony.GameLogic.Natives;
@@ -121,8 +123,27 @@ public sealed class NativeSettlement
         : Alarm <= AlarmAngryMax ? AlarmLevel.Angry
         : AlarmLevel.Hateful;
 
-    /// <summary>True once a colonist has spoken with the chief (the first-contact gift is given once).</summary>
-    public bool HasBeenVisited { get; internal set; }
+    /// <summary>Player id of the human (the original single-player first-contact flag rides this id).</summary>
+    private const int HumanVisitorId = 0;
+
+    /// <summary>Colonial player ids that have spoken with this settlement's chief — FreeCol's per-player first contact; each player gets the first-contact gift once.</summary>
+    private readonly HashSet<int> _visitedBy = [];
+
+    /// <summary>Whether <paramref name="playerId"/> has spoken with this settlement's chief (its one-time gift is spent).</summary>
+    public bool HasBeenVisitedBy(int playerId) => _visitedBy.Contains(playerId);
+
+    /// <summary>Records that <paramref name="playerId"/> has spoken with the chief.</summary>
+    internal void MarkVisitedBy(int playerId) => _visitedBy.Add(playerId);
+
+    /// <summary>True once the <b>human</b> (player 0) has spoken with the chief — the original first-contact flag, now backed by the per-player set (kept for the presentation panel and the legacy save field).</summary>
+    public bool HasBeenVisited
+    {
+        get => _visitedBy.Contains(HumanVisitorId);
+        internal set { if (value) { _visitedBy.Add(HumanVisitorId); } else { _visitedBy.Remove(HumanVisitorId); } }
+    }
+
+    /// <summary>The non-human player ids that have visited (the additive save field; the human rides <see cref="HasBeenVisited"/>).</summary>
+    public IReadOnlyList<int> VisitedByPowers => _visitedBy.Where(id => id != HumanVisitorId).OrderBy(id => id).ToArray();
 
     /// <summary>True once this settlement's <see cref="LearnableSkill"/> has been taught (capitals never consume theirs).</summary>
     public bool SkillConsumed { get; internal set; }

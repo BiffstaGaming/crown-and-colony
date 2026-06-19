@@ -235,4 +235,79 @@ public class NativeAiTests
         Assert.Contains(game.CombatNotices, n => n.AttackerNationId == brave.OwnerNationId && n.Position == softTile);
         Assert.DoesNotContain(game.CombatNotices, n => n.Position == hardTile); // the dug-in soldier was passed over
     }
+
+    // ── AI scout-chief + per-player first contact (86d3c9vta slice, save v44) ──────────────────────────────────────
+
+    private static NativeSettlement SettlementWithFreeNeighbour(Game game) =>
+        game.NativeSettlements.First(s => s.Position.Neighbours().Any(n => Free(game, n)));
+
+    [Fact]
+    public void ChiefVisit_IsPerPlayer_AForeignVisitDoesNotConsumeTheHumansFirstContact()
+    {
+        Game game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        NativeSettlement settlement = SettlementWithFreeNeighbour(game);
+        Position adj = settlement.Position.Neighbours().First(n => Free(game, n));
+        Unit powerColonist = game.SpawnUnit(Classic.Unit(FreeColonist), adj);
+        powerColonist.OwnerId = power.PlayerId;
+
+        game.Visit(power, powerColonist, settlement); // the power speaks with the chief (its own stream)
+
+        Assert.True(settlement.HasBeenVisitedBy(power.PlayerId));            // the power has now visited
+        Assert.False(settlement.HasBeenVisitedBy(game.HumanPlayer.PlayerId)); // the human's first contact is intact
+        Assert.False(settlement.HasBeenVisited);                            // (= the human's flag)
+    }
+
+    [Fact]
+    public void AForeignColonist_AtColonyCap_SpeaksWithAnAdjacentChief_OnItsTurn()
+    {
+        Game game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        foreach (Unit u in game.Units.Where(u => u.OwnerId == power.PlayerId && u.IsOnMap).ToList())
+        {
+            game.Disband(u); // clear the power's starting units so only what we stage acts
+        }
+        // One colony → the power is at MaxAiColonies (1), so its remaining colonist explores/visits instead of founding.
+        Position colonyTile = game.Map.AllPositions().First(p =>
+            Free(game, p) && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n)));
+        Unit founder = game.SpawnUnit(Classic.Unit(FreeColonist), colonyTile);
+        founder.OwnerId = power.PlayerId;
+        Colony colony = game.FoundColony(founder);
+        colony.OwnerId = power.PlayerId;
+        // A second colonist beside an unvisited native settlement.
+        NativeSettlement settlement = SettlementWithFreeNeighbour(game);
+        Position adj = settlement.Position.Neighbours().First(n => Free(game, n));
+        Unit colonist = game.SpawnUnit(Classic.Unit(FreeColonist), adj);
+        colonist.OwnerId = power.PlayerId;
+        Assert.False(settlement.HasBeenVisitedBy(power.PlayerId));
+
+        game.EndTurn();
+
+        Assert.True(settlement.HasBeenVisitedBy(power.PlayerId)); // it spoke with the chief on its own turn
+    }
+
+    [Fact]
+    public void APowersChiefVisit_RoundTripsThroughSave_V44()
+    {
+        Game game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        NativeSettlement settlement = SettlementWithFreeNeighbour(game);
+        Position adj = settlement.Position.Neighbours().First(n => Free(game, n));
+        Unit powerColonist = game.SpawnUnit(Classic.Unit(FreeColonist), adj);
+        powerColonist.OwnerId = power.PlayerId;
+        game.Visit(power, powerColonist, settlement);
+
+        Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+        NativeSettlement r = restored.NativeSettlements.Single(s => s.Id == settlement.Id);
+
+        Assert.Equal(44, SaveGame.CurrentVersion);
+        Assert.True(r.HasBeenVisitedBy(power.PlayerId)); // the power's visit survives the round trip
+    }
+
+    [Fact]
+    public void ANoForeignVisitGame_OmitsTheVisitedByPowersField()
+    {
+        string json = SaveGame.From(Game.New(Classic, seed: 7)).ToJson();
+        Assert.DoesNotContain("VisitedByPowers", json); // additive: omitted → byte-identical to v43 but for the version
+    }
 }

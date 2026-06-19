@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 43;
+    public const int CurrentVersion = 44;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -322,7 +322,8 @@ public sealed record SaveGame
                         s.Alarm, s.HasBeenVisited, s.SkillConsumed,
                         s.WantedGoods.Count > 0 ? s.WantedGoods.ToList() : null,
                         s.MissionOwnerId, s.HasMission ? s.MissionIsExpert : null, // omitted when no mission
-                        s.ConvertProgress != 0 ? s.ConvertProgress : null))        // omitted when no progress banked
+                        s.ConvertProgress != 0 ? s.ConvertProgress : null,         // omitted when no progress banked
+                        s.VisitedByPowers.Count > 0 ? s.VisitedByPowers.ToList() : null)) // v44; omitted when no foreign power has visited
                     .ToList()
                 : null,
         };
@@ -438,17 +439,25 @@ public sealed record SaveGame
                 colony.ReconcileWorkerTypes(); // belt-and-braces: the overlay never exceeds the restored counts
                 return colony;
             }),
-            NativeSettlements?.Select(s => new NativeSettlement(
-                s.Id, s.NationTypeId, s.SettlementTypeId, s.IsCapital,
-                new Position(s.X, s.Y), s.Size, s.LearnableSkill)
+            NativeSettlements?.Select(s =>
             {
-                Alarm = s.Alarm,
-                HasBeenVisited = s.HasBeenVisited,
-                SkillConsumed = s.SkillConsumed,
-                WantedGoods = s.WantedGoods ?? [],
-                MissionOwnerId = s.MissionOwnerId,           // v33; pre-v33 → null = no mission
-                MissionIsExpert = s.MissionIsExpert ?? false, // v33; default free-colonist missionary
-                ConvertProgress = s.ConvertProgress ?? 0,    // v34; pre-v34 → 0
+                var settlement = new NativeSettlement(
+                    s.Id, s.NationTypeId, s.SettlementTypeId, s.IsCapital,
+                    new Position(s.X, s.Y), s.Size, s.LearnableSkill)
+                {
+                    Alarm = s.Alarm,
+                    HasBeenVisited = s.HasBeenVisited,        // the human's first-contact flag (rides player 0)
+                    SkillConsumed = s.SkillConsumed,
+                    WantedGoods = s.WantedGoods ?? [],
+                    MissionOwnerId = s.MissionOwnerId,           // v33; pre-v33 → null = no mission
+                    MissionIsExpert = s.MissionIsExpert ?? false, // v33; default free-colonist missionary
+                    ConvertProgress = s.ConvertProgress ?? 0,    // v34; pre-v34 → 0
+                };
+                foreach (int powerId in s.VisitedByPowers ?? []) // v44; pre-v44 → no foreign power has visited
+                {
+                    settlement.MarkVisitedBy(powerId);
+                }
+                return settlement;
             }),
             AutoExportMode.GetValueOrDefault()); // pre-v28 / omitted → PerGood (the enum's 0 default)
 
@@ -625,13 +634,15 @@ public sealed record SavedWorker(int X, int Y, string GoodsId, string? UnitTypeI
 /// <param name="MissionOwnerId">Colonial player id whose missionary resides here (v33+; null = no mission, omitted).</param>
 /// <param name="MissionIsExpert">Whether the resident missionary is a jesuit (v33+; null when no mission, omitted).</param>
 /// <param name="ConvertProgress">Accrued convert progress under a mission (v34+; null/omitted when 0).</param>
+/// <param name="VisitedByPowers">Non-human player ids that have spoken with the chief (v44+; null/omitted when none, so a game where only the human (or nobody) has visited is byte-identical to v43). The human rides <see cref="HasBeenVisited"/>.</param>
 public sealed record SavedNativeSettlement(
     int Id, string NationTypeId, string SettlementTypeId, bool IsCapital,
     int X, int Y, int Size, string? LearnableSkill = null,
     int Alarm = 0, bool HasBeenVisited = false, bool SkillConsumed = false,
     IReadOnlyList<string>? WantedGoods = null,
     int? MissionOwnerId = null, bool? MissionIsExpert = null,
-    int? ConvertProgress = null);
+    int? ConvertProgress = null,
+    IReadOnlyList<int>? VisitedByPowers = null);
 
 /// <summary>A unit inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Id">Unit id.</param>

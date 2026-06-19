@@ -767,7 +767,7 @@ public sealed partial class Game
         {
             return MoveCheck.No("Move next to the settlement to speak with its chief.");
         }
-        if (settlement.HasBeenVisited)
+        if (settlement.HasBeenVisitedBy(unit.OwnerId))
         {
             return MoveCheck.No("You have already spoken with this settlement's chief.");
         }
@@ -799,7 +799,7 @@ public sealed partial class Game
             throw new InvalidMoveException(check.Reason!);
         }
 
-        settlement.HasBeenVisited = true;
+        settlement.MarkVisitedBy(player.PlayerId); // per-player first contact (FreeCol's per-player hasVisited)
         return unit.RoleId == ScoutRoleId
             ? ScoutSpeakToChief(player, unit, settlement, random)
             : VisitAsColonist(player, unit, settlement, random);
@@ -4969,6 +4969,14 @@ public sealed partial class Game
                 FoundColony(unit);
                 continue;
             }
+            // Speak with a chief (86d3c9vta slice, FreeCol's scout/explore visiting): a colonist beside a native
+            // settlement the power hasn't yet visited takes the chief's audience for a gift/tales, on the power's OWN
+            // stream. Per-player first contact (HasBeenVisitedBy) means an AI visit never consumes the human's.
+            if (AdjacentUnvisitedSettlement(power, unit) is { } chiefSettlement)
+            {
+                Visit(power, unit, chiefSettlement, RandomFor(power));
+                continue;
+            }
             // Seek out a known Lost City Rumour (86d3c9vta, FreeCol's scout/explore missions) before generic
             // exploring: head for the nearest rumour tile the power has discovered. Reaching it auto-resolves the
             // rumour (`TryExploreRumour` via `MoveUnit`) on the power's OWN stream — treasure/units/expertise land for
@@ -5562,6 +5570,13 @@ public sealed partial class Game
         _units.Where(u => u.IsOnMap && IsHumanOwned(u) && u.Type.IsNaval == hunter.Type.IsNaval)
             .OrderBy(u => Chebyshev(u.Position, hunter.Position))
             .ThenBy(u => u.Position.Y).ThenBy(u => u.Position.X)
+            .FirstOrDefault();
+
+    /// <summary>A native settlement on or adjacent to <paramref name="unit"/> whose chief <paramref name="power"/> may speak with now (not yet visited by this power, per <see cref="CheckVisit"/>), by stable position order — the AI scout-chief target. Null when none.</summary>
+    private NativeSettlement? AdjacentUnvisitedSettlement(Player power, Unit unit) =>
+        _nativeSettlements
+            .Where(s => (s.Position == unit.Position || s.Position.IsAdjacentTo(unit.Position)) && CheckVisit(unit, s).Allowed)
+            .OrderBy(s => s.Position.Y).ThenBy(s => s.Position.X)
             .FirstOrDefault();
 
     /// <summary>
