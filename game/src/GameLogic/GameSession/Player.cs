@@ -50,6 +50,7 @@ public sealed class Player
     private readonly Dictionary<int, Stance> _stance = [];   // this player's directional view of each other player (FP-6a)
     private readonly Dictionary<int, int> _tension = [];     // this player's tension toward each other player (0..MaxTension)
     private readonly Dictionary<string, int> _unitPrices = []; // this player's escalated Europe purchase prices (artillery); absent = the ruleset base
+    private readonly List<TradeRoute> _tradeRoutes = []; // this player's defined trade routes (carriers attach by id)
 
     /// <summary>Creates a player with its own market; callers seed the remaining state via the internal setters.</summary>
     internal Player(int playerId, string? nationId, bool isHuman, PlayerType playerType, Market market)
@@ -157,6 +158,15 @@ public sealed class Player
     /// <summary>Mutable view of <see cref="UnitPriceOverrides"/> for the Europe-pricing rules on <see cref="Game"/>.</summary>
     internal Dictionary<string, int> UnitPriceMap => _unitPrices;
 
+    /// <summary>This player's defined trade routes (FreeCol per-player <c>tradeRoutes</c>); a carrier attaches to one by <see cref="Units.Unit.TradeRouteId"/>.</summary>
+    public IReadOnlyList<TradeRoute> TradeRoutes => _tradeRoutes;
+
+    /// <summary>Mutable view of <see cref="TradeRoutes"/> for the trade-route rules on <see cref="Game"/>.</summary>
+    internal List<TradeRoute> TradeRoutesList => _tradeRoutes;
+
+    /// <summary>The next trade-route id to allocate for this player (monotonic; persisted so ids stay stable across save/load).</summary>
+    public int NextTradeRouteId { get; internal set; } = 1;
+
     /// <summary>Mutable view of <see cref="Congress"/> for the rules on <see cref="Game"/>.</summary>
     internal List<string> CongressList => _congress;
 
@@ -212,4 +222,5 @@ public sealed record RestoredPlayer(
     bool MonarchDispleasure = false,
     bool SupportSeaGranted = false,
     int? DeclaredIndependenceTurn = null,
-    int InterventionBells = 0);
+    int InterventionBells = 0,
+    IReadOnlyList<TradeRoute>? TradeRoutes = null);

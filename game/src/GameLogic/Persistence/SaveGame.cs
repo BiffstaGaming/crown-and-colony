@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 42;
+    public const int CurrentVersion = 43;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -241,7 +241,9 @@ public sealed record SaveGame
                     // Treasure carried omitted for the common 0 so every non-treasure unit stays byte-identical to v26.
                     u.TreasureAmount == 0 ? null : u.TreasureAmount,
                     // Goto destination split into two ints; both omitted when no goto so a goto-free unit stays byte-identical to v35.
-                    u.Destination?.X, u.Destination?.Y))
+                    u.Destination?.X, u.Destination?.Y,
+                    // Trade-route assignment (v43); omitted for a route-less unit so it stays byte-identical to v42.
+                    u.TradeRouteId, u.TradeRouteStopIndex == 0 ? null : u.TradeRouteStopIndex))
                 .ToList(),
             Colonies = game.Colonies
                 .Select(c => new SavedColony(
@@ -371,7 +373,8 @@ public sealed record SaveGame
                 u.RepairTurns ?? 0,         // pre-v21 / healthy ship → 0
                 (UnitOrders)(u.Orders ?? 0), // pre-v23 / active → Active
                 u.TreasureAmount ?? 0,      // pre-v27 / non-treasure → 0
-                u.DestX is { } dx && u.DestY is { } dy ? new Position(dx, dy) : (Position?)null)), // pre-v36 / no goto → null
+                u.DestX is { } dx && u.DestY is { } dy ? new Position(dx, dy) : (Position?)null, // pre-v36 / no goto → null
+                u.TradeRouteId, u.TradeRouteStop ?? 0)), // pre-v43 / route-less → null/0
             Colonies?.Select(c =>
             {
                 var colony = new CrownAndColony.GameLogic.Colonies.Colony(
@@ -482,7 +485,9 @@ public sealed record SaveGame
         p.Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
         p.RngState is { } s && p.RngIncrement is { } inc ? new RandomState(s, inc) : null,
         p.Stances, p.Tensions, p.UnitPrices, p.Arrears, p.MonarchDispleasure ?? false, p.SupportSeaGranted ?? false,
-        p.DeclaredIndependenceTurn, p.InterventionBells ?? 0);
+        p.DeclaredIndependenceTurn, p.InterventionBells ?? 0,
+        p.TradeRoutes?.Select(r => new TradeRoute(r.Id, r.Name,
+            r.Stops.Select(stop => new TradeRouteStop(stop.ColonyId, stop.Load ?? [])).ToList())).ToList());
 
     /// <summary>
     /// Folds the legacy flat top-level fields into the single human player — taken for a ≤v19 save, or any save
@@ -520,7 +525,12 @@ public sealed record SaveGame
             p.MonarchDispleasure ? true : null,
             p.SupportSeaGranted ? true : null,
             p.DeclaredIndependenceTurn,
-            p.InterventionBells == 0 ? null : p.InterventionBells);
+            p.InterventionBells == 0 ? null : p.InterventionBells,
+            p.TradeRoutes.Count > 0
+                ? p.TradeRoutes.Select(r => new SavedTradeRoute(r.Id, r.Name,
+                    r.Stops.Select(s => new SavedTradeRouteStop(
+                        s.ColonyId, s.LoadGoodsIds.Count > 0 ? s.LoadGoodsIds.ToList() : null)).ToList())).ToList()
+                : null);
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -642,13 +652,16 @@ public sealed record SavedNativeSettlement(
 /// <param name="TreasureAmount">Gold carried by a treasure train (null/0 = none; v27+). Nullable so a non-treasure unit serializes byte-identically to v26.</param>
 /// <param name="DestX">X of the unit's standing goto destination (null = no goto; v36+). Both DestX/DestY omitted when none, so a goto-free unit serializes byte-identically to v35.</param>
 /// <param name="DestY">Y of the unit's standing goto destination (null = no goto; v36+).</param>
+/// <param name="TradeRouteId">Id of the trade route this carrier is assigned to (null = none; v43+). Omitted for a route-less unit, so it serializes byte-identically to v42.</param>
+/// <param name="TradeRouteStop">The carrier's current route stop index (null/0 = the first stop; v43+). Omitted when 0.</param>
 public sealed record SavedUnit(
     int Id, string? TypeId, int X, int Y, int MovementLeft,
     int Location = 0, int SailTurns = 0, IReadOnlyDictionary<string, int>? Cargo = null,
     int? CarrierId = null,
     string? Owner = null, string? Role = null, int? RoleCount = null,
     int? OwnerId = null, int? RepairTurns = null, int? Orders = null, int? TreasureAmount = null,
-    int? DestX = null, int? DestY = null);
+    int? DestX = null, int? DestY = null,
+    int? TradeRouteId = null, int? TradeRouteStop = null);
 
 /// <summary>
 /// A player inside a <see cref="SaveGame"/> (v20+). Holds the player-scoped state that used to sit as
@@ -682,6 +695,7 @@ public sealed record SavedUnit(
 /// <param name="SupportSeaGranted">Whether the King has granted this player naval support (v39 additive; null/omitted when not — a one-shot so SUPPORT_SEA cannot repeat).</param>
 /// <param name="DeclaredIndependenceTurn">The turn this player declared independence (v41 additive; null/omitted if it never did).</param>
 /// <param name="InterventionBells">Bells accrued toward the Foreign Intervention Force (v41 additive; null/omitted when 0).</param>
+/// <param name="TradeRoutes">This player's trade routes (v43 additive; null/omitted when it has none, so a route-free game stays byte-identical to v42).</param>
 public sealed record SavedPlayer(
     int PlayerId, string? NationId, bool IsHuman, int PlayerType,
     int Gold = 0, int Tax = 0,
@@ -700,4 +714,14 @@ public sealed record SavedPlayer(
     bool? MonarchDispleasure = null,
     bool? SupportSeaGranted = null,
     int? DeclaredIndependenceTurn = null,
-    int? InterventionBells = null);
+    int? InterventionBells = null,
+    IReadOnlyList<SavedTradeRoute>? TradeRoutes = null);
+
+/// <summary>A saved trade route (v43): a player's named ring of stops a carrier hauls along automatically. Omitted entirely when the player has none.</summary>
+/// <param name="Id">Per-player route id.</param>
+/// <param name="Name">Route name.</param>
+/// <param name="Stops">The ordered stops.</param>
+public sealed record SavedTradeRoute(int Id, string Name, IReadOnlyList<SavedTradeRouteStop> Stops);
+
+/// <summary>One <see cref="SavedTradeRoute"/> stop (v43): a colony id and the goods to load there (null = load nothing — a pure delivery stop).</summary>
+public sealed record SavedTradeRouteStop(int ColonyId, IReadOnlyList<string>? Load);

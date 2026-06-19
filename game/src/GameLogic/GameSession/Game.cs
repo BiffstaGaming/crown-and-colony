@@ -2595,7 +2595,8 @@ public sealed partial class Game
         IEnumerable<(int id, UnitType type, Position position, int movementLeft,
             UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
             int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
-            int repairTurns, UnitOrders orders, int treasureAmount, Position? destination)> units,
+            int repairTurns, UnitOrders orders, int treasureAmount, Position? destination,
+            int? tradeRouteId, int tradeRouteStopIndex)> units,
         IEnumerable<Colony>? colonies = null,
         IEnumerable<NativeSettlement>? nativeSettlements = null,
         AutoExportMode autoExportMode = AutoExportMode.PerGood)
@@ -2619,7 +2620,8 @@ public sealed partial class Game
         foreach ((int id, UnitType type, Position position, int movementLeft,
                   UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
                   int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
-                  int repairTurns, UnitOrders orders, int treasureAmount, Position? destination) in units)
+                  int repairTurns, UnitOrders orders, int treasureAmount, Position? destination,
+                  int? tradeRouteId, int tradeRouteStopIndex) in units)
         {
             var unit = new Unit(id, type, position)
             {
@@ -2634,6 +2636,8 @@ public sealed partial class Game
                 RepairTurnsRemaining = repairTurns,
                 Orders = orders,
                 Destination = destination,
+                TradeRouteId = tradeRouteId,
+                TradeRouteStopIndex = tradeRouteStopIndex,
             };
             unit.SetTreasureAmount(treasureAmount); // internal method, like AddCargo — set after the initializer
             foreach ((string goodsId, int amount) in cargo ?? new Dictionary<string, int>())
@@ -2722,6 +2726,11 @@ public sealed partial class Game
         if (saved.RecruitDock is not null)
         {
             player.RecruitDockList.AddRange(saved.RecruitDock);
+        }
+        if (saved.TradeRoutes is { Count: > 0 })
+        {
+            player.TradeRoutesList.AddRange(saved.TradeRoutes);
+            player.NextTradeRouteId = saved.TradeRoutes.Max(r => r.Id) + 1; // keep new ids above the restored ones
         }
         if (saved.Stances is not null)
         {
@@ -3380,6 +3389,122 @@ public sealed partial class Game
         }
         carrier.AddCargo(goodsId, -amount);
         colony.AddGoods(goodsId, amount);
+    }
+
+    // ===== Trade routes (86d3c9rq1) =========================================================================
+    // A player defines named routes (an ordered ring of colony stops, each listing the goods to load there); a
+    // carrier assigned to a route auto-hauls along it each turn — delivering what a stop doesn't want, loading what
+    // it does, then heading for the next stop. Reuses LoadFromColony/UnloadToColony (the carrier-haulage seam).
+
+    /// <summary>
+    /// Creates a trade route for <paramref name="player"/> from an ordered list of stops and returns it (FreeCol
+    /// <c>Player.newTradeRoute</c>). Every stop must name a colony <paramref name="player"/> owns. The route is given
+    /// the next per-player id and added to <see cref="Player.TradeRoutes"/>.
+    /// </summary>
+    /// <exception cref="InvalidMoveException">A stop names a colony the player does not own.</exception>
+    public TradeRoute CreateTradeRoute(Player player, string name, IReadOnlyList<TradeRouteStop> stops)
+    {
+        foreach (TradeRouteStop stop in stops)
+        {
+            if (_colonies.FirstOrDefault(c => c.Id == stop.ColonyId) is not { } colony || colony.OwnerId != player.PlayerId)
+            {
+                throw new InvalidMoveException("A trade-route stop must be one of your own colonies.");
+            }
+        }
+        var route = new TradeRoute(player.NextTradeRouteId++, name, stops.ToList());
+        player.TradeRoutesList.Add(route);
+        return route;
+    }
+
+    /// <summary>Whether <paramref name="unit"/> may run trade route <paramref name="routeId"/>: it must be a carrier (cargo space) owned by a player that has the route.</summary>
+    public MoveCheck CheckAssignTradeRoute(Unit unit, int routeId)
+    {
+        if (!unit.Type.IsCarrier)
+        {
+            return MoveCheck.No("Only a carrier (a ship or wagon train) can run a trade route.");
+        }
+        if (PlayerById(unit.OwnerId) is not { } owner || owner.TradeRoutes.All(r => r.Id != routeId))
+        {
+            return MoveCheck.No("No such trade route for this unit's owner.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>Assigns <paramref name="unit"/> to a trade route, starting at its first stop (FreeCol <c>Unit.setTradeRoute</c>).</summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAssignTradeRoute"/>.</exception>
+    public void AssignTradeRoute(Unit unit, int routeId)
+    {
+        MoveCheck check = CheckAssignTradeRoute(unit, routeId);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        unit.TradeRouteId = routeId;
+        unit.TradeRouteStopIndex = 0;
+    }
+
+    /// <summary>Takes <paramref name="unit"/> off its trade route (FreeCol <c>Unit.setTradeRoute(null)</c>).</summary>
+    public void ClearTradeRoute(Unit unit)
+    {
+        unit.TradeRouteId = null;
+        unit.TradeRouteStopIndex = 0;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="player"/>'s trade-route carriers for the turn (FreeCol's trade-route haul): each assigned
+    /// carrier heads for its current stop's colony; on arrival it <b>delivers</b> everything it holds that the stop
+    /// doesn't list to load (<see cref="UnloadToColony"/>), <b>loads</b> the stop's goods up to its hold
+    /// (<see cref="LoadFromColony"/>), and advances to the next stop (wrapping). A carrier whose route was deleted is
+    /// dropped; a stop whose colony is gone is skipped. The step uses <see cref="StepToward"/> on the owner's stream —
+    /// a route-less player iterates nothing, so it never perturbs the human's stream 0 or churns goldens (ADR-009).
+    /// </summary>
+    private void ProcessTradeRoutes(Player player)
+    {
+        foreach (Unit unit in _units
+            .Where(u => u.OwnerId == player.PlayerId && u.IsOnTradeRoute && u.IsOnMap)
+            .OrderBy(u => u.Id).ToList())
+        {
+            if (player.TradeRoutes.FirstOrDefault(r => r.Id == unit.TradeRouteId) is not { Stops.Count: > 0 } route)
+            {
+                ClearTradeRoute(unit); // the route was deleted (or is empty) → drop the assignment
+                continue;
+            }
+            int stopIndex = unit.TradeRouteStopIndex % route.Stops.Count;
+            TradeRouteStop stop = route.Stops[stopIndex];
+            if (_colonies.FirstOrDefault(c => c.Id == stop.ColonyId) is not { } colony)
+            {
+                unit.TradeRouteStopIndex = (stopIndex + 1) % route.Stops.Count; // the stop's colony is gone → skip it
+                continue;
+            }
+            if (unit.Position == colony.Position || unit.Position.IsAdjacentTo(colony.Position))
+            {
+                ServeTradeRouteStop(unit, colony, stop);
+                unit.TradeRouteStopIndex = (stopIndex + 1) % route.Stops.Count;
+            }
+            else if (StepToward(player, unit, colony.Position) is { } step)
+            {
+                MoveUnit(unit, step);
+            }
+        }
+    }
+
+    /// <summary>Serves one trade-route stop: deliver everything the carrier holds that <paramref name="stop"/> doesn't load, then load the stop's goods up to the carrier's free hold.</summary>
+    private void ServeTradeRouteStop(Unit carrier, Colony colony, TradeRouteStop stop)
+    {
+        foreach ((string goodsId, int amount) in carrier.Cargo.Where(c => !stop.LoadGoodsIds.Contains(c.Key)).ToList())
+        {
+            UnloadToColony(carrier, colony, goodsId, amount); // deliver what this stop doesn't want
+        }
+        foreach (string goodsId in stop.LoadGoodsIds)
+        {
+            int available = colony.StoreOf(goodsId);
+            int partial = SlotsFor(carrier.CargoOf(goodsId)) * CargoSlotSize - carrier.CargoOf(goodsId); // slack in the current stack
+            int load = Math.Min(available, partial + CargoSlotsFree(carrier) * CargoSlotSize);
+            if (load > 0)
+            {
+                LoadFromColony(carrier, colony, goodsId, load);
+            }
+        }
     }
 
     /// <summary>Sells goods from a docked ship's hold to the European market, crediting the treasury after tax.</summary>
@@ -4517,6 +4642,7 @@ public sealed partial class Game
         AccumulateLibertyAndElectFathers(player);
         ApplyFreeBuildings(player); // La Salle: a free stockade in each colony that has reached the required population
         AccumulateImmigrationAndEmigrate(player);
+        ProcessTradeRoutes(player); // auto-haul any carriers on a trade route (no-op + no RNG when none — stream-0-safe)
 
         if (!player.IsHuman)
         {

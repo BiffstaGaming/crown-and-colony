@@ -109,6 +109,19 @@ public sealed class Unit
     public bool IsGoingTo => Destination is not null;
 
     /// <summary>
+    /// The id of the <see cref="GameSession.TradeRoute"/> this carrier is assigned to (FreeCol <c>Unit.tradeRoute</c>),
+    /// or null when it hauls nothing automatically. While set, the unit auto-hauls along its route's stops each turn
+    /// (see <c>Game.ProcessTradeRoutes</c>); only a carrier (cargo space &gt; 0) can be assigned.
+    /// </summary>
+    public int? TradeRouteId { get; internal set; }
+
+    /// <summary>The index of the route stop this carrier is currently heading for (FreeCol <c>Unit.currentStop</c>); 0 when not on a route. Wraps back to 0 after the last stop.</summary>
+    public int TradeRouteStopIndex { get; internal set; }
+
+    /// <summary>True when this carrier is assigned to a trade route.</summary>
+    public bool IsOnTradeRoute => TradeRouteId is not null;
+
+    /// <summary>
     /// The id of the ship carrying this unit, or null when not aboard. A carried
     /// unit's <see cref="Location"/>/<see cref="Position"/> mirror its carrier's.
     /// </summary>
