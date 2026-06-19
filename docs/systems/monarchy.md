@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | In progress — monarch tick + chooser (item 1) + RAISE/LOWER/WAIVE tax mutation with the accept/reject demand (item 2). Mercenaries/support/REF land in later items. |
-| **Last verified** | 2026-06-19 @ RAISE_TAX demand + tax mutation (`86d3c9r2m`) |
+| **Status** | In progress — monarch tick + chooser (1), tax mutation (2), Boston Tea Party + boycott/arrears + pay-to-lift (3). Mercenaries/support/REF land in later items. |
+| **Last verified** | 2026-06-19 @ Boston Tea Party + boycott (`86d3c9r4w`, save v37) |
 | **Code** | `game/src/GameLogic/GameSession/Game.Monarch.cs`, `MonarchAction.cs`; `Randomness/RandomChoice.cs` |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/MonarchTests.cs` |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/common/model/Monarch.java` (`getActionChoices`, `actionIsValid`), the server monarch tick |
@@ -45,7 +45,7 @@ This first piece is the King *deciding* — the weighted dice-roll each turn tha
 - **RAISE_TAX** opens a *demand* the player answers (accept / reject). The proposed new rate is `min(tax + 1 + rnd[0, 3 + turn/40), 65)`. The King names the player's **most valuable tradeable stockpile** (highest sale-value across colonies, one cargo's worth); a raise demand is only made when there is such a good.
   - **Accept** → the tax rises to the proposed rate.
   - **Reject, goods already gone** (sold/moved before answering) → the King raises it anyway, **+3** (FORCE_TAX).
-  - **Reject, goods still in the colony** → a **Boston Tea Party** (item 3): the goods are dumped, the good is boycotted, rebel sentiment rises, tax unchanged. *(Until item 3, a goods-present reject simply declines.)*
+  - **Reject, goods still in the colony** → a **Boston Tea Party**: the colony dumps the demanded goods overboard, the good is **boycotted** (back-tax = its sale price × 300 — it cannot be sold until paid off), rebel sentiment **surges** (+50% bell output for 25 turns, decaying −2%/turn), and the **tax is not raised**. Pay the back-tax (`PayArrears`, costs the full arrears) to lift the boycott.
 - **LOWER_TAX** (war / other goodwill) applies immediately, no player choice: `max(tax − 1 − rnd[0, 8), 20)`.
 - **WAIVE_TAX** is a message only — no change.
 
@@ -57,7 +57,8 @@ This first piece is the King *deciding* — the weighted dice-roll each turn tha
 - `Game.MonarchActionIsValid(action)`: a pure, RNG-free predicate over the human's state (FreeCol `actionIsValid`). `ADD_TO_REF` is gated off until the REF Force is modelled (item 6).
 - `Game.GetMonarchActionChoices(turn)`: the weighted `(weight, action)` list — empty before the grace gate; otherwise NO_ACTION + each valid action at its weight.
 - `Game.RunMonarchTick()`: called once per round in `EndTurn` after `UpdateColonialStances`. If the chooser is empty it returns having drawn nothing; otherwise it picks one action via `RandomChoice.WeightedRandom` and dispatches it via `DispatchMonarchAction(action, monarchRng)`.
-- **Tax (item 2):** `DispatchMonarchAction` handles `NO_ACTION`, `RAISE_TAX_*` (build a `PendingMonarchDemand` from `RaiseTaxAmount(rng)` + `GetMostValuableGoods`), `LOWER_TAX_*` (`SetTax(LowerTaxAmount(rng))` immediately), and `WAIVE_TAX` (no-op). `PendingMonarchDemand` (transient, not saved — the ADR-006 oracle the P7 UI reads) is answered by `RespondToMonarch(bool accept)`: accept → `SetTax(taxRaise)`; reject with the goods gone → `SetTax(taxRaise + 3)` (FORCE_TAX); reject with goods present → declines (the tea party is item 3). `RaiseTaxAmount`/`LowerTaxAmount` are the FreeCol formulas; tax reuses the existing `Player.TaxRate` save field (no bump). Remaining actions stay no-op until their slice.
+- **Tax (item 2):** `DispatchMonarchAction` handles `NO_ACTION`, `RAISE_TAX_*` (build a `PendingMonarchDemand` from `RaiseTaxAmount(rng)` + `GetMostValuableGoods`), `LOWER_TAX_*` (`SetTax(LowerTaxAmount(rng))` immediately), and `WAIVE_TAX` (no-op). `PendingMonarchDemand` (transient, not saved — the ADR-006 oracle the P7 UI reads) is answered by `RespondToMonarch(bool accept)`. `RaiseTaxAmount`/`LowerTaxAmount` are the FreeCol formulas; tax reuses the existing `Player.TaxRate` save field.
+- **Boston Tea Party / boycott (item 3):** `RespondToMonarch(false)` → if the goods are gone, FORCE_TAX (`SetTax(taxRaise+3)`); else `HoldTeaParty` — `colony.AddGoods(good, −amount)`, `Market.SetArrears(good, salePrice × 300)`, `colony.TeaPartyBellTurns = 25`. `Market` carries per-good `Arrears` (>0 = boycotted; `CanTrade` gates both `SellColonyGoods`/`SellShipCargo`). `Colony.TeaPartyBellTurns` adds `+2%`/turn to bell output (`AccumulateLibertyAndElectFathers`) and ticks down each turn. `CheckPayArrears`/`PayArrears` (ADR-006) lift the boycott for the full arrears. Save **v37**: `SavedPlayer.Arrears` (omit-when-empty) + `SavedColony.TeaPartyBellTurns` (omit-when-0). Remaining actions stay no-op until their slice.
 - `RandomChoice.WeightedRandom(rng, choices)`: one weighted pick, one RNG draw (shared by the chooser, mercenary/support rolls, REF composition).
 - **Determinism (ADR-009):** the Monarch is the human's King, but its roll must not shift the human's **stream 0** (that would change every existing seeded game past turn 30). So the tick seeds an **ephemeral** `Pcg32Random` from the human's *current* stream state (read non-destructively via `SaveState`) **+ the turn**, on a reserved stream id — it consumes nothing from stream 0, yet is fully reproducible across save/load (the human state and turn are persisted). A gated-out turn draws nothing. No save change in this item (the decision is derived; the first persisted monarch state arrives with the boycott/displeasure slices).
 
@@ -74,8 +75,8 @@ This first piece is the King *deciding* — the weighted dice-roll each turn tha
 ## 5. Open issues / TODO (the independence arc)
 
 - [x] Monarch turn-tick + weighted action chooser (`86d3c9qvr`).
-- [x] RAISE_TAX demand + tax mutation (`86d3c9r2m`) — accept/reject oracle (tea-party reject in item 3).
-- [ ] Boston Tea Party + boycott/arrears + pay-to-lift (`86d3c9r4w`).
+- [x] RAISE_TAX demand + tax mutation (`86d3c9r2m`) — accept/reject oracle.
+- [x] Boston Tea Party + boycott/arrears + pay-to-lift (`86d3c9r4w`, save v37).
 - [ ] Monarch + Hessian mercenary offers + DISPLEASURE (`86d3c9rep`).
 - [ ] Monarch SUPPORT_LAND / SUPPORT_SEA (`86d3c9rag`).
 - [ ] REF build-up (ADD_TO_REF + Force) (`86d3c9v4j`).
@@ -90,3 +91,4 @@ This first piece is the King *deciding* — the weighted dice-roll each turn tha
 |---|---|---|
 | 2026-06-19 | **Monarch turn-tick + weighted action chooser**: `MonarchAction`, `MonarchActionIsValid`, `GetMonarchActionChoices` (FreeCol weights/grace/validity), `RunMonarchTick` in `EndTurn` (ephemeral RNG — stream 0 untouched, no save change), `RandomChoice.WeightedRandom`. Action effects deferred to later arc items | P6 (`86d3c9qvr`) |
 | 2026-06-19 | **Tax mutation**: RAISE_TAX opens a `PendingMonarchDemand` (`RaiseTaxAmount`, `GetMostValuableGoods`) answered by `RespondToMonarch` (accept raises; reject-goods-gone forces +3; goods-present reject = tea party, item 3); LOWER_TAX/WAIVE_TAX dispatched. Tax reuses `Player.TaxRate` (no save bump) | P6 (`86d3c9r2m`) |
+| 2026-06-19 | **Boston Tea Party + boycott**: goods-present reject dumps the goods, boycotts the good (`Market.Arrears` = salePrice×300, gates selling), surges bells (+50% for 25 turns decaying), tax unchanged; `CheckPayArrears`/`PayArrears` lift it. Save **v37** (`SavedPlayer.Arrears` + `SavedColony.TeaPartyBellTurns`, omit-when-default) | P6 (`86d3c9r4w`) |

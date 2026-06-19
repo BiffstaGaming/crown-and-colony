@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 36;
+    public const int CurrentVersion = 37;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -75,7 +75,10 @@ public sealed record SaveGame
     /// v36 added a unit's standing "go to" destination (<see cref="SavedUnit.DestX"/> + <see cref="SavedUnit.DestY"/>;
     /// both omitted when the unit has no goto, so a goto-free game is byte-identical to v35; pre-v36 saves load with
     /// no destination).
-    /// Each of v23–v36 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// v37 added boycott back-tax (<see cref="SavedPlayer.Arrears"/>, omitted when nothing is boycotted) and a colony's
+    /// Boston-Tea-Party bell-surge turns (<see cref="SavedColony.TeaPartyBellTurns"/>, omitted when 0), so a game with
+    /// no tea party is byte-identical to v36; pre-v37 saves load with neither.
+    /// Each of v23–v37 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
@@ -251,7 +254,9 @@ public sealed record SaveGame
                         ? c.BuildingWorkerTypes.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value.ToList())
                         : null,
                     c.IdleWorkerTypes.Count > 0 ? c.IdleWorkerTypes.ToList() : null,
-                    c.SchoolTrainingTurns.Count > 0 ? new Dictionary<string, int>(c.SchoolTrainingTurns) : null))
+                    c.SchoolTrainingTurns.Count > 0 ? new Dictionary<string, int>(c.SchoolTrainingTurns) : null,
+                    // Boston-Tea-Party bell-surge turns remaining; omitted when none (v37, byte-identical to v36).
+                    c.TeaPartyBellTurns == 0 ? null : c.TeaPartyBellTurns))
                 .ToList(),
             Resources = game.Map.Resources.Count > 0
                 ? game.Map.Resources
@@ -385,6 +390,7 @@ public sealed record SaveGame
                     (c.CurrentBuild is null ? Enumerable.Empty<string>() : [c.CurrentBuild])
                         .Concat(c.BuildQueueRest ?? []));
                 colony.Liberty = c.Liberty ?? 0; // ≤v21 saves had no liberty → SoL 0%
+                colony.TeaPartyBellTurns = c.TeaPartyBellTurns ?? 0; // v37; pre-v37 / no party → 0
                 foreach ((string goods, SavedExport export) in c.Exports ?? new Dictionary<string, SavedExport>())
                 {
                     colony.SetExport(goods, export.Exported, export.Level); // custom-house export settings (v28; pre-v28 → none)
@@ -442,7 +448,7 @@ public sealed record SaveGame
         p.RecruitDock,
         p.Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
         p.RngState is { } s && p.RngIncrement is { } inc ? new RandomState(s, inc) : null,
-        p.Stances, p.Tensions, p.UnitPrices);
+        p.Stances, p.Tensions, p.UnitPrices, p.Arrears);
 
     /// <summary>
     /// Folds the legacy flat top-level fields into the single human player — taken for a ≤v19 save, or any save
@@ -475,7 +481,8 @@ public sealed record SaveGame
             rng?.State, rng?.Increment,
             p.Stances.Count > 0 ? new Dictionary<int, Stance>(p.Stances) : null,
             p.Tensions.Count > 0 ? new Dictionary<int, int>(p.Tensions) : null,
-            p.UnitPriceOverrides.Count > 0 ? new Dictionary<string, int>(p.UnitPriceOverrides) : null);
+            p.UnitPriceOverrides.Count > 0 ? new Dictionary<string, int>(p.UnitPriceOverrides) : null,
+            p.Market.SaveArrears() is { Count: > 0 } arrears ? new Dictionary<string, int>(arrears) : null);
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -506,6 +513,7 @@ public sealed record SaveGame
 /// <param name="BuildingWorkerTypes">Per building, its NON-FREE occupant unit-type ids (v30; null/omitted when every building worker is a free colonist). The free occupants are implicit (count − non-free).</param>
 /// <param name="IdleWorkerTypes">The colony's NON-FREE idle colonists' unit-type ids (v30; null/omitted when all idle are free colonists).</param>
 /// <param name="SchoolTraining">Per school building, the accrued training turns toward its current student (v32; null/omitted when no school is mid-training, so a non-teaching game is byte-identical to v31).</param>
+/// <param name="TeaPartyBellTurns">Turns remaining of the Boston-Tea-Party bell surge (v37; null/omitted when 0, so a no-party colony is byte-identical to v36).</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
     IReadOnlyDictionary<string, int>? Stores = null,
@@ -519,7 +527,8 @@ public sealed record SavedColony(
     IReadOnlyDictionary<string, SavedExport>? Exports = null,
     IReadOnlyDictionary<string, IReadOnlyList<string>>? BuildingWorkerTypes = null,
     IReadOnlyList<string>? IdleWorkerTypes = null,
-    IReadOnlyDictionary<string, int>? SchoolTraining = null);
+    IReadOnlyDictionary<string, int>? SchoolTraining = null,
+    int? TeaPartyBellTurns = null);
 
 /// <summary>A colony's custom-house export setting for one good (v28+; only non-default goods are stored).</summary>
 /// <param name="Exported">Whether the good auto-exports.</param>
@@ -625,6 +634,7 @@ public sealed record SavedUnit(
 /// <param name="Stances">This player's diplomatic stance toward each other player it has met, by their player id (v20 additive, FP-6a; null/omitted when it has met no one). An ordinal of <see cref="GameSession.Stance"/>.</param>
 /// <param name="Tensions">This player's tension toward each other player, by their player id (v20 additive, FP-6a; null/omitted when all zero).</param>
 /// <param name="UnitPrices">This player's escalated Europe purchase prices by unit-type id (v29 additive; null/omitted when none have escalated, so a game where nobody has bought artillery stays byte-identical to v28). Today only artillery escalates.</param>
+/// <param name="Arrears">This player's boycott back-tax by good (v37 additive; null/omitted when nothing is boycotted, so a boycott-free game stays byte-identical to v36). A non-zero entry means the good cannot be sold until paid off.</param>
 public sealed record SavedPlayer(
     int PlayerId, string? NationId, bool IsHuman, int PlayerType,
     int Gold = 0, int Tax = 0,
@@ -638,4 +648,5 @@ public sealed record SavedPlayer(
     ulong? RngState = null, ulong? RngIncrement = null,
     IReadOnlyDictionary<int, Stance>? Stances = null,
     IReadOnlyDictionary<int, int>? Tensions = null,
-    IReadOnlyDictionary<string, int>? UnitPrices = null);
+    IReadOnlyDictionary<string, int>? UnitPrices = null,
+    IReadOnlyDictionary<string, int>? Arrears = null);

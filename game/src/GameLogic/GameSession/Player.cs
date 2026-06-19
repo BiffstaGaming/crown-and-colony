@@ -192,4 +192,5 @@ public sealed record RestoredPlayer(
     RandomState? Rng = null,
     IReadOnlyDictionary<int, Stance>? Stances = null,
     IReadOnlyDictionary<int, int>? Tensions = null,
-    IReadOnlyDictionary<string, int>? UnitPrices = null);
+    IReadOnlyDictionary<string, int>? UnitPrices = null,
+    IReadOnlyDictionary<string, int>? Arrears = null);

@@ -2618,6 +2618,10 @@ public sealed partial class Game
         {
             market.LoadDeltas(saved.MarketDeltas);
         }
+        if (saved.Arrears is { Count: > 0 })
+        {
+            market.LoadArrears(saved.Arrears); // boycott back-taxes (v37)
+        }
         var player = new Player(saved.PlayerId, saved.NationId, saved.IsHuman, saved.PlayerType, market)
         {
             Gold = saved.Gold,
@@ -3150,6 +3154,10 @@ public sealed partial class Game
         {
             throw new InvalidMoveException($"{goodsId} cannot be sold in Europe.");
         }
+        if (!player.Market.CanTrade(goodsId))
+        {
+            throw new InvalidMoveException($"{goodsId} is under boycott — pay the back taxes to lift it.");
+        }
         if (colony.StoreOf(goodsId) < amount)
         {
             throw new InvalidMoveException($"The colony does not have {amount} {goodsId} to sell.");
@@ -3285,6 +3293,10 @@ public sealed partial class Game
         if (!player.Market.IsTradeable(goodsId))
         {
             throw new InvalidMoveException($"{goodsId} cannot be sold in Europe.");
+        }
+        if (!player.Market.CanTrade(goodsId))
+        {
+            throw new InvalidMoveException($"{goodsId} is under boycott — pay the back taxes to lift it.");
         }
         if (ship.CargoOf(goodsId) < amount)
         {
@@ -5152,15 +5164,18 @@ public sealed partial class Game
             if (bells > 0)
             {
                 colony.AddGoods(BellsId, -bells); // bells become liberty, not tradeable stock
-                // The colony's printing press / newspaper boosts its bell output first (+50% / +100%), then the
-                // founding-father bonus (Jefferson/Paine) applies, then each colonist past the first two consumes
-                // 1 bell of upkeep — so a colony that grows faster than its bell output loses liberty (its Sons of
-                // Liberty can fall). FreeCol feeds the same net figure to both pools.
-                int boosted = bells + (bells * BellProductionBonus(colony) / 100); // printing press / newspaper
+                // The colony's printing press / newspaper boosts its bell output first (+50% / +100%), plus any
+                // active Boston-Tea-Party surge (+50% decaying), then the founding-father bonus (Jefferson/Paine)
+                // applies, then each colonist past the first two consumes 1 bell of upkeep — so a colony that grows
+                // faster than its bell output loses liberty (its Sons of Liberty can fall). FreeCol feeds the same
+                // net figure to both pools.
+                int boostPercent = BellProductionBonus(colony) + colony.TeaPartyBellBonusPercent;
+                int boosted = bells + (bells * boostPercent / 100);
                 int net = ApplyGoodsModifiers(player, BellsId, boosted) - Math.Max(0, colony.Population - Ruleset.Difficulty.UnitsThatUseNoBells);
                 player.Liberty += net;   // banked toward the next founding father
                 colony.AddLiberty(net);  // the colony's own Sons-of-Liberty liberty (AddLiberty floors at 0)
             }
+            colony.TickTeaPartyBonus(); // decay the tea-party surge each turn, even on a no-bell turn
         }
         player.Liberty = Math.Max(0, player.Liberty); // a net-negative bell turn can't push the founding-father pool below 0
 

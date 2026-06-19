@@ -538,6 +538,25 @@ public sealed class Colony
     /// accumulation is capped to exactly <c>200·population</c> (FreeCol <c>bellAccumulationCapped</c>), so it never
     /// overshoots — the cap reads the population already settled for this turn (growth/starvation run before banking).
     /// </summary>
+    /// <summary>
+    /// Turns remaining of the Boston-Tea-Party bell bonus (FreeCol <c>colonyGoodsParty</c> modifier: +50% bell
+    /// output decaying −2%/turn over 25 turns). 0 = none. Set when the colony holds a tea party; ticked down each
+    /// turn. Persisted v37 (omit-when-0). See [monarchy].
+    /// </summary>
+    public int TeaPartyBellTurns { get; internal set; }
+
+    /// <summary>The current tea-party bell-output bonus percentage: +2% per remaining turn (so +50% at 25 turns down to 0).</summary>
+    public int TeaPartyBellBonusPercent => TeaPartyBellTurns * 2;
+
+    /// <summary>Decays the tea-party bell bonus by one turn (a no-op when none is active).</summary>
+    internal void TickTeaPartyBonus()
+    {
+        if (TeaPartyBellTurns > 0)
+        {
+            TeaPartyBellTurns--;
+        }
+    }
+
     internal void AddLiberty(int amount)
     {
         Liberty = Math.Max(0, Liberty + amount);

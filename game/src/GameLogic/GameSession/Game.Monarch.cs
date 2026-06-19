@@ -26,6 +26,8 @@ public sealed partial class Game
     private const int HessianMinimumPrice = 5000;    // Monarch.HESSIAN_MINIMUM_PRICE
     private const int MonarchTaxAdjustment = 2;      // GameOptions.TAX_ADJUSTMENT (medium)
     private const int ForceTaxExtra = 3;             // ServerPlayer.csRaiseTax FORCE_TAX surcharge
+    private const int ArrearsFactor = 300;           // GameOptions.ARREARS_FACTOR — boycott back-tax = salePrice × this
+    private const int TeaPartyBellDuration = 25;     // colonyGoodsParty modifier duration (turns) → +50% bells decaying −2%/turn
 
     private PendingMonarchDemand? _pendingMonarchDemand; // transient: a monarch demand awaiting the human's accept/reject (not saved, like _pendingDemand)
 
@@ -183,8 +185,51 @@ public sealed partial class Game
             {
                 SetTax(_human, demand.TaxRaise + ForceTaxExtra); // FORCE_TAX: goods removed, the King raises it anyway
             }
-            // else: goods still present → Boston Tea Party (item 3); for now the demand is simply declined.
+            else
+            {
+                HoldTeaParty(colony, demand.GoodsId!, demand.GoodsAmount); // Boston Tea Party — dump, boycott, rebel surge
+            }
         }
+    }
+
+    /// <summary>
+    /// A Boston Tea Party (FreeCol <c>csRaiseTax</c> reject branch): the colony dumps the demanded goods overboard,
+    /// the good is boycotted (arrears = its sale price × 300), and rebel sentiment surges (+50% bell output for 25
+    /// turns, decaying). The tax is <b>not</b> raised.
+    /// </summary>
+    private void HoldTeaParty(Colony colony, string goodsId, int amount)
+    {
+        colony.AddGoods(goodsId, -amount);
+        _human.Market.SetArrears(goodsId, _human.Market.BidPrice(goodsId) * ArrearsFactor);
+        colony.TeaPartyBellTurns = TeaPartyBellDuration;
+    }
+
+    /// <summary>Whether the player can pay off a good's boycott back-taxes (FreeCol <c>payArrears</c>): the good is boycotted and the player can afford the arrears.</summary>
+    public MoveCheck CheckPayArrears(string goodsId)
+    {
+        int arrears = _human.Market.Arrears(goodsId);
+        if (arrears <= 0)
+        {
+            return MoveCheck.No("That good is not under boycott.");
+        }
+        if (_human.Gold < arrears)
+        {
+            return MoveCheck.No($"Lifting the boycott costs {arrears} gold.");
+        }
+        return MoveCheck.Yes(arrears);
+    }
+
+    /// <summary>Pays a good's boycott back-taxes, lifting the boycott (FreeCol <c>payArrears</c>).</summary>
+    /// <exception cref="InvalidMoveException">The boycott cannot be paid off; see <see cref="CheckPayArrears"/>.</exception>
+    public void PayArrears(string goodsId)
+    {
+        MoveCheck check = CheckPayArrears(goodsId);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        _human.Gold -= check.Cost;
+        _human.Market.SetArrears(goodsId, 0);
     }
 
     /// <summary>The new tax rate after a raise: <c>min(tax + 1 + rnd[0, 3 + turn/40), 65)</c> (FreeCol <c>Monarch.raiseTax</c>).</summary>
@@ -217,9 +262,9 @@ public sealed partial class Game
         {
             foreach ((string goodsId, int stored) in colony.Stores.OrderBy(kv => kv.Key))
             {
-                if (stored <= 0 || !player.Market.IsTradeable(goodsId))
+                if (stored <= 0 || !player.Market.IsTradeable(goodsId) || !player.Market.CanTrade(goodsId))
                 {
-                    continue; // (arrears/boycott exclusion arrives with item 3)
+                    continue; // skip empty, non-tradeable, and boycotted goods
                 }
                 int amount = Math.Min(stored, Market.CargoChunk);
                 int value = player.Market.BidPrice(goodsId) * amount;

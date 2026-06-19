@@ -151,6 +151,39 @@ public sealed class Market
         d.Ask = newPrice;
     }
 
+    private readonly Dictionary<string, int> _arrears = []; // per-good back-tax owed after a boycott (FreeCol MarketData.arrears); >0 = boycotted
+
+    /// <summary>The back-tax owed on a boycotted good (FreeCol <c>getArrears</c>); 0 = freely tradeable.</summary>
+    public int Arrears(string goodsId) => _arrears.GetValueOrDefault(goodsId);
+
+    /// <summary>True when a good may be sold (not under boycott) — FreeCol <c>Player.canTrade</c>.</summary>
+    public bool CanTrade(string goodsId) => Arrears(goodsId) == 0;
+
+    /// <summary>Sets (or clears, when 0) the boycott arrears for a good — a tea party sets it, paying it lifts it.</summary>
+    internal void SetArrears(string goodsId, int amount)
+    {
+        if (amount <= 0)
+        {
+            _arrears.Remove(goodsId);
+        }
+        else
+        {
+            _arrears[goodsId] = amount;
+        }
+    }
+
+    /// <summary>The non-zero boycott arrears by good (for the save; empty when nothing is boycotted).</summary>
+    internal IReadOnlyDictionary<string, int> SaveArrears() => new Dictionary<string, int>(_arrears);
+
+    /// <summary>Restores boycott arrears from a save.</summary>
+    internal void LoadArrears(IReadOnlyDictionary<string, int> arrears)
+    {
+        foreach ((string goodsId, int amount) in arrears)
+        {
+            SetArrears(goodsId, amount);
+        }
+    }
+
     /// <summary>Captures the inventory of every good whose market has moved from its seed.</summary>
     internal IReadOnlyDictionary<string, int> SaveDeltas() =>
         _data.Values

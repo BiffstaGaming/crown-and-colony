@@ -244,4 +244,85 @@ public class MonarchTests
     [Fact]
     public void RespondToMonarch_ThrowsWhenNothingPending() =>
         Assert.Throws<InvalidOperationException>(() => FoundedGame().RespondToMonarch(true));
+
+    // ── Item 3: Boston Tea Party + boycott/arrears + pay-to-lift ─────────────────────────────────────────
+
+    [Fact]
+    public void RejectTaxDemand_WithGoodsPresent_HoldsATeaParty()
+    {
+        (Game game, var colony) = FoundedColony();
+        colony.AddGoods("model.goods.furs", 100);
+        int salePrice = game.HumanPlayer.Market.BidPrice("model.goods.furs");
+        game.HumanPlayer.TaxRate = 10;
+        game.DispatchMonarchAction(MonarchAction.RaiseTaxAct, new ScriptedRandom(2));
+
+        game.RespondToMonarch(accept: false); // tea party (goods still present)
+
+        Assert.Equal(10, game.HumanPlayer.TaxRate);                              // tax NOT raised
+        Assert.Equal(0, colony.StoreOf("model.goods.furs"));                     // goods dumped overboard
+        Assert.Equal(salePrice * 300, game.HumanPlayer.Market.Arrears("model.goods.furs")); // boycott back-tax
+        Assert.False(game.HumanPlayer.Market.CanTrade("model.goods.furs"));      // now boycotted
+        Assert.Equal(25, colony.TeaPartyBellTurns);                              // rebel surge armed
+    }
+
+    [Fact]
+    public void BoycottedGood_CannotBeSold()
+    {
+        (Game game, var colony) = FoundedColony();
+        colony.AddGoods("model.goods.furs", 100);
+        game.HumanPlayer.Market.SetArrears("model.goods.furs", 5000);
+
+        Assert.Throws<InvalidMoveException>(() => game.SellColonyGoods(colony, "model.goods.furs", 50));
+    }
+
+    [Fact]
+    public void PayArrears_LiftsTheBoycott_ForItsFullCost()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.Market.SetArrears("model.goods.furs", 1200);
+        game.HumanPlayer.Gold = 1500;
+
+        Assert.True(game.CheckPayArrears("model.goods.furs").Allowed);
+        game.PayArrears("model.goods.furs");
+
+        Assert.Equal(300, game.HumanPlayer.Gold);                            // 1500 − 1200
+        Assert.True(game.HumanPlayer.Market.CanTrade("model.goods.furs"));   // boycott lifted
+    }
+
+    [Fact]
+    public void PayArrears_RefusedWhenNotBoycottedOrUnaffordable()
+    {
+        Game game = FoundedGame();
+        Assert.False(game.CheckPayArrears("model.goods.furs").Allowed); // not boycotted
+        game.HumanPlayer.Market.SetArrears("model.goods.furs", 1200);
+        game.HumanPlayer.Gold = 100;
+        Assert.False(game.CheckPayArrears("model.goods.furs").Allowed); // can't afford
+        Assert.Throws<InvalidMoveException>(() => game.PayArrears("model.goods.furs"));
+    }
+
+    [Fact]
+    public void TeaPartyBellSurge_DecaysEachTurn()
+    {
+        (Game game, var colony) = FoundedColony();
+        colony.TeaPartyBellTurns = 25;
+        Assert.Equal(50, colony.TeaPartyBellBonusPercent); // +50% at full
+
+        game.EndTurn();
+        Assert.Equal(24, colony.TeaPartyBellTurns); // decayed one turn
+        Assert.Equal(48, colony.TeaPartyBellBonusPercent);
+    }
+
+    [Fact]
+    public void Boycott_PersistsAcrossSaveLoad()
+    {
+        (Game game, var colony) = FoundedColony();
+        game.HumanPlayer.Market.SetArrears("model.goods.furs", 1500);
+        colony.TeaPartyBellTurns = 20;
+
+        Game loaded = CrownAndColony.GameLogic.Persistence.SaveGame
+            .FromJson(CrownAndColony.GameLogic.Persistence.SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(1500, loaded.HumanPlayer.Market.Arrears("model.goods.furs"));
+        Assert.Equal(20, loaded.Colonies.First().TeaPartyBellTurns);
+    }
 }
