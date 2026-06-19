@@ -19,7 +19,7 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
-## 2026-06-19 — P5 "20 more items" batch — items 1-4/20 (ships caught · John Paul Jones · Jacob Fugger · ship construction)
+## 2026-06-19 — P5 "20 more items" batch — items 1-5/20 (ships caught · JPJ · Fugger · ship construction · wagon haulage)
 
 **Requested:** "Get 20 more items from P5 completed WITHOUT stopping" (+ timestamp each message). Working through genuinely-undone P5 backlog items autonomously, shipping each CI-green. (Running solo in the main loop — the spend cap killed parallel workflows; see Needs-you.)
 **Did (item 1 — `86d3c9twd`, `d392ac8`):** When a colony is captured, the former owner's **ships moored in its port** are now resolved (FreeCol `csDamageColonyShips`/`csSinkColonyShips`):
@@ -31,10 +31,12 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 - `FoundingFather.LiftsBoycotts` parses `<event id="model.event.boycottsLifted"/>`, and on election `AccumulateLibertyAndElectFathers` calls `Market.LiftAllBoycotts()` (empties arrears, leaves prices) for the electing player — Jacob Fugger ends every boycott (from a Boston Tea Party) at once. One-time, per-owner, RNG-free, no save change (arrears already persist; a boycott-free game is a no-op). +2 L1. (No pre-existing task — created `86d3deqq9` and shipped it.)
 **Did (item 4 — In-colony ship construction, `86d3c9p51`, `fbc2b43`):** a **coastal shipyard** colony can now build ships:
 - `ResolveBuildable`/`BuildableUnits` no longer exclude naval units; `ColonyCanBuildUnit` lets a coastal colony with a shipyard (`BuildsNavalUnits`) build any ship, and `RunConstruction` **launches** the finished ship onto the first water tile beside the colony (it can't sit on the land tile), under the colony owner. The coastal gate (mirroring the shipyard's own `hasPort`) stops a landlocked force-added shipyard building a berth-less ship. No save change, no RNG. +4 L1/L2 (`BuildUnitTests`).
-**Status:** **1119 L1/L2 + 4 soak green**, build clean. No save change any item. Docs: `combat.md` + `founding-fathers.md` + `colonies.md` (both layers + tables + §5 + changelog + Last-verified each).
-**Decisions:** scoped item 1 to **ships** (caught non-combatant *land* units = deferred, noted). Confirmed two *non*-items and did NOT pad the count: **factory-tier "+50%" bonus** is already data-driven (`6 tobacco→9 cigars` in spec) + build-gate shipped → `86d3c9p1u` effectively done; **ocean fish coastal-bonus** (`86d3c9we8`) deferred as high-blast.
-**Scheduled next:** **item 5/20** — next genuinely-undone P5 item (candidates: wagon-train haulage `86d3c9t3g`, religious-unrest recruit filter `86d3c7yca`). Continuing in-turn.
-**Needs you:** nothing — continuing through the batch in-turn, each item its own committed/pushed/CI-green checkpoint. **4/20 done.** (Note: items 2-3 are founding-father effects — JPJ had task `86d3c7xpk`; Fugger I tracked as new `86d3deqq9`; the remaining tracked-FF tasks de las Casas/Brébeuf/de Sepúlveda are blocked on the in-dev missions/conversion system. Item 4's task `86d3c9p51` was a tracked backlog item.)
+**Did (item 5 — Wagon-train haulage, `86d3c9t3g`, `a8636fd`):** goods now move overland between colonies:
+- `LoadFromColony` generalised from `IsNaval` to `IsCarrier` (cargo `space > 0`) + new `UnloadToColony`, both gated on colony adjacency — a wagon train (space 2) loads at colony A, hauls overland, unloads at colony B (the same load/carry/unload a ship does by sea). Warehouse overflow handled by the end-of-turn spoilage cap. No save/RNG change. +2 L1 (`SailingTests`: overland haul end-to-end + non-carrier refused).
+**Status:** **1121 L1/L2 + 4 soak green**, build clean. No save change any item. Docs: `combat.md` + `founding-fathers.md` + `colonies.md` + `transport.md` (both layers + §5 + changelog + Last-verified each).
+**Decisions:** scoped item 1 to **ships** (caught land units deferred). Did NOT pad the count: **factory-tier "+50%"** already data-driven (`6 tobacco→9 cigars`) + build-gate shipped → `86d3c9p1u` effectively done; **ocean fish coastal-bonus** (`86d3c9we8`) deferred as high-blast.
+**Scheduled next:** **item 6/20** — next genuinely-undone P5 item (candidates: religious-unrest recruit-dock filter `86d3c7yca`, trade-route GameLogic `86d3c9rq1`, an AI-depth slice). Auto-resumes via ScheduleWakeup.
+**Needs you:** nothing — continuing through the batch, each item its own committed/pushed/CI-green checkpoint. **5/20 done.** (Tracked tasks: ships-caught `86d3c9twd`, JPJ `86d3c7xpk`, ship-construction `86d3c9p51`, wagon-haulage `86d3c9t3g` were backlog items; Fugger I tracked as new `86d3deqq9`. The remaining tracked-FF tasks de las Casas/Brébeuf/de Sepúlveda are blocked on the in-dev missions/conversion system.)
 
 ## 2026-06-19 — One-command local launcher + "Running locally" wiki page
 

@@ -3296,29 +3296,57 @@ public sealed partial class Game
         SyncPassengers(unit);
     }
 
-    /// <summary>Loads goods from a colony's warehouse into an adjacent ship's hold.</summary>
-    /// <exception cref="InvalidMoveException">The ship isn't adjacent on the map, or the colony lacks the goods.</exception>
-    public void LoadFromColony(Unit ship, Colony colony, string goodsId, int amount)
+    /// <summary>
+    /// Loads goods from a colony's warehouse into an adjacent <b>carrier</b> — a ship <em>or</em> a wagon train
+    /// (any unit with cargo space). The carrier must be on the colony's tile or next to it.
+    /// </summary>
+    /// <exception cref="InvalidMoveException">Not a carrier on the map, not adjacent, the colony lacks the goods, or no room in the hold.</exception>
+    public void LoadFromColony(Unit carrier, Colony colony, string goodsId, int amount)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
-        if (!ship.Type.IsNaval || !ship.IsOnMap)
+        if (!carrier.Type.IsCarrier || !carrier.IsOnMap)
         {
-            throw new InvalidMoveException("Only a ship on the map can carry cargo.");
+            throw new InvalidMoveException("Only a carrier (a ship or wagon train) on the map can carry cargo.");
         }
-        if (!ship.Position.IsAdjacentTo(colony.Position) && ship.Position != colony.Position)
+        if (!carrier.Position.IsAdjacentTo(colony.Position) && carrier.Position != colony.Position)
         {
-            throw new InvalidMoveException("The ship must be next to the colony to load cargo.");
+            throw new InvalidMoveException("The carrier must be next to the colony to load cargo.");
         }
         if (colony.StoreOf(goodsId) < amount)
         {
             throw new InvalidMoveException($"The colony does not have {amount} {goodsId}.");
         }
-        if (ExtraGoodsSlots(ship, goodsId, amount) > CargoSlotsFree(ship))
+        if (ExtraGoodsSlots(carrier, goodsId, amount) > CargoSlotsFree(carrier))
         {
-            throw new InvalidMoveException("The ship has no room for that cargo.");
+            throw new InvalidMoveException("The carrier has no room for that cargo.");
         }
         colony.AddGoods(goodsId, -amount);
-        ship.AddCargo(goodsId, amount);
+        carrier.AddCargo(goodsId, amount);
+    }
+
+    /// <summary>
+    /// Unloads goods from a <b>carrier</b> (a ship or a wagon train) into an adjacent colony's warehouse — the
+    /// delivery half of overland/coastal haulage (FreeCol unload-at-settlement). The carrier must be on the colony's
+    /// tile or next to it; warehouse overflow is handled by the colony's end-of-turn spoilage cap (<c>86d3c9nnp</c>).
+    /// </summary>
+    /// <exception cref="InvalidMoveException">Not a carrier on the map, not adjacent, or not carrying the goods.</exception>
+    public void UnloadToColony(Unit carrier, Colony colony, string goodsId, int amount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
+        if (!carrier.Type.IsCarrier || !carrier.IsOnMap)
+        {
+            throw new InvalidMoveException("Only a carrier (a ship or wagon train) on the map can unload cargo.");
+        }
+        if (!carrier.Position.IsAdjacentTo(colony.Position) && carrier.Position != colony.Position)
+        {
+            throw new InvalidMoveException("The carrier must be next to the colony to unload cargo.");
+        }
+        if (carrier.CargoOf(goodsId) < amount)
+        {
+            throw new InvalidMoveException($"The carrier is not carrying {amount} {goodsId}.");
+        }
+        carrier.AddCargo(goodsId, -amount);
+        colony.AddGoods(goodsId, amount);
     }
 
     /// <summary>Sells goods from a docked ship's hold to the European market, crediting the treasury after tax.</summary>

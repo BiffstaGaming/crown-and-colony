@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (board/sail/disembark + shared goods/passenger capacity; board/sail on the Europe screen) |
-| **Last verified** | 2026-06-13 @ Phase 4 slice 5 |
+| **Status** | Implemented (board/sail/disembark + shared goods/passenger capacity; board/sail on the Europe screen; wagon-train goods haulage between colonies) |
+| **Last verified** | 2026-06-19 @ wagon-train haulage (`86d3c9t3g`) |
 | **Code** | `game/src/GameLogic/GameSession/Game.cs` (board/disembark/capacity), `Units/Unit.cs` (`CarrierId`), `Specification/UnitType.cs` (`Space`/`SpaceTaken`) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/TransportTests.cs`, `Scenarios/JourneyTests.cs` (Journey 7) |
 | **FreeCol reference** | `Unit.java` (`getCargoCapacity`, `getSpaceLeft`, `getCargoSpaceTaken`, `canAdd`), `UnitType.java` (`space`/`spaceTaken`, `getSpaceTaken`), `GoodsContainer.CARGO_SIZE` |
@@ -24,6 +24,8 @@ A colonist can't swim the ocean — to move one across the sea you put it **on a
 
 **What the player sees and does:** on the **Europe screen** ([europe.md](europe.md)) you board a recruit onto a ship and press *Sail to New World*; ships show their hold (used/free slots) and passengers. Map-side board/disembark (next to a coastal ship) is still future — for now disembarking in the New World is driven through the game API.
 
+**Carrying goods overland — the wagon train.** Ships move goods by sea; a **wagon train** moves them **over land between your colonies**. It loads goods from a colony it's standing on or beside, trundles overland to another colony, and unloads them into that colony's warehouse — the same load/carry/unload it does, but on land instead of water. So an inland colony making tools can ship them to a coastal port for export without a road, and a port can feed muskets to a frontier colony. (A wagon train is built in any colony — see [colonies.md](colonies.md).)
+
 ## 2. Detailed rules
 
 | Input / condition | Result |
@@ -41,7 +43,7 @@ A colonist can't swim the ocean — to move one across the sea you put it **on a
 
 **Deviations from original 1994 / FreeCol behavior:**
 - **Disembark lands a free unit; joining a colony is a separate step.** A disembarked colonist can now `JoinColony` an adjacent colony to grow it (see [colonies](colonies.md)) or `FoundColony` a new one — disembark itself just puts it ashore. (Embarking a colonist *directly* from a colony onto a ship in one action is still future; today you `LeaveColony` then board.)
-- **Only ships carry; only land units are carried.** Wagon trains and ships-on-ships are out of scope (faithful for the early game).
+- **Wagon trains now haul goods overland** (`86d3c9t3g`): any **carrier** — a ship *or* a wagon train (`UnitType.IsCarrier`, i.e. cargo `space > 0`) — can `LoadFromColony` and `UnloadToColony` at a colony it's on or next to, so a wagon train carries goods colony-to-colony on land. Ships-on-ships (a ship carried by another) stay out of scope. *(Goods load/unload at any adjacent colony — an "own colony only" ownership check matches the existing ship behavior and remains a documented gap, not introduced here. Wagon trains carry **goods** only, not passengers.)*
 - **Capacity now enforced for goods too** (the gap [europe.md](europe.md) flagged): loading goods or boarding a unit is rejected when the hold is full.
 
 ## 3. Technical design
@@ -54,7 +56,7 @@ A colonist can't swim the ocean — to move one across the sea you put it **on a
 - `CargoCapacity`/`CargoSlotsUsed`/`CargoSlotsFree` — goods slots (`ceil(amount/100)` per goods type, `CargoSlotSize=100`) plus carried units' `CarrySlots`.
 - `CheckBoard`/`Board`, `CheckDisembark`/`Disembark`, `DisembarkToDock` — the player actions, each guarded by a `MoveCheck`.
 - `SyncPassengers(carrier)` is called wherever a carrier's location/tile changes (`Board`, `MoveUnit`, `SailToEurope`, `SailToNewWorld`, arrival in `AdvanceSailing`).
-- Goods loading (`LoadFromColony`, `BuyEuropeGoods`) now checks `CargoSlotsFree`.
+- Goods loading (`LoadFromColony`, `BuyEuropeGoods`) checks `CargoSlotsFree`. **`LoadFromColony`/`UnloadToColony`** gate on `Unit.Type.IsCarrier` (cargo `space > 0`) rather than `IsNaval`, so a **wagon train** (space 2, on land) hauls goods colony-to-colony exactly as a ship moves them coast-to-coast; `UnloadToColony` adds to the warehouse and leans on the end-of-turn spoilage cap ([colonies.md](colonies.md)) for any overflow. No save/RNG change (cargo rides the existing `Cargo` dict; land movement already works).
 
 **Integration points:** a passenger aboard a ship in Europe **no longer counts** toward the immigration penalty (only persons standing on the dock do) — see [immigration.md](immigration.md). `CheckMove`/`CheckSailToEurope`/`CheckFoundColony` reject aboard units via `IsOnMap`; `SailToNewWorld` rejects them explicitly.
 
@@ -76,10 +78,12 @@ A colonist can't swim the ocean — to move one across the sea you put it **on a
 - [x] **Europe screen UI** — done ([europe.md](europe.md)): board passengers onto ships and sail them home from the Europe screen (passengers + free slots shown). *Map-side disembark/board UI (next to a coastal ship) is still to come.*
 - [x] **Colonist in/out of a colony** — done ([colonies](colonies.md)): `JoinColony` grows a colony, `LeaveColony` detaches one. (A one-action embark *from* a colony onto a ship is still future.)
 - [x] **Ship loss drowns its passengers** — `SinkShip`/`DamageShip` remove every unit aboard a sunk or crippled ship (no orphans); see [combat](combat.md) (naval slices 1c-3a/b).
+- [x] **Wagon-train goods haulage** (`86d3c9t3g`): a wagon train (any `IsCarrier` land unit) `LoadFromColony`/`UnloadToColony` to move goods colony-to-colony overland. Follow-ups: an "own colony only" ownership gate (shared with ships); map-side load/unload UI; trade routes (`86d3c9rq1`).
 - [ ] Capacity-aware **auto-loading**; multi-ship cargo transfer.
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-19 | **Wagon-train haulage** (`86d3c9t3g`): `LoadFromColony` generalised from `IsNaval` to `IsCarrier` and a new `UnloadToColony` added, both gated on cargo `space > 0` + colony adjacency — so a wagon train carries goods colony-to-colony overland (load at A → move → unload at B), the same load/carry/unload a ship does by sea. Warehouse overflow handled by the end-of-turn spoilage cap. No save/RNG change. +2 L1 (`SailingTests`: overland haul end-to-end; a non-carrier is refused); 1121 + 4 soak green | Phase 5 (`86d3c9t3g`) |
 | 2026-06-13 | Ships carry colonists: `CarrierId`, board/disembark, shared goods/passenger capacity (now enforced); save v13 | Phase 4 slice 5 |

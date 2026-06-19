@@ -85,6 +85,46 @@ public class SailingTests
         Assert.Throws<InvalidMoveException>(() => game.LoadFromColony(ship, colony, Sugar, 100)); // only 40 left
     }
 
+    // ---- Wagon-train haulage (86d3c9t3g): a land carrier moves goods colony-to-colony ----
+
+    [Fact]
+    public void WagonTrain_HaulsGoodsBetweenColoniesOverland()
+    {
+        // Two adjacent plains colonies; a wagon train (a land carrier, space 2) starts on Alpha's tile.
+        Game game = GameOn(["model.tile.plains", "model.tile.plains"], 2, 1,
+            [new SavedUnit(1, "model.unit.wagonTrain", 0, 0, 12)],
+            [new SavedColony(1, "Alpha", 0, 0, 1, new Dictionary<string, int> { [Sugar] = 100 }),
+             new SavedColony(2, "Beta", 1, 0, 1)]);
+        Unit wagon = game.Units[0];
+        Colony alpha = game.Colonies[0];
+        Colony beta = game.Colonies[1];
+
+        game.LoadFromColony(wagon, alpha, Sugar, 60);  // load at Alpha (same tile)
+        Assert.Equal(60, wagon.CargoOf(Sugar));
+        Assert.Equal(40, alpha.StoreOf(Sugar));
+
+        game.MoveUnit(wagon, new Position(1, 0));       // haul overland to Beta's tile — the cargo travels with it
+        Assert.Equal(60, wagon.CargoOf(Sugar));
+
+        game.UnloadToColony(wagon, beta, Sugar, 60);    // deliver to Beta
+        Assert.Equal(0, wagon.CargoOf(Sugar));
+        Assert.Equal(60, beta.StoreOf(Sugar));
+        Assert.Equal(40, alpha.StoreOf(Sugar));
+    }
+
+    [Fact]
+    public void ANonCarrier_CannotLoadOrUnloadGoods()
+    {
+        Game game = GameOn(["model.tile.plains"], 1, 1,
+            [new SavedUnit(1, "model.unit.freeColonist", 0, 0, 3)],
+            [new SavedColony(1, "Port", 0, 0, 1, new Dictionary<string, int> { [Sugar] = 100 })]);
+        Unit colonist = game.Units[0]; // space 0 → not a carrier
+        Colony colony = game.Colonies[0];
+
+        Assert.Throws<InvalidMoveException>(() => game.LoadFromColony(colonist, colony, Sugar, 10));
+        Assert.Throws<InvalidMoveException>(() => game.UnloadToColony(colonist, colony, Sugar, 10));
+    }
+
     [Fact]
     public void SellShipCargo_InEurope_CreditsTreasury_AndMovesMarket()
     {
