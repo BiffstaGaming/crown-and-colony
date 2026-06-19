@@ -19,6 +19,18 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-19 — P6 independence arc — items 3-5/10 shipped (tea party, mercenaries, support); autonomous
+
+**Requested:** "finish off that list without ANY further prompts" — continuing the 10-item P6 arc autonomously (self-scheduled wakeup, no user prompts).
+**Did:** Shipped 3 more items, each CI-green + pushed, marking the board + chaining the next via ScheduleWakeup:
+- **Item 3 — Boston Tea Party + boycott/arrears + pay-to-lift (`86d3c9r4w`)** (`2163fb1`, save **v37**): `Market.Arrears`/`CanTrade` (boycott gates both sell paths), goods-present tax reject → `HoldTeaParty` (dump goods, arrears = salePrice×300, +50% colony bell surge for 25 turns decaying, tax unchanged); `CheckPayArrears`/`PayArrears` lift it.
+- **Item 4 — Mercenary offers + DISPLEASURE (`86d3c9rep`)** (`eefccb7`, save **v38**): `LoadMercenaries` (2-3 veteran groups, price ×65% trimmed to affordable) → `PendingMonarchDemand`; accept spends gold + spawns on the Europe dock, decline-when-affordable → `Player.MonarchDispleasure` (gates future mercenaries/support); `ForceEntry`.
+- **Item 5 — SUPPORT_LAND/SEA (`86d3c9rag`)** (`aab807d`, save **v39**): `GetSupport`/`GrantSupport` — SUPPORT_SEA = free naval ship (one-shot `SupportSeaGranted`), SUPPORT_LAND = 2 free mounted veterans; reachability noted (SUPPORT_LAND medium-unreachable, SUPPORT_SEA needs privateers).
+**Status:** **1081 L1/L2 + 4 soak green**, build clean; pushed `2163fb1`, `eefccb7`, `aab807d`, CI ✓. Saves v37→v39 (each additive, omit-when-default — feature-free games byte-identical to the prior version). Ephemeral monarch RNG still off stream 0 (all pre-existing tests unchanged). Docs: monarchy.md (§2/§3 + changelog) + save-load.md per bump.
+**Decisions:** faithful-subset where infra is thin (veteran-soldier mercenaries; frigate naval support; hardcoded compositions — TODO `86d3c9rg6` ruleset routing), all documented. 3 save bumps threaded through SavedPlayer/SavedColony + From/Restore/BuildPlayer.
+**Scheduled next:** **item 6 — REF build-up + Force model (`86d3c9v4j`)** (Force.cs, ADD_TO_REF, save v40), then 7 Declare Independence + muster, 8 REF war combat, 9 win, 10 lose; then an adversarial review over the whole arc. Continuing autonomously via ScheduleWakeup — no prompts needed.
+**Needs you:** Nothing — the monarch arc is internal (dialogs are P7), no playtest. 5/10 done, continuing on my own to all 10.
+
 ## 2026-06-19 — P6 independence endgame arc — items 1-2/10 shipped (Monarch tick + tax); in progress
 
 **Requested:** "Complete ALL 10 items" — the P6 independence-endgame arc I recommended (monarch → tax → REF → Declare Independence → War of Independence → win/lose).
