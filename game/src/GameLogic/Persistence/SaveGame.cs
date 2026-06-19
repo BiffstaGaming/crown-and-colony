@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 40;
+    public const int CurrentVersion = 41;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -84,7 +84,10 @@ public sealed record SaveGame
     /// false), so a game with no SUPPORT_SEA is byte-identical to v38; pre-v39 saves load not-yet-granted.
     /// v40 added the Royal Expeditionary Force (<see cref="RefForce"/>, omitted until grown beyond its re-derivable
     /// base), so a pre-rebellion game is byte-identical to v39; pre-v40 saves re-derive the base on demand.
-    /// Each of v23–v40 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// v41 added the rebellion lifecycle: <see cref="SavedPlayer.DeclaredIndependenceTurn"/> + <see cref="SavedPlayer.InterventionBells"/>
+    /// (both omitted before independence) and the <see cref="GameSession.PlayerType"/> Rebel/Independent/REF ordinals +
+    /// the REF player row; a pre-independence game is byte-identical to v40; pre-v41 saves load with no rebellion.
+    /// Each of v23–v41 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
@@ -467,7 +470,8 @@ public sealed record SaveGame
         p.RecruitDock,
         p.Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
         p.RngState is { } s && p.RngIncrement is { } inc ? new RandomState(s, inc) : null,
-        p.Stances, p.Tensions, p.UnitPrices, p.Arrears, p.MonarchDispleasure ?? false, p.SupportSeaGranted ?? false);
+        p.Stances, p.Tensions, p.UnitPrices, p.Arrears, p.MonarchDispleasure ?? false, p.SupportSeaGranted ?? false,
+        p.DeclaredIndependenceTurn, p.InterventionBells ?? 0);
 
     /// <summary>
     /// Folds the legacy flat top-level fields into the single human player — taken for a ≤v19 save, or any save
@@ -503,7 +507,9 @@ public sealed record SaveGame
             p.UnitPriceOverrides.Count > 0 ? new Dictionary<string, int>(p.UnitPriceOverrides) : null,
             p.Market.SaveArrears() is { Count: > 0 } arrears ? new Dictionary<string, int>(arrears) : null,
             p.MonarchDispleasure ? true : null,
-            p.SupportSeaGranted ? true : null);
+            p.SupportSeaGranted ? true : null,
+            p.DeclaredIndependenceTurn,
+            p.InterventionBells == 0 ? null : p.InterventionBells);
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -663,6 +669,8 @@ public sealed record SavedUnit(
 /// <param name="Arrears">This player's boycott back-tax by good (v37 additive; null/omitted when nothing is boycotted, so a boycott-free game stays byte-identical to v36). A non-zero entry means the good cannot be sold until paid off.</param>
 /// <param name="MonarchDispleasure">Whether the King is displeased with this player (v38 additive; null/omitted when content). While displeased the King offers no mercenaries or military support.</param>
 /// <param name="SupportSeaGranted">Whether the King has granted this player naval support (v39 additive; null/omitted when not — a one-shot so SUPPORT_SEA cannot repeat).</param>
+/// <param name="DeclaredIndependenceTurn">The turn this player declared independence (v41 additive; null/omitted if it never did).</param>
+/// <param name="InterventionBells">Bells accrued toward the Foreign Intervention Force (v41 additive; null/omitted when 0).</param>
 public sealed record SavedPlayer(
     int PlayerId, string? NationId, bool IsHuman, int PlayerType,
     int Gold = 0, int Tax = 0,
@@ -679,4 +687,6 @@ public sealed record SavedPlayer(
     IReadOnlyDictionary<string, int>? UnitPrices = null,
     IReadOnlyDictionary<string, int>? Arrears = null,
     bool? MonarchDispleasure = null,
-    bool? SupportSeaGranted = null);
+    bool? SupportSeaGranted = null,
+    int? DeclaredIndependenceTurn = null,
+    int? InterventionBells = null);

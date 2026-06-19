@@ -12,10 +12,19 @@ namespace CrownAndColony.GameLogic.GameSession;
 public enum PlayerType
 {
     /// <summary>A European colonial power (the human, and — from FP-3 — the foreign powers).</summary>
-    Colonial,
+    Colonial = 0,
 
     /// <summary>A native nation.</summary>
-    Native,
+    Native = 1,
+
+    /// <summary>A colonial power that has declared independence and is fighting the War of Independence.</summary>
+    Rebel = 2,
+
+    /// <summary>A rebel that has won its independence (the REF defeated/expelled).</summary>
+    Independent = 3,
+
+    /// <summary>The King's Royal Expeditionary Force — the AI army sent to crush a rebellion.</summary>
+    RoyalExpeditionaryForce = 4,
 }
 
 /// <summary>
@@ -61,8 +70,8 @@ public sealed class Player
     /// <summary>Whether this player is the local human (found via <see cref="Game.HumanPlayer"/>).</summary>
     public bool IsHuman { get; }
 
-    /// <summary>Whether this player is a colonial power or a native nation.</summary>
-    public PlayerType PlayerType { get; }
+    /// <summary>What kind of player this is. Mutates Colonial → Rebel → Independent across the War of Independence (only <see cref="Game"/> changes it).</summary>
+    public PlayerType PlayerType { get; internal set; }
 
     /// <summary>This player's European market (per-player; ADR-019).</summary>
     public Market Market { get; }
@@ -99,6 +108,12 @@ public sealed class Player
     /// so SUPPORT_SEA cannot repeat. Persisted with the support slice (omit-when-false). See [monarchy].
     /// </summary>
     public bool SupportSeaGranted { get; internal set; }
+
+    /// <summary>The turn this player declared independence (FreeCol <c>Player.getIndependenceTurn</c>), or null if it never did. Persisted v41 (omit-when-null). See [independence].</summary>
+    public int? DeclaredIndependenceTurn { get; internal set; }
+
+    /// <summary>Bells accrued by a rebel toward the Foreign Intervention Force (FreeCol <c>interventionBells</c>); 0 until rebellion. Persisted v41 (omit-when-0). See [independence].</summary>
+    public int InterventionBells { get; internal set; }
 
     /// <summary>Liberty points banked toward this player's next Founding Father.</summary>
     public int Liberty { get; internal set; }
@@ -195,4 +210,6 @@ public sealed record RestoredPlayer(
     IReadOnlyDictionary<string, int>? UnitPrices = null,
     IReadOnlyDictionary<string, int>? Arrears = null,
     bool MonarchDispleasure = false,
-    bool SupportSeaGranted = false);
+    bool SupportSeaGranted = false,
+    int? DeclaredIndependenceTurn = null,
+    int InterventionBells = 0);

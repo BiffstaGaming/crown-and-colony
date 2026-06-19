@@ -2634,6 +2634,8 @@ public sealed partial class Game
             RecruitLowerCap = saved.RecruitLowerCap,
             MonarchDispleasure = saved.MonarchDispleasure,
             SupportSeaGranted = saved.SupportSeaGranted,
+            DeclaredIndependenceTurn = saved.DeclaredIndependenceTurn,
+            InterventionBells = saved.InterventionBells,
         };
         if (saved.Congress is not null)
         {
@@ -4375,9 +4377,15 @@ public sealed partial class Game
             RunNativeTurn(player); // braves raid the human when alarmed, else wander — on the nation's own stream
             return;
         }
-        if (player.PlayerType != PlayerType.Colonial)
+        if (player.PlayerType == PlayerType.RoyalExpeditionaryForce)
         {
-            return; // future-proofing: any PlayerType that is neither Native nor Colonial takes no turn
+            RunRefTurn(player); // the King's army sails in and assaults the rebel — on its own stream
+            return;
+        }
+        // Colonial powers and the rebel/independent nation all run the colonial economy path below.
+        if (player.PlayerType is not (PlayerType.Colonial or PlayerType.Rebel or PlayerType.Independent))
+        {
+            return;
         }
 
         BombardEnemyShips(player); // fort/fortress colonies fire on adjacent enemy ships first (FreeCol csStartTurn)
