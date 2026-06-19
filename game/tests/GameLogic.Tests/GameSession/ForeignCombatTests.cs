@@ -312,4 +312,58 @@ public class ForeignCombatTests
 
         Assert.True(Cheb(gun.Position, prey.Position) < before, "a war land unit should pursue a distant prey, not idle");
     }
+
+    // ---- AI logistics: treasure-train cash-in (86d3c9vq9) ----
+
+    /// <summary>A foreign power whose starting units are cleared, with one undefended colony on open inland ground.</summary>
+    private static (Game game, Player power, Colony colony) PowerWithColony(ulong seed)
+    {
+        Game game = Game.New(Classic, seed);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        foreach (Unit u in game.Units.Where(u => u.OwnerId == power.PlayerId && u.IsOnMap).ToList())
+        {
+            game.Disband(u); // only the staged treasure train should act
+        }
+        power.Gold = 0;
+
+        Position colonyTile = game.Map.AllPositions().First(p =>
+            Free(game, p) && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n)));
+        Unit founder = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), colonyTile);
+        founder.OwnerId = power.PlayerId;
+        Colony colony = game.FoundColony(founder);
+        colony.OwnerId = power.PlayerId;
+        return (game, power, colony);
+    }
+
+    [Fact]
+    public void APowersTreasureTrain_AtItsOwnColony_IsCashedIn()
+    {
+        (Game game, Player power, Colony colony) = PowerWithColony(seed: 7);
+        Unit train = game.SpawnUnit(Classic.Unit(Game.TreasureTrainUnitTypeId), colony.Position);
+        train.OwnerId = power.PlayerId;
+        train.SetTreasureAmount(1000);
+        int trainId = train.Id;
+
+        game.EndTurn();
+
+        Assert.DoesNotContain(game.Units, u => u.Id == trainId); // cashed in → the train leaves the game
+        Assert.True(power.Gold > 0);                             // its net gold banked to the power
+    }
+
+    [Fact]
+    public void APowersTreasureTrain_AwayFromAColony_StepsTowardItToBankTheGold()
+    {
+        (Game game, Player power, Colony colony) = PowerWithColony(seed: 7);
+        // A free tile exactly two Chebyshev tiles from the colony, reachable by a clear diagonal step.
+        Position start = colony.Position.Neighbours().SelectMany(n => n.Neighbours())
+            .First(p => Free(game, p) && Cheb(p, colony.Position) == 2);
+        Unit train = game.SpawnUnit(Classic.Unit(Game.TreasureTrainUnitTypeId), start);
+        train.OwnerId = power.PlayerId;
+        train.SetTreasureAmount(1000);
+
+        game.EndTurn();
+
+        Unit moved = game.Units.Single(u => u.Id == train.Id);
+        Assert.Equal(1, Cheb(moved.Position, colony.Position)); // stepped 2 → 1, closing on the colony
+    }
 }

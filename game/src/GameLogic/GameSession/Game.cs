@@ -4786,6 +4786,24 @@ public sealed partial class Game
                 continue; // units still in Europe wait (a warship can now act below; an unarmed ship falls through to idle)
             }
 
+            // AI logistics (86d3c9vq9, FreeCol CashInTreasureTrainMission): a power's treasure train — won by sacking a
+            // native settlement or from a Lost City Rumour — heads to the nearest owned colony and banks its gold there,
+            // instead of sitting idle forever. The cash-in is RNG-free; the step draws the power's OWN stream (never
+            // stream 0). Guarded on owning a loaded treasure train, so a power without one is unaffected.
+            if (unit.Type.CarryTreasure && unit.TreasureAmount > 0)
+            {
+                if (CheckCashInTreasureTrain(unit).Allowed)
+                {
+                    CashInTreasureTrain(unit); // standing at an owned colony → bank the net gold to the power
+                }
+                else if (NearestColonyOf(power, unit.Position, Map.Width + Map.Height) is { } bank
+                    && StepToward(power, unit, bank.Position) is { } toBank)
+                {
+                    MoveUnit(unit, toBank); // escort it toward the nearest owned colony
+                }
+                continue;
+            }
+
             // At war, an armed unit goes on the offensive instead of expanding. A land unit beside an undefended
             // human colony captures it (1c-3f — the decisive move, taking priority over chasing a field unit);
             // otherwise it hunts the human's nearest unit (1c-2 / 1c-3a′). Combat draws from the power's own RNG
