@@ -84,6 +84,7 @@ public sealed partial class Game
     private readonly List<CombatNotice> _combatNotices = []; // transient: the most recent turn's AI-vs-human raids (not saved)
     private readonly List<ColonyLossNotice> _colonyLossNotices = []; // transient: the most recent turn's AI captures of human colonies (not saved)
     private readonly List<ColonyRaidNotice> _colonyRaidNotices = []; // transient: the most recent turn's native pillages of human colonies (not saved)
+    private readonly List<ColonyGiftNotice> _colonyGiftNotices = []; // transient: the most recent turn's friendly native gifts to human colonies (not saved)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
     private readonly Player _human;
@@ -403,6 +404,13 @@ public sealed partial class Game
     /// it after the turn resolves to tell the player "X raided your colony Y and carried off N goods".
     /// </summary>
     public IReadOnlyList<ColonyRaidNotice> ColonyRaidNotices => _colonyRaidNotices;
+
+    /// <summary>
+    /// Friendly native gifts delivered to human colonies during the most recent <see cref="EndTurn"/> (native
+    /// bring-gift AI). Transient — cleared each turn, never saved; the presentation reads it after the turn to tell
+    /// the player "the X brought N goods to your colony Y".
+    /// </summary>
+    public IReadOnlyList<ColonyGiftNotice> ColonyGiftNotices => _colonyGiftNotices;
 
     /// <summary>
     /// The native tribute demand currently awaiting the human's accept/refuse, or null if none. Transient per-turn
@@ -4411,6 +4419,7 @@ public sealed partial class Game
         _combatNotices.Clear();     // this turn's AI-initiated raids on the human are collected fresh each round
         _colonyLossNotices.Clear(); // and this turn's AI captures of human colonies
         _colonyRaidNotices.Clear(); // and this turn's native pillages of human colonies
+        _colonyGiftNotices.Clear(); // and this turn's friendly native gifts to human colonies
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
         DeclinePendingMounds();     // an unanswered strange-mounds prompt counts as "leave them be" — clears it before the AI turns so it can't strand or block exploration across the round
         int startIndex = _currentPlayerIndex;
@@ -4847,11 +4856,50 @@ public sealed partial class Game
                     MoveUnit(brave, step); // hemmed-in hostile braves simply wait (no fallback wander)
                 }
             }
+            else if (!hostile && TryBringGift(player, brave))
+            {
+                // a friendly tribe left a gift at an adjacent human colony — the brave's turn is spent
+            }
             else if (Wander(player, brave) is { } wanderStep)
             {
                 MoveUnit(brave, wanderStep);
             }
         }
+    }
+
+    private const int NativeGiftChanceDenominator = 8; // ~1-in-8 chance per eligible (Happy + colony-adjacent) brave turn
+    private const int NativeGiftAmount = 25;           // a modest parcel of the shared good
+    // A raw trade good the tribes grow — NOT food: gifting food would grow the human colony, adding tile workers and
+    // thus extra stream-0 experience rolls, so a native-RNG gift would perturb the human's stream 0 (ADR-009). A raw
+    // warehouse good has no such feedback into the human's draw sequence. (We model no native goods store; the parcel
+    // is abstracted, like pillage's goods-to-nowhere.)
+    private const string NativeGiftGoodsId = "model.goods.tobacco";
+
+    /// <summary>
+    /// A friendly tribe's brave brings a gift to an adjacent human colony (FreeCol <c>IndianBringGiftMission</c>):
+    /// when the brave's home settlement is <see cref="AlarmLevel.Happy"/> toward the human and it stands beside one of
+    /// the human's colonies, a per-turn chance (the nation's OWN RNG stream) leaves a parcel of goods in that colony's
+    /// warehouse, recording a <see cref="ColonyGiftNotice"/>. Returns true when a gift was delivered (the brave's turn
+    /// is then spent). Pure goodwill — no alarm change, no brave consumed. The chance is drawn only when the brave is
+    /// already Happy <em>and</em> colony-adjacent, so an ineligible brave never perturbs the native stream (ADR-009).
+    /// </summary>
+    private bool TryBringGift(Player nation, Unit brave)
+    {
+        if (HomeSettlement(nation, brave) is not { AlarmLevel: AlarmLevel.Happy })
+        {
+            return false;
+        }
+        Colony? colony = _colonies
+            .Where(c => IsHumanOwned(c) && brave.Position.IsAdjacentTo(c.Position))
+            .OrderBy(c => c.Position.Y).ThenBy(c => c.Position.X)
+            .FirstOrDefault();
+        if (colony is null || RandomFor(nation).Next(NativeGiftChanceDenominator) != 0)
+        {
+            return false;
+        }
+        colony.AddGoods(NativeGiftGoodsId, NativeGiftAmount);
+        _colonyGiftNotices.Add(new ColonyGiftNotice(nation.NationId!, colony.Name, NativeGiftGoodsId, NativeGiftAmount, colony.Position));
+        return true;
     }
 
     /// <summary>

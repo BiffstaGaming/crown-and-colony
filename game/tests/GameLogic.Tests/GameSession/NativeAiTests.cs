@@ -1,3 +1,4 @@
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Combat;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
@@ -33,6 +34,35 @@ public class NativeAiTests
         {
             game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // clamped to Hateful (1000)
         }
+    }
+
+    [Fact]
+    public void AFriendlyTribe_BringsAGiftToAnAdjacentHumanColony()
+    {
+        Game game = Game.New(Classic, seed: 7);
+        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.Type.CanFoundColony));
+        string nation = game.NativeSettlements.First().NationTypeId;
+        Position adj = colony.Position.Neighbours().First(n => Free(game, n));
+        Unit brave = game.SpawnUnit(Classic.Unit("model.unit.brave"), adj, nation);
+
+        bool gifted = false;
+        for (int turn = 0; turn < 60 && !gifted; turn++)
+        {
+            foreach (NativeSettlement s in game.NativeSettlements) // keep the tribe Happy (cancel any ambient alarm)
+            {
+                game.ChangeNativeAlarm(s, -s.Alarm);
+            }
+            brave.Position = adj; // park it beside the colony (it would otherwise wander off between gift rolls)
+            game.EndTurn();
+            gifted = game.ColonyGiftNotices.Any(g => g.ColonyName == colony.Name);
+        }
+
+        Assert.True(gifted, "a Happy tribe's brave beside a human colony should eventually bring a gift");
+        ColonyGiftNotice gift = game.ColonyGiftNotices.First(g => g.ColonyName == colony.Name);
+        Assert.Equal(nation, gift.GiverNationId);
+        Assert.Equal("model.goods.tobacco", gift.GoodsId);
+        Assert.Equal(25, gift.Amount);
+        Assert.True(colony.StoreOf("model.goods.tobacco") >= 25); // the parcel reached the warehouse
     }
 
     [Fact]

@@ -19,10 +19,10 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
-## 2026-06-19 — P5 "20 more items" batch — items 1-9/20 (in progress)
+## 2026-06-19 — P5 "20 more items" batch — items 1-10/20 (HALFWAY)
 
 **Requested:** "Get 20 more items from P5 completed WITHOUT stopping" (+ timestamp each message). Shipping genuinely-undone P5 backlog items autonomously, each CI-green (logic + xUnit + system-doc both layers + changelog + commit/push + ClickUp Shipped). One commit per item.
-**Shipped so far (9/20):**
+**Shipped so far (10/20):**
 1. **Ships caught in a falling colony** (`86d3c9twd`, `d392ac8`) — `ResolveCaughtShips`: a captured colony's docked ships are damaged (limp to repair) or sunk; RNG-free.
 2. **John Paul Jones** (`86d3c7xpk`, `96b2ae0`) — first free-unit father: `FreeUnits` parses `<unit>`, election spawns a free frigate in Europe.
 3. **Jacob Fugger** (`86d3deqq9`, `c9f688f`) — `LiftsBoycotts` (`model.event.boycottsLifted`) → `Market.LiftAllBoycotts()` on election.
@@ -32,10 +32,11 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 7. **Francisco de Coronado** (`86d3df2ne`, `5ffe22e`) — `RevealsAllColonies` (`model.event.seeAllColonies`): election reveals every colony's tile+ring into the player's fog.
 8. **French nation-type advantage** (`86d3df4u1`, `8382a93`) — second nation-type advantage: `ScaleNativeAlarmGain` now folds the player's nation-type `nativeAlarmModifier` (the French `cooperation` −50%) via the reusable `NationTypeModifiers` seam; a French human's native alarm grows half as fast (stacks with Pocahontas → ×0.25).
 9. **AI defend-settlement garrisoning** (`86d3c9vxj`, `cf7b4af`) — `RunForeignPowerTurn`: an armed land unit not on the offensive marches to the nearest **undefended own colony** (`NearestUndefendedOwnColony`/`ColonyHasArmedDefender`) and stands guard, so a power's colonies aren't left open; founding keeps priority. RNG-free re stream 0.
-**Status:** **1127 L1/L2 + 4 soak green**, build clean. **No save-format change in any of the 9.** Docs (both layers + §5 + changelog + Last-verified): `combat.md`, `founding-fathers.md` (×3), `colonies.md`, `transport.md`, `immigration.md`, `natives.md`, `players.md`.
+10. **Native bring-gifts** (`86d3dfcfe`, `b4e9e41`) — `TryBringGift` in `RunNativeTurn`: a **Happy** tribe's brave beside a human colony has a 1-in-8 per-turn chance (nation's own stream) to leave 25 **tobacco** in its warehouse (new `ColonyGiftNotice`). The goodwill mirror of pillage. **Gifts a non-food good deliberately** — food would grow the colony → extra stream-0 experience rolls → an ADR-009 stream-0 perturbation (caught two existing isolation tests; fixed by switching to tobacco).
+**Status:** **1128 L1/L2 + 4 soak green**, build clean. **No save-format change in any of the 10.** Docs (both layers + §5 + changelog + Last-verified): `combat.md`, `founding-fathers.md` (×3), `colonies.md`, `transport.md`, `immigration.md`, `natives.md` (×2), `players.md`.
 **Decisions:** did NOT pad the count — **factory-tier "+50%"** is already data-driven (`6 tobacco→9 cigars`) so `86d3c9p1u` is effectively done; **ocean fish coastal-bonus** (`86d3c9we8`) deferred as high-blast. JPJ/Fugger/Coronado established the reusable one-time-effect pattern (`FreeUnits`/`LiftsBoycotts`/`RevealsAllColonies`); religious-unrest established the nation-type-modifier pattern (Dutch trade etc. follow it).
-**Scheduled next:** **item 10/20** (halfway) — next genuinely-undone P5 item (another AI-depth slice `86d3c9vq9/vta/vzp`, trade-route GameLogic `86d3c9rq1`, or another bounded effect). Auto-resumes via ScheduleWakeup.
-**Needs you:** nothing — continuing through the batch, each item its own committed/pushed/CI-green checkpoint. **9/20 done.** (Remaining tracked-FF tasks de las Casas/Brébeuf/de Sepúlveda are blocked on the in-dev missions/conversion system.)
+**Scheduled next:** **item 11/20** — next genuinely-undone P5 item (an AI-depth slice `86d3c9vq9/vta`, trade-route GameLogic `86d3c9rq1`, or another bounded effect). Auto-resumes via ScheduleWakeup.
+**Needs you:** nothing — continuing through the batch, each item its own committed/pushed/CI-green checkpoint. **10/20 done (halfway).** (Remaining tracked-FF tasks de las Casas/Brébeuf/de Sepúlveda are blocked on the in-dev missions/conversion system.)
 
 ## 2026-06-19 — One-command local launcher + "Running locally" wiki page
 
