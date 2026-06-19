@@ -204,4 +204,35 @@ public class NativeAiTests
         }
         Assert.Equal(SaveGame.From(live).ToJson(), SaveGame.From(reloaded).ToJson());
     }
+
+    // ── Displeasure attack weighting (86d3c9vzp): a brave goes for the soft target, not just the nearest ──────────
+
+    private const string VeteranSoldier = "model.unit.veteranSoldier";
+    private const string SoldierRole = "model.role.soldier";
+
+    [Fact]
+    public void AnAlarmedBrave_PrefersTheSoftTarget_OverAnArmedOneAtTheSameDistance()
+    {
+        Game game = Game.New(Classic, seed: 7);
+        Unit brave = game.NativeUnits.First(b => b.Position.Neighbours().Count(n => Free(game, n)) >= 2);
+        foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == brave.OwnerNationId))
+        {
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // its nation is Hateful → it raids
+        }
+
+        // Two human targets adjacent to the brave (both Chebyshev distance 1): a defenceless colonist and an armed
+        // veteran soldier. The value−distance heuristic should pick the colonist (a far easier kill at equal range).
+        var spots = brave.Position.Neighbours().Where(n => Free(game, n)).Take(2).ToList();
+        Position softTile = spots[0];
+        Position hardTile = spots[1];
+        game.SpawnUnit(Classic.Unit(FreeColonist), softTile);
+        Unit soldier = game.SpawnUnit(Classic.Unit(VeteranSoldier), hardTile);
+        soldier.RoleId = SoldierRole;   // armed → higher defence → lower raid score
+        soldier.RoleCount = 1;
+
+        game.EndTurn();
+
+        Assert.Contains(game.CombatNotices, n => n.AttackerNationId == brave.OwnerNationId && n.Position == softTile);
+        Assert.DoesNotContain(game.CombatNotices, n => n.Position == hardTile); // the dug-in soldier was passed over
+    }
 }

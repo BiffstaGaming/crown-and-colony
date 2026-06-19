@@ -5153,13 +5153,15 @@ public sealed partial class Game
                 // Can't simply storm it (defended, or only gold/food to take) → shake it down for tribute instead.
                 CreateNativeDemand(player, brave, demandColony);
             }
-            else if (hostile && NearestHumanUnit(brave) is { } prey)
+            else if (hostile && PickRaidTarget(brave) is { } preyTile)
             {
-                if (brave.Position.IsAdjacentTo(prey.Position) && CheckAttack(brave, prey.Position).Allowed)
+                // Displeasure attack weighting (86d3c9vzp): go for the best-scored human target in range (soft/valuable
+                // over dug-in), falling back to the nearest at any distance — instead of always the nearest body.
+                if (brave.Position.IsAdjacentTo(preyTile) && CheckAttack(brave, preyTile).Allowed)
                 {
-                    RaidHumanUnit(player, brave, prey.Position);
+                    RaidHumanUnit(player, brave, preyTile);
                 }
-                else if (StepToward(player, brave, prey.Position) is { } step)
+                else if (StepToward(player, brave, preyTile) is { } step)
                 {
                     MoveUnit(brave, step); // hemmed-in hostile braves simply wait (no fallback wander)
                 }
@@ -5561,6 +5563,41 @@ public sealed partial class Game
             .OrderBy(u => Chebyshev(u.Position, hunter.Position))
             .ThenBy(u => u.Position.Y).ThenBy(u => u.Position.X)
             .FirstOrDefault();
+
+    /// <summary>
+    /// The human unit-tile an alarmed <paramref name="brave"/> raids — FreeCol's <c>UnitSeekAndDestroyMission</c>
+    /// applied to natives (the brave's "displeasure attack weighting"): the best-scored human <b>land</b> unit-tile
+    /// within the 8/12/16 Chebyshev range ladder by the same <see cref="ScoreUnitTarget"/> value−distance heuristic the
+    /// foreign-power war AI uses — so an angry brave goes for the <b>soft, valuable</b> target (an unarmed colonist, a
+    /// treasure escort) over a dug-in soldier, not just the nearest body. Colonies are handled separately (pillage /
+    /// demand). Falls back to the nearest human unit at any distance (the prior behaviour) when nothing is in range, so a
+    /// far-off war never lets a hostile brave idle. Pure (no RNG); only ever called on the native's own turn.
+    /// </summary>
+    private Position? PickRaidTarget(Unit brave)
+    {
+        foreach (int range in SeekRangeLadder)
+        {
+            Position? best = null;
+            int bestScore = int.MinValue;
+            foreach (Position tile in _units
+                         .Where(u => u.IsOnMap && IsHumanOwned(u) && !u.Type.IsNaval
+                                     && Chebyshev(u.Position, brave.Position) <= range)
+                         .OrderBy(u => u.Id).Select(u => u.Position).Distinct())
+            {
+                int score = ScoreUnitTarget(brave, tile);
+                if (score != int.MinValue && score > bestScore)
+                {
+                    bestScore = score;
+                    best = tile;
+                }
+            }
+            if (best is { } found)
+            {
+                return found;
+            }
+        }
+        return NearestHumanUnit(brave)?.Position; // out of seek range → close on the nearest (prior behaviour)
+    }
 
     /// <summary>
     /// The nearest human colony to <paramref name="unit"/> (Chebyshev, ties by position), or null if the human has
