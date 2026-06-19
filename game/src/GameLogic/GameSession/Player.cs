@@ -87,6 +87,19 @@ public sealed class Player
     /// <summary>Sales tax as a percentage (0–100) deducted from this player's European sales.</summary>
     public int TaxRate { get; internal set; }
 
+    /// <summary>
+    /// True once the King is displeased with this player — set when it declines an affordable mercenary offer
+    /// (FreeCol <c>Monarch.setDispleasure</c>). While displeased the King offers no more mercenaries or military
+    /// support. Persisted with the mercenary slice (omit-when-false). See [monarchy].
+    /// </summary>
+    public bool MonarchDispleasure { get; internal set; }
+
+    /// <summary>
+    /// True once the King has granted this player naval support (FreeCol <c>Monarch.supportSea</c>) — a one-shot,
+    /// so SUPPORT_SEA cannot repeat. Persisted with the support slice (omit-when-false). See [monarchy].
+    /// </summary>
+    public bool SupportSeaGranted { get; internal set; }
+
     /// <summary>Liberty points banked toward this player's next Founding Father.</summary>
     public int Liberty { get; internal set; }
 
