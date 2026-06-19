@@ -40,7 +40,48 @@ public class ScoutSightTests
         Assert.Contains(twoAway, game.CurrentlyVisible);
     }
 
-    private static Game EmptyPlainsMap() =>
+    // ── Hernando de Soto: +1 sight for every land unit (86d3...) ────────────────────────────────────────────────
+
+    private const string DeSoto = "model.foundingFather.hernandoDeSoto";
+
+    [Fact]
+    public void Spec_DeSoto_GrantsAnAdditiveLineOfSightBonus()
+    {
+        FatherModifier los = Classic.Father(DeSoto).Modifiers
+            .Single(m => m.TargetId == "model.modifier.lineOfSightBonus");
+        Assert.Equal(ModifierType.Additive, los.Type);
+        Assert.Equal(1, (int)los.Value);
+    }
+
+    [Fact]
+    public void DeSoto_GivesAPlainLandUnitAnExtraTileOfSight()
+    {
+        Game game = EmptyPlainsMap();
+        game.SpawnUnit(Classic.Unit(FreeColonist), new Position(2, 2)); // default role, sight 1
+        var twoAway = new Position(4, 2);                               // Chebyshev distance 2
+        Assert.False(game.IsVisible(twoAway));                          // sight 1 → not yet visible
+
+        game.HumanPlayer.CongressList.Add(DeSoto);                      // elect Hernando de Soto
+        Assert.True(game.IsVisible(twoAway));                           // +1 sight → the 2-away tile is revealed
+    }
+
+    [Fact]
+    public void DeSoto_DoesNotExtendANavalUnitsSight()
+    {
+        Game game = EmptyOceanMap();
+        game.SpawnUnit(Classic.Unit("model.unit.caravel"), new Position(2, 2)); // a ship, sight 1
+        Assert.True(game.IsVisible(new Position(3, 2)));   // sees one tile out…
+        var twoAway = new Position(4, 2);
+        Assert.False(game.IsVisible(twoAway));             // …but not two
+
+        game.HumanPlayer.CongressList.Add(DeSoto);
+        Assert.False(game.IsVisible(twoAway));             // de Soto's bonus is land-only (navalUnit=false) → unchanged
+    }
+
+    private static Game EmptyPlainsMap() => EmptyMap("model.tile.plains");
+    private static Game EmptyOceanMap() => EmptyMap("model.tile.ocean");
+
+    private static Game EmptyMap(string terrainId) =>
         new SaveGame
         {
             Turn = 1,
@@ -48,7 +89,7 @@ public class ScoutSightTests
             RandomIncrement = 1,
             MapWidth = 5,
             MapHeight = 5,
-            Terrain = [.. Enumerable.Repeat("model.tile.plains", 25)],
+            Terrain = [.. Enumerable.Repeat(terrainId, 25)],
             Units = [],
             Explored = [],
         }.Restore(Classic);

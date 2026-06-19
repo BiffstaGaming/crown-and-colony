@@ -7101,12 +7101,26 @@ public sealed partial class Game
     /// <summary>Reveals all tiles within the unit's line of sight for <paramref name="player"/>.</summary>
     private void Reveal(Player player, Unit unit) => RevealAround(player, unit.Position, LineOfSightOf(unit));
 
+    /// <summary>The line-of-sight modifier (FreeCol <c>model.modifier.lineOfSightBonus</c>): the scout role grants it, and Hernando de Soto grants +1 to all the player's <b>land</b> units (scope <c>navalUnit=false</c>).</summary>
+    private const string LineOfSightBonusId = "model.modifier.lineOfSightBonus";
+
     /// <summary>
     /// A unit's effective sight radius: its type's <see cref="UnitType.LineOfSight"/> plus its role's
-    /// <see cref="RoleType.LineOfSightBonus"/> (a scout sees +1 tile further, FreeCol <c>model.modifier.lineOfSightBonus</c>).
+    /// <see cref="RoleType.LineOfSightBonus"/> (a scout sees +1 tile further), plus <b>Hernando de Soto</b>'s
+    /// <c>model.modifier.lineOfSightBonus</c> +1 — a founding-father modifier scoped to the owner's <b>non-naval</b>
+    /// units (FreeCol's <c>navalUnit=false</c> scope, honoured here by the <see cref="UnitType.IsNaval"/> gate). The
+    /// father bonus is folded only for a colonial owner that holds de Soto; with no such father the sight is unchanged,
+    /// so a default game's fog reveal is byte-identical (ADR-009 — the fold is RNG-free).
     /// </summary>
-    private int LineOfSightOf(Unit unit) =>
-        unit.Type.LineOfSight + (int)Ruleset.Role(unit.RoleId).LineOfSightBonus;
+    private int LineOfSightOf(Unit unit)
+    {
+        int sight = unit.Type.LineOfSight + (int)Ruleset.Role(unit.RoleId).LineOfSightBonus;
+        if (!unit.Type.IsNaval && unit.OwnerNationId is null && PlayerById(unit.OwnerId) is { } owner)
+        {
+            sight = ApplyGoodsModifiers(owner, LineOfSightBonusId, sight); // de Soto +1 (additive; no father → unchanged)
+        }
+        return sight;
+    }
 
     /// <summary>
     /// Reveals a unit's surroundings into its <em>owning colonial player's</em> fog — the human's for a human
