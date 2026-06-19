@@ -31,6 +31,17 @@ public partial class GameController : Node2D
     public static string? PendingLoadPath { get; set; }
 
     /// <summary>
+    /// Set by the main menu's New Game options before it switches to this scene: the world size + land amount for the
+    /// new game (null = the shipped default — so existing entry points and tests get the historical 36×24/45% world).
+    /// Consumed (and cleared) in <see cref="NewGame"/>. Static because it must survive the scene change, like
+    /// <see cref="PendingLoadPath"/>.
+    /// </summary>
+    public static WorldSize? PendingWorldSize { get; set; }
+
+    /// <summary>Companion to <see cref="PendingWorldSize"/>: the chosen land amount (null = shipped default).</summary>
+    public static LandMass? PendingLandMass { get; set; }
+
+    /// <summary>
     /// New-game seed. 0 (default) = pick a random seed per game; set non-zero to
     /// pin the world (tests, bug reproduction — ADR-009).
     /// </summary>
@@ -93,16 +104,29 @@ public partial class GameController : Node2D
 
     private void NewGame()
     {
+        // The new-game options (if the player chose any) ride a static across the scene change; consume and clear
+        // them so a later default new game isn't surprised by a stale choice. Null → the shipped default world.
+        WorldSize size = PendingWorldSize ?? WorldSizeOptions.DefaultSize;
+        LandMass land = PendingLandMass ?? WorldSizeOptions.DefaultLandMass;
+        PendingWorldSize = null;
+        PendingLandMass = null;
+
         // Picking the seed may be non-deterministic (player convenience);
         // the game itself is fully determined by the chosen seed.
-        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi());
+        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi(), size, land);
     }
 
-    /// <summary>Starts a new game from an explicit seed (tests, visual goldens — ADR-009).</summary>
-    public void StartNewGame(ulong seed)
+    /// <summary>Starts a new game from an explicit seed at the shipped-default world size (tests, visual goldens — ADR-009).</summary>
+    public void StartNewGame(ulong seed) =>
+        StartNewGame(seed, WorldSizeOptions.DefaultSize, WorldSizeOptions.DefaultLandMass);
+
+    /// <summary>Starts a new game from an explicit seed and world size / land amount (forwarded from the new-game options).</summary>
+    public void StartNewGame(ulong seed, WorldSize size, LandMass landMass)
     {
         _currentSeed = seed;
-        StartGame(Game.New(_variant.LoadRuleset(), _currentSeed));
+        StartGame(Game.New(
+            _variant.LoadRuleset(), _currentSeed, size.Width, size.Height,
+            landMassFraction: landMass.Fraction));
     }
 
     private void StartGame(Game game)

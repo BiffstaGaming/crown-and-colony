@@ -80,6 +80,9 @@ public class MapGeneratorTests
     private static GameMap Generate(ulong seed, int w = 36, int h = 24) =>
         MapGenerator.Generate(Classic, w, h, new Pcg32Random(seed));
 
+    private static int LandCount(GameMap map) =>
+        map.AllPositions().Count(p => !map.TerrainAt(p).IsWater);
+
     [Fact]
     public void SameSeed_GeneratesIdenticalMap()
     {
@@ -187,6 +190,58 @@ public class MapGeneratorTests
         Assert.Equal(
             a.Resources.OrderBy(r => (r.Key.Y, r.Key.X)),
             b.Resources.OrderBy(r => (r.Key.Y, r.Key.X)));
+    }
+
+    [Fact]
+    public void DefaultLandMass_IsByteIdenticalToOmittingTheParameter()
+    {
+        // The shipped default (omit the param) must equal passing DefaultLandMassFraction explicitly — the contract
+        // that keeps the default new game (and its visual goldens / soak baseline) byte-identical (ADR-009).
+        GameMap omitted = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(9));
+        GameMap explicitDefault = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(9), MapGenerator.DefaultLandMassFraction);
+
+        Assert.Equal(
+            omitted.AllPositions().Select(p => omitted.TerrainAt(p).Id),
+            explicitDefault.AllPositions().Select(p => explicitDefault.TerrainAt(p).Id));
+    }
+
+    [Fact]
+    public void HigherLandMass_GrowsMoreLand()
+    {
+        // Same seed + size, only the land fraction differs: more requested land → more land tiles.
+        GameMap sparse = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(7), 0.30);
+        GameMap dense = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(7), 0.50);
+
+        Assert.True(LandCount(dense) > LandCount(sparse),
+            $"0.50 land ({LandCount(dense)}) should exceed 0.30 land ({LandCount(sparse)})");
+        // Each lands near its target (the interior is large enough that the frontier reaches it).
+        Assert.InRange(LandCount(sparse) / (double)(36 * 24), 0.22, 0.38);
+        Assert.InRange(LandCount(dense) / (double)(36 * 24), 0.42, 0.55);
+    }
+
+    [Fact]
+    public void NonDefaultSize_GeneratesDeterministically_AndKeepsTheWateryMargin()
+    {
+        foreach ((int w, int h) in new[] { (30, 20), (56, 38) })
+        {
+            GameMap a = MapGenerator.Generate(Classic, w, h, new Pcg32Random(4), 0.45);
+            GameMap b = MapGenerator.Generate(Classic, w, h, new Pcg32Random(4), 0.45);
+
+            Assert.Equal(w, a.Width);
+            Assert.Equal(h, a.Height);
+            // Same seed + size + land mass → identical map (ADR-009), independent of the default size.
+            Assert.Equal(
+                a.AllPositions().Select(p => a.TerrainAt(p).Id),
+                b.AllPositions().Select(p => b.TerrainAt(p).Id));
+
+            // The watery-margin invariant is size-relative, not hard-wired to 36×24.
+            Assert.All(
+                a.AllPositions().Where(p => p.X < 4 || p.Y < 2 || p.X >= a.Width - 4 || p.Y >= a.Height - 2),
+                p => Assert.True(a.TerrainAt(p).IsWater, $"{p} should be water on a {w}×{h} map"));
+            Assert.All(
+                a.AllPositions().Where(p => p.X == 0 || p.X == a.Width - 1),
+                p => Assert.Equal("model.tile.highSeas", a.TerrainAt(p).Id));
+        }
     }
 
     [Fact]

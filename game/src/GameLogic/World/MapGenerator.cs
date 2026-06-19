@@ -22,13 +22,23 @@ public static class MapGenerator
     private const double HillsChance = 0.10;
     private const double MountainsChance = 0.04;
 
-    /// <summary>Generates a width × height map. Same ruleset + same RNG state → identical map.</summary>
-    public static GameMap Generate(Ruleset ruleset, int width, int height, IGameRandom random)
+    /// <summary>The shipped default fraction of the map that is land (FreeCol <c>model.option.landMass</c>); the value the default new game uses.</summary>
+    public const double DefaultLandMassFraction = 0.45;
+
+    /// <summary>
+    /// Generates a width × height map. Same ruleset + same RNG state (+ same <paramref name="landMassFraction"/>) →
+    /// identical map. <paramref name="landMassFraction"/> is the share of tiles grown into land (FreeCol's
+    /// <c>model.option.landMass</c>); it defaults to <see cref="DefaultLandMassFraction"/>, so a call that omits it
+    /// is byte-identical to the historical generator (the default new game and its goldens are unchanged).
+    /// </summary>
+    public static GameMap Generate(
+        Ruleset ruleset, int width, int height, IGameRandom random,
+        double landMassFraction = DefaultLandMassFraction)
     {
         TerrainType ocean = ruleset.Terrain("model.tile.ocean");
         TerrainType highSeas = ruleset.Terrain("model.tile.highSeas");
 
-        bool[,] land = GrowContinent(width, height, random);
+        bool[,] land = GrowContinent(width, height, random, landMassFraction);
         int[,] humidity = SmoothedNoise(width, height, random, 0, 101);
 
         var terrain = new TerrainType[width * height];
@@ -87,10 +97,10 @@ public static class MapGenerator
     /// Grows one continent from random interior seed points; keeps a watery margin
     /// (2 tiles vertically, 4 horizontally — room for the high seas and coast).
     /// </summary>
-    private static bool[,] GrowContinent(int width, int height, IGameRandom random)
+    private static bool[,] GrowContinent(int width, int height, IGameRandom random, double landMassFraction)
     {
         var land = new bool[width, height];
-        int targetLand = (int)(width * height * 0.45);
+        int targetLand = (int)(width * height * landMassFraction);
 
         // Frontier-growth from a few seeds biased toward the middle.
         var frontier = new List<Position>();

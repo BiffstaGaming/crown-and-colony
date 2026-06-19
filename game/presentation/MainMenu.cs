@@ -51,8 +51,23 @@ public partial class MainMenu : Control
         GetNode<Button>("Panel/VBox/QuitButton").Pressed += OnQuit;
     }
 
-    /// <summary>Starts a new game by loading the in-game scene (which builds a fresh game, as the app did on boot before).</summary>
-    private void OnNewGame() => GetTree().ChangeSceneToFile(GameScenePath);
+    /// <summary>
+    /// Opens the new-game world-options overlay (world size + land mass); choosing Start forwards the picks to the
+    /// game scene via <see cref="GameController.PendingWorldSize"/>/<see cref="GameController.PendingLandMass"/> and
+    /// boots it (which builds a fresh game from those options, defaulting to the shipped world if none were changed).
+    /// </summary>
+    private void OnNewGame()
+    {
+        var dialog = new NewGameDialog();
+        dialog.Closed += dialog.QueueFree;
+        AddChild(dialog);
+        dialog.Open((size, land) =>
+        {
+            GameController.PendingWorldSize = size;
+            GameController.PendingLandMass = land;
+            GetTree().ChangeSceneToFile(GameScenePath);
+        });
+    }
 
     /// <summary>Opens the save-slot dialog; choosing a save boots the game scene loaded from it.</summary>
     private void OnLoadGame()

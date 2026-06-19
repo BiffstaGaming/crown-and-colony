@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Threading.Tasks;
+using CrownAndColony.GameLogic.World;
 using CrownAndColony.Presentation;
 using GdUnit4;
 using Godot;
@@ -86,6 +87,51 @@ public class MainMenuTests
         var instance = GD.Load<PackedScene>(MainMenu.GameScenePath).Instantiate();
         AssertThat(instance).IsInstanceOf<GameController>();
         instance.Free();
+    }
+
+    [TestCase]
+    public async Task NewGameButton_OpensTheNewGameOptionsDialog()
+    {
+        ISceneRunner runner = ISceneRunner.Load(MenuScene);
+        await runner.SimulateFrames(2);
+        var menu = runner.Scene();
+
+        menu.GetNode<Button>("Panel/VBox/NewGameButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(menu.GetChildren().OfType<NewGameDialog>().Any()).IsTrue();
+    }
+
+    [TestCase]
+    public async Task NewGameDialog_ForwardsTheChosenWorldSizeAndLandMass()
+    {
+        ISceneRunner runner = ISceneRunner.Load(MenuScene);
+        await runner.SimulateFrames(2);
+        var menu = (Control)runner.Scene();
+
+        var dialog = new NewGameDialog();
+        menu.AddChild(dialog);
+        await runner.SimulateFrames(1); // _Ready builds the controls
+
+        WorldSize? chosenSize = null;
+        LandMass? chosenLand = null;
+        dialog.Open((size, land) => { chosenSize = size; chosenLand = land; });
+
+        var sizeOption = dialog.FindChild("SizeOption", recursive: true, owned: false) as OptionButton;
+        var landOption = dialog.FindChild("LandOption", recursive: true, owned: false) as OptionButton;
+        AssertThat(sizeOption).IsNotNull();
+        AssertThat(landOption).IsNotNull();
+        sizeOption!.Select(2); // "Large"
+        landOption!.Select(2); // "Dense"
+
+        var start = dialog.FindChild("StartButton", recursive: true, owned: false) as Button;
+        AssertThat(start).IsNotNull();
+        start!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(chosenSize).IsNotNull();
+        AssertThat(chosenSize!.Name).IsEqual(WorldSizeOptions.Sizes[2].Name);
+        AssertThat(chosenLand!.Name).IsEqual(WorldSizeOptions.LandMasses[2].Name);
     }
 
     [TestCase]

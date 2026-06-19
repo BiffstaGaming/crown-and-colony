@@ -2522,15 +2522,19 @@ public sealed partial class Game
         Math.Abs(centre.X - p.X) <= radius && Math.Abs(centre.Y - p.Y) <= radius;
 
     /// <summary>
-    /// Starts a new game: generates a map from the seed and places one starting
-    /// colonist on the first settleable land tile, revealing its surroundings.
+    /// Starts a new game: generates a <paramref name="mapWidth"/>×<paramref name="mapHeight"/> map (with
+    /// <paramref name="landMassFraction"/> of it grown into land) from the seed and places one starting colonist on
+    /// the first settleable land tile, revealing its surroundings. The map-shape parameters default to the shipped
+    /// world (36×24, 45% land), so omitting them yields the historical default game; the new-game options forward
+    /// the player's chosen world size / land mass here (<see cref="World.WorldSizeOptions"/>).
     /// </summary>
     public static Game New(
         Ruleset ruleset, ulong seed, int mapWidth = 36, int mapHeight = 24,
-        int startingGold = 0, int startingTax = 0)
+        int startingGold = 0, int startingTax = 0,
+        double landMassFraction = MapGenerator.DefaultLandMassFraction)
     {
         var random = new Pcg32Random(seed);
-        GameMap map = MapGenerator.Generate(ruleset, mapWidth, mapHeight, random);
+        GameMap map = MapGenerator.Generate(ruleset, mapWidth, mapHeight, random, landMassFraction);
 
         // The single human player (stream 0; foreign powers and natives become players in FP-3).
         var human = new Player(playerId: 0, nationId: null, isHuman: true, PlayerType.Colonial, new Market(ruleset))
