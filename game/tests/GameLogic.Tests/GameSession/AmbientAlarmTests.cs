@@ -82,6 +82,34 @@ public class AmbientAlarmTests
     }
 
     [Fact]
+    public void FrenchNationType_HalvesTheAmbientAlarmGain_LikePocahontas()
+    {
+        // The French (model.nationType.cooperation) carry the same nativeAlarmModifier −50% as Pocahontas, as a
+        // national trait rather than a father: a French human's +7 ambient gain halves to +3, which the −4 decay erases.
+        string french = Classic.EuropeanNations.First(n =>
+            n.NationType.Modifiers.Any(m => m.TargetId == "model.modifier.nativeAlarmModifier")).Id;
+        Game game = GameWithHumanNation(french);
+        NativeSettlement s = CalmSettlement(game);
+        Position adj = s.Position.Neighbours().First(n => FreeLand(game, n));
+        game.SpawnUnit(Classic.Unit(Artillery), adj);
+        int sid = s.Id;
+
+        game.EndTurn();
+
+        Assert.Equal(0, game.NativeSettlements.First(x => x.Id == sid).Alarm); // halved gain (3) < decay (4) → 0
+    }
+
+    /// <summary>A fresh game with the human assigned <paramref name="nationId"/>, via the save/restore path — so its nation-type advantages apply.</summary>
+    private static Game GameWithHumanNation(string nationId)
+    {
+        SaveGame save = SaveGame.From(Game.New(Classic, Seed));
+        return (save with
+        {
+            Players = save.Players!.Select(p => p.IsHuman ? p with { NationId = nationId } : p).ToList(),
+        }).Restore(Classic);
+    }
+
+    [Fact]
     public void AmbientAlarm_IsReplayStable()
     {
         // The ambient pass is RNG-free, so two identical setups stay byte-identical across several turns.

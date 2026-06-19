@@ -19,10 +19,10 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
-## 2026-06-19 — P5 "20 more items" batch — items 1-7/20 (in progress)
+## 2026-06-19 — P5 "20 more items" batch — items 1-8/20 (in progress)
 
 **Requested:** "Get 20 more items from P5 completed WITHOUT stopping" (+ timestamp each message). Shipping genuinely-undone P5 backlog items autonomously, each CI-green (logic + xUnit + system-doc both layers + changelog + commit/push + ClickUp Shipped). One commit per item.
-**Shipped so far (7/20):**
+**Shipped so far (8/20):**
 1. **Ships caught in a falling colony** (`86d3c9twd`, `d392ac8`) — `ResolveCaughtShips`: a captured colony's docked ships are damaged (limp to repair) or sunk; RNG-free.
 2. **John Paul Jones** (`86d3c7xpk`, `96b2ae0`) — first free-unit father: `FreeUnits` parses `<unit>`, election spawns a free frigate in Europe.
 3. **Jacob Fugger** (`86d3deqq9`, `c9f688f`) — `LiftsBoycotts` (`model.event.boycottsLifted`) → `Market.LiftAllBoycotts()` on election.
@@ -30,10 +30,11 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 5. **Wagon-train haulage** (`86d3c9t3g`, `a8636fd`) — `LoadFromColony` generalised to any `IsCarrier` + new `UnloadToColony`: goods move colony-to-colony overland.
 6. **Religious-unrest nation modifier** (`86d3c7yca`, `b69bc75`) — first nation-type advantage: `ReligiousUnrestFactor`/`EffectiveImmigrationRequired`; the English need −33% immigration points.
 7. **Francisco de Coronado** (`86d3df2ne`, `5ffe22e`) — `RevealsAllColonies` (`model.event.seeAllColonies`): election reveals every colony's tile+ring into the player's fog.
-**Status:** **1125 L1/L2 + 4 soak green**, build clean. **No save-format change in any of the 7.** Docs (both layers + §5 + changelog + Last-verified): `combat.md`, `founding-fathers.md` (×3), `colonies.md`, `transport.md`, `immigration.md`.
+8. **French nation-type advantage** (`86d3df4u1`, `8382a93`) — second nation-type advantage: `ScaleNativeAlarmGain` now folds the player's nation-type `nativeAlarmModifier` (the French `cooperation` −50%) via the reusable `NationTypeModifiers` seam; a French human's native alarm grows half as fast (stacks with Pocahontas → ×0.25).
+**Status:** **1126 L1/L2 + 4 soak green**, build clean. **No save-format change in any of the 8.** Docs (both layers + §5 + changelog + Last-verified): `combat.md`, `founding-fathers.md` (×3), `colonies.md`, `transport.md`, `immigration.md`, `natives.md`.
 **Decisions:** did NOT pad the count — **factory-tier "+50%"** is already data-driven (`6 tobacco→9 cigars`) so `86d3c9p1u` is effectively done; **ocean fish coastal-bonus** (`86d3c9we8`) deferred as high-blast. JPJ/Fugger/Coronado established the reusable one-time-effect pattern (`FreeUnits`/`LiftsBoycotts`/`RevealsAllColonies`); religious-unrest established the nation-type-modifier pattern (Dutch trade etc. follow it).
-**Scheduled next:** **item 8/20** — next genuinely-undone P5 item (trade-route GameLogic `86d3c9rq1`, an AI-depth slice `86d3c9vq9/vta/vxj/vzp`, or another bounded nation/father effect). Auto-resumes via ScheduleWakeup.
-**Needs you:** nothing — continuing through the batch, each item its own committed/pushed/CI-green checkpoint. **7/20 done.** (Remaining tracked-FF tasks de las Casas/Brébeuf/de Sepúlveda are blocked on the in-dev missions/conversion system.)
+**Scheduled next:** **item 9/20** — next genuinely-undone P5 item (an AI-depth slice `86d3c9vxj/vq9/vta/vzp`, trade-route GameLogic `86d3c9rq1`, or another bounded nation/father effect). Auto-resumes via ScheduleWakeup.
+**Needs you:** nothing — continuing through the batch, each item its own committed/pushed/CI-green checkpoint. **8/20 done.** (Remaining tracked-FF tasks de las Casas/Brébeuf/de Sepúlveda are blocked on the in-dev missions/conversion system.)
 
 ## 2026-06-19 — One-command local launcher + "Running locally" wiki page
 

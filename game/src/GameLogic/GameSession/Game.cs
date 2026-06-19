@@ -5384,8 +5384,9 @@ public sealed partial class Game
     private const string SailHighSeasId = "model.modifier.sailHighSeas";
 
     /// <summary>
-    /// Scales a positive native-alarm <em>gain</em> by the human's <see cref="NativeAlarmModifierId"/> modifier
-    /// (Pocahontas −50%, read from the spec via the elected father). Gains only — goodwill and decay (negative
+    /// Scales a positive native-alarm <em>gain</em> by the human's <see cref="NativeAlarmModifierId"/> modifiers — both
+    /// the elected-father one (Pocahontas −50%) and the player's <b>nation-type advantage</b> (the French
+    /// <c>model.nationType.cooperation</c> −50%), stacked. Gains only — goodwill and decay (negative
     /// deltas) pass through unchanged. Applied to the per-turn <b>ambient</b> proximity alarm
     /// (<see cref="ApplyAmbientNativeAlarm"/>), matching FreeCol (<c>ServerPlayer.csNewTurn</c>); combat tension is
     /// raw (<see cref="ApplyNativeCombatTension"/>).
@@ -5396,10 +5397,18 @@ public sealed partial class Game
         {
             return delta;
         }
-        FatherModifier? modifier = _human.Congress.Select(Ruleset.Father)
-            .SelectMany(f => f.Modifiers)
-            .FirstOrDefault(m => m.TargetId == NativeAlarmModifierId);
-        return modifier is null ? delta : (int)modifier.ApplyTo(delta);
+        // Two damping sources, stacked as FreeCol stacks them: the founding-father modifier (Pocahontas −50%) and the
+        // player's nation-type advantage (the French — model.nationType.cooperation — −50%); the human's nation is null
+        // by default, so a default game folds only what's in Congress.
+        double scaled = delta;
+        foreach (FatherModifier modifier in _human.Congress.Select(Ruleset.Father)
+                     .SelectMany(f => f.Modifiers)
+                     .Where(m => m.TargetId == NativeAlarmModifierId)
+                     .Concat(NationTypeModifiers(_human, NativeAlarmModifierId)))
+        {
+            scaled = modifier.ApplyTo(scaled);
+        }
+        return (int)scaled;
     }
 
     /// <summary>Zeroes every native settlement's alarm toward the human (FreeCol <c>resetNativeAlarm</c> → <c>Tension.TENSION_MIN</c>, the Happy band).</summary>
@@ -5488,15 +5497,20 @@ public sealed partial class Game
     /// immigration points. Returns 1.0 for a player with no nation (the human's default) or whose nation type lacks
     /// the modifier — the first <em>nation-type</em> advantage modifier we apply.
     /// </summary>
+    /// <summary>
+    /// A player's <b>nation-type advantage</b> modifiers with a given target id (FreeCol's <c>&lt;european-nation-type&gt;</c>
+    /// <c>&lt;modifier&gt;</c>s) — the reusable seam for national advantages. Empty for a player with no nation (the human's
+    /// default), so a default game folds none.
+    /// </summary>
+    private IEnumerable<FatherModifier> NationTypeModifiers(Player player, string targetId) =>
+        player.NationId is { } nationId && Ruleset.EuropeanNations.FirstOrDefault(n => n.Id == nationId) is { } nation
+            ? nation.NationType.Modifiers.Where(m => m.TargetId == targetId)
+            : [];
+
     private double ReligiousUnrestFactor(Player player)
     {
-        if (player.NationId is not { } nationId
-            || Ruleset.EuropeanNations.FirstOrDefault(n => n.Id == nationId) is not { } nation)
-        {
-            return 1.0;
-        }
         double factor = 1.0;
-        foreach (FatherModifier modifier in nation.NationType.Modifiers.Where(m => m.TargetId == ReligiousUnrestBonusId))
+        foreach (FatherModifier modifier in NationTypeModifiers(player, ReligiousUnrestBonusId))
         {
             factor = modifier.ApplyTo(factor);
         }
