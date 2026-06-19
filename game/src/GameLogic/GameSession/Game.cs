@@ -832,6 +832,12 @@ public sealed partial class Game
     /// <summary>Furthest a colony may be from a converting settlement to receive the convert (FreeCol <c>ServerIndianSettlement.MAX_CONVERT_DISTANCE</c> = 10, Chebyshev).</summary>
     private const int MaxConvertDistance = 10;
 
+    /// <summary>Base chance (percent) that winning an assault on a settlement you hold a mission in captures a brave as a convert (FreeCol <c>model.option.nativeConvertProbability</c> = 50).</summary>
+    private const int NativeConvertProbabilityPercent = 50;
+
+    /// <summary>The convert-capture modifier (FreeCol <c>model.modifier.nativeConvertBonus</c>): Juan de Sepúlveda's +20% and the Spanish <c>conquest</c> nation type's +200% raise the capture-convert chance.</summary>
+    private const string NativeConvertBonusId = "model.modifier.nativeConvertBonus";
+
     /// <summary>
     /// Whether <paramref name="unit"/> may attempt to establish a mission at <paramref name="settlement"/> (FreeCol
     /// <c>InGameController.establishMission</c>): an on-map unit in the missionary role, with movement left, on or
@@ -1221,6 +1227,28 @@ public sealed partial class Game
             factor = modifier.ApplyTo(factor);
         }
         return factor;
+    }
+
+    /// <summary>
+    /// The probability (0–1) that winning an assault on a settlement the attacker holds a mission in captures a brave
+    /// as an Indian Convert (FreeCol <c>Unit.getConvertProbability</c> = 0.01 × the <c>nativeConvertProbability</c>
+    /// option (50), raised by the attacker's <see cref="NativeConvertBonusId"/> modifiers — <b>Juan de Sepúlveda</b>
+    /// +20% (a founding-father modifier) and the Spanish <b>conquest</b> nation type +200%, stacked index-ordered like
+    /// every modifier fold; capped at 1.0). Returns the bare base for a player with no such modifier (the human's
+    /// default), so an ordinary captor's chance is unchanged.
+    /// </summary>
+    private double NativeConvertProbability(Player owner)
+    {
+        double percent = NativeConvertProbabilityPercent;
+        foreach (FatherModifier modifier in owner.Congress.Select(Ruleset.Father)
+                     .SelectMany(f => f.Modifiers)
+                     .Where(m => m.TargetId == NativeConvertBonusId)
+                     .Concat(NationTypeModifiers(owner, NativeConvertBonusId))
+                     .OrderBy(m => m.Index))
+        {
+            percent = modifier.ApplyTo(percent);
+        }
+        return Math.Min(1.0, percent / 100.0);
     }
 
     /// <summary>
@@ -1645,6 +1673,16 @@ public sealed partial class Game
             if (plunder > 0)
             {
                 SpawnTreasureTrain(target, attacker.OwnerId, plunder);
+            }
+            // Capture-convert (FreeCol SimpleCombatModel CAPTURE_CONVERT): if the attacker holds this settlement's
+            // mission and a brave remains, winning may convert one — its chance raised by Juan de Sepúlveda / the
+            // Spanish conquest type's nativeConvertBonus. The convert musters on the attacker's tile. The roll is
+            // drawn ONLY when a mission is present, so an ordinary assault is byte-identical (ADR-009 — no churn).
+            if (settlement.HasMission && settlement.MissionOwnerId == attacker.OwnerId && settlement.Size >= 1
+                && PlayerById(attacker.OwnerId) is { } captor
+                && random.NextDouble() < NativeConvertProbability(captor))
+            {
+                SpawnUnit(Ruleset.Unit(IndianConvertUnitTypeId), attacker.Position, attacker.OwnerId);
             }
             _nativeSettlements.Remove(settlement); // destroyed
             ClaimNativeLand(); // the razed settlement releases its land claim (surviving same-nation settlements keep theirs)

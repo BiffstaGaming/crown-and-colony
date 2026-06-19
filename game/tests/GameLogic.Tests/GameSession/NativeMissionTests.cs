@@ -4,6 +4,7 @@ using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
+using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
@@ -294,6 +295,99 @@ public class NativeMissionTests
 
         game.ProcessMissions();
         Assert.Equal(9, settlement.ConvertProgress); // (3 jesuit skill + 6) — Brébeuf makes the ordinary mission expert
+    }
+
+    // ── Juan de Sepúlveda: capture-convert on a won settlement assault (86d3c7y0u) ───────────────────────────────
+    //
+    // FreeCol wires model.modifier.nativeConvertBonus to Unit.getConvertProbability — the chance, on WINNING an
+    // assault on a native settlement you hold a mission in, that a brave is captured as a convert (SimpleCombatModel
+    // CAPTURE_CONVERT). It is NOT a missionary-accrual modifier. Base chance 50% (model.option.nativeConvertProbability);
+    // Juan de Sepúlveda's +20% raises it to 60%, the Spanish conquest nation type's +200% to (capped) 100%.
+
+    private const string DeSepulveda = "model.foundingFather.juanDeSepulveda";
+    private const string NativeConvertBonus = "model.modifier.nativeConvertBonus";
+    private const string ColonialRegular = "model.unit.colonialRegular"; // top of the promotion chain → ApplyWinnerPromotion draws nothing
+
+    /// <summary>Returns scripted doubles in order (for the combat roll then the capture-convert roll); ints take the low end.</summary>
+    private sealed class SequenceRandom(params double[] doubles) : IGameRandom
+    {
+        private int _i;
+        public int Next(int maxExclusive) => 0;
+        public int Next(int minInclusive, int maxExclusive) => minInclusive;
+        public double NextDouble() => doubles[_i++];
+        public RandomState SaveState() => new(0, 0);
+    }
+
+    private sealed class FixedRandom(double value) : IGameRandom
+    {
+        public int Next(int maxExclusive) => 0;
+        public int Next(int minInclusive, int maxExclusive) => minInclusive;
+        public double NextDouble() => value;
+        public RandomState SaveState() => new(0, 0);
+    }
+
+    /// <summary>A strong human soldier on a free land tile beside the settlement (a colonial regular → no promotion RNG draw).</summary>
+    private static Unit SpawnSoldierBeside(Game game, NativeSettlement settlement)
+    {
+        Position adj = settlement.Position.Neighbours().First(n => game.Map.InBounds(n)
+            && !game.Map.TerrainAt(n).IsWater && game.ColonyAt(n) is null && game.NativeSettlementAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+        Unit soldier = game.SpawnUnit(Classic.Unit(ColonialRegular), adj); // human-owned
+        soldier.RoleId = "model.role.soldier";
+        soldier.RoleCount = 1;
+        return soldier;
+    }
+
+    [Fact]
+    public void Spec_DeSepulveda_GrantsTheNativeConvertBonus()
+    {
+        Assert.Contains(Classic.Father(DeSepulveda).Modifiers, m => m.TargetId == NativeConvertBonus);
+        // The Spanish conquest nation type carries the same modifier (its larger +200%).
+        Assert.Contains(Classic.EuropeanNations.SelectMany(n => n.NationType.Modifiers),
+            m => m.TargetId == NativeConvertBonus);
+    }
+
+    [Fact]
+    public void AttackSettlement_CapturesAConvert_WhenTheAttackerHoldsTheMission()
+    {
+        (Game game, NativeSettlement settlement, Unit missionary) = MissionaryAtSettlement();
+        game.EstablishMission(missionary, settlement); // the human holds this settlement's mission
+        Unit soldier = SpawnSoldierBeside(game, settlement);
+
+        game.AttackSettlement(soldier, settlement.Position, new SequenceRandom(0.0, 0.1)); // win, convert roll 0.1 < base 0.5
+        Assert.Contains(game.Units, u => u.Type.Id == IndianConvertTypeId
+            && u.OwnerId == game.HumanPlayer.PlayerId && u.Position == soldier.Position);
+    }
+
+    [Fact]
+    public void AttackSettlement_CapturesNoConvert_WithoutAMission()
+    {
+        (Game game, NativeSettlement settlement, Unit _) = MissionaryAtSettlement(); // a missionary stands by but never establishes
+        Unit soldier = SpawnSoldierBeside(game, settlement);
+
+        game.AttackSettlement(soldier, settlement.Position, new FixedRandom(0.0)); // wins; no mission → the convert roll is never reached
+        Assert.DoesNotContain(game.Units, u => u.Type.Id == IndianConvertTypeId);
+    }
+
+    [Fact]
+    public void DeSepulveda_RaisesTheCaptureConvertChance()
+    {
+        // The combat roll (0.0) always wins; the convert roll 0.55 sits between the 50% base and the 60% de Sepúlveda chance.
+        Assert.False(CapturesConvertAt(0.55, withSepulveda: false)); // 0.55 ≥ base 0.50 → no convert
+        Assert.True(CapturesConvertAt(0.55, withSepulveda: true));   // 0.55 < 0.60 (+20%) → convert captured
+    }
+
+    private static bool CapturesConvertAt(double convertRoll, bool withSepulveda)
+    {
+        (Game game, NativeSettlement settlement, Unit missionary) = MissionaryAtSettlement();
+        game.EstablishMission(missionary, settlement);
+        if (withSepulveda)
+        {
+            game.HumanPlayer.CongressList.Add(DeSepulveda); // human has no nation, so only the father's +20% applies
+        }
+        Unit soldier = SpawnSoldierBeside(game, settlement);
+        game.AttackSettlement(soldier, settlement.Position, new SequenceRandom(0.0, convertRoll));
+        return game.Units.Any(u => u.Type.Id == IndianConvertTypeId && u.OwnerId == game.HumanPlayer.PlayerId);
     }
 
     private const string IndianConvertTypeId = "model.unit.indianConvert";
