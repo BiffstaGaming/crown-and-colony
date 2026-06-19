@@ -814,6 +814,9 @@ public sealed partial class Game
     /// <summary>The native unit a mission converts (FreeCol <c>model.unit.indianConvert</c>).</summary>
     public const string IndianConvertUnitTypeId = "model.unit.indianConvert";
 
+    /// <summary>Bartolomé de las Casas's ability: on election every native convert the player holds upgrades to a free colonist (FreeCol <c>model.ability.upgradeConvert</c>).</summary>
+    private const string UpgradeConvertAbility = "model.ability.upgradeConvert";
+
     /// <summary>Flat convert progress a mission accrues per turn (FreeCol <c>model.modifier.conversionSkill</c> +6, on the colonist base type).</summary>
     private const int ConversionSkillBonus = 6;
 
@@ -5544,6 +5547,14 @@ public sealed partial class Game
                 foreach (Colony c in _colonies)
                 {
                     RevealAround(player, c.Position, 1); // Francisco de Coronado (model.event.seeAllColonies) — every colony + its ring revealed
+                }
+            }
+            if (Ruleset.Father(elected).Abilities.Any(a => a.Id == UpgradeConvertAbility && a.Value))
+            {
+                // Bartolomé de las Casas (model.ability.upgradeConvert): every native convert the player holds becomes a free colonist.
+                foreach (Unit convert in _units.Where(u => u.OwnerId == player.PlayerId && u.Type.Id == IndianConvertUnitTypeId).ToList())
+                {
+                    UpgradeUnitType(convert, Colony.FreeColonistTypeId);
                 }
             }
             if (player.IsHuman && elected == PocahontasId)

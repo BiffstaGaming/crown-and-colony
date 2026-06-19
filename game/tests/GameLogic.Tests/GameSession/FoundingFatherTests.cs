@@ -199,6 +199,41 @@ public class FoundingFatherTests
     }
 
     [Fact]
+    public void Spec_DeLasCasas_HasTheUpgradeConvertAbility()
+    {
+        Assert.Contains(Classic.Father("model.foundingFather.bartolomeDeLasCasas").Abilities,
+            a => a.Id == "model.ability.upgradeConvert" && a.Value);
+        Assert.DoesNotContain(Classic.Father("model.foundingFather.adamSmith").Abilities,
+            a => a.Id == "model.ability.upgradeConvert");
+    }
+
+    [Fact]
+    public void DeLasCasas_UpgradesEveryConvertToAFreeColonist_OnElection()
+    {
+        var game = Game.New(Classic, seed: 42);
+        Position land = game.Map.AllPositions().First(p => !game.Map.TerrainAt(p).IsWater
+            && game.ColonyAt(p) is null && game.NativeSettlementAt(p) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p));
+        Unit convert = game.SpawnUnit(Classic.Unit("model.unit.indianConvert"), land); // human-owned native convert
+        Assert.Equal("model.unit.indianConvert", convert.Type.Id);
+
+        SaveGame baseSave = SaveGame.From(game);
+        SaveGame primed = baseSave with
+        {
+            Players = baseSave.Players!.Select(p => p.IsHuman
+                ? p with { CurrentFather = "model.foundingFather.bartolomeDeLasCasas", Liberty = 100_000 }
+                : p).ToList(),
+        };
+        Game g = SaveGame.FromJson(primed.ToJson()).Restore(Classic);
+
+        g.EndTurn(); // de las Casas elected → every convert becomes a free colonist
+
+        Assert.Contains("model.foundingFather.bartolomeDeLasCasas", g.Congress);
+        Unit upgraded = g.Units.Single(u => u.Id == convert.Id);
+        Assert.Equal("model.unit.freeColonist", upgraded.Type.Id);
+    }
+
+    [Fact]
     public void ChooseFather_RejectsAnUnofferedFather()
     {
         var game = Game.New(Classic, seed: 42);
