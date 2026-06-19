@@ -64,4 +64,7 @@ public sealed record RoleType(
 
     /// <summary>Whether the role may only be taken by a Royal Expeditionary Force unit (required-ability <c>model.ability.refUnit</c>).</summary>
     public bool RequiresRef => RequiredAbilities.GetValueOrDefault("model.ability.refUnit");
+
+    /// <summary>Whether taking the role needs the colony to ordain a missionary (required-ability <c>model.ability.dressMissionary</c>, which a church/cathedral provides) — the missionary role.</summary>
+    public bool RequiresDressMissionary => RequiredAbilities.GetValueOrDefault("model.ability.dressMissionary");
 }

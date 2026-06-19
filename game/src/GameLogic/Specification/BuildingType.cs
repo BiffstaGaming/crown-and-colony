@@ -88,6 +88,12 @@ namespace CrownAndColony.GameLogic.Specification;
 /// trio set 1, inherited down the <c>extends</c> chain — so only an expert teaches, never a free colonist/servant/
 /// criminal; default 0 = no floor). FreeCol <c>Building.getNoAddReason</c> MINIMUM_SKILL.
 /// </param>
+/// <param name="DressesMissionary">
+/// Whether this building lets the colony ordain a missionary — i.e. grants the colony <c>model.ability.dressMissionary</c>
+/// (spec, resolved down the <c>extends</c> chain; the <b>church</b> declares it, the <b>cathedral</b> inherits it, the
+/// chapel does not). It is the colony-side requirement of the <c>model.role.missionary</c> role, so a colonist can only
+/// be equipped as a missionary at a colony with a church or cathedral. FreeCol <c>Ability.DRESS_MISSIONARY</c>.
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -109,7 +115,8 @@ public sealed record BuildingType(
     double RebelFactor = 1.0,
     int MaximumSkill = 0,
     bool Teaches = false,
-    int MinimumSkill = 0)
+    int MinimumSkill = 0,
+    bool DressesMissionary = false)
 {
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
     private static readonly IReadOnlySet<string> NoUnits = new HashSet<string>();

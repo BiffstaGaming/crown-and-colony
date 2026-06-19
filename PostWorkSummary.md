@@ -19,6 +19,16 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-20 — P5 "next 10 recommended" batch — items 1-10 (in progress)
+
+**Requested:** "Begin on those 10" — work through the 10 recommended P5 backlog items, each CI-green (GameLogic + xUnit + system-doc both layers + changelog + commit/push + ClickUp Shipped). One commit per item; verify-before-building (several candidates turned out already done).
+**Shipped so far (1/10):**
+1. **Church/cathedral missionary ordination** (`86d3c9p3p`, `<pending>`) — the player-facing entry to the whole missions feature: a colonist is equipped into `model.role.missionary` **only at a colony with a church or cathedral** (`model.ability.dressMissionary`; a chapel can't). `BuildingType.DressesMissionary` (parsed down the `extends` chain) + `RoleType.RequiresDressMissionary` + the `CheckEquipRole` gate (`ColonyDressesMissionary`). Missionary role needs no goods; no RNG, no save change. Cross production by chapel/church/cathedral was already wired. +6 L1 (`MissionaryEquipTests`).
+**Status:** **1162 L1/L2 + 4 soak green**, build clean. Save format unchanged (still v43). Docs both layers + changelog + Last-verified: `colonies.md` (primary), `natives.md` (cross-link).
+**Verify-before-building corrections (NOT built — already done, to be closed):** **#2 Horse breeding** (`86d3c7x8a`) is already implemented (`RunBreeding`, shipped as `86d3c9nwr`); **Factory-tier** (`86d3c9p1u`) + **Adam Smith** (`86d3c7x6w`) are effectively done (build-gate `86d3c9p0q` + data-driven ratios); **Split Europe train/purchase + artillery escalation** (`86d3c7x6k`) is done. I'll substitute genuinely-undone items to keep the run at 10 of real work.
+**Scheduled next:** **item 2** — **Clear-skill unit-change (expert → free colonist)** (`86d3c7x5n`, confirmed genuinely missing) — a small `UnitChange` addition reusing the promotion/capture machinery. Then the AI-depth slices (logistics transport / scout-chief / native displeasure weighting). Auto-resumes via ScheduleWakeup.
+**Needs you:** nothing — working the list; each item its own committed/pushed/CI-green checkpoint. Note the 4 "already-done" candidates above (I'll mark them Shipped during the run rather than fabricate work).
+
 ## 2026-06-20 — P5 "20 more items" batch — items 1-20/20 — COMPLETE ✅
 
 **Requested:** "Get 20 more items from P5 completed WITHOUT stopping" (+ timestamp each message). Shipping genuinely-undone P5 backlog items autonomously, each CI-green (logic + xUnit + system-doc both layers + changelog + commit/push + ClickUp Shipped). One commit per item. **All 20 shipped.**

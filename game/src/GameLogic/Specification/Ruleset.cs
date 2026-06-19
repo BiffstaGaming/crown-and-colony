@@ -494,6 +494,9 @@ public sealed class Ruleset
                 BombardsShips: ResolveAbility(el, "model.ability.bombardShips", buildingElements),
                 // Auto-export: the custom house grants model.ability.export (per-turn auto-sell).
                 GrantsExport: ResolveAbility(el, "model.ability.export", buildingElements),
+                // Missionary ordination: the church grants model.ability.dressMissionary, the cathedral inherits it
+                // (the chapel does not) — the colony-side requirement of the model.role.missionary role.
+                DressesMissionary: ResolveAbility(el, "model.ability.dressMissionary", buildingElements),
                 // Horse breeding: pasture/country sets breedingDivisor 50 / breedingFactor 2; stables multiplies the
                 // divisor by 0.5 → 25 (resolved additive-then-multiplicative up the extends chain). 0 = not a breeder.
                 BreedingDivisor: ResolveScalarModifierUpChain(el, "model.modifier.breedingDivisor", buildingElements),

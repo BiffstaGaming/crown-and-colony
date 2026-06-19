@@ -1387,6 +1387,10 @@ public sealed partial class Game
         _ => MovementPenalty.None,
     };
 
+    /// <summary>Whether <paramref name="colony"/> can ordain a missionary — it holds a building granting <c>model.ability.dressMissionary</c> (a church or cathedral).</summary>
+    private bool ColonyDressesMissionary(Colony colony) =>
+        colony.Buildings.Any(b => Ruleset.Building(b).DressesMissionary);
+
     /// <summary>Whether <paramref name="unit"/> may equip into <paramref name="targetRoleId"/> at <paramref name="colony"/> now.</summary>
     public MoveCheck CheckEquipRole(Unit unit, Colony colony, string targetRoleId)
     {
@@ -1410,6 +1414,13 @@ public sealed partial class Game
         if (target.RequiresNative || target.RequiresRef)
         {
             return MoveCheck.No($"A colonist cannot take the {target.ShortName} role.");
+        }
+        // The missionary role needs the colony to ordain it — only a church or cathedral grants dressMissionary
+        // (FreeCol's role required-ability resolved against the colony's buildings), so a chapel-only or church-less
+        // colony cannot dress a missionary.
+        if (target.RequiresDressMissionary && !ColonyDressesMissionary(colony))
+        {
+            return MoveCheck.No("Only a church or cathedral can ordain a missionary — build one first.");
         }
         foreach ((string goodsId, int amount) in RoleGoodsDelta(unit, target))
         {
