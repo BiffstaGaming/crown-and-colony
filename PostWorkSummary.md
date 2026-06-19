@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-19 — P5 "20 more items" batch — item 1/20: Ships caught in a falling colony (86d3c9twd)
+
+**Requested:** "Get 20 more items from P5 completed WITHOUT stopping" (+ timestamp each message). Working through genuinely-undone P5 backlog items autonomously, shipping each CI-green.
+**Did (item 1 — `86d3c9twd`, `8c25281`):** When a colony is captured, the former owner's **ships moored in its port** are now resolved (FreeCol `csDamageColonyShips`/`csSinkColonyShips`):
+- `CaptureColony` (the universal capture choke point — human assault, foreign-AI capture, REF-vs-rebel all flow through it) now calls new `ResolveCaughtShips`: each former-owner naval unit in port is **damaged** (limps to the nearest drydock colony / Europe via the existing `DamageShip`/`RepairBerthFor`) or **sunk** when it has no repair location. Run *after* the ownership flip (the lost colony isn't a valid berth); classic `captureUnitsUnderRepair=false` so under-repair ships are processed too. Deterministic (id order, no RNG → foreign-AI captures stay off stream 0).
+- Model adaptation documented: ships live on water here (can't sit on the colony's land tile), so "in port" = a ship on a **water tile adjacent to the colony** (FreeCol uses the colony tile's naval units).
+**Status:** **1113 L1/L2 + 4 soak green** (+3 `ColonyCaptureTests`: damaged-to-repair, all-resolved, ship-at-sea-untouched), build clean. No save change. Docs: `combat.md` (both layers + §5 + changelog + Last-verified).
+**Decisions:** scoped to **ships** (caught non-combatant *land* units transferring with the colony = deferred, noted). Confirmed two *non*-items along the way and did NOT pad the count: **factory-tier "+50%" bonus** is already data-driven (cigarFactory is literally `6 tobacco→9 cigars` in the spec + our ratio-aware production pipeline) and the **build-gate** already shipped, so `86d3c9p1u` is effectively done by data; **ocean fish coastal-bonus** (`86d3c9we8`) is genuinely undone but high-blast (touches every coastal colony's food) so deferred for a low-risk run under the spend cap.
+**Scheduled next:** **item 2/20** — picking the next low-blast, genuinely-undone P5 logic item (candidates: wagon-train haulage `86d3c9t3g`, religious-unrest recruit filter `86d3c7yca`, or a founding-father effect). Continuing via ScheduleWakeup.
+**⚠️ Needs you:** the account **hit its monthly spend limit** (claude.ai/settings/usage) — workflows/subagents are dead and the main loop may halt mid-batch. I'm shipping one durable, committed item at a time so progress survives a cutoff, but **raising the cap** is what lets all 20 flow without interruption. 1/20 done.
+
 ## 2026-06-19 — One-command local launcher + "Running locally" wiki page
 
 **Requested:** "Update one of the Wiki Documents to give the command to launch this locally — I hate having to ask you each time to run the game for me."

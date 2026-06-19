@@ -1737,10 +1737,51 @@ public sealed partial class Game
 
     /// <summary>
     /// Hands <paramref name="colony"/> to <paramref name="newOwnerId"/> (FreeCol <c>csChangeOwner</c>): its people,
-    /// buildings and stores transfer intact with the ownership change. Plunder gold and ships caught in a falling
-    /// colony are later sub-slices.
+    /// buildings and stores transfer intact with the ownership change, then the former owner's <b>ships caught at the
+    /// falling colony</b> are resolved (<see cref="ResolveCaughtShips"/>). Plunder gold is handled by the caller
+    /// (<see cref="PlunderColony"/>), before the handover, while the treasury is still the former owner's.
     /// </summary>
-    private void CaptureColony(Colony colony, int newOwnerId) => colony.OwnerId = newOwnerId;
+    private void CaptureColony(Colony colony, int newOwnerId)
+    {
+        int formerOwnerId = colony.OwnerId;
+        colony.OwnerId = newOwnerId;
+        ResolveCaughtShips(colony, formerOwnerId);
+    }
+
+    /// <summary>
+    /// Resolves the former owner's ships caught in port as a colony falls (FreeCol <c>csDamageColonyShips</c> /
+    /// <c>csSinkColonyShips</c>): every naval unit of <paramref name="formerOwnerId"/> moored at the colony is
+    /// <b>damaged</b> — limping to its repair location (the nearest owned drydock/shipyard colony, else Europe via
+    /// <see cref="DamageShip"/>) — or, when it has nowhere to repair, <b>sunk</b> (FreeCol picks sink when
+    /// <c>getRepairLocation() == null</c>). Because a naval unit can't occupy the colony's own land tile in our model,
+    /// "in port" is a ship on a <b>water tile adjacent to the colony</b> — FreeCol's
+    /// <c>colony.getTile().getNavalUnits()</c> adapted to our ships-on-water representation. Run <em>after</em> the
+    /// ownership flip, so the just-lost colony is no longer a valid repair berth (a ship cannot repair at the port just
+    /// taken from it). Classic <c>captureUnitsUnderRepair</c> is <c>false</c>, so a ship already under repair here is
+    /// processed too. Deterministic: ships are taken in id order and the damage/sink path draws no RNG. (Caught
+    /// <em>land</em> units — non-combatants sharing the tile — transfer with the colony in FreeCol; we model only ships.)
+    /// </summary>
+    private void ResolveCaughtShips(Colony colony, int formerOwnerId)
+    {
+        HashSet<Position> port = colony.Position.Neighbours()
+            .Where(n => Map.InBounds(n) && Map.TerrainAt(n).IsWater)
+            .ToHashSet();
+        List<Unit> caught = _units
+            .Where(u => u.OwnerId == formerOwnerId && u.Type.IsNaval && u.IsOnMap && port.Contains(u.Position))
+            .OrderBy(u => u.Id)
+            .ToList();
+        foreach (Unit ship in caught)
+        {
+            if (RepairBerthFor(ship) is not null || CanRepairAtEurope(ship))
+            {
+                DamageShip(ship); // limps to its repair location
+            }
+            else
+            {
+                SinkShip(ship);   // nowhere to repair → goes down with the colony
+            }
+        }
+    }
 
     /// <summary>
     /// Sacks a captured colony's treasury (FreeCol <c>csCaptureColony</c>): the former owner loses, and the

@@ -115,4 +115,82 @@ public class ColonyCaptureTests
 
         Assert.Equal(humanId, restored.Colonies.First(c => c.Id == colony.Id).OwnerId);
     }
+
+    // ===== Ships caught in a falling colony (86d3c9twd) =====================================================
+
+    /// <summary>
+    /// Stages a coastal rival colony: a fresh free colonist founds a colony on a coastal land tile (so the colony has
+    /// a water "port" neighbour), the colony is handed to a rival, and a human artillery stands beside it ungarrisoned.
+    /// Returns a free port-water tile a ship can be moored on.
+    /// </summary>
+    private static (Game game, Colony colony, Unit attacker, int foreignId, Position port) StageCoastalRivalColony()
+    {
+        Game game = Game.New(Classic, Seed);
+        int foreignId = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).PlayerId;
+
+        // A free land tile with both a water neighbour (a port) and a free-land neighbour (for the attacker).
+        Position site = game.Map.AllPositions().First(p =>
+            FreeLand(game, p)
+            && p.Neighbours().Any(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater)
+            && p.Neighbours().Any(n => FreeLand(game, n)));
+
+        Unit founder = game.SpawnUnit(Classic.Unit(Colony.FreeColonistTypeId), site);
+        Colony colony = game.FoundColony(founder);
+        colony.OwnerId = foreignId;
+
+        Position attackTile = colony.Position.Neighbours().First(n => FreeLand(game, n));
+        Unit attacker = game.SpawnUnit(Classic.Unit(Artillery), attackTile);
+        Position port = colony.Position.Neighbours().First(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater);
+        return (game, colony, attacker, foreignId, port);
+    }
+
+    private static Unit MoorRivalShip(Game game, Position water, int foreignId)
+    {
+        Unit ship = game.SpawnUnit(Classic.UnitTypes.First(u => u.IsNaval), water);
+        ship.OwnerId = foreignId;
+        return ship;
+    }
+
+    [Fact]
+    public void CaughtShip_IsDamagedAndLimpsToRepair_WhenItsColonyIsCaptured()
+    {
+        (Game game, Colony colony, Unit attacker, int foreignId, Position port) = StageCoastalRivalColony();
+        Unit ship = MoorRivalShip(game, port, foreignId);
+
+        game.AttackColony(attacker, colony.Position, new FixedRandom(0.0)); // forced capture
+
+        Unit survivor = game.Units.Single(u => u.Id == ship.Id);   // not sunk — it limps off
+        Assert.True(survivor.RepairTurnsRemaining > 0);            // under forced repair
+        Assert.Equal(UnitLocation.InEurope, survivor.Location);    // the rival has no drydock → repairs in Europe
+        Assert.Equal(foreignId, survivor.OwnerId);                 // still the rival's ship, not the captor's
+    }
+
+    [Fact]
+    public void CaughtShips_AreAllResolved_WhenTheColonyFalls()
+    {
+        (Game game, Colony colony, Unit attacker, int foreignId, Position port) = StageCoastalRivalColony();
+        Unit a = MoorRivalShip(game, port, foreignId);
+        Unit b = MoorRivalShip(game, port, foreignId);
+
+        game.AttackColony(attacker, colony.Position, new FixedRandom(0.0));
+
+        Assert.All(new[] { a.Id, b.Id }, id =>
+            Assert.Equal(UnitLocation.InEurope, game.Units.Single(u => u.Id == id).Location));
+        Assert.DoesNotContain(game.Units, u => u.IsOnMap && u.Position == port && u.Type.IsNaval);
+    }
+
+    [Fact]
+    public void ShipAtSea_IsNotCaught_WhenAColonyFalls()
+    {
+        (Game game, Colony colony, Unit attacker, int foreignId, _) = StageCoastalRivalColony();
+        Position farWater = game.Map.AllPositions().First(p =>
+            game.Map.TerrainAt(p).IsWater && !p.IsAdjacentTo(colony.Position));
+        Unit offshore = MoorRivalShip(game, farWater, foreignId); // a rival ship elsewhere, not in this colony's port
+
+        game.AttackColony(attacker, colony.Position, new FixedRandom(0.0));
+
+        Unit same = game.Units.Single(u => u.Id == offshore.Id);
+        Assert.True(same.IsOnMap && same.Position == farWater); // untouched
+        Assert.Equal(0, same.RepairTurnsRemaining);
+    }
 }
