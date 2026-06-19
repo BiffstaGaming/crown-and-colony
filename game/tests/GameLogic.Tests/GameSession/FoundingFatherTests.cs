@@ -1,6 +1,7 @@
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.Units;
 using Xunit;
 
 namespace CrownAndColony.GameLogic.Tests.GameSession;
@@ -94,6 +95,40 @@ public class FoundingFatherTests
         Assert.Null(game.CurrentFather);    // ready to choose the next
         Assert.NotEmpty(game.OfferedFathers);
         Assert.DoesNotContain(target, game.OfferedFathers); // elected, not re-offered
+    }
+
+    [Fact]
+    public void Spec_ParsesJohnPaulJonesFreeFrigate()
+    {
+        FoundingFather jpj = Classic.Father("model.foundingFather.johnPaulJones");
+        Assert.Equal(new[] { "model.unit.frigate" }, jpj.FreeUnits);
+        Assert.Empty(Classic.Father("model.foundingFather.adamSmith").FreeUnits); // most fathers grant no free unit
+    }
+
+    [Fact]
+    public void JohnPaulJones_GrantsAFreeFrigateInEurope_OnElection()
+    {
+        var game = Game.New(Classic, seed: 42);
+        int humanId = game.HumanPlayer.PlayerId;
+        Assert.DoesNotContain(game.Units, u => u.Type.Id == "model.unit.frigate"); // none at the start
+
+        // Prime the human's player row with John Paul Jones pending and ample liberty, so the next turn elects him.
+        SaveGame baseSave = SaveGame.From(game);
+        SaveGame primed = baseSave with
+        {
+            Players = baseSave.Players!.Select(p => p.IsHuman
+                ? p with { CurrentFather = "model.foundingFather.johnPaulJones", Liberty = 100_000 }
+                : p).ToList(),
+        };
+        Game g = SaveGame.FromJson(primed.ToJson()).Restore(Classic);
+
+        g.EndTurn(); // liberty >= cost → JPJ elected → his free frigate appears on the Europe dock
+
+        Assert.Contains("model.foundingFather.johnPaulJones", g.Congress);
+        var frigates = g.Units.Where(u => u.Type.Id == "model.unit.frigate").ToList();
+        Unit frigate = Assert.Single(frigates);
+        Assert.Equal(humanId, frigate.OwnerId);
+        Assert.Equal(UnitLocation.InEurope, frigate.Location);
     }
 
     [Fact]

@@ -531,6 +531,10 @@ public sealed class Ruleset
                 FreeBuildings: el.Elements("event")
                     .Where(e => (string?)e.Attribute("id") == "model.event.freeBuilding")
                     .Select(e => RequiredAttribute(e, "value"))
+                    .ToList(),
+                // Free units (FreeCol founding-father <unit id="…"/>): John Paul Jones → a free frigate in Europe.
+                FreeUnits: el.Elements("unit")
+                    .Select(e => RequiredAttribute(e, "id"))
                     .ToList());
         }
 

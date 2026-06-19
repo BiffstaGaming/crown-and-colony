@@ -5241,6 +5241,10 @@ public sealed partial class Game
             player.OfferedFathersList.Clear();
             RefreshDockForRecruitability(player); // a newly-elected father may ban dock recruits (Brewster)
             RefreshSonsOfLibertyModifiers();       // a newly-elected father may grant a standing SoL bonus (Bolívar +20)
+            foreach (string freeUnit in Ruleset.Father(elected).FreeUnits)
+            {
+                SpawnInEurope(freeUnit, null, player.PlayerId); // a one-time free unit on election — John Paul Jones → a frigate in Europe
+            }
             if (player.IsHuman && elected == PocahontasId)
             {
                 ResetAllNativeAlarm(); // FreeCol model.event.resetNativeAlarm — all native anger toward you forgotten
