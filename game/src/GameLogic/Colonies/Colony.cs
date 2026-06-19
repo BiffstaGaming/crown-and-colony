@@ -178,6 +178,25 @@ public sealed class Colony
         }
     }
 
+    /// <summary>Removes the queued buildable at <paramref name="index"/> (a no-op if out of range).</summary>
+    internal void RemoveFromBuildQueue(int index)
+    {
+        if (index >= 0 && index < _buildQueue.Count)
+        {
+            _buildQueue.RemoveAt(index);
+        }
+    }
+
+    /// <summary>Swaps the queued buildable at <paramref name="index"/> with the one <paramref name="delta"/> places away (a no-op if either position is out of range).</summary>
+    internal void MoveBuildQueueItem(int index, int delta)
+    {
+        int target = index + delta;
+        if (index >= 0 && index < _buildQueue.Count && target >= 0 && target < _buildQueue.Count)
+        {
+            (_buildQueue[index], _buildQueue[target]) = (_buildQueue[target], _buildQueue[index]);
+        }
+    }
+
     /// <summary>
     /// Accumulated liberty points from <b>net</b> bell production (gross bells − upkeep; FreeCol <c>Colony.liberty</c>).
     /// Drives <see cref="SonsOfLiberty"/>. Floored at 0; persisted (SaveGame v22). Each turn the colony banks the same

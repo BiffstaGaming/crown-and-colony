@@ -4627,6 +4627,31 @@ public sealed partial class Game
         colony.EnqueueBuild(buildableId);
     }
 
+    /// <summary>
+    /// Removes the queued buildable at <paramref name="index"/> from the colony's construction queue (a no-op if out
+    /// of range). Reordering/removal is unrestricted: any resulting bad order self-heals at build time — a front item
+    /// whose upgrade predecessor is gone is skipped without spending (<see cref="RunConstruction"/>).
+    /// </summary>
+    public void RemoveFromBuildQueue(Colony colony, int index) => colony.RemoveFromBuildQueue(index);
+
+    /// <summary>
+    /// Moves the queued buildable at <paramref name="index"/> by <paramref name="delta"/> places (−1 = up/earlier,
+    /// +1 = down/later); a no-op if either end is out of range. As with removal, a resulting out-of-order upgrade is
+    /// simply skipped when reached (<see cref="RunConstruction"/>), not rejected here.
+    /// </summary>
+    public void MoveBuildQueueItem(Colony colony, int index, int delta) => colony.MoveBuildQueueItem(index, delta);
+
+    /// <summary>
+    /// Display facts for a queued construction id — a building <em>or</em> a buildable unit — for the colony build UI;
+    /// <c>null</c> if the id is not a buildable type. Lets the UI render a queue item (name/cost/kind) without knowing
+    /// whether it is a building or a unit.
+    /// </summary>
+    public BuildableInfo? DescribeBuildable(string id) =>
+        ResolveBuildable(id) is { } t ? new BuildableInfo(t.Id, t.ShortName, t.IsUnit, t.BuildCost) : null;
+
+    /// <summary>A construction target's display facts (building or unit) — see <see cref="DescribeBuildable"/>.</summary>
+    public sealed record BuildableInfo(string Id, string ShortName, bool IsUnit, IReadOnlyList<GoodsOutput> BuildCost);
+
     /// <summary>Building types the colony could start constructing right now.</summary>
     public IEnumerable<BuildingType> Buildables(Colony colony) =>
         Ruleset.BuildingTypes.Where(b => CheckSetBuild(colony, b.Id).Allowed);

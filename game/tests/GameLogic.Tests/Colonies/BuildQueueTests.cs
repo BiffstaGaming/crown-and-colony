@@ -148,4 +148,49 @@ public class BuildQueueTests
         colony.SetBuildQueue([Warehouse]);
         Assert.DoesNotContain("BuildQueueRest", SaveGame.From(game).ToJson()); // ≤1-item queue stays byte-identical to v23
     }
+
+    [Fact]
+    public void RemoveFromBuildQueue_DropsTheItemAtIndex_OutOfRangeIsANoOp()
+    {
+        Game game = PlainsColony(out Colony colony);
+        colony.SetBuildQueue([Warehouse, WarehouseExpansion]);
+
+        game.RemoveFromBuildQueue(colony, 0);
+        Assert.Equal([WarehouseExpansion], colony.BuildQueue); // the front went, the tail shifted up
+
+        game.RemoveFromBuildQueue(colony, 5); // out of range
+        Assert.Equal([WarehouseExpansion], colony.BuildQueue); // unchanged
+    }
+
+    [Fact]
+    public void MoveBuildQueueItem_ReordersTheQueue_OutOfRangeIsANoOp()
+    {
+        Game game = PlainsColony(out Colony colony);
+        colony.SetBuildQueue([Warehouse, WarehouseExpansion]);
+
+        game.MoveBuildQueueItem(colony, 1, -1); // pull the second item to the front
+        Assert.Equal([WarehouseExpansion, Warehouse], colony.BuildQueue);
+        Assert.Equal(WarehouseExpansion, colony.CurrentBuild);
+
+        game.MoveBuildQueueItem(colony, 0, -1); // off the top → no-op
+        Assert.Equal([WarehouseExpansion, Warehouse], colony.BuildQueue);
+    }
+
+    [Fact]
+    public void DescribeBuildable_ResolvesBuildingsAndUnits_AndNullForJunk()
+    {
+        Game game = PlainsColony(out Colony colony);
+        _ = colony;
+
+        Game.BuildableInfo? building = game.DescribeBuildable(Warehouse);
+        Assert.NotNull(building);
+        Assert.False(building!.IsUnit);
+        Assert.NotEmpty(building.BuildCost);
+
+        Game.BuildableInfo? unit = game.DescribeBuildable("model.unit.wagonTrain");
+        Assert.NotNull(unit);
+        Assert.True(unit!.IsUnit);
+
+        Assert.Null(game.DescribeBuildable("model.building.bogus")); // not a buildable type
+    }
 }

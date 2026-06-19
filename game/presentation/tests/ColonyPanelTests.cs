@@ -76,6 +76,51 @@ public class ColonyPanelTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task BuildMenu_OffersUnits_EnqueuesAndRemovesAWagonTrain()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+
+        // The picker lists buildings first, then units — a unit (the wagon train) is genuinely offered.
+        int buildings = game.Buildables(colony).Count();
+        var units = game.BuildableUnits(colony).ToList();
+        int wagonAt = units.FindIndex(u => u.Id == "model.unit.wagonTrain");
+        AssertThat(wagonAt >= 0).IsTrue();
+
+        var options = controller.GetNode<PanelContainer>("UI/ColonyPanel")
+            .FindChild("BuildOptions", recursive: true, owned: false) as OptionButton;
+        AssertThat(options).IsNotNull();
+        options!.EmitSignal(OptionButton.SignalName.ItemSelected, (long)(1 + buildings + wagonAt));
+        await runner.SimulateFrames(1);
+        AssertThat(colony.BuildQueue.Contains("model.unit.wagonTrain")).IsTrue(); // a unit is queued via the UI
+
+        // Remove the queued item via its row's ✕ button.
+        var remove = FindButton(controller, "RemoveBuild_0");
+        AssertThat(remove).IsNotNull();
+        remove!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(colony.BuildQueue.Count).IsEqual(0);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task BuildQueue_ReordersWithTheUpButton()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+
+        // Two queued buildables (a building then a unit); re-open so both rows render.
+        game.EnqueueBuild(colony, "model.building.warehouse");
+        game.EnqueueBuild(colony, "model.unit.wagonTrain");
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+        AssertThat(colony.CurrentBuild).IsEqual("model.building.warehouse");
+
+        var up = FindButton(controller, "Up_1"); // pull the second item to the front
+        AssertThat(up).IsNotNull();
+        up!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(colony.CurrentBuild).IsEqual("model.unit.wagonTrain");
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task TileWorkPicker_AssignsAColonist_ToANonFoodTileGood()
     {
         (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();

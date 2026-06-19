@@ -417,41 +417,85 @@ public partial class ColonyPanel : PanelContainer
     {
         var box = new VBoxContainer();
         box.AddChild(SectionLabel("Construction"));
-        if (_colony.CurrentBuild is not null)
+
+        // — The build queue (the front item is built first; each row can be reordered or removed). A queued id the
+        //   ruleset no longer knows is skipped here (the engine drops it at build time). Buildings AND units appear,
+        //   each rendered from DescribeBuildable so a queued unit no longer mis-renders as a building. —
+        IReadOnlyList<string> queue = _colony.BuildQueue;
+        if (queue.Count == 0)
         {
-            BuildingType target = _game.Ruleset.Building(_colony.CurrentBuild);
-            string cost = string.Join(", ", target.BuildCost
-                .Select(c => $"{Display(Short(c.GoodsId))} {_colony.StoreOf(_game.Ruleset.StorageIdOf(c.GoodsId))}/{c.Amount}"));
+            box.AddChild(new Label { Text = "(nothing under construction)", HorizontalAlignment = HorizontalAlignment.Center });
+        }
+        for (int i = 0; i < queue.Count; i++)
+        {
+            if (_game.DescribeBuildable(queue[i]) is not { } info)
+            {
+                continue;
+            }
+            bool front = i == 0;
+            string detail = front
+                ? string.Join(", ", info.BuildCost.Select(c =>
+                    $"{Display(Short(c.GoodsId))} {_colony.StoreOf(_game.Ruleset.StorageIdOf(c.GoodsId))}/{c.Amount}"))
+                : CostLabel(info.BuildCost);
+            Texture2D? icon = info.IsUnit ? ColonyArt.UnitIcon(info.ShortName) : ColonyArt.BuildingImage(info.ShortName);
+
             var row = new HBoxContainer();
-            row.AddChild(IconRect(ColonyArt.BuildingImage(target.ShortName), 48, 36));
-            row.AddChild(new Label { Text = $"Building {Display(target.ShortName)} ({cost})", SizeFlagsHorizontal = SizeFlags.ExpandFill });
-            var stop = new Button { Name = "StopBuild", Text = "Stop" };
-            stop.Pressed += () => { _game.SetBuild(_colony, null); Changed(); };
-            row.AddChild(stop);
+            row.AddChild(IconRect(icon, 48, 36));
+            row.AddChild(new Label
+            {
+                Text = $"{(front ? "▶ " : "")}{Display(info.ShortName)} ({detail})",
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            });
+
+            int index = i;
+            var up = new Button { Name = $"Up_{index}", Text = "▲", Disabled = index == 0 };
+            up.Pressed += () => { _game.MoveBuildQueueItem(_colony, index, -1); Changed(); };
+            row.AddChild(up);
+            var down = new Button { Name = $"Down_{index}", Text = "▼", Disabled = index == queue.Count - 1 };
+            down.Pressed += () => { _game.MoveBuildQueueItem(_colony, index, +1); Changed(); };
+            row.AddChild(down);
+            var remove = new Button { Name = $"RemoveBuild_{index}", Text = "✕" };
+            remove.Pressed += () => { _game.RemoveFromBuildQueue(_colony, index); Changed(); };
+            row.AddChild(remove);
+
             box.AddChild(row);
         }
-        else
+
+        // — Add a building or a unit to the end of the queue (FreeCol's BuildQueuePanel offers both) —
+        var options = new OptionButton { Name = "BuildOptions" };
+        options.AddItem("Add to queue…");
+        var addable = new List<string>();
+        foreach (BuildingType b in _game.Buildables(_colony))
         {
-            var options = new OptionButton { Name = "BuildOptions" };
-            options.AddItem("Choose a building…");
-            var buildables = _game.Buildables(_colony).ToList();
-            foreach (BuildingType b in buildables)
+            addable.Add(b.Id);
+            options.AddItem($"{Display(b.ShortName)} ({CostLabel(b.BuildCost)})");
+        }
+        foreach (UnitType u in _game.BuildableUnits(_colony))
+        {
+            addable.Add(u.Id);
+            options.AddItem($"{Display(u.ShortName)} ({CostLabel(u.BuildCostOrEmpty)}) — unit");
+        }
+        options.ItemSelected += selected =>
+        {
+            if (selected > 0)
             {
-                string cost = string.Join(" + ", b.BuildCost.Select(c => $"{c.Amount} {Display(Short(c.GoodsId))}"));
-                options.AddItem($"{Display(b.ShortName)} ({cost})");
+                _game.EnqueueBuild(_colony, addable[(int)selected - 1]);
+                Changed();
             }
-            options.ItemSelected += index =>
-            {
-                if (index > 0)
-                {
-                    _game.SetBuild(_colony, buildables[(int)index - 1].Id);
-                    Changed();
-                }
-            };
-            box.AddChild(options);
+        };
+        box.AddChild(options);
+
+        if (queue.Count > 0)
+        {
+            var clear = new Button { Name = "StopBuild", Text = "Clear queue" };
+            clear.Pressed += () => { _game.SetBuild(_colony, null); Changed(); };
+            box.AddChild(clear);
         }
         return box;
     }
+
+    private string CostLabel(IReadOnlyList<GoodsOutput> cost) =>
+        string.Join(" + ", cost.Select(c => $"{c.Amount} {Display(Short(c.GoodsId))}"));
 
     // ── Right: the colony's buildings as FreeCol images, with their workers ─────────────────────────────────
 
