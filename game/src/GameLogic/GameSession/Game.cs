@@ -3297,7 +3297,7 @@ public sealed partial class Game
         }
 
         colony.AddGoods(goodsId, -amount);
-        SaleResult sale = player.Market.Sell(goodsId, amount, player.TaxRate);
+        SaleResult sale = player.Market.Sell(goodsId, amount, player.TaxRate, MarketVolumeFactor(player));
         player.Gold += sale.GoldAfterTax;
         return sale.GoldAfterTax;
     }
@@ -3580,7 +3580,7 @@ public sealed partial class Game
             throw new InvalidMoveException($"The ship is not carrying {amount} {goodsId}.");
         }
         ship.AddCargo(goodsId, -amount);
-        SaleResult sale = player.Market.Sell(goodsId, amount, player.TaxRate);
+        SaleResult sale = player.Market.Sell(goodsId, amount, player.TaxRate, MarketVolumeFactor(player));
         player.Gold += sale.GoldAfterTax;
         return sale.GoldAfterTax;
     }
@@ -5814,6 +5814,27 @@ public sealed partial class Game
     {
         double factor = 1.0;
         foreach (FatherModifier modifier in NationTypeModifiers(player, ReligiousUnrestBonusId))
+        {
+            factor = modifier.ApplyTo(factor);
+        }
+        return factor;
+    }
+
+    /// <summary>The Dutch trade advantage (FreeCol <c>model.modifier.tradeBonus</c>, −50%): their market absorbs less of their trade volume, so prices move slower against them.</summary>
+    private const string TradeBonusId = "model.modifier.tradeBonus";
+
+    /// <summary>
+    /// How much of a sale's volume <paramref name="player"/>'s market absorbs (FreeCol <c>Modifier.TRADE_BONUS</c>): 1.0
+    /// for an ordinary player, <b>0.5 for the Dutch</b> (<c>model.nationType.trade</c>, −50%) so their sell price falls
+    /// half as fast. Folded from the player's <b>nation type</b> via the shared <see cref="NationTypeModifiers"/> seam
+    /// (no founding father carries this modifier); the human defaults to no nation (1.0 → unchanged), so a default game
+    /// is byte-identical. (Our buy path doesn't move the market, so the advantage only surfaces on sells — a faithful
+    /// subset of FreeCol's two-sided <c>addGoodsToMarket</c>.)
+    /// </summary>
+    private double MarketVolumeFactor(Player player)
+    {
+        double factor = 1.0;
+        foreach (FatherModifier modifier in NationTypeModifiers(player, TradeBonusId))
         {
             factor = modifier.ApplyTo(factor);
         }

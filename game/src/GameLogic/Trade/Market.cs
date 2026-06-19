@@ -73,8 +73,16 @@ public sealed class Market
     /// chunked (<see cref="CargoChunk"/>) so each batch is priced after the previous
     /// one moved the market.
     /// </summary>
+    /// <param name="goodsId">The good being sold.</param>
+    /// <param name="amount">How much to sell.</param>
+    /// <param name="taxPercent">The tax withheld from the revenue.</param>
+    /// <param name="volumeFactor">
+    /// How much of each chunk the market absorbs (FreeCol <c>Modifier.TRADE_BONUS</c>): 1.0 normally, 0.5 for the
+    /// Dutch <c>model.nationType.trade</c> advantage (−50%), so their price falls half as fast as they sell. The
+    /// seller still receives the full chunk revenue — only the market's price-moving inventory is scaled.
+    /// </param>
     /// <returns>The pre-tax and post-tax gold for the whole sale.</returns>
-    public SaleResult Sell(string goodsId, int amount, int taxPercent)
+    public SaleResult Sell(string goodsId, int amount, int taxPercent, double volumeFactor = 1.0)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(amount);
         if (!_data.TryGetValue(goodsId, out Datum? d))
@@ -90,7 +98,7 @@ public sealed class Market
             int chunkRevenue = chunk * d.Bid;        // priced at the current bid…
             beforeTax += chunkRevenue;
             afterTax += (100 - taxPercent) * chunkRevenue / 100; // integer truncation, as FreeCol
-            d.AmountInMarket += chunk;               // …then the market absorbs the goods…
+            d.AmountInMarket += (int)MathF.Round(chunk * (float)volumeFactor, MidpointRounding.AwayFromZero); // …the market absorbs the goods (a trade advantage absorbs less)…
             Recompute(d);                            // …and the price falls for the next chunk.
             remaining -= chunk;
         }

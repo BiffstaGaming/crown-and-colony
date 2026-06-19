@@ -1,3 +1,5 @@
+using System.Linq;
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
@@ -13,6 +15,8 @@ public class MarketTests
     private const string Sugar = "model.goods.sugar";
     private const string Silver = "model.goods.silver";
     private const string Food = "model.goods.food";
+    private const string Furs = "model.goods.furs";
+    private const string TradeBonus = "model.modifier.tradeBonus";
 
     [Theory]
     // bid (sell) / ask (buy) seeds, verified directly against the classic spec.
@@ -152,5 +156,65 @@ public class MarketTests
         Assert.Equal(0, loaded.Gold);
         Assert.Equal(0, loaded.TaxRate);
         Assert.Equal(2, loaded.Market.BidPrice(Sugar)); // reseeded from ruleset
+    }
+
+    // ── Dutch trade advantage (86d3...): model.modifier.tradeBonus −50% halves the market's absorption of a sale ─────
+
+    [Fact]
+    public void Spec_ExactlyOneNationType_CarriesTheTradeBonus()
+    {
+        // The Dutch (model.nationType.trade) are the only nation with the trade advantage; its value is −50%.
+        var withBonus = Classic.EuropeanNations.Where(n => n.NationType.Modifiers.Any(m => m.TargetId == TradeBonus)).ToList();
+        Assert.Single(withBonus);
+    }
+
+    [Fact]
+    public void Sell_WithATradeAdvantage_AbsorbsLessVolume_SoThePriceHoldsUp()
+    {
+        var plain = new Market(Classic);
+        var dutch = new Market(Classic);
+
+        plain.Sell(Furs, 300, taxPercent: 0);                      // ordinary: the market absorbs all 300
+        dutch.Sell(Furs, 300, taxPercent: 0, volumeFactor: 0.5);   // Dutch: the market absorbs only 150
+
+        Assert.True(dutch.AmountInMarket(Furs) < plain.AmountInMarket(Furs)); // strictly less absorbed
+        Assert.True(dutch.BidPrice(Furs) >= plain.BidPrice(Furs));            // so the Dutch sell price held up
+    }
+
+    [Fact]
+    public void Sell_VolumeFactorOne_IsByteIdenticalToTheDefault()
+    {
+        var a = new Market(Classic);
+        var b = new Market(Classic);
+        a.Sell(Furs, 250, taxPercent: 10);
+        b.Sell(Furs, 250, taxPercent: 10, volumeFactor: 1.0); // the explicit default must match the implicit one
+        Assert.Equal(a.AmountInMarket(Furs), b.AmountInMarket(Furs));
+        Assert.Equal(a.BidPrice(Furs), b.BidPrice(Furs));
+    }
+
+    [Fact]
+    public void DutchHuman_DepressesThePriceLessThanANoNationHuman()
+    {
+        int dutch = MarketAmountAfterColonySale(asDutch: true);
+        int plain = MarketAmountAfterColonySale(asDutch: false);
+        Assert.True(dutch < plain, $"the Dutch market absorbed {dutch}, a no-nation market {plain} — the advantage should absorb less");
+    }
+
+    /// <summary>Founds a colony for a human (Dutch or no-nation), sells 600 furs from it, and returns the market's resulting absorbed volume.</summary>
+    private static int MarketAmountAfterColonySale(bool asDutch)
+    {
+        SaveGame save = SaveGame.From(Game.New(Classic, seed: 42));
+        string? nation = asDutch
+            ? Classic.EuropeanNations.First(n => n.NationType.Modifiers.Any(m => m.TargetId == TradeBonus)).Id
+            : null;
+        Game game = (save with
+        {
+            Players = save.Players!.Select(p => p.IsHuman ? p with { NationId = nation } : p).ToList(),
+        }).Restore(Classic);
+
+        Colony colony = game.FoundColony(game.Units[0]);
+        colony.AddGoods(Furs, 600);
+        game.SellColonyGoods(colony, Furs, 600);
+        return game.HumanPlayer.Market.AmountInMarket(Furs);
     }
 }
