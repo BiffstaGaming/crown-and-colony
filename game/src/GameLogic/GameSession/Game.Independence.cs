@@ -169,6 +169,133 @@ public sealed partial class Game
         }
     }
 
+    // Victory thresholds (FreeCol ServerPlayer.checkForREFDefeat) + the Spanish Succession.
+    private const double RefDefeatPowerRatio = 1.5;   // the rebel must hold 1.5× the REF's land power
+    private const int RefDefeatLandThreshold = 7;     // …and the REF be reduced below 7 land
+    private const int RefDefeatNavalThreshold = 2;    //    or below 2 naval units
+    private const int SpanishSuccessionYear = 1600;
+
+    private bool _spanishSuccessionDone;
+
+    /// <summary>Whether the Spanish Succession consolidation has already happened (save state).</summary>
+    internal bool SpanishSuccessionDone => _spanishSuccessionDone;
+
+    /// <summary>Installs the restored Spanish-Succession flag (save load).</summary>
+    internal void SetSpanishSuccessionDone(bool done) => _spanishSuccessionDone = done;
+
+    /// <summary>The player that has won by securing independence (FreeCol VICTORY_DEFEAT_REF), or null while the game continues.</summary>
+    public Player? Winner => _players.FirstOrDefault(p => p.PlayerType == PlayerType.Independent);
+
+    /// <summary>
+    /// The combined attack power of a player's land units (the War-of-Independence strength yardstick). Counts every
+    /// owned land unit regardless of location — the REF's un-landed reinforcements still count toward its strength.
+    /// </summary>
+    internal double LandPowerOf(Player player) =>
+        _units.Where(u => u.OwnerId == player.PlayerId && !u.IsNative && !u.Type.IsNaval).Sum(OffenceBase);
+
+    /// <summary>
+    /// Whether the rebel has broken the Royal Expeditionary Force (FreeCol <c>checkForREFDefeat</c>): the REF holds no
+    /// settlements, the rebel's land power is at least 1.5× the REF's, and the REF is reduced below 7 land or 2 naval
+    /// units (counting the whole force, including reinforcements still mustering — so the win can't fire before it lands).
+    /// </summary>
+    internal bool CheckForRefDefeat(Player refPlayer, Player rebel)
+    {
+        if (ColoniesOf(refPlayer).Any())
+        {
+            return false; // the REF still holds captured colonies — the rebellion isn't won
+        }
+        int land = _units.Count(u => u.OwnerId == refPlayer.PlayerId && !u.Type.IsNaval);
+        int naval = _units.Count(u => u.OwnerId == refPlayer.PlayerId && u.Type.IsNaval);
+        if (land >= RefDefeatLandThreshold && naval >= RefDefeatNavalThreshold)
+        {
+            return false; // the REF is still a credible force
+        }
+        return LandPowerOf(rebel) >= RefDefeatPowerRatio * LandPowerOf(refPlayer);
+    }
+
+    /// <summary>
+    /// Grants independence (FreeCol <c>csGiveIndependence</c>): peace with the King, the rebel becomes
+    /// <see cref="PlayerType.Independent"/> with no tax, surviving REF land units surrender to the new nation, and the
+    /// rest of the expeditionary force withdraws. The first independent nation has won (<see cref="Winner"/>).
+    /// </summary>
+    internal void GiveIndependence(Player refPlayer, Player rebel)
+    {
+        // Set the peace directly — SetStance is a no-op between non-Colonial players (the REF/rebel pair), the same
+        // reason CreateRefPlayer wrote the war stance directly.
+        refPlayer.StanceMap[rebel.PlayerId] = Stance.Peace;
+        rebel.StanceMap[refPlayer.PlayerId] = Stance.Peace;
+        rebel.PlayerType = PlayerType.Independent;
+        rebel.TaxRate = 0;
+
+        foreach (Unit unit in _units.Where(u => u.OwnerId == refPlayer.PlayerId).ToList())
+        {
+            if (unit.IsOnMap && !unit.Type.IsNaval)
+            {
+                unit.OwnerId = rebel.PlayerId; // the redcoats lay down their arms for the victors
+                RevealForOwner(unit);
+            }
+            else
+            {
+                _units.Remove(unit); // the fleet and any in Europe sail home
+            }
+        }
+    }
+
+    /// <summary>Per-turn War-of-Independence resolution: a rebel that has broken the REF wins its independence.</summary>
+    private void ResolveWarOfIndependence()
+    {
+        Player? refPlayer = _players.FirstOrDefault(p => p.PlayerType == PlayerType.RoyalExpeditionaryForce);
+        if (refPlayer is null)
+        {
+            return; // no war under way
+        }
+        foreach (Player rebel in _players.Where(p => p.PlayerType == PlayerType.Rebel).ToList())
+        {
+            if (CheckForRefDefeat(refPlayer, rebel))
+            {
+                GiveIndependence(refPlayer, rebel);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The Spanish Succession (FreeCol <c>ServerGame</c>): once, from 1600, a fading European AI (SoL &lt; 50) is
+    /// absorbed by the dominant one (SoL &gt; 50) — its colonies and units change hands. RNG-free; draws nothing before
+    /// the trigger year.
+    /// </summary>
+    private void RunSpanishSuccession()
+    {
+        if (_spanishSuccessionDone || CurrentYear < SpanishSuccessionYear)
+        {
+            return;
+        }
+        var powers = _players
+            .Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial && ColoniesOf(p).Any())
+            .OrderBy(p => p.PlayerId)
+            .ToList();
+        if (powers.Count < 2)
+        {
+            return;
+        }
+        Player weakest = powers.OrderBy(NationalSonsOfLiberty).ThenBy(p => p.PlayerId).First();
+        Player strongest = powers.OrderByDescending(NationalSonsOfLiberty).ThenBy(p => p.PlayerId).First();
+        if (weakest.PlayerId == strongest.PlayerId
+            || NationalSonsOfLiberty(weakest) >= 50 || NationalSonsOfLiberty(strongest) <= 50)
+        {
+            return; // no clear fading-vs-dominant pair yet — try again next turn
+        }
+
+        foreach (Colony colony in ColoniesOf(weakest).ToList())
+        {
+            colony.OwnerId = strongest.PlayerId;
+        }
+        foreach (Unit unit in _units.Where(u => u.OwnerId == weakest.PlayerId && !u.IsNative).ToList())
+        {
+            unit.OwnerId = strongest.PlayerId;
+        }
+        _spanishSuccessionDone = true;
+    }
+
     /// <summary>The first empty tile (in expanding rings around the targets) matching the unit's domain, or null if none within reach.</summary>
     private Position? FindLandingTile(IReadOnlyList<Colony> targets, bool naval)
     {

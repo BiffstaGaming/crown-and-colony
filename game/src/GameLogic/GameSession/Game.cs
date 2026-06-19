@@ -4345,6 +4345,8 @@ public sealed partial class Game
         DecayColonialTension();     // colonial-pair tension cools each turn (mirrors native alarm)
         UpdateColonialStances();    // stance follows tension: war → cease-fire → peace as it cools (FP-6b)
         RunMonarchTick();           // the player's King may act (tax/REF/war/mercenaries) — ephemeral RNG, stream 0 untouched (P6)
+        ResolveWarOfIndependence(); // a rebel that has broken the REF wins its independence (P6)
+        RunSpanishSuccession();     // from 1600, a fading European AI is absorbed by the dominant one (P6)
         ApplyAmbientNativeAlarm();   // natives resent the human's nearby colonies/troops (FreeCol csNewTurn) — before the calm-down
         ProcessMissions();           // missions accrue converts on the alarm this turn produced (FreeCol csStartTurn) — before the decay
         foreach (NativeSettlement settlement in _nativeSettlements)

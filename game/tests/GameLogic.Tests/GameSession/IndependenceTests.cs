@@ -196,4 +196,67 @@ public class IndependenceTests
         Assert.Equal(refOnMap, loaded.Units.Count(u => u.OwnerId == loadedRef.PlayerId && u.IsOnMap));
         Assert.Equal(Stance.War, loaded.StanceBetween(loadedRef.PlayerId, loaded.HumanPlayer.PlayerId));
     }
+
+    // ── Item 9: Win — defeat the REF + Spanish Succession ────────────────────────────────────────────────
+
+    [Fact]
+    public void CheckForRefDefeat_IsFalseWhileTheRefIsIntact()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        Assert.False(game.CheckForRefDefeat(Ref(game), rebel)); // a full 60-land/8-naval REF is far from broken
+    }
+
+    [Fact]
+    public void GiveIndependence_WinsTheWar_SurrendersTheRedcoats()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        Player refP = Ref(game);
+        game.EndTurn(); // some REF regulars land
+        int refLandOnMap = game.Units.Count(u => u.OwnerId == refP.PlayerId && u.IsOnMap && !u.Type.IsNaval);
+        int rebelUnitsBefore = game.Units.Count(u => u.OwnerId == rebel.PlayerId);
+
+        game.GiveIndependence(refP, rebel);
+
+        Assert.Equal(PlayerType.Independent, rebel.PlayerType);
+        Assert.Equal(0, rebel.TaxRate);
+        Assert.Equal(Stance.Peace, game.StanceBetween(refP.PlayerId, rebel.PlayerId));
+        Assert.Equal(0, game.Units.Count(u => u.OwnerId == refP.PlayerId)); // the REF is gone (land surrendered, navy withdrawn)
+        Assert.Equal(rebelUnitsBefore + refLandOnMap, game.Units.Count(u => u.OwnerId == rebel.PlayerId)); // the on-map redcoats surrendered
+        Assert.Equal(rebel, game.Winner);
+    }
+
+    [Fact]
+    public void Victory_RoundTripsSaveLoad()
+    {
+        (Game game, _) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer);
+        game.GiveIndependence(Ref(game), game.HumanPlayer);
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(PlayerType.Independent, loaded.HumanPlayer.PlayerType);
+        Assert.Equal(loaded.HumanPlayer, loaded.Winner);
+    }
+
+    [Fact]
+    public void SpanishSuccession_DoesNotFireBefore1600_AndItsFlagPersists()
+    {
+        Game game = Game.New(Classic, Seed);
+        game.EndTurn();
+        Assert.False(game.SpanishSuccessionDone); // it is well before 1600
+
+        game.SetSpanishSuccessionDone(true);
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+        Assert.True(loaded.SpanishSuccessionDone);
+    }
+
+    [Fact]
+    public void PreVictoryGame_OmitsTheSuccessionToken()
+    {
+        Assert.DoesNotContain("\"SpanishSuccession\"", SaveGame.From(Game.New(Classic, Seed)).ToJson());
+    }
 }

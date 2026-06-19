@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 41;
+    public const int CurrentVersion = 42;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -87,7 +87,9 @@ public sealed record SaveGame
     /// v41 added the rebellion lifecycle: <see cref="SavedPlayer.DeclaredIndependenceTurn"/> + <see cref="SavedPlayer.InterventionBells"/>
     /// (both omitted before independence) and the <see cref="GameSession.PlayerType"/> Rebel/Independent/REF ordinals +
     /// the REF player row; a pre-independence game is byte-identical to v40; pre-v41 saves load with no rebellion.
-    /// Each of v23–v41 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// v42 added the <see cref="SpanishSuccession"/> flag (omitted until it fires), so a game before 1600 is
+    /// byte-identical to v41; pre-v42 saves load with the succession not yet done.
+    /// Each of v23–v42 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
@@ -149,6 +151,9 @@ public sealed record SaveGame
 
     /// <summary>The Royal Expeditionary Force the King has amassed (v40; null/omitted until grown beyond its re-derivable base, so a pre-rebellion game stays byte-identical to v39).</summary>
     public SavedForce? RefForce { get; init; }
+
+    /// <summary>Whether the Spanish Succession consolidation has happened (v42; null/omitted until it fires, so a game before 1600 stays byte-identical to v41).</summary>
+    public bool? SpanishSuccession { get; init; }
 
     /// <summary>Legacy ≤v19 / pre-FP-7 read-only player treasury (v9+). Player state lives in <see cref="Players"/> (v20+); no longer written as of FP-7. Nullable so new saves omit it.</summary>
     public int? Gold { get; init; }
@@ -300,6 +305,8 @@ public sealed record SaveGame
             RefForce = game.RefForceOrNull is { } ref_
                 ? new SavedForce(ref_.LandUnits.ToList(), ref_.NavalUnits.ToList())
                 : null,
+            // The Spanish Succession flag; omitted until it fires so a pre-1600 game stays byte-identical to v41.
+            SpanishSuccession = game.SpanishSuccessionDone ? true : null,
             // Player-scoped state: authoritative in (and written only to) Players[]. The legacy flat
             // top-level fields are no longer written as of FP-7 — they remain readable for ≤v19 / pre-FP-7
             // v20 saves (the fold path), but the v20 load path was always Players[]-only, so the format
@@ -445,6 +452,10 @@ public sealed record SaveGame
         if (RefForce is { } ref_) // v40; pre-v40 / omitted → the base REF is re-derived on demand
         {
             game.SetRefForce(new GameSession.Force(ref_.Land, ref_.Naval));
+        }
+        if (SpanishSuccession == true) // v42; pre-v42 / omitted → not yet done
+        {
+            game.SetSpanishSuccessionDone(true);
         }
         return game;
     }
