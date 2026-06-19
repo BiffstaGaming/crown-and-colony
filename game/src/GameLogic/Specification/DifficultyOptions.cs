@@ -50,6 +50,11 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <param name="RecruitLowerCapIncrease">Recruit-price-floor rise per paid recruit (spec <c>model.option.lowerCapIncrease</c>; medium 0). See [europe].</param>
 /// <param name="ArtilleryPriceIncrease">Added to the artillery purchase price after each artillery bought (spec <c>model.option.priceIncrease.artillery</c>; medium 100). See [europe].</param>
 /// <param name="TreasureTransportFee">The King's cut (percent) to ship a treasure train to Europe (spec <c>model.option.treasureTransportFee</c>; medium 60). See [treasure-train].</param>
+/// <param name="ShipTradePenalty">
+/// The percentage penalty applied to a <b>ship-borne</b> trader's price when selling to a native settlement (spec
+/// <c>model.option.shipTradePenalty</c>, a negative <c>percentage</c> modifier; veryEasy→veryHard = −20/−25/−30/−35/−40,
+/// medium −30). A settlement pays a ship 30% less than an overland trader would get. See [natives].
+/// </param>
 public sealed record DifficultyOptions(
     int FoundingFatherFactor,
     int UnitsThatUseNoBells,
@@ -63,7 +68,8 @@ public sealed record DifficultyOptions(
     int RecruitPriceIncrease,
     int RecruitLowerCapIncrease,
     int ArtilleryPriceIncrease,
-    int TreasureTransportFee)
+    int TreasureTransportFee,
+    int ShipTradePenalty)
 {
     /// <summary>
     /// The classic <c>model.difficulty.medium</c> values — the fallback when a spec omits the difficulty group or a
@@ -82,5 +88,6 @@ public sealed record DifficultyOptions(
         RecruitPriceIncrease: 30,
         RecruitLowerCapIncrease: 0,
         ArtilleryPriceIncrease: 100,
-        TreasureTransportFee: 60);
+        TreasureTransportFee: 60,
+        ShipTradePenalty: -30);
 }

@@ -1085,8 +1085,12 @@ public sealed partial class Game
     /// What a settlement pays for <paramref name="amount"/> of <paramref name="goodsId"/> you sell it
     /// (FreeCol <c>getPriceToSell</c> ≈ <c>amount + 11·getPriceToBuy/10</c>): a per-unit base of
     /// <c>12 + the settlement's trade bonus</c>, times a wanted-goods premium (150 / 125 / 110% for its
-    /// 1st / 2nd / 3rd wanted good). Settlement goods stock — which lowers the price as they fill up — is
-    /// not modelled yet, so the price assumes they still want it.
+    /// 1st / 2nd / 3rd wanted good), then the classic <b>ship-trade penalty</b> (a settlement pays a
+    /// ship-borne trader less — <see cref="DifficultyOptions.ShipTradePenalty"/>, −30% at medium; FreeCol
+    /// <c>model.option.shipTradePenalty</c> applied with <c>sense=true</c> for the player's sale). Native
+    /// trade here is ship-only (<see cref="CheckSellToNatives"/>), so the penalty always applies. Settlement
+    /// goods stock — which lowers the price as they fill up — is not modelled yet, so the price assumes they
+    /// still want it.
     /// </summary>
     public int NativeSalePrice(NativeSettlement settlement, string goodsId, int amount)
     {
@@ -1099,7 +1103,9 @@ public sealed partial class Game
             _ => 100,
         };
         int perUnit = full * wantedMultiplier / 100;
-        return amount + (11 * perUnit * amount) / 10;
+        int price = amount + (11 * perUnit * amount) / 10;
+        // The ship-trade penalty is a percentage modifier on the whole sale price (FreeCol applyModifiers).
+        return price * (100 + Ruleset.Difficulty.ShipTradePenalty) / 100;
     }
 
     /// <summary>Whether <paramref name="ship"/> may sell <paramref name="amount"/> of a good to <paramref name="settlement"/> now.</summary>

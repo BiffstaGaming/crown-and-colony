@@ -629,7 +629,8 @@ public sealed class Ruleset
             RecruitPriceIncrease: IntOption("model.option.recruitPriceIncrease", m.RecruitPriceIncrease),
             RecruitLowerCapIncrease: IntOption("model.option.lowerCapIncrease", m.RecruitLowerCapIncrease),
             ArtilleryPriceIncrease: IntOption("model.option.priceIncrease.artillery", m.ArtilleryPriceIncrease),
-            TreasureTransportFee: IntOption("model.option.treasureTransportFee", m.TreasureTransportFee));
+            TreasureTransportFee: IntOption("model.option.treasureTransportFee", m.TreasureTransportFee),
+            ShipTradePenalty: IntOption("model.option.shipTradePenalty", m.ShipTradePenalty));
     }
 
     /// <summary>

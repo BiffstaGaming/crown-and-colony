@@ -11,7 +11,8 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 /// <summary>
 /// Native trade (Phase 5 slice 4): a ship sells cargo to a coastal settlement for gold.
 /// Pricing follows FreeCol getPriceToSell (base 12 + trade-bonus, ×150/125/110% for the
-/// settlement's 1st/2nd/3rd wanted good, ~10% markup).
+/// settlement's 1st/2nd/3rd wanted good, ~10% markup), then the classic ship-trade penalty
+/// (model.option.shipTradePenalty, −30% at medium — a ship is paid less than an overland trader).
 /// </summary>
 public class NativeTradeTests
 {
@@ -64,21 +65,34 @@ public class NativeTradeTests
     [Fact]
     public void SalePrice_AppliesTradeBonusAndWantedPremium()
     {
-        // Camp trade-bonus = 1 → full = 13. Price(amount) = amount + 11·(13·mult/100)·amount/10.
+        // Camp trade-bonus = 1 → full = 13. Price = (amount + 11·(13·mult/100)·amount/10) × (100 − 30)/100
+        // — the ×70/100 tail is the medium ship-trade penalty (a ship is paid 30% less).
         (Game game, NativeSettlement settlement, _) = SetupCoastalTrade(
             ["model.goods.sugar", "model.goods.tobacco", "model.goods.cotton"]);
 
-        Assert.Equal(2190, game.NativeSalePrice(settlement, "model.goods.sugar", 100));   // wanted #1 (×150%)
-        Assert.Equal(1860, game.NativeSalePrice(settlement, "model.goods.tobacco", 100)); // wanted #2 (×125%)
-        Assert.Equal(1640, game.NativeSalePrice(settlement, "model.goods.cotton", 100));  // wanted #3 (×110%)
-        Assert.Equal(1530, game.NativeSalePrice(settlement, "model.goods.ore", 100));     // not wanted (×100%)
+        Assert.Equal(1533, game.NativeSalePrice(settlement, "model.goods.sugar", 100));   // wanted #1 (×150%) → 2190×0.70
+        Assert.Equal(1302, game.NativeSalePrice(settlement, "model.goods.tobacco", 100)); // wanted #2 (×125%) → 1860×0.70
+        Assert.Equal(1148, game.NativeSalePrice(settlement, "model.goods.cotton", 100));  // wanted #3 (×110%) → 1640×0.70
+        Assert.Equal(1071, game.NativeSalePrice(settlement, "model.goods.ore", 100));     // not wanted (×100%) → 1530×0.70
+    }
+
+    [Fact]
+    public void SalePrice_AppliesTheShipTradePenalty_FromTheDifficultyOption()
+    {
+        (Game game, NativeSettlement settlement, _) = SetupCoastalTrade(["model.goods.sugar"]);
+        Assert.Equal(-30, Classic.Difficulty.ShipTradePenalty); // parsed from the spec's medium level, not hardcoded
+
+        // A ship-borne trader (native trade is ship-only) is paid the penalty% less than the raw getPriceToSell.
+        const int unpenalized = 2190; // base 13 × 150% wanted, 100 units, +11/10 markup
+        Assert.Equal(unpenalized * (100 + Classic.Difficulty.ShipTradePenalty) / 100, // 1533
+            game.NativeSalePrice(settlement, "model.goods.sugar", 100));
     }
 
     [Fact]
     public void SalePrice_EmptyWantedGoods_UsesBasePrice()
     {
         (Game game, NativeSettlement settlement, _) = SetupCoastalTrade([]); // wants nothing in particular
-        Assert.Equal(1530, game.NativeSalePrice(settlement, "model.goods.sugar", 100)); // ×100% (camp, full = 13)
+        Assert.Equal(1071, game.NativeSalePrice(settlement, "model.goods.sugar", 100)); // ×100% (camp, full = 13) → 1530×0.70
     }
 
     [Fact]
@@ -108,7 +122,7 @@ public class NativeTradeTests
 
         int price = game.SellToNatives(ship, settlement, "model.goods.sugar", 100);
 
-        Assert.Equal(2190, price);                       // wanted #1, no tax
+        Assert.Equal(1533, price);                       // wanted #1, no tax, ship-trade penalty applied
         Assert.Equal(goldBefore + price, game.Gold);
         Assert.Equal(0, ship.CargoOf("model.goods.sugar"));
         Assert.True(settlement.Alarm < alarmBefore, "trading builds goodwill");
