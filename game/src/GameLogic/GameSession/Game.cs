@@ -4703,12 +4703,29 @@ public sealed partial class Game
                 FoundColony(unit);
                 continue;
             }
+            // Seek out a known Lost City Rumour (86d3c9vta, FreeCol's scout/explore missions) before generic
+            // exploring: head for the nearest rumour tile the power has discovered. Reaching it auto-resolves the
+            // rumour (`TryExploreRumour` via `MoveUnit`) on the power's OWN stream — treasure/units/expertise land for
+            // the power, never touching the human's stream 0.
+            if (NearestKnownRumour(power, unit) is { } rumour && StepToward(power, unit, rumour) is { } toRumour)
+            {
+                MoveUnit(unit, toRumour);
+                continue;
+            }
             if (StepTowardNearestUnexplored(power, unit) is { } step)
             {
                 MoveUnit(unit, step);
             }
         }
     }
+
+    /// <summary>The nearest Lost City Rumour tile <paramref name="power"/> has already discovered (in its fog), by Chebyshev from <paramref name="unit"/> (ties by position), or null when it knows of none. Sparse (<see cref="GameMap.Rumours"/>) so it stays cheap each turn.</summary>
+    private Position? NearestKnownRumour(Player power, Unit unit) =>
+        Map.Rumours
+            .Where(r => power.Explored.Contains(r))
+            .OrderBy(r => Chebyshev(r, unit.Position)).ThenBy(r => r.Y).ThenBy(r => r.X)
+            .Select(r => (Position?)r)
+            .FirstOrDefault();
 
     /// <summary>True when one of <paramref name="power"/>'s armed land units stands on <paramref name="colony"/>'s tile (it has a garrison defender).</summary>
     private bool ColonyHasArmedDefender(Player power, Colony colony) =>

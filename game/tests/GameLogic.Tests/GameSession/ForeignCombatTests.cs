@@ -108,6 +108,40 @@ public class ForeignCombatTests
     }
 
     [Fact]
+    public void AtPeace_AColonist_SeeksOutAndResolvesAKnownLostCityRumour()
+    {
+        Game game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        foreach (Unit u in game.Units.Where(u => u.OwnerId == power.PlayerId && u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+
+        // A colony so the power is at its colony cap (can't found another → it explores instead).
+        Position colonyTile = game.Map.AllPositions().First(p =>
+            Free(game, p) && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n)));
+        Unit founder = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), colonyTile);
+        founder.OwnerId = power.PlayerId;
+        Colony colony = game.FoundColony(founder);
+        colony.OwnerId = power.PlayerId;
+
+        // A colonist far from the colony with a KNOWN Lost City Rumour on the adjacent tile.
+        Position scoutTile = game.Map.AllPositions().First(p =>
+            Free(game, p) && !game.Map.HasRumour(p) && Cheb(p, colonyTile) > 15
+            && p.Neighbours().Any(n => Free(game, n)));
+        Position rumour = scoutTile.Neighbours().First(n => Free(game, n));
+        game.Map.AddRumour(rumour);
+        power.ExploredSet.Add(rumour); // the power has discovered it
+        Unit scout = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), scoutTile);
+        scout.OwnerId = power.PlayerId;
+        Assert.True(game.Map.HasRumour(rumour));
+
+        game.EndTurn();
+
+        Assert.False(game.Map.HasRumour(rumour)); // the colonist marched onto the rumour and resolved it
+    }
+
+    [Fact]
     public void AtWar_WithNoHumanUnitOnMap_AttacksNothing()
     {
         // The human-only target contract (NearestHumanUnit) is the sole guard keeping a foreign power from

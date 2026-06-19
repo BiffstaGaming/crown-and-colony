@@ -19,10 +19,10 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
-## 2026-06-19 — P5 "20 more items" batch — items 1-11/20 (in progress)
+## 2026-06-19 — P5 "20 more items" batch — items 1-12/20 (in progress)
 
 **Requested:** "Get 20 more items from P5 completed WITHOUT stopping" (+ timestamp each message). Shipping genuinely-undone P5 backlog items autonomously, each CI-green (logic + xUnit + system-doc both layers + changelog + commit/push + ClickUp Shipped). One commit per item.
-**Shipped so far (11/20):**
+**Shipped so far (12/20):**
 1. **Ships caught in a falling colony** (`86d3c9twd`, `d392ac8`) — `ResolveCaughtShips`: a captured colony's docked ships are damaged (limp to repair) or sunk; RNG-free.
 2. **John Paul Jones** (`86d3c7xpk`, `96b2ae0`) — first free-unit father: `FreeUnits` parses `<unit>`, election spawns a free frigate in Europe.
 3. **Jacob Fugger** (`86d3deqq9`, `c9f688f`) — `LiftsBoycotts` (`model.event.boycottsLifted`) → `Market.LiftAllBoycotts()` on election.
@@ -34,10 +34,11 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 9. **AI defend-settlement garrisoning** (`86d3c9vxj`, `cf7b4af`) — `RunForeignPowerTurn`: an armed land unit not on the offensive marches to the nearest **undefended own colony** (`NearestUndefendedOwnColony`/`ColonyHasArmedDefender`) and stands guard, so a power's colonies aren't left open; founding keeps priority. RNG-free re stream 0.
 10. **Native bring-gifts** (`86d3dfcfe`, `b4e9e41`) — `TryBringGift` in `RunNativeTurn`: a **Happy** tribe's brave beside a human colony has a 1-in-8 per-turn chance (nation's own stream) to leave 25 **tobacco** in its warehouse (new `ColonyGiftNotice`). The goodwill mirror of pillage. **Gifts a non-food good deliberately** — food would grow the colony → extra stream-0 experience rolls → an ADR-009 stream-0 perturbation (caught two existing isolation tests; fixed by switching to tobacco).
 11. **Spanish conquest advantage** (`86d3dff0f`, `daebeb4`) — third nation-type advantage: `OffenceAgainstNativeFactor` folds the attacker's nation-type `offenceAgainst` (Spanish `conquest` +50%, scope `isIndian`) into the attack power vs a **native** defender, at both native-combat sites (`Attack` vs a brave, `AttackSettlement`). Contextual (defender-dependent), so applied at the attack site not in `OffenceBase`; reuses `NationTypeModifiers`.
-**Status:** **1130 L1/L2 + 4 soak green**, build clean. **No save-format change in any of the 11.** Docs (both layers + §5 + changelog + Last-verified): `combat.md` (×2), `founding-fathers.md` (×3), `colonies.md`, `transport.md`, `immigration.md`, `natives.md` (×2), `players.md`.
+12. **AI seeks Lost City Rumours** (`86d3dfj5x`, `b7009b6`) — `RunForeignPowerTurn`'s explore branch now steers a unit toward the nearest **known** rumour (`NearestKnownRumour`, sparse `GameMap.Rumours` ∩ the power's fog) before generic exploring; arrival auto-resolves it via the existing AI-correct `TryExploreRumour` (power's own stream, mounds auto-investigated, no human prompt). A bounded slice of `86d3c9vta`. RNG-free re stream 0.
+**Status:** **1131 L1/L2 + 4 soak green**, build clean. **No save-format change in any of the 12.** Docs (both layers + §5 + changelog + Last-verified): `combat.md` (×2), `founding-fathers.md` (×3), `colonies.md`, `transport.md`, `immigration.md`, `natives.md` (×2), `players.md` (×2).
 **Decisions:** did NOT pad the count — **factory-tier "+50%"** is already data-driven (`6 tobacco→9 cigars`) so `86d3c9p1u` is effectively done; **ocean fish coastal-bonus** (`86d3c9we8`) deferred as high-blast. JPJ/Fugger/Coronado established the reusable one-time-effect pattern (`FreeUnits`/`LiftsBoycotts`/`RevealsAllColonies`); religious-unrest established the nation-type-modifier pattern (Dutch trade etc. follow it).
-**Scheduled next:** **item 12/20** — next genuinely-undone P5 item (trade-route GameLogic `86d3c9rq1`, an AI-depth slice `86d3c9vq9/vta`, or another bounded effect). Auto-resumes via ScheduleWakeup. (Nation-type advantages now done: English/French/Spanish; Dutch `tradeBonus` needs a market-recovery model we don't have yet.)
-**Needs you:** nothing — continuing through the batch, each item its own committed/pushed/CI-green checkpoint. **11/20 done.** (Remaining tracked-FF tasks de las Casas/Brébeuf/de Sepúlveda are blocked on the in-dev missions/conversion system.)
+**Scheduled next:** **item 13/20** — **trade-route GameLogic `86d3c9rq1`** is now the highest-value remaining clean item but it's the widest (save bump v43 rippling through the unit-restore tuple + its `Game` consumer + player save/restore + ~15 version pins); per Chris's "land clean in one item" rule I'm giving it a dedicated turn next. Fallbacks if needed: AI logistics `86d3c9vq9`, more of AI exploration `86d3c9vta` (pioneering/missionary). Auto-resumes via ScheduleWakeup.
+**Needs you:** nothing — continuing through the batch, each item its own committed/pushed/CI-green checkpoint. **12/20 done.** (Remaining tracked-FF tasks de las Casas/Brébeuf/de Sepúlveda are blocked on the in-dev missions/conversion system.)
 
 ## 2026-06-19 — One-command local launcher + "Running locally" wiki page
 
