@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-19 — P6 independence endgame arc — items 1-2/10 shipped (Monarch tick + tax); in progress
+
+**Requested:** "Complete ALL 10 items" — the P6 independence-endgame arc I recommended (monarch → tax → REF → Declare Independence → War of Independence → win/lose).
+**Did:** Ran a 5-agent master-design workflow decomposing all 10 items into ordered CI-green slices (data model, per-item save bumps v37-v41, determinism). Then shipped the first two:
+- **Item 1 — Monarch turn-tick + weighted action chooser (`86d3c9qvr`)** (`8ea1479`): `MonarchAction` enum, `MonarchActionIsValid` (pure validity oracle), `GetMonarchActionChoices` (FreeCol weights — grace `(6-dx)*10=30`, NO_ACTION `max(200-turn,100)`, RAISE_TAX 8, ADD_TO_REF 13, …; SUPPORT_LAND never at medium), `RunMonarchTick` in `EndTurn`, `RandomChoice.WeightedRandom`.
+- **Item 2 — RAISE_TAX demand + tax mutation (`86d3c9r2m`)** (`b39c51a`): `PendingMonarchDemand` (ADR-006 oracle) + `RespondToMonarch(accept)` — accept raises tax, reject-goods-gone forces +3, goods-present reject = tea-party (item 3); LOWER/WAIVE dispatched; `RaiseTaxAmount`/`LowerTaxAmount`/`GetMostValuableGoods` (exact FreeCol formulas).
+**Key determinism decision:** the Monarch is the human's King, but its roll is drawn from an **ephemeral RNG seeded off the human's current stream-0 state (read non-destructively) + the turn** — it draws **nothing** from stream 0. This is cleaner than the design's stream-0 proposal: **zero golden churn**, every existing seeded game/test/soak stays byte-identical, yet the choice is reproducible across save/load. (The design warned stream 0 would churn every past-turn-30 game; this avoids it entirely — confirmed by all 1066 pre-existing tests passing unchanged.)
+**Status:** **1066 L1/L2 + 4 soak green**, build clean (0 warnings); pushed `8ea1479`, `b39c51a`, CI ✓. No save bump yet (tax reuses `Player.TaxRate`; first bump is item 3's arrears, v37). New system doc `docs/systems/monarchy.md` (both layers).
+**Decisions:** ephemeral monarch RNG (above); monarch constants temporarily in-code (TODO `86d3c9rg6` ruleset routing); ADD_TO_REF gated off until the Force model (item 6); the dispatch frontier grows per item (unwired actions no-op).
+**Scheduled next:** **item 3 — Boston Tea Party + boycott/arrears + pay-to-lift (`86d3c9r4w`)** — per-good `Arrears` on Market (save **v37**), the tea-party reject branch (dump goods + arrears = paidForSale×300 + a +50% bells modifier decaying −2/turn for 25 turns), `CheckPayArrears`/`PayArrears`. Then items 4-10 (mercenaries → support → REF build-up → Declare Independence → REF war → win/lose).
+**Follow-ups (the arc, items 3-10):** 3 more save bumps (v37 arrears, then displeasure, REF force, independence state); the Force model (item 6); the REF player + continental muster (item 7); REF combat AI on its own stream (item 8); win/lose (items 9-10). Each ships CI-green + reviewed.
+**Needs you:** Nothing blocking — the monarch is internal (no player-facing change yet; the action dialogs are P7), so no playtest. The arc is large (8 items remain, incl. REF combat + 3 save bumps); I'm continuing through it item-by-item. Say "continue" if a turn ends mid-arc and I've paused.
+
 ## 2026-06-19 — Goto / multi-turn moves + pathfinding + unit cycling (86d3c9pfy) — SHIPPED; "begin on all" 5/5 DONE
 
 **Requested:** "continue" → next-5 **item 5: goto / multi-turn moves** (the last of "begin on all of those items").
