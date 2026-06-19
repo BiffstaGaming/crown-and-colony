@@ -1,4 +1,6 @@
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Randomness;
+using CrownAndColony.GameLogic.Trade;
 
 namespace CrownAndColony.GameLogic.GameSession;
 
@@ -22,6 +24,16 @@ public sealed partial class Game
     private const int MonarchMinTaxRate = 20;       // Monarch.MINIMUM_TAX_RATE
     private const int MonarchMinimumMercPrice = 200; // Monarch.MONARCH_MINIMUM_PRICE
     private const int HessianMinimumPrice = 5000;    // Monarch.HESSIAN_MINIMUM_PRICE
+    private const int MonarchTaxAdjustment = 2;      // GameOptions.TAX_ADJUSTMENT (medium)
+    private const int ForceTaxExtra = 3;             // ServerPlayer.csRaiseTax FORCE_TAX surcharge
+
+    private PendingMonarchDemand? _pendingMonarchDemand; // transient: a monarch demand awaiting the human's accept/reject (not saved, like _pendingDemand)
+
+    /// <summary>
+    /// The monarch demand awaiting the human's response (FreeCol <c>MonarchSession</c>), or null. The presentation
+    /// layer (P7) reads this to prompt and answers via <see cref="RespondToMonarch"/> (ADR-006). Transient — never saved.
+    /// </summary>
+    public PendingMonarchDemand? PendingMonarchDemand => _pendingMonarchDemand;
 
     /// <summary>RNG stream reserved for the Monarch — above every per-player stream and the LCR stream so a monarch
     /// roll never correlates with another stream. The tick re-seeds this stream id from the human's live state each
@@ -115,23 +127,113 @@ public sealed partial class Game
         RandomState humanState = _random.SaveState(); // non-destructive read of stream 0
         var monarchRng = new Pcg32Random(humanState.State + (ulong)Turn, MonarchStreamId);
         MonarchAction action = RandomChoice.WeightedRandom(monarchRng, choices);
-        DispatchMonarchAction(action);
+        DispatchMonarchAction(action, monarchRng);
     }
 
     /// <summary>Applies a chosen monarch action. Effects are wired in their own slices; an unwired action is a no-op this turn.</summary>
-    private void DispatchMonarchAction(MonarchAction action)
+    internal void DispatchMonarchAction(MonarchAction action, IGameRandom rng)
     {
         switch (action)
         {
             case MonarchAction.NoAction:
                 break;
-            // RAISE_TAX / LOWER_TAX / WAIVE_TAX -> item 2 (86d3c9r2m); mercenaries + DISPLEASURE -> item 4 (86d3c9rep);
-            // SUPPORT_SEA/LAND -> item 5 (86d3c9rag); ADD_TO_REF -> item 6 (86d3c9v4j); DECLARE_WAR/PEACE -> monarch
-            // diplomacy slice. Until each lands, an offered-but-unwired action passes harmlessly this turn.
+            case MonarchAction.RaiseTaxAct:
+            case MonarchAction.RaiseTaxWar:
+                if (GetMostValuableGoods(_human) is { } goods) // nothing worth taxing → no demand (FreeCol skips)
+                {
+                    _pendingMonarchDemand = new PendingMonarchDemand(
+                        action, TaxRaise: RaiseTaxAmount(rng),
+                        GoodsId: goods.GoodsId, ColonyId: goods.ColonyId, GoodsAmount: goods.Amount);
+                }
+                break;
+            case MonarchAction.LowerTaxWar:
+            case MonarchAction.LowerTaxOther:
+                SetTax(_human, LowerTaxAmount(rng)); // immediate goodwill, no player choice
+                break;
+            case MonarchAction.WaiveTax:
+                break; // message only — no change
+            // mercenaries + DISPLEASURE -> item 4 (86d3c9rep); SUPPORT_SEA/LAND -> item 5 (86d3c9rag);
+            // ADD_TO_REF -> item 6 (86d3c9v4j); DECLARE_WAR/PEACE -> monarch diplomacy slice. Unwired = no-op.
             default:
                 break;
         }
     }
+
+    /// <summary>
+    /// The human's response to the <see cref="PendingMonarchDemand"/> (ADR-006 mutator). For a tax demand: accept
+    /// raises the tax; reject forces a small extra rise (+3) when the taxed goods are already gone — the full
+    /// Boston-Tea-Party reject (goods still in the colony) lands in item 3 (86d3c9r4w).
+    /// </summary>
+    /// <exception cref="InvalidOperationException">No monarch demand is pending.</exception>
+    public void RespondToMonarch(bool accept)
+    {
+        if (_pendingMonarchDemand is not { } demand)
+        {
+            throw new InvalidOperationException("No monarch demand is pending.");
+        }
+        _pendingMonarchDemand = null;
+
+        if (demand.Action is MonarchAction.RaiseTaxAct or MonarchAction.RaiseTaxWar)
+        {
+            if (accept)
+            {
+                SetTax(_human, demand.TaxRaise);
+            }
+            else if (ColonyById(demand.ColonyId) is not { } colony || colony.StoreOf(demand.GoodsId!) < demand.GoodsAmount)
+            {
+                SetTax(_human, demand.TaxRaise + ForceTaxExtra); // FORCE_TAX: goods removed, the King raises it anyway
+            }
+            // else: goods still present → Boston Tea Party (item 3); for now the demand is simply declined.
+        }
+    }
+
+    /// <summary>The new tax rate after a raise: <c>min(tax + 1 + rnd[0, 3 + turn/40), 65)</c> (FreeCol <c>Monarch.raiseTax</c>).</summary>
+    internal int RaiseTaxAmount(IGameRandom rng)
+    {
+        int divisor = Math.Max(1, (6 - MonarchTaxAdjustment) * 10); // 40 at medium
+        int adjust = 1 + rng.Next(3 + Turn / divisor);
+        return Math.Min(_human.TaxRate + adjust, MonarchMaxTaxRate);
+    }
+
+    /// <summary>The new tax rate after a reduction: <c>max(tax − 1 − rnd[0, 8), 20)</c> (FreeCol <c>Monarch.lowerTax</c>).</summary>
+    internal int LowerTaxAmount(IGameRandom rng)
+    {
+        int adjust = 1 + rng.Next(Math.Max(1, 10 - MonarchTaxAdjustment)); // 1 + rnd[0,8) at medium
+        return Math.Max(_human.TaxRate - adjust, MonarchMinTaxRate);
+    }
+
+    /// <summary>Sets a player's sales tax (FreeCol <c>csSetTax</c>); the rate is read live wherever tax applies.</summary>
+    private static void SetTax(Player player, int rate) => player.TaxRate = rate;
+
+    /// <summary>
+    /// The player's most valuable tradeable colony goods the King would tax (FreeCol <c>Player.getMostValuableGoods</c>):
+    /// the highest sale-value stockpile across its colonies (amount capped at one cargo), not boycotted. Null if none.
+    /// </summary>
+    internal ValuableGoods? GetMostValuableGoods(Player player)
+    {
+        ValuableGoods? best = null;
+        int bestValue = -1;
+        foreach (Colony colony in _colonies.Where(c => c.OwnerId == player.PlayerId).OrderBy(c => c.Id))
+        {
+            foreach ((string goodsId, int stored) in colony.Stores.OrderBy(kv => kv.Key))
+            {
+                if (stored <= 0 || !player.Market.IsTradeable(goodsId))
+                {
+                    continue; // (arrears/boycott exclusion arrives with item 3)
+                }
+                int amount = Math.Min(stored, Market.CargoChunk);
+                int value = player.Market.BidPrice(goodsId) * amount;
+                if (value > bestValue)
+                {
+                    best = new ValuableGoods(goodsId, colony.Id, amount);
+                    bestValue = value;
+                }
+            }
+        }
+        return best;
+    }
+
+    private Colony? ColonyById(int id) => _colonies.FirstOrDefault(c => c.Id == id);
 
     private bool HumanHasSettlements() => _colonies.Any(c => c.OwnerId == _human.PlayerId);
 

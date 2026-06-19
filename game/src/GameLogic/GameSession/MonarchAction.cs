@@ -53,3 +53,23 @@ public enum MonarchAction
     /// <summary>The King is displeased (a consequence of declining an affordable offer).</summary>
     Displeasure,
 }
+
+/// <summary>
+/// A monarch demand awaiting the human's accept/reject (FreeCol <c>MonarchSession</c>; transient — not saved). For a
+/// tax demand it carries the proposed <paramref name="TaxRaise"/> and the goods the King eyes (so a reject can check
+/// whether they are still in the colony — a tea party — or already gone — a forced rise). Later items extend it for
+/// mercenary offers (force + price).
+/// </summary>
+/// <param name="Action">The monarch action being demanded.</param>
+/// <param name="TaxRaise">The proposed new tax rate (for a RAISE_TAX demand).</param>
+/// <param name="GoodsId">The taxed goods' id (for a RAISE_TAX demand).</param>
+/// <param name="ColonyId">The colony holding those goods.</param>
+/// <param name="GoodsAmount">How much of the goods the demand concerns (capped at one cargo).</param>
+public sealed record PendingMonarchDemand(
+    MonarchAction Action, int TaxRaise = 0, string? GoodsId = null, int ColonyId = 0, int GoodsAmount = 0);
+
+/// <summary>The most valuable tradeable goods stockpile in a player's colonies (FreeCol <c>getMostValuableGoods</c>).</summary>
+/// <param name="GoodsId">The goods type id.</param>
+/// <param name="ColonyId">The colony holding it.</param>
+/// <param name="Amount">The amount concerned (capped at one cargo).</param>
+public sealed record ValuableGoods(string GoodsId, int ColonyId, int Amount);

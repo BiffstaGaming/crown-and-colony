@@ -1,6 +1,7 @@
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.Trade;
 using Xunit;
 
 namespace CrownAndColony.GameLogic.Tests.GameSession;
@@ -21,6 +22,24 @@ public class MonarchTests
         Game game = Game.New(Classic, seed);
         game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
         return game;
+    }
+
+    private static (Game Game, CrownAndColony.GameLogic.Colonies.Colony Colony) FoundedColony(ulong seed = Seed)
+    {
+        Game game = Game.New(Classic, seed);
+        CrownAndColony.GameLogic.Colonies.Colony colony =
+            game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        return (game, colony);
+    }
+
+    /// <summary>Dequeues scripted ints from <c>Next</c> (the bound is ignored) — for exact-amount monarch rolls.</summary>
+    private sealed class ScriptedRandom(params int[] values) : IGameRandom
+    {
+        private readonly Queue<int> _values = new(values);
+        public int Next(int maxExclusive) => _values.Dequeue();
+        public int Next(int minInclusive, int maxExclusive) => _values.Dequeue();
+        public double NextDouble() => 0;
+        public RandomState SaveState() => new(0, 0);
     }
 
     // ── Weighted pick helper ─────────────────────────────────────────────────────────────────────────────
@@ -140,4 +159,89 @@ public class MonarchTests
         Assert.Equal(a.RandomState, b.RandomState);
         Assert.Equal(a.HumanPlayer.TaxRate, b.HumanPlayer.TaxRate);
     }
+
+    // ── Item 2: RAISE_TAX demand + tax mutation ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void RaiseTaxAmount_AddsOnePlusRoll_CappedAtMax()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.TaxRate = 10;
+        Assert.Equal(13, game.RaiseTaxAmount(new ScriptedRandom(2))); // 10 + 1 + 2
+        game.HumanPlayer.TaxRate = 64;
+        Assert.Equal(65, game.RaiseTaxAmount(new ScriptedRandom(5))); // capped at 65
+    }
+
+    [Fact]
+    public void LowerTaxAmount_SubtractsOnePlusRoll_FlooredAtMin()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.TaxRate = 40;
+        Assert.Equal(36, game.LowerTaxAmount(new ScriptedRandom(3))); // 40 - 1 - 3
+        game.HumanPlayer.TaxRate = 21;
+        Assert.Equal(20, game.LowerTaxAmount(new ScriptedRandom(7))); // floored at 20
+    }
+
+    [Fact]
+    public void GetMostValuableGoods_NullWithoutTradeableStores()
+    {
+        Game game = Game.New(Classic, Seed); // no colony at all
+        Assert.Null(game.GetMostValuableGoods(game.HumanPlayer));
+    }
+
+    [Fact]
+    public void GetMostValuableGoods_PicksTheTradeableStockpile_CappedAtOneCargo()
+    {
+        (Game game, var colony) = FoundedColony();
+        colony.AddGoods("model.goods.furs", 150); // more than one cargo
+
+        ValuableGoods? best = game.GetMostValuableGoods(game.HumanPlayer);
+
+        Assert.Equal("model.goods.furs", best!.GoodsId);
+        Assert.Equal(colony.Id, best.ColonyId);
+        Assert.Equal(Market.CargoChunk, best.Amount); // capped at 100
+    }
+
+    [Fact]
+    public void DispatchRaiseTax_OpensADemand_AcceptRaisesTheTax()
+    {
+        (Game game, var colony) = FoundedColony();
+        colony.AddGoods("model.goods.furs", 100);
+        game.HumanPlayer.TaxRate = 10;
+
+        game.DispatchMonarchAction(MonarchAction.RaiseTaxAct, new ScriptedRandom(2)); // raise → 10 + 1 + 2 = 13
+        Assert.Equal(13, game.PendingMonarchDemand!.TaxRaise);
+
+        game.RespondToMonarch(accept: true);
+        Assert.Equal(13, game.HumanPlayer.TaxRate);
+        Assert.Null(game.PendingMonarchDemand);
+    }
+
+    [Fact]
+    public void RejectTaxDemand_WithGoodsGone_ForcesTaxPlusThree()
+    {
+        (Game game, var colony) = FoundedColony();
+        colony.AddGoods("model.goods.furs", 100);
+        game.HumanPlayer.TaxRate = 10;
+        game.DispatchMonarchAction(MonarchAction.RaiseTaxAct, new ScriptedRandom(0)); // raise → 11
+
+        colony.AddGoods("model.goods.furs", -100); // the player sold/moved the taxed goods before answering
+        game.RespondToMonarch(accept: false);
+
+        Assert.Equal(11 + 3, game.HumanPlayer.TaxRate); // FORCE_TAX surcharge
+    }
+
+    [Fact]
+    public void DispatchLowerTax_AppliesImmediately_NoDemand()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.TaxRate = 40;
+        game.DispatchMonarchAction(MonarchAction.LowerTaxWar, new ScriptedRandom(3));
+        Assert.Equal(36, game.HumanPlayer.TaxRate); // 40 - 1 - 3
+        Assert.Null(game.PendingMonarchDemand);
+    }
+
+    [Fact]
+    public void RespondToMonarch_ThrowsWhenNothingPending() =>
+        Assert.Throws<InvalidOperationException>(() => FoundedGame().RespondToMonarch(true));
 }
