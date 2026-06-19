@@ -72,14 +72,19 @@ public sealed partial class Game
         player.DeclaredIndependenceTurn = Turn;
         _units.RemoveAll(u => u.OwnerId == player.PlayerId && !u.IsNative && !u.IsOnMap); // units in/bound for Europe are forfeit
         player.RecruitDockList.Clear(); // Europe is closed to a rebel
+        player.Market.Reinitialise();   // the new nation trades on a clean market — colonial boycotts/drift cleared (FreeCol reinitialiseMarket)
 
         MusterContinentalArmy(player);
         CreateRefPlayer(player);
     }
 
     /// <summary>
-    /// Upgrades the rebel's veteran soldiers to colonial regulars (FreeCol continental-army muster): per colony with
-    /// SoL &gt; 50, the cap is <c>(unitCount + 2) · (SoL − 50) / 100</c>; the strongest rebels rise first.
+    /// Upgrades the rebel's veteran soldiers to colonial regulars (FreeCol continental-army muster). The cap is summed
+    /// over colonies with SoL &gt; 50 as <c>(unitCount + 2) · (SoL − 50) / 100</c>, and the earliest veterans rise first.
+    /// <para><b>Faithful-subset deviation:</b> FreeCol caps and draws this <em>per colony</em> from each colony's own
+    /// resident units (<c>getAllUnitsList</c>); our colony workers are not in the unit list, so we use the rebel's
+    /// nationwide unit count in each term and upgrade veterans from the whole map. This can over-muster in a
+    /// multi-colony rebellion versus FreeCol — a per-colony port is a follow-up (TODO 86d3c9rg6 / a muster-fidelity task).</para>
     /// </summary>
     private void MusterContinentalArmy(Player player)
     {

@@ -1,6 +1,7 @@
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
+using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
@@ -83,8 +84,10 @@ public class IndependenceTests
     {
         (Game game, Colony colony) = RebellionReady();
         Player rebel = game.HumanPlayer;
-        // Three veteran soldiers — the muster cap with one SoL-100 colony is
-        // (unitCount + 2) * (100 - 50) / 100 = (3 + 2) * 50 / 100 = 2 upgrades, leaving 1.
+        // Disband the leftover starting colonist so the rebel's unit count is exactly the 3 veterans below; with one
+        // SoL-100 colony the cap is then (3 + 2) * (100 - 50) / 100 = 2 upgrades, leaving 1 (pins the cap + the
+        // "some veterans un-mustered" branch).
+        game.Disband(game.Units.First(u => u.OwnerId == rebel.PlayerId && u.IsOnMap && u.Type.Id == "model.unit.freeColonist"));
         foreach (Position p in EmptyLand(game, 3))
         {
             game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), p);
@@ -92,10 +95,8 @@ public class IndependenceTests
 
         game.DeclareIndependence(rebel);
 
-        int colonialRegulars = game.Units.Count(u => u.Type.Id == "model.unit.colonialRegular");
-        int remainingVeterans = game.Units.Count(u => u.Type.Id == "model.unit.veteranSoldier" && u.OwnerId == rebel.PlayerId);
-        Assert.Equal(3, colonialRegulars + remainingVeterans); // conservation: every spawned veteran is one or the other
-        Assert.True(colonialRegulars >= 1, "the muster should have upgraded at least one veteran to a colonial regular");
+        Assert.Equal(2, game.Units.Count(u => u.Type.Id == "model.unit.colonialRegular"));
+        Assert.Equal(1, game.Units.Count(u => u.Type.Id == "model.unit.veteranSoldier" && u.OwnerId == rebel.PlayerId));
     }
 
     [Fact]
@@ -227,6 +228,61 @@ public class IndependenceTests
         Assert.Equal(0, game.Units.Count(u => u.OwnerId == refP.PlayerId)); // the REF is gone (land surrendered, navy withdrawn)
         Assert.Equal(rebelUnitsBefore + refLandOnMap, game.Units.Count(u => u.OwnerId == rebel.PlayerId)); // the on-map redcoats surrendered
         Assert.Equal(rebel, game.Winner);
+    }
+
+    /// <summary>Disbands the REF down to the given on-roster land/naval unit counts (to drive the defeat thresholds).</summary>
+    private static void ReduceRefTo(Game game, Player refP, int keepLand, int keepNaval)
+    {
+        foreach (Unit u in game.Units.Where(u => u.OwnerId == refP.PlayerId && !u.Type.IsNaval).OrderBy(u => u.Id).Skip(keepLand).ToList())
+        {
+            game.Disband(u);
+        }
+        foreach (Unit u in game.Units.Where(u => u.OwnerId == refP.PlayerId && u.Type.IsNaval).OrderBy(u => u.Id).Skip(keepNaval).ToList())
+        {
+            game.Disband(u);
+        }
+    }
+
+    [Fact]
+    public void RebelWinsTheWar_WhenTheRefIsBrokenAndTheTurnResolves()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        Player refP = Ref(game);
+        ReduceRefTo(game, refP, keepLand: 0, keepNaval: 1); // broken: 0 land, 1 naval, no colonies held
+        Assert.True(game.CheckForRefDefeat(refP, rebel));
+
+        game.EndTurn(); // ResolveWarOfIndependence (in the world-advance band) must fire GiveIndependence
+
+        Assert.Equal(PlayerType.Independent, rebel.PlayerType);
+        Assert.Equal(rebel, game.Winner);
+    }
+
+    [Fact]
+    public void CheckForRefDefeat_AtTheSevenLandTwoNavalBoundary_IsNotDefeated()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        Player refP = Ref(game);
+        ReduceRefTo(game, refP, keepLand: 7, keepNaval: 2); // exactly at the threshold — still a credible force
+        Assert.False(game.CheckForRefDefeat(refP, rebel)); // pins the >= comparison (7 land AND 2 naval = not broken)
+    }
+
+    [Fact]
+    public void Ref_DrawsNothingFromStreamZero_DuringTheWar()
+    {
+        // The REF fights on its OWN stream — with the human idle, stream 0 must not move (ADR-009 isolation, not just determinism).
+        (Game game, _) = RebellionReady(7777);
+        game.DeclareIndependence(game.HumanPlayer);
+        game.EndTurn(); // let the REF land/settle
+        RandomState frozen = game.RandomState;
+        for (int i = 0; i < 4; i++)
+        {
+            game.EndTurn(); // the REF wages war on its own stream
+        }
+        Assert.Equal(frozen, game.RandomState);
     }
 
     [Fact]

@@ -160,6 +160,35 @@ public class MonarchTests
         Assert.Equal(a.HumanPlayer.TaxRate, b.HumanPlayer.TaxRate);
     }
 
+    [Fact]
+    public void MonarchTick_DrawsNothingFromStreamZero_AcrossTheGraceBoundary()
+    {
+        // Stronger than the twin test: with the human idle, stream 0 must not move even though the monarch acts every
+        // turn past the grace boundary (turn 30) — the ephemeral monarch RNG is isolated (ADR-009).
+        Game game = FoundedGame(7777);
+        for (int i = 0; i < 28; i++)
+        {
+            game.EndTurn(); // settle into a quiet stream-0 state (just before the grace boundary)
+        }
+        RandomState frozen = game.RandomState;
+        for (int i = 0; i < 10; i++)
+        {
+            game.EndTurn(); // run past turn 30 — the King now weighs an action every turn
+        }
+        Assert.Equal(frozen, game.RandomState); // …yet stream 0 is byte-frozen
+    }
+
+    [Fact]
+    public void FreshGame_OmitsAllOptionalMonarchTokens()
+    {
+        // omit-when-default for the v37-v39 player tokens: a game with no tea party / displeasure / support carries none.
+        string json = CrownAndColony.GameLogic.Persistence.SaveGame.From(Game.New(Classic, Seed)).ToJson();
+        Assert.DoesNotContain("\"Arrears\"", json);
+        Assert.DoesNotContain("\"TeaPartyBellTurns\"", json);
+        Assert.DoesNotContain("\"MonarchDispleasure\"", json);
+        Assert.DoesNotContain("\"SupportSeaGranted\"", json);
+    }
+
     // ── Item 2: RAISE_TAX demand + tax mutation ──────────────────────────────────────────────────────────
 
     [Fact]

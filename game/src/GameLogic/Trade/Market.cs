@@ -184,6 +184,21 @@ public sealed class Market
         }
     }
 
+    /// <summary>
+    /// Resets the market to its ruleset baseline — clears every boycott and price/inventory drift (FreeCol
+    /// <c>Player.reinitialiseMarket</c>): a new nation trades on a clean market on declaring independence.
+    /// </summary>
+    internal void Reinitialise()
+    {
+        _arrears.Clear();
+        foreach (Datum d in _data.Values)
+        {
+            d.AmountInMarket = d.Goods.Market!.InitialAmount;
+            d.Ask = -1; // disable the jump-clamp for the recompute (as LoadDeltas does)
+            Recompute(d);
+        }
+    }
+
     /// <summary>Captures the inventory of every good whose market has moved from its seed.</summary>
     internal IReadOnlyDictionary<string, int> SaveDeltas() =>
         _data.Values
