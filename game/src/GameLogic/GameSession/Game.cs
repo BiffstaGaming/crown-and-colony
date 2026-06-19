@@ -4117,9 +4117,10 @@ public sealed partial class Game
         UnitType? Unit);
 
     /// <summary>
-    /// Resolves a construction id to a building or a buildable <b>land</b> unit; <c>null</c> when the id is
-    /// neither (unknown, a non-buildable type, or a ship — naval construction needs a shipyard's water-scoped
-    /// build ability and a water berth, deferred, so ships are excluded here to keep the colony tile valid).
+    /// Resolves a construction id to a building or a buildable unit (land <em>or</em> naval); <c>null</c> when the
+    /// id is neither (unknown or a non-buildable type). A ship is buildable only where a shipyard grants the
+    /// water-scoped build ability (<see cref="ColonyCanBuildUnit"/>) and launches into a water berth beside the
+    /// colony on completion (<see cref="RunConstruction"/>).
     /// </summary>
     private Buildable? ResolveBuildable(string id)
     {
@@ -4127,7 +4128,7 @@ public sealed partial class Game
         {
             return new Buildable(b.Id, b.ShortName, b.BuildCost, b.RequiredPopulation, b.RequiredAbilitiesOrEmpty, IsUnit: false, b.UpgradesFrom, Unit: null);
         }
-        if (Ruleset.FindBuildableUnit(id) is { IsNaval: false } u)
+        if (Ruleset.FindBuildableUnit(id) is { } u)
         {
             return new Buildable(u.Id, u.ShortName, u.BuildCostOrEmpty, u.RequiredPopulation, u.RequiredAbilitiesOrEmpty, IsUnit: true, UpgradesFrom: null, Unit: u);
         }
@@ -4192,10 +4193,17 @@ public sealed partial class Game
     /// True when one of the colony's buildings grants the build ability scoped to <paramref name="unit"/> (FreeCol
     /// <c>UnitType.canBeBuiltInColony</c>): carpenter's house → wagon train (a free base building, so every colony
     /// qualifies), armory → artillery, shipyard → any naval unit. A unit with no enabling building is MISSING_BUILD_ABILITY.
+    /// A <b>ship</b> additionally needs the colony to be <b>coastal</b> — it launches into an adjacent water berth, and
+    /// FreeCol gates the shipyard itself on <c>hasPort</c>, so a landlocked shipyard can never build one.
     /// </summary>
-    private bool ColonyCanBuildUnit(Colony colony, UnitType unit) =>
-        colony.Buildings.Select(Ruleset.Building)
-            .Any(b => b.BuildableUnitTypeIdsOrEmpty.Contains(unit.Id) || (unit.IsNaval && b.BuildsNavalUnits));
+    private bool ColonyCanBuildUnit(Colony colony, UnitType unit)
+    {
+        if (unit.IsNaval)
+        {
+            return IsColonyCoastal(colony) && colony.Buildings.Select(Ruleset.Building).Any(b => b.BuildsNavalUnits);
+        }
+        return colony.Buildings.Select(Ruleset.Building).Any(b => b.BuildableUnitTypeIdsOrEmpty.Contains(unit.Id));
+    }
 
     /// <summary>
     /// True when building one more <paramref name="unit"/> stays within its spec <c>&lt;limit&gt;</c> (FreeCol
@@ -4298,9 +4306,9 @@ public sealed partial class Game
     public IEnumerable<BuildingType> Buildables(Colony colony) =>
         Ruleset.BuildingTypes.Where(b => CheckSetBuild(colony, b.Id).Allowed);
 
-    /// <summary>Land unit types the colony could start constructing right now (artillery, wagon train).</summary>
+    /// <summary>Unit types the colony could start constructing right now (artillery, wagon train, and — at a shipyard colony — ships).</summary>
     public IEnumerable<UnitType> BuildableUnits(Colony colony) =>
-        Ruleset.BuildableUnitTypes.Where(u => !u.IsNaval && CheckSetBuild(colony, u.Id).Allowed);
+        Ruleset.BuildableUnitTypes.Where(u => CheckSetBuild(colony, u.Id).Allowed);
 
     /// <summary>
     /// Advances the colony's construction queue (FreeCol <c>csNextBuildable</c> + completion): any front item that
@@ -4336,7 +4344,12 @@ public sealed partial class Game
             bool repeats = target.IsUnit && colony.BuildQueue.Count == 1; // a lone queued unit is rebuilt next turn
             if (target.IsUnit)
             {
-                SpawnUnit(Ruleset.Unit(target.Id), colony.Position, colony.OwnerId); // a built unit musters at the colony
+                // A land unit musters on the colony tile; a ship launches into the colony's port — a water tile beside it
+                // (a shipyard colony is coastal, so a water neighbour always exists), since a ship can't sit on land.
+                Position berth = target.Unit is { IsNaval: true }
+                    ? colony.Position.Neighbours().First(n => Map.InBounds(n) && Map.TerrainAt(n).IsWater)
+                    : colony.Position;
+                SpawnUnit(Ruleset.Unit(target.Id), berth, colony.OwnerId);
             }
             else if (target.UpgradesFrom is { } upgraded)
             {

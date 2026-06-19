@@ -13,9 +13,10 @@ namespace CrownAndColony.GameLogic.Tests.Colonies;
 /// <summary>
 /// Building units in a colony (FreeCol <c>ServerColony.csBuildUnit</c> + <c>Colony.getNoBuildReason</c>): the
 /// construction queue can hold land units — <b>artillery</b> (192 hammers + 40 tools, needs an armory) and the
-/// <b>wagon train</b> (40 hammers, the free carpenter's house enables it). A completed unit musters on the colony
-/// tile under the colony's owner, costs no colonist, and can be built repeatedly; the wagon train is capped at one
-/// per colony. Ships and the free colonist are excluded. No save-format change (a unit id rides the queue strings).
+/// <b>wagon train</b> (40 hammers, the free carpenter's house enables it) — and <b>ships</b> at a <b>coastal shipyard</b>
+/// colony (which launch on an adjacent water tile). A completed land unit musters on the colony tile under the colony's
+/// owner, costs no colonist, and can be built repeatedly; the wagon train is capped at one per colony. The free colonist
+/// is food-grown, never built. No save-format change (a unit id rides the queue strings).
 /// </summary>
 public class BuildUnitTests
 {
@@ -101,14 +102,45 @@ public class BuildUnitTests
     }
 
     [Fact]
-    public void ShipsAndTheFreeColonist_CannotBeBuilt()
+    public void ALandlockedShipyard_CannotBuildShips_AndNoColonyBuildsAFreeColonist()
     {
-        Game game = PlainsColony(out Colony colony);
-        // A shipyard *does* grant the naval build scope — yet ships stay excluded this slice (deferred at
-        // ResolveBuildable's IsNaval filter), so the refusal isn't merely "no enabling building".
+        Game game = PlainsColony(out Colony colony); // 1×1 all-land map → the colony has no water neighbour
+        // A shipyard grants the naval build scope, but a ship needs a port to launch into — a landlocked colony can't.
         colony.AddBuilding("model.building.shipyard");
-        Assert.False(game.CheckSetBuild(colony, "model.unit.caravel").Allowed);   // naval — deferred even with a shipyard
-        Assert.False(game.CheckSetBuild(colony, "model.unit.freeColonist").Allowed); // food-grown, not built
+        Assert.False(game.CheckSetBuild(colony, "model.unit.caravel").Allowed);       // no port → no ship
+        Assert.False(game.CheckSetBuild(colony, "model.unit.freeColonist").Allowed);  // food-grown, not built
+    }
+
+    [Fact]
+    public void ACoastalShipyard_CanBuildAShip_AndOffersItInTheBuildMenu()
+    {
+        Game game = CoastalShipyardColony(out Colony colony, out _);
+        Assert.True(game.CheckSetBuild(colony, "model.unit.caravel").Allowed);
+        Assert.Contains(game.BuildableUnits(colony), u => u.Id == "model.unit.caravel");
+
+        // Without the shipyard the same coastal colony cannot (no naval build ability).
+        Game noYard = CoastalColony(out Colony bare, out _);
+        Assert.False(noYard.CheckSetBuild(bare, "model.unit.caravel").Allowed);
+        Assert.DoesNotContain(noYard.BuildableUnits(bare), u => u.Id == "model.unit.caravel");
+    }
+
+    [Fact]
+    public void BuildingAShip_LaunchesItOnAdjacentWater_UnderTheColonyOwner()
+    {
+        Game game = CoastalShipyardColony(out Colony colony, out Position water);
+        GoodsOutput hammers = Classic.Unit("model.unit.caravel").BuildCostOrEmpty.First(c => c.GoodsId == Hammers);
+        GoodsOutput tools = Classic.Unit("model.unit.caravel").BuildCostOrEmpty.First(c => c.GoodsId == Tools);
+        colony.AddGoods(Hammers, hammers.Amount);
+        colony.AddGoods(Tools, tools.Amount);
+        game.SetBuild(colony, "model.unit.caravel");
+
+        game.EndTurn();
+
+        Unit caravel = Assert.Single(game.Units, u => u.Type.Id == "model.unit.caravel");
+        Assert.Equal(water, caravel.Position);             // launched into the port (adjacent water), not on the land tile
+        Assert.True(caravel.IsOnMap);
+        Assert.Equal(colony.OwnerId, caravel.OwnerId);
+        Assert.Equal(0, colony.StoreOf(Hammers));          // spent its build cost
     }
 
     [Fact]
@@ -337,6 +369,34 @@ public class BuildUnitTests
             Colonies = [new SavedColony(1, "Forge", 0, 0, 1)],
         }.Restore(Classic);
         colony = game.Colonies[0];
+        return game;
+    }
+
+    /// <summary>A coastal colony with no shipyard: plains at (0,0), ocean at (1,0) — the colony's port.</summary>
+    private static Game CoastalColony(out Colony colony, out Position water)
+    {
+        var game = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 2,
+            MapHeight = 1,
+            Terrain = ["model.tile.plains", "model.tile.ocean"],
+            Units = [],
+            Explored = [0, 1],
+            Colonies = [new SavedColony(1, "Harbor", 0, 0, 1)],
+        }.Restore(Classic);
+        colony = game.Colonies[0];
+        water = new Position(1, 0);
+        return game;
+    }
+
+    /// <summary>A coastal colony (see <see cref="CoastalColony"/>) with a shipyard — can build and launch ships.</summary>
+    private static Game CoastalShipyardColony(out Colony colony, out Position water)
+    {
+        Game game = CoastalColony(out colony, out water);
+        colony.AddBuilding("model.building.shipyard");
         return game;
     }
 
