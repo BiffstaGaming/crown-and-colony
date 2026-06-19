@@ -259,4 +259,49 @@ public class IndependenceTests
     {
         Assert.DoesNotContain("\"SpanishSuccession\"", SaveGame.From(Game.New(Classic, Seed)).ToJson());
     }
+
+    // ── Item 10: Lose — the rebel loses its last connected port ──────────────────────────────────────────
+
+    [Fact]
+    public void Rebel_LosingItsLastPort_IsDefeated()
+    {
+        (Game game, Colony colony) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        Assert.Equal(1, game.GetNumberOfPorts(rebel));
+        Assert.False(game.IsRebelDefeated(rebel)); // still holds its port
+
+        colony.OwnerId = Ref(game).PlayerId; // the REF captures the last port
+
+        Assert.Equal(0, game.GetNumberOfPorts(rebel));
+        Assert.True(game.IsRebelDefeated(rebel));
+    }
+
+    [Fact]
+    public void ColonialPlayer_WithNoPort_IsNotRebelDefeated()
+    {
+        // The lose condition only applies after declaring — a plain colony with no port is just a colony.
+        Game game = Game.New(Classic, Seed);
+        Assert.False(game.IsRebelDefeated(game.HumanPlayer));
+    }
+
+    [Fact]
+    public void EndTurn_StaysByteStable_AfterTheRebelLosesItsLastPort()
+    {
+        // Defeat is a presentation flag — EndTurn must NOT short-circuit (ADR-009 byte-stability). Twins with a
+        // defeated rebel still advance stream 0 identically.
+        (Game a, Colony ca) = RebellionReady(7777);
+        (Game b, Colony cb) = RebellionReady(7777);
+        a.DeclareIndependence(a.HumanPlayer);
+        b.DeclareIndependence(b.HumanPlayer);
+        ca.OwnerId = Ref(a).PlayerId;
+        cb.OwnerId = Ref(b).PlayerId;
+        for (int i = 0; i < 3; i++)
+        {
+            a.EndTurn();
+            b.EndTurn();
+        }
+        Assert.True(a.IsRebelDefeated(a.HumanPlayer));
+        Assert.Equal(a.RandomState, b.RandomState);
+    }
 }

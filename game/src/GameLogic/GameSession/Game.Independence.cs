@@ -241,6 +241,18 @@ public sealed partial class Game
         }
     }
 
+    /// <summary>The number of a player's colonies with a connected port (FreeCol <c>Player.getNumberOfPorts</c>).</summary>
+    public int GetNumberOfPorts(Player player) => ColoniesOf(player).Count(IsColonyCoastal);
+
+    /// <summary>
+    /// Whether a rebel/independent nation has been crushed (FreeCol <c>checkForDeath</c> REBEL/INDEPENDENT): once it
+    /// has declared, holding <b>no connected port</b> means it has lost the War of Independence. Derived and
+    /// recomputed on demand — never saved; a plain colonial power is never "rebel-defeated" this way. The presentation
+    /// reads this for the defeat screen; <see cref="EndTurn"/> does NOT short-circuit on it (ADR-009 byte-stability).
+    /// </summary>
+    public bool IsRebelDefeated(Player player) =>
+        player.PlayerType is PlayerType.Rebel or PlayerType.Independent && GetNumberOfPorts(player) == 0;
+
     /// <summary>Per-turn War-of-Independence resolution: a rebel that has broken the REF wins its independence.</summary>
     private void ResolveWarOfIndependence()
     {

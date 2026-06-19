@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | In progress — declaration + muster (7), REF arrival/war combat (8), the victory (9). The defeat condition (10) follows. |
-| **Last verified** | 2026-06-19 @ Win: defeat REF + Spanish Succession (`86d3c9vfn`, save v42) |
+| **Status** | Implemented (GameLogic) — declaration + continental muster, REF arrival + War-of-Independence combat, victory (defeat the REF) + Spanish Succession, and defeat (lose your last port). The war UI is P7. |
+| **Last verified** | 2026-06-19 @ Lose: rebel loses last port (`86d3c9vh1`) |
 | **Code** | `game/src/GameLogic/GameSession/Game.Independence.cs`, `Force.cs`; `Player.PlayerType`/`DeclaredIndependenceTurn` |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/IndependenceTests.cs` |
 | **FreeCol reference** | `InGameController.csDeclareIndependence`, `Player.getSoL`, `model.event.declareIndependence` |
@@ -33,6 +33,7 @@ From the next turn the **King's army sails in and lands near your ports**, then 
 - **The war** (`RunRefTurn`, item 8): each REF turn, units still in Europe **land** (`LandRefUnits`) onto the nearest empty tiles around the rebel's connected-port colonies (land units ashore, ships on the adjacent water), then the REF **prosecutes the war** — because the rebel *is* the human, the REF reuses the existing foreign-power war AI (hunt + assault the rebel's units and colonies). The REF draws entirely from **its own RNG stream**; the rebel attacks the REF through the normal stream-0 combat. The REF↔rebel war stance never cools (the colonial-tension decay touches only `Colonial` players).
 - **Winning** (`ResolveWarOfIndependence`, item 9): each turn, the rebel wins (FreeCol `checkForREFDefeat`) when the REF **holds no colonies**, the rebel's **land power ≥ 1.5×** the REF's, and the REF is reduced **below 7 land or 2 naval** units (counting its whole force, so the win can't fire before the army even lands). On winning (`GiveIndependence`): peace with the King, the rebel becomes **`Independent`** with **no tax**, the **surviving redcoats on the map surrender** to the new nation (the fleet sails home), and that nation is the **`Winner`**.
 - **Spanish Succession** (`RunSpanishSuccession`, a separate event): once, from **1600**, a fading European AI (SoL < 50) is **absorbed** by the dominant one (SoL > 50) — its colonies and units change hands. (Not the win condition; a late-game consolidation.)
+- **Losing** (`IsRebelDefeated`, item 10): once you've declared, holding **no connected port** (`GetNumberOfPorts == 0` — the REF has taken them all) means you've **lost** the War of Independence. This is a flag the presentation reads for the defeat screen; the turn loop keeps running regardless (a defeated human must not freeze stream 0 — ADR-009). A plain colony with no port is never "rebel-defeated".
 
 **Deviations from original / FreeCol:** the gate (SoL ≥ 50, ≥ 1 connected port, year cutoff), the muster cap, and the veteran→colonial-regular upgrade match FreeCol. The REF lands as units in "Europe" (a holding state) before the invasion, then ashore near rebel ports. The REF reuses the foreign-power war AI rather than a bespoke amphibious doctrine (faithful-subset). The REF combat ambush-penalty and a dedicated naval transport doctrine are deferred; the last-colonial-year is a code constant pending ruleset routing (`86d3c9rg6`). Native re-stancing on declaration and the on-declaration mercenary offer are deferred.
 
@@ -58,8 +59,9 @@ From the next turn the **King's army sails in and lands near your ports**, then 
 - [x] Declare Independence + continental muster + REF takes the field (`86d3c9v28`, save v41).
 - [x] REF arrival/landing + War-of-Independence combat (`86d3c9v8k`) — `RunRefTurn`/`LandRefUnits`, reuses the war AI on the REF stream.
 - [x] Win: defeat/expel the REF → independence granted + Spanish Succession (`86d3c9vfn`, save v42).
-- [ ] Lose: rebel loses its last connected port (`86d3c9vh1`).
+- [x] Lose: rebel loses its last connected port (`86d3c9vh1`) — `IsRebelDefeated` (derived; EndTurn doesn't short-circuit).
 - [ ] Native re-stancing + on-declaration mercenary offer; last-colonial-year via ruleset (`86d3c9rg6`).
+- [ ] The War-of-Independence UI (declaration screen, defeat/victory screens, REF-arrival warning) — P7.
 
 ## Changelog
 
@@ -68,3 +70,4 @@ From the next turn the **King's army sails in and lands near your ports**, then 
 | 2026-06-19 | **Declare Independence**: `PlayerType` Rebel/Independent/REF; `NationalSonsOfLiberty`; `CheckDeclareIndependence`/`DeclareIndependence` (gate + lose-Europe + continental muster veteran→colonial-regular + REF player at war on its own stream). Save **v41** (`DeclaredIndependenceTurn` + `InterventionBells` + REF player/units). REF landing/combat + win/lose follow | P6 (`86d3c9v28`) |
 | 2026-06-19 | **REF arrival + war combat**: `RunRefTurn` lands the REF (`LandRefUnits`) near rebel ports then reuses the foreign-power war AI to assault the rebel — all on the REF's own RNG stream; the REF↔rebel war stance never decays (colonial-only). No save change (REF units persist via v41). Deterministic twin-game + round-trip tested | P6 (`86d3c9v8k`) |
 | 2026-06-19 | **Victory**: `ResolveWarOfIndependence` (per-turn) fires `GiveIndependence` on `CheckForRefDefeat` (no REF colonies + rebel land power ≥ 1.5× REF + REF < 7 land/2 naval) → rebel becomes `Independent` (tax 0), redcoats surrender, `Winner` set. `RunSpanishSuccession` (year ≥ 1600, once). Save **v42** (`SpanishSuccession` flag, omit-until-fired) | P6 (`86d3c9vfn`) |
+| 2026-06-19 | **Defeat**: `GetNumberOfPorts` + `IsRebelDefeated` — a declared nation with no connected port has lost; a derived presentation flag, EndTurn never short-circuits (ADR-009). No save change | P6 (`86d3c9vh1`) |
