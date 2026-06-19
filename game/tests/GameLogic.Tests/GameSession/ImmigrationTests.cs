@@ -216,6 +216,29 @@ public class ImmigrationTests
         Assert.Equal(Game.RecruitSlots, loaded.RecruitDock.Count);        // a fresh dock was drawn
     }
 
+    // ───── Religious unrest (86d3c7yca): the English (immigration nation type) immigrate faster ─────
+
+    [Fact]
+    public void ReligiousUnrest_ReducesTheImmigrationTarget_ForTheEnglishNationType()
+    {
+        EuropeanNation english = Classic.EuropeanNations.First(n =>
+            n.NationType.Modifiers.Any(m => m.TargetId == "model.modifier.religiousUnrestBonus"));
+
+        Assert.Equal(15, GameWithHumanNation(null).ImmigrationRequired);       // no nation → the full target
+        Assert.Equal(10, GameWithHumanNation(english.Id).ImmigrationRequired); // −33% → round(15 × 0.67)
+    }
+
+    [Fact]
+    public void ReligiousUnrest_StoresTheRawTarget_AndSurvivesSaveRoundTrip()
+    {
+        EuropeanNation english = Classic.EuropeanNations.First(n =>
+            n.NationType.Modifiers.Any(m => m.TargetId == "model.modifier.religiousUnrestBonus"));
+        Game eng = GameWithHumanNation(english.Id);
+
+        Game reloaded = SaveGame.FromJson(SaveGame.From(eng).ToJson()).Restore(Classic);
+        Assert.Equal(10, reloaded.ImmigrationRequired); // reduced on use; the raw 15 rides the save unchanged
+    }
+
     // ───────────────────────── fixtures ─────────────────────────
 
     /// <summary>
@@ -239,5 +262,16 @@ public class ImmigrationTests
             ImmigrationRequired = required,
         };
         return save.Restore(Classic);
+    }
+
+    /// <summary>A fresh game with the human assigned <paramref name="nationId"/> (null = none), via the save/restore path — so its nation-type advantages (e.g. the English religious-unrest bonus) apply.</summary>
+    private static Game GameWithHumanNation(string? nationId)
+    {
+        SaveGame baseSave = SaveGame.From(Game.New(Classic, seed: 42));
+        SaveGame primed = baseSave with
+        {
+            Players = baseSave.Players!.Select(p => p.IsHuman ? p with { NationId = nationId } : p).ToList(),
+        };
+        return SaveGame.FromJson(primed.ToJson()).Restore(Classic);
     }
 }

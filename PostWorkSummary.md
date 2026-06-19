@@ -19,7 +19,7 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
-## 2026-06-19 — P5 "20 more items" batch — items 1-5/20 (ships caught · JPJ · Fugger · ship construction · wagon haulage)
+## 2026-06-19 — P5 "20 more items" batch — items 1-6/20 (ships caught · JPJ · Fugger · ship construction · wagon haulage · religious unrest)
 
 **Requested:** "Get 20 more items from P5 completed WITHOUT stopping" (+ timestamp each message). Working through genuinely-undone P5 backlog items autonomously, shipping each CI-green. (Running solo in the main loop — the spend cap killed parallel workflows; see Needs-you.)
 **Did (item 1 — `86d3c9twd`, `d392ac8`):** When a colony is captured, the former owner's **ships moored in its port** are now resolved (FreeCol `csDamageColonyShips`/`csSinkColonyShips`):
@@ -33,10 +33,12 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 - `ResolveBuildable`/`BuildableUnits` no longer exclude naval units; `ColonyCanBuildUnit` lets a coastal colony with a shipyard (`BuildsNavalUnits`) build any ship, and `RunConstruction` **launches** the finished ship onto the first water tile beside the colony (it can't sit on the land tile), under the colony owner. The coastal gate (mirroring the shipyard's own `hasPort`) stops a landlocked force-added shipyard building a berth-less ship. No save change, no RNG. +4 L1/L2 (`BuildUnitTests`).
 **Did (item 5 — Wagon-train haulage, `86d3c9t3g`, `a8636fd`):** goods now move overland between colonies:
 - `LoadFromColony` generalised from `IsNaval` to `IsCarrier` (cargo `space > 0`) + new `UnloadToColony`, both gated on colony adjacency — a wagon train (space 2) loads at colony A, hauls overland, unloads at colony B (the same load/carry/unload a ship does by sea). Warehouse overflow handled by the end-of-turn spoilage cap. No save/RNG change. +2 L1 (`SailingTests`: overland haul end-to-end + non-carrier refused).
-**Status:** **1121 L1/L2 + 4 soak green**, build clean. No save change any item. Docs: `combat.md` + `founding-fathers.md` + `colonies.md` + `transport.md` (both layers + §5 + changelog + Last-verified each).
+**Did (item 6 — Religious-unrest nation modifier, `86d3c7yca`, `b69bc75`):** the first *nation-type advantage* wired:
+- `ReligiousUnrestFactor(player)` resolves the player's `EuropeanNation.NationType` `religiousUnrestBonus` (FreeCol `RELIGIOUS_UNREST_BONUS`); the **English** (`immigration` type, −33%) get `EffectiveImmigrationRequired` = round(raw × 0.67) → emigrants need a third fewer points, from the start (15→10). Raw target still stored + grown flat (no save change); human defaults to no nation (×1 → byte-identical). The task's *recruit-dock availability filter* was already `IsRecruitable` (recruit-probability + Brewster). +2 L1 (`ImmigrationTests`).
+**Status:** **1123 L1/L2 + 4 soak green**, build clean. No save change any item. Docs: `combat.md` + `founding-fathers.md` + `colonies.md` + `transport.md` + `immigration.md` (both layers + §5 + changelog + Last-verified each).
 **Decisions:** scoped item 1 to **ships** (caught land units deferred). Did NOT pad the count: **factory-tier "+50%"** already data-driven (`6 tobacco→9 cigars`) + build-gate shipped → `86d3c9p1u` effectively done; **ocean fish coastal-bonus** (`86d3c9we8`) deferred as high-blast.
-**Scheduled next:** **item 6/20** — next genuinely-undone P5 item (candidates: religious-unrest recruit-dock filter `86d3c7yca`, trade-route GameLogic `86d3c9rq1`, an AI-depth slice). Auto-resumes via ScheduleWakeup.
-**Needs you:** nothing — continuing through the batch, each item its own committed/pushed/CI-green checkpoint. **5/20 done.** (Tracked tasks: ships-caught `86d3c9twd`, JPJ `86d3c7xpk`, ship-construction `86d3c9p51`, wagon-haulage `86d3c9t3g` were backlog items; Fugger I tracked as new `86d3deqq9`. The remaining tracked-FF tasks de las Casas/Brébeuf/de Sepúlveda are blocked on the in-dev missions/conversion system.)
+**Scheduled next:** **item 7/20** — next genuinely-undone P5 item (candidates: trade-route GameLogic `86d3c9rq1`, an AI-depth slice `86d3c9vq9/vta/vxj/vzp`, another bounded nation/father effect). Auto-resumes via ScheduleWakeup.
+**Needs you:** nothing — continuing through the batch, each item its own committed/pushed/CI-green checkpoint. **6/20 done.** (Tracked backlog tasks: `86d3c9twd`, `86d3c7xpk`, `86d3c9p51`, `86d3c9t3g`, `86d3c7yca`; Fugger tracked as new `86d3deqq9`. Remaining tracked-FF tasks de las Casas/Brébeuf/de Sepúlveda are blocked on the in-dev missions/conversion system.)
 
 ## 2026-06-19 — One-command local launcher + "Running locally" wiki page
 

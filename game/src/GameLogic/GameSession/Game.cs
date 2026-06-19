@@ -322,8 +322,8 @@ public sealed partial class Game
     /// <summary>Immigration points banked toward the human player's next emigrant (crosses + the Europe contribution).</summary>
     public int Immigration => _human.Immigration;
 
-    /// <summary>Immigration points needed to produce the human player's next emigrant (rises by the difficulty's <see cref="Specification.DifficultyOptions.CrossesIncrement"/> each time).</summary>
-    public int ImmigrationRequired => _human.ImmigrationRequired;
+    /// <summary>Immigration points needed to produce the human player's next emigrant — the stored target reduced by the player's religious-unrest advantage (rises by the difficulty's <see cref="Specification.DifficultyOptions.CrossesIncrement"/> each time).</summary>
+    public int ImmigrationRequired => EffectiveImmigrationRequired(_human);
 
     /// <summary>The unit types waiting on the human player's Europe recruitment dock (one id per <see cref="RecruitSlots"/> slot).</summary>
     public IReadOnlyList<string> RecruitDock => _human.RecruitDock;
@@ -5473,6 +5473,37 @@ public sealed partial class Game
     /// bonus, never dropping the turn's total below zero) is added, then each time
     /// the pool meets the target an emigrant arrives in Europe from a random dock slot.
     /// </summary>
+    private const string ReligiousUnrestBonusId = "model.modifier.religiousUnrestBonus";
+
+    /// <summary>
+    /// The religious-unrest factor on a player's immigration target (FreeCol <c>Modifier.RELIGIOUS_UNREST_BONUS</c>):
+    /// the English (the <c>immigration</c> nation type) carry <b>−33%</b>, so their emigrants need a third fewer
+    /// immigration points. Returns 1.0 for a player with no nation (the human's default) or whose nation type lacks
+    /// the modifier — the first <em>nation-type</em> advantage modifier we apply.
+    /// </summary>
+    private double ReligiousUnrestFactor(Player player)
+    {
+        if (player.NationId is not { } nationId
+            || Ruleset.EuropeanNations.FirstOrDefault(n => n.Id == nationId) is not { } nation)
+        {
+            return 1.0;
+        }
+        double factor = 1.0;
+        foreach (FatherModifier modifier in nation.NationType.Modifiers.Where(m => m.TargetId == ReligiousUnrestBonusId))
+        {
+            factor = modifier.ApplyTo(factor);
+        }
+        return factor;
+    }
+
+    /// <summary>
+    /// A player's <b>effective</b> immigration target — the stored target reduced by its <see cref="ReligiousUnrestFactor"/>.
+    /// FreeCol stores this already-reduced; we store the raw target (so the save and the flat <c>crossesIncrement</c> growth
+    /// are unchanged) and reduce on use, which is equivalent: the effective target both starts and grows ×factor.
+    /// </summary>
+    private int EffectiveImmigrationRequired(Player player) =>
+        (int)Math.Round(player.ImmigrationRequired * ReligiousUnrestFactor(player), MidpointRounding.AwayFromZero);
+
     private void AccumulateImmigrationAndEmigrate(Player player)
     {
         // Colony crosses become immigration and leave the warehouse (not tradeable stock).
@@ -5499,7 +5530,7 @@ public sealed partial class Game
 
         // Auto-emigrate (no William Brewster / select-recruit yet → a random dock slot).
         // Guarded on a stocked dock: test rulesets with no recruitable units have none.
-        while (player.RecruitDock.Count > 0 && player.Immigration >= player.ImmigrationRequired)
+        while (player.RecruitDock.Count > 0 && player.Immigration >= EffectiveImmigrationRequired(player))
         {
             Emigrate(player, RandomFor(player).Next(player.RecruitDock.Count));
             ReduceImmigration(player);
@@ -5509,10 +5540,13 @@ public sealed partial class Game
 
     /// <summary>
     /// Consumes immigration on emigration (FreeCol <c>Player.reduceImmigration</c> with
-    /// classic <c>saveProductionOverflow=true</c>): subtract the target, keeping any surplus.
+    /// classic <c>saveProductionOverflow=true</c>): subtract the <b>effective</b> target, keeping any surplus.
     /// </summary>
-    private static void ReduceImmigration(Player player) =>
-        player.Immigration = player.ImmigrationRequired > player.Immigration ? 0 : player.Immigration - player.ImmigrationRequired;
+    private void ReduceImmigration(Player player)
+    {
+        int required = EffectiveImmigrationRequired(player);
+        player.Immigration = required > player.Immigration ? 0 : player.Immigration - required;
+    }
 
     /// <summary>
     /// Fills the dock to <see cref="RecruitSlots"/> with fresh weighted draws. A no-op

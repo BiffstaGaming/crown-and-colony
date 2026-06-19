@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (accrual + auto-emigration + paid recruitment; on the Europe screen; **per-player** — the foreign-power AI runs it too, FP-5) |
-| **Last verified** | 2026-06-18 @ crosses/recruit increments routed through the difficulty system (`86d3c9y08` slice 4) |
+| **Last verified** | 2026-06-19 @ religious-unrest nation modifier (`86d3c7yca`) |
 | **Code** | `game/src/GameLogic/GameSession/Player.cs` (per-player immigration/dock state), `GameSession/Game.cs` (accrual, dock, recruit — `Player`-parameterised), `Specification/UnitType.cs` (recruit weight + person) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/ImmigrationTests.cs`, `ForeignPowerEconomyTests.cs` (the AI recruits onto its own dock with correctly-owned units), `Scenarios/JourneyTests.cs` (Journey 6) |
 | **FreeCol reference** | `Player.java` (immigration/`reduceImmigration`/`updateImmigrationRequired`), `Europe.java` (`getCurrentRecruitPrice`, `getImmigration`), `ServerEurope.java` (`generateRecruitablesList`, `increaseRecruitmentDifficulty`), `ServerPlayer.java` (`csEmigrate`), classic `specification.xml` difficulty options |
@@ -16,7 +16,9 @@ New colonists don't only come from babies born in your colonies — they also **
 - **Crosses** (religious enthusiasm). Every colony has a free **chapel** that makes **1 cross per turn**; build a church and it makes more. Crosses are the "religious unrest" that makes people in the old world want to start a new life across the ocean.
 - A small **flat bonus** (+2 per turn) just for being a colonial power.
 
-These add up into an **immigration pool**. When the pool reaches the **target** (it starts at **15**), one colonist **emigrates** — it appears waiting on your **dock in Europe**. Each time that happens the target goes **up by 2**, so immigrants come a little slower as the game goes on.
+Some nations emigrate faster than others: the **English** are a nation of religious dissenters, so their people are **a third keener to leave** — their immigration target is **−33%**, and immigrants reach their docks sooner all game long. (Other nations have their own advantages elsewhere.)
+
+These add up into an **immigration pool**. When the pool reaches the **target** (it starts at **15**, or **10** for the English), one colonist **emigrates** — it appears waiting on your **dock in Europe**. Each time that happens the target goes **up by 2**, so immigrants come a little slower as the game goes on.
 
 There's a catch: colonists **standing idle in Europe slow immigration down** — each one waiting on the dock costs **−4 per turn** off the pool (so ship them to the New World to keep the flow going). The pool can stall but never goes below zero.
 
@@ -35,7 +37,7 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 |---|---|
 | Immigration per turn | `crosses produced by all colonies` + Europe contribution |
 | Europe contribution | `(persons on the dock × −4) + 2`, but clamped so the **turn's total** immigration is never negative (a person *aboard a ship* in Europe does not count — see [transport.md](transport.md)) |
-| Initial target | **15** (`model.option.initialImmigration`) |
+| Initial target | **15** (`model.option.initialImmigration`), **× the nation's religious-unrest factor** (English `immigration` type ×0.67 → effective 10) |
 | Emigrant produced | whenever pool ≥ target: one recruit leaves the dock for Europe; repeat while still ≥ target |
 | On each emigration | pool reduced by the target (surplus kept — `saveProductionOverflow=true`); target **+2** (`crossesIncrement`) |
 | Dock | **3** slots (`MigrantCount`), each a weighted-random recruitable unit type |
@@ -46,9 +48,9 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 
 **Deviations from original 1994 / FreeCol behavior:**
 - **No recruit selection on free emigration.** William Brewster's recruit *ban* (no servants/criminals on the dock) is applied — see [founding-fathers.md](founding-fathers.md) — but his `selectRecruit` *choice* (pick which dock slot emigrates for free) is a UI hook not yet wired, so free emigration still takes a **random** slot. Paid recruitment already lets the player choose a slot.
-- **No religious-unrest modifier.** FreeCol's `updateImmigrationRequired` folds in a `RELIGIOUS_UNREST_BONUS` modifier; with no modifier system yet, the target simply rises by the increment (the modifier resolves to ×1 anyway in the classic base game).
+- **Religious-unrest modifier** (`86d3c7yca`, FreeCol `RELIGIOUS_UNREST_BONUS`): the immigration target is reduced by the player's **nation-type** `religiousUnrestBonus` — the **English** (`immigration` nation type) carry **−33%**, so they need a third fewer points per emigrant, from the start (15 → effective 10). We store the **raw** target (so the save and the flat `crossesIncrement` growth are unchanged) and apply the factor on use (`EffectiveImmigrationRequired`), which is equivalent to FreeCol's reduced-stored value; the human defaults to **no nation** (×1), so a default game is byte-identical. The **first nation-type advantage modifier** wired (the pattern Dutch trade etc. will follow).
 - **Recruits reach the New World by ship.** Boarding a recruit onto a ship and sailing it home is implemented — see [transport.md](transport.md). (Recruits still can't be carried directly into an existing colony's population yet.)
-- **Per-player from FP-5**: every colonial player accrues immigration and recruits on its **own** dock, drawing from its **own** RNG stream (`RandomFor(player)`) — the foreign-power AI runs the same accrual + auto-emigration and recruits when affordable (capped Europe pile-up; see [players.md](players.md)). Recruited/emigrated units carry the owner's id (the human is 0), so a foreign power's colonists never land on the human's dock. The recruitable pool is still filtered only by `recruit-probability > 0` (+ Brewster's ban), omitting FreeCol's per-nation `canRecruitUnit`/availability checks.
+- **Per-player from FP-5**: every colonial player accrues immigration and recruits on its **own** dock, drawing from its **own** RNG stream (`RandomFor(player)`) — the foreign-power AI runs the same accrual + auto-emigration and recruits when affordable (capped Europe pile-up; see [players.md](players.md)). Recruited/emigrated units carry the owner's id (the human is 0), so a foreign power's colonists never land on the human's dock. The **recruit-dock availability filter** is `Game.IsRecruitable` — a unit type is offered only when its `recruit-probability > 0` and no elected father bans it (Brewster's `canRecruitUnit=false`); this is the filter both the initial dock and every refill draw through. (FreeCol's *per-nation* `canRecruitUnit`/availability beyond Brewster is still omitted.)
 
 ## 3. Technical design
 
@@ -62,7 +64,8 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 **Algorithms & formulas** (`GameSession/Game.cs`):
 - `AccumulateImmigrationAndEmigrate(player)` (called from `RunPlayerTurn` for every colonial player, after liberty): drains each of the player's colonies' crosses store into its pool (mirroring bells→liberty; the player's own fathers fold via `ApplyGoodsModifiers(player, …)`), adds the clamped Europe contribution (its own dock persons), then auto-emigrates while `pool ≥ target` (a random dock slot drawn from `RandomFor(player)`).
 - `RecruitPrice` getter = `max(base · max(required−immigration,0) / required, floor)` — FreeCol `Europe.getCurrentRecruitPrice` verbatim.
-- `ReduceImmigration()` — subtract the target, keep surplus (`saveProductionOverflow=true`).
+- `ReligiousUnrestFactor(player)` — the player's nation-type `religiousUnrestBonus` resolved to a multiplier (1.0 with no nation / no modifier; English ×0.67); `EffectiveImmigrationRequired(player) = round(ImmigrationRequired × factor)`. The auto-emigrate loop and the price/recruit checks compare the pool against this **effective** target (the raw `ImmigrationRequired` field still grows by the flat `crossesIncrement` and is what the save stores).
+- `ReduceImmigration()` — subtract the **effective** target, keep surplus (`saveProductionOverflow=true`).
 - `DrawRecruitType(player)` — seeded weighted pick over `Ruleset.UnitTypes` by `RecruitProbability`, drawing from `RandomFor(player)` (the human's stream 0, a foreign power's own stream); same pattern as Founding-Father offers (ADR-009 RNG, no `System.Random`).
 - `Recruit(slot)` / `CheckRecruit(slot)` — the paid path; mirrors `ServerPlayer.csEmigrate`'s RECRUIT case (pay → `increaseRecruitmentDifficulty` → fall through to the NORMAL pool consume + target raise).
 
@@ -91,6 +94,7 @@ All values are the classic ruleset at the default (**medium**) difficulty, read 
 ## Changelog
 
 | Date | Change | Commit |
+| 2026-06-19 | **Religious-unrest nation modifier** (`86d3c7yca`, FreeCol `RELIGIOUS_UNREST_BONUS`): the first nation-type advantage wired — `ReligiousUnrestFactor(player)` resolves the player's `EuropeanNation.NationType` `religiousUnrestBonus` (English `immigration` type −33%) and `EffectiveImmigrationRequired` reduces the immigration target on use (raw target still stored + grown flat → no save change; the auto-emigrate loop + `ReduceImmigration` use the effective value). Human defaults to no nation (×1) so a default game is byte-identical. The task's *recruit-dock availability filter* is the existing `IsRecruitable` (recruit-probability + Brewster). +2 L1 (`ImmigrationTests`: English target 15→10, save round-trip); 1123 + 4 soak green. | Phase 5 (`86d3c7yca`) |
 |---|---|---|
 | 2026-06-18 | **Crosses/recruit increments routed through the difficulty system** (`86d3c9y08` slice 4): `crossesIncrement`, `recruitPriceIncrease`, `lowerCapIncrease` now read `Ruleset.Difficulty.*` (default medium 2/30/0) instead of hardcoded consts. Behaviour-preserving at medium; no save change; soak byte-stable. (The base-`gameOptions` trio `initialImmigration`/`europeanUnitImmigrationPenalty`/`playerImmigrationBonus` is slice 5.) See [difficulty](difficulty.md). | Phase (`86d3c9y08` slice 4) |
 | 2026-06-13 | Immigration accrual (crosses + Europe formula), 3-slot dock, weighted recruit draw, escalating recruit price, auto-emigration; save v12 | Phase 4 slice 4 |
