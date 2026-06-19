@@ -838,6 +838,9 @@ public sealed partial class Game
     /// <summary>The convert-capture modifier (FreeCol <c>model.modifier.nativeConvertBonus</c>): Juan de Sepúlveda's +20% and the Spanish <c>conquest</c> nation type's +200% raise the capture-convert chance.</summary>
     private const string NativeConvertBonusId = "model.modifier.nativeConvertBonus";
 
+    /// <summary>Chance (percent) that winning an assault on a settlement you hold a mission in instead burns the attacker's missions across that nation (FreeCol <c>model.option.burnProbability</c> = 2; no modifier scales it).</summary>
+    private const int NativeBurnProbabilityPercent = 2;
+
     /// <summary>
     /// Whether <paramref name="unit"/> may attempt to establish a mission at <paramref name="settlement"/> (FreeCol
     /// <c>InGameController.establishMission</c>): an on-map unit in the missionary role, with movement left, on or
@@ -1249,6 +1252,21 @@ public sealed partial class Game
             percent = modifier.ApplyTo(percent);
         }
         return Math.Min(1.0, percent / 100.0);
+    }
+
+    /// <summary>
+    /// The natives burn every mission <paramref name="ownerId"/> holds across <paramref name="nationId"/>'s settlements
+    /// (FreeCol <c>ServerPlayer.csBurnMissions</c>): for each settlement of that nation whose resident missionary is the
+    /// attacker's, the mission is cleared (owner/expert/convert-progress reset). RNG-free.
+    /// </summary>
+    private void BurnMissionsOf(int ownerId, string nationId)
+    {
+        foreach (NativeSettlement s in _nativeSettlements.Where(s => s.NationTypeId == nationId && s.MissionOwnerId == ownerId))
+        {
+            s.MissionOwnerId = null;
+            s.MissionIsExpert = false;
+            s.ConvertProgress = 0;
+        }
     }
 
     /// <summary>
@@ -1674,15 +1692,23 @@ public sealed partial class Game
             {
                 SpawnTreasureTrain(target, attacker.OwnerId, plunder);
             }
-            // Capture-convert (FreeCol SimpleCombatModel CAPTURE_CONVERT): if the attacker holds this settlement's
-            // mission and a brave remains, winning may convert one — its chance raised by Juan de Sepúlveda / the
-            // Spanish conquest type's nativeConvertBonus. The convert musters on the attacker's tile. The roll is
-            // drawn ONLY when a mission is present, so an ordinary assault is byte-identical (ADR-009 — no churn).
+            // Capture-convert (low roll) OR burn-missions (high roll) — FreeCol's two `SimpleCombatModel`
+            // CAPTURE_CONVERT / BURN_MISSIONS branches off the SAME post-win roll, fired only when the attacker holds
+            // THIS settlement's mission (so an ordinary assault draws nothing — ADR-009, no churn). A low roll converts
+            // a brave onto the attacker's tile (chance raised by Juan de Sepúlveda / the Spanish conquest type's
+            // nativeConvertBonus); a high roll makes the natives burn the attacker's missions across this whole nation.
             if (settlement.HasMission && settlement.MissionOwnerId == attacker.OwnerId && settlement.Size >= 1
-                && PlayerById(attacker.OwnerId) is { } captor
-                && random.NextDouble() < NativeConvertProbability(captor))
+                && PlayerById(attacker.OwnerId) is { } captor)
             {
-                SpawnUnit(Ruleset.Unit(IndianConvertUnitTypeId), attacker.Position, attacker.OwnerId);
+                double roll = random.NextDouble();
+                if (roll < NativeConvertProbability(captor))
+                {
+                    SpawnUnit(Ruleset.Unit(IndianConvertUnitTypeId), attacker.Position, attacker.OwnerId); // a brave converts
+                }
+                else if (roll >= 1.0 - NativeBurnProbabilityPercent / 100.0)
+                {
+                    BurnMissionsOf(attacker.OwnerId, nation); // the natives burn the attacker's missions across this nation
+                }
             }
             _nativeSettlements.Remove(settlement); // destroyed
             ClaimNativeLand(); // the razed settlement releases its land claim (surviving same-nation settlements keep theirs)

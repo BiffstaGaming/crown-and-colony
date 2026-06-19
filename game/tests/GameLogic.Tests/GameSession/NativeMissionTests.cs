@@ -390,5 +390,54 @@ public class NativeMissionTests
         return game.Units.Any(u => u.Type.Id == IndianConvertTypeId && u.OwnerId == game.HumanPlayer.PlayerId);
     }
 
+    // ── Burn-missions: the high-roll mirror of capture-convert (86d3c9t7z, FreeCol BURN_MISSIONS) ────────────────
+    //
+    // Off the SAME post-win roll as capture-convert: a low roll converts a brave, a high roll (top burnProbability=2%)
+    // makes the natives burn the attacker's missions across the whole assaulted nation (ServerPlayer.csBurnMissions).
+
+    [Fact]
+    public void AttackSettlement_BurnsTheAttackersMissionsAcrossTheNation_OnAHighRoll()
+    {
+        Game game = Game.New(Classic, Seed);
+        bool FreeLandNeighbour(NativeSettlement s) => s.Position.Neighbours().Any(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater && game.ColonyAt(n) is null
+            && game.NativeSettlementAt(n) is null && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+
+        // An assaultable settlement whose nation has at least one OTHER settlement (to observe the burn spreading).
+        NativeSettlement target = game.NativeSettlements.First(s => FreeLandNeighbour(s)
+            && game.NativeSettlements.Any(o => o.Id != s.Id && o.NationTypeId == s.NationTypeId));
+        NativeSettlement other = game.NativeSettlements.First(o => o.Id != target.Id && o.NationTypeId == target.NationTypeId);
+        target.MissionOwnerId = game.HumanPlayer.PlayerId; // the human holds a mission in both
+        other.MissionOwnerId = game.HumanPlayer.PlayerId;
+        Assert.True(other.HasMission);
+
+        Unit soldier = SpawnSoldierBeside(game, target);
+        // win (0.0), then a roll in the top 2% → burn (≥ 0.98), not a convert (≥ 0.5 base).
+        game.AttackSettlement(soldier, target.Position, new SequenceRandom(0.0, 0.99));
+
+        Assert.False(other.HasMission); // the natives burned the attacker's mission in the nation's other settlement
+        Assert.DoesNotContain(game.Units, u => u.Type.Id == IndianConvertTypeId); // a burn, not a convert
+    }
+
+    [Fact]
+    public void AttackSettlement_DoesNotBurnMissions_OnAMidRoll()
+    {
+        Game game = Game.New(Classic, Seed);
+        bool FreeLandNeighbour(NativeSettlement s) => s.Position.Neighbours().Any(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater && game.ColonyAt(n) is null
+            && game.NativeSettlementAt(n) is null && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+        NativeSettlement target = game.NativeSettlements.First(s => FreeLandNeighbour(s)
+            && game.NativeSettlements.Any(o => o.Id != s.Id && o.NationTypeId == s.NationTypeId));
+        NativeSettlement other = game.NativeSettlements.First(o => o.Id != target.Id && o.NationTypeId == target.NationTypeId);
+        target.MissionOwnerId = game.HumanPlayer.PlayerId;
+        other.MissionOwnerId = game.HumanPlayer.PlayerId;
+
+        Unit soldier = SpawnSoldierBeside(game, target);
+        // win, then a mid roll (≥ 0.5 base → no convert, < 0.98 → no burn).
+        game.AttackSettlement(soldier, target.Position, new SequenceRandom(0.0, 0.75));
+
+        Assert.True(other.HasMission); // a mid roll neither converts nor burns
+    }
+
     private const string IndianConvertTypeId = "model.unit.indianConvert";
 }
