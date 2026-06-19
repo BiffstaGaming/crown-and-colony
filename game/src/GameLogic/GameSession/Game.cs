@@ -1479,6 +1479,45 @@ public sealed partial class Game
     }
 
     /// <summary>
+    /// Whether <paramref name="unit"/> can clear its learned speciality back to a free colonist now (FreeCol
+    /// <c>InGameController.clearSpeciality</c>): an on-map colonial specialist that has a <c>clearSkill</c> unit-change
+    /// (every expert/master/preacher/etc. — not a free colonist, servant, criminal or non-person). FreeCol forbids
+    /// clearing a <em>teacher</em>'s speciality; our teachers are in-colony building workers, never on-map units, so the
+    /// on-map gate already covers that case.
+    /// </summary>
+    public MoveCheck CheckClearSkill(Unit unit)
+    {
+        if (unit.IsNative)
+        {
+            return MoveCheck.No("Native units have no learned speciality to clear.");
+        }
+        if (!unit.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (Ruleset.GetUnitChange(UnitChangeTypeIds.ClearSkill, unit.Type.Id) is null)
+        {
+            return MoveCheck.No($"A {unit.Type.ShortName} has no speciality to clear.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Clears <paramref name="unit"/>'s speciality, reverting a specialist (expert farmer, master carpenter, …) to a
+    /// plain free colonist (FreeCol <c>clearSpeciality</c>). RNG-free; no save change (a unit type swap).
+    /// </summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckClearSkill"/>.</exception>
+    public void ClearSkill(Unit unit)
+    {
+        MoveCheck check = CheckClearSkill(unit);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        UpgradeUnitType(unit, Ruleset.GetUnitChange(UnitChangeTypeIds.ClearSkill, unit.Type.Id)!.To);
+    }
+
+    /// <summary>
     /// Whether <paramref name="attacker"/> may attack the strongest enemy on <paramref name="target"/> now.
     /// Native units may attack from slice 1b (the gate is gone), so this admits any owner-inequality enemy
     /// (<see cref="AreEnemies"/>) — restricting a brave to human targets is the native AI's job

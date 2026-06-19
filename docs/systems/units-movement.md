@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (ruleset unit types, naval units, off-map sailing/Europe, cargo + passengers, role movement bonuses, standing orders: fortify/sentry/clear-orders/disband, goto/multi-turn move orders + pathfinding + unit cycling) |
-| **Last verified** | 2026-06-19 @ goto / multi-turn moves + cycling (save v36, `86d3c9pfy`) |
+| **Last verified** | 2026-06-20 @ clear-skill (specialist → free colonist) (`86d3c7x5n`) |
 | **Code** | `game/src/GameLogic/Units/` (`Unit.Orders`/`UnitOrders`, `Unit.Destination`), `GameSession/Game.cs` (`InitialMovement`, `Fortify`/`Sentry`/`ClearOrders`/`Disband` + their `Check*`), `GameSession/Game.Goto.cs` (goto oracle/mutator, `ProcessGotos`, `NextUnitToMove`), `World/Pathfinder.cs` (A*) · rendering: `game/presentation/UnitMarker.cs` |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/GameTests.cs`, `RoleMovementTests.cs`, `MagellanTests.cs`, `UnitOrdersTests.cs`, `GotoTests.cs`, `World/PathfinderTests.cs` |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/common/model/Unit.java` (`getMoveCost`, `MoveType`, `setDestination`), `Map.java` (`searchMap`) |
@@ -13,7 +13,7 @@
 
 There's one explorer on the map. Click it to select (gold ring), click a neighbouring tile to walk there. Rough ground (forests, hills) uses up the turn faster than open plains; water is off-limits. When the unit can't move any further, end the turn and it's refreshed.
 
-You can also give a unit a **standing order** instead of moving it. **Fortify** a unit and it spends a turn digging in; from then on it defends **half again as hard** (+50%) — invaluable for a soldier guarding a colony or a chokepoint. **Sentry** rests a unit until something happens (so it stops asking for orders). **Clear orders** wakes a fortified or resting unit, and **disband** removes a unit you no longer want for good. Moving a fortified unit wakes it — you trade the defensive bonus for the march.
+You can also give a unit a **standing order** instead of moving it. **Fortify** a unit and it spends a turn digging in; from then on it defends **half again as hard** (+50%) — invaluable for a soldier guarding a colony or a chokepoint. **Sentry** rests a unit until something happens (so it stops asking for orders). **Clear orders** wakes a fortified or resting unit, and **disband** removes a unit you no longer want for good. You can also **clear a specialist's speciality** — turn an expert (say an expert farmer you've got too many of) back into a plain free colonist, so it can be retrained or put to general work. Moving a fortified unit wakes it — you trade the defensive bonus for the march.
 
 **Go to.** You can point a unit at a far-off tile and tell it to **go there** ("goto"). It finds the cheapest route through ground it has already explored and walks itself toward the destination a bit each turn, all on its own, until it arrives — then the order clears. If something blocks the way (an enemy steps onto the route, or it simply runs out of road it can see) it waits and tries again next turn; moving it by hand cancels the trip. While a unit is travelling on a goto it no longer stops to ask you for orders, so the game **cycles** straight to the next unit that still needs your attention — and tells you when none are left and the turn can end.
 
@@ -44,6 +44,7 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
   | **Sentry** (`CheckSentry`/`Sentry`) | any on-map unit | rests the unit (0 moves); a sentry unit is skipped when cycling for orders. |
   | **Clear orders** (`ClearOrders`) | any unit | back to *Active* (no movement refund). |
   | **Disband** (`CheckDisband`/`Disband`) | any unit, except a carrier still holding passengers | removes the unit from the game for good (its hold, if any, is lost). |
+  | **Clear speciality** (`CheckClearSkill`/`ClearSkill`) | an on-map colonial **specialist** (a unit with a `model.unitChange.clearSkill` change — every expert/master/preacher, not a free colonist/servant/criminal/non-person) | reverts the unit to a **free colonist** (FreeCol `clearSpeciality`), e.g. to turn a surplus expert into a general worker. RNG-free, no save change (a type swap). FreeCol forbids clearing a teacher's skill; our teachers are in-colony building workers (never on-map), so the on-map gate covers that. |
 
   **Moving wakes a unit** — `MoveUnit` resets a fortified/sentry unit to *Active*, so you trade the dig-in bonus for the move (FreeCol clears the state on a move). The order persists across save/load (v23, omitted for an *Active* unit so a no-orders game stays byte-identical).
 
@@ -82,7 +83,7 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
-| L1 Unit | Always | `GameTests`: legal move spends points; rejects non-adjacent/off-map/water/exhausted; spawn validation. `RoleMovementTests`: dragoon/scout reset to base + 9, foot/default unchanged. `UnitOrdersTests`: fortify → fortifying (0 moves) → fortified on the next turn; moving wakes it; ships can't fortify; **a fortified defender repels an attack an active one loses** (combat wiring, computed flip draw); sentry rests + clear-orders/disband; disband refused for a carrier with passengers; order state round-trips (v23) + byte-identical when all-active + pre-v23 loads Active. `PathfinderTests`: least-cost route, diagonal preference, cost-aware + impassable detours, no-path, byte-stable (Y-then-X) tie-break. `GotoTests`: set/clear oracle rejects invalid + allows reachable; advance reaches+clears / out-of-moves keeps / not-going; manual move clears; v36 round-trip + omit-when-none + pre-v36 loads no-goto; cycling order + skip rules | ✅ |
+| L1 Unit | Always | `GameTests`: legal move spends points; rejects non-adjacent/off-map/water/exhausted; spawn validation. `RoleMovementTests`: dragoon/scout reset to base + 9, foot/default unchanged. `UnitOrdersTests`: fortify → fortifying (0 moves) → fortified on the next turn; moving wakes it; ships can't fortify; **a fortified defender repels an attack an active one loses** (combat wiring, computed flip draw); sentry rests + clear-orders/disband; disband refused for a carrier with passengers; order state round-trips (v23) + byte-identical when all-active + pre-v23 loads Active. `ClearSkillTests`: `clearSkill` reverts each specialist to a free colonist in-spec (free colonist has none); `ClearSkill` turns an expert farmer into a free colonist; refused for a free colonist + a native unit; draws no RNG. `PathfinderTests`: least-cost route, diagonal preference, cost-aware + impassable detours, no-path, byte-stable (Y-then-X) tie-break. `GotoTests`: set/clear oracle rejects invalid + allows reachable; advance reaches+clears / out-of-moves keeps / not-going; manual move clears; v36 round-trip + omit-when-none + pre-v36 loads no-goto; cycling order + skip rules | ✅ |
 | L2 Scenario | Always | 10-turn wander with per-move invariants; deterministic twin games; `GotoTests.Goto_WalksTheUnitAcrossMultipleTurns` (a goto unit advances across `EndTurn`s and arrives) | ✅ |
 | L3 Interaction | Yes | `InputTests`: click-select + click-to-move (simulated mouse, camera-aware); marker placement. Goto/cycling input (shift-click / G-key, route overlay) deferred to P7 | ✅ |
 | L4 Visual | Yes | TODO with visual harness | ⬜ |
@@ -91,6 +92,7 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
 
 ## 5. Open issues / TODO
 
+- [x] **Clear speciality** (`86d3c7x5n`, FreeCol `clearSpeciality`): a specialist reverts to a free colonist via `CheckClearSkill`/`ClearSkill` (the `model.unitChange.clearSkill` change). RNG-free, no save change. Follow-up: a **Clear-speciality button** on the colony/unit panel (the GameLogic command exists).
 - [x] Role movement bonuses (dragoon/scout/cavalry +9, pioneer +3) applied at the per-turn reset (FP-5, `86d3bbvv6`).
 - [x] Standing orders — fortify (+50% defence), sentry, clear-orders, disband (`86d3c9pfh`, save v23). Presentation hotkeys/buttons (F = fortify, etc.) + skipping sentry units when cycling are the **follow-up presentation slice** (the GameLogic + combat wiring + save are done).
 - [x] Goto / multi-turn move orders + pathfinding + unit cycling — GameLogic done (`86d3c9pfy`, save v36): `Unit.Destination`, the `Pathfinder` A*, the set/advance oracle/mutator, `ProcessGotos`, `NextUnitToMove`. **Skipping sentry/goto units when cycling is now in GameLogic** (`NextUnitToMove`). The **goto/cycling input UI** (shift-click / G-key, route preview overlay, select-next-unit input) is the **P7 presentation slice**.
@@ -103,6 +105,7 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
 ## Changelog
 
 | Date | Change | Commit |
+| 2026-06-20 | **Clear speciality** (`86d3c7x5n`, FreeCol `InGameController.clearSpeciality`): `CheckClearSkill`/`ClearSkill` (ADR-006) revert an on-map colonial specialist to a free colonist via the `model.unitChange.clearSkill` change (already parsed generically by `ParseUnitChanges`); `UnitChangeTypeIds.ClearSkill` added. Gated on a non-native, on-map unit that has a clearSkill change — the on-map gate also satisfies FreeCol's no-teacher rule (our teachers are in-colony building workers). RNG-free, no save change (a `UpgradeUnitType` swap). +5 L1 (`ClearSkillTests`); 1167 + soak green | Phase 5 (`86d3c7x5n`) |
 |---|---|---|
 | 2026-06-13 | Skeleton unit, 8-way single-step movement, selection UI | Phase 1 skeleton |
 | 2026-06-13 | Unit types from ruleset; naval movement; real FreeCol partial-movement rule (cross-check resolved) | Phase 2a |

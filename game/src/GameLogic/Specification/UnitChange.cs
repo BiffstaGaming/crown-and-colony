@@ -31,4 +31,7 @@ public static class UnitChangeTypeIds
 
     /// <summary>A school upgrade taught by an expert (petty criminal → indentured servant → free colonist → the teacher's expertise).</summary>
     public const string Education = "model.unitChange.education";
+
+    /// <summary>A specialist voluntarily reverting to a free colonist (expert farmer / master carpenter / … → free colonist), FreeCol <c>clearSpeciality</c>.</summary>
+    public const string ClearSkill = "model.unitChange.clearSkill";
 }
