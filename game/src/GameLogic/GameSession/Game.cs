@@ -4639,6 +4639,27 @@ public sealed partial class Game
                 }
             }
 
+            // Defend-settlement garrisoning (FP-5, FreeCol DefendSettlementMission): an **armed land unit** that isn't
+            // going to found a new colony marches to the nearest **undefended own colony** and stands guard on its tile —
+            // so the power's colonies aren't left open to capture/pillage (a garrisoned colony is fought as a field unit
+            // first). Founding a new colony keeps priority (expansion over defence); a unit already standing in an own
+            // colony stays put (no thrash). The step draws from the power's own stream (StepToward), never stream 0.
+            if (!unit.Type.IsNaval && OffenceBase(unit) > 0)
+            {
+                if (ColonyAt(unit.Position) is { } here && here.OwnerId == power.PlayerId)
+                {
+                    continue; // already standing guard in an own colony
+                }
+                bool willFound = unit.Type.CanFoundColony
+                    && ColoniesOf(power).Count() < MaxAiColonies && CheckFoundColony(unit).Allowed;
+                if (!willFound && NearestUndefendedOwnColony(power, unit) is { } garrisonTile
+                    && StepToward(power, unit, garrisonTile) is { } toGarrison)
+                {
+                    MoveUnit(unit, toGarrison);
+                    continue;
+                }
+            }
+
             if (!unit.Type.CanFoundColony)
             {
                 continue; // non-founders (e.g. an idle soldier at peace) wait
@@ -4654,6 +4675,18 @@ public sealed partial class Game
             }
         }
     }
+
+    /// <summary>True when one of <paramref name="power"/>'s armed land units stands on <paramref name="colony"/>'s tile (it has a garrison defender).</summary>
+    private bool ColonyHasArmedDefender(Player power, Colony colony) =>
+        _units.Any(u => IsOwnedBy(u, power) && u.IsOnMap && !u.Type.IsNaval && OffenceBase(u) > 0 && u.Position == colony.Position);
+
+    /// <summary>The tile of <paramref name="power"/>'s nearest colony lacking an armed land defender (Chebyshev from <paramref name="unit"/>, ties by position), or null when every own colony is garrisoned.</summary>
+    private Position? NearestUndefendedOwnColony(Player power, Unit unit) =>
+        ColoniesOf(power)
+            .Where(c => !ColonyHasArmedDefender(power, c))
+            .OrderBy(c => Chebyshev(c.Position, unit.Position)).ThenBy(c => c.Position.Y).ThenBy(c => c.Position.X)
+            .Select(c => (Position?)c.Position)
+            .FirstOrDefault();
 
     /// <summary>
     /// Resolves a foreign power's attack on the human unit at <paramref name="target"/> through the power's OWN

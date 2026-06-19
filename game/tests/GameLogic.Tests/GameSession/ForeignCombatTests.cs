@@ -1,3 +1,4 @@
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
@@ -65,6 +66,45 @@ public class ForeignCombatTests
         game.EndTurn();
 
         Assert.DoesNotContain(game.CombatNotices, n => n.AttackerNationId == power.NationId);
+    }
+
+    // ---- Defend-settlement garrisoning (86d3c9vxj) ----
+
+    [Fact]
+    public void AtPeace_AnArmedUnit_MarchesInToGarrisonAnUndefendedOwnColony()
+    {
+        Game game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+
+        // Clear the power's starting units + purse so only what we stage acts (no other unit can garrison or be bought).
+        foreach (Unit u in game.Units.Where(u => u.OwnerId == power.PlayerId && u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+        power.Gold = 0;
+
+        // An undefended colony for the power on open inland ground.
+        Position colonyTile = game.Map.AllPositions().First(p =>
+            Free(game, p) && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n)));
+        Unit founder = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), colonyTile);
+        founder.OwnerId = power.PlayerId;
+        Colony colony = game.FoundColony(founder);
+        colony.OwnerId = power.PlayerId;
+
+        // An armed artillery (a non-founder → always reaches the garrison logic) two tiles from the colony, at peace.
+        Position gunTile = colonyTile.Neighbours().SelectMany(n => n.Neighbours())
+            .First(p => Free(game, p) && Cheb(p, colonyTile) == 2);
+        Unit gun = game.SpawnUnit(Classic.Unit("model.unit.artillery"), gunTile);
+        gun.OwnerId = power.PlayerId;
+        Assert.Equal(Stance.Uncontacted, game.StanceBetween(power.PlayerId, game.HumanPlayer.PlayerId)); // not at war → defensive
+
+        for (int i = 0; i < 6; i++)
+        {
+            game.EndTurn();
+        }
+
+        Unit moved = game.Units.Single(u => u.Id == gun.Id);
+        Assert.Equal(colony.Position, moved.Position); // marched in and stands guard on its undefended colony
     }
 
     [Fact]
