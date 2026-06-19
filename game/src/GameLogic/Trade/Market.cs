@@ -185,6 +185,13 @@ public sealed class Market
     }
 
     /// <summary>
+    /// Lifts every boycott on the market in one stroke, leaving prices and inventory untouched (FreeCol
+    /// <c>model.event.boycottsLifted</c>): Jacob Fugger's election clears all back-tax arrears so the goods trade
+    /// freely again — unlike <see cref="Reinitialise"/>, the price model is not reset.
+    /// </summary>
+    internal void LiftAllBoycotts() => _arrears.Clear();
+
+    /// <summary>
     /// Resets the market to its ruleset baseline — clears every boycott and price/inventory drift (FreeCol
     /// <c>Player.reinitialiseMarket</c>): a new nation trades on a clean market on declaring independence.
     /// </summary>

@@ -535,7 +535,10 @@ public sealed class Ruleset
                 // Free units (FreeCol founding-father <unit id="…"/>): John Paul Jones → a free frigate in Europe.
                 FreeUnits: el.Elements("unit")
                     .Select(e => RequiredAttribute(e, "id"))
-                    .ToList());
+                    .ToList(),
+                // Boycotts-lifted event (FreeCol model.event.boycottsLifted): Jacob Fugger clears all the player's boycotts.
+                LiftsBoycotts: el.Elements("event")
+                    .Any(e => (string?)e.Attribute("id") == "model.event.boycottsLifted"));
         }
 
         var resources = new Dictionary<string, ResourceType>();

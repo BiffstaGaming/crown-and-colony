@@ -5245,6 +5245,10 @@ public sealed partial class Game
             {
                 SpawnInEurope(freeUnit, null, player.PlayerId); // a one-time free unit on election — John Paul Jones → a frigate in Europe
             }
+            if (Ruleset.Father(elected).LiftsBoycotts)
+            {
+                player.Market.LiftAllBoycotts(); // Jacob Fugger (model.event.boycottsLifted) — all the player's boycotts end
+            }
             if (player.IsHuman && elected == PocahontasId)
             {
                 ResetAllNativeAlarm(); // FreeCol model.event.resetNativeAlarm — all native anger toward you forgotten

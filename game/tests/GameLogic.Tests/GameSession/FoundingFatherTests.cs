@@ -132,6 +132,39 @@ public class FoundingFatherTests
     }
 
     [Fact]
+    public void Spec_ParsesJacobFuggerBoycottsLifted()
+    {
+        Assert.True(Classic.Father("model.foundingFather.jacobFugger").LiftsBoycotts);
+        Assert.False(Classic.Father("model.foundingFather.adamSmith").LiftsBoycotts); // no other father lifts boycotts
+    }
+
+    [Fact]
+    public void JacobFugger_LiftsAllBoycotts_OnElection()
+    {
+        var game = Game.New(Classic, seed: 42);
+        game.HumanPlayer.Market.SetArrears("model.goods.furs", 5000);   // two goods under boycott
+        game.HumanPlayer.Market.SetArrears("model.goods.cigars", 3000);
+        Assert.False(game.HumanPlayer.Market.CanTrade("model.goods.furs"));
+
+        // Prime the human's player row with Jacob Fugger pending and ample liberty (arrears ride the save).
+        SaveGame baseSave = SaveGame.From(game);
+        SaveGame primed = baseSave with
+        {
+            Players = baseSave.Players!.Select(p => p.IsHuman
+                ? p with { CurrentFather = "model.foundingFather.jacobFugger", Liberty = 100_000 }
+                : p).ToList(),
+        };
+        Game g = SaveGame.FromJson(primed.ToJson()).Restore(Classic);
+
+        g.EndTurn(); // Fugger elected → every boycott lifted
+
+        Assert.Contains("model.foundingFather.jacobFugger", g.Congress);
+        Assert.True(g.HumanPlayer.Market.CanTrade("model.goods.furs"));
+        Assert.True(g.HumanPlayer.Market.CanTrade("model.goods.cigars"));
+        Assert.Equal(0, g.HumanPlayer.Market.Arrears("model.goods.furs"));
+    }
+
+    [Fact]
     public void ChooseFather_RejectsAnUnofferedFather()
     {
         var game = Game.New(Classic, seed: 42);

@@ -94,6 +94,10 @@ public sealed record FatherAbility(string Id, bool Value, IReadOnlyList<string> 
 /// founding-father <c>&lt;unit id="…"/&gt;</c> child): John Paul Jones grants a free <c>model.unit.frigate</c>.
 /// Empty for most fathers.
 /// </param>
+/// <param name="LiftsBoycotts">
+/// Whether electing this father lifts every boycott on his player's market in one stroke (FreeCol
+/// <c>&lt;event id="model.event.boycottsLifted"/&gt;</c>): Jacob Fugger. False for every other father.
+/// </param>
 public sealed record FoundingFather(
     string Id,
     FatherType Type,
@@ -103,7 +107,8 @@ public sealed record FoundingFather(
     IReadOnlyList<FatherModifier> Modifiers,
     IReadOnlyList<FatherAbility> Abilities,
     IReadOnlyList<string> FreeBuildings,
-    IReadOnlyList<string> FreeUnits)
+    IReadOnlyList<string> FreeUnits,
+    bool LiftsBoycotts)
 {
     /// <summary>Short name derived from the id: <c>model.foundingFather.adamSmith</c> → <c>adamSmith</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
