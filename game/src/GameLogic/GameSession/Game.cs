@@ -5290,6 +5290,13 @@ public sealed partial class Game
             {
                 player.Market.LiftAllBoycotts(); // Jacob Fugger (model.event.boycottsLifted) — all the player's boycotts end
             }
+            if (Ruleset.Father(elected).RevealsAllColonies)
+            {
+                foreach (Colony c in _colonies)
+                {
+                    RevealAround(player, c.Position, 1); // Francisco de Coronado (model.event.seeAllColonies) — every colony + its ring revealed
+                }
+            }
             if (player.IsHuman && elected == PocahontasId)
             {
                 ResetAllNativeAlarm(); // FreeCol model.event.resetNativeAlarm — all native anger toward you forgotten

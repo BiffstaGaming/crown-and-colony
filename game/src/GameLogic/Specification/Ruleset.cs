@@ -538,7 +538,10 @@ public sealed class Ruleset
                     .ToList(),
                 // Boycotts-lifted event (FreeCol model.event.boycottsLifted): Jacob Fugger clears all the player's boycotts.
                 LiftsBoycotts: el.Elements("event")
-                    .Any(e => (string?)e.Attribute("id") == "model.event.boycottsLifted"));
+                    .Any(e => (string?)e.Attribute("id") == "model.event.boycottsLifted"),
+                // See-all-colonies event (FreeCol model.event.seeAllColonies): Coronado reveals every colony on election.
+                RevealsAllColonies: el.Elements("event")
+                    .Any(e => (string?)e.Attribute("id") == "model.event.seeAllColonies"));
         }
 
         var resources = new Dictionary<string, ResourceType>();

@@ -2,6 +2,7 @@ using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
+using CrownAndColony.GameLogic.World;
 using Xunit;
 
 namespace CrownAndColony.GameLogic.Tests.GameSession;
@@ -162,6 +163,39 @@ public class FoundingFatherTests
         Assert.True(g.HumanPlayer.Market.CanTrade("model.goods.furs"));
         Assert.True(g.HumanPlayer.Market.CanTrade("model.goods.cigars"));
         Assert.Equal(0, g.HumanPlayer.Market.Arrears("model.goods.furs"));
+    }
+
+    [Fact]
+    public void Spec_ParsesCoronadoSeeAllColonies()
+    {
+        Assert.True(Classic.Father("model.foundingFather.franciscoDeCoronado").RevealsAllColonies);
+        Assert.False(Classic.Father("model.foundingFather.adamSmith").RevealsAllColonies); // no other father reveals colonies
+    }
+
+    [Fact]
+    public void Coronado_RevealsEveryColony_OnElection()
+    {
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 5,
+            MapHeight = 5,
+            Terrain = [.. System.Linq.Enumerable.Repeat("model.tile.plains", 25)],
+            Units = [],
+            Explored = [0], // only (0,0) has been seen
+            Colonies = [new SavedColony(1, "Far", 4, 4, 1)],
+            CurrentFather = "model.foundingFather.franciscoDeCoronado",
+            Liberty = 100_000, // well over the first father's cost
+        };
+        Game game = save.Restore(Classic);
+        Assert.False(game.IsExplored(new Position(4, 4))); // the distant colony is unseen before election
+
+        game.EndTurn(); // Coronado elected → every colony on the map revealed
+
+        Assert.Contains("model.foundingFather.franciscoDeCoronado", game.Congress);
+        Assert.True(game.IsExplored(new Position(4, 4)));
     }
 
     [Fact]

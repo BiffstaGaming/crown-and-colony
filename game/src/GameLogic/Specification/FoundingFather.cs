@@ -98,6 +98,10 @@ public sealed record FatherAbility(string Id, bool Value, IReadOnlyList<string> 
 /// Whether electing this father lifts every boycott on his player's market in one stroke (FreeCol
 /// <c>&lt;event id="model.event.boycottsLifted"/&gt;</c>): Jacob Fugger. False for every other father.
 /// </param>
+/// <param name="RevealsAllColonies">
+/// Whether electing this father reveals every colony on the map to his player at once (FreeCol
+/// <c>&lt;event id="model.event.seeAllColonies"/&gt;</c>): Francisco de Coronado. False for every other father.
+/// </param>
 public sealed record FoundingFather(
     string Id,
     FatherType Type,
@@ -108,7 +112,8 @@ public sealed record FoundingFather(
     IReadOnlyList<FatherAbility> Abilities,
     IReadOnlyList<string> FreeBuildings,
     IReadOnlyList<string> FreeUnits,
-    bool LiftsBoycotts)
+    bool LiftsBoycotts,
+    bool RevealsAllColonies)
 {
     /// <summary>Short name derived from the id: <c>model.foundingFather.adamSmith</c> → <c>adamSmith</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
