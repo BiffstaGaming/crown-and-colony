@@ -98,7 +98,7 @@ public class MonarchTests
         Assert.Equal(8, choices[MonarchAction.RaiseTaxAct]);  // 5 + dx (dx=3)
         Assert.Equal(8, choices[MonarchAction.RaiseTaxWar]);
         Assert.False(choices.ContainsKey(MonarchAction.SupportLand)); // never offered at medium (dx == 3)
-        Assert.False(choices.ContainsKey(MonarchAction.AddToRef));    // REF modelled in item 6
+        Assert.Equal(13, choices[MonarchAction.AddToRef]);            // 10 + dx — the highest-weighted active action
     }
 
     [Fact]
@@ -446,5 +446,75 @@ public class MonarchTests
             .FromJson(CrownAndColony.GameLogic.Persistence.SaveGame.From(game).ToJson()).Restore(Classic);
 
         Assert.True(loaded.HumanPlayer.SupportSeaGranted);
+    }
+
+    // ── Item 6: REF build-up + Force model ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void BaseRef_HasTheMediumComposition_AndUnbalancedCapacity()
+    {
+        Game game = FoundedGame();
+        Force ref_ = game.EnsureRefForce();
+
+        Assert.Equal(31 + 15 + 14, ref_.LandUnitCount); // 60 land (infantry + cavalry + artillery)
+        Assert.Equal(8, ref_.NavalUnitCount);            // 8 men-o-war
+        // The base navy can't yet carry the land force, so ADD_TO_REF should grow the navy first.
+        Assert.True(ref_.NavalCapacity(Classic) < ref_.SpaceRequired(Classic) * 1.1);
+    }
+
+    [Fact]
+    public void AddToRef_GrowsTheNavy_WhileItCannotCarryTheLand()
+    {
+        Game game = FoundedGame();
+        int navyBefore = game.EnsureRefForce().NavalUnitCount;
+
+        game.AddToRef(new Pcg32Random(1)); // capacity short → adds a man-o-war (no land-roll consumed)
+
+        Assert.Equal(navyBefore + 1, game.EnsureRefForce().NavalUnitCount);
+    }
+
+    [Fact]
+    public void AddToRef_GrowsTheLand_OnceTheNavyCanCarryIt()
+    {
+        Game game = FoundedGame();
+        Force ref_ = game.EnsureRefForce();
+        // Pile on men-o-war until the navy comfortably exceeds the land it must carry.
+        for (int i = 0; i < 50; i++)
+        {
+            ref_.AddNaval("model.unit.manOWar", null, 1);
+        }
+        Assert.True(ref_.NavalCapacity(Classic) >= ref_.SpaceRequired(Classic) * 1.1);
+        int landBefore = ref_.LandUnitCount;
+
+        game.AddToRef(new Pcg32Random(2)); // now adds 1-3 land units
+
+        Assert.InRange(game.EnsureRefForce().LandUnitCount - landBefore, 1, 3);
+    }
+
+    [Fact]
+    public void AddToRef_IsOfferedByTheChooser()
+    {
+        Game game = FoundedGame();
+        Assert.True(game.MonarchActionIsValid(MonarchAction.AddToRef));
+        Assert.Contains(MonarchAction.AddToRef, game.GetMonarchActionChoices(50).Select(c => c.Action));
+    }
+
+    [Fact]
+    public void RefForce_PersistsAcrossSaveLoad_AndIsOmittedBeforeGrowth()
+    {
+        Game fresh = FoundedGame();
+        // A game that never grew the REF omits it (byte-identical to v39) and re-derives the base on demand.
+        Assert.Null(CrownAndColony.GameLogic.Persistence.SaveGame.From(fresh).RefForce);
+
+        Game game = FoundedGame();
+        game.AddToRef(new Pcg32Random(1)); // grow it (a man-o-war)
+        int navy = game.EnsureRefForce().NavalUnitCount;
+
+        Game loaded = CrownAndColony.GameLogic.Persistence.SaveGame
+            .FromJson(CrownAndColony.GameLogic.Persistence.SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.NotNull(loaded.RefForceOrNull);
+        Assert.Equal(navy, loaded.RefForceOrNull!.NavalUnitCount);
+        Assert.Equal(game.EnsureRefForce().LandUnitCount, loaded.RefForceOrNull.LandUnitCount);
     }
 }

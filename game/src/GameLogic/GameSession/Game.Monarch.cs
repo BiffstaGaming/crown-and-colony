@@ -40,6 +40,61 @@ public sealed partial class Game
     private const string NavalSupportUnitTypeId = "model.unit.frigate"; // SUPPORT_SEA free naval aid (faithful-subset naval supportUnit)
     private const int SupportLandMountedUnits = 2; // GameOptions.MONARCH_SUPPORT level 2 (medium) → 2 mounted veterans
 
+    // Royal Expeditionary Force (item 6). Medium refSize (specification.xml model.difficulty.medium). TODO(86d3c9rg6): ruleset.
+    private const string KingsRegularUnitTypeId = "model.unit.kingsRegular";
+    private const string ManOWarUnitTypeId = "model.unit.manOWar";
+    private const string RefInfantryRoleId = "model.role.infantry";
+    private const string RefCavalryRoleId = "model.role.cavalry";
+    private const int RefBaseInfantry = 31;
+    private const int RefBaseCavalry = 15;
+    private const int RefBaseArtillery = 14;
+    private const int RefBaseManOWar = 8;
+
+    private Force? _refForce; // the King's growing expeditionary force; null until grown (re-derives the base on demand)
+
+    /// <summary>The Royal Expeditionary Force as it stands, or null if it has never been grown beyond the base (which is re-derivable). For the save.</summary>
+    internal Force? RefForceOrNull => _refForce;
+
+    /// <summary>The REF force, materialising the base composition on first need (FreeCol <c>Monarch.getExpeditionaryForce</c>).</summary>
+    internal Force EnsureRefForce() => _refForce ??= BuildBaseRef();
+
+    /// <summary>Installs a restored REF force (save load).</summary>
+    internal void SetRefForce(Force force) => _refForce = force;
+
+    private static Force BuildBaseRef()
+    {
+        var force = new Force();
+        force.AddLand(KingsRegularUnitTypeId, RefInfantryRoleId, RefBaseInfantry);
+        force.AddLand(KingsRegularUnitTypeId, RefCavalryRoleId, RefBaseCavalry);
+        force.AddLand(ArtilleryUnitTypeId, null, RefBaseArtillery);
+        force.AddNaval(ManOWarUnitTypeId, null, RefBaseManOWar);
+        return force;
+    }
+
+    /// <summary>
+    /// Grows the REF (FreeCol <c>Monarch.addToREF</c>): add a man-o-war when the navy can't yet carry the land force
+    /// (capacity &lt; spaceRequired × 1.1), otherwise 1-3 land units — king's regulars (1-in-3 mounted) or artillery.
+    /// </summary>
+    internal void AddToRef(IGameRandom rng)
+    {
+        Force force = EnsureRefForce();
+        if (force.NavalCapacity(Ruleset) < force.SpaceRequired(Ruleset) * 1.1)
+        {
+            force.AddNaval(ManOWarUnitTypeId, null, 1);
+            return;
+        }
+        int number = 1 + rng.Next(3); // 1-3
+        if (rng.Next(2) == 0)
+        {
+            string role = rng.Next(3) == 0 ? RefCavalryRoleId : RefInfantryRoleId; // king's regulars, 1-in-3 mounted
+            force.AddLand(KingsRegularUnitTypeId, role, number);
+        }
+        else
+        {
+            force.AddLand(ArtilleryUnitTypeId, null, number);
+        }
+    }
+
     private PendingMonarchDemand? _pendingMonarchDemand; // transient: a monarch demand awaiting the human's accept/reject (not saved, like _pendingDemand)
 
     /// <summary>
@@ -67,8 +122,7 @@ public sealed partial class Game
         MonarchAction.ForceTax => false,
         MonarchAction.LowerTaxWar or MonarchAction.LowerTaxOther => _human.TaxRate > MonarchMinTaxRate + 10,
         MonarchAction.WaiveTax => true,
-        // REF unit types are modelled in item 6 (86d3c9v4j); until then the King has no force to add to.
-        MonarchAction.AddToRef => false,
+        MonarchAction.AddToRef => true, // the ruleset always has REF land + naval unit types (king's regular, man-o-war)
         MonarchAction.DeclarePeace => MonarchPotentialFriends().Any(),
         MonarchAction.DeclareWar => MonarchPotentialEnemies().Any(),
         MonarchAction.SupportSea => AttackedByPrivateers && !_human.SupportSeaGranted && !_human.MonarchDispleasure,
@@ -179,7 +233,10 @@ public sealed partial class Game
             case MonarchAction.SupportLand:
                 GrantSupport(GetSupport(naval: false)); // free land aid (unreachable via the chooser at medium; handler kept for fidelity)
                 break;
-            // ADD_TO_REF -> item 6 (86d3c9v4j); DECLARE_WAR/PEACE -> monarch diplomacy slice. Unwired = no-op.
+            case MonarchAction.AddToRef:
+                AddToRef(rng); // the King grows the army he'll send if you rebel
+                break;
+            // DECLARE_WAR/PEACE -> monarch diplomacy slice. Unwired = no-op.
             default:
                 break;
         }

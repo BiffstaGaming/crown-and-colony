@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 39;
+    public const int CurrentVersion = 40;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -82,7 +82,9 @@ public sealed record SaveGame
     /// where the King is content is byte-identical to v37; pre-v38 saves load content.
     /// v39 added whether naval support has been granted (<see cref="SavedPlayer.SupportSeaGranted"/>, omitted when
     /// false), so a game with no SUPPORT_SEA is byte-identical to v38; pre-v39 saves load not-yet-granted.
-    /// Each of v23–v39 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// v40 added the Royal Expeditionary Force (<see cref="RefForce"/>, omitted until grown beyond its re-derivable
+    /// base), so a pre-rebellion game is byte-identical to v39; pre-v40 saves re-derive the base on demand.
+    /// Each of v23–v40 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
@@ -141,6 +143,9 @@ public sealed record SaveGame
 
     /// <summary>The game-wide custom-house auto-export mode (v28; null/omitted for the <see cref="GameSession.AutoExportMode.PerGood"/> default, so a default game stays byte-identical to v27). Stored as the enum ordinal.</summary>
     public AutoExportMode? AutoExportMode { get; init; }
+
+    /// <summary>The Royal Expeditionary Force the King has amassed (v40; null/omitted until grown beyond its re-derivable base, so a pre-rebellion game stays byte-identical to v39).</summary>
+    public SavedForce? RefForce { get; init; }
 
     /// <summary>Legacy ≤v19 / pre-FP-7 read-only player treasury (v9+). Player state lives in <see cref="Players"/> (v20+); no longer written as of FP-7. Nullable so new saves omit it.</summary>
     public int? Gold { get; init; }
@@ -288,6 +293,10 @@ public sealed record SaveGame
                 : null,
             // Custom-house auto-export mode; omitted for the PerGood default so a default game stays byte-identical to v27.
             AutoExportMode = game.AutoExportMode == GameSession.AutoExportMode.PerGood ? null : game.AutoExportMode,
+            // The Royal Expeditionary Force; omitted until grown beyond its (re-derivable) base, so a pre-rebellion game stays byte-identical to v39.
+            RefForce = game.RefForceOrNull is { } ref_
+                ? new SavedForce(ref_.LandUnits.ToList(), ref_.NavalUnits.ToList())
+                : null,
             // Player-scoped state: authoritative in (and written only to) Players[]. The legacy flat
             // top-level fields are no longer written as of FP-7 — they remain readable for ≤v19 / pre-FP-7
             // v20 saves (the fold path), but the v20 load path was always Players[]-only, so the format
@@ -329,7 +338,7 @@ public sealed record SaveGame
             (int[] regionIds, IReadOnlyList<Region> regions) = RegionGenerator.Assign(map);
             map.SetRegions(regionIds, regions);
         }
-        return Game.Restore(
+        Game game = Game.Restore(
             ruleset,
             map,
             new RandomState(RandomStateValue, RandomIncrement),
@@ -429,6 +438,12 @@ public sealed record SaveGame
                 ConvertProgress = s.ConvertProgress ?? 0,    // v34; pre-v34 → 0
             }),
             AutoExportMode.GetValueOrDefault()); // pre-v28 / omitted → PerGood (the enum's 0 default)
+
+        if (RefForce is { } ref_) // v40; pre-v40 / omitted → the base REF is re-derived on demand
+        {
+            game.SetRefForce(new GameSession.Force(ref_.Land, ref_.Naval));
+        }
+        return game;
     }
 
     /// <summary>
@@ -553,6 +568,11 @@ public sealed record SavedResource(int Index, string ResourceId);
 /// <param name="Key">Fixed-region key (e.g. <c>model.region.arctic</c>); null/omitted for a dynamic land/mountain region.</param>
 /// <param name="ParentId">Parent region id (an ocean quadrant's parent ocean); null/omitted at the top level.</param>
 public sealed record SavedRegion(int Id, int Type, int ScoreValue, string? Key = null, int? ParentId = null);
+
+/// <summary>A serialised <see cref="GameSession.Force"/> (the Royal Expeditionary Force) inside a <see cref="SaveGame"/> (v40).</summary>
+/// <param name="Land">Land-unit blocks.</param>
+/// <param name="Naval">Naval-unit blocks.</param>
+public sealed record SavedForce(IReadOnlyList<ForceEntry> Land, IReadOnlyList<ForceEntry> Naval);
 
 /// <summary>A colonist's tile assignment inside a <see cref="SavedColony"/>.</summary>
 /// <param name="X">Worked tile column.</param>
