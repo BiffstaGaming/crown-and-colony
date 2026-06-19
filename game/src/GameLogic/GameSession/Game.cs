@@ -3573,6 +3573,23 @@ public sealed partial class Game
     }
 
     /// <summary>
+    /// Deletes trade route <paramref name="routeId"/> from <paramref name="player"/> and un-assigns every carrier that
+    /// was running it (FreeCol <c>Player.removeTradeRoute</c> + the units' <c>setTradeRoute(null)</c>). No-op if the
+    /// player has no such route.
+    /// </summary>
+    public void RemoveTradeRoute(Player player, int routeId)
+    {
+        if (player.TradeRoutesList.RemoveAll(r => r.Id == routeId) == 0)
+        {
+            return;
+        }
+        foreach (Unit unit in _units.Where(u => u.OwnerId == player.PlayerId && u.TradeRouteId == routeId))
+        {
+            ClearTradeRoute(unit);
+        }
+    }
+
+    /// <summary>
     /// Runs <paramref name="player"/>'s trade-route carriers for the turn (FreeCol's trade-route haul): each assigned
     /// carrier heads for its current stop's colony; on arrival it <b>delivers</b> everything it holds that the stop
     /// doesn't list to load (<see cref="UnloadToColony"/>), <b>loads</b> the stop's goods up to its hold

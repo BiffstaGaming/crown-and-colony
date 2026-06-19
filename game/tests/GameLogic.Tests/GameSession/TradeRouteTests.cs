@@ -117,4 +117,19 @@ public class TradeRouteTests
         Assert.Equal(route.Id, loadedWagon.TradeRouteId);
         Assert.Equal(wagon.TradeRouteStopIndex, loadedWagon.TradeRouteStopIndex); // mid-route position preserved
     }
+
+    [Fact]
+    public void RemoveTradeRoute_DeletesTheRoute_AndUnassignsItsCarrier()
+    {
+        Game game = TwoColonyStrip(out Unit wagon, out Colony alpha, out Colony beta);
+        TradeRoute route = game.CreateTradeRoute(game.HumanPlayer, "Run",
+            [new TradeRouteStop(alpha.Id, [Sugar]), new TradeRouteStop(beta.Id, [])]);
+        game.AssignTradeRoute(wagon, route.Id);
+
+        game.RemoveTradeRoute(game.HumanPlayer, route.Id);
+
+        Assert.Empty(game.HumanPlayer.TradeRoutes); // the route is gone
+        Assert.Null(wagon.TradeRouteId);            // its carrier was un-assigned
+        game.RemoveTradeRoute(game.HumanPlayer, 999); // unknown route → no-op, no throw
+    }
 }

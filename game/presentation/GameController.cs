@@ -49,6 +49,7 @@ public partial class GameController : Node2D
     private PanelContainer _europePanel = null!;
     private PanelContainer _nativePanel = null!;
     private PanelContainer _demandPanel = null!;
+    private PanelContainer _tradeRoutePanel = null!;
     private Button _endTurnButton = null!;
     private Control _gameOverScreen = null!;
     private Label _gameOverMessage = null!;
@@ -66,14 +67,17 @@ public partial class GameController : Node2D
         _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
         _demandPanel = GetNode<PanelContainer>("UI/NativeDemandPanel");
+        _tradeRoutePanel = GetNode<PanelContainer>("UI/TradeRoutePanel");
         _endTurnButton = GetNode<Button>("UI/EndTurnButton");
         _gameOverScreen = GetNode<Control>("UI/GameOverScreen");
         _gameOverMessage = GetNode<Label>("UI/GameOverScreen/Panel/VBox/Message");
         _endTurnButton.Pressed += OnEndTurnPressed;
         GetNode<Button>("UI/EuropeButton").Pressed += OpenEuropePanel;
+        GetNode<Button>("UI/TradeRoutesButton").Pressed += OpenTradeRoutePanel;
         GetNode<Button>("UI/ColonyPanel/VBox/CloseButton").Pressed += () => _colonyPanel.Hide();
         GetNode<Button>("UI/EuropePanel/VBox/CloseButton").Pressed += () => _europePanel.Hide();
         GetNode<Button>("UI/NativeSettlementPanel/VBox/CloseButton").Pressed += () => _nativePanel.Hide();
+        GetNode<Button>("UI/TradeRoutePanel/VBox/CloseButton").Pressed += () => _tradeRoutePanel.Hide();
         GetNode<Button>("UI/GameOverScreen/Panel/VBox/NewGameButton").Pressed += NewGame;
 
         if (PendingLoadPath is { } loadPath)
@@ -345,6 +349,10 @@ public partial class GameController : Node2D
     /// <summary>Opens the Europe screen (dock, recruits, ships in port). Public so scene tests can drive it.</summary>
     public void OpenEuropePanel() =>
         ((EuropePanel)_europePanel).Open(_game, RefreshView);
+
+    /// <summary>Opens the trade-route management screen (list/create/assign/delete routes). Public so scene tests can drive it.</summary>
+    public void OpenTradeRoutePanel() =>
+        ((TradeRoutePanel)_tradeRoutePanel).Open(_game, RefreshView);
 
     /// <summary>Opens the native-settlement interaction panel, acting with <paramref name="actingUnit"/> (may be null — the panel then prompts to select one).</summary>
     public void OpenNativeSettlementPanel(NativeSettlement settlement, Unit? actingUnit)
