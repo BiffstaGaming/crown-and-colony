@@ -1192,6 +1192,29 @@ public sealed partial class Game
         return factor;
     }
 
+    private const string OffenceAgainstId = "model.modifier.offenceAgainst"; // Spanish conquest (+50% vs natives, scope isIndian)
+
+    /// <summary>
+    /// The contextual offence factor the attacker's <b>nation type</b> grants against a <b>native</b> defender (FreeCol
+    /// <c>model.modifier.offenceAgainst</c> scoped <c>isIndian</c>) — the Spanish <c>conquest</c> advantage, <b>+50%
+    /// vs natives</b>. 1.0 when the defender is not native, or the attacker has no European nation / no such modifier
+    /// (the human defaults to no nation). The modifier's <c>isIndian</c> scope is satisfied by the
+    /// <see cref="Unit.IsNative"/> gate here. Folded multiplicatively, like every situational combat factor.
+    /// </summary>
+    private double OffenceAgainstNativeFactor(Unit attacker, Unit defender)
+    {
+        if (!defender.IsNative || attacker.OwnerNationId is not null || PlayerById(attacker.OwnerId) is not { } owner)
+        {
+            return 1.0;
+        }
+        double factor = 1.0;
+        foreach (FatherModifier modifier in NationTypeModifiers(owner, OffenceAgainstId))
+        {
+            factor = modifier.ApplyTo(factor);
+        }
+        return factor;
+    }
+
     /// <summary>
     /// The role a unit fights in. A defender may be automatically equipped for the fight (FreeCol
     /// <c>getAutomaticRole</c>): an unarmed unit in a colony whose owner has the automatic-equipment
@@ -1489,7 +1512,8 @@ public sealed partial class Game
             ArtilleryInOpen: !naval && attacker.Type.Bombard && !attackerInColony && !attacker.IsFortified && !inColony,
             AmbushBonus: ambush ? Map.TerrainAt(target).DefenceBonus : 0,
             GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0); // FreeCol cargo penalty is goods only, not passengers
-        double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext);
+        // Spanish conquest +50% vs a native defender (model.modifier.offenceAgainst, scope isIndian) folds onto the base.
+        double attackPower = CombatModel.AttackPower(OffenceBase(attacker) * OffenceAgainstNativeFactor(attacker, defender), attackContext);
         // The defender's full power (terrain/fortify/settlement/artillery/cargo) — the same figure DefenderAt ranks by.
         double defencePower = DefencePowerOf(attacker, defender, target);
 
@@ -1589,7 +1613,8 @@ public sealed partial class Game
 
         var attackContext = new AttackContext(Movement: MovementPenaltyFor(attacker));
         var defenceContext = new DefenceContext(SettlementDefenceBonus: type.DefenceModifier);
-        double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext);
+        // Spanish conquest +50% vs natives (the settlement's implicit defender is a brave — always native).
+        double attackPower = CombatModel.AttackPower(OffenceBase(attacker) * OffenceAgainstNativeFactor(attacker, defender), attackContext);
         double defencePower = CombatModel.DefencePower(DefenceBase(defender), defenceContext);
 
         bool hasPlunderAbility = AbilityForUnit(attacker, PlunderNativesAbility); // Cortés
