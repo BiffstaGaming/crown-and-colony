@@ -65,8 +65,17 @@ public enum MonarchAction
 /// <param name="GoodsId">The taxed goods' id (for a RAISE_TAX demand).</param>
 /// <param name="ColonyId">The colony holding those goods.</param>
 /// <param name="GoodsAmount">How much of the goods the demand concerns (capped at one cargo).</param>
+/// <param name="Offer">The units offered (a mercenary offer); null for a tax demand.</param>
+/// <param name="Price">The gold price of the offer (a mercenary offer); 0 for a tax demand.</param>
 public sealed record PendingMonarchDemand(
-    MonarchAction Action, int TaxRaise = 0, string? GoodsId = null, int ColonyId = 0, int GoodsAmount = 0);
+    MonarchAction Action, int TaxRaise = 0, string? GoodsId = null, int ColonyId = 0, int GoodsAmount = 0,
+    IReadOnlyList<ForceEntry>? Offer = null, int Price = 0);
+
+/// <summary>One block of like units in a monarch force or offer (the REF, mercenaries, military support).</summary>
+/// <param name="UnitTypeId">The unit type id.</param>
+/// <param name="RoleId">The military role id the units carry (null = the default role).</param>
+/// <param name="Count">How many.</param>
+public sealed record ForceEntry(string UnitTypeId, string? RoleId, int Count);
 
 /// <summary>The most valuable tradeable goods stockpile in a player's colonies (FreeCol <c>getMostValuableGoods</c>).</summary>
 /// <param name="GoodsId">The goods type id.</param>

@@ -325,4 +325,73 @@ public class MonarchTests
         Assert.Equal(1500, loaded.HumanPlayer.Market.Arrears("model.goods.furs"));
         Assert.Equal(20, loaded.Colonies.First().TeaPartyBellTurns);
     }
+
+    // ── Item 4: mercenary offers + DISPLEASURE ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Mercenaries_Offered_AcceptSpendsGoldAndSpawnsVeteransInEurope()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.Gold = 100_000; // plenty to be offered a full force
+        game.DispatchMonarchAction(MonarchAction.MonarchMercenaries, new ScriptedRandom(0, 0, 0, 0, 0, 0, 0, 0));
+
+        PendingMonarchDemand? offer = game.PendingMonarchDemand;
+        Assert.NotNull(offer);
+        Assert.True(offer!.Price > 0);
+        Assert.NotEmpty(offer.Offer!);
+        int veteransOffered = offer.Offer!.Sum(e => e.Count);
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.RespondToMonarch(accept: true);
+
+        Assert.Equal(goldBefore - offer.Price, game.HumanPlayer.Gold);
+        Assert.Equal(veteransOffered, game.UnitsInEurope.Count(u => u.Type.Id == "model.unit.veteranSoldier"));
+        Assert.False(game.HumanPlayer.MonarchDispleasure); // accepting keeps the King content
+    }
+
+    [Fact]
+    public void Mercenaries_DeclinedWhenAffordable_SetsDispleasure_AndGatesFutureOffers()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.Gold = 100_000;
+        game.DispatchMonarchAction(MonarchAction.MonarchMercenaries, new ScriptedRandom(0, 0, 0, 0, 0, 0, 0, 0));
+        Assert.NotNull(game.PendingMonarchDemand);
+
+        game.RespondToMonarch(accept: false); // could afford, but declined
+
+        Assert.True(game.HumanPlayer.MonarchDispleasure);
+        Assert.False(game.MonarchActionIsValid(MonarchAction.MonarchMercenaries)); // now gated off
+        Assert.False(game.MonarchActionIsValid(MonarchAction.SupportSea));
+    }
+
+    [Fact]
+    public void Mercenaries_NotOfferedWhenPlayerCannotAffordEvenOne()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.Gold = 50; // far below one veteran's mercenary price
+        game.DispatchMonarchAction(MonarchAction.MonarchMercenaries, new ScriptedRandom(0, 0, 0, 0, 0, 0, 0, 0));
+        Assert.Null(game.PendingMonarchDemand); // no affordable offer → none made
+    }
+
+    [Fact]
+    public void HessianMercenaries_RequireFiveThousandGold()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.Gold = 4999;
+        Assert.False(game.MonarchActionIsValid(MonarchAction.HessianMercenaries));
+        game.HumanPlayer.Gold = 5000;
+        Assert.True(game.MonarchActionIsValid(MonarchAction.HessianMercenaries));
+    }
+
+    [Fact]
+    public void Displeasure_PersistsAcrossSaveLoad()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.MonarchDispleasure = true;
+
+        Game loaded = CrownAndColony.GameLogic.Persistence.SaveGame
+            .FromJson(CrownAndColony.GameLogic.Persistence.SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.True(loaded.HumanPlayer.MonarchDispleasure);
+    }
 }

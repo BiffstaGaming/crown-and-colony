@@ -193,4 +193,5 @@ public sealed record RestoredPlayer(
     IReadOnlyDictionary<int, Stance>? Stances = null,
     IReadOnlyDictionary<int, int>? Tensions = null,
     IReadOnlyDictionary<string, int>? UnitPrices = null,
-    IReadOnlyDictionary<string, int>? Arrears = null);
+    IReadOnlyDictionary<string, int>? Arrears = null,
+    bool MonarchDispleasure = false);

@@ -2632,6 +2632,7 @@ public sealed partial class Game
             ImmigrationRequired = saved.ImmigrationRequired,
             BaseRecruitPrice = saved.BaseRecruitPrice,
             RecruitLowerCap = saved.RecruitLowerCap,
+            MonarchDispleasure = saved.MonarchDispleasure,
         };
         if (saved.Congress is not null)
         {

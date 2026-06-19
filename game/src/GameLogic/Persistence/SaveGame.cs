@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 37;
+    public const int CurrentVersion = 38;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -78,7 +78,9 @@ public sealed record SaveGame
     /// v37 added boycott back-tax (<see cref="SavedPlayer.Arrears"/>, omitted when nothing is boycotted) and a colony's
     /// Boston-Tea-Party bell-surge turns (<see cref="SavedColony.TeaPartyBellTurns"/>, omitted when 0), so a game with
     /// no tea party is byte-identical to v36; pre-v37 saves load with neither.
-    /// Each of v23–v37 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
+    /// v38 added the King's displeasure (<see cref="SavedPlayer.MonarchDispleasure"/>, omitted when false), so a game
+    /// where the King is content is byte-identical to v37; pre-v38 saves load content.
+    /// Each of v23–v38 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
@@ -448,7 +450,7 @@ public sealed record SaveGame
         p.RecruitDock,
         p.Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
         p.RngState is { } s && p.RngIncrement is { } inc ? new RandomState(s, inc) : null,
-        p.Stances, p.Tensions, p.UnitPrices, p.Arrears);
+        p.Stances, p.Tensions, p.UnitPrices, p.Arrears, p.MonarchDispleasure ?? false);
 
     /// <summary>
     /// Folds the legacy flat top-level fields into the single human player — taken for a ≤v19 save, or any save
@@ -482,7 +484,8 @@ public sealed record SaveGame
             p.Stances.Count > 0 ? new Dictionary<int, Stance>(p.Stances) : null,
             p.Tensions.Count > 0 ? new Dictionary<int, int>(p.Tensions) : null,
             p.UnitPriceOverrides.Count > 0 ? new Dictionary<string, int>(p.UnitPriceOverrides) : null,
-            p.Market.SaveArrears() is { Count: > 0 } arrears ? new Dictionary<string, int>(arrears) : null);
+            p.Market.SaveArrears() is { Count: > 0 } arrears ? new Dictionary<string, int>(arrears) : null,
+            p.MonarchDispleasure ? true : null);
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -635,6 +638,7 @@ public sealed record SavedUnit(
 /// <param name="Tensions">This player's tension toward each other player, by their player id (v20 additive, FP-6a; null/omitted when all zero).</param>
 /// <param name="UnitPrices">This player's escalated Europe purchase prices by unit-type id (v29 additive; null/omitted when none have escalated, so a game where nobody has bought artillery stays byte-identical to v28). Today only artillery escalates.</param>
 /// <param name="Arrears">This player's boycott back-tax by good (v37 additive; null/omitted when nothing is boycotted, so a boycott-free game stays byte-identical to v36). A non-zero entry means the good cannot be sold until paid off.</param>
+/// <param name="MonarchDispleasure">Whether the King is displeased with this player (v38 additive; null/omitted when content). While displeased the King offers no mercenaries or military support.</param>
 public sealed record SavedPlayer(
     int PlayerId, string? NationId, bool IsHuman, int PlayerType,
     int Gold = 0, int Tax = 0,
@@ -649,4 +653,5 @@ public sealed record SavedPlayer(
     IReadOnlyDictionary<int, Stance>? Stances = null,
     IReadOnlyDictionary<int, int>? Tensions = null,
     IReadOnlyDictionary<string, int>? UnitPrices = null,
-    IReadOnlyDictionary<string, int>? Arrears = null);
+    IReadOnlyDictionary<string, int>? Arrears = null,
+    bool? MonarchDispleasure = null);

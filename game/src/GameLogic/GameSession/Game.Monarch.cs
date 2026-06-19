@@ -1,6 +1,9 @@
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Randomness;
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Trade;
+using CrownAndColony.GameLogic.Units;
+using CrownAndColony.GameLogic.World;
 
 namespace CrownAndColony.GameLogic.GameSession;
 
@@ -28,6 +31,12 @@ public sealed partial class Game
     private const int ForceTaxExtra = 3;             // ServerPlayer.csRaiseTax FORCE_TAX surcharge
     private const int ArrearsFactor = 300;           // GameOptions.ARREARS_FACTOR — boycott back-tax = salePrice × this
     private const int TeaPartyBellDuration = 25;     // colonyGoodsParty modifier duration (turns) → +50% bells decaying −2%/turn
+    private const int MercenaryPricePercent = 65;    // GameOptions.MERCENARY_PRICE (medium) — offer price = europeanPurchasePrice × this%
+    // Classic mercenaryUnit land force (specification.xml): veteran soldiers, armed or mounted. (The naval man-o-war
+    // mercenary and ability-driven type selection are a faithful-subset simplification — TODO 86d3c9rg6.)
+    private const string MercenaryUnitTypeId = "model.unit.veteranSoldier";
+    private const string MercenarySoldierRoleId = "model.role.soldier";
+    private const string MercenaryDragoonRoleId = "model.role.dragoon";
 
     private PendingMonarchDemand? _pendingMonarchDemand; // transient: a monarch demand awaiting the human's accept/reject (not saved, like _pendingDemand)
 
@@ -154,8 +163,15 @@ public sealed partial class Game
                 break;
             case MonarchAction.WaiveTax:
                 break; // message only — no change
-            // mercenaries + DISPLEASURE -> item 4 (86d3c9rep); SUPPORT_SEA/LAND -> item 5 (86d3c9rag);
-            // ADD_TO_REF -> item 6 (86d3c9v4j); DECLARE_WAR/PEACE -> monarch diplomacy slice. Unwired = no-op.
+            case MonarchAction.MonarchMercenaries:
+            case MonarchAction.HessianMercenaries:
+                if (LoadMercenaries(rng) is { } offer) // an offer trimmed to what the player can afford (or none)
+                {
+                    _pendingMonarchDemand = new PendingMonarchDemand(action, Offer: offer.Force, Price: offer.Price);
+                }
+                break;
+            // SUPPORT_SEA/LAND -> item 5 (86d3c9rag); ADD_TO_REF -> item 6 (86d3c9v4j);
+            // DECLARE_WAR/PEACE -> monarch diplomacy slice. Unwired = no-op.
             default:
                 break;
         }
@@ -190,6 +206,80 @@ public sealed partial class Game
                 HoldTeaParty(colony, demand.GoodsId!, demand.GoodsAmount); // Boston Tea Party — dump, boycott, rebel surge
             }
         }
+        else if (demand.Action is MonarchAction.MonarchMercenaries or MonarchAction.HessianMercenaries)
+        {
+            if (accept)
+            {
+                _human.Gold -= demand.Price;
+                foreach (ForceEntry entry in demand.Offer!)
+                {
+                    for (int i = 0; i < entry.Count; i++)
+                    {
+                        SpawnInEurope(entry.UnitTypeId, entry.RoleId, _human.PlayerId);
+                    }
+                }
+            }
+            else if (_human.Gold >= demand.Price)
+            {
+                _human.MonarchDispleasure = true; // declined an offer it could afford → the King sulks (no more support)
+            }
+        }
+    }
+
+    /// <summary>
+    /// Builds a mercenary offer (FreeCol <c>Monarch.loadMercenaries</c>): 2-3 groups of 1-2 veteran soldiers, each
+    /// armed or mounted, priced at the European purchase price × 65%, trimmed to what the player can afford. Returns
+    /// null when nothing affordable can be offered.
+    /// </summary>
+    internal (IReadOnlyList<ForceEntry> Force, int Price)? LoadMercenaries(IGameRandom rng)
+    {
+        int groups = 2 + rng.Next(2); // 2-3
+        var entries = new List<ForceEntry>();
+        for (int i = 0; i < groups; i++)
+        {
+            int n = 1 + rng.Next(Math.Min(groups, 2)); // 1-2 per group
+            string role = rng.Next(2) == 0 ? MercenarySoldierRoleId : MercenaryDragoonRoleId;
+            entries.Add(new ForceEntry(MercenaryUnitTypeId, role, n));
+        }
+
+        int unitPrice = EuropeUnitPrice(_human, Ruleset.Unit(MercenaryUnitTypeId)) * MercenaryPricePercent / 100;
+        if (unitPrice <= 0)
+        {
+            return null;
+        }
+        int offered = entries.Sum(e => e.Count);
+        int affordable = Math.Min(offered, _human.Gold / unitPrice); // the King only offers what the treasury can buy
+        if (affordable <= 0)
+        {
+            return null;
+        }
+
+        // Trim the entry list down to `affordable` units total (keeping the earlier groups).
+        var trimmed = new List<ForceEntry>();
+        int remaining = affordable;
+        foreach (ForceEntry e in entries)
+        {
+            if (remaining <= 0)
+            {
+                break;
+            }
+            int take = Math.Min(e.Count, remaining);
+            trimmed.Add(e with { Count = take });
+            remaining -= take;
+        }
+        return (trimmed, affordable * unitPrice);
+    }
+
+    /// <summary>Creates a unit on a player's Europe dock in the given role (mercenary/support delivery, mirrors <see cref="BuyUnit(string)"/>).</summary>
+    private void SpawnInEurope(string unitTypeId, string? roleId, int ownerId)
+    {
+        var unit = new Unit(_nextUnitId++, Ruleset.Unit(unitTypeId), new Position(0, 0))
+        {
+            Location = UnitLocation.InEurope,
+            OwnerId = ownerId,
+            RoleId = roleId ?? RoleType.DefaultRoleId,
+        };
+        _units.Add(unit);
     }
 
     /// <summary>
