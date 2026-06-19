@@ -260,5 +260,41 @@ public class NativeMissionTests
         Assert.Equal(47, r.ConvertProgress);
     }
 
+    // ── Father Jean de Brébeuf: every missionary converts as an expert jesuit (86d3c7xx9) ────────────────────────
+
+    private const string Brebeuf = "model.foundingFather.fatherJeanDeBrebeuf";
+
+    [Fact]
+    public void Spec_DeBrebeuf_GrantsTheExpertMissionaryAbility()
+    {
+        Assert.Contains(Classic.Father(Brebeuf).Abilities,
+            a => a.Id == "model.ability.expertMissionary" && a.Value);
+        Assert.DoesNotContain(Classic.Father("model.foundingFather.adamSmith").Abilities,
+            a => a.Id == "model.ability.expertMissionary"); // no other father grants it
+    }
+
+    [Fact]
+    public void ProcessMissions_WithoutBrebeuf_AccruesAnOrdinaryMissionAtTheBaseRate()
+    {
+        (Game game, NativeSettlement settlement, Unit missionary) = MissionaryAtSettlement(FreeColonist);
+        game.EstablishMission(missionary, settlement); // an ordinary free-colonist mission (not a jesuit)
+        Assert.False(settlement.MissionIsExpert);
+
+        game.ProcessMissions();
+        Assert.Equal(6, settlement.ConvertProgress); // (0 skill + 6), alarm eased to 0 on establish
+    }
+
+    [Fact]
+    public void ProcessMissions_WithBrebeuf_AccruesAnOrdinaryMissionAtTheExpertRate()
+    {
+        (Game game, NativeSettlement settlement, Unit missionary) = MissionaryAtSettlement(FreeColonist);
+        game.EstablishMission(missionary, settlement); // still an ordinary missionary — never a jesuit
+        Assert.False(settlement.MissionIsExpert);
+        game.HumanPlayer.CongressList.Add(Brebeuf);    // elect Father Jean de Brébeuf
+
+        game.ProcessMissions();
+        Assert.Equal(9, settlement.ConvertProgress); // (3 jesuit skill + 6) — Brébeuf makes the ordinary mission expert
+    }
+
     private const string IndianConvertTypeId = "model.unit.indianConvert";
 }

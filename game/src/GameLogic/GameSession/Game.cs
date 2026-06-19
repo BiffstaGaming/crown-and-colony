@@ -823,6 +823,9 @@ public sealed partial class Game
     /// <summary>The expert (jesuit) missionary's extra skill term (FreeCol jesuit <c>skill</c> 3; an ordinary colonist is 0).</summary>
     private const int JesuitConversionSkill = 3;
 
+    /// <summary>Father Jean de Brébeuf's ability: every one of the player's missionaries converts as an expert jesuit (FreeCol <c>model.ability.expertMissionary</c>).</summary>
+    private const string ExpertMissionaryAbility = "model.ability.expertMissionary";
+
     /// <summary>Percent of the settlement's alarm added to convert progress each turn (FreeCol <c>model.modifier.conversionAlarmRate</c> +2%).</summary>
     private const int ConversionAlarmRatePercent = 2;
 
@@ -913,7 +916,9 @@ public sealed partial class Game
                 continue;
             }
 
-            int skill = settlement.MissionIsExpert ? JesuitConversionSkill : 0;
+            // Father Jean de Brébeuf makes every one of the owner's missionaries count as an expert jesuit.
+            bool expert = settlement.MissionIsExpert || HasAbilityFor(owner, ExpertMissionaryAbility);
+            int skill = expert ? JesuitConversionSkill : 0;
             int alarm = Math.Min(settlement.Alarm, NativeSettlement.MaxAlarm);
             settlement.ConvertProgress += (skill + ConversionSkillBonus) + alarm * ConversionAlarmRatePercent / 100;
 
