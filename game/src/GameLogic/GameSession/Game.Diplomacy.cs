@@ -157,28 +157,105 @@ public sealed partial class Game
     // ---- Incite clause (86d3c9u94) ----
 
     /// <summary>
-    /// Whether an <see cref="Diplomacy.InciteTradeItem"/> could incite war against <paramref name="victimId"/> on
-    /// behalf of <paramref name="beneficiaryId"/>: the victim is a colonial power distinct from both the
-    /// <paramref name="inciterId"/> and the <paramref name="beneficiaryId"/>, and both of those are colonial powers
-    /// (FreeCol <c>InciteTradeItem.isValid</c>: victim ≠ source ≠ destination).
+    /// Whether an <see cref="Diplomacy.InciteTradeItem"/> could incite <paramref name="warmakerId"/> to war against
+    /// <paramref name="victimId"/> on behalf of <paramref name="beneficiaryId"/>: the victim is a colonial power
+    /// distinct from both the <paramref name="warmakerId"/> and the <paramref name="beneficiaryId"/>, and both of those
+    /// are colonial powers (FreeCol <c>InciteTradeItem.isValid</c>: victim ≠ source ≠ destination).
     /// </summary>
-    internal bool CanIncite(int inciterId, int beneficiaryId, int victimId) =>
-        victimId != inciterId && victimId != beneficiaryId
-        && IsColonialPlayer(inciterId) && IsColonialPlayer(beneficiaryId) && IsColonialPlayer(victimId);
+    internal bool CanIncite(int warmakerId, int beneficiaryId, int victimId) =>
+        victimId != warmakerId && victimId != beneficiaryId
+        && IsColonialPlayer(warmakerId) && IsColonialPlayer(beneficiaryId) && IsColonialPlayer(victimId);
 
     /// <summary>
-    /// Settles an incitement (FreeCol <c>csIncite</c>): puts the <paramref name="beneficiaryId"/> and the
-    /// <paramref name="victimId"/> at <see cref="Stance.War"/> (symmetric). Stance only this slice — the war-inciter
-    /// tension spike lands with the stance-change tension-modifier table (86d3c9u3z); the gold the inciter pays travels
-    /// as a separate <see cref="Diplomacy.GoldTradeItem"/> clause in the same treaty. A no-op unless all three are
-    /// distinct colonial powers; draws no RNG.
+    /// Settles an incitement (FreeCol <c>csAcceptTrade</c> incite branch: <c>source.csChangeStance(WAR, victim)</c>):
+    /// puts the <paramref name="warmakerId"/> (the clause's source — the power that agrees to fight) and the
+    /// <paramref name="victimId"/> at <see cref="Stance.War"/> (symmetric, with the war stance-change tension modifier),
+    /// then adds the war-inciter spike (<see cref="TensionWarInciter"/> = 250, FreeCol <c>TENSION_ADD_WAR_INCITER</c>)
+    /// to the victim's tension toward the <paramref name="beneficiaryId"/> (the power who instigated it). The gold the
+    /// beneficiary pays for the favour travels as a separate <see cref="Diplomacy.GoldTradeItem"/> clause in the same
+    /// treaty. A no-op unless all three are distinct colonial powers; draws no RNG.
     /// </summary>
-    internal void Incite(int inciterId, int beneficiaryId, int victimId)
+    internal void Incite(int warmakerId, int beneficiaryId, int victimId)
     {
-        if (!CanIncite(inciterId, beneficiaryId, victimId))
+        if (!CanIncite(warmakerId, beneficiaryId, victimId))
         {
             return;
         }
-        SetStance(beneficiaryId, victimId, Stance.War);
+        ApplyStanceWithTension(warmakerId, victimId, Stance.War);
+        ChangeTension(victimId, beneficiaryId, TensionWarInciter, symmetric: false); // the victim resents the instigator
+    }
+
+    // ---- Stance-change tension modifiers (86d3c9u3z) ----
+
+    /// <summary>Tension applied to a colonial pair when they ally (FreeCol <c>Tension.ALLIANCE_MODIFIER</c>).</summary>
+    private const int TensionAllianceModifier = -500;
+
+    /// <summary>Tension applied to a colonial pair when they sign a peace treaty (FreeCol <c>Tension.PEACE_TREATY_MODIFIER</c>).</summary>
+    private const int TensionPeaceTreatyModifier = -250;
+
+    /// <summary>Tension applied to a colonial pair when they agree a cease-fire (FreeCol <c>Tension.CEASE_FIRE_MODIFIER</c>).</summary>
+    private const int TensionCeaseFireModifier = -250;
+
+    /// <summary>Tension applied to a colonial pair when war resumes from a cease-fire (FreeCol <c>Tension.RESUME_WAR_MODIFIER</c>).</summary>
+    private const int TensionResumeWarModifier = 750;
+
+    /// <summary>Tension a victim gains toward the power that incited war against it (FreeCol <c>Tension.TENSION_ADD_WAR_INCITER</c>).</summary>
+    internal const int TensionWarInciter = 250;
+
+    /// <summary>
+    /// The tension delta to apply when a colonial pair's stance changes from <paramref name="oldStance"/> to
+    /// <paramref name="newStance"/> via an act of diplomacy — a faithful port of FreeCol <c>Stance.getTensionModifier</c>
+    /// (the realistic transitions only): allying calms (peace→alliance −500, cease-fire→alliance −750, war→alliance
+    /// −1000), a peace treaty calms (cease-fire→peace −250, war→peace −500), a cease-fire calms a war (war→cease-fire
+    /// −250), and going to war from peace spikes to maximum (peace/alliance→war +1000 = <see cref="TensionWar"/>)
+    /// while war from a cease-fire is a smaller +750 (<see cref="TensionResumeWarModifier"/>). A no-change transition
+    /// (the same stance both sides, including war→war) is 0. Pure; draws no RNG.
+    /// </summary>
+    internal static int StanceTensionModifier(Stance oldStance, Stance newStance) => newStance switch
+    {
+        Stance.Alliance => oldStance switch
+        {
+            Stance.Peace => TensionAllianceModifier,
+            Stance.CeaseFire => TensionAllianceModifier + TensionPeaceTreatyModifier,
+            Stance.War => TensionAllianceModifier + TensionCeaseFireModifier + TensionPeaceTreatyModifier,
+            _ => 0,
+        },
+        Stance.Peace => oldStance switch
+        {
+            Stance.CeaseFire => TensionPeaceTreatyModifier,
+            Stance.War => TensionCeaseFireModifier + TensionPeaceTreatyModifier,
+            _ => 0,
+        },
+        Stance.CeaseFire => oldStance == Stance.War ? TensionCeaseFireModifier : 0,
+        Stance.War => oldStance switch
+        {
+            Stance.CeaseFire => TensionResumeWarModifier,
+            Stance.War => 0,
+            _ => TensionWar, // Uncontacted/Peace/Alliance → War
+        },
+        _ => 0,
+    };
+
+    /// <summary>
+    /// Sets a colonial pair's mutual stance to <paramref name="newStance"/> <b>and</b> applies the matching
+    /// stance-change tension modifier (FreeCol <c>ServerPlayer.csChangeStance</c>): reads the current stance, then
+    /// <see cref="SetStance"/> + <see cref="ChangeTension"/> by <see cref="StanceTensionModifier"/>. The diplomacy
+    /// apply path (the <see cref="Diplomacy.StanceTradeItem"/> clause and <see cref="Incite"/>) routes through here so
+    /// a treaty's stance change carries its tension consequence; the generic <see cref="SetStance"/> used elsewhere
+    /// (contact, the tension→stance machine, monarch-imposed war/peace) is left tension-free, by design. A no-op
+    /// unless <paramref name="a"/> and <paramref name="b"/> are distinct colonial powers; draws no RNG.
+    /// </summary>
+    internal void ApplyStanceWithTension(int a, int b, Stance newStance)
+    {
+        if (!CanSetStance(a, b))
+        {
+            return;
+        }
+        int delta = StanceTensionModifier(StanceBetween(a, b), newStance);
+        SetStance(a, b, newStance);
+        if (delta != 0)
+        {
+            ChangeTension(a, b, delta);
+        }
     }
 }

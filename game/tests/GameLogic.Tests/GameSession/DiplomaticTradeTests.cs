@@ -333,22 +333,24 @@ public class DiplomaticTradeTests
     }
 
     [Fact]
-    public void InciteTradeItem_PutsTheIncitedPowerAtWarWithTheVictim_OnSettle()
+    public void InciteTradeItem_PutsTheWarmakerAtWarWithTheVictim_OnSettle()
     {
+        // FreeCol convention: the clause's SOURCE is the power that goes to war (the recipient who agrees to fight),
+        // the DESTINATION is the beneficiary who asked. Here we (0) pay the incited power to fight the third power.
         var game = Game.New(Classic, seed: 7);
-        int incited = ForeignPowerId(game);        // we incite this power…
-        int victim = SecondForeignPowerId(game);   // …to war against this third power
+        int incited = ForeignPowerId(game);        // …agrees to make war (the clause source)
+        int victim = SecondForeignPowerId(game);   // …against this third power
         Assert.NotEqual(incited, victim);
 
         var trade = new DiplomaticTrade(0, incited)
-            .Add(new InciteTradeItem(source: 0, destination: incited, victim: victim));
+            .Add(new InciteTradeItem(source: incited, destination: 0, victim: victim));
         Assert.True(trade.IsValid(game));
 
         game.SettleTrade(trade);
 
         Assert.Equal(Stance.War, game.StanceBetween(incited, victim));
         Assert.Equal(Stance.War, game.StanceBetween(victim, incited)); // symmetric
-        Assert.Equal(Stance.Uncontacted, game.StanceBetween(0, victim)); // the inciter stays out of it
+        Assert.Equal(Stance.Uncontacted, game.StanceBetween(0, victim)); // the beneficiary stays out of it
     }
 
     [Fact]
@@ -381,7 +383,7 @@ public class DiplomaticTradeTests
         var trade = new DiplomaticTrade(0, incited)
             .Add(new GoldTradeItem(source: 0, destination: incited, amount: 150))
             .Add(new UnitTradeItem(source: 0, destination: incited, unitId: gift.Id))
-            .Add(new InciteTradeItem(source: 0, destination: incited, victim: victim));
+            .Add(new InciteTradeItem(source: incited, destination: 0, victim: victim)); // the incited power makes war
         Assert.True(trade.IsValid(game));
 
         game.SettleTrade(trade);
@@ -390,5 +392,101 @@ public class DiplomaticTradeTests
         Assert.Equal(150, ally.Gold);                              // received 150
         Assert.Equal(incited, gift.OwnerId);                       // unit handed over
         Assert.Equal(Stance.War, game.StanceBetween(incited, victim)); // war incited
+    }
+
+    // ---- Item 5 (86d3c9u3z): stance-change tension modifiers ----
+
+    [Theory]
+    // Calming transitions (FreeCol Stance.getTensionModifier realistic cases).
+    [InlineData(Stance.Peace, Stance.Alliance, -500)]
+    [InlineData(Stance.CeaseFire, Stance.Alliance, -750)] // -500 + -250
+    [InlineData(Stance.War, Stance.Alliance, -1000)]      // -500 + -250 + -250
+    [InlineData(Stance.CeaseFire, Stance.Peace, -250)]
+    [InlineData(Stance.War, Stance.Peace, -500)]          // -250 + -250
+    [InlineData(Stance.War, Stance.CeaseFire, -250)]
+    // Escalating transitions.
+    [InlineData(Stance.Peace, Stance.War, 1000)]
+    [InlineData(Stance.Alliance, Stance.War, 1000)]
+    [InlineData(Stance.CeaseFire, Stance.War, 750)]       // RESUME_WAR
+    // No-change.
+    [InlineData(Stance.Peace, Stance.Peace, 0)]
+    [InlineData(Stance.War, Stance.War, 0)]
+    public void StanceTensionModifier_MatchesFreeColTable(Stance from, Stance to, int expected) =>
+        Assert.Equal(expected, Game.StanceTensionModifier(from, to));
+
+    [Fact]
+    public void StanceClause_AllyingFromPeace_DropsTensionBy500_BothWays()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        game.SetStance(0, fid, Stance.Peace);
+        game.ChangeTension(0, fid, 800); // a standing grudge despite the peace
+
+        game.SettleTrade(new DiplomaticTrade(0, fid).Add(new StanceTradeItem(0, fid, Stance.Alliance)));
+
+        Assert.Equal(Stance.Alliance, game.StanceBetween(0, fid));
+        Assert.Equal(300, game.TensionBetween(0, fid)); // 800 − 500
+        Assert.Equal(300, game.TensionBetween(fid, 0)); // symmetric
+    }
+
+    [Fact]
+    public void StanceClause_PeaceTreatyFromWar_CalmsTheGrudge()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        game.SetStance(0, fid, Stance.War);
+        game.ChangeTension(0, fid, 1000); // at war, tension high
+
+        game.SettleTrade(new DiplomaticTrade(0, fid).Add(new StanceTradeItem(0, fid, Stance.Peace)));
+
+        Assert.Equal(Stance.Peace, game.StanceBetween(0, fid));
+        Assert.Equal(500, game.TensionBetween(0, fid)); // 1000 − (250 + 250)
+    }
+
+    [Fact]
+    public void StanceClause_DeclaringWarFromPeace_SpikesTensionToTheWarModifier()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        game.SetStance(0, fid, Stance.Peace); // tension 0
+
+        game.SettleTrade(new DiplomaticTrade(0, fid).Add(new StanceTradeItem(0, fid, Stance.War)));
+
+        Assert.Equal(Stance.War, game.StanceBetween(0, fid));
+        Assert.Equal(1000, game.TensionBetween(0, fid)); // +TensionWar
+    }
+
+    [Fact]
+    public void Incite_AppliesTheWarModifier_AndTheWarInciterSpikeOnTheBeneficiary()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int warmaker = ForeignPowerId(game);       // the clause source — goes to war
+        int victim = SecondForeignPowerId(game);
+        int beneficiary = 0;                        // the clause destination — asked for it
+        game.SetStance(warmaker, victim, Stance.Peace); // peace → war = +1000
+
+        game.SettleTrade(new DiplomaticTrade(0, warmaker)
+            .Add(new InciteTradeItem(source: warmaker, destination: beneficiary, victim: victim)));
+
+        Assert.Equal(Stance.War, game.StanceBetween(warmaker, victim));
+        Assert.Equal(1000, game.TensionBetween(warmaker, victim));   // war stance-change modifier, both ways
+        Assert.Equal(1000, game.TensionBetween(victim, warmaker));
+        Assert.Equal(250, game.TensionBetween(victim, beneficiary)); // war-inciter: the victim resents the instigator
+        Assert.Equal(0, game.TensionBetween(beneficiary, victim));   // directional — the beneficiary's own view is untouched
+    }
+
+    [Fact]
+    public void GenericSetStance_IsLeftTensionFree_SoTheMonarchAndContactPathsDoNotGainTension()
+    {
+        // ApplyStanceWithTension is the diplomacy-only seam; the generic SetStance (contact, tension machine,
+        // monarch-imposed war/peace) must NOT carry a tension delta.
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        game.SetStance(0, fid, Stance.Peace);
+
+        game.SetStance(0, fid, Stance.War); // the generic mutator — no modifier
+
+        Assert.Equal(Stance.War, game.StanceBetween(0, fid));
+        Assert.Equal(0, game.TensionBetween(0, fid)); // unchanged by SetStance
     }
 }

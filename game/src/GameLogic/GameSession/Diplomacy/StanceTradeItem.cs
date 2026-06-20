@@ -7,10 +7,11 @@ namespace CrownAndColony.GameLogic.GameSession.Diplomacy;
 /// <see cref="GameSession.Stance.Alliance"/> (end a war, agree a truce, or ally).
 /// </summary>
 /// <remarks>
-/// The stance is set symmetrically via <see cref="Game.SetStance"/>, so it applies between the clause's two players
-/// the same way contact/attack do. Like every clause this draws no RNG (ADR-009) and carries no tension delta — the
-/// FreeCol alliance/peace tension modifiers are a later slice. A stance change between non-colonial players is a
-/// no-op (the existing <c>SetStance</c> guard), which makes the clause invalid for such a pair.
+/// The stance is set symmetrically <b>and carries its tension consequence</b> via
+/// <see cref="Game.ApplyStanceWithTension"/> (FreeCol <c>ServerPlayer.csChangeStance</c>): allying / a peace treaty /
+/// a cease-fire calms the pair, while going to war spikes their tension. Like every clause this draws no RNG
+/// (ADR-009). A stance change between non-colonial players is a no-op (the <c>CanSetStance</c> guard), which makes the
+/// clause invalid for such a pair.
 /// </remarks>
 public sealed class StanceTradeItem : TradeItem
 {
@@ -24,9 +25,9 @@ public sealed class StanceTradeItem : TradeItem
     /// <summary>The stance the treaty sets between the two parties (FreeCol <c>StanceTradeItem.getStance</c>).</summary>
     public Stance Stance { get; }
 
-    /// <summary>Valid when the two parties are distinct colonial powers (FreeCol <c>StanceTradeItem.isValid</c> — the only pairs whose stance is tracked); <see cref="Game.SetStance"/> is otherwise a no-op.</summary>
+    /// <summary>Valid when the two parties are distinct colonial powers (FreeCol <c>StanceTradeItem.isValid</c> — the only pairs whose stance is tracked); the stance change is otherwise a no-op.</summary>
     public override bool IsValid(Game game) => game.CanSetStance(Source, Destination);
 
-    /// <summary>Sets the mutual stance between the two parties (symmetric, via <see cref="Game.SetStance"/>).</summary>
-    public override void Apply(Game game) => game.SetStance(Source, Destination, Stance);
+    /// <summary>Sets the mutual stance between the two parties and applies the stance-change tension modifier (symmetric, via <see cref="Game.ApplyStanceWithTension"/>).</summary>
+    public override void Apply(Game game) => game.ApplyStanceWithTension(Source, Destination, Stance);
 }
