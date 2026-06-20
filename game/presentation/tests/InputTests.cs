@@ -91,6 +91,30 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task ClickingATile_ShowsTheTileInfoReadout_WithTerrainAndOccupant()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        var panel = controller.GetNode<PanelContainer>("UI/TileInfoPanel");
+        AssertThat(panel.Visible).IsFalse(); // empty/hidden until a tile is clicked (so the visual goldens are unaffected)
+
+        // Click the human's starting unit's tile: it's explored, so the readout names that tile's terrain and the
+        // occupying unit (the same tile the click selects).
+        Unit unit = game.PlayerUnits.First(u => u.IsOnMap);
+        Position tile = unit.Position;
+        await ClickTile(runner, controller, tile);
+
+        AssertThat(panel.Visible).IsTrue();
+        var label = controller.GetNode<Label>("UI/TileInfoPanel/VBox/Label");
+        AssertThat(label.Text).Contains(game.Map.TerrainAt(tile).ShortName); // terrain
+        AssertThat(label.Text).Contains(unit.Type.ShortName);                // occupant
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task SelectedUnitPanel_FortifyButton_FortifiesTheUnit()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

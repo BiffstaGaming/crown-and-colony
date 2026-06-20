@@ -60,6 +60,8 @@ public partial class GameController : Node2D
     private Label _calendarLabel = null!;
     private PanelContainer _selectedUnitPanel = null!;
     private Label _selectedUnitLabel = null!;
+    private PanelContainer _tileInfoPanel = null!;
+    private Label _tileInfoLabel = null!;
     private Button _fortifyButton = null!;
     private Button _sentryButton = null!;
     private Button _clearOrdersButton = null!;
@@ -78,6 +80,7 @@ public partial class GameController : Node2D
     private Control _gameOverScreen = null!;
     private Label _gameOverMessage = null!;
     private Unit? _selectedUnit;
+    private Position? _inspectedTile;
     private string? _notice;
     private bool _gotoMode;
     private GotoMarker _gotoMarker = null!;
@@ -94,6 +97,8 @@ public partial class GameController : Node2D
         _calendarLabel = GetNode<Label>("UI/CalendarPanel/CalendarLabel");
         _selectedUnitPanel = GetNode<PanelContainer>("UI/SelectedUnitPanel");
         _selectedUnitLabel = GetNode<Label>("UI/SelectedUnitPanel/VBox/Label");
+        _tileInfoPanel = GetNode<PanelContainer>("UI/TileInfoPanel");
+        _tileInfoLabel = GetNode<Label>("UI/TileInfoPanel/VBox/Label");
         _fortifyButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/FortifyButton");
         _sentryButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/SentryButton");
         _clearOrdersButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/ClearButton");
@@ -172,6 +177,7 @@ public partial class GameController : Node2D
     {
         _game = game;
         _selectedUnit = null;
+        _inspectedTile = null;
         _notice = null;
         // Centre on the player's first on-map unit; after founding the only colony the player may have
         // none on the map (and the unit list now also holds native braves), so fall back to a colony,
@@ -205,6 +211,45 @@ public partial class GameController : Node2D
         string orders = u.Orders == UnitOrders.Active ? "" : $"  ·  {u.Orders.ToString().ToLowerInvariant()}";
         string goingTo = u.IsGoingTo ? "  ·  going to" : "";
         return $"{u.Type.ShortName}  ·  moves {u.MovementLeft}/{u.Type.Movement}{role}{orders}{goingTo}";
+    }
+
+    /// <summary>
+    /// One- or two-line readout for the HUD tile-info panel (FreeCol's <c>InfoPanel</c> tile-info): the clicked
+    /// tile's terrain, its bonus resource (if any), and what occupies it — the human's own colony, a discovered
+    /// native settlement, an on-map unit, or nothing. Fog-gated: an unexplored tile reads only "Unexplored" so the
+    /// player learns nothing they haven't seen. Reads-only over <see cref="Game"/> oracles (ADR-006).
+    /// </summary>
+    private string DescribeTile(Position tile)
+    {
+        if (!_game.IsExplored(tile))
+        {
+            return "Unexplored";
+        }
+
+        // Terrain + bonus resource. The resource short name is derived from its ruleset id the same way MapView
+        // turns the bonus id into an icon name (e.g. model.resource.minerals → minerals); no new oracle needed.
+        string terrain = _game.Map.TerrainAt(tile).ShortName;
+        string line = terrain;
+        if (_game.Map.ResourceAt(tile) is { } resourceId)
+        {
+            line += $"  ·  {resourceId[(resourceId.LastIndexOf('.') + 1)..]}";
+        }
+
+        // Occupant: the human's own colony, a discovered native settlement, then any on-map unit. Foreign colonies
+        // are not named (the player learns their name only by visiting); the terrain line alone is shown for them.
+        if (_game.ColonyAt(tile) is { } colony && colony.OwnerId == _game.HumanPlayer.PlayerId)
+        {
+            line += $"\nYour colony: {colony.Name}";
+        }
+        else if (_game.NativeSettlementAt(tile) is { } settlement)
+        {
+            line += $"\n{NationLabel(settlement.NationTypeId)} settlement";
+        }
+        else if (_game.Units.FirstOrDefault(u => u.IsOnMap && u.Position == tile) is { } unit)
+        {
+            line += $"\n{unit.Type.ShortName}";
+        }
+        return line;
     }
 
     private void OnEndTurnPressed()
@@ -392,6 +437,11 @@ public partial class GameController : Node2D
         {
             return;
         }
+
+        // Remember the clicked tile as the "inspected" tile so the HUD tile-info readout describes it
+        // (terrain / resource / occupant). Set on every in-bounds click — selecting, moving or attacking all
+        // refresh the readout to the tile the player just acted on (FreeCol's InfoPanel tile-info, ADR-006).
+        _inspectedTile = tile;
 
         // Goto-target mode (armed by the G key): this click sets the selected unit's standing destination
         // instead of moving/attacking. The per-turn ProcessGotos walks it there (ADR-006 — rules in GameLogic).
@@ -703,6 +753,18 @@ public partial class GameController : Node2D
         else
         {
             _selectedUnitPanel.Hide();
+        }
+
+        // Tile-info readout (terrain / resource / occupant), shown only once the player has clicked a tile — empty
+        // until then so the camera-centred visual goldens (which never click) are unaffected (ADR-006).
+        if (_inspectedTile is { } inspected)
+        {
+            _tileInfoLabel.Text = DescribeTile(inspected);
+            _tileInfoPanel.Show();
+        }
+        else
+        {
+            _tileInfoPanel.Hide();
         }
 
         UpdateDefeatUi();

@@ -78,6 +78,22 @@ text = "Sentry"
 layout_mode = 2
 text = "Wake"
 
+[node name="TileInfoPanel" type="PanelContainer" parent="UI"]
+visible = false
+mouse_filter = 2
+offset_left = 12.0
+offset_top = 108.0
+offset_right = 360.0
+offset_bottom = 150.0
+
+[node name="VBox" type="VBoxContainer" parent="UI/TileInfoPanel"]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Label" type="Label" parent="UI/TileInfoPanel/VBox"]
+layout_mode = 2
+mouse_filter = 2
+
 [node name="ColonyPanel" type="PanelContainer" parent="UI"]
 visible = false
 anchors_preset = 15
