@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-20 — 5-stream bundled parallel wave (wave 2) — 12 items — COMPLETE ✅
+
+**Requested:** "do the same again AND automatically start them" — a second 5-stream bundled wave, fully autonomous (owner asleep, no prompts).
+**Did:** 5 worktree agents (one merge hotspot each, ≤3 items bundled sequentially); integrated via cherry-pick (order **C → B → D → E → A last**) + ONE combined test pass.
+- **A Map-gen / Rivers** (owns `SaveGame` **v46→v47** + `MapGenerator` + goldens): resource-quantity gen-roll into `Game.New` (`427d686`) · **river PLACEMENT** — improvement layer + stamp + `<tile-improvement-type>` parse + yield/move wiring + v47 (`c333ead`) · European starts + REF entry tile (`11a8300`). 6 goldens regenerated.
+- **B AI behaviour** (`Game.cs` loops): AI colony economy + **`MaxAiColonies` 1→3** (`ebcecd6`) · native arms/horse redistribution (`327f18c`) · AI scout targeting (`3342f67`).
+- **C Diplomacy backend** (`Diplomacy/`): colony/unit/incite clauses (`6907546`) · stance-change tension modifiers (`4f8623d`) · AI treaty evaluation — pure method (`e92d6cf`).
+- **D HUD** (`GameController`+`main.tscn`): Colopedia all categories (`e9b8528`) · History report + in-memory `Game.History` (`35e5fe1`) · emigration choice dialog (`f334985`).
+- **E Colony/econ leaf** — VERIFY-FIRST: all 3 (Stuyvesant custom-house / Adam Smith+factory / horse-breeding) confirmed **already shipped**; fixed `founding-fathers.md` doc drift (`2551ede`).
+**Status:** combined pass green together — **1389 L1/L2 + 4 soak; 102 L3/L4**; both projects build clean; **save v46→v47**. CI green on **both jobs** (run 27871408217).
+**Decisions:** same bundling reframe; integration C→B→D→E→**A last** (A owns the save bump + the sole golden/soak regen). Conflicts were only the predictable overlaps — `game-logic.md`/`players.md` changelog rows (kept both) and the `MaxAiColonies`-vs-`MinDistanceBetweenPowers` const block (kept both consts) — all resolved by hand. Honest partials kept **In Development**: rivers epic `86d3b3qdx` (placement done; **rendering + per-tile style** follow-ups), AI economy `86d3c9vmr` (getBestWorker/Europe-buy remain), AI exploration `86d3c9vta` (pioneering now UNBLOCKED), treaty eval `86d3c9uar` (turn-wiring + counter-offers deferred). Shipped the rest, incl. E's 3 verify-closes.
+**Changed:** 12 commits `6907546`..`11a8300`. Save v47.
+**Scheduled next:** nothing auto-scheduled — **two autonomous waves delivered** per the standing instruction; stopping here for the owner to review. Suggested wave 3: **AI pioneering** (now unblocked by the tile-improvement layer), **river map rendering** (presentation), **negotiation UI** (the diplomacy backend + eval now exist), and decomposing the **P6 endgame epic**.
+**Follow-ups:** river rendering + style/connectivity (`86d3b3qdx`); AI pioneering + missionary (`86d3c9vta`); treaty turn-wiring + counter-offers + negotiation UI (`86d3c9uar`/`ubw`/`xpt`); persist History + emigration choice (next save bump); AI economy `getBestWorker`/Europe-buy (`86d3c9vmr`); Colopedia Concepts; native defend-mission pathing.
+**Needs you:** nothing blocking. **Two waves complete = 23 items across waves 1+2** (save v45→v47).
+
 ## 2026-06-20 — 5-stream bundled parallel wave (wave 1) — 11 items — COMPLETE ✅
 
 **Requested:** Launch 5 parallel streams, each up to 3 backlog items, merging cleanly via region-disjoint **hotspot ownership** (items within a stream may share files; the 5 streams stay disjoint). Then do the same again and auto-start the next wave. (Owner asleep → fully autonomous, no prompts.)
