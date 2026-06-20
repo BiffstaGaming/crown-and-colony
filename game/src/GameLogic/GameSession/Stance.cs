@@ -9,8 +9,9 @@ namespace CrownAndColony.GameLogic.GameSession;
 /// Ordered so the zero value is <see cref="Uncontacted"/> — an absent map entry (a never-met pair, or a
 /// save written before stances existed) reads as "not yet met" for free. <see cref="CeaseFire"/> is produced
 /// by the tension→stance machine (FP-6b) as a war cools toward peace. Values are explicit and appended (not in
-/// FreeCol's declaration order) so the saved ordinals of the FP-6a values stay stable. FreeCol additionally has
-/// <c>Alliance</c>, which only a diplomacy action sets — deferred until those land (it will be appended as 4).
+/// FreeCol's declaration order) so the saved ordinals of the earlier values stay stable. <see cref="Alliance"/>
+/// is only set by a diplomacy action (a <c>StanceTradeItem</c>); it is appended as 4 so every earlier ordinal is
+/// untouched.
 /// </remarks>
 public enum Stance
 {
@@ -25,4 +26,7 @@ public enum Stance
 
     /// <summary>A truce — a war that has cooled (tension fell below the war band); de-escalates to <see cref="Peace"/> as tension keeps falling (FP-6b).</summary>
     CeaseFire = 3,
+
+    /// <summary>Allied — set only by a diplomacy action (a stance trade item). Appended (=4) so earlier saved ordinals are unchanged; the tension→stance machine never produces it.</summary>
+    Alliance = 4,
 }

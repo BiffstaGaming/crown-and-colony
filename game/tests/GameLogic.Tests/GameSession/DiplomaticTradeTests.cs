@@ -1,6 +1,7 @@
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.GameSession.Diplomacy;
+using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
@@ -172,5 +173,86 @@ public class DiplomaticTradeTests
         Assert.Equal(200, rival.Gold);            // received 200
         Assert.Equal(0, theirs.StoreOf(Tobacco)); // gave 80
         Assert.Equal(80, ours.StoreOf(Tobacco));  // received 80
+    }
+
+    // ---- Item 3: alliance stance + StanceTradeItem ----
+
+    [Fact]
+    public void AllianceOrdinal_IsAppendedAsFour_LeavingEarlierStanceOrdinalsStable()
+    {
+        // Saved stance ordinals must stay stable across the wave — Alliance is appended, not reordered.
+        Assert.Equal(0, (int)Stance.Uncontacted);
+        Assert.Equal(1, (int)Stance.Peace);
+        Assert.Equal(2, (int)Stance.War);
+        Assert.Equal(3, (int)Stance.CeaseFire);
+        Assert.Equal(4, (int)Stance.Alliance);
+    }
+
+    [Theory]
+    [InlineData(Stance.Peace)]
+    [InlineData(Stance.CeaseFire)]
+    [InlineData(Stance.Alliance)]
+    public void StanceTradeItem_SetsThePairsStanceBothWays_OnSettle(Stance agreed)
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        game.SetStance(0, fid, Stance.War); // a war the treaty ends/changes
+
+        var trade = new DiplomaticTrade(0, fid).Add(new StanceTradeItem(source: 0, destination: fid, stance: agreed));
+        Assert.True(trade.IsValid(game));
+
+        game.SettleTrade(trade);
+
+        Assert.Equal(agreed, game.StanceBetween(0, fid));
+        Assert.Equal(agreed, game.StanceBetween(fid, 0)); // symmetric
+    }
+
+    [Fact]
+    public void StanceTradeItem_IsInvalid_ForANonColonialPair()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int nid = game.Players.First(p => p.PlayerType == PlayerType.Native).PlayerId;
+
+        var item = new StanceTradeItem(0, nid, Stance.Alliance);
+        Assert.False(item.IsValid(game)); // natives stay on the alarm system — stance is not tracked
+
+        game.SettleTrade(new DiplomaticTrade(0, nid).Add(item)); // skipped
+        Assert.Equal(Stance.Uncontacted, game.StanceBetween(0, nid));
+    }
+
+    [Fact]
+    public void Treaty_CanEndAWarWithGoldAndAlliance_InOneSettle()
+    {
+        // "300 gold and we ally" — gold + stance clauses settle together.
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        Player human = game.HumanPlayer;
+        human.Gold = 1000;
+        game.SetStance(0, fid, Stance.War);
+
+        var trade = new DiplomaticTrade(0, fid)
+            .Add(new GoldTradeItem(0, fid, 300))
+            .Add(new StanceTradeItem(0, fid, Stance.Alliance));
+
+        game.SettleTrade(trade);
+
+        Assert.Equal(700, human.Gold);
+        Assert.Equal(Stance.Alliance, game.StanceBetween(0, fid));
+        Assert.Equal(Stance.Alliance, game.StanceBetween(fid, 0));
+    }
+
+    [Fact]
+    public void AllianceStance_RoundTripsThroughSave_NoSaveBumpNeeded()
+    {
+        // The trade container isn't persisted, but the stance it sets is (existing FP-6a save path). Alliance is a
+        // new enum value serialized as its ordinal (4); it round-trips on the existing save version (additive).
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        game.SettleTrade(new DiplomaticTrade(0, fid).Add(new StanceTradeItem(0, fid, Stance.Alliance)));
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(Stance.Alliance, loaded.StanceBetween(0, fid));
+        Assert.Equal(Stance.Alliance, loaded.StanceBetween(fid, 0));
     }
 }

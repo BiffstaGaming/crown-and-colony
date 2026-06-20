@@ -90,4 +90,13 @@ public sealed partial class Game
         from.AddGoods(goodsId, -amount);
         to.AddGoods(goodsId, amount);
     }
+
+    // ---- Stance clause (86d3c9u3z) ----
+
+    /// <summary>
+    /// Whether a <see cref="Diplomacy.StanceTradeItem"/> could set a stance between <paramref name="a"/> and
+    /// <paramref name="b"/>: they must be distinct colonial powers — the only pairs whose stance is tracked and the
+    /// exact pairs for which <see cref="SetStance"/> is not a no-op (FreeCol <c>StanceTradeItem.isValid</c>).
+    /// </summary>
+    internal bool CanSetStance(int a, int b) => a != b && IsColonialPlayer(a) && IsColonialPlayer(b);
 }
