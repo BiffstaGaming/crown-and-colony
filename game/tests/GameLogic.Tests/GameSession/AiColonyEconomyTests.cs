@@ -4,6 +4,7 @@ using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 using Xunit;
 
@@ -391,6 +392,164 @@ public class AiColonyEconomyTests
 
         Colony colony = game.Colonies.First(c => c.OwnerId == power.PlayerId);
         Assert.True(colony.TileWorkers.Count > 0); // the planner staffed its tiles (centre-only/idle before 86d3c9vmr)
+    }
+
+    // ── Best-worker building fill (increment 6 — FreeCol getBestWorker) ───────────────────────────────────────────────
+
+    private const string MasterDistiller = "model.unit.masterDistiller";
+
+    [Fact]
+    public void PlanColonyBuildingWork_AssignsTheMatchingExpert_WhenOneIsIdle()
+    {
+        // FreeCol getBestWorker: the worker that most improves the building's output wins the slot. A plains colony whose
+        // sole idle colonist is a master distiller, with sugar in store, must seat the MASTER DISTILLER (×2 rum) in the
+        // distiller house — the expert is the best worker for it.
+        (Game game, Colony colony) = PlainsColony();
+        colony.Population = 1;                 // one colonist total
+        colony.AddIdleColonist(MasterDistiller); // …and it is the master distiller
+        colony.AddGoods(Sugar, 100);
+
+        game.PlanColonyBuildingWork(game.HumanPlayer, colony);
+
+        Assert.Equal(1, colony.BuildingWorkers.GetValueOrDefault(DistillerHouse));
+        Assert.Contains(MasterDistiller, colony.BuildingWorkerTypes.GetValueOrDefault(DistillerHouse, [])); // the expert took the slot
+    }
+
+    [Fact]
+    public void PlanColonyBuildingWork_RoutesTheExpertToItsMatchingBuilding_NotAnUnrelatedOne()
+    {
+        // With a free colonist + a master distiller both idle, and BOTH a sugar-fed distiller house and a lumber-fed
+        // carpenter fundable, the best-worker fill routes the master distiller to the distiller house (its ×2 rum match)
+        // and never into the carpenter (where it adds no more than a free colonist) — FreeCol's "the expert wins its
+        // building" placement, the free colonist taking the other slot.
+        (Game game, Colony colony) = PlainsColony();
+        colony.Population = 2;                  // one free colonist + one master distiller
+        colony.AddIdleColonist(MasterDistiller);
+        colony.AddGoods(Sugar, 100);           // distiller house fundable (rum)
+        colony.AddGoods(Lumber, 100);          // carpenter fundable (hammers)
+        game.SetBuild(colony, game.Buildables(colony).First().Id); // a build raises the carpenter's value so it competes
+
+        game.PlanColonyBuildingWork(game.HumanPlayer, colony);
+
+        Assert.Contains(MasterDistiller, colony.BuildingWorkerTypes.GetValueOrDefault(DistillerHouse, [])); // expert → its match
+        Assert.DoesNotContain(MasterDistiller, colony.BuildingWorkerTypes.GetValueOrDefault(CarpenterHouse, [])); // never the carpenter
+    }
+
+    [Fact]
+    public void PlanColonyBuildingWork_BestWorker_DrawsNoRandomness()
+    {
+        (Game game, Colony colony) = PlainsColony();
+        colony.Population = 2;
+        colony.AddIdleColonist(MasterDistiller);
+        colony.AddGoods(Sugar, 100);
+        var before = game.RandomState;
+        game.PlanColonyBuildingWork(game.HumanPlayer, colony);
+        Assert.Equal(before, game.RandomState); // pure value/ordinal ranking (ADR-009)
+    }
+
+    // ── Europe train/buy (increment 6 — FreeCol trainAIUnitInEurope + artillery/ship buy) ─────────────────────────────
+
+    private const string Caravel = "model.unit.caravel";
+
+    [Fact]
+    public void CheckTrain_RejectsANonSpecialist_AndGatesOnGold()
+    {
+        Game game = ForeignColony(out Colony _, out int ownerId);
+        Player power = game.Players.First(p => p.PlayerId == ownerId);
+
+        Assert.False(game.CheckTrain(power, Caravel).Allowed);          // a ship is purchased, not trained
+        Assert.False(game.CheckTrain(power, "model.unit.freeColonist").Allowed); // a plain colonist is recruited, not trained
+
+        power.Gold = 0;
+        Assert.False(game.CheckTrain(power, MasterDistiller).Allowed);  // can't afford it
+        power.Gold = 100_000;
+        Assert.True(game.CheckTrain(power, MasterDistiller).Allowed);   // affordable specialist → allowed
+    }
+
+    [Fact]
+    public void TrainUnit_DocksAnOwnedSpecialist_AndSpendsItsGold()
+    {
+        Game game = ForeignColony(out Colony _, out int ownerId);
+        Player power = game.Players.First(p => p.PlayerId == ownerId);
+        power.Gold = 100_000;
+        int before = power.Gold;
+
+        Unit trained = game.TrainUnit(power, MasterDistiller);
+
+        Assert.Equal(MasterDistiller, trained.Type.Id);
+        Assert.Equal(ownerId, trained.OwnerId);                         // belongs to the power, not the human
+        Assert.Equal(UnitLocation.InEurope, trained.Location);         // docked, ready to ship
+        Assert.True(power.Gold < before);                              // its own gold was spent
+        Assert.Empty(game.UnitsInEurope);                             // the human gained nothing
+    }
+
+    [Fact]
+    public void EuropeSpend_TrainsAWantedSpecialist_WhenFlush()
+    {
+        // A flush power trains a specialist whose expertise matches a good its plains colony produces every turn (grain
+        // + cotton at the centre → wanted grain/cotton/cloth). It picks the cheapest such expert, deterministically, and
+        // docks it in its own Europe (a trained-in-Europe unit with skill > 0). Asserts the spend trained a *wanted*
+        // expert without pinning the exact type (the cheapest-wins ordering is covered by the unit tests on the seam).
+        Game game = ForeignColony(out Colony _, out int ownerId);
+        Player power = game.Players.First(p => p.PlayerId == ownerId);
+        power.Gold = 100_000;
+
+        game.EndTurn(); // the power's economy runs, including the Europe spend
+
+        var trainedIds = game.UnitTypesTrainedInEurope().Select(t => t.Id).ToHashSet();
+        Unit? trained = game.Units.FirstOrDefault(u => u.OwnerId == ownerId
+            && u.Location == UnitLocation.InEurope && trainedIds.Contains(u.Type.Id));
+        Assert.NotNull(trained);                                  // it trained a specialist in Europe
+        Assert.True(trained!.Type.Skill > 0, "the trained unit is not a skilled specialist"); // not a plain recruit/ship
+    }
+
+    [Fact]
+    public void EuropeSpend_BuysAShip_WhenFlushAndOwningNoCarrier()
+    {
+        // A flush power with no naval carrier buys the cheapest ship (the transport need) — its own gold, its own unit.
+        Game game = ForeignColony(out Colony _, out int ownerId);
+        Player power = game.Players.First(p => p.PlayerId == ownerId);
+        power.Gold = 100_000;
+        Assert.DoesNotContain(game.Units, u => u.OwnerId == ownerId && u.Type.IsNaval); // premise: no carrier yet
+
+        game.EndTurn();
+
+        Assert.Contains(game.Units, u => u.OwnerId == ownerId && u.Type.IsNaval && u.Type.IsCarrier);
+    }
+
+    [Fact]
+    public void EuropeSpend_StaysWithinTheReserve_WhenPoor()
+    {
+        // A poor power (below the spend floor) buys nothing in Europe — it keeps its reserve for recruiting/building.
+        Game game = ForeignColony(out Colony _, out int ownerId);
+        Player power = game.Players.First(p => p.PlayerId == ownerId);
+        power.Gold = 100; // below AiEuropeSpendFloor
+        int unitsBefore = game.Units.Count(u => u.OwnerId == ownerId);
+
+        game.EndTurn();
+
+        Assert.Equal(unitsBefore, game.Units.Count(u => u.OwnerId == ownerId)); // no Europe purchase/train
+    }
+
+    [Fact]
+    public void EuropeSpend_DrawsNothingFromTheHumansStream0()
+    {
+        // The decisive ADR-009 guard: a flush rival spending hard in Europe must leave the human's stream 0 byte-identical.
+        Game baseline = Game.New(Classic, seed: 8675309);
+        Game perturbed = Game.New(Classic, seed: 8675309);
+        for (int turn = 0; turn < 25; turn++)
+        {
+            foreach (Player rival in perturbed.Players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial))
+            {
+                rival.Gold += 5000; // fund the rivals so they train/buy in Europe far more than the baseline
+            }
+            baseline.EndTurn();
+            perturbed.EndTurn();
+        }
+
+        Assert.NotEqual(SaveGame.From(baseline).ToJson(), SaveGame.From(perturbed).ToJson()); // the rivals genuinely diverged
+        Assert.Equal(baseline.RandomState, perturbed.RandomState);                            // human stream 0 untouched
+        Assert.Equal(baseline.HumanPlayer.Gold, perturbed.HumanPlayer.Gold);
     }
 
     // ── Build-queue planner — buildable UNITS (increment 4b) ─────────────────────────────────────────────────────────

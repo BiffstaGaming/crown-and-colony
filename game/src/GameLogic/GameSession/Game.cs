@@ -1,5 +1,6 @@
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Combat;
+using CrownAndColony.GameLogic.GameSession.Diplomacy;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
@@ -3616,6 +3617,29 @@ public sealed partial class Game
         colony.AssignBuildingWorker(buildingId, PickIdleBuildingWorker(colony));
     }
 
+    /// <summary>
+    /// Puts a <b>specific</b> idle colonist type to work in a building (the AI best-worker seam, FreeCol
+    /// <c>getBestWorker</c>): when <paramref name="type"/> is a specialist it must currently be in the colony's idle
+    /// overlay, so the caller has already established the colonist is available; a free-colonist <paramref name="type"/>
+    /// falls back to the implicit free pool. Used by <see cref="PlanColonyBuildingWork"/> to assign the marginal
+    /// best worker (its matching expert) to a building, rather than always a free colonist.
+    /// </summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAssignBuildingWork"/>.</exception>
+    internal void AssignBuildingWork(Colony colony, string buildingId, string type)
+    {
+        MoveCheck check = CheckAssignBuildingWork(colony, buildingId);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        // A specialist must be idle to be placed by type; otherwise fall back to a free colonist (AssignBuildingWorker
+        // treats an unknown specialist as a free colonist — RemoveOneIdle is a no-op — but the guard keeps intent clear).
+        string assigned = type != Colony.FreeColonistTypeId && !colony.IdleWorkerTypes.Contains(type)
+            ? PickIdleBuildingWorker(colony)
+            : type;
+        colony.AssignBuildingWorker(buildingId, assigned);
+    }
+
     /// <summary>Returns one of a building's workers to the idle pool.</summary>
     public void UnassignBuildingWork(Colony colony, string buildingId) =>
         colony.UnassignBuildingWorker(buildingId);
@@ -4092,6 +4116,42 @@ public sealed partial class Game
         };
         _units.Add(unit);
         return unit;
+    }
+
+    /// <summary>Whether <paramref name="player"/> can train the specialist <paramref name="unitTypeId"/> in Europe right now.</summary>
+    internal MoveCheck CheckTrain(Player player, string unitTypeId)
+    {
+        UnitType type = Ruleset.Unit(unitTypeId);
+        if (!type.IsTrainedInEurope)
+        {
+            return MoveCheck.No($"A {type.ShortName} cannot be trained in Europe.");
+        }
+        int price = EuropeUnitPrice(player, type);
+        if (player.Gold < price)
+        {
+            return MoveCheck.No($"Not enough gold (need {price}).");
+        }
+        return MoveCheck.Yes(price);
+    }
+
+    /// <summary>
+    /// Trains a specialist (a priced, skill &gt; 0 unit — expert farmer, master carpenter…) in <paramref name="player"/>'s
+    /// Europe for gold; it appears docked there as a person, ready to board a ship (FreeCol <c>Europe.train</c> /
+    /// <c>trainAIUnitInEurope</c>). Classic specialists carry a flat price (no per-type escalation), so unlike
+    /// <see cref="BuyUnit(Player, string)"/>'s artillery there is no price ratchet. The trained unit belongs to
+    /// <paramref name="player"/> (a foreign power its own id), never the human.
+    /// </summary>
+    /// <returns>The trained specialist, docked in Europe.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckTrain"/>.</exception>
+    internal Unit TrainUnit(Player player, string unitTypeId)
+    {
+        MoveCheck check = CheckTrain(player, unitTypeId);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        player.Gold -= check.Cost;
+        return CreateEuropeRecruit(player, unitTypeId); // a docked person, owner-stamped, never on the map
     }
 
     /// <summary>Goods that pack into one cargo slot (FreeCol <c>GoodsContainer.CARGO_SIZE</c>).</summary>
@@ -5226,6 +5286,12 @@ public sealed partial class Game
             RunForeignColonyBuildPlan(colony);
         }
 
+        // When flush, invest the surplus in Europe (86d3c9vmr, FreeCol trainAIUnitInEurope + the artillery/ship buy):
+        // train a specialist its colonies want and buy a ship/artillery. Run BEFORE the recruit loop so a deliberate
+        // wanted expert is preferred over a random recruit and is not crowded out of the Europe person cap. Bounded +
+        // deterministic — no RNG draw, so the human's stream 0 stays byte-identical; all spend is the power's own gold.
+        RunForeignPowerEuropeSpend(power);
+
         // Recruit while gold allows, capped so colonists do not pile up in Europe (ships are idle until FP-6).
         while (OwnPersonsInEurope(power) < AiMaxEuropeRecruits
                && power.RecruitDock.Count > 0
@@ -5238,6 +5304,147 @@ public sealed partial class Game
     /// <summary>The number of <paramref name="player"/>'s own colonists currently waiting on the Europe dock (not aboard a ship).</summary>
     private int OwnPersonsInEurope(Player player) => _units.Count(u =>
         u.Location == UnitLocation.InEurope && u.Type.IsPerson && !u.IsAboard && IsOwnedBy(u, player));
+
+    /// <summary>Gold a foreign power keeps in reserve before it splurges on Europe units — so a poor power keeps recruiting/building rather than draining its treasury (a documented AI budget floor, not a FreeCol constant).</summary>
+    private const int AiEuropeSpendFloor = 1500;
+
+    /// <summary>
+    /// The flush-treasury Europe spend (<c>86d3c9vmr</c>, FreeCol <c>EuropeanAIPlayer.trainAIUnitInEurope</c> + the
+    /// artillery/ship purchases): when a power's treasury is above <see cref="AiEuropeSpendFloor"/> it invests the
+    /// surplus in Europe each turn, at most one unit of each kind so the spend stays bounded:
+    /// <list type="number">
+    /// <item><b>Train a specialist</b> — while under the Europe person cap (<see cref="AiMaxEuropeRecruits"/>, so trained
+    /// experts don't pile up un-shipped), train the cheapest affordable specialist whose <see cref="UnitType.ExpertProduction"/>
+    /// matches a good one of the power's colonies is making (its best-worker fill will then place the expert in its building).</item>
+    /// <item><b>Buy a ship</b> — if the power owns no naval carrier anywhere, buy the cheapest affordable ship (FreeCol's
+    /// transport need — a power must eventually ship its Europe colonists to the New World).</item>
+    /// <item><b>Buy artillery</b> — else, buy artillery (defence) when affordable.</item>
+    /// </list>
+    /// Every choice is by gold/ordinal id — <b>no RNG draw</b>, so human stream 0 is byte-identical (ADR-009); all spend
+    /// is the power's own gold via the owner-scoped <see cref="TrainUnit"/>/<see cref="BuyUnit(Player, string)"/> seams.
+    /// </summary>
+    private void RunForeignPowerEuropeSpend(Player power)
+    {
+        if (power.Gold < AiEuropeSpendFloor)
+        {
+            return; // keep the reserve — recruiting/building comes first for a poor power
+        }
+
+        // 1. Train one specialist its colonies actually want (cheapest affordable expert for a good a colony produces).
+        if (OwnPersonsInEurope(power) < AiMaxEuropeRecruits && WantedColonyGoods(power) is { Count: > 0 } wanted)
+        {
+            UnitType? specialist = UnitTypesTrainedInEurope()
+                .Where(t => t.ExpertProduction is { } g && wanted.Contains(g) && CheckTrain(power, t.Id).Allowed)
+                .OrderBy(t => EuropeUnitPrice(power, t)).ThenBy(t => t.Id, StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (specialist is not null)
+            {
+                TrainUnit(power, specialist.Id);
+            }
+        }
+
+        // 2. Buy a transport ship if the power owns no carrier; else 3. buy artillery for defence.
+        if (!OwnsNavalCarrier(power))
+        {
+            UnitType? ship = UnitTypesPurchasedInEurope()
+                .Where(t => t.IsNaval && t.IsCarrier && CheckBuyUnit(power, t.Id).Allowed)
+                .OrderBy(t => EuropeUnitPrice(power, t)).ThenBy(t => t.Id, StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (ship is not null)
+            {
+                BuyUnit(power, ship.Id);
+                return; // one big-ticket purchase per turn keeps the spend bounded
+            }
+        }
+        if (CheckBuyUnit(power, ArtilleryUnitTypeId).Allowed)
+        {
+            BuyUnit(power, ArtilleryUnitTypeId);
+        }
+    }
+
+    /// <summary>
+    /// The <b>exact</b> goods <paramref name="power"/>'s colonies could use a producer for — the basis for choosing which
+    /// Europe specialist (matched by its exact <see cref="UnitType.ExpertProduction"/>) to train. It is the goods the
+    /// colonies actually <em>produce</em> this turn — each worked tile's good and each centre-tile unattended output, by
+    /// their <b>exact</b> good id (so <em>grain</em> and <em>fish</em> stay distinct even though both store as food: a
+    /// plains colony with no water wants an expert farmer, not an expert fisherman) — <b>plus</b> the one-step refined
+    /// goods makeable from those raws (each good whose <see cref="GoodsType.MadeFrom"/> is a raw produced here), so a
+    /// colony farming <em>cotton</em> also wants a <em>cloth</em> expert. Transient warehouse stock is deliberately
+    /// excluded: it is keyed by storage id (conflating grain/fish) and the sell loop drains it before this runs.
+    /// </summary>
+    private HashSet<string> WantedColonyGoods(Player power)
+    {
+        var produced = new HashSet<string>();
+        foreach (Colony colony in ColoniesOf(power))
+        {
+            foreach (string good in colony.TileWorkers.Values)
+            {
+                produced.Add(good); // exact tile good (grain / fish / cotton / ore …)
+            }
+            foreach (ProductionEntry entry in Map.TerrainAt(colony.Position).Productions.Where(p => p.Unattended))
+            {
+                foreach (GoodsOutput o in entry.Outputs)
+                {
+                    produced.Add(o.GoodsId); // exact centre output
+                }
+            }
+        }
+        // Fold in the refined goods makeable from those raws (one step), so an expert at a refined output counts when its
+        // input is being produced: rum-from-sugar, cloth-from-cotton, cigars-from-tobacco, coats-from-furs, tools-from-ore…
+        var wanted = new HashSet<string>(produced);
+        foreach (GoodsType g in Ruleset.GoodsTypes.Where(g => g.MadeFrom is { } src && produced.Contains(src)))
+        {
+            wanted.Add(g.Id);
+        }
+        return wanted;
+    }
+
+    /// <summary>True when <paramref name="power"/> owns at least one naval carrier (a ship with hold space) anywhere — the "already has a transport" test for the Europe ship purchase.</summary>
+    private bool OwnsNavalCarrier(Player power) =>
+        _units.Any(u => IsOwnedBy(u, power) && u.Type.IsNaval && u.Type.IsCarrier);
+
+    /// <summary>
+    /// Answers a <paramref name="trade"/> offered to <paramref name="power"/> (the AI-consumption seam, FreeCol
+    /// <c>EuropeanAIPlayer.acceptDiplomaticTrade</c> → <c>csAcceptTrade</c>): scores it through the pure
+    /// <see cref="EvaluateTrade(int, DiplomaticTrade)"/> and, when the power accepts (no clause unacceptable and the
+    /// net value ≥ 0), <see cref="SettleTrade"/>s it; otherwise nothing happens. Both the AI's self-proposed peace
+    /// (<see cref="RunForeignPowerDiplomacy"/>) and a future negotiation UI route through this one tested path so a power
+    /// answers an offer exactly as it weighs its own. Deterministic — <see cref="EvaluateTrade(int, DiplomaticTrade)"/> is
+    /// pure and <see cref="SettleTrade"/> is a deterministic transfer, so it draws <b>no</b> RNG (ADR-009).
+    /// </summary>
+    /// <returns><c>true</c> if the power accepted and the treaty was settled; <c>false</c> if it declined.</returns>
+    internal bool RespondToTrade(Player power, DiplomaticTrade trade)
+    {
+        if (!EvaluateTrade(power.PlayerId, trade).Accept)
+        {
+            return false;
+        }
+        SettleTrade(trade);
+        return true;
+    }
+
+    /// <summary>
+    /// The foreign power's per-turn diplomacy (`86d3c9uar` turn-wiring, FreeCol <c>EuropeanAIPlayer</c> suing for peace):
+    /// called only when the power was <b>already at war</b> with the human (a freshly-declared war is pressed, not undone).
+    /// While at war it weighs a single-clause <b>peace</b> treaty with the human (a
+    /// <see cref="StanceTradeItem"/> to <see cref="Stance.Peace"/>) and, when its own <see cref="EvaluateTrade(int, DiplomaticTrade)"/>
+    /// accepts — i.e. it is militarily weak enough (<see cref="EvaluateStance"/>: a low strength ratio scores peace
+    /// positive) — settles it via <see cref="RespondToTrade"/>, ending the war. Bounded: one peace offer per turn, no
+    /// haggling, no clauses but the stance change (a clean truce, no gold/colony trade). A strong power's evaluation
+    /// rejects the peace, so it fights on. Deterministic; draws <b>no</b> RNG, so human stream 0 stays byte-identical
+    /// (ADR-009). The human is never an AI here — this models the AI <i>offering</i> peace and the war ending; a
+    /// human-driven negotiation will route an offered treaty through <see cref="RespondToTrade"/> the same way.
+    /// </summary>
+    private void RunForeignPowerDiplomacy(Player power)
+    {
+        if (StanceBetween(power.PlayerId, _human.PlayerId) != Stance.War)
+        {
+            return; // only a war is worth ending; at peace the power simply expands/trades
+        }
+        var peace = new DiplomaticTrade(power.PlayerId, _human.PlayerId)
+            .Add(new StanceTradeItem(power.PlayerId, _human.PlayerId, Stance.Peace));
+        RespondToTrade(power, peace); // settles iff the power's own evaluation accepts (a weak power sues for peace)
+    }
 
     /// <summary>
     /// The minimal foreign-power AI (FP-4 / 1c-2 / 1c-3f): per unit in stable by-id order. When the power is at
@@ -7485,10 +7692,12 @@ public sealed partial class Game
             available.Add(Ruleset.StorageIdOf(good));
         }
 
-        // The per-worker market value a free colonist would add by joining building b (0 if it has no free workplace, no
-        // attended entry, or no entry the colony can currently feed). A building's own refined output also becomes an
-        // available input for a downstream building considered later (rare in classic, but keeps the ranking coherent).
-        int BuildingWorkerValue(BuildingType b)
+        // The per-turn market value the worker <paramref name="workerType"/> would add by joining building b (0 if it has
+        // no free workplace, no attended entry, or no entry the colony can currently feed). A building's own refined
+        // output also becomes an available input for a downstream building considered later (rare in classic, but keeps
+        // the ranking coherent). The worker type is threaded so an expert's index-30 modifiers raise its own building's
+        // output (FreeCol getBestWorker — the worker that adds the most production wins the slot).
+        int BuildingWorkerValue(BuildingType b, string workerType)
         {
             if (colony.BuildingWorkers.GetValueOrDefault(b.Id) >= b.Workplaces)
             {
@@ -7509,7 +7718,7 @@ public sealed partial class Game
                 }
                 foreach (GoodsOutput o in entry.Outputs)
                 {
-                    int perWorker = Math.Max(0, ApplyWorkerProductionModifiers(Colony.FreeColonistTypeId, o.GoodsId, o.Amount));
+                    int perWorker = Math.Max(0, ApplyWorkerProductionModifiers(workerType, o.GoodsId, o.Amount));
                     if (perWorker <= 0)
                     {
                         continue;
@@ -7521,27 +7730,62 @@ public sealed partial class Game
             return value;
         }
 
-        // Greedily fill: each pass, staff the single highest-valued building with a free workplace, then re-evaluate (a
-        // building can take more than one colonist, up to its workplaces; its output may unlock a downstream building).
+        // The idle worker that adds the most value in building b — FreeCol getBestWorker's "the unit that most improves
+        // production wins the slot", favouring the matching expert. Candidates are a free colonist (one is implicitly idle
+        // whenever IdleColonists exceeds the specialist overlay) plus each distinct idle specialist type, in ordinal order
+        // so the choice is deterministic; the matching expert naturally tops the value via its index-30 modifier, and a
+        // free colonist is preferred on a tie (a specialist is kept for a building it actually boosts). Returns the chosen
+        // worker type and its building value, or null when no idle worker yields a positive value here.
+        (string Type, int Value)? BestIdleWorkerFor(BuildingType b)
+        {
+            var candidates = new List<string>();
+            if (colony.IdleColonists - colony.IdleWorkerTypes.Count > 0 || colony.IdleWorkerTypes.Count == 0)
+            {
+                candidates.Add(Colony.FreeColonistTypeId); // a free colonist is idle (or only free colonists are idle)
+            }
+            candidates.AddRange(colony.IdleWorkerTypes.Distinct().OrderBy(t => t, StringComparer.Ordinal));
+
+            string? bestType = null;
+            int bestValue = 0;
+            foreach (string type in candidates)
+            {
+                int value = BuildingWorkerValue(b, type);
+                if (value > bestValue)
+                {
+                    bestType = type;
+                    bestValue = value;
+                }
+            }
+            return bestType is null ? null : (bestType, bestValue);
+        }
+
+        // Greedily fill: each pass, staff the single highest-valued (building, best-worker) pair with a free workplace,
+        // then re-evaluate (a building can take more than one colonist, up to its workplaces; its output may unlock a
+        // downstream building). The chosen worker is the marginal best for that building (its matching expert if idle).
         while (colony.IdleColonists > 0)
         {
             BuildingType? best = null;
+            string? bestWorker = null;
             int bestValue = 0;
             foreach (string buildingId in colony.Buildings)
             {
                 BuildingType b = Ruleset.Building(buildingId);
-                int value = BuildingWorkerValue(b);
-                if (value > bestValue || (value > 0 && value == bestValue && best is not null && string.CompareOrdinal(b.Id, best.Id) < 0))
+                if (BestIdleWorkerFor(b) is not { } pick)
+                {
+                    continue;
+                }
+                if (pick.Value > bestValue || (pick.Value > 0 && pick.Value == bestValue && best is not null && string.CompareOrdinal(b.Id, best.Id) < 0))
                 {
                     best = b;
-                    bestValue = value;
+                    bestWorker = pick.Type;
+                    bestValue = pick.Value;
                 }
             }
             if (best is null)
             {
                 break; // no fundable building with a free slot → leave the rest idle (the tile planner already worked food)
             }
-            AssignBuildingWork(colony, best.Id);
+            AssignBuildingWork(colony, best.Id, bestWorker!);
             available.Add(Ruleset.StorageIdOf(best.Productions
                 .Where(e => !e.Unattended && e.Outputs.Count > 0).SelectMany(e => e.Outputs).First().GoodsId));
         }
