@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-20 — Sequential cleanup (A/B/C) — monarch war/peace + school tie-break + resource placement — COMPLETE ✅
+
+**Requested:** After the parallel-analysis thread found the last 3 region-disjoint streams, do A/B/C **sequentially** (no parallel orchestration — only ~1 small clean stream really remained).
+**Did:**
+- **A. Monarch declares war/peace** (`86d3c9r7j`, `b9048db`) — wired the two no-op `DispatchMonarchAction` cases to `ImposeMonarchStance`: the King sets the human at War with a peace-standing rival / Peace with a war rival, target drawn on the **monarch RNG** (never stream 0). +3 L1. **In Development** — war-support force+gold and Benjamin Franklin's `IGNORE_EUROPEAN_WARS` gating deferred (Franklin is itself unbuilt).
+- **B. School trade tie-break** (`86d3dnpv2` [created], `bbddc7d`) — `FindLeastSkilledStudent` now breaks a skill tie toward a student already producing the teacher's `ExpertProduction` good (FreeCol `findStudent`), else stable order. +1 L1 (proven against the old order-only rule). **Shipped** (closes the documented deviation).
+- **C. Resource/bonus placement fidelity** (`86d3c9wbp`, `62f9e09`) — FreeCol `perhapsAddBonus` odds: **land** at the 10% bonus-number, **water** only bordering >1 land at `1/(10−adjacentLand)`, replacing the flat 8%-per-tile roll. Drew RNG → **6 map-view goldens regenerated + eyeballed** (terrain unchanged, resource icons shifted; minimap golden untouched), 1 monarch idle-test retargeted (seed 25→27, found by probe). +1 L1. **In Development** — per-resource **quantity** + the hi-seas-connectivity water gate deferred (quantity needs a save bump).
+**Status:** each its own commit + **CI-green-both-jobs** checkpoint. Final: **1238 L1/L2 + 4 soak; 97 L3/L4**; both projects build clean; **no save change (v45)**. CI runs 27866960466 (A), 27867166391 (B), 27867459670 (C).
+**Changed:** A `Game.Monarch.cs`, `MonarchTests.cs`, `monarchy.md`, `diplomacy.md`; B `Game.cs` (`FindLeastSkilledStudent`), `SchoolTeachingTests.cs`, `education-schools.md`; C `MapGenerator.cs`, `WorldTests.cs`, `MonarchTests.cs` (seed retarget), 6 goldens, `map-terrain.md`. Commits `b9048db`, `bbddc7d`, `62f9e09`.
+**Decisions:** ran sequentially (no worktrees) per your steer; C last (sole golden/soak regen). Honest partials — A and C kept **In Development** (named deliverables deferred), B fully **Shipped**. **The clean-merge parallel well is now essentially dry**: future work is a serial queue of hub-touching [P7] panels + prerequisite-blocked GameLogic epics.
+**Scheduled next:** **difficulty picker** (`86d3c9y08`, **save v46** — the held-back save-bump slot; needs your new-game-dialog UI steer). It's also the natural place to fold in the deferred resource-**quantity** save field (one bump, two features).
+**Follow-ups:** monarch war-support force+gold + Franklin gating (`86d3c9r7j`); resource quantity + hi-seas-connectivity (`86d3c9wbp`); difficulty picker (`86d3c9y08`); the serial [P7] panel queue (turn-message / monarch-dialog / victory / DoI).
+**Needs you:** difficulty-picker UI placement (new-game dialog beside world size/shape, recommended); otherwise nothing blocking.
+
 ## 2026-06-20 — Parallel batch (6 streams, 5 shipped) — clean-merge by non-overlapping regions — COMPLETE ✅
 
 **Requested:** Find MORE parallel backlog streams (constraint relaxed: same file is OK if the edited functions don't overlap → clean merge), launch them, single test batch at the end.
