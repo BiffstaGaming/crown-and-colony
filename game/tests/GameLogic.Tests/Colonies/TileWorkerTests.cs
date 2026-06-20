@@ -252,6 +252,102 @@ public class TileWorkerTests
         Assert.Equal(2, highSeasGame.TileYieldPotential(new Position(1, 1), Fish)); // base only, no coastal bonus
     }
 
+    // ---- River-mouth fish bonus (86d3b3qdx): FreeCol fishBonusRiver, +1 fish on water beside a river mouth ----
+
+    /// <summary>
+    /// Builds a map from an explicit terrain grid plus a set of river tiles (row-major), so river-mouth yields can be
+    /// asserted directly. The river improvement is stamped via the v47 save <see cref="SaveGame.Improvements"/> path.
+    /// </summary>
+    private static Game MapWithRivers(int width, int height, string[] terrain, params (int X, int Y)[] rivers)
+    {
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = width,
+            MapHeight = height,
+            Terrain = terrain,
+            Units = [],
+            Explored = [],
+            Colonies = [],
+            Improvements = [.. System.Linq.Enumerable.Select(
+                rivers, r => new SavedImprovement(r.Y * width + r.X, "model.improvement.river", 1))],
+        };
+        return save.Restore(Classic);
+    }
+
+    [Fact]
+    public void WaterBesideRiverMouth_YieldsOneMoreFish()
+    {
+        // Row-major 3x3: a central land column, ocean either side. The river sits on the centre land tile (1,1),
+        // which touches the ocean columns — so it is a river mouth, and its adjacent ocean tiles get +1.
+        //   ocean  plains ocean
+        //   ocean  river  ocean
+        //   ocean  plains ocean
+        string[] terrain =
+        [
+            "model.tile.ocean", "model.tile.plains", "model.tile.ocean",
+            "model.tile.ocean", "model.tile.plains", "model.tile.ocean",
+            "model.tile.ocean", "model.tile.plains", "model.tile.ocean",
+        ];
+        Game game = MapWithRivers(3, 3, terrain, (1, 1));
+
+        // Coastal ocean (2,1) is beside the river-mouth land (1,1): 3 land neighbours → coastal +2, plus river +1 → 5.
+        Assert.Equal(5, game.TileYieldPotential(new Position(2, 1), Fish));
+        // Open-ocean (0,0) is also beside (1,1) the mouth, but has only 2 land neighbours → no coastal +2; still +1
+        // for the river mouth → 2 base + 1 = 3.
+        Assert.Equal(3, game.TileYieldPotential(new Position(0, 0), Fish));
+    }
+
+    [Fact]
+    public void InlandRiver_IsNotAMouth_SoNoFishBonus()
+    {
+        // A river on a fully land-surrounded tile is not a mouth: it touches no water, so no neighbouring water earns
+        // the +1. The river at (1,1) sits in a block of plains; the ocean at (4,0) is two tiles away, so the river
+        // tile has no water neighbour of its own and is not a mouth.
+        //   plains plains plains plains ocean
+        //   plains river  plains plains plains
+        //   plains plains plains plains plains
+        string[] terrain =
+        [
+            "model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.ocean",
+            "model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.plains",
+            "model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.plains",
+        ];
+        string[] riverless = (string[])terrain.Clone();
+        Game riverGame = MapWithRivers(5, 3, terrain, (1, 1)); // (1,1) is the river; its neighbours are all land
+        Game plainGame = MapFrom(5, 3, riverless);
+
+        // The ocean (4,0) is the only water; the inland river (1,1) is not its neighbour anyway, but more importantly
+        // the river tile has no water neighbour so it is not a mouth → the ocean's yield matches the riverless map.
+        Assert.Equal(
+            plainGame.TileYieldPotential(new Position(4, 0), Fish),
+            riverGame.TileYieldPotential(new Position(4, 0), Fish));
+    }
+
+    [Fact]
+    public void RiverMouthBonus_AppliesOnlyToFish_AndNotToHighSeas()
+    {
+        // Centre land column with a river mouth; high seas on one side, ocean on the other.
+        //   highSeas plains ocean
+        //   highSeas river  ocean
+        //   highSeas plains ocean
+        string[] terrain =
+        [
+            "model.tile.highSeas", "model.tile.plains", "model.tile.ocean",
+            "model.tile.highSeas", "model.tile.plains", "model.tile.ocean",
+            "model.tile.highSeas", "model.tile.plains", "model.tile.ocean",
+        ];
+        Game game = MapWithRivers(3, 3, terrain, (1, 1));
+
+        // The ocean side (2,1) gets coastal +2 and river +1 → 5; grain stays 0 (the bonus is fish-only).
+        Assert.Equal(5, game.TileYieldPotential(new Position(2, 1), Fish));
+        Assert.Equal(0, game.TileYieldPotential(new Position(2, 1), Grain));
+        // The high-seas side (0,1) is excluded by the improvement's match-negated highSeas scope → base 2, no bonuses.
+        Assert.Equal(2, game.TileYieldPotential(new Position(0, 1), Fish));
+    }
+
     [Fact]
     public void SaveRoundTrip_PreservesWorkers_AndPreV5LoadsNone()
     {

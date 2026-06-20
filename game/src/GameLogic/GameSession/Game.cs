@@ -7156,6 +7156,12 @@ public sealed partial class Game
     private const int CoastalFishBonus = 2;
 
     /// <summary>
+    /// Flat fish added to a non-high-seas water tile that adjoins a river mouth (FreeCol classic <c>fishBonusRiver</c>
+    /// modifier, index-50 additive value 1 — the "river brings fish to the sea" rule). Stacks on the coastal +2.
+    /// </summary>
+    private const int RiverMouthFishBonus = 1;
+
+    /// <summary>
     /// FreeCol's Col1 coastal-fish threshold: a water tile needs <b>more than two</b> adjacent land tiles to earn the
     /// bonus (the map generator applies <c>fishBonusLand</c> only when <c>adjacentLand &gt; 2</c>; fewer land neighbours
     /// stay at the open-ocean 2 fish). See FreeCol <c>TerrainGenerator.perhapsAddBonus</c>.
@@ -7203,11 +7209,20 @@ public sealed partial class Game
         yield += ImprovementProduction.YieldDelta(Map.ImprovementAt(tile), goodsId);
 
         // Coastal fish bonus (FreeCol fishBonusLand): +2 fish on a coastal water tile — one with more than two
-        // adjacent land tiles. High-seas tiles are excluded (the improvement's match-negated scope). The river-mouth
-        // +1 (fishBonusRiver) is still skipped — it needs the per-tile river style (delta direction), a later slice.
+        // adjacent land tiles. High-seas tiles are excluded (the improvement's match-negated scope).
         if (goodsId == FishId && IsCoastalWater(tile))
         {
             yield += CoastalFishBonus;
+        }
+
+        // River-mouth fish bonus (FreeCol fishBonusRiver): +1 fish on a non-high-seas water tile adjacent to a land
+        // tile where a river meets the sea (a river-mouth tile — a land tile carrying a river that itself touches
+        // water). Stacks on top of the coastal +2 (FreeCol applies both improvements). The river layer is read at
+        // potential time; no per-tile river style is needed (the river simply being on a coast-adjacent land tile
+        // makes that land tile a mouth), so this stays a pure read.
+        if (goodsId == FishId && IsRiverMouthWater(tile))
+        {
+            yield += RiverMouthFishBonus;
         }
 
         return (int)yield;
@@ -7228,6 +7243,31 @@ public sealed partial class Game
         int adjacentLand = tile.Neighbours().Count(n => Map.InBounds(n) && !Map.TerrainAt(n).IsWater);
         return adjacentLand > CoastalLandNeighboursRequired;
     }
+
+    /// <summary>
+    /// Whether a water tile adjoins a river mouth and so earns the <c>fishBonusRiver</c> +1: the tile must be water
+    /// (excluding the high seas) and have at least one adjacent <b>river-mouth land tile</b> — a land tile carrying a
+    /// river that itself sits beside water (where the river meets the sea). Pure read of terrain + the river
+    /// improvement layer + adjacency (no RNG, no stored state). Faithful to FreeCol, which stamps
+    /// <c>fishBonusRiver</c> on the sea tiles a river flows into.
+    /// </summary>
+    private bool IsRiverMouthWater(Position tile)
+    {
+        TerrainType terrain = Map.TerrainAt(tile);
+        if (!terrain.IsWater || terrain.Id == HighSeasId)
+        {
+            return false;
+        }
+        return tile.Neighbours().Any(n => Map.InBounds(n) && IsRiverMouthLand(n));
+    }
+
+    /// <summary>
+    /// Whether a land tile is a river mouth: it carries a river and has at least one adjacent water tile, so the river
+    /// reaches the sea there. (A river tile entirely inland is not a mouth.)
+    /// </summary>
+    private bool IsRiverMouthLand(Position land) =>
+        Map.HasRiver(land)
+        && land.Neighbours().Any(w => Map.InBounds(w) && Map.TerrainAt(w).IsWater);
 
     /// <summary>
     /// Whether a colonist of <paramref name="colony"/> may be put to work on
