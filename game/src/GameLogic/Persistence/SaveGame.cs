@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 44;
+    public const int CurrentVersion = 45;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -496,7 +496,8 @@ public sealed record SaveGame
         p.Stances, p.Tensions, p.UnitPrices, p.Arrears, p.MonarchDispleasure ?? false, p.SupportSeaGranted ?? false,
         p.DeclaredIndependenceTurn, p.InterventionBells ?? 0,
         p.TradeRoutes?.Select(r => new TradeRoute(r.Id, r.Name,
-            r.Stops.Select(stop => new TradeRouteStop(stop.ColonyId, stop.Load ?? [])).ToList())).ToList());
+            r.Stops.Select(stop => new TradeRouteStop(stop.ColonyId, stop.Load ?? [])).ToList())).ToList(),
+        p.NextTradeRouteId);
 
     /// <summary>
     /// Folds the legacy flat top-level fields into the single human player — taken for a ≤v19 save, or any save
@@ -539,7 +540,8 @@ public sealed record SaveGame
                 ? p.TradeRoutes.Select(r => new SavedTradeRoute(r.Id, r.Name,
                     r.Stops.Select(s => new SavedTradeRouteStop(
                         s.ColonyId, s.LoadGoodsIds.Count > 0 ? s.LoadGoodsIds.ToList() : null)).ToList())).ToList()
-                : null);
+                : null,
+            p.NextTradeRouteId == 1 ? null : p.NextTradeRouteId); // omit-when-default (1) → byte-identical to v44 until a route is made
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -707,6 +709,7 @@ public sealed record SavedUnit(
 /// <param name="DeclaredIndependenceTurn">The turn this player declared independence (v41 additive; null/omitted if it never did).</param>
 /// <param name="InterventionBells">Bells accrued toward the Foreign Intervention Force (v41 additive; null/omitted when 0).</param>
 /// <param name="TradeRoutes">This player's trade routes (v43 additive; null/omitted when it has none, so a route-free game stays byte-identical to v42).</param>
+/// <param name="NextTradeRouteId">The player's monotonic next-trade-route id counter (v45 additive; null/omitted when still 1 — the default — so a game that never created a route stays byte-identical to v44). Persisted (FreeCol persists <c>Game.nextId</c>) so ids are never reused after a route is deleted and the game is reloaded; pre-v45 saves fall back to <c>max(route id) + 1</c>.</param>
 public sealed record SavedPlayer(
     int PlayerId, string? NationId, bool IsHuman, int PlayerType,
     int Gold = 0, int Tax = 0,
@@ -726,7 +729,8 @@ public sealed record SavedPlayer(
     bool? SupportSeaGranted = null,
     int? DeclaredIndependenceTurn = null,
     int? InterventionBells = null,
-    IReadOnlyList<SavedTradeRoute>? TradeRoutes = null);
+    IReadOnlyList<SavedTradeRoute>? TradeRoutes = null,
+    int? NextTradeRouteId = null);
 
 /// <summary>A saved trade route (v43): a player's named ring of stops a carrier hauls along automatically. Omitted entirely when the player has none.</summary>
 /// <param name="Id">Per-player route id.</param>

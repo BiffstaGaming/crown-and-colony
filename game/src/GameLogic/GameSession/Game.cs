@@ -2862,8 +2862,11 @@ public sealed partial class Game
         if (saved.TradeRoutes is { Count: > 0 })
         {
             player.TradeRoutesList.AddRange(saved.TradeRoutes);
-            player.NextTradeRouteId = saved.TradeRoutes.Max(r => r.Id) + 1; // keep new ids above the restored ones
         }
+        // Restore the monotonic id counter exactly (v45+) so ids are never reused after a delete-then-reload; a
+        // pre-v45 save lacks it, so fall back to max(restored id) + 1 (or 1 when route-free), the old behaviour.
+        player.NextTradeRouteId = saved.NextTradeRouteId
+            ?? (saved.TradeRoutes is { Count: > 0 } restoredRoutes ? restoredRoutes.Max(r => r.Id) + 1 : 1);
         if (saved.Stances is not null)
         {
             foreach ((int otherId, Stance stance) in saved.Stances)

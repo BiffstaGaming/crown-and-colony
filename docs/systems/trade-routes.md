@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented: define a route, assign a carrier, it auto-hauls each turn — driven from the **route-management UI** (`86d3c9rrd`, shipped) or the GameLogic API. |
-| **Last verified** | 2026-06-20 @ trade-route management UI (`86d3c9rrd`) |
+| **Last verified** | 2026-06-20 @ persisted route-id counter, save v45 (`86d3dkh5p`) |
 | **Code** | `game/src/GameLogic/GameSession/TradeRoute.cs` (model); `Game.cs` (`CreateTradeRoute`/`CheckAssignTradeRoute`/`AssignTradeRoute`/`ClearTradeRoute`/`RemoveTradeRoute`/`ProcessTradeRoutes`/`ServeTradeRouteStop`); `Player.TradeRoutes`/`NextTradeRouteId`; `Units/Unit.cs` (`TradeRouteId`/`TradeRouteStopIndex`); **UI:** `game/presentation/TradeRoutePanel.cs` + `GameController.OpenTradeRoutePanel` |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/TradeRouteTests.cs`; **L3:** `game/presentation/tests/TradeRoutePanelTests.cs` |
 | **FreeCol reference** | `TradeRoute`, `TradeRouteStop`, `Unit.tradeRoute`/`currentStop`, the AI trade-route mission |
@@ -45,14 +45,15 @@ Each turn the carrier heads for its next stop. When it gets there it **drops off
 - **UI** (`TradeRoutePanel.cs`, ADR-006 presentation-only): a `PanelContainer` controller built programmatically into the fixed `VBox/Dynamic` shell (like `EuropePanel`). It only renders `HumanPlayer.TradeRoutes` and forwards clicks to the oracles above — every rule (validation, the per-turn haul, save) stays in GameLogic. Wired in `GameController` via `OpenTradeRoutePanel`/the **Trade Routes** button.
 - **Auto-haul** (`ProcessTradeRoutes`): called from `RunPlayerTurn`'s colonial path after immigration, for every colonial player. Reuses the carrier-haulage seam from [transport](transport.md): `UnloadToColony` then `LoadFromColony`. The load amount fits the hold via the same slot math as cargo looting (`SlotsFor`/`CargoSlotSize`/`CargoSlotsFree`).
 - **Determinism (ADR-009):** the only RNG is `StepToward`'s tiebreak, drawn from the **mover's own stream** (the human's stream 0 for a human hauler, a foreign power's own stream otherwise). A **route-less** player iterates zero carriers, so `ProcessTradeRoutes` draws **nothing** — a game with no routes is byte-identical and no golden churns. Load/unload draw no RNG.
-- **Save v43** (additive, omit-when-default): `SavedPlayer.TradeRoutes` (a list of `SavedTradeRoute`/`SavedTradeRouteStop`, omitted when the player has none) + `SavedUnit.TradeRouteId`/`TradeRouteStop` (omitted for a route-less unit). A game with no trade routes serializes **byte-identically to v42**. `NextTradeRouteId` is re-derived on load as `max(route id) + 1`.
+- **Save v43** (additive, omit-when-default): `SavedPlayer.TradeRoutes` (a list of `SavedTradeRoute`/`SavedTradeRouteStop`, omitted when the player has none) + `SavedUnit.TradeRouteId`/`TradeRouteStop` (omitted for a route-less unit). A game with no trade routes serializes **byte-identically to v42**.
+- **Save v45** (additive, omit-when-default): `SavedPlayer.NextTradeRouteId` — the monotonic id counter — is now **persisted** (omitted while still 1, so a route-free game stays byte-identical to v44). Before v45 it was re-derived on load as `max(route id) + 1`, which **reused an id** after you deleted the highest-numbered route and reloaded (the new route collided with a surviving one, breaking the assign/haul lookups that match by id). FreeCol persists its game-wide `nextId` for exactly this reason. A pre-v45 save (no field) still falls back to `max(route id) + 1` on load.
 
 ## 4. Verification
 
 | Layer | Required? | Tests | Status |
 |---|---|---|---|
 | L1 Unit | Always | `TradeRouteTests`: `CreateTradeRoute` rejects a non-owned-colony stop; `AssignTradeRoute` is carrier-only (a free colonist is refused, a wagon accepted) + `ClearTradeRoute`; the v43 tokens are omitted for a route-less game (byte-identical) and the version is current | ✅ |
-| L2 Scenario | Always | `TradeRouteTests`: an assigned wagon hauls sugar Alpha→Beta over several turns (source emptied, destination stocked); routes + the carrier's assignment + mid-route stop index round-trip through save v43; `RemoveTradeRoute` deletes the route and un-assigns its carrier (unknown id = no-op) | ✅ |
+| L2 Scenario | Always | `TradeRouteTests`: an assigned wagon hauls sugar Alpha→Beta over several turns (source emptied, destination stocked); routes + the carrier's assignment + mid-route stop index round-trip through save v43; `RemoveTradeRoute` deletes the route and un-assigns its carrier (unknown id = no-op); **the `NextTradeRouteId` counter survives save/load so ids aren't reused after a delete-then-reload (v45), and a pre-v45 save falls back to `max id + 1`** | ✅ |
 | L3 Interaction | UI | `TradeRoutePanelTests` (scene runner on `main.tscn`): the **Create route** button makes a route from the two default colony ends; the per-route **Assign** dropdown assigns a carrier; the **Delete** button removes the route | ✅ |
 
 - **FreeCol cross-check:** ✅ the route = an ordered ring of stops, each loading listed goods and delivering the rest, advancing per turn — `TradeRoute`/`Unit.currentStop`.
@@ -61,6 +62,7 @@ Each turn the carrier heads for its next stop. When it gets there it **drops off
 
 - [x] **Trade-route GameLogic** (`86d3c9rq1`): model + create/assign/clear + per-turn auto-haul + save v43.
 - [x] **Route-management UI** (`86d3c9rrd`): list routes, create (from→to + load good), assign a carrier, delete (`TradeRoutePanel`).
+- [x] **Stable route ids across save/load** (`86d3dkh5p`): `NextTradeRouteId` persisted (save v45) so a deleted route's id is never reused after a reload.
 - [ ] **Richer route editor:** multi-stop rings, per-stop load editing, live carrier-progress (the GameLogic already supports arbitrary stop lists).
 - [ ] **Naval pathfinding** for haul movement (today greedy `StepToward`); **Europe stops** (sell/buy on the route); explicit per-stop unload lists / load-to-max cargo plans.
 
@@ -68,5 +70,6 @@ Each turn the carrier heads for its next stop. When it gets there it **drops off
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-20 | **Persist the route-id counter** (`86d3dkh5p`, save **v45**): `Player.NextTradeRouteId` is now saved (additive `SavedPlayer.NextTradeRouteId`, omit-when-1 → route-free game byte-identical to v44) instead of re-derived as `max(id)+1` on load — which **reused an id** after deleting the highest route and reloading (colliding with a surviving route, breaking the by-id assign/haul lookups; FreeCol persists `Game.nextId` for this reason). Restored exactly in `Game.BuildPlayer`; pre-v45 saves fall back to `max(id)+1`. RNG-free; soak byte-stable (no AI creates routes). +2 L1 (`TradeRouteTests`: id-reuse regression + pre-v45 fallback); 18 version-pins → 45; 1193 green. | P5 (`86d3dkh5p`) |
 | 2026-06-20 | **Route-management UI** (`86d3c9rrd`): `TradeRoutePanel` (list routes + per-route assign-carrier dropdown + delete; new-route from→to + load-good quick-create), wired into `GameController` via `OpenTradeRoutePanel` + a **Trade Routes** button. Added `Game.RemoveTradeRoute` (drop route + un-assign its carriers). Presentation-only (ADR-006): forwards to the existing oracles, no new rules. +1 L1/L2 (`RemoveTradeRoute`) + 3 L3 (`TradeRoutePanelTests`); 1173 + 3 L3 green. No save change. | P5 (`86d3c9rrd`) |
 | 2026-06-19 | **Trade-route GameLogic** (`86d3c9rq1`, save **v43**): `TradeRoute`/`TradeRouteStop` model; `Player.TradeRoutes`/`NextTradeRouteId` + `Unit.TradeRouteId`/`TradeRouteStopIndex`; `CreateTradeRoute`/`AssignTradeRoute`/`ClearTradeRoute` ops; `ProcessTradeRoutes` per-turn auto-haul (deliver-then-load-then-advance, reusing `Load`/`UnloadToColony`, greedy `StepToward`). Save v43 additive omit-when-default (route-less game byte-identical to v42). RNG-free re stream 0 (no routes → no draw). +5 L1/L2 `TradeRouteTests`; 1136 + 4 soak green. UI is P7 (`86d3c9rrd`) | P5 (`86d3c9rq1`) |

@@ -223,4 +223,5 @@ public sealed record RestoredPlayer(
     bool SupportSeaGranted = false,
     int? DeclaredIndependenceTurn = null,
     int InterventionBells = 0,
-    IReadOnlyList<TradeRoute>? TradeRoutes = null);
+    IReadOnlyList<TradeRoute>? TradeRoutes = null,
+    int? NextTradeRouteId = null);

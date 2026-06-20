@@ -95,7 +95,8 @@ public class TradeRouteTests
         Assert.DoesNotContain("\"TradeRoutes\"", json);
         Assert.DoesNotContain("\"TradeRouteId\"", json);
         Assert.DoesNotContain("\"TradeRouteStop\"", json);
-        Assert.Equal(44, SaveGame.CurrentVersion);
+        Assert.DoesNotContain("NextTradeRouteId", json); // omit-when-default (counter still 1) → byte-identical to v44
+        Assert.Equal(45, SaveGame.CurrentVersion);
     }
 
     [Fact]
@@ -131,5 +132,40 @@ public class TradeRouteTests
         Assert.Empty(game.HumanPlayer.TradeRoutes); // the route is gone
         Assert.Null(wagon.TradeRouteId);            // its carrier was un-assigned
         game.RemoveTradeRoute(game.HumanPlayer, 999); // unknown route → no-op, no throw
+    }
+
+    [Fact]
+    public void NextTradeRouteId_SurvivesSaveLoad_SoIdsAreNotReusedAfterDeleting()
+    {
+        Game game = TwoColonyStrip(out _, out Colony alpha, out Colony beta);
+        List<TradeRouteStop> Stops() => [new(alpha.Id, [Sugar]), new(beta.Id, [])];
+        game.CreateTradeRoute(game.HumanPlayer, "A", Stops()); // id 1
+        game.CreateTradeRoute(game.HumanPlayer, "B", Stops()); // id 2
+        TradeRoute c = game.CreateTradeRoute(game.HumanPlayer, "C", Stops()); // id 3 → counter now 4
+        game.RemoveTradeRoute(game.HumanPlayer, c.Id);         // delete the highest id
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        // Pre-fix the counter re-derived to max(1,2)+1 = 3 and the next route REUSED id 3; now it's preserved at 4.
+        TradeRoute next = loaded.CreateTradeRoute(loaded.HumanPlayer, "D", Stops());
+        Assert.Equal(4, next.Id);
+        Assert.Equal([1, 2, 4], loaded.HumanPlayer.TradeRoutes.Select(r => r.Id)); // A, B, D — all distinct, no reuse
+    }
+
+    [Fact]
+    public void APreV45Save_WithoutTheCounter_FallsBackToMaxIdPlusOne()
+    {
+        Game game = TwoColonyStrip(out _, out Colony alpha, out Colony beta);
+        List<TradeRouteStop> Stops() => [new(alpha.Id, [Sugar]), new(beta.Id, [])];
+        game.CreateTradeRoute(game.HumanPlayer, "A", Stops()); // id 1
+        game.CreateTradeRoute(game.HumanPlayer, "B", Stops()); // id 2
+
+        // Simulate a pre-v45 save: the NextTradeRouteId field is absent (null) on every player.
+        SaveGame save = SaveGame.From(game);
+        save = save with { Players = save.Players!.Select(p => p with { NextTradeRouteId = null }).ToList() };
+        Game loaded = save.Restore(Classic);
+
+        // No persisted counter → fall back to max(1,2)+1 = 3 (the legacy behaviour, preserved for old saves).
+        Assert.Equal(3, loaded.CreateTradeRoute(loaded.HumanPlayer, "C", Stops()).Id);
     }
 }
