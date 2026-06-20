@@ -200,6 +200,82 @@ public class MarketTests
         Assert.True(dutch < plain, $"the Dutch market absorbed {dutch}, a no-nation market {plain} — the advantage should absorb less");
     }
 
+    // ── Buying out of the market lifts the price (86d3dkffz): the mirror of selling (FreeCol buyInEurope) ─────────
+
+    [Fact]
+    public void Buying_RemovesInventory_AndRaisesTheAsk()
+    {
+        var market = new Market(Classic);
+        int askBefore = market.AskPrice(Furs);
+        int amountBefore = market.AmountInMarket(Furs);
+
+        market.Buy(Furs, 20_000); // drains the supply
+
+        Assert.True(market.AmountInMarket(Furs) < amountBefore, "buying should drain the market's inventory");
+        Assert.True(market.AskPrice(Furs) > askBefore, "draining the market should raise the ask price");
+    }
+
+    [Fact]
+    public void Buying_IsChunked_SoALargeBuyCostsMoreThanAFlatAsk()
+    {
+        var market = new Market(Classic);
+        int askBefore = market.AskPrice(Furs);
+
+        int cost = market.Buy(Furs, 5000); // later chunks are dearer than the first
+
+        Assert.True(cost > 5000 * askBefore, $"chunked cost {cost} should exceed the flat {5000 * askBefore}");
+    }
+
+    [Fact]
+    public void Buying_FloorsInventory_AndClampsTheAsk_NoDivideByZero()
+    {
+        var market = new Market(Classic);
+        market.Buy(Furs, 1_000_000); // would drain the supply to zero without the floor
+
+        Assert.InRange(market.AskPrice(Furs), 1, 19); // clamped to the hard bounds, no overflow/throw
+        Assert.True(market.AmountInMarket(Furs) > 0); // floored above zero
+    }
+
+    [Fact]
+    public void BuyCost_EqualsBuy_ButLeavesTheMarketUntouched()
+    {
+        var market = new Market(Classic);
+        int amountBefore = market.AmountInMarket(Furs);
+        int askBefore = market.AskPrice(Furs);
+
+        int quoted = market.BuyCost(Furs, 800);
+        Assert.Equal(amountBefore, market.AmountInMarket(Furs)); // a preview moves nothing
+        Assert.Equal(askBefore, market.AskPrice(Furs));
+
+        int actual = market.Buy(Furs, 800);
+        Assert.Equal(quoted, actual); // the preview matched the real charge
+    }
+
+    [Fact]
+    public void Buy_VolumeFactorOne_IsByteIdenticalToTheDefault()
+    {
+        var a = new Market(Classic);
+        var b = new Market(Classic);
+        int ca = a.Buy(Furs, 250);
+        int cb = b.Buy(Furs, 250, volumeFactor: 1.0); // the explicit default must match the implicit one
+        Assert.Equal(ca, cb);
+        Assert.Equal(a.AmountInMarket(Furs), b.AmountInMarket(Furs));
+        Assert.Equal(a.AskPrice(Furs), b.AskPrice(Furs));
+    }
+
+    [Fact]
+    public void Buy_WithATradeAdvantage_DrainsLess_SoThePriceRisesLess()
+    {
+        var plain = new Market(Classic);
+        var dutch = new Market(Classic);
+
+        plain.Buy(Furs, 300);                      // ordinary: the market loses all 300
+        dutch.Buy(Furs, 300, volumeFactor: 0.5);   // Dutch: the market loses only 150
+
+        Assert.True(dutch.AmountInMarket(Furs) > plain.AmountInMarket(Furs)); // strictly less drained
+        Assert.True(dutch.AskPrice(Furs) <= plain.AskPrice(Furs));            // so the Dutch buy price rose less
+    }
+
     /// <summary>Founds a colony for a human (Dutch or no-nation), sells 600 furs from it, and returns the market's resulting absorbed volume.</summary>
     private static int MarketAmountAfterColonySale(bool asDutch)
     {

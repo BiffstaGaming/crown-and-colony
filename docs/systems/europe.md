@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (sailing + cargo + sell/buy + unit purchase + the Europe screen UI) |
-| **Last verified** | 2026-06-18 @ artillery price increase routed through the difficulty system (`86d3c9y08` slice 4) |
+| **Last verified** | 2026-06-20 @ Europe buying now moves the market price (`86d3dkffz`) |
 | **Code** | `game/src/GameLogic/Units/Unit.cs` (cargo, location), `GameSession/Game.cs` (sailing + Europe trade); UI: `game/presentation/EuropePanel.cs`, `GameController.cs` |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/SailingTests.cs`, `Scenarios/JourneyTests.cs` (Journey 3b); UI: `game/presentation/tests/EuropePanelTests.cs` |
 | **FreeCol reference** | `Europe.java`, `Unit.java` (`getSailTurns`, `TURNS_TO_SAIL` line 2629) |
@@ -25,7 +25,7 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 | Sail to Europe | ship must be a naval unit on a **high-seas** tile; arrives in `SailTurns` (3) turns |
 | In Europe | not on the map; can sell/buy; can't move on the map |
 | Sell in Europe | hold → European market (price moves, tax applied) → treasury |
-| Buy in Europe | gold → hold at the **ask** price; **buying does not move the price** (FreeCol) |
+| Buy in Europe | gold → hold at the **ask** price; **buying raises the ask** as it drains the market (chunked, FreeCol `buyInEurope`) — see [market.md](market.md) |
 | Train vs Purchase | Europe units split: **train** a priced specialist (skill > 0 — expert farmer, master carpenter…) or **purchase** a priced ship/artillery (no skill) |
 | Artillery price | each artillery you buy raises **your** artillery price by **+100** (500 → 600 → 700…); ships and specialists stay flat |
 | Sail home | from Europe; arrives in 3 turns at the departure high-seas tile |
@@ -52,7 +52,7 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 | L3 Interaction | Yes (Europe screen) | `EuropePanelTests`: recruit-from-dock (gold debited); board-then-sail sends a colonist home; **sell cargo** credits the treasury; **buy-goods** loads the hold; **buy-unit** docks a purchase — all through the real scene controls | ✅ |
 | L4 Visual | UI hidden in goldens | — (L4 captures hide the UI layer; see [QA-REPORT](../QA-REPORT.md)) | — |
 
-- **FreeCol cross-check:** `SailTurns = 3` from `TURNS_TO_SAIL` (`Unit.java:2629`); buying-doesn't-move-price per `Market`/`Europe` behaviour.
+- **FreeCol cross-check:** `SailTurns = 3` from `TURNS_TO_SAIL` (`Unit.java:2629`); buying moves the market (the ask rises) per FreeCol `buyInEurope` → `addGoodsToMarket(type, −amount)` — see [market.md](market.md).
 
 ## 5. Open issues / TODO
 
@@ -66,6 +66,7 @@ Europe is across the ocean. Sail a ship to the **high seas** (the map's outer ed
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-20 | **Europe buying moves the market price** (`86d3dkffz`): `BuyEuropeGoods` no longer buys at a static ask — buying now raises the ask as it drains the market (the logic lives in `Market.Buy`/`BuyCost`; see [market.md](market.md)). The Buy-in-Europe rule + the FreeCol cross-check corrected (the old "buying does not move the price" was wrong vs `buyInEurope`). No save change; AI never buys goods in Europe so the soak is byte-stable. | Phase 5 (`86d3dkffz`) |
 | 2026-06-18 | **Artillery price increase routed through the difficulty system** (`86d3c9y08` slice 4): the +100/purchase escalation now reads `Ruleset.Difficulty.ArtilleryPriceIncrease` (medium 100; the dotted `model.option.priceIncrease.artillery` id), with the recruit-price/lower-cap increments alongside it (see [immigration](immigration.md)). Behaviour-preserving at medium; no save change; soak byte-stable. See [difficulty](difficulty.md). | Phase (`86d3c9y08` slice 4) |
 | 2026-06-17 | **Train/Purchase split + artillery price escalation** (`86d3c9qgy`): `UnitType.Skill` (parsed) splits priced units into trained specialists (skill > 0) vs purchased ships/artillery (skill 0) — `UnitTypesTrainedInEurope`/`PurchasedInEurope`; each player's `UnitPriceOverrides` map makes buying artillery ratchet its price +100/purchase (`EuropeUnitPrice` in `CheckBuyUnit`/`BuyUnit`), ships/specialists flat, per-player. Save **v29** (`SavedPlayer.UnitPrices`, omitted when empty → byte-identical to v28 until a price escalates). +100 hardcoded classic-medium. +7 L1 (`EuropePurchaseTests`); 778 + 4 soak green. UI two-list split deferred. | Phase 5 (`86d3c9qgy`) |
 | 2026-06-13 | High-seas sailing (3 turns each way), ship cargo, sell/buy in Europe; save v11 | Phase 4 slice 3 |

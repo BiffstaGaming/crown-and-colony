@@ -6,16 +6,20 @@ namespace CrownAndColony.GameLogic.Trade;
 /// The European market: a supply-and-demand price model for every tradeable good,
 /// ported faithfully from FreeCol's <c>MarketData.price()</c>. Each good has a
 /// running inventory (<see cref="AmountInMarket"/>); the more of a good the market
-/// holds, the lower its sell (bid) price. Selling adds to the inventory and pushes
-/// the price down; the spread between bid and ask is fixed per good.
+/// holds, the lower its sell (bid) price. <b>Selling</b> adds to the inventory and pushes
+/// the price down; <b>buying</b> removes from it and pushes the price up (FreeCol
+/// <c>addGoodsToMarket(type, ±amount)</c>); the spread between bid and ask is fixed per good.
 /// </summary>
 public sealed class Market
 {
-    /// <summary>Goods are sold in batches of this size so a big sale can't crash the price in one jump.</summary>
+    /// <summary>Goods are traded in batches of this size so a big sale/purchase can't crash/spike the price in one jump.</summary>
     public const int CargoChunk = 100;
 
     private const int MinimumPrice = 1;
     private const int MaximumPrice = 19;
+
+    /// <summary>The market never holds less than this of a good (FreeCol <c>MINIMUM_AMOUNT</c>) — so heavy buying can't drive the supply to zero (a divide-by-zero in <see cref="Recompute"/>).</summary>
+    private const int MinimumAmountInMarket = 100;
 
     private sealed class Datum
     {
@@ -104,6 +108,64 @@ public sealed class Market
         }
         return new SaleResult(beforeTax, afterTax);
     }
+
+    /// <summary>
+    /// Buys goods out of the European market, pushing the price <b>up</b> as the inventory shrinks (FreeCol
+    /// <c>buyInEurope</c> → <c>addGoodsToMarket(type, −amount)</c>). Buys are chunked (<see cref="CargoChunk"/>) so each
+    /// batch is priced after the previous one moved the market, and the inventory floors at
+    /// <see cref="MinimumAmountInMarket"/> so a huge purchase can't drain the supply to zero.
+    /// </summary>
+    /// <param name="goodsId">The good being bought.</param>
+    /// <param name="amount">How much to buy.</param>
+    /// <param name="volumeFactor">
+    /// How much of each chunk the market loses (FreeCol <c>Modifier.TRADE_BONUS</c>): 1.0 normally, 0.5 for the Dutch
+    /// trade advantage (−50%), so their buying lifts the price half as fast. The buyer still pays the full chunk price.
+    /// </param>
+    /// <returns>The gold cost of the whole purchase.</returns>
+    public int Buy(string goodsId, int amount, double volumeFactor = 1.0) =>
+        ChunkedBuy(DatumOf(goodsId), amount, volumeFactor);
+
+    /// <summary>
+    /// What <see cref="Buy"/> would charge for <paramref name="amount"/> right now, <b>without</b> moving the market —
+    /// for the affordability check (the cost rises across chunks, so a flat ask × amount under-quotes a large buy).
+    /// </summary>
+    public int BuyCost(string goodsId, int amount, double volumeFactor = 1.0)
+    {
+        Datum d = DatumOf(goodsId);
+        var preview = new Datum
+        {
+            Goods = d.Goods,
+            NewWorldCapped = d.NewWorldCapped,
+            AmountInMarket = d.AmountInMarket,
+            Bid = d.Bid,
+            Ask = d.Ask,
+        };
+        return ChunkedBuy(preview, amount, volumeFactor); // mutates the throwaway copy only
+    }
+
+    /// <summary>The chunked buy loop shared by <see cref="Buy"/> (on the live datum) and <see cref="BuyCost"/> (on a copy).</summary>
+    private static int ChunkedBuy(Datum d, int amount, double volumeFactor)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(amount);
+        int cost = 0;
+        int remaining = amount;
+        while (remaining > 0)
+        {
+            int chunk = Math.Min(remaining, CargoChunk);
+            cost += chunk * d.Ask; // priced at the current ask…
+            d.AmountInMarket = Math.Max(
+                d.AmountInMarket - (int)MathF.Round(chunk * (float)volumeFactor, MidpointRounding.AwayFromZero),
+                MinimumAmountInMarket); // …buying removes supply (a trade advantage removes less)…
+            Recompute(d);              // …and the price rises for the next chunk.
+            remaining -= chunk;
+        }
+        return cost;
+    }
+
+    private Datum DatumOf(string goodsId) =>
+        _data.TryGetValue(goodsId, out Datum? d)
+            ? d
+            : throw new ArgumentException($"'{goodsId}' is not tradeable.", nameof(goodsId));
 
     /// <summary>Recalculates a good's bid/ask from its inventory (FreeCol <c>MarketData.price()</c>).</summary>
     private static void Recompute(Datum d)

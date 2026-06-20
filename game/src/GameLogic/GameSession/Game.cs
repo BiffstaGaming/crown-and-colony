@@ -3689,8 +3689,9 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Whether the player can buy <paramref name="amount"/> of a good in Europe for
-    /// the docked <paramref name="ship"/> (no market price rise on buying, per FreeCol).
+    /// Whether the player can buy <paramref name="amount"/> of a good in Europe for the docked
+    /// <paramref name="ship"/>. The quoted cost is the <b>chunked</b> price (buying lifts the ask as it drains the
+    /// market, FreeCol <c>buyInEurope</c>), so a large buy costs more than a flat ask × amount.
     /// </summary>
     public MoveCheck CheckBuyEuropeGoods(Unit ship, string goodsId, int amount) =>
         CheckBuyEuropeGoods(_human, ship, goodsId, amount);
@@ -3710,7 +3711,7 @@ public sealed partial class Game
         {
             return MoveCheck.No($"{goodsId} is not sold in Europe.");
         }
-        int cost = player.Market.AskPrice(goodsId) * amount;
+        int cost = player.Market.BuyCost(goodsId, amount, MarketVolumeFactor(player));
         if (player.Gold < cost)
         {
             return MoveCheck.No($"Not enough gold (need {cost}).");
@@ -3722,7 +3723,7 @@ public sealed partial class Game
         return MoveCheck.Yes(cost);
     }
 
-    /// <summary>Buys goods in Europe into a docked ship's hold, debiting the treasury at the ask price.</summary>
+    /// <summary>Buys goods in Europe into a docked ship's hold, debiting the treasury and lifting the market's ask price.</summary>
     /// <returns>The gold spent.</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBuyEuropeGoods(Unit, string, int)"/>.</exception>
     public int BuyEuropeGoods(Unit ship, string goodsId, int amount) =>
@@ -3737,9 +3738,10 @@ public sealed partial class Game
         {
             throw new InvalidMoveException(check.Reason!);
         }
-        player.Gold -= check.Cost;
+        int cost = player.Market.Buy(goodsId, amount, MarketVolumeFactor(player)); // moves the market (the ask rises)
+        player.Gold -= cost;
         ship.AddCargo(goodsId, amount);
-        return check.Cost;
+        return cost;
     }
 
     /// <summary>

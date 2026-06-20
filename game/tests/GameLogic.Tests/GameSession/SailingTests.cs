@@ -148,7 +148,7 @@ public class SailingTests
     }
 
     [Fact]
-    public void BuyEuropeGoods_DebitsGoldAtAsk_WithoutMovingThePrice()
+    public void BuyEuropeGoods_DebitsGoldAtTheAskPrice_AndDrainsTheMarket()
     {
         // A docked ship and a treasury of 1000 gold (player state lives in Players[] from save v20).
         SaveGame seed = SaveGame.From(
@@ -161,14 +161,15 @@ public class SailingTests
         int ask = game.Market.AskPrice(Tools);                  // tools ask = 3
         int amountBefore = game.Market.AmountInMarket(Tools);
 
-        int spent = game.BuyEuropeGoods(ship, Tools, 10);
+        int spent = game.BuyEuropeGoods(ship, Tools, 10);       // one sub-chunk → priced at the current ask
 
         Assert.Equal(ask * 10, spent);
         Assert.Equal(1000 - spent, game.Gold);
         Assert.Equal(10, ship.CargoOf(Tools));
-        Assert.Equal(amountBefore, game.Market.AmountInMarket(Tools)); // buying doesn't move the price
+        Assert.True(game.Market.AmountInMarket(Tools) < amountBefore); // buying removes supply (the price-rise detail is in MarketTests)
+        Assert.True(game.Market.AskPrice(Tools) >= ask);              // buying never lowers the ask
 
-        Assert.False(game.CheckBuyEuropeGoods(ship, Tools, 10_000).Allowed); // not enough gold
+        Assert.False(game.CheckBuyEuropeGoods(ship, Tools, 10_000).Allowed); // not enough gold (chunked cost climbs past 1000)
     }
 
     [Fact]
