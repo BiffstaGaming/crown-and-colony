@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (ruleset unit types, naval units, off-map sailing/Europe, cargo + passengers, role movement bonuses, standing orders: fortify/sentry/clear-orders/disband, goto/multi-turn move orders + pathfinding + unit cycling) |
-| **Last verified** | 2026-06-20 @ clear-skill (specialist → free colonist) (`86d3c7x5n`) |
+| **Last verified** | 2026-06-20 @ `Game.IsMilitaryUnit` classifier for the unit report (`86d3c9x15`) |
 | **Code** | `game/src/GameLogic/Units/` (`Unit.Orders`/`UnitOrders`, `Unit.Destination`), `GameSession/Game.cs` (`InitialMovement`, `Fortify`/`Sentry`/`ClearOrders`/`Disband` + their `Check*`), `GameSession/Game.Goto.cs` (goto oracle/mutator, `ProcessGotos`, `NextUnitToMove`), `World/Pathfinder.cs` (A*) · rendering: `game/presentation/UnitMarker.cs` |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/GameTests.cs`, `RoleMovementTests.cs`, `MagellanTests.cs`, `UnitOrdersTests.cs`, `GotoTests.cs`, `World/PathfinderTests.cs` |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/common/model/Unit.java` (`getMoveCost`, `MoveType`, `setDestination`), `Map.java` (`searchMap`) |
@@ -79,6 +79,8 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
 - **Orders** (`Unit.Orders`, a `UnitOrders` enum): `Game.Fortify`/`Sentry`/`ClearOrders`/`Disband` follow the `CheckX`/`X` + `MoveCheck`/`InvalidMoveException` pattern. The per-turn reset in `EndTurn` ages `Fortifying → Fortified` before resetting movement; `MoveUnit` resets `Orders` to `Active`. Combat reads `Unit.IsFortified` into `DefenceContext.Fortified` in the field-`Attack` path (see [combat](combat.md) §3). Save: `SavedUnit.Orders` (v23) is nullable and omitted for an *Active* unit, so an all-active game serializes byte-identically to v22 and a pre-v23 save loads every unit *Active*.
 - **Goto** (`Unit.Destination`, a `Position?`; `GameSession/Game.Goto.cs`): `Pathfinder.FindPath(map, start, goal, passable)` is a pure deterministic A* — open set keyed by the total order `(f, g, Y, X)` so the path is byte-stable, enter-cost = `TerrainType.MoveCost`, diagonals free, Chebyshev×3 admissible heuristic, **no RNG**. `Game.CanPathEnter` supplies the `passable` predicate (the `CheckMove` blocking rules minus adjacency/movement, plus the owner-`Explored` fog gate). `CheckSetDestination`/`SetDestination`/`ClearDestination` are the ADR-006 set surface; `AdvanceDestination` returns a `GotoAdvance{Outcome, StepsTaken}` and walks the unit via `MoveUnit` (re-asserting the destination after each step, since `MoveUnit` clears it). `ProcessGotos(player)` runs in `RunPlayerTurn` (before the world's movement reset), advancing the player's goto units in id order; it is a no-op when none have a goto, so it draws no randomness and leaves every RNG stream byte-identical (ADR-009). `NextUnitToMove`/`HasUnitsToMove` are the cycling oracles. Save: `SavedUnit.DestX`/`DestY` (v36) are nullable and omitted when no goto, so a goto-free game serializes byte-identically to v35 and a pre-v36 save loads with no destination.
 
+- **Military classifier** (`86d3c9x15`): `Game.IsMilitaryUnit(unit)` is a pure read for the unit report's Military group (FreeCol `Unit.isOffensiveUnit` / `ReportMilitaryPanel`, faithful subset): `!unit.Type.IsNaval && (unit.Type.Offence > 0 || Ruleset.Role(unit.RoleId).IsOffensive)` — a non-naval unit whose type is inherently offensive (artillery) or whose equipped role is offensive (soldier/dragoon). Faithful-subset deviation: FreeCol additionally counts an *unarmed* veteran via the `expertSoldier` ability, which `UnitType` doesn't model yet, so such a unit currently lists under the report's Labour group. No RNG, no save change.
+
 ## 4. Verification
 
 | Layer | Required? | Tests / goldens | Status |
@@ -105,6 +107,7 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
 ## Changelog
 
 | Date | Change | Commit |
+| 2026-06-20 | **Military classifier** (`86d3c9x15`): `Game.IsMilitaryUnit(unit)` — pure read for the empire unit report's Military group (`!IsNaval && (Type.Offence>0 || Role.IsOffensive)`), faithful subset of FreeCol `Unit.isOffensiveUnit` (unarmed-veteran/expertSoldier deferred → lists under Labour). No RNG/save change. +1 L1 (`UnitCategoryTests`); presentation in `ColonyReportPanel` Units tab. | Phase 5/P7 (`86d3c9x15`) |
 | 2026-06-20 | **Clear speciality** (`86d3c7x5n`, FreeCol `InGameController.clearSpeciality`): `CheckClearSkill`/`ClearSkill` (ADR-006) revert an on-map colonial specialist to a free colonist via the `model.unitChange.clearSkill` change (already parsed generically by `ParseUnitChanges`); `UnitChangeTypeIds.ClearSkill` added. Gated on a non-native, on-map unit that has a clearSkill change — the on-map gate also satisfies FreeCol's no-teacher rule (our teachers are in-colony building workers). RNG-free, no save change (a `UpgradeUnitType` swap). +5 L1 (`ClearSkillTests`); 1167 + soak green | Phase 5 (`86d3c7x5n`) |
 |---|---|---|
 | 2026-06-13 | Skeleton unit, 8-way single-step movement, selection UI | Phase 1 skeleton |

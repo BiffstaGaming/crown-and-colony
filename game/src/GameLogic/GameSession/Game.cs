@@ -6246,6 +6246,17 @@ public sealed partial class Game
     }
 
     /// <summary>
+    /// Whether a unit counts as <b>military</b> for the unit report (FreeCol <c>ReportMilitaryPanel</c> /
+    /// <c>Unit.isOffensiveUnit</c>, the faithful subset): a non-naval unit whose <em>type</em> is inherently
+    /// offensive (e.g. artillery, <see cref="Specification.UnitType.Offence"/> &gt; 0) or whose equipped
+    /// <em>role</em> is offensive (soldier/dragoon, <see cref="Specification.RoleType.IsOffensive"/>). Pure read.
+    /// Faithful-subset note: FreeCol additionally counts an <em>unarmed</em> veteran via the expertSoldier ability,
+    /// which our <see cref="Specification.UnitType"/> does not model yet, so such a unit lists under labour until then.
+    /// </summary>
+    public bool IsMilitaryUnit(Unit unit) =>
+        !unit.Type.IsNaval && (unit.Type.Offence > 0 || Ruleset.Role(unit.RoleId).IsOffensive);
+
+    /// <summary>
     /// The yield of one goods type when a colonist of <paramref name="player"/> works a tile: the terrain's
     /// best attended output, then any bonus-resource boost on the tile, then that player's Founding-Father
     /// goods modifiers (e.g. Henry Hudson's +100% furs). 0 when the terrain can't produce the goods at all

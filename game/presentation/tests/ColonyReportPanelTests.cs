@@ -64,6 +64,29 @@ public class ColonyReportPanelTests
         AssertThat(hasEmptyMessage).IsTrue();
     }
 
+    [TestCase]
+    public async Task UnitsTab_GroupsTheHumansUnits()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+
+        // Switch to the Units tab and assert the four FreeCol groups render, with a non-empty roster.
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Units")
+            .EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Unit report");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        foreach (string section in new[] { "Military", "Naval", "Cargo", "Labour" })
+        {
+            AssertThat(dynamic.GetNodeOrNull($"UnitSection_{section}")).IsNotNull();
+        }
+    }
+
     private static CrownAndColony.GameLogic.GameSession.Game GetGame(GameController controller) =>
         (CrownAndColony.GameLogic.GameSession.Game)controller
             .GetType()
