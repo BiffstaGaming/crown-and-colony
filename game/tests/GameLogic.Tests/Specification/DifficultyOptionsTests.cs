@@ -88,7 +88,15 @@ public class DifficultyOptionsTests
     {
         // Guards the duplication: the hardcoded ClassicMedium fallback must equal the spec's medium level, so a
         // per-option fallback can never silently diverge from the data as more options are routed through.
-        Assert.Equal(DifficultyOptions.ClassicMedium, Ruleset.LoadClassic().Difficulty);
+        DifficultyOptions parsed = Ruleset.LoadClassic().Difficulty;
+        // The monarch's war-support force is a list (record equality is reference-based) — compare its contents…
+        Assert.Equal(
+            DifficultyOptions.ClassicMedium.Monarch.WarSupportForce.Select(b => (b.UnitTypeId, b.RoleId, b.Number)),
+            parsed.Monarch.WarSupportForce.Select(b => (b.UnitTypeId, b.RoleId, b.Number)));
+        // …then equate the whole record by normalising that one list member to the same instance.
+        Assert.Equal(
+            DifficultyOptions.ClassicMedium,
+            parsed with { Monarch = parsed.Monarch with { WarSupportForce = DifficultyOptions.ClassicMedium.Monarch.WarSupportForce } });
     }
 
     [Fact]

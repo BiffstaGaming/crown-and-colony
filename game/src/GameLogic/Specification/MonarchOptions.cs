@@ -35,6 +35,16 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <param name="RefBaseCavalry">King's-regular cavalry in the base REF (spec <c>model.option.refSize.dragoons</c> number; medium 15).</param>
 /// <param name="RefBaseArtillery">Artillery in the base REF (spec <c>model.option.refSize.artillery</c> number; medium 14).</param>
 /// <param name="RefBaseManOWar">Men-o-war in the base REF (spec <c>model.option.refSize.menOfWar</c> number; medium 8).</param>
+/// <param name="WarSupportForce">
+/// The maximum force the King grants to support a war he declares for you (spec <c>model.option.warSupportForce</c>
+/// <c>unitListOption</c>; classic medium = 6 <c>model.unit.veteranSoldier</c> in <c>model.role.soldier</c>). Granted as a
+/// one-off onto the Europe dock when the King declares war and decides to help; the per-unit count may be reduced by his
+/// strength calculation. See [monarchy].
+/// </param>
+/// <param name="WarSupportGold">
+/// The base gold the King grants alongside <see cref="WarSupportForce"/> (spec <c>model.option.warSupportGold</c>; medium
+/// 2500). Varied ±20% by the monarch's own roll (FreeCol <c>InGameController</c> war-support branch).
+/// </param>
 public sealed record MonarchOptions(
     int Meddling,
     int MaximumTaxRate,
@@ -45,7 +55,9 @@ public sealed record MonarchOptions(
     int RefBaseInfantry,
     int RefBaseCavalry,
     int RefBaseArtillery,
-    int RefBaseManOWar)
+    int RefBaseManOWar,
+    IReadOnlyList<MonarchSupportUnit> WarSupportForce,
+    int WarSupportGold)
 {
     /// <summary>The classic <c>model.difficulty.medium</c> monarch values — the fallback and default source of truth.</summary>
     public static readonly MonarchOptions ClassicMedium = new(
@@ -58,5 +70,17 @@ public sealed record MonarchOptions(
         RefBaseInfantry: 31,
         RefBaseCavalry: 15,
         RefBaseArtillery: 14,
-        RefBaseManOWar: 8);
+        RefBaseManOWar: 8,
+        WarSupportForce: [new MonarchSupportUnit("model.unit.veteranSoldier", "model.role.soldier", 4)],
+        WarSupportGold: 1500);
 }
+
+/// <summary>
+/// One block of like units in the King's war-support force (spec <c>model.option.warSupportForce</c> <c>unitOption</c>) —
+/// a Specification-level value type (mirrors <see cref="EuropeanStartingUnit"/>) so <see cref="MonarchOptions"/> stays
+/// free of any <c>GameSession</c> dependency. The monarch logic maps it to a <c>ForceEntry</c> when granting the force.
+/// </summary>
+/// <param name="UnitTypeId">The unit type id (classic <c>model.unit.veteranSoldier</c>).</param>
+/// <param name="RoleId">The military role id the units carry (classic <c>model.role.soldier</c>); null = the default role.</param>
+/// <param name="Number">How many units in this block (classic 6).</param>
+public sealed record MonarchSupportUnit(string UnitTypeId, string? RoleId, int Number);

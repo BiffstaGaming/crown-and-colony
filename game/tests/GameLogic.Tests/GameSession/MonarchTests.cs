@@ -4,6 +4,8 @@ using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Trade;
+using CrownAndColony.GameLogic.Units;
+using CrownAndColony.GameLogic.World;
 using Xunit;
 
 namespace CrownAndColony.GameLogic.Tests.GameSession;
@@ -573,7 +575,13 @@ public class MonarchTests
         Assert.Equal(15, mon.RefBaseCavalry);
         Assert.Equal(14, mon.RefBaseArtillery);
         Assert.Equal(8, mon.RefBaseManOWar);
-        Assert.Equal(MonarchOptions.ClassicMedium, mon); // and equals the hardcoded fallback exactly
+        Assert.Equal(1500, mon.WarSupportGold);
+        // The war-support force is a list (record equality is reference-based), so compare its block-by-block contents…
+        Assert.Equal(
+            MonarchOptions.ClassicMedium.WarSupportForce.Select(b => (b.UnitTypeId, b.RoleId, b.Number)),
+            mon.WarSupportForce.Select(b => (b.UnitTypeId, b.RoleId, b.Number)));
+        // …then equate the rest of the record by normalising both to the same list instance.
+        Assert.Equal(MonarchOptions.ClassicMedium, mon with { WarSupportForce = MonarchOptions.ClassicMedium.WarSupportForce });
     }
 
     /// <summary>Each monarch integer option is read by its own spec id (non-default values prove no silent fallback).</summary>
@@ -764,7 +772,9 @@ public class MonarchTests
         Player target = rivals[0];
         game.SetStance(human, target.PlayerId, Stance.Peace);
 
-        game.DispatchMonarchAction(MonarchAction.DeclareWar, new ScriptedRandom(0)); // rng→0 picks eligible[0]
+        // Exactly one eligible target → the pick is determined regardless of the RNG; a real generator also feeds the
+        // war-support decision/rolls (which may now also fire on a DECLARE_WAR — covered separately below).
+        game.DispatchMonarchAction(MonarchAction.DeclareWar, new Pcg32Random(1));
 
         Assert.Equal(Stance.War, game.StanceBetween(human, target.PlayerId));
     }
@@ -805,6 +815,188 @@ public class MonarchTests
         // …and dispatching it anyway draws nothing and changes nothing (safe no-op).
         game.DispatchMonarchAction(MonarchAction.DeclareWar, new ScriptedRandom());
         Assert.All(rivals, p => Assert.Equal(Stance.War, game.StanceBetween(human, p.PlayerId)));
+    }
+
+    // ── Benjamin Franklin — ignoreEuropeanWars (86d3c9r7j) ───────────────────────────────────────────────
+    //
+    // FreeCol Monarch.collectPotentialEnemies returns an empty list when the player has model.ability.ignoreEuropeanWars
+    // (Benjamin Franklin), so the King can no longer drag you into his European wars. He can still make *peace* —
+    // collectPotentialFriends deliberately does not apply Franklin ("he stops wars, not peace").
+
+    private const string BenjaminFranklin = "model.foundingFather.benjaminFranklin";
+
+    /// <summary>The classic spec really does define Benjamin Franklin carrying the ignoreEuropeanWars ability the gate reads.</summary>
+    [Fact]
+    public void Spec_DefinesFranklin_WithIgnoreEuropeanWars()
+    {
+        FoundingFather franklin = Classic.Father(BenjaminFranklin);
+        Assert.Contains(franklin.Abilities, a => a.Id == "model.ability.ignoreEuropeanWars" && a.Value);
+    }
+
+    [Fact]
+    public void Franklin_BlocksTheKingFromDeclaringWar_ButNotFromMakingPeace()
+    {
+        Game game = FoundedGame();
+        int human = game.HumanPlayer.PlayerId;
+        List<Player> rivals = ColonialRivals(game);
+        Assert.NotEmpty(rivals);
+
+        // Set up a board where DECLARE_WAR *would* be valid (a peace-standing rival) and DECLARE_PEACE too (a war one).
+        Player warTarget = rivals[0];
+        foreach (Player p in rivals)
+        {
+            game.SetStance(human, p.PlayerId, Stance.Peace); // every rival at peace → declare-war targets exist
+        }
+        game.SetStance(human, warTarget.PlayerId, Stance.War); // …and one at war → a declare-peace target exists
+
+        // Both valid before Franklin.
+        Assert.True(game.MonarchActionIsValid(MonarchAction.DeclareWar));
+        Assert.True(game.MonarchActionIsValid(MonarchAction.DeclarePeace));
+
+        game.HumanPlayer.CongressList.Add(BenjaminFranklin); // elect Franklin
+
+        // The King can no longer impose a war (no potential enemies)…
+        Assert.False(game.MonarchActionIsValid(MonarchAction.DeclareWar));
+        Assert.DoesNotContain(MonarchAction.DeclareWar, game.GetMonarchActionChoices(game.Turn).Select(c => c.Action));
+        // …and a stray DECLARE_WAR dispatch is a no-op (every peace-standing rival stays at peace).
+        game.DispatchMonarchAction(MonarchAction.DeclareWar, new ScriptedRandom());
+        Assert.All(rivals.Where(p => p.PlayerId != warTarget.PlayerId),
+            p => Assert.Equal(Stance.Peace, game.StanceBetween(human, p.PlayerId)));
+
+        // …but he can still make peace (Franklin stops wars, not peace).
+        Assert.True(game.MonarchActionIsValid(MonarchAction.DeclarePeace));
+        game.DispatchMonarchAction(MonarchAction.DeclarePeace, new ScriptedRandom(0));
+        Assert.Equal(Stance.Peace, game.StanceBetween(human, warTarget.PlayerId));
+    }
+
+    // ── War support on a King-declared war (86d3c9r7j, FreeCol Monarch.getWarSupport + InGameController) ──────
+    //
+    // When the King declares a war for you he may also send a one-off force (onto the Europe dock) + gold. He always
+    // helps when the rival is at least as strong as you (strength ratio ≤ 0.5 → p ≥ 1, no decision roll), never when
+    // you are clearly stronger (ratio > 0.6 → p ≤ 0), and a sliding chance between. Amounts are difficulty-data-driven.
+
+    private const string VeteranSoldier = "model.unit.veteranSoldier";
+    private const string SoldierRole = "model.role.soldier";
+
+    /// <summary>
+    /// Clears the board's incidental land forces so a strength ratio is controllable: parks every non-native land unit
+    /// on <paramref name="parkOwnerId"/> (a colonial player who is neither the human nor the war target), so only the
+    /// soldiers a test explicitly hands to the human / enemy count toward <c>LandPowerOf</c>.
+    /// </summary>
+    private static void ParkLandUnits(Game game, int parkOwnerId)
+    {
+        foreach (Unit u in game.Units.Where(u => !u.IsNative && !u.Type.IsNaval))
+        {
+            u.OwnerId = parkOwnerId;
+        }
+    }
+
+    /// <summary>Gives <paramref name="ownerId"/> armed veteran soldiers (land power, so a strength ratio is testable), placed on a land tile.</summary>
+    private static void GiveSoldiers(Game game, int ownerId, int count, Position landTile)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            Unit soldier = game.SpawnUnit(Classic.Unit(VeteranSoldier), landTile);
+            soldier.RoleId = SoldierRole;
+            soldier.OwnerId = ownerId;
+        }
+    }
+
+    /// <summary>The classic medium war-support amounts parse to 4 veteran soldiers + 1500 gold (not the veryEasy 6/2500).</summary>
+    [Fact]
+    public void ClassicRuleset_ParsesTheMediumWarSupport_FourVeteransAnd1500Gold()
+    {
+        MonarchOptions mon = Classic.Difficulty.Monarch;
+        Assert.Equal(1500, mon.WarSupportGold);
+        MonarchSupportUnit block = Assert.Single(mon.WarSupportForce);
+        Assert.Equal(VeteranSoldier, block.UnitTypeId);
+        Assert.Equal(SoldierRole, block.RoleId);
+        Assert.Equal(4, block.Number);
+    }
+
+    [Fact]
+    public void GetWarSupport_GrantsTheFullForce_WhenTheEnemyIsAtLeastAsStrong()
+    {
+        (Game game, var colony) = FoundedColony();
+        List<Player> rivals = ColonialRivals(game);
+        Player enemy = rivals[0];
+        ParkLandUnits(game, rivals[^1].PlayerId);     // clear the board (park on a third rival)
+        GiveSoldiers(game, enemy.PlayerId, 2, colony.Position); // enemy has power; human has none → ratio 0 → p ≥ 1
+
+        // p ≥ 1 ⇒ no decision roll; enemy not defenceless ⇒ one count roll per block (here +0 → the base 4).
+        var force = game.GetWarSupport(enemy, new ScriptedRandom(1)); // count roll 1 → 4 + 1 − 1 = 4
+        ForceEntry block = Assert.Single(force);
+        Assert.Equal(VeteranSoldier, block.UnitTypeId);
+        Assert.Equal(SoldierRole, block.RoleId);
+        Assert.Equal(4, block.Count);
+    }
+
+    [Fact]
+    public void GetWarSupport_DeclinesToHelp_WhenThePlayerIsMuchStronger()
+    {
+        (Game game, var colony) = FoundedColony();
+        List<Player> rivals = ColonialRivals(game);
+        Player enemy = rivals[0];
+        ParkLandUnits(game, rivals[^1].PlayerId);              // clear the board
+        GiveSoldiers(game, game.HumanPlayer.PlayerId, 3, colony.Position); // human strong, enemy defenceless → ratio 1 → p < 0
+
+        // p ≤ 0 ⇒ never support, no RNG draw at all (the empty ScriptedRandom would throw if any draw were made).
+        Assert.Empty(game.GetWarSupport(enemy, new ScriptedRandom()));
+    }
+
+    [Fact]
+    public void GetWarSupport_AgainstADefencelessEnemy_IsASingleTokenUnit()
+    {
+        (Game game, _) = FoundedColony();
+        List<Player> rivals = ColonialRivals(game);
+        Player enemy = rivals[0];
+        ParkLandUnits(game, rivals[^1].PlayerId); // enemy now defenceless; human also none → ratio 0 → p ≥ 1 (support)
+
+        var force = game.GetWarSupport(enemy, new ScriptedRandom()); // defenceless ⇒ no count roll
+        ForceEntry block = Assert.Single(force);
+        Assert.Equal(1, block.Count); // a token single unit
+    }
+
+    [Fact]
+    public void DeclareWar_WithSupport_LandsTheForceInEurope_AndAddsTheGold()
+    {
+        (Game game, var colony) = FoundedColony();
+        int human = game.HumanPlayer.PlayerId;
+        List<Player> rivals = ColonialRivals(game);
+        Player target = rivals[0];
+        Player park = rivals[^1];
+        ParkLandUnits(game, park.PlayerId); // clear the board so the ratio is controlled
+        foreach (Player p in rivals)
+        {
+            game.SetStance(human, p.PlayerId, Stance.War);
+        }
+        game.SetStance(human, target.PlayerId, Stance.Peace); // exactly one peace-standing target
+        GiveSoldiers(game, target.PlayerId, 2, colony.Position); // target not defenceless, human none → ratio 0 → p ≥ 1
+        int goldBefore = game.HumanPlayer.Gold;
+        int veteransBefore = game.UnitsInEurope.Count(u => u.Type.Id == VeteranSoldier);
+
+        // Draws: [0] target pick (1 eligible → any), [1] force count roll (+0 → 4), [2] gold variance (→ +0).
+        game.DispatchMonarchAction(MonarchAction.DeclareWar, new ScriptedRandom(0, 1, 2));
+
+        Assert.Equal(Stance.War, game.StanceBetween(human, target.PlayerId));
+        Assert.Equal(veteransBefore + 4, game.UnitsInEurope.Count(u => u.Type.Id == VeteranSoldier));
+        Assert.Equal(goldBefore + 1500, game.HumanPlayer.Gold); // 1500 + 150·(2 − 2) = 1500
+    }
+
+    [Fact]
+    public void WarSupportAmounts_FollowTheRuleset()
+    {
+        // A modified ruleset proves the force size + gold are data-driven, not hardcoded.
+        Game game = FoundedGame(EditedClassicRuleset(medium =>
+        {
+            medium.Descendants("unitOption").First(o => (string?)o.Attribute("id") == "model.option.warSupportForce.veteranSoldier")
+                .Element("number")!.SetAttributeValue("value", "9");
+            medium.Descendants("integerOption").First(o => (string?)o.Attribute("id") == "model.option.warSupportGold")
+                .SetAttributeValue("value", "999");
+        }));
+        MonarchOptions mon = game.Ruleset.Difficulty.Monarch;
+        Assert.Equal(9, Assert.Single(mon.WarSupportForce).Number);
+        Assert.Equal(999, mon.WarSupportGold);
     }
 
     // ── Pending monarch demand persistence (86d3c9rk6, save v46) ────────────────────────────────────────────

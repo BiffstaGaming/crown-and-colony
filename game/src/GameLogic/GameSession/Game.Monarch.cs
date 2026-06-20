@@ -251,8 +251,9 @@ public sealed partial class Game
                 break;
             case MonarchAction.DeclareWar:
                 // The King drags you into his war with a rival European power (FreeCol MONARCH_DECLARE_WAR):
-                // king-chosen, no player veto. The gate guarantees a peace-standing target exists.
-                ImposeMonarchStance(Stance.War, MonarchPotentialEnemies(), rng);
+                // king-chosen, no player veto. The gate guarantees a peace-standing target exists. He may also send
+                // war support (a free force + gold) toward the fight he picked — see MonarchDeclareWar.
+                MonarchDeclareWar(rng);
                 break;
             case MonarchAction.DeclarePeace:
                 // The King makes peace for you with a power you're at war/cease-fire with (FreeCol MONARCH_DECLARE_PEACE).
@@ -278,6 +279,68 @@ public sealed partial class Game
         }
         Player target = eligible[rng.Next(eligible.Count)];
         SetStance(_human.PlayerId, target.PlayerId, stance);
+    }
+
+    // FreeCol getWarSupport tuning: the Crown is cautious — it always helps when the rival is at least as strong
+    // (strengthRatio < NOSUPPORT) and never when the player is much stronger; a sliding chance in between.
+    private const double WarSupportNoSupportRatio = 0.6; // FreeCol Monarch.getWarSupport NOSUPPORT
+
+    /// <summary>
+    /// The King declares war on the human's behalf and, by FreeCol's <c>getWarSupport</c> calculation, may help fund the
+    /// fight he picked: a one-off <see cref="MonarchOptions.WarSupportForce"/> onto the human's Europe dock plus
+    /// <see cref="MonarchOptions.WarSupportGold"/> (varied ±20%). He always supports when the rival is at least as strong
+    /// (strength ratio &lt; <c>0.6</c>), never when the human is clearly stronger, and a sliding chance between — drawn on
+    /// the <b>monarch RNG</b> (never stream 0). The target is the King's pick from the peace-standing rivals; the support
+    /// is granted <em>before</em> the stance flips (FreeCol's order). Stance only persists — the grant is immediate units
+    /// + gold (no new save state). A no-op when no eligible rival remains (the gate normally prevents that).
+    /// </summary>
+    private void MonarchDeclareWar(IGameRandom rng)
+    {
+        List<Player> eligible = MonarchPotentialEnemies().OrderBy(p => p.PlayerId).ToList();
+        if (eligible.Count == 0)
+        {
+            return; // no peace-standing target — nothing to do (and nothing drawn beyond the chooser)
+        }
+        Player enemy = eligible[rng.Next(eligible.Count)];
+
+        IReadOnlyList<ForceEntry> support = GetWarSupport(enemy, rng);
+        if (support.Count > 0)
+        {
+            GrantSupport(support); // a free force on the Europe dock
+            int gold = MonarchOpts.WarSupportGold;
+            gold += gold / 10 * (rng.Next(5) - 2); // ±2 tenths → ±20%, on the monarch RNG
+            _human.Gold += gold;
+        }
+
+        SetStance(_human.PlayerId, enemy.PlayerId, Stance.War);
+    }
+
+    /// <summary>
+    /// The war-support force the King grants for a war against <paramref name="enemy"/> (FreeCol <c>Monarch.getWarSupport</c>):
+    /// the difficulty <see cref="MonarchOptions.WarSupportForce"/>, granted with probability <c>10·(0.6 − strengthRatio)</c>
+    /// (always at ratio ≤ 0.5, never at ratio &gt; 0.6). When granted with the enemy still standing, each block's count is
+    /// varied by the King's roll (<c>+rnd[0,3) − 1</c>, i.e. −1/0/+1, floored at 1); against a defenceless enemy a single
+    /// unit suffices. RNG-free of stream 0 (drawn on the monarch generator); empty when the Crown declines to help.
+    /// </summary>
+    internal IReadOnlyList<ForceEntry> GetWarSupport(Player enemy, IGameRandom rng)
+    {
+        double ratio = StrengthRatio(_human.PlayerId, enemy.PlayerId);
+        double p = 10.0 * (WarSupportNoSupportRatio - ratio);
+        if (p < 1.0 && (p <= 0.0 || p <= rng.NextDouble()))
+        {
+            return []; // the cautious Crown declines to help this turn
+        }
+
+        bool enemyDefenceless = LandPowerOf(enemy) <= 0.0;
+        var force = new List<ForceEntry>();
+        foreach (MonarchSupportUnit block in MonarchOpts.WarSupportForce)
+        {
+            int count = enemyDefenceless
+                ? 1                                  // a defenceless enemy needs only a token force
+                : Math.Max(1, block.Number + rng.Next(3) - 1); // vary ±1, floor 1
+            force.Add(new ForceEntry(block.UnitTypeId, block.RoleId, count));
+        }
+        return enemyDefenceless && force.Count > 1 ? [force[^1]] : force; // defenceless → a single block
     }
 
     /// <summary>
@@ -498,9 +561,23 @@ public sealed partial class Game
 
     private bool HumanIsAtWar() => _human.Stances.Values.Any(s => s == Stance.War);
 
+    // Benjamin Franklin's diplomacy ability (FreeCol model.foundingFather.benjaminFranklin → model.ability.ignoreEuropeanWars):
+    // while he sits in Congress the King can no longer drag the player into his European wars. Franklin's other two effects
+    // (alwaysOfferedPeace, peaceTreaty +50%) need an AI diplomatic-trade flow and stay deferred — see founding-fathers.md.
+    private const string IgnoreEuropeanWarsAbility = "model.ability.ignoreEuropeanWars";
+
+    /// <summary>
+    /// The European rivals the King could declare war on the human's behalf (FreeCol <c>Monarch.collectPotentialEnemies</c>):
+    /// colonial powers currently at peace with the human. <b>Benjamin Franklin ends the meddling</b> — when the human holds
+    /// <c>model.ability.ignoreEuropeanWars</c> the list is empty, so the King can no longer impose a war (DECLARE_WAR is gated
+    /// off and a stray dispatch is a no-op). Franklin does <em>not</em> apply to <see cref="MonarchPotentialFriends"/>: he
+    /// stops wars, not peace (FreeCol's comment).
+    /// </summary>
     private IEnumerable<Player> MonarchPotentialEnemies() =>
-        _players.Where(p => p.PlayerId != _human.PlayerId && p.PlayerType == PlayerType.Colonial
-            && _human.Stances.GetValueOrDefault(p.PlayerId) == Stance.Peace);
+        HasAbilityFor(_human, IgnoreEuropeanWarsAbility)
+            ? []
+            : _players.Where(p => p.PlayerId != _human.PlayerId && p.PlayerType == PlayerType.Colonial
+                && _human.Stances.GetValueOrDefault(p.PlayerId) == Stance.Peace);
 
     private IEnumerable<Player> MonarchPotentialFriends() =>
         _players.Where(p => p.PlayerId != _human.PlayerId && p.PlayerType == PlayerType.Colonial

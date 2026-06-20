@@ -668,6 +668,26 @@ public sealed class Ruleset
                 .Select(o => ParseInt((string?)o.Element("number")?.Attribute("value")))
                 .FirstOrDefault(v => v is not null) ?? fallback;
 
+        // The King's war-support force: a <unitListOption id="model.option.warSupportForce"> of <unitOption> blocks,
+        // each a <unitType>/<role>/<number>. Parses every block into a MonarchSupportUnit; falls back if absent/empty.
+        IReadOnlyList<MonarchSupportUnit> WarSupportForce(IReadOnlyList<MonarchSupportUnit> fallback)
+        {
+            XElement? listOption = level.Descendants("unitListOption")
+                .FirstOrDefault(o => (string?)o.Attribute("id") == "model.option.warSupportForce");
+            if (listOption is null)
+            {
+                return fallback;
+            }
+            var blocks = listOption.Elements("unitOption")
+                .Select(u => new MonarchSupportUnit(
+                    UnitTypeId: (string?)u.Element("unitType")?.Attribute("value") ?? "",
+                    RoleId: (string?)u.Element("role")?.Attribute("value"),
+                    Number: ParseInt((string?)u.Element("number")?.Attribute("value")) ?? 0))
+                .Where(b => b.UnitTypeId.Length > 0 && b.Number > 0)
+                .ToList();
+            return blocks.Count > 0 ? blocks : fallback;
+        }
+
         DifficultyOptions m = DifficultyOptions.ClassicMedium;
         GovernmentLimits medium = GovernmentLimits.ClassicMedium;
         MonarchOptions mon = MonarchOptions.ClassicMedium;
@@ -702,7 +722,9 @@ public sealed class Ruleset
                 RefBaseInfantry: RefSize("model.option.refSize.soldiers", mon.RefBaseInfantry),
                 RefBaseCavalry: RefSize("model.option.refSize.dragoons", mon.RefBaseCavalry),
                 RefBaseArtillery: RefSize("model.option.refSize.artillery", mon.RefBaseArtillery),
-                RefBaseManOWar: RefSize("model.option.refSize.menOfWar", mon.RefBaseManOWar)));
+                RefBaseManOWar: RefSize("model.option.refSize.menOfWar", mon.RefBaseManOWar),
+                WarSupportForce: WarSupportForce(mon.WarSupportForce),
+                WarSupportGold: IntOption("model.option.warSupportGold", mon.WarSupportGold)));
     }
 
     /// <summary>
