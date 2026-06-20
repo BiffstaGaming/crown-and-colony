@@ -26,6 +26,7 @@ public class SchoolTeachingTests
     private const string Indentured = "model.unit.indenturedServant";
     private const string Free = "model.unit.freeColonist";
     private const string Grain = "model.goods.grain";
+    private const string Ore = "model.goods.ore";
 
     /// <summary>A colony with the given school building staffed by <paramref name="teacher"/> (pop = 1, the teacher).</summary>
     private static (Game game, Colony colony) School(string building, string teacher)
@@ -171,6 +172,27 @@ public class SchoolTeachingTests
         for (int i = 0; i < 4; i++) game.RunSchoolTeaching(colony);
         Assert.Equal(ExpertOreMiner, colony.WorkerTypeAt(tile)); // taught in place, still on its tile
         Assert.True(colony.TileWorkers.ContainsKey(tile));
+    }
+
+    [Fact]
+    public void TieBreak_PrefersTheEquallyLeastSkilledStudentWorkingTheTeachersExpertGood()
+    {
+        // Two free colonists (equal skill 0): one mining the teacher's good (ore), one farming grain. The expert ore
+        // miner teaches the ore worker first — FreeCol findStudent's trade tie-break — even though the grain worker
+        // comes EARLIER in the stable enumeration order (so the old order-only rule would have picked grain).
+        (Game game, Colony colony) = School(Schoolhouse, ExpertOreMiner); // ExpertProduction = model.goods.ore
+        colony.Population += 2;
+        var tiles = colony.Position.Neighbours().Where(n => game.Map.InBounds(n))
+            .OrderBy(p => p.Y).ThenBy(p => p.X).Take(2).ToList();
+        Position grainTile = tiles[0]; // row-major first → would win the tie under the old stable-order rule
+        Position oreTile = tiles[1];   // later, but works the teacher's good → wins via the trade tie-break
+        colony.SetWorker(grainTile, Grain, Free);
+        colony.SetWorker(oreTile, Ore, Free);
+
+        for (int i = 0; i < 4; i++) game.RunSchoolTeaching(colony);
+
+        Assert.Equal(ExpertOreMiner, colony.WorkerTypeAt(oreTile)); // the ore worker won the tie and graduated in place
+        Assert.Equal(Free, colony.WorkerTypeAt(grainTile));         // the grain worker was not chosen
     }
 
     [Fact]

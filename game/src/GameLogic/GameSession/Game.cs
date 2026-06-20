@@ -7267,47 +7267,64 @@ public sealed partial class Game
 
     /// <summary>
     /// The colony's least-skilled colonist a teacher of <paramref name="teacherType"/> can teach (FreeCol
-    /// <c>Colony.findStudent</c>, least-skill-first), searched across worked tiles, buildings and the idle pool. Ties
-    /// resolve by a stable enumeration order (tiles row-major, then buildings, then idle) — deterministic, no RNG.
+    /// <c>Colony.findStudent</c>, least-skill-first), searched across worked tiles, buildings and the idle pool.
+    /// <b>Trade tie-break (`86d3c9p7f` follow-up):</b> among equally-least-skilled students, one already producing the
+    /// teacher's expert good (<see cref="UnitType.ExpertProduction"/>) wins — so an expert ore miner teaches the
+    /// colonist already mining ore first (FreeCol <c>findStudent</c>'s <c>getWorkType() == expertise</c>). Remaining
+    /// ties fall back to a stable enumeration order (tiles row-major, then buildings, then idle). Deterministic, no RNG.
     /// Null when the teacher can raise no one (e.g. every colonist is already an expert).
     /// </summary>
     private Student? FindLeastSkilledStudent(Colony colony, string teacherType)
     {
+        string? expertGood = Ruleset.Unit(teacherType).ExpertProduction; // the good the teacher is expert in (null = non-goods expert)
         Student? best = null;
-        void Consider(string type, StudentLocation where, Position tile, string buildingId)
+        bool bestWorksExpertGood = false;
+        void Consider(string type, StudentLocation where, Position tile, string buildingId, bool worksExpertGood)
         {
             if (Ruleset.GetTeachingType(teacherType, type) is null)
             {
                 return; // not teachable by this teacher (already at/above the taught skill, or no education rung)
             }
             int skill = Ruleset.Unit(type).Skill;
-            if (best is null || skill < best.Value.Skill)
+            // Lower skill always wins; on a skill tie, a student already working the teacher's good wins over one that isn't.
+            if (best is null
+                || skill < best.Value.Skill
+                || (skill == best.Value.Skill && worksExpertGood && !bestWorksExpertGood))
             {
                 best = new Student(skill, where, type, tile, buildingId);
+                bestWorksExpertGood = worksExpertGood;
             }
         }
         foreach (Position tile in colony.TileWorkers.Keys.OrderBy(p => p.Y).ThenBy(p => p.X))
         {
-            Consider(colony.WorkerTypeAt(tile), StudentLocation.Tile, tile, "");
+            // TileWorkers maps a tile to the good worked there, so a tile student works the teacher's good directly.
+            bool worksExpertGood = expertGood is not null && colony.TileWorkers[tile] == expertGood;
+            Consider(colony.WorkerTypeAt(tile), StudentLocation.Tile, tile, "", worksExpertGood);
         }
         foreach (string b in colony.Buildings)
         {
-            if (Ruleset.Building(b).Teaches)
+            BuildingType buildingType = Ruleset.Building(b);
+            if (buildingType.Teaches)
             {
                 continue; // a colonist inside a school is staff, never a student (FreeCol's minimum-skill keeps students out of schools)
             }
+            // A building student "works the teacher's good" when the building produces it (attended output).
+            bool buildingMakesExpertGood = expertGood is not null && buildingType.Productions
+                .Where(p => !p.Unattended)
+                .SelectMany(p => p.Outputs)
+                .Any(o => o.GoodsId == expertGood);
             foreach (string occupant in colony.BuildingOccupants(b))
             {
-                Consider(occupant, StudentLocation.Building, default, b);
+                Consider(occupant, StudentLocation.Building, default, b, buildingMakesExpertGood);
             }
         }
         foreach (string idle in colony.IdleWorkerTypes)
         {
-            Consider(idle, StudentLocation.Idle, default, "");
+            Consider(idle, StudentLocation.Idle, default, "", worksExpertGood: false); // idle colonists produce nothing
         }
         if (colony.IdleColonists - colony.IdleWorkerTypes.Count > 0)
         {
-            Consider(Colony.FreeColonistTypeId, StudentLocation.Idle, default, "");
+            Consider(Colony.FreeColonistTypeId, StudentLocation.Idle, default, "", worksExpertGood: false);
         }
         return best;
     }
