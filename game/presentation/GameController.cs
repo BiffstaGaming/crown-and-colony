@@ -8,6 +8,7 @@ using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
+using CrownAndColony.GameLogic.World.Improvements;
 using Godot;
 
 namespace CrownAndColony.Presentation;
@@ -69,6 +70,9 @@ public partial class GameController : Node2D
     private Button _fortifyButton = null!;
     private Button _sentryButton = null!;
     private Button _clearOrdersButton = null!;
+    private Button _roadButton = null!;
+    private Button _plowButton = null!;
+    private Button _clearForestButton = null!;
     private MiniMap _miniMap = null!;
     private PanelContainer _colonyPanel = null!;
     private PanelContainer _europePanel = null!;
@@ -113,6 +117,19 @@ public partial class GameController : Node2D
         _fortifyButton.Pressed += () => ApplyUnitOrder(u => _game.CheckFortify(u).Allowed, _game.Fortify, "Fortifying.");
         _sentryButton.Pressed += () => ApplyUnitOrder(u => _game.CheckSentry(u).Allowed, _game.Sentry, "Sentried.");
         _clearOrdersButton.Pressed += () => ApplyUnitOrder(_ => true, _game.ClearOrders, "Orders cleared.");
+        _roadButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/RoadButton");
+        _plowButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/PlowButton");
+        _clearForestButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/ClearForestButton");
+        // Pioneer build orders: each forwards to the BuildImprovement command, gated on its CheckBuildImprovement oracle (ADR-006).
+        _roadButton.Pressed += () => ApplyUnitOrder(
+            u => _game.CheckBuildImprovement(u, TileImprovementType.RoadId).Allowed,
+            u => _game.BuildImprovement(u, TileImprovementType.RoadId), "Building a road.");
+        _plowButton.Pressed += () => ApplyUnitOrder(
+            u => _game.CheckBuildImprovement(u, TileImprovementType.PlowId).Allowed,
+            u => _game.BuildImprovement(u, TileImprovementType.PlowId), "Plowing the field.");
+        _clearForestButton.Pressed += () => ApplyUnitOrder(
+            u => _game.CheckBuildImprovement(u, TileImprovementType.ClearForestId).Allowed,
+            u => _game.BuildImprovement(u, TileImprovementType.ClearForestId), "Clearing the forest.");
         _miniMap = GetNode<MiniMap>("UI/MiniMap");
         _miniMap.TileSelected += CenterCameraOnTile;
         GetNode<Button>("UI/MiniMap/ZoomInButton").Pressed += _miniMap.ZoomIn;
@@ -224,8 +241,12 @@ public partial class GameController : Node2D
     {
         string role = u.HasDefaultRole ? "" : $"  ·  {u.RoleId[(u.RoleId.LastIndexOf('.') + 1)..]}";
         string orders = u.Orders == UnitOrders.Active ? "" : $"  ·  {u.Orders.ToString().ToLowerInvariant()}";
+        // An in-progress tile improvement: show what's being built and the turns of work left.
+        string building = u.WorkImprovementId is { } imp
+            ? $"  ·  building {imp[(imp.LastIndexOf('.') + 1)..]} ({u.WorkTurnsLeft})"
+            : "";
         string goingTo = u.IsGoingTo ? "  ·  going to" : "";
-        return $"{u.Type.ShortName}  ·  moves {u.MovementLeft}/{u.Type.Movement}{role}{orders}{goingTo}";
+        return $"{u.Type.ShortName}  ·  moves {u.MovementLeft}/{u.Type.Movement}{role}{orders}{building}{goingTo}";
     }
 
     /// <summary>
@@ -794,7 +815,11 @@ public partial class GameController : Node2D
             _selectedUnitLabel.Text = DescribeSelectedUnit(sel);
             _fortifyButton.Disabled = !_game.CheckFortify(sel).Allowed;
             _sentryButton.Disabled = !_game.CheckSentry(sel).Allowed;
-            _clearOrdersButton.Disabled = sel.Orders == UnitOrders.Active; // nothing to clear when already active
+            _clearOrdersButton.Disabled = sel.Orders == UnitOrders.Active && !sel.IsImproving; // nothing to clear when active and not building
+            // Pioneer build orders — each shown only when that improvement can be built here right now (ADR-006 oracle).
+            _roadButton.Disabled = !_game.CheckBuildImprovement(sel, TileImprovementType.RoadId).Allowed;
+            _plowButton.Disabled = !_game.CheckBuildImprovement(sel, TileImprovementType.PlowId).Allowed;
+            _clearForestButton.Disabled = !_game.CheckBuildImprovement(sel, TileImprovementType.ClearForestId).Allowed;
             _selectedUnitPanel.Show();
         }
         else

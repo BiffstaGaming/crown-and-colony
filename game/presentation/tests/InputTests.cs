@@ -138,6 +138,34 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task SelectedUnitPanel_RoadButton_StartsBuildingARoad()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Unit unit = game.Units[0];
+
+        // The default human start is a plain free colonist; arm it as a pioneer (internal setters reached by
+        // reflection, like the river overlay test) so it can build — a road applies on any land tile it stands on.
+        typeof(Unit).GetProperty("RoleId")!.GetSetMethod(nonPublic: true)!.Invoke(unit, ["model.role.pioneer"]);
+        typeof(Unit).GetProperty("RoleCount")!.GetSetMethod(nonPublic: true)!.Invoke(unit, [1]);
+
+        await ClickTile(runner, controller, unit.Position); // select → the build-order buttons gate on the oracle
+        var road = controller.GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/RoadButton");
+        AssertThat(road.Disabled).IsFalse(); // a tooled pioneer on land can build a road
+
+        road.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(unit.IsImproving).IsTrue();                            // the build order took
+        AssertThat(unit.WorkImprovementId).IsEqual("model.improvement.road");
+        AssertThat(unit.MovementLeft).IsEqual(0);                         // committed for the turn
+        AssertThat(controller.GetNode<Label>("UI/SelectedUnitPanel/VBox/Label").Text).Contains("building road"); // shown
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task GotoMode_Arms_AndSetsTheSelectedUnitDestination_AndDrawsTheMarker()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

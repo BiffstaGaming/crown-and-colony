@@ -58,7 +58,7 @@ visible = false
 mouse_filter = 2
 offset_left = 12.0
 offset_top = 40.0
-offset_right = 360.0
+offset_right = 560.0
 offset_bottom = 100.0
 
 [node name="VBox" type="VBoxContainer" parent="UI/SelectedUnitPanel"]
@@ -84,6 +84,18 @@ text = "Sentry"
 [node name="ClearButton" type="Button" parent="UI/SelectedUnitPanel/VBox/Orders"]
 layout_mode = 2
 text = "Wake"
+
+[node name="RoadButton" type="Button" parent="UI/SelectedUnitPanel/VBox/Orders"]
+layout_mode = 2
+text = "Road"
+
+[node name="PlowButton" type="Button" parent="UI/SelectedUnitPanel/VBox/Orders"]
+layout_mode = 2
+text = "Plow"
+
+[node name="ClearForestButton" type="Button" parent="UI/SelectedUnitPanel/VBox/Orders"]
+layout_mode = 2
+text = "Clear"
 
 [node name="TileInfoPanel" type="PanelContainer" parent="UI"]
 visible = false
