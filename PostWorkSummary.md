@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — In-Development cleanup wave (4 streams) — 9 items shipped + 15 status closes — COMPLETE ✅
+
+**Requested:** Review the In Development work — what can we get done, anything in streams? → tidy statuses + launch all 4 streams.
+**Did:**
+- **Triage (verified against code, not status):** **15 tasks were actually already shipped** (status lagged). Moved the 3 mis-statused In-Development done items to **In Review** (`86d3dmh6b` standing-orders, `86d3c9t6e` **missionaries — fully shipped, 27 tests, its description still wrongly said "Missing"**, `86d3bex51` FP-6 AI combat/diplomacy). The 12 In-Review items stay (correctly awaiting your playtest — In Review is your acceptance gate, not mine to flip).
+- **4 region-disjoint streams** (one merge hotspot each), integrated **A → B → C → D** + one combined test pass:
+  - **A notices/FoY** (presentation + rumour/FoY leaves): rumour-outcome notices (`6e03f8c`) · Fountain-of-Youth recruit-choice wiring (`bfabe61`).
+  - **B Franklin/monarch** (`Game.Monarch.cs`): Benjamin Franklin ignore-european-wars gate + war-support force/gold (`70f7bf7`).
+  - **C AI loop** (serial — all 3 edit `RunForeignPowerTurn`): best-worker fill + Europe train/buy (`b5a08c3`) · AI establishes missions (`b04206e`) · AI sue-for-peace treaty wiring (`a00fa7b`).
+  - **D river rendering** (`MapView` + goldens): river-mouth fish +1 (`825f353`) · river map overlay (`28e4502`) · render-time small/large style (`fe7a21d`). New `river-seed424242` golden.
+**Status:** green together — **1428 L1/L2 + 4 soak; 106 L3/L4**; both projects build clean; **save stays v47 (no bump needed)**. CI green on **both jobs** (run 27883549182).
+**Decisions:** integration A→B→C→D (D golden owner last). Only conflict was `presentation.md` (A∧D, kept both rows) — `GameController.RefreshView` and `Game.cs` merged clean despite A+C both editing Game.cs (far-apart leaves vs the AI loop) and A+D both editing RefreshView. The 3 AI items shared ONE serial stream (they all touch `RunForeignPowerTurn`). **Shipped:** `86d3c9r7j`, `86d3b3qdx` (rivers now fully work + render), `86d3c9vmr` (AI economy named scope complete). **Left In Review** (your playtest): `86d3c9umy`, `86d3c9ujx`. **Kept In Development:** `86d3c9vta` (pioneering **blocked**), `86d3c9uar` (counter-offers + negotiation UI remain).
+**Changed:** 9 commits `6e03f8c`..`fe7a21d`. Save v47.
+**Blocked (do not start):** amphibious-capture guard `86d3c9tzv` (needs amphibious assault first); AI **pioneering** `86d3c9vta` (needs a human pioneer / road-plow-clear BUILD action — the improvement layer is rivers-data-only).
+**Scheduled next:** nothing auto-scheduled. Suggested: a **human pioneer / tile-improvement build action** (unblocks AI pioneering + exercises the improvement layer), then the **negotiation UI** (the diplomacy backend + `EvaluateTrade` + a basic AI propose path all now exist).
+**Follow-ups:** pioneer build action; negotiation UI (`86d3c9ubw`/`86d3c9xpt`); Franklin's other 2 effects; river section-growth polish; AI logistics (`86d3c9vq9`).
+**Needs you:** the **In Review queue is large** (15+ done items awaiting your playtest) — that's the main thing waiting on you. Nothing blocking.
+
 ## 2026-06-20 — 5-stream bundled parallel wave (wave 2) — 12 items — COMPLETE ✅
 
 **Requested:** "do the same again AND automatically start them" — a second 5-stream bundled wave, fully autonomous (owner asleep, no prompts).
