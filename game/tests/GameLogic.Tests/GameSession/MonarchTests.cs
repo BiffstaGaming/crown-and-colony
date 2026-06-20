@@ -806,4 +806,81 @@ public class MonarchTests
         game.DispatchMonarchAction(MonarchAction.DeclareWar, new ScriptedRandom());
         Assert.All(rivals, p => Assert.Equal(Stance.War, game.StanceBetween(human, p.PlayerId)));
     }
+
+    // ── Pending monarch demand persistence (86d3c9rk6, save v46) ────────────────────────────────────────────
+
+    private static Game RoundTrip(Game game) =>
+        CrownAndColony.GameLogic.Persistence.SaveGame.FromJson(
+            CrownAndColony.GameLogic.Persistence.SaveGame.From(game).ToJson()).Restore(Classic);
+
+    [Fact]
+    public void PendingTaxDemand_SurvivesSaveLoad_AndCanBeAnsweredAfterLoading()
+    {
+        (Game game, var colony) = FoundedColony();
+        colony.AddGoods("model.goods.furs", 100);
+        game.HumanPlayer.TaxRate = 10;
+        game.DispatchMonarchAction(MonarchAction.RaiseTaxAct, new ScriptedRandom(2)); // demand: raise to 13
+        PendingMonarchDemand original = game.PendingMonarchDemand!;
+
+        Game loaded = RoundTrip(game);
+
+        PendingMonarchDemand restored = loaded.PendingMonarchDemand!;
+        Assert.NotNull(restored);
+        Assert.Equal(original.Action, restored.Action);
+        Assert.Equal(original.TaxRaise, restored.TaxRaise);
+        Assert.Equal(original.GoodsId, restored.GoodsId);
+        Assert.Equal(original.ColonyId, restored.ColonyId);
+        Assert.Equal(original.GoodsAmount, restored.GoodsAmount);
+
+        // The demand is answerable after the reload exactly as before — accept raises the tax to the demanded rate.
+        loaded.RespondToMonarch(accept: true);
+        Assert.Equal(13, loaded.HumanPlayer.TaxRate);
+        Assert.Null(loaded.PendingMonarchDemand);
+    }
+
+    [Fact]
+    public void PendingMercenaryOffer_SurvivesSaveLoad_WithItsForceAndPrice()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.Gold = 100_000;
+        game.DispatchMonarchAction(MonarchAction.MonarchMercenaries, new ScriptedRandom(0, 0, 0, 0, 0, 0, 0, 0));
+        PendingMonarchDemand offer = game.PendingMonarchDemand!;
+        Assert.NotEmpty(offer.Offer!);
+
+        Game loaded = RoundTrip(game);
+
+        PendingMonarchDemand restored = loaded.PendingMonarchDemand!;
+        Assert.Equal(offer.Action, restored.Action);
+        Assert.Equal(offer.Price, restored.Price);
+        Assert.Equal(
+            offer.Offer!.Select(e => (e.UnitTypeId, e.RoleId, e.Count)),
+            restored.Offer!.Select(e => (e.UnitTypeId, e.RoleId, e.Count)));
+
+        // Accepting the restored offer still spends the gold and lands the veterans in Europe.
+        int veterans = restored.Offer!.Sum(e => e.Count);
+        loaded.RespondToMonarch(accept: true);
+        Assert.Equal(veterans, loaded.UnitsInEurope.Count(u => u.Type.Id == "model.unit.veteranSoldier"));
+    }
+
+    [Fact]
+    public void NoPendingDemand_OmitsTheToken_AndStaysByteStable()
+    {
+        // A game with no open demand (the common case) writes no PendingMonarchDemand token → byte-identical to v45.
+        string json = CrownAndColony.GameLogic.Persistence.SaveGame.From(FoundedGame()).ToJson();
+        Assert.DoesNotContain("\"PendingMonarchDemand\"", json);
+        Assert.Equal(46, CrownAndColony.GameLogic.Persistence.SaveGame.CurrentVersion);
+    }
+
+    [Fact]
+    public void PreV46Save_LoadsWithNoPendingDemand()
+    {
+        (Game game, var colony) = FoundedColony();
+        colony.AddGoods("model.goods.furs", 100);
+        game.DispatchMonarchAction(MonarchAction.RaiseTaxAct, new ScriptedRandom(2)); // a demand is pending
+        // Simulate an old save: drop the token + back-date the version.
+        CrownAndColony.GameLogic.Persistence.SaveGame v45 =
+            CrownAndColony.GameLogic.Persistence.SaveGame.From(game) with { Version = 45, PendingMonarchDemand = null };
+        Game loaded = CrownAndColony.GameLogic.Persistence.SaveGame.FromJson(v45.ToJson()).Restore(Classic);
+        Assert.Null(loaded.PendingMonarchDemand);
+    }
 }

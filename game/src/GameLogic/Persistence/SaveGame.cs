@@ -95,12 +95,15 @@ public sealed record SaveGame
     /// byte-identical to v41; pre-v42 saves load with the succession not yet done.
     /// Each of v23–v42 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
-    /// v46 added the chosen difficulty level (<see cref="DifficultyLevel"/>, omitted for the default
-    /// <c>model.difficulty.medium</c> so a default game stays byte-identical to v45; pre-v46 saves load the default
-    /// level, 86d3c9y08) and each finite bonus resource's rolled starting quantity (<see cref="ResourceQuantities"/>,
-    /// omitted when no placed resource carries one, so a typical game stays byte-identical; pre-v46 saves load with
-    /// none, 86d3c9wbp). Both are additive + omitted-when-default, so a default game round-trips byte-identically to v45
-    /// and older saves load with the feature absent.
+    /// v46 added three additive omit-when-default fields: the chosen difficulty level (<see cref="DifficultyLevel"/>,
+    /// omitted for the default <c>model.difficulty.medium</c> so a default game stays byte-identical to v45; pre-v46
+    /// saves load the default level, 86d3c9y08); each finite bonus resource's rolled starting quantity
+    /// (<see cref="ResourceQuantities"/>, omitted when no placed resource carries one, so a typical game stays
+    /// byte-identical; pre-v46 saves load with none, 86d3c9wbp); and a pending monarch demand awaiting the human's
+    /// accept/reject (<see cref="PendingMonarchDemand"/>, omitted when none is pending — the common case, so a game with
+    /// no open demand stays byte-identical; pre-v46 saves load with no pending demand, 86d3c9rk6). All three are additive
+    /// + omitted-when-default, so a default game round-trips byte-identically to v45 and older saves load with the
+    /// feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -173,6 +176,9 @@ public sealed record SaveGame
 
     /// <summary>Each finite bonus resource's rolled starting quantity, by row-major tile index (v46; null/omitted when no placed resource carries a quantity, so a typical map stays byte-identical to v45). Only finite (min/max-ranged) resources carry one — a limitless resource is absent. Pre-v46 saves load with none.</summary>
     public IReadOnlyList<SavedResourceQuantity>? ResourceQuantities { get; init; }
+
+    /// <summary>A monarch demand awaiting the human's accept/reject when the game was saved (v46; null/omitted when none is pending — the common case, so a game with no open demand stays byte-identical to v45). Pre-v46 saves load with no pending demand. (FreeCol persists the <c>MonarchSession</c>.)</summary>
+    public SavedMonarchDemand? PendingMonarchDemand { get; init; }
 
     /// <summary>Legacy ≤v19 / pre-FP-7 read-only player treasury (v9+). Player state lives in <see cref="Players"/> (v20+); no longer written as of FP-7. Nullable so new saves omit it.</summary>
     public int? Gold { get; init; }
@@ -355,6 +361,8 @@ public sealed record SaveGame
                 : null,
             // The chosen difficulty level (v46); omitted for the default medium so a default game stays byte-identical to v45.
             DifficultyLevel = game.DifficultyLevelId == DifficultyLevels.DefaultId ? null : game.DifficultyLevelId,
+            // A pending monarch demand awaiting the human's accept/reject (v46); omitted when none — the common case.
+            PendingMonarchDemand = game.PendingMonarchDemand is { } md ? SavedMonarchDemand.From(md) : null,
         };
     }
 
@@ -503,6 +511,10 @@ public sealed record SaveGame
         {
             game.SetSpanishSuccessionDone(true);
         }
+        if (PendingMonarchDemand is { } md) // v46; pre-v46 / omitted → no demand was pending
+        {
+            game.RestorePendingMonarchDemand(md.ToDemand());
+        }
         return game;
     }
 
@@ -637,6 +649,39 @@ public sealed record SavedResource(int Index, string ResourceId);
 /// <param name="Index">Row-major tile index (<c>y * MapWidth + x</c>).</param>
 /// <param name="Quantity">The remaining quantity (FreeCol <c>Resource.quantity</c>).</param>
 public sealed record SavedResourceQuantity(int Index, int Quantity);
+
+/// <summary>
+/// A monarch demand awaiting the human's accept/reject inside a <see cref="SaveGame"/> (v46; FreeCol persists the
+/// <c>MonarchSession</c>). Mirrors <see cref="GameSession.PendingMonarchDemand"/>; only the fields a restored demand
+/// needs are stored (a mercenary offer's force is a list of unit-type/role/count blocks).
+/// </summary>
+/// <param name="Action">The monarch action ordinal (<see cref="GameSession.MonarchAction"/>).</param>
+/// <param name="TaxRaise">The proposed new tax rate (a RAISE_TAX demand; 0 otherwise).</param>
+/// <param name="GoodsId">The taxed goods' id (a RAISE_TAX demand; null otherwise).</param>
+/// <param name="ColonyId">The colony holding those goods (a RAISE_TAX demand; 0 otherwise).</param>
+/// <param name="GoodsAmount">How much of the goods the demand concerns (a RAISE_TAX demand; 0 otherwise).</param>
+/// <param name="Offer">The units offered (a mercenary offer; null otherwise).</param>
+/// <param name="Price">The gold price of the offer (a mercenary offer; 0 otherwise).</param>
+public sealed record SavedMonarchDemand(
+    int Action, int TaxRaise = 0, string? GoodsId = null, int ColonyId = 0, int GoodsAmount = 0,
+    IReadOnlyList<SavedForceEntry>? Offer = null, int Price = 0)
+{
+    /// <summary>Captures a live <see cref="GameSession.PendingMonarchDemand"/> for the save.</summary>
+    public static SavedMonarchDemand From(GameSession.PendingMonarchDemand d) => new(
+        (int)d.Action, d.TaxRaise, d.GoodsId, d.ColonyId, d.GoodsAmount,
+        d.Offer?.Select(e => new SavedForceEntry(e.UnitTypeId, e.RoleId, e.Count)).ToList(), d.Price);
+
+    /// <summary>Rebuilds the live demand on load.</summary>
+    public GameSession.PendingMonarchDemand ToDemand() => new(
+        (GameSession.MonarchAction)Action, TaxRaise, GoodsId, ColonyId, GoodsAmount,
+        Offer?.Select(e => new GameSession.ForceEntry(e.UnitTypeId, e.RoleId, e.Count)).ToList(), Price);
+}
+
+/// <summary>One block of like units in a saved monarch offer (mirrors <see cref="GameSession.ForceEntry"/>; v46).</summary>
+/// <param name="UnitTypeId">The unit type id.</param>
+/// <param name="RoleId">The military role id (null = the default role).</param>
+/// <param name="Count">How many.</param>
+public sealed record SavedForceEntry(string UnitTypeId, string? RoleId, int Count);
 
 /// <summary>A map <see cref="Region"/> inside a <see cref="SaveGame"/> (v35).</summary>
 /// <param name="Id">Region id (indexed by <see cref="SaveGame.RegionIds"/>).</param>

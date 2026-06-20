@@ -92,13 +92,17 @@ public sealed partial class Game
         }
     }
 
-    private PendingMonarchDemand? _pendingMonarchDemand; // transient: a monarch demand awaiting the human's accept/reject (not saved, like _pendingDemand)
+    private PendingMonarchDemand? _pendingMonarchDemand; // a monarch demand awaiting the human's accept/reject; persisted across save/load since v46 (86d3c9rk6)
 
     /// <summary>
     /// The monarch demand awaiting the human's response (FreeCol <c>MonarchSession</c>), or null. The presentation
-    /// layer (P7) reads this to prompt and answers via <see cref="RespondToMonarch"/> (ADR-006). Transient — never saved.
+    /// layer (P7) reads this to prompt and answers via <see cref="RespondToMonarch"/> (ADR-006). Persisted in the save
+    /// since v46 so a game saved while the demand dialog is open reloads with the demand still pending (86d3c9rk6).
     /// </summary>
     public PendingMonarchDemand? PendingMonarchDemand => _pendingMonarchDemand;
+
+    /// <summary>Re-installs a saved pending monarch demand on load (v46). The human answers it via <see cref="RespondToMonarch"/> exactly as if the King had just made it.</summary>
+    internal void RestorePendingMonarchDemand(PendingMonarchDemand demand) => _pendingMonarchDemand = demand;
 
     /// <summary>RNG stream reserved for the Monarch — above every per-player stream and the LCR stream so a monarch
     /// roll never correlates with another stream. The tick re-seeds this stream id from the human's live state each
