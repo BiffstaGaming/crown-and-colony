@@ -247,6 +247,76 @@ public class ForeignCombatTests
         Assert.False(game.Map.HasRumour(rumour)); // it went for the rumour (resolved on arrival), not the settlement
     }
 
+    // ── AI missionary (86d3c9vta missionary half — establish a mission) ───────────────────────────────────────────────
+
+    private const string MissionaryRole = "model.role.missionary";
+
+    /// <summary>Stages a foreign power at its colony cap with a missionary-role colonist on a free tile adjacent to a calm,
+    /// unmissioned native settlement; returns the game, power, missionary and target settlement.</summary>
+    private static (Game game, Player power, Unit missionary, NativeSettlement target) StageMissionary(ulong seed)
+    {
+        Game game = Game.New(Classic, seed);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        foreach (Unit u in game.Units.Where(u => u.OwnerId == power.PlayerId && u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+        FoundColoniesToCap(game, power); // at the cap → it won't found instead of establishing the mission
+
+        // A settlement with a free adjacent land tile to stand the missionary on; clear any known rumour so the mission
+        // branch (which precedes the rumour seek only via the adjacency test) is the one exercised.
+        NativeSettlement target = game.NativeSettlements
+            .First(s => s.Position.Neighbours().Any(n => Free(game, n)));
+        Position spot = target.Position.Neighbours().First(n => Free(game, n));
+        Unit missionary = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), spot);
+        missionary.OwnerId = power.PlayerId;
+        missionary.RoleId = MissionaryRole;
+        return (game, power, missionary, target);
+    }
+
+    [Fact]
+    public void AMissionary_EstablishesAMission_AtAnAdjacentUnmissionedSettlement()
+    {
+        (Game game, Player power, Unit missionary, NativeSettlement target) = StageMissionary(seed: 7);
+        Assert.False(target.HasMission);                 // premise: no mission there yet
+        int missionaryId = missionary.Id;
+
+        game.EndTurn();
+
+        Assert.True(target.HasMission);                  // the AI founded a mission
+        Assert.Equal(power.PlayerId, target.MissionOwnerId);
+        Assert.DoesNotContain(game.Units, u => u.Id == missionaryId); // the missionary was installed (left the map)
+    }
+
+    [Fact]
+    public void AMissionary_DoesNotReFoundItsOwnExistingMission()
+    {
+        (Game game, Player power, Unit missionary, NativeSettlement target) = StageMissionary(seed: 7);
+        target.MissionOwnerId = power.PlayerId;          // the power already holds the mission here
+        int missionaryId = missionary.Id;
+
+        game.EndTurn();
+
+        // The mission branch is skipped (already ours), so the missionary stays on the map (it explores/visits instead).
+        Assert.Contains(game.Units, u => u.Id == missionaryId);
+    }
+
+    [Fact]
+    public void AMissionaryMission_IsReplayStable_AndLeavesTheHumanStream0ByteIdentical()
+    {
+        // The whole mission mechanic is RNG-free; staging an AI missionary must leave the human's stream 0 byte-identical
+        // and play identically across two same-seed games.
+        (Game a, _, _, _) = StageMissionary(seed: 4242);
+        (Game b, _, _, _) = StageMissionary(seed: 4242);
+        for (int i = 0; i < 3; i++) { a.EndTurn(); b.EndTurn(); }
+        Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
+
+        (Game withMission, _, _, _) = StageMissionary(seed: 4242);
+        Game noMission = Game.New(Classic, seed: 4242);
+        for (int i = 0; i < 3; i++) { withMission.EndTurn(); noMission.EndTurn(); }
+        Assert.Equal(noMission.RandomState, withMission.RandomState); // stream 0 untouched by the missionary's activity
+    }
+
     [Fact]
     public void ScoutTargeting_IsReplayStable_AndLeavesTheHumanStream0ByteIdentical()
     {

@@ -5592,6 +5592,17 @@ public sealed partial class Game
                 FoundColony(unit);
                 continue;
             }
+            // Establish a mission (86d3c9vta missionary half, FreeCol's missionary `MissionaryMission`): a missionary-role
+            // colonist beside a native settlement the power does not already hold a mission in founds one — converting the
+            // tribe over time and easing its alarm (the whole mission mechanic is RNG-free, so the human's stream 0 is
+            // byte-identical). Takes priority over the chief-audience below: a missionary's purpose is the mission, not a
+            // one-off gift. An Angry/Hateful tribe kills the missionary inside EstablishMission — a faithful risk the AI
+            // accepts, exactly as a human missionary does.
+            if (AdjacentUnmissionedSettlement(power, unit) is { } missionTarget)
+            {
+                EstablishMission(power, unit, missionTarget);
+                continue;
+            }
             // Speak with a chief (86d3c9vta slice, FreeCol's scout/explore visiting): a colonist beside a native
             // settlement the power hasn't yet visited takes the chief's audience for a gift/tales, on the power's OWN
             // stream. Per-player first contact (HasBeenVisitedBy) means an AI visit never consumes the human's.
@@ -6389,6 +6400,19 @@ public sealed partial class Game
     private NativeSettlement? AdjacentUnvisitedSettlement(Player power, Unit unit) =>
         _nativeSettlements
             .Where(s => (s.Position == unit.Position || s.Position.IsAdjacentTo(unit.Position)) && CheckVisit(unit, s).Allowed)
+            .OrderBy(s => s.Position.Y).ThenBy(s => s.Position.X)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// The native settlement <paramref name="unit"/> (a missionary-role colonist) may found a mission in this turn — on
+    /// or adjacent to it (<see cref="CheckEstablishMission"/> passes, so the unit carries the missionary ability and has
+    /// movement) and the power does <b>not already hold a mission there</b> (so it never re-founds its own mission;
+    /// another power's mission is replaceable, matching <see cref="EstablishMission(Player, Unit, NativeSettlement)"/>).
+    /// Ties break by position. The AI missionary target for <see cref="RunForeignPowerTurn"/> (`86d3c9vta` missionary half).
+    /// </summary>
+    private NativeSettlement? AdjacentUnmissionedSettlement(Player power, Unit unit) =>
+        _nativeSettlements
+            .Where(s => s.MissionOwnerId != power.PlayerId && CheckEstablishMission(unit, s).Allowed)
             .OrderBy(s => s.Position.Y).ThenBy(s => s.Position.X)
             .FirstOrDefault();
 
