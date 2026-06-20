@@ -19,6 +19,25 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-20 — Parallel batch (6 streams, 5 shipped) — clean-merge by non-overlapping regions — COMPLETE ✅
+
+**Requested:** Find MORE parallel backlog streams (constraint relaxed: same file is OK if the edited functions don't overlap → clean merge), launch them, single test batch at the end.
+**Did:**
+- A multi-agent analysis partitioned the backlog by **merge-hotspot region** (not just by file); launched a **6-stream wave** in isolated git worktrees; integrated via cherry-pick + **one** combined test pass:
+  - **S1 Mountain/hill ranges** (`86d3c9w71`, `71c7dad`) — `MapGenerator.MakeMountains` ports FreeCol `createMountains` (walked ranges + fringe). Deliberate stream-0 reorder → **7 goldens regenerated + eyeballed**, 2 seed-pinned tests retargeted. +3 L1.
+  - **S2 Custom-house sale notice** (→ `86d3c9rx2`, `36b9027`) — transient `CustomHouseSaleNotice` on `AutoSellExports` (a HUD feedback channel). +4 L1. *(Commit mis-tagged `86d3c9t7z`; corrected in ClickUp — the work belongs to `86d3c9rx2`.)*
+  - **S3 Monarch tuning → ruleset** (`86d3c9rg6`, `027cb53`) — `MonarchOptions` on `Ruleset.Difficulty`, value-preserving (no behaviour change). +8 L1.
+  - **S4 Coastal fish +2** (`86d3c9we8`, `0ec288c`) — FreeCol `fishBonusLand` in `TileYieldPotential`. +4 L1. *(River-mouth +1 deferred to the rivers epic.)*
+  - **S5 Native AI equip camps** (`86d3c9vzp` slice, `f394504`) — settlements arm braves from stock when threatened, on the native's own RNG stream. +4 L1.
+  - **S6 Build-queue reorder** (`86d3c9x7y`) — **NO-OP**, already shipped in `51a3b43`; closed as already-done.
+- **Integration:** 5 cherry-picks. S2/S3/S4/S5 merged with **zero** conflicts — three share `Game.cs` but in far-apart methods (`AutoSellExports` / `TileYieldPotential` / `RunNativeTurn`), exactly as the region-partition predicted; S3 is a separate partial file. S1 conflicted only on `map-terrain.md` (resolved, both changelog rows kept). One cross-stream **ripple**: S1's new map put the custom-house test colony on a sugar tile (40→43 surplus) → made that assertion map-robust (integration fix `5c8b89e`).
+**Status:** **one combined test pass, all green together** — 1233 L1/L2 + 4 soak (byte-stable with all 5 combined); 97 L3/L4 (S1's regenerated goldens match the integrated map); both projects build clean (0/0). **No save change (v45).** CI green on **both jobs** (run 27866286642).
+**Changed:** S1 `MapGenerator.cs`/`WorldTests.cs`/+7 goldens/2 retargeted tests/`map-terrain.md`; S2 `Game.cs`/`CustomHouseSaleNotice.cs`/`CustomHouseTests.cs`/`custom-house.md`; S3 `MonarchOptions.cs`/`DifficultyOptions.cs`/`Ruleset.cs`/`Game.Monarch.cs`/`MonarchTests.cs`/3 docs; S4 `Game.cs`/`TileWorkerTests.cs`/`map-terrain.md`; S5 `Game.cs`/`NativeSettlement.cs`/`NativeAiTests.cs`/`natives.md`. Commits `36b9027`, `027cb53`, `0ec288c`, `f394504`, `71c7dad`, `5c8b89e`.
+**Decisions:** relaxed clean-merge criterion (non-overlapping **regions**, not files) → a 6-stream wave (vs 3 last time); 3 streams shared `Game.cs` in far-apart leaf methods and cherry-picked clean; S1 ran SOLE on the golden/soak surface (the only golden/soak regen); integrator owned the 1 doc conflict + 1 ripple-fix. Corrected a task-id mistake (custom-house = `86d3c9rx2`, not `86d3c9t7z`).
+**Scheduled next:** difficulty picker (`86d3c9y08`, the held-back **save-bump v46** slot — needs your new-game-dialog UI steer) OR the next AI-economy slice (`86d3c9vmr` inc 5).
+**Follow-ups:** surface custom-house notices in a turn-message HUD panel; native secure-pathing + arms-acquisition (`86d3c9vzp`); river-mouth fish +1 with rivers (`86d3b3qdx`); read map-gen consts from spec; persist monarch state (`86d3c9rk6`).
+**Needs you:** the difficulty-picker UI placement (new-game dialog beside world size/shape, recommended); otherwise nothing blocking.
+
 ## 2026-06-20 — Parallel batch (3 streams) — AI build-queue units + Congress tab + HUD tile-info — COMPLETE ✅
 
 **Requested:** Launch parallel workers on different work streams (files that don't overlap), then perform testing together at the end.
