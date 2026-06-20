@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — Pioneer tile-improvement BUILD action (road / plow / clear-forest) — COMPLETE ✅
+
+**Requested:** Implement the human pioneer / tile-improvement build action — parse the road/plow/clear-forest spec, the unit action (CheckX/X), per-turn work + tool consumption + save v48, the three effects, and the HUD order buttons.
+**Did:**
+- **Spec parse + applicability** (`cfbef4d`): `Ruleset` now parses road/plow/clearForest in full — `<scope>`s, `required-role`, `expended-amount` (1 count = 20 tools), `add-work-turns`, `<tile-type-change>` (forest → cleared base + lumber). New `TileImprovementType.AppliesTo`/`ChangeFrom`/`IsRoad/IsPlow/IsClearForest`, `ImprovementScope`/`ImprovementTypeChange`, `RoleType.CanImproveTerrain`.
+- **Build action + per-turn work + tools + effects + save v48** (`02ef636`): `Game.CheckBuildImprovement`/`BuildImprovement`/`ProcessImprovements`/`CompleteImprovement` (wired into `RunPlayerTurn`, RNG-free → stream-0 byte-stable); `Unit.WorkImprovementId`/`WorkTurnsLeft`/`IsImproving`; hardy pioneer 2×; tools spent on completion (reverts to colonist at 0). **Map improvement layer made multi-valued per tile** so a road/plow coexists with a river. Effects: road→movement (generalised `ImprovementMovement.MoveCost`), plow→+1 farmed yield, clear-forest→terrain change + 20 lumber (scrub 10) to the owning colony. **Save v48** (unit work-state, additive + omit-when-default; multi-improvement round-trips a v47 river save identically).
+- **HUD buttons** (`0278dd2`): Road/Plow/Clear on `SelectedUnitPanel`, gated on `CheckBuildImprovement`, "building … (N)" readout (ADR-006, oracle-only).
+**Status:** **1465 L1/L2 + 4 soak + 32 scene/golden green**; both projects build clean (0 warnings); **save v47→v48**. CI green on **both jobs** for all three pushes (runs 27884123329 / 27884565615 / 27884719210).
+**Changed:** 3 commits `cfbef4d`, `02ef636`, `0278dd2`. GameLogic (`TileImprovementType`/`Ruleset`/`RoleType`/`GameMap`/`Unit`/`ImprovementMovement`/`Game`/`SaveGame`/`MapGenerator`), presentation (`GameController`/`RiverOverlay`/`main.tscn`), +`PioneerBuildTests`. Docs: rivers-tile-improvements.md (both layers), save-load.md, units-movement.md, presentation.md.
+**Decisions:** Folded the planned slices 2+3 into one cohesive commit (shared completion logic; an artificial clear-forest gate would be a smell). Multi-improvement map layer chosen over single-improvement (a road must coexist with a river — faithful, ~6 call sites). Clear-forest **resource-exposure roll skipped** (would need a world-stream RNG draw — kept the per-turn completion RNG-free to protect stream-0 byte-stability); documented deviation.
+**Scheduled next:** **AI pioneering** — `86d3c9vta` (`[P5] AI exploration depth: scouting, pioneering, missionary missions`), now unblocked by this human build action (foreign powers order their pioneers to road/clear/plow around colonies).
+**Follow-ups:** AI pioneering (`86d3c9vta`); draw roads/plowed fields on the map (presentation overlay — owns a golden regen); clear-forest 5% resource-exposure roll; pioneer initial equip up to count 5 (`EquipRole` arms at 1 today); fold the road follow-cost into `Pathfinder` goto routes.
+**Needs you:** Nothing blocking. Optional playtest: equip a colonist as a pioneer in a colony with ≥20 tools, then use the Road/Plow/Clear buttons.
+
 ## 2026-06-21 — In-Development cleanup wave (4 streams) — 9 items shipped + 15 status closes — COMPLETE ✅
 
 **Requested:** Review the In Development work — what can we get done, anything in streams? → tidy statuses + launch all 4 streams.
