@@ -87,6 +87,32 @@ public class ColonyReportPanelTests
         }
     }
 
+    [TestCase]
+    public async Task StatusTabs_SwitchToForeignNativesReligion()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        var title = controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Foreign").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(title.Text).IsEqual("Foreign affairs"); // a fresh game has 3 landed rival powers to list
+
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Natives").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(title.Text).IsEqual("Native nations");
+
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Religion").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(title.Text).IsEqual("Religion");
+        AssertThat(dynamic.GetNodeOrNull("ReligionImmigration")).IsNotNull(); // the immigration bar always renders
+    }
+
     private static CrownAndColony.GameLogic.GameSession.Game GetGame(GameController controller) =>
         (CrownAndColony.GameLogic.GameSession.Game)controller
             .GetType()

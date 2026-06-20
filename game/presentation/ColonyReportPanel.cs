@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Units;
 using Godot;
 
@@ -22,10 +23,19 @@ namespace CrownAndColony.Presentation;
 /// </summary>
 public partial class ColonyReportPanel : PanelContainer
 {
-    private enum Tab { Colonies, Units }
+    private enum Tab { Colonies, Units, Foreign, Natives, Religion }
 
     private Game _game = null!;
     private Tab _tab = Tab.Colonies;
+
+    private static readonly System.Collections.Generic.Dictionary<Tab, string> Titles = new()
+    {
+        [Tab.Colonies] = "Colony report",
+        [Tab.Units] = "Unit report",
+        [Tab.Foreign] = "Foreign affairs",
+        [Tab.Natives] = "Native nations",
+        [Tab.Religion] = "Religion",
+    };
 
     /// <summary>Opens the reports screen on the Colonies tab over the current game state.</summary>
     public void Open(Game game)
@@ -38,7 +48,7 @@ public partial class ColonyReportPanel : PanelContainer
 
     private void Rebuild()
     {
-        GetNode<Label>("VBox/ReportTitle").Text = _tab == Tab.Colonies ? "Colony report" : "Unit report";
+        GetNode<Label>("VBox/ReportTitle").Text = Titles[_tab];
         var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
@@ -49,16 +59,19 @@ public partial class ColonyReportPanel : PanelContainer
         var tabs = new HBoxContainer { Name = "Tabs" };
         tabs.AddChild(TabButton("Colonies", Tab.Colonies));
         tabs.AddChild(TabButton("Units", Tab.Units));
+        tabs.AddChild(TabButton("Foreign", Tab.Foreign));
+        tabs.AddChild(TabButton("Natives", Tab.Natives));
+        tabs.AddChild(TabButton("Religion", Tab.Religion));
         dynamic.AddChild(tabs);
         dynamic.AddChild(new HSeparator());
 
-        if (_tab == Tab.Colonies)
+        switch (_tab)
         {
-            BuildColonies(dynamic);
-        }
-        else
-        {
-            BuildUnits(dynamic);
+            case Tab.Colonies: BuildColonies(dynamic); break;
+            case Tab.Units: BuildUnits(dynamic); break;
+            case Tab.Foreign: BuildForeign(dynamic); break;
+            case Tab.Natives: BuildNatives(dynamic); break;
+            case Tab.Religion: BuildReligion(dynamic); break;
         }
     }
 
@@ -195,6 +208,86 @@ public partial class ColonyReportPanel : PanelContainer
             .Select(kv => $"{kv.Value} {_game.Ruleset.Goods(kv.Key).ShortName}"));
         return parts.Count > 0 ? $"  [{string.Join(", ", parts)}]" : "";
     }
+
+    // ── Foreign affairs tab ──────────────────────────────────────────────────────────────────────────────
+
+    private void BuildForeign(VBoxContainer dynamic)
+    {
+        long human = _game.HumanPlayer.PlayerId;
+        var powers = _game.Players
+            .Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial)
+            .OrderBy(p => p.PlayerId)
+            .ToList();
+        if (powers.Count == 0)
+        {
+            dynamic.AddChild(new Label { Text = "No foreign powers are known.", HorizontalAlignment = HorizontalAlignment.Center });
+            return;
+        }
+
+        // FreeCol's NationSummary shows a rival's stance, #colonies, #units and gold to everyone; SoL%, father
+        // count and tax% stay hidden without the De Witt ability (which we omit faithfully).
+        foreach (Player p in powers)
+        {
+            Stance stance = _game.StanceBetween((int)human, p.PlayerId);
+            int colonies = _game.Colonies.Count(c => c.OwnerId == p.PlayerId);
+            int units = _game.Units.Count(u => u.OwnerId == p.PlayerId);
+            dynamic.AddChild(new Label
+            {
+                Name = $"Foreign_{p.PlayerId}",
+                Text = $"{Strip(p.NationId)} — {stance}, {colonies} colonies, {units} units, {p.Gold} gold",
+            });
+        }
+    }
+
+    // ── Native nations tab ───────────────────────────────────────────────────────────────────────────────
+
+    private void BuildNatives(VBoxContainer dynamic)
+    {
+        var settlements = _game.NativeSettlements
+            .Where(s => _game.IsExplored(s.Position))
+            .OrderBy(s => s.NationTypeId, System.StringComparer.Ordinal)
+            .ThenBy(s => s.Position.Y).ThenBy(s => s.Position.X)
+            .ToList();
+        if (settlements.Count == 0)
+        {
+            dynamic.AddChild(new Label { Text = "No native settlements discovered yet.", HorizontalAlignment = HorizontalAlignment.Center });
+            return;
+        }
+
+        foreach (NativeSettlement s in settlements)
+        {
+            string capital = s.IsCapital ? "★" : "";
+            string skill = s.LearnableSkill is { } sk ? Strip(sk) : "none";
+            string mission = s.HasMission ? "  ·  mission" : "";
+            string wanted = s.WantedGoods.Count > 0
+                ? "  ·  wants " + string.Join(", ", s.WantedGoods.Select(Strip))
+                : "";
+            dynamic.AddChild(new Label
+            {
+                Name = $"Native_{s.Position.X}_{s.Position.Y}",
+                Text = $"{Strip(s.NationTypeId)}{capital} ({s.Position.X},{s.Position.Y}) — alarm {s.AlarmLevel}, teaches {skill}{mission}{wanted}",
+            });
+        }
+    }
+
+    // ── Religion tab (faithful subset: the immigration bar) ──────────────────────────────────────────────
+
+    private void BuildReligion(VBoxContainer dynamic)
+    {
+        dynamic.AddChild(new Label
+        {
+            Name = "ReligionImmigration",
+            Text = $"Crosses toward the next emigrant: {_game.Immigration} / {_game.ImmigrationRequired}",
+        });
+        dynamic.AddChild(new Label { Text = $"Recruit a waiting emigrant now: {_game.RecruitPrice} gold" });
+        dynamic.AddChild(new Label
+        {
+            Text = "(Per-church cross output is a follow-up; map-region exploration discovery is deferred.)",
+        });
+    }
+
+    /// <summary>The readable tail of a <c>model.*.foo</c> id (e.g. <c>model.nation.dutch</c> → <c>dutch</c>).</summary>
+    private static string Strip(string? id) => id is null ? "?" : id[(id.LastIndexOf('.') + 1)..];
 
     private static string Signed(int n) => (n > 0 ? "+" : "") + n;
 }
