@@ -33,6 +33,19 @@ public class ColonyEconomyTests
     }
 
     [Fact]
+    public void ColonyNetProduction_FoldsCentreYieldLessFoodEaten()
+    {
+        // The shared oracle behind the colony screen's production bar and the empire colony report.
+        Game game = PlainsColony();
+        Colony colony = game.Colonies[0];
+
+        System.Collections.Generic.IReadOnlyDictionary<string, int> net = game.ColonyNetProduction(colony);
+
+        Assert.Equal(1, net[Food]);   // plains centre grain 3 -> food, minus 1 colonist eating 2
+        Assert.Equal(2, net[Cotton]); // plains centre cotton 2 (unattended), no tile workers on a 1x1 map
+    }
+
+    [Fact]
     public void EndTurn_ColonySquareProduces_AndColonistsEat()
     {
         Game game = PlainsColony();

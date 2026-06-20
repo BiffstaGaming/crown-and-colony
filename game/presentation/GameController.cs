@@ -63,6 +63,7 @@ public partial class GameController : Node2D
     private PanelContainer _nativePanel = null!;
     private PanelContainer _demandPanel = null!;
     private PanelContainer _tradeRoutePanel = null!;
+    private PanelContainer _colonyReportPanel = null!;
     private Button _endTurnButton = null!;
     private Control _gameOverScreen = null!;
     private Label _gameOverMessage = null!;
@@ -86,12 +87,15 @@ public partial class GameController : Node2D
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
         _demandPanel = GetNode<PanelContainer>("UI/NativeDemandPanel");
         _tradeRoutePanel = GetNode<PanelContainer>("UI/TradeRoutePanel");
+        _colonyReportPanel = GetNode<PanelContainer>("UI/ColonyReportPanel");
         _endTurnButton = GetNode<Button>("UI/EndTurnButton");
         _gameOverScreen = GetNode<Control>("UI/GameOverScreen");
         _gameOverMessage = GetNode<Label>("UI/GameOverScreen/Panel/VBox/Message");
         _endTurnButton.Pressed += OnEndTurnPressed;
         GetNode<Button>("UI/EuropeButton").Pressed += OpenEuropePanel;
         GetNode<Button>("UI/TradeRoutesButton").Pressed += OpenTradeRoutePanel;
+        GetNode<Button>("UI/ReportsButton").Pressed += OpenColonyReportPanel;
+        GetNode<Button>("UI/ColonyReportPanel/VBox/CloseButton").Pressed += () => _colonyReportPanel.Hide();
         GetNode<Button>("UI/ColonyPanel/VBox/CloseButton").Pressed += () => _colonyPanel.Hide();
         GetNode<Button>("UI/EuropePanel/VBox/CloseButton").Pressed += () => _europePanel.Hide();
         GetNode<Button>("UI/NativeSettlementPanel/VBox/CloseButton").Pressed += () => _nativePanel.Hide();
@@ -388,6 +392,10 @@ public partial class GameController : Node2D
     /// <summary>Opens the trade-route management screen (list/create/assign/delete routes). Public so scene tests can drive it.</summary>
     public void OpenTradeRoutePanel() =>
         ((TradeRoutePanel)_tradeRoutePanel).Open(_game, RefreshView);
+
+    /// <summary>Opens the empire colony report (per-colony population / production / build requirements). Public so scene tests can drive it.</summary>
+    public void OpenColonyReportPanel() =>
+        ((ColonyReportPanel)_colonyReportPanel).Open(_game);
 
     /// <summary>Opens the native-settlement interaction panel, acting with <paramref name="actingUnit"/> (may be null — the panel then prompts to select one).</summary>
     public void OpenNativeSettlementPanel(NativeSettlement settlement, Unit? actingUnit)

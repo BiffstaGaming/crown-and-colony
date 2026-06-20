@@ -6214,6 +6214,38 @@ public sealed partial class Game
     public int TileYield(Position tile, string goodsId) => TileYield(_human, tile, goodsId);
 
     /// <summary>
+    /// A colony's per-turn <b>net production by stored good</b> under its present assignments: each tile worker's
+    /// yield (folding the human's Founding-Father goods modifiers) + the colony-centre tile's unattended output,
+    /// less the food the colonists eat (<see cref="Colony.Population"/> × <see cref="Colony.FoodPerColonist"/>).
+    /// Keyed by the storage good id (so e.g. all grains roll into food). A pure read (no RNG, no mutation) shared
+    /// by the colony screen's production bar and the empire colony report so both show one tested figure (ADR-006).
+    /// Building-worker conversions (e.g. a weaver's cloth) are not included — this is the tile/centre production
+    /// the colony screen displays, matching its long-standing production bar.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> ColonyNetProduction(Colony colony)
+    {
+        var net = new Dictionary<string, int>();
+        void Add(string good, int amount)
+        {
+            string stored = Ruleset.StorageIdOf(good);
+            net[stored] = net.GetValueOrDefault(stored) + amount;
+        }
+        foreach ((Position tile, string good) in colony.TileWorkers)
+        {
+            Add(good, TileYield(tile, good));
+        }
+        foreach (ProductionEntry p in Map.TerrainAt(colony.Position).Productions.Where(p => p.Unattended))
+        {
+            foreach (GoodsOutput o in p.Outputs)
+            {
+                Add(o.GoodsId, o.Amount);
+            }
+        }
+        Add(Colony.FoodId, -colony.Population * Colony.FoodPerColonist);
+        return net;
+    }
+
+    /// <summary>
     /// The yield of one goods type when a colonist of <paramref name="player"/> works a tile: the terrain's
     /// best attended output, then any bonus-resource boost on the tile, then that player's Founding-Father
     /// goods modifiers (e.g. Henry Hudson's +100% furs). 0 when the terrain can't produce the goods at all

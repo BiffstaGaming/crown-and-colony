@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://presentation/GameController.cs" id="1"]
 [ext_resource type="Script" path="res://presentation/MapView.cs" id="2"]
@@ -10,6 +10,7 @@
 [ext_resource type="Script" path="res://presentation/PauseMenu.cs" id="9"]
 [ext_resource type="Script" path="res://presentation/TradeRoutePanel.cs" id="10"]
 [ext_resource type="Script" path="res://presentation/MiniMap.cs" id="11"]
+[ext_resource type="Script" path="res://presentation/ColonyReportPanel.cs" id="12"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -231,6 +232,51 @@ size_flags_vertical = 3
 [node name="CloseButton" type="Button" parent="UI/TradeRoutePanel/VBox"]
 layout_mode = 2
 text = "Close"
+
+[node name="ColonyReportPanel" type="PanelContainer" parent="UI"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -220.0
+offset_right = 300.0
+offset_bottom = 220.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("12")
+
+[node name="VBox" type="VBoxContainer" parent="UI/ColonyReportPanel"]
+layout_mode = 2
+
+[node name="ReportTitle" type="Label" parent="UI/ColonyReportPanel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+
+[node name="Dynamic" type="VBoxContainer" parent="UI/ColonyReportPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CloseButton" type="Button" parent="UI/ColonyReportPanel/VBox"]
+layout_mode = 2
+text = "Close"
+
+[node name="ReportsButton" type="Button" parent="UI"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -280.0
+offset_top = -192.0
+offset_right = -156.0
+offset_bottom = -152.0
+grow_horizontal = 0
+grow_vertical = 0
+text = "Reports"
 
 [node name="CalendarPanel" type="PanelContainer" parent="UI"]
 anchors_preset = 3

@@ -195,29 +195,11 @@ public partial class ColonyPanel : PanelContainer
         return bar;
     }
 
-    /// <summary>A colony's per-turn net production: each tile worker's yield + the colony-centre auto-yield, less food eaten.</summary>
-    private Dictionary<string, int> NetProduction()
-    {
-        var net = new Dictionary<string, int>();
-        void Add(string good, int amount)
-        {
-            string stored = _game.Ruleset.StorageIdOf(good);
-            net[stored] = net.GetValueOrDefault(stored) + amount;
-        }
-        foreach ((Position tile, string good) in _colony.TileWorkers)
-        {
-            Add(good, _game.TileYield(tile, good));
-        }
-        foreach (ProductionEntry p in _game.Map.TerrainAt(_colony.Position).Productions.Where(p => p.Unattended))
-        {
-            foreach (GoodsOutput o in p.Outputs)
-            {
-                Add(o.GoodsId, o.Amount);
-            }
-        }
-        Add(Colony.FoodId, -_colony.Population * Colony.FoodPerColonist);
-        return net;
-    }
+    /// <summary>
+    /// A colony's per-turn net production (tile yields + colony-centre auto-yield, less food eaten), via the shared
+    /// <see cref="Game.ColonyNetProduction"/> oracle so the colony screen and the empire report show one tested figure.
+    /// </summary>
+    private IReadOnlyDictionary<string, int> NetProduction() => _game.ColonyNetProduction(_colony);
 
     // ── Left: the isometric surrounding tiles + the construction panel ──────────────────────────────────────
 
