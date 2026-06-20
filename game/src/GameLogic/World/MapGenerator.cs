@@ -25,6 +25,12 @@ public static class MapGenerator
     /// <summary>The shipped default fraction of the map that is land (FreeCol <c>model.option.landMass</c>); the value the default new game uses.</summary>
     public const double DefaultLandMassFraction = 0.45;
 
+    /// <summary>A near-edge ocean tile is high seas when no land lies within this many tiles (FreeCol <c>model.option.distanceToHighSea</c>, classic 4).</summary>
+    private const int DistanceToHighSea = 4;
+
+    /// <summary>How many columns inward from each east/west edge the high-seas band can reach (FreeCol <c>model.option.maximumDistanceToEdge</c>, classic 10).</summary>
+    private const int MaxDistanceToEdge = 10;
+
     /// <summary>
     /// Generates a width × height map. Same ruleset + same RNG state (+ same <paramref name="landMassFraction"/>) →
     /// identical map. <paramref name="landMassFraction"/> is the share of tiles grown into land (FreeCol's
@@ -51,8 +57,10 @@ public static class MapGenerator
                 TerrainType type;
                 if (!land[x, y])
                 {
-                    // Outermost columns are the high seas (the route to Europe);
-                    // all other water is coastal ocean. Lakes/rivers are later work.
+                    // Outermost columns are seeded as high seas here ONLY to preserve the RNG-draw sequence:
+                    // high-seas tiles carry no resource table, so they skip the per-tile resource roll below, exactly
+                    // as before. ResetHighSeas (after the loop) then recomputes the real high-seas band from
+                    // distance-to-land — a pure, RNG-free reclassification. All other water is coastal ocean.
                     type = x == 0 || x == width - 1 ? highSeas : ocean;
                 }
                 else
@@ -70,6 +78,13 @@ public static class MapGenerator
             }
         }
 
+        // High-seas band: recompute which near-edge ocean tiles are the open route to Europe from their
+        // distance to land (FreeCol Map.resetHighSeas), replacing the old fixed-outermost-columns rule. Pure and
+        // RNG-free, so it consumes no randomness and reorders no later draw (the loop above kept its high-seas
+        // seeding only to preserve the resource-roll sequence). Regions don't distinguish ocean subtypes, so the
+        // region layer is unchanged.
+        ResetHighSeas(terrain, resources, width, height, ocean, highSeas);
+
         var map = new GameMap(width, height, terrain, resources);
 
         // Partition the finished terrain into named regions (polar, ocean, mountain, land). Pure and RNG-free,
@@ -77,6 +92,80 @@ public static class MapGenerator
         (int[] regionIds, IReadOnlyList<Region> regions) = RegionGenerator.Assign(map);
         map.SetRegions(regionIds, regions);
         return map;
+    }
+
+    /// <summary>
+    /// Marks the open-sea route to Europe as a land-proximity band along the east and west edges, faithful to
+    /// FreeCol <c>Map.resetHighSeas(distToLandFromHighSeas, maxDistanceToEdge)</c>: every high-seas tile is reset to
+    /// ocean, then for each row the contiguous ocean strip up to <see cref="MaxDistanceToEdge"/> columns in from each
+    /// edge is walked outward-to-inward, and an ocean tile with no land within <see cref="DistanceToHighSea"/> (8-dir
+    /// Chebyshev distance) becomes high seas. If a side ends up with no high seas, its furthest-from-land strip tile
+    /// is promoted (FreeCol's <c>seaL</c>/<c>seaR</c> fallback) so each side always has an exit. Pure and RNG-free.
+    /// Resources are dropped from any tile that becomes high seas (the open sea hosts no bonus). Replaces the former
+    /// fixed-outermost-columns rule.
+    /// </summary>
+    private static void ResetHighSeas(
+        TerrainType[] terrain, Dictionary<Position, string> resources,
+        int width, int height, TerrainType ocean, TerrainType highSeas)
+    {
+        int Idx(int x, int y) => y * width + x;
+        bool IsWater(int x, int y) => terrain[Idx(x, y)].IsWater;
+
+        // Reset all high seas to ocean (FreeCol's first pass), so the band is recomputed from scratch.
+        for (int i = 0; i < terrain.Length; i++)
+        {
+            if (terrain[i] == highSeas)
+            {
+                terrain[i] = ocean;
+            }
+        }
+
+        // The 8-direction Chebyshev distance to the nearest land within max, or -1 if none is that close.
+        int NearestLand(int cx, int cy, int max)
+        {
+            for (int d = 1; d <= max; d++)
+            {
+                for (int ny = cy - d; ny <= cy + d; ny++)
+                {
+                    for (int nx = cx - d; nx <= cx + d; nx++)
+                    {
+                        if (Math.Max(Math.Abs(nx - cx), Math.Abs(ny - cy)) != d) continue; // ring at exactly d
+                        if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+                        if (!IsWater(nx, ny)) return d;
+                    }
+                }
+            }
+            return -1;
+        }
+
+        void Promote(int x, int y)
+        {
+            terrain[Idx(x, y)] = highSeas;
+            resources.Remove(new Position(x, y)); // the open sea hosts no bonus resource
+        }
+
+        int totalL = 0, totalR = 0, distL = -1, distR = -1, seaLx = -1, seaLy = -1, seaRx = -1, seaRy = -1;
+        for (int y = 0; y < height; y++)
+        {
+            // West edge: walk in while still on the contiguous ocean strip (stops at the first land).
+            for (int x = 0; x < MaxDistanceToEdge && x < width && terrain[Idx(x, y)] == ocean; x++)
+            {
+                int d = NearestLand(x, y, DistanceToHighSea);
+                if (d < 0) { Promote(x, y); totalL++; }
+                else if (d > distL) { distL = d; seaLx = x; seaLy = y; }
+            }
+            // East edge.
+            for (int x = 0; x < MaxDistanceToEdge && x < width && terrain[Idx(width - 1 - x, y)] == ocean; x++)
+            {
+                int gx = width - 1 - x;
+                int d = NearestLand(gx, y, DistanceToHighSea);
+                if (d < 0) { Promote(gx, y); totalR++; }
+                else if (d > distR) { distR = d; seaRx = gx; seaRy = y; }
+            }
+        }
+
+        if (totalL <= 0 && seaLx >= 0) Promote(seaLx, seaLy); // guarantee a west exit
+        if (totalR <= 0 && seaRx >= 0) Promote(seaRx, seaRy); // guarantee an east exit
     }
 
     private static string PickWeightedResource(IReadOnlyList<ResourceChance> table, IGameRandom random)

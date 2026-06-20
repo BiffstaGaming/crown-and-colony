@@ -106,7 +106,7 @@ public class MapGeneratorTests
     }
 
     [Fact]
-    public void MapEdges_AreWater_WithHighSeasColumns()
+    public void MapEdges_AreWater_WithAHighSeasLandProximityBand()
     {
         GameMap map = Generate(1);
 
@@ -115,10 +115,23 @@ public class MapGeneratorTests
             map.AllPositions().Where(p => p.X < 4 || p.Y < 2 || p.X >= map.Width - 4 || p.Y >= map.Height - 2),
             p => Assert.True(map.TerrainAt(p).IsWater, $"{p} should be water"));
 
-        // Outermost columns are the route to Europe.
-        Assert.All(
-            map.AllPositions().Where(p => p.X == 0 || p.X == map.Width - 1),
-            p => Assert.Equal("model.tile.highSeas", map.TerrainAt(p).Id));
+        // High seas is a land-proximity band along the east/west edges (FreeCol resetHighSeas), not fixed columns.
+        var highSeas = map.AllPositions().Where(p => map.TerrainAt(p).Id == "model.tile.highSeas").ToList();
+        Assert.NotEmpty(highSeas);
+        Assert.Contains(highSeas, p => p.X < map.Width / 2);  // a west exit to Europe
+        Assert.Contains(highSeas, p => p.X >= map.Width / 2); // an east exit to Europe
+
+        // Every high-seas tile is water and sits within the near-edge band (≤ 10 columns from an edge).
+        Assert.All(highSeas, p =>
+        {
+            Assert.True(map.TerrainAt(p).IsWater, $"{p} high seas should be water");
+            Assert.True(p.X < 10 || p.X >= map.Width - 10, $"{p} high seas should hug an edge");
+        });
+
+        // The band rule is genuine (not just the per-side fallback): at least one high-seas tile has no land
+        // within Chebyshev distance 4 — open sea, exactly the resetHighSeas condition.
+        Assert.Contains(highSeas, p => !map.AllPositions().Any(q =>
+            !map.TerrainAt(q).IsWater && System.Math.Max(System.Math.Abs(q.X - p.X), System.Math.Abs(q.Y - p.Y)) <= 4));
     }
 
     [Fact]
@@ -238,9 +251,16 @@ public class MapGeneratorTests
             Assert.All(
                 a.AllPositions().Where(p => p.X < 4 || p.Y < 2 || p.X >= a.Width - 4 || p.Y >= a.Height - 2),
                 p => Assert.True(a.TerrainAt(p).IsWater, $"{p} should be water on a {w}×{h} map"));
-            Assert.All(
-                a.AllPositions().Where(p => p.X == 0 || p.X == a.Width - 1),
-                p => Assert.Equal("model.tile.highSeas", a.TerrainAt(p).Id));
+            // High seas is now a land-proximity band hugging both edges (FreeCol resetHighSeas), not fixed columns:
+            // both sides have an exit and every high-seas tile sits within the near-edge band and is water.
+            var highSeas = a.AllPositions().Where(p => a.TerrainAt(p).Id == "model.tile.highSeas").ToList();
+            Assert.Contains(highSeas, p => p.X < a.Width / 2);
+            Assert.Contains(highSeas, p => p.X >= a.Width / 2);
+            Assert.All(highSeas, p =>
+            {
+                Assert.True(a.TerrainAt(p).IsWater);
+                Assert.True(p.X < 10 || p.X >= a.Width - 10, $"{p} high seas should hug an edge on a {w}×{h} map");
+            });
         }
     }
 
