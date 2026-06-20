@@ -67,4 +67,7 @@ public sealed record RoleType(
 
     /// <summary>Whether taking the role needs the colony to ordain a missionary (required-ability <c>model.ability.dressMissionary</c>, which a church/cathedral provides) — the missionary role.</summary>
     public bool RequiresDressMissionary => RequiredAbilities.GetValueOrDefault("model.ability.dressMissionary");
+
+    /// <summary>Whether the role lets its bearer build tile improvements (FreeCol granted ability <c>model.ability.improveTerrain</c>) — the pioneer role.</summary>
+    public bool CanImproveTerrain => GrantedAbilities.GetValueOrDefault("model.ability.improveTerrain");
 }

@@ -46,21 +46,103 @@ namespace CrownAndColony.GameLogic.World.Improvements;
 /// <c>&lt;modifier&gt;</c> children). The classic river adds to several goods; see
 /// <see cref="ImprovementProduction"/> for the yield-delta helper that consumes these.
 /// </param>
+/// <param name="IsNatural">
+/// True for a natural feature placed by the world (rivers), false for a pioneer-built improvement
+/// (road/plow/clear-forest). FreeCol <c>natural</c>; only a non-natural improvement is buildable.
+/// </param>
+/// <param name="RequiredRoleId">
+/// The role a unit must hold to build this improvement (FreeCol <c>required-role</c>) — the pioneer role
+/// (<c>model.role.pioneer</c>) for road/plow/clear-forest; null for a natural feature nothing builds.
+/// </param>
+/// <param name="ExpendedAmount">
+/// How many of the required role's equipment multiples this improvement consumes on completion (FreeCol
+/// <c>expended-amount</c>): 1 for every pioneer improvement — one pioneer count = 20 tools. 0 for a natural
+/// feature.
+/// </param>
+/// <param name="ExposeResourcePercent">
+/// Percent chance the improvement exposes a bonus resource on completion (FreeCol
+/// <c>expose-resource-percent</c>; only the tile-type-change clear-forest carries one). Carried for fidelity;
+/// resource exposure is a documented deferred follow-up (it would need a world-RNG draw).
+/// </param>
+/// <param name="Scopes">
+/// The applicability scopes (FreeCol <c>&lt;scope&gt;</c> children): a tile's terrain must satisfy <b>all</b>
+/// of them for the improvement to be allowed there (e.g. plow requires not-water and not-forested). Null/empty
+/// means "any terrain".
+/// </param>
+/// <param name="TileTypeChanges">
+/// The terrain transformations this improvement performs on completion (FreeCol <c>&lt;tile-type-change&gt;</c>),
+/// keyed by the <i>from</i> terrain id — clear-forest maps each forest to its cleared base terrain and the
+/// one-off goods (lumber) it delivers. Null/empty for an improvement that lays on top of the terrain (road/plow).
+/// </param>
 public sealed record TileImprovementType(
     string Id,
     int Magnitude,
     int MovementCost,
     int AddWorkTurns,
-    IReadOnlyList<ImprovementModifier> Modifiers)
+    IReadOnlyList<ImprovementModifier> Modifiers,
+    bool IsNatural = false,
+    string? RequiredRoleId = null,
+    int ExpendedAmount = 0,
+    int ExposeResourcePercent = 0,
+    IReadOnlyList<ImprovementScope>? Scopes = null,
+    IReadOnlyDictionary<string, ImprovementTypeChange>? TileTypeChanges = null)
 {
+    private static readonly IReadOnlyList<ImprovementScope> NoScopes = [];
+    private static readonly IReadOnlyDictionary<string, ImprovementTypeChange> NoChanges =
+        new Dictionary<string, ImprovementTypeChange>();
+
     /// <summary>The classic ruleset id of the river improvement type.</summary>
     public const string RiverId = "model.improvement.river";
+
+    /// <summary>The classic ruleset id of the road improvement type (pioneer-built; speeds movement).</summary>
+    public const string RoadId = "model.improvement.road";
+
+    /// <summary>The classic ruleset id of the plowed-field improvement type (pioneer-built; +1 farmed goods).</summary>
+    public const string PlowId = "model.improvement.plow";
+
+    /// <summary>The classic ruleset id of the clear-forest improvement type (pioneer-built; forest → cleared base + lumber).</summary>
+    public const string ClearForestId = "model.improvement.clearForest";
 
     /// <summary>Short name derived from the id: <c>model.improvement.river</c> → <c>river</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
 
     /// <summary>True when this improvement grants a reduced cost to travel along it (river/road bonus).</summary>
     public bool GrantsMovementBonus => MovementCost > 0;
+
+    /// <summary>True when this is the road improvement.</summary>
+    public bool IsRoad => Id == RoadId;
+
+    /// <summary>True when this is the plowed-field improvement.</summary>
+    public bool IsPlow => Id == PlowId;
+
+    /// <summary>True when this is the clear-forest improvement.</summary>
+    public bool IsClearForest => Id == ClearForestId;
+
+    /// <summary>True when this improvement transforms the underlying terrain on completion (FreeCol <c>isChangeType</c>) — clear-forest.</summary>
+    public bool ChangesTerrain => TileTypeChanges is { Count: > 0 };
+
+    /// <summary>The applicability scopes (never null).</summary>
+    public IReadOnlyList<ImprovementScope> ScopesOrEmpty => Scopes ?? NoScopes;
+
+    /// <summary>The terrain transformations keyed by from-terrain id (never null).</summary>
+    public IReadOnlyDictionary<string, ImprovementTypeChange> TileTypeChangesOrEmpty => TileTypeChanges ?? NoChanges;
+
+    /// <summary>
+    /// Whether this improvement is allowed on the given terrain in principle (FreeCol
+    /// <c>TileImprovementType.isTileTypeAllowed</c>): every scope must apply. Disregards whether the tile already
+    /// carries the improvement — that is the caller's per-tile check.
+    /// </summary>
+    /// <param name="terrain">The terrain to test.</param>
+    public bool AppliesTo(Specification.TerrainType terrain) =>
+        ScopesOrEmpty.All(s => s.AppliesTo(terrain));
+
+    /// <summary>
+    /// The terrain transformation this improvement performs on the given from-terrain (clear-forest's forest →
+    /// cleared base + lumber), or null when it does not transform that terrain.
+    /// </summary>
+    /// <param name="fromTerrainId">The terrain the improvement is built on.</param>
+    public ImprovementTypeChange? ChangeFrom(string fromTerrainId) =>
+        TileTypeChangesOrEmpty.GetValueOrDefault(fromTerrainId);
 
     /// <summary>
     /// Builds a tile-improvement type from a flat list of additive goods bonuses (the common river/road shape),
@@ -123,3 +205,51 @@ public sealed record ImprovementModifier(string GoodsId, ModifierType Type, doub
     /// <summary>Applies this modifier to a running yield value (shared FreeCol modifier arithmetic).</summary>
     public double ApplyTo(double value) => ModifierMath.Apply(Type, value, Value);
 }
+
+/// <summary>
+/// One applicability scope of an improvement type (FreeCol <c>&lt;scope&gt;</c>): either a terrain predicate
+/// (<paramref name="MethodName"/> + <paramref name="MethodValue"/>, e.g. <c>isWater=false</c>) or a specific
+/// terrain id that must (or, when negated, must not) match (<paramref name="TileTypeId"/> +
+/// <paramref name="MatchNegated"/>, e.g. exclude <c>model.tile.hills</c>). An improvement applies to a terrain
+/// only when <b>every</b> scope is satisfied (FreeCol <c>Scope.appliesTo</c>).
+/// </summary>
+/// <param name="MethodName">
+/// The terrain predicate to test (<c>isWater</c>, <c>isForested</c>, <c>isElevation</c>), or null for a
+/// terrain-id scope. FreeCol invokes the named getter; we map it to the matching <see cref="Specification.TerrainType"/> flag.
+/// </param>
+/// <param name="MethodValue">The value the predicate must equal (FreeCol <c>method-value</c>).</param>
+/// <param name="TileTypeId">The terrain id this scope matches (FreeCol scope <c>type</c>), or null for a predicate scope.</param>
+/// <param name="MatchNegated">When true, a terrain-id scope is satisfied by <i>not</i> being that terrain (FreeCol <c>match-negated</c>).</param>
+public sealed record ImprovementScope(string? MethodName, bool MethodValue, string? TileTypeId, bool MatchNegated)
+{
+    /// <summary>Whether the given terrain satisfies this scope (FreeCol <c>Scope.appliesTo</c>).</summary>
+    /// <param name="terrain">The terrain to test.</param>
+    /// <exception cref="System.NotSupportedException">An unrecognised <see cref="MethodName"/> (spec drift).</exception>
+    public bool AppliesTo(Specification.TerrainType terrain)
+    {
+        if (TileTypeId is { } id)
+        {
+            // A type scope: satisfied when the terrain is (or, negated, is not) that exact terrain.
+            return (terrain.Id == id) != MatchNegated;
+        }
+        bool actual = MethodName switch
+        {
+            "isWater" => terrain.IsWater,
+            "isForested" => terrain.IsForest,
+            "isElevation" => terrain.IsElevation,
+            _ => throw new System.NotSupportedException(
+                $"Improvement scope method-name '{MethodName}' is not mapped to a terrain predicate."),
+        };
+        return actual == MethodValue;
+    }
+}
+
+/// <summary>
+/// A terrain transformation an improvement performs on completion (FreeCol <c>&lt;tile-type-change&gt;</c>):
+/// the underlying terrain becomes <paramref name="ToTerrainId"/> and a one-off batch of
+/// <paramref name="ProductionGoodsId"/> (lumber, for clear-forest) is delivered to the owning colony.
+/// </summary>
+/// <param name="ToTerrainId">The cleared/changed terrain id (e.g. <c>model.tile.plains</c> from mixed forest).</param>
+/// <param name="ProductionGoodsId">The goods delivered on the change (e.g. <c>model.goods.lumber</c>), or null when none.</param>
+/// <param name="ProductionAmount">The amount of <paramref name="ProductionGoodsId"/> delivered (0 when none).</param>
+public sealed record ImprovementTypeChange(string ToTerrainId, string? ProductionGoodsId, int ProductionAmount);

@@ -242,3 +242,125 @@ public class ImprovementMovementTests
         Assert.Equal(3, ImprovementMovement.RiverMoveCost(River, noBonusRiver, baseCost: 3));
     }
 }
+
+/// <summary>
+/// The pioneer-built improvement types parsed from the classic ruleset (road / plow / clear-forest) — their
+/// FreeCol attributes (required role, tool cost, work turns), applicability scopes, and terrain transformations.
+/// Cross-checked against <c>data/rules/classic/specification.xml</c> <c>&lt;tile-improvement-type&gt;</c>.
+/// </summary>
+public class PioneerImprovementTypeTests
+{
+    private static readonly Ruleset Classic = Ruleset.LoadClassic();
+    private static readonly TileImprovementType Road = Classic.Improvement(TileImprovementType.RoadId);
+    private static readonly TileImprovementType Plow = Classic.Improvement(TileImprovementType.PlowId);
+    private static readonly TileImprovementType Clear = Classic.Improvement(TileImprovementType.ClearForestId);
+
+    [Fact]
+    public void Road_MatchesFreeColSpec()
+    {
+        Assert.True(Road.IsRoad);
+        Assert.False(Road.IsNatural);                                   // pioneer-built
+        Assert.Equal("model.role.pioneer", Road.RequiredRoleId);
+        Assert.Equal(1, Road.ExpendedAmount);                           // one pioneer count = 20 tools
+        Assert.Equal(0, Road.AddWorkTurns);
+        Assert.Equal(1, Road.MovementCost);                             // road speeds movement
+        Assert.True(Road.GrantsMovementBonus);
+        Assert.False(Road.ChangesTerrain);
+    }
+
+    [Fact]
+    public void Plow_MatchesFreeColSpec()
+    {
+        Assert.True(Plow.IsPlow);
+        Assert.False(Plow.IsNatural);
+        Assert.Equal("model.role.pioneer", Plow.RequiredRoleId);
+        Assert.Equal(1, Plow.ExpendedAmount);
+        Assert.Equal(2, Plow.AddWorkTurns);                            // plow add-work-turns="2"
+        Assert.Equal(0, Plow.MovementCost);                            // plow grants no movement bonus
+        Assert.False(Plow.GrantsMovementBonus);
+        Assert.False(Plow.ChangesTerrain);
+        // The four farmed-goods +1 bonuses (folded by TileYieldPotential once placed).
+        Assert.Equal(1, ImprovementProduction.YieldDelta(Plow, "model.goods.grain"));
+        Assert.Equal(1, ImprovementProduction.YieldDelta(Plow, "model.goods.cotton"));
+    }
+
+    [Fact]
+    public void ClearForest_MatchesFreeColSpec()
+    {
+        Assert.True(Clear.IsClearForest);
+        Assert.False(Clear.IsNatural);
+        Assert.Equal("model.role.pioneer", Clear.RequiredRoleId);
+        Assert.Equal(1, Clear.ExpendedAmount);
+        Assert.Equal(2, Clear.AddWorkTurns);                           // clearForest add-work-turns="2"
+        Assert.Equal(5, Clear.ExposeResourcePercent);                  // expose-resource-percent="5"
+        Assert.True(Clear.ChangesTerrain);
+    }
+
+    [Fact]
+    public void Road_AppliesToAnyLand_ButNotWater()
+    {
+        Assert.True(Road.AppliesTo(Classic.Terrain("model.tile.plains")));
+        Assert.True(Road.AppliesTo(Classic.Terrain("model.tile.mixedForest")));
+        Assert.True(Road.AppliesTo(Classic.Terrain("model.tile.hills")));
+        Assert.False(Road.AppliesTo(Classic.Terrain("model.tile.ocean")));    // <scope method-name="isWater" method-value="false"/>
+    }
+
+    [Fact]
+    public void Plow_AppliesToClearedFarmland_ButNotForestWaterOrElevation()
+    {
+        Assert.True(Plow.AppliesTo(Classic.Terrain("model.tile.plains")));
+        Assert.True(Plow.AppliesTo(Classic.Terrain("model.tile.grassland")));
+        Assert.False(Plow.AppliesTo(Classic.Terrain("model.tile.mixedForest"))); // not forested
+        Assert.False(Plow.AppliesTo(Classic.Terrain("model.tile.hills")));        // negated hills scope
+        Assert.False(Plow.AppliesTo(Classic.Terrain("model.tile.mountains")));    // negated mountains scope
+        Assert.False(Plow.AppliesTo(Classic.Terrain("model.tile.arctic")));       // negated arctic scope
+        Assert.False(Plow.AppliesTo(Classic.Terrain("model.tile.ocean")));        // not water
+    }
+
+    [Fact]
+    public void ClearForest_AppliesOnlyToForest()
+    {
+        Assert.True(Clear.AppliesTo(Classic.Terrain("model.tile.mixedForest")));
+        Assert.True(Clear.AppliesTo(Classic.Terrain("model.tile.coniferForest")));
+        Assert.False(Clear.AppliesTo(Classic.Terrain("model.tile.plains")));      // <scope isForested true/>
+        Assert.False(Clear.AppliesTo(Classic.Terrain("model.tile.ocean")));
+    }
+
+    [Theory]
+    [InlineData("model.tile.mixedForest", "model.tile.plains", 20)]
+    [InlineData("model.tile.coniferForest", "model.tile.grassland", 20)]
+    [InlineData("model.tile.broadleafForest", "model.tile.prairie", 20)]
+    [InlineData("model.tile.scrubForest", "model.tile.desert", 10)]   // scrub yields only 10 lumber
+    [InlineData("model.tile.borealForest", "model.tile.tundra", 20)]
+    public void ClearForest_TileTypeChange_MatchesFreeColSpec(string from, string toTerrain, int lumber)
+    {
+        ImprovementTypeChange? change = Clear.ChangeFrom(from);
+        Assert.NotNull(change);
+        Assert.Equal(toTerrain, change!.ToTerrainId);
+        Assert.Equal("model.goods.lumber", change.ProductionGoodsId);
+        Assert.Equal(lumber, change.ProductionAmount);
+    }
+
+    [Fact]
+    public void ClearForest_NoChangeFromNonForest()
+    {
+        Assert.Null(Clear.ChangeFrom("model.tile.plains"));
+    }
+
+    [Fact]
+    public void River_ParsesAsNatural_NoRequiredRoleOrToolCost()
+    {
+        TileImprovementType river = Classic.RiverType;
+        Assert.True(river.IsNatural);
+        Assert.Null(river.RequiredRoleId);
+        Assert.Equal(0, river.ExpendedAmount);
+    }
+
+    [Fact]
+    public void PioneerRole_CanImproveTerrain()
+    {
+        Assert.True(Classic.Role("model.role.pioneer").CanImproveTerrain);
+        Assert.False(Classic.Role("model.role.soldier").CanImproveTerrain);
+        Assert.False(Classic.Role(CrownAndColony.GameLogic.Specification.RoleType.DefaultRoleId).CanImproveTerrain);
+    }
+}

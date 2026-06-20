@@ -591,8 +591,9 @@ public sealed class Ruleset
                 MaxValue: (int?)el.Attribute("maximum-value") ?? 0);
         }
 
-        // Tile-improvement types (FreeCol <tile-improvement-types>): the natural/pioneer features laid on a tile.
-        // Today we only model + place the river; road/plow/clear are parsed-through for completeness but unused.
+        // Tile-improvement types (FreeCol <tile-improvement-types>): the natural/pioneer features laid on a tile —
+        // the natural river (placed by the generator) and the pioneer-built road/plow/clear-forest. We read each
+        // type's applicability scopes, required role + tool cost, and any terrain transformation (clear-forest).
         var improvements = new Dictionary<string, TileImprovementType>();
         foreach (XElement el in root.Element("tile-improvement-types")?.Elements("tile-improvement-type") ?? [])
         {
@@ -602,7 +603,14 @@ public sealed class Ruleset
                 Magnitude: (int?)el.Attribute("magnitude") ?? 1,
                 MovementCost: (int?)el.Attribute("movement-cost") ?? 0,
                 AddWorkTurns: (int?)el.Attribute("add-work-turns") ?? 0,
-                Modifiers: el.Elements("modifier").Select(ParseImprovementModifier).ToList());
+                Modifiers: el.Elements("modifier").Select(ParseImprovementModifier).ToList(),
+                IsNatural: (bool?)el.Attribute("natural") ?? false,
+                RequiredRoleId: (string?)el.Attribute("required-role"),
+                ExpendedAmount: (int?)el.Attribute("expended-amount") ?? 0,
+                ExposeResourcePercent: (int?)el.Attribute("expose-resource-percent") ?? 0,
+                Scopes: el.Elements("scope").Select(ParseImprovementScope).ToList(),
+                TileTypeChanges: el.Elements("tile-type-change")
+                    .ToDictionary(c => RequiredAttribute(c, "from"), ParseTileTypeChange));
         }
 
         (Dictionary<string, NativeNationType> nativeNations, Dictionary<string, SettlementType> settlements) =
@@ -1061,6 +1069,30 @@ public sealed class Ruleset
             _ => ModifierType.Additive,
         },
         Value: (double?)m.Attribute("value") ?? 0);
+
+    /// <summary>
+    /// Parses one improvement-type <c>&lt;scope&gt;</c>: either a terrain predicate (<c>method-name</c> +
+    /// <c>method-value</c>) or a terrain-id scope (<c>type</c> + optional <c>match-negated</c>). See
+    /// <see cref="ImprovementScope"/>.
+    /// </summary>
+    private static ImprovementScope ParseImprovementScope(XElement s) => new(
+        MethodName: (string?)s.Attribute("method-name"),
+        MethodValue: (bool?)s.Attribute("method-value") ?? false,
+        TileTypeId: (string?)s.Attribute("type"),
+        MatchNegated: (bool?)s.Attribute("match-negated") ?? false);
+
+    /// <summary>
+    /// Parses one improvement-type <c>&lt;tile-type-change&gt;</c> (clear-forest's forest → cleared base): the
+    /// destination terrain and the one-off <c>&lt;production&gt;</c> goods (lumber) delivered on the change.
+    /// </summary>
+    private static ImprovementTypeChange ParseTileTypeChange(XElement c)
+    {
+        XElement? production = c.Element("production");
+        return new ImprovementTypeChange(
+            ToTerrainId: RequiredAttribute(c, "to"),
+            ProductionGoodsId: (string?)production?.Attribute("goods-type"),
+            ProductionAmount: (int?)production?.Attribute("value") ?? 0);
+    }
 
     private static UnitProductionModifier ParseUnitProductionModifier(XElement m) => new(
         GoodsId: RequiredAttribute(m, "id"),
