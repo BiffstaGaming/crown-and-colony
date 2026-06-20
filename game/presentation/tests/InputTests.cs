@@ -49,6 +49,36 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task GotoMode_Arms_AndSetsTheSelectedUnitDestination_AndDrawsTheMarker()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+
+        Game game = GameOf(controller);
+        Unit unit = game.Units[0];
+        Position origin = unit.Position;
+
+        // Select the unit, then arm goto-target mode with the real G key.
+        await ClickTile(runner, controller, origin);
+        runner.SimulateKeyPressed(Key.G);
+        await runner.SimulateFrames(1);
+        bool armed = (bool)controller.GetType().GetField("_gotoMode", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(controller)!;
+        AssertThat(armed).IsTrue(); // G armed goto-target mode for the selected unit
+
+        // The armed click forwards to SetSelectedDestination (its public seam). A reachable explored neighbour:
+        Position dest = origin.Neighbours().First(n => game.CheckSetDestination(unit, n).Allowed);
+        bool set = controller.SetSelectedDestination(dest);
+
+        AssertThat(set).IsTrue();
+        AssertThat(unit.Destination.HasValue).IsTrue();
+        AssertThat(unit.Destination!.Value).IsEqual(dest);    // standing goto order recorded (ProcessGotos walks it)
+        AssertThat(unit.Position).IsEqual(origin);            // setting a destination doesn't move the unit
+        AssertThat(controller.GetNode<GotoMarker>("MapView/GotoMarker").Visible).IsTrue(); // destination marker shown
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task PressingN_StartsAFreshGame()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

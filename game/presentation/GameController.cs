@@ -71,11 +71,14 @@ public partial class GameController : Node2D
     private Label _gameOverMessage = null!;
     private Unit? _selectedUnit;
     private string? _notice;
+    private bool _gotoMode;
+    private GotoMarker _gotoMarker = null!;
 
     public override void _Ready()
     {
         _mapView = GetNode<MapView>("MapView");
         _unitLayer = GetNode<Node2D>("MapView/UnitLayer");
+        _gotoMarker = GetNode<GotoMarker>("MapView/GotoMarker");
         _colonyLayer = GetNode<Node2D>("MapView/ColonyLayer");
         _nativeLayer = GetNode<Node2D>("MapView/NativeLayer");
         _statusLabel = GetNode<Label>("UI/StatusLabel");
@@ -278,13 +281,65 @@ public partial class GameController : Node2D
             case InputEventKey { Keycode: Key.F, Pressed: true, Echo: false }:
                 OpenFoundingFatherPanel();
                 break;
+            case InputEventKey { Keycode: Key.G, Pressed: true, Echo: false }:
+                EnterGotoMode();
+                break;
         }
+    }
+
+    /// <summary>
+    /// Sets the selected unit's standing "go to" destination (the goto-mode click target / public test seam).
+    /// Validates via <see cref="Game.CheckSetDestination"/>, surfaces the outcome in the status bar, and refreshes
+    /// (which draws the destination marker). No-op with no selection. Returns whether a destination was set.
+    /// </summary>
+    public bool SetSelectedDestination(Position tile)
+    {
+        if (_selectedUnit is not { } goer)
+        {
+            return false;
+        }
+        MoveCheck check = _game.CheckSetDestination(goer, tile);
+        if (check.Allowed)
+        {
+            _game.SetDestination(goer, tile);
+            _notice = $"Destination set to ({tile.X},{tile.Y}).";
+        }
+        else
+        {
+            _notice = check.Reason;
+        }
+        RefreshView();
+        return check.Allowed;
+    }
+
+    /// <summary>Arms goto-target mode: the next map click sets the selected unit's standing destination.</summary>
+    private void EnterGotoMode()
+    {
+        if (_selectedUnit is null)
+        {
+            _notice = "Select a unit first, then press G to set a destination.";
+        }
+        else
+        {
+            _gotoMode = true;
+            _notice = "Go to: click a destination tile (Esc-click the unit to cancel).";
+        }
+        RefreshView();
     }
 
     private void HandleTileClick(Position tile)
     {
         if (!_game.Map.InBounds(tile))
         {
+            return;
+        }
+
+        // Goto-target mode (armed by the G key): this click sets the selected unit's standing destination
+        // instead of moving/attacking. The per-turn ProcessGotos walks it there (ADR-006 — rules in GameLogic).
+        if (_gotoMode)
+        {
+            _gotoMode = false;
+            SetSelectedDestination(tile);
             return;
         }
 
@@ -488,6 +543,17 @@ public partial class GameController : Node2D
 
         _mapView.ShowState(_game.Map, _game.Explored, _game.CurrentlyVisible);
         _miniMap.ShowState(_game);
+        // Outline the selected unit's standing goto destination, if any.
+        if (_selectedUnit is { Destination: { } dest })
+        {
+            _gotoMarker.Position = MapView.TileCentre(dest);
+            _gotoMarker.Visible = true;
+            _gotoMarker.QueueRedraw();
+        }
+        else
+        {
+            _gotoMarker.Visible = false;
+        }
         SyncColonyMarkers();
         SyncNativeMarkers();
         SyncUnitMarkers();
