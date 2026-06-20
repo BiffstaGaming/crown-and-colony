@@ -5612,6 +5612,52 @@ public sealed partial class Game
         return true;
     }
 
+    /// <summary>The hard ceiling on counter rounds in an AI-to-AI negotiation (FreeCol's patience roll usually ends it sooner; this is the absolute bound so a haggle can never loop forever).</summary>
+    private const int MaxNegotiationRounds = 8;
+
+    /// <summary>
+    /// Runs a bounded AI-to-AI <b>negotiation</b> over an offered <paramref name="trade"/> (FreeCol's
+    /// <c>DiplomaticTrade</c> back-and-forth driven by <c>EuropeanAIPlayer.acceptDiplomaticTrade</c>): the
+    /// <paramref name="recipient"/> either accepts as-is (<see cref="RespondToTrade"/> settles it), or
+    /// <see cref="CounterOffer(int, DiplomaticTrade, int)"/>s a pruned/cheaper version that the original
+    /// <paramref name="proposer"/> then weighs — accepting (and settling) when it is now net-positive to it, or
+    /// countering back, until one side accepts, a side gives up (the seeded patience roll on its <b>own</b> stream
+    /// returns <c>null</c>), or the round cap <see cref="MaxNegotiationRounds"/> is hit. Each clause valuation is the
+    /// pure <see cref="EvaluateTradeItem"/>; the only randomness is each AI's give-up roll, drawn from <b>its own</b>
+    /// RNG stream (never the human's stream 0), so a human game is byte-identical (ADR-009). Both parties must be
+    /// non-human colonial powers — a negotiation involving the human is the future negotiation UI's job, so this method
+    /// only ever exercises the AI counter loop AI-to-AI and leaves stream 0 untouched.
+    /// </summary>
+    /// <returns><c>true</c> if some treaty was agreed and settled; <c>false</c> if the negotiation collapsed.</returns>
+    internal bool NegotiateTrade(Player proposer, Player recipient, DiplomaticTrade trade)
+    {
+        if (proposer.IsHuman || recipient.IsHuman)
+        {
+            return false; // AI-to-AI only; a human negotiation routes through the (future) UI, never auto-counters
+        }
+
+        DiplomaticTrade current = trade;
+        Player answerer = recipient; // the side currently weighing the offer
+        Player offerer = proposer;   // the side that made `current`
+        for (int round = 0; round < MaxNegotiationRounds; round++)
+        {
+            if (RespondToTrade(answerer, current)) // accepts as-is → settled
+            {
+                return true;
+            }
+
+            DiplomaticTrade? counter = CounterOffer(answerer.PlayerId, current, round); // prune/cheapen, or give up
+            if (counter is null)
+            {
+                return false; // the answerer walked away (nothing salvageable, too many bad clauses, or patience spent)
+            }
+
+            current = counter;
+            (answerer, offerer) = (offerer, answerer); // the counter is now offered back to the other side
+        }
+        return false; // ran out of patience by the round cap without an agreement
+    }
+
     /// <summary>
     /// The foreign power's per-turn diplomacy (`86d3c9uar` turn-wiring, FreeCol <c>EuropeanAIPlayer</c> suing for peace):
     /// called only when the power was <b>already at war</b> with the human (a freshly-declared war is pressed, not undone).

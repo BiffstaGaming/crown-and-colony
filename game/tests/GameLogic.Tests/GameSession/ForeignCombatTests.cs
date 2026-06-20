@@ -792,4 +792,97 @@ public class ForeignCombatTests
         for (int i = 0; i < 3; i++) { withWar.EndTurn(); noWar.EndTurn(); }
         Assert.Equal(noWar.RandomState, withWar.RandomState); // stream 0 untouched by the diplomacy step
     }
+
+    // ── AI counter-offers (86d3c9uar) ─────────────────────────────────────────────────────────────────────────────────
+
+    private static int ForeignPowerId(Game game) =>
+        game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).PlayerId;
+
+    private static int SecondForeignPowerId(Game game) =>
+        game.Players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).Skip(1).First().PlayerId;
+
+    [Fact]
+    public void NegotiateTrade_TheRecipientPrunesABadClause_AndTheCounterSettles()
+    {
+        // AI-to-AI converging haggle: two evenly-matched powers at WAR both want peace (a balanced strength ratio scores
+        // peace positively for each). A offers peace bundled with a unit demand B can't stomach (B's roster is thin →
+        // invalid). B prunes the unit demand and counters BARE peace; A — which also wants peace — accepts and the war
+        // ends. The pruned clause is what made the raw offer unacceptable; once gone, both sides agree.
+        Game game = Game.New(Classic, seed: 7);
+        Player a = game.Players.First(p => p.PlayerId == ForeignPowerId(game));
+        Player b = game.Players.First(p => p.PlayerId == SecondForeignPowerId(game));
+
+        // Even strength so peace is positive for BOTH (ratio ≈ 0.5 → not refused either way).
+        GiveSoldiers(game, a.PlayerId, 3);
+        GiveSoldiers(game, b.PlayerId, 3);
+        game.SetStance(a.PlayerId, b.PlayerId, Stance.War);
+        game.ChangeTension(a.PlayerId, b.PlayerId, Game.TensionWar);
+        Assert.Equal(Stance.War, game.StanceBetween(a.PlayerId, b.PlayerId));
+
+        Unit bsOnly = game.Units.First(u => u.OwnerId == b.PlayerId && u.OwnerNationId is null);
+        var offer = new DiplomaticTrade(a.PlayerId, b.PlayerId)
+            .Add(new StanceTradeItem(a.PlayerId, b.PlayerId, Stance.Peace))                  // both want this
+            .Add(new UnitTradeItem(source: b.PlayerId, destination: a.PlayerId, unitId: bsOnly.Id)); // B won't give (thin roster)
+
+        Assert.False(game.EvaluateTrade(b.PlayerId, offer).Accept); // the unit demand vetoes the raw offer for B
+
+        bool agreed = game.NegotiateTrade(a, b, offer);
+
+        Assert.True(agreed); // B pruned the unit clause, countered bare peace, A accepted
+        Assert.Equal(Stance.Peace, game.StanceBetween(a.PlayerId, b.PlayerId)); // the war ended via the counter
+        Assert.Equal(b.PlayerId, bsOnly.OwnerId); // the pruned unit never changed hands
+    }
+
+    private static void GiveSoldiers(Game g, int ownerId, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            Position spot = g.Map.AllPositions().First(p => Free(g, p));
+            Unit soldier = g.SpawnUnit(Classic.Unit(VeteranSoldier), spot);
+            soldier.RoleId = SoldierRole;
+            soldier.OwnerId = ownerId;
+        }
+    }
+
+    [Fact]
+    public void NegotiateTrade_CollapsesWhenTheOfferIsUnsalvageable()
+    {
+        // An all-loss offer (B gives away its only colony AND its only unit, both invalid) → no counter is possible, so
+        // the negotiation collapses with nothing settled.
+        Game game = Game.New(Classic, seed: 7);
+        Player a = game.Players.First(p => p.PlayerId == ForeignPowerId(game));
+        Player b = game.Players.First(p => p.PlayerId == SecondForeignPowerId(game));
+
+        Position site = game.Map.AllPositions().First(p => Free(game, p) && game.Map.TerrainAt(p).CanSettle
+            && p.Neighbours().All(n => !game.Map.InBounds(n) || game.ColonyAt(n) is null));
+        Unit founder = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), site);
+        founder.OwnerId = b.PlayerId;
+        Colony only = game.FoundColony(founder);
+        only.OwnerId = b.PlayerId;
+
+        var offer = new DiplomaticTrade(a.PlayerId, b.PlayerId)
+            .Add(new ColonyTradeItem(source: b.PlayerId, destination: a.PlayerId, colonyId: only.Id)); // B's only colony
+
+        Assert.False(game.NegotiateTrade(a, b, offer)); // unsalvageable → collapses
+        Assert.Equal(b.PlayerId, only.OwnerId);          // and nothing changed hands
+    }
+
+    [Fact]
+    public void NegotiateTrade_InvolvingTheHuman_NeverAutoCounters_LeavingStream0ByteIdentical()
+    {
+        // ADR-009: a negotiation involving the human is the (future) UI's job — NegotiateTrade refuses it AI-side, so
+        // the human's stream 0 is never drawn by the counter loop.
+        Game game = Game.New(Classic, seed: 7);
+        Player human = game.HumanPlayer;
+        Player power = game.Players.First(p => p.PlayerId == ForeignPowerId(game));
+        human.Gold = 1000;
+
+        var offer = new DiplomaticTrade(human.PlayerId, power.PlayerId)
+            .Add(new GoldTradeItem(source: human.PlayerId, destination: power.PlayerId, amount: 100))
+            .Add(new GoldTradeItem(source: power.PlayerId, destination: human.PlayerId, amount: 500)); // net −400 to power
+
+        var before = game.RandomState;
+        Assert.False(game.NegotiateTrade(human, power, offer)); // refused: a human party never auto-counters
+        Assert.Equal(before, game.RandomState);                  // stream 0 byte-identical
+    }
 }

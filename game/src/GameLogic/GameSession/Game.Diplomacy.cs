@@ -431,4 +431,135 @@ public sealed partial class Game
         double theirs = PlayerById(bId) is { } b ? LandPowerOf(b) : 0;
         return ours == 0.0 ? 0.0 : ours / (ours + theirs);
     }
+
+    // ---- AI treaty counter-offers (86d3c9uar) — the prune + counter + give-up loop ----
+
+    /// <summary>
+    /// The patience threshold in FreeCol's give-up roll (<c>EuropeanAIPlayer.acceptDiplomaticTrade</c>:
+    /// <c>randomInt("Enough diplomacy?", 1 + version) &gt; 5</c>). At round/version 0 the draw is from
+    /// <c>Next(1)</c> = always 0, so a power never gives up on the first counter; the upper bound grows with each
+    /// round, so the chance of exceeding 5 (and abandoning the haggle) climbs as the negotiation drags on.
+    /// </summary>
+    private const int CounterPatienceThreshold = 5;
+
+    /// <summary>The smallest residual deficit for which the power prefers to <b>halve a gold clause it pays</b> rather than drop a clause outright (FreeCol's <c>value &gt;= 50</c> magic-number guard in the prune loop).</summary>
+    private const int GoldCounterFloor = 50;
+
+    /// <summary>
+    /// Produces the colonial power <paramref name="powerId"/>'s <b>counter-offer</b> to a treaty it has been offered but
+    /// cannot accept as-is — a faithful subset of FreeCol <c>EuropeanAIPlayer.acceptDiplomaticTrade</c>'s prune + counter
+    /// + give-up loop. Returns a new <see cref="DiplomaticTrade"/> (the received offer with the clauses the power values
+    /// negatively pruned, and a gold clause it would pay <b>halved</b> rather than dropped where that alone closes the
+    /// gap) that nets the power ≥ 0, or <c>null</c> to signal "give up / reject" (nothing left to offer, too many
+    /// unacceptable clauses, or the power's patience ran out). Convenience: see <see cref="ShouldAcceptTrade"/> /
+    /// <see cref="EvaluateTrade"/> for the accept/reject side.
+    /// </summary>
+    /// <param name="powerId">The colonial power weighing the offer (the recipient that may counter).</param>
+    /// <param name="received">The treaty offered to <paramref name="powerId"/>.</param>
+    /// <param name="round">
+    /// The counter round, FreeCol's <c>DiplomaticTrade.getVersion()</c> — 0 for the first answer to a fresh offer, then
+    /// incremented each time the power counters again. Higher rounds tolerate fewer unacceptable clauses and raise the
+    /// chance the power simply gives up (the patience roll). Defaults to 0.
+    /// </param>
+    /// <remarks>
+    /// <b>Determinism (ADR-009):</b> the only randomness is the give-up "patience" roll, drawn from
+    /// <paramref name="powerId"/>'s <b>own</b> RNG stream via <see cref="RandomFor"/> — never the human's stream 0. A
+    /// human (<c>powerId == _human.PlayerId</c>) never counters (the human decides at the negotiation table), so this is
+    /// AI-only and the human's seeded game stays byte-identical. The clause valuation is the pure
+    /// <see cref="EvaluateTradeItem"/>; building the counter mutates nothing (the new trade is a fresh value object).
+    /// <b>Approximations vs FreeCol</b> (documented): the Franklin "always offered peace" special-case and the
+    /// CONTACT-context peace exemption are out of scope (no founding-father diplomacy / contact negotiation yet); the
+    /// per-round version counter is supplied by the caller rather than carried on the (un-persisted) trade.
+    /// </remarks>
+    public DiplomaticTrade? CounterOffer(int powerId, DiplomaticTrade received, int round = 0)
+    {
+        // The human never auto-counters (it negotiates by hand) and a non-colonial / empty offer is not negotiable.
+        if (PlayerById(powerId) is not { PlayerType: PlayerType.Colonial } power
+            || power.PlayerId == _human.PlayerId || received.Items.Count == 0)
+        {
+            return null;
+        }
+
+        // Score every clause once (FreeCol scores into a map, keyed by item): positive = good for us, negative = a cost,
+        // InvalidTradeItem = a clause we will not take at any price.
+        var scored = new List<(TradeItem Item, int Score)>(received.Items.Count);
+        int unacceptable = 0;
+        foreach (TradeItem item in received.Items)
+        {
+            int score = EvaluateTradeItem(powerId, item);
+            scored.Add((item, score));
+            if (score == InvalidTradeItem)
+            {
+                unacceptable++;
+            }
+        }
+
+        // Reject outright when too large a fraction of the clauses are unacceptable (FreeCol:
+        // ratio > 0.5 − 0.5·version). The tolerance shrinks each round — a power that has already haggled is less
+        // willing to keep pruning a deal that is mostly things it hates.
+        double ratio = (double)unacceptable / (unacceptable + received.Items.Count);
+        if (ratio > 0.5 - 0.5 * round)
+        {
+            return null;
+        }
+
+        // Drop the unacceptable clauses and keep the rest with their scores (FreeCol removes INVALID items, sums the
+        // rest). If pruning the invalid clauses leaves nothing, there is no counter to make.
+        var kept = scored.Where(s => s.Score != InvalidTradeItem).ToList();
+        if (kept.Count == 0)
+        {
+            return null;
+        }
+
+        // Give up? FreeCol's patience roll — randomInt(1 + version) > 5. At round 0 the bound is 1 (always 0, never
+        // gives up); the bound grows with the round, so a long haggle eventually exceeds the threshold and the power
+        // walks away. Drawn from the POWER'S OWN stream (never the human's stream 0), so the human game is byte-stable.
+        if (RandomFor(power).Next(1 + round) > CounterPatienceThreshold)
+        {
+            return null;
+        }
+
+        int value = kept.Sum(s => s.Score);
+
+        // Build the counter from the kept clauses, pruning the negatives until the running sum is non-negative — in
+        // ascending score order (most-disliked first), exactly as FreeCol does. A gold clause WE would pay is HALVED
+        // (rather than dropped) when that alone closes the remaining deficit (value ≥ GoldCounterFloor); every other
+        // negative clause is dropped. Positives are always kept.
+        var counterItems = new List<TradeItem>();
+        foreach ((TradeItem item, int score) in kept.OrderBy(s => s.Score))
+        {
+            if (value >= 0)
+            {
+                counterItems.Add(item); // sum already non-negative → keep the remaining (non-worse) clauses
+                continue;
+            }
+
+            value -= score; // remove this clause's contribution from the running total (score < 0 here, so value rises)
+            if (value >= GoldCounterFloor && item is GoldTradeItem gold && gold.Source == powerId)
+            {
+                // Counter a smaller gold payment instead of dropping it: halve what we pay, keep the rest of the deficit.
+                int reduced = gold.Amount - value / 2;
+                value /= 2;
+                if (reduced > 0)
+                {
+                    counterItems.Add(new GoldTradeItem(gold.Source, gold.Destination, reduced));
+                }
+            }
+            // else: drop the clause (do not re-add it) — value now reflects its removal.
+        }
+
+        // A counter is only worth proposing when it nets us ≥ 0 and still has at least one clause (FreeCol:
+        // PROPOSE_TRADE iff value ≥ 0 && !empty, else reject).
+        if (value < 0 || counterItems.Count == 0)
+        {
+            return null;
+        }
+
+        var counter = new DiplomaticTrade(received.ProposerId, received.RecipientId);
+        foreach (TradeItem item in counterItems)
+        {
+            counter.Add(item);
+        }
+        return counter;
+    }
 }

@@ -667,4 +667,144 @@ public class DiplomaticTradeTests
         Assert.Equal(100, rival.Gold);
         Assert.Equal(Stance.War, game.StanceBetween(0, fid)); // still at war — not settled
     }
+
+    // ---- Item 6 (86d3c9uar): AI treaty counter-offers + give-up loop ----
+
+    [Fact]
+    public void CounterOffer_PrunesAClauseThePowerValuesNegatively()
+    {
+        // A net-negative offer: free gold the power WANTS (+200) bundled with a colony it must GIVE UP from a thin
+        // holding (invalid — it has only 1 colony, below TRADE_MARGIN). The power counters by dropping the colony clause
+        // and keeping the gold — a deal it will happily take.
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        Colony only = FoundColonyFor(game, ownerId: fid); // 1 colony → giving it away is InvalidTradeItem
+
+        var offer = new DiplomaticTrade(0, fid)
+            .Add(new GoldTradeItem(source: 0, destination: fid, amount: 200))           // +200 (wanted)
+            .Add(new ColonyTradeItem(source: fid, destination: 0, colonyId: only.Id));  // unacceptable
+
+        Assert.False(game.EvaluateTrade(fid, offer).Accept); // can't accept as-is (an unacceptable clause)
+
+        DiplomaticTrade? counter = game.CounterOffer(fid, offer);
+        Assert.NotNull(counter);
+        Assert.Single(counter!.Items); // the colony clause was pruned
+        Assert.IsType<GoldTradeItem>(counter.Items[0]); // only the gold it wants remains
+        Assert.True(game.EvaluateTrade(fid, counter).Accept); // the counter is now net-positive to the power
+    }
+
+    [Fact]
+    public void CounterOffer_HalvesGoldThePowerWouldPay_RatherThanDroppingItOutright()
+    {
+        // The power is offered a colony it wants (+worth) but must pay a bit MORE than the colony is worth → net
+        // negative as-is. Rather than drop the gold entirely (and lose the colony with it) it counters a HALVED gold
+        // payment that closes the gap, keeping the colony. (Pay is kept below 1.5× worth so the single halving suffices.)
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        Player power = game.Players.First(p => p.PlayerId == fid);
+        power.Gold = 5000;
+        Colony prize = FoundColonyFor(game, ownerId: 0); // the human's colony, on offer to the power
+
+        int colonyWorth = game.EvaluateTradeItem(fid, new ColonyTradeItem(source: 0, destination: fid, colonyId: prize.Id));
+        Assert.True(colonyWorth > 0);
+        int pay = colonyWorth + colonyWorth / 4; // > worth (net negative as-is) but < 1.5× worth (one halving recovers it)
+
+        var offer = new DiplomaticTrade(0, fid)
+            .Add(new ColonyTradeItem(source: 0, destination: fid, colonyId: prize.Id)) // +worth
+            .Add(new GoldTradeItem(source: fid, destination: 0, amount: pay));         // −pay (we pay)
+
+        Assert.False(game.EvaluateTrade(fid, offer).Accept);
+
+        DiplomaticTrade? counter = game.CounterOffer(fid, offer);
+        Assert.NotNull(counter);
+        // The colony clause survives; the gold clause is reduced (halved toward the residual deficit), not dropped.
+        Assert.Contains(counter!.Items, i => i is ColonyTradeItem);
+        GoldTradeItem? gold = counter.Items.OfType<GoldTradeItem>().FirstOrDefault();
+        Assert.NotNull(gold);
+        Assert.Equal(fid, gold!.Source);     // still us paying
+        Assert.True(gold.Amount < pay);      // but a smaller amount than originally demanded
+        Assert.True(game.EvaluateTrade(fid, counter).Accept); // the cheaper deal now nets ≥ 0
+    }
+
+    [Fact]
+    public void CounterOffer_GivesUp_WhenEveryClauseIsUnacceptable()
+    {
+        // An offer that is ALL unacceptable (give away the power's only colony, give away its only unit) — nothing to
+        // salvage, so the power gives up (null), not a counter.
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        Colony only = FoundColonyFor(game, ownerId: fid);                 // 1 colony → giving it is invalid
+        Unit lone = SpawnUnitFor(game, ownerId: fid, avoid: only.Position); // < 10 units → giving it is invalid
+
+        var offer = new DiplomaticTrade(0, fid)
+            .Add(new ColonyTradeItem(source: fid, destination: 0, colonyId: only.Id))
+            .Add(new UnitTradeItem(source: fid, destination: 0, unitId: lone.Id));
+
+        Assert.Null(game.CounterOffer(fid, offer)); // both clauses invalid → unsalvageable → give up
+    }
+
+    [Fact]
+    public void CounterOffer_GivesUp_AsThePatienceRollRunsOut_OnLaterRounds()
+    {
+        // The give-up "patience" roll: at round 0 a power never abandons a salvageable deal, but as the round count
+        // climbs the seeded roll (on the power's OWN stream) eventually exceeds the threshold and it walks away.
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+
+        // A salvageable offer: free gold (+200) plus a clause it dislikes (paying 50 gold) → net +150, but mixed.
+        var offer = new DiplomaticTrade(0, fid)
+            .Add(new GoldTradeItem(source: 0, destination: fid, amount: 200))
+            .Add(new GoldTradeItem(source: fid, destination: 0, amount: 50));
+
+        Assert.NotNull(game.CounterOffer(fid, offer, round: 0)); // round 0 → patience bound 1 → never gives up
+
+        // Across enough rounds the patience roll must eventually fire (return null) for this seed/power.
+        bool gaveUp = Enumerable.Range(1, 40).Any(r => game.CounterOffer(fid, offer, round: r) is null);
+        Assert.True(gaveUp);
+    }
+
+    [Fact]
+    public void CounterOffer_IsDeterministic_PerSeed_DrawingOnlyFromThePowersOwnStream()
+    {
+        // ADR-009: same seed → identical counter outcome (the patience roll draws the power's own stream), and the
+        // negotiation never touches the human's stream 0.
+        var a = Game.New(Classic, seed: 9182);
+        var b = Game.New(Classic, seed: 9182);
+        int fidA = ForeignPowerId(a);
+        int fidB = ForeignPowerId(b);
+
+        DiplomaticTrade OfferFor(int fid) => new DiplomaticTrade(0, fid)
+            .Add(new GoldTradeItem(source: 0, destination: fid, amount: 200))
+            .Add(new GoldTradeItem(source: fid, destination: 0, amount: 50));
+
+        var stream0Before = a.RandomState;
+        for (int round = 0; round < 20; round++)
+        {
+            DiplomaticTrade? ca = a.CounterOffer(fidA, OfferFor(fidA), round);
+            DiplomaticTrade? cb = b.CounterOffer(fidB, OfferFor(fidB), round);
+            Assert.Equal(ca is null, cb is null); // identical give-up/counter decision per seed + round
+            if (ca is not null)
+            {
+                Assert.Equal(ca.Items.Count, cb!.Items.Count);
+            }
+        }
+        Assert.Equal(stream0Before, a.RandomState); // the human's stream 0 was never drawn
+    }
+
+    [Fact]
+    public void CounterOffer_TheHumanNeverAutoCounters()
+    {
+        // The human decides at the negotiation table — CounterOffer is AI-only and returns null for the human, leaving
+        // stream 0 untouched.
+        var game = Game.New(Classic, seed: 7);
+        int humanId = game.HumanPlayer.PlayerId;
+        int fid = ForeignPowerId(game);
+
+        var offer = new DiplomaticTrade(fid, humanId)
+            .Add(new GoldTradeItem(source: humanId, destination: fid, amount: 200));
+
+        var before = game.RandomState;
+        Assert.Null(game.CounterOffer(humanId, offer)); // the human never auto-counters
+        Assert.Equal(before, game.RandomState);          // and no stream-0 draw
+    }
 }
