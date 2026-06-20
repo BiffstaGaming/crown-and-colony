@@ -223,6 +223,30 @@ public class MapGeneratorTests
     }
 
     [Fact]
+    public void WaterResources_OnlyBorderLand_AndLandDensityMatchesTheBonusNumber()
+    {
+        // FreeCol perhapsAddBonus (86d3c9wbp): land bonuses at ~bonusNumber% (10); water resources only where a tile
+        // borders MORE THAN ONE land tile (open ocean stays bare), at 1/(10−adjacentLand) odds. A larger map gives a
+        // meaningful sample.
+        GameMap map = MapGenerator.Generate(Classic, 56, 38, new Pcg32Random(42), 0.45);
+
+        // (a) Every water tile that hosts a resource borders > 1 land tile (the adjacency gate holds exactly).
+        foreach ((Position p, string _) in map.Resources.Where(kv => map.TerrainAt(kv.Key).IsWater))
+        {
+            int landNeighbours = p.Neighbours().Count(n => map.InBounds(n) && !map.TerrainAt(n).IsWater);
+            Assert.True(landNeighbours > 1, $"water resource at {p} borders only {landNeighbours} land tile(s)");
+        }
+
+        // (b) Land-resource density over eligible land (terrain that has a resource table) sits around the 10% bonus number.
+        var eligibleLand = map.AllPositions()
+            .Where(p => !map.TerrainAt(p).IsWater && map.TerrainAt(p).Resources.Count > 0)
+            .ToList();
+        Assert.NotEmpty(eligibleLand);
+        double density = eligibleLand.Count(p => map.ResourceAt(p) is not null) / (double)eligibleLand.Count;
+        Assert.InRange(density, 0.05, 0.16); // ~10%, with sampling slack
+    }
+
+    [Fact]
     public void DefaultLandMass_IsByteIdenticalToOmittingTheParameter()
     {
         // The shipped default (omit the param) must equal passing DefaultLandMassFraction explicitly — the contract

@@ -167,10 +167,10 @@ public class MonarchTests
     {
         // Stronger than the twin test: with the human idle, stream 0 must not move even though the monarch acts every
         // turn past the grace boundary (turn 30) — the ephemeral monarch RNG is isolated (ADR-009).
-        // Seed 25: a founded game whose colony grows slowly enough to stay quiet on stream 0 across the boundary (the
-        // P5 mountain-range map-gen change moved seed 7777's start onto fast-growing savannah, which births a
-        // colonist — a legitimate stream-0 draw — mid-run; this seed keeps the human genuinely idle).
-        Game game = FoundedGame(25);
+        // Seed 27: a founded game whose colony grows slowly enough to stay quiet on stream 0 across the boundary. (Map-gen
+        // fidelity changes shift which seeds stay idle — the P5 mountain ranges retargeted this off 7777, and the P5
+        // resource-placement change retargeted it off 25; 27 keeps the human genuinely idle through turn 38.)
+        Game game = FoundedGame(27);
         for (int i = 0; i < 28; i++)
         {
             game.EndTurn(); // settle into a quiet stream-0 state (just before the grace boundary)

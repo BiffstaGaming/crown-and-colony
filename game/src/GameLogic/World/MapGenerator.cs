@@ -17,8 +17,18 @@ public static class MapGenerator
     /// <summary>Fraction of matching land tiles that come up forested.</summary>
     private const double ForestChance = 0.45;
 
-    /// <summary>Chance a tile hosts a bonus resource (prime grain, minerals, fishery…).</summary>
-    private const double ResourceChanceFraction = 0.08;
+    /// <summary>
+    /// Chance a <b>land</b> tile hosts a bonus resource — FreeCol <c>BONUS_NUMBER</c> (`model.option.bonusNumber`,
+    /// classic default 10%). (Hardcoded from the spec for now, like <see cref="MountainNumber"/>; reading the
+    /// map-generator option is a follow-up.)
+    /// </summary>
+    private const double LandBonusChance = 0.10;
+
+    /// <summary>A water tile only hosts a resource when it borders <b>more than</b> this many land tiles (FreeCol <c>perhapsAddBonus</c>: <c>&gt; 1</c>).</summary>
+    private const int WaterResourceMinLandNeighbours = 1;
+
+    /// <summary>Water-resource odds are <c>1 / (this − adjacentLand)</c> (FreeCol <c>1/(10−adjacentLand)</c>) — a tile hugged by land is likelier.</summary>
+    private const int WaterResourceOddsBase = 10;
 
     /// <summary>
     /// "One elevation tile per this many land tiles" — FreeCol's <c>model.option.mountainNumber</c> (classic
@@ -103,7 +113,26 @@ public static class MapGenerator
             for (int x = 0; x < width; x++)
             {
                 TerrainType type = terrain[y * width + x];
-                if (type.Resources.Count > 0 && random.NextDouble() < ResourceChanceFraction)
+                if (type.Resources.Count == 0)
+                {
+                    continue; // no resource table for this terrain → nothing to place, no RNG drawn
+                }
+                if (!type.IsWater)
+                {
+                    // Land: a flat bonus-number chance (FreeCol perhapsAddBonus land branch).
+                    if (random.NextDouble() < LandBonusChance)
+                    {
+                        resources[new Position(x, y)] = PickWeightedResource(type.Resources, random);
+                    }
+                    continue;
+                }
+                // Water: a resource only where the tile borders land, at FreeCol's adjacency-scaled odds
+                // (1 / (10 − adjacentLand)); open ocean gets none and draws nothing. The min-land-neighbour gate
+                // also keeps fish off the deep sea. (FreeCol additionally requires high-seas connectivity; we
+                // approximate that with the land-neighbour rule for now — see map-terrain.md.)
+                int adjacentLand = LandNeighbours(terrain, width, height, x, y);
+                if (adjacentLand > WaterResourceMinLandNeighbours
+                    && random.NextDouble() < 1.0 / (WaterResourceOddsBase - adjacentLand))
                 {
                     resources[new Position(x, y)] = PickWeightedResource(type.Resources, random);
                 }
@@ -200,6 +229,32 @@ public static class MapGenerator
 
         if (totalL <= 0 && seaLx >= 0) Promote(seaLx, seaLy); // guarantee a west exit
         if (totalR <= 0 && seaRx >= 0) Promote(seaRx, seaRy); // guarantee an east exit
+    }
+
+    /// <summary>The number of the eight neighbours of (<paramref name="x"/>,<paramref name="y"/>) that are land (off-map counts as none).</summary>
+    private static int LandNeighbours(TerrainType[] terrain, int width, int height, int x, int y)
+    {
+        int count = 0;
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                if (dx == 0 && dy == 0)
+                {
+                    continue;
+                }
+                int nx = x + dx, ny = y + dy;
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height)
+                {
+                    continue;
+                }
+                if (!terrain[ny * width + nx].IsWater)
+                {
+                    count++;
+                }
+            }
+        }
+        return count;
     }
 
     private static string PickWeightedResource(IReadOnlyList<ResourceChance> table, IGameRandom random)
