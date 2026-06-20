@@ -23,13 +23,18 @@ namespace CrownAndColony.Presentation;
 /// <item><b>Market</b> (`86d3dmn6d` — FreeCol's ReportTradePanel, price subset): every tradeable good's current
 /// sell (bid) and buy (ask) price plus a boycott marker, read straight from the human's <see cref="Game.Market"/>.
 /// Volume/income columns need accumulated trade history (no oracle yet) and are scoped out.</item>
+/// <item><b>Congress</b> (`86d3c9x53` — FreeCol's ReportReligiousPanel sibling, the Continental Congress facet):
+/// the founding-father election state — the father currently being recruited (<see cref="Game.CurrentFather"/>),
+/// the liberty (bells) progress (<see cref="Game.Liberty"/> / <see cref="Game.TotalFoundingFatherCost"/>), and one
+/// row per offered father (<see cref="Game.OfferedFathers"/>) with its category, marking the in-progress pick.
+/// Read-only — election lives in <see cref="FoundingFatherPanel"/>.</item>
 /// </list>
 /// Pure presentation (ADR-006) — reads <see cref="Game"/> oracles only, never mutates. Built programmatically into
 /// the fixed <c>VBox/Dynamic</c> shell.
 /// </summary>
 public partial class ColonyReportPanel : PanelContainer
 {
-    private enum Tab { Colonies, Units, Foreign, Natives, Religion, Market }
+    private enum Tab { Colonies, Units, Foreign, Natives, Religion, Market, Congress }
 
     private Game _game = null!;
     private Tab _tab = Tab.Colonies;
@@ -42,6 +47,7 @@ public partial class ColonyReportPanel : PanelContainer
         [Tab.Natives] = "Native nations",
         [Tab.Religion] = "Religion",
         [Tab.Market] = "Trade & market prices",
+        [Tab.Congress] = "Continental Congress",
     };
 
     /// <summary>Opens the reports screen on the Colonies tab over the current game state.</summary>
@@ -70,6 +76,7 @@ public partial class ColonyReportPanel : PanelContainer
         tabs.AddChild(TabButton("Natives", Tab.Natives));
         tabs.AddChild(TabButton("Religion", Tab.Religion));
         tabs.AddChild(TabButton("Market", Tab.Market));
+        tabs.AddChild(TabButton("Congress", Tab.Congress));
         dynamic.AddChild(tabs);
         dynamic.AddChild(new HSeparator());
 
@@ -81,6 +88,7 @@ public partial class ColonyReportPanel : PanelContainer
             case Tab.Natives: BuildNatives(dynamic); break;
             case Tab.Religion: BuildReligion(dynamic); break;
             case Tab.Market: BuildMarket(dynamic); break;
+            case Tab.Congress: BuildCongress(dynamic); break;
         }
     }
 
@@ -323,6 +331,39 @@ public partial class ColonyReportPanel : PanelContainer
             {
                 Name = $"Market_{Strip(g.Id)}",
                 Text = $"{g.ShortName} — sell {bid} / buy {ask}{boycott}",
+            });
+        }
+    }
+
+    // ── Continental Congress tab (faithful subset: the founding-father election state) ───────────────────
+
+    private void BuildCongress(VBoxContainer dynamic)
+    {
+        // FreeCol's Continental Congress report: the father currently being recruited, the liberty (bells) banked
+        // toward the next election, and the fathers presently on offer (one per category). Read-only — the actual
+        // election lives in FoundingFatherPanel (ADR-006). Mirrors FoundingFatherPanel's reads exactly.
+        string current = _game.CurrentFather is { } cf ? _game.Ruleset.Father(cf).ShortName : "(none)";
+        dynamic.AddChild(new Label
+        {
+            Name = "CongressProgress",
+            Text = $"Recruiting: {current}  ·  liberty {_game.Liberty} / {_game.TotalFoundingFatherCost()}",
+        });
+        dynamic.AddChild(new HSeparator());
+
+        if (_game.OfferedFathers.Count == 0)
+        {
+            dynamic.AddChild(new Label { Text = "No fathers are on offer right now.", HorizontalAlignment = HorizontalAlignment.Center });
+            return;
+        }
+
+        foreach (string id in _game.OfferedFathers)
+        {
+            FoundingFather father = _game.Ruleset.Father(id);
+            string recruiting = _game.CurrentFather == id ? "  — recruiting" : "";
+            dynamic.AddChild(new Label
+            {
+                Name = $"Father_{father.ShortName}",
+                Text = $"{father.ShortName}  ({father.Type}){recruiting}",
             });
         }
     }

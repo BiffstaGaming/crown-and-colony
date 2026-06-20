@@ -135,6 +135,27 @@ public class ColonyReportPanelTests
         AssertThat(tobacco.Text).Contains("buy");
     }
 
+    [TestCase]
+    public async Task CongressTab_ShowsTheFoundingFatherElectionState()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Congress").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Continental Congress");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        // The recruit + liberty-progress header always renders, named for the test.
+        var progress = dynamic.GetNodeOrNull<Label>("CongressProgress");
+        AssertThat(progress).IsNotNull();
+        AssertThat(progress!.Text).Contains("liberty");
+    }
+
     private static CrownAndColony.GameLogic.GameSession.Game GetGame(GameController controller) =>
         (CrownAndColony.GameLogic.GameSession.Game)controller
             .GetType()
