@@ -1,3 +1,5 @@
+using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
@@ -372,5 +374,112 @@ public class MapGeneratorTests
 
         Assert.All(equatorLand, t =>
             Assert.DoesNotContain(t.Id, new[] { "model.tile.arctic", "model.tile.tundra", "model.tile.borealForest" }));
+    }
+}
+
+/// <summary>
+/// Per-resource starting quantity (<c>86d3c9wbp</c> facet): the spec min/max range parsed onto <see cref="ResourceType"/>,
+/// the deterministic roll, the <see cref="GameMap"/> quantity layer, and its save round-trip (v46, omit-when-default).
+/// The gen-time placement is deferred (rolling at game start would break a default game's byte-stability — most maps
+/// already place finite resources), so the roller is exercised directly here.
+/// </summary>
+public class ResourceQuantityTests
+{
+    private static readonly Ruleset Classic = Ruleset.LoadClassic();
+
+    [Theory]
+    [InlineData("model.resource.minerals", 40, 400)]
+    [InlineData("model.resource.ore", 200, 4000)]
+    [InlineData("model.resource.silver", 80, 800)]
+    public void ClassicSpec_ParsesTheFiniteResourceRanges(string id, int min, int max)
+    {
+        ResourceType type = Classic.Resource(id);
+        Assert.True(type.HasQuantityRange);
+        Assert.Equal(min, type.MinValue);
+        Assert.Equal(max, type.MaxValue);
+    }
+
+    [Fact]
+    public void ALimitlessResource_HasNoRange()
+    {
+        // lumber/furs/grain carry no minimum/maximum-value in the classic spec → limitless.
+        ResourceType type = Classic.Resource("model.resource.lumber");
+        Assert.False(type.HasQuantityRange);
+        Assert.Equal(0, type.MinValue);
+        Assert.Equal(0, type.MaxValue);
+        Assert.Equal(0, type.RollQuantity(new Pcg32Random(1))); // limitless rolls nothing
+    }
+
+    [Fact]
+    public void RollQuantity_StaysWithinTheInclusiveRange_AndIsDeterministic()
+    {
+        ResourceType minerals = Classic.Resource("model.resource.minerals");
+        for (ulong seed = 0; seed < 50; seed++)
+        {
+            int q = minerals.RollQuantity(new Pcg32Random(seed));
+            Assert.InRange(q, minerals.MinValue, minerals.MaxValue);
+            Assert.Equal(q, minerals.RollQuantity(new Pcg32Random(seed))); // same seed → same roll (ADR-009)
+        }
+    }
+
+    [Fact]
+    public void Roller_AssignsAFiniteQuantityToEachFiniteResource_AndSkipsLimitlessOnes()
+    {
+        Game game = Game.New(Classic, seed: 42);
+        game.RollResourceQuantities(seed: 42);
+
+        // Every finite resource on the map now carries a quantity in range; limitless ones carry none.
+        foreach ((Position p, string resourceId) in game.Map.Resources)
+        {
+            ResourceType type = Classic.Resource(resourceId);
+            int? q = game.Map.ResourceQuantityAt(p);
+            if (type.HasQuantityRange)
+            {
+                Assert.NotNull(q);
+                Assert.InRange(q!.Value, type.MinValue, type.MaxValue);
+            }
+            else
+            {
+                Assert.Null(q);
+            }
+        }
+        // The classic default map does place some finite resources, so the roller does real work here.
+        Assert.NotEmpty(game.Map.ResourceQuantities);
+    }
+
+    [Fact]
+    public void ResourceQuantities_RoundTripThroughSave_V46()
+    {
+        Game game = Game.New(Classic, seed: 42);
+        game.RollResourceQuantities(seed: 42);
+
+        SaveGame save = SaveGame.From(game);
+        Assert.NotNull(save.ResourceQuantities);
+        Assert.Equal(46, SaveGame.CurrentVersion);
+
+        Game loaded = SaveGame.FromJson(save.ToJson()).Restore(Classic);
+        Assert.Equal(
+            game.Map.ResourceQuantities.OrderBy(kv => (kv.Key.Y, kv.Key.X)),
+            loaded.Map.ResourceQuantities.OrderBy(kv => (kv.Key.Y, kv.Key.X)));
+    }
+
+    [Fact]
+    public void ADefaultGame_OmitsTheResourceQuantitiesToken_AndStaysCurrent()
+    {
+        // The roller is not run at game start, so a default game places no quantities → no token (byte-stable vs v45).
+        string json = SaveGame.From(Game.New(Classic, seed: 5)).ToJson();
+        Assert.DoesNotContain("\"ResourceQuantities\"", json);
+        Assert.Equal(46, SaveGame.CurrentVersion);
+    }
+
+    [Fact]
+    public void PreV46Save_LoadsWithNoQuantities()
+    {
+        Game game = Game.New(Classic, seed: 9);
+        game.RollResourceQuantities(seed: 9);
+        // Simulate an old save: drop the token + back-date the version.
+        SaveGame v45 = SaveGame.From(game) with { Version = 45, ResourceQuantities = null };
+        Game loaded = SaveGame.FromJson(v45.ToJson()).Restore(Classic);
+        Assert.Empty(loaded.Map.ResourceQuantities);
     }
 }

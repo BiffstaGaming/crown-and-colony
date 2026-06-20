@@ -29,8 +29,27 @@ public sealed record ResourceModifier(
 /// </summary>
 /// <param name="Id">Ruleset id, e.g. <c>model.resource.minerals</c>.</param>
 /// <param name="Modifiers">The yield bonuses this resource grants.</param>
-public sealed record ResourceType(string Id, IReadOnlyList<ResourceModifier> Modifiers)
+/// <param name="MinValue">
+/// The resource's minimum starting quantity (FreeCol resource-type <c>minimum-value</c>), or 0 when the spec gives the
+/// type no range — a "limitless" resource (most classic resources). A placed deposit's quantity is rolled in
+/// <c>MinValue..MaxValue</c> (86d3c9wbp). FreeCol uses the quantity for the deposit-depletes-when-worked rule; we
+/// persist the rolled amount now, depletion-when-worked is a later slice.
+/// </param>
+/// <param name="MaxValue">The resource's maximum starting quantity (FreeCol resource-type <c>maximum-value</c>), or 0 for a limitless type. See <see cref="MinValue"/>.</param>
+public sealed record ResourceType(
+    string Id, IReadOnlyList<ResourceModifier> Modifiers, int MinValue = 0, int MaxValue = 0)
 {
     /// <summary>Short name derived from the id: <c>model.resource.minerals</c> → <c>minerals</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
+
+    /// <summary>True when the spec gives this resource a finite starting-quantity range (the inverse of FreeCol's <c>limitless = (maxValue &lt;= 0)</c>). A limitless resource carries no persisted quantity.</summary>
+    public bool HasQuantityRange => MaxValue > 0;
+
+    /// <summary>
+    /// Rolls a starting quantity for a freshly placed deposit (FreeCol <c>RandomRange</c> over <see cref="MinValue"/>..
+    /// <see cref="MaxValue"/> inclusive), or 0 for a limitless resource (which carries no quantity). Deterministic over
+    /// the supplied generator (ADR-009).
+    /// </summary>
+    public int RollQuantity(Randomness.IGameRandom random) =>
+        HasQuantityRange ? MinValue + random.Next(MaxValue - MinValue + 1) : 0;
 }

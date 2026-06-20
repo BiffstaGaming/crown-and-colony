@@ -566,7 +566,10 @@ public sealed class Ruleset
             string id = RequiredAttribute(el, "id");
             resources[id] = new ResourceType(
                 Id: id,
-                Modifiers: el.Elements("modifier").Select(ParseResourceModifier).ToList());
+                Modifiers: el.Elements("modifier").Select(ParseResourceModifier).ToList(),
+                // Starting-quantity range (FreeCol resource-type minimum-value/maximum-value); absent → 0 = limitless.
+                MinValue: (int?)el.Attribute("minimum-value") ?? 0,
+                MaxValue: (int?)el.Attribute("maximum-value") ?? 0);
         }
 
         (Dictionary<string, NativeNationType> nativeNations, Dictionary<string, SettlementType> settlements) =

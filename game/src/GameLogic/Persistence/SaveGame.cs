@@ -97,7 +97,9 @@ public sealed record SaveGame
     /// prior version and older saves load with the feature absent.
     /// v46 added the chosen difficulty level (<see cref="DifficultyLevel"/>, omitted for the default
     /// <c>model.difficulty.medium</c> so a default game stays byte-identical to v45; pre-v46 saves load the default
-    /// level, 86d3c9y08). It is additive + omitted-when-default, so a default game round-trips byte-identically to v45
+    /// level, 86d3c9y08) and each finite bonus resource's rolled starting quantity (<see cref="ResourceQuantities"/>,
+    /// omitted when no placed resource carries one, so a typical game stays byte-identical; pre-v46 saves load with
+    /// none, 86d3c9wbp). Both are additive + omitted-when-default, so a default game round-trips byte-identically to v45
     /// and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
@@ -168,6 +170,9 @@ public sealed record SaveGame
 
     /// <summary>The difficulty level id to load this save's ruleset under: the persisted <see cref="DifficultyLevel"/>, or the default medium when omitted (pre-v46 / a default game). Hosts pass this to <c>GameVariant.LoadRuleset</c> so the reloaded balance matches the save.</summary>
     public string DifficultyLevelOrDefault => DifficultyLevel ?? DifficultyLevels.DefaultId;
+
+    /// <summary>Each finite bonus resource's rolled starting quantity, by row-major tile index (v46; null/omitted when no placed resource carries a quantity, so a typical map stays byte-identical to v45). Only finite (min/max-ranged) resources carry one — a limitless resource is absent. Pre-v46 saves load with none.</summary>
+    public IReadOnlyList<SavedResourceQuantity>? ResourceQuantities { get; init; }
 
     /// <summary>Legacy ≤v19 / pre-FP-7 read-only player treasury (v9+). Player state lives in <see cref="Players"/> (v20+); no longer written as of FP-7. Nullable so new saves omit it.</summary>
     public int? Gold { get; init; }
@@ -297,6 +302,14 @@ public sealed record SaveGame
                     .OrderBy(r => r.Index)
                     .ToList()
                 : null,
+            // Each finite resource's rolled starting quantity by row-major index (v46); omitted when none placed,
+            // so a typical game stays byte-identical to v45.
+            ResourceQuantities = game.Map.ResourceQuantities.Count > 0
+                ? game.Map.ResourceQuantities
+                    .Select(q => new SavedResourceQuantity(q.Key.Y * game.Map.Width + q.Key.X, q.Value))
+                    .OrderBy(q => q.Index)
+                    .ToList()
+                : null,
             // Lost City Rumours by row-major index; omitted when none so a rumour-free game stays byte-identical to v24.
             Rumours = game.Map.Rumours.Count > 0
                 ? game.Map.Rumours.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList()
@@ -358,7 +371,11 @@ public sealed record SaveGame
             Rumours?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList(),
             ClaimedTiles?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList(),
             RegionIds,
-            Regions?.Select(r => new Region(r.Id, (RegionType)r.Type, r.ScoreValue, r.Key, r.ParentId)).ToList());
+            Regions?.Select(r => new Region(r.Id, (RegionType)r.Type, r.ScoreValue, r.Key, r.ParentId)).ToList(),
+            // Finite resource quantities by tile (v46; pre-v46 / omitted → none).
+            ResourceQuantities?.ToDictionary(
+                q => new Position(q.Index % MapWidth, q.Index / MapWidth),
+                q => q.Quantity));
 
         // Pre-v35 saves (and any save without a persisted region layer) re-derive regions deterministically from
         // the terrain — exactly the layer the generator would have produced (mirrors the native-land re-derivation).
@@ -615,6 +632,11 @@ public sealed record SavedExport(bool Exported, int Level);
 /// <param name="Index">Row-major tile index (<c>y * MapWidth + x</c>).</param>
 /// <param name="ResourceId">Ruleset resource id.</param>
 public sealed record SavedResource(int Index, string ResourceId);
+
+/// <summary>A finite bonus resource's remaining quantity on a tile inside a <see cref="SaveGame"/> (v46; only finite/limited resources carry one — a limitless resource is absent).</summary>
+/// <param name="Index">Row-major tile index (<c>y * MapWidth + x</c>).</param>
+/// <param name="Quantity">The remaining quantity (FreeCol <c>Resource.quantity</c>).</param>
+public sealed record SavedResourceQuantity(int Index, int Quantity);
 
 /// <summary>A map <see cref="Region"/> inside a <see cref="SaveGame"/> (v35).</summary>
 /// <param name="Id">Region id (indexed by <see cref="SaveGame.RegionIds"/>).</param>

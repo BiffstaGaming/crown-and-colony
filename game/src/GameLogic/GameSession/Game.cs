@@ -77,6 +77,10 @@ public sealed partial class Game
     /// (<c>Player.RngStreamId</c> = playerId + 1) so rumour scatter never correlates with or shifts another stream.</summary>
     private const ulong LcrStreamId = 100;
 
+    /// <summary>RNG stream reserved for rolling each bonus resource's starting quantity (86d3c9wbp) — a high id like
+    /// <see cref="LcrStreamId"/>, so it never correlates with or shifts the human's economy stream 0 (ADR-009).</summary>
+    private const ulong ResourceQuantityStreamId = 102;
+
     private readonly List<Unit> _units = [];
     private readonly List<Colony> _colonies = [];
     private readonly List<NativeSettlement> _nativeSettlements = [];
@@ -2726,6 +2730,34 @@ public sealed partial class Game
         game.InitRecruitDock(human); // three recruits waiting on the Europe dock from turn 1
 
         return game;
+    }
+
+    /// <summary>
+    /// Assigns each placed bonus resource a starting quantity (FreeCol <c>new Resource(game, tile, type)</c> ⇒
+    /// <c>RandomRange(minValue, maxValue)</c>): a finite (min/max-ranged) resource gets a rolled amount; a limitless
+    /// one (no range — most classic resources) gets none. Rolled on the dedicated <see cref="ResourceQuantityStreamId"/>
+    /// stream (seeded off the game seed) so the human's economy stream 0 is never shifted (ADR-009). Iterates resources
+    /// in row-major order for a stable draw sequence.
+    /// <para><b>Not called at game start yet (86d3c9wbp scoped down).</b> The classic default 36×24 map already places
+    /// ~10-17 finite resources (minerals/ore/silver on hills/mountains), so rolling them at <see cref="New"/> would write
+    /// a <c>ResourceQuantities</c> token into every default save and break byte-stability with v45. Wiring the roll into
+    /// generation needs to coordinate with the map-generator slice (it owns where resources are created); until then the
+    /// save field + model + parse are in place and round-trip any quantities present, but none are placed by default. This
+    /// method is the ready-to-wire roller for that follow-up — exercised directly by the round-trip test.</para>
+    /// </summary>
+    internal void RollResourceQuantities(ulong seed)
+    {
+        var rng = new Pcg32Random(seed, ResourceQuantityStreamId);
+        foreach (Position p in Map.Resources.Keys
+                     .OrderBy(p => p.Y * Map.Width + p.X)
+                     .ToList())
+        {
+            ResourceType type = Ruleset.Resource(Map.Resources[p]);
+            if (type.HasQuantityRange)
+            {
+                Map.SetResourceQuantity(p, type.RollQuantity(rng));
+            }
+        }
     }
 
     /// <summary>The number of foreign colonial powers spawned alongside the human (the classic four minus the human's slot).</summary>

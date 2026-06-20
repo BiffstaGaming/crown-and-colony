@@ -7,6 +7,7 @@ public sealed class GameMap
 {
     private readonly TerrainType[] _terrain;
     private readonly Dictionary<Position, string> _resources;
+    private readonly Dictionary<Position, int> _resourceQuantities; // tile → a finite resource's remaining quantity (sparse; absent = limitless / no range)
     private readonly HashSet<Position> _rumours;
     private readonly Dictionary<Position, string> _nativeOwners = []; // tile → owning native nation type id (derived, not saved)
     private readonly HashSet<Position> _claimedFromNatives; // tiles bought/taken from the natives — a SAVED override the derivation honours
@@ -22,13 +23,15 @@ public sealed class GameMap
     /// <param name="claimedFromNatives">Tiles the player has bought or taken from the natives (sparse; null = none). Restored from the save here; the native-land claim re-derivation honours this override so a claimed tile never reverts to native ownership.</param>
     /// <param name="regionIds">Row-major region id per tile (length Width × Height; null = no region layer yet). Restored from a v35+ save; otherwise the region generator re-derives it after construction.</param>
     /// <param name="regions">The region table indexed by region id (null = none). Restored alongside <paramref name="regionIds"/>.</param>
+    /// <param name="resourceQuantities">A finite resource's remaining quantity by tile (sparse; null = none). Restored from a v46+ save; only finite (min/max-ranged) resources carry one.</param>
     public GameMap(
         int width, int height, IReadOnlyList<TerrainType> terrain,
         IReadOnlyDictionary<Position, string>? resources = null,
         IReadOnlyCollection<Position>? rumours = null,
         IReadOnlyCollection<Position>? claimedFromNatives = null,
         IReadOnlyList<int>? regionIds = null,
-        IReadOnlyList<Region>? regions = null)
+        IReadOnlyList<Region>? regions = null,
+        IReadOnlyDictionary<Position, int>? resourceQuantities = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
@@ -47,6 +50,7 @@ public sealed class GameMap
         Height = height;
         _terrain = [.. terrain];
         _resources = resources is null ? [] : new Dictionary<Position, string>(resources);
+        _resourceQuantities = resourceQuantities is null ? [] : new Dictionary<Position, int>(resourceQuantities);
         _rumours = rumours is null ? [] : [.. rumours];
         _claimedFromNatives = claimedFromNatives is null ? [] : [.. claimedFromNatives];
         _regionIds = regionIds is null ? null : [.. regionIds];
@@ -77,6 +81,25 @@ public sealed class GameMap
 
     /// <summary>Places a bonus resource on a tile (gen-time placement is via the ctor; this serves scenario setup/tests).</summary>
     internal void SetResource(Position p, string resourceId) => _resources[p] = resourceId;
+
+    /// <summary>The finite remaining quantity of the resource on a tile (FreeCol <c>Resource.quantity</c>), or null when the tile has no resource or a limitless one (no min/max range).</summary>
+    public int? ResourceQuantityAt(Position p) => _resourceQuantities.TryGetValue(p, out int q) ? q : null;
+
+    /// <summary>Every tile carrying a finite resource quantity (sparse — a limitless resource is absent).</summary>
+    public IReadOnlyDictionary<Position, int> ResourceQuantities => _resourceQuantities;
+
+    /// <summary>Records (or clears, when <paramref name="quantity"/> is null) a finite resource's quantity on a tile (gen-time rolling + save restore).</summary>
+    internal void SetResourceQuantity(Position p, int? quantity)
+    {
+        if (quantity is { } q)
+        {
+            _resourceQuantities[p] = q;
+        }
+        else
+        {
+            _resourceQuantities.Remove(p);
+        }
+    }
 
     /// <summary>True when a tile holds an unexplored Lost City Rumour.</summary>
     public bool HasRumour(Position p) => _rumours.Contains(p);
