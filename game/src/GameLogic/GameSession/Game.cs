@@ -2697,6 +2697,14 @@ public sealed partial class Game
         };
         var game = new Game(ruleset, map, random, turn: 1, human) { DifficultyLevelId = difficultyLevelId };
 
+        // Give every placed finite (min/max-ranged) bonus resource a rolled starting quantity (FreeCol
+        // `new Resource(game, tile, type)` ⇒ RandomRange(min, max)). Rolled on the dedicated, reserved
+        // ResourceQuantity stream (102), seeded off the world seed — never the human's economy stream 0 — so
+        // wiring this in does NOT shift any stream-0 draw and the human's future random sequence is byte-stable
+        // (ADR-009). It does add a ResourceQuantities token to the default save (the classic map places finite
+        // minerals/ore/silver deposits), so the L4 map golden and soak baseline are regenerated this wave.
+        game.RollResourceQuantities(seed);
+
         // Start on settleable land that has somewhere to walk to (not a 1-tile
         // islet), preferring temperate latitudes (nearest the equator row) over
         // a polar landfall.
@@ -2786,12 +2794,12 @@ public sealed partial class Game
     /// one (no range — most classic resources) gets none. Rolled on the dedicated <see cref="ResourceQuantityStreamId"/>
     /// stream (seeded off the game seed) so the human's economy stream 0 is never shifted (ADR-009). Iterates resources
     /// in row-major order for a stable draw sequence.
-    /// <para><b>Not called at game start yet (86d3c9wbp scoped down).</b> The classic default 36×24 map already places
-    /// ~10-17 finite resources (minerals/ore/silver on hills/mountains), so rolling them at <see cref="New"/> would write
-    /// a <c>ResourceQuantities</c> token into every default save and break byte-stability with v45. Wiring the roll into
-    /// generation needs to coordinate with the map-generator slice (it owns where resources are created); until then the
-    /// save field + model + parse are in place and round-trip any quantities present, but none are placed by default. This
-    /// method is the ready-to-wire roller for that follow-up — exercised directly by the round-trip test.</para>
+    /// <para>Called from <see cref="New"/> after map generation (86d3c9wbp), so every placed finite deposit carries a
+    /// rolled quantity from turn 1. The classic default 36×24 map places finite minerals/ore/silver deposits, so a
+    /// default save now writes a <c>ResourceQuantities</c> token — byte-stability with the pre-roll save is intentionally
+    /// broken (the L4 map golden and soak baseline were regenerated this wave). Because it draws only on the reserved
+    /// stream 102, it shifts no stream-0 draw, so the human's economy/turn sequence is unchanged. We persist the rolled
+    /// amount now; the deposit-depletes-when-worked rule is a later slice.</para>
     /// </summary>
     internal void RollResourceQuantities(ulong seed)
     {

@@ -426,6 +426,7 @@ public class ResourceQuantityTests
     public void Roller_AssignsAFiniteQuantityToEachFiniteResource_AndSkipsLimitlessOnes()
     {
         Game game = Game.New(Classic, seed: 42);
+        // Game.New already ran the roll; calling it again re-rolls the reserved stream identically (idempotent).
         game.RollResourceQuantities(seed: 42);
 
         // Every finite resource on the map now carries a quantity in range; limitless ones carry none.
@@ -448,14 +449,27 @@ public class ResourceQuantityTests
     }
 
     [Fact]
-    public void ResourceQuantities_RoundTripThroughSave_V46()
+    public void GameNew_RollsResourceQuantities_AtGameStart()
     {
+        // 86d3c9wbp: the roll is wired into Game.New, so a fresh default game already carries finite quantities
+        // (the classic map places minerals/ore/silver) — no explicit roller call needed.
         Game game = Game.New(Classic, seed: 42);
-        game.RollResourceQuantities(seed: 42);
+        Assert.NotEmpty(game.Map.ResourceQuantities);
+        foreach ((Position p, int q) in game.Map.ResourceQuantities)
+        {
+            ResourceType type = Classic.Resource(game.Map.ResourceAt(p)!);
+            Assert.True(type.HasQuantityRange);
+            Assert.InRange(q, type.MinValue, type.MaxValue);
+        }
+    }
+
+    [Fact]
+    public void ResourceQuantities_RoundTripThroughSave()
+    {
+        Game game = Game.New(Classic, seed: 42); // Game.New rolls the quantities
 
         SaveGame save = SaveGame.From(game);
         Assert.NotNull(save.ResourceQuantities);
-        Assert.Equal(46, SaveGame.CurrentVersion);
 
         Game loaded = SaveGame.FromJson(save.ToJson()).Restore(Classic);
         Assert.Equal(
@@ -464,22 +478,25 @@ public class ResourceQuantityTests
     }
 
     [Fact]
-    public void ADefaultGame_OmitsTheResourceQuantitiesToken_AndStaysCurrent()
+    public void AMapWithNoFiniteResources_OmitsTheResourceQuantitiesToken()
     {
-        // The roller is not run at game start, so a default game places no quantities → no token (byte-stable vs v45).
-        string json = SaveGame.From(Game.New(Classic, seed: 5)).ToJson();
+        // The token is still omit-when-empty: a game whose map carries no finite quantities writes no token.
+        Game game = Game.New(Classic, seed: 5);
+        foreach (Position p in game.Map.ResourceQuantities.Keys.ToList())
+        {
+            game.Map.SetResourceQuantity(p, null); // clear every quantity → empty layer
+        }
+        string json = SaveGame.From(game).ToJson();
         Assert.DoesNotContain("\"ResourceQuantities\"", json);
-        Assert.Equal(46, SaveGame.CurrentVersion);
     }
 
     [Fact]
-    public void PreV46Save_LoadsWithNoQuantities()
+    public void PreQuantitySave_LoadsWithNoQuantities()
     {
-        Game game = Game.New(Classic, seed: 9);
-        game.RollResourceQuantities(seed: 9);
-        // Simulate an old save: drop the token + back-date the version.
-        SaveGame v45 = SaveGame.From(game) with { Version = 45, ResourceQuantities = null };
-        Game loaded = SaveGame.FromJson(v45.ToJson()).Restore(Classic);
+        Game game = Game.New(Classic, seed: 9); // Game.New rolls the quantities
+        // Simulate an old save that predates per-resource quantity: drop the token + back-date the version.
+        SaveGame old = SaveGame.From(game) with { Version = 45, ResourceQuantities = null };
+        Game loaded = SaveGame.FromJson(old.ToJson()).Restore(Classic);
         Assert.Empty(loaded.Map.ResourceQuantities);
     }
 }
