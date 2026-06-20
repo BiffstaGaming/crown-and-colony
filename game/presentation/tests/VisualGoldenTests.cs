@@ -151,6 +151,35 @@ public class VisualGoldenTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task MapView_RumourMarker_MatchesGolden()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+
+        controller.GetWindow().Size = CaptureSize;
+        controller.GetNode<CanvasLayer>("UI").Visible = false;
+        controller.StartNewGame(GoldenSeed);
+        await runner.SimulateFrames(2);
+
+        // Place a rumour on an explored, unit-free, colony-free tile beside the start unit so the marker draws
+        // unobstructed, then centre on it. AddRumour is internal — reach it by reflection from the view assembly.
+        var game = GetGame(controller);
+        var unitPos = game.PlayerUnits.First(u => u.IsOnMap).Position;
+        var rumourPos = unitPos.Neighbours().First(n =>
+            game.IsExplored(n) && !game.Units.Any(u => u.IsOnMap && u.Position == n) && game.ColonyAt(n) is null);
+        typeof(CrownAndColony.GameLogic.World.GameMap)
+            .GetMethod("AddRumour", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(game.Map, [rumourPos]);
+
+        controller.GetNode<Camera2D>("Camera").Position = MapView.TileCentre(rumourPos);
+        runner.SimulateKeyPressed(Key.F5); // QuickSave → RefreshView, redrawing the rumour layer (no AI/turn advance)
+        await runner.SimulateFrames(3);
+
+        Image actual = controller.GetViewport().GetTexture().GetImage();
+        GoldenAssert.Assert("rumour-marker-seed424242", actual);
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task MiniMap_SeededWorld_MatchesGolden()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

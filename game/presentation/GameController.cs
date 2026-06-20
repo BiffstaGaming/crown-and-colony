@@ -55,6 +55,7 @@ public partial class GameController : Node2D
     private Node2D _unitLayer = null!;
     private Node2D _colonyLayer = null!;
     private Node2D _nativeLayer = null!;
+    private Node2D _rumourLayer = null!;
     private Label _statusLabel = null!;
     private Label _calendarLabel = null!;
     private MiniMap _miniMap = null!;
@@ -82,6 +83,7 @@ public partial class GameController : Node2D
         _gotoMarker = GetNode<GotoMarker>("MapView/GotoMarker");
         _colonyLayer = GetNode<Node2D>("MapView/ColonyLayer");
         _nativeLayer = GetNode<Node2D>("MapView/NativeLayer");
+        _rumourLayer = GetNode<Node2D>("MapView/RumourLayer");
         _statusLabel = GetNode<Label>("UI/StatusLabel");
         _calendarLabel = GetNode<Label>("UI/CalendarPanel/CalendarLabel");
         _miniMap = GetNode<MiniMap>("UI/MiniMap");
@@ -588,6 +590,7 @@ public partial class GameController : Node2D
         }
         SyncColonyMarkers();
         SyncNativeMarkers();
+        SyncRumourMarkers();
         SyncUnitMarkers();
 
         Unit? unit = _game.PlayerUnits.FirstOrDefault(u => u.IsOnMap); // the human's first on-map unit, for the status line
@@ -710,6 +713,22 @@ public partial class GameController : Node2D
                 Caption = settlement.IsCapital ? $"{caption} ★" : caption,
             };
             _nativeLayer.AddChild(marker);
+        }
+    }
+
+    /// <summary>Draws a marker on each explored Lost City Rumour tile (fog-gated like the settlement markers, ADR-006).</summary>
+    private void SyncRumourMarkers()
+    {
+        foreach (Node child in _rumourLayer.GetChildren())
+        {
+            child.QueueFree();
+        }
+        foreach (Position rumour in _game.Map.Rumours)
+        {
+            if (_game.IsExplored(rumour))
+            {
+                _rumourLayer.AddChild(new RumourMarker { Position = MapView.TileCentre(rumour) });
+            }
         }
     }
 

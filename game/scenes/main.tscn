@@ -26,6 +26,8 @@ script = ExtResource("2")
 
 [node name="ColonyLayer" type="Node2D" parent="MapView"]
 
+[node name="RumourLayer" type="Node2D" parent="MapView"]
+
 [node name="UnitLayer" type="Node2D" parent="MapView"]
 
 [node name="GotoMarker" type="Node2D" parent="MapView"]
