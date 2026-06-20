@@ -1,6 +1,7 @@
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
+using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
@@ -365,5 +366,105 @@ public class ForeignCombatTests
 
         Unit moved = game.Units.Single(u => u.Id == train.Id);
         Assert.Equal(1, Cheb(moved.Position, colony.Position)); // stepped 2 → 1, closing on the colony
+    }
+
+    // ---- AI breaks the peace from accumulated territorial tension (86d3c9udb) ----
+
+    /// <summary>
+    /// A foreign power with one undefended colony and a human colony planted right beside it so the power accrues
+    /// territorial tension each turn. Both powers' starting units are cleared so nothing else acts. When
+    /// <paramref name="atPeace"/> the pair is set to Peace (so the accrual can escalate it to War); otherwise it stays
+    /// Uncontacted (the accrual early-returns) — a valid stream-0 control that shares the identical human colony.
+    /// </summary>
+    private static (Game game, Player power) PowerCrowdedByHuman(ulong seed, bool atPeace = true)
+    {
+        (Game game, Player power, Colony powerColony) = PowerWithColony(seed);
+        // A human colony two tiles from the power's colony (inside ColonialTensionRadius = 3, so it counts as encroachment).
+        Position humanTile = powerColony.Position.Neighbours().SelectMany(n => n.Neighbours())
+            .First(p => Free(game, p) && Cheb(p, powerColony.Position) == 2);
+        Unit settler = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), humanTile);
+        Colony humanColony = game.FoundColony(settler); // human-owned (OwnerId 0)
+        Assert.True(game.ColonyAt(humanColony.Position) is { OwnerId: 0 });
+        if (atPeace)
+        {
+            game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.Peace); // they've met and are at peace
+        }
+        return (game, power);
+    }
+
+    [Fact]
+    public void APeacefulPower_CrowdedByHumanColonies_AccruesTensionAndEventuallyDeclaresWar()
+    {
+        (Game game, Player power) = PowerCrowdedByHuman(seed: 7);
+        Assert.Equal(Stance.Peace, game.StanceBetween(power.PlayerId, game.HumanPlayer.PlayerId));
+        int startTension = game.TensionBetween(power.PlayerId, game.HumanPlayer.PlayerId);
+
+        bool wentToWar = false;
+        for (int turn = 0; turn < 30 && !wentToWar; turn++)
+        {
+            game.EndTurn();
+            wentToWar = game.StanceBetween(power.PlayerId, game.HumanPlayer.PlayerId) == Stance.War;
+        }
+
+        Assert.True(wentToWar, "a power steadily crowded by a human colony should break the peace once tension crosses the war line");
+        Assert.True(game.TensionBetween(power.PlayerId, game.HumanPlayer.PlayerId) > startTension); // tension rose to get there
+        // War is mutual once declared (SetStance is symmetric), so the human now reads as at war with the power too.
+        Assert.Equal(Stance.War, game.StanceBetween(game.HumanPlayer.PlayerId, power.PlayerId));
+    }
+
+    [Fact]
+    public void APeacefulPower_WithNoHumanColonyNearby_StaysAtPeace()
+    {
+        // The trigger is territorial encroachment: with no human colony inside the radius, tension never rises, so the
+        // Peace→War branch stays unreachable — the power keeps the peace indefinitely.
+        (Game game, Player power, _) = PowerWithColony(seed: 7); // no human colony founded at all
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.Peace);
+
+        for (int turn = 0; turn < 30; turn++)
+        {
+            game.EndTurn();
+            Assert.Equal(0, game.TensionBetween(power.PlayerId, game.HumanPlayer.PlayerId)); // nothing to resent
+            Assert.Equal(Stance.Peace, game.StanceBetween(power.PlayerId, game.HumanPlayer.PlayerId));
+        }
+    }
+
+    [Fact]
+    public void AccruingTerritorialTension_DrawsNoRng_HumanStream0ByteStable()
+    {
+        // The decisive ADR-009 guard for the escalation itself: the territorial-tension accrual (and, when it tips the
+        // pair into war, the declaration spike) is RNG-free. Called directly and repeatedly until war is reached, the
+        // human's RNG stream 0 never advances — only the diplomacy bookkeeping changes.
+        (Game game, Player power) = PowerCrowdedByHuman(seed: 4242, atPeace: true);
+        RandomState before = game.RandomState;
+
+        for (int i = 0; i < 20 && game.StanceBetween(power.PlayerId, game.HumanPlayer.PlayerId) != Stance.War; i++)
+        {
+            game.AccrueTerritorialTension(power); // accrue; then mirror the turn-loop's flip so we actually reach war
+            if (power.Stances.GetValueOrDefault(game.HumanPlayer.PlayerId) is Stance.Peace or Stance.CeaseFire
+                && Game.StanceFromTension(power.Stances[game.HumanPlayer.PlayerId],
+                                          power.Tensions.GetValueOrDefault(game.HumanPlayer.PlayerId)) == Stance.War)
+            {
+                game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.War);
+                game.ChangeTension(power.PlayerId, game.HumanPlayer.PlayerId, Game.TensionWar);
+            }
+        }
+
+        Assert.Equal(Stance.War, game.StanceBetween(power.PlayerId, game.HumanPlayer.PlayerId)); // it escalated to war…
+        Assert.Equal(before, game.RandomState);                                                 // …drawing nothing from stream 0
+    }
+
+    [Fact]
+    public void ACrowdedGame_ThatBreaksThePeace_ReplaysByteIdentically()
+    {
+        // Determinism (ADR-009): two same-seed games, both with a power crowded into breaking the peace, play out
+        // byte-identically over many turns — the accrual/declaration and the ensuing war all draw deterministically.
+        (Game a, Player _) = PowerCrowdedByHuman(seed: 13);
+        (Game b, Player _) = PowerCrowdedByHuman(seed: 13);
+        for (int turn = 0; turn < 25; turn++)
+        {
+            a.EndTurn();
+            b.EndTurn();
+        }
+        Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
     }
 }

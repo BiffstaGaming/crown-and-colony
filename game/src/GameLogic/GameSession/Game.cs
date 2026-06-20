@@ -205,6 +205,17 @@ public sealed partial class Game
     /// <summary>Tension added to a colonial pair by an act of war — the FreeCol WAR modifier (<c>HATEFUL.limit</c>).</summary>
     internal const int TensionWar = 1000;
 
+    /// <summary>
+    /// Per-turn territorial tension a foreign power gains toward the human for each human colony encroaching near one
+    /// of its own colonies (FreeCol <c>Tension.TENSION_ADD_LAND_TAKEN</c> = 200, the land-encroachment modifier). This
+    /// is the non-attack tension source that makes <see cref="StanceFromTension"/>'s Peace→War branch reachable in
+    /// normal play (86d3c9udb): without it colonial tension only ever rose on an attack, which already set War directly.
+    /// </summary>
+    internal const int TensionLandTaken = 200;
+
+    /// <summary>Chebyshev range, in tiles from a foreign power's colony, within which a human colony counts as territorial encroachment — the colony's 3×3 work footprint (radius 1) plus a 2-tile buffer (cf. <see cref="NativeAlarmRadius"/>, the native-alarm footprint). A colony carries no settlement type, so this is a flat constant rather than a per-colony claimable radius.</summary>
+    private const int ColonialTensionRadius = 3;
+
     // FreeCol Tension.Level limits + DELTA, used by the tension→stance machine (Stance.getStanceFromTension).
     private const int TensionContentLimit = 600; // CONTENT band
     private const int TensionHappyLimit = 100;   // HAPPY band
@@ -269,6 +280,36 @@ public sealed partial class Game
         {
             Player pb = PlayerById(b)!;
             pb.TensionMap[a] = Math.Clamp(pb.Tensions.GetValueOrDefault(a) + delta, 0, MaxTension);
+        }
+    }
+
+    /// <summary>
+    /// Raises <paramref name="power"/>'s tension toward the human by <see cref="TensionLandTaken"/> for each of the
+    /// human's colonies that crowds one of the power's own colonies — within <see cref="ColonialTensionRadius"/> tiles
+    /// (FreeCol's land-encroachment tension, <c>TENSION_ADD_LAND_TAKEN</c>).
+    /// This is the non-attack tension source (86d3c9udb) that makes <see cref="StanceFromTension"/>'s Peace→War branch
+    /// reachable in play: before it, colonial tension only ever rose on an attack (which already set War directly), so a
+    /// power never declared war on its own. <b>Directional</b> — only the power's view of the human rises (FreeCol: the
+    /// territory owner gains the tension), so it never touches the human's own tension/stance toward the power, and (like
+    /// all diplomacy) draws no RNG, leaving the human's stream 0 byte-identical (ADR-009). A no-op for a power with no
+    /// colonies, or one already at war (war tension is already maxed). Deterministic — stable colony iteration.
+    /// <c>internal</c> so the RNG-free accrual can be asserted directly against stream 0 (ADR-006).
+    /// </summary>
+    internal void AccrueTerritorialTension(Player power)
+    {
+        if (power.Stances.GetValueOrDefault(_human.PlayerId) is not (Stance.Peace or Stance.CeaseFire))
+        {
+            return; // uncontacted (not yet met) or already at war → no territorial escalation to apply
+        }
+        int encroachment = 0;
+        foreach (Colony own in ColoniesOf(power))
+        {
+            encroachment += _colonies.Count(h =>
+                IsHumanOwned(h) && ChebyshevDistance(h.Position, own.Position) <= ColonialTensionRadius);
+        }
+        if (encroachment > 0)
+        {
+            ChangeTension(power.PlayerId, _human.PlayerId, encroachment * TensionLandTaken, symmetric: false);
         }
     }
 
@@ -5044,6 +5085,20 @@ public sealed partial class Game
     /// </summary>
     private void RunForeignPowerTurn(Player power)
     {
+        // Accrue territorial tension and re-derive the stance from it (86d3c9udb, FreeCol determineStances): a power
+        // that the human is crowding flips Peace/CeaseFire → War on its own before it acts, so the offensive below
+        // actually engages. The accrual is RNG-free, so the human's stream 0 stays byte-identical (ADR-009).
+        AccrueTerritorialTension(power);
+        if (power.Stances.GetValueOrDefault(_human.PlayerId) is Stance.Peace or Stance.CeaseFire
+            && StanceFromTension(power.Stances[_human.PlayerId], power.Tensions.GetValueOrDefault(_human.PlayerId)) == Stance.War)
+        {
+            // Declare war exactly as an attack does (FreeCol: war is mutual): set the stance both ways and spike the
+            // pair's tension symmetrically to the WAR modifier, so the end-of-turn UpdateColonialStances keeps it at War
+            // (it re-derives from the lower-id player's tension — which the directional accrual alone would leave at 0).
+            SetStance(power.PlayerId, _human.PlayerId, Stance.War);
+            ChangeTension(power.PlayerId, _human.PlayerId, TensionWar);
+        }
+
         bool atWarWithHuman = StanceBetween(power.PlayerId, _human.PlayerId) == Stance.War;
 
         // Snapshot the owned units (founding/combat removes a unit from _units mid-loop).
