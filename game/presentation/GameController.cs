@@ -58,6 +58,8 @@ public partial class GameController : Node2D
     private Node2D _rumourLayer = null!;
     private Label _statusLabel = null!;
     private Label _calendarLabel = null!;
+    private PanelContainer _selectedUnitPanel = null!;
+    private Label _selectedUnitLabel = null!;
     private MiniMap _miniMap = null!;
     private PanelContainer _colonyPanel = null!;
     private PanelContainer _europePanel = null!;
@@ -86,6 +88,8 @@ public partial class GameController : Node2D
         _rumourLayer = GetNode<Node2D>("MapView/RumourLayer");
         _statusLabel = GetNode<Label>("UI/StatusLabel");
         _calendarLabel = GetNode<Label>("UI/CalendarPanel/CalendarLabel");
+        _selectedUnitPanel = GetNode<PanelContainer>("UI/SelectedUnitPanel");
+        _selectedUnitLabel = GetNode<Label>("UI/SelectedUnitPanel/Label");
         _miniMap = GetNode<MiniMap>("UI/MiniMap");
         _miniMap.TileSelected += CenterCameraOnTile;
         GetNode<Button>("UI/MiniMap/ZoomInButton").Pressed += _miniMap.ZoomIn;
@@ -171,6 +175,15 @@ public partial class GameController : Node2D
     /// <summary>Recenters the main camera on a map tile — the minimap's click-to-recenter target (ADR-006).</summary>
     private void CenterCameraOnTile(Position tile) =>
         GetNode<Camera2D>("Camera").Position = MapView.TileCentre(tile);
+
+    /// <summary>One-line readout for the selected-unit HUD panel (type / moves / role / orders / goto). Reads-only (ADR-006).</summary>
+    private string DescribeSelectedUnit(Unit u)
+    {
+        string role = u.HasDefaultRole ? "" : $"  ·  {u.RoleId[(u.RoleId.LastIndexOf('.') + 1)..]}";
+        string orders = u.Orders == UnitOrders.Active ? "" : $"  ·  {u.Orders.ToString().ToLowerInvariant()}";
+        string goingTo = u.IsGoingTo ? "  ·  going to" : "";
+        return $"{u.Type.ShortName}  ·  moves {u.MovementLeft}/{u.Type.Movement}{role}{orders}{goingTo}";
+    }
 
     private void OnEndTurnPressed()
     {
@@ -616,6 +629,17 @@ public partial class GameController : Node2D
         // The dedicated, classic-style date readout in the HUD (its own panel near the turn controls), distinct
         // from the dev status string above. Presentation-only — reads the Game.CalendarLabel oracle (ADR-006).
         _calendarLabel.Text = _game.CalendarLabel;
+
+        // Selected-unit info readout (type / moves / role / orders / goto), shown only while a unit is selected.
+        if (_selectedUnit is { } sel)
+        {
+            _selectedUnitLabel.Text = DescribeSelectedUnit(sel);
+            _selectedUnitPanel.Show();
+        }
+        else
+        {
+            _selectedUnitPanel.Hide();
+        }
 
         UpdateDefeatUi();
 

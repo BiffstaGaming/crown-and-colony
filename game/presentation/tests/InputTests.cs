@@ -49,6 +49,27 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task SelectingAUnit_ShowsTheSelectedUnitInfoPanel()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Unit unit = game.Units[0];
+
+        var panel = controller.GetNode<PanelContainer>("UI/SelectedUnitPanel");
+        AssertThat(panel.Visible).IsFalse(); // nothing selected at game start
+
+        await ClickTile(runner, controller, unit.Position); // select the unit
+
+        AssertThat(panel.Visible).IsTrue();
+        var label = controller.GetNode<Label>("UI/SelectedUnitPanel/Label");
+        AssertThat(label.Text).Contains(unit.Type.ShortName); // type
+        AssertThat(label.Text).Contains("moves");             // and its movement readout
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task GotoMode_Arms_AndSetsTheSelectedUnitDestination_AndDrawsTheMarker()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
