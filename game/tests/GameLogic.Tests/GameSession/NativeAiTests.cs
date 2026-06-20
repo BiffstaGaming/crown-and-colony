@@ -336,6 +336,118 @@ public class NativeAiTests
         Assert.NotEqual(SaveGame.From(bare).ToJson(), SaveGame.From(equips).ToJson());
     }
 
+    // ── Native dragoon promotion + strength-ordered securing (86d3c9vzp, FreeCol equipBraves) ──────────────────────
+
+    private const string ArmedBrave = "model.role.armedBrave";
+    private const string NativeDragoon = "model.role.nativeDragoon";
+
+    /// <summary>Enrages every settlement of the brave's nation so its camps secure themselves this turn.</summary>
+    private static void EnrageNationOf(Game game, Unit brave)
+    {
+        foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == brave.OwnerNationId))
+        {
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm);
+        }
+    }
+
+    [Fact]
+    public void AThreatenedCamp_WithBothMusketsAndHorses_PromotesItsBraveStraightToNativeDragoon()
+    {
+        // FreeCol favours the strongest affordable military role: an unarmed brave with both halves in stock becomes a
+        // native dragoon outright (not a coin-flip between armed and mounted).
+        Game game = Game.New(Classic, seed: 7);
+        Unit brave = game.NativeUnits.First();
+        Assert.Equal(DefaultRole, brave.RoleId);
+        NativeSettlement home = HomeOf(game, brave);
+        EnrageNationOf(game, brave);
+        home.AddStock(Muskets, 25);
+        home.AddStock(Horses, 25);
+
+        game.EndTurn();
+
+        Assert.Equal(NativeDragoon, brave.RoleId);   // armed + mounted in one step
+        Assert.Equal(0, home.StockOf(Muskets));      // both halves drawn from the camp…
+        Assert.Equal(0, home.StockOf(Horses));
+    }
+
+    [Fact]
+    public void AThreatenedCamp_PromotesAnAlreadyArmedBraveToDragoon_ChargingOnlyTheMissingHorses()
+    {
+        // The headline new facet: a partially-equipped (armed) brave is promoted to full dragoon by adding only the
+        // half it lacks — the camp is charged the horses, NOT a fresh set of muskets (FreeCol getGoodsDifference).
+        Game game = Game.New(Classic, seed: 7);
+        Unit brave = game.NativeUnits.First();
+        brave.RoleId = ArmedBrave; // already armed (has its muskets)
+        brave.RoleCount = 1;
+        NativeSettlement home = HomeOf(game, brave);
+        EnrageNationOf(game, brave);
+        home.AddStock(Horses, 25); // only the missing half is in stock — no muskets at all
+
+        game.EndTurn();
+
+        Assert.Equal(NativeDragoon, brave.RoleId); // promoted using just the horses
+        Assert.Equal(0, home.StockOf(Horses));     // the missing half was consumed…
+        Assert.Equal(0, home.StockOf(Muskets));    // …and no muskets were charged (it kept the ones it had)
+    }
+
+    [Fact]
+    public void AThreatenedCamp_WithScarceStock_SecuresTheStrongestBraveFirst()
+    {
+        // Strength-ordered securing (FreeCol getMilitaryStrengthComparator): with stock for only one upgrade, the
+        // strongest-needed brave is equipped first. An already-armed brave (stronger) homed at the camp promotes to
+        // dragoon, consuming the lone 25 horses; a weaker unarmed brave at the same camp is then left with nothing it
+        // can equip from (no muskets, horses gone) and stays unarmed.
+        Game game = Game.New(Classic, seed: 7);
+        NativeSettlement home = game.NativeSettlements.First(s => s.Position.Neighbours().Count(n => Free(game, n)) >= 2);
+        string nation = home.NationTypeId;
+        var spots = home.Position.Neighbours().Where(n => Free(game, n)).Take(2).ToList();
+        Unit strong = game.SpawnUnit(Classic.Unit("model.unit.brave"), spots[0], nation);
+        strong.RoleId = ArmedBrave; // already armed → stronger than an unarmed brave
+        strong.RoleCount = 1;
+        Unit weak = game.SpawnUnit(Classic.Unit("model.unit.brave"), spots[1], nation); // unarmed
+        Assert.True(HomeOf(game, strong) == home && HomeOf(game, weak) == home); // both home this camp
+        EnrageNationOf(game, strong);
+        home.AddStock(Horses, 25); // exactly one upgrade's worth of the scarce good
+
+        game.EndTurn();
+
+        Assert.Equal(NativeDragoon, strong.RoleId); // the strongest brave was secured first…
+        Assert.Equal(DefaultRole, weak.RoleId);     // …leaving nothing for the weaker one
+        Assert.Equal(0, home.StockOf(Horses));      // the lone stock went to the strong brave
+    }
+
+    [Fact]
+    public void NativeDragoonPromotion_IsRngFree_HumanStream0ByteStable()
+    {
+        // ADR-009 for the deepened equip path: a game whose camps promote braves to dragoon keeps the human's stream 0
+        // byte-identical to a game whose camps can't equip — the strongest-affordable choice is deterministic (no draw).
+        Game equips = Game.New(Classic, seed: 2024);
+        Game bare = Game.New(Classic, seed: 2024);
+        foreach (Game g in new[] { equips, bare })
+        {
+            foreach (NativeSettlement s in g.NativeSettlements)
+            {
+                g.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // both enraged so the native paths run identically…
+            }
+        }
+        foreach (NativeSettlement s in equips.NativeSettlements)
+        {
+            s.AddStock(Muskets, 75); // …but only this game's camps can arm AND mount (→ dragoons)
+            s.AddStock(Horses, 75);
+        }
+
+        for (int turn = 0; turn < 10; turn++)
+        {
+            equips.EndTurn();
+            bare.EndTurn();
+        }
+
+        Assert.Contains(equips.NativeUnits, b => b.RoleId == NativeDragoon); // at least one dragoon was made (path ran)
+        Assert.Equal(bare.RandomState, equips.RandomState);                  // …yet stream 0 is untouched (RNG-free equip)
+        Assert.Equal(bare.HumanPlayer.Gold, equips.HumanPlayer.Gold);
+        Assert.NotEqual(SaveGame.From(bare).ToJson(), SaveGame.From(equips).ToJson()); // the native streams genuinely diverged
+    }
+
     // ── AI scout-chief + per-player first contact (86d3c9vta slice, save v44) ──────────────────────────────────────
 
     private static NativeSettlement SettlementWithFreeNeighbour(Game game) =>

@@ -5390,6 +5390,11 @@ public sealed partial class Game
     /// </summary>
     private void RunNativeTurn(Player player)
     {
+        // Secure the threatened camps first (FreeCol NativeAIPlayer.equipBraves, run for each settlement at the start
+        // of its turn): equip/promote braves from each alarmed settlement's stock, strongest-needed brave first. This
+        // is free — it never consumes a brave's action, so an armed brave still raids/wanders below as usual.
+        EquipBravesAtThreatenedSettlements(player);
+
         // Snapshot: a raid can remove the prey (or, on a loss, the brave itself) from _units mid-loop.
         foreach (Unit brave in _units.Where(u => u.OwnerNationId == player.NationId).OrderBy(u => u.Id).ToList())
         {
@@ -5400,13 +5405,6 @@ public sealed partial class Game
 
             NativeSettlement? home = HomeSettlement(player, brave);
             bool hostile = home is not null && home.AlarmLevel >= RaidAlarmThreshold;
-            if (hostile)
-            {
-                // Secure the camp first: arm the brave from the settlement's own stock before it acts this turn
-                // (FreeCol NativeAIPlayer.equipBraves, run at the start of the settlement's turn). Free — it never
-                // consumes the brave's action, so an armed brave still raids/wanders below as usual.
-                TryEquipBrave(player, brave, home!);
-            }
             if (hostile && AdjacentPillageableHumanColony(brave) is { } colonyTile)
             {
                 PillageColony(brave, colonyTile, RandomFor(player)); // storm an undefended human colony (own stream)
@@ -5481,43 +5479,84 @@ public sealed partial class Game
     /// <summary>The brave role granting horses (FreeCol <c>model.role.mountedBrave</c>).</summary>
     private const string MountedBraveRoleId = "model.role.mountedBrave";
 
+    /// <summary>The brave role granting both muskets and horses — the strongest native role (FreeCol <c>model.role.nativeDragoon</c>, offence +3 / defence +2 / +9 move).</summary>
+    private const string NativeDragoonRoleId = "model.role.nativeDragoon";
+
     /// <summary>
-    /// Arms a brave from its threatened home settlement's own goods stock (FreeCol <c>NativeAIPlayer.equipBraves</c>),
-    /// the equip facet of securing a camp. When the brave is still in the unarmed default role and its home settlement
-    /// holds enough of a brave role's required goods, the brave is upgraded into that role and the goods are deducted
-    /// from the settlement's stock — turning a defenceless brave into an <see cref="ArmedBraveRoleId">armed</see> or
-    /// <see cref="MountedBraveRoleId">mounted</see> warrior. Returns true when an upgrade happened.
+    /// Equips/promotes the braves of every <em>threatened</em> settlement of <paramref name="nation"/> from that
+    /// settlement's own military stock (FreeCol <c>NativeAIPlayer.secureSettlements</c> → <c>equipBraves</c>, run for
+    /// each settlement at the start of its turn). Each alarmed settlement (alarm ≥ <see cref="RaidAlarmThreshold"/>,
+    /// the secure trigger) secures its braves in <b>military-strength order</b> — the strongest-needed brave first
+    /// (FreeCol's <c>getMilitaryStrengthComparator</c>) — so when stock is scarce the best warriors are armed first.
+    /// Settlements and braves are iterated deterministically (by position / by id) and the equip itself is RNG-free, so
+    /// securing draws nothing at all — never the human's stream 0. Securing never consumes a brave's action (it still
+    /// raids/wanders this turn). A no-op when the nation holds no stock or no settlement is alarmed, so a default game
+    /// stays byte-stable (ADR-009).
+    /// </summary>
+    private void EquipBravesAtThreatenedSettlements(Player nation)
+    {
+        foreach (NativeSettlement settlement in _nativeSettlements
+            .Where(s => s.NationTypeId == nation.NationId && s.AlarmLevel >= RaidAlarmThreshold)
+            .OrderBy(s => s.Position.Y).ThenBy(s => s.Position.X))
+        {
+            // The settlement's braves, strongest first (offence+defence, ties by id). FreeCol arms the strongest
+            // promotable warriors first, so a partially-equipped strong brave reaches native dragoon before a weaker
+            // one is armed at all when stock runs short.
+            var braves = _units
+                .Where(u => u.OwnerNationId == nation.NationId && u.IsOnMap && HomeSettlement(nation, u) == settlement)
+                .OrderByDescending(u => OffenceBase(u) + DefenceBase(u)).ThenBy(u => u.Id)
+                .ToList();
+            foreach (Unit brave in braves)
+            {
+                TryEquipBrave(brave, settlement);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Improves one brave's military role by one step from its threatened home settlement's own goods stock (FreeCol
+    /// <c>NativeAIPlayer.equipBraves</c> → <c>Settlement.canImproveUnitMilitaryRole</c>), charging only the
+    /// <b>extra</b> equipment over its current role. From the unarmed default role the brave can become
+    /// <see cref="ArmedBraveRoleId">armed</see> or <see cref="MountedBraveRoleId">mounted</see>; a partially-equipped
+    /// armed or mounted brave is <b>promoted to full native dragoon</b> (<see cref="NativeDragoonRoleId"/>) by adding
+    /// the missing half (the muskets/horses it lacks). Returns true when an upgrade happened. The brave always takes
+    /// the <b>strongest role the camp can afford</b> in one step (FreeCol favours the full military role): an unarmed
+    /// brave with both halves in stock becomes a dragoon outright, not a coin-flip between armed and mounted.
     /// <para>
-    /// When the settlement can afford <em>both</em> muskets and horses, which to take is drawn from the nation's OWN
-    /// RNG stream (<see cref="RandomFor"/>) — FreeCol spreads arms and horses between camps with a random pick; never
-    /// the human's stream 0, so a default game (settlements hold no stock → this never fires) stays byte-stable
-    /// (ADR-009). Only the <em>choice</em> draws RNG, and only when both are affordable, so a settlement that can arm
-    /// just one way (or none) makes no draw at all. Equipping does not consume the brave's action — it still acts this
-    /// turn. <b>Bounded subset:</b> only the equip-when-threatened trigger and the muskets/horses single-role upgrade —
-    /// not FreeCol's full strength-ordered promotion to native dragoon, nor the threat-evaluation defend missions of
-    /// <c>secureIndianSettlement</c>.
+    /// The equip is entirely <b>RNG-free</b> (the strongest-affordable choice is deterministic) — never the human's
+    /// stream 0, so a default game (settlements hold no stock → this never fires) stays byte-stable (ADR-009).
+    /// Equipping does not consume the brave's action.
     /// </para>
     /// </summary>
-    private bool TryEquipBrave(Player nation, Unit brave, NativeSettlement home)
+    private bool TryEquipBrave(Unit brave, NativeSettlement home)
     {
-        if (!brave.HasDefaultRole)
+        if (brave.HasDefaultRole)
         {
-            return false; // already armed/mounted — nothing to upgrade from the default role
-        }
-        bool canArm = home.StockOf(MusketsId) >= BraveEquipGoods;
-        bool canMount = home.StockOf(HorsesId) >= BraveEquipGoods;
-        if (!canArm && !canMount)
-        {
-            return false; // no stock the brave could equip from → no RNG draw, settlement untouched
+            // Unarmed → take the strongest affordable role: dragoon if both halves are in stock, else the one half it
+            // can afford, else nothing. (FreeCol promotes to the best military role the camp can provide.)
+            bool canArm = home.StockOf(MusketsId) >= BraveEquipGoods;
+            bool canMount = home.StockOf(HorsesId) >= BraveEquipGoods;
+            if (canArm && canMount)
+            {
+                EquipFromSettlement(brave, home, NativeDragoonRoleId);
+                return true;
+            }
+            if (!canArm && !canMount)
+            {
+                return false; // no stock the brave could equip from → settlement untouched
+            }
+            EquipFromSettlement(brave, home, canArm ? ArmedBraveRoleId : MountedBraveRoleId);
+            return true;
         }
 
-        // Both affordable → the nation's own stream picks; otherwise take the only option. Muskets first by convention.
-        string roleId = canArm && canMount
-            ? (RandomFor(nation).Next(2) == 0 ? ArmedBraveRoleId : MountedBraveRoleId)
-            : canArm ? ArmedBraveRoleId : MountedBraveRoleId;
-
-        EquipFromSettlement(brave, home, roleId);
-        return true;
+        // Already armed or mounted → promote to native dragoon if the missing half is in stock (FreeCol "promote
+        // partially equipped units to full dragoon"). The delta is just the equipment it lacks.
+        if (brave.RoleId is ArmedBraveRoleId or MountedBraveRoleId && CanAffordUpgrade(home, brave, NativeDragoonRoleId))
+        {
+            EquipFromSettlement(brave, home, NativeDragoonRoleId);
+            return true;
+        }
+        return false; // already a dragoon, or the missing half isn't in stock → nothing to do
     }
 
     /// <summary>Goods units one brave role count requires (FreeCol armed/mounted brave = 25; pinned in the spec).</summary>
@@ -5529,18 +5568,22 @@ public sealed partial class Game
     /// <summary>Horses goods id (the mounted-brave equipment).</summary>
     private const string HorsesId = "model.goods.horses";
 
+    /// <summary>Whether <paramref name="home"/>'s stock can cover the <em>extra</em> equipment to move <paramref name="brave"/> from its current role to <paramref name="targetRoleId"/> (FreeCol <c>Settlement.canProvideGoods(getGoodsDifference(r, 1))</c>): every positively-consumed good in the delta must be in stock.</summary>
+    private bool CanAffordUpgrade(NativeSettlement home, Unit brave, string targetRoleId) =>
+        RoleGoodsDelta(brave, Ruleset.Role(targetRoleId)).All(d => d.Amount <= 0 || home.StockOf(d.GoodsId) >= d.Amount);
+
     /// <summary>
-    /// Moves <paramref name="brave"/> into <paramref name="roleId"/>, deducting that role's required goods from
-    /// <paramref name="home"/>'s stock — the native equivalent of <see cref="EquipRole"/>'s colony draw-down, reusing
-    /// the shared <see cref="ChangeRole"/> mechanism (the same path combat capture uses to arm a brave). The role's
-    /// equipment is consumed from the settlement (it is the brave's only count); the upgrade persists via the brave's
-    /// existing serialized role field (no save change).
+    /// Moves <paramref name="brave"/> into <paramref name="roleId"/>, deducting only the <b>extra</b> equipment over its
+    /// current role from <paramref name="home"/>'s stock (FreeCol <c>getGoodsDifference</c> — so an armed→dragoon
+    /// promotion charges only the horses it adds, not a fresh set of muskets), reusing the shared
+    /// <see cref="RoleGoodsDelta"/>/<see cref="ChangeRole"/> mechanism (the same path combat capture uses to arm a
+    /// brave). The upgrade persists via the brave's existing serialized role field (no save change).
     /// </summary>
     private void EquipFromSettlement(Unit brave, NativeSettlement home, string roleId)
     {
-        foreach (RoleRequiredGoods g in Ruleset.Role(roleId).RequiredGoods)
+        foreach ((string goodsId, int amount) in RoleGoodsDelta(brave, Ruleset.Role(roleId)))
         {
-            home.AddStock(g.GoodsId, -g.Amount);
+            home.AddStock(goodsId, -amount); // positive = consumed; a negative delta (a downgrade) would refund
         }
         ChangeRole(brave, roleId, 1);
     }
