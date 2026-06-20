@@ -44,6 +44,7 @@ public class RegionTests
         Assert.Equal(1, (int)RegionType.Land);
         Assert.Equal(2, (int)RegionType.Mountain);
         Assert.Equal(3, (int)RegionType.River);
+        Assert.Equal(4, (int)RegionType.Lake);
     }
 }
 

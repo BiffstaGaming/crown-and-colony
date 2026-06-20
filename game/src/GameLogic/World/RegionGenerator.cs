@@ -14,9 +14,11 @@ namespace CrownAndColony.GameLogic.World;
 /// <para>Faithful subset and divergences (see <c>docs/systems/map-terrain.md</c>): FreeCol builds mountain
 /// regions during a generation-time range walk; our altitude is per-tile noise, so we derive mountain regions
 /// from the resulting hill/mountain terrain instead (same <see cref="RegionType.Mountain"/> and
-/// <c>score = 2 × size</c>). FreeCol's nine virtual "geographic thirds" bounding boxes (used only to seed
-/// native placement) and RIVER/LAKE/COAST/DESERT region types are deferred until rivers and that placement
-/// hook exist.</para>
+/// <c>score = 2 × size</c>). Enclosed water the ocean fill cannot reach is tagged <see cref="RegionType.Lake"/>
+/// (FreeCol <c>TerrainGenerator.createLakeRegions</c>) — region classification only; FreeCol additionally retypes
+/// the tile to lake <i>terrain</i>, which we defer (it would move the map goldens). FreeCol's nine virtual
+/// "geographic thirds" bounding boxes (used only to seed native placement) and the RIVER/COAST/DESERT region
+/// types are deferred until rivers and that placement hook exist.</para>
 /// </summary>
 public static class RegionGenerator
 {
@@ -95,15 +97,18 @@ public static class RegionGenerator
         // ── 2. Oceans: fill the four quadrants from a seed inward, escalating quadrant → half → whole map ────
         AssignOceans(map, ids, w, h, northPacific, southPacific, northAtlantic, southAtlantic);
 
-        // Any water the directional fill never reached (e.g. an enclosed body) becomes its own ocean region,
-        // so no water tile is left unassigned. (FreeCol routes these through lake/river generators we defer.)
+        // Any water the directional ocean fill never reached is an enclosed body with no sea route out: an
+        // inland lake (FreeCol TerrainGenerator.createLakeRegions tags exactly this set — water that is
+        // "!isLand && getRegion()==null" after the oceans are assigned). One score-0 lake region per blob, so
+        // no water tile is left unassigned. Region classification only: FreeCol also retypes the tile to lake
+        // terrain, which we defer (it would move the map goldens); rivers (RNG-bearing) are a separate slice.
         for (int y = 0; y < h; y++)
         {
             for (int x = 0; x < w; x++)
             {
                 if (!IsLand(x, y) && ids[Idx(x, y)] == GameMap.NoRegion)
                 {
-                    int region = NewRegion(RegionType.Ocean, 0);
+                    int region = NewRegion(RegionType.Lake, 0);
                     foreach ((int bx, int by) in CollectBlob((px, py) => !IsLand(px, py) && ids[Idx(px, py)] == GameMap.NoRegion, x, y, w, h))
                     {
                         ids[Idx(bx, by)] = region;

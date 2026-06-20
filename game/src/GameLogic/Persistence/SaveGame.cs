@@ -72,6 +72,10 @@ public sealed record SaveGame
     /// v35 added the map's geographic regions (<see cref="RegionIds"/> + <see cref="Regions"/>; omitted when the map
     /// has no region layer, so a regionless fixture is byte-identical to v34). A pre-v35 save (or any save without a
     /// region layer) re-derives regions deterministically on load via <see cref="World.RegionGenerator"/>.
+    /// (From 2026-06-20 the generator additionally classifies fully-enclosed water as <see cref="World.RegionType.Lake"/>
+    /// (ordinal 4); this is an existing-field value change within the v35 layer, not a format change, so it carries
+    /// <b>no version bump</b> — a newly-generated map with a lake writes <c>Type = 4</c>, while older saves load their
+    /// persisted region types verbatim. No loader logic branches on lake-vs-ocean.)
     /// v36 added a unit's standing "go to" destination (<see cref="SavedUnit.DestX"/> + <see cref="SavedUnit.DestY"/>;
     /// both omitted when the unit has no goto, so a goto-free game is byte-identical to v35; pre-v36 saves load with
     /// no destination).

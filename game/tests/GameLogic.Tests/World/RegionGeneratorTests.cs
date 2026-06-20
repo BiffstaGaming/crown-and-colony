@@ -122,6 +122,42 @@ public class RegionGeneratorTests
         Assert.Equal(0, map.Regions.First(r => r.Key == "model.region.atlantic").ScoreValue);
     }
 
+    // ── Lakes (enclosed water) ───────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void EnclosedWater_BecomesALakeRegion_WhileOpenOceanStaysOcean()
+    {
+        // A single water tile (3,3) fully ringed by land, with open ocean all around the ring. The ocean fill
+        // reaches the open water from the edges but can never reach the enclosed pocket, so it is tagged as a
+        // lake (FreeCol createLakeRegions), while the surrounding sea stays ocean. Land rows 2-4 sit clear of
+        // the polar bands (arctic = rows [0,2); antarctic = rows [5,8)).
+        GameMap map = FromRows(
+            "OOOOOOOOO", // y0
+            "OOOOOOOOO", // y1
+            "OOLLLOOOO", // y2  land ring (top)
+            "OOLOLOOOO", // y3  land | LAKE (3,3) | land
+            "OOLLLOOOO", // y4  land ring (bottom)
+            "OOOOOOOOO", // y5
+            "OOOOOOOOO", // y6
+            "OOOOOOOOO");// y7
+
+        Region lake = RegionAt(map, 3, 3);
+        Assert.Equal(RegionType.Lake, lake.Type);
+        Assert.Null(lake.Key);          // a dynamic region, not a fixed ocean/polar one
+        Assert.Equal(0, lake.ScoreValue); // lakes carry no discovery score (FreeCol leaves them score 0)
+
+        // The open sea around the ring is ocean, not lake, and a different region from the pocket.
+        Region openSea = RegionAt(map, 0, 3);
+        Assert.Equal(RegionType.Ocean, openSea.Type);
+        Assert.NotEqual(lake.Id, openSea.Id);
+
+        // The ring itself is dry land.
+        Assert.Equal(RegionType.Land, RegionAt(map, 2, 2).Type);
+
+        // Every tile still gets exactly one valid region (no NoRegion sentinel survives the lake pass).
+        Assert.All(map.AllPositions(), p => Assert.NotEqual(GameMap.NoRegion, map.RegionIdAt(p)));
+    }
+
     // ── Mountain regions ─────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
