@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-20 — Parallel batch (3 streams) — AI build-queue units + Congress tab + HUD tile-info — COMPLETE ✅
+
+**Requested:** Launch parallel workers on different work streams (files that don't overlap), then perform testing together at the end.
+**Did:**
+- Ran **3 workers concurrently in isolated git worktrees** on disjoint code files, then integrated + tested together:
+  1. **AI build-queue — buildable units** (`86d3c9vmr` inc 4b, `a4dc356`): `RunForeignColonyBuildPlan` now queues **artillery** when a foreign colony is under-defended (no military unit on its tile + can build it) and a **wagon train** when it's landlocked and the owner has no wagon (FreeCol `StandardAIPlayer`/`ColonyPlan` subset). RNG-free, deterministic, no save bump. +6 L1 (`AiColonyEconomyTests`). *(Epic stays open: inc 5 Europe train/buy → lift `MaxAiColonies` remain.)*
+  2. **Continental Congress report tab** (`86d3c9x53` Congress facet, `dc89488`): `ColonyReportPanel` Congress tab — recruit + liberty progress (`Game.Liberty`/`TotalFoundingFatherCost()`) + offered fathers (`Game.OfferedFathers`) with category; read-only over oracles. +1 L3. *(Task stays open: Turn-message panel + History report facets remain.)*
+  3. **HUD tile-info readout** (`86d3c9x6y`, `869f4ee` — task **Shipped**): new `TileInfoPanel` shows the last-clicked tile's terrain + resource + occupant via `DescribeTile`; `mouse_filter=Ignore`, hidden-until-click → zero golden churn. +1 L3. Completes the map-controls task (selected-unit/orders/minimap already shipped).
+- **Integration:** cherry-picked the 3 worktree commits onto `main`; the only conflict was `docs/modules/presentation.md` (both presentation streams' changelog + Last-verified) — resolved keeping both rows. All other files were disjoint (Game.cs / ColonyReportPanel.cs / GameController.cs+main.tscn) → no code conflicts.
+**Status:** **tested together at the end** — 1210 L1/L2 + 4 soak green; **97 L3+L4** green (both new tests + all goldens, no regen); both projects build clean (0/0). **No save change (stays v45).** CI green on **both jobs** (run 27864386321).
+**Changed:** `Game.cs`, `AiColonyEconomyTests.cs`, `players.md` (#1); `ColonyReportPanel.cs`, `ColonyReportPanelTests.cs`, `presentation.md` (#4); `GameController.cs`, `InputTests.cs`, `main.tscn`, `presentation.md` (#10). Commits `a4dc356`, `dc89488`, `869f4ee`.
+**Decisions:** parallel *authoring* in worktrees + serial cherry-pick *integration* (CI/merge is inherently serial); presentation.md was the one (trivial) shared-doc conflict, resolved by hand; #1 used `IsMilitaryUnit` for "under-defended" + a once-per-owner wagon trigger (both documented as FreeCol-subset deviations in players.md).
+**Scheduled next:** **AI-economy epic `86d3c9vmr` inc 5** — Europe **train-by-type + buy ship/artillery** for foreign powers (a-few-commits; own-stream spend → soak re-run), then lift `MaxAiColonies` above 1 (one-line, soak-sensitive, last). From the next-10 plan.
+**Follow-ups:** AI economy inc 5 + cap-lift (`86d3c9vmr`); #6 difficulty picker (`86d3c9y08` — needs your UI steer + save bump v46); Turn-message panel + History report (`86d3c9x53`); DiplomaticTrade epic first slice (`86d3c9u2f`); AI declares war from tension (`86d3bex51`); tile-improvement epic (next-batch headline).
+**Needs you:** for #6 difficulty — confirm the picker goes in the new-game dialog alongside world-size/shape (my recommended default). Nothing else blocking.
+
 ## 2026-06-20 — P5 "next 20 backlog" batch — items 1-20/20 — COMPLETE ✅
 
 **Requested:** Work the next 20 P5 backlog items autonomously, one solid+complete+committed item per turn, verify-before-building (ultracode scout each item/batch), self-scheduling the next via ScheduleWakeup.
