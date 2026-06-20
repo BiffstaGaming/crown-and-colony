@@ -6,9 +6,11 @@ namespace CrownAndColony.GameLogic.World;
 /// <summary>
 /// Climate-band map generation driven by the ruleset's <c>&lt;gen&gt;</c> data
 /// (the same climate envelopes FreeCol uses): a continent is grown from seeded
-/// blobs, then each land tile gets a temperature from its latitude, humidity and
-/// altitude from smoothed noise, and a terrain type whose climate envelope
-/// matches. Deterministic for a given <see cref="IGameRandom"/>.
+/// blobs, then each land tile gets a temperature from its latitude, humidity from
+/// smoothed noise, and a lowland terrain type whose climate envelope matches.
+/// Hills and mountains are then grown as ranges by a directional walk
+/// (<see cref="MakeMountains"/>, FreeCol <c>TerrainGenerator.createMountains</c>),
+/// not scattered per-tile. Deterministic for a given <see cref="IGameRandom"/>.
 /// </summary>
 public static class MapGenerator
 {
@@ -18,9 +20,15 @@ public static class MapGenerator
     /// <summary>Chance a tile hosts a bonus resource (prime grain, minerals, fishery…).</summary>
     private const double ResourceChanceFraction = 0.08;
 
-    /// <summary>Fraction of land tiles raised to hills / mountains.</summary>
-    private const double HillsChance = 0.10;
-    private const double MountainsChance = 0.04;
+    /// <summary>
+    /// "One elevation tile per this many land tiles" — FreeCol's <c>model.option.mountainNumber</c> (classic
+    /// default 10; higher = fewer mountains). The mountain-range pass aims for half of this budget, the random
+    /// hill/mountain sprinkle the other half (FreeCol <c>randomHillsRatio = 0.5</c>).
+    /// </summary>
+    private const int MountainNumber = 10;
+
+    /// <summary>FreeCol's split: half the elevation budget goes to walked ranges, half to a random sprinkle.</summary>
+    private const double RandomHillsRatio = 0.5;
 
     /// <summary>The shipped default fraction of the map that is land (FreeCol <c>model.option.landMass</c>); the value the default new game uses.</summary>
     public const double DefaultLandMassFraction = 0.45;
@@ -58,32 +66,49 @@ public static class MapGenerator
                 if (!land[x, y])
                 {
                     // Outermost columns are seeded as high seas here ONLY to preserve the RNG-draw sequence:
-                    // high-seas tiles carry no resource table, so they skip the per-tile resource roll below, exactly
-                    // as before. ResetHighSeas (after the loop) then recomputes the real high-seas band from
-                    // distance-to-land — a pure, RNG-free reclassification. All other water is coastal ocean.
+                    // ResetHighSeas (after the loop) then recomputes the real high-seas band from distance-to-land
+                    // — a pure, RNG-free reclassification. All other water is coastal ocean.
                     type = x == 0 || x == width - 1 ? highSeas : ocean;
                 }
                 else
                 {
-                    int altitude = RollAltitude(random);
+                    // Lowland climate terrain only. Hills and mountains are NOT scattered per-tile here; they are
+                    // grown as ranges by MakeMountains (FreeCol TerrainGenerator.createMountains), which overwrites
+                    // land tiles after the climate pass.
+                    int altitude = RollLowlandAltitude(random);
                     type = PickLandTerrain(ruleset, humidity[x, y], temperature, altitude, random);
                 }
                 terrain[y * width + x] = type;
+            }
+        }
 
-                // Bonus resources, picked from the terrain's own table by weight.
+        // Mountain & hill RANGES (FreeCol TerrainGenerator.createMountains): pick seed land tiles, walk a chain in a
+        // direction laying mountain tiles with a hill/mountain fringe, then sprinkle a few random hills/mountains —
+        // so elevation looks like ridgelines, not altitude noise. Overwrites land tiles in place. Draws RNG, so it
+        // reorders the stream-0 draw sequence (a deliberate map-gen change for this item, 86d3c9w71).
+        MakeMountains(ruleset, terrain, land, width, height, random);
+
+        // High-seas band: recompute which near-edge ocean tiles are the open route to Europe from their
+        // distance to land (FreeCol Map.resetHighSeas), replacing the old fixed-outermost-columns rule. Pure and
+        // RNG-free, so it consumes no randomness and reorders no later draw. Regions don't distinguish ocean
+        // subtypes, so the region layer is unchanged.
+        ResetHighSeas(terrain, highSeas, width, height, ocean);
+
+        // Bonus resources, picked from each tile's final terrain table by weight — placed only AFTER the terrain is
+        // complete (FreeCol adds bonuses last, "otherwise we risk creating resources on fields where they do not
+        // belong, like tobacco on hills"), so a tile retyped to mountains gets mountain resources, not the lowland
+        // resource it might have rolled before the range pass.
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                TerrainType type = terrain[y * width + x];
                 if (type.Resources.Count > 0 && random.NextDouble() < ResourceChanceFraction)
                 {
                     resources[new Position(x, y)] = PickWeightedResource(type.Resources, random);
                 }
             }
         }
-
-        // High-seas band: recompute which near-edge ocean tiles are the open route to Europe from their
-        // distance to land (FreeCol Map.resetHighSeas), replacing the old fixed-outermost-columns rule. Pure and
-        // RNG-free, so it consumes no randomness and reorders no later draw (the loop above kept its high-seas
-        // seeding only to preserve the resource-roll sequence). Regions don't distinguish ocean subtypes, so the
-        // region layer is unchanged.
-        ResetHighSeas(terrain, resources, width, height, ocean, highSeas);
 
         var map = new GameMap(width, height, terrain, resources);
 
@@ -114,12 +139,12 @@ public static class MapGenerator
     /// edge is walked outward-to-inward, and an ocean tile with no land within <see cref="DistanceToHighSea"/> (8-dir
     /// Chebyshev distance) becomes high seas. If a side ends up with no high seas, its furthest-from-land strip tile
     /// is promoted (FreeCol's <c>seaL</c>/<c>seaR</c> fallback) so each side always has an exit. Pure and RNG-free.
-    /// Resources are dropped from any tile that becomes high seas (the open sea hosts no bonus). Replaces the former
-    /// fixed-outermost-columns rule.
+    /// Runs before bonus resources are placed, so a high-seas tile simply never gets a resource (the resource pass
+    /// skips water with no resource table). Replaces the former fixed-outermost-columns rule.
     /// </summary>
     private static void ResetHighSeas(
-        TerrainType[] terrain, Dictionary<Position, string> resources,
-        int width, int height, TerrainType ocean, TerrainType highSeas)
+        TerrainType[] terrain, TerrainType highSeas,
+        int width, int height, TerrainType ocean)
     {
         int Idx(int x, int y) => y * width + x;
         bool IsWater(int x, int y) => terrain[Idx(x, y)].IsWater;
@@ -151,11 +176,7 @@ public static class MapGenerator
             return -1;
         }
 
-        void Promote(int x, int y)
-        {
-            terrain[Idx(x, y)] = highSeas;
-            resources.Remove(new Position(x, y)); // the open sea hosts no bonus resource
-        }
+        void Promote(int x, int y) => terrain[Idx(x, y)] = highSeas;
 
         int totalL = 0, totalR = 0, distL = -1, distR = -1, seaLx = -1, seaLy = -1, seaRx = -1, seaRy = -1;
         for (int y = 0; y < height; y++)
@@ -247,19 +268,160 @@ public static class MapGenerator
         return Math.Clamp(baseTemperature + random.Next(-4, 5), -20, 40);
     }
 
-    /// <summary>Mostly lowland (1–3) with occasional hills (10–19) and mountains (20–30).</summary>
-    private static int RollAltitude(IGameRandom random)
+    /// <summary>
+    /// Lowland altitude (1–3) for the climate pass. Hills (10–19) and mountains (20–30) are no longer scattered
+    /// per-tile — <see cref="MakeMountains"/> grows them as ranges after the climate terrain is laid.
+    /// </summary>
+    private static int RollLowlandAltitude(IGameRandom random) => 1 + random.Next(3);
+
+    /// <summary>
+    /// Grows mountain &amp; hill RANGES across the land, faithful to FreeCol
+    /// <c>TerrainGenerator.createMountains</c>. Two passes over the land tiles, in <paramref name="terrain"/>
+    /// (row-major; <paramref name="land"/> marks which tiles are land):
+    /// <list type="number">
+    /// <item><b>Ranges.</b> Until a tile budget (<c>½ · landCount / MountainNumber</c>) is met: take the next
+    /// shuffled land tile that isn't already elevation, pick a random walk direction and a length
+    /// (<c>maxLength − rand(maxLength/2)</c>, <c>maxLength = max(w,h)/10</c>), then step that many land tiles laying
+    /// a mountain at each step and, for each of the step tile's 8 neighbours, a mountain (2/8), a hill (5/8) or
+    /// nothing (1/8). The walk stops early at water or the map edge.</item>
+    /// <item><b>Sprinkle.</b> The other half of the budget is scattered over shuffled land tiles as 25% mountains,
+    /// 75% hills — the "random hills here and there" FreeCol adds after the ranges.</item>
+    /// </list>
+    /// Hills/mountains carry full-latitude climate envelopes in the classic spec, so (unlike FreeCol's
+    /// per-latitude tile-type lists) a single hill/mountain type suffices at every latitude. Overwrites land tiles
+    /// in place; never touches water. Draws RNG (Fisher–Yates shuffle + walks), so it reorders stream-0 draws.
+    /// </summary>
+    private static void MakeMountains(
+        Ruleset ruleset, TerrainType[] terrain, bool[,] land, int width, int height, IGameRandom random)
     {
-        double roll = random.NextDouble();
-        if (roll < MountainsChance)
+        TerrainType mountains = ruleset.Terrain("model.tile.mountains");
+        TerrainType hills = ruleset.Terrain("model.tile.hills");
+
+        int Idx(int x, int y) => y * width + x;
+        bool InBounds(int x, int y) => x >= 0 && x < width && y >= 0 && y < height;
+        bool IsElevation(int x, int y) => terrain[Idx(x, y)].IsElevation;
+
+        // Every land tile, in row-major order, then shuffled deterministically (FreeCol randomShuffle).
+        var landTiles = new List<Position>();
+        for (int y = 0; y < height; y++)
         {
-            return 20 + random.Next(11);
+            for (int x = 0; x < width; x++)
+            {
+                if (land[x, y])
+                {
+                    landTiles.Add(new Position(x, y));
+                }
+            }
         }
-        if (roll < MountainsChance + HillsChance)
+        int landCount = landTiles.Count;
+        if (landCount == 0)
         {
-            return 10 + random.Next(10);
+            return;
         }
-        return 1 + random.Next(3);
+
+        // The eight walk directions (E, SE, S, SW, W, NW, N, NE) — the same 8-neighbourhood the rest of the map uses.
+        (int dx, int dy)[] directions =
+        [
+            (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1),
+        ];
+
+        // ---- Pass 1: walked mountain ranges ----
+        int rangeBudget = (int)Math.Round((1.0 - RandomHillsRatio) * landCount / MountainNumber);
+        int maxLength = Math.Max(1, Math.Max(width, height) / 10);
+
+        var shuffled = Shuffle(landTiles, random);
+        int placed = 0;
+        foreach (Position start in shuffled)
+        {
+            if (placed >= rangeBudget)
+            {
+                break;
+            }
+            // isGoodMountainTile can change as new mountains are added (FreeCol re-checks here).
+            if (IsElevation(start.X, start.Y))
+            {
+                continue;
+            }
+
+            (int ddx, int ddy) = directions[random.Next(directions.Length)];
+            int length = maxLength - random.Next(maxLength / 2 + 1); // maxLength/2 can be 0 on tiny maps; +1 keeps Next valid
+            int cx = start.X, cy = start.Y;
+            for (int step = 0; step < length; step++)
+            {
+                // Raise the current tile to mountain.
+                if (!IsElevation(cx, cy))
+                {
+                    terrain[Idx(cx, cy)] = mountains;
+                    placed++;
+                }
+                // Fringe: each surrounding land tile gets a mountain (2/8), a hill (5/8) or nothing (1/8).
+                foreach ((int nx, int ny) in Surrounding(cx, cy))
+                {
+                    if (!InBounds(nx, ny) || !land[nx, ny] || IsElevation(nx, ny))
+                    {
+                        continue;
+                    }
+                    int r = random.Next(8);
+                    if (r < 2)
+                    {
+                        terrain[Idx(nx, ny)] = mountains;
+                        placed++;
+                    }
+                    else if (r < 7)
+                    {
+                        terrain[Idx(nx, ny)] = hills;
+                    }
+                }
+                // Step to the next tile in the walk direction; stop at water or the edge.
+                cx += ddx;
+                cy += ddy;
+                if (!InBounds(cx, cy) || !land[cx, cy])
+                {
+                    break;
+                }
+            }
+        }
+
+        // ---- Pass 2: random hill/mountain sprinkle (FreeCol's "here and there") ----
+        int sprinkleBudget = (int)(landCount * RandomHillsRatio) / MountainNumber;
+        var sprinkleOrder = Shuffle(landTiles, random);
+        int sprinkled = 0;
+        foreach (Position p in sprinkleOrder)
+        {
+            if (sprinkled >= sprinkleBudget)
+            {
+                break;
+            }
+            if (IsElevation(p.X, p.Y))
+            {
+                continue;
+            }
+            terrain[Idx(p.X, p.Y)] = random.Next(4) == 0 ? mountains : hills; // 25% mountains, 75% hills
+            sprinkled++;
+        }
+
+        IEnumerable<(int X, int Y)> Surrounding(int x, int y)
+        {
+            foreach ((int dx, int dy) in directions)
+            {
+                yield return (x + dx, y + dy);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Returns a new list holding <paramref name="source"/> in a deterministic shuffled order (Fisher–Yates,
+    /// drawing from the injected RNG — FreeCol <c>RandomUtils.randomShuffle</c>). Leaves the input untouched.
+    /// </summary>
+    private static List<Position> Shuffle(IReadOnlyList<Position> source, IGameRandom random)
+    {
+        var list = new List<Position>(source);
+        for (int i = list.Count - 1; i > 0; i--)
+        {
+            int j = random.Next(i + 1);
+            (list[i], list[j]) = (list[j], list[i]);
+        }
+        return list;
     }
 
     /// <summary>

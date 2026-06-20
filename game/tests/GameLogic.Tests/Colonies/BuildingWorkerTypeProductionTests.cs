@@ -17,7 +17,10 @@ namespace CrownAndColony.GameLogic.Tests.Colonies;
 public class BuildingWorkerTypeProductionTests
 {
     private static readonly Ruleset Classic = Ruleset.LoadClassic();
-    private const ulong Seed = 0xC0FFEEUL;
+    // A seed whose starting tile is non-sugar terrain, so the colony's centre tile auto-produces no sugar and the
+    // factory input-flooring assertions below see only the sugar the test adds (the P5 mountain-range map-gen change
+    // moved the old 0xC0FFEE start tile onto savannah, which auto-produces sugar — see WorldTests range pass).
+    private const ulong Seed = 3UL;
     private const string Carpenter = "model.building.carpenterHouse";
     private const string Lumber = "model.goods.lumber";
     private const string Hammers = "model.goods.hammers";

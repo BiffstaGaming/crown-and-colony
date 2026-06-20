@@ -281,6 +281,60 @@ public class MapGeneratorTests
         }
     }
 
+    private static int ElevationCount(GameMap map) =>
+        map.AllPositions().Count(p => map.TerrainAt(p).IsElevation);
+
+    [Fact]
+    public void Mountains_FormContiguousRanges_NotIsolatedScatter()
+    {
+        // The directional-walk generator (FreeCol createMountains) grows ridgelines: most elevation tiles touch
+        // another elevation tile (8-neighbour), unlike the old per-tile altitude scatter where lone peaks abounded.
+        GameMap map = Generate(7);
+
+        var elevation = map.AllPositions().Where(p => map.TerrainAt(p).IsElevation).ToList();
+        Assert.NotEmpty(elevation); // a 36x24 map has mountains/hills
+
+        bool HasElevationNeighbour(Position p) => p.Neighbours()
+            .Any(n => map.InBounds(n) && map.TerrainAt(n).IsElevation);
+
+        int connected = elevation.Count(HasElevationNeighbour);
+        // Ranges, not noise: the clear majority of elevation tiles sit beside another elevation tile.
+        Assert.True(connected >= elevation.Count * 0.7,
+            $"only {connected}/{elevation.Count} elevation tiles have an elevation neighbour — looks like scatter, not ranges");
+
+        // And at least one genuine chain of three mountains in a line exists (a ridgeline, not just a 2x2 clump).
+        bool HasMountain(Position p) => map.InBounds(p) && map.TerrainAt(p).Id == "model.tile.mountains";
+        (int, int)[] dirs = [(1, 0), (0, 1), (1, 1), (1, -1)];
+        Assert.Contains(map.AllPositions().Where(p => HasMountain(p)), p =>
+            dirs.Any(d => HasMountain(new Position(p.X + d.Item1, p.Y + d.Item2))
+                       && HasMountain(new Position(p.X + 2 * d.Item1, p.Y + 2 * d.Item2))));
+    }
+
+    [Fact]
+    public void ElevationCount_ScalesWithMapSize()
+    {
+        // The mountain/hill budget is a fraction of land (FreeCol's mountainNumber), so a much bigger map of the
+        // same land fraction carries materially more elevation. Same seed isolates size as the only variable.
+        GameMap small = MapGenerator.Generate(Classic, 30, 20, new Pcg32Random(7), 0.45);
+        GameMap large = MapGenerator.Generate(Classic, 56, 38, new Pcg32Random(7), 0.45);
+
+        Assert.True(ElevationCount(small) > 0 && ElevationCount(large) > 0, "both maps should have elevation");
+        Assert.True(ElevationCount(large) > ElevationCount(small),
+            $"large map elevation ({ElevationCount(large)}) should exceed small ({ElevationCount(small)})");
+    }
+
+    [Fact]
+    public void Mountains_AreDeterministicPerSeed()
+    {
+        // The range walk draws RNG; the same seed must still lay the identical elevation, on every machine (ADR-009).
+        GameMap a = Generate(13);
+        GameMap b = Generate(13);
+
+        Assert.Equal(
+            a.AllPositions().Where(p => a.TerrainAt(p).IsElevation).ToList(),
+            b.AllPositions().Where(p => b.TerrainAt(p).IsElevation).ToList());
+    }
+
     [Fact]
     public void Tropics_GrowHotTerrain_NotArctic()
     {
