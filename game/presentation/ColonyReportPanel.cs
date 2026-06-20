@@ -3,6 +3,7 @@ using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using Godot;
 
@@ -17,13 +18,18 @@ namespace CrownAndColony.Presentation;
 /// <item><b>Units</b> (`86d3c9x15` — Labour / Military / Naval / Cargo): the human's units grouped into military
 /// (<see cref="Game.IsMilitaryUnit"/>), naval, cargo carriers (with hold contents) and labour (the person residual),
 /// each with its role and location.</item>
+/// <item><b>Foreign</b> / <b>Natives</b> / <b>Religion</b> (`86d3c9x3c`): rival-power, discovered-settlement and
+/// immigration summaries.</item>
+/// <item><b>Market</b> (`86d3dmn6d` — FreeCol's ReportTradePanel, price subset): every tradeable good's current
+/// sell (bid) and buy (ask) price plus a boycott marker, read straight from the human's <see cref="Game.Market"/>.
+/// Volume/income columns need accumulated trade history (no oracle yet) and are scoped out.</item>
 /// </list>
 /// Pure presentation (ADR-006) — reads <see cref="Game"/> oracles only, never mutates. Built programmatically into
-/// the fixed <c>VBox/Dynamic</c> shell. (Status reports + a Trade/market report are follow-up tabs.)
+/// the fixed <c>VBox/Dynamic</c> shell.
 /// </summary>
 public partial class ColonyReportPanel : PanelContainer
 {
-    private enum Tab { Colonies, Units, Foreign, Natives, Religion }
+    private enum Tab { Colonies, Units, Foreign, Natives, Religion, Market }
 
     private Game _game = null!;
     private Tab _tab = Tab.Colonies;
@@ -35,6 +41,7 @@ public partial class ColonyReportPanel : PanelContainer
         [Tab.Foreign] = "Foreign affairs",
         [Tab.Natives] = "Native nations",
         [Tab.Religion] = "Religion",
+        [Tab.Market] = "Trade & market prices",
     };
 
     /// <summary>Opens the reports screen on the Colonies tab over the current game state.</summary>
@@ -62,6 +69,7 @@ public partial class ColonyReportPanel : PanelContainer
         tabs.AddChild(TabButton("Foreign", Tab.Foreign));
         tabs.AddChild(TabButton("Natives", Tab.Natives));
         tabs.AddChild(TabButton("Religion", Tab.Religion));
+        tabs.AddChild(TabButton("Market", Tab.Market));
         dynamic.AddChild(tabs);
         dynamic.AddChild(new HSeparator());
 
@@ -72,6 +80,7 @@ public partial class ColonyReportPanel : PanelContainer
             case Tab.Foreign: BuildForeign(dynamic); break;
             case Tab.Natives: BuildNatives(dynamic); break;
             case Tab.Religion: BuildReligion(dynamic); break;
+            case Tab.Market: BuildMarket(dynamic); break;
         }
     }
 
@@ -284,6 +293,38 @@ public partial class ColonyReportPanel : PanelContainer
         {
             Text = "(Per-church cross output is a follow-up; map-region exploration discovery is deferred.)",
         });
+    }
+
+    // ── Trade & market prices tab (faithful subset: per-good bid/ask + boycott) ──────────────────────────
+
+    private void BuildMarket(VBoxContainer dynamic)
+    {
+        // FreeCol's ReportTradePanel lists every tradeable good with its sale (bid) and purchase (ask) price plus
+        // a boycott marker. Volume/income columns need accumulated trade history (no oracle yet), so they are
+        // scoped out here — this is the price/boycott subset, read straight from the human's Market (ADR-006).
+        List<GoodsType> goods = _game.Ruleset.GoodsTypes
+            .Where(g => _game.Market.IsTradeable(g.Id))
+            .ToList();
+        if (goods.Count == 0)
+        {
+            dynamic.AddChild(new Label { Text = "No goods are tradeable.", HorizontalAlignment = HorizontalAlignment.Center });
+            return;
+        }
+
+        dynamic.AddChild(new Label { Name = "MarketHeader", Text = "Good — sell / buy (gold per unit)" });
+        foreach (GoodsType g in goods)
+        {
+            int bid = _game.Market.BidPrice(g.Id);
+            int ask = _game.Market.AskPrice(g.Id);
+            string boycott = _game.Market.CanTrade(g.Id)
+                ? ""
+                : $"  ·  BOYCOTT (arrears {_game.Market.Arrears(g.Id)} gold)";
+            dynamic.AddChild(new Label
+            {
+                Name = $"Market_{Strip(g.Id)}",
+                Text = $"{g.ShortName} — sell {bid} / buy {ask}{boycott}",
+            });
+        }
     }
 
     /// <summary>The readable tail of a <c>model.*.foo</c> id (e.g. <c>model.nation.dutch</c> → <c>dutch</c>).</summary>

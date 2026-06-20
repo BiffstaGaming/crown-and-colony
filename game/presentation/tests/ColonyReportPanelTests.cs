@@ -113,6 +113,28 @@ public class ColonyReportPanelTests
         AssertThat(dynamic.GetNodeOrNull("ReligionImmigration")).IsNotNull(); // the immigration bar always renders
     }
 
+    [TestCase]
+    public async Task MarketTab_ListsTradeableGoodsWithPrices()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Market").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Trade & market prices");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        // Tobacco is always market-tradeable in the classic ruleset → its priced row renders, named by the good.
+        var tobacco = dynamic.GetNodeOrNull<Label>("Market_tobacco");
+        AssertThat(tobacco).IsNotNull();
+        AssertThat(tobacco!.Text).Contains("sell");
+        AssertThat(tobacco.Text).Contains("buy");
+    }
+
     private static CrownAndColony.GameLogic.GameSession.Game GetGame(GameController controller) =>
         (CrownAndColony.GameLogic.GameSession.Game)controller
             .GetType()
