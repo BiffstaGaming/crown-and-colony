@@ -213,4 +213,69 @@ public class CustomHouseTests
 
         Assert.Equal(popBefore + 1, colony.Population);  // grew first; the food sale didn't starve growth
     }
+
+    // ---- Sale notice (86d3c9t7z): transient per-turn feedback for the HUD ----
+    //
+    // The custom house sells silently to Europe — the player gets no feedback without these notices. Each sale from
+    // a human colony records a CustomHouseSaleNotice (colony id/name + goods + amount + after-tax gold); the list is
+    // transient (cleared at the start of every EndTurn, never saved).
+
+    [Fact]
+    public void AutoSell_RecordsASaleNotice_WithGoodsAndGold()
+    {
+        (Game game, Colony colony) = CustomHouseColony();
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 50);
+        colony.AddGoods(Sugar, 90);                       // 40 surplus over the level
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.EndTurn();
+
+        CustomHouseSaleNotice notice = Assert.Single(game.CustomHouseSaleNotices);
+        Assert.Equal(colony.Id, notice.ColonyId);
+        Assert.Equal(colony.Name, notice.ColonyName);
+        Assert.Equal(Sugar, notice.GoodsId);
+        Assert.Equal(40, notice.Amount);                 // surplus shipped (90 − 50)
+        Assert.True(notice.Gold > 0);
+        Assert.Equal(notice.Gold, game.HumanPlayer.Gold - goldBefore); // matches the gold actually credited
+    }
+
+    [Fact]
+    public void AutoSell_NoSale_ProducesNoNotice()
+    {
+        (Game game, Colony colony) = CustomHouseColony();
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 100);
+        colony.AddGoods(Sugar, 30);                       // below the retain level → nothing ships
+
+        game.EndTurn();
+
+        Assert.Empty(game.CustomHouseSaleNotices);
+    }
+
+    [Fact]
+    public void AutoSell_WithoutACustomHouse_ProducesNoNotice()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundColony(game);               // no custom house
+        game.SetColonyExport(colony, Sugar, exported: true);
+        colony.AddGoods(Sugar, 90);
+
+        game.EndTurn();
+
+        Assert.Empty(game.CustomHouseSaleNotices);       // no building → no sale → no notice
+    }
+
+    [Fact]
+    public void AutoSell_SaleNotices_ClearAtTheStartOfEachEndTurn()
+    {
+        (Game game, Colony colony) = CustomHouseColony();
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 50);
+        colony.AddGoods(Sugar, 90);
+        game.EndTurn();
+        Assert.NotEmpty(game.CustomHouseSaleNotices);    // sold this turn
+
+        colony.AddGoods(Sugar, -colony.StoreOf(Sugar));  // empty the warehouse so next turn ships nothing
+        game.EndTurn();
+
+        Assert.Empty(game.CustomHouseSaleNotices);       // last turn's notices were cleared; nothing new sold
+    }
 }

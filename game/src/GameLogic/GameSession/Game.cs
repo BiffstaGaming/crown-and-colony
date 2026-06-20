@@ -85,6 +85,7 @@ public sealed partial class Game
     private readonly List<ColonyLossNotice> _colonyLossNotices = []; // transient: the most recent turn's AI captures of human colonies (not saved)
     private readonly List<ColonyRaidNotice> _colonyRaidNotices = []; // transient: the most recent turn's native pillages of human colonies (not saved)
     private readonly List<ColonyGiftNotice> _colonyGiftNotices = []; // transient: the most recent turn's friendly native gifts to human colonies (not saved)
+    private readonly List<CustomHouseSaleNotice> _customHouseSaleNotices = []; // transient: the most recent turn's custom-house auto-sales from human colonies (not saved)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
     private readonly Player _human;
@@ -411,6 +412,13 @@ public sealed partial class Game
     /// the player "the X brought N goods to your colony Y".
     /// </summary>
     public IReadOnlyList<ColonyGiftNotice> ColonyGiftNotices => _colonyGiftNotices;
+
+    /// <summary>
+    /// Goods a human colony's custom house auto-sold to Europe during the most recent <see cref="EndTurn"/> — one
+    /// entry per good sold. Transient per-turn UI scratch (cleared each <c>EndTurn</c>, never saved); the
+    /// presentation reads it after the turn to tell the player "your custom house in X sold N goods for G gold".
+    /// </summary>
+    public IReadOnlyList<CustomHouseSaleNotice> CustomHouseSaleNotices => _customHouseSaleNotices;
 
     /// <summary>
     /// The native tribute demand currently awaiting the human's accept/refuse, or null if none. Transient per-turn
@@ -4815,6 +4823,7 @@ public sealed partial class Game
         _colonyLossNotices.Clear(); // and this turn's AI captures of human colonies
         _colonyRaidNotices.Clear(); // and this turn's native pillages of human colonies
         _colonyGiftNotices.Clear(); // and this turn's friendly native gifts to human colonies
+        _customHouseSaleNotices.Clear(); // and this turn's custom-house auto-sales from human colonies
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
         DeclinePendingMounds();     // an unanswered strange-mounds prompt counts as "leave them be" — clears it before the AI turns so it can't strand or block exploration across the round
         int startIndex = _currentPlayerIndex;
@@ -7273,7 +7282,8 @@ public sealed partial class Game
     /// does <b>except food</b> (auto-dumping food would halt growth). Goods are iterated in stable id order for
     /// determinism (ADR-009); a colony with no custom house — and the default PerGood mode with no toggles — sells
     /// nothing, so the soak stays byte-stable. (No boycott check yet — FreeCol's <c>canTrade(CUSTOM_HOUSE)</c> gate is
-    /// deferred with the boycott system.)
+    /// deferred with the boycott system.) Each sale from a <b>human-owned</b> colony records a transient
+    /// <see cref="CustomHouseSaleNotice"/> (good + amount + after-tax gold) the HUD surfaces after End Turn.
     /// </summary>
     private void AutoSellExports(Player owner, Colony colony)
     {
@@ -7298,7 +7308,13 @@ public sealed partial class Game
             int surplus = colony.StoreOf(goodsId) - setting.ExportLevel;
             if (surplus > 0)
             {
-                SellColonyGoods(owner, colony, goodsId, surplus);
+                int gold = SellColonyGoods(owner, colony, goodsId, surplus);
+                if (IsHumanOwned(colony))
+                {
+                    // Transient player-facing notice (ADR-006): the HUD surfaces what each custom house sold after
+                    // End Turn. Only the human's colonies are recorded — foreign powers still sell, silently.
+                    _customHouseSaleNotices.Add(new CustomHouseSaleNotice(colony.Id, colony.Name, goodsId, surplus, gold));
+                }
             }
         }
     }
