@@ -489,4 +489,182 @@ public class DiplomaticTradeTests
         Assert.Equal(Stance.War, game.StanceBetween(0, fid));
         Assert.Equal(0, game.TensionBetween(0, fid)); // unchanged by SetStance
     }
+
+    // ---- Item 6 (86d3c9uar): AI treaty evaluation (PURE; not turn-loop wired) ----
+
+    private const string VeteranSoldier = "model.unit.veteranSoldier";
+    private const string SoldierRole = "model.role.soldier";
+
+    /// <summary>Spawns <paramref name="count"/> armed soldiers for <paramref name="ownerId"/> (each adds land military power, so a power's strength ratio is testable).</summary>
+    private static void GiveSoldiers(Game g, int ownerId, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            Unit soldier = g.SpawnUnit(Classic.Unit(VeteranSoldier), FoundableSite(g));
+            soldier.RoleId = SoldierRole; // role offence > 0 → counts toward LandPowerOf
+            soldier.OwnerId = ownerId;
+        }
+    }
+
+    [Fact]
+    public void EvaluateTrade_AcceptsGoldReceived_AndRejectsGoldPaidForNothing()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+
+        // The power is offered 200 gold for nothing → accepts (value +200).
+        var good = new DiplomaticTrade(0, fid).Add(new GoldTradeItem(source: 0, destination: fid, amount: 200));
+        TradeEvaluation acc = game.EvaluateTrade(fid, good);
+        Assert.True(acc.Accept);
+        Assert.Equal(200, acc.Value);
+
+        // The power is asked to pay 200 gold for nothing → rejects (value −200).
+        var bad = new DiplomaticTrade(0, fid).Add(new GoldTradeItem(source: fid, destination: 0, amount: 200));
+        TradeEvaluation rej = game.EvaluateTrade(fid, bad);
+        Assert.False(rej.Accept);
+        Assert.Equal(-200, rej.Value);
+    }
+
+    [Fact]
+    public void EvaluateTrade_BalancedGoldForGold_NetsZero_AndIsAccepted()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+
+        var trade = new DiplomaticTrade(0, fid)
+            .Add(new GoldTradeItem(source: 0, destination: fid, amount: 200))  // +200 to fid
+            .Add(new GoldTradeItem(source: fid, destination: 0, amount: 200)); // −200 to fid
+
+        TradeEvaluation e = game.EvaluateTrade(fid, trade);
+        Assert.Equal(0, e.Value);
+        Assert.True(e.Accept); // value ≥ 0
+    }
+
+    [Fact]
+    public void EvaluateTrade_EmptyTrade_OrNonColonialPower_IsRejected()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        int nid = game.Players.First(p => p.PlayerType == PlayerType.Native).PlayerId;
+
+        Assert.False(game.EvaluateTrade(fid, new DiplomaticTrade(0, fid)).Accept); // no clauses
+        Assert.False(game.EvaluateTrade(nid, new DiplomaticTrade(0, nid)
+            .Add(new GoldTradeItem(0, nid, 500))).Accept); // natives don't evaluate treaties
+    }
+
+    [Fact]
+    public void EvaluateTrade_GoodsReceived_IsValuedPositivelyAtMarket()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        Colony ours = FoundColonyFor(game, ownerId: 0);
+        Colony theirs = FoundColonyFor(game, ownerId: fid, avoid: ours.Position);
+        ours.AddGoods(Tobacco, 100);
+
+        // fid receives 50 tobacco from us → positive (after-tax bid value).
+        var item = new GoodsTradeItem(source: 0, destination: fid, sourceColonyId: ours.Id, destinationColonyId: theirs.Id, goodsId: Tobacco, amount: 50);
+        int score = game.EvaluateTradeItem(fid, item);
+
+        Player power = game.Players.First(p => p.PlayerId == fid);
+        int expected = (int)System.Math.Round(power.Market.BidPrice(Tobacco) * 50 * (1.0 - power.TaxRate / 100.0));
+        Assert.Equal(expected, score);
+        Assert.True(score > 0);
+    }
+
+    [Fact]
+    public void EvaluateStanceClause_AStrongPower_RefusesToMakePeace_ButTakesWarValue()
+    {
+        // A power much stronger than the other (ratio > 0.66) sees no value in peace (invalid) and positive value in war.
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        int other = SecondForeignPowerId(game);
+        GiveSoldiers(game, fid, 10);  // strong
+        GiveSoldiers(game, other, 1); // weak  → ratio ≈ 0.91 for fid
+
+        var peace = new DiplomaticTrade(other, fid).Add(new StanceTradeItem(fid, other, Stance.Peace));
+        Assert.False(game.EvaluateTrade(fid, peace).Accept); // peace clause invalid at ratio > 0.66
+
+        int warScore = game.EvaluateTradeItem(fid, new StanceTradeItem(fid, other, Stance.War));
+        Assert.True(warScore > 0); // war is attractive when we dominate (ratio ≥ 0.5 → +value)
+    }
+
+    [Fact]
+    public void EvaluateStanceClause_AWeakPower_LeapsAtPeace_WithAStrongPositive()
+    {
+        // A power much weaker than the other (ratio < 0.33) values peace very highly (+1000).
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        int other = SecondForeignPowerId(game);
+        GiveSoldiers(game, fid, 1);    // weak
+        GiveSoldiers(game, other, 10); // strong → ratio ≈ 0.09 for fid
+
+        int peaceScore = game.EvaluateTradeItem(fid, new StanceTradeItem(fid, other, Stance.Peace));
+        Assert.Equal(1000, peaceScore);
+    }
+
+    [Fact]
+    public void EvaluateUnitClause_AnAIWithFewUnits_RefusesToGiveOneAway()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        Unit only = SpawnUnitFor(game, ownerId: fid); // the power holds very few units (< 10)
+
+        int giving = game.EvaluateTradeItem(fid, new UnitTradeItem(source: fid, destination: 0, unitId: only.Id));
+        Assert.Equal(int.MinValue, giving); // InvalidTradeItem — won't trade away from a thin roster
+
+        int receiving = game.EvaluateTradeItem(fid, new UnitTradeItem(source: 0, destination: fid, unitId: only.Id));
+        Assert.True(receiving > 0); // happy to receive a unit
+    }
+
+    [Fact]
+    public void EvaluateColonyClause_AnAIBelowTheMargin_RefusesToGiveAColonyAway()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        Colony colony = FoundColonyFor(game, ownerId: fid); // power has 1 colony (< TRADE_MARGIN 5)
+
+        int giving = game.EvaluateTradeItem(fid, new ColonyTradeItem(source: fid, destination: 0, colonyId: colony.Id));
+        Assert.Equal(int.MinValue, giving);
+
+        int receiving = game.EvaluateTradeItem(fid, new ColonyTradeItem(source: 0, destination: fid, colonyId: colony.Id));
+        Assert.True(receiving > 0); // a colony is worth having
+    }
+
+    [Fact]
+    public void EvaluateTrade_RejectsWhenAnyClauseIsUnacceptable_EvenIfTheRestPay()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        Colony colony = FoundColonyFor(game, ownerId: fid); // 1 colony → giving it is invalid
+
+        var trade = new DiplomaticTrade(0, fid)
+            .Add(new GoldTradeItem(source: 0, destination: fid, amount: 5000))           // huge positive
+            .Add(new ColonyTradeItem(source: fid, destination: 0, colonyId: colony.Id)); // but unacceptable
+
+        TradeEvaluation e = game.EvaluateTrade(fid, trade);
+        Assert.Equal(1, e.UnacceptableItems);
+        Assert.False(e.Accept); // an unacceptable clause vetoes the whole treaty, however sweet the rest
+    }
+
+    [Fact]
+    public void EvaluateTrade_IsPure_LeavingTheGameUntouched()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        Player human = game.HumanPlayer;
+        Player rival = game.Players.First(p => p.PlayerId == fid);
+        human.Gold = 500;
+        rival.Gold = 100;
+        game.SetStance(0, fid, Stance.War);
+
+        var trade = new DiplomaticTrade(0, fid)
+            .Add(new GoldTradeItem(0, fid, 300))
+            .Add(new StanceTradeItem(0, fid, Stance.Peace));
+
+        game.EvaluateTrade(fid, trade); // evaluation only — must mutate nothing
+
+        Assert.Equal(500, human.Gold);
+        Assert.Equal(100, rival.Gold);
+        Assert.Equal(Stance.War, game.StanceBetween(0, fid)); // still at war — not settled
+    }
 }
