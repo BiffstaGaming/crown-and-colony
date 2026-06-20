@@ -57,6 +57,7 @@ public partial class GameController : Node2D
     private Node2D _nativeLayer = null!;
     private Label _statusLabel = null!;
     private Label _calendarLabel = null!;
+    private MiniMap _miniMap = null!;
     private PanelContainer _colonyPanel = null!;
     private PanelContainer _europePanel = null!;
     private PanelContainer _nativePanel = null!;
@@ -76,6 +77,10 @@ public partial class GameController : Node2D
         _nativeLayer = GetNode<Node2D>("MapView/NativeLayer");
         _statusLabel = GetNode<Label>("UI/StatusLabel");
         _calendarLabel = GetNode<Label>("UI/CalendarPanel/CalendarLabel");
+        _miniMap = GetNode<MiniMap>("UI/MiniMap");
+        _miniMap.TileSelected += CenterCameraOnTile;
+        GetNode<Button>("UI/MiniMap/ZoomInButton").Pressed += _miniMap.ZoomIn;
+        GetNode<Button>("UI/MiniMap/ZoomOutButton").Pressed += _miniMap.ZoomOut;
         _colonyPanel = GetNode<PanelContainer>("UI/ColonyPanel");
         _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
@@ -145,6 +150,10 @@ public partial class GameController : Node2D
         GetNode<Camera2D>("Camera").Position = MapView.TileCentre(focus);
         RefreshView();
     }
+
+    /// <summary>Recenters the main camera on a map tile — the minimap's click-to-recenter target (ADR-006).</summary>
+    private void CenterCameraOnTile(Position tile) =>
+        GetNode<Camera2D>("Camera").Position = MapView.TileCentre(tile);
 
     private void OnEndTurnPressed()
     {
@@ -450,6 +459,7 @@ public partial class GameController : Node2D
         }
 
         _mapView.ShowState(_game.Map, _game.Explored, _game.CurrentlyVisible);
+        _miniMap.ShowState(_game);
         SyncColonyMarkers();
         SyncNativeMarkers();
         SyncUnitMarkers();

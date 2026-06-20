@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://presentation/GameController.cs" id="1"]
 [ext_resource type="Script" path="res://presentation/MapView.cs" id="2"]
@@ -9,6 +9,7 @@
 [ext_resource type="Script" path="res://presentation/NativeDemandPanel.cs" id="8"]
 [ext_resource type="Script" path="res://presentation/PauseMenu.cs" id="9"]
 [ext_resource type="Script" path="res://presentation/TradeRoutePanel.cs" id="10"]
+[ext_resource type="Script" path="res://presentation/MiniMap.cs" id="11"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -292,6 +293,42 @@ offset_bottom = -16.0
 grow_horizontal = 0
 grow_vertical = 0
 text = "End Turn"
+
+[node name="MiniMap" type="Control" parent="UI"]
+clip_contents = true
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -172.0
+offset_right = 252.0
+offset_bottom = -12.0
+grow_vertical = 0
+script = ExtResource("11")
+
+[node name="ZoomOutButton" type="Button" parent="UI/MiniMap"]
+custom_minimum_size = Vector2(24, 24)
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -52.0
+offset_top = 2.0
+offset_right = -28.0
+offset_bottom = 26.0
+grow_horizontal = 0
+text = "-"
+
+[node name="ZoomInButton" type="Button" parent="UI/MiniMap"]
+custom_minimum_size = Vector2(24, 24)
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -26.0
+offset_top = 2.0
+offset_right = -2.0
+offset_bottom = 26.0
+grow_horizontal = 0
+text = "+"
 
 [node name="GameOverScreen" type="Control" parent="UI"]
 visible = false

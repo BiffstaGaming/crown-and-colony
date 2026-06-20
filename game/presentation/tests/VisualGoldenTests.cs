@@ -150,6 +150,25 @@ public class VisualGoldenTests
         GoldenAssert.Assert("rendered-units-seed424242", actual);
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task MiniMap_SeededWorld_MatchesGolden()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+
+        controller.GetWindow().Size = CaptureSize;
+        controller.StartNewGame(GoldenSeed); // UI stays visible: the minimap draws an opaque backdrop
+        await runner.SimulateFrames(5);
+
+        // Crop the full-screen capture to the minimap's own rect — self-contained (opaque), so independent of
+        // the map view rendered behind the rest of the UI. Pure flat-colour cells + dots → cross-platform stable.
+        var mini = controller.GetNode<MiniMap>("UI/MiniMap");
+        Rect2 rect = mini.GetGlobalRect();
+        Image actual = controller.GetViewport().GetTexture().GetImage()
+            .GetRegion(new Rect2I((Vector2I)rect.Position, (Vector2I)rect.Size));
+        GoldenAssert.Assert("minimap-seed424242", actual);
+    }
+
     private static CrownAndColony.GameLogic.GameSession.Game GetGame(GameController controller) =>
         (CrownAndColony.GameLogic.GameSession.Game)controller
             .GetType()
