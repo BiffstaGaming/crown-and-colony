@@ -236,6 +236,106 @@ public class NativeAiTests
         Assert.DoesNotContain(game.CombatNotices, n => n.Position == hardTile); // the dug-in soldier was passed over
     }
 
+    // ── Equip braves from settlement stock (86d3c9vzp, equip facet — FreeCol NativeAIPlayer.equipBraves) ───────────
+
+    private const string Muskets = "model.goods.muskets";
+    private const string Horses = "model.goods.horses";
+    private const string DefaultRole = "model.role.default";
+
+    /// <summary>The home settlement (nearest same-nation) a brave equips from — the same rule RunNativeTurn uses.</summary>
+    private static NativeSettlement HomeOf(Game game, Unit brave) =>
+        game.NativeSettlements.Where(s => s.NationTypeId == brave.OwnerNationId)
+            .OrderBy(s => System.Math.Max(System.Math.Abs(s.Position.X - brave.Position.X),
+                                          System.Math.Abs(s.Position.Y - brave.Position.Y)))
+            .ThenBy(s => s.Position.Y).ThenBy(s => s.Position.X)
+            .First();
+
+    [Fact]
+    public void AThreatenedSettlement_WithMuskets_ArmsItsBrave_FromItsOwnStock()
+    {
+        Game game = Game.New(Classic, seed: 7);
+        Unit brave = game.NativeUnits.First();
+        Assert.Equal(DefaultRole, brave.RoleId); // braves start unarmed
+
+        NativeSettlement home = HomeOf(game, brave);
+        foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == brave.OwnerNationId))
+        {
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // the nation is Hateful → its camps secure themselves
+        }
+        home.AddStock(Muskets, 25); // exactly one armed-brave's worth in the camp store
+
+        game.EndTurn();
+
+        Assert.Equal("model.role.armedBrave", brave.RoleId); // the brave armed itself from the stock
+        Assert.Equal(0, home.StockOf(Muskets));              // …drawn down from the settlement
+    }
+
+    [Fact]
+    public void AThreatenedSettlement_WithoutMuskets_LeavesItsBraveUnarmed()
+    {
+        Game game = Game.New(Classic, seed: 7);
+        Unit brave = game.NativeUnits.First();
+        foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == brave.OwnerNationId))
+        {
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // alarmed, but the camp holds no muskets/horses
+        }
+
+        game.EndTurn();
+
+        Assert.Equal(DefaultRole, brave.RoleId); // no stock → nothing to equip from → still the default role
+    }
+
+    [Fact]
+    public void ACalmSettlement_DoesNotArmItsBrave_EvenWithMusketsInStock()
+    {
+        // The trigger is being threatened: a Happy/Content camp keeps its braves unarmed even when it holds muskets.
+        Game game = Game.New(Classic, seed: 7);
+        Unit brave = game.NativeUnits.First();
+        HomeOf(game, brave).AddStock(Muskets, 100); // plenty of muskets, but the nation is at peace (alarm 0)
+
+        game.EndTurn();
+
+        Assert.Equal(DefaultRole, brave.RoleId); // a calm camp does not secure itself → no equip
+    }
+
+    [Fact]
+    public void EquippingABrave_DrawsOnlyOnTheNativesStream_HumanStream0ByteStable()
+    {
+        // The decisive ADR-009 guard for the equip path: a game whose natives arm themselves (both muskets AND horses
+        // available, so the choice draws from the native stream) keeps the human's stream 0 byte-identical to a game
+        // whose natives can't equip — only the natives' own state diverges.
+        Game equips = Game.New(Classic, seed: 999);
+        Game bare = Game.New(Classic, seed: 999);
+        foreach (Game g in new[] { equips, bare })
+        {
+            foreach (NativeSettlement s in g.NativeSettlements)
+            {
+                g.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // both enraged so the native paths run identically…
+            }
+        }
+        foreach (NativeSettlement s in equips.NativeSettlements)
+        {
+            s.AddStock(Muskets, 50); // …but only this game's camps can arm (and mount) their braves
+            s.AddStock(Horses, 50);
+        }
+
+        for (int turn = 0; turn < 10; turn++)
+        {
+            equips.EndTurn();
+            bare.EndTurn();
+        }
+
+        // At least one brave actually armed itself (the path ran), proving the test exercises the equip…
+        Assert.Contains(equips.NativeUnits, b => b.RoleId != DefaultRole);
+        // …yet the equipping nation drew only on its own stream — the human's stream 0 and own state are untouched.
+        Assert.Equal(bare.RandomState, equips.RandomState);
+        Assert.Equal(bare.HumanPlayer.Gold, equips.HumanPlayer.Gold);
+        Assert.Equal(bare.HumanPlayer.Immigration, equips.HumanPlayer.Immigration);
+        Assert.Equal(bare.HumanPlayer.RecruitDock, equips.HumanPlayer.RecruitDock);
+        // The native streams genuinely diverged (an armed brave fights/moves differently from an unarmed one).
+        Assert.NotEqual(SaveGame.From(bare).ToJson(), SaveGame.From(equips).ToJson());
+    }
+
     // ── AI scout-chief + per-player first contact (86d3c9vta slice, save v44) ──────────────────────────────────────
 
     private static NativeSettlement SettlementWithFreeNeighbour(Game game) =>

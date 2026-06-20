@@ -178,6 +178,33 @@ public sealed class NativeSettlement
     /// </summary>
     public IReadOnlyList<string> WantedGoods { get; internal set; } = [];
 
+    /// <summary>
+    /// Muskets and horses the settlement holds, by goods id (FreeCol <c>IndianSettlement</c> goods container — the
+    /// stock the native AI arms its braves from, <see cref="GameSession.Game.TryEquipBrave"/>). We do not model a
+    /// full native warehouse: this is a <b>minimal, transient</b> military stock that is <em>not serialized</em>
+    /// (consistent with the "no native goods store" abstraction the gift/pillage paths already make) and defaults to
+    /// empty, so a generated/loaded game holds none and the equip step never fires — the human's stream 0 and every
+    /// save round-trip stay byte-identical (ADR-009). Only gameplay/tests that deposit muskets/horses here activate it.
+    /// </summary>
+    private readonly Dictionary<string, int> _militaryStock = [];
+
+    /// <summary>Units of <paramref name="goodsId"/> the settlement holds (0 if none). See <see cref="_militaryStock"/>.</summary>
+    public int StockOf(string goodsId) => _militaryStock.GetValueOrDefault(goodsId);
+
+    /// <summary>Adds <paramref name="amount"/> of <paramref name="goodsId"/> to the settlement's military stock (clamped at 0); the native AI consumes it when equipping braves.</summary>
+    public void AddStock(string goodsId, int amount)
+    {
+        int next = StockOf(goodsId) + amount;
+        if (next <= 0)
+        {
+            _militaryStock.Remove(goodsId);
+        }
+        else
+        {
+            _militaryStock[goodsId] = next;
+        }
+    }
+
     /// <summary>The wanted-good slot of a goods id (0 = most wanted), or -1 if not wanted.</summary>
     public int WantedSlot(string goodsId)
     {

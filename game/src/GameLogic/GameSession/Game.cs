@@ -5283,7 +5283,15 @@ public sealed partial class Game
                 continue;
             }
 
-            bool hostile = HomeSettlement(player, brave) is { } home && home.AlarmLevel >= RaidAlarmThreshold;
+            NativeSettlement? home = HomeSettlement(player, brave);
+            bool hostile = home is not null && home.AlarmLevel >= RaidAlarmThreshold;
+            if (hostile)
+            {
+                // Secure the camp first: arm the brave from the settlement's own stock before it acts this turn
+                // (FreeCol NativeAIPlayer.equipBraves, run at the start of the settlement's turn). Free — it never
+                // consumes the brave's action, so an armed brave still raids/wanders below as usual.
+                TryEquipBrave(player, brave, home!);
+            }
             if (hostile && AdjacentPillageableHumanColony(brave) is { } colonyTile)
             {
                 PillageColony(brave, colonyTile, RandomFor(player)); // storm an undefended human colony (own stream)
@@ -5350,6 +5358,76 @@ public sealed partial class Game
         colony.AddGoods(NativeGiftGoodsId, NativeGiftAmount);
         _colonyGiftNotices.Add(new ColonyGiftNotice(nation.NationId!, colony.Name, NativeGiftGoodsId, NativeGiftAmount, colony.Position));
         return true;
+    }
+
+    /// <summary>The brave role granting muskets (FreeCol <c>model.role.armedBrave</c>).</summary>
+    private const string ArmedBraveRoleId = "model.role.armedBrave";
+
+    /// <summary>The brave role granting horses (FreeCol <c>model.role.mountedBrave</c>).</summary>
+    private const string MountedBraveRoleId = "model.role.mountedBrave";
+
+    /// <summary>
+    /// Arms a brave from its threatened home settlement's own goods stock (FreeCol <c>NativeAIPlayer.equipBraves</c>),
+    /// the equip facet of securing a camp. When the brave is still in the unarmed default role and its home settlement
+    /// holds enough of a brave role's required goods, the brave is upgraded into that role and the goods are deducted
+    /// from the settlement's stock — turning a defenceless brave into an <see cref="ArmedBraveRoleId">armed</see> or
+    /// <see cref="MountedBraveRoleId">mounted</see> warrior. Returns true when an upgrade happened.
+    /// <para>
+    /// When the settlement can afford <em>both</em> muskets and horses, which to take is drawn from the nation's OWN
+    /// RNG stream (<see cref="RandomFor"/>) — FreeCol spreads arms and horses between camps with a random pick; never
+    /// the human's stream 0, so a default game (settlements hold no stock → this never fires) stays byte-stable
+    /// (ADR-009). Only the <em>choice</em> draws RNG, and only when both are affordable, so a settlement that can arm
+    /// just one way (or none) makes no draw at all. Equipping does not consume the brave's action — it still acts this
+    /// turn. <b>Bounded subset:</b> only the equip-when-threatened trigger and the muskets/horses single-role upgrade —
+    /// not FreeCol's full strength-ordered promotion to native dragoon, nor the threat-evaluation defend missions of
+    /// <c>secureIndianSettlement</c>.
+    /// </para>
+    /// </summary>
+    private bool TryEquipBrave(Player nation, Unit brave, NativeSettlement home)
+    {
+        if (!brave.HasDefaultRole)
+        {
+            return false; // already armed/mounted — nothing to upgrade from the default role
+        }
+        bool canArm = home.StockOf(MusketsId) >= BraveEquipGoods;
+        bool canMount = home.StockOf(HorsesId) >= BraveEquipGoods;
+        if (!canArm && !canMount)
+        {
+            return false; // no stock the brave could equip from → no RNG draw, settlement untouched
+        }
+
+        // Both affordable → the nation's own stream picks; otherwise take the only option. Muskets first by convention.
+        string roleId = canArm && canMount
+            ? (RandomFor(nation).Next(2) == 0 ? ArmedBraveRoleId : MountedBraveRoleId)
+            : canArm ? ArmedBraveRoleId : MountedBraveRoleId;
+
+        EquipFromSettlement(brave, home, roleId);
+        return true;
+    }
+
+    /// <summary>Goods units one brave role count requires (FreeCol armed/mounted brave = 25; pinned in the spec).</summary>
+    private const int BraveEquipGoods = 25;
+
+    /// <summary>Muskets goods id (the armed-brave equipment).</summary>
+    private const string MusketsId = "model.goods.muskets";
+
+    /// <summary>Horses goods id (the mounted-brave equipment).</summary>
+    private const string HorsesId = "model.goods.horses";
+
+    /// <summary>
+    /// Moves <paramref name="brave"/> into <paramref name="roleId"/>, deducting that role's required goods from
+    /// <paramref name="home"/>'s stock — the native equivalent of <see cref="EquipRole"/>'s colony draw-down, reusing
+    /// the shared <see cref="ChangeRole"/> mechanism (the same path combat capture uses to arm a brave). The role's
+    /// equipment is consumed from the settlement (it is the brave's only count); the upgrade persists via the brave's
+    /// existing serialized role field (no save change).
+    /// </summary>
+    private void EquipFromSettlement(Unit brave, NativeSettlement home, string roleId)
+    {
+        foreach (RoleRequiredGoods g in Ruleset.Role(roleId).RequiredGoods)
+        {
+            home.AddStock(g.GoodsId, -g.Amount);
+        }
+        ChangeRole(brave, roleId, 1);
     }
 
     /// <summary>
