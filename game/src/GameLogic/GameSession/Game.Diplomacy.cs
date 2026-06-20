@@ -350,7 +350,7 @@ public sealed partial class Game
             return -market.AskPrice(goods.GoodsId) * goods.Amount; // cost to replace what we give away
         }
         int revenue = market.BidPrice(goods.GoodsId) * goods.Amount;
-        return (int)Math.Round(revenue * (1.0 - power.TaxRate / 100.0)); // after-tax sale value of what we receive
+        return (int)Math.Round(revenue * (1.0 - power.TaxRate / 100.0), MidpointRounding.AwayFromZero); // after-tax sale value of what we receive
     }
 
     /// <summary>
@@ -362,7 +362,7 @@ public sealed partial class Game
     private int EvaluateStance(int powerId, int otherId, Stance stance)
     {
         double ratio = StrengthRatio(powerId, otherId);
-        int value = (int)Math.Round(100 * ratio);
+        int value = (int)Math.Round(100 * ratio, MidpointRounding.AwayFromZero);
         switch (stance)
         {
             case Stance.War:
@@ -394,7 +394,7 @@ public sealed partial class Game
         {
             return InvalidTradeItem; // no strength → cannot make war (avoids div-by-zero)
         }
-        return -(int)Math.Round(50.0 / ratio);
+        return -(int)Math.Round(50.0 / ratio, MidpointRounding.AwayFromZero); // round-half-up to match FreeCol's Java Math.round (50.0/ratio is positive here), and the project convention
     }
 
     /// <summary>Colony value (proxy for FreeCol <c>ColonyTradeItem.evaluateFor</c>): an AI won't give up a colony when it would drop below <see cref="ColonyTradeMargin"/>; otherwise ± its population-proxy worth (negative when the power is the giver).</summary>

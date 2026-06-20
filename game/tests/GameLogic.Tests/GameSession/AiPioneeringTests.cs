@@ -115,6 +115,38 @@ public class AiPioneeringTests
     private static int Chebyshev(Position a, Position b) => System.Math.Max(System.Math.Abs(a.X - b.X), System.Math.Abs(a.Y - b.Y));
 
     [Fact]
+    public void ForeignPioneer_WithNoPlans_IsNotConsumedToFoundAColony()
+    {
+        // A tooled pioneer whose power has no colony (so no footprint, no plans) must NOT be spent founding a colony —
+        // that would destroy its 20 tools. It explores instead, staying a pioneer (review finding, `86d3c9vta`).
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 5,
+            MapHeight = 5,
+            Terrain = [.. Enumerable.Repeat("model.tile.plains", 25)],
+            Units = [ForeignUnit(1, HardyPioneer, 2, 2, Pioneer, 1)], // a lone pioneer, no colony anywhere
+            Explored = [.. Enumerable.Range(0, 25)],
+            Players = HumanPlusForeign(),
+            Colonies = null,
+        };
+        Game game = save.Restore(Classic);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        foreach (Position p in game.Map.AllPositions())
+        {
+            power.ExploredSet.Add(p);
+        }
+
+        game.EndTurn();
+
+        Assert.Contains(game.Units, u => u.Id == 1);              // the pioneer was NOT consumed to found
+        Assert.Equal(Pioneer, UnitOf(game, 1).RoleId);           // still a tooled pioneer (tools not wasted)
+        Assert.DoesNotContain(game.Colonies, c => c.OwnerId == power.PlayerId); // and it founded nothing
+    }
+
+    [Fact]
     public void ForeignPower_ArmsAnIdleColonistAsAPioneer_FromAToolStockedColony()
     {
         // A plain colonist standing in the foreign colony, which stocks a pioneer's tools, is armed as a pioneer

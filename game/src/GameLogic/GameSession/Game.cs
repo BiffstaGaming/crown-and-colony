@@ -5445,9 +5445,12 @@ public sealed partial class Game
             PlanColonyBuildingWork(power, colony);
         }
 
-        // When the power wants another pioneer (86d3c9vta), it keeps one pioneer's worth of tools in store rather than
-        // selling them all off — FreeCol's AI reserves equipment for the roles it plans to fill (pioneersNeeded). So a
-        // colonist can later be armed as a pioneer instead of the tools always being cashed out. RNG-free read.
+        // When the power wants another pioneer (86d3c9vta), each colony keeps a pioneer's worth of tools back rather
+        // than selling them all off — FreeCol's AI reserves equipment for the roles it plans to fill (pioneersNeeded).
+        // So a colonist standing in a colony can later be armed as a pioneer there (equipping needs the 20 tools
+        // co-located — see ColonyCanEquipPioneer) instead of the tools always being cashed out. RNG-free read. (The
+        // reserve is per colony, applied in the per-colony loop below — a deliberate over-reserve that simply sells
+        // fewer tools; it never starves anything since food is always kept and tools aren't eaten.)
         int toolsReserve = PowerWantsAnotherPioneer(power) ? PioneerToolCost : AiTradeReserve;
 
         // Sell the surplus of each tradeable good (the colony centre and worked tiles yield cash crops/ore
@@ -5861,14 +5864,17 @@ public sealed partial class Game
                     MoveUnit(unit, toPlan);
                     continue;
                 }
-                // No plan left to pursue — an idle pioneer falls through to the explore fallback below.
+                // No plan left to pursue — an idle pioneer falls through to the chief/explore fallbacks below
+                // (NOT founding — a tooled pioneer must never be consumed to found a colony, which would waste its
+                // tools; the founding branch is gated on !IsPioneer for exactly this).
             }
 
             if (!unit.Type.CanFoundColony)
             {
                 continue; // non-founders (e.g. an idle soldier at peace) wait
             }
-            if (ColoniesOf(power).Count() < MaxAiColonies && CheckFoundColony(unit).Allowed)
+            // A tooled pioneer never founds (it would destroy its 20 tools); it improves, or — out of plans — explores.
+            if (!IsPioneer(unit) && ColoniesOf(power).Count() < MaxAiColonies && CheckFoundColony(unit).Allowed)
             {
                 FoundColony(unit);
                 continue;
