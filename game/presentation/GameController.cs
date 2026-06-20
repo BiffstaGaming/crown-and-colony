@@ -64,6 +64,7 @@ public partial class GameController : Node2D
     private PanelContainer _demandPanel = null!;
     private PanelContainer _tradeRoutePanel = null!;
     private PanelContainer _colonyReportPanel = null!;
+    private PanelContainer _findSettlementPanel = null!;
     private Button _endTurnButton = null!;
     private Control _gameOverScreen = null!;
     private Label _gameOverMessage = null!;
@@ -88,6 +89,7 @@ public partial class GameController : Node2D
         _demandPanel = GetNode<PanelContainer>("UI/NativeDemandPanel");
         _tradeRoutePanel = GetNode<PanelContainer>("UI/TradeRoutePanel");
         _colonyReportPanel = GetNode<PanelContainer>("UI/ColonyReportPanel");
+        _findSettlementPanel = GetNode<PanelContainer>("UI/FindSettlementPanel");
         _endTurnButton = GetNode<Button>("UI/EndTurnButton");
         _gameOverScreen = GetNode<Control>("UI/GameOverScreen");
         _gameOverMessage = GetNode<Label>("UI/GameOverScreen/Panel/VBox/Message");
@@ -96,6 +98,7 @@ public partial class GameController : Node2D
         GetNode<Button>("UI/TradeRoutesButton").Pressed += OpenTradeRoutePanel;
         GetNode<Button>("UI/ReportsButton").Pressed += OpenColonyReportPanel;
         GetNode<Button>("UI/ColonyReportPanel/VBox/CloseButton").Pressed += () => _colonyReportPanel.Hide();
+        GetNode<Button>("UI/FindSettlementPanel/VBox/CloseButton").Pressed += () => _findSettlementPanel.Hide();
         GetNode<Button>("UI/ColonyPanel/VBox/CloseButton").Pressed += () => _colonyPanel.Hide();
         GetNode<Button>("UI/EuropePanel/VBox/CloseButton").Pressed += () => _europePanel.Hide();
         GetNode<Button>("UI/NativeSettlementPanel/VBox/CloseButton").Pressed += () => _nativePanel.Hide();
@@ -266,6 +269,9 @@ public partial class GameController : Node2D
             case InputEventKey { Keycode: Key.E, Pressed: true, Echo: false }:
                 OpenEuropePanel();
                 break;
+            case InputEventKey { Keycode: Key.L, Pressed: true, Echo: false }:
+                OpenFindSettlementPanel();
+                break;
         }
     }
 
@@ -396,6 +402,10 @@ public partial class GameController : Node2D
     /// <summary>Opens the empire colony report (per-colony population / production / build requirements). Public so scene tests can drive it.</summary>
     public void OpenColonyReportPanel() =>
         ((ColonyReportPanel)_colonyReportPanel).Open(_game);
+
+    /// <summary>Opens the Find Settlement dialog (pick a colony to recenter the camera on it). Public so scene tests can drive it.</summary>
+    public void OpenFindSettlementPanel() =>
+        ((FindSettlementPanel)_findSettlementPanel).Open(_game, CenterCameraOnTile);
 
     /// <summary>Opens the native-settlement interaction panel, acting with <paramref name="actingUnit"/> (may be null — the panel then prompts to select one).</summary>
     public void OpenNativeSettlementPanel(NativeSettlement settlement, Unit? actingUnit)
