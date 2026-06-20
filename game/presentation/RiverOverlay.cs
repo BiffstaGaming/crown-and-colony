@@ -182,7 +182,7 @@ public partial class RiverOverlay : Node2D
     /// drawn-style field (ADR-006).
     /// </summary>
     private float LineWidth(Position p) =>
-        (_map!.ImprovementAt(p)?.Magnitude ?? 1) >= 2 || _largeRivers.Contains(p) ? LargeWidth : SmallWidth;
+        (_map!.RiverAt(p)?.Magnitude ?? 1) >= 2 || _largeRivers.Contains(p) ? LargeWidth : SmallWidth;
 
     /// <summary>Darkens a colour to the remembered-fog tint (matches <see cref="MapView"/>'s DimTint factor).</summary>
     private static Color Dim(Color c) => new(c.R * 0.5f, c.G * 0.5f, c.B * 0.58f);

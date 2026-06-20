@@ -156,6 +156,24 @@ public sealed class Unit
     /// <summary>True when the unit is in the unarmed default role.</summary>
     public bool HasDefaultRole => RoleId == Specification.RoleType.DefaultRoleId;
 
+    /// <summary>
+    /// The id of the tile improvement this unit is currently building (FreeCol <c>Unit.workImprovement</c> +
+    /// <c>UnitState.IMPROVING</c>), or null when it is not improving a tile. A pioneer with a build order accrues
+    /// work each turn until <see cref="WorkTurnsLeft"/> reaches zero, when the improvement lands and tools are spent.
+    /// Only <see cref="GameSession.Game"/> mutates it (<c>BuildImprovement</c> sets it, the per-turn work completes it).
+    /// </summary>
+    public string? WorkImprovementId { get; internal set; }
+
+    /// <summary>
+    /// Turns of work left before the in-progress improvement completes (FreeCol <c>Unit.workLeft</c> /
+    /// <c>TileImprovement.turnsToComplete</c>); 0 when the unit is not improving. A hardy (expert) pioneer works it
+    /// down twice as fast (2 per turn vs. 1).
+    /// </summary>
+    public int WorkTurnsLeft { get; internal set; }
+
+    /// <summary>True while the unit is building a tile improvement (it is busy and skipped when cycling units).</summary>
+    public bool IsImproving => WorkImprovementId is not null;
+
     /// <summary>True when this unit is a passenger aboard a ship.</summary>
     public bool IsAboard => CarrierId is not null;
 

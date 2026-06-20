@@ -241,6 +241,47 @@ public class ImprovementMovementTests
 
         Assert.Equal(3, ImprovementMovement.RiverMoveCost(River, noBonusRiver, baseCost: 3));
     }
+
+    // The generalised MoveCost over a tile's improvement list (river AND road).
+    private static readonly TileImprovementType Road =
+        Ruleset.LoadClassic().Improvement(TileImprovementType.RoadId);
+    private static readonly TileImprovementType Plow =
+        Ruleset.LoadClassic().Improvement(TileImprovementType.PlowId);
+
+    [Fact]
+    public void MoveCost_BothTilesHaveRoad_ReducedToRoadCost()
+    {
+        Assert.Equal(1, ImprovementMovement.MoveCost([Road], [Road], baseCost: 3));
+    }
+
+    [Fact]
+    public void MoveCost_RoadConnectsToRiver_BonusApplies()
+    {
+        // A road tile stepping onto a river tile (and vice versa) still follows the bonus (both grant movement).
+        Assert.Equal(1, ImprovementMovement.MoveCost([Road], [River], baseCost: 3));
+        Assert.Equal(1, ImprovementMovement.MoveCost([River], [Road], baseCost: 3));
+    }
+
+    [Fact]
+    public void MoveCost_RiverAndRoadOnOneTile_StillConnectsToRoadOnlyNeighbour()
+    {
+        // A tile with both a river and a road connects to a road-only (or river-only) neighbour.
+        Assert.Equal(1, ImprovementMovement.MoveCost([River, Road], [Road], baseCost: 6));
+    }
+
+    [Fact]
+    public void MoveCost_OnlyOneTileHasAMovementImprovement_NoBonus()
+    {
+        Assert.Equal(3, ImprovementMovement.MoveCost([], [Road], baseCost: 3));     // origin has none
+        Assert.Equal(3, ImprovementMovement.MoveCost([Road], [], baseCost: 3));     // destination has none
+    }
+
+    [Fact]
+    public void MoveCost_PlowGrantsNoMovementBonus()
+    {
+        // Plowed fields confer no movement bonus (movement-cost absent in the spec) — base cost stands.
+        Assert.Equal(3, ImprovementMovement.MoveCost([Plow], [Plow], baseCost: 3));
+    }
 }
 
 /// <summary>

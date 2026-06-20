@@ -6,10 +6,9 @@ namespace CrownAndColony.GameLogic.World.Improvements;
 /// FreeCol movement units (3 = one normal move), matching <c>TerrainType.MoveCost</c>.
 /// </summary>
 /// <remarks>
-/// This is a <b>pure rule layer, not yet wired</b>. Hooking this into <c>Game</c> unit movement and the
-/// <c>Pathfinder</c> (so a unit actually pays the reduced cost when stepping along a river) is a deferred
-/// follow-up slice (see <c>docs/systems/rivers-tile-improvements.md</c> §5). Until then this helper is
-/// unit-tested in isolation.
+/// The river bonus is wired into <c>Game.CheckMove</c>; <see cref="MoveCost"/> generalises it to roads (and any
+/// future movement-granting improvement) — a unit moving between two tiles that both carry a connecting
+/// movement-bonus improvement pays the reduced enter-cost.
 /// </remarks>
 public static class ImprovementMovement
 {
@@ -55,5 +54,31 @@ public static class ImprovementMovement
         }
 
         return ReducedCost(to.MovementCost, baseCost);
+    }
+
+    /// <summary>
+    /// The cost to move from one tile to an adjacent tile, applying any improvement "follow it" bonus generalised
+    /// over all the improvements on each tile (river <i>and</i> road). The bonus applies only when travel runs
+    /// <i>along</i> a movement-granting feature — i.e. <b>both</b> the origin and the destination carry at least one
+    /// improvement that grants a movement bonus (a river or a road). When it applies, the cheapest such bonus on the
+    /// destination tile is used (FreeCol takes the lowest connecting move cost). Otherwise the normal terrain cost
+    /// stands. A tile with a river and a road thus still connects to a road-only or river-only neighbour.
+    /// </summary>
+    /// <param name="from">The improvements on the tile being left.</param>
+    /// <param name="to">The improvements on the tile being entered.</param>
+    /// <param name="baseCost">The destination terrain's normal cost to enter (3 = one normal move).</param>
+    /// <returns>The reduced cost when both tiles carry a connecting movement-bonus improvement and it is cheaper; otherwise <paramref name="baseCost"/>.</returns>
+    public static int MoveCost(
+        IEnumerable<TileImprovementType> from, IEnumerable<TileImprovementType> to, int baseCost)
+    {
+        if (!from.Any(i => i.GrantsMovementBonus))
+        {
+            return baseCost; // nothing to follow from the origin tile
+        }
+        int? cheapest = to
+            .Where(i => i.GrantsMovementBonus)
+            .Select(i => (int?)i.MovementCost)
+            .Min();
+        return cheapest is { } cost ? ReducedCost(cost, baseCost) : baseCost;
     }
 }

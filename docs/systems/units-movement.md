@@ -65,9 +65,9 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
 
   The route is found by a deterministic, **RNG-free** A* (`Pathfinder`) over the terrain move-cost model, restricted to tiles the owner has **explored** (so a goto never routes through the unknown), recomputed **every step** so it adapts to revealed terrain and moved units. A unit only ever steps where `CheckMove` allows, so the goto obeys every normal movement rule.
 
-  **Unit cycling** (`NextUnitToMove`/`HasUnitsToMove`): the next of a player's units still needing orders this turn (lowest id first), skipping those with no moves left, those resting (fortifying/fortified/sentry), those on a goto (they auto-advance), and any off the map. The presentation layer drives selection from this oracle; the goto/cycling **input UI** (shift-click / G-key, the route overlay) is a separate P7 task.
+  **Unit cycling** (`NextUnitToMove`/`HasUnitsToMove`): the next of a player's units still needing orders this turn (lowest id first), skipping those with no moves left, those resting (fortifying/fortified/sentry), those **building a tile improvement** (a busy pioneer), those on a goto (they auto-advance), and any off the map. The presentation layer drives selection from this oracle; the goto/cycling **input UI** (shift-click / G-key, the route overlay) is a separate P7 task.
 
-**Deviations from original / FreeCol:** ✅ **cross-check done (2026-06-13).** The partial-movement rule above is FreeCol's exactly (`Unit.getMoveCost`, Unit.java:2227). Not yet implemented from that method: tile-improvement cost changes (roads/rivers — arrive with improvements) and the settlement-target clause (no settlements yet). For 3-MP units the rule is equivalent to the old skeleton behaviour; it differs for faster units (pinned by test).
+**Deviations from original / FreeCol:** ✅ **cross-check done (2026-06-13).** The partial-movement rule above is FreeCol's exactly (`Unit.getMoveCost`, Unit.java:2227). The tile-improvement "follow it" cost change (rivers **and** pioneer-built roads — `ImprovementMovement.MoveCost`, applied per step in `CheckMove` for land units) is now wired; see [rivers-tile-improvements](rivers-tile-improvements.md). Not yet implemented from that method: the settlement-target clause. For 3-MP units the rule is equivalent to the old skeleton behaviour; it differs for faster units (pinned by test).
 
 ## 3. Technical design
 
@@ -99,7 +99,7 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
 - [x] Standing orders — fortify (+50% defence), sentry, clear-orders, disband (`86d3c9pfh`, save v23). Presentation hotkeys/buttons (F = fortify, etc.) + skipping sentry units when cycling are the **follow-up presentation slice** (the GameLogic + combat wiring + save are done).
 - [x] Goto / multi-turn move orders + pathfinding + unit cycling — GameLogic done (`86d3c9pfy`, save v36): `Unit.Destination`, the `Pathfinder` A*, the set/advance oracle/mutator, `ProcessGotos`, `NextUnitToMove`. **Skipping sentry/goto units when cycling is now in GameLogic** (`NextUnitToMove`). The **goto/cycling input UI** (shift-click / G-key, route preview overlay, select-next-unit input) is the **P7 presentation slice**.
 - [ ] Nation-type (naval +3) and Magellan (+3) movement bonuses — scoped `movementBonus` modifiers, deferred with scope evaluation / founding-father effects.
-- [ ] Tile-improvement movement costs (roads/rivers) with the improvements system — will also speed goto routes (the `Pathfinder` heuristic assumes a minimum enter cost of 3; revisit then).
+- [x] Tile-improvement movement costs (rivers + pioneer-built roads): `CheckMove` applies `ImprovementMovement.MoveCost` per step for land units (`86d3b3qdx` rivers, `86d3dqr62` roads). Still to do: fold it into the `Pathfinder` so goto routes prefer roads (the heuristic still assumes a minimum enter cost of 3).
 - [ ] Settlement-target movement clause when colonies exist.
 - [ ] Naval / Europe / settlement goto destinations (only on-map land/own-colony tiles for now) — need a naval cost model.
 - [ ] L4 golden with unit + selection ring.

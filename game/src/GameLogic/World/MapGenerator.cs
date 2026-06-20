@@ -498,10 +498,12 @@ public static class MapGenerator
     /// crosses. Movement/production fidelity (the "both endpoints carry a river" follow-cost and the flat yield bonus)
     /// is exact — see <see cref="Improvements.ImprovementMovement"/> / <see cref="Improvements.ImprovementProduction"/>.</para>
     /// </summary>
-    private static Dictionary<Position, TileImprovementType> MakeRivers(
+    private static Dictionary<Position, IReadOnlyList<TileImprovementType>> MakeRivers(
         Ruleset ruleset, TerrainType[] terrain, int width, int height, IGameRandom random)
     {
-        var rivers = new Dictionary<Position, TileImprovementType>();
+        // Each river tile carries a single-improvement list (the river); pioneers later add roads/plows to the
+        // same tiles, which is why the map's improvement layer is multi-valued per tile.
+        var rivers = new Dictionary<Position, IReadOnlyList<TileImprovementType>>();
         TileImprovementType riverType = ruleset.ImprovementTypes.FirstOrDefault(i => i.Id == TileImprovementType.RiverId)
             ?? throw new InvalidOperationException("The ruleset declares no river tile-improvement type.");
 
@@ -578,7 +580,7 @@ public static class MapGenerator
             for (int step = 0; step < MaxRiverLength; step++)
             {
                 // Lay the river on the current (allowed) tile.
-                rivers[new Position(cx, cy)] = riverType;
+                rivers[new Position(cx, cy)] = [riverType];
                 if (rivers.Count >= budget)
                 {
                     break;

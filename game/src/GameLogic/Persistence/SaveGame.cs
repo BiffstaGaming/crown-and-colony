@@ -19,7 +19,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 47;
+    public const int CurrentVersion = 48;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -113,6 +113,12 @@ public sealed record SaveGame
     /// (<see cref="RefEntryTile"/>, chosen near the human's start at game creation, 86d3c9w5n), omitted when unset so a
     /// game that never fixed one stays byte-identical; pre-v47 saves load with none (the REF falls back to landing
     /// around the rebel's coastal colonies).
+    /// v48 added a pioneer's in-progress tile-improvement work-state — the improvement being built
+    /// (<see cref="SavedUnit.WorkImprovement"/>) and the turns of work left (<see cref="SavedUnit.WorkTurnsLeft"/>) —
+    /// both additive + omitted when the unit is not improving (the common case), so a game with no active pioneering
+    /// stays byte-identical to v47; pre-v48 saves load with no unit improving. The improvement layer also became
+    /// multi-valued per tile (a river plus a pioneer-built road/plow), which a v47 river save round-trips identically
+    /// — one entry per tile as before (86d3dqr62).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -283,7 +289,9 @@ public sealed record SaveGame
                     // Goto destination split into two ints; both omitted when no goto so a goto-free unit stays byte-identical to v35.
                     u.Destination?.X, u.Destination?.Y,
                     // Trade-route assignment (v43); omitted for a route-less unit so it stays byte-identical to v42.
-                    u.TradeRouteId, u.TradeRouteStopIndex == 0 ? null : u.TradeRouteStopIndex))
+                    u.TradeRouteId, u.TradeRouteStopIndex == 0 ? null : u.TradeRouteStopIndex,
+                    // In-progress pioneer improvement (v48); both omitted when not improving so a unit with no build order stays byte-identical to v47.
+                    u.WorkImprovementId, u.WorkTurnsLeft == 0 ? null : u.WorkTurnsLeft))
                 .ToList(),
             Colonies = game.Colonies
                 .Select(c => new SavedColony(
@@ -331,12 +339,15 @@ public sealed record SaveGame
                     .OrderBy(q => q.Index)
                     .ToList()
                 : null,
-            // Natural tile improvements (rivers) by row-major index + id/magnitude (v47); omitted when none placed,
-            // so a riverless map stays byte-identical to v46.
-            Improvements = game.Map.Improvements.Count > 0
-                ? game.Map.Improvements
-                    .Select(i => new SavedImprovement(i.Key.Y * game.Map.Width + i.Key.X, i.Value.Id, i.Value.Magnitude))
+            // Tile improvements by row-major index + id/magnitude (v47); one entry per (tile, improvement) — a tile
+            // with a river and a road emits two entries at the same index, ordered by id for a stable byte layout.
+            // Omitted when none placed, so an improvement-free map stays byte-identical to v46.
+            Improvements = game.Map.AllImprovements().Any()
+                ? game.Map.AllImprovements()
+                    .Select(i => new SavedImprovement(
+                        i.Position.Y * game.Map.Width + i.Position.X, i.Improvement.Id, i.Improvement.Magnitude))
                     .OrderBy(i => i.Index)
+                    .ThenBy(i => i.ImprovementId, StringComparer.Ordinal)
                     .ToList()
                 : null,
             // The REF's fixed entry tile (v47); omitted when unset so a game that never fixed one stays byte-identical.
@@ -409,11 +420,16 @@ public sealed record SaveGame
             ResourceQuantities?.ToDictionary(
                 q => new Position(q.Index % MapWidth, q.Index / MapWidth),
                 q => q.Quantity),
-            // Natural tile improvements (rivers) by tile (v47; pre-v47 / omitted → none). The ruleset re-supplies the
-            // improvement type's rule data (modifiers, movement cost); the saved magnitude is re-stamped onto it.
-            Improvements?.ToDictionary(
-                i => new Position(i.Index % MapWidth, i.Index / MapWidth),
-                i => ruleset.Improvement(i.ImprovementId) with { Magnitude = i.Magnitude }));
+            // Tile improvements by tile (v47; pre-v47 / omitted → none) — grouped by index so a tile with several
+            // (a river + a road) restores its full list. The ruleset re-supplies each improvement type's rule data
+            // (modifiers, movement cost, scopes); the saved magnitude is re-stamped onto it.
+            Improvements?
+                .GroupBy(i => i.Index)
+                .ToDictionary(
+                    g => new Position(g.Key % MapWidth, g.Key / MapWidth),
+                    g => (IReadOnlyList<TileImprovementType>)g
+                        .Select(i => ruleset.Improvement(i.ImprovementId) with { Magnitude = i.Magnitude })
+                        .ToList()));
 
         // Pre-v35 saves (and any save without a persisted region layer) re-derive regions deterministically from
         // the terrain — exactly the layer the generator would have produced (mirrors the native-land re-derivation).
@@ -446,7 +462,8 @@ public sealed record SaveGame
                 (UnitOrders)(u.Orders ?? 0), // pre-v23 / active → Active
                 u.TreasureAmount ?? 0,      // pre-v27 / non-treasure → 0
                 u.DestX is { } dx && u.DestY is { } dy ? new Position(dx, dy) : (Position?)null, // pre-v36 / no goto → null
-                u.TradeRouteId, u.TradeRouteStop ?? 0)), // pre-v43 / route-less → null/0
+                u.TradeRouteId, u.TradeRouteStop ?? 0, // pre-v43 / route-less → null/0
+                u.WorkImprovement, u.WorkTurnsLeft ?? 0)), // pre-v48 / not improving → null/0
             Colonies?.Select(c =>
             {
                 var colony = new CrownAndColony.GameLogic.Colonies.Colony(
@@ -791,6 +808,8 @@ public sealed record SavedNativeSettlement(
 /// <param name="DestY">Y of the unit's standing goto destination (null = no goto; v36+).</param>
 /// <param name="TradeRouteId">Id of the trade route this carrier is assigned to (null = none; v43+). Omitted for a route-less unit, so it serializes byte-identically to v42.</param>
 /// <param name="TradeRouteStop">The carrier's current route stop index (null/0 = the first stop; v43+). Omitted when 0.</param>
+/// <param name="WorkImprovement">The tile-improvement type id this pioneer is building (null = not improving; v48+). Omitted when not improving, so a unit with no build order serializes byte-identically to v47.</param>
+/// <param name="WorkTurnsLeft">Turns of work left on the in-progress improvement (null/0 = none; v48+). Omitted when 0.</param>
 public sealed record SavedUnit(
     int Id, string? TypeId, int X, int Y, int MovementLeft,
     int Location = 0, int SailTurns = 0, IReadOnlyDictionary<string, int>? Cargo = null,
@@ -798,7 +817,8 @@ public sealed record SavedUnit(
     string? Owner = null, string? Role = null, int? RoleCount = null,
     int? OwnerId = null, int? RepairTurns = null, int? Orders = null, int? TreasureAmount = null,
     int? DestX = null, int? DestY = null,
-    int? TradeRouteId = null, int? TradeRouteStop = null);
+    int? TradeRouteId = null, int? TradeRouteStop = null,
+    string? WorkImprovement = null, int? WorkTurnsLeft = null);
 
 /// <summary>
 /// A player inside a <see cref="SaveGame"/> (v20+). Holds the player-scoped state that used to sit as

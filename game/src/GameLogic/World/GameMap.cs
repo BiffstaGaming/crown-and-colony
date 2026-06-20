@@ -9,7 +9,7 @@ public sealed class GameMap
     private readonly TerrainType[] _terrain;
     private readonly Dictionary<Position, string> _resources;
     private readonly Dictionary<Position, int> _resourceQuantities; // tile → a finite resource's remaining quantity (sparse; absent = limitless / no range)
-    private readonly Dictionary<Position, TileImprovementType> _improvements; // tile → the natural improvement on it (sparse; rivers only today)
+    private readonly Dictionary<Position, List<TileImprovementType>> _improvements; // tile → the improvements on it (sparse; a tile may carry several — e.g. a river + a road + a plow)
     private readonly HashSet<Position> _rumours;
     private readonly Dictionary<Position, string> _nativeOwners = []; // tile → owning native nation type id (derived, not saved)
     private readonly HashSet<Position> _claimedFromNatives; // tiles bought/taken from the natives — a SAVED override the derivation honours
@@ -26,7 +26,7 @@ public sealed class GameMap
     /// <param name="regionIds">Row-major region id per tile (length Width × Height; null = no region layer yet). Restored from a v35+ save; otherwise the region generator re-derives it after construction.</param>
     /// <param name="regions">The region table indexed by region id (null = none). Restored alongside <paramref name="regionIds"/>.</param>
     /// <param name="resourceQuantities">A finite resource's remaining quantity by tile (sparse; null = none). Restored from a v46+ save; only finite (min/max-ranged) resources carry one.</param>
-    /// <param name="improvements">The natural tile improvement on each tile (sparse; null = none). Restored from a v47+ save; today only rivers, stamped at game start by the map generator. A pre-v47 save has none (no rivers).</param>
+    /// <param name="improvements">The tile improvements on each tile (sparse; null = none) — a tile may carry several (a river plus a pioneer-built road/plow). Restored from a v47+ save; rivers are stamped at game start by the map generator, roads/plows/clearings by pioneers. A pre-v47 save has none.</param>
     public GameMap(
         int width, int height, IReadOnlyList<TerrainType> terrain,
         IReadOnlyDictionary<Position, string>? resources = null,
@@ -35,7 +35,7 @@ public sealed class GameMap
         IReadOnlyList<int>? regionIds = null,
         IReadOnlyList<Region>? regions = null,
         IReadOnlyDictionary<Position, int>? resourceQuantities = null,
-        IReadOnlyDictionary<Position, TileImprovementType>? improvements = null)
+        IReadOnlyDictionary<Position, IReadOnlyList<TileImprovementType>>? improvements = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
@@ -55,7 +55,9 @@ public sealed class GameMap
         _terrain = [.. terrain];
         _resources = resources is null ? [] : new Dictionary<Position, string>(resources);
         _resourceQuantities = resourceQuantities is null ? [] : new Dictionary<Position, int>(resourceQuantities);
-        _improvements = improvements is null ? [] : new Dictionary<Position, TileImprovementType>(improvements);
+        _improvements = improvements is null
+            ? []
+            : improvements.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key, kv => kv.Value.ToList());
         _rumours = rumours is null ? [] : [.. rumours];
         _claimedFromNatives = claimedFromNatives is null ? [] : [.. claimedFromNatives];
         _regionIds = regionIds is null ? null : [.. regionIds];
@@ -106,27 +108,81 @@ public sealed class GameMap
         }
     }
 
-    /// <summary>The natural tile improvement on a tile (today only a river — FreeCol <c>model.improvement.river</c>), or null when the tile has none.</summary>
-    public TileImprovementType? ImprovementAt(Position p) => _improvements.GetValueOrDefault(p);
+    private static readonly IReadOnlyList<TileImprovementType> NoImprovements = [];
+
+    /// <summary>All tile improvements on a tile (sparse; a tile may carry a river plus a pioneer-built road/plow), or an empty list when it has none.</summary>
+    public IReadOnlyList<TileImprovementType> ImprovementsAt(Position p) =>
+        _improvements.TryGetValue(p, out List<TileImprovementType>? list) ? list : NoImprovements;
+
+    /// <summary>The improvement of a given type id on a tile (e.g. its river or its road), or null when the tile carries no such improvement.</summary>
+    public TileImprovementType? ImprovementOfType(Position p, string improvementId) =>
+        _improvements.TryGetValue(p, out List<TileImprovementType>? list)
+            ? list.FirstOrDefault(i => i.Id == improvementId)
+            : null;
+
+    /// <summary>True when a tile carries an improvement of the given type id.</summary>
+    public bool HasImprovement(Position p, string improvementId) =>
+        ImprovementOfType(p, improvementId) is not null;
+
+    /// <summary>The river improvement on a tile (FreeCol <c>model.improvement.river</c>), or null when the tile has none.</summary>
+    public TileImprovementType? RiverAt(Position p) => ImprovementOfType(p, TileImprovementType.RiverId);
 
     /// <summary>True when a tile carries a river improvement (FreeCol <c>Tile.hasRiver</c>).</summary>
-    public bool HasRiver(Position p) =>
-        _improvements.TryGetValue(p, out TileImprovementType? imp) && imp.Id == TileImprovementType.RiverId;
+    public bool HasRiver(Position p) => HasImprovement(p, TileImprovementType.RiverId);
 
-    /// <summary>Every tile carrying a natural improvement (sparse — rivers only today; the value is the improvement type, magnitude included).</summary>
-    public IReadOnlyDictionary<Position, TileImprovementType> Improvements => _improvements;
+    /// <summary>Every (tile, improvement) pair on the map (sparse; a tile with several improvements yields several pairs). For persistence + enumeration.</summary>
+    public IEnumerable<(Position Position, TileImprovementType Improvement)> AllImprovements() =>
+        _improvements.SelectMany(kv => kv.Value.Select(i => (kv.Key, i)));
 
-    /// <summary>Places (or clears, when <paramref name="improvement"/> is null) a natural improvement on a tile (gen-time river stamping + save restore).</summary>
+    /// <summary>
+    /// Adds (or, when an improvement of the same type id is already present, replaces) an improvement on a tile —
+    /// gen-time river stamping, pioneer-built road/plow placement, and save restore. A tile may hold several
+    /// improvements of different types (a river and a road); only one of each type.
+    /// </summary>
+    internal void AddImprovement(Position p, TileImprovementType improvement)
+    {
+        if (!_improvements.TryGetValue(p, out List<TileImprovementType>? list))
+        {
+            _improvements[p] = list = [];
+        }
+        list.RemoveAll(i => i.Id == improvement.Id); // one of each type per tile (re-stamp wins)
+        list.Add(improvement);
+    }
+
+    /// <summary>Removes the improvement of a given type id from a tile (e.g. a forest cleared away), if present.</summary>
+    internal void RemoveImprovement(Position p, string improvementId)
+    {
+        if (_improvements.TryGetValue(p, out List<TileImprovementType>? list))
+        {
+            list.RemoveAll(i => i.Id == improvementId);
+            if (list.Count == 0)
+            {
+                _improvements.Remove(p);
+            }
+        }
+    }
+
+    /// <summary>Places (or, when <paramref name="improvement"/> is null, clears all improvements on) a tile — a convenience over <see cref="AddImprovement"/> used by gen-time/test stamping of a single improvement.</summary>
     internal void SetImprovement(Position p, TileImprovementType? improvement)
     {
         if (improvement is { } imp)
         {
-            _improvements[p] = imp;
+            AddImprovement(p, imp);
         }
         else
         {
             _improvements.Remove(p);
         }
+    }
+
+    /// <summary>Changes a tile's terrain type (FreeCol <c>Tile.changeType</c>) — a pioneer clearing a forest to its base type. Improvements on the tile are left in place (a river survives the clearing).</summary>
+    internal void SetTerrain(Position p, TerrainType terrain)
+    {
+        if (!InBounds(p))
+        {
+            throw new ArgumentOutOfRangeException(nameof(p), p, "Position is off the map.");
+        }
+        _terrain[p.Y * Width + p.X] = terrain;
     }
 
     /// <summary>True when a tile holds an unexplored Lost City Rumour.</summary>

@@ -171,14 +171,15 @@ public sealed partial class Game
     /// <summary>
     /// The next of <paramref name="player"/>'s units that still needs orders this turn (lowest id first), or null
     /// when none remain — the cycling oracle the presentation layer drives (ADR-006; the input/selection is P7).
-    /// Skips units with no moves left, those resting (fortifying/fortified/sentry), those on a goto (they
-    /// auto-advance), and any not on the map (sailing / in Europe).
+    /// Skips units with no moves left, those resting (fortifying/fortified/sentry), those building a tile
+    /// improvement (busy), those on a goto (they auto-advance), and any not on the map (sailing / in Europe).
     /// </summary>
     public Unit? NextUnitToMove(Player player) =>
         _units
             .Where(u => u.OwnerId == player.PlayerId && !u.IsNative && u.IsOnMap
                 && u.MovementLeft > 0
                 && u.Orders is not (UnitOrders.Fortifying or UnitOrders.Fortified or UnitOrders.Sentry)
+                && !u.IsImproving
                 && !u.IsGoingTo)
             .OrderBy(u => u.Id)
             .FirstOrDefault();

@@ -527,15 +527,15 @@ public class RiverTests
     {
         // The classic 36×24 default map has enough lowland for the river budget to place at least one river tile.
         Game game = Game.New(Classic, seed: 42);
-        Assert.NotEmpty(game.Map.Improvements);
-        Assert.Contains(game.Map.Improvements, kv => kv.Value.Id == TileImprovementType.RiverId);
+        Assert.NotEmpty(game.Map.AllImprovements());
+        Assert.Contains(game.Map.AllImprovements(), i => i.Improvement.Id == TileImprovementType.RiverId);
     }
 
     [Fact]
     public void RiverPlacement_IsDeterministicPerSeed()
     {
-        var a = Game.New(Classic, seed: 7).Map.Improvements.Keys.OrderBy(p => (p.Y, p.X)).ToList();
-        var b = Game.New(Classic, seed: 7).Map.Improvements.Keys.OrderBy(p => (p.Y, p.X)).ToList();
+        var a = Game.New(Classic, seed: 7).Map.AllImprovements().Select(i => i.Position).OrderBy(p => (p.Y, p.X)).ToList();
+        var b = Game.New(Classic, seed: 7).Map.AllImprovements().Select(i => i.Position).OrderBy(p => (p.Y, p.X)).ToList();
         Assert.Equal(a, b); // same seed → identical river layer (ADR-009)
     }
 
@@ -552,7 +552,7 @@ public class RiverTests
                 allowed++;
             }
         }
-        foreach ((Position p, TileImprovementType imp) in game.Map.Improvements)
+        foreach ((Position p, TileImprovementType imp) in game.Map.AllImprovements())
         {
             TerrainType t = game.Map.TerrainAt(p);
             Assert.False(t.IsWater);       // a river never sits on water
@@ -562,8 +562,9 @@ public class RiverTests
         }
         // The river pass respects FreeCol's soft maximum: river tiles ≤ allowed · riverNumber% (15%), with a little
         // slack because the budget is checked before the final tile of a walk is laid.
-        Assert.True(game.Map.Improvements.Count <= allowed * 15 / 100 + 1,
-            $"placed {game.Map.Improvements.Count} rivers over a {allowed * 15 / 100} budget");
+        int riverTiles = game.Map.AllImprovements().Count();
+        Assert.True(riverTiles <= allowed * 15 / 100 + 1,
+            $"placed {riverTiles} rivers over a {allowed * 15 / 100} budget");
     }
 
     [Fact]
@@ -571,7 +572,7 @@ public class RiverTests
     {
         // Find a default-map river tile and compare its grain yield with and without the river.
         Game game = Game.New(Classic, seed: 42);
-        (Position river, _) = game.Map.Improvements.First(kv => kv.Value.Id == TileImprovementType.RiverId);
+        Position river = game.Map.AllImprovements().First(i => i.Improvement.Id == TileImprovementType.RiverId).Position;
 
         int withRiver = game.TileYieldPotential(river, "model.goods.grain");
         game.Map.SetImprovement(river, null); // strip the river
@@ -610,28 +611,28 @@ public class RiverTests
     }
 
     [Fact]
-    public void Rivers_RoundTripThroughSave_V47()
+    public void Rivers_RoundTripThroughSave_V48()
     {
         Game game = Game.New(Classic, seed: 42); // Game.New stamps rivers
-        Assert.NotEmpty(game.Map.Improvements);
+        Assert.NotEmpty(game.Map.AllImprovements());
 
         SaveGame save = SaveGame.From(game);
         Assert.NotNull(save.Improvements);
-        Assert.Equal(47, SaveGame.CurrentVersion);
+        Assert.Equal(48, SaveGame.CurrentVersion);
 
         Game loaded = SaveGame.FromJson(save.ToJson()).Restore(Classic);
         Assert.Equal(
-            game.Map.Improvements.Select(kv => (kv.Key, kv.Value.Id, kv.Value.Magnitude)).OrderBy(t => (t.Key.Y, t.Key.X)),
-            loaded.Map.Improvements.Select(kv => (kv.Key, kv.Value.Id, kv.Value.Magnitude)).OrderBy(t => (t.Key.Y, t.Key.X)));
+            game.Map.AllImprovements().Select(i => (i.Position, i.Improvement.Id, i.Improvement.Magnitude)).OrderBy(t => (t.Position.Y, t.Position.X)),
+            loaded.Map.AllImprovements().Select(i => (i.Position, i.Improvement.Id, i.Improvement.Magnitude)).OrderBy(t => (t.Position.Y, t.Position.X)));
     }
 
     [Fact]
     public void AMapWithNoRivers_OmitsTheImprovementsToken()
     {
         Game game = Game.New(Classic, seed: 42);
-        foreach (Position p in game.Map.Improvements.Keys.ToList())
+        foreach (Position p in game.Map.AllImprovements().Select(i => i.Position).Distinct().ToList())
         {
-            game.Map.SetImprovement(p, null); // clear the river layer
+            game.Map.SetImprovement(p, null); // clear the improvement layer at that tile
         }
         string json = SaveGame.From(game).ToJson();
         Assert.DoesNotContain("\"Improvements\"", json);
@@ -643,7 +644,7 @@ public class RiverTests
         Game game = Game.New(Classic, seed: 42);
         SaveGame old = SaveGame.From(game) with { Version = 46, Improvements = null };
         Game loaded = SaveGame.FromJson(old.ToJson()).Restore(Classic);
-        Assert.Empty(loaded.Map.Improvements);
+        Assert.Empty(loaded.Map.AllImprovements());
     }
 
     // Builds a 3×3 all-plains game with the given river tiles (restored through the save path so the river layer is

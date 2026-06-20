@@ -2971,7 +2971,8 @@ public sealed partial class Game
             UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
             int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
             int repairTurns, UnitOrders orders, int treasureAmount, Position? destination,
-            int? tradeRouteId, int tradeRouteStopIndex)> units,
+            int? tradeRouteId, int tradeRouteStopIndex,
+            string? workImprovementId, int workTurnsLeft)> units,
         IEnumerable<Colony>? colonies = null,
         IEnumerable<NativeSettlement>? nativeSettlements = null,
         AutoExportMode autoExportMode = AutoExportMode.PerGood,
@@ -3003,7 +3004,8 @@ public sealed partial class Game
                   UnitLocation location, int sailTurns, IReadOnlyDictionary<string, int>? cargo,
                   int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
                   int repairTurns, UnitOrders orders, int treasureAmount, Position? destination,
-                  int? tradeRouteId, int tradeRouteStopIndex) in units)
+                  int? tradeRouteId, int tradeRouteStopIndex,
+                  string? workImprovementId, int workTurnsLeft) in units)
         {
             var unit = new Unit(id, type, position)
             {
@@ -3020,6 +3022,8 @@ public sealed partial class Game
                 Destination = destination,
                 TradeRouteId = tradeRouteId,
                 TradeRouteStopIndex = tradeRouteStopIndex,
+                WorkImprovementId = workImprovementId,
+                WorkTurnsLeft = workTurnsLeft,
             };
             unit.SetTreasureAmount(treasureAmount); // internal method, like AddCargo — set after the initializer
             foreach ((string goodsId, int amount) in cargo ?? new Dictionary<string, int>())
@@ -3251,15 +3255,16 @@ public sealed partial class Game
             return MoveCheck.No("No movement left this turn.");
         }
 
-        // River "follow the river" bonus (FreeCol TileImprovementType.getMoveCost + Tile connectivity): a land unit
-        // moving between two tiles that BOTH carry a river pays the river's reduced enter-cost (1) instead of the
-        // terrain's normal cost, when that is cheaper. Ships never get it (rivers are a land feature). The cost to
-        // enter is a property of the destination's river — see ImprovementMovement.RiverMoveCost.
+        // River/road "follow it" bonus (FreeCol TileImprovementType.getMoveCost + Tile connectivity): a land unit
+        // moving between two tiles that BOTH carry a movement-granting improvement (a river or a pioneer-built road)
+        // pays the reduced enter-cost (1) instead of the terrain's normal cost, when that is cheaper. Ships never get
+        // it (rivers/roads are land features). The cost to enter is a property of the destination's improvements —
+        // see ImprovementMovement.MoveCost (generalised over a tile's improvements).
         int cost = terrain.MoveCost;
         if (!unit.Type.IsNaval)
         {
-            cost = ImprovementMovement.RiverMoveCost(
-                Map.ImprovementAt(unit.Position), Map.ImprovementAt(target), cost);
+            cost = ImprovementMovement.MoveCost(
+                Map.ImprovementsAt(unit.Position), Map.ImprovementsAt(target), cost);
         }
         // FreeCol's partial-movement rule (Unit.getMoveCost): when the terrain
         // costs more than the unit has left, the move is still allowed — for the
@@ -3354,8 +3359,184 @@ public sealed partial class Game
         unit.MovementLeft = 0; // resting consumes the turn
     }
 
-    /// <summary>Clears a unit's standing order back to active (it does not refund the spent movement).</summary>
-    public void ClearOrders(Unit unit) => unit.Orders = UnitOrders.Active;
+    /// <summary>Clears a unit's standing order back to active (it does not refund the spent movement). Also cancels an in-progress tile improvement (the work is abandoned; tools already committed are not refunded — FreeCol keeps the partial progress lost).</summary>
+    public void ClearOrders(Unit unit)
+    {
+        unit.Orders = UnitOrders.Active;
+        unit.WorkImprovementId = null;
+        unit.WorkTurnsLeft = 0;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="unit"/> may start building the tile improvement <paramref name="improvementId"/>
+    /// (FreeCol <c>InGameController.askImprove</c> / <c>TileImprovementType.isWorkerAllowed</c> +
+    /// <c>Tile.isImprovementAllowed</c>): a tooled pioneer (a colonial land unit whose role grants
+    /// <c>improveTerrain</c> and still holds equipment) standing on a land tile whose terrain the improvement applies
+    /// to, where that improvement is not already present, and which is not currently building/garrisoned in a way
+    /// that forbids it. Returns the reason when not allowed.
+    /// </summary>
+    /// <param name="unit">The unit ordered to build.</param>
+    /// <param name="improvementId">The improvement type id (<c>model.improvement.road</c>/<c>.plow</c>/<c>.clearForest</c>).</param>
+    public MoveCheck CheckBuildImprovement(Unit unit, string improvementId)
+    {
+        if (unit.IsNative)
+        {
+            return MoveCheck.No("Native units do not build tile improvements.");
+        }
+        if (!unit.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (!Ruleset.ImprovementTypes.Any(i => i.Id == improvementId))
+        {
+            return MoveCheck.No($"Unknown improvement '{improvementId}'.");
+        }
+        TileImprovementType improvement = Ruleset.Improvement(improvementId);
+        if (improvement.IsNatural)
+        {
+            return MoveCheck.No("A river is a natural feature — it cannot be built.");
+        }
+        // The unit must hold a role that can improve terrain (the pioneer role) and still have tools to spend.
+        if (!Ruleset.Role(unit.RoleId).CanImproveTerrain || unit.RoleCount <= 0)
+        {
+            return MoveCheck.No("Only a pioneer carrying tools can build improvements.");
+        }
+        TerrainType terrain = Map.TerrainAt(unit.Position);
+        if (!improvement.AppliesTo(terrain))
+        {
+            return MoveCheck.No($"A {improvement.ShortName} cannot be built on {terrain.ShortName}.");
+        }
+        // Already present? A road/plow laid on top can't be re-laid; a terrain-changing improvement (clear-forest)
+        // is gated by applicability instead (you can't clear a non-forest), so it needs no presence check.
+        if (!improvement.ChangesTerrain && Map.HasImprovement(unit.Position, improvementId))
+        {
+            return MoveCheck.No($"This tile already has a {improvement.ShortName}.");
+        }
+        if (unit.IsImproving && unit.WorkImprovementId == improvementId)
+        {
+            return MoveCheck.No($"The pioneer is already building a {improvement.ShortName} here.");
+        }
+        if (unit.MovementLeft <= 0)
+        {
+            return MoveCheck.No("No movement left this turn.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Orders a pioneer to start building a tile improvement: it commits to the work (spending the rest of its turn)
+    /// and accrues <see cref="WorkTurnsToComplete"/> turns of work; the improvement lands and tools are consumed when
+    /// the work finishes (see <see cref="ProcessImprovements"/>). Re-ordering switches the target improvement.
+    /// </summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBuildImprovement"/>.</exception>
+    public void BuildImprovement(Unit unit, string improvementId)
+    {
+        MoveCheck check = CheckBuildImprovement(unit, improvementId);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        TileImprovementType improvement = Ruleset.Improvement(improvementId);
+        unit.Orders = UnitOrders.Active;        // building supersedes a fortify/sentry order
+        unit.WorkImprovementId = improvementId;
+        unit.WorkTurnsLeft = WorkTurnsToComplete(Map.TerrainAt(unit.Position), improvement);
+        unit.MovementLeft = 0;                  // the pioneer is now busy for the rest of the turn
+    }
+
+    /// <summary>
+    /// The total turns of work to complete <paramref name="improvement"/> on <paramref name="terrain"/> (FreeCol
+    /// <c>TileImprovement</c> ctor: the terrain's basic work-turns plus the improvement's add-work-turns). A hardy
+    /// pioneer works this down at 2/turn, a regular pioneer at 1/turn (see <see cref="ProcessImprovements"/>).
+    /// </summary>
+    /// <param name="terrain">The terrain being improved.</param>
+    /// <param name="improvement">The improvement type.</param>
+    public static int WorkTurnsToComplete(TerrainType terrain, TileImprovementType improvement) =>
+        terrain.WorkTurns + improvement.AddWorkTurns;
+
+    /// <summary>The work a unit does per turn on a tile improvement: 2 for a hardy (expert) pioneer, 1 otherwise (FreeCol <c>Ability.EXPERT_PIONEER</c>).</summary>
+    private int ImprovementWorkPerTurn(Unit unit) =>
+        unit.WorkImprovementId is { } id
+        && Ruleset.Improvement(id).RequiredRoleId is { } roleId
+        && Ruleset.Role(roleId).ExpertUnit == unit.Type.Id
+            ? 2
+            : 1;
+
+    /// <summary>
+    /// Advances every one of <paramref name="player"/>'s pioneers currently building a tile improvement (id order,
+    /// for determinism), completing those whose work finishes this turn. Called on the player's turn before the
+    /// world's movement reset. A no-op (no RNG drawn) for a player with no improving units, so the human's stream 0
+    /// stays byte-identical when nobody is pioneering (ADR-009).
+    /// </summary>
+    internal void ProcessImprovements(Player player)
+    {
+        foreach (Unit unit in _units
+            .Where(u => u.OwnerId == player.PlayerId && !u.IsNative && u.IsOnMap && u.IsImproving)
+            .OrderBy(u => u.Id)
+            .ToList()) // materialise: completion can change terrain / deliver goods
+        {
+            unit.WorkTurnsLeft = Math.Max(0, unit.WorkTurnsLeft - ImprovementWorkPerTurn(unit));
+            if (unit.WorkTurnsLeft <= 0)
+            {
+                CompleteImprovement(unit);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Completes a pioneer's tile improvement (FreeCol <c>ServerUnit.csImproveTile</c>): lays a road/plow on the
+    /// tile (or, for clear-forest, changes the terrain to its cleared base type and delivers the one-off lumber to
+    /// the owning colony), consumes the role's expended tools (reverting the pioneer to a plain colonist when its
+    /// tools run out), and clears the work order.
+    /// </summary>
+    private void CompleteImprovement(Unit unit)
+    {
+        TileImprovementType improvement = Ruleset.Improvement(unit.WorkImprovementId!);
+        Position pos = unit.Position;
+
+        if (improvement.ChangeFrom(Map.TerrainAt(pos).Id) is { } change)
+        {
+            // Terrain-changing improvement (clear-forest): retype the tile and deliver the one-off production
+            // (lumber) to the colony that works the tile, if any. Improvements already on the tile (a river) survive.
+            Map.SetTerrain(pos, Ruleset.Terrain(change.ToTerrainId));
+            if (change.ProductionGoodsId is { } goodsId && change.ProductionAmount > 0
+                && OwningColonyOf(unit.OwnerId, pos) is { } colony)
+            {
+                colony.AddGoods(Ruleset.StorageIdOf(goodsId), change.ProductionAmount);
+            }
+        }
+        else
+        {
+            // A road/plow laid on top of the existing terrain (and any river already there).
+            Map.AddImprovement(pos, improvement);
+        }
+
+        // Expend the role's tools (FreeCol changeRoleCount(-expendedAmount)); a pioneer out of tools reverts to a colonist.
+        int remaining = unit.RoleCount - improvement.ExpendedAmount;
+        if (remaining <= 0)
+        {
+            ChangeRole(unit, RoleType.DefaultRoleId, 0);
+        }
+        else
+        {
+            unit.RoleCount = remaining;
+        }
+
+        unit.WorkImprovementId = null;
+        unit.WorkTurnsLeft = 0;
+    }
+
+    /// <summary>
+    /// The colony of <paramref name="ownerId"/> that works the tile at <paramref name="tile"/> (its centre or one of
+    /// its eight neighbours — the colony's 3×3 footprint), nearest first then by id for determinism, or null when
+    /// none. FreeCol delivers a cleared forest's lumber to the tile's owning settlement; this is our footprint-based
+    /// equivalent (we have no per-tile ownership layer for colonies).
+    /// </summary>
+    private Colony? OwningColonyOf(int ownerId, Position tile) =>
+        _colonies
+            .Where(c => c.OwnerId == ownerId && Chebyshev(c.Position, tile) <= 1)
+            .OrderBy(c => Chebyshev(c.Position, tile))
+            .ThenBy(c => c.Id)
+            .FirstOrDefault();
 
     /// <summary>
     /// Whether <paramref name="unit"/> may be disbanded (permanently removed). A carrier still holding
@@ -5213,6 +5394,8 @@ public sealed partial class Game
         }
 
         BombardEnemyShips(player); // fort/fortress colonies fire on adjacent enemy ships first (FreeCol csStartTurn)
+
+        ProcessImprovements(player); // advance any pioneers building tile improvements; land completed ones (no-op + RNG-free when none)
 
         ProcessGotos(player); // walk any units on a standing goto toward their destination (no-op when none — RNG-free)
 
@@ -7203,10 +7386,11 @@ public sealed partial class Game
             }
         }
 
-        // River improvement on the tile: add its flat goods bonus (FreeCol river <modifier> children, e.g. +1 grain,
-        // +2 furs/lumber). The classic river's modifiers are additive at index 50 — after the index-10 resource
-        // modifiers above — so a multiplicative resource bonus is applied first and the river's flat delta added on top.
-        yield += ImprovementProduction.YieldDelta(Map.ImprovementAt(tile), goodsId);
+        // Tile improvements: add each one's flat goods bonus (FreeCol improvement <modifier> children, e.g. a river's
+        // +1 grain / +2 furs/lumber, a plowed field's +1 farmed goods, a road's +furs/lumber/ore/silver). All are
+        // additive at index 50 — after the index-10 resource modifiers above — so a multiplicative resource bonus is
+        // applied first and the improvements' flat deltas added on top. A tile may carry several (river + road/plow).
+        yield += ImprovementProduction.YieldDelta(Map.ImprovementsAt(tile), goodsId);
 
         // Coastal fish bonus (FreeCol fishBonusLand): +2 fish on a coastal water tile — one with more than two
         // adjacent land tiles. High-seas tiles are excluded (the improvement's match-negated scope).
