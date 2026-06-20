@@ -17,9 +17,13 @@ namespace CrownAndColony.Presentation;
 /// A single full-network drawable (like <see cref="MapView"/> itself), not a per-tile marker: connectivity needs
 /// each tile's neighbours, and one <c>_Draw</c> over the whole layer keeps the spoke logic in one place.
 /// <para>
-/// Per-tile style (small vs. large river) follows the river's stored <c>Magnitude</c> (1 = small, 2 = large draws
-/// thicker). This is presentation-only; the stored improvement layer records magnitude but no drawn-style field
-/// (ADR-006, no save bump).
+/// Per-tile style (small vs. large river) is derived <b>at render time</b> from the river's connectivity, never from
+/// a stored field (ADR-006, no save bump): each explored river tile belongs to a connected component (flood-filled
+/// over adjacent explored river tiles), and a tile in a component of at least <see cref="LargeRiverTiles"/> tiles
+/// draws as a large (thick) river — a long, well-connected course reads as a major river, a short tributary as a
+/// minor one. A river type stamped at magnitude 2 by the ruleset/generator still forces the large style, so an
+/// explicitly-large river is honoured; with today's generator (all rivers magnitude 1) the style is purely the
+/// derived component length.
 /// </para>
 /// </remarks>
 public partial class RiverOverlay : Node2D
@@ -39,9 +43,15 @@ public partial class RiverOverlay : Node2D
     /// <summary>Radius of the pool drawn for an isolated river tile (a lone source with no river neighbour).</summary>
     private const float PoolRadius = 6f;
 
+    /// <summary>A connected river component of at least this many explored tiles draws as a large (major) river.</summary>
+    private const int LargeRiverTiles = 4;
+
     private GameMap? _map;
     private IReadOnlySet<Position>? _explored;
     private IReadOnlySet<Position>? _visible;
+
+    /// <summary>The explored river tiles whose connected component is large enough to draw as a major river (rebuilt each draw).</summary>
+    private readonly HashSet<Position> _largeRivers = [];
 
     /// <summary>
     /// Assigns the map and the fog sets to draw, then triggers a redraw. Mirrors <see cref="MapView.ShowState"/> so
@@ -62,10 +72,56 @@ public partial class RiverOverlay : Node2D
             return;
         }
 
-        // Two passes over the same courses: a wider darker rim first, then the water fill on top, so every rim sits
-        // fully behind every course (no rim showing through a junction where two tiles' spokes overlap).
+        // Derive per-tile style (small vs. large) from connectivity, then draw. Two passes over the same courses: a
+        // wider darker rim first, then the water fill on top, so every rim sits fully behind every course (no rim
+        // showing through a junction where two tiles' spokes overlap).
+        ComputeLargeRivers();
         DrawCourses(rim: true);
         DrawCourses(rim: false);
+    }
+
+    /// <summary>
+    /// Recomputes <see cref="_largeRivers"/>: flood-fills each connected component of explored river tiles (over the
+    /// 8-neighbourhood, the same adjacency the courses connect along) and marks every tile of a component with at
+    /// least <see cref="LargeRiverTiles"/> tiles. Pure read of the improvement layer + fog; no stored state.
+    /// </summary>
+    private void ComputeLargeRivers()
+    {
+        _largeRivers.Clear();
+        var seen = new HashSet<Position>();
+        var component = new List<Position>();
+        var stack = new Stack<Position>();
+
+        foreach (Position start in _map!.AllPositions())
+        {
+            if (!IsDrawnRiver(start) || !seen.Add(start))
+            {
+                continue;
+            }
+
+            component.Clear();
+            stack.Push(start);
+            while (stack.Count > 0)
+            {
+                Position p = stack.Pop();
+                component.Add(p);
+                foreach (Position n in p.Neighbours())
+                {
+                    if (IsDrawnRiver(n) && seen.Add(n))
+                    {
+                        stack.Push(n);
+                    }
+                }
+            }
+
+            if (component.Count >= LargeRiverTiles)
+            {
+                foreach (Position p in component)
+                {
+                    _largeRivers.Add(p);
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -120,9 +176,13 @@ public partial class RiverOverlay : Node2D
     private bool IsDrawnRiver(Position p) =>
         _map!.InBounds(p) && _map.HasRiver(p) && (_explored is null || _explored.Contains(p));
 
-    /// <summary>Course half-width for a river tile: large (thick) when the river was stamped magnitude 2, else small.</summary>
+    /// <summary>
+    /// Course half-width for a river tile: large (thick) when the ruleset/generator stamped it magnitude 2 <i>or</i>
+    /// its connected component is long enough (<see cref="_largeRivers"/>), else small. Render-time only — no stored
+    /// drawn-style field (ADR-006).
+    /// </summary>
     private float LineWidth(Position p) =>
-        (_map!.ImprovementAt(p)?.Magnitude ?? 1) >= 2 ? LargeWidth : SmallWidth;
+        (_map!.ImprovementAt(p)?.Magnitude ?? 1) >= 2 || _largeRivers.Contains(p) ? LargeWidth : SmallWidth;
 
     /// <summary>Darkens a colour to the remembered-fog tint (matches <see cref="MapView"/>'s DimTint factor).</summary>
     private static Color Dim(Color c) => new(c.R * 0.5f, c.G * 0.5f, c.B * 0.58f);
