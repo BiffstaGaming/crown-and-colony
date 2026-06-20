@@ -80,6 +80,7 @@ public partial class GameController : Node2D
     private PanelContainer _colonyReportPanel = null!;
     private PanelContainer _findSettlementPanel = null!;
     private PanelContainer _foundingFatherPanel = null!;
+    private PanelContainer _colopediaPanel = null!;
     private Button _endTurnButton = null!;
     private Control _gameOverScreen = null!;
     private Label _gameOverMessage = null!;
@@ -124,6 +125,7 @@ public partial class GameController : Node2D
         _colonyReportPanel = GetNode<PanelContainer>("UI/ColonyReportPanel");
         _findSettlementPanel = GetNode<PanelContainer>("UI/FindSettlementPanel");
         _foundingFatherPanel = GetNode<PanelContainer>("UI/FoundingFatherPanel");
+        _colopediaPanel = GetNode<PanelContainer>("UI/ColopediaPanel");
         _endTurnButton = GetNode<Button>("UI/EndTurnButton");
         _gameOverScreen = GetNode<Control>("UI/GameOverScreen");
         _gameOverMessage = GetNode<Label>("UI/GameOverScreen/Panel/VBox/Message");
@@ -131,6 +133,8 @@ public partial class GameController : Node2D
         GetNode<Button>("UI/EuropeButton").Pressed += OpenEuropePanel;
         GetNode<Button>("UI/TradeRoutesButton").Pressed += OpenTradeRoutePanel;
         GetNode<Button>("UI/ReportsButton").Pressed += OpenColonyReportPanel;
+        GetNode<Button>("UI/ColopediaButton").Pressed += OpenColopediaPanel;
+        GetNode<Button>("UI/ColopediaPanel/VBox/CloseButton").Pressed += () => _colopediaPanel.Hide();
         GetNode<Button>("UI/ColonyReportPanel/VBox/CloseButton").Pressed += () => _colonyReportPanel.Hide();
         GetNode<Button>("UI/FindSettlementPanel/VBox/CloseButton").Pressed += () => _findSettlementPanel.Hide();
         GetNode<Button>("UI/FoundingFatherPanel/VBox/CloseButton").Pressed += () => _foundingFatherPanel.Hide();
@@ -381,6 +385,9 @@ public partial class GameController : Node2D
                 break;
             case InputEventKey { Keycode: Key.W, Pressed: true, Echo: false }:
                 SelectNextUnitToMove();
+                break;
+            case InputEventKey { Keycode: Key.C, Pressed: true, Echo: false }:
+                OpenColopediaPanel();
                 break;
         }
     }
@@ -639,6 +646,10 @@ public partial class GameController : Node2D
     /// <summary>Opens the Founding Father choice dialog (pick which offered father to recruit). Public so scene tests can drive it.</summary>
     public void OpenFoundingFatherPanel() =>
         ((FoundingFatherPanel)_foundingFatherPanel).Open(_game, RefreshView);
+
+    /// <summary>Opens the Colopedia reference panel (the Goods category — a read-only ruleset reference). Public so scene tests can drive it.</summary>
+    public void OpenColopediaPanel() =>
+        ((ColopediaPanel)_colopediaPanel).Open(_game);
 
     /// <summary>Opens the native-settlement interaction panel, acting with <paramref name="actingUnit"/> (may be null — the panel then prompts to select one).</summary>
     public void OpenNativeSettlementPanel(NativeSettlement settlement, Unit? actingUnit)
