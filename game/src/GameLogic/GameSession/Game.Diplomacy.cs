@@ -1,3 +1,4 @@
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession.Diplomacy;
 
 namespace CrownAndColony.GameLogic.GameSession;
@@ -16,9 +17,77 @@ namespace CrownAndColony.GameLogic.GameSession;
 public sealed partial class Game
 {
     /// <summary>
-    /// Settles an accepted treaty (FreeCol <c>csAcceptTrade</c>): applies each of its currently-valid clauses. The
-    /// foundation slice has no clause kinds yet, so this is inert until gold/goods/stance items land — it is the
-    /// stable seam the rules/UI call once a <see cref="DiplomaticTrade"/> is agreed.
+    /// Settles an accepted treaty (FreeCol <c>csAcceptTrade</c>): applies each of its currently-valid clauses — gold,
+    /// goods, and (once it lands) stance changes. The stable seam the rules/UI call once a <see cref="DiplomaticTrade"/>
+    /// is agreed; clause application reaches the gold/goods/stance helpers below.
     /// </summary>
     public void SettleTrade(DiplomaticTrade trade) => trade.Apply(this);
+
+    // ---- Gold clause (86d3c9u94) ----
+
+    /// <summary>
+    /// Whether a <see cref="Diplomacy.GoldTradeItem"/> could pay <paramref name="amount"/> gold from
+    /// <paramref name="fromId"/> to <paramref name="toId"/> right now: both are distinct colonial powers, the amount
+    /// is positive, and the payer can afford it (FreeCol <c>GoldTradeItem.isValid</c>).
+    /// </summary>
+    internal bool CanTransferGold(int fromId, int toId, int amount) =>
+        amount > 0 && fromId != toId && IsColonialPlayer(fromId) && IsColonialPlayer(toId)
+        && PlayerById(fromId)!.Gold >= amount;
+
+    /// <summary>
+    /// Moves <paramref name="amount"/> gold from <paramref name="fromId"/>'s treasury to <paramref name="toId"/>'s
+    /// (the treaty gold-clause mutator). A no-op unless <see cref="CanTransferGold"/> holds, so an over-large or
+    /// non-colonial transfer never drives a treasury negative.
+    /// </summary>
+    internal void TransferGold(int fromId, int toId, int amount)
+    {
+        if (!CanTransferGold(fromId, toId, amount))
+        {
+            return;
+        }
+        PlayerById(fromId)!.Gold -= amount;
+        PlayerById(toId)!.Gold += amount;
+    }
+
+    // ---- Goods clause (86d3c9u94) ----
+    // (Colony lookup reuses the existing private ColonyById in Game.Monarch.cs.)
+
+    /// <summary>
+    /// Whether a <see cref="Diplomacy.GoodsTradeItem"/> could move <paramref name="amount"/> of
+    /// <paramref name="goodsId"/> from <paramref name="fromColonyId"/> to <paramref name="toColonyId"/>: the amount is
+    /// positive, the goods id is a real ruleset type, both parties are distinct colonial powers each owning their
+    /// named colony, and the source colony holds at least <paramref name="amount"/> (FreeCol <c>GoodsTradeItem.isValid</c>).
+    /// </summary>
+    internal bool CanTransferColonyGoods(
+        int fromPlayerId, int toPlayerId,
+        int fromColonyId, int toColonyId,
+        string goodsId, int amount)
+    {
+        if (amount <= 0 || fromPlayerId == toPlayerId
+            || !IsColonialPlayer(fromPlayerId) || !IsColonialPlayer(toPlayerId)
+            || !Ruleset.GoodsTypes.Any(g => g.Id == goodsId))
+        {
+            return false;
+        }
+        Colony? from = ColonyById(fromColonyId);
+        Colony? to = ColonyById(toColonyId);
+        return from is not null && to is not null
+            && from.OwnerId == fromPlayerId && to.OwnerId == toPlayerId
+            && from.StoreOf(goodsId) >= amount;
+    }
+
+    /// <summary>
+    /// Moves <paramref name="amount"/> of <paramref name="goodsId"/> from <paramref name="fromColonyId"/>'s warehouse
+    /// to <paramref name="toColonyId"/>'s (the treaty goods-clause mutator). A no-op unless the colonies exist, so a
+    /// stale clause never throws; the source is debited and the destination credited via <c>Colony.AddGoods</c>.
+    /// </summary>
+    internal void TransferColonyGoods(int fromColonyId, int toColonyId, string goodsId, int amount)
+    {
+        if (ColonyById(fromColonyId) is not { } from || ColonyById(toColonyId) is not { } to)
+        {
+            return;
+        }
+        from.AddGoods(goodsId, -amount);
+        to.AddGoods(goodsId, amount);
+    }
 }
