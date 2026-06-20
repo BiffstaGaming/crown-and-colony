@@ -5240,6 +5240,16 @@ public sealed partial class Game
                 MoveUnit(unit, toRumour);
                 continue;
             }
+            // Head for the nearest known native settlement the power hasn't spoken with yet (86d3c9vta scout facet,
+            // FreeCol's scout `ScoutingMission` heading for an un-visited settlement): a scout makes for a concrete
+            // discovery — a chief's gift/tales — rather than wandering blindly, before falling back to generic explore.
+            // Reaching it triggers the adjacent-chief `Visit` branch above next turn. Only settlements in the power's
+            // own fog (`NearestUnvisitedSettlement`), so it isn't omniscient; the step draws the power's OWN stream.
+            if (NearestUnvisitedSettlement(power, unit) is { } toVisit && StepToward(power, unit, toVisit) is { } toChief)
+            {
+                MoveUnit(unit, toChief);
+                continue;
+            }
             if (StepTowardNearestUnexplored(power, unit) is { } step)
             {
                 MoveUnit(unit, step);
@@ -6011,6 +6021,20 @@ public sealed partial class Game
         _nativeSettlements
             .Where(s => (s.Position == unit.Position || s.Position.IsAdjacentTo(unit.Position)) && CheckVisit(unit, s).Allowed)
             .OrderBy(s => s.Position.Y).ThenBy(s => s.Position.X)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// The tile of the nearest native settlement <paramref name="power"/> has <b>discovered</b> (its position is in the
+    /// power's fog) but whose chief it has <b>not yet spoken with</b> (<see cref="NativeSettlement.HasBeenVisitedBy"/> the
+    /// power) — by Chebyshev from <paramref name="unit"/>, ties by position — or null when there is none. The distant
+    /// equivalent of <see cref="AdjacentUnvisitedSettlement"/> that the AI scout heads toward (`86d3c9vta` scout facet),
+    /// fog-gated so the AI never beelines for a settlement it hasn't seen.
+    /// </summary>
+    private Position? NearestUnvisitedSettlement(Player power, Unit unit) =>
+        _nativeSettlements
+            .Where(s => power.Explored.Contains(s.Position) && !s.HasBeenVisitedBy(power.PlayerId))
+            .OrderBy(s => Chebyshev(s.Position, unit.Position)).ThenBy(s => s.Position.Y).ThenBy(s => s.Position.X)
+            .Select(s => (Position?)s.Position)
             .FirstOrDefault();
 
     /// <summary>

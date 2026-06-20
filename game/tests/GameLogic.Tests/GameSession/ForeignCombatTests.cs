@@ -1,5 +1,6 @@
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
@@ -35,7 +36,8 @@ public class ForeignCombatTests
         for (int i = 0; i < Game.MaxAiColonies; i++)
         {
             Position tile = game.Map.AllPositions().First(p =>
-                Free(game, p) && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n))
+                Free(game, p) && game.Map.TerrainAt(p).CanSettle
+                && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n))
                 && taken.All(t => Cheb(t, p) > 3)); // spaced so footprints never touch (founding's min-spacing rule)
             Unit founder = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), tile);
             founder.OwnerId = power.PlayerId;
@@ -157,6 +159,132 @@ public class ForeignCombatTests
         game.EndTurn();
 
         Assert.False(game.Map.HasRumour(rumour)); // the colonist marched onto the rumour and resolved it
+    }
+
+    [Fact]
+    public void AtPeace_AColonist_HeadsForTheNearestKnownUnvisitedNativeSettlement()
+    {
+        // The scout facet (86d3c9vta): with no rumour known and the power at its colony cap, a colonist makes for the
+        // nearest native settlement it has discovered but not yet spoken with — closing the Chebyshev distance — rather
+        // than wandering toward unexplored fog.
+        Game game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        foreach (Unit u in game.Units.Where(u => u.OwnerId == power.PlayerId && u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+        Position colonyTile = FoundColoniesToCap(game, power);
+
+        // Mark every settlement as already visited by the power EXCEPT one chosen target → the target is the only
+        // unvisited settlement, so the AI must head for it specifically.
+        NativeSettlement target = game.NativeSettlements.First();
+        foreach (NativeSettlement s in game.NativeSettlements)
+        {
+            if (s.Id != target.Id) { s.MarkVisitedBy(power.PlayerId); }
+        }
+        power.ExploredSet.Add(target.Position); // the power has discovered the target settlement
+
+        // Clear any rumour already in the power's fog (founding colonies reveals tiles) so the rumour branch is skipped
+        // and the unvisited-settlement branch is the one under test.
+        foreach (Position r in game.Map.Rumours.Where(power.Explored.Contains).ToList())
+        {
+            game.Map.RemoveRumour(r);
+        }
+
+        // A colonist on a free tile, away from the target.
+        Position scoutTile = game.Map.AllPositions().First(p =>
+            Free(game, p) && Cheb(p, target.Position) is > 2 and < 12
+            && game.ColonyAt(p) is null && p.Neighbours().All(n => !game.Map.InBounds(n) || game.ColonyAt(n) is null));
+        Unit scout = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), scoutTile);
+        scout.OwnerId = power.PlayerId;
+        Assert.DoesNotContain(game.Map.Rumours, r => power.Explored.Contains(r)); // no known rumour to distract it
+        int before = Cheb(scoutTile, target.Position);
+
+        game.EndTurn();
+
+        Unit moved = game.Units.Single(u => u.Id == scout.Id);
+        Assert.True(Cheb(moved.Position, target.Position) < before, // it closed on the settlement
+            $"scout at {moved.Position} did not approach the settlement at {target.Position} (was {before})");
+    }
+
+    [Fact]
+    public void AColonist_PrefersAKnownRumour_OverAnUnvisitedSettlement()
+    {
+        // Branch ordering: a known Lost City Rumour outranks heading for an unvisited settlement (the rumour is the
+        // higher-value, resolve-on-arrival target). A scout with a rumour one way and a settlement the other goes for
+        // the rumour.
+        Game game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        foreach (Unit u in game.Units.Where(u => u.OwnerId == power.PlayerId && u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+        FoundColoniesToCap(game, power);
+
+        NativeSettlement target = game.NativeSettlements.First();
+        foreach (NativeSettlement s in game.NativeSettlements)
+        {
+            if (s.Id != target.Id) { s.MarkVisitedBy(power.PlayerId); }
+        }
+        power.ExploredSet.Add(target.Position);
+
+        Position scoutTile = game.Map.AllPositions().First(p =>
+            Free(game, p) && !game.Map.HasRumour(p) && Cheb(p, target.Position) is > 4 and < 12
+            && p.Neighbours().Any(n => Free(game, n) && !game.Map.HasRumour(n))
+            && game.ColonyAt(p) is null && p.Neighbours().All(n => !game.Map.InBounds(n) || game.ColonyAt(n) is null));
+        // A rumour right beside the scout, on the OPPOSITE side from the settlement (so the two pull apart).
+        Position rumour = scoutTile.Neighbours()
+            .Where(n => Free(game, n))
+            .OrderByDescending(n => Cheb(n, target.Position)) // farthest from the settlement → opposite pull
+            .First();
+        game.Map.AddRumour(rumour);
+        power.ExploredSet.Add(rumour);
+        Unit scout = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), scoutTile);
+        scout.OwnerId = power.PlayerId;
+
+        game.EndTurn();
+
+        Assert.False(game.Map.HasRumour(rumour)); // it went for the rumour (resolved on arrival), not the settlement
+    }
+
+    [Fact]
+    public void ScoutTargeting_IsReplayStable_AndLeavesTheHumanStream0ByteIdentical()
+    {
+        // ADR-009: the scout-targeting branch draws only the power's own stream — two same-seed games play identically,
+        // and a game where a power scouts a settlement keeps the human's stream 0 byte-stable.
+        static Game Staged()
+        {
+            Game game = Game.New(Classic, seed: 4242);
+            Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+            foreach (Unit u in game.Units.Where(u => u.OwnerId == power.PlayerId && u.IsOnMap).ToList())
+            {
+                game.Disband(u);
+            }
+            FoundColoniesToCap(game, power);
+            NativeSettlement target = game.NativeSettlements.First();
+            foreach (NativeSettlement s in game.NativeSettlements)
+            {
+                if (s.Id != target.Id) { s.MarkVisitedBy(power.PlayerId); }
+            }
+            power.ExploredSet.Add(target.Position);
+            Position scoutTile = game.Map.AllPositions().First(p =>
+                Free(game, p) && Cheb(p, target.Position) is > 2 and < 12 && game.ColonyAt(p) is null
+                && p.Neighbours().All(n => !game.Map.InBounds(n) || game.ColonyAt(n) is null));
+            Unit scout = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), scoutTile);
+            scout.OwnerId = power.PlayerId;
+            return game;
+        }
+
+        Game a = Staged();
+        Game b = Staged();
+        for (int i = 0; i < 5; i++) { a.EndTurn(); b.EndTurn(); }
+        Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson()); // same seed + setup → identical play
+
+        // The human's stream 0 is byte-identical to a same-seed game with NO staged scout (the scout draws its own stream).
+        Game withScout = Staged();
+        Game noScout = Game.New(Classic, seed: 4242);
+        for (int i = 0; i < 5; i++) { withScout.EndTurn(); noScout.EndTurn(); }
+        Assert.Equal(noScout.RandomState, withScout.RandomState); // stream 0 untouched by the scout's activity
     }
 
     [Fact]
