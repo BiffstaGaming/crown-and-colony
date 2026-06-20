@@ -257,6 +257,13 @@ public sealed partial class Game
         {
             return;
         }
+        // A transition *into* war that involves the human is a notable history event (recorded once, on the change).
+        bool wasWar = PlayerById(a)!.StanceMap.GetValueOrDefault(b) == Stance.War;
+        if (stance == Stance.War && !wasWar && (a == _human.PlayerId || b == _human.PlayerId))
+        {
+            int rival = a == _human.PlayerId ? b : a;
+            RecordHistory(HistoryEventKind.WarDeclared, $"War broke out with the {NationDisplayName(rival)}.");
+        }
         PlayerById(a)!.StanceMap[b] = stance;
         if (symmetric)
         {
@@ -3372,6 +3379,10 @@ public sealed partial class Game
         // The colony keeps its surroundings explored — for its owner (the human, or a foreign founder; FP-4).
         RevealAround(PlayerById(colony.OwnerId) ?? _human, colony.Position, ColonySightRadius);
         AutoAssignIdleToFood(colony);
+        if (colony.OwnerId == _human.PlayerId)
+        {
+            RecordHistory(HistoryEventKind.ColonyFounded, $"Founded {colony.Name}.");
+        }
         return colony;
     }
 
@@ -6177,6 +6188,10 @@ public sealed partial class Game
             string elected = player.CurrentFather; // capture before it is cleared
             player.Liberty -= TotalFoundingFatherCost(player);
             player.CongressList.Add(elected);
+            if (player.IsHuman)
+            {
+                RecordHistory(HistoryEventKind.FatherElected, $"{FatherDisplayName(elected)} joined the Continental Congress.");
+            }
             player.CurrentFather = null;
             player.OfferedFathersList.Clear();
             RefreshDockForRecruitability(player); // a newly-elected father may ban dock recruits (Brewster)

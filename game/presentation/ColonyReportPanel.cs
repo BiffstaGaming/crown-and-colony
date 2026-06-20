@@ -28,13 +28,16 @@ namespace CrownAndColony.Presentation;
 /// the liberty (bells) progress (<see cref="Game.Liberty"/> / <see cref="Game.TotalFoundingFatherCost"/>), and one
 /// row per offered father (<see cref="Game.OfferedFathers"/>) with its category, marking the in-progress pick.
 /// Read-only — election lives in <see cref="FoundingFatherPanel"/>.</item>
+/// <item><b>History</b> (`86d3c9x53` — FreeCol's ReportHistoryPanel facet): the human's notable past events
+/// (<see cref="Game.History"/>) in turn order — colonies founded, wars entered, Founding Fathers elected. The
+/// event log is in-memory only this wave (not persisted), so a reloaded game's history starts empty.</item>
 /// </list>
 /// Pure presentation (ADR-006) — reads <see cref="Game"/> oracles only, never mutates. Built programmatically into
 /// the fixed <c>VBox/Dynamic</c> shell.
 /// </summary>
 public partial class ColonyReportPanel : PanelContainer
 {
-    private enum Tab { Colonies, Units, Foreign, Natives, Religion, Market, Congress }
+    private enum Tab { Colonies, Units, Foreign, Natives, Religion, Market, Congress, History }
 
     private Game _game = null!;
     private Tab _tab = Tab.Colonies;
@@ -48,6 +51,7 @@ public partial class ColonyReportPanel : PanelContainer
         [Tab.Religion] = "Religion",
         [Tab.Market] = "Trade & market prices",
         [Tab.Congress] = "Continental Congress",
+        [Tab.History] = "History",
     };
 
     /// <summary>Opens the reports screen on the Colonies tab over the current game state.</summary>
@@ -77,6 +81,7 @@ public partial class ColonyReportPanel : PanelContainer
         tabs.AddChild(TabButton("Religion", Tab.Religion));
         tabs.AddChild(TabButton("Market", Tab.Market));
         tabs.AddChild(TabButton("Congress", Tab.Congress));
+        tabs.AddChild(TabButton("History", Tab.History));
         dynamic.AddChild(tabs);
         dynamic.AddChild(new HSeparator());
 
@@ -89,6 +94,7 @@ public partial class ColonyReportPanel : PanelContainer
             case Tab.Religion: BuildReligion(dynamic); break;
             case Tab.Market: BuildMarket(dynamic); break;
             case Tab.Congress: BuildCongress(dynamic); break;
+            case Tab.History: BuildHistory(dynamic); break;
         }
     }
 
@@ -364,6 +370,41 @@ public partial class ColonyReportPanel : PanelContainer
             {
                 Name = $"Father_{father.ShortName}",
                 Text = $"{father.ShortName}  ({father.Type}){recruiting}",
+            });
+        }
+    }
+
+    // ── History tab (the human's notable past events; FreeCol's ReportHistoryPanel) ──────────────────────
+
+    private void BuildHistory(VBoxContainer dynamic)
+    {
+        // FreeCol's player history log: colonies founded, wars entered, fathers elected — in turn order, already
+        // formatted to player-facing strings by GameLogic. In-memory only this wave (not saved); a reloaded game's
+        // history begins empty (a header note flags that). Read-only over Game.History (ADR-006).
+        dynamic.AddChild(new Label
+        {
+            Name = "HistoryNote",
+            Text = "Notable events this game (not carried across save/load yet):",
+        });
+
+        if (_game.History.Count == 0)
+        {
+            dynamic.AddChild(new Label
+            {
+                Name = "HistoryEmpty",
+                Text = "Nothing of note has happened yet.",
+                HorizontalAlignment = HorizontalAlignment.Center,
+            });
+            return;
+        }
+
+        int i = 0;
+        foreach (HistoryEvent e in _game.History)
+        {
+            dynamic.AddChild(new Label
+            {
+                Name = $"History_{i++}",
+                Text = $"Turn {e.Turn}: {e.Description}",
             });
         }
     }

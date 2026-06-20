@@ -156,6 +156,30 @@ public class ColonyReportPanelTests
         AssertThat(progress!.Text).Contains("liberty");
     }
 
+    [TestCase]
+    public async Task HistoryTab_ListsNotablePastEvents()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // Founding a colony records a ColonyFounded history event — the History tab should then list it.
+        var game = GetGame(controller);
+        var colony = game.FoundColony(game.Units[0]);
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_History").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("History");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var first = dynamic.GetNodeOrNull<Label>("History_0");
+        AssertThat(first).IsNotNull();
+        AssertThat(first!.Text).Contains(colony.Name); // "Turn N: Founded <colony>."
+    }
+
     private static CrownAndColony.GameLogic.GameSession.Game GetGame(GameController controller) =>
         (CrownAndColony.GameLogic.GameSession.Game)controller
             .GetType()
