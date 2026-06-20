@@ -301,6 +301,26 @@ public partial class GameController : Node2D
             case InputEventKey { Keycode: Key.G, Pressed: true, Echo: false }:
                 EnterGotoMode();
                 break;
+            case InputEventKey { Keycode: Key.W, Pressed: true, Echo: false }:
+                SelectNextUnitToMove();
+                break;
+        }
+    }
+
+    /// <summary>Selects the next of the human's units still needing orders and centres on it (FreeCol's "wait/next unit"
+    /// cycle, key W) — reads the shipped <see cref="Game.NextUnitToMove"/> oracle; no-op when none remain (ADR-006).</summary>
+    private void SelectNextUnitToMove()
+    {
+        if (_game.NextUnitToMove(_game.HumanPlayer) is { } next)
+        {
+            _selectedUnit = next;
+            CenterCameraOnTile(next.Position);
+            RefreshView();
+        }
+        else
+        {
+            _notice = "No units need orders.";
+            RefreshView();
         }
     }
 

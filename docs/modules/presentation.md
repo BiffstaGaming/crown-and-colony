@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Last verified** | 2026-06-20 @ selected-unit HUD info line (`86d3dmej6`) — `UI/SelectedUnitPanel` over `Unit` reads; **90 L3+L4** green |
+| **Last verified** | 2026-06-20 @ "next unit needing orders" cycle (`86d3dmfvq`) — key **W** over `Game.NextUnitToMove`; **91 L3+L4** green |
 | **Location** | `game/presentation/`, `game/scenes/` (project: `game/CrownAndColony.csproj`) |
 | **Layer** | Presentation (Godot) |
 | **Depends on** | `GameLogic`, Godot 4.6 |
@@ -62,6 +62,7 @@ Everything the player sees and touches: scene tree, drawing, camera, input, UI. 
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-20 | **"Next unit needing orders" cycle** (`86d3dmfvq`, key **W**): `GameController.SelectNextUnitToMove` selects the next of the human's units still needing orders (`Game.NextUnitToMove`) and centres on it (`CenterCameraOnTile`); no-op notice when none remain. Pure presentation (ADR-006) over a shipped, tested oracle; no GameLogic/save change; no golden churn (a key). +1 L3 (`InputTests.PressingW_SelectsTheNextUnitNeedingOrders_AndCentresOnIt`). Closes the goto "cycling-to-next-unit UI" follow-up. See [units-movement.md](../systems/units-movement.md) | P7 (`86d3dmfvq`) |
 | 2026-06-20 | **Selected-unit HUD info line** (`86d3dmej6`, sub-slice of `86d3c9x6y`): new `SelectedUnitPanel` (top-left, shown only while a unit is selected) reads the selected unit's type / moves / role / orders / goto via `DescribeSelectedUnit` (`Unit` reads only). Presentation-only (ADR-006); `mouse_filter=Ignore` (no click-steal); hidden in golden states → no golden churn. +1 L3 (`InputTests.SelectingAUnit_ShowsTheSelectedUnitInfoPanel`). The order-button cluster + tile info stay on the parent `86d3c9x6y`. | P7 (`86d3dmej6`) |
 | 2026-06-20 | **On-map rumour-marker glyph** (`86d3dm9tq`): new drawn `RumourMarker` (mound + glint, no art) on each explored Lost-City-Rumour tile, placed by `SyncRumourMarkers` into a new `MapView/RumourLayer`, fog-gated like settlement markers. Presentation-only (ADR-006); no GameLogic/save change. Existing goldens unchanged; +1 new L4 (`rumour-marker-seed424242`) + 1 L3 (`RumourMarkerTests`). The last Lost-City-Rumour presentation slice. See [lost-city-rumours.md](../systems/lost-city-rumours.md) | P7 (`86d3dm9tq`) |
 | 2026-06-20 | **Strange-mounds decision panel** (`86d3cqqu5`): new `MoundsDecisionPanel` (mirrors `NativeDemandPanel`) — opened from `RefreshView` when `Game.PendingMounds` is set; **Investigate**/**Leave them be** call the new public `Game.ResolvePendingMounds(bool)` oracle (wraps the internal investigate/decline + returns a player-facing outcome). Presentation-only (ADR-006) bar the thin oracle; no save/RNG change; hidden by default → no golden churn. +3 L1 (`LostCityRumourTests.ResolvePendingMounds_*`) + 2 L3 (`MoundsDecisionPanelTests`). See [lost-city-rumours.md](../systems/lost-city-rumours.md) | P5 (`86d3cqqu5`) |

@@ -49,6 +49,27 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task PressingW_SelectsTheNextUnitNeedingOrders_AndCentresOnIt()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        Unit expected = game.NextUnitToMove(game.HumanPlayer)!;
+        AssertThat(expected).IsNotNull(); // a fresh game has a unit still needing orders
+
+        runner.SimulateKeyPressed(Key.W); // cycle to the next unit needing orders
+        await runner.SimulateFrames(1);
+
+        // The camera centres on it and the selected-unit panel reflects it.
+        AssertThat(controller.GetNode<Camera2D>("Camera").Position).IsEqual(MapView.TileCentre(expected.Position));
+        AssertThat(controller.GetNode<PanelContainer>("UI/SelectedUnitPanel").Visible).IsTrue();
+        AssertThat(controller.GetNode<Label>("UI/SelectedUnitPanel/Label").Text).Contains(expected.Type.ShortName);
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task SelectingAUnit_ShowsTheSelectedUnitInfoPanel()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
