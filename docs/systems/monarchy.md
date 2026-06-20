@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | In progress — tick+chooser (1), tax (2), tea party (3), mercenaries (4), support (5), ADD_TO_REF build-up (6). Declare-Independence + war land in items 7-10. |
-| **Last verified** | 2026-06-19 @ REF build-up (`86d3c9v4j`, save v40) |
+| **Status** | In progress — tick+chooser (1), tax (2), tea party (3), mercenaries (4), support (5), ADD_TO_REF build-up (6); monarch tuning is now difficulty-data-driven (`86d3c9rg6`). Declare-Independence + war land in items 7-10. |
+| **Last verified** | 2026-06-20 @ monarch tuning → ruleset data (`86d3c9rg6`) |
 | **Code** | `game/src/GameLogic/GameSession/Game.Monarch.cs`, `MonarchAction.cs`; `Randomness/RandomChoice.cs` |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/MonarchTests.cs` |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/common/model/Monarch.java` (`getActionChoices`, `actionIsValid`), the server monarch tick |
@@ -53,14 +53,14 @@ This first piece is the King *deciding* — the weighted dice-roll each turn tha
 
 - **MONARCH_MERCENARIES** (offered at war, not displeased, ≥ 200 gold) and **HESSIAN_MERCENARIES** (≥ 5000 gold) offer a force of **veteran soldiers** (armed or mounted — 2-3 groups of 1-2), priced at the European purchase price **× 65%**, **trimmed to what your treasury can afford** (no affordable units → no offer).
 - **Accept** → pay the gold, the veterans appear on your **Europe dock**. **Decline an offer you could afford** → the King is **displeased** (`DISPLEASURE`): he offers **no more mercenaries or military support** for the rest of the game.
-- *Faithful-subset:* the mercenary force is veteran soldiers (the classic land mercenary); the naval man-o-war mercenary and full ability-driven type selection are simplified (TODO `86d3c9rg6`).
+- *Faithful-subset:* the mercenary force is veteran soldiers (the classic land mercenary); the naval man-o-war mercenary and full ability-driven type selection are simplified. The mercenary **price percentage** is difficulty-data-driven (`mercenaryPrice`, medium 65 — see [difficulty](difficulty.md)); the force **composition** is still a hardcoded faithful-subset.
 
 ### Free military support (item 5)
 
 - **SUPPORT_SEA** (offered after a **privateer raid**, if not already granted and the King isn't displeased) grants **one free naval ship** on your Europe dock — a **one-shot** (`SupportSeaGranted`). **SUPPORT_LAND** grants free land troops (medium support level 2 = **2 mounted veterans**). Both are free and immediate (no demand).
 - *Reachability:* `SUPPORT_LAND` is **never offered at medium** (the chooser only lists it when `dx < 3`); `SUPPORT_SEA` needs a privateer raid, which arrives with privateer combat later. Both handlers + validity gates are implemented and tested (forced via the handler) for fidelity now.
 
-**Deviations from original / FreeCol:** the chooser, weights, grace and validity gates are FreeCol's exactly. The action *effects* are wired in their own slices (this item is the decision only). `monarchMeddling`/`maximumTax` are temporary code constants pending the ruleset-constants pass (`86d3c9rg6`).
+**Deviations from original / FreeCol:** the chooser, weights, grace and validity gates are FreeCol's exactly. The action *effects* are wired in their own slices (this item is the decision only). The monarch's **tuning numbers** — meddling, tax cap/spread, mercenary price, support size, boycott factor and the REF base composition — are now **difficulty-data-driven** (`Ruleset.Difficulty.Monarch`, default = classic medium; see [difficulty](difficulty.md), [royal-expeditionary-force](royal-expeditionary-force.md)), so they are transposable per game-mode / variant. The only deliberate value-preserving deviation: the **boycott back-tax factor** stays the classic-game **300** (the spec's medium `arrearsFactor` is 500), kept on `MonarchOptions.ArrearsFactor` rather than read from the spec id. The remaining monarch numbers (`MINIMUM_TAX_RATE` 20, `MONARCH_MINIMUM_PRICE` 200, `HESSIAN_MINIMUM_PRICE` 5000, the FORCE_TAX +3 surcharge, the 25-turn tea-party bell duration) are FreeCol **code** constants (not difficulty options) and stay as C# consts.
 
 ## 3. Technical design
 
@@ -94,12 +94,14 @@ This first piece is the King *deciding* — the weighted dice-roll each turn tha
 - [ ] Declare Independence + continental muster (`86d3c9v28`).
 - [ ] REF arrival + War of Independence combat (`86d3c9v8k`).
 - [ ] Win (defeat REF) (`86d3c9vfn`) / Lose (last port) (`86d3c9vh1`).
-- [ ] Route `monarchMeddling`/`maximumTax` through ruleset constants (`86d3c9rg6`); persist monarch state per stateful slice (`86d3c9rk6`).
+- [x] Route the monarch tuning numbers (`monarchMeddling`/`maximumTax`/`taxAdjustment`/`mercenaryPrice`/`monarchSupport`/`refSize` + the boycott factor) through ruleset difficulty data (`86d3c9rg6`) — `Ruleset.Difficulty.Monarch`, value-preserving at medium. See [difficulty](difficulty.md).
+- [ ] Persist monarch state per stateful slice (`86d3c9rk6`).
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-20 | **Monarch tuning → ruleset data** (`86d3c9rg6`): the monarch's hardcoded C# tuning consts (`monarchMeddling`/`maximumTax`/`taxAdjustment`/`mercenaryPrice`/`monarchSupport` + the REF base composition `refSize`) moved into `Specification/MonarchOptions.cs` on `Ruleset.Difficulty.Monarch`, parsed from the `model.difficulty.monarch` group (and the nested `refSize` `unitListOption`). The monarch methods read `Ruleset.Difficulty.Monarch.*`; `BuildBaseRef` became instance. **Value-preserving at medium** (defaults equal the old consts → default game byte-identical, soak byte-stable; no save bump — difficulty is ruleset-derived). The boycott back-tax factor was also moved onto `MonarchOptions.ArrearsFactor` but **deliberately kept at the classic-game 300**, not read from the spec's medium `arrearsFactor` (500), to preserve behaviour. Remaining monarch numbers (min-tax/min-merc-price/Hessian-floor/FORCE_TAX surcharge/tea-party duration) are FreeCol code constants and stay consts. Removed the `TODO(86d3c9rg6)`. +7 L1 (parse-by-id + refSize + ArrearsFactor guard + grace/tax-cap/REF/merc-price behaviour proofs). See [difficulty](difficulty.md), [royal-expeditionary-force](royal-expeditionary-force.md). | Phase 5 (`86d3c9rg6`) |
 | 2026-06-19 | **Monarch turn-tick + weighted action chooser**: `MonarchAction`, `MonarchActionIsValid`, `GetMonarchActionChoices` (FreeCol weights/grace/validity), `RunMonarchTick` in `EndTurn` (ephemeral RNG — stream 0 untouched, no save change), `RandomChoice.WeightedRandom`. Action effects deferred to later arc items | P6 (`86d3c9qvr`) |
 | 2026-06-19 | **Tax mutation**: RAISE_TAX opens a `PendingMonarchDemand` (`RaiseTaxAmount`, `GetMostValuableGoods`) answered by `RespondToMonarch` (accept raises; reject-goods-gone forces +3; goods-present reject = tea party, item 3); LOWER_TAX/WAIVE_TAX dispatched. Tax reuses `Player.TaxRate` (no save bump) | P6 (`86d3c9r2m`) |
 | 2026-06-19 | **Boston Tea Party + boycott**: goods-present reject dumps the goods, boycotts the good (`Market.Arrears` = salePrice×300, gates selling), surges bells (+50% for 25 turns decaying), tax unchanged; `CheckPayArrears`/`PayArrears` lift it. Save **v37** (`SavedPlayer.Arrears` + `SavedColony.TeaPartyBellTurns`, omit-when-default) | P6 (`86d3c9r4w`) |

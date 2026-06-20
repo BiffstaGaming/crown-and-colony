@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | In progress — the REF as a growing force the King amasses (ADD_TO_REF, item 6). Realising it into an army at the Declaration of Independence + the war itself land in items 7-8. |
-| **Last verified** | 2026-06-19 @ REF build-up + Force model (`86d3c9v4j`, save v40) |
+| **Last verified** | 2026-06-20 @ refSize routed to difficulty data (`86d3c9rg6`) |
 | **Code** | `game/src/GameLogic/GameSession/Force.cs`, `Game.Monarch.cs` (`EnsureRefForce`/`BuildBaseRef`/`AddToRef`) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/MonarchTests.cs` |
 | **FreeCol reference** | `Monarch.java` (`getExpeditionaryForce`, `addToREF`, `Force`), `specification.xml` (`model.option.refSize`) |
@@ -16,18 +16,18 @@ The King keeps a **Royal Expeditionary Force** — the army and navy he will sen
 ## 2. Detailed rules
 
 - The REF is a **force**: a list of land-unit blocks (king's regulars as infantry/cavalry, artillery) and naval-unit blocks (men-o-war). It is grown but **not yet turned into real units** — that happens at the Declaration of Independence (item 7).
-- **Base size** (FreeCol classic medium `refSize`): **31** king's-regular infantry, **15** king's-regular cavalry, **14** artillery (60 land), **8** men-o-war.
+- **Base size** (FreeCol classic medium `refSize`): **31** king's-regular infantry, **15** king's-regular cavalry, **14** artillery (60 land), **8** men-o-war. These counts are **difficulty-data-driven** (`Ruleset.Difficulty.Monarch.RefBase*`, parsed from the spec `refSize` `unitListOption`; default = classic medium — see [difficulty](difficulty.md)), so a variant can resize the King's army; only the unit/role **identities** (king's regular, man-o-war, infantry/cavalry roles) remain hardcoded.
 - **ADD_TO_REF** (the King's highest-weighted active monarch action, weight `10 + dx` = 13) grows the force (FreeCol `Monarch.addToREF`):
   - if the navy can't yet carry the land force — **naval capacity < land space required × 1.1** — add **one man-o-war**;
   - otherwise add **1-3 land units**: either king's regulars (1-in-3 **mounted**, else infantry) or artillery.
 - `SpaceRequired` = the cargo slots the land units occupy; `NavalCapacity` = the men-o-war's cargo capacity. The base navy (8 men-o-war) can't carry 60 land units, so early ADD_TO_REF reinforces the navy.
 
-**Deviations from original / FreeCol:** the composition + the `×1.1` navy-growth rule + the 1-3 land roll match FreeCol; the unit types are hardcoded (faithful-subset — TODO `86d3c9rg6` to route `refSize` through ruleset/difficulty data). RNG is the ephemeral monarch generator (off stream 0).
+**Deviations from original / FreeCol:** the composition + the `×1.1` navy-growth rule + the 1-3 land roll match FreeCol; the base **counts** are now `refSize` difficulty data (`86d3c9rg6`), while the unit **types** stay hardcoded (faithful-subset). RNG is the ephemeral monarch generator (off stream 0).
 
 ## 3. Technical design
 
 - `Force` (`GameSession/Force.cs`): `LandUnits`/`NavalUnits` as `ForceEntry(UnitTypeId, RoleId, Count)` blocks; `AddLand`/`AddNaval` merge into a matching block; `SpaceRequired(ruleset)` / `NavalCapacity(ruleset)`; `LandUnitCount`/`NavalUnitCount`. Reused by the foreign-intervention force later.
-- `Game._refForce` (nullable): the King's force, **null until grown beyond the re-derivable base**. `EnsureRefForce()` materialises `BuildBaseRef()` on first need; `AddToRef(rng)` applies the growth rule; `SetRefForce` installs a restored one.
+- `Game._refForce` (nullable): the King's force, **null until grown beyond the re-derivable base**. `EnsureRefForce()` materialises `BuildBaseRef()` on first need (an instance method since `86d3c9rg6` — it reads the base counts from `Ruleset.Difficulty.Monarch`); `AddToRef(rng)` applies the growth rule; `SetRefForce` installs a restored one.
 - `MonarchActionIsValid(AddToRef)` is true (the ruleset always has REF land + naval types); the tick dispatches `AddToRef(monarchRng)`.
 - **Save v40:** `SaveGame.RefForce` (a `SavedForce` of the two `ForceEntry` lists) is written only when `_refForce` is non-null (grown), so a pre-rebellion game is byte-identical to v39; a pre-v40 save (or an ungrown one) re-derives the base on demand. Restored via `SetRefForce` after `Game.Restore`.
 
@@ -45,10 +45,11 @@ The King keeps a **Royal Expeditionary Force** — the army and navy he will sen
 - [x] REF Force model + ADD_TO_REF build-up (`86d3c9v4j`, save v40).
 - [ ] Realise the REF into a PlayerType.RoyalExpeditionaryForce army at the Declaration of Independence (item 7, `86d3c9v28`).
 - [ ] REF arrival/landing + War-of-Independence combat on the REF's own RNG stream (item 8, `86d3c9v8k`).
-- [ ] Route `refSize` through ruleset/difficulty data (`86d3c9rg6`).
+- [x] Route `refSize` (the base counts) through ruleset/difficulty data (`86d3c9rg6`) — `Ruleset.Difficulty.Monarch.RefBase*`, value-preserving at medium. See [difficulty](difficulty.md).
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-20 | **refSize → difficulty data** (`86d3c9rg6`): the REF base counts (31/15/14/8) moved from hardcoded consts into `Ruleset.Difficulty.Monarch.RefBase*` (parsed from the spec `refSize` `unitListOption`); `BuildBaseRef` became an instance method. Value-preserving at medium (default game byte-identical); the unit/role identities stay hardcoded. See [difficulty](difficulty.md), [monarchy](monarchy.md). | Phase 5 (`86d3c9rg6`) |
 | 2026-06-19 | **REF Force model + ADD_TO_REF build-up**: `Force` (land/naval blocks + space/capacity), `Game._refForce` grown by `AddToRef` (navy to +10% then 1-3 land), ADD_TO_REF dispatched + offered (weight 13). Save **v40** (`SaveGame.RefForce`, omit-until-grown). Composition hardcoded (faithful-subset) | P6 (`86d3c9v4j`) |

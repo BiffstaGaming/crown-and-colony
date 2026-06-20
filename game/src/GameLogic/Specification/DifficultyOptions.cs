@@ -55,6 +55,11 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <c>model.option.shipTradePenalty</c>, a negative <c>percentage</c> modifier; veryEasy→veryHard = −20/−25/−30/−35/−40,
 /// medium −30). A settlement pays a ship 30% less than an overland trader would get. See [natives].
 /// </param>
+/// <param name="Monarch">
+/// The home-nation Monarch's tuning numbers (spec <c>model.difficulty.monarch</c> group + <c>refSize</c>): meddling,
+/// tax cap/spread, mercenary pricing, support size, boycott factor and the REF base composition. See [monarchy],
+/// [royal-expeditionary-force].
+/// </param>
 public sealed record DifficultyOptions(
     int FoundingFatherFactor,
     int UnitsThatUseNoBells,
@@ -69,7 +74,8 @@ public sealed record DifficultyOptions(
     int RecruitLowerCapIncrease,
     int ArtilleryPriceIncrease,
     int TreasureTransportFee,
-    int ShipTradePenalty)
+    int ShipTradePenalty,
+    MonarchOptions Monarch)
 {
     /// <summary>
     /// The classic <c>model.difficulty.medium</c> values — the fallback when a spec omits the difficulty group or a
@@ -89,5 +95,6 @@ public sealed record DifficultyOptions(
         RecruitLowerCapIncrease: 0,
         ArtilleryPriceIncrease: 100,
         TreasureTransportFee: 60,
-        ShipTradePenalty: -30);
+        ShipTradePenalty: -30,
+        Monarch: MonarchOptions.ClassicMedium);
 }

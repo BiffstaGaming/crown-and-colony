@@ -21,34 +21,30 @@ namespace CrownAndColony.GameLogic.GameSession;
 /// </summary>
 public sealed partial class Game
 {
-    // FreeCol monarch constants. TODO(86d3c9rg6): route MonarchMeddling/MaxTax through ruleset gameOptions.
-    private const int MonarchMeddling = 2;          // GameOptions.MONARCH_MEDDLING (medium); dx = 1 + meddling = 3
-    private const int MonarchMaxTaxRate = 65;       // GameOptions.MAXIMUM_TAX
-    private const int MonarchMinTaxRate = 20;       // Monarch.MINIMUM_TAX_RATE
+    // Monarch action tuning is difficulty-driven (model.difficulty.monarch + refSize): meddling, tax cap/spread,
+    // mercenary pricing, support size, boycott factor and the REF base composition all read Ruleset.Difficulty.Monarch
+    // (default = classic medium, byte-identical to the old consts). See Specification/MonarchOptions.cs.
+    private MonarchOptions MonarchOpts => Ruleset.Difficulty.Monarch;
+
+    // FreeCol code-level monarch constants (Monarch.java / ServerPlayer.java hardcodes — not difficulty options).
+    private const int MonarchMinTaxRate = 20;        // Monarch.MINIMUM_TAX_RATE
     private const int MonarchMinimumMercPrice = 200; // Monarch.MONARCH_MINIMUM_PRICE
     private const int HessianMinimumPrice = 5000;    // Monarch.HESSIAN_MINIMUM_PRICE
-    private const int MonarchTaxAdjustment = 2;      // GameOptions.TAX_ADJUSTMENT (medium)
     private const int ForceTaxExtra = 3;             // ServerPlayer.csRaiseTax FORCE_TAX surcharge
-    private const int ArrearsFactor = 300;           // GameOptions.ARREARS_FACTOR — boycott back-tax = salePrice × this
     private const int TeaPartyBellDuration = 25;     // colonyGoodsParty modifier duration (turns) → +50% bells decaying −2%/turn
-    private const int MercenaryPricePercent = 65;    // GameOptions.MERCENARY_PRICE (medium) — offer price = europeanPurchasePrice × this%
+
     // Classic mercenaryUnit land force (specification.xml): veteran soldiers, armed or mounted. (The naval man-o-war
-    // mercenary and ability-driven type selection are a faithful-subset simplification — TODO 86d3c9rg6.)
+    // mercenary and ability-driven type selection are a faithful-subset simplification.)
     private const string MercenaryUnitTypeId = "model.unit.veteranSoldier";
     private const string MercenarySoldierRoleId = "model.role.soldier";
     private const string MercenaryDragoonRoleId = "model.role.dragoon";
     private const string NavalSupportUnitTypeId = "model.unit.frigate"; // SUPPORT_SEA free naval aid (faithful-subset naval supportUnit)
-    private const int SupportLandMountedUnits = 2; // GameOptions.MONARCH_SUPPORT level 2 (medium) → 2 mounted veterans
 
-    // Royal Expeditionary Force (item 6). Medium refSize (specification.xml model.difficulty.medium). TODO(86d3c9rg6): ruleset.
+    // Royal Expeditionary Force (item 6) unit/role identities (the counts are difficulty-driven, see MonarchOpts).
     private const string KingsRegularUnitTypeId = "model.unit.kingsRegular";
     private const string ManOWarUnitTypeId = "model.unit.manOWar";
     private const string RefInfantryRoleId = "model.role.infantry";
     private const string RefCavalryRoleId = "model.role.cavalry";
-    private const int RefBaseInfantry = 31;
-    private const int RefBaseCavalry = 15;
-    private const int RefBaseArtillery = 14;
-    private const int RefBaseManOWar = 8;
 
     private Force? _refForce; // the King's growing expeditionary force; null until grown (re-derives the base on demand)
 
@@ -61,13 +57,14 @@ public sealed partial class Game
     /// <summary>Installs a restored REF force (save load).</summary>
     internal void SetRefForce(Force force) => _refForce = force;
 
-    private static Force BuildBaseRef()
+    private Force BuildBaseRef()
     {
+        MonarchOptions mon = MonarchOpts;
         var force = new Force();
-        force.AddLand(KingsRegularUnitTypeId, RefInfantryRoleId, RefBaseInfantry);
-        force.AddLand(KingsRegularUnitTypeId, RefCavalryRoleId, RefBaseCavalry);
-        force.AddLand(ArtilleryUnitTypeId, null, RefBaseArtillery);
-        force.AddNaval(ManOWarUnitTypeId, null, RefBaseManOWar);
+        force.AddLand(KingsRegularUnitTypeId, RefInfantryRoleId, mon.RefBaseInfantry);
+        force.AddLand(KingsRegularUnitTypeId, RefCavalryRoleId, mon.RefBaseCavalry);
+        force.AddLand(ArtilleryUnitTypeId, null, mon.RefBaseArtillery);
+        force.AddNaval(ManOWarUnitTypeId, null, mon.RefBaseManOWar);
         return force;
     }
 
@@ -118,7 +115,7 @@ public sealed partial class Game
     internal bool MonarchActionIsValid(MonarchAction action) => action switch
     {
         MonarchAction.NoAction => true,
-        MonarchAction.RaiseTaxAct or MonarchAction.RaiseTaxWar => _human.TaxRate < MonarchMaxTaxRate,
+        MonarchAction.RaiseTaxAct or MonarchAction.RaiseTaxWar => _human.TaxRate < MonarchOpts.MaximumTaxRate,
         MonarchAction.ForceTax => false,
         MonarchAction.LowerTaxWar or MonarchAction.LowerTaxOther => _human.TaxRate > MonarchMinTaxRate + 10,
         MonarchAction.WaiveTax => true,
@@ -141,8 +138,8 @@ public sealed partial class Game
     internal IReadOnlyList<(int Weight, MonarchAction Action)> GetMonarchActionChoices(int turn)
     {
         var choices = new List<(int Weight, MonarchAction Action)>();
-        int dx = 1 + MonarchMeddling;   // 3 at medium
-        int grace = (6 - dx) * 10;      // 30 at medium
+        int dx = 1 + MonarchOpts.Meddling; // 3 at medium
+        int grace = (6 - dx) * 10;         // 30 at medium
 
         if (turn < grace || !HumanHasSettlements() || _human.PlayerType != PlayerType.Colonial)
         {
@@ -307,7 +304,7 @@ public sealed partial class Game
             entries.Add(new ForceEntry(MercenaryUnitTypeId, role, n));
         }
 
-        int unitPrice = EuropeUnitPrice(_human, Ruleset.Unit(MercenaryUnitTypeId)) * MercenaryPricePercent / 100;
+        int unitPrice = EuropeUnitPrice(_human, Ruleset.Unit(MercenaryUnitTypeId)) * MonarchOpts.MercenaryPricePercent / 100;
         if (unitPrice <= 0)
         {
             return null;
@@ -342,7 +339,7 @@ public sealed partial class Game
     /// </summary>
     internal IReadOnlyList<ForceEntry> GetSupport(bool naval) => naval
         ? [new ForceEntry(NavalSupportUnitTypeId, null, 1)]
-        : [new ForceEntry(MercenaryUnitTypeId, MercenaryDragoonRoleId, SupportLandMountedUnits)];
+        : [new ForceEntry(MercenaryUnitTypeId, MercenaryDragoonRoleId, MonarchOpts.SupportLandMountedUnits)];
 
     /// <summary>Delivers a free force to the human's Europe dock (the King's military support — no gold cost).</summary>
     private void GrantSupport(IReadOnlyList<ForceEntry> force)
@@ -376,7 +373,7 @@ public sealed partial class Game
     private void HoldTeaParty(Colony colony, string goodsId, int amount)
     {
         colony.AddGoods(goodsId, -amount);
-        _human.Market.SetArrears(goodsId, _human.Market.BidPrice(goodsId) * ArrearsFactor);
+        _human.Market.SetArrears(goodsId, _human.Market.BidPrice(goodsId) * MonarchOpts.ArrearsFactor);
         colony.TeaPartyBellTurns = TeaPartyBellDuration;
     }
 
@@ -411,15 +408,15 @@ public sealed partial class Game
     /// <summary>The new tax rate after a raise: <c>min(tax + 1 + rnd[0, 3 + turn/40), 65)</c> (FreeCol <c>Monarch.raiseTax</c>).</summary>
     internal int RaiseTaxAmount(IGameRandom rng)
     {
-        int divisor = Math.Max(1, (6 - MonarchTaxAdjustment) * 10); // 40 at medium
+        int divisor = Math.Max(1, (6 - MonarchOpts.TaxAdjustment) * 10); // 40 at medium
         int adjust = 1 + rng.Next(3 + Turn / divisor);
-        return Math.Min(_human.TaxRate + adjust, MonarchMaxTaxRate);
+        return Math.Min(_human.TaxRate + adjust, MonarchOpts.MaximumTaxRate);
     }
 
     /// <summary>The new tax rate after a reduction: <c>max(tax − 1 − rnd[0, 8), 20)</c> (FreeCol <c>Monarch.lowerTax</c>).</summary>
     internal int LowerTaxAmount(IGameRandom rng)
     {
-        int adjust = 1 + rng.Next(Math.Max(1, 10 - MonarchTaxAdjustment)); // 1 + rnd[0,8) at medium
+        int adjust = 1 + rng.Next(Math.Max(1, 10 - MonarchOpts.TaxAdjustment)); // 1 + rnd[0,8) at medium
         return Math.Max(_human.TaxRate - adjust, MonarchMinTaxRate);
     }
 

@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Xml.Linq;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
@@ -545,5 +547,191 @@ public class MonarchTests
         Assert.NotNull(loaded.RefForceOrNull);
         Assert.Equal(navy, loaded.RefForceOrNull!.NavalUnitCount);
         Assert.Equal(game.EnsureRefForce().LandUnitCount, loaded.RefForceOrNull.LandUnitCount);
+    }
+
+    // ── Monarch tuning is difficulty-driven (86d3c9rg6) ──────────────────────────────────────────────────────
+    //
+    // The monarch's tuning numbers (meddling, tax cap/spread, mercenary price, support size, boycott factor, REF
+    // base composition) moved out of hardcoded consts into Ruleset.Difficulty.Monarch. These prove the default
+    // game is byte-identical (the classic spec parses the old const values) AND that a modified ruleset value
+    // genuinely changes the behaviour (so it is data-driven, not still hardcoded).
+
+    /// <summary>The classic spec's medium monarch group parses to exactly the old hardcoded constants (value-preserving).</summary>
+    [Fact]
+    public void ClassicRuleset_ParsesTheMediumMonarchValues_EqualToTheOldConsts()
+    {
+        MonarchOptions mon = Classic.Difficulty.Monarch;
+        Assert.Equal(2, mon.Meddling);                 // dx = 1 + 2 = 3 → grace 30
+        Assert.Equal(65, mon.MaximumTaxRate);
+        Assert.Equal(2, mon.TaxAdjustment);
+        Assert.Equal(65, mon.MercenaryPricePercent);
+        Assert.Equal(2, mon.SupportLandMountedUnits);
+        Assert.Equal(31, mon.RefBaseInfantry);
+        Assert.Equal(15, mon.RefBaseCavalry);
+        Assert.Equal(14, mon.RefBaseArtillery);
+        Assert.Equal(8, mon.RefBaseManOWar);
+        Assert.Equal(MonarchOptions.ClassicMedium, mon); // and equals the hardcoded fallback exactly
+    }
+
+    /// <summary>Each monarch integer option is read by its own spec id (non-default values prove no silent fallback).</summary>
+    [Fact]
+    public void ParseDifficulty_ReadsTheMonarchOptions_ByTheirOwnIds()
+    {
+        XElement root = XElement.Parse(
+            "<freecol-specification><optionGroup id='model.difficulty.medium'>" +
+            "  <integerOption id='model.option.monarchMeddling' value='4' />" +
+            "  <integerOption id='model.option.maximumTax' value='75' />" +
+            "  <integerOption id='model.option.taxAdjustment' value='3' />" +
+            "  <integerOption id='model.option.mercenaryPrice' value='80' />" +
+            "  <integerOption id='model.option.monarchSupport' value='6' />" +
+            "</optionGroup></freecol-specification>");
+        MonarchOptions mon = Ruleset.ParseDifficulty(root).Monarch;
+        Assert.Equal(4, mon.Meddling);
+        Assert.Equal(75, mon.MaximumTaxRate);
+        Assert.Equal(3, mon.TaxAdjustment);
+        Assert.Equal(80, mon.MercenaryPricePercent);
+        Assert.Equal(6, mon.SupportLandMountedUnits);
+    }
+
+    /// <summary>The REF base counts are read from the nested <c>refSize</c> unitListOption (each block's <c>number</c>).</summary>
+    [Fact]
+    public void ParseDifficulty_ReadsTheRefSizeNumbers_FromTheUnitListOption()
+    {
+        XElement root = XElement.Parse(
+            "<freecol-specification><optionGroup id='model.difficulty.medium'>" +
+            "  <unitListOption id='model.option.refSize'>" +
+            "    <unitOption id='model.option.refSize.soldiers'><number value='40' /></unitOption>" +
+            "    <unitOption id='model.option.refSize.dragoons'><number value='20' /></unitOption>" +
+            "    <unitOption id='model.option.refSize.artillery'><number value='10' /></unitOption>" +
+            "    <unitOption id='model.option.refSize.menOfWar'><number value='12' /></unitOption>" +
+            "  </unitListOption>" +
+            "</optionGroup></freecol-specification>");
+        MonarchOptions mon = Ruleset.ParseDifficulty(root).Monarch;
+        Assert.Equal(40, mon.RefBaseInfantry);
+        Assert.Equal(20, mon.RefBaseCavalry);
+        Assert.Equal(10, mon.RefBaseArtillery);
+        Assert.Equal(12, mon.RefBaseManOWar);
+    }
+
+    /// <summary>
+    /// ArrearsFactor stays the classic-game 300, deliberately NOT read from <c>model.option.arrearsFactor</c> (whose
+    /// medium value is 500) — a value-preservation guard so the boycott back-tax is byte-identical to the old const.
+    /// </summary>
+    [Fact]
+    public void ArrearsFactor_StaysAt300_NotReadFromTheSpecOption()
+    {
+        Assert.Equal(300, Classic.Difficulty.Monarch.ArrearsFactor); // not 500 (the spec's medium arrearsFactor)
+        // Even when a spec restates arrearsFactor, the monarch option keeps 300 (the parser does not read that id).
+        XElement root = XElement.Parse(
+            "<freecol-specification><optionGroup id='model.difficulty.medium'>" +
+            "  <integerOption id='model.option.arrearsFactor' value='500' />" +
+            "</optionGroup></freecol-specification>");
+        Assert.Equal(300, Ruleset.ParseDifficulty(root).Monarch.ArrearsFactor);
+    }
+
+    // ── Data-driven behaviour proofs (a modified ruleset changes the monarch's behaviour) ─────────────────────
+
+    /// <summary>The grace period follows <c>monarchMeddling</c>: a higher meddling shrinks the grace, so the chooser wakes earlier.</summary>
+    [Fact]
+    public void Grace_FollowsRulesetMeddling()
+    {
+        // meddling 4 → dx = 5 → grace = (6 − 5)·10 = 10 (vs 30 at the default meddling 2).
+        Game game = FoundedGame(RulesetWithMonarch(("model.option.monarchMeddling", "4")));
+        Assert.Empty(game.GetMonarchActionChoices(9));     // still inside the (now shorter) grace
+        Assert.NotEmpty(game.GetMonarchActionChoices(10)); // …and awake at turn 10 (the default game is empty until 30)
+    }
+
+    /// <summary>A raise is capped at the ruleset's <c>maximumTax</c>, and validity flips at that cap — not the old hardcoded 65.</summary>
+    [Fact]
+    public void TaxCap_FollowsRulesetMaximumTax()
+    {
+        Game game = FoundedGame(RulesetWithMonarch(("model.option.maximumTax", "50")));
+        game.HumanPlayer.TaxRate = 48;
+        Assert.Equal(50, game.RaiseTaxAmount(new ScriptedRandom(9))); // capped at the ruleset max (50), not 65
+        Assert.True(game.MonarchActionIsValid(MonarchAction.RaiseTaxAct));  // 48 < 50
+        game.HumanPlayer.TaxRate = 50;
+        Assert.False(game.MonarchActionIsValid(MonarchAction.RaiseTaxAct)); // at the ruleset cap
+    }
+
+    /// <summary>The base REF composition follows the ruleset's <c>refSize</c> numbers.</summary>
+    [Fact]
+    public void BaseRef_FollowsRulesetRefSize()
+    {
+        Game game = FoundedGame(RulesetWithRefSize(soldiers: 40, dragoons: 20, artillery: 10, menOfWar: 12));
+        Force ref_ = game.EnsureRefForce();
+        Assert.Equal(40 + 20 + 10, ref_.LandUnitCount); // 70 land (vs 60 at the default refSize)
+        Assert.Equal(12, ref_.NavalUnitCount);          // 12 men-o-war (vs 8)
+    }
+
+    /// <summary>The mercenary offer price follows the ruleset's <c>mercenaryPrice</c> percentage.</summary>
+    [Fact]
+    public void MercenaryPrice_FollowsRulesetMercenaryPrice()
+    {
+        // A cheaper percentage (30 vs the default 65) makes the same offer cost proportionally less.
+        Game cheap = FoundedGame(RulesetWithMonarch(("model.option.mercenaryPrice", "30")));
+        Game dear = FoundedGame(RulesetWithMonarch(("model.option.mercenaryPrice", "60")));
+        cheap.HumanPlayer.Gold = dear.HumanPlayer.Gold = 100_000;
+
+        var rolls = new[] { 0, 0, 0, 0, 0, 0, 0, 0 };
+        cheap.DispatchMonarchAction(MonarchAction.MonarchMercenaries, new ScriptedRandom(rolls));
+        dear.DispatchMonarchAction(MonarchAction.MonarchMercenaries, new ScriptedRandom(rolls));
+
+        // Same scripted force; the 30%-priced offer must be cheaper than the 60%-priced one (proves the % is data-driven).
+        Assert.True(cheap.PendingMonarchDemand!.Price < dear.PendingMonarchDemand!.Price);
+    }
+
+    // ── Custom-ruleset helper ────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Loads the embedded classic spec, overrides the named integer options in the <em>medium</em> difficulty group,
+    /// and re-parses it into a full <see cref="Ruleset"/>. Lets a behaviour test run a real <see cref="Game"/> against
+    /// a modified monarch tuning without hand-writing a whole spec.
+    /// </summary>
+    private static Ruleset RulesetWithMonarch(params (string Id, string Value)[] integerOverrides) =>
+        EditedClassicRuleset(medium =>
+        {
+            foreach ((string id, string value) in integerOverrides)
+            {
+                medium.Descendants("integerOption").First(o => (string?)o.Attribute("id") == id).SetAttributeValue("value", value);
+            }
+        });
+
+    /// <summary>The classic ruleset with the medium <c>refSize</c> block numbers overridden.</summary>
+    private static Ruleset RulesetWithRefSize(int soldiers, int dragoons, int artillery, int menOfWar) =>
+        EditedClassicRuleset(medium =>
+        {
+            void SetRef(string blockId, int n) =>
+                medium.Descendants("unitOption").First(o => (string?)o.Attribute("id") == blockId)
+                    .Element("number")!.SetAttributeValue("value", n);
+            SetRef("model.option.refSize.soldiers", soldiers);
+            SetRef("model.option.refSize.dragoons", dragoons);
+            SetRef("model.option.refSize.artillery", artillery);
+            SetRef("model.option.refSize.menOfWar", menOfWar);
+        });
+
+    /// <summary>Loads the embedded classic spec, applies <paramref name="editMedium"/> to its medium difficulty group, and re-parses it.</summary>
+    private static Ruleset EditedClassicRuleset(Action<XElement> editMedium)
+    {
+        Assembly assembly = typeof(Ruleset).Assembly;
+        const string resource = "CrownAndColony.GameLogic.Specification.classic.specification.xml";
+        using Stream stream = assembly.GetManifestResourceStream(resource)!;
+        XDocument doc = XDocument.Load(stream);
+
+        // The medium difficulty group → the only subtree ParseDifficulty reads (default level).
+        XElement medium = doc.Descendants("optionGroup").First(g => (string?)g.Attribute("id") == "model.difficulty.medium");
+        editMedium(medium);
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        ms.Position = 0;
+        return Ruleset.Load(ms);
+    }
+
+    /// <summary>A founded game on a custom ruleset (mirrors <see cref="FoundedGame(ulong)"/> but for a modified spec).</summary>
+    private static Game FoundedGame(Ruleset ruleset)
+    {
+        Game game = Game.New(ruleset, Seed);
+        game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        return game;
     }
 }

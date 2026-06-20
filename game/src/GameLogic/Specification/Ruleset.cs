@@ -610,8 +610,17 @@ public sealed class Ruleset
                 .Select(o => ParseInt((string?)o.Attribute("value")))
                 .FirstOrDefault(v => v is not null) ?? fallback;
 
+        // A REF entry's <number> within the <unitListOption id="model.option.refSize"> group: each block (soldiers,
+        // dragoons, …) is a <unitOption> carrying a <number value="…"/>. Reads it by the block's option id.
+        int RefSize(string unitOptionId, int fallback) =>
+            level.Descendants("unitOption")
+                .Where(o => (string?)o.Attribute("id") == unitOptionId)
+                .Select(o => ParseInt((string?)o.Element("number")?.Attribute("value")))
+                .FirstOrDefault(v => v is not null) ?? fallback;
+
         DifficultyOptions m = DifficultyOptions.ClassicMedium;
         GovernmentLimits medium = GovernmentLimits.ClassicMedium;
+        MonarchOptions mon = MonarchOptions.ClassicMedium;
         return new DifficultyOptions(
             FoundingFatherFactor: IntOption("model.option.foundingFatherFactor", DifficultyOptions.ClassicMedium.FoundingFatherFactor),
             UnitsThatUseNoBells: IntOption("model.option.unitsThatUseNoBells", DifficultyOptions.ClassicMedium.UnitsThatUseNoBells),
@@ -630,7 +639,20 @@ public sealed class Ruleset
             RecruitLowerCapIncrease: IntOption("model.option.lowerCapIncrease", m.RecruitLowerCapIncrease),
             ArtilleryPriceIncrease: IntOption("model.option.priceIncrease.artillery", m.ArtilleryPriceIncrease),
             TreasureTransportFee: IntOption("model.option.treasureTransportFee", m.TreasureTransportFee),
-            ShipTradePenalty: IntOption("model.option.shipTradePenalty", m.ShipTradePenalty));
+            ShipTradePenalty: IntOption("model.option.shipTradePenalty", m.ShipTradePenalty),
+            Monarch: new MonarchOptions(
+                Meddling: IntOption("model.option.monarchMeddling", mon.Meddling),
+                MaximumTaxRate: IntOption("model.option.maximumTax", mon.MaximumTaxRate),
+                TaxAdjustment: IntOption("model.option.taxAdjustment", mon.TaxAdjustment),
+                MercenaryPricePercent: IntOption("model.option.mercenaryPrice", mon.MercenaryPricePercent),
+                SupportLandMountedUnits: IntOption("model.option.monarchSupport", mon.SupportLandMountedUnits),
+                // ArrearsFactor: the classic game has always used 300 here, not the spec's medium 500; kept at the
+                // const-preserving default (not read from model.option.arrearsFactor) so behaviour is byte-identical.
+                ArrearsFactor: mon.ArrearsFactor,
+                RefBaseInfantry: RefSize("model.option.refSize.soldiers", mon.RefBaseInfantry),
+                RefBaseCavalry: RefSize("model.option.refSize.dragoons", mon.RefBaseCavalry),
+                RefBaseArtillery: RefSize("model.option.refSize.artillery", mon.RefBaseArtillery),
+                RefBaseManOWar: RefSize("model.option.refSize.menOfWar", mon.RefBaseManOWar)));
     }
 
     /// <summary>
