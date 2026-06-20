@@ -1,5 +1,6 @@
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.GameSession.Diplomacy;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Randomness;
@@ -681,5 +682,114 @@ public class ForeignCombatTests
             b.EndTurn();
         }
         Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
+    }
+
+    // ── AI answers / proposes treaties (86d3c9uar turn-wiring) ────────────────────────────────────────────────────────
+
+    /// <summary>A foreign power at war with the human, stripped of its land units so it is militarily weak (a low strength
+    /// ratio → its own peace evaluation accepts). Returns the game + power.</summary>
+    private static (Game game, Player power) WeakPowerAtWar(ulong seed)
+    {
+        Game game = Game.New(Classic, seed);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        foreach (Unit u in game.Units.Where(u => u.OwnerId == power.PlayerId && !u.Type.IsNaval).ToList())
+        {
+            game.Disband(u); // no land power → StrengthRatio ≈ 0 → peace is strongly positive
+        }
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.War);
+        game.ChangeTension(power.PlayerId, game.HumanPlayer.PlayerId, Game.TensionWar); // a genuine war (won't decay off this turn)
+        return (game, power);
+    }
+
+    [Fact]
+    public void AWeakPowerAtWar_SuesForPeace_OnItsTurn()
+    {
+        // Turn-wiring: a power at war that is militarily weak weighs a peace treaty through EvaluateTrade, accepts, and
+        // settles it on its own turn — so the war ends without any human action.
+        (Game game, Player power) = WeakPowerAtWar(seed: 7);
+        Assert.Equal(Stance.War, game.StanceBetween(power.PlayerId, game.HumanPlayer.PlayerId));
+
+        game.EndTurn();
+
+        Assert.Equal(Stance.Peace, game.StanceBetween(power.PlayerId, game.HumanPlayer.PlayerId)); // it sued for peace
+    }
+
+    [Fact]
+    public void AStrongPowerAtWar_FightsOn_RatherThanSuingForPeace()
+    {
+        // A power that is militarily strong (a high strength ratio) has its peace evaluation REJECT the truce — so it
+        // keeps the war rather than offering peace. Built magic-number-free: it simply has overwhelming land force.
+        Game game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        // Strip the human's land units and give the power a big army → its strength ratio is ≈ 1 (peace eval invalid).
+        foreach (Unit u in game.Units.Where(u => u.OwnerId == game.HumanPlayer.PlayerId && !u.Type.IsNaval).ToList())
+        {
+            game.Disband(u);
+        }
+        for (int i = 0; i < 6; i++)
+        {
+            Position spot = game.Map.AllPositions().First(p => Free(game, p));
+            Unit gun = game.SpawnUnit(Classic.Unit("model.unit.artillery"), spot);
+            gun.OwnerId = power.PlayerId;
+        }
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.War);
+        game.ChangeTension(power.PlayerId, game.HumanPlayer.PlayerId, Game.TensionWar); // a genuine war so it can't decay off this turn
+
+        game.EndTurn();
+
+        Assert.Equal(Stance.War, game.StanceBetween(power.PlayerId, game.HumanPlayer.PlayerId)); // strong → fights on
+    }
+
+    [Fact]
+    public void AtPeace_APower_DoesNotProposeAnything()
+    {
+        // The diplomacy step only acts on a war; an un-provoked power at the default Uncontacted stance offers nothing.
+        Game game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        Assert.Equal(Stance.Uncontacted, game.StanceBetween(power.PlayerId, game.HumanPlayer.PlayerId));
+
+        game.EndTurn();
+
+        Assert.Equal(Stance.Uncontacted, game.StanceBetween(power.PlayerId, game.HumanPlayer.PlayerId)); // unchanged
+    }
+
+    [Fact]
+    public void RespondToTrade_SettlesAnAcceptableOffer_AndDeclinesAnUnacceptableOne()
+    {
+        // The answer seam: a power settles a treaty it accepts (free gold) and leaves an unacceptable one (pure loss) be.
+        Game game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        Player human = game.HumanPlayer;
+        human.Gold = 1000;
+        int powerBefore = power.Gold;
+
+        // Offer the power 300 gold from the human (the power is the destination → positive value → accepted + settled).
+        var gift = new DiplomaticTrade(human.PlayerId, power.PlayerId)
+            .Add(new GoldTradeItem(human.PlayerId, power.PlayerId, 300));
+        Assert.True(game.RespondToTrade(power, gift));
+        Assert.Equal(powerBefore + 300, power.Gold); // it accepted and the gold moved
+
+        // Offer that the power pay 300 gold for nothing (pure cost → negative value → declined, nothing moves).
+        int powerNow = power.Gold;
+        var demand = new DiplomaticTrade(human.PlayerId, power.PlayerId)
+            .Add(new GoldTradeItem(power.PlayerId, human.PlayerId, 300));
+        Assert.False(game.RespondToTrade(power, demand));
+        Assert.Equal(powerNow, power.Gold); // declined → unchanged
+    }
+
+    [Fact]
+    public void SuingForPeace_IsReplayStable_AndLeavesTheHumanStream0ByteIdentical()
+    {
+        // ADR-009: the diplomacy step is deterministic and RNG-free — two same-seed weak-power-at-war games play
+        // identically, and the human's stream 0 is byte-identical to a same-seed game with no staged war.
+        (Game a, _) = WeakPowerAtWar(seed: 4242);
+        (Game b, _) = WeakPowerAtWar(seed: 4242);
+        for (int i = 0; i < 3; i++) { a.EndTurn(); b.EndTurn(); }
+        Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
+
+        (Game withWar, _) = WeakPowerAtWar(seed: 4242);
+        Game noWar = Game.New(Classic, seed: 4242);
+        for (int i = 0; i < 3; i++) { withWar.EndTurn(); noWar.EndTurn(); }
+        Assert.Equal(noWar.RandomState, withWar.RandomState); // stream 0 untouched by the diplomacy step
     }
 }

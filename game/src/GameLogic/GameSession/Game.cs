@@ -5461,6 +5461,12 @@ public sealed partial class Game
     /// </summary>
     private void RunForeignPowerTurn(Player power)
     {
+        // Whether the power was ALREADY at war with the human coming into this turn (before the territorial-tension
+        // accrual below may freshly declare one). Only an already-running war is eligible to be sued for peace — a power
+        // that breaks the peace this turn (it has just been crowded, so it is aggrieved) presses its grievance rather
+        // than instantly offering peace the same turn (86d3c9uar: don't undo a just-declared war).
+        bool alreadyAtWar = StanceBetween(power.PlayerId, _human.PlayerId) == Stance.War;
+
         // Accrue territorial tension and re-derive the stance from it (86d3c9udb, FreeCol determineStances): a power
         // that the human is crowding flips Peace/CeaseFire → War on its own before it acts, so the offensive below
         // actually engages. The accrual is RNG-free, so the human's stream 0 stays byte-identical (ADR-009).
@@ -5473,6 +5479,18 @@ public sealed partial class Game
             // (it re-derives from the lower-id player's tension — which the directional accrual alone would leave at 0).
             SetStance(power.PlayerId, _human.PlayerId, Stance.War);
             ChangeTension(power.PlayerId, _human.PlayerId, TensionWar);
+        }
+
+        // Sue for peace when losing a war (86d3c9uar, FreeCol EuropeanAIPlayer suing for peace): a power that was already
+        // at war with the human weighs a peace treaty through the SAME pure EvaluateTrade the rules expose, and — when its
+        // own evaluation accepts (it is militarily weak enough that ending the war is worth more than continuing) —
+        // settles it, so the war actually ends instead of grinding on. Gated on alreadyAtWar so a war just declared from
+        // territorial tension this turn is pressed, not instantly undone. Drawn before atWarWithHuman is read, so a power
+        // that makes peace stands down the same turn. Deterministic (EvaluateTrade is pure, SettleTrade a deterministic
+        // transfer) — no RNG draw, so human stream 0 stays byte-identical (ADR-009).
+        if (alreadyAtWar)
+        {
+            RunForeignPowerDiplomacy(power);
         }
 
         bool atWarWithHuman = StanceBetween(power.PlayerId, _human.PlayerId) == Stance.War;
