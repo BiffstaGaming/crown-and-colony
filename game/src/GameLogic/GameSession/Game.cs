@@ -5445,6 +5445,11 @@ public sealed partial class Game
             PlanColonyBuildingWork(power, colony);
         }
 
+        // When the power wants another pioneer (86d3c9vta), it keeps one pioneer's worth of tools in store rather than
+        // selling them all off — FreeCol's AI reserves equipment for the roles it plans to fill (pioneersNeeded). So a
+        // colonist can later be armed as a pioneer instead of the tools always being cashed out. RNG-free read.
+        int toolsReserve = PowerWantsAnotherPioneer(power) ? PioneerToolCost : AiTradeReserve;
+
         // Sell the surplus of each tradeable good (the colony centre and worked tiles yield cash crops/ore
         // unattended) to the power's own market. Food is kept so the colony never starves itself for gold.
         foreach (Colony colony in ColoniesOf(power).OrderBy(c => c.Id))
@@ -5455,7 +5460,8 @@ public sealed partial class Game
                 {
                     continue;
                 }
-                int surplus = colony.StoreOf(goodsId) - AiTradeReserve;
+                int reserve = goodsId == ToolsGoodsId ? toolsReserve : AiTradeReserve;
+                int surplus = colony.StoreOf(goodsId) - reserve;
                 if (surplus > 0)
                 {
                     SellColonyGoods(power, colony, goodsId, surplus);
@@ -5686,6 +5692,13 @@ public sealed partial class Game
                 continue; // units still in Europe wait (a warship can now act below; an unarmed ship falls through to idle)
             }
 
+            // A pioneer mid-build is committed: its work is advanced by ProcessImprovements at the start of this turn
+            // (and completed there when done) — leave it be so it isn't marched off its half-finished job (86d3c9vta).
+            if (unit.IsImproving)
+            {
+                continue;
+            }
+
             // AI logistics (86d3c9vq9, FreeCol CashInTreasureTrainMission): a power's treasure train — won by sacking a
             // native settlement or from a Lost City Rumour — heads to the nearest owned colony and banks its gold there,
             // instead of sitting idle forever. The cash-in is RNG-free; the step draws the power's OWN stream (never
@@ -5784,6 +5797,27 @@ public sealed partial class Game
                 }
             }
 
+            // AI pioneering — execute (86d3c9vta, FreeCol PioneeringMission/TileImprovementPlan): a tooled pioneer
+            // works the power's improvement plans rather than founding/exploring. It builds the best plan on its own
+            // tile, else marches to the nearest planned tile in the power's colony footprints. Placed before founding
+            // (a pioneer improves, not founds) and the chief/explore fallbacks. BuildImprovement/the plan ranking are
+            // RNG-free; the march draws the power's OWN stream (StepToward) — never the human's stream 0 (ADR-009).
+            if (IsPioneer(unit) && unit.MovementLeft > 0)
+            {
+                if (BuildablePlanOnTile(power, unit) is { } here)
+                {
+                    BuildImprovement(unit, here);
+                    continue;
+                }
+                if (NearestImprovementPlanTile(power, unit) is { } planTile
+                    && StepToward(power, unit, planTile) is { } toPlan)
+                {
+                    MoveUnit(unit, toPlan);
+                    continue;
+                }
+                // No plan left to pursue — an idle pioneer falls through to the explore fallback below.
+            }
+
             if (!unit.Type.CanFoundColony)
             {
                 continue; // non-founders (e.g. an idle soldier at peace) wait
@@ -5791,6 +5825,16 @@ public sealed partial class Game
             if (ColoniesOf(power).Count() < MaxAiColonies && CheckFoundColony(unit).Allowed)
             {
                 FoundColony(unit);
+                continue;
+            }
+            // AI pioneering — equip (86d3c9vta, FreeCol pioneersNeeded/getRoleWithAbility): an idle plain colonist
+            // standing in an own colony that stocks tools is armed as a pioneer when the power wants another one
+            // (capped, only while improvement plans exist). It pioneers on its following turns via the execute branch
+            // above. EquipRole consumes the colony's tools — RNG-free, and the colony is the power's own.
+            if (unit.HasDefaultRole && ColonyAt(unit.Position) is { } equipColony && equipColony.OwnerId == power.PlayerId
+                && PowerWantsAnotherPioneer(power) && CheckEquipRole(unit, equipColony, PioneerRoleId).Allowed)
+            {
+                EquipRole(unit, equipColony, PioneerRoleId);
                 continue;
             }
             // Establish a mission (86d3c9vta missionary half, FreeCol's missionary `MissionaryMission`): a missionary-role
@@ -5831,6 +5875,16 @@ public sealed partial class Game
                 MoveUnit(unit, toChief);
                 continue;
             }
+            // AI pioneering — tool up (86d3c9vta): rather than wander off exploring, an idle colonist marches to the
+            // nearest own colony that can equip a pioneer when the power wants one (it equips on arrival via the branch
+            // above). Last before generic explore, so it only redirects a colonist that would otherwise roam. Own stream.
+            if (unit.HasDefaultRole && PowerWantsAnotherPioneer(power)
+                && NearestEquippableColony(power, unit) is { } tooledColony
+                && StepToward(power, unit, tooledColony) is { } toTooled)
+            {
+                MoveUnit(unit, toTooled);
+                continue;
+            }
             if (StepTowardNearestUnexplored(power, unit) is { } step)
             {
                 MoveUnit(unit, step);
@@ -5854,6 +5908,122 @@ public sealed partial class Game
     private Position? NearestUndefendedOwnColony(Player power, Unit unit) =>
         ColoniesOf(power)
             .Where(c => !ColonyHasArmedDefender(power, c))
+            .OrderBy(c => Chebyshev(c.Position, unit.Position)).ThenBy(c => c.Position.Y).ThenBy(c => c.Position.X)
+            .Select(c => (Position?)c.Position)
+            .FirstOrDefault();
+
+    // --- AI pioneering helpers (86d3c9vta, FreeCol PioneeringMission / TileImprovementPlan / pioneersNeeded) ---
+
+    /// <summary>The role a pioneer carries (the improve-terrain role the AI equips and the human equips by hand).</summary>
+    private const string PioneerRoleId = "model.role.pioneer";
+
+    /// <summary>The goods a pioneer's equipment is made of (FreeCol <c>model.role.pioneer</c> required-goods).</summary>
+    private const string ToolsGoodsId = "model.goods.tools";
+
+    /// <summary>One pioneer count's worth of tools (the classic <c>model.role.pioneer</c> required-goods value) — the AI keeps this many in store when it wants a pioneer instead of selling them all off.</summary>
+    private const int PioneerToolCost = 20;
+
+    /// <summary>Most pioneers an AI power keeps at once (FreeCol <c>pioneersNeeded</c>, bounded so it never drains its colonist pool).</summary>
+    private const int MaxAiPioneers = 2;
+
+    /// <summary>
+    /// The improvements the AI plans, in descending priority (FreeCol <c>TileImprovementPlan</c> favours
+    /// production-boosting work): plow a field, clear a forest, then road. Roads rank lowest (a minor gain).
+    /// </summary>
+    private static readonly (string Id, int Weight)[] AiImprovementPriority =
+    [
+        (TileImprovementType.PlowId, 3),
+        (TileImprovementType.ClearForestId, 2),
+        (TileImprovementType.RoadId, 1),
+    ];
+
+    /// <summary>The plan weight of an improvement id (see <see cref="AiImprovementPriority"/>).</summary>
+    private static int AiPlanWeight(string improvementId) =>
+        AiImprovementPriority.First(p => p.Id == improvementId).Weight;
+
+    /// <summary>True when a unit is a tooled pioneer — a non-native unit in a role that grants terrain-improvement with equipment left.</summary>
+    private bool IsPioneer(Unit unit) =>
+        !unit.IsNative && unit.RoleCount > 0 && Ruleset.Role(unit.RoleId).CanImproveTerrain;
+
+    /// <summary>The number of pioneers <paramref name="power"/> owns, counting one mid-build (so a busy pioneer still counts against the cap).</summary>
+    private int OwnedPioneerCount(Player power) =>
+        _units.Count(u => IsOwnedBy(u, power) && (IsPioneer(u) || u.IsImproving));
+
+    /// <summary>The tiles a power's colonies work (each colony tile + its eight neighbours, in-bounds land), de-duplicated — the area the AI plans improvements over.</summary>
+    private IEnumerable<Position> ColonyFootprintTiles(Player power) =>
+        ColoniesOf(power)
+            .SelectMany(c => c.Position.Neighbours().Append(c.Position))
+            .Where(p => Map.InBounds(p) && !Map.TerrainAt(p).IsWater)
+            .Distinct();
+
+    /// <summary>
+    /// Whether <paramref name="improvement"/> is worth planning on <paramref name="tile"/> for <paramref name="power"/>
+    /// (unit-independent): it applies to the terrain, isn't already there, no own pioneer is already building it there,
+    /// and — for a plow — the tile actually farms a crop the plow boosts (so the AI doesn't plow barren ground).
+    /// </summary>
+    private bool IsWorthwhilePlan(Player power, Position tile, TileImprovementType improvement)
+    {
+        if (Map.HasImprovement(tile, improvement.Id) || !improvement.AppliesTo(Map.TerrainAt(tile)))
+        {
+            return false;
+        }
+        if (_units.Any(u => IsOwnedBy(u, power) && u.IsImproving
+                && u.WorkImprovementId == improvement.Id && u.Position == tile))
+        {
+            return false; // another of the power's pioneers is already on this exact job
+        }
+        // A plow only helps a tile that grows a farmed crop (grain is the universal one); skip plowing barren ground.
+        return !improvement.IsPlow || TileYieldPotential(tile, GrainId) > 0;
+    }
+
+    /// <summary>The highest-priority improvement id worth planning on <paramref name="tile"/> for <paramref name="power"/>, or null when none is worthwhile there.</summary>
+    private string? BestPlanFor(Player power, Position tile) =>
+        AiImprovementPriority
+            .Where(p => IsWorthwhilePlan(power, tile, Ruleset.Improvement(p.Id)))
+            .Select(p => (string?)p.Id)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// The best improvement <paramref name="pioneer"/> can build standing on its current tile — only when that tile is
+    /// one its colonies actually work (a footprint tile; the AI improves its own land, not random wilderness) and the
+    /// build is gated through <see cref="CheckBuildImprovement"/> — or null.
+    /// </summary>
+    private string? BuildablePlanOnTile(Player power, Unit pioneer) =>
+        ColonyFootprintTiles(power).Contains(pioneer.Position)
+        && BestPlanFor(power, pioneer.Position) is { } id && CheckBuildImprovement(pioneer, id).Allowed
+            ? id
+            : null;
+
+    /// <summary>Whether the power has at least one worthwhile improvement plan anywhere in its colony footprints.</summary>
+    private bool HasAnyImprovementPlan(Player power) =>
+        ColonyFootprintTiles(power).Any(t => BestPlanFor(power, t) is not null);
+
+    /// <summary>
+    /// The nearest footprint tile with a worthwhile plan, ranked by plan priority then Chebyshev distance from the
+    /// pioneer then position (deterministic), or null — the pioneer's next job to march to.
+    /// </summary>
+    private Position? NearestImprovementPlanTile(Player power, Unit pioneer) =>
+        ColonyFootprintTiles(power)
+            .Select(t => (Tile: t, Plan: BestPlanFor(power, t)))
+            .Where(x => x.Plan is not null)
+            .OrderByDescending(x => AiPlanWeight(x.Plan!))
+            .ThenBy(x => Chebyshev(x.Tile, pioneer.Position)).ThenBy(x => x.Tile.Y).ThenBy(x => x.Tile.X)
+            .Select(x => (Position?)x.Tile)
+            .FirstOrDefault();
+
+    /// <summary>Whether <paramref name="colony"/> stocks the tools to equip a pioneer (the pioneer role's required goods).</summary>
+    private bool ColonyCanEquipPioneer(Colony colony) =>
+        Ruleset.Role(PioneerRoleId).RequiredGoods.All(g => colony.StoreOf(Ruleset.StorageIdOf(g.GoodsId)) >= g.Amount);
+
+    /// <summary>Whether <paramref name="power"/> should equip another pioneer: below its cap (one per colony, capped at <see cref="MaxAiPioneers"/>) and with improvement work pending.</summary>
+    private bool PowerWantsAnotherPioneer(Player power) =>
+        OwnedPioneerCount(power) < Math.Min(ColoniesOf(power).Count(), MaxAiPioneers)
+        && HasAnyImprovementPlan(power);
+
+    /// <summary>The tile of the power's nearest colony that can equip a pioneer (Chebyshev from <paramref name="unit"/>, ties by position), or null.</summary>
+    private Position? NearestEquippableColony(Player power, Unit unit) =>
+        ColoniesOf(power)
+            .Where(ColonyCanEquipPioneer)
             .OrderBy(c => Chebyshev(c.Position, unit.Position)).ThenBy(c => c.Position.Y).ThenBy(c => c.Position.X)
             .Select(c => (Position?)c.Position)
             .FirstOrDefault();
@@ -7331,6 +7501,9 @@ public sealed partial class Game
 
     /// <summary>The good a water tile's coastal fish bonus applies to (FreeCol <c>model.improvement.fishBonusLand</c>).</summary>
     private const string FishId = "model.goods.fish";
+
+    /// <summary>The universal farmed crop — the AI uses a positive grain potential as the test for "a plowable field" (86d3c9vta).</summary>
+    private const string GrainId = "model.goods.grain";
 
     /// <summary>
     /// Flat fish added to a coastal water tile's potential (FreeCol classic <c>fishBonusLand</c> modifier, index-50

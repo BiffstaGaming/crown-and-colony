@@ -122,6 +122,13 @@ public class DiplomacyTests
         game.SetStance(0, fid, Stance.War); // already at war before "meeting"
         game.ChangeTension(0, fid, 1000);   // a hot war (so the tension→stance machine keeps it at War this turn)
 
+        // Arm one of the power's land units so its strength ratio against the (military-less) human stays high — a
+        // strong power's own turn never sues for peace (an orthogonal, strength-ratio mechanism). This isolates the
+        // test to its real intent: that *contact* does not downgrade an existing war. Without it the assertion is
+        // brittle to whether the seed's AI happens to hold any armed unit by this turn (its own RNG trajectory — e.g.
+        // it now fields a pioneer that improves tiles instead of idling, shifting that trajectory; 86d3c9vta).
+        game.Units.First(u => u.OwnerId == fid && u.IsOnMap && !u.Type.IsNaval).RoleId = Soldier;
+
         game.HumanPlayer.ExploredSet.Add(rivalColony.Position);
         game.EndTurn();
 
