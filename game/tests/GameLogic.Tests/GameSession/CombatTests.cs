@@ -222,6 +222,70 @@ public class CombatTests
         Assert.Equal(alarmBefore, home.Alarm);
     }
 
+    // ---- Pre-combat odds preview (CombatOddsAgainst, side-effect-free oracle) ----
+
+    [Fact]
+    public void CombatOddsAgainst_ReturnsBothPowersAndFreeColWinProbability()
+    {
+        (Game game, Unit attacker, Unit brave, _) = SetupAttack("model.unit.artillery");
+
+        Game.CombatOdds odds = game.CombatOddsAgainst(attacker, brave.Position)!;
+
+        Assert.True(odds.AttackPower > 0);
+        Assert.True(odds.DefencePower > 0);
+        // win% is FreeCol's attack / (attack + defence)
+        Assert.Equal(odds.AttackPower / (odds.AttackPower + odds.DefencePower), odds.WinProbability, 10);
+    }
+
+    [Fact]
+    public void CombatOddsAgainst_HasNoSideEffects_AndIsRepeatable()
+    {
+        (Game game, Unit attacker, Unit brave, NativeSettlement home) = SetupAttack("model.unit.artillery");
+        int movesBefore = attacker.MovementLeft;
+        int alarmBefore = home.Alarm;
+        int unitsBefore = game.Units.Count();
+
+        Game.CombatOdds first = game.CombatOddsAgainst(attacker, brave.Position)!;
+        Game.CombatOdds second = game.CombatOddsAgainst(attacker, brave.Position)!;
+
+        Assert.Equal(movesBefore, attacker.MovementLeft); // no movement spent (Attack would zero it)
+        Assert.Equal(alarmBefore, home.Alarm);            // no war declared / no alarm raised
+        Assert.Equal(unitsBefore, game.Units.Count());    // nobody killed
+        Assert.Contains(brave, game.Units);               // the defender is still standing
+        Assert.Equal(first, second);                      // pure: same inputs, same odds
+    }
+
+    [Fact]
+    public void CombatOddsAgainst_ReturnsNull_WhenThereIsNoDefender()
+    {
+        (Game game, Unit attacker, _, _) = SetupAttack("model.unit.artillery");
+        // an empty adjacent land tile (no unit, colony or settlement) has nothing to preview against
+        Position empty = attacker.Position.Neighbours().First(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.ColonyAt(n) is null && game.NativeSettlementAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+
+        Assert.Null(game.CombatOddsAgainst(attacker, empty));
+    }
+
+    [Fact]
+    public void CombatOddsAgainst_WinProbability_IsTheThresholdTheAttackRollsAgainst()
+    {
+        // The previewed win% is the exact figure Combat.Resolve compares the roll against (r < win -> a win),
+        // so a roll just inside it wins and a roll just past it loses. Derive both rolls from the preview to
+        // stay clear of the great-win / great-loss bands for any p in (0,1).
+        (Game probe, Unit aProbe, Unit bProbe, _) = SetupAttack(FreeColonist, Soldier);
+        double p = probe.CombatOddsAgainst(aProbe, bProbe.Position)!.WinProbability;
+        double winRoll = 0.55 * p;                  // in (0.1p, p)        -> a plain Win
+        double lossRoll = (p + (0.1 * p + 0.9)) / 2; // in (p, 0.1p + 0.9) -> a plain Loss
+
+        (Game win, Unit aWin, Unit bWin, _) = SetupAttack(FreeColonist, Soldier);
+        Assert.Equal(CombatResult.Win, win.Attack(aWin, bWin.Position, new FixedRandom(winRoll)));
+
+        (Game loss, Unit aLoss, Unit bLoss, _) = SetupAttack(FreeColonist, Soldier);
+        Assert.Equal(CombatResult.Loss, loss.Attack(aLoss, bLoss.Position, new FixedRandom(lossRoll)));
+    }
+
     // ---- Outcomes ----
 
     [Fact]

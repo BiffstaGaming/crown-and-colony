@@ -253,12 +253,56 @@ public class InputTests
         int artId = artillery.Id;
 
         await ClickTile(runner, controller, artPos);    // select the artillery
-        await ClickTile(runner, controller, bravePos);  // click the brave → attack (not a move)
+        await ClickTile(runner, controller, bravePos);  // click the brave → open the pre-combat odds dialog
 
-        // The attack resolved: the attacker spent its turn — it's gone (slain/demoted-away) or present with
-        // 0 movement. A rejected move would have left it on its tile with full movement.
+        // The odds dialog is up and the attack has NOT been rolled yet: the artillery still has its full
+        // movement (CombatOddsAgainst is side-effect-free; nothing is committed until Attack is pressed).
+        var panel = controller.GetNode<PanelContainer>("UI/PreCombatPanel");
+        AssertThat(panel.Visible).IsTrue();
+        AssertThat(panel.GetNode<Label>("VBox/Info").Text).Contains("Chance to win");
+        AssertThat(game.Units.First(u => u.Id == artId).MovementLeft).IsGreater(0);
+
+        controller.GetNode<Button>("UI/PreCombatPanel/VBox/Buttons/AttackButton")
+            .EmitSignal(BaseButton.SignalName.Pressed); // confirm the attack
+        await runner.SimulateFrames(2);
+
+        // The attack resolved: the dialog closed and the attacker spent its turn — it's gone (slain/demoted-away)
+        // or present with 0 movement. A rejected move would have left it on its tile with full movement.
+        AssertThat(panel.Visible).IsFalse();
         Unit? after = game.Units.FirstOrDefault(u => u.Id == artId);
         AssertThat(after == null || after.MovementLeft == 0).IsTrue();
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task CancellingThePreCombatDialog_LeavesTheAttackerUntouched()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        string nation = game.Units.First(u => u.IsNative).OwnerNationId!;
+        Position human = game.PlayerUnits.First(u => u.IsOnMap).Position;
+        Position bravePos = human.Neighbours().First(n => Free(game, n));
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.brave"), bravePos, nation);
+        Position artPos = bravePos.Neighbours().First(n => n != human && Free(game, n));
+        Unit artillery = game.SpawnUnit(game.Ruleset.Unit("model.unit.artillery"), artPos);
+        int artId = artillery.Id;
+        int bravesBefore = game.Units.Count(u => u.IsNative);
+
+        await ClickTile(runner, controller, artPos);    // select the artillery
+        await ClickTile(runner, controller, bravePos);  // open the dialog
+
+        controller.GetNode<Button>("UI/PreCombatPanel/VBox/Buttons/CancelButton")
+            .EmitSignal(BaseButton.SignalName.Pressed); // back out
+        await runner.SimulateFrames(2);
+
+        // Nothing happened: dialog closed, attacker keeps its full movement, every brave still alive.
+        AssertThat(controller.GetNode<PanelContainer>("UI/PreCombatPanel").Visible).IsFalse();
+        Unit after = game.Units.First(u => u.Id == artId);
+        AssertThat(after.MovementLeft).IsGreater(0);
+        AssertThat(game.Units.Count(u => u.IsNative)).IsEqual(bravesBefore);
     }
 
     [TestCase(Timeout = 60000)]

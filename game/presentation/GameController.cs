@@ -69,6 +69,7 @@ public partial class GameController : Node2D
     private PanelContainer _nativePanel = null!;
     private PanelContainer _demandPanel = null!;
     private PanelContainer _moundsPanel = null!;
+    private PreCombatPanel _preCombatPanel = null!;
     private PanelContainer _tradeRoutePanel = null!;
     private PanelContainer _colonyReportPanel = null!;
     private PanelContainer _findSettlementPanel = null!;
@@ -108,6 +109,7 @@ public partial class GameController : Node2D
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
         _demandPanel = GetNode<PanelContainer>("UI/NativeDemandPanel");
         _moundsPanel = GetNode<PanelContainer>("UI/MoundsDecisionPanel");
+        _preCombatPanel = GetNode<PreCombatPanel>("UI/PreCombatPanel");
         _tradeRoutePanel = GetNode<PanelContainer>("UI/TradeRoutePanel");
         _colonyReportPanel = GetNode<PanelContainer>("UI/ColonyReportPanel");
         _findSettlementPanel = GetNode<PanelContainer>("UI/FindSettlementPanel");
@@ -475,7 +477,11 @@ public partial class GameController : Node2D
         RefreshView();
     }
 
-    /// <summary>Attacks the enemy unit on an adjacent tile with the selected unit, reporting the outcome.</summary>
+    /// <summary>
+    /// Opens the pre-combat odds dialog for an attack on the enemy unit at an adjacent tile (`86d3c9xmw`): the
+    /// previewed powers/win% come from the side-effect-free <see cref="Game.CombatOddsAgainst"/> oracle, so no
+    /// RNG is drawn and no turn spent until the player confirms. The actual roll runs in <see cref="ResolveAttackOn"/>.
+    /// </summary>
     private void AttackUnitAt(Position tile)
     {
         MoveCheck check = _game.CheckAttack(_selectedUnit!, tile);
@@ -484,8 +490,21 @@ public partial class GameController : Node2D
             _notice = check.Reason;
             return;
         }
-        string who = _selectedUnit!.Type.ShortName;
-        CombatResult result = _game.Attack(_selectedUnit, tile);
+        Game.CombatOdds? odds = _game.CombatOddsAgainst(_selectedUnit!, tile);
+        if (odds is null)
+        {
+            ResolveAttackOn(tile, _selectedUnit!); // no previewable defender (shouldn't happen post-CheckAttack): resolve directly
+            return;
+        }
+        Unit attacker = _selectedUnit!;
+        _preCombatPanel.Open(odds, () => ResolveAttackOn(tile, attacker));
+    }
+
+    /// <summary>Rolls the confirmed attack of <paramref name="attacker"/> on <paramref name="tile"/> and reports the outcome.</summary>
+    private void ResolveAttackOn(Position tile, Unit attacker)
+    {
+        string who = attacker.Type.ShortName;
+        CombatResult result = _game.Attack(attacker, tile);
         _selectedUnit = null; // the attack ends the unit's turn (and may demote/destroy it)
         _notice = result switch
         {
@@ -493,6 +512,7 @@ public partial class GameController : Node2D
             CombatResult.Evade => $"The enemy evaded your {who}.", // naval: the defender slipped away
             _ => $"Your {who} was beaten back.",
         };
+        RefreshView();
     }
 
     /// <summary>Assaults an ungarrisoned rival colony on an adjacent tile to capture it, reporting the outcome.</summary>

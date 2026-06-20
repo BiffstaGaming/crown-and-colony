@@ -1602,6 +1602,52 @@ public sealed partial class Game
         return MoveCheck.Yes(0);
     }
 
+    /// <summary>The two final combat powers and the attacker's win probability for a pre-combat preview (`86d3c9xmw`).</summary>
+    /// <param name="AttackPower">The attacker's folded offence power (the same figure <c>Attack</c> resolves with).</param>
+    /// <param name="DefencePower">The best defender's folded defence power.</param>
+    /// <param name="WinProbability">The attacker's win chance, <c>attack / (attack + defence)</c>.</param>
+    public sealed record CombatOdds(double AttackPower, double DefencePower, double WinProbability);
+
+    /// <summary>
+    /// The combat odds an attack on <paramref name="target"/> would face — the attacker's and the strongest
+    /// defender's final powers plus the win probability — or <c>null</c> when there is no legal defender. A pure,
+    /// <b>side-effect-free preview</b> for the pre-combat odds dialog: it draws no RNG, declares no war, and spends
+    /// no movement, yet returns exactly the figures <c>Attack</c> resolves with (both share
+    /// <see cref="CombatPowers"/>). ADR-006 read oracle.
+    /// </summary>
+    public CombatOdds? CombatOddsAgainst(Unit attacker, Position target)
+    {
+        if (DefenderAt(attacker, target) is not { } defender)
+        {
+            return null;
+        }
+        (double attack, double defence) = CombatPowers(attacker, defender, target);
+        return new CombatOdds(attack, defence, CombatModel.WinProbability(attack, defence));
+    }
+
+    /// <summary>
+    /// The attacker's and the best defender's final combat powers — the single shared computation behind
+    /// <c>Attack</c> and <see cref="CombatOddsAgainst"/>, folding naval / colony-defence / ambush /
+    /// artillery-in-the-open / cargo context and the Spanish-conquest offence-vs-native factor. No side effects
+    /// (no RNG, no mutation), so the preview and the resolved attack can never drift apart.
+    /// </summary>
+    private (double Attack, double Defence) CombatPowers(Unit attacker, Unit defender, Position target)
+    {
+        bool naval = defender.Type.IsNaval;
+        bool inColony = !naval && ColonyAt(target) is not null;
+        bool attackerInColony = ColonyAt(attacker.Position) is not null;
+        bool ambush = !naval && !inColony && !attackerInColony && attacker.IsNative && !defender.IsFortified
+            && (Map.TerrainAt(attacker.Position).AmbushTerrain || Map.TerrainAt(target).AmbushTerrain);
+        var ctx = new AttackContext(
+            Movement: MovementPenaltyFor(attacker),
+            ArtilleryInOpen: !naval && attacker.Type.Bombard && !attackerInColony && !attacker.IsFortified && !inColony,
+            AmbushBonus: ambush ? Map.TerrainAt(target).DefenceBonus : 0,
+            GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0);
+        double attack = CombatModel.AttackPower(OffenceBase(attacker) * OffenceAgainstNativeFactor(attacker, defender), ctx);
+        double defence = DefencePowerOf(attacker, defender, target);
+        return (attack, defence);
+    }
+
     /// <summary>
     /// Resolves an attack on the strongest defender at <paramref name="target"/> through the pure
     /// <see cref="CombatModel"/> (drawing from the game's main saved RNG, so combat is resume-deterministic),
@@ -1640,30 +1686,12 @@ public sealed partial class Game
             ChangeTension(attacker.OwnerId, defender.OwnerId, TensionWar);
         }
 
-        // Naval combat (ship vs ship): no terrain bonus on water, a cargo penalty per hold slot, and the
-        // defender may evade. A land unit can't stand on a water tile to defend, so a naval defender ⇒ ship-vs-ship.
+        // Naval combat (ship vs ship): the defender may evade; a land unit can't stand on water, so a naval
+        // defender means ship-vs-ship resolution below. The two final combat powers (terrain/fortify/settlement/
+        // ambush/artillery/cargo all folded in) come from the shared, side-effect-free CombatPowers — the same
+        // figures the pre-combat odds preview shows (see CombatOddsAgainst).
         bool naval = defender.Type.IsNaval;
-        // A unit defending in a colony uses the colony's defence (its fortification bonus), NOT the tile terrain —
-        // FreeCol suppresses the terrain modifier inside a settlement (as our native-settlement assault already does).
-        bool inColony = !naval && ColonyAt(target) is not null;
-        bool attackerInColony = ColonyAt(attacker.Position) is not null;
-        // Ambush (FreeCol canAmbush + getOffensiveModifiers): a native attacker striking in the open from — or at a
-        // defender on — concealing forest/hills negates the defender's terrain cover by gaining it as offence. Both
-        // units on a tile outside a settlement, the defender not dug in, the attacker native (the indian ambushBonus;
-        // the REF ambushPenalty is P6). The bonus is the defender's own tile defence percentage.
-        bool ambush = !naval && !inColony && !attackerInColony && attacker.IsNative && !defender.IsFortified
-            && (Map.TerrainAt(attacker.Position).AmbushTerrain || Map.TerrainAt(target).AmbushTerrain);
-        var attackContext = new AttackContext(
-            Movement: MovementPenaltyFor(attacker), // snapshot the movement penalty before spending it
-            // Artillery is brittle attacking IN THE OPEN (−75%): only when neither unit is in a settlement and the
-            // gun isn't dug in (FreeCol getOffensiveModifiers). Battering a colony/garrison, it keeps full power.
-            ArtilleryInOpen: !naval && attacker.Type.Bombard && !attackerInColony && !attacker.IsFortified && !inColony,
-            AmbushBonus: ambush ? Map.TerrainAt(target).DefenceBonus : 0,
-            GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0); // FreeCol cargo penalty is goods only, not passengers
-        // Spanish conquest +50% vs a native defender (model.modifier.offenceAgainst, scope isIndian) folds onto the base.
-        double attackPower = CombatModel.AttackPower(OffenceBase(attacker) * OffenceAgainstNativeFactor(attacker, defender), attackContext);
-        // The defender's full power (terrain/fortify/settlement/artillery/cargo) — the same figure DefenderAt ranks by.
-        double defencePower = DefencePowerOf(attacker, defender, target);
+        (double attackPower, double defencePower) = CombatPowers(attacker, defender, target);
 
         // Attacking ends the attacker's turn now — before any promotion/demotion that swaps the unit
         // object (UpgradeUnitType copies MovementLeft, so the swapped unit inherits the spent turn).
