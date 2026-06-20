@@ -438,10 +438,15 @@ public class InputTests
         && game.NativeSettlementAt(n) is null && game.ColonyAt(n) is null
         && !game.Units.Any(u => u.IsOnMap && u.Position == n);
 
-    /// <summary>Left-clicks the window position corresponding to a map tile (camera-aware, zoom 1).</summary>
+    /// <summary>
+    /// Left-clicks the window position corresponding to a map tile (camera-aware, zoom 1). Centres the camera on
+    /// the tile first so the click lands at screen-centre — clear of the corner HUD overlays (the minimap, the
+    /// turn controls), which otherwise consume a click that happens to project onto them.
+    /// </summary>
     private static async Task ClickTile(ISceneRunner runner, GameController controller, Position tile)
     {
         var camera = controller.GetNode<Camera2D>("Camera");
+        camera.Position = MapView.TileCentre(tile);
         Vector2 viewportSize = controller.GetViewport().GetVisibleRect().Size;
         Vector2 screen = MapView.TileCentre(tile) - camera.Position + viewportSize / 2f;
 
