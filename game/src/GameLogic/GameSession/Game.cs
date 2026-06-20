@@ -5397,6 +5397,12 @@ public sealed partial class Game
     /// </summary>
     private void RunNativeTurn(Player player)
     {
+        // Spread the nation's arms to where they're needed (FreeCol NativeAIPlayer.secureSettlements arms-spreading):
+        // a calm, well-stocked camp ships a surplus half-unit of muskets/horses to a threatened (alarmed) camp that has
+        // none — so a tribe's weapons reach the front line instead of sitting idle in a peaceful village. RNG-free, and
+        // run BEFORE equipBraves so the receiving camp can arm its braves from the freshly delivered stock this turn.
+        RedistributeArmsToThreatenedSettlements(player);
+
         // Secure the threatened camps first (FreeCol NativeAIPlayer.equipBraves, run for each settlement at the start
         // of its turn): equip/promote braves from each alarmed settlement's stock, strongest-needed brave first. This
         // is free — it never consumes a brave's action, so an armed brave still raids/wanders below as usual.
@@ -5488,6 +5494,59 @@ public sealed partial class Game
 
     /// <summary>The brave role granting both muskets and horses — the strongest native role (FreeCol <c>model.role.nativeDragoon</c>, offence +3 / defence +2 / +9 move).</summary>
     private const string NativeDragoonRoleId = "model.role.nativeDragoon";
+
+    /// <summary>The military goods a nation spreads between its camps, in stable order — muskets first, then horses.</summary>
+    private static readonly string[] MilitaryStockGoods = [MusketsId, HorsesId];
+
+    /// <summary>
+    /// Spreads <paramref name="nation"/>'s muskets/horses from a stocked, <b>calm</b> camp to a <b>threatened, bare</b>
+    /// one (FreeCol <c>NativeAIPlayer.secureSettlements</c> arms-spreading via <c>tradeGoodsWithSettlement</c>): a tribe
+    /// shouldn't leave its weapons idle in a peaceful village while a frontier camp under pressure has none to arm its
+    /// braves with. For each military good (muskets then horses, deterministic), a <b>donor</b> is a settlement that is
+    /// <em>not</em> threatened (alarm below <see cref="RaidAlarmThreshold"/>) and holds a <b>surplus</b> — more than
+    /// <see cref="BraveEquipGoods"/> after keeping one half-unit for itself (i.e. ≥ <c>2 × BraveEquipGoods</c>); a
+    /// <b>recipient</b> is a threatened settlement holding less than one half-unit of that good (it can't equip a brave
+    /// from it). One half-unit (<see cref="BraveEquipGoods"/>) is shipped from the richest donor to the neediest
+    /// recipient, repeating until no eligible donor/recipient pair remains. Settlements are ranked deterministically
+    /// (stock then position), so the transfer is <b>RNG-free</b> — never the human's stream 0 — and a default game (every
+    /// settlement holds zero stock → no donor, no transfer) stays byte-stable (ADR-009). The stock is the same transient
+    /// non-serialized <see cref="NativeSettlement"/> field <see cref="TryEquipBrave"/> arms from, so this adds no save
+    /// state. Run before <see cref="EquipBravesAtThreatenedSettlements"/> so a recipient can arm braves from the freshly
+    /// delivered stock the same turn.
+    /// </summary>
+    internal void RedistributeArmsToThreatenedSettlements(Player nation)
+    {
+        List<NativeSettlement> nationSettlements = _nativeSettlements
+            .Where(s => s.NationTypeId == nation.NationId)
+            .ToList();
+        if (nationSettlements.Count < 2)
+        {
+            return; // a one-camp nation has nobody to redistribute with
+        }
+
+        foreach (string good in MilitaryStockGoods)
+        {
+            // Repeatedly hand one half-unit from the richest calm donor (surplus ≥ 2 half-units) to the neediest
+            // threatened recipient (< one half-unit), until no pair is left. Bounded by the finite total stock.
+            while (true)
+            {
+                NativeSettlement? donor = nationSettlements
+                    .Where(s => s.AlarmLevel < RaidAlarmThreshold && s.StockOf(good) >= 2 * BraveEquipGoods)
+                    .OrderByDescending(s => s.StockOf(good)).ThenBy(s => s.Position.Y).ThenBy(s => s.Position.X)
+                    .FirstOrDefault();
+                NativeSettlement? recipient = nationSettlements
+                    .Where(s => s.AlarmLevel >= RaidAlarmThreshold && s.StockOf(good) < BraveEquipGoods)
+                    .OrderBy(s => s.StockOf(good)).ThenBy(s => s.Position.Y).ThenBy(s => s.Position.X)
+                    .FirstOrDefault();
+                if (donor is null || recipient is null)
+                {
+                    break;
+                }
+                donor.AddStock(good, -BraveEquipGoods);
+                recipient.AddStock(good, BraveEquipGoods);
+            }
+        }
+    }
 
     /// <summary>
     /// Equips/promotes the braves of every <em>threatened</em> settlement of <paramref name="nation"/> from that

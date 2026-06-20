@@ -450,6 +450,149 @@ public class NativeAiTests
         Assert.NotEqual(SaveGame.From(bare).ToJson(), SaveGame.From(equips).ToJson()); // the native streams genuinely diverged
     }
 
+    // ── Arms/horse redistribution between camps (86d3c9vzp, FreeCol secureSettlements arms-spreading) ───────────────
+
+    /// <summary>The native player for a nation type id.</summary>
+    private static Player NationPlayer(Game game, string nationId) =>
+        game.Players.First(p => p.PlayerType == PlayerType.Native && p.NationId == nationId);
+
+    /// <summary>A nation with at least two settlements (so it can redistribute), plus those settlements (id order).</summary>
+    private static (string Nation, System.Collections.Generic.List<NativeSettlement> Settlements) NationWithTwoCamps(Game game)
+    {
+        string nation = game.NativeSettlements.GroupBy(s => s.NationTypeId)
+            .First(g => g.Count() >= 2).Key;
+        var camps = game.NativeSettlements.Where(s => s.NationTypeId == nation).OrderBy(s => s.Id).ToList();
+        return (nation, camps);
+    }
+
+    [Fact]
+    public void ACalmStockedCamp_ShipsArmsToAThreatenedBareCamp()
+    {
+        // A calm, well-stocked camp sends one half-unit (25) of its surplus muskets to a threatened same-nation camp
+        // that has none — the tribe's arms reach the front line (FreeCol secureSettlements arms-spreading).
+        Game game = Game.New(Classic, seed: 7);
+        (string nation, var camps) = NationWithTwoCamps(game);
+        NativeSettlement donor = camps[0];
+        NativeSettlement recipient = camps[1];
+        donor.AddStock(Muskets, 60);                     // surplus (≥ 2 half-units after keeping one for itself)
+        game.ChangeNativeAlarm(recipient, NativeSettlement.MaxAlarm); // the recipient is threatened (Hateful)
+        Assert.True(donor.AlarmLevel < AlarmLevel.Displeased);        // …the donor stays calm (peaceful = 0)
+
+        game.RedistributeArmsToThreatenedSettlements(NationPlayer(game, nation));
+
+        Assert.Equal(35, donor.StockOf(Muskets));     // shipped one half-unit (25) away
+        Assert.Equal(25, recipient.StockOf(Muskets)); // …which the bare front-line camp received
+    }
+
+    [Fact]
+    public void RedistributedArms_LetTheReceivingCamp_ArmItsBraveTheSameTurn()
+    {
+        // End-to-end through EndTurn: a bare threatened camp receives muskets from a calm stocked camp and arms one of
+        // its own braves the SAME turn (redistribution runs before equipBraves), drawing the delivered stock down to 0.
+        Game game = Game.New(Classic, seed: 7);
+        (string nation, var camps) = NationWithTwoCamps(game);
+        NativeSettlement recipient = camps[0];                    // its game-spawned brave will arm from the delivery
+        NativeSettlement donor = camps.First(s => s.Id != recipient.Id);
+        // Every brave homing the recipient starts unarmed (no stock anywhere yet).
+        Assert.Contains(game.NativeUnits, b => HomeOf(game, b) == recipient && b.RoleId == DefaultRole);
+        donor.AddStock(Muskets, 60);                             // the calm donor's surplus
+        game.ChangeNativeAlarm(recipient, NativeSettlement.MaxAlarm); // ONLY the recipient is threatened (donor stays calm)
+
+        game.EndTurn();
+
+        // A brave homing the recipient armed itself this turn from the delivered muskets, which were drawn down.
+        Assert.Contains(game.NativeUnits, b => HomeOf(game, b) == recipient && b.RoleId == ArmedBrave);
+        Assert.Equal(0, recipient.StockOf(Muskets)); // the delivered half-unit was consumed by the equip
+        Assert.Equal(35, donor.StockOf(Muskets));    // the donor shipped exactly one half-unit
+    }
+
+    [Fact]
+    public void RedistributeArms_DoesNothing_WhenNoCampIsThreatened()
+    {
+        // No threatened recipient → a calm tribe keeps its weapons in store (no movement).
+        Game game = Game.New(Classic, seed: 7);
+        (string nation, var camps) = NationWithTwoCamps(game);
+        camps[0].AddStock(Muskets, 100);
+
+        game.RedistributeArmsToThreatenedSettlements(NationPlayer(game, nation));
+
+        Assert.Equal(100, camps[0].StockOf(Muskets));        // untouched
+        Assert.All(camps.Skip(1), s => Assert.Equal(0, s.StockOf(Muskets)));
+    }
+
+    [Fact]
+    public void RedistributeArms_DoesNotStripAThreatenedDonor()
+    {
+        // A donor must be CALM: a threatened, stocked camp keeps its arms for its own braves (it isn't a donor), so a
+        // second threatened bare camp gets nothing from it.
+        Game game = Game.New(Classic, seed: 7);
+        (string nation, var camps) = NationWithTwoCamps(game);
+        camps[0].AddStock(Muskets, 100);
+        foreach (NativeSettlement s in camps)
+        {
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // ALL threatened → no calm donor exists
+        }
+
+        game.RedistributeArmsToThreatenedSettlements(NationPlayer(game, nation));
+
+        Assert.Equal(100, camps[0].StockOf(Muskets));        // the threatened stocked camp keeps its own arms
+        Assert.All(camps.Skip(1), s => Assert.Equal(0, s.StockOf(Muskets)));
+    }
+
+    [Fact]
+    public void RedistributeArms_ShipsHorsesToo_AndIsRngFree()
+    {
+        // Horses spread the same way as muskets, and the whole transfer draws no randomness (ADR-009).
+        Game game = Game.New(Classic, seed: 7);
+        (string nation, var camps) = NationWithTwoCamps(game);
+        NativeSettlement donor = camps[0];
+        NativeSettlement recipient = camps[1];
+        donor.AddStock(Horses, 50);
+        game.ChangeNativeAlarm(recipient, NativeSettlement.MaxAlarm);
+        var before = game.RandomState;
+
+        game.RedistributeArmsToThreatenedSettlements(NationPlayer(game, nation));
+
+        Assert.Equal(25, recipient.StockOf(Horses));   // a half-unit of horses delivered
+        Assert.Equal(25, donor.StockOf(Horses));
+        Assert.Equal(before, game.RandomState);        // RNG-free → human stream 0 untouched
+    }
+
+    [Fact]
+    public void RedistributeArms_DrawsOnlyOnNonHumanStreams_HumanStream0ByteStable()
+    {
+        // The decisive ADR-009 guard: a game whose tribes spread arms (and then arm braves) keeps the human's stream 0
+        // byte-identical to a game whose tribes hold no stock — only the native state diverges.
+        Game spreads = Game.New(Classic, seed: 4242);
+        Game bare = Game.New(Classic, seed: 4242);
+        foreach (NativeSettlement s in spreads.NativeSettlements)
+        {
+            s.AddStock(Muskets, 60); // every spreading camp is stocked
+        }
+        // Enrage all but the per-nation lowest-id camp in BOTH games (so the native-turn paths run identically — the
+        // lowest-id camp stays a calm donor), but only the spreading game actually has stock to move/equip.
+        foreach (Game g in new[] { spreads, bare })
+        {
+            foreach (var grp in g.NativeSettlements.GroupBy(s => s.NationTypeId))
+            {
+                foreach (NativeSettlement s in grp.OrderBy(s => s.Id).Skip(1))
+                {
+                    g.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm);
+                }
+            }
+        }
+
+        for (int turn = 0; turn < 8; turn++)
+        {
+            spreads.EndTurn();
+            bare.EndTurn();
+        }
+
+        Assert.Equal(bare.RandomState, spreads.RandomState);   // stream 0 untouched
+        Assert.Equal(bare.HumanPlayer.Gold, spreads.HumanPlayer.Gold);
+        Assert.NotEqual(SaveGame.From(bare).ToJson(), SaveGame.From(spreads).ToJson()); // native state genuinely diverged
+    }
+
     // ── AI scout-chief + per-player first contact (86d3c9vta slice, save v44) ──────────────────────────────────────
 
     private static NativeSettlement SettlementWithFreeNeighbour(Game game) =>
