@@ -23,10 +23,12 @@ public class NativeLandPurchaseTests
     private const int Factor = 60;   // classic-medium landPriceFactor
     private const int Base = 100;    // getLandPrice +100
     private const int TakenAlarm = 200; // TENSION_ADD_LAND_TAKEN
+    private const string FoodId = "model.goods.food"; // the primary-food aggregate (getPrimaryFoodType)
 
-    // Land is valued from the UNMODIFIED tile potential (no founding-father boosts) — mirror that here.
-    private static int NonFoodSum(Game game, Position tile) =>
-        Classic.GoodsTypes.Where(g => !g.IsFood).Sum(g => game.TileYieldPotential(tile, g.Id));
+    // Land is valued from the UNMODIFIED tile potential (no founding-father boosts) of every good EXCEPT the
+    // primary-food aggregate (FreeCol gt != getPrimaryFoodType) — grain and fish ARE counted. Mirror that here.
+    private static int PricedSum(Game game, Position tile) =>
+        Classic.GoodsTypes.Where(g => g.Id != FoodId).Sum(g => game.TileYieldPotential(tile, g.Id));
 
     /// <summary>A new game + a native-owned land tile that is NOT a settlement tile (so it is purchasable).</summary>
     private static (Game game, Position tile, string nation) Staged()
@@ -42,26 +44,31 @@ public class NativeLandPurchaseTests
     // ---- Price ----
 
     [Fact]
-    public void LandPrice_OnANativeTile_IsFactorTimesNonFoodYieldPlusBase()
+    public void LandPrice_OnANativeTile_IsFactorTimesPricedYieldPlusBase()
     {
         (Game game, Position tile, _) = Staged();
-        Assert.Equal(Factor * NonFoodSum(game, tile) + Base, game.LandPrice(tile));
+        Assert.Equal(Factor * PricedSum(game, tile) + Base, game.LandPrice(tile));
     }
 
     [Fact]
-    public void LandPrice_ExcludesFoodFromTheSum()
+    public void LandPrice_CountsGrainAndFish_ExcludingOnlyThePrimaryFoodAggregate()
     {
-        // A native-owned tile that yields food (grain/fish): the price omits that food from the sum.
-        (Game game, Position tile, _) = (Game.New(Classic, Seed), default(Position), "");
+        // FreeCol getLandPrice excludes ONLY model.goods.food (getPrimaryFoodType); grain & fish (also is-food)
+        // ARE summed via the tile potential, since farmland/fisheries are worth paying for. Pick a native tile
+        // whose potential includes grain or fish.
+        Game game = Game.New(Classic, Seed);
         Position foodTile = game.Map.NativeOwners.Keys
             .Where(p => game.NativeSettlementAt(p) is null
-                && Classic.GoodsTypes.Where(g => g.IsFood).Sum(g => game.TileYield(p, g.Id)) > 0)
+                && game.TileYieldPotential(p, "model.goods.grain") + game.TileYieldPotential(p, "model.goods.fish") > 0)
             .OrderBy(p => p.Y).ThenBy(p => p.X)
             .First();
 
-        int withFood = Factor * Classic.GoodsTypes.Sum(g => game.TileYieldPotential(foodTile, g.Id)) + Base;
-        Assert.Equal(Factor * NonFoodSum(game, foodTile) + Base, game.LandPrice(foodTile)); // food excluded
-        Assert.True(game.LandPrice(foodTile) < withFood); // and that genuinely drops the food yield
+        // The corrected price counts grain/fish; the OLD bug dropped every is-food good (grain+fish too).
+        int buggyDropAllFood = Factor * Classic.GoodsTypes.Where(g => !g.IsFood).Sum(g => game.TileYieldPotential(foodTile, g.Id)) + Base;
+
+        Assert.Equal(Factor * PricedSum(game, foodTile) + Base, game.LandPrice(foodTile)); // grain/fish counted
+        Assert.True(game.LandPrice(foodTile) > buggyDropAllFood);                          // they genuinely add value
+        Assert.Equal(0, game.TileYieldPotential(foodTile, FoodId));                        // the aggregate itself has no tile potential
     }
 
     [Fact]

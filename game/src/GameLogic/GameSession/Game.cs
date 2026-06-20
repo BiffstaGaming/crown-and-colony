@@ -594,7 +594,9 @@ public sealed partial class Game
     /// <summary>
     /// What <paramref name="player"/> must pay a native nation for <paramref name="tile"/> (FreeCol
     /// <c>Player.getLandPrice</c>): the difficulty's <see cref="Specification.DifficultyOptions.LandPriceFactor"/> ×
-    /// the tile's potential yield of every <em>non-food</em> good + <see cref="LandPriceBase"/>, then the player's
+    /// the tile's potential yield of every good <em>except the primary food aggregate</em> (FreeCol
+    /// <c>gt != getPrimaryFoodType()</c> — only <c>model.goods.food</c> is dropped; <b>grain and fish are counted</b>,
+    /// since farmland and fisheries are worth paying for) + <see cref="LandPriceBase"/>, then the player's
     /// <see cref="LandPaymentModifierId"/>
     /// modifier (Peter Minuit −100% → 0). Returns <b>0</b> when the tile is not native-owned (unclaimed or already
     /// bought; natives are never a colonial player, so the buyer can never already own it).
@@ -607,7 +609,9 @@ public sealed partial class Game
         }
         // The price values the land's POTENTIAL output (FreeCol getPotentialProduction with a null owner) — NOT
         // the acting player's father-boosted yield, so e.g. Henry Hudson's +furs never inflates what land costs.
-        int raw = (Ruleset.Difficulty.LandPriceFactor * Ruleset.GoodsTypes.Where(g => !g.IsFood).Sum(g => TileYieldPotential(tile, g.Id)))
+        // Only the primary-food aggregate (model.goods.food) is excluded, matching FreeCol's gt != getPrimaryFoodType();
+        // grain/fish (also is-food) ARE summed — dropping them would undervalue farmland and fisheries.
+        int raw = (Ruleset.Difficulty.LandPriceFactor * Ruleset.GoodsTypes.Where(g => g.Id != Colony.FoodId).Sum(g => TileYieldPotential(tile, g.Id)))
                   + LandPriceBase;
         // The landPaymentModifier scales the price — Peter Minuit's −100% makes it free. ApplyGoodsModifiers stacks
         // every matching modifier by index (FreeCol applyModifiers), consistent with the rest of the codebase.
