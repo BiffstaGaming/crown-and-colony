@@ -230,6 +230,67 @@ public class LostCityRumourTests
         Assert.False(game.Map.HasRumour(tile));
     }
 
+    // ---- Player-facing outcome notices (86d3c9umy) ----
+    // A human exploring a non-mounds rumour resolves it inside the move with no return value the UI reads, so the
+    // game records a transient RumourNotice (mirroring the AI-phase combat/raid notices) the presentation drains.
+
+    [Theory]
+    [InlineData(1536, "treasure")]   // TribalChief
+    [InlineData(96, "scout")]        // Learn (free colonist learns)
+    [InlineData(2976, "colonists")]  // Colonist
+    [InlineData(4900, "nothing")]    // Nothing
+    public void Explore_ByAHuman_RecordsAPlayerFacingNotice_ForTheTile(int roll, string expectedFragment)
+    {
+        (Game game, Unit unit, Position tile) = ExplorerOnRumour();
+
+        game.ExploreRumour(unit, tile, new ScriptedRandom(roll, 0));
+
+        RumourNotice notice = Assert.Single(game.RumourNotices);
+        Assert.Equal(tile, notice.Position);
+        Assert.Contains(expectedFragment, notice.Message, System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TakeRumourNotices_DrainsAndClearsTheCollectedNotices()
+    {
+        (Game game, Unit unit, Position tile) = ExplorerOnRumour();
+        game.ExploreRumour(unit, tile, new ScriptedRandom(1536, 0)); // a chief gift → one notice
+
+        var drained = game.TakeRumourNotices();
+
+        Assert.Single(drained);
+        Assert.Empty(game.RumourNotices); // drained: the UI reads each outcome once
+    }
+
+    [Fact]
+    public void Explore_ByAForeignPower_RecordsNoHumanNotice()
+    {
+        // Only the human's rumour outcomes surface in the player-facing list — a foreign power has no UI, so its
+        // explore (on its own stream) must never leak into the human's notices.
+        Game game = Game.New(Classic, Seed);
+        Player foreign = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        Position tile = game.PlayerUnits.First().Position;
+        Unit unit = game.SpawnUnit(Classic.Unit(FreeColonist), tile, foreign.PlayerId);
+        game.Map.AddRumour(tile);
+
+        game.ExploreRumour(unit, tile, new ScriptedRandom(1536, 0)); // chief gift to the foreign power
+
+        Assert.Empty(game.RumourNotices);
+    }
+
+    [Fact]
+    public void Explore_StrangeMounds_RecordsNoImmediateNotice_ItsOutcomeComesViaThePrompt()
+    {
+        // MOUNDS pauses for an investigate/decline choice; ExploreRumour returns the sentinel without resolving, so
+        // no immediate notice is recorded — the description comes via ResolvePendingMounds.
+        (Game game, Unit unit, Position tile, _) = MoundsExplorer();
+
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(4416)); // 4416 → MOUNDS (native table)
+
+        Assert.Equal(Game.LostCityRumourType.Mounds, outcome);
+        Assert.Empty(game.RumourNotices);
+    }
+
     [Fact]
     public void Explore_ANonLearnableUnit_NeverLearns_TheLowRollGivesGoldInstead()
     {

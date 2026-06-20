@@ -733,6 +733,15 @@ public partial class GameController : Node2D
             _selectedUnit = null;
         }
 
+        // A human explorer that just stepped onto a (non-mounds) Lost City Rumour resolved it inside the move with
+        // no return value to read — surface each collected outcome in the status line (the strange-mounds outcome
+        // comes via its own panel). Drained here so it catches both an interactive move and a standing-goto move
+        // walked during EndTurn. (Empty on a plain selection refresh — harmless.)
+        foreach (RumourNotice rumour in _game.TakeRumourNotices())
+        {
+            _notice = _notice is null ? rumour.Message : $"{_notice}  {rumour.Message}";
+        }
+
         _mapView.ShowState(_game.Map, _game.Explored, _game.CurrentlyVisible);
         _miniMap.ShowState(_game);
         // Outline the selected unit's standing goto destination, if any.

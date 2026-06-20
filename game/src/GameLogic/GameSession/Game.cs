@@ -91,6 +91,7 @@ public sealed partial class Game
     private readonly List<ColonyRaidNotice> _colonyRaidNotices = []; // transient: the most recent turn's native pillages of human colonies (not saved)
     private readonly List<ColonyGiftNotice> _colonyGiftNotices = []; // transient: the most recent turn's friendly native gifts to human colonies (not saved)
     private readonly List<CustomHouseSaleNotice> _customHouseSaleNotices = []; // transient: the most recent turn's custom-house auto-sales from human colonies (not saved)
+    private readonly List<RumourNotice> _rumourNotices = []; // transient: Lost City Rumours the human resolved this turn (non-mounds outcomes; not saved)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
     private readonly Player _human;
@@ -480,6 +481,25 @@ public sealed partial class Game
     /// presentation reads it after the turn to tell the player "your custom house in X sold N goods for G gold".
     /// </summary>
     public IReadOnlyList<CustomHouseSaleNotice> CustomHouseSaleNotices => _customHouseSaleNotices;
+
+    /// <summary>
+    /// Lost City Rumours the human explored since the last <see cref="EndTurn"/> that resolved immediately — every
+    /// outcome except strange mounds (which pause for <see cref="PendingMounds"/>). The reward is applied inside
+    /// <see cref="ExploreRumour"/> during the human's own move with no return value the move handler reads, so the
+    /// game collects these and the presentation surfaces them after the move (FreeCol shows a model message per
+    /// rumour). Transient per-turn UI scratch — cleared each <c>EndTurn</c>, never saved; presentation drains it
+    /// (each entry's <see cref="RumourNotice.Message"/> is pre-formatted to keep the internal outcome enum out of
+    /// the UI, ADR-006).
+    /// </summary>
+    public IReadOnlyList<RumourNotice> RumourNotices => _rumourNotices;
+
+    /// <summary>Drains and clears the collected <see cref="RumourNotices"/> (the presentation reads them once, after a move that explored a rumour).</summary>
+    public IReadOnlyList<RumourNotice> TakeRumourNotices()
+    {
+        var taken = _rumourNotices.ToList();
+        _rumourNotices.Clear();
+        return taken;
+    }
 
     /// <summary>
     /// The native tribute demand currently awaiting the human's accept/refuse, or null if none. Transient per-turn
@@ -4347,8 +4367,21 @@ public sealed partial class Game
             return LostCityRumourType.Mounds;
         }
 
+        // Capture the explorer's owner before ResolveOutcome — a vanished expedition removes the unit, so the
+        // reference must not be read afterwards.
+        bool ownerIsHuman = PlayerById(unit.OwnerId) is { IsHuman: true };
+
         ResolveOutcome(unit, target, outcome, random);
         Map.RemoveRumour(target); // consumed regardless of outcome
+
+        // Surface the resolved outcome to the human as a transient notice (the move handler has no return value to
+        // read for a rumour, like the AI-phase combat/raid notices). An AI/foreign explorer has no UI, so its
+        // rumour outcomes are never recorded — only the human's land in the player-facing list. The strange-mounds
+        // path returned above; its description comes via ResolvePendingMounds.
+        if (ownerIsHuman)
+        {
+            _rumourNotices.Add(new RumourNotice(DescribeMoundsOutcome(outcome), target));
+        }
         return outcome;
     }
 
@@ -5003,6 +5036,7 @@ public sealed partial class Game
         _colonyRaidNotices.Clear(); // and this turn's native pillages of human colonies
         _colonyGiftNotices.Clear(); // and this turn's friendly native gifts to human colonies
         _customHouseSaleNotices.Clear(); // and this turn's custom-house auto-sales from human colonies
+        _rumourNotices.Clear(); // and any rumour outcomes the human explored this turn (normally drained by the UI mid-turn; cleared here belt-and-braces)
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
         DeclinePendingMounds();     // an unanswered strange-mounds prompt counts as "leave them be" — clears it before the AI turns so it can't strand or block exploration across the round
         int startIndex = _currentPlayerIndex;

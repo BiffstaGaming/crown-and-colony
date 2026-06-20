@@ -365,6 +365,67 @@ public class InputTests
         return string.Join("\n", dynamic.GetChildren().OfType<Label>().Select(l => l.Text));
     }
 
+    /// <summary>Every one-line outcome the engine can describe for a resolved (non-mounds) Lost City Rumour (mirrors Game.DescribeMoundsOutcome).</summary>
+    private static readonly string[] RumourOutcomeMessages =
+    [
+        "The expedition vanishes without a trace!",
+        "Tribal chiefs share their treasure with you!",
+        "Your explorer learns the ways of a seasoned scout!",
+        "A band of colonists joins your expedition!",
+        "A Fountain of Youth! Settlers flock to your docks.",
+        "You uncover ancient ruins — treasure!",
+        "You have found one of the Seven Cities of Cibola — a vast treasure!",
+        "You find nothing of note.",
+    ];
+
+    [TestCase(Timeout = 60000)]
+    public async Task ExploringARumour_BySteppingOntoIt_ShowsTheOutcomeInTheStatusBar()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Plant a rumour on a free, non-native tile adjacent to the human's first land unit (AddRumour is internal to
+        // GameLogic, so inject it through the save layer like the colony-capture test), then step a unit onto it: any
+        // roll on non-native land resolves immediately (MOUNDS/BURIAL degrade to NOTHING — no pause), recording exactly
+        // one RumourNotice the controller drains into the status bar. Exercises the explore → RumourNotice → drain path.
+        Unit unit0 = game.PlayerUnits.First(u => u.IsOnMap && !u.Type.IsNaval);
+        Position to = unit0.Position.Neighbours()
+            .First(n => Free(game, n) && !game.Map.IsNativeOwned(n) && game.CheckMove(unit0, n).Allowed);
+        int unitId = unit0.Id;
+
+        SaveGame save = SaveGame.From(game);
+        Game injected = (save with { Rumours = (save.Rumours ?? []).Append(to.Y * game.Map.Width + to.X).ToList() })
+            .Restore(game.Ruleset);
+        SetGame(controller, injected);
+        AssertThat(injected.Map.HasRumour(to)).IsTrue(); // the injected rumour round-tripped
+
+        // Resolve the rumour on the engine (the move records exactly one RumourNotice for the human — no pause off
+        // native land), then trigger one controller refresh by selecting a unit; the refresh drains the notice into
+        // the status bar. Splitting the engine move from the UI refresh keeps the assertion off click-frame timing.
+        injected.MoveUnit(injected.Units.First(u => u.Id == unitId), to);
+        AssertThat(injected.Map.HasRumour(to)).IsFalse();    // a non-native rumour is consumed on arrival (never a pause)
+        AssertThat(injected.PendingMounds).IsNull();         // and never raises a mounds prompt off native land
+        RumourNotice recorded = injected.RumourNotices.Count == 1
+            ? injected.RumourNotices[0]
+            : default; // (asserted below — the engine records exactly one outcome for the human)
+        AssertThat(injected.RumourNotices.Count)
+            .OverrideFailureMessage($"expected one recorded rumour notice, got {injected.RumourNotices.Count}")
+            .IsEqual(1);
+        AssertThat(RumourOutcomeMessages).Contains(recorded.Message); // it's a known outcome description
+
+        // One controller refresh drains the recorded notice into the status bar.
+        controller.GetType().GetMethod("RefreshView", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(controller, null);
+        await runner.SimulateFrames(1);
+        string status = controller.GetNode<Label>("UI/StatusLabel").Text;
+        AssertThat(status)
+            .OverrideFailureMessage($"recorded=[{recorded.Message}] remaining={injected.RumourNotices.Count} status=[{status}]")
+            .Contains(recorded.Message); // the resolved outcome surfaced in the status bar
+    }
+
     [TestCase(Timeout = 60000)]
     public async Task ForeignPowerCapturesUndefendedColony_DuringEndTurn_ShowsALossNotice()
     {
