@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-20 — 5-stream bundled parallel wave (wave 1) — 11 items — COMPLETE ✅
+
+**Requested:** Launch 5 parallel streams, each up to 3 backlog items, merging cleanly via region-disjoint **hotspot ownership** (items within a stream may share files; the 5 streams stay disjoint). Then do the same again and auto-start the next wave. (Owner asleep → fully autonomous, no prompts.)
+**Did:** 5 worktree agents, each exclusively owning one merge hotspot and bundling its items sequentially; integrated via cherry-pick (order **2 → 4 → 1 → 3 → 5**) with ONE combined test pass. **Zero cross-stream merge conflicts** — the partition held exactly.
+- **S1 AI behaviour** (`Game.cs` turn loops): `86d3bex51` verified-already-done (skipped, no invented work) · `86d3c9udb` AI breaks peace from accumulated tension (`e75e667`) · `86d3c9vzp` native depth — strength-ordered securing + native-dragoon promotion, now RNG-free (`668ea39`).
+- **S2 Save + difficulty** (owns `SaveGame.cs`+`Ruleset.cs`, the **v45→v46** bump): `86d3c9y08` difficulty picker + persist (`6be6fcd`) · `86d3c9wbp` resource-quantity persistence layer (`586aa3b`; gen-roll wiring deferred) · `86d3c9rk6` persist pending monarch demand (`b5c8d58`).
+- **S3 Diplomacy backend** (new `GameSession/Diplomacy/` dir + `Stance.Alliance=4`): `86d3c9u2f` DiplomaticTrade container (`3bc798c`) · `86d3c9u94` gold/goods clauses (`7097386`) · `86d3c9u3z` alliance + StanceTradeItem (`fd4d7c3`).
+- **S4 Rivers / tile-improvements** — collision-free **data-model foundation** in new `World/Improvements/` (no placement/save/golden) (`0fcfb53`).
+- **S5 HUD** (owns `GameController._Ready`+`main.tscn`): `86d3c9x53` turn-message panel (`0b020e0`) · `86d3c9x9t` Colopedia Goods category (`84aed88`).
+**Status:** combined pass green together — **1311 L1/L2 + 4 soak; 99 L3/L4**; both projects build clean; **save v45→v46** (additive omit-when-default → a default game is byte-identical). CI green on **both jobs** (run 27869908286).
+**Decisions:** the bundling reframe (one hotspot per stream) eliminated ALL cross-stream conflicts. Honest partials kept **In Development** (`86d3c9vzp`/`wbp`/`u94`/`u3z`/`x53`/`x9t` + the rivers epic `86d3b3qdx`); full-completes **Shipped** (`udb`/`y08`/`rk6`/`u2f`). Stream 4 deliberately scoped to a model-only foundation (river placement/save/golden would span Stream 2's save+ruleset hotspots → a future solo slice). Difficulty picker shipped with the recommended placement (new-game dialog beside size/shape).
+**Changed:** the 11 commits `6be6fcd`..`84aed88`. Save v46.
+**Scheduled next:** **auto-starting 5-stream WAVE 2 now** (standing instruction "do the same again AND automatically start them") — fresh analysis of the remaining backlog + launch.
+**Follow-ups:** rivers placement+save+wiring (`86d3b3qdx`); resource-quantity gen-roll (`86d3c9wbp`); diplomacy clause kinds + tension modifiers + AI treaty eval (`86d3c9u94`/`u3z`/`uar`); native arms-redistribution (`86d3c9vzp`); Colopedia more categories + History report (`86d3c9x53`/`x9t`); the serial new-panel queue.
+**Needs you:** nothing blocking.
+
 ## 2026-06-20 — Sequential cleanup (A/B/C) — monarch war/peace + school tie-break + resource placement — COMPLETE ✅
 
 **Requested:** After the parallel-analysis thread found the last 3 region-disjoint streams, do A/B/C **sequentially** (no parallel orchestration — only ~1 small clean stream really remained).
