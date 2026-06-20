@@ -1,5 +1,6 @@
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.World.Improvements;
 
 namespace CrownAndColony.GameLogic.World;
 
@@ -39,6 +40,16 @@ public static class MapGenerator
 
     /// <summary>FreeCol's split: half the elevation budget goes to walked ranges, half to a random sprinkle.</summary>
     private const double RandomHillsRatio = 0.5;
+
+    /// <summary>
+    /// River budget as a percentage of the river-allowed land tiles — FreeCol <c>model.option.riverNumber</c> (classic
+    /// default 15). The river pass stops once it has laid this fraction of the allowed-tile count as river tiles.
+    /// (Hardcoded from the spec for now, like <see cref="MountainNumber"/>; reading the map-generator option is a follow-up.)
+    /// </summary>
+    private const int RiverNumber = 15;
+
+    /// <summary>Hard cap on a single river's length in tiles, so a river can't wander the whole map on a pathological seed (FreeCol bounds rivers implicitly via its section logic; we cap explicitly for the faithful subset).</summary>
+    private const int MaxRiverLength = 16;
 
     /// <summary>The shipped default fraction of the map that is land (FreeCol <c>model.option.landMass</c>); the value the default new game uses.</summary>
     public const double DefaultLandMassFraction = 0.45;
@@ -104,6 +115,12 @@ public static class MapGenerator
         // subtypes, so the region layer is unchanged.
         ResetHighSeas(terrain, highSeas, width, height, ocean);
 
+        // Rivers (FreeCol TerrainGenerator.createRivers + River.flowFromSource): springs on high inland ground walk
+        // downhill to the sea, laying a river improvement on each lowland tile. Runs after the terrain (mountains +
+        // high-seas) is settled and before bonuses (so a later slice's river-mouth fish bonus could fire). Draws RNG,
+        // so it reorders the stream-0 draw sequence (a deliberate map-gen change for this item, 86d3b3qdx).
+        var improvements = MakeRivers(ruleset, terrain, width, height, random);
+
         // Bonus resources, picked from each tile's final terrain table by weight — placed only AFTER the terrain is
         // complete (FreeCol adds bonuses last, "otherwise we risk creating resources on fields where they do not
         // belong, like tobacco on hills"), so a tile retyped to mountains gets mountain resources, not the lowland
@@ -139,7 +156,7 @@ public static class MapGenerator
             }
         }
 
-        var map = new GameMap(width, height, terrain, resources);
+        var map = new GameMap(width, height, terrain, resources, improvements: improvements);
 
         // Partition the finished terrain into named regions (polar, ocean, mountain, land). Pure and RNG-free,
         // so it consumes no randomness and leaves the map RNG state untouched — see RegionGenerator.
@@ -158,7 +175,8 @@ public static class MapGenerator
                 terrain[i] = lake;
             }
         }
-        return new GameMap(width, height, terrain, resources, regionIds: regionIds, regions: regions);
+        return new GameMap(
+            width, height, terrain, resources, regionIds: regionIds, regions: regions, improvements: improvements);
     }
 
     /// <summary>
@@ -462,6 +480,142 @@ public static class MapGenerator
                 yield return (x + dx, y + dy);
             }
         }
+    }
+
+    /// <summary>
+    /// Stamps rivers across the land, a faithful subset of FreeCol <c>TerrainGenerator.createRivers</c> +
+    /// <c>River.flowFromSource</c>/<c>flow</c>. A river-allowed tile is lowland land (not water, not hills/mountains,
+    /// not arctic — the river type's spec scopes). Spring tiles ("good river tiles" — FreeCol <c>Tile.isGoodRiverTile</c>)
+    /// are river-allowed tiles whose <b>whole 8-neighbourhood is land</b>, so a source never starts on the coast. From
+    /// the shuffled springs, each not already a river starts a walk: pick a random direction, lay the river type on the
+    /// current tile, then step (mostly straight, sometimes turning left/right — FreeCol's <c>DirectionChange</c>) to the
+    /// next tile; the walk ends when it reaches water (the river mouth), an existing river, the map edge, a non-allowed
+    /// tile, or the per-river length cap. The pass stops once the laid river tiles reach the river budget
+    /// (<c>allowedTileCount · RiverNumber / 100</c>). Draws RNG (shuffle + walks), so it reorders stream-0 draws.
+    /// <para>Faithful-subset deviations vs FreeCol: rivers are stamped at a single (small) magnitude — the section-size
+    /// growth that produces large rivers/fjords, the connect-to-other-river joining, and the delta branching are not
+    /// modelled (they need the per-tile river <i>style</i>, a later slice); a river simply marks each land tile it
+    /// crosses. Movement/production fidelity (the "both endpoints carry a river" follow-cost and the flat yield bonus)
+    /// is exact — see <see cref="Improvements.ImprovementMovement"/> / <see cref="Improvements.ImprovementProduction"/>.</para>
+    /// </summary>
+    private static Dictionary<Position, TileImprovementType> MakeRivers(
+        Ruleset ruleset, TerrainType[] terrain, int width, int height, IGameRandom random)
+    {
+        var rivers = new Dictionary<Position, TileImprovementType>();
+        TileImprovementType riverType = ruleset.ImprovementTypes.FirstOrDefault(i => i.Id == TileImprovementType.RiverId)
+            ?? throw new InvalidOperationException("The ruleset declares no river tile-improvement type.");
+
+        int Idx(int x, int y) => y * width + x;
+        bool InBounds(int x, int y) => x >= 0 && x < width && y >= 0 && y < height;
+        bool IsWaterAt(int x, int y) => terrain[Idx(x, y)].IsWater;
+
+        // A tile a river may occupy: lowland land (the river type's scopes negate water, hills, mountains, arctic).
+        bool RiverAllowed(int x, int y)
+        {
+            TerrainType t = terrain[Idx(x, y)];
+            return !t.IsWater && !t.IsElevation && t.Id != "model.tile.arctic";
+        }
+
+        // All river-allowed land tiles (the budget denominator).
+        var allowed = new List<Position>();
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (RiverAllowed(x, y))
+                {
+                    allowed.Add(new Position(x, y));
+                }
+            }
+        }
+        if (allowed.Count == 0)
+        {
+            return rivers;
+        }
+        int budget = allowed.Count * RiverNumber / 100;
+        if (budget <= 0)
+        {
+            return rivers; // too little land for even one river tile
+        }
+
+        // Springs: river-allowed tiles whose entire 8-neighbourhood is land (FreeCol isGoodRiverTile) — not on the coast.
+        bool IsSpring(Position p)
+        {
+            if (!RiverAllowed(p.X, p.Y))
+            {
+                return false;
+            }
+            foreach (Position n in p.Neighbours())
+            {
+                if (!InBounds(n.X, n.Y) || IsWaterAt(n.X, n.Y))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // The 8 walk directions (E, SE, S, SW, W, NW, N, NE), the same order MakeMountains uses.
+        (int dx, int dy)[] directions =
+        [
+            (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1),
+        ];
+
+        var springs = Shuffle(allowed.Where(IsSpring).ToList(), random);
+        foreach (Position spring in springs)
+        {
+            if (rivers.Count >= budget)
+            {
+                break;
+            }
+            if (rivers.ContainsKey(spring))
+            {
+                continue; // already part of a river
+            }
+
+            int dir = random.Next(directions.Length);
+            int cx = spring.X, cy = spring.Y;
+            for (int step = 0; step < MaxRiverLength; step++)
+            {
+                // Lay the river on the current (allowed) tile.
+                rivers[new Position(cx, cy)] = riverType;
+                if (rivers.Count >= budget)
+                {
+                    break;
+                }
+
+                // Every other step, nudge the flow direction (FreeCol changes direction on even section counts):
+                // 50% straight ahead, 25% one step left, 25% one step right.
+                if (step % 2 == 1)
+                {
+                    int turn = random.Next(4);
+                    if (turn == 1) dir = (dir + 1) % directions.Length;       // right turn
+                    else if (turn == 2) dir = (dir + directions.Length - 1) % directions.Length; // left turn
+                }
+
+                int nx = cx + directions[dir].dx, ny = cy + directions[dir].dy;
+                if (!InBounds(nx, ny))
+                {
+                    break; // ran off the map
+                }
+                if (IsWaterAt(nx, ny))
+                {
+                    break; // reached the sea (the river mouth) — done
+                }
+                if (rivers.ContainsKey(new Position(nx, ny)))
+                {
+                    break; // merged into an existing river
+                }
+                if (!RiverAllowed(nx, ny))
+                {
+                    break; // hit hills/mountains/arctic — a river cannot cross it
+                }
+                cx = nx;
+                cy = ny;
+            }
+        }
+
+        return rivers;
     }
 
     /// <summary>

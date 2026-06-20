@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Xml.Linq;
+using CrownAndColony.GameLogic.World.Improvements;
 
 namespace CrownAndColony.GameLogic.Specification;
 
@@ -16,6 +17,7 @@ public sealed class Ruleset
     private readonly Dictionary<string, BuildingType> _buildingById;
     private readonly Dictionary<string, FoundingFather> _fatherById;
     private readonly Dictionary<string, ResourceType> _resourceById;
+    private readonly Dictionary<string, TileImprovementType> _improvementById;
     private readonly Dictionary<string, NativeNationType> _nativeNationById;
     private readonly Dictionary<string, SettlementType> _settlementById;
     private readonly Dictionary<string, RoleType> _roleById;
@@ -32,6 +34,7 @@ public sealed class Ruleset
         Dictionary<string, BuildingType> buildingById,
         Dictionary<string, FoundingFather> fatherById,
         Dictionary<string, ResourceType> resourceById,
+        Dictionary<string, TileImprovementType> improvementById,
         Dictionary<string, NativeNationType> nativeNationById,
         Dictionary<string, SettlementType> settlementById,
         Dictionary<string, RoleType> roleById,
@@ -54,6 +57,7 @@ public sealed class Ruleset
         _buildingById = buildingById;
         _fatherById = fatherById;
         _resourceById = resourceById;
+        _improvementById = improvementById;
         _nativeNationById = nativeNationById;
         _settlementById = settlementById;
         _roleById = roleById;
@@ -90,6 +94,7 @@ public sealed class Ruleset
             .ToHashSet();
         FoundingFathers = _fatherById.Values.ToList();
         ResourceTypes = _resourceById.Values.ToList();
+        ImprovementTypes = _improvementById.Values.ToList();
         NativeNationTypes = _nativeNationById.Values.ToList();
         SettlementTypes = _settlementById.Values.ToList();
         Roles = _roleById.Values.ToList();
@@ -215,6 +220,20 @@ public sealed class Ruleset
         _resourceById.TryGetValue(id, out var r)
             ? r
             : throw new KeyNotFoundException($"Unknown resource type '{id}'.");
+
+    /// <summary>All tile-improvement types (river, road, plow, …), in specification order. Today only the river type is modelled/used.</summary>
+    public IReadOnlyList<TileImprovementType> ImprovementTypes { get; }
+
+    /// <summary>Looks up a tile-improvement type by ruleset id (e.g. <c>model.improvement.river</c>).</summary>
+    /// <exception cref="KeyNotFoundException">Unknown id.</exception>
+    public TileImprovementType Improvement(string id) =>
+        _improvementById.TryGetValue(id, out var imp)
+            ? imp
+            : throw new KeyNotFoundException($"Unknown tile-improvement type '{id}'.");
+
+    /// <summary>The river tile-improvement type (<c>model.improvement.river</c>), the one improvement the map generator places.</summary>
+    /// <exception cref="KeyNotFoundException">The ruleset declares no river type.</exception>
+    public TileImprovementType RiverType => Improvement(TileImprovementType.RiverId);
 
     /// <summary>All native nation types (Apache, Sioux, …), in specification order.</summary>
     public IReadOnlyList<NativeNationType> NativeNationTypes { get; }
@@ -572,6 +591,20 @@ public sealed class Ruleset
                 MaxValue: (int?)el.Attribute("maximum-value") ?? 0);
         }
 
+        // Tile-improvement types (FreeCol <tile-improvement-types>): the natural/pioneer features laid on a tile.
+        // Today we only model + place the river; road/plow/clear are parsed-through for completeness but unused.
+        var improvements = new Dictionary<string, TileImprovementType>();
+        foreach (XElement el in root.Element("tile-improvement-types")?.Elements("tile-improvement-type") ?? [])
+        {
+            string id = RequiredAttribute(el, "id");
+            improvements[id] = new TileImprovementType(
+                Id: id,
+                Magnitude: (int?)el.Attribute("magnitude") ?? 1,
+                MovementCost: (int?)el.Attribute("movement-cost") ?? 0,
+                AddWorkTurns: (int?)el.Attribute("add-work-turns") ?? 0,
+                Modifiers: el.Elements("modifier").Select(ParseImprovementModifier).ToList());
+        }
+
         (Dictionary<string, NativeNationType> nativeNations, Dictionary<string, SettlementType> settlements) =
             ParseNativeNationTypes(root.Element("indian-nation-types"));
 
@@ -593,7 +626,7 @@ public sealed class Ruleset
         DifficultyOptions difficulty = ParseDifficulty(root, difficultyLevelId);
 
         return new Ruleset(
-            terrain, units, goods, buildings, fathers, resources, nativeNations, settlements,
+            terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
             roles, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears,
             difficulty, difficultyLevelId);
     }
@@ -996,6 +1029,16 @@ public sealed class Ruleset
             .Where(t => t is not null)
             .Select(t => t!)
             .ToList());
+
+    private static ImprovementModifier ParseImprovementModifier(XElement m) => new(
+        GoodsId: RequiredAttribute(m, "id"),
+        Type: (string?)m.Attribute("type") switch
+        {
+            "multiplicative" => ModifierType.Multiplicative,
+            "percentage" => ModifierType.Percentage,
+            _ => ModifierType.Additive,
+        },
+        Value: (double?)m.Attribute("value") ?? 0);
 
     private static UnitProductionModifier ParseUnitProductionModifier(XElement m) => new(
         GoodsId: RequiredAttribute(m, "id"),

@@ -3,6 +3,7 @@ using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
+using CrownAndColony.GameLogic.World.Improvements;
 using Xunit;
 
 namespace CrownAndColony.GameLogic.Tests.World;
@@ -498,5 +499,175 @@ public class ResourceQuantityTests
         SaveGame old = SaveGame.From(game) with { Version = 45, ResourceQuantities = null };
         Game loaded = SaveGame.FromJson(old.ToJson()).Restore(Classic);
         Assert.Empty(loaded.Map.ResourceQuantities);
+    }
+}
+
+/// <summary>Rivers: ruleset parse, map-generator placement (determinism + faithful constraints), the production +
+/// movement folding, and v47 save round-trip (86d3b3qdx).</summary>
+public class RiverTests
+{
+    private static readonly Ruleset Classic = Ruleset.LoadClassic();
+
+    [Fact]
+    public void ClassicSpec_ParsesTheRiverImprovementType_WithItsModifiersAndMoveCost()
+    {
+        TileImprovementType river = Classic.RiverType;
+        Assert.Equal(TileImprovementType.RiverId, river.Id);
+        Assert.Equal(1, river.MovementCost);       // the river follow-cost (1 = a third of a normal move)
+        Assert.Equal(0, river.AddWorkTurns);       // rivers are natural, not pioneer-built
+        // The classic river's flat additive goods bonuses (specification.xml model.improvement.river).
+        Assert.Equal(1, ImprovementProduction.YieldDelta(river, "model.goods.grain"));
+        Assert.Equal(2, ImprovementProduction.YieldDelta(river, "model.goods.furs"));
+        Assert.Equal(2, ImprovementProduction.YieldDelta(river, "model.goods.lumber"));
+        Assert.Equal(0, ImprovementProduction.YieldDelta(river, "model.goods.bells")); // a good rivers don't touch
+    }
+
+    [Fact]
+    public void DefaultMap_PlacesSomeRivers()
+    {
+        // The classic 36×24 default map has enough lowland for the river budget to place at least one river tile.
+        Game game = Game.New(Classic, seed: 42);
+        Assert.NotEmpty(game.Map.Improvements);
+        Assert.Contains(game.Map.Improvements, kv => kv.Value.Id == TileImprovementType.RiverId);
+    }
+
+    [Fact]
+    public void RiverPlacement_IsDeterministicPerSeed()
+    {
+        var a = Game.New(Classic, seed: 7).Map.Improvements.Keys.OrderBy(p => (p.Y, p.X)).ToList();
+        var b = Game.New(Classic, seed: 7).Map.Improvements.Keys.OrderBy(p => (p.Y, p.X)).ToList();
+        Assert.Equal(a, b); // same seed → identical river layer (ADR-009)
+    }
+
+    [Fact]
+    public void EveryRiverTile_IsLowlandLand_AndWithinTheBudget()
+    {
+        Game game = Game.New(Classic, seed: 13);
+        int allowed = 0;
+        foreach (Position p in game.Map.AllPositions())
+        {
+            TerrainType t = game.Map.TerrainAt(p);
+            if (!t.IsWater && !t.IsElevation && t.Id != "model.tile.arctic")
+            {
+                allowed++;
+            }
+        }
+        foreach ((Position p, TileImprovementType imp) in game.Map.Improvements)
+        {
+            TerrainType t = game.Map.TerrainAt(p);
+            Assert.False(t.IsWater);       // a river never sits on water
+            Assert.False(t.IsElevation);   // nor on hills/mountains (the river type's negated scopes)
+            Assert.NotEqual("model.tile.arctic", t.Id);
+            Assert.Equal(TileImprovementType.RiverId, imp.Id);
+        }
+        // The river pass respects FreeCol's soft maximum: river tiles ≤ allowed · riverNumber% (15%), with a little
+        // slack because the budget is checked before the final tile of a walk is laid.
+        Assert.True(game.Map.Improvements.Count <= allowed * 15 / 100 + 1,
+            $"placed {game.Map.Improvements.Count} rivers over a {allowed * 15 / 100} budget");
+    }
+
+    [Fact]
+    public void TileYield_AddsTheRiverBonus_ToAGoodTheRiverBoosts()
+    {
+        // Find a default-map river tile and compare its grain yield with and without the river.
+        Game game = Game.New(Classic, seed: 42);
+        (Position river, _) = game.Map.Improvements.First(kv => kv.Value.Id == TileImprovementType.RiverId);
+
+        int withRiver = game.TileYieldPotential(river, "model.goods.grain");
+        game.Map.SetImprovement(river, null); // strip the river
+        int without = game.TileYieldPotential(river, "model.goods.grain");
+
+        // Grain is only produced on attended land; if the terrain makes grain at all, the river adds exactly +1.
+        if (without > 0)
+        {
+            Assert.Equal(without + 1, withRiver);
+        }
+    }
+
+    [Fact]
+    public void RiverFollowCost_IsCheaperBetweenTwoRiverTiles_ForALandUnit()
+    {
+        // Two adjacent plains tiles; with rivers on both, a land unit pays the river follow-cost (1) not the
+        // terrain cost (plains = 3). ImprovementMovement encodes the rule; here we check the wiring through CheckMove.
+        var from = new Position(1, 1);
+        var to = new Position(2, 1);
+        int plainsCost = Classic.Terrain("model.tile.plains").MoveCost;
+
+        int baseCost = MoveCostBetween(rivers: [], from, to);
+        int riverCost = MoveCostBetween(rivers: [from, to], from, to);
+        Assert.Equal(plainsCost, baseCost);
+        Assert.Equal(1, riverCost); // the river follow-cost
+        Assert.True(riverCost < baseCost);
+    }
+
+    [Fact]
+    public void RiverFollowCost_DoesNotApply_WhenOnlyOneTileHasARiver()
+    {
+        var from = new Position(1, 1);
+        var to = new Position(2, 1);
+        int plainsCost = Classic.Terrain("model.tile.plains").MoveCost;
+        Assert.Equal(plainsCost, MoveCostBetween(rivers: [from], from, to)); // only the origin → no follow bonus
+    }
+
+    [Fact]
+    public void Rivers_RoundTripThroughSave_V47()
+    {
+        Game game = Game.New(Classic, seed: 42); // Game.New stamps rivers
+        Assert.NotEmpty(game.Map.Improvements);
+
+        SaveGame save = SaveGame.From(game);
+        Assert.NotNull(save.Improvements);
+        Assert.Equal(47, SaveGame.CurrentVersion);
+
+        Game loaded = SaveGame.FromJson(save.ToJson()).Restore(Classic);
+        Assert.Equal(
+            game.Map.Improvements.Select(kv => (kv.Key, kv.Value.Id, kv.Value.Magnitude)).OrderBy(t => (t.Key.Y, t.Key.X)),
+            loaded.Map.Improvements.Select(kv => (kv.Key, kv.Value.Id, kv.Value.Magnitude)).OrderBy(t => (t.Key.Y, t.Key.X)));
+    }
+
+    [Fact]
+    public void AMapWithNoRivers_OmitsTheImprovementsToken()
+    {
+        Game game = Game.New(Classic, seed: 42);
+        foreach (Position p in game.Map.Improvements.Keys.ToList())
+        {
+            game.Map.SetImprovement(p, null); // clear the river layer
+        }
+        string json = SaveGame.From(game).ToJson();
+        Assert.DoesNotContain("\"Improvements\"", json);
+    }
+
+    [Fact]
+    public void PreV47Save_LoadsWithNoRivers()
+    {
+        Game game = Game.New(Classic, seed: 42);
+        SaveGame old = SaveGame.From(game) with { Version = 46, Improvements = null };
+        Game loaded = SaveGame.FromJson(old.ToJson()).Restore(Classic);
+        Assert.Empty(loaded.Map.Improvements);
+    }
+
+    // Builds a 3×3 all-plains game with the given river tiles (restored through the save path so the river layer is
+    // resolved from the ruleset, like a real load) and returns the cost CheckMove charges a colonist to step from→to.
+    private static int MoveCostBetween(Position[] rivers, Position from, Position to)
+    {
+        int width = 3, height = 3;
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = width,
+            MapHeight = height,
+            Terrain = Enumerable.Repeat("model.tile.plains", width * height).ToList(),
+            Units = [new SavedUnit(1, Game.StartingUnitTypeId, from.X, from.Y, 3)],
+            Explored = [],
+            Improvements = rivers.Length > 0
+                ? rivers.Select(p => new SavedImprovement(p.Y * width + p.X, TileImprovementType.RiverId, 1)).ToList()
+                : null,
+        };
+        Game game = save.Restore(Classic);
+        MoveCheck check = game.CheckMove(game.Units[0], to);
+        Assert.True(check.Allowed, check.Reason);
+        return check.Cost;
     }
 }

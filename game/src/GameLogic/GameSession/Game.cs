@@ -6,6 +6,7 @@ using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Trade;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
+using CrownAndColony.GameLogic.World.Improvements;
 
 namespace CrownAndColony.GameLogic.GameSession;
 
@@ -3195,12 +3196,21 @@ public sealed partial class Game
             return MoveCheck.No("No movement left this turn.");
         }
 
+        // River "follow the river" bonus (FreeCol TileImprovementType.getMoveCost + Tile connectivity): a land unit
+        // moving between two tiles that BOTH carry a river pays the river's reduced enter-cost (1) instead of the
+        // terrain's normal cost, when that is cheaper. Ships never get it (rivers are a land feature). The cost to
+        // enter is a property of the destination's river — see ImprovementMovement.RiverMoveCost.
+        int cost = terrain.MoveCost;
+        if (!unit.Type.IsNaval)
+        {
+            cost = ImprovementMovement.RiverMoveCost(
+                Map.ImprovementAt(unit.Position), Map.ImprovementAt(target), cost);
+        }
         // FreeCol's partial-movement rule (Unit.getMoveCost): when the terrain
         // costs more than the unit has left, the move is still allowed — for the
         // full remainder — only if the unit is near full movement (lost at most
         // 2/3 of a move) or the shortfall is small. (A settlement target also
         // qualifies; none exist yet.) Otherwise the unit must wait.
-        int cost = terrain.MoveCost;
         if (cost > movesLeft)
         {
             bool allowed = movesLeft + 2 >= InitialMovement(unit) || cost <= movesLeft + 2;
@@ -6805,9 +6815,14 @@ public sealed partial class Game
             }
         }
 
+        // River improvement on the tile: add its flat goods bonus (FreeCol river <modifier> children, e.g. +1 grain,
+        // +2 furs/lumber). The classic river's modifiers are additive at index 50 — after the index-10 resource
+        // modifiers above — so a multiplicative resource bonus is applied first and the river's flat delta added on top.
+        yield += ImprovementProduction.YieldDelta(Map.ImprovementAt(tile), goodsId);
+
         // Coastal fish bonus (FreeCol fishBonusLand): +2 fish on a coastal water tile — one with more than two
-        // adjacent land tiles. High-seas tiles are excluded (the improvement's match-negated scope); the river-mouth
-        // +1 (fishBonusRiver) is skipped because we don't model rivers yet.
+        // adjacent land tiles. High-seas tiles are excluded (the improvement's match-negated scope). The river-mouth
+        // +1 (fishBonusRiver) is still skipped — it needs the per-tile river style (delta direction), a later slice.
         if (goodsId == FishId && IsCoastalWater(tile))
         {
             yield += CoastalFishBonus;

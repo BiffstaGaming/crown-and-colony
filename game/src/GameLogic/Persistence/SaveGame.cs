@@ -6,6 +6,7 @@ using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
+using CrownAndColony.GameLogic.World.Improvements;
 
 namespace CrownAndColony.GameLogic.Persistence;
 
@@ -18,7 +19,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 46;
+    public const int CurrentVersion = 47;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -104,6 +105,11 @@ public sealed record SaveGame
     /// no open demand stays byte-identical; pre-v46 saves load with no pending demand, 86d3c9rk6). All three are additive
     /// + omitted-when-default, so a default game round-trips byte-identically to v45 and older saves load with the
     /// feature absent.
+    /// v47 added the map's natural tile improvements (<see cref="Improvements"/> — today only rivers, stamped at game
+    /// start by the map generator), by row-major tile index with the improvement's id + magnitude; omitted when the map
+    /// carries none (a pre-river fixture), so a riverless map stays byte-identical. Pre-v47 saves load with no
+    /// improvements (no rivers); the river layer is part of map generation, so a reloaded river map round-trips its
+    /// rivers exactly rather than re-deriving them (86d3b3qdx).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -176,6 +182,9 @@ public sealed record SaveGame
 
     /// <summary>Each finite bonus resource's rolled starting quantity, by row-major tile index (v46; null/omitted when no placed resource carries a quantity, so a typical map stays byte-identical to v45). Only finite (min/max-ranged) resources carry one — a limitless resource is absent. Pre-v46 saves load with none.</summary>
     public IReadOnlyList<SavedResourceQuantity>? ResourceQuantities { get; init; }
+
+    /// <summary>The map's natural tile improvements (today only rivers) by row-major tile index, each with its improvement id + magnitude (v47; null/omitted when the map carries none, so a riverless map stays byte-identical to v46). Pre-v47 saves load with no improvements.</summary>
+    public IReadOnlyList<SavedImprovement>? Improvements { get; init; }
 
     /// <summary>A monarch demand awaiting the human's accept/reject when the game was saved (v46; null/omitted when none is pending — the common case, so a game with no open demand stays byte-identical to v45). Pre-v46 saves load with no pending demand. (FreeCol persists the <c>MonarchSession</c>.)</summary>
     public SavedMonarchDemand? PendingMonarchDemand { get; init; }
@@ -316,6 +325,14 @@ public sealed record SaveGame
                     .OrderBy(q => q.Index)
                     .ToList()
                 : null,
+            // Natural tile improvements (rivers) by row-major index + id/magnitude (v47); omitted when none placed,
+            // so a riverless map stays byte-identical to v46.
+            Improvements = game.Map.Improvements.Count > 0
+                ? game.Map.Improvements
+                    .Select(i => new SavedImprovement(i.Key.Y * game.Map.Width + i.Key.X, i.Value.Id, i.Value.Magnitude))
+                    .OrderBy(i => i.Index)
+                    .ToList()
+                : null,
             // Lost City Rumours by row-major index; omitted when none so a rumour-free game stays byte-identical to v24.
             Rumours = game.Map.Rumours.Count > 0
                 ? game.Map.Rumours.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList()
@@ -383,7 +400,12 @@ public sealed record SaveGame
             // Finite resource quantities by tile (v46; pre-v46 / omitted → none).
             ResourceQuantities?.ToDictionary(
                 q => new Position(q.Index % MapWidth, q.Index / MapWidth),
-                q => q.Quantity));
+                q => q.Quantity),
+            // Natural tile improvements (rivers) by tile (v47; pre-v47 / omitted → none). The ruleset re-supplies the
+            // improvement type's rule data (modifiers, movement cost); the saved magnitude is re-stamped onto it.
+            Improvements?.ToDictionary(
+                i => new Position(i.Index % MapWidth, i.Index / MapWidth),
+                i => ruleset.Improvement(i.ImprovementId) with { Magnitude = i.Magnitude }));
 
         // Pre-v35 saves (and any save without a persisted region layer) re-derive regions deterministically from
         // the terrain — exactly the layer the generator would have produced (mirrors the native-land re-derivation).
@@ -649,6 +671,12 @@ public sealed record SavedResource(int Index, string ResourceId);
 /// <param name="Index">Row-major tile index (<c>y * MapWidth + x</c>).</param>
 /// <param name="Quantity">The remaining quantity (FreeCol <c>Resource.quantity</c>).</param>
 public sealed record SavedResourceQuantity(int Index, int Quantity);
+
+/// <summary>A natural tile improvement on a tile inside a <see cref="SaveGame"/> (v47; today only rivers). The improvement's rule data (modifiers, movement cost) is re-supplied from the ruleset on load; only the id + magnitude are stored.</summary>
+/// <param name="Index">Row-major tile index (<c>y * MapWidth + x</c>).</param>
+/// <param name="ImprovementId">Ruleset improvement id (e.g. <c>model.improvement.river</c>).</param>
+/// <param name="Magnitude">The improvement's per-tile magnitude (1 = small river, 2 = large; FreeCol river section size).</param>
+public sealed record SavedImprovement(int Index, string ImprovementId, int Magnitude);
 
 /// <summary>
 /// A monarch demand awaiting the human's accept/reject inside a <see cref="SaveGame"/> (v46; FreeCol persists the
