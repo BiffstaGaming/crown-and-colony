@@ -2723,6 +2723,11 @@ public sealed partial class Game
                 map.AllPositions().First(Settleable));
         game.SpawnUnit(ruleset.Unit(StartingUnitTypeId), start);
 
+        // The REF's entry tile: the nearest water tile to the human's start (FreeCol picks a non-land tile within
+        // distance 10 of the start and stores it as the REF player's entry tile). Chosen deterministically — no RNG
+        // draw, so the human's stream 0 stays byte-stable; on independence the King's fleet arrives here. Persisted.
+        game.SetRefEntryTile(game.NearestWaterTile(start));
+
         // Native settlements, on their own RNG stream so placement does not shift the
         // economy/father/immigration draws. They keep clear of the player's landing.
         var nativeRandom = new Pcg32Random(seed, NativeStreamId);
@@ -2830,6 +2835,14 @@ public sealed partial class Game
     /// drive a power to its cap without hard-coding the number.</summary>
     internal const int MaxAiColonies = 3;
 
+    /// <summary>
+    /// Minimum spacing (Chebyshev) between two foreign powers' landing anchors, so the rivals spread along the coast
+    /// instead of clustering at the single farthest corner (FreeCol <c>EuropeanStartingPositionsGenerator</c>'s
+    /// <c>MINIMUM_DISTANCE_BETWEEN_PLAYERS = 10</c>, scaled to our smaller default 36×24 world). Relaxed automatically
+    /// on a crowded/small map: a power that can't honour it lands at the best tile it can (placement never fails).
+    /// </summary>
+    private const int MinDistanceBetweenPowers = 8;
+
     private static int Chebyshev(Position a, Position b) => Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
 
     /// <summary>
@@ -2837,8 +2850,10 @@ public sealed partial class Game
     /// native nation present becomes a <see cref="PlayerType.Native"/> player (its units/settlements
     /// reference it by nation id; its braves act via <see cref="RunNativeTurn"/> from slice 1b); the foreign powers are the first
     /// <see cref="ForeignPowerCount"/> classic playable European nations, <b>landed on the map</b> far from
-    /// the human (FP-4) with their starting units. Placement draws no RNG (the human's stream 0 stays
-    /// byte-stable); player ids are allocated densely in a stable order (human 0, then natives, then powers).
+    /// the human (FP-4) with their starting units, <b>spread along the coast</b> at least
+    /// <see cref="MinDistanceBetweenPowers"/> apart (faithful to FreeCol's per-player spacing). Placement draws no RNG
+    /// (the human's stream 0 stays byte-stable); player ids are allocated densely in a stable order (human 0, then
+    /// natives, then powers).
     /// </summary>
     private void SpawnRivalsAndNatives(Ruleset ruleset, Position humanStart)
     {
@@ -2847,23 +2862,33 @@ public sealed partial class Game
             _players.Add(new Player(_players.Count, nationType, isHuman: false, PlayerType.Native, new Market(ruleset)));
         }
 
-        var taken = new HashSet<Position>(); // tiles claimed by foreign landings (keeps powers apart)
+        var taken = new HashSet<Position>(); // tiles claimed by foreign landings (keeps powers off each other's units)
+        var anchors = new List<Position>();  // each placed power's landing anchor (keeps powers spread along the coast)
         foreach (EuropeanNation nation in ruleset.EuropeanNations
                      .Where(n => n.Selectable && !n.IsRef).Take(ForeignPowerCount))
         {
             var power = new Player(_players.Count, nation.Id, isHuman: false, PlayerType.Colonial, new Market(ruleset));
             _players.Add(power);
-            LandForeignPower(ruleset, power, nation, humanStart, taken);
+            if (LandForeignPower(ruleset, power, nation, humanStart, taken, anchors) is { } anchor)
+            {
+                anchors.Add(anchor);
+            }
         }
     }
 
     /// <summary>
     /// Lands a foreign power on the map far from the human (FP-4): its colonists on settleable land and its
-    /// ship on adjacent water, around a deterministic anchor (the farthest free coastal tile from the human,
-    /// away from other landings), revealing the power's own fog. A unit with no free on-map tile falls back
-    /// to docking in Europe (robustness on small/crowded maps). Deterministic — draws no RNG.
+    /// ship on adjacent water, around a deterministic coastal anchor — the farthest free coastal tile from the
+    /// human that is also at least <see cref="MinDistanceBetweenPowers"/> from every already-placed power, so the
+    /// rivals spread along the coast rather than clustering at one corner (FreeCol
+    /// <c>EuropeanStartingPositionsGenerator</c>). On a crowded/small map where no tile honours the spacing the
+    /// constraint is relaxed to the best available tile, then to docking in Europe — placement never fails. Reveals
+    /// the power's own fog. Deterministic — draws no RNG.
     /// </summary>
-    private void LandForeignPower(Ruleset ruleset, Player power, EuropeanNation nation, Position humanStart, HashSet<Position> taken)
+    /// <returns>The chosen landing anchor (so the caller keeps the next power away from it), or null if the power had to dock in Europe.</returns>
+    private Position? LandForeignPower(
+        Ruleset ruleset, Player power, EuropeanNation nation, Position humanStart,
+        HashSet<Position> taken, IReadOnlyList<Position> placedAnchors)
     {
         bool FreeLand(Position p) => Map.InBounds(p) && Map.TerrainAt(p).CanSettle && !Map.TerrainAt(p).IsWater
             && ColonyAt(p) is null && NativeSettlementAt(p) is null
@@ -2873,11 +2898,17 @@ public sealed partial class Game
         Position? FirstFree(Position anchor, Func<Position, bool> free) =>
             free(anchor) ? anchor : anchor.Neighbours().Where(free).Cast<Position?>().FirstOrDefault();
 
-        // A coastal land anchor as far from the human as possible (and from other powers' claimed tiles).
-        Position? anchor = Map.AllPositions()
+        // Candidate coastal land anchors far from the human, ordered farthest-first (stable tie-break). FreeCol spreads
+        // powers by a minimum distance between their starts; we honour it when a candidate satisfies the spacing for
+        // every already-placed power, and relax to the best available tile when the map is too crowded to.
+        var candidates = Map.AllPositions()
             .Where(p => FreeLand(p) && Chebyshev(p, humanStart) >= ForeignLandingMinDistance && p.Neighbours().Any(FreeWater))
             .OrderByDescending(p => Chebyshev(p, humanStart)).ThenBy(p => p.Y).ThenBy(p => p.X)
-            .Cast<Position?>().FirstOrDefault();
+            .ToList();
+        Position? anchor =
+            candidates.Cast<Position?>().FirstOrDefault(
+                p => placedAnchors.All(a => Chebyshev(p!.Value, a) >= MinDistanceBetweenPowers))
+            ?? candidates.Cast<Position?>().FirstOrDefault(); // relax the spacing on a crowded map
 
         foreach (EuropeanStartingUnit start in nation.NationType.RegularStartingUnits)
         {
@@ -2902,6 +2933,8 @@ public sealed partial class Game
                 Reveal(power, unit); // the power lifts its own fog around its landing
             }
         }
+        // Report the anchor only if at least one unit actually landed there (otherwise the power docked in Europe).
+        return anchor is { } a2 && _units.Any(u => u.OwnerId == power.PlayerId && u.IsOnMap) ? a2 : null;
     }
 
     /// <summary>
@@ -3961,6 +3994,18 @@ public sealed partial class Game
     /// </summary>
     private Position EuropeEntryTile() =>
         Map.AllPositions().FirstOrDefault(p => Map.TerrainAt(p).Id == HighSeasId, new Position(0, 0));
+
+    /// <summary>
+    /// The water tile nearest <paramref name="origin"/> (Chebyshev), or null when the map has no water (test fixtures).
+    /// Used to fix the REF's entry tile at the human's coast (FreeCol stores a non-land entry tile near each start).
+    /// Deterministic (stable distance + row/column tie-break); draws no RNG.
+    /// </summary>
+    private Position? NearestWaterTile(Position origin) =>
+        Map.AllPositions()
+            .Where(p => Map.TerrainAt(p).IsWater)
+            .OrderBy(p => Chebyshev(p, origin)).ThenBy(p => p.Y).ThenBy(p => p.X)
+            .Cast<Position?>()
+            .FirstOrDefault();
 
     /// <summary>Whether the player can buy a <paramref name="unitTypeId"/> in Europe right now.</summary>
     public MoveCheck CheckBuyUnit(string unitTypeId) => CheckBuyUnit(_human, unitTypeId);

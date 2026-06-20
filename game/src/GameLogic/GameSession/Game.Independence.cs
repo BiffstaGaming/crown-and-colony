@@ -145,7 +145,12 @@ public sealed partial class Game
         RunForeignPowerTurn(refPlayer); // the rebel == the human, so the at-war hunt/assault logic targets it
     }
 
-    /// <summary>Brings the REF's in-Europe units ashore, each onto the nearest empty tile (land for land units, water for ships) around a rebel's connected-port colonies.</summary>
+    /// <summary>
+    /// Brings the REF's in-Europe units ashore. The King's fleet makes landfall at its fixed entry tile (chosen near
+    /// the human's start at game creation, FreeCol <c>Player.entryTile</c>): each unit takes the nearest empty tile
+    /// (land for land units, water for ships) around that beachhead, falling back to the ring around a rebel's
+    /// connected-port colonies when the entry tile is unset (pre-v47 save) or its surroundings are full.
+    /// </summary>
     private void LandRefUnits(Player refPlayer)
     {
         var targets = _players
@@ -154,9 +159,9 @@ public sealed partial class Game
             .Where(IsColonyCoastal)
             .OrderBy(c => c.Id)
             .ToList();
-        if (targets.Count == 0)
+        if (targets.Count == 0 && _refEntryTile is null)
         {
-            return; // no rebel port to invade
+            return; // no rebel port to invade and no fixed beachhead
         }
 
         foreach (Unit unit in _units
@@ -164,14 +169,47 @@ public sealed partial class Game
             .OrderBy(u => u.Id)
             .ToList())
         {
-            if (FindLandingTile(targets, unit.Type.IsNaval) is { } spot)
+            // Land at the fixed entry-tile beachhead first (the King's fleet arrives at the human's coast), then fall
+            // back to the rebel colonies' surroundings if that beachhead is full this turn.
+            Position? spot = (_refEntryTile is { } entry ? FindLandingTileNear(entry, unit.Type.IsNaval) : null)
+                ?? FindLandingTile(targets, unit.Type.IsNaval);
+            if (spot is { } s)
             {
-                unit.Position = spot;
+                unit.Position = s;
                 unit.Location = UnitLocation.OnMap;
                 RevealForOwner(unit);
             }
             // Units that don't fit this turn wait in Europe and land next turn.
         }
+    }
+
+    /// <summary>The nearest empty landing tile (water for ships, land for land units) to <paramref name="centre"/>, scanning outward in rings up to radius 4. Deterministic; null if none free.</summary>
+    private Position? FindLandingTileNear(Position centre, bool naval)
+    {
+        for (int radius = 0; radius <= 4; radius++)
+        {
+            for (int dy = -radius; dy <= radius; dy++)
+            {
+                for (int dx = -radius; dx <= radius; dx++)
+                {
+                    if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != radius)
+                    {
+                        continue; // only the ring at this radius
+                    }
+                    var p = new Position(centre.X + dx, centre.Y + dy);
+                    if (!Map.InBounds(p) || Map.TerrainAt(p).IsWater != naval)
+                    {
+                        continue;
+                    }
+                    if (ColonyAt(p) is not null || NativeSettlementAt(p) is not null || _units.Any(u => u.IsOnMap && u.Position == p))
+                    {
+                        continue; // occupied
+                    }
+                    return p;
+                }
+            }
+        }
+        return null;
     }
 
     // Victory thresholds (FreeCol ServerPlayer.checkForREFDefeat) + the Spanish Succession.

@@ -109,7 +109,10 @@ public sealed record SaveGame
     /// start by the map generator), by row-major tile index with the improvement's id + magnitude; omitted when the map
     /// carries none (a pre-river fixture), so a riverless map stays byte-identical. Pre-v47 saves load with no
     /// improvements (no rivers); the river layer is part of map generation, so a reloaded river map round-trips its
-    /// rivers exactly rather than re-deriving them (86d3b3qdx).
+    /// rivers exactly rather than re-deriving them (86d3b3qdx). v47 also added the REF's fixed entry tile
+    /// (<see cref="RefEntryTile"/>, chosen near the human's start at game creation, 86d3c9w5n), omitted when unset so a
+    /// game that never fixed one stays byte-identical; pre-v47 saves load with none (the REF falls back to landing
+    /// around the rebel's coastal colonies).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -185,6 +188,9 @@ public sealed record SaveGame
 
     /// <summary>The map's natural tile improvements (today only rivers) by row-major tile index, each with its improvement id + magnitude (v47; null/omitted when the map carries none, so a riverless map stays byte-identical to v46). Pre-v47 saves load with no improvements.</summary>
     public IReadOnlyList<SavedImprovement>? Improvements { get; init; }
+
+    /// <summary>The Royal Expeditionary Force's entry tile, row-major index (v47; null/omitted when unset — a pre-v47 save or a map with no water — so a game that never fixed one stays byte-identical). Chosen near the human's start at game creation; on independence the King's fleet lands here.</summary>
+    public int? RefEntryTile { get; init; }
 
     /// <summary>A monarch demand awaiting the human's accept/reject when the game was saved (v46; null/omitted when none is pending — the common case, so a game with no open demand stays byte-identical to v45). Pre-v46 saves load with no pending demand. (FreeCol persists the <c>MonarchSession</c>.)</summary>
     public SavedMonarchDemand? PendingMonarchDemand { get; init; }
@@ -333,6 +339,8 @@ public sealed record SaveGame
                     .OrderBy(i => i.Index)
                     .ToList()
                 : null,
+            // The REF's fixed entry tile (v47); omitted when unset so a game that never fixed one stays byte-identical.
+            RefEntryTile = game.RefEntryTile is { } e ? e.Y * game.Map.Width + e.X : null,
             // Lost City Rumours by row-major index; omitted when none so a rumour-free game stays byte-identical to v24.
             Rumours = game.Map.Rumours.Count > 0
                 ? game.Map.Rumours.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList()
@@ -528,6 +536,10 @@ public sealed record SaveGame
         if (RefForce is { } ref_) // v40; pre-v40 / omitted → the base REF is re-derived on demand
         {
             game.SetRefForce(new GameSession.Force(ref_.Land, ref_.Naval));
+        }
+        if (RefEntryTile is { } refEntry) // v47; pre-v47 / omitted → unset (REF falls back to rebel-colony landings)
+        {
+            game.SetRefEntryTile(new Position(refEntry % MapWidth, refEntry / MapWidth));
         }
         if (SpanishSuccession == true) // v42; pre-v42 / omitted → not yet done
         {

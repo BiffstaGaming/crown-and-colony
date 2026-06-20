@@ -111,4 +111,72 @@ public class MultiPlayerTests
             game.Units.Count(u => u.OwnerId == power.PlayerId && u.OwnerNationId is null),
             loaded.Units.Count(u => u.OwnerId == power.PlayerId && u.OwnerNationId is null));
     }
+
+    // The Chebyshev distance between two tiles (the same metric the placement code spaces powers by).
+    private static int Cheb(CrownAndColony.GameLogic.World.Position a, CrownAndColony.GameLogic.World.Position b) =>
+        System.Math.Max(System.Math.Abs(a.X - b.X), System.Math.Abs(a.Y - b.Y));
+
+    [Theory]
+    [InlineData(7)]
+    [InlineData(31337)]
+    [InlineData(99)]
+    public void ForeignPowers_SpreadAlongTheCoast_NotClusteredAtOneCorner(ulong seed)
+    {
+        // 86d3c9w5n: each landed foreign power's anchor should sit a sensible distance from every other power's, so
+        // rivals don't all pile into one corner. We take each power's first on-map unit as its anchor proxy.
+        var game = Game.New(Classic, seed: seed);
+        var anchors = game.Players
+            .Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial)
+            .Select(p => game.Units.Where(u => u.OwnerId == p.PlayerId && u.IsOnMap)
+                .OrderBy(u => u.Id).Select(u => (CrownAndColony.GameLogic.World.Position?)u.Position).FirstOrDefault())
+            .Where(pos => pos is not null)
+            .Select(pos => pos!.Value)
+            .ToList();
+
+        // At least two powers landed (the default map has room), and every distinct pair is more than 1 tile apart
+        // (no two powers share a corner/adjacent tile) — the spacing pass spreads them.
+        Assert.True(anchors.Count >= 2, "expected at least two foreign powers to land on the map");
+        for (int i = 0; i < anchors.Count; i++)
+        {
+            for (int j = i + 1; j < anchors.Count; j++)
+            {
+                Assert.True(Cheb(anchors[i], anchors[j]) > 1,
+                    $"powers landed too close: {anchors[i]} vs {anchors[j]} (seed {seed})");
+            }
+        }
+    }
+
+    [Fact]
+    public void RefEntryTile_IsSet_NearTheHumanStart_OnWater()
+    {
+        var game = Game.New(Classic, seed: 7);
+        Assert.NotNull(game.RefEntryTile);
+        CrownAndColony.GameLogic.World.Position entry = game.RefEntryTile!.Value;
+        Assert.True(game.Map.TerrainAt(entry).IsWater, "the REF entry tile must be a water tile");
+
+        // It is the nearest water to the human's start — no land-or-water tile is closer to the start that is also water.
+        CrownAndColony.GameLogic.World.Position humanStart = game.Units.First(u => u.OwnerId == 0 && u.IsOnMap).Position;
+        int entryDist = Cheb(entry, humanStart);
+        Assert.All(game.Map.AllPositions().Where(p => game.Map.TerrainAt(p).IsWater),
+            p => Assert.True(Cheb(p, humanStart) >= entryDist));
+    }
+
+    [Fact]
+    public void RefEntryTile_RoundTripsThroughSave()
+    {
+        var game = Game.New(Classic, seed: 7);
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+        Assert.Equal(game.RefEntryTile, loaded.RefEntryTile);
+    }
+
+    [Fact]
+    public void RefEntryTile_OmittedWhenUnset_AndPreV47LoadsWithNone()
+    {
+        var game = Game.New(Classic, seed: 7);
+        // Simulate an old save that predates the REF entry tile: drop it + back-date the version.
+        SaveGame old = SaveGame.From(game) with { Version = 46, RefEntryTile = null };
+        Assert.DoesNotContain("\"RefEntryTile\"", old.ToJson());
+        Game loaded = SaveGame.FromJson(old.ToJson()).Restore(Classic);
+        Assert.Null(loaded.RefEntryTile);
+    }
 }

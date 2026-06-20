@@ -47,6 +47,18 @@ public sealed partial class Game
     private const string RefCavalryRoleId = "model.role.cavalry";
 
     private Force? _refForce; // the King's growing expeditionary force; null until grown (re-derives the base on demand)
+    private Position? _refEntryTile; // a water tile near the human's start where the REF arrives (FreeCol Player.entryTile); set at Game.New, persisted
+
+    /// <summary>
+    /// The tile the Royal Expeditionary Force enters the New World at — a water tile near the human's starting
+    /// position, chosen at game creation (FreeCol <c>ourREF.setEntryTile(startRef)</c>), so on independence the King's
+    /// fleet always arrives at a fixed, deterministic landfall. Null on a pre-v47 save / a map with no nearby water
+    /// (then the REF falls back to landing around the rebel's coastal colonies).
+    /// </summary>
+    internal Position? RefEntryTile => _refEntryTile;
+
+    /// <summary>Records the REF's entry tile (game creation + save restore).</summary>
+    internal void SetRefEntryTile(Position? tile) => _refEntryTile = tile;
 
     /// <summary>The Royal Expeditionary Force as it stands, or null if it has never been grown beyond the base (which is re-derivable). For the save.</summary>
     internal Force? RefForceOrNull => _refForce;
