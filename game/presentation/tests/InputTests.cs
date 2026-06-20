@@ -98,6 +98,39 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task ClickingAnAdjacentShip_Boards_AndClickingLand_Disembarks()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Place a colonist on a coast and a ship on the water beside it (both unoccupied, deterministic scan).
+        Position landPos = game.Map.AllPositions().First(p =>
+            !game.Map.TerrainAt(p).IsWater
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p)
+            && p.Neighbours().Any(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater
+                && !game.Units.Any(u => u.IsOnMap && u.Position == n)));
+        Position seaPos = landPos.Neighbours().First(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+        Unit colonist = game.SpawnUnit(game.Ruleset.Unit("model.unit.freeColonist"), landPos);
+        Unit ship = game.SpawnUnit(game.Ruleset.Unit("model.unit.caravel"), seaPos);
+
+        // Select the colonist, click the adjacent ship → it boards.
+        await ClickTile(runner, controller, landPos);
+        await ClickTile(runner, controller, seaPos);
+        AssertThat(colonist.IsAboard).IsTrue();
+        AssertThat(colonist.CarrierId!.Value).IsEqual(ship.Id);
+
+        // Select the ship, click the adjacent land → the passenger goes ashore.
+        await ClickTile(runner, controller, seaPos);
+        await ClickTile(runner, controller, landPos);
+        AssertThat(colonist.IsAboard).IsFalse();
+        AssertThat(colonist.Position).IsEqual(landPos);
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task PressingB_WithSelectedUnit_FoundsColony()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (board/sail/disembark + shared goods/passenger capacity; board/sail on the Europe screen; wagon-train goods haulage between colonies) |
-| **Last verified** | 2026-06-19 @ wagon-train haulage (`86d3c9t3g`) |
+| **Last verified** | 2026-06-20 @ map-side board/disembark UI (`86d3c9t4v`) |
 | **Code** | `game/src/GameLogic/GameSession/Game.cs` (board/disembark/capacity), `Units/Unit.cs` (`CarrierId`), `Specification/UnitType.cs` (`Space`/`SpaceTaken`) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/TransportTests.cs`, `Scenarios/JourneyTests.cs` (Journey 7) |
 | **FreeCol reference** | `Unit.java` (`getCargoCapacity`, `getSpaceLeft`, `getCargoSpaceTaken`, `canAdd`), `UnitType.java` (`space`/`spaceTaken`, `getSpaceTaken`), `GoodsContainer.CARGO_SIZE` |
@@ -22,7 +22,7 @@ A colonist can't swim the ocean — to move one across the sea you put it **on a
 **Worked example:**
 > A caravel waits in Europe. You recruited a free colonist last turn — board it (1 of the caravel's 2 slots used). Sail to the New World; three turns later the caravel re-appears off the coast with the colonist still aboard. Disembark it onto the neighbouring grassland and found your second colony there.
 
-**What the player sees and does:** on the **Europe screen** ([europe.md](europe.md)) you board a recruit onto a ship and press *Sail to New World*; ships show their hold (used/free slots) and passengers. Map-side board/disembark (next to a coastal ship) is still future — for now disembarking in the New World is driven through the game API.
+**What the player sees and does:** on the **Europe screen** ([europe.md](europe.md)) you board a recruit onto a ship and press *Sail to New World*; ships show their hold (used/free slots) and passengers. **On the map** (`86d3c9t4v`): with a land unit selected, click an adjacent (or same-tile) friendly ship to **board** it; with a ship selected, click an adjacent land tile to **disembark** a passenger ashore — the same `Board`/`Disembark` oracles the Europe screen uses (see [presentation](../modules/presentation.md)).
 
 **Carrying goods overland — the wagon train.** Ships move goods by sea; a **wagon train** moves them **over land between your colonies**. It loads goods from a colony it's standing on or beside, trundles overland to another colony, and unloads them into that colony's warehouse — the same load/carry/unload it does, but on land instead of water. So an inland colony making tools can ship them to a coastal port for export without a road, and a port can feed muskets to a frontier colony. (A wagon train is built in any colony — see [colonies.md](colonies.md).)
 
@@ -85,5 +85,6 @@ A colonist can't swim the ocean — to move one across the sea you put it **on a
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-20 | **Map-side board/disembark UI** (`86d3c9t4v`): closes the "map-side board/disembark is still future" gap — `GameController.HandleTileClick` boards a selected land unit onto an adjacent/same-tile friendly carrier (`CheckBoard`/`Board`) and disembarks the first eligible passenger of a selected carrier onto an adjacent land tile (`CheckDisembark`/`Disembark`). Presentation-only (ADR-006) over the existing oracles; no logic/save change. +1 L3 (`InputTests.ClickingAnAdjacentShip_Boards_AndClickingLand_Disembarks`). | P5 (`86d3c9t4v`) |
 | 2026-06-19 | **Wagon-train haulage** (`86d3c9t3g`): `LoadFromColony` generalised from `IsNaval` to `IsCarrier` and a new `UnloadToColony` added, both gated on cargo `space > 0` + colony adjacency — so a wagon train carries goods colony-to-colony overland (load at A → move → unload at B), the same load/carry/unload a ship does by sea. Warehouse overflow handled by the end-of-turn spoilage cap. No save/RNG change. +2 L1 (`SailingTests`: overland haul end-to-end; a non-carrier is refused); 1121 + 4 soak green | Phase 5 (`86d3c9t3g`) |
 | 2026-06-13 | Ships carry colonists: `CarrierId`, board/disembark, shared goods/passenger capacity (now enforced); save v13 | Phase 4 slice 5 |

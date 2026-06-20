@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Last verified** | 2026-06-20 @ GoTo orders UI (`86d3c9xjy`) — key **G** + `GotoMarker` over `Game.SetDestination`; **86 L3+L4** green |
+| **Last verified** | 2026-06-20 @ map-side board/disembark (`86d3c9t4v`) — click an adjacent ship to board / adjacent land to disembark; **86 L3+L4** green |
 | **Location** | `game/presentation/`, `game/scenes/` (project: `game/CrownAndColony.csproj`) |
 | **Layer** | Presentation (Godot) |
 | **Depends on** | `GameLogic`, Godot 4.6 |
@@ -59,6 +59,7 @@ Everything the player sees and touches: scene tree, drawing, camera, input, UI. 
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-20 | **Map-side board / disembark** (`86d3c9t4v`): `HandleTileClick` now embarks a selected land unit when it clicks an adjacent/same-tile friendly carrier (`Game.CheckBoard`/`Board`) and puts a passenger ashore when a selected carrier clicks an adjacent land tile (`Game.CheckDisembark`/`Disembark`, the first eligible `Passengers`) — the same oracles the Europe screen uses, now reachable on the map. Presentation-only (ADR-006); no GameLogic/save change. +1 L3 (`InputTests.ClickingAnAdjacentShip_Boards_AndClickingLand_Disembarks`). See [transport.md](../systems/transport.md) | P5 (`86d3c9t4v`) |
 | 2026-06-20 | **GoTo orders + destination UI** (`86d3c9xjy`): the **G** key arms goto-target mode for the selected unit; the next map click forwards to `SetSelectedDestination` → `Game.CheckSetDestination`/`SetDestination` (the per-turn `ProcessGotos` walk was already shipped + tested). A new `GotoMarker` (`MapView/GotoMarker`) outlines the standing destination tile, shown/positioned in `RefreshView`. Presentation-only (ADR-006); no GameLogic/save change; hidden by default → no golden churn. +1 L3 (`InputTests.GotoMode_Arms…`). See [units-movement.md](../systems/units-movement.md) | P5/P7 (`86d3c9xjy`) |
 | 2026-06-20 | **Status report tabs** (`86d3c9x3c` — Foreign Affairs / Native / Religion): added three tabs to `ColonyReportPanel` — Foreign (rival powers' stance/#colonies/#units/gold via `Game.Players`/`StanceBetween`, faithful to FreeCol `NationSummary`), Natives (discovered settlements' alarm/skill/mission/wanted goods, fog-gated on `IsExplored`), Religion (the `Immigration`/`ImmigrationRequired` crosses bar). Presentation-only (ADR-006) over existing oracles; no GameLogic/save change; hidden by default → no golden churn. +1 L3 (`ColonyReportPanelTests.StatusTabs…`). **Exploration** facet deferred (region-discovery logic is missing — its own slice); per-church cross breakdown deferred. | P5/P7 (`86d3c9x3c`) |
 | 2026-06-20 | **Unit report tab** (`86d3c9x15` — Labour/Military/Naval/Cargo): `ColonyReportPanel` is now a tabbed empire-reports screen (`Tab_Colonies`/`Tab_Units`); the Units tab groups the human's units into Military (`Game.IsMilitaryUnit` — a new pure, L1-tested oracle: non-naval offensive type or role), Naval, Cargo (carriers + hold contents), Labour (person residual), each with role + location. Presentation-only (ADR-006) bar the tiny oracle; no save change; hidden by default → no golden churn. +1 L1 (`UnitCategoryTests`) + 1 L3 (`ColonyReportPanelTests.UnitsTab…`). Faithful-subset: an unarmed veteran (expertSoldier ability, unmodelled) lists under Labour for now. See [units-movement.md](../systems/units-movement.md) | P5/P7 (`86d3c9x15`) |

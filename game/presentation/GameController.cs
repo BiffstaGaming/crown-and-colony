@@ -343,6 +343,36 @@ public partial class GameController : Node2D
             return;
         }
 
+        // Board: a selected land unit clicks an adjacent/same-tile friendly carrier with room → it embarks
+        // (ADR-006; the same Board oracle the Europe screen uses). Takes priority over selecting the ship.
+        if (_selectedUnit is { Type.IsNaval: false, IsOnMap: true } boarder)
+        {
+            Unit? ship = _game.PlayerUnits.FirstOrDefault(u =>
+                u.Type.IsCarrier && u.IsOnMap && u.Position == tile && _game.CheckBoard(boarder, u).Allowed);
+            if (ship is not null)
+            {
+                _game.Board(boarder, ship);
+                _notice = $"{boarder.Type.ShortName} boarded the {ship.Type.ShortName}.";
+                _selectedUnit = ship;
+                RefreshView();
+                return;
+            }
+        }
+
+        // Disembark: a selected carrier with passengers clicks an adjacent land tile → put a passenger ashore.
+        if (_selectedUnit is { IsOnMap: true } carrier && carrier.Type.IsCarrier)
+        {
+            Unit? passenger = _game.Passengers(carrier).FirstOrDefault(p => _game.CheckDisembark(p, tile).Allowed);
+            if (passenger is not null)
+            {
+                _game.Disembark(passenger, tile);
+                _notice = $"{passenger.Type.ShortName} went ashore at ({tile.X},{tile.Y}).";
+                _selectedUnit = passenger;
+                RefreshView();
+                return;
+            }
+        }
+
         // Click a unit: select it. Click elsewhere with a selection: try to move. Only the human's own
         // on-map units are clickable (natives and foreign powers are not the player's to command).
         Unit? unitOnTile = _game.PlayerUnits.FirstOrDefault(u => u.IsOnMap && u.Position == tile);
