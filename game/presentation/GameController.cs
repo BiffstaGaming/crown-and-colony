@@ -74,6 +74,7 @@ public partial class GameController : Node2D
     private PanelContainer _nativePanel = null!;
     private PanelContainer _demandPanel = null!;
     private PanelContainer _moundsPanel = null!;
+    private EmigrationChoicePanel _emigrationPanel = null!;
     private PreCombatPanel _preCombatPanel = null!;
     private TurnMessagePanel _turnMessagePanel = null!;
     private PanelContainer _tradeRoutePanel = null!;
@@ -119,6 +120,7 @@ public partial class GameController : Node2D
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
         _demandPanel = GetNode<PanelContainer>("UI/NativeDemandPanel");
         _moundsPanel = GetNode<PanelContainer>("UI/MoundsDecisionPanel");
+        _emigrationPanel = GetNode<EmigrationChoicePanel>("UI/EmigrationChoicePanel");
         _preCombatPanel = GetNode<PreCombatPanel>("UI/PreCombatPanel");
         _turnMessagePanel = GetNode<TurnMessagePanel>("UI/TurnMessagePanel");
         _tradeRoutePanel = GetNode<PanelContainer>("UI/TradeRoutePanel");
@@ -651,6 +653,17 @@ public partial class GameController : Node2D
     public void OpenColopediaPanel() =>
         ((ColopediaPanel)_colopediaPanel).Open(_game);
 
+    /// <summary>Opens the emigration choice dialog for the pending <c>selectRecruit</c> choice (no-op when none pending). Public so scene tests can drive it.</summary>
+    public void OpenEmigrationChoicePanel() =>
+        _emigrationPanel.Open(_game, outcome =>
+        {
+            if (!string.IsNullOrEmpty(outcome))
+            {
+                _notice = outcome;
+            }
+            RefreshView();
+        });
+
     /// <summary>Opens the native-settlement interaction panel, acting with <paramref name="actingUnit"/> (may be null — the panel then prompts to select one).</summary>
     public void OpenNativeSettlementPanel(NativeSettlement settlement, Unit? actingUnit)
     {
@@ -803,6 +816,13 @@ public partial class GameController : Node2D
                 }
                 RefreshView();
             });
+        }
+
+        // A human with William Brewster (selectRecruit) is due an emigrant — surface the choice dialog (once; the
+        // panel re-opens itself for a backlog and clears when the engine clears PendingEmigration). Suppressed on defeat.
+        if (!_game.IsHumanDefeated && _game.PendingEmigration is not null && !_emigrationPanel.Visible)
+        {
+            OpenEmigrationChoicePanel();
         }
     }
 

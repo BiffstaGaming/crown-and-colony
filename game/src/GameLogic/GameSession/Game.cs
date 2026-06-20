@@ -6492,15 +6492,26 @@ public sealed partial class Game
         }
         player.Immigration += crossesThisTurn + europe;
 
-        // Auto-emigrate (no William Brewster / select-recruit yet → a random dock slot).
-        // Guarded on a stocked dock: test rulesets with no recruitable units have none.
+        // Emigrate while immigration is full. Guarded on a stocked dock: test rulesets with no recruitable units
+        // have none. A human player who has earned William Brewster (model.ability.selectRecruit) instead PAUSES on
+        // the first due emigrant — a pending choice the UI resolves via ChooseEmigrant (FreeCol's selectRecruit);
+        // every other case (the AI, and a human without Brewster) keeps the historical random-slot auto-emigrate, so
+        // the existing RNG stream + goldens are byte-identical.
         while (player.RecruitDock.Count > 0 && player.Immigration >= EffectiveImmigrationRequired(player))
         {
+            if (player.IsHuman && HasAbilityFor(player, SelectRecruitAbility))
+            {
+                _pendingEmigration = new PendingEmigrationChoice(player.PlayerId, player.RecruitDock.ToList());
+                return; // the rest waits until the player has chosen (ChooseEmigrant resumes any backlog)
+            }
             Emigrate(player, RandomFor(player).Next(player.RecruitDock.Count));
             ReduceImmigration(player);
             player.ImmigrationRequired += Ruleset.Difficulty.CrossesIncrement;
         }
     }
+
+    /// <summary>William Brewster's gift (FreeCol <c>model.ability.selectRecruit</c>): the player picks which dock recruit emigrates.</summary>
+    private const string SelectRecruitAbility = "model.ability.selectRecruit";
 
     /// <summary>
     /// Consumes immigration on emigration (FreeCol <c>Player.reduceImmigration</c> with
