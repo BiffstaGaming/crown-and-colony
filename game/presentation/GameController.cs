@@ -55,6 +55,7 @@ public partial class GameController : Node2D
     private ulong _currentSeed;
     private GameVariant _variant = GameVariants.Default;
     private MapView _mapView = null!;
+    private RiverOverlay _riverLayer = null!;
     private Node2D _unitLayer = null!;
     private Node2D _colonyLayer = null!;
     private Node2D _nativeLayer = null!;
@@ -94,6 +95,7 @@ public partial class GameController : Node2D
     public override void _Ready()
     {
         _mapView = GetNode<MapView>("MapView");
+        _riverLayer = GetNode<RiverOverlay>("MapView/RiverLayer");
         _unitLayer = GetNode<Node2D>("MapView/UnitLayer");
         _gotoMarker = GetNode<GotoMarker>("MapView/GotoMarker");
         _colonyLayer = GetNode<Node2D>("MapView/ColonyLayer");
@@ -743,6 +745,7 @@ public partial class GameController : Node2D
         }
 
         _mapView.ShowState(_game.Map, _game.Explored, _game.CurrentlyVisible);
+        _riverLayer.ShowState(_game.Map, _game.Explored, _game.CurrentlyVisible);
         _miniMap.ShowState(_game);
         // Outline the selected unit's standing goto destination, if any.
         if (_selectedUnit is { Destination: { } dest })

@@ -180,6 +180,53 @@ public class VisualGoldenTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task MapView_River_MatchesGolden()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+
+        controller.GetWindow().Size = CaptureSize;
+        controller.GetNode<CanvasLayer>("UI").Visible = false;
+        controller.StartNewGame(GoldenSeed);
+        await runner.SimulateFrames(2);
+
+        // Stamp a winding river course on explored land tiles around the start unit so the golden reliably captures
+        // the overlay's connected-course rendering (the generated rivers fall inland, off the start view). A winding
+        // line (not a star) reads like a real river and exercises the connectivity + derived small/large style.
+        // SetImprovement is internal — reach it by reflection from the view assembly (ADR-006: a pure render of the
+        // improvement layer, the same path generation/load use).
+        var game = GetGame(controller);
+        var unitPos = game.PlayerUnits.First(u => u.IsOnMap).Position;
+        var river = CrownAndColony.GameLogic.World.Improvements.TileImprovementType.ClassicRiver();
+        var setImprovement = typeof(CrownAndColony.GameLogic.World.GameMap)
+            .GetMethod("SetImprovement", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        // A deterministic winding course (E, SE, E, SE, …) from the start tile — laid only on explored land tiles.
+        var steps = new (int dx, int dy)[] { (1, 0), (1, 1), (1, 0), (0, 1), (1, 0) };
+        var cursor = unitPos;
+        var course = new System.Collections.Generic.List<CrownAndColony.GameLogic.World.Position> { unitPos };
+        foreach (var (dx, dy) in steps)
+        {
+            var next = new CrownAndColony.GameLogic.World.Position(cursor.X + dx, cursor.Y + dy);
+            if (game.Map.InBounds(next) && game.IsExplored(next) && !game.Map.TerrainAt(next).IsWater)
+            {
+                course.Add(next);
+                cursor = next;
+            }
+        }
+        foreach (var p in course)
+        {
+            setImprovement.Invoke(game.Map, [p, river]);
+        }
+
+        controller.GetNode<Camera2D>("Camera").Position = MapView.TileCentre(unitPos);
+        runner.SimulateKeyPressed(Key.F5); // QuickSave → RefreshView, redrawing the river layer (no AI/turn advance)
+        await runner.SimulateFrames(3);
+
+        Image actual = controller.GetViewport().GetTexture().GetImage();
+        GoldenAssert.Assert("river-seed424242", actual);
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task MiniMap_SeededWorld_MatchesGolden()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
