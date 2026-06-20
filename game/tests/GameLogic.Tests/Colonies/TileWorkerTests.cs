@@ -144,6 +144,114 @@ public class TileWorkerTests
         Assert.Empty(game.TileWorkOptions(new Position(99, 99)));
     }
 
+    // ---- Coastal fish bonus (86d3c9we8): FreeCol fishBonusLand, +2 fish on coastal water ----
+
+    /// <summary>
+    /// Builds an arbitrary-size map from an explicit terrain grid (row-major), with no colonies, so individual
+    /// tile-yield potentials can be asserted directly. Mirrors <see cref="ColonyOnCross"/>'s save-restore approach.
+    /// </summary>
+    private static Game MapFrom(int width, int height, string[] terrain)
+    {
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = width,
+            MapHeight = height,
+            Terrain = terrain,
+            Units = [],
+            Explored = [],
+            Colonies = [],
+        };
+        return save.Restore(Classic);
+    }
+
+    [Fact]
+    public void CoastalOceanTile_YieldsTwoMoreFish_ThanOpenOcean()
+    {
+        // Column 0 = open ocean (only ocean neighbours); column 2's ocean touches the central land column.
+        // Row-major 3x3:
+        //   ocean  plains ocean
+        //   ocean  plains ocean
+        //   ocean  plains ocean
+        string[] terrain =
+        [
+            "model.tile.ocean", "model.tile.plains", "model.tile.ocean",
+            "model.tile.ocean", "model.tile.plains", "model.tile.ocean",
+            "model.tile.ocean", "model.tile.plains", "model.tile.ocean",
+        ];
+        Game game = MapFrom(3, 3, terrain);
+
+        // Open-ocean tile (0,0): land neighbours = plains at (1,0) and (1,1) = 2 → not coastal → base 2 fish.
+        int openOcean = game.TileYieldPotential(new Position(0, 0), Fish);
+        // Coastal ocean tile (2,1): land neighbours = plains at (1,0),(1,1),(1,2) = 3 → coastal → 2 + 2 = 4 fish.
+        int coastal = game.TileYieldPotential(new Position(2, 1), Fish);
+
+        Assert.Equal(2, openOcean);
+        Assert.Equal(4, coastal);
+        Assert.Equal(openOcean + 2, coastal); // the bonus is exactly the spec amount (+2)
+    }
+
+    [Fact]
+    public void OpenOceanWithTooFewLandNeighbours_GetsNoFishBonus()
+    {
+        // Edge ocean tile with at most two land neighbours stays at the open-ocean 2 fish (FreeCol adjacentLand > 2).
+        string[] terrain =
+        [
+            "model.tile.ocean", "model.tile.ocean", "model.tile.ocean",
+            "model.tile.ocean", "model.tile.ocean", "model.tile.ocean",
+            "model.tile.ocean", "model.tile.plains", "model.tile.plains",
+        ];
+        Game game = MapFrom(3, 3, terrain);
+
+        // (1,1) touches exactly two land tiles — plains at (1,2) and (2,2) → 2 land neighbours → no bonus.
+        Assert.Equal(2, game.TileYieldPotential(new Position(1, 1), Fish));
+        // A land-locked-by-water ocean corner (0,0): 0 land neighbours → no bonus.
+        Assert.Equal(2, game.TileYieldPotential(new Position(0, 0), Fish));
+    }
+
+    [Fact]
+    public void CoastalBonus_AppliesOnlyToFish_NotOtherGoods()
+    {
+        // A coastal ocean tile produces no grain regardless of land adjacency (the bonus is fish-specific).
+        string[] terrain =
+        [
+            "model.tile.plains", "model.tile.plains", "model.tile.plains",
+            "model.tile.plains", "model.tile.ocean",  "model.tile.plains",
+            "model.tile.plains", "model.tile.plains", "model.tile.plains",
+        ];
+        Game game = MapFrom(3, 3, terrain);
+
+        // Centre ocean (1,1) has 8 land neighbours → coastal → 4 fish, but still 0 grain.
+        Assert.Equal(4, game.TileYieldPotential(new Position(1, 1), Fish));
+        Assert.Equal(0, game.TileYieldPotential(new Position(1, 1), Grain));
+    }
+
+    [Fact]
+    public void LakeTilesAlsoGetTheCoastalBonus_HighSeasDoesNot()
+    {
+        // Lakes are non-high-seas water, so the fishBonusLand scope (isWater && !highSeas) covers them too.
+        // High seas (the map edge a ship sails from) is excluded by the improvement's match-negated scope.
+        string[] lakeMap =
+        [
+            "model.tile.plains", "model.tile.plains", "model.tile.plains",
+            "model.tile.plains", "model.tile.lake",   "model.tile.plains",
+            "model.tile.plains", "model.tile.plains", "model.tile.plains",
+        ];
+        Game lakeGame = MapFrom(3, 3, lakeMap);
+        Assert.Equal(4, lakeGame.TileYieldPotential(new Position(1, 1), Fish)); // 2 base + 2 coastal
+
+        string[] highSeasMap =
+        [
+            "model.tile.plains",    "model.tile.plains", "model.tile.plains",
+            "model.tile.plains",    "model.tile.highSeas", "model.tile.plains",
+            "model.tile.plains",    "model.tile.plains", "model.tile.plains",
+        ];
+        Game highSeasGame = MapFrom(3, 3, highSeasMap);
+        Assert.Equal(2, highSeasGame.TileYieldPotential(new Position(1, 1), Fish)); // base only, no coastal bonus
+    }
+
     [Fact]
     public void SaveRoundTrip_PreservesWorkers_AndPreV5LoadsNone()
     {

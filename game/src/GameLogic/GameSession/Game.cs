@@ -6394,12 +6394,29 @@ public sealed partial class Game
         return Math.Max(0, (int)yield);
     }
 
+    /// <summary>The good a water tile's coastal fish bonus applies to (FreeCol <c>model.improvement.fishBonusLand</c>).</summary>
+    private const string FishId = "model.goods.fish";
+
     /// <summary>
-    /// The tile's <b>potential</b> yield of one goods type — the terrain's best attended output plus any on-tile
-    /// bonus-resource boost, but <em>without</em> any player's Founding-Father goods modifiers (FreeCol
-    /// <c>Tile.getPotentialProduction</c> with a null owner). This is the player-independent figure native land is
-    /// valued from (see <see cref="LandPrice(Player, Position)"/>); <see cref="TileYield(Player, Position, string)"/>
-    /// folds the acting player's fathers on top of it for actual colony production. 0 when the terrain can't make it.
+    /// Flat fish added to a coastal water tile's potential (FreeCol classic <c>fishBonusLand</c> modifier, index-50
+    /// additive value 2 — the Col1 "+2 fish on the coast" rule that makes coastal colonies viable).
+    /// </summary>
+    private const int CoastalFishBonus = 2;
+
+    /// <summary>
+    /// FreeCol's Col1 coastal-fish threshold: a water tile needs <b>more than two</b> adjacent land tiles to earn the
+    /// bonus (the map generator applies <c>fishBonusLand</c> only when <c>adjacentLand &gt; 2</c>; fewer land neighbours
+    /// stay at the open-ocean 2 fish). See FreeCol <c>TerrainGenerator.perhapsAddBonus</c>.
+    /// </summary>
+    private const int CoastalLandNeighboursRequired = 2;
+
+    /// <summary>
+    /// The tile's <b>potential</b> yield of one goods type — the terrain's best attended output, any on-tile
+    /// bonus-resource boost, and (for fish on coastal water) the coastal fish bonus, but <em>without</em> any player's
+    /// Founding-Father goods modifiers (FreeCol <c>Tile.getPotentialProduction</c> with a null owner). This is the
+    /// player-independent figure native land is valued from (see <see cref="LandPrice(Player, Position)"/>);
+    /// <see cref="TileYield(Player, Position, string)"/> folds the acting player's fathers on top of it for actual
+    /// colony production. 0 when the terrain can't make it.
     /// </summary>
     internal int TileYieldPotential(Position tile, string goodsId)
     {
@@ -6428,7 +6445,31 @@ public sealed partial class Game
             }
         }
 
+        // Coastal fish bonus (FreeCol fishBonusLand): +2 fish on a coastal water tile — one with more than two
+        // adjacent land tiles. High-seas tiles are excluded (the improvement's match-negated scope); the river-mouth
+        // +1 (fishBonusRiver) is skipped because we don't model rivers yet.
+        if (goodsId == FishId && IsCoastalWater(tile))
+        {
+            yield += CoastalFishBonus;
+        }
+
         return (int)yield;
+    }
+
+    /// <summary>
+    /// Whether a water tile qualifies for the coastal fish bonus: water (excluding the high seas) with more than two
+    /// adjacent land tiles. Pure read of terrain + adjacency (no RNG, no stored state) — faithful to FreeCol's
+    /// <c>TerrainGenerator.perhapsAddBonus</c> (<c>adjacentLand &gt; 2</c>, high seas excluded).
+    /// </summary>
+    private bool IsCoastalWater(Position tile)
+    {
+        TerrainType terrain = Map.TerrainAt(tile);
+        if (!terrain.IsWater || terrain.Id == HighSeasId)
+        {
+            return false;
+        }
+        int adjacentLand = tile.Neighbours().Count(n => Map.InBounds(n) && !Map.TerrainAt(n).IsWater);
+        return adjacentLand > CoastalLandNeighboursRequired;
     }
 
     /// <summary>
