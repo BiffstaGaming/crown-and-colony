@@ -34,9 +34,20 @@ public partial class EmigrationChoicePanel : PanelContainer
             return;
         }
 
-        GetNode<Label>("VBox/EmigrationTitle").Text = "A new emigrant is ready";
-        GetNode<Label>("VBox/EmigrationInfo").Text =
-            "Religious unrest in Europe has produced an emigrant. Choose who sails to the New World:";
+        if (pending.IsFountainOfYouth)
+        {
+            // The Fountain-of-Youth burst routes through the same select-recruit seam (FreeCol MigrationType.FOUNTAIN):
+            // the human hand-picks each of the dx free immigrants, one prompt at a time.
+            GetNode<Label>("VBox/EmigrationTitle").Text = "A Fountain of Youth!";
+            GetNode<Label>("VBox/EmigrationInfo").Text =
+                $"Settlers flock to your docks ({pending.Remaining} to choose). Pick who sails to the New World:";
+        }
+        else
+        {
+            GetNode<Label>("VBox/EmigrationTitle").Text = "A new emigrant is ready";
+            GetNode<Label>("VBox/EmigrationInfo").Text =
+                "Religious unrest in Europe has produced an emigrant. Choose who sails to the New World:";
+        }
 
         var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
         foreach (Node child in dynamic.GetChildren())

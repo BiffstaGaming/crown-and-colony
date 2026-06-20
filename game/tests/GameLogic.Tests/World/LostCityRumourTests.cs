@@ -321,6 +321,99 @@ public class LostCityRumourTests
         Assert.False(game.Map.HasRumour(tile));
     }
 
+    // ---- Fountain of Youth → recruit-choice routing (86d3c9ujx) ----
+
+    private const string Brewster = "model.foundingFather.williamBrewster";
+
+    /// <summary>A game whose human Congress holds the given fathers, with a free colonist on a rumour tile.</summary>
+    private static (Game Game, Unit Unit, Position Tile) ExplorerWithCongress(params string[] fathers)
+    {
+        SaveGame save = SaveGame.From(Game.New(Classic, Seed));
+        Game game = (save with { Players = save.Players!.Select(p => p with { Congress = p.IsHuman ? fathers : p.Congress }).ToList() })
+            .Restore(Classic);
+        Position tile = game.PlayerUnits.First().Position;
+        Unit unit = game.SpawnUnit(Classic.Unit(FreeColonist), tile);
+        game.Map.AddRumour(tile);
+        return (game, unit, tile);
+    }
+
+    [Fact]
+    public void Explore_FountainOfYouth_WithBrewster_RoutesToTheRecruitChoice_DrawingNoBurstRng()
+    {
+        // A select-recruit human (William Brewster): the FoY burst arms a pending recruit choice of dx picks instead
+        // of generating the immigrants directly. A single scripted value (the FoY type roll, 0) is enough — the burst
+        // makes NO recruit draws here (each pick draws later, on the player's own stream), so an empty queue afterward
+        // proves no RNG was spent on the burst.
+        (Game game, Unit unit, Position tile) = ExplorerWithCongress(Brewster);
+        int europeBefore = game.Units.Count(u => u.OwnerId == 0 && !u.IsNative && u.Location == UnitLocation.InEurope);
+
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(0)); // only the FoY type roll
+
+        Assert.Equal(Game.LostCityRumourType.FountainOfYouth, outcome);
+        Assert.NotNull(game.PendingEmigration);
+        Assert.True(game.PendingEmigration!.IsFountainOfYouth);
+        Assert.Equal(8, game.PendingEmigration.Remaining);                 // dx picks owed
+        Assert.Equal(game.RecruitDock, game.PendingEmigration.RecruitTypeIds); // pick from the live dock
+        Assert.Equal(europeBefore, game.Units.Count(u => u.OwnerId == 0 && !u.IsNative && u.Location == UnitLocation.InEurope)); // none generated yet
+        Assert.False(game.Map.HasRumour(tile));
+    }
+
+    [Fact]
+    public void FountainOfYouth_ChooseEmigrant_LandsDxImmigrants_WithoutConsumingImmigration()
+    {
+        (Game game, Unit unit, Position tile) = ExplorerWithCongress(Brewster);
+        game.ExploreRumour(unit, tile, new ScriptedRandom(0)); // arm the dx-pick FoY choice
+        int immigrationBefore = game.HumanPlayer.Immigration;
+        int requiredBefore = game.HumanPlayer.ImmigrationRequired;
+        int europeBefore = game.Units.Count(u => u.OwnerId == 0 && !u.IsNative && u.Location == UnitLocation.InEurope);
+
+        int picks = 0;
+        while (game.PendingEmigration is { IsFountainOfYouth: true })
+        {
+            Assert.NotNull(game.ChooseEmigrant(0)); // always take dock slot 0
+            picks++;
+        }
+
+        Assert.Equal(8, picks);                                            // exactly dx picks
+        Assert.Null(game.PendingEmigration);                               // the burst cleared
+        Assert.Equal(europeBefore + 8, game.Units.Count(u => u.OwnerId == 0 && !u.IsNative && u.Location == UnitLocation.InEurope));
+        Assert.Equal(immigrationBefore, game.HumanPlayer.Immigration);     // FoY consumes no immigration (FreeCol MigrationType.FOUNTAIN)
+        Assert.Equal(requiredBefore, game.HumanPlayer.ImmigrationRequired); // and never raises the target
+        Assert.Equal(Game.RecruitSlots, game.RecruitDock.Count);           // the dock stayed full (refilled each pick)
+    }
+
+    [Fact]
+    public void Explore_FountainOfYouth_WithoutBrewster_StillGeneratesDirectly_ByteIdenticalPath()
+    {
+        // A human WITHOUT Brewster keeps the historical direct path: dx recruit draws off the passed stream, no pause.
+        // (Guards the byte-identity requirement for every non-choosing player.)
+        (Game game, Unit unit, Position tile) = ExplorerOnRumour();
+        int europeBefore = game.Units.Count(u => u.OwnerId == 0 && !u.IsNative && u.Location == UnitLocation.InEurope);
+
+        game.ExploreRumour(unit, tile, new ScriptedRandom(0, 0, 0, 0, 0, 0, 0, 0, 0)); // FoY + dx direct draws
+
+        Assert.Null(game.PendingEmigration); // no choice — generated directly
+        Assert.Equal(europeBefore + 8, game.Units.Count(u => u.OwnerId == 0 && !u.IsNative && u.Location == UnitLocation.InEurope));
+    }
+
+    [Fact]
+    public void Explore_FountainOfYouth_WithNoEurope_GeneratesNothing_AndNoticesTheGate()
+    {
+        // A human whose Europe is closed (empty recruit dock — a rebel, or a minimal ruleset) gets the noEurope gate:
+        // no recruits, no pause, and a player-facing "no Europe" notice instead of the generic success line.
+        (Game game, Unit unit, Position tile) = ExplorerOnRumour();
+        game.HumanPlayer.RecruitDockList.Clear(); // simulate a closed Europe (as DeclareIndependence does)
+        int unitsBefore = game.Units.Count;
+
+        Game.LostCityRumourType outcome = game.ExploreRumour(unit, tile, new ScriptedRandom(0)); // FoY; no burst draws
+
+        Assert.Equal(Game.LostCityRumourType.FountainOfYouth, outcome);
+        Assert.Null(game.PendingEmigration);                  // no choice armed
+        Assert.Equal(unitsBefore, game.Units.Count);          // no immigrants generated
+        RumourNotice notice = Assert.Single(game.RumourNotices);
+        Assert.Contains("no Europe", notice.Message, System.StringComparison.OrdinalIgnoreCase);
+    }
+
     private const string TreasureTrain = "model.unit.treasureTrain";
 
     [Fact]

@@ -94,6 +94,7 @@ public sealed partial class Game
     private readonly List<RumourNotice> _rumourNotices = []; // transient: Lost City Rumours the human resolved this turn (non-mounds outcomes; not saved)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
+    private FountainResult _lastFountainResult; // transient: how the most recent FoY burst was handled — picks the player-facing message in ExploreRumour
     private readonly Player _human;
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
@@ -4377,13 +4378,25 @@ public sealed partial class Game
         // Surface the resolved outcome to the human as a transient notice (the move handler has no return value to
         // read for a rumour, like the AI-phase combat/raid notices). An AI/foreign explorer has no UI, so its
         // rumour outcomes are never recorded — only the human's land in the player-facing list. The strange-mounds
-        // path returned above; its description comes via ResolvePendingMounds.
+        // path returned above; its description comes via ResolvePendingMounds. A Fountain of Youth's message is
+        // context-aware (generated / queued for the recruit-choice / no Europe), so it owns its own description.
         if (ownerIsHuman)
         {
-            _rumourNotices.Add(new RumourNotice(DescribeMoundsOutcome(outcome), target));
+            string message = outcome == LostCityRumourType.FountainOfYouth
+                ? DescribeFountainOutcome(_lastFountainResult)
+                : DescribeMoundsOutcome(outcome);
+            _rumourNotices.Add(new RumourNotice(message, target));
         }
         return outcome;
     }
+
+    /// <summary>A one-line player-facing description of how a Fountain-of-Youth burst was handled (the recruit-choice / no-Europe variants of the generic FoY line).</summary>
+    private static string DescribeFountainOutcome(FountainResult result) => result switch
+    {
+        FountainResult.QueuedForChoice => "A Fountain of Youth! Choose the settlers who flock to your docks.",
+        FountainResult.NoEurope => "A Fountain of Youth — but with no Europe to receive them, the settlers cannot come.",
+        _ => "A Fountain of Youth! Settlers flock to your docks.",
+    };
 
     /// <summary>
     /// Applies a resolved rumour outcome's effect (shared by the direct <see cref="ExploreRumour"/> and the
@@ -4416,7 +4429,9 @@ public sealed partial class Game
                 SpawnUnit(Ruleset.Unit(FoundInLostCityUnitTypeId), target, unit.OwnerId); // a found colonist musters on the tile
                 break;
             case LostCityRumourType.FountainOfYouth:
-                GenerateFountainRecruits(unit.OwnerId, random); // a burst of dx immigrants arrives on the owner's Europe dock
+                // A burst of dx immigrants: generated directly (AI / non-Brewster) or routed to the human's
+                // select-recruit choice. The result picks the player-facing message in ExploreRumour.
+                _lastFountainResult = GenerateFountainRecruits(unit.OwnerId, random);
                 break;
             case LostCityRumourType.Ruins:
                 // FreeCol: rand(0, dx·2)·300 + 50 → a small find (< 500) is gold; a larger one becomes a treasure train.
@@ -4536,25 +4551,64 @@ public sealed partial class Game
     private void SpawnTreasureTrain(Position target, int ownerId, int amount) =>
         SpawnUnit(Ruleset.Unit(TreasureTrainUnitTypeId), target, ownerId).SetTreasureAmount(amount);
 
-    /// <summary>
-    /// A Fountain of Youth: lands <see cref="RumourDifficultyDx"/> fresh immigrants on the owner's Europe dock
-    /// (FreeCol <c>ServerEurope.generateFountainRecruits(dx)</c>). Each is an independent weighted recruit draw
-    /// (<see cref="DrawRecruitType(Player, IGameRandom)"/> → <see cref="CreateEuropeRecruit"/> off <paramref name="random"/>,
-    /// the exploring unit's owner stream) — they arrive as units <em>in Europe</em>, not as the three dock
-    /// <em>candidates</em>, so the player still ships them over. FreeCol lets the human pick each immigrant; we
-    /// generate them directly (its AI path) until a select-recruit flow exists. A no-op for a player with no
-    /// recruitable unit types (minimal rulesets).
-    /// </summary>
-    private void GenerateFountainRecruits(int ownerId, IGameRandom random)
+    /// <summary>How a Fountain-of-Youth burst was handled — drives the player-facing message (<see cref="ExploreRumour"/>).</summary>
+    internal enum FountainResult
     {
-        if (PlayerById(ownerId) is not { } owner || !Ruleset.UnitTypes.Any(t => IsRecruitable(owner, t)))
+        /// <summary>The <c>dx</c> immigrants were generated directly onto the owner's Europe dock (the AI / non-choosing path).</summary>
+        Generated,
+
+        /// <summary>A select-recruit human: the <c>dx</c> picks were armed as a <see cref="PendingEmigration"/> choice (the human picks each).</summary>
+        QueuedForChoice,
+
+        /// <summary>The owner has no Europe to receive them (a rebel/independent player, or a ruleset with no recruitable units) — nothing happens (FreeCol's <c>noEurope</c> gate).</summary>
+        NoEurope,
+    }
+
+    /// <summary>
+    /// A Fountain of Youth: a burst of <see cref="RumourDifficultyDx"/> fresh immigrants for the owner's Europe
+    /// (FreeCol <c>ServerUnit.csExploreLostCityRumour</c> FOUNTAIN_OF_YOUTH).
+    /// <list type="bullet">
+    /// <item><b>No Europe</b> (a rebel/independent player whose dock is closed, or a ruleset with no recruitable
+    /// units) → nothing happens, returning <see cref="FountainResult.NoEurope"/> (FreeCol's <c>europe == null</c>
+    /// → <c>noEurope</c> message gate).</item>
+    /// <item><b>A select-recruit human</b> (William Brewster, <c>model.ability.selectRecruit</c>) → the <c>dx</c>
+    /// picks are armed as a Fountain-of-Youth <see cref="PendingEmigration"/> choice so the human hand-picks each
+    /// immigrant from the dock (FreeCol <c>setRemainingEmigrants(dx)</c> + the <c>selectRecruit</c> prompts); no
+    /// recruits are generated here and <b>no RNG is drawn off <paramref name="random"/></b> — the per-pick draws
+    /// run later, on the player's own stream, inside <see cref="ChooseEmigrant"/>. (If a normal Brewster emigrant
+    /// is already pending — a rare same-instant overlap — falls back to the direct path so neither is lost.)</item>
+    /// <item><b>Everyone else</b> (the AI, foreign powers, and a human <em>without</em> Brewster) → the <c>dx</c>
+    /// immigrants are generated directly, each an independent weighted draw
+    /// (<see cref="DrawRecruitType(Player, IGameRandom)"/> → <see cref="CreateEuropeRecruit"/> off
+    /// <paramref name="random"/>, the explorer's owner stream), exactly as before — so every non-choosing player's
+    /// RNG path is byte-identical (ADR-009).</item>
+    /// </list>
+    /// The immigrants arrive as units <em>in Europe</em> (not as the three dock candidates), so the owner still
+    /// ships them over.
+    /// </summary>
+    private FountainResult GenerateFountainRecruits(int ownerId, IGameRandom random)
+    {
+        if (PlayerById(ownerId) is not { } owner
+            || owner.RecruitDock.Count == 0
+            || !Ruleset.UnitTypes.Any(t => IsRecruitable(owner, t)))
         {
-            return;
+            return FountainResult.NoEurope; // no Europe (closed dock / minimal ruleset) — the FreeCol noEurope gate
         }
+
+        if (owner.IsHuman && HasAbilityFor(owner, SelectRecruitAbility) && _pendingEmigration is null)
+        {
+            // Route the burst through the shipped select-recruit seam: arm dx FoY picks the human resolves one by one
+            // (no immigration consumed; no draw here — ChooseEmigrant draws each refill on the player's own stream).
+            _pendingEmigration = new PendingEmigrationChoice(
+                owner.PlayerId, owner.RecruitDock.ToList(), IsFountainOfYouth: true, Remaining: RumourDifficultyDx);
+            return FountainResult.QueuedForChoice;
+        }
+
         for (int i = 0; i < RumourDifficultyDx; i++)
         {
             CreateEuropeRecruit(owner, DrawRecruitType(owner, random));
         }
+        return FountainResult.Generated;
     }
 
     /// <summary>

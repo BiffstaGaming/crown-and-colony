@@ -46,6 +46,38 @@ public class EmigrationChoicePanelTests
         AssertThat(game.PendingEmigration == null).IsTrue(); // and the pending state cleared
     }
 
+    [TestCase]
+    public async Task FountainOfYouthChoice_OpensTheModal_WithFountainText_AndPicksEachImmigrant()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        Game game = GameOf(controller);
+
+        // Inject a 2-pick Fountain-of-Youth choice (what the engine arms for a Brewster human exploring an FoY rumour).
+        InjectPendingEmigration(game, new PendingEmigrationChoice(
+            game.HumanPlayer.PlayerId, new List<string>(game.RecruitDock), IsFountainOfYouth: true, Remaining: 2));
+        Refresh(controller);
+        await runner.SimulateFrames(1);
+
+        var panel = controller.GetNode<PanelContainer>("UI/EmigrationChoicePanel");
+        AssertThat(panel.Visible).IsTrue();
+        AssertThat(controller.GetNode<Label>("UI/EmigrationChoicePanel/VBox/EmigrationTitle").Text).Contains("Fountain of Youth");
+
+        // First pick: the burst still owes one → the panel re-arms (stays open) rather than closing.
+        controller.GetNode<Button>("UI/EmigrationChoicePanel/VBox/Dynamic/Choose_0").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(panel.Visible).IsTrue();
+        AssertThat(game.PendingEmigration != null && game.PendingEmigration.IsFountainOfYouth).IsTrue();
+        AssertThat(game.PendingEmigration!.Remaining).IsEqual(1);
+
+        // Second (last) pick: the burst is spent → the modal closes and the pending state clears.
+        controller.GetNode<Button>("UI/EmigrationChoicePanel/VBox/Dynamic/Choose_0").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(panel.Visible).IsFalse();
+        AssertThat(game.PendingEmigration == null).IsTrue();
+    }
+
     private static void InjectPendingEmigration(Game game, PendingEmigrationChoice choice) =>
         typeof(Game).GetField("_pendingEmigration", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(game, choice);
