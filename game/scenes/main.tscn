@@ -1,4 +1,4 @@
-[gd_scene load_steps=20 format=3]
+[gd_scene load_steps=21 format=3]
 
 [ext_resource type="Script" path="res://presentation/GameController.cs" id="1"]
 [ext_resource type="Script" path="res://presentation/MapView.cs" id="2"]
@@ -20,6 +20,7 @@
 [ext_resource type="Script" path="res://presentation/ColopediaPanel.cs" id="19"]
 [ext_resource type="Script" path="res://presentation/EmigrationChoicePanel.cs" id="20"]
 [ext_resource type="Script" path="res://presentation/RiverOverlay.cs" id="21"]
+[ext_resource type="Script" path="res://presentation/ImprovementOverlay.cs" id="22"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -29,6 +30,9 @@ script = ExtResource("2")
 
 [node name="RiverLayer" type="Node2D" parent="MapView"]
 script = ExtResource("21")
+
+[node name="ImprovementLayer" type="Node2D" parent="MapView"]
+script = ExtResource("22")
 
 [node name="NativeLayer" type="Node2D" parent="MapView"]
 
