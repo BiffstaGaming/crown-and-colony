@@ -90,8 +90,21 @@ public static class MapGenerator
         // Partition the finished terrain into named regions (polar, ocean, mountain, land). Pure and RNG-free,
         // so it consumes no randomness and leaves the map RNG state untouched — see RegionGenerator.
         (int[] regionIds, IReadOnlyList<Region> regions) = RegionGenerator.Assign(map);
-        map.SetRegions(regionIds, regions);
-        return map;
+
+        // Lake terrain: retype the enclosed-water tiles that RegionGenerator just classified as Lake regions to the
+        // lake terrain type (FreeCol TerrainGenerator.makeLakes `t.setType(lakeType)`) — completing the lake slice
+        // beyond the region tag. RNG-free; a lake tile is still water, so the region layer is unchanged and reused
+        // (no second Assign). Lake renders as ocean in the main map view (MapView BaseFor), so the main map golden
+        // is unaffected; save stores terrain ids, so an enclosed tile just serialises "model.tile.lake" (no bump).
+        TerrainType lake = ruleset.Terrain("model.tile.lake");
+        for (int i = 0; i < regionIds.Length; i++)
+        {
+            if (regions[regionIds[i]].Type == RegionType.Lake)
+            {
+                terrain[i] = lake;
+            }
+        }
+        return new GameMap(width, height, terrain, resources, regionIds: regionIds, regions: regions);
     }
 
     /// <summary>

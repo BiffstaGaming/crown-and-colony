@@ -135,6 +135,23 @@ public class MapGeneratorTests
     }
 
     [Fact]
+    public void GeneratedMap_RetypesEnclosedLakeRegionsToLakeTerrain()
+    {
+        // Enclosed water (the Lake regions RegionGenerator finds) is retyped to model.tile.lake terrain (FreeCol
+        // makeLakes). Seed 424242 generates enclosed lakes; assert region and terrain agree, both ways.
+        GameMap map = Generate(424242);
+
+        var lakeRegionTiles = map.AllPositions().Where(p => map.RegionOf(p)!.Type == RegionType.Lake).ToList();
+        Assert.NotEmpty(lakeRegionTiles); // non-vacuous: this seed has enclosed lakes
+        Assert.All(lakeRegionTiles, p => Assert.Equal("model.tile.lake", map.TerrainAt(p).Id));
+
+        // And no tile is lake terrain without being a Lake region (the retype is exactly the Lake-region set).
+        Assert.All(
+            map.AllPositions().Where(p => map.TerrainAt(p).Id == "model.tile.lake"),
+            p => Assert.Equal(RegionType.Lake, map.RegionOf(p)!.Type));
+    }
+
+    [Fact]
     public void Map_HasSubstantialVariedLandmass()
     {
         GameMap map = Generate(7);

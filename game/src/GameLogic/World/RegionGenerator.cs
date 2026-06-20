@@ -15,8 +15,8 @@ namespace CrownAndColony.GameLogic.World;
 /// regions during a generation-time range walk; our altitude is per-tile noise, so we derive mountain regions
 /// from the resulting hill/mountain terrain instead (same <see cref="RegionType.Mountain"/> and
 /// <c>score = 2 × size</c>). Enclosed water the ocean fill cannot reach is tagged <see cref="RegionType.Lake"/>
-/// (FreeCol <c>TerrainGenerator.createLakeRegions</c>) — region classification only; FreeCol additionally retypes
-/// the tile to lake <i>terrain</i>, which we defer (it would move the map goldens). FreeCol's nine virtual
+/// (FreeCol <c>TerrainGenerator.createLakeRegions</c>); <see cref="MapGenerator"/> then retypes those tiles to lake
+/// <i>terrain</i> after region assignment (FreeCol <c>makeLakes</c>). FreeCol's nine virtual
 /// "geographic thirds" bounding boxes (used only to seed native placement) and the RIVER/COAST/DESERT region
 /// types are deferred until rivers and that placement hook exist.</para>
 /// </summary>
@@ -100,8 +100,8 @@ public static class RegionGenerator
         // Any water the directional ocean fill never reached is an enclosed body with no sea route out: an
         // inland lake (FreeCol TerrainGenerator.createLakeRegions tags exactly this set — water that is
         // "!isLand && getRegion()==null" after the oceans are assigned). One score-0 lake region per blob, so
-        // no water tile is left unassigned. Region classification only: FreeCol also retypes the tile to lake
-        // terrain, which we defer (it would move the map goldens); rivers (RNG-bearing) are a separate slice.
+        // no water tile is left unassigned. MapGenerator retypes these tiles to lake terrain after this pass
+        // (FreeCol makeLakes); rivers (RNG-bearing) are a separate slice.
         for (int y = 0; y < h; y++)
         {
             for (int x = 0; x < w; x++)
