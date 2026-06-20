@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://presentation/GameController.cs" id="1"]
 [ext_resource type="Script" path="res://presentation/MapView.cs" id="2"]
@@ -12,6 +12,7 @@
 [ext_resource type="Script" path="res://presentation/MiniMap.cs" id="11"]
 [ext_resource type="Script" path="res://presentation/ColonyReportPanel.cs" id="12"]
 [ext_resource type="Script" path="res://presentation/FindSettlementPanel.cs" id="13"]
+[ext_resource type="Script" path="res://presentation/FoundingFatherPanel.cs" id="14"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -293,6 +294,37 @@ layout_mode = 2
 size_flags_vertical = 3
 
 [node name="CloseButton" type="Button" parent="UI/FindSettlementPanel/VBox"]
+layout_mode = 2
+text = "Close"
+
+[node name="FoundingFatherPanel" type="PanelContainer" parent="UI"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -240.0
+offset_top = -180.0
+offset_right = 240.0
+offset_bottom = 180.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("14")
+
+[node name="VBox" type="VBoxContainer" parent="UI/FoundingFatherPanel"]
+layout_mode = 2
+
+[node name="FatherTitle" type="Label" parent="UI/FoundingFatherPanel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+
+[node name="Dynamic" type="VBoxContainer" parent="UI/FoundingFatherPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CloseButton" type="Button" parent="UI/FoundingFatherPanel/VBox"]
 layout_mode = 2
 text = "Close"
 
