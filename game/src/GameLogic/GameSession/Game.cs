@@ -2807,8 +2807,12 @@ public sealed partial class Game
     /// <summary>How far (Chebyshev) a foreign power lands from the human's start, so rivals stay outside the human's view.</summary>
     private const int ForeignLandingMinDistance = 6;
 
-    /// <summary>Colonies a foreign power's AI founds before its remaining colonists explore instead (FP-4 minimal AI).</summary>
-    private const int MaxAiColonies = 1;
+    /// <summary>Colonies a foreign power's AI founds before its remaining colonists explore instead (FP-4 minimal AI).
+    /// Lifted from 1 to 3 once the colony economy (`86d3c9vmr`: food-first tile plan + building-worker fill) was proven
+    /// to keep multiple AI colonies fed and solvent under the soak (no starvation / negative treasury at 25 seeds ×
+    /// 200 turns). Bounded in practice by each power's handful of founder colonists. <c>internal</c> so AI tests can
+    /// drive a power to its cap without hard-coding the number.</summary>
+    internal const int MaxAiColonies = 3;
 
     private static int Chebyshev(Position a, Position b) => Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
 
@@ -5026,11 +5030,14 @@ public sealed partial class Game
             power.CurrentFather = power.OfferedFathers[RandomFor(power).Next(power.OfferedFathers.Count)];
         }
 
-        // Plan each colony's tile workers (staff cash crops + food) before selling — so worked tiles, not just the
-        // unattended centre, feed the sell loop. RNG-free; diff-applied to preserve on-tile experience.
+        // Plan each colony's workers before selling — so worked tiles + staffed buildings, not just the unattended
+        // centre, feed the sell loop. Tiles first (food-first, so the colony never starves), then the remaining idle
+        // colonists into the best production buildings (refineries/carpenter/town hall). RNG-free; the tile plan is
+        // diff-applied to preserve on-tile experience, the building fill only ever takes colonists left idle after it.
         foreach (Colony colony in ColoniesOf(power).OrderBy(c => c.Id))
         {
             PlanColonyTileWork(power, colony);
+            PlanColonyBuildingWork(power, colony);
         }
 
         // Sell the surplus of each tradeable good (the colony centre and worked tiles yield cash crops/ore
@@ -7152,6 +7159,126 @@ public sealed partial class Game
             {
                 AssignWork(owner, colony, tile, good);
             }
+        }
+    }
+
+    /// <summary>A per-worker value for a non-tradeable but useful building output (FreeCol <c>ColonyPlan</c> production
+    /// weights): construction materials (hammers/tools) are valued <b>high while a build is queued</b> (16, so the
+    /// carpenter's house out-ranks a refinery and construction actually progresses, FreeCol's HAMMERS priority) and
+    /// modestly otherwise (8); bells then crosses a touch below — so a colony with an active build staffs its carpenter,
+    /// while an idle-queue colony favours its refineries.</summary>
+    private int NonTradeableOutputValue(Colony colony, string goodsId) => goodsId switch
+    {
+        _ when Ruleset.BuildingMaterials.Contains(goodsId) => colony.CurrentBuild is not null ? 16 : 8, // hammers/tools → construction
+        BellsId => 6,                                                                                   // liberty
+        CrossesId => 4,                                                                                 // immigration
+        _ => 0,
+    };
+
+    /// <summary>
+    /// Plans a foreign-power colony's <b>building</b> workers (FreeCol <c>ColonyPlan.assignWorkers</c>, building subset):
+    /// after the tiles are staffed (<see cref="PlanColonyTileWork"/> runs first and protects food), the colony's
+    /// <em>remaining idle</em> colonists are sent to the highest-value production buildings — turning the raws the tiles
+    /// (and centre) make into refined goods, hammers for construction, and bells/crosses. A building is valued by the
+    /// market sale value its <b>next</b> worker would add per turn: for each attended production entry, the per-worker
+    /// modified output of a free colonist × the good's market sale price (a tradeable refined good) or a fixed
+    /// <see cref="NonTradeableOutputValue"/> (hammers/bells/crosses), summed; an entry is only counted when the colony
+    /// can actually feed it — every positively-consumed input is either already in store <b>or</b> itself produced by a
+    /// tile/centre/another building this turn (so a distiller is staffed once sugar is being farmed, not before). The
+    /// highest-value building with a free workplace takes one colonist; repeat until no idle colonist or no positive
+    /// building remains. Because it only ever consumes colonists already idle <b>after</b> the food-first tile plan, it
+    /// can never pull a food worker — the colony's survival margin is untouched (a soak invariant). Ties break by
+    /// ordinal building id; <b>RNG-free</b> (pure value/ordinal ranking) → the human's stream 0 is untouched (ADR-009).
+    /// <b>Deviation:</b> not FreeCol's full marginal <c>getBestWorker</c>/expert-swap or its input-exhaustion scaling —
+    /// a free-colonist greedy fill of the best-valued buildings (the experts already land on their own tiles via the tile
+    /// planner; <see cref="PickIdleBuildingWorker"/> keeps specialists for their tiles).
+    /// </summary>
+    internal void PlanColonyBuildingWork(Player owner, Colony colony)
+    {
+        if (colony.IdleColonists <= 0)
+        {
+            return;
+        }
+
+        // The goods the colony is making locally this turn (centre unattended + worked tiles + already-stocked goods):
+        // an attended building entry can only be staffed when each of its inputs is available, so a refinery isn't filled
+        // before its raw is being farmed. Stored goods count too (a stockpile feeds the building until the tiles catch up).
+        var available = new HashSet<string>();
+        foreach (string g in colony.Stores.Where(kv => kv.Value > 0).Select(kv => kv.Key))
+        {
+            available.Add(g);
+        }
+        foreach (ProductionEntry entry in Map.TerrainAt(colony.Position).Productions.Where(p => p.Unattended))
+        {
+            foreach (GoodsOutput o in entry.Outputs)
+            {
+                available.Add(Ruleset.StorageIdOf(o.GoodsId));
+            }
+        }
+        foreach (string good in colony.TileWorkers.Values)
+        {
+            available.Add(Ruleset.StorageIdOf(good));
+        }
+
+        // The per-worker market value a free colonist would add by joining building b (0 if it has no free workplace, no
+        // attended entry, or no entry the colony can currently feed). A building's own refined output also becomes an
+        // available input for a downstream building considered later (rare in classic, but keeps the ranking coherent).
+        int BuildingWorkerValue(BuildingType b)
+        {
+            if (colony.BuildingWorkers.GetValueOrDefault(b.Id) >= b.Workplaces)
+            {
+                return 0; // fully staffed
+            }
+            int value = 0;
+            foreach (ProductionEntry entry in b.Productions.Where(e => !e.Unattended && e.Outputs.Count > 0))
+            {
+                // Skip auto-production (horse breeding) — it needs no worker and is handled by RunBuildingProduction.
+                if (b.BreedingDivisor > 0)
+                {
+                    continue;
+                }
+                bool fed = entry.Inputs.All(i => available.Contains(Ruleset.StorageIdOf(i.GoodsId)));
+                if (!fed)
+                {
+                    continue;
+                }
+                foreach (GoodsOutput o in entry.Outputs)
+                {
+                    int perWorker = Math.Max(0, ApplyWorkerProductionModifiers(Colony.FreeColonistTypeId, o.GoodsId, o.Amount));
+                    if (perWorker <= 0)
+                    {
+                        continue;
+                    }
+                    GoodsType g = Ruleset.Goods(o.GoodsId);
+                    value += perWorker * (g.IsTradeable ? owner.Market.BidPrice(o.GoodsId) : NonTradeableOutputValue(colony, o.GoodsId));
+                }
+            }
+            return value;
+        }
+
+        // Greedily fill: each pass, staff the single highest-valued building with a free workplace, then re-evaluate (a
+        // building can take more than one colonist, up to its workplaces; its output may unlock a downstream building).
+        while (colony.IdleColonists > 0)
+        {
+            BuildingType? best = null;
+            int bestValue = 0;
+            foreach (string buildingId in colony.Buildings)
+            {
+                BuildingType b = Ruleset.Building(buildingId);
+                int value = BuildingWorkerValue(b);
+                if (value > bestValue || (value > 0 && value == bestValue && best is not null && string.CompareOrdinal(b.Id, best.Id) < 0))
+                {
+                    best = b;
+                    bestValue = value;
+                }
+            }
+            if (best is null)
+            {
+                break; // no fundable building with a free slot → leave the rest idle (the tile planner already worked food)
+            }
+            AssignBuildingWork(colony, best.Id);
+            available.Add(Ruleset.StorageIdOf(best.Productions
+                .Where(e => !e.Unattended && e.Outputs.Count > 0).SelectMany(e => e.Outputs).First().GoodsId));
         }
     }
 

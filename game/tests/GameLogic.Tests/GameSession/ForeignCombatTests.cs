@@ -26,6 +26,27 @@ public class ForeignCombatTests
         && g.NativeSettlementAt(n) is null && g.ColonyAt(n) is null
         && !g.Units.Any(u => u.IsOnMap && u.Position == n);
 
+    /// <summary>Founds <see cref="Game.MaxAiColonies"/> well-separated colonies for <paramref name="power"/> so it sits
+    /// at its colony cap (its remaining colonist then explores/visits rather than founding). Returns the last tile used.</summary>
+    private static Position FoundColoniesToCap(Game game, Player power)
+    {
+        Position last = default;
+        var taken = new System.Collections.Generic.List<Position>();
+        for (int i = 0; i < Game.MaxAiColonies; i++)
+        {
+            Position tile = game.Map.AllPositions().First(p =>
+                Free(game, p) && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n))
+                && taken.All(t => Cheb(t, p) > 3)); // spaced so footprints never touch (founding's min-spacing rule)
+            Unit founder = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), tile);
+            founder.OwnerId = power.PlayerId;
+            Colony colony = game.FoundColony(founder);
+            colony.OwnerId = power.PlayerId;
+            taken.Add(tile);
+            last = tile;
+        }
+        return last;
+    }
+
     /// <summary>A foreign power with an armed soldier on a free tile beside the human's first on-map unit; optionally already at war.</summary>
     private static (Game game, Player power, Unit prey) Stage(ulong seed, bool atWar)
     {
@@ -118,18 +139,14 @@ public class ForeignCombatTests
             game.Disband(u);
         }
 
-        // A colony so the power is at its colony cap (can't found another → it explores instead).
-        Position colonyTile = game.Map.AllPositions().First(p =>
-            Free(game, p) && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n)));
-        Unit founder = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), colonyTile);
-        founder.OwnerId = power.PlayerId;
-        Colony colony = game.FoundColony(founder);
-        colony.OwnerId = power.PlayerId;
+        // Found colonies up to the power's cap so its remaining colonist explores (can't found another).
+        Position colonyTile = FoundColoniesToCap(game, power);
 
-        // A colonist far from the colony with a KNOWN Lost City Rumour on the adjacent tile.
+        // A colonist far from the colonies with a KNOWN Lost City Rumour on the adjacent tile.
         Position scoutTile = game.Map.AllPositions().First(p =>
             Free(game, p) && !game.Map.HasRumour(p) && Cheb(p, colonyTile) > 15
-            && p.Neighbours().Any(n => Free(game, n)));
+            && p.Neighbours().Any(n => Free(game, n))
+            && game.ColonyAt(p) is null && p.Neighbours().All(n => !game.Map.InBounds(n) || game.ColonyAt(n) is null));
         Position rumour = scoutTile.Neighbours().First(n => Free(game, n));
         game.Map.AddRumour(rumour);
         power.ExploredSet.Add(rumour); // the power has discovered it

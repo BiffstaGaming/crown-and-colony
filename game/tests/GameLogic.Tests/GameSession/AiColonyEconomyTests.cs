@@ -20,15 +20,46 @@ public class AiColonyEconomyTests
     private const string Grain = "model.goods.grain";
     private const string Hammers = "model.goods.hammers";
     private const string Tools = "model.goods.tools";
+    private const string Lumber = "model.goods.lumber";
+    private const string Sugar = "model.goods.sugar";
+    private const string Rum = "model.goods.rum";
     private const string Artillery = "model.unit.artillery";
     private const string WagonTrain = "model.unit.wagonTrain";
     private const string Armory = "model.building.armory";
+    private const string DistillerHouse = "model.building.distillerHouse";
+    private const string CarpenterHouse = "model.building.carpenterHouse";
 
     /// <summary>A fresh game with a founded human colony whose tiles have all been freed (the founder left idle).</summary>
     private static (Game Game, Colony Colony) IdleColony()
     {
         Game game = Game.New(Classic, Seed);
         Colony colony = game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        foreach (Position t in colony.TileWorkers.Keys.ToList())
+        {
+            game.UnassignWork(colony, t);
+        }
+        return (game, colony);
+    }
+
+    /// <summary>A human colony on a 3×3 plains block (no sugar/lumber source anywhere) — so a building's input is present
+    /// only when a test deposits it, isolating the building-worker funding check from incidental centre/tile production.</summary>
+    private static (Game Game, Colony Colony) PlainsColony()
+    {
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 3,
+            MapHeight = 3,
+            Terrain = [.. Enumerable.Repeat("model.tile.plains", 9)],
+            Units = [],
+            Explored = [.. Enumerable.Range(0, 9)],
+            Players = [new SavedPlayer(0, NationId: null, IsHuman: true, PlayerType: (int)PlayerType.Colonial)],
+            Colonies = [new SavedColony(1, "Plainsville", 1, 1, 0)],
+        };
+        Game game = save.Restore(Classic);
+        Colony colony = game.Colonies[0];
         foreach (Position t in colony.TileWorkers.Keys.ToList())
         {
             game.UnassignWork(colony, t);
@@ -119,6 +150,171 @@ public class AiColonyEconomyTests
         var before = game.RandomState;
         game.PlanColonyTileWork(game.HumanPlayer, colony);
         Assert.Equal(before, game.RandomState); // pure ordinal/yield ranking (ADR-009)
+    }
+
+    // ── Building-worker planner (increment 5) ────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void PlanColonyBuildingWork_StaffsARefinery_WhenItsRawIsAvailable()
+    {
+        // A plains colony (centre makes no sugar) with sugar in store has an idle colonist sent to the distiller house
+        // (sugar → rum) — building work turns a raw into a higher-value refined good. Plains isolates the test: the only
+        // sugar source is the deposit, so the distiller is the highest-value fundable building.
+        (Game game, Colony colony) = PlainsColony();
+        colony.Population = 1;            // exactly one idle colonist after the tiles were freed
+        colony.AddGoods(Sugar, 50);       // the distiller's input is in store → the entry is fundable
+
+        game.PlanColonyBuildingWork(game.HumanPlayer, colony);
+
+        Assert.Equal(1, colony.BuildingWorkers.GetValueOrDefault(DistillerHouse)); // the colonist staffed the distiller
+        Assert.Equal(0, colony.IdleColonists);                                     // no longer idle
+    }
+
+    [Fact]
+    public void PlanColonyBuildingWork_FundsARefineryFromCentreProduction()
+    {
+        // The colony's own unattended centre output funds a building: a savannah colony makes sugar at its centre, so the
+        // distiller is fundable with no deposit at all (the centre feeds it). Demonstrates the available-goods set folds
+        // in centre + tile production, not just the warehouse.
+        (Game game, Colony colony) = IdleColony(); // savannah → centre makes grain + sugar
+        colony.Population = 1;
+
+        game.PlanColonyBuildingWork(game.HumanPlayer, colony);
+
+        Assert.Equal(1, colony.BuildingWorkers.GetValueOrDefault(DistillerHouse)); // fed by the centre's sugar
+    }
+
+    [Fact]
+    public void PlanColonyBuildingWork_DoesNotStaffARefinery_WithoutItsRaw()
+    {
+        // A plains colony makes no sugar (centre = grain + cotton, no sugar tile) → the distiller has nothing to convert,
+        // so it is NOT staffed (a worker there would produce nothing).
+        (Game game, Colony colony) = PlainsColony();
+        colony.Population = 1;
+
+        game.PlanColonyBuildingWork(game.HumanPlayer, colony);
+
+        Assert.Equal(0, colony.BuildingWorkers.GetValueOrDefault(DistillerHouse)); // unfed refinery left empty
+    }
+
+    [Fact]
+    public void PlanColonyBuildingWork_StaffsTheCarpenter_WhenABuildIsQueued()
+    {
+        // With a build queued and lumber in store, the carpenter's house (lumber → hammers) is valued high (FreeCol's
+        // HAMMERS construction priority) so it out-ranks the centre-cotton weaver and gets the colonist — construction
+        // actually progresses instead of stalling for hammers.
+        (Game game, Colony colony) = PlainsColony();
+        colony.Population = 1;
+        colony.AddGoods(Lumber, 50);
+        game.SetBuild(colony, game.Buildables(colony).First().Id); // an active build raises the hammers value
+
+        game.PlanColonyBuildingWork(game.HumanPlayer, colony);
+
+        Assert.Equal(1, colony.BuildingWorkers.GetValueOrDefault(CarpenterHouse));
+    }
+
+    [Fact]
+    public void PlanColonyBuildingWork_FavoursARefineryOverTheCarpenter_WhenNoBuildIsQueued()
+    {
+        // With no build queued, construction materials are valued modestly, so a high-value refinery (centre cotton →
+        // weaver) is staffed ahead of the carpenter — the colony grows its cash economy when it isn't building.
+        (Game game, Colony colony) = PlainsColony();
+        colony.Population = 1;
+        colony.AddGoods(Lumber, 50);
+        game.SetBuild(colony, null);
+
+        game.PlanColonyBuildingWork(game.HumanPlayer, colony);
+
+        Assert.Equal(0, colony.BuildingWorkers.GetValueOrDefault(CarpenterHouse)); // refinery preferred over hammers
+    }
+
+    [Fact]
+    public void PlanColonyBuildingWork_NeverExceedsIdleColonists()
+    {
+        // Plenty of raws, but only the idle colonists may be staffed — never more than the population minus tile workers.
+        (Game game, Colony colony) = IdleColony();
+        colony.Population = 2;
+        colony.AddGoods(Sugar, 100);
+        colony.AddGoods(Lumber, 100);
+
+        game.PlanColonyBuildingWork(game.HumanPlayer, colony);
+
+        Assert.True(colony.BuildingWorkers.Values.Sum() <= 2);
+        Assert.True(colony.IdleColonists >= 0); // never over-assigned
+    }
+
+    [Fact]
+    public void PlanColonyBuildingWork_LeavesFoodTileWorkersUntouched()
+    {
+        // The building fill only ever consumes colonists left idle after the (food-first) tile plan — it must never pull
+        // a food worker, so the colony's survival margin is preserved (a soak invariant).
+        (Game game, Colony colony) = IdleColony();
+        colony.Population = 4;
+        colony.AddGoods(Sugar, 100);
+        game.PlanColonyTileWork(game.HumanPlayer, colony);   // food-first tile plan
+        int tileWorkersBefore = colony.TileWorkers.Count;
+        int netFoodBefore = game.ColonyNetFood(game.HumanPlayer, colony);
+
+        game.PlanColonyBuildingWork(game.HumanPlayer, colony);
+
+        Assert.Equal(tileWorkersBefore, colony.TileWorkers.Count);                 // no tile worker pulled
+        Assert.Equal(netFoodBefore, game.ColonyNetFood(game.HumanPlayer, colony)); // food margin untouched
+    }
+
+    [Fact]
+    public void PlanColonyBuildingWork_DrawsNoRandomness()
+    {
+        (Game game, Colony colony) = IdleColony();
+        colony.Population = 3;
+        colony.AddGoods(Sugar, 100);
+        colony.AddGoods(Lumber, 100);
+        var before = game.RandomState;
+        game.PlanColonyBuildingWork(game.HumanPlayer, colony);
+        Assert.Equal(before, game.RandomState); // pure value/ordinal ranking (ADR-009)
+    }
+
+    [Fact]
+    public void PlanColonyBuildingWork_IsDeterministic()
+    {
+        // Two identical colonies make the identical building assignment.
+        static (Game Game, Colony Colony) Setup()
+        {
+            (Game g, Colony c) = IdleColony();
+            c.Population = 2;
+            c.AddGoods(Sugar, 100);
+            c.AddGoods(Lumber, 100);
+            return (g, c);
+        }
+
+        (Game a, Colony ca) = Setup();
+        (Game b, Colony cb) = Setup();
+        a.PlanColonyBuildingWork(a.HumanPlayer, ca);
+        b.PlanColonyBuildingWork(b.HumanPlayer, cb);
+
+        Assert.Equal(
+            ca.BuildingWorkers.OrderBy(kv => kv.Key, System.StringComparer.Ordinal),
+            cb.BuildingWorkers.OrderBy(kv => kv.Key, System.StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void ForeignPowerEconomy_StaffsAForeignColonysBuildings()
+    {
+        // Integration: building-worker planning must run for a foreign power through RunForeignPowerEconomy (guards
+        // against the EndTurn wiring being removed). A colony has at most ~9 tile slots; a large population guarantees
+        // colonists remain idle after the (food-first) tile plan, so the building fill must place at least one of them.
+        Game game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        for (int i = 0; i < 30; i++)
+        {
+            game.EndTurn(); // by ~turn 30 the power founds a colony (cf. ForeignPowerEconomyTests)
+        }
+        Colony colony = game.Colonies.First(c => c.OwnerId == power.PlayerId);
+        colony.Population = 15;       // far more colonists than the ≤9 tile slots → idle ones remain for buildings
+        colony.AddGoods(Sugar, 400);  // a fundable refinery input (rum) so a building is worth staffing
+
+        game.EndTurn(); // the power's economy re-plans tiles then buildings
+
+        Assert.True(colony.BuildingWorkers.Values.Sum() > 0); // the building fill ran end-to-end (centre-only before)
     }
 
     // ── Build-queue planner (increment 4) ────────────────────────────────────────────────────────────────────────

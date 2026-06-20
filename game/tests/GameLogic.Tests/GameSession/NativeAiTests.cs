@@ -27,6 +27,8 @@ public class NativeAiTests
         && g.NativeSettlementAt(n) is null && g.ColonyAt(n) is null
         && !g.Units.Any(u => u.IsOnMap && u.Position == n);
 
+    private static int Cheb(Position a, Position b) => System.Math.Max(System.Math.Abs(a.X - b.X), System.Math.Abs(a.Y - b.Y));
+
     /// <summary>Cranks every native settlement to Hateful so its braves go raiding this turn (alarm decays slowly, so one crank lasts the test).</summary>
     private static void EnrageAllNatives(Game game)
     {
@@ -479,14 +481,20 @@ public class NativeAiTests
         {
             game.Disband(u); // clear the power's starting units so only what we stage acts
         }
-        // One colony → the power is at MaxAiColonies (1), so its remaining colonist explores/visits instead of founding.
-        Position colonyTile = game.Map.AllPositions().First(p =>
-            Free(game, p) && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n)));
-        Unit founder = game.SpawnUnit(Classic.Unit(FreeColonist), colonyTile);
-        founder.OwnerId = power.PlayerId;
-        Colony colony = game.FoundColony(founder);
-        colony.OwnerId = power.PlayerId;
-        // A second colonist beside an unvisited native settlement.
+        // Colonies up to MaxAiColonies → the power is at its cap, so its remaining colonist explores/visits not founds.
+        var taken = new System.Collections.Generic.List<Position>();
+        for (int i = 0; i < Game.MaxAiColonies; i++)
+        {
+            Position tile = game.Map.AllPositions().First(p =>
+                Free(game, p) && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n))
+                && taken.All(t => Cheb(t, p) > 3));
+            Unit founder = game.SpawnUnit(Classic.Unit(FreeColonist), tile);
+            founder.OwnerId = power.PlayerId;
+            Colony colony = game.FoundColony(founder);
+            colony.OwnerId = power.PlayerId;
+            taken.Add(tile);
+        }
+        // A further colonist beside an unvisited native settlement.
         NativeSettlement settlement = SettlementWithFreeNeighbour(game);
         Position adj = settlement.Position.Neighbours().First(n => Free(game, n));
         Unit colonist = game.SpawnUnit(Classic.Unit(FreeColonist), adj);
