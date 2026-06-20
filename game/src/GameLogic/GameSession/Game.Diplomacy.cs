@@ -99,4 +99,86 @@ public sealed partial class Game
     /// exact pairs for which <see cref="SetStance"/> is not a no-op (FreeCol <c>StanceTradeItem.isValid</c>).
     /// </summary>
     internal bool CanSetStance(int a, int b) => a != b && IsColonialPlayer(a) && IsColonialPlayer(b);
+
+    // ---- Colony clause (86d3c9u94) ----
+
+    /// <summary>
+    /// Whether a <see cref="Diplomacy.ColonyTradeItem"/> could hand the colony <paramref name="colonyId"/> from
+    /// <paramref name="fromId"/> to <paramref name="toId"/>: both are distinct colonial powers and the colony still
+    /// exists and is owned by <paramref name="fromId"/> (FreeCol <c>ColonyTradeItem.isValid</c> — a colony id that
+    /// still names the source's colony).
+    /// </summary>
+    internal bool CanTransferColony(int fromId, int toId, int colonyId) =>
+        fromId != toId && IsColonialPlayer(fromId) && IsColonialPlayer(toId)
+        && ColonyById(colonyId) is { } colony && colony.OwnerId == fromId;
+
+    /// <summary>
+    /// Hands the colony <paramref name="colonyId"/> over to <paramref name="toId"/> (the treaty colony-clause mutator),
+    /// reusing the capture/transfer path (<see cref="CaptureColony"/>) so the former owner's ships caught in its port
+    /// are resolved exactly as in a wartime seizure. A no-op unless the colony exists and is owned by
+    /// <paramref name="fromId"/>, so a stale clause never throws. Draws no RNG — unlike a wartime capture there is no
+    /// plunder roll; a negotiated handover transfers the colony intact (FreeCol settles the colony without sacking it).
+    /// </summary>
+    internal void TransferColony(int fromId, int toId, int colonyId)
+    {
+        if (ColonyById(colonyId) is not { } colony || colony.OwnerId != fromId)
+        {
+            return;
+        }
+        CaptureColony(colony, toId);
+    }
+
+    // ---- Unit clause (86d3c9u94) ----
+
+    /// <summary>
+    /// Whether a <see cref="Diplomacy.UnitTradeItem"/> could hand the unit <paramref name="unitId"/> from
+    /// <paramref name="fromId"/> to <paramref name="toId"/>: both are distinct colonial powers and the unit still
+    /// exists and is a (non-native) unit owned by <paramref name="fromId"/> (FreeCol <c>UnitTradeItem.isValid</c> —
+    /// the unit is the source's and its type is available to the destination; we model the ownership half).
+    /// </summary>
+    internal bool CanTransferUnit(int fromId, int toId, int unitId) =>
+        fromId != toId && IsColonialPlayer(fromId) && IsColonialPlayer(toId)
+        && UnitById(unitId) is { OwnerNationId: null } unit && unit.OwnerId == fromId;
+
+    /// <summary>
+    /// Hands the unit <paramref name="unitId"/> over to <paramref name="toId"/> (the treaty unit-clause mutator): a
+    /// pure reparent of its <see cref="Units.Unit.OwnerId"/> (FreeCol <c>unit.changeOwner</c>) — its position/location are
+    /// untouched. A no-op unless the unit exists and is the source's non-native unit, so a stale clause never throws.
+    /// </summary>
+    internal void TransferUnit(int fromId, int toId, int unitId)
+    {
+        if (UnitById(unitId) is not { OwnerNationId: null } unit || unit.OwnerId != fromId)
+        {
+            return;
+        }
+        unit.OwnerId = toId;
+    }
+
+    // ---- Incite clause (86d3c9u94) ----
+
+    /// <summary>
+    /// Whether an <see cref="Diplomacy.InciteTradeItem"/> could incite war against <paramref name="victimId"/> on
+    /// behalf of <paramref name="beneficiaryId"/>: the victim is a colonial power distinct from both the
+    /// <paramref name="inciterId"/> and the <paramref name="beneficiaryId"/>, and both of those are colonial powers
+    /// (FreeCol <c>InciteTradeItem.isValid</c>: victim ≠ source ≠ destination).
+    /// </summary>
+    internal bool CanIncite(int inciterId, int beneficiaryId, int victimId) =>
+        victimId != inciterId && victimId != beneficiaryId
+        && IsColonialPlayer(inciterId) && IsColonialPlayer(beneficiaryId) && IsColonialPlayer(victimId);
+
+    /// <summary>
+    /// Settles an incitement (FreeCol <c>csIncite</c>): puts the <paramref name="beneficiaryId"/> and the
+    /// <paramref name="victimId"/> at <see cref="Stance.War"/> (symmetric). Stance only this slice — the war-inciter
+    /// tension spike lands with the stance-change tension-modifier table (86d3c9u3z); the gold the inciter pays travels
+    /// as a separate <see cref="Diplomacy.GoldTradeItem"/> clause in the same treaty. A no-op unless all three are
+    /// distinct colonial powers; draws no RNG.
+    /// </summary>
+    internal void Incite(int inciterId, int beneficiaryId, int victimId)
+    {
+        if (!CanIncite(inciterId, beneficiaryId, victimId))
+        {
+            return;
+        }
+        SetStance(beneficiaryId, victimId, Stance.War);
+    }
 }

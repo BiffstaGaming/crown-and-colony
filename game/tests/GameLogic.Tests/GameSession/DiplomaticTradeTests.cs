@@ -255,4 +255,140 @@ public class DiplomaticTradeTests
         Assert.Equal(Stance.Alliance, loaded.StanceBetween(0, fid));
         Assert.Equal(Stance.Alliance, loaded.StanceBetween(fid, 0));
     }
+
+    // ---- Item 4 (86d3c9u94): colony, unit, and incite clauses ----
+
+    private static int SecondForeignPowerId(Game game) =>
+        game.Players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).Skip(1).First().PlayerId;
+
+    /// <summary>Spawns a free colonist on a fresh tile and reassigns it to <paramref name="ownerId"/> (as a capture/trade would).</summary>
+    private static Unit SpawnUnitFor(Game g, int ownerId, Position? avoid = null)
+    {
+        Unit unit = g.SpawnUnit(Classic.Unit(Colony.FreeColonistTypeId), FoundableSite(g, avoid));
+        unit.OwnerId = ownerId;
+        return unit;
+    }
+
+    [Fact]
+    public void ColonyTradeItem_HandsTheColonyToTheDestination_OnSettle()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        Colony colony = FoundColonyFor(game, ownerId: 0); // ours
+        Assert.Equal(0, colony.OwnerId);
+
+        var trade = new DiplomaticTrade(0, fid)
+            .Add(new ColonyTradeItem(source: 0, destination: fid, colonyId: colony.Id));
+        Assert.True(trade.IsValid(game));
+
+        game.SettleTrade(trade);
+
+        Assert.Equal(fid, colony.OwnerId); // changed hands intact
+    }
+
+    [Fact]
+    public void ColonyTradeItem_IsInvalid_AndSkipped_WhenTheSourceNoLongerOwnsIt()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        Colony colony = FoundColonyFor(game, ownerId: fid); // not the source's (source is 0)
+
+        var item = new ColonyTradeItem(source: 0, destination: fid, colonyId: colony.Id);
+        Assert.False(item.IsValid(game)); // 0 doesn't own it
+
+        game.SettleTrade(new DiplomaticTrade(0, fid).Add(item)); // skipped
+        Assert.Equal(fid, colony.OwnerId); // unchanged
+    }
+
+    [Fact]
+    public void UnitTradeItem_ReassignsTheUnitsOwner_OnSettle_LeavingItInPlace()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        Unit unit = SpawnUnitFor(game, ownerId: 0); // ours
+        Position before = unit.Position;
+
+        var trade = new DiplomaticTrade(0, fid)
+            .Add(new UnitTradeItem(source: 0, destination: fid, unitId: unit.Id));
+        Assert.True(trade.IsValid(game));
+
+        game.SettleTrade(trade);
+
+        Assert.Equal(fid, unit.OwnerId);     // changed allegiance
+        Assert.Equal(before, unit.Position); // stayed put
+    }
+
+    [Fact]
+    public void UnitTradeItem_IsInvalid_AndSkipped_ForANativeUnit()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        Unit brave = game.Units.First(u => u.IsNative);
+
+        var item = new UnitTradeItem(source: 0, destination: fid, unitId: brave.Id);
+        Assert.False(item.IsValid(game)); // braves stay native — not a tradeable colonial unit
+
+        game.SettleTrade(new DiplomaticTrade(0, fid).Add(item)); // skipped
+        Assert.True(brave.IsNative);
+    }
+
+    [Fact]
+    public void InciteTradeItem_PutsTheIncitedPowerAtWarWithTheVictim_OnSettle()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int incited = ForeignPowerId(game);        // we incite this power…
+        int victim = SecondForeignPowerId(game);   // …to war against this third power
+        Assert.NotEqual(incited, victim);
+
+        var trade = new DiplomaticTrade(0, incited)
+            .Add(new InciteTradeItem(source: 0, destination: incited, victim: victim));
+        Assert.True(trade.IsValid(game));
+
+        game.SettleTrade(trade);
+
+        Assert.Equal(Stance.War, game.StanceBetween(incited, victim));
+        Assert.Equal(Stance.War, game.StanceBetween(victim, incited)); // symmetric
+        Assert.Equal(Stance.Uncontacted, game.StanceBetween(0, victim)); // the inciter stays out of it
+    }
+
+    [Fact]
+    public void InciteTradeItem_IsInvalid_WhenTheVictimIsOneOfTheTwoParties()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int incited = ForeignPowerId(game);
+
+        // Victim == destination is not a real incitement.
+        var item = new InciteTradeItem(source: 0, destination: incited, victim: incited);
+        Assert.False(item.IsValid(game));
+
+        game.SettleTrade(new DiplomaticTrade(0, incited).Add(item)); // skipped
+        Assert.Equal(Stance.Uncontacted, game.StanceBetween(incited, incited));
+    }
+
+    [Fact]
+    public void MixedTreaty_SettlesGoldUnitAndIncite_Together()
+    {
+        // "I pay you 150 gold and give you a colonist; in return you go to war with the third power."
+        var game = Game.New(Classic, seed: 7);
+        int incited = ForeignPowerId(game);
+        int victim = SecondForeignPowerId(game);
+        Player human = game.HumanPlayer;
+        Player ally = game.Players.First(p => p.PlayerId == incited);
+        human.Gold = 1000;
+        ally.Gold = 0;
+        Unit gift = SpawnUnitFor(game, ownerId: 0);
+
+        var trade = new DiplomaticTrade(0, incited)
+            .Add(new GoldTradeItem(source: 0, destination: incited, amount: 150))
+            .Add(new UnitTradeItem(source: 0, destination: incited, unitId: gift.Id))
+            .Add(new InciteTradeItem(source: 0, destination: incited, victim: victim));
+        Assert.True(trade.IsValid(game));
+
+        game.SettleTrade(trade);
+
+        Assert.Equal(850, human.Gold);                              // paid 150
+        Assert.Equal(150, ally.Gold);                              // received 150
+        Assert.Equal(incited, gift.OwnerId);                       // unit handed over
+        Assert.Equal(Stance.War, game.StanceBetween(incited, victim)); // war incited
+    }
 }
