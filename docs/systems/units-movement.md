@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (ruleset unit types, naval units, off-map sailing/Europe, cargo + passengers, role movement bonuses, standing orders: fortify/sentry/clear-orders/disband, goto/multi-turn move orders + pathfinding + unit cycling) |
-| **Last verified** | 2026-06-20 @ "next unit needing orders" cycle — key W (`86d3dmfvq`) |
+| **Last verified** | 2026-06-20 @ standing-orders HUD buttons — fortify/sentry/wake (`86d3dmh6b`) |
 | **Code** | `game/src/GameLogic/Units/` (`Unit.Orders`/`UnitOrders`, `Unit.Destination`), `GameSession/Game.cs` (`InitialMovement`, `Fortify`/`Sentry`/`ClearOrders`/`Disband` + their `Check*`), `GameSession/Game.Goto.cs` (goto oracle/mutator, `ProcessGotos`, `NextUnitToMove`), `World/Pathfinder.cs` (A*) · rendering: `game/presentation/UnitMarker.cs` |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/GameTests.cs`, `RoleMovementTests.cs`, `MagellanTests.cs`, `UnitOrdersTests.cs`, `GotoTests.cs`, `World/PathfinderTests.cs` |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/common/model/Unit.java` (`getMoveCost`, `MoveType`, `setDestination`), `Map.java` (`searchMap`) |
@@ -107,6 +107,7 @@ You can also give a unit a **standing order** instead of moving it. **Fortify** 
 ## Changelog
 
 | Date | Change | Commit |
+| 2026-06-20 | **Standing-orders HUD buttons** (`86d3dmh6b`): the `SelectedUnitPanel` gains Fortify / Sentry / Wake buttons wiring the shipped `Game.Fortify`/`Sentry`/`ClearOrders` (each gated on its `Check…` oracle) — the standing-orders feature (`86d3c9pfh`) is now reachable from the map HUD, not only the API. Presentation-only (ADR-006); no logic/save change. +1 L3 (`InputTests.SelectedUnitPanel_FortifyButton…`). | P7 (`86d3dmh6b`) |
 | 2026-06-20 | **"Next unit needing orders" cycle UI** (`86d3dmfvq`, key **W**): `GameController.SelectNextUnitToMove` wires the shipped `Game.NextUnitToMove` oracle to a key — selects the next unit still needing orders + centres on it. Closes the "cycling-to-next-unit UI" follow-up left by the GoTo item. Presentation-only (ADR-006); no logic/save change. +1 L3 (`InputTests.PressingW…`). | P7 (`86d3dmfvq`) |
 | 2026-06-20 | **GoTo orders + destination UI** (`86d3c9xjy`): wired the shipped goto oracle to the HUD — the **G** key arms goto-target mode for the selected unit, the next map click forwards to `GameController.SetSelectedDestination` → `Game.CheckSetDestination`/`SetDestination`, and a `GotoMarker` outlines the standing destination (the per-turn `ProcessGotos` walk was already there). Presentation-only (ADR-006); no logic/save change. +1 L3 (`InputTests.GotoMode_Arms…`). Closes the "Goto/cycling input UI = P7" note (cycling-to-next-unit UI still a follow-up). See [presentation](../modules/presentation.md). | P5/P7 (`86d3c9xjy`) |
 | 2026-06-20 | **Military classifier** (`86d3c9x15`): `Game.IsMilitaryUnit(unit)` — pure read for the empire unit report's Military group (`!IsNaval && (Type.Offence>0 || Role.IsOffensive)`), faithful subset of FreeCol `Unit.isOffensiveUnit` (unarmed-veteran/expertSoldier deferred → lists under Labour). No RNG/save change. +1 L1 (`UnitCategoryTests`); presentation in `ColonyReportPanel` Units tab. | Phase 5/P7 (`86d3c9x15`) |

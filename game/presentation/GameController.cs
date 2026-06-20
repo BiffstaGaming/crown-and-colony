@@ -60,6 +60,9 @@ public partial class GameController : Node2D
     private Label _calendarLabel = null!;
     private PanelContainer _selectedUnitPanel = null!;
     private Label _selectedUnitLabel = null!;
+    private Button _fortifyButton = null!;
+    private Button _sentryButton = null!;
+    private Button _clearOrdersButton = null!;
     private MiniMap _miniMap = null!;
     private PanelContainer _colonyPanel = null!;
     private PanelContainer _europePanel = null!;
@@ -89,7 +92,13 @@ public partial class GameController : Node2D
         _statusLabel = GetNode<Label>("UI/StatusLabel");
         _calendarLabel = GetNode<Label>("UI/CalendarPanel/CalendarLabel");
         _selectedUnitPanel = GetNode<PanelContainer>("UI/SelectedUnitPanel");
-        _selectedUnitLabel = GetNode<Label>("UI/SelectedUnitPanel/Label");
+        _selectedUnitLabel = GetNode<Label>("UI/SelectedUnitPanel/VBox/Label");
+        _fortifyButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/FortifyButton");
+        _sentryButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/SentryButton");
+        _clearOrdersButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/ClearButton");
+        _fortifyButton.Pressed += () => ApplyUnitOrder(u => _game.CheckFortify(u).Allowed, _game.Fortify, "Fortifying.");
+        _sentryButton.Pressed += () => ApplyUnitOrder(u => _game.CheckSentry(u).Allowed, _game.Sentry, "Sentried.");
+        _clearOrdersButton.Pressed += () => ApplyUnitOrder(_ => true, _game.ClearOrders, "Orders cleared.");
         _miniMap = GetNode<MiniMap>("UI/MiniMap");
         _miniMap.TileSelected += CenterCameraOnTile;
         GetNode<Button>("UI/MiniMap/ZoomInButton").Pressed += _miniMap.ZoomIn;
@@ -175,6 +184,17 @@ public partial class GameController : Node2D
     /// <summary>Recenters the main camera on a map tile — the minimap's click-to-recenter target (ADR-006).</summary>
     private void CenterCameraOnTile(Position tile) =>
         GetNode<Camera2D>("Camera").Position = MapView.TileCentre(tile);
+
+    /// <summary>Applies a standing order to the selected unit when its <paramref name="allowed"/> check passes, then refreshes (ADR-006).</summary>
+    private void ApplyUnitOrder(System.Func<Unit, bool> allowed, System.Action<Unit> apply, string notice)
+    {
+        if (_selectedUnit is { } u && allowed(u))
+        {
+            apply(u);
+            _notice = notice;
+            RefreshView();
+        }
+    }
 
     /// <summary>One-line readout for the selected-unit HUD panel (type / moves / role / orders / goto). Reads-only (ADR-006).</summary>
     private string DescribeSelectedUnit(Unit u)
@@ -650,10 +670,14 @@ public partial class GameController : Node2D
         // from the dev status string above. Presentation-only — reads the Game.CalendarLabel oracle (ADR-006).
         _calendarLabel.Text = _game.CalendarLabel;
 
-        // Selected-unit info readout (type / moves / role / orders / goto), shown only while a unit is selected.
+        // Selected-unit info readout (type / moves / role / orders / goto) + standing-orders buttons, shown only
+        // while a unit is selected; each order button is gated on its Check oracle (ADR-006).
         if (_selectedUnit is { } sel)
         {
             _selectedUnitLabel.Text = DescribeSelectedUnit(sel);
+            _fortifyButton.Disabled = !_game.CheckFortify(sel).Allowed;
+            _sentryButton.Disabled = !_game.CheckSentry(sel).Allowed;
+            _clearOrdersButton.Disabled = sel.Orders == UnitOrders.Active; // nothing to clear when already active
             _selectedUnitPanel.Show();
         }
         else

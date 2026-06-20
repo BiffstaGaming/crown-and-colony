@@ -66,7 +66,7 @@ public class InputTests
         // The camera centres on it and the selected-unit panel reflects it.
         AssertThat(controller.GetNode<Camera2D>("Camera").Position).IsEqual(MapView.TileCentre(expected.Position));
         AssertThat(controller.GetNode<PanelContainer>("UI/SelectedUnitPanel").Visible).IsTrue();
-        AssertThat(controller.GetNode<Label>("UI/SelectedUnitPanel/Label").Text).Contains(expected.Type.ShortName);
+        AssertThat(controller.GetNode<Label>("UI/SelectedUnitPanel/VBox/Label").Text).Contains(expected.Type.ShortName);
     }
 
     [TestCase(Timeout = 60000)]
@@ -85,9 +85,32 @@ public class InputTests
         await ClickTile(runner, controller, unit.Position); // select the unit
 
         AssertThat(panel.Visible).IsTrue();
-        var label = controller.GetNode<Label>("UI/SelectedUnitPanel/Label");
+        var label = controller.GetNode<Label>("UI/SelectedUnitPanel/VBox/Label");
         AssertThat(label.Text).Contains(unit.Type.ShortName); // type
         AssertThat(label.Text).Contains("moves");             // and its movement readout
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task SelectedUnitPanel_FortifyButton_FortifiesTheUnit()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Unit unit = game.Units[0];
+
+        await ClickTile(runner, controller, unit.Position); // select → panel + order buttons show
+        var fortify = controller.GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/FortifyButton");
+        AssertThat(fortify.Disabled).IsFalse(); // an active unit can fortify
+
+        fortify.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(unit.Orders).IsEqual(UnitOrders.Fortifying);                 // the order took
+        AssertThat(controller.GetNode<Label>("UI/SelectedUnitPanel/VBox/Label").Text).Contains("fortifying"); // shown
+        AssertThat(fortify.Disabled).IsTrue();                                  // can't re-fortify
+        AssertThat(controller.GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/ClearButton").Disabled).IsFalse(); // can wake
     }
 
     [TestCase(Timeout = 60000)]
