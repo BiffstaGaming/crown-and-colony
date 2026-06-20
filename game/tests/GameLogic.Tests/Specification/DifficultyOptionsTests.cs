@@ -1,6 +1,7 @@
 using System.Xml.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
 using Xunit;
@@ -210,5 +211,87 @@ public class DifficultyOptionsTests
     public void ClassicRuleset_ParsesTheTreasureTransportFee()
     {
         Assert.Equal(60, Ruleset.LoadClassic().Difficulty.TreasureTransportFee);
+    }
+
+    // ── Player-selectable + persisted difficulty level (86d3c9y08) ───────────────────────────────────────────────────
+
+    [Fact]
+    public void DifficultyLevels_OffersTheFiveClassicLevels_MediumDefault()
+    {
+        Assert.Equal(5, DifficultyLevels.All.Count);
+        Assert.Equal(DifficultyLevels.DefaultId, DifficultyLevels.Default.Id);
+        Assert.Equal("model.difficulty.medium", DifficultyLevels.Default.Id);
+        Assert.Equal(DifficultyLevels.Default, DifficultyLevels.All[DifficultyLevels.DefaultIndex]);
+    }
+
+    [Fact]
+    public void LoadClassic_DefaultsToMedium_RecordingItsLevelId()
+    {
+        Ruleset r = Ruleset.LoadClassic();
+        Assert.Equal("model.difficulty.medium", r.DifficultyLevelId);
+        Assert.Equal(40, r.Difficulty.FoundingFatherFactor); // medium value
+    }
+
+    [Theory]
+    [InlineData("model.difficulty.veryEasy", 24)]
+    [InlineData("model.difficulty.hard", 48)]
+    [InlineData("model.difficulty.veryHard", 56)]
+    public void LoadClassic_WithALevel_AppliesThatLevelsBalance_AndRecordsTheId(string levelId, int factor)
+    {
+        Ruleset r = Ruleset.LoadClassic(levelId);
+        Assert.Equal(levelId, r.DifficultyLevelId);
+        Assert.Equal(factor, r.Difficulty.FoundingFatherFactor);
+    }
+
+    [Fact]
+    public void GameNew_DefaultsTheDifficultyTag_ToMedium()
+    {
+        Assert.Equal("model.difficulty.medium", Game.New(Ruleset.LoadClassic(), seed: 7).DifficultyLevelId);
+    }
+
+    [Fact]
+    public void GameNew_RecordsTheChosenDifficultyLevel()
+    {
+        Ruleset hard = Ruleset.LoadClassic("model.difficulty.hard");
+        Game game = Game.New(hard, seed: 7, difficultyLevelId: "model.difficulty.hard");
+        Assert.Equal("model.difficulty.hard", game.DifficultyLevelId);
+        Assert.Equal(48, game.Ruleset.Difficulty.FoundingFatherFactor); // the hard balance is live
+    }
+
+    [Fact]
+    public void ChosenDifficultyLevel_RoundTripsThroughSave()
+    {
+        Ruleset hard = Ruleset.LoadClassic("model.difficulty.hard");
+        Game game = Game.New(hard, seed: 7, difficultyLevelId: "model.difficulty.hard");
+
+        SaveGame save = SaveGame.From(game);
+        Assert.Equal("model.difficulty.hard", save.DifficultyLevel);
+        Assert.Equal("model.difficulty.hard", save.DifficultyLevelOrDefault);
+
+        // A host re-loads the ruleset under the persisted level so the balance matches.
+        Game loaded = SaveGame.FromJson(save.ToJson())
+            .Restore(Ruleset.LoadClassic(save.DifficultyLevelOrDefault));
+        Assert.Equal("model.difficulty.hard", loaded.DifficultyLevelId);
+        Assert.Equal(48, loaded.Ruleset.Difficulty.FoundingFatherFactor);
+    }
+
+    [Fact]
+    public void DefaultDifficulty_OmitsTheLevelToken_AndStaysCurrent()
+    {
+        // A default (medium) game writes no DifficultyLevel token → byte-identical to a v45 default, and the version is current.
+        string json = SaveGame.From(Game.New(Ruleset.LoadClassic(), seed: 5)).ToJson();
+        Assert.DoesNotContain("\"DifficultyLevel\"", json);
+        Assert.Equal(46, SaveGame.CurrentVersion);
+    }
+
+    [Fact]
+    public void PreV46Save_LoadsAtTheDefaultMediumLevel()
+    {
+        // An old save with no DifficultyLevel token loads under the default medium balance.
+        SaveGame v45 = SaveGame.From(Game.New(Ruleset.LoadClassic(), seed: 9))
+            with { Version = 45, DifficultyLevel = null };
+        Assert.Equal("model.difficulty.medium", v45.DifficultyLevelOrDefault);
+        Game loaded = SaveGame.FromJson(v45.ToJson()).Restore(Ruleset.LoadClassic());
+        Assert.Equal("model.difficulty.medium", loaded.DifficultyLevelId);
     }
 }

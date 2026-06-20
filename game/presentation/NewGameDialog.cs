@@ -1,16 +1,18 @@
 using System;
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
 using Godot;
 
 namespace CrownAndColony.Presentation;
 
 /// <summary>
-/// New-game world-options overlay (<c>86d3c9w9c</c>): the player picks the world <b>size</b> and how much of the map
-/// is <b>land</b> (FreeCol's <c>model.option.mapWidth</c>/<c>mapHeight</c> + <c>model.option.landMass</c>) before
-/// starting. It only collects the choice and hands it back to the host via the <c>onStart</c> callback — the map
-/// generation itself lives in GameLogic (<see cref="MapGenerator"/> / <see cref="GameLogic.GameSession.Game.New"/>,
-/// forwarded by <see cref="GameController"/>). Presentation-only (ADR-006). Built programmatically (no scene file) and
-/// added as a child of the main menu like the other overlays; shares the parchment/wood look via <see cref="ColonyTheme"/>.
+/// New-game world-options overlay (<c>86d3c9w9c</c> + <c>86d3c9y08</c>): the player picks the world <b>size</b>, how
+/// much of the map is <b>land</b> (FreeCol's <c>model.option.mapWidth</c>/<c>mapHeight</c> + <c>model.option.landMass</c>)
+/// and the <b>difficulty</b> level (FreeCol's five classic levels) before starting. It only collects the choice and
+/// hands it back to the host via the <c>onStart</c> callback — the map generation and difficulty balance live in
+/// GameLogic (<see cref="MapGenerator"/> / <see cref="GameLogic.GameSession.Game.New"/>, forwarded by
+/// <see cref="GameController"/>). Presentation-only (ADR-006). Built programmatically (no scene file) and added as a
+/// child of the main menu like the other overlays; shares the parchment/wood look via <see cref="ColonyTheme"/>.
 /// </summary>
 public partial class NewGameDialog : Control
 {
@@ -20,7 +22,8 @@ public partial class NewGameDialog : Control
 
     private OptionButton _sizeOption = null!;
     private OptionButton _landOption = null!;
-    private Action<WorldSize, LandMass>? _onStart;
+    private OptionButton _difficultyOption = null!;
+    private Action<WorldSize, LandMass, DifficultyLevel>? _onStart;
 
     /// <summary>Builds the overlay (dim + parchment panel + the two dropdowns + Start/Back) and starts hidden.</summary>
     public override void _Ready()
@@ -67,6 +70,14 @@ public partial class NewGameDialog : Control
         _landOption.Selected = WorldSizeOptions.DefaultLandMassIndex;
         vbox.AddChild(LabeledRow("Land mass", _landOption));
 
+        _difficultyOption = new OptionButton { Name = "DifficultyOption" };
+        foreach (DifficultyLevel d in DifficultyLevels.All)
+        {
+            _difficultyOption.AddItem(d.Name);
+        }
+        _difficultyOption.Selected = DifficultyLevels.DefaultIndex;
+        vbox.AddChild(LabeledRow("Difficulty", _difficultyOption));
+
         var start = new Button { Name = "StartButton", Text = "Start" };
         start.Pressed += OnStart;
         vbox.AddChild(start);
@@ -78,8 +89,8 @@ public partial class NewGameDialog : Control
         Hide();
     }
 
-    /// <summary>Opens the dialog. <paramref name="onStart"/> receives the chosen size + land amount; the dialog then closes.</summary>
-    public void Open(Action<WorldSize, LandMass> onStart)
+    /// <summary>Opens the dialog. <paramref name="onStart"/> receives the chosen size + land amount + difficulty; the dialog then closes.</summary>
+    public void Open(Action<WorldSize, LandMass, DifficultyLevel> onStart)
     {
         _onStart = onStart;
         Show();
@@ -89,7 +100,8 @@ public partial class NewGameDialog : Control
     {
         WorldSize size = WorldSizeOptions.Sizes[_sizeOption.Selected];
         LandMass land = WorldSizeOptions.LandMasses[_landOption.Selected];
-        _onStart?.Invoke(size, land);
+        DifficultyLevel difficulty = DifficultyLevels.All[_difficultyOption.Selected];
+        _onStart?.Invoke(size, land, difficulty);
         EmitSignal(SignalName.Closed);
     }
 

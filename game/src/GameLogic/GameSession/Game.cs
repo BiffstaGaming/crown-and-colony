@@ -98,6 +98,7 @@ public sealed partial class Game
     private Game(Ruleset ruleset, GameMap map, Pcg32Random random, int turn, Player human)
     {
         Ruleset = ruleset;
+        DifficultyLevelId = ruleset.DifficultyLevelId; // the loaded level; New/Restore may override the persisted tag
         Map = map;
         _random = random;
         Turn = turn;
@@ -107,6 +108,13 @@ public sealed partial class Game
 
     /// <summary>The rule data this game plays by.</summary>
     public Ruleset Ruleset { get; }
+
+    /// <summary>
+    /// The spec id of the difficulty level this game plays under (e.g. <c>model.difficulty.medium</c>), persisted in
+    /// the save so it reloads under the same balance (86d3c9y08). Defaults to the ruleset's loaded level
+    /// (<see cref="Ruleset.DifficultyLevelId"/>) — set by <see cref="New"/> / <see cref="Restore"/>.
+    /// </summary>
+    public string DifficultyLevelId { get; private init; }
 
     /// <summary>The game world.</summary>
     public GameMap Map { get; }
@@ -2608,10 +2616,23 @@ public sealed partial class Game
     /// world (36×24, 45% land), so omitting them yields the historical default game; the new-game options forward
     /// the player's chosen world size / land mass here (<see cref="World.WorldSizeOptions"/>).
     /// </summary>
+    /// <param name="ruleset">The rule data to play by (its <see cref="Ruleset.Difficulty"/> supplies the balance numbers).</param>
+    /// <param name="seed">The world seed; the game is fully determined by it (ADR-009).</param>
+    /// <param name="mapWidth">Map width in tiles (default 36 — the shipped world).</param>
+    /// <param name="mapHeight">Map height in tiles (default 24 — the shipped world).</param>
+    /// <param name="startingGold">The human's starting treasury.</param>
+    /// <param name="startingTax">The human's starting sales tax.</param>
+    /// <param name="landMassFraction">The fraction of the map grown into land (default the shipped 45%).</param>
+    /// <param name="difficultyLevelId">
+    /// The difficulty level to record in the save (default <c>model.difficulty.medium</c> → byte-identical default).
+    /// The balance numbers themselves come from <paramref name="ruleset"/> (which must have been loaded with the same
+    /// level); this only tags the game so a reload re-loads the matching balance (86d3c9y08).
+    /// </param>
     public static Game New(
         Ruleset ruleset, ulong seed, int mapWidth = 36, int mapHeight = 24,
         int startingGold = 0, int startingTax = 0,
-        double landMassFraction = MapGenerator.DefaultLandMassFraction)
+        double landMassFraction = MapGenerator.DefaultLandMassFraction,
+        string difficultyLevelId = DifficultyLevels.DefaultId)
     {
         var random = new Pcg32Random(seed);
         GameMap map = MapGenerator.Generate(ruleset, mapWidth, mapHeight, random, landMassFraction);
@@ -2622,7 +2643,7 @@ public sealed partial class Game
             Gold = startingGold,
             TaxRate = startingTax,
         };
-        var game = new Game(ruleset, map, random, turn: 1, human);
+        var game = new Game(ruleset, map, random, turn: 1, human) { DifficultyLevelId = difficultyLevelId };
 
         // Start on settleable land that has somewhere to walk to (not a 1-tile
         // islet), preferring temperate latitudes (nearest the equator row) over
@@ -2805,10 +2826,17 @@ public sealed partial class Game
             int? tradeRouteId, int tradeRouteStopIndex)> units,
         IEnumerable<Colony>? colonies = null,
         IEnumerable<NativeSettlement>? nativeSettlements = null,
-        AutoExportMode autoExportMode = AutoExportMode.PerGood)
+        AutoExportMode autoExportMode = AutoExportMode.PerGood,
+        string? difficultyLevelId = null)
     {
         Player human = BuildPlayer(ruleset, players.Single(p => p.IsHuman), randomState);
-        var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn, human) { AutoExportMode = autoExportMode };
+        var game = new Game(ruleset, map, Pcg32Random.FromState(randomState), turn, human)
+        {
+            AutoExportMode = autoExportMode,
+            // The save's level tag; pre-v46 saves (null) keep the ruleset's loaded level (the load path re-loads the
+            // ruleset under the persisted level, so this stays consistent).
+            DifficultyLevelId = difficultyLevelId ?? ruleset.DifficultyLevelId,
+        };
         foreach (RestoredPlayer rp in players.Where(p => !p.IsHuman))
         {
             game._players.Add(BuildPlayer(ruleset, rp, randomState));

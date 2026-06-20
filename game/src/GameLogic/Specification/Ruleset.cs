@@ -41,11 +41,13 @@ public sealed class Ruleset
         Dictionary<string, EuropeanNation> europeanNationById,
         Calendar calendar,
         IReadOnlyList<int> fatherAgeYears,
-        DifficultyOptions difficulty)
+        DifficultyOptions difficulty,
+        string difficultyLevelId)
     {
         Calendar = calendar;
         FatherAgeYears = fatherAgeYears;
         Difficulty = difficulty;
+        DifficultyLevelId = difficultyLevelId;
         _terrainById = terrainById;
         _unitById = unitById;
         _goodsById = goodsById;
@@ -120,6 +122,13 @@ public sealed class Ruleset
     /// Balance constants read these instead of hardcoding values.
     /// </summary>
     public DifficultyOptions Difficulty { get; }
+
+    /// <summary>
+    /// The spec id of the difficulty level this ruleset was loaded with (e.g. <c>model.difficulty.medium</c>) — the
+    /// level whose options <see cref="Difficulty"/> holds. Persisted in the save (omitted when the default medium) so
+    /// a game reloads under the same balance (86d3c9y08).
+    /// </summary>
+    public string DifficultyLevelId { get; }
 
     /// <summary>All terrain types, in specification order.</summary>
     public IReadOnlyList<TerrainType> TerrainTypes { get; }
@@ -348,15 +357,17 @@ public sealed class Ruleset
     /// assembly. Convenience for the default variant; equivalent to
     /// <c>GameVariants.ClassicAmerica.LoadRuleset()</c>.
     /// </summary>
-    public static Ruleset LoadClassic() => LoadEmbedded(GameVariants.ClassicSpecResource);
+    public static Ruleset LoadClassic(string difficultyLevelId = DifficultyLevels.DefaultId) =>
+        LoadEmbedded(GameVariants.ClassicSpecResource, difficultyLevelId);
 
     /// <summary>
     /// Loads a ruleset from a specification embedded in this assembly (used by
     /// <see cref="GameVariant.LoadRuleset"/> to load the selected variant's data).
     /// </summary>
     /// <param name="resourceName">Manifest resource name of the embedded <c>specification.xml</c>.</param>
+    /// <param name="difficultyLevelId">The difficulty level to apply (default <c>model.difficulty.medium</c>); see <see cref="ParseDifficulty"/>.</param>
     /// <exception cref="InvalidOperationException">No embedded resource with that name exists.</exception>
-    public static Ruleset LoadEmbedded(string resourceName)
+    public static Ruleset LoadEmbedded(string resourceName, string difficultyLevelId = DifficultyLevels.DefaultId)
     {
         var assembly = Assembly.GetExecutingAssembly();
         using Stream stream = assembly.GetManifestResourceStream(resourceName)
@@ -365,14 +376,16 @@ public sealed class Ruleset
         // A variant supplies its own by following the naming convention; absent names → no colony-name lists.
         string colonyNamesResource = resourceName.Replace("specification.xml", "european-nation-names.properties");
         using Stream? colonyNames = assembly.GetManifestResourceStream(colonyNamesResource);
-        return Load(stream, colonyNames);
+        return Load(stream, colonyNames, difficultyLevelId);
     }
 
     /// <summary>Parses a ruleset from FreeCol-format specification XML.</summary>
     /// <param name="xml">The specification XML stream.</param>
     /// <param name="colonyNames">Optional FreeCol-format per-nation colony-name properties (null → European nations get empty colony-name lists).</param>
+    /// <param name="difficultyLevelId">The difficulty level to apply (default <c>model.difficulty.medium</c>); see <see cref="ParseDifficulty"/>.</param>
     /// <exception cref="RulesetFormatException">The XML is missing required elements or attributes.</exception>
-    public static Ruleset Load(Stream xml, Stream? colonyNames = null)
+    public static Ruleset Load(
+        Stream xml, Stream? colonyNames = null, string difficultyLevelId = DifficultyLevels.DefaultId)
     {
         XDocument doc = XDocument.Load(xml);
         XElement root = doc.Root
@@ -574,11 +587,12 @@ public sealed class Ruleset
 
         Calendar calendar = ParseCalendar(root);
         IReadOnlyList<int> fatherAgeYears = ParseFatherAgeYears(root, calendar.StartingYear);
-        DifficultyOptions difficulty = ParseDifficulty(root);
+        DifficultyOptions difficulty = ParseDifficulty(root, difficultyLevelId);
 
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, nativeNations, settlements,
-            roles, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears, difficulty);
+            roles, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears,
+            difficulty, difficultyLevelId);
     }
 
     /// <summary>

@@ -41,6 +41,9 @@ public partial class GameController : Node2D
     /// <summary>Companion to <see cref="PendingWorldSize"/>: the chosen land amount (null = shipped default).</summary>
     public static LandMass? PendingLandMass { get; set; }
 
+    /// <summary>Companion to <see cref="PendingWorldSize"/>: the chosen difficulty level (null = the shipped default, Conquistador/medium). Consumed (and cleared) in <see cref="NewGame"/>. (86d3c9y08)</summary>
+    public static DifficultyLevel? PendingDifficulty { get; set; }
+
     /// <summary>
     /// New-game seed. 0 (default) = pick a random seed per game; set non-zero to
     /// pin the world (tests, bug reproduction — ADR-009).
@@ -149,28 +152,30 @@ public partial class GameController : Node2D
     private void NewGame()
     {
         // The new-game options (if the player chose any) ride a static across the scene change; consume and clear
-        // them so a later default new game isn't surprised by a stale choice. Null → the shipped default world.
+        // them so a later default new game isn't surprised by a stale choice. Null → the shipped default.
         WorldSize size = PendingWorldSize ?? WorldSizeOptions.DefaultSize;
         LandMass land = PendingLandMass ?? WorldSizeOptions.DefaultLandMass;
+        DifficultyLevel difficulty = PendingDifficulty ?? DifficultyLevels.Default;
         PendingWorldSize = null;
         PendingLandMass = null;
+        PendingDifficulty = null;
 
         // Picking the seed may be non-deterministic (player convenience);
         // the game itself is fully determined by the chosen seed.
-        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi(), size, land);
+        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi(), size, land, difficulty);
     }
 
-    /// <summary>Starts a new game from an explicit seed at the shipped-default world size (tests, visual goldens — ADR-009).</summary>
+    /// <summary>Starts a new game from an explicit seed at the shipped-default world size / difficulty (tests, visual goldens — ADR-009).</summary>
     public void StartNewGame(ulong seed) =>
-        StartNewGame(seed, WorldSizeOptions.DefaultSize, WorldSizeOptions.DefaultLandMass);
+        StartNewGame(seed, WorldSizeOptions.DefaultSize, WorldSizeOptions.DefaultLandMass, DifficultyLevels.Default);
 
-    /// <summary>Starts a new game from an explicit seed and world size / land amount (forwarded from the new-game options).</summary>
-    public void StartNewGame(ulong seed, WorldSize size, LandMass landMass)
+    /// <summary>Starts a new game from an explicit seed, world size / land amount and difficulty level (forwarded from the new-game options). The ruleset is loaded under the chosen level so its balance matches, and the level is recorded for the save.</summary>
+    public void StartNewGame(ulong seed, WorldSize size, LandMass landMass, DifficultyLevel difficulty)
     {
         _currentSeed = seed;
         StartGame(Game.New(
-            _variant.LoadRuleset(), _currentSeed, size.Width, size.Height,
-            landMassFraction: landMass.Fraction));
+            _variant.LoadRuleset(difficulty.Id), _currentSeed, size.Width, size.Height,
+            landMassFraction: landMass.Fraction, difficultyLevelId: difficulty.Id));
     }
 
     private void StartGame(Game game)
@@ -665,9 +670,9 @@ public partial class GameController : Node2D
         }
         using var file = FileAccess.Open(QuickSavePath, FileAccess.ModeFlags.Read);
         SaveGame save = SaveGame.FromJson(file.GetAsText());
-        // Reload under the save's own variant so its ruleset matches (ADR-018).
+        // Reload under the save's own variant + difficulty level so its ruleset/balance matches (ADR-018, 86d3c9y08).
         _variant = GameVariants.Resolve(save.Variant);
-        StartGame(save.Restore(_variant.LoadRuleset()));
+        StartGame(save.Restore(_variant.LoadRuleset(save.DifficultyLevelOrDefault)));
         _notice = "Game loaded.";
         RefreshView();
     }
@@ -686,7 +691,7 @@ public partial class GameController : Node2D
         using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);
         SaveGame save = SaveGame.FromJson(file.GetAsText());
         _variant = GameVariants.Resolve(save.Variant);
-        StartGame(save.Restore(_variant.LoadRuleset()));
+        StartGame(save.Restore(_variant.LoadRuleset(save.DifficultyLevelOrDefault)));
     }
 
     private void RefreshView()

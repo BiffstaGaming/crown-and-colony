@@ -34,8 +34,10 @@ public sealed class GameVariant
     /// <summary>One-line description for the variant-select screen.</summary>
     public string Description { get; }
 
-    /// <summary>Loads this variant's ruleset by parsing its embedded specification.</summary>
-    public Ruleset LoadRuleset() => Ruleset.LoadEmbedded(_specResource);
+    /// <summary>Loads this variant's ruleset by parsing its embedded specification, applying a difficulty level.</summary>
+    /// <param name="difficultyLevelId">The difficulty level to apply (default <c>model.difficulty.medium</c> → the historical balance).</param>
+    public Ruleset LoadRuleset(string difficultyLevelId = DifficultyLevels.DefaultId) =>
+        Ruleset.LoadEmbedded(_specResource, difficultyLevelId);
 }
 
 /// <summary>

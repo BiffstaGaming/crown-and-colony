@@ -61,10 +61,11 @@ public partial class MainMenu : Control
         var dialog = new NewGameDialog();
         dialog.Closed += dialog.QueueFree;
         AddChild(dialog);
-        dialog.Open((size, land) =>
+        dialog.Open((size, land, difficulty) =>
         {
             GameController.PendingWorldSize = size;
             GameController.PendingLandMass = land;
+            GameController.PendingDifficulty = difficulty;
             GetTree().ChangeSceneToFile(GameScenePath);
         });
     }

@@ -1,4 +1,45 @@
+using System.Collections.Generic;
+using System.Linq;
+
 namespace CrownAndColony.GameLogic.Specification;
+
+/// <summary>A selectable new-game difficulty level — the spec <c>model.difficulty.*</c> level id plus a player-facing
+/// name (FreeCol's five classic levels). "Data not code" like <see cref="GameVariants"/> / world-shape presets: adding
+/// a level is a list entry, no logic change.</summary>
+/// <param name="Id">The spec optionGroup id, e.g. <c>model.difficulty.medium</c> (the value persisted in the save and passed to <see cref="Ruleset.ParseDifficulty"/>).</param>
+/// <param name="Name">Player-facing label, e.g. "Conquistador".</param>
+public sealed record DifficultyLevel(string Id, string Name);
+
+/// <summary>
+/// The selectable difficulty levels the build ships with (FreeCol's five classic levels, easiest first). The default
+/// is <see cref="Default"/> (<c>medium</c> / "Conquistador"), so a new game that does not choose a level — and every
+/// existing entry point and test — gets the historical medium balance (ADR-009: byte-identical default).
+/// </summary>
+public static class DifficultyLevels
+{
+    /// <summary>The spec id of the default level (<c>model.difficulty.medium</c>) — what an unspecified new game uses.</summary>
+    public const string DefaultId = "model.difficulty.medium";
+
+    /// <summary>The offered levels, easiest first; names follow the classic Colonization difficulty titles.</summary>
+    public static IReadOnlyList<DifficultyLevel> All { get; } =
+    [
+        new("model.difficulty.veryEasy", "Discoverer"),
+        new("model.difficulty.easy", "Explorer"),
+        new(DefaultId, "Conquistador"),
+        new("model.difficulty.hard", "Governor"),
+        new("model.difficulty.veryHard", "Viceroy"),
+    ];
+
+    /// <summary>Index of the shipped-default level (Conquistador / medium) in <see cref="All"/>.</summary>
+    public static int DefaultIndex { get; } = All.ToList().FindIndex(l => l.Id == DefaultId);
+
+    /// <summary>The shipped-default level (Conquistador / <c>model.difficulty.medium</c>).</summary>
+    public static DifficultyLevel Default => All[DefaultIndex];
+
+    /// <summary>The player-facing name for a level id, or the bare short id (e.g. <c>medium</c>) if it is not a shipped level.</summary>
+    public static string NameOf(string id) =>
+        All.FirstOrDefault(l => l.Id == id)?.Name ?? id[(id.LastIndexOf('.') + 1)..];
+}
 
 /// <summary>
 /// The tuning numbers a difficulty level sets — FreeCol's <c>model.difficulty.*</c> option groups, parsed once from

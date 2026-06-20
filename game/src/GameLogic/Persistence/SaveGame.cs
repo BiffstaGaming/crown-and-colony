@@ -18,7 +18,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 45;
+    public const int CurrentVersion = 46;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -95,6 +95,10 @@ public sealed record SaveGame
     /// byte-identical to v41; pre-v42 saves load with the succession not yet done.
     /// Each of v23–v42 is additive + omitted-when-empty, so a feature-free game round-trips byte-identically to the
     /// prior version and older saves load with the feature absent.
+    /// v46 added the chosen difficulty level (<see cref="DifficultyLevel"/>, omitted for the default
+    /// <c>model.difficulty.medium</c> so a default game stays byte-identical to v45; pre-v46 saves load the default
+    /// level, 86d3c9y08). It is additive + omitted-when-default, so a default game round-trips byte-identically to v45
+    /// and older saves load with the feature absent.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -158,6 +162,12 @@ public sealed record SaveGame
 
     /// <summary>Whether the Spanish Succession consolidation has happened (v42; null/omitted until it fires, so a game before 1600 stays byte-identical to v41).</summary>
     public bool? SpanishSuccession { get; init; }
+
+    /// <summary>The spec id of the difficulty level this game plays under (v46; null/omitted for the default <c>model.difficulty.medium</c>, so a default game stays byte-identical to v45). On load the ruleset is re-loaded under this level so the balance matches; pre-v46 saves load the default level.</summary>
+    public string? DifficultyLevel { get; init; }
+
+    /// <summary>The difficulty level id to load this save's ruleset under: the persisted <see cref="DifficultyLevel"/>, or the default medium when omitted (pre-v46 / a default game). Hosts pass this to <c>GameVariant.LoadRuleset</c> so the reloaded balance matches the save.</summary>
+    public string DifficultyLevelOrDefault => DifficultyLevel ?? DifficultyLevels.DefaultId;
 
     /// <summary>Legacy ≤v19 / pre-FP-7 read-only player treasury (v9+). Player state lives in <see cref="Players"/> (v20+); no longer written as of FP-7. Nullable so new saves omit it.</summary>
     public int? Gold { get; init; }
@@ -330,6 +340,8 @@ public sealed record SaveGame
                         s.VisitedByPowers.Count > 0 ? s.VisitedByPowers.ToList() : null)) // v44; omitted when no foreign power has visited
                     .ToList()
                 : null,
+            // The chosen difficulty level (v46); omitted for the default medium so a default game stays byte-identical to v45.
+            DifficultyLevel = game.DifficultyLevelId == DifficultyLevels.DefaultId ? null : game.DifficultyLevelId,
         };
     }
 
@@ -463,7 +475,8 @@ public sealed record SaveGame
                 }
                 return settlement;
             }),
-            AutoExportMode.GetValueOrDefault()); // pre-v28 / omitted → PerGood (the enum's 0 default)
+            AutoExportMode.GetValueOrDefault(), // pre-v28 / omitted → PerGood (the enum's 0 default)
+            DifficultyLevel ?? DifficultyLevels.DefaultId); // v46; pre-v46 / omitted → the default medium level
 
         if (RefForce is { } ref_) // v40; pre-v40 / omitted → the base REF is re-derived on demand
         {

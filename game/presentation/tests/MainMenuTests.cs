@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Threading.Tasks;
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
 using CrownAndColony.Presentation;
 using GdUnit4;
@@ -103,7 +104,7 @@ public class MainMenuTests
     }
 
     [TestCase]
-    public async Task NewGameDialog_ForwardsTheChosenWorldSizeAndLandMass()
+    public async Task NewGameDialog_ForwardsTheChosenWorldSizeLandMassAndDifficulty()
     {
         ISceneRunner runner = ISceneRunner.Load(MenuScene);
         await runner.SimulateFrames(2);
@@ -115,14 +116,18 @@ public class MainMenuTests
 
         WorldSize? chosenSize = null;
         LandMass? chosenLand = null;
-        dialog.Open((size, land) => { chosenSize = size; chosenLand = land; });
+        DifficultyLevel? chosenDifficulty = null;
+        dialog.Open((size, land, difficulty) => { chosenSize = size; chosenLand = land; chosenDifficulty = difficulty; });
 
         var sizeOption = dialog.FindChild("SizeOption", recursive: true, owned: false) as OptionButton;
         var landOption = dialog.FindChild("LandOption", recursive: true, owned: false) as OptionButton;
+        var difficultyOption = dialog.FindChild("DifficultyOption", recursive: true, owned: false) as OptionButton;
         AssertThat(sizeOption).IsNotNull();
         AssertThat(landOption).IsNotNull();
+        AssertThat(difficultyOption).IsNotNull();
         sizeOption!.Select(2); // "Large"
         landOption!.Select(2); // "Dense"
+        difficultyOption!.Select(4); // "Viceroy" (veryHard)
 
         var start = dialog.FindChild("StartButton", recursive: true, owned: false) as Button;
         AssertThat(start).IsNotNull();
@@ -132,6 +137,8 @@ public class MainMenuTests
         AssertThat(chosenSize).IsNotNull();
         AssertThat(chosenSize!.Name).IsEqual(WorldSizeOptions.Sizes[2].Name);
         AssertThat(chosenLand!.Name).IsEqual(WorldSizeOptions.LandMasses[2].Name);
+        AssertThat(chosenDifficulty).IsNotNull();
+        AssertThat(chosenDifficulty!.Id).IsEqual(DifficultyLevels.All[4].Id);
     }
 
     [TestCase]
