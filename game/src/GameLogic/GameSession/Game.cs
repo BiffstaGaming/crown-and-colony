@@ -6905,13 +6905,26 @@ public sealed partial class Game
         return w;
     }
 
+    /// <summary>The artillery / wagon-train unit ids a foreign-power colony will build (FreeCol <c>ColonyPlan</c> defence + transport priorities).</summary>
+    private const string WagonTrainUnitTypeId = "model.unit.wagonTrain";
+
     /// <summary>
-    /// Plans a foreign-power colony's construction (FreeCol <c>ColonyPlan.updateBuildableTypes</c>, building subset):
-    /// when nothing is queued, build the highest-value building — value = <see cref="BuildingBuildWeight"/> ÷
-    /// difficulty, where difficulty = <c>max(1, sqrt(Σ shortfall of required goods × (input farmable here ? 1 : 5)))</c>.
-    /// Buildings above the colony's size-profile level are skipped, except defence/export (always considered). Reuses
-    /// <see cref="SetBuild"/>/<see cref="RunConstruction"/>; an in-progress build is left alone. RNG-free. Buildable
-    /// <b>units</b> (artillery/wagons) are a later increment.
+    /// Plans a foreign-power colony's construction (FreeCol <c>ColonyPlan.updateBuildableTypes</c> / <c>StandardAIPlayer</c>,
+    /// faithful subset). When nothing is queued, two deterministic UNIT triggers are checked first, then the building plan:
+    /// <list type="number">
+    /// <item><b>Artillery when under-defended</b> — if no <see cref="IsMilitaryUnit">military</see> land unit owned by the
+    /// colony's owner stands on the colony tile, and <c>model.unit.artillery</c> is in <see cref="BuildableUnits"/> (needs an
+    /// armory + materials), queue artillery (FreeCol prioritises defence for an undefended colony).</item>
+    /// <item><b>Wagon train for inland transport</b> — else, if the colony is landlocked (no adjacent water, so no ship can
+    /// serve it) and the owner owns no <c>model.unit.wagonTrain</c> yet, and the wagon is buildable, queue a wagon train.</item>
+    /// <item><b>Otherwise the building plan</b> — build the highest-value building: value = <see cref="BuildingBuildWeight"/> ÷
+    /// difficulty, where difficulty = <c>max(1, sqrt(Σ shortfall of required goods × (input farmable here ? 1 : 5)))</c>;
+    /// buildings above the colony's size-profile level are skipped, except defence/export (always considered).</item>
+    /// </list>
+    /// Reuses <see cref="SetBuild"/>/<see cref="RunConstruction"/>; an in-progress build is left alone. RNG-free
+    /// (ADR-009 — runs on a foreign power's own turn and draws nothing; ties break by ordinal id, never by RNG).
+    /// <b>Deviation:</b> not FreeCol's full value-ranking of units against buildings or its transport-route planning — just
+    /// these two unit triggers plus the building fallback (faithful-subset, see [docs]/systems/players.md).
     /// </summary>
     internal void RunForeignColonyBuildPlan(Colony colony)
     {
@@ -6919,6 +6932,29 @@ public sealed partial class Game
         {
             return; // don't churn an in-progress build
         }
+
+        // 1. Buildable UNITS take precedence over buildings, in a fixed order (BuildableUnits handles the armory/hammers/
+        //    tools/limit/coastal gates, so we only judge the strategic trigger here).
+        List<UnitType> buildableUnits = BuildableUnits(colony).ToList();
+
+        // 1a. Artillery for an under-defended colony: no military land unit of the owner on the colony tile.
+        if (!ColonyHasMilitaryDefender(colony)
+            && buildableUnits.Any(u => u.Id == ArtilleryUnitTypeId))
+        {
+            SetBuild(colony, ArtilleryUnitTypeId);
+            return;
+        }
+
+        // 1b. Wagon train for an inland (landlocked) colony that owns no wagon train yet — its only overland carrier.
+        if (!IsColonyCoastal(colony)
+            && !OwnerOwnsWagonTrain(colony)
+            && buildableUnits.Any(u => u.Id == WagonTrainUnitTypeId))
+        {
+            SetBuild(colony, WagonTrainUnitTypeId);
+            return;
+        }
+
+        // 2. No unit trigger fired → fall back to the best building.
         int maxLevel = colony.Population <= 2 ? 1 : colony.Population <= 4 ? 2 : colony.Population <= 8 ? 3 : 4;
 
         BuildingType? best = null;
@@ -6951,6 +6987,15 @@ public sealed partial class Game
             SetBuild(colony, best.Id);
         }
     }
+
+    /// <summary>True when a <see cref="IsMilitaryUnit">military</see> land unit owned by the colony's owner stands on the colony tile (it has a defender) — the under-defended test for <see cref="RunForeignColonyBuildPlan"/>'s artillery trigger.</summary>
+    private bool ColonyHasMilitaryDefender(Colony colony) =>
+        _units.Any(u => u.OwnerId == colony.OwnerId && u.OwnerNationId is null
+                        && u.IsOnMap && u.Position == colony.Position && IsMilitaryUnit(u));
+
+    /// <summary>True when the colony's owner already owns at least one wagon train anywhere — the "skip a second wagon" test for <see cref="RunForeignColonyBuildPlan"/>'s transport trigger.</summary>
+    private bool OwnerOwnsWagonTrain(Colony colony) =>
+        _units.Any(u => u.OwnerId == colony.OwnerId && u.OwnerNationId is null && u.Type.Id == WagonTrainUnitTypeId);
 
     private void RunColonyTurn(Player owner, Colony colony)
     {

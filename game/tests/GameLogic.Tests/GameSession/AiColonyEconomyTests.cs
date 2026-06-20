@@ -1,6 +1,8 @@
+using System.Collections.Generic;
 using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
 using Xunit;
@@ -16,6 +18,11 @@ public class AiColonyEconomyTests
     private static readonly Ruleset Classic = Ruleset.LoadClassic();
     private const ulong Seed = 0xC0FFEEUL;
     private const string Grain = "model.goods.grain";
+    private const string Hammers = "model.goods.hammers";
+    private const string Tools = "model.goods.tools";
+    private const string Artillery = "model.unit.artillery";
+    private const string WagonTrain = "model.unit.wagonTrain";
+    private const string Armory = "model.building.armory";
 
     /// <summary>A fresh game with a founded human colony whose tiles have all been freed (the founder left idle).</summary>
     private static (Game Game, Colony Colony) IdleColony()
@@ -188,5 +195,196 @@ public class AiColonyEconomyTests
 
         Colony colony = game.Colonies.First(c => c.OwnerId == power.PlayerId);
         Assert.True(colony.TileWorkers.Count > 0); // the planner staffed its tiles (centre-only/idle before 86d3c9vmr)
+    }
+
+    // ── Build-queue planner — buildable UNITS (increment 4b) ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void BuildQueue_UnderDefendedColony_QueuesArtillery()
+    {
+        // A foreign colony with an armory + materials, no military unit on its tile → it builds artillery to defend itself.
+        Game game = ForeignColony(out Colony colony, out int _);
+        colony.AddBuilding(Armory);
+        colony.AddGoods(Hammers, 192);
+        colony.AddGoods(Tools, 40);
+        Assert.Contains(game.BuildableUnits(colony), u => u.Id == Artillery); // premise: artillery is buildable now
+
+        game.RunForeignColonyBuildPlan(colony);
+
+        Assert.Equal(Artillery, colony.CurrentBuild); // defence takes precedence over any building
+    }
+
+    [Fact]
+    public void BuildQueue_DefendedColony_DoesNotQueueArtillery()
+    {
+        // A military land unit (artillery) of the owner is already standing on the colony tile → not under-defended,
+        // so the artillery trigger does NOT fire even though artillery is buildable (armory + materials present).
+        Game game = ForeignColony(out Colony colony, out int ownerId);
+        colony.Population = 4;
+        colony.AddBuilding(Armory);
+        colony.AddGoods(Hammers, 192);
+        colony.AddGoods(Tools, 40);
+        Assert.Contains(game.BuildableUnits(colony), u => u.Id == Artillery); // premise: artillery IS buildable
+        game.SpawnUnit(Classic.Unit(Artillery), colony.Position, ownerId);    // …but a defender already stands on the tile
+
+        game.RunForeignColonyBuildPlan(colony);
+
+        Assert.NotEqual(Artillery, colony.CurrentBuild); // defence is satisfied → the artillery trigger is skipped
+    }
+
+    [Fact]
+    public void BuildQueue_NoUnitTriggers_FallsThroughToABuilding()
+    {
+        // A coastal (not landlocked), defended colony with no armory: neither the artillery nor the wagon trigger
+        // applies, so the existing building plan runs and picks a building (the increment leaves it intact).
+        Game game = CoastalForeignColony(out Colony colony, out int ownerId);
+        colony.Population = 4; // enough population to unlock a building for the fallback to pick
+        game.SpawnUnit(Classic.Unit(Artillery), colony.Position, ownerId); // defended → no artillery
+        Assert.True(game.Buildables(colony).Any(), "no buildables — test premise broke");
+
+        game.RunForeignColonyBuildPlan(colony);
+
+        Assert.NotNull(colony.CurrentBuild);                                                     // it queued a build…
+        Assert.NotNull(Classic.BuildingTypes.FirstOrDefault(b => b.Id == colony.CurrentBuild));  // …and it is a BUILDING
+    }
+
+    [Fact]
+    public void BuildQueue_LandlockedColonyWithNoWagon_QueuesAWagonTrain()
+    {
+        // A landlocked colony (no water neighbour) that owns no wagon train → it builds one for overland transport.
+        // It IS defended (a soldier on the tile) so the artillery trigger does not pre-empt the wagon trigger.
+        Game game = ForeignColony(out Colony colony, out int ownerId);
+        game.SpawnUnit(Classic.Unit(Artillery), colony.Position, ownerId); // defended → skip the artillery branch
+        colony.AddGoods(Hammers, 40);
+        Assert.DoesNotContain(game.BuildableUnits(colony), u => u.Id == Artillery); // no armory → artillery not buildable anyway
+        Assert.Contains(game.BuildableUnits(colony), u => u.Id == WagonTrain); // premise: the wagon is buildable
+
+        game.RunForeignColonyBuildPlan(colony);
+
+        Assert.Equal(WagonTrain, colony.CurrentBuild);
+    }
+
+    [Fact]
+    public void BuildQueue_OwnerAlreadyHasAWagon_DoesNotQueueASecondOne()
+    {
+        // A two-colony owner that already owns a wagon train does not queue another (FreeCol builds the wagon for
+        // transport, not in bulk) — it falls through to a building instead.
+        Game game = TwoForeignColonies(out Colony first, out int ownerId, out Position spareLand);
+        game.SpawnUnit(Classic.Unit(Artillery), first.Position, ownerId); // defended → skip artillery
+        game.SpawnUnit(Classic.Unit(WagonTrain), spareLand, ownerId);     // the owner already has a wagon
+        first.Population = 4; // enough to unlock a building so the fallback has something to pick
+
+        game.RunForeignColonyBuildPlan(first);
+
+        Assert.NotEqual(WagonTrain, first.CurrentBuild); // not a second wagon
+    }
+
+    [Fact]
+    public void BuildQueue_UnitTriggers_AreDeterministic()
+    {
+        // Two identical setups must make the identical pick, with no RNG drawn (ADR-009).
+        static (Game Game, Colony Colony) Setup()
+        {
+            Game g = ForeignColony(out Colony c, out _);
+            c.AddBuilding(Armory);
+            c.AddGoods(Hammers, 192);
+            c.AddGoods(Tools, 40);
+            return (g, c);
+        }
+
+        (Game a, Colony ca) = Setup();
+        (Game b, Colony cb) = Setup();
+        var beforeA = a.RandomState;
+        a.RunForeignColonyBuildPlan(ca);
+        b.RunForeignColonyBuildPlan(cb);
+
+        Assert.Equal(ca.CurrentBuild, cb.CurrentBuild); // same pick from the same setup
+        Assert.Equal(Artillery, ca.CurrentBuild);
+        Assert.Equal(beforeA, a.RandomState);           // the planner drew no randomness
+    }
+
+    // ---- Fixtures (foreign-owned colonies on hand-built maps, mirroring BuildUnitTests) ----
+
+    /// <summary>Human (stream 0) + one foreign colonial power (id 1, Dutch) — the player roster every fixture restores with.</summary>
+    private static List<SavedPlayer> HumanPlusForeign() =>
+    [
+        new SavedPlayer(0, NationId: null, IsHuman: true, PlayerType: (int)PlayerType.Colonial),
+        new SavedPlayer(1, "model.nation.dutch", IsHuman: false, PlayerType: (int)PlayerType.Colonial),
+    ];
+
+    /// <summary>A landlocked 1×1 plains colony handed to the foreign colonial power, idle build queue.</summary>
+    private static Game ForeignColony(out Colony colony, out int ownerId) =>
+        ForeignColonyFrom(
+            new SaveGame
+            {
+                Turn = 1,
+                RandomStateValue = 1,
+                RandomIncrement = 1,
+                MapWidth = 1,
+                MapHeight = 1,
+                Terrain = ["model.tile.plains"],
+                Units = [],
+                Explored = [0],
+                Players = HumanPlusForeign(),
+                Colonies = [new SavedColony(1, "Forge", 0, 0, 1)],
+            },
+            out colony, out ownerId);
+
+    /// <summary>A coastal foreign colony: plains at (0,0), ocean at (1,0) — it has a port, so it is not landlocked.</summary>
+    private static Game CoastalForeignColony(out Colony colony, out int ownerId) =>
+        ForeignColonyFrom(
+            new SaveGame
+            {
+                Turn = 1,
+                RandomStateValue = 1,
+                RandomIncrement = 1,
+                MapWidth = 2,
+                MapHeight = 1,
+                Terrain = ["model.tile.plains", "model.tile.ocean"],
+                Units = [],
+                Explored = [0, 1],
+                Players = HumanPlusForeign(),
+                Colonies = [new SavedColony(1, "Harbor", 0, 0, 1)],
+            },
+            out colony, out ownerId);
+
+    /// <summary>Two landlocked foreign colonies (cols 0 and 4 of a 5×1 plains strip) plus a spare land tile to spawn a wagon on.</summary>
+    private static Game TwoForeignColonies(out Colony first, out int ownerId, out Position spareLand)
+    {
+        Game game = ForeignColonyFrom(
+            new SaveGame
+            {
+                Turn = 1,
+                RandomStateValue = 1,
+                RandomIncrement = 1,
+                MapWidth = 5,
+                MapHeight = 1,
+                Terrain = [.. Enumerable.Repeat("model.tile.plains", 5)],
+                Units = [],
+                Explored = [0, 1, 2, 3, 4],
+                Players = HumanPlusForeign(),
+                Colonies =
+                [
+                    new SavedColony(1, "Alpha", 0, 0, 1),
+                    new SavedColony(2, "Beta", 4, 0, 1),
+                ],
+            },
+            out first, out ownerId);
+        foreach (Colony c in game.Colonies)
+        {
+            c.OwnerId = ownerId; // both colonies belong to the same foreign power
+        }
+        spareLand = new Position(2, 0);
+        return game;
+    }
+
+    /// <summary>Restores <paramref name="save"/>, hands the first colony to the foreign colonial power, returns it.</summary>
+    private static Game ForeignColonyFrom(SaveGame save, out Colony colony, out int ownerId)
+    {
+        Game game = save.Restore(Classic);
+        ownerId = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).PlayerId;
+        colony = game.Colonies[0];
+        colony.OwnerId = ownerId;
+        return game;
     }
 }
