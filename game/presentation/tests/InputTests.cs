@@ -353,8 +353,16 @@ public class InputTests
         controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(2);
 
-        var label = controller.GetNode<Label>("UI/StatusLabel");
-        AssertThat(label.Text.ToLower()).Contains("raid"); // "raided" (native won) or "fought off … raid" (defended)
+        // The raid surfaces as a row in the dismissible TurnMessagePanel (not the status bar any more).
+        AssertThat(controller.GetNode<PanelContainer>("UI/TurnMessagePanel").Visible).IsTrue();
+        AssertThat(MessageRows(controller).ToLower()).Contains("raid"); // "raided" (native won) or "fought off … raid"
+    }
+
+    /// <summary>The concatenated text of every <c>Message_*</c> row in the turn-message panel (helper for the L3 notice tests).</summary>
+    private static string MessageRows(GameController controller)
+    {
+        var dynamic = controller.GetNode<VBoxContainer>("UI/TurnMessagePanel/VBox/Scroll/Dynamic");
+        return string.Join("\n", dynamic.GetChildren().OfType<Label>().Select(l => l.Text));
     }
 
     [TestCase(Timeout = 60000)]
@@ -394,8 +402,9 @@ public class InputTests
         controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(2);
 
-        var label = controller.GetNode<Label>("UI/StatusLabel");
-        AssertThat(label.Text.ToLower()).Contains("captured your colony");
+        // The capture surfaces as a row in the dismissible TurnMessagePanel.
+        AssertThat(controller.GetNode<PanelContainer>("UI/TurnMessagePanel").Visible).IsTrue();
+        AssertThat(MessageRows(controller).ToLower()).Contains("captured your colony");
     }
 
     private static IReadOnlyDictionary<int, Stance> WithWar(IReadOnlyDictionary<int, Stance>? existing, int other)
@@ -416,7 +425,7 @@ public class InputTests
 
         // Found a colony with the human's only unit (so 0 human units, 1 colony), then hand that colony to a rival
         // via the save layer — leaving the human with no colonies and no units: IsHumanDefeated. End Turn must
-        // surface the defeat in the status bar.
+        // surface the defeat as a turn-message row.
         Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
         SaveGame save = SaveGame.From(game);
         SavedPlayer rival = save.Players!.First(p => !p.IsHuman && p.PlayerType == (int)PlayerType.Colonial);
@@ -428,7 +437,44 @@ public class InputTests
         controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(2);
 
-        AssertThat(controller.GetNode<Label>("UI/StatusLabel").Text.ToLower()).Contains("defeated");
+        // The defeat surfaces as a turn-message row (after the loss notice that caused it).
+        AssertThat(controller.GetNode<PanelContainer>("UI/TurnMessagePanel").Visible).IsTrue();
+        AssertThat(MessageRows(controller).ToLower()).Contains("defeated");
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task TurnMessagePanel_AfterARaid_ListsTheNotice_AndOkDismissesIt()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Same setup as the native-raid notice test: a brave adjacent to the human's unit + every native enraged,
+        // so the AI phase raids the human and produces a notice row in the panel.
+        Position humanPos = game.PlayerUnits.First(u => u.IsOnMap).Position;
+        Position bravePos = humanPos.Neighbours().First(n => Free(game, n));
+        string nation = game.NativeSettlements.First().NationTypeId;
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.brave"), bravePos, nation);
+        foreach (NativeSettlement s in game.NativeSettlements)
+        {
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm);
+        }
+
+        controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+
+        var panel = controller.GetNode<PanelContainer>("UI/TurnMessagePanel");
+        AssertThat(panel.Visible).IsTrue();
+        // At least one named message row rendered, and a first row exists (Message_0).
+        var dynamic = controller.GetNode<VBoxContainer>("UI/TurnMessagePanel/VBox/Scroll/Dynamic");
+        AssertThat(dynamic.GetNodeOrNull("Message_0")).IsNotNull();
+
+        // OK dismisses the panel.
+        controller.GetNode<Button>("UI/TurnMessagePanel/VBox/OkButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(panel.Visible).IsFalse();
     }
 
     [TestCase(Timeout = 60000)]

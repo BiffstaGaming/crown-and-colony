@@ -75,6 +75,7 @@ public partial class GameController : Node2D
     private PanelContainer _demandPanel = null!;
     private PanelContainer _moundsPanel = null!;
     private PreCombatPanel _preCombatPanel = null!;
+    private TurnMessagePanel _turnMessagePanel = null!;
     private PanelContainer _tradeRoutePanel = null!;
     private PanelContainer _colonyReportPanel = null!;
     private PanelContainer _findSettlementPanel = null!;
@@ -118,6 +119,7 @@ public partial class GameController : Node2D
         _demandPanel = GetNode<PanelContainer>("UI/NativeDemandPanel");
         _moundsPanel = GetNode<PanelContainer>("UI/MoundsDecisionPanel");
         _preCombatPanel = GetNode<PreCombatPanel>("UI/PreCombatPanel");
+        _turnMessagePanel = GetNode<TurnMessagePanel>("UI/TurnMessagePanel");
         _tradeRoutePanel = GetNode<PanelContainer>("UI/TradeRoutePanel");
         _colonyReportPanel = GetNode<PanelContainer>("UI/ColonyReportPanel");
         _findSettlementPanel = GetNode<PanelContainer>("UI/FindSettlementPanel");
@@ -260,22 +262,22 @@ public partial class GameController : Node2D
     private void OnEndTurnPressed()
     {
         _game.EndTurn();
-        // Surface what the human suffered during the AI phase (no return value to read, unlike a player-initiated
-        // attack): raids on units (1c-2/1c-3a′), native pillages of colonies, then captures of colonies (1c-3f).
-        // Notices are in deterministic order; show them together.
+        // Surface what the human suffered or received during the AI phase (no return value to read, unlike a
+        // player-initiated attack): raids on units (1c-2/1c-3a′), native pillages of colonies, captures of colonies
+        // (1c-3f), then custom-house auto-sales. Notices are in deterministic order; instead of cramming them into
+        // the one-line status bar, each is formatted to a player-facing row and shown together in the dismissible
+        // TurnMessagePanel (FreeCol's ReportTurnPanel). Formatting (and the rules) stay here / in GameLogic (ADR-006).
         var messages = _game.CombatNotices.Select(FormatCombatNotice)
             .Concat(_game.ColonyRaidNotices.Select(FormatColonyRaidNotice))
             .Concat(_game.ColonyLossNotices.Select(FormatColonyLossNotice))
+            .Concat(_game.CustomHouseSaleNotices.Select(FormatCustomHouseSaleNotice))
             .ToList();
         if (_game.IsHumanDefeated)
         {
             // The AI phase took the human's last colony/unit — surface the defeat after the loss notice that caused it.
             messages.Add("💀 You have been defeated — your last colony and units are gone.");
         }
-        if (messages.Count > 0)
-        {
-            _notice = string.Join("   ", messages);
-        }
+        _turnMessagePanel.Open(messages); // no-op (stays hidden) when there were no events this turn
         RefreshView();
 
         // A native brave demanded tribute of one of the human's colonies during the AI phase → prompt for a decision
@@ -334,6 +336,10 @@ public partial class GameController : Node2D
         notice.GoodsId is { } goodsId
             ? $"⚔ The {NationLabel(notice.AttackerNationId)} raided {notice.ColonyName} and carried off {notice.Amount} {_game.Ruleset.Goods(goodsId).ShortName}!"
             : $"⚔ The {NationLabel(notice.AttackerNationId)} raided {notice.ColonyName} and made off with {notice.Amount} gold!";
+
+    /// <summary>Turns a custom-house auto-sale into a turn-message row ("💰 Your custom house in X sold N goods for G gold.").</summary>
+    private string FormatCustomHouseSaleNotice(CustomHouseSaleNotice notice) =>
+        $"💰 Your custom house in {notice.ColonyName} sold {notice.Amount} {_game.Ruleset.Goods(notice.GoodsId).ShortName} for {notice.Gold} gold.";
 
     /// <summary>The display label for a nation id (e.g. <c>model.nation.dutch</c> → "Dutch").</summary>
     private static string NationLabel(string nationId)
