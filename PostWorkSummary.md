@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — Road/river-aware goto Pathfinder — COMPLETE ✅
+
+**Requested:** Make the goto `Pathfinder` road/river-aware so auto-routed goto paths prefer roads and rivers (the "follow it" reduced movement cost), matching `CheckMove`, and keep A* admissible/deterministic.
+**Did:**
+- **Pathfinder edge cost** (`game/src/GameLogic/World/Pathfinder.cs`): `FindPath` gains an `applyImprovementBonus` flag; a land edge is now costed via `ImprovementMovement.MoveCost(map.ImprovementsAt(from), map.ImprovementsAt(to), terrain.MoveCost)` (river **and** road follow-cost), exactly what `CheckMove` charges per step. Extracted an `EnterCost` helper; ships/terrain-only callers keep plain terrain cost (flag defaults false).
+- **Admissibility fix:** lowered the heuristic's min-enter-cost multiplier **3 → 1** (`MinEnterCost`). A road/river step can now cost 1, so a heuristic stuck at 3 would overestimate an all-road remainder and A* could return a suboptimal path. At 1 it never overestimates → admissible **and** consistent (diagonals free) → optimal paths. Reasoning is in code comments.
+- **Wiring** (`Game.Goto.cs`): `Game.FindPath` passes `applyImprovementBonus: !unit.Type.IsNaval` — land units get the bonus, ships don't. No new lookup threaded (the improvement layer is already on `GameMap`).
+- **Tests:** +5 L1 (`PathfinderTests` — road corridor preferred over parallel plains, cost-minimising road over short open diagonal, river corridor, terrain-only ignores the road, determinism) +4 L2 (`GotoTests` — road preference with cost matching summed `CheckMove`, river corridor, ships unaffected, determinism).
+**Status:** **1474 L1/L2 + 4 soak green**; both `GameLogic` and the Godot `CrownAndColony` projects build clean (0 warnings). RNG-free → stream-0 / soak byte-stable (ADR-009). Committed in worktree (not pushed).
+**Changed:** `game/src/GameLogic/World/Pathfinder.cs`, `game/src/GameLogic/GameSession/Game.Goto.cs`, `game/tests/GameLogic.Tests/World/PathfinderTests.cs`, `game/tests/GameLogic.Tests/GameSession/GotoTests.cs`, `docs/systems/units-movement.md`, `docs/systems/rivers-tile-improvements.md`. Commit `9cb6fed` (worktree `86d3dqr62`).
+**Decisions:** Threaded a bool flag rather than passing the unit/naval-ness into the pure pathfinder (keeps it a game-rules-free graph search; the flag is the minimum needed). The improvement layer reads off `GameMap` directly (no separate lookup injected). Used the un-clamped per-edge cost in the planner — `CheckMove`'s partial-move rule only ever *reduces* a single charged step at a turn boundary and never changes which route is cheapest.
+**Scheduled next:** **AI pioneering** — `86d3c9vta` (`[P5] AI exploration depth: scouting, pioneering, missionary missions`) — unblocked by the just-shipped human pioneer build action.
+**Follow-ups:** AI pioneering (`86d3c9vta`); draw roads/plowed fields on the map (presentation overlay — owns a golden regen); naval/Europe/settlement goto destinations (need a naval cost model); negotiation UI (`86d3c9ubw`/`86d3c9xpt`).
+**Needs you:** Nothing blocking. This is a worktree commit — not pushed. Shared files another stream might touch: `Game.Goto.cs` (only `FindPath` changed), `docs/systems/units-movement.md` (Last-verified + prose §goto + checklist + changelog rows) and `docs/systems/rivers-tile-improvements.md` (Last-verified + §5 Pathfinder item + §5 intro + changelog row).
+
 ## 2026-06-21 — Pioneer tile-improvement BUILD action (road / plow / clear-forest) — COMPLETE ✅
 
 **Requested:** Implement the human pioneer / tile-improvement build action — parse the road/plow/clear-forest spec, the unit action (CheckX/X), per-turn work + tool consumption + save v48, the three effects, and the HUD order buttons.

@@ -13,9 +13,14 @@ namespace CrownAndColony.GameLogic.GameSession;
 /// </summary>
 public sealed partial class Game
 {
-    /// <summary>The least-cost route a unit would take to <paramref name="goal"/> (the tiles to enter; empty = no route).</summary>
+    /// <summary>
+    /// The least-cost route a unit would take to <paramref name="goal"/> (the tiles to enter; empty = no route).
+    /// A land unit's edge cost folds in the river/road "follow it" bonus (so a goto prefers a road/river corridor,
+    /// matching <see cref="CheckMove"/>); a ship pays plain terrain cost (rivers/roads are land features).
+    /// </summary>
     internal IReadOnlyList<Position> FindPath(Unit unit, Position goal) =>
-        Pathfinder.FindPath(Map, unit.Position, goal, p => CanPathEnter(unit, p));
+        Pathfinder.FindPath(
+            Map, unit.Position, goal, p => CanPathEnter(unit, p), applyImprovementBonus: !unit.Type.IsNaval);
 
     /// <summary>
     /// Whether <paramref name="unit"/> may path through <paramref name="p"/>: the same blocking rules as

@@ -1,8 +1,17 @@
+using CrownAndColony.GameLogic.World.Improvements;
+
 namespace CrownAndColony.GameLogic.World;
 
 /// <summary>
 /// Deterministic, RNG-free A* over the tile grid (FreeCol <c>Map.searchMap</c>): finds the least-cost route from
 /// one tile to another, entering each tile at its terrain move cost, with diagonals free (as in the original game).
+///
+/// <para>For land units the per-edge cost folds in the river/road "follow it" bonus (see
+/// <see cref="ImprovementMovement.MoveCost"/>): stepping between two tiles that both carry a movement-granting
+/// improvement (a river or a pioneer-built road) costs the reduced enter-cost (1), so a goto route prefers a
+/// road/river corridor. This matches <c>Game.CheckMove</c>'s per-step charge exactly, so the summed path cost the
+/// A* minimises is the movement a unit actually spends. Ships get no such bonus (rivers/roads are land features),
+/// so they path on plain terrain cost.</para>
 ///
 /// <para>The open set is ordered by a total key <c>(f, g, Y, X)</c> — f = g + heuristic, then tie-broken by lower
 /// path cost, then lower row, then lower column — so the expansion order, and hence the returned path, is byte-stable
@@ -12,17 +21,34 @@ namespace CrownAndColony.GameLogic.World;
 /// </summary>
 public static class Pathfinder
 {
-    /// <summary>The cheapest terrain enter cost (plains/grassland etc. cost 3). The A* heuristic assumes no step is
-    /// cheaper than this; revisit if roads/rivers (which could cost less) are added so the heuristic stays admissible.</summary>
-    private const int MinEnterCost = 3;
+    /// <summary>
+    /// The cheapest possible enter cost of any step the A* can take. Plain terrain (plains/grassland etc.) costs 3,
+    /// but a land unit following a road or river pays the reduced enter-cost (1) — see
+    /// <see cref="ImprovementMovement.MoveCost"/> / the classic river/road <c>MovementCost</c> of 1. The heuristic
+    /// must never overestimate the true remaining cost (A* admissibility), so it multiplies the remaining Chebyshev
+    /// distance by this <i>minimum</i> possible per-step cost. Were it left at 3 (the old plain-terrain minimum) the
+    /// heuristic could exceed the true cost of an all-road route and A* could return a suboptimal path. Using 1
+    /// keeps the heuristic admissible (and consistent) for both improvement-aware land paths and ship paths.
+    /// </summary>
+    private const int MinEnterCost = 1;
 
     /// <summary>
     /// The ordered tiles to ENTER to walk from <paramref name="start"/> to <paramref name="goal"/> (excludes the start
     /// tile; the last element is the goal), or an empty list when there is no route. <paramref name="passable"/> decides
     /// which tiles may be entered (the goal included).
     /// </summary>
+    /// <param name="map">The world grid (terrain + the sparse improvement layer the road/river bonus reads).</param>
+    /// <param name="start">The tile the unit stands on (not included in the returned route).</param>
+    /// <param name="goal">The destination tile.</param>
+    /// <param name="passable">Which tiles may be entered (terrain/fog/blocker rules from the caller).</param>
+    /// <param name="applyImprovementBonus">
+    /// True for a land unit — fold the river/road "follow it" bonus into each edge cost (a route along a
+    /// road/river is cheaper and is preferred), mirroring <c>Game.CheckMove</c>. False for a ship — rivers and
+    /// roads are land features, so it pays plain terrain cost. Defaults to false (terrain-only) so existing
+    /// terrain-only callers and tests are unchanged.
+    /// </param>
     public static IReadOnlyList<Position> FindPath(
-        GameMap map, Position start, Position goal, Func<Position, bool> passable)
+        GameMap map, Position start, Position goal, Func<Position, bool> passable, bool applyImprovementBonus = false)
     {
         if (start == goal || !map.InBounds(goal) || !passable(goal))
         {
@@ -53,7 +79,7 @@ public static class Pathfinder
                 {
                     continue;
                 }
-                int tentativeG = currentG + map.TerrainAt(n).MoveCost;
+                int tentativeG = currentG + EnterCost(map, current, n, applyImprovementBonus);
                 if (!gScore.TryGetValue(n, out int known) || tentativeG < known)
                 {
                     gScore[n] = tentativeG;
@@ -65,7 +91,28 @@ public static class Pathfinder
         return []; // no route
     }
 
-    /// <summary>Chebyshev distance × the cheapest enter cost — admissible and consistent (diagonals are free).</summary>
+    /// <summary>
+    /// The cost to step from <paramref name="from"/> into the adjacent tile <paramref name="to"/>, matching
+    /// <c>Game.CheckMove</c>: the terrain's enter cost, reduced by the river/road "follow it" bonus when
+    /// <paramref name="applyImprovementBonus"/> (a land unit) and both tiles carry a movement-granting improvement.
+    /// This keeps the A*'s summed path cost identical to the movement a unit actually spends, so the route the
+    /// pathfinder minimises is the route the unit takes. (The partial-move rounding in CheckMove only ever
+    /// <i>reduces</i> a single charged step to the unit's remaining movement at a turn boundary; it never changes
+    /// which route is cheapest, so the planner uses the un-clamped per-edge cost.)
+    /// </summary>
+    private static int EnterCost(GameMap map, Position from, Position to, bool applyImprovementBonus)
+    {
+        int baseCost = map.TerrainAt(to).MoveCost;
+        return applyImprovementBonus
+            ? ImprovementMovement.MoveCost(map.ImprovementsAt(from), map.ImprovementsAt(to), baseCost)
+            : baseCost;
+    }
+
+    /// <summary>
+    /// Chebyshev distance × the cheapest possible enter cost (<see cref="MinEnterCost"/>) — admissible and
+    /// consistent (diagonals are free, and no single step can cost less than <see cref="MinEnterCost"/>, so this
+    /// never overestimates the true remaining cost).
+    /// </summary>
     private static int Heuristic(Position p, Position goal) =>
         Math.Max(Math.Abs(p.X - goal.X), Math.Abs(p.Y - goal.Y)) * MinEnterCost;
 

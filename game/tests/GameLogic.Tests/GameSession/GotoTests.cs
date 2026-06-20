@@ -3,6 +3,7 @@ using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
+using CrownAndColony.GameLogic.World.Improvements;
 using Xunit;
 
 namespace CrownAndColony.GameLogic.Tests.GameSession;
@@ -328,5 +329,144 @@ public class GotoTests
 
         Assert.Equal(first.Id, game.NextUnitToMove(human)!.Id); // offered again
         Assert.True(game.HasUnitsToMove(human));
+    }
+
+    // ── Road/river-aware goto pathing (86d3dqr62) ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A wide, fully-explored plains map with a single unit of <paramref name="unitTypeId"/> at the west edge of
+    /// the middle row. Built from a save (mirrors PioneerBuildTests) so tests can stamp a road/river corridor and
+    /// drive the real <see cref="Game"/> (CheckMove + FindPath), not just the bare pathfinder.
+    /// </summary>
+    private static Game CorridorGame(int width, int height, string unitTypeId = "model.unit.freeColonist")
+    {
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = width,
+            MapHeight = height,
+            Terrain = [.. Enumerable.Repeat("model.tile.plains", width * height)],
+            Units = [new SavedUnit(1, unitTypeId, 0, height / 2, 3)],
+            Explored = [],
+        };
+        Game game = save.Restore(Classic);
+        game.HumanPlayer.ExploredSet.UnionWith(game.Map.AllPositions()); // reveal the whole map so a far goto routes
+        return game;
+    }
+
+    // The total cost CheckMove charges to walk a route, step by step from the unit's start, refreshing movement
+    // each step so partial-move clamping never kicks in — i.e. the un-clamped per-edge sum the pathfinder minimises.
+    private static int SummedCheckMoveCost(Game game, Unit unit, IReadOnlyList<Position> route)
+    {
+        int total = 0;
+        foreach (Position step in route)
+        {
+            unit.MovementLeft = 99; // plenty, so CheckMove returns the true per-edge cost (no partial-move clamp)
+            MoveCheck check = game.CheckMove(unit, step);
+            Assert.True(check.Allowed, $"step into {step} should be legal");
+            total += check.Cost;
+            game.MoveUnit(unit, step);
+        }
+        return total;
+    }
+
+    [Fact]
+    public void Goto_PrefersARoadCorridor_OverParallelOpenPlains_AndTheCostMatchesCheckMove()
+    {
+        // A straight road runs along the middle row (the unit's row); the rows above/below are open plains. The
+        // goto to the east end of the road must hug the road (each road→road step costs 1, vs plains 3). We also
+        // assert the chosen route's cost, summed through CheckMove step by step, equals the road's 1-per-step total —
+        // proving the pathfinder's edge cost and CheckMove's per-step charge agree (the whole point of this change).
+        Game game = CorridorGame(width: 6, height: 3);
+        Unit unit = game.Units.First(u => u.Id == 1);
+        int row = unit.Position.Y;
+        var road = Classic.Improvement(TileImprovementType.RoadId);
+        for (int x = 0; x < game.Map.Width; x++)
+        {
+            game.Map.AddImprovement(new Position(x, row), road); // road the unit's whole row
+        }
+        var goal = new Position(5, row);
+
+        IReadOnlyList<Position> path = game.FindPath(unit, goal);
+
+        Assert.Equal(5, path.Count);                                                  // 5 straight road steps east
+        Assert.All(path, p => Assert.True(game.Map.HasImprovement(p, TileImprovementType.RoadId)));
+        Assert.Equal(goal, path[^1]);
+        // The route runs entirely along the road row — never detours onto a plains row.
+        Assert.All(path, p => Assert.Equal(row, p.Y));
+        // Cost agreement: walking the route through CheckMove charges 1 per road step = 5 total (not 5 × 3 = 15).
+        Assert.Equal(5, SummedCheckMoveCost(game, game.Units.First(u => u.Id == 1), path));
+    }
+
+    [Fact]
+    public void Goto_FollowsARiverCorridor_TheSameAsARoad()
+    {
+        Game game = CorridorGame(width: 6, height: 3);
+        Unit unit = game.Units.First(u => u.Id == 1);
+        int row = unit.Position.Y;
+        for (int x = 0; x < game.Map.Width; x++)
+        {
+            game.Map.AddImprovement(new Position(x, row), Classic.RiverType); // river the unit's whole row
+        }
+        var goal = new Position(5, row);
+
+        IReadOnlyList<Position> path = game.FindPath(unit, goal);
+
+        Assert.All(path, p => Assert.True(game.Map.HasRiver(p)));         // hugs the river
+        Assert.Equal(5, SummedCheckMoveCost(game, game.Units.First(u => u.Id == 1), path)); // river follow-cost 1 each
+    }
+
+    [Fact]
+    public void Goto_Ships_AreUnaffectedByRoadsOrRivers()
+    {
+        // Rivers/roads are land features; a ship gets no bonus, so its route is pure terrain cost. We sail a ship
+        // east along an all-ocean middle row that carries a (nonsensical-but-harmless) road stamp on every tile and
+        // confirm the route cost is plain ocean cost — the improvement bonus is genuinely gated off for naval units.
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 5,
+            MapHeight = 3,
+            Terrain = [.. Enumerable.Repeat("model.tile.ocean", 15)],
+            Units = [new SavedUnit(1, "model.unit.caravel", 0, 1, 3)],
+            Explored = [],
+        };
+        Game game = save.Restore(Classic);
+        game.HumanPlayer.ExploredSet.UnionWith(game.Map.AllPositions());
+        Unit ship = game.Units.First(u => u.Id == 1);
+        var road = Classic.Improvement(TileImprovementType.RoadId);
+        for (int x = 0; x < game.Map.Width; x++)
+        {
+            game.Map.AddImprovement(new Position(x, 1), road); // a road on the ship's water row (no effect for a ship)
+        }
+        int oceanCost = game.Map.TerrainAt(new Position(1, 1)).MoveCost;
+        var goal = new Position(4, 1);
+
+        IReadOnlyList<Position> path = game.FindPath(ship, goal);
+
+        Assert.Equal(4, path.Count);
+        // Each step costs full ocean cost — the road grants the ship nothing (CheckMove never reduces a naval step).
+        ship.MovementLeft = 99;
+        Assert.Equal(oceanCost, game.CheckMove(ship, path[0]).Cost);
+    }
+
+    [Fact]
+    public void Goto_RoadPathing_IsDeterministic_SameInputSamePath()
+    {
+        Game game = CorridorGame(width: 6, height: 3);
+        Unit unit = game.Units.First(u => u.Id == 1);
+        int row = unit.Position.Y;
+        var road = Classic.Improvement(TileImprovementType.RoadId);
+        for (int x = 0; x < game.Map.Width; x++)
+        {
+            game.Map.AddImprovement(new Position(x, row), road);
+        }
+        var goal = new Position(5, row);
+
+        Assert.Equal(game.FindPath(unit, goal), game.FindPath(unit, goal)); // byte-stable on a repeat (ADR-009)
     }
 }
