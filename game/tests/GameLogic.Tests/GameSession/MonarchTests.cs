@@ -737,4 +737,73 @@ public class MonarchTests
         game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
         return game;
     }
+
+    // ── Monarch declares war / peace (86d3c9r7j) ─────────────────────────────────────────────────────────
+
+    private static List<Player> ColonialRivals(Game game)
+    {
+        int human = game.HumanPlayer.PlayerId;
+        return game.Players
+            .Where(p => p.PlayerId != human && p.PlayerType == PlayerType.Colonial)
+            .OrderBy(p => p.PlayerId)
+            .ToList();
+    }
+
+    [Fact]
+    public void DeclareWar_PutsTheHumanAtWarWithThePeaceStandingRivalTheKingPicks()
+    {
+        Game game = FoundedGame();
+        int human = game.HumanPlayer.PlayerId;
+        List<Player> rivals = ColonialRivals(game);
+        Assert.NotEmpty(rivals);
+        // Leave exactly one valid (peace-standing) target so the King's pick is determined: the rest are at war.
+        foreach (Player p in rivals)
+        {
+            game.SetStance(human, p.PlayerId, Stance.War);
+        }
+        Player target = rivals[0];
+        game.SetStance(human, target.PlayerId, Stance.Peace);
+
+        game.DispatchMonarchAction(MonarchAction.DeclareWar, new ScriptedRandom(0)); // rng→0 picks eligible[0]
+
+        Assert.Equal(Stance.War, game.StanceBetween(human, target.PlayerId));
+    }
+
+    [Fact]
+    public void DeclarePeace_EndsTheWarWithTheRivalTheKingPicks()
+    {
+        Game game = FoundedGame();
+        int human = game.HumanPlayer.PlayerId;
+        List<Player> rivals = ColonialRivals(game);
+        Assert.NotEmpty(rivals);
+        // Leave exactly one valid (war-standing) target; the rest at peace.
+        foreach (Player p in rivals)
+        {
+            game.SetStance(human, p.PlayerId, Stance.Peace);
+        }
+        Player target = rivals[0];
+        game.SetStance(human, target.PlayerId, Stance.War);
+
+        game.DispatchMonarchAction(MonarchAction.DeclarePeace, new ScriptedRandom(0));
+
+        Assert.Equal(Stance.Peace, game.StanceBetween(human, target.PlayerId));
+    }
+
+    [Fact]
+    public void DeclareWar_WithEveryRivalAlreadyAtWar_IsNotOffered_AndDispatchIsANoOp()
+    {
+        Game game = FoundedGame();
+        int human = game.HumanPlayer.PlayerId;
+        List<Player> rivals = ColonialRivals(game);
+        foreach (Player p in rivals)
+        {
+            game.SetStance(human, p.PlayerId, Stance.War);
+        }
+
+        // No peace-standing target → the chooser won't offer it…
+        Assert.DoesNotContain(MonarchAction.DeclareWar, game.GetMonarchActionChoices(game.Turn).Select(c => c.Action));
+        // …and dispatching it anyway draws nothing and changes nothing (safe no-op).
+        game.DispatchMonarchAction(MonarchAction.DeclareWar, new ScriptedRandom());
+        Assert.All(rivals, p => Assert.Equal(Stance.War, game.StanceBetween(human, p.PlayerId)));
+    }
 }

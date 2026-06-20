@@ -233,10 +233,35 @@ public sealed partial class Game
             case MonarchAction.AddToRef:
                 AddToRef(rng); // the King grows the army he'll send if you rebel
                 break;
-            // DECLARE_WAR/PEACE -> monarch diplomacy slice. Unwired = no-op.
+            case MonarchAction.DeclareWar:
+                // The King drags you into his war with a rival European power (FreeCol MONARCH_DECLARE_WAR):
+                // king-chosen, no player veto. The gate guarantees a peace-standing target exists.
+                ImposeMonarchStance(Stance.War, MonarchPotentialEnemies(), rng);
+                break;
+            case MonarchAction.DeclarePeace:
+                // The King makes peace for you with a power you're at war/cease-fire with (FreeCol MONARCH_DECLARE_PEACE).
+                ImposeMonarchStance(Stance.Peace, MonarchPotentialFriends(), rng);
+                break;
             default:
                 break;
         }
+    }
+
+    /// <summary>
+    /// The King imposes a <paramref name="stance"/> on the human toward one eligible European power he picks
+    /// (FreeCol <c>MONARCH_DECLARE_WAR</c>/<c>MONARCH_DECLARE_PEACE</c>) — no player choice. The target is drawn from
+    /// <paramref name="candidates"/> on the monarch's own RNG (never stream 0); a no-op when none are eligible
+    /// (the action gate normally prevents that). Stance only — no tension delta and no save change (stances persist).
+    /// </summary>
+    private void ImposeMonarchStance(Stance stance, IEnumerable<Player> candidates, IGameRandom rng)
+    {
+        List<Player> eligible = candidates.OrderBy(p => p.PlayerId).ToList();
+        if (eligible.Count == 0)
+        {
+            return;
+        }
+        Player target = eligible[rng.Next(eligible.Count)];
+        SetStance(_human.PlayerId, target.PlayerId, stance);
     }
 
     /// <summary>
