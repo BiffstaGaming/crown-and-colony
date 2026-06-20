@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3]
+[gd_scene load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://presentation/GameController.cs" id="1"]
 [ext_resource type="Script" path="res://presentation/MapView.cs" id="2"]
@@ -14,6 +14,7 @@
 [ext_resource type="Script" path="res://presentation/FindSettlementPanel.cs" id="13"]
 [ext_resource type="Script" path="res://presentation/FoundingFatherPanel.cs" id="14"]
 [ext_resource type="Script" path="res://presentation/GotoMarker.cs" id="15"]
+[ext_resource type="Script" path="res://presentation/MoundsDecisionPanel.cs" id="16"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -208,6 +209,48 @@ text = "Pay tribute"
 [node name="RefuseButton" type="Button" parent="UI/NativeDemandPanel/VBox/Buttons"]
 layout_mode = 2
 text = "Refuse"
+
+[node name="MoundsDecisionPanel" type="PanelContainer" parent="UI"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -260.0
+offset_top = -110.0
+offset_right = 260.0
+offset_bottom = 110.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("16")
+
+[node name="VBox" type="VBoxContainer" parent="UI/MoundsDecisionPanel"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="MoundsTitle" type="Label" parent="UI/MoundsDecisionPanel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+
+[node name="MoundsInfo" type="Label" parent="UI/MoundsDecisionPanel/VBox"]
+layout_mode = 2
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Buttons" type="HBoxContainer" parent="UI/MoundsDecisionPanel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="InvestigateButton" type="Button" parent="UI/MoundsDecisionPanel/VBox/Buttons"]
+layout_mode = 2
+text = "Investigate"
+
+[node name="DeclineButton" type="Button" parent="UI/MoundsDecisionPanel/VBox/Buttons"]
+layout_mode = 2
+text = "Leave them be"
 
 [node name="TradeRoutePanel" type="PanelContainer" parent="UI"]
 visible = false

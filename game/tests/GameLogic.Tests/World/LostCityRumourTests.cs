@@ -460,6 +460,45 @@ public class LostCityRumourTests
     }
 
     [Fact]
+    public void ResolvePendingMounds_Decline_RemovesTheRumour_AndDescribesIt()
+    {
+        // The presentation oracle behind the strange-mounds decision panel. _pendingMounds is transient UI state
+        // with no public setter (a human only reaches it by rolling MOUNDS on its own stream), so inject it directly.
+        (Game game, Unit unit, Position tile, _) = MoundsExplorer();
+        SetPendingMounds(game, unit, tile);
+
+        string outcome = game.ResolvePendingMounds(investigate: false);
+
+        Assert.Contains("undisturbed", outcome);
+        Assert.Null(game.PendingMounds);        // resolved
+        Assert.False(game.Map.HasRumour(tile)); // declined → the rumour is consumed
+    }
+
+    [Fact]
+    public void ResolvePendingMounds_Investigate_ResolvesTheRumour_AndDescribesTheOutcome()
+    {
+        (Game game, Unit unit, Position tile, _) = MoundsExplorer();
+        SetPendingMounds(game, unit, tile);
+
+        string outcome = game.ResolvePendingMounds(investigate: true);
+
+        Assert.False(string.IsNullOrEmpty(outcome)); // a human-readable result line
+        Assert.Null(game.PendingMounds);             // resolved
+        Assert.False(game.Map.HasRumour(tile));      // investigated → consumed
+    }
+
+    [Fact]
+    public void ResolvePendingMounds_WithNothingPending_ReturnsEmpty()
+    {
+        (Game game, _, _, _) = MoundsExplorer();
+        Assert.Equal("", game.ResolvePendingMounds(investigate: true));
+    }
+
+    private static void SetPendingMounds(Game game, Unit unit, Position tile) =>
+        typeof(Game).GetField("_pendingMounds", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .SetValue(game, new Game.PendingMoundsDecision(unit.Id, tile));
+
+    [Fact]
     public void InvestigateMounds_AcceptsTribalChief_ResolvingAndConsumingTheRumour()
     {
         (Game game, Unit unit, Position tile, _) = MoundsExplorer();

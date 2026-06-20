@@ -62,6 +62,7 @@ public partial class GameController : Node2D
     private PanelContainer _europePanel = null!;
     private PanelContainer _nativePanel = null!;
     private PanelContainer _demandPanel = null!;
+    private PanelContainer _moundsPanel = null!;
     private PanelContainer _tradeRoutePanel = null!;
     private PanelContainer _colonyReportPanel = null!;
     private PanelContainer _findSettlementPanel = null!;
@@ -91,6 +92,7 @@ public partial class GameController : Node2D
         _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
         _demandPanel = GetNode<PanelContainer>("UI/NativeDemandPanel");
+        _moundsPanel = GetNode<PanelContainer>("UI/MoundsDecisionPanel");
         _tradeRoutePanel = GetNode<PanelContainer>("UI/TradeRoutePanel");
         _colonyReportPanel = GetNode<PanelContainer>("UI/ColonyReportPanel");
         _findSettlementPanel = GetNode<PanelContainer>("UI/FindSettlementPanel");
@@ -613,6 +615,20 @@ public partial class GameController : Node2D
         _calendarLabel.Text = _game.CalendarLabel;
 
         UpdateDefeatUi();
+
+        // A human explorer that stepped onto strange mounds owes an investigate/decline choice — surface the modal
+        // (once; resolving it clears the pending state so it won't re-open). Suppressed if the human is defeated.
+        if (!_game.IsHumanDefeated && _game.PendingMounds is not null && !_moundsPanel.Visible)
+        {
+            ((MoundsDecisionPanel)_moundsPanel).Open(_game, outcome =>
+            {
+                if (!string.IsNullOrEmpty(outcome))
+                {
+                    _notice = outcome;
+                }
+                RefreshView();
+            });
+        }
     }
 
     /// <summary>
@@ -638,6 +654,7 @@ public partial class GameController : Node2D
             _europePanel.Hide();
             _nativePanel.Hide();
             _demandPanel.Hide();
+            _moundsPanel.Hide();
         }
         _gameOverScreen.Visible = defeated;
     }

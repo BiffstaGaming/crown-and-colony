@@ -454,6 +454,40 @@ public sealed partial class Game
         return InvestigateMounds(unit, pending.Tile, _random);
     }
 
+    /// <summary>
+    /// Resolves the pending strange-mounds prompt for the human and returns a short, player-facing description of
+    /// what happened (the presentation entry point, ADR-006 — it keeps the internal outcome enum out of the UI
+    /// assembly). <paramref name="investigate"/> true digs the mounds (a re-rolled Lost-City outcome on the human's
+    /// stream); false leaves them be. Empty string if nothing is pending.
+    /// </summary>
+    public string ResolvePendingMounds(bool investigate)
+    {
+        if (_pendingMounds is null)
+        {
+            return "";
+        }
+        if (!investigate)
+        {
+            DeclinePendingMounds();
+            return "You leave the strange mounds undisturbed.";
+        }
+        return DescribeMoundsOutcome(InvestigatePendingMounds());
+    }
+
+    /// <summary>A one-line player-facing description of an investigated strange-mounds (Lost City) outcome.</summary>
+    private static string DescribeMoundsOutcome(LostCityRumourType outcome) => outcome switch
+    {
+        LostCityRumourType.ExpeditionVanishes => "The expedition vanishes without a trace!",
+        LostCityRumourType.TribalChief => "Tribal chiefs share their treasure with you!",
+        LostCityRumourType.Learn => "Your explorer learns the ways of a seasoned scout!",
+        LostCityRumourType.Colonist => "A band of colonists joins your expedition!",
+        LostCityRumourType.FountainOfYouth => "A Fountain of Youth! Settlers flock to your docks.",
+        LostCityRumourType.Ruins => "You uncover ancient ruins — treasure!",
+        LostCityRumourType.Cibola => "You have found one of the Seven Cities of Cibola — a vast treasure!",
+        LostCityRumourType.BurialGround => "You have desecrated a native burial ground — the natives are enraged!",
+        _ => "You find nothing of note.",
+    };
+
     /// <summary>Declines the <see cref="PendingMounds"/> rumour (removes it, no effect) and clears the pending state (FreeCol decline).</summary>
     internal void DeclinePendingMounds()
     {
