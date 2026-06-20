@@ -56,6 +56,7 @@ public partial class GameController : Node2D
     private Node2D _colonyLayer = null!;
     private Node2D _nativeLayer = null!;
     private Label _statusLabel = null!;
+    private Label _calendarLabel = null!;
     private PanelContainer _colonyPanel = null!;
     private PanelContainer _europePanel = null!;
     private PanelContainer _nativePanel = null!;
@@ -74,6 +75,7 @@ public partial class GameController : Node2D
         _colonyLayer = GetNode<Node2D>("MapView/ColonyLayer");
         _nativeLayer = GetNode<Node2D>("MapView/NativeLayer");
         _statusLabel = GetNode<Label>("UI/StatusLabel");
+        _calendarLabel = GetNode<Label>("UI/CalendarPanel/CalendarLabel");
         _colonyPanel = GetNode<PanelContainer>("UI/ColonyPanel");
         _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
@@ -471,6 +473,10 @@ public partial class GameController : Node2D
             _notice = null;
         }
         _statusLabel.Text = status;
+
+        // The dedicated, classic-style date readout in the HUD (its own panel near the turn controls), distinct
+        // from the dev status string above. Presentation-only — reads the Game.CalendarLabel oracle (ADR-006).
+        _calendarLabel.Text = _game.CalendarLabel;
 
         UpdateDefeatUi();
     }

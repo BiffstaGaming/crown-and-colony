@@ -231,6 +231,26 @@ size_flags_vertical = 3
 layout_mode = 2
 text = "Close"
 
+[node name="CalendarPanel" type="PanelContainer" parent="UI"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -280.0
+offset_top = -148.0
+offset_right = -16.0
+offset_bottom = -108.0
+grow_horizontal = 0
+grow_vertical = 0
+
+[node name="CalendarLabel" type="Label" parent="UI/CalendarPanel"]
+layout_mode = 2
+theme_type_variation = &"ColonyTitle"
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "1492"
+
 [node name="EuropeButton" type="Button" parent="UI"]
 anchors_preset = 3
 anchor_left = 1.0

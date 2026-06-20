@@ -39,6 +39,22 @@ public class MainSceneTests
     }
 
     [TestCase]
+    public async Task CalendarHud_ShowsTheDate_AndAdvancesWithTheTurn()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+
+        var calendar = runner.Scene().GetNode<Label>("UI/CalendarPanel/CalendarLabel");
+        // Turn 1 is 1492 in the classic calendar (a bare year — seasons begin at 1600), shown in the
+        // dedicated HUD readout, not just the dev status string.
+        AssertThat(calendar.Text).IsEqual("1492");
+
+        runner.Scene().GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(calendar.Text).IsEqual("1493"); // the readout follows Game.CalendarLabel as turns pass
+    }
+
+    [TestCase]
     public async Task ColonyPanel_OpensWithColonyDetails_AndCloses()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
