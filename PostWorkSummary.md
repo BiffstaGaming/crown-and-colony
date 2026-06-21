@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — Parallel WAVE 3 (scoring · Foreign Intervention Force · unit attrition · diplomacy depth · monarch dialog) — COMPLETE ✅
+
+**Requested:** "5-10 parallel waves, the more the better" — wave 3 of the run.
+**Did:** 5 worktree agents, cherry-picked clean (zero merge conflicts), then integrated + reviewed + pushed. **CI green both jobs** (incl. L3, no flake). One agent (FIF) shipped a non-faithful spawn + tests that never passed — I caught it on integration and fixed both.
+- **Player score** (`2076208`): `Game.PlayerScore` pure read, FreeCol formula (Σ unit values + Σ colony liberty + 5×fathers + ⌊gold/1000⌋ + independence bonus). New `scoring.md`. RNG-free, no save bump. `86d3c9vjm`.
+- **Monarch action dialog** (`5236c31`): `MonarchDialog` scene reads `PendingMonarchDemand`/forwards `RespondToMonarch`; main.tscn node. RAISE_TAX + mercenary offers have a pending seam; the message-only actions (LOWER/WAIVE/DECLARE_WAR/…) surface nothing yet (future King's-message notice). `86d3c9xdb`.
+- **Diplomacy depth** (`921d998` + wiring `420c0ba`): `TradeContext` enum (Contact/Diplomatic/Trade/Tribute) threaded onto `DiplomaticTrade`; `ProposeProactiveTreaties` (alliance + cease-fire) — **I added the turn-wiring** (pass 3 of `RunForeignPowerDiplomacy` + `ClearPendingHumanProposals` in EndTurn). AI-to-AI settles on the proposer's own stream; human offers queue in `PendingHumanProposals` (never auto-applied). `86d3drn2g`/`86d3drn4f`.
+- **Foreign Intervention Force** (`b2f3bc4` + fix `420c0ba`): `ParseIntervention` reads bells/turns/force from the chosen difficulty level. **Integration fix:** the spawn scattered all 8 units on beach tiles and landed **zero** when the REF besieged the port (its whole purpose is to relieve a siege). Rewrote `SpawnInterventionForce` FreeCol-faithfully (men-o-war on water carrying the land units aboard, `loadShips`); made `ResolveWarOfIndependence` internal to test the landing in isolation. Fixed the 3 broken tests (a men-o-war *entry-count* assertion read 1 not 2; two turn tests confounded by REF combat). `86d3c9vap`.
+- **Unit attrition** (`7d6b909`, **save v49→v50**): `Unit.Attrition` + `ProcessAttrition` in EndTurn (FreeCol `csNewTurn`). Classic: only the Indian Convert has a finite cap (max 8) → effectively dormant; default soak byte-identical. `86d3drmzp`.
+**Status:** Integrated, **CI green both jobs** (`27897914788`). build clean + **1608 L1/L2** + 4 soak green. Adversarial review: ProposeProactiveTreaties verified (own-stream RNG, REF skipped, stable-ordered); FIF spawn verified (single RNG draw preserved, determinism holds). Pushed `2076208…420c0ba`; 6 ClickUp tasks **Shipped**.
+**Changed:** 6 commits. Save **v49→v50** (one bump, omit-when-0 → default byte-identical). Docs: scoring / monarchy / diplomacy / independence (both-layers + changelog) — distinct files.
+**Decisions:** FIF made FreeCol-faithful (fleet-with-troops-aboard) rather than papering the broken tests — the scatter approach silently landed nothing against a full REF. `ResolveWarOfIndependence` exposed `internal` for isolated testing (a full EndTurn sinks the just-arrived fleet the same turn).
+**Scheduled next:** **Wave 4** launching now — continental-muster per-colony cap (`86d3dbufx`), trade-route validation warnings (`86d3drn0j`), recruits-arrive-equipped (`86d3c7yg8`), region discovery + exploration score (`86d3c9w2f`), native-constants-vs-spec verification (`86d3drphp`).
+**Follow-ups:** Grow the standing intervention force every `interventionTurns` (FreeCol `updateInterventionForce`); King's-message notice for the message-only monarch actions; de Witt foreign-affairs report UI.
+**Needs you:** Still one open call from Wave 2 — keep WAIVE_TAX forgiving boycott arrears (current) or make it FreeCol message-only? Otherwise nothing.
+
 ## 2026-06-21 — Parallel WAVE 2 (fathers · monarch tax · nation selection · survival recruit · lastColonialYear) — COMPLETE ✅
 
 **Requested:** "5-10 parallel waves, the more the better" — wave 2 of the run.
