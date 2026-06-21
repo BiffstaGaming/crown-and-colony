@@ -56,8 +56,9 @@ public sealed partial class Game
 
     /// <summary>
     /// Declares independence (FreeCol <c>csDeclareIndependence</c>): the player becomes a <see cref="PlayerType.Rebel"/>,
-    /// loses every unit in or sailing to Europe (and its recruiting), musters its veterans into colonial regulars, and
-    /// the King's Royal Expeditionary Force takes the field at war with the new nation.
+    /// loses every unit in or sailing to Europe (and its recruiting), musters its veterans into colonial regulars, the
+    /// King's Royal Expeditionary Force takes the field at war with the new nation, the natives who most resented the
+    /// departing Crown swing behind the rebel, and the King offers a one-off war-mercenary (Hessian) force for hire.
     /// </summary>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckDeclareIndependence"/>.</exception>
     public void DeclareIndependence(Player player)
@@ -76,6 +77,83 @@ public sealed partial class Game
 
         MusterContinentalArmy(player);
         CreateRefPlayer(player);
+        ShiftNativeStanceOnDeclaration(player); // the natives who hated the Crown most side with the rebel
+        OfferWarMercenaries(player);            // the King dangles a Hessian force for hire (a pending offer, never auto-applied)
+        RecordHistory(HistoryEventKind.DeclaredIndependence, "Declared independence from the Crown.");
+    }
+
+    /// <summary>
+    /// The native realignment that follows a declaration of independence (FreeCol <c>csDeclareIndependence</c>'s
+    /// native block): the most-hostile contacted native nation throws in with the new rebel and is <b>calmed</b>
+    /// toward it. FreeCol shifts the friendliest such nation's tension toward the rebel down to <c>CONTENT</c> (from
+    /// war) or <c>HAPPY</c> (from a cease-fire) and makes it hateful toward the freshly-arrived REF, while the
+    /// <em>least</em>-hostile contacted nation turns on the rebel.
+    /// <para><b>Faithful-subset deviation.</b> Our native model is single-player: a settlement tracks one
+    /// <see cref="NativeSettlement.Alarm"/> figure toward the human, and there is <em>no</em> native↔REF relationship
+    /// (the REF is a colonial-like player the natives never meet) and no second human to turn hostile. So we keep only
+    /// the faithful, representable half: the nation the human-rebel has angered the most (highest alarm, among the
+    /// nations whose chief the human has met) is <b>brought onside</b> — every one of its settlements is calmed to at
+    /// most FreeCol's <c>CONTENT</c> band (it backs the rebellion against the departed Crown). The REF-hostility and
+    /// the "least-hostile turns on you" halves have no analogue here and are omitted (documented in independence.md).
+    /// RNG-free; touches only native alarm, which is not persisted at nation scope beyond the per-settlement field.</para>
+    /// </summary>
+    private void ShiftNativeStanceOnDeclaration(Player rebel)
+    {
+        // Among nations the human-rebel has actually contacted (spoken with a chief, FreeCol hasContacted), pick the
+        // one whose settlements are angriest at the rebel (highest peak alarm) — FreeCol's "most hostile" ally pick.
+        string? ally = _nativeSettlements
+            .Where(s => s.HasBeenVisitedBy(rebel.PlayerId))
+            .GroupBy(s => s.NationTypeId)
+            .OrderByDescending(g => g.Max(s => s.Alarm))
+            .ThenBy(g => g.Key) // deterministic tie-break
+            .Select(g => g.Key)
+            .FirstOrDefault();
+        if (ally is null)
+        {
+            return; // the rebel has met no natives — nobody to swing behind it
+        }
+
+        // The ally is calmed to at most the CONTENT band: it stops resenting the rebel now the Crown it really hated
+        // has gone (FreeCol sets the tension into the CONTENT/HAPPY range). Settlements calmer than CONTENT are left.
+        foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == ally && s.Alarm > NativeAllyCalmedAlarm))
+        {
+            ChangeNativeAlarm(settlement, NativeAllyCalmedAlarm - settlement.Alarm); // down to the CONTENT limit
+        }
+    }
+
+    /// <summary>The alarm a native nation that backs the rebellion is calmed <em>to</em> (FreeCol <c>Tension.Level.CONTENT.getLimit()</c> = 600, the band an ally settles into when the war-time Crown departs).</summary>
+    private const int NativeAllyCalmedAlarm = NativeSettlement.AlarmContentMax;
+
+    /// <summary>
+    /// The King's parting offer of a war-mercenary (Hessian) force on the very turn of the declaration (FreeCol
+    /// <c>csDeclareIndependence</c>'s <c>loadMercenaryForce</c> + <c>csMercenaries(HESSIAN_MERCENARIES)</c>): a one-off
+    /// professional force the new nation may hire for gold to face the REF. Surfaced as a
+    /// <see cref="PendingMonarchDemand"/> (the same accept/decline seam as the King's in-game mercenary offers), built
+    /// from the in-game <see cref="LoadMercenaries"/> generator and applied only on accept via
+    /// <see cref="RespondToMonarch"/> — never auto-applied, so the rebel's stream 0 stays byte-identical until the
+    /// player chooses (ADR-009). An offer is made only when one affordable to the rebel can be built; otherwise none.
+    /// <para><b>Faithful-subset note.</b> FreeCol draws the Hessian force from the Monarch's pre-built
+    /// <c>mercenaryForce</c> (a fixed ruleset force, priced by hire price). We reuse our existing affordability-trimmed
+    /// mercenary generator (veteran soldiers, armed or mounted) so the offer is consistent with the King's other
+    /// mercenary offers and never exceeds the treasury — the same documented simplification the in-game offer makes.
+    /// The offer rides the monarch RNG (an ephemeral stream off the rebel's current state), never stream 0.</para>
+    /// </summary>
+    private void OfferWarMercenaries(Player rebel)
+    {
+        if (!rebel.IsHuman)
+        {
+            return; // the offer is for the human rebel (the pending-offer seam is the human's UI); an AI rebel auto-fights
+        }
+
+        // The offer draws on the monarch's ephemeral stream (off the human's live state + turn), never stream 0 — the
+        // same isolation the monarch tick uses (a human rebel's economy stream stays byte-identical until it answers).
+        RandomState humanState = _random.SaveState();
+        var rng = new Pcg32Random(humanState.State + (ulong)Turn, MonarchStreamId);
+        if (LoadMercenaries(rng) is { } offer) // an affordability-trimmed force, or none
+        {
+            _pendingMonarchDemand = new PendingMonarchDemand(
+                MonarchAction.HessianMercenaries, Offer: offer.Force, Price: offer.Price);
+        }
     }
 
     /// <summary>
@@ -237,8 +315,60 @@ public sealed partial class Game
     /// <summary>Installs the restored Spanish-Succession flag (save load).</summary>
     internal void SetSpanishSuccessionDone(bool done) => _spanishSuccessionDone = done;
 
-    /// <summary>The player that has won by securing independence (FreeCol VICTORY_DEFEAT_REF), or null while the game continues.</summary>
-    public Player? Winner => _players.FirstOrDefault(p => p.PlayerType == PlayerType.Independent);
+    /// <summary>
+    /// The player that has won the game (FreeCol <c>ServerGame.checkForWinner</c>), or null while it continues — a
+    /// <b>pure read</b> over the live players, evaluated against the ruleset's enabled victory conditions (each a
+    /// parsed-or-defaulted boolean, so the classic defaults leave the default game's outcome unchanged):
+    /// <list type="bullet">
+    /// <item><b>Defeat the REF</b> (<see cref="Specification.Ruleset.VictoryDefeatRef"/>, classic on): the first
+    /// nation to secure its <see cref="PlayerType.Independent"/>ence wins.</item>
+    /// <item><b>Defeat all Europeans</b> (<see cref="Specification.Ruleset.VictoryDefeatEuropeans"/>, classic on):
+    /// when only one non-REF European power is still alive, it wins.</item>
+    /// <item><b>Defeat all humans</b> (<see cref="Specification.Ruleset.VictoryDefeatHumans"/>, classic off): when
+    /// only one non-AI European power is still alive, it wins.</item>
+    /// </list>
+    /// Conditions are checked in FreeCol's order (REF, then Europeans, then Humans); the first to fire names the
+    /// winner. Like all the independence reads this changes nothing and draws no RNG — <see cref="EndTurn"/> never
+    /// short-circuits on it (ADR-009 byte-stability); the presentation reads it for the victory screen.
+    /// </summary>
+    public Player? Winner
+    {
+        get
+        {
+            if (Ruleset.VictoryDefeatRef
+                && _players.FirstOrDefault(p => p.PlayerType == PlayerType.Independent) is { } independent)
+            {
+                return independent;
+            }
+            if (Ruleset.VictoryDefeatEuropeans)
+            {
+                List<Player> survivors = LiveEuropeanPowers().ToList();
+                if (survivors.Count == 1)
+                {
+                    return survivors[0];
+                }
+            }
+            if (Ruleset.VictoryDefeatHumans)
+            {
+                List<Player> survivors = LiveEuropeanPowers().Where(p => p.IsHuman).ToList();
+                if (survivors.Count == 1)
+                {
+                    return survivors[0];
+                }
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The live European powers (FreeCol <c>getLiveEuropeanPlayers</c> minus the REF): every colonial, rebel or
+    /// independent player that has <b>not</b> been wiped out — it still holds at least one colony or one non-native
+    /// unit. The Royal Expeditionary Force and the native nations are excluded. Pure; the victory reads count these.
+    /// </summary>
+    private IEnumerable<Player> LiveEuropeanPowers() =>
+        _players.Where(p =>
+            p.PlayerType is PlayerType.Colonial or PlayerType.Rebel or PlayerType.Independent
+            && (ColoniesOf(p).Any() || _units.Any(u => u.OwnerId == p.PlayerId && !u.IsNative)));
 
     /// <summary>
     /// The combined attack power of a player's land units (the War-of-Independence strength yardstick). Counts every

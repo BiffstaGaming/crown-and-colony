@@ -29,6 +29,9 @@ public enum HistoryEventKind
 
     /// <summary>The human discovered a geographic region for the first time (FreeCol <c>DISCOVER_REGION</c>).</summary>
     RegionDiscovered,
+
+    /// <summary>The human declared independence from the Crown (FreeCol <c>DECLARE_INDEPENDENCE</c>).</summary>
+    DeclaredIndependence,
 }
 
 public sealed partial class Game

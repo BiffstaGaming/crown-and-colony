@@ -2,6 +2,7 @@ using System.Text;
 using System.Xml.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
@@ -646,5 +647,327 @@ public class IndependenceTests
 
         Assert.Equal(rebelOnMap, RebelOwnedUnits(loaded, loaded.HumanPlayer)); // the landed force persisted
         Assert.Equal(0, loaded.HumanPlayer.InterventionBells); // the reset counter persisted (omitted at 0)
+    }
+
+    // ── Item 1: Native re-stancing on the Declaration of Independence (86d3drn4p) ─────────────────────────
+
+    [Fact]
+    public void DeclareIndependence_CalmsTheMostHostileContactedNativeNation()
+    {
+        // FreeCol csDeclareIndependence: the most-hostile contacted native nation throws in with the rebel and is
+        // calmed toward it (to the CONTENT band). We model the faithful, representable half: the angriest contacted
+        // nation's settlements drop to at most CONTENT (600). Set one contacted nation hateful, then declare.
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        NativeSettlement settlement = game.NativeSettlements.First();
+        string nation = settlement.NationTypeId;
+        foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == nation))
+        {
+            s.MarkVisitedBy(rebel.PlayerId);          // the rebel has met this nation (FreeCol hasContacted)
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // → hateful (1000)
+        }
+
+        game.DeclareIndependence(rebel);
+
+        // Every settlement of the angriest contacted nation is calmed down to the CONTENT limit (600), not beyond.
+        Assert.All(game.NativeSettlements.Where(s => s.NationTypeId == nation),
+            s => Assert.Equal(NativeSettlement.AlarmContentMax, s.Alarm));
+    }
+
+    [Fact]
+    public void DeclareIndependence_LeavesUncontactedNativesUntouched()
+    {
+        // Only a nation the rebel has CONTACTED can swing behind it (FreeCol filters on hasContacted). A hostile but
+        // never-met nation keeps its alarm — and a nation already calmer than CONTENT is not stirred up.
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        NativeSettlement uncontacted = game.NativeSettlements.First();
+        game.ChangeNativeAlarm(uncontacted, NativeSettlement.MaxAlarm); // hateful, but never visited
+        int before = uncontacted.Alarm;
+
+        game.DeclareIndependence(rebel);
+
+        Assert.Equal(before, game.NativeSettlements.First(s => s.Id == uncontacted.Id).Alarm); // untouched (never met)
+    }
+
+    [Fact]
+    public void DeclareIndependence_NativeReStancing_IsByteStableOnStreamZero()
+    {
+        // The re-stancing is RNG-free — twins (same seed) advance stream 0 identically through the declaration.
+        (Game a, _) = RebellionReady(7777);
+        (Game b, _) = RebellionReady(7777);
+        foreach (Game g in new[] { a, b })
+        {
+            NativeSettlement s = g.NativeSettlements.First();
+            s.MarkVisitedBy(g.HumanPlayer.PlayerId);
+            g.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm);
+        }
+        a.DeclareIndependence(a.HumanPlayer);
+        b.DeclareIndependence(b.HumanPlayer);
+        Assert.Equal(a.RandomState, b.RandomState);
+    }
+
+    // ── Item 2: War-time mercenary (Hessian) offer on declaration (86d3c9vdb) ─────────────────────────────
+
+    [Fact]
+    public void DeclareIndependence_OffersWarMercenaries_WhenAffordable()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        rebel.Gold = 100000; // plenty to fund a Hessian force
+
+        game.DeclareIndependence(rebel);
+
+        // A pending Hessian offer is surfaced (the same seam as the in-game mercenary offers), not auto-applied.
+        Assert.NotNull(game.PendingMonarchDemand);
+        Assert.Equal(MonarchAction.HessianMercenaries, game.PendingMonarchDemand!.Action);
+        Assert.NotNull(game.PendingMonarchDemand.Offer);
+        Assert.True(game.PendingMonarchDemand.Offer!.Sum(e => e.Count) > 0);
+        Assert.True(game.PendingMonarchDemand.Price > 0);
+    }
+
+    [Fact]
+    public void DeclareIndependence_MercenaryOffer_IsAppliedOnlyOnAccept()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        rebel.Gold = 100000;
+        game.DeclareIndependence(rebel);
+        PendingMonarchDemand offer = game.PendingMonarchDemand!;
+        int offered = offer.Offer!.Sum(e => e.Count);
+        int goldBefore = rebel.Gold;
+        // No units were spawned by the mere offer — the rebel keeps its declaration roster.
+        int europeBefore = game.Units.Count(u => u.OwnerId == rebel.PlayerId && u.Location == UnitLocation.InEurope);
+
+        game.RespondToMonarch(accept: true);
+
+        Assert.Null(game.PendingMonarchDemand); // the offer is consumed
+        Assert.Equal(goldBefore - offer.Price, rebel.Gold); // paid for
+        // The hired force arrives on the rebel's Europe dock (FreeCol csAddMercenaries spawns them in Europe).
+        Assert.Equal(europeBefore + offered,
+            game.Units.Count(u => u.OwnerId == rebel.PlayerId && u.Location == UnitLocation.InEurope));
+    }
+
+    [Fact]
+    public void DeclareIndependence_MercenaryOffer_DeclineSpawnsNothing()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        rebel.Gold = 100000;
+        game.DeclareIndependence(rebel);
+        int goldBefore = rebel.Gold;
+        int unitsBefore = game.Units.Count(u => u.OwnerId == rebel.PlayerId);
+
+        game.RespondToMonarch(accept: false);
+
+        Assert.Null(game.PendingMonarchDemand);
+        Assert.Equal(goldBefore, rebel.Gold); // not charged
+        Assert.Equal(unitsBefore, game.Units.Count(u => u.OwnerId == rebel.PlayerId)); // no force hired
+    }
+
+    [Fact]
+    public void DeclareIndependence_NoMercenaryOffer_WhenBroke()
+    {
+        // With an empty treasury the trimmed offer is null — no Hessian offer is surfaced (FreeCol's "not affordable").
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        rebel.Gold = 0;
+
+        game.DeclareIndependence(rebel);
+
+        Assert.Null(game.PendingMonarchDemand);
+    }
+
+    // ── Item 3: Alternative victory conditions (86d3drn5n / victoryDefeat* options) ───────────────────────
+
+    [Fact]
+    public void ClassicRuleset_ParsesTheVictoryOptions()
+    {
+        // ADR-009: the default game's victory toggles come from the classic spec (REF on, Europeans on, Humans off).
+        Assert.True(Classic.VictoryDefeatRef);
+        Assert.True(Classic.VictoryDefeatEuropeans);
+        Assert.False(Classic.VictoryDefeatHumans);
+    }
+
+    [Fact]
+    public void ParseBooleanOption_ReadsVictoryDefaults_AndFallsBack()
+    {
+        // The values come from the parsed booleanOption defaultValue, not a hardcoded constant.
+        XElement withOption = XElement.Parse(
+            "<freecol-specification><options><optionGroup id='gameOptions.victoryConditions'>" +
+            "  <booleanOption id='model.option.victoryDefeatHumans' defaultValue='true' />" +
+            "</optionGroup></options></freecol-specification>");
+        Assert.True(Ruleset.ParseBooleanOption(withOption, "model.option.victoryDefeatHumans", fallback: false));
+
+        XElement empty = XElement.Parse("<freecol-specification />");
+        Assert.False(Ruleset.ParseBooleanOption(empty, "model.option.victoryDefeatHumans", fallback: false));
+    }
+
+    [Fact]
+    public void DefeatAllEuropeans_WinsWhenOneEuropeanPowerRemains()
+    {
+        // VICTORY_DEFEAT_EUROPEANS (classic on): when only one non-REF European power is still alive, it wins. Wipe
+        // out the foreign powers (no colonies, no units) so only the human remains.
+        Game game = Game.New(Classic, Seed);
+        Player human = game.HumanPlayer;
+        Assert.Null(game.Winner); // the human + 3 foreign powers are all alive → no winner
+
+        foreach (Player power in game.Players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).ToList())
+        {
+            foreach (Unit u in game.Units.Where(u => u.OwnerId == power.PlayerId).ToList())
+            {
+                game.Disband(u); // the foreign power loses its last unit (it never founded a colony) → wiped out
+            }
+        }
+
+        Assert.Equal(human, game.Winner); // the last European standing wins
+    }
+
+    [Fact]
+    public void DefeatAllEuropeans_NoWinnerWhileTwoEuropeanPowersSurvive()
+    {
+        // With two live European powers no Europeans-victory fires (and the human hasn't gone independent).
+        Game game = Game.New(Classic, Seed);
+        // Leave the human + at least one foreign power alive: wipe out only the foreign powers beyond the first.
+        List<Player> foreign = game.Players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).ToList();
+        foreach (Player power in foreign.Skip(1))
+        {
+            foreach (Unit u in game.Units.Where(u => u.OwnerId == power.PlayerId).ToList())
+            {
+                game.Disband(u);
+            }
+        }
+        Assert.True(game.Players.Count(p => p.PlayerType == PlayerType.Colonial
+            && (game.Colonies.Any(c => c.OwnerId == p.PlayerId) || game.Units.Any(u => u.OwnerId == p.PlayerId))) >= 2);
+        Assert.Null(game.Winner); // two live European powers → no Europeans victory
+    }
+
+    [Fact]
+    public void DefeatAllEuropeans_Disabled_NoWinnerEvenWithOneSurvivor()
+    {
+        // With victoryDefeatEuropeans off (and REF off, since no rebellion), one surviving European power is NOT a win.
+        Ruleset noEuropeanVictory = ClassicWithVictoryOptions(ref_: false, europeans: false, humans: false);
+        Game game = Game.New(noEuropeanVictory, Seed);
+        foreach (Player power in game.Players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).ToList())
+        {
+            foreach (Unit u in game.Units.Where(u => u.OwnerId == power.PlayerId).ToList())
+            {
+                game.Disband(u);
+            }
+        }
+        Assert.Null(game.Winner); // the option is off → no victory despite being the last European standing
+    }
+
+    [Fact]
+    public void DefeatAllHumans_WinsWhenEnabledAndOneHumanRemains()
+    {
+        // VICTORY_DEFEAT_HUMANS: with the single human alive among the Europeans and the option on, the human wins
+        // immediately (there is only one human player in our game). Off by default, so this needs the option enabled.
+        Ruleset humanVictory = ClassicWithVictoryOptions(ref_: false, europeans: false, humans: true);
+        Game game = Game.New(humanVictory, Seed);
+        Assert.Equal(game.HumanPlayer, game.Winner); // only one non-AI European alive → human victory
+    }
+
+    /// <summary>The classic ruleset reloaded with the three victory booleans overridden.</summary>
+    private static Ruleset ClassicWithVictoryOptions(bool ref_, bool europeans, bool humans)
+    {
+        var assembly = typeof(Ruleset).Assembly;
+        using Stream raw = assembly.GetManifestResourceStream(GameVariants.ClassicSpecResource)!;
+        XDocument doc = XDocument.Load(raw);
+        void Set(string id, bool value) => doc.Descendants("booleanOption")
+            .Single(o => (string?)o.Attribute("id") == id)
+            .SetAttributeValue("defaultValue", value ? "true" : "false");
+        Set("model.option.victoryDefeatREF", ref_);
+        Set("model.option.victoryDefeatEuropeans", europeans);
+        Set("model.option.victoryDefeatHumans", humans);
+        using var patched = new MemoryStream(Encoding.UTF8.GetBytes(doc.ToString()));
+        return Ruleset.Load(patched);
+    }
+
+    // ── Item 4: Spanish Succession end-to-end consolidation (86d3dbugp) ───────────────────────────────────
+
+    [Fact]
+    public void SpanishSuccession_AbsorbsTheFadingAiIntoTheDominantOne_OnTheTurnAt1600()
+    {
+        // A scripted year-1600 scenario (FreeCol ServerGame.csSpanishSuccession): two AI European powers, one fervent
+        // (SoL > 50) and one fading (SoL < 50), each with a colony + a unit. On the turn at/after 1600 the fading
+        // power is absorbed by the dominant one — its colony and unit change hands, and the flag is set (once).
+        Game game = Game.New(Classic, Seed);
+        AdvanceTo1600(game);
+
+        List<Player> powers = game.Players
+            .Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial)
+            .OrderBy(p => p.PlayerId).Take(2).ToList();
+        Player strong = powers[0];
+        Player weak = powers[1];
+
+        Colony strongColony = FoundColonyFor(game, strong);
+        Colony weakColony = FoundColonyFor(game, weak);
+        strongColony.Liberty = Colony.LibertyPerRebel * strongColony.Population;     // SoL 100 → dominant
+        weakColony.Liberty = 0;                                                       // SoL 0 → fading
+        Unit weakUnit = SpawnLandUnitFor(game, weak);
+        int weakColonyId = weakColony.Id;
+        int weakUnitId = weakUnit.Id;
+
+        Assert.False(game.SpanishSuccessionDone);
+        game.EndTurn(); // RunSpanishSuccession fires (year ≥ 1600, clear strong/weak pair)
+
+        Assert.True(game.SpanishSuccessionDone);
+        Assert.Equal(strong.PlayerId, game.Colonies.Single(c => c.Id == weakColonyId).OwnerId); // colony ceded
+        Assert.Equal(strong.PlayerId, game.Units.Single(u => u.Id == weakUnitId).OwnerId);      // unit ceded
+        Assert.Empty(game.Colonies.Where(c => c.OwnerId == weak.PlayerId));                     // the fading power is emptied
+    }
+
+    [Fact]
+    public void SpanishSuccession_DoesNotFire_WithoutAClearStrongWeakPair()
+    {
+        // Two AI powers both fervent (SoL > 50): no fading power, so the succession does not consolidate them.
+        Game game = Game.New(Classic, Seed);
+        AdvanceTo1600(game);
+        List<Player> powers = game.Players
+            .Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial)
+            .OrderBy(p => p.PlayerId).Take(2).ToList();
+        Colony c0 = FoundColonyFor(game, powers[0]);
+        Colony c1 = FoundColonyFor(game, powers[1]);
+        c0.Liberty = Colony.LibertyPerRebel * c0.Population; // both at SoL 100 → no fading power
+        c1.Liberty = Colony.LibertyPerRebel * c1.Population;
+
+        game.EndTurn();
+
+        Assert.False(game.SpanishSuccessionDone); // no clear weak (SoL < 50) power → no absorption
+        Assert.Equal(powers[1].PlayerId, game.Colonies.Single(c => c.Id == c1.Id).OwnerId); // still its owner
+    }
+
+    /// <summary>Runs end-turns until the calendar reaches (or passes) the Spanish-Succession trigger year 1600.</summary>
+    private static void AdvanceTo1600(Game game)
+    {
+        while (game.CurrentYear < 1600)
+        {
+            game.EndTurn();
+        }
+    }
+
+    /// <summary>Founds a colony owned by <paramref name="power"/> on the first free coastal land tile not adjacent to an existing colony (reusing a spawned colonist).</summary>
+    private static Colony FoundColonyFor(Game game, Player power)
+    {
+        Position spot = game.Map.AllPositions().First(p =>
+            !game.Map.TerrainAt(p).IsWater
+            && game.ColonyAt(p) is null
+            && game.NativeSettlementAt(p) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p)
+            && p.Neighbours().Any(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater)
+            && !p.Neighbours().Any(n => game.Map.InBounds(n) && game.ColonyAt(n) is not null)); // colony footprints never touch
+        Unit colonist = game.SpawnUnit(game.Ruleset.Unit(Game.StartingUnitTypeId), spot);
+        colonist.OwnerId = power.PlayerId;
+        return game.FoundColony(colonist);
+    }
+
+    /// <summary>Spawns a free colonist on open land owned by <paramref name="power"/> (a unit to be ceded in the succession).</summary>
+    private static Unit SpawnLandUnitFor(Game game, Player power)
+    {
+        Position spot = EmptyLand(game, 1)[0];
+        Unit unit = game.SpawnUnit(game.Ruleset.Unit(Game.StartingUnitTypeId), spot);
+        unit.OwnerId = power.PlayerId;
+        return unit;
     }
 }

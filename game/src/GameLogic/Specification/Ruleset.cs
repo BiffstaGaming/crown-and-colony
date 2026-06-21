@@ -50,7 +50,10 @@ public sealed class Ruleset
         int lastColonialYear,
         int interventionBells,
         int interventionTurns,
-        InterventionForceComposition interventionForce)
+        InterventionForceComposition interventionForce,
+        bool victoryDefeatRef,
+        bool victoryDefeatEuropeans,
+        bool victoryDefeatHumans)
     {
         Calendar = calendar;
         FatherAgeYears = fatherAgeYears;
@@ -61,6 +64,9 @@ public sealed class Ruleset
         InterventionBells = interventionBells;
         InterventionTurns = interventionTurns;
         InterventionForce = interventionForce;
+        VictoryDefeatRef = victoryDefeatRef;
+        VictoryDefeatEuropeans = victoryDefeatEuropeans;
+        VictoryDefeatHumans = victoryDefeatHumans;
         _terrainById = terrainById;
         _unitById = unitById;
         _goodsById = goodsById;
@@ -186,6 +192,30 @@ public sealed class Ruleset
     /// without the option falls back to that classic-medium composition.
     /// </summary>
     public InterventionForceComposition InterventionForce { get; }
+
+    /// <summary>
+    /// Victory condition: the first player to defeat/expel the Royal Expeditionary Force wins (the spec
+    /// <c>model.option.victoryDefeatREF</c> boolean game option in the <c>gameOptions.victoryConditions</c> group;
+    /// classic default <b>true</b>). This is the headline War-of-Independence win (FreeCol <c>checkForWinner</c>'s REF
+    /// branch). A spec without the option falls back to true, so the default classic game is unchanged.
+    /// </summary>
+    public bool VictoryDefeatRef { get; }
+
+    /// <summary>
+    /// Victory condition: a player who defeats every other European power wins (the spec
+    /// <c>model.option.victoryDefeatEuropeans</c> boolean game option; classic default <b>true</b>). Satisfied when
+    /// exactly one non-REF European power is still alive (FreeCol <c>checkForWinner</c>'s Europeans branch). A spec
+    /// without the option falls back to true.
+    /// </summary>
+    public bool VictoryDefeatEuropeans { get; }
+
+    /// <summary>
+    /// Victory condition: a player who defeats every other <em>human</em> player wins (the spec
+    /// <c>model.option.victoryDefeatHumans</c> boolean game option; classic default <b>false</b>). Satisfied when
+    /// exactly one non-AI European power is still alive (FreeCol <c>checkForWinner</c>'s humans branch — for our
+    /// single-human game it is off by default). A spec without the option falls back to false.
+    /// </summary>
+    public bool VictoryDefeatHumans { get; }
 
     /// <summary>All terrain types, in specification order.</summary>
     public IReadOnlyList<TerrainType> TerrainTypes { get; }
@@ -709,12 +739,19 @@ public sealed class Ruleset
         // selected level so a variant resizes the ally by data alone.
         (int interventionBells, int interventionTurns, InterventionForceComposition interventionForce) =
             ParseIntervention(root, difficultyLevelId);
+        // The alternative victory conditions (gameOptions.victoryConditions group); classic defaults: REF + Europeans
+        // on, Humans off. These gate the pure victory reads in Game.Independence.cs; a spec without them falls back to
+        // the classic defaults, so the default game is unchanged (ADR-009).
+        bool victoryDefeatRef = ParseBooleanOption(root, "model.option.victoryDefeatREF", fallback: true);
+        bool victoryDefeatEuropeans = ParseBooleanOption(root, "model.option.victoryDefeatEuropeans", fallback: true);
+        bool victoryDefeatHumans = ParseBooleanOption(root, "model.option.victoryDefeatHumans", fallback: false);
 
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
             roles, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears,
             difficulty, difficultyLevelId, upkeepEnabled, lastColonialYear,
-            interventionBells, interventionTurns, interventionForce);
+            interventionBells, interventionTurns, interventionForce,
+            victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans);
     }
 
     /// <summary>
