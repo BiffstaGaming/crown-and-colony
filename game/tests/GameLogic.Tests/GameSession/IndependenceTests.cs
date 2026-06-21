@@ -161,22 +161,67 @@ public class IndependenceTests
     {
         (Game game, Colony colony) = RebellionReady();
         Player rebel = game.HumanPlayer;
-        // Disband the leftover starting roster so the rebel's unit count is exactly the 3 veterans below; with one
-        // SoL-100 colony the cap is then (3 + 2) * (100 - 50) / 100 = 2 upgrades, leaving 1 (pins the cap + the
-        // "some veterans un-mustered" branch).
+        // Disband the leftover starting roster, then garrison 4 veterans ON the colony's tile (the per-colony muster
+        // draws from each colony's OWN tile garrison, FreeCol getAllUnitsList). The colony has population 1, so its
+        // unit count is 1 worker + 4 garrison = 5, and at SoL 100 the cap is (5 + 2) * (100 - 50) / 100 = 3 upgrades,
+        // leaving 1 veteran un-mustered (pins the per-colony cap + the "some veterans stay veterans" branch).
         foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
         {
             game.Disband(u);
         }
-        foreach (Position p in EmptyLand(game, 3))
+        for (int i = 0; i < 4; i++)
         {
-            game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), p);
+            game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), colony.Position);
         }
 
         game.DeclareIndependence(rebel);
 
-        Assert.Equal(2, game.Units.Count(u => u.Type.Id == "model.unit.colonialRegular"));
+        Assert.Equal(3, game.Units.Count(u => u.Type.Id == "model.unit.colonialRegular"));
         Assert.Equal(1, game.Units.Count(u => u.Type.Id == "model.unit.veteranSoldier" && u.OwnerId == rebel.PlayerId));
+    }
+
+    [Fact]
+    public void DeclareIndependence_MusterDrawsFromEachColonysOwnGarrison_NotTheWholeMap()
+    {
+        // Per-colony fidelity (FreeCol csDeclareIndependence): a veteran standing AWAY from any SoL>50 colony is not
+        // mustered — only each colony's own tile garrison upgrades. Here the colony's tile holds one veteran (mustered),
+        // while a second veteran sits on open land elsewhere (left a veteran).
+        (Game game, Colony colony) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+        game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), colony.Position); // garrisoning the colony — eligible
+        Position away = EmptyLand(game, 1)[0];
+        Unit straggler = game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), away); // in the field — not at any colony
+
+        game.DeclareIndependence(rebel);
+
+        // The garrison veteran rose to a colonial regular; the field veteran stayed a veteran (it belongs to no colony).
+        Assert.Equal(1, game.Units.Count(u => u.Type.Id == "model.unit.colonialRegular"));
+        Assert.Equal("model.unit.veteranSoldier", game.Units.Single(u => u.Id == straggler.Id).Type.Id);
+    }
+
+    [Fact]
+    public void DeclareIndependence_MusterCapCountsTheColonysOwnUnitsOnly()
+    {
+        // The cap term is (unitCount + 2) * (SoL - 50) / 100 over THIS colony's own units — population (workers) plus
+        // its tile garrison (FreeCol allUnits.size()). With population 1 and a single garrisoned veteran the colony's
+        // unit count is 2, so the cap is (2 + 2) * (100 - 50) / 100 = 2 — comfortably covering that one veteran. A
+        // nationwide count would have summed in unrelated units; this proves the cap is per colony.
+        (Game game, Colony colony) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+        game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), colony.Position);
+
+        game.DeclareIndependence(rebel);
+
+        Assert.Equal(1, game.Units.Count(u => u.Type.Id == "model.unit.colonialRegular"));
+        Assert.Equal(0, game.Units.Count(u => u.Type.Id == "model.unit.veteranSoldier" && u.OwnerId == rebel.PlayerId));
     }
 
     [Fact]

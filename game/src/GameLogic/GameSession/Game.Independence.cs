@@ -79,30 +79,41 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Upgrades the rebel's veteran soldiers to colonial regulars (FreeCol continental-army muster). The cap is summed
-    /// over colonies with SoL &gt; 50 as <c>(unitCount + 2) · (SoL − 50) / 100</c>, and the earliest veterans rise first.
-    /// <para><b>Faithful-subset deviation:</b> FreeCol caps and draws this <em>per colony</em> from each colony's own
-    /// resident units (<c>getAllUnitsList</c>); our colony workers are not in the unit list, so we use the rebel's
-    /// nationwide unit count in each term and upgrade veterans from the whole map. This can over-muster in a
-    /// multi-colony rebellion versus FreeCol — a per-colony port is a follow-up (TODO 86d3c9rg6 / a muster-fidelity task).</para>
+    /// Upgrades the rebel's veteran soldiers to colonial regulars, colony by colony (FreeCol continental-army muster,
+    /// <c>csDeclareIndependence</c>). For every colony with SoL &gt; 50 the cap is <c>(unitCount + 2) · (SoL − 50) / 100</c>,
+    /// counting <em>that colony's own</em> units, and up to that many of <em>that colony's own</em> veteran soldiers
+    /// (earliest first by id) rise to colonial regulars. Colonies are processed in id order for determinism.
+    /// <para><b>Faithful-subset deviation:</b> FreeCol's per-colony unit list (<c>Settlement.getAllUnitsList</c>) is the
+    /// colony's worker units <em>plus</em> the units garrisoning its tile. In our model a colony's workers are a
+    /// <see cref="Colony.Population"/> count, not <see cref="Unit"/> objects, so (a) the cap term counts the colony's
+    /// population (its workers) plus the non-native units standing on its tile (the garrison) — faithfully reproducing
+    /// <c>allUnits.size()</c> — but (b) the veterans actually drawn can only come from the <em>garrison on the colony's
+    /// tile</em>, never from worker colonists (which aren't units that can be upgraded). A veteran soldier serving as a
+    /// colony worker therefore isn't mustered until it is taken out as a unit; otherwise this matches FreeCol per colony.</para>
     /// </summary>
     private void MusterContinentalArmy(Player player)
     {
-        int unitCount = _units.Count(u => u.OwnerId == player.PlayerId && !u.IsNative);
-        int limit = ColoniesOf(player)
-            .Where(c => c.SonsOfLiberty > 50)
-            .Sum(c => (unitCount + 2) * (c.SonsOfLiberty - 50) / 100);
-        if (limit <= 0)
+        foreach (Colony colony in ColoniesOf(player).Where(c => c.SonsOfLiberty > 50).OrderBy(c => c.Id).ToList())
         {
-            return;
-        }
-        foreach (Unit veteran in _units
-            .Where(u => u.OwnerId == player.PlayerId && u.IsOnMap && u.Type.Id == VeteranSoldierUnitTypeId)
-            .OrderBy(u => u.Id)
-            .Take(limit)
-            .ToList())
-        {
-            UpgradeUnitType(veteran, ColonialRegularUnitTypeId);
+            // FreeCol allUnits.size() = getUnitList() (worker units) + getTile().getUnitList() (units on the tile).
+            // Our workers are a Population count (not units); the garrison is the on-map units standing on the tile.
+            int garrison = _units.Count(u => u.OwnerId == player.PlayerId && !u.IsNative && u.IsOnMap && u.Position == colony.Position);
+            int unitCount = colony.Population + garrison;
+            int limit = (unitCount + 2) * (colony.SonsOfLiberty - 50) / 100;
+            if (limit <= 0)
+            {
+                continue;
+            }
+            // Draw the veterans from this colony's own garrison (earliest first by id), upgrading up to the cap.
+            foreach (Unit veteran in _units
+                .Where(u => u.OwnerId == player.PlayerId && u.IsOnMap && u.Position == colony.Position
+                    && u.Type.Id == VeteranSoldierUnitTypeId)
+                .OrderBy(u => u.Id)
+                .Take(limit)
+                .ToList())
+            {
+                UpgradeUnitType(veteran, ColonialRegularUnitTypeId);
+            }
         }
     }
 
