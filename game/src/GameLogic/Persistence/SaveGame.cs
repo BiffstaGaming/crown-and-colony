@@ -500,6 +500,19 @@ public sealed record SaveGame
                 {
                     colony.SetBuildingWorkers(buildingId, workers);
                 }
+                // Defence-in-depth at the save boundary: a save written before the produceInWater gate could hold a
+                // colonist fishing a sea tile on a colony with no Docks. Now that buildings are restored, drop any such
+                // worker (it returns to the idle pool) so a loaded game obeys the rule the live game enforces. A valid
+                // save has none, so this is a no-op there and the byte-identical round-trip is preserved.
+                bool worksWater = colony.Buildings.Any(b => ruleset.Building(b).ProducesInWater);
+                if (!worksWater)
+                {
+                    foreach (Position seaTile in colony.TileWorkers.Keys
+                                 .Where(t => map.TerrainAt(t).IsWater).ToList())
+                    {
+                        colony.RemoveWorker(seaTile);
+                    }
+                }
                 // Rebuild the construction queue: the front (CurrentBuild) then the saved tail (v24; absent → ≤1 item).
                 colony.SetBuildQueue(
                     (c.CurrentBuild is null ? Enumerable.Empty<string>() : [c.CurrentBuild])

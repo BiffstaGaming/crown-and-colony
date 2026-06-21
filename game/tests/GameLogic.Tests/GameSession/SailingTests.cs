@@ -70,6 +70,19 @@ public class SailingTests
     }
 
     [Fact]
+    public void CheckSailToEurope_RefusesAShipUnderRepair()
+    {
+        // A ship on the high seas is ready to sail — until it is under forced repair, which blocks acting (consistent
+        // with SailToNewWorld/CheckBoard/CheckBuyEuropeGoods; FreeCol isReadyToTrade).
+        Game game = GameOn(["model.tile.highSeas"], 1, 1, [new SavedUnit(1, Caravel, 0, 0, 12)]);
+        Unit ship = game.Units[0];
+        Assert.True(game.CheckSailToEurope(ship).Allowed);
+
+        ship.RepairTurnsRemaining = 3;
+        Assert.False(game.CheckSailToEurope(ship).Allowed);
+    }
+
+    [Fact]
     public void LoadFromColony_MovesGoodsToTheHold()
     {
         Game game = GameOn(["model.tile.plains", "model.tile.ocean"], 2, 1,

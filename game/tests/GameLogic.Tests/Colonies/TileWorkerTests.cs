@@ -118,6 +118,41 @@ public class TileWorkerTests
     }
 
     [Fact]
+    public void Restore_DropsAWaterWorkerOnADocklessColony_ButKeepsItWithDocks()
+    {
+        // A save written before the Docks gate could hold a colonist fishing a sea tile on a dockless colony. Loading
+        // such a save now returns that colonist to the idle pool; a colony that has Docks keeps its fisher.
+        string[] terrain =
+        [
+            "model.tile.ocean", "model.tile.plains", "model.tile.plains",
+            "model.tile.plains", "model.tile.plains", "model.tile.plains",
+            "model.tile.plains", "model.tile.plains", "model.tile.mountains",
+        ];
+        SaveGame Save(System.Collections.Generic.IReadOnlyList<string>? buildings) => new()
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 3,
+            MapHeight = 3,
+            Terrain = terrain,
+            Units = [],
+            Explored = [],
+            Colonies = [new SavedColony(1, "Testville", 1, 1, 1,
+                Workers: [new SavedWorker(0, 0, Fish)], Buildings: buildings)],
+        };
+
+        // Dockless (null → the free base buildings, no docks): the illegal fisher is dropped, the colonist goes idle.
+        Colony dockless = Save(null).Restore(Classic).Colonies[0];
+        Assert.DoesNotContain(dockless.TileWorkers.Keys, t => t == new Position(0, 0));
+        Assert.Equal(1, dockless.IdleColonists);
+
+        // With Docks built, the same fisher survives the round-trip.
+        Colony withDocks = Save(["model.building.docks"]).Restore(Classic).Colonies[0];
+        Assert.Equal(Fish, withDocks.TileWorkers[new Position(0, 0)]);
+    }
+
+    [Fact]
     public void ColonyCanWorkTile_LandAlways_WaterNeedsDocks()
     {
         Game game = ColonyOnCross(population: 1);

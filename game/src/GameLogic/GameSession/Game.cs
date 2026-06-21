@@ -3968,6 +3968,13 @@ public sealed partial class Game
         {
             return MoveCheck.No("The ship is not on the map.");
         }
+        if (unit.IsUnderRepair)
+        {
+            // A ship under forced repair cannot act — consistent with SailToNewWorld/CheckBoard/CheckBuyEuropeGoods
+            // (FreeCol isReadyToTrade). Defence-in-depth: a damaged ship is relocated off the high seas, so this is
+            // unreachable in normal play, but the guard keeps the sail oracle from contradicting its peers.
+            return MoveCheck.No($"The ship is under repair for {unit.RepairTurnsRemaining} more turn(s).");
+        }
         if (Map.TerrainAt(unit.Position).Id != HighSeasId)
         {
             return MoveCheck.No("Ships sail to Europe from the high seas (the map edge).");
