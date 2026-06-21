@@ -70,72 +70,113 @@ public readonly record struct DefenceContext(
     int GoodsCarried = 0);
 
 /// <summary>
+/// The unattached, top-level combat <c>&lt;modifier&gt;</c> percentages FreeCol keeps in the spec's
+/// <c>&lt;modifiers&gt;</c> section (the <c>GENERAL_COMBAT_INDEX = 50</c> situational bonuses/penalties that
+/// are <em>not</em> attached to a unit/terrain/building). Stored as fractions (the spec's <c>-33</c> percentage
+/// becomes <c>-0.33</c>) so <see cref="CombatModel"/>'s arithmetic is unchanged. <see cref="Classic"/> holds the
+/// hardcoded classic values; <see cref="Specification.Ruleset.CombatModifiers"/> parses the same numbers from the
+/// spec so a variant can retune combat by data alone (FreeCol <c>Specification.getModifiers</c> + <c>Modifier</c>).
+/// </summary>
+/// <param name="AttackBonus">The standing attack bonus (<c>model.modifier.attackBonus</c>, classic +0.50).</param>
+/// <param name="SmallMovementPenalty">Penalty with ~⅔ of a move left (<c>model.modifier.smallMovementPenalty</c>, classic −0.33).</param>
+/// <param name="BigMovementPenalty">Penalty with ~⅓ of a move left (<c>model.modifier.bigMovementPenalty</c>, classic −0.66).</param>
+/// <param name="AmphibiousPenalty">Attacking from a ship onto land (<c>model.modifier.amphibiousAttack</c>, classic −0.75).</param>
+/// <param name="ArtilleryInOpenPenalty">Artillery in the open (<c>model.modifier.artilleryInTheOpen</c>, classic −0.75).</param>
+/// <param name="ArtilleryAgainstRaidBonus">Artillery defending a settlement against a native raid (<c>model.modifier.artilleryAgainstRaid</c>, classic +1.00).</param>
+/// <param name="FortifiedBonus">The fortified defence bonus (<c>model.modifier.fortified</c>, classic +0.50).</param>
+/// <param name="CargoPenalty">Per-goods-unit naval cargo penalty (<c>model.modifier.cargoPenalty</c>, classic −0.125).</param>
+public readonly record struct CombatModifiers(
+    double AttackBonus,
+    double SmallMovementPenalty,
+    double BigMovementPenalty,
+    double AmphibiousPenalty,
+    double ArtilleryInOpenPenalty,
+    double ArtilleryAgainstRaidBonus,
+    double FortifiedBonus,
+    double CargoPenalty)
+{
+    /// <summary>
+    /// The hardcoded classic FreeCol combat percentages (as fractions), used as the default when no ruleset value
+    /// is supplied — so the no-argument <see cref="CombatModel.AttackPower(double, AttackContext)"/> /
+    /// <see cref="CombatModel.DefencePower(double, DefenceContext)"/> overloads stay byte-identical.
+    /// </summary>
+    public static readonly CombatModifiers Classic = new(
+        AttackBonus: 0.50,               // +50%
+        SmallMovementPenalty: -0.33,     // 2 moves left
+        BigMovementPenalty: -0.66,       // 1 move left
+        AmphibiousPenalty: -0.75,
+        ArtilleryInOpenPenalty: -0.75,
+        ArtilleryAgainstRaidBonus: 1.00, // +100% — artillery defending a colony against a native raid
+        FortifiedBonus: 0.50,            // +50%
+        CargoPenalty: -0.125);           // −12.5% per goods unit carried (naval, both offence & defence)
+}
+
+/// <summary>
 /// FreeCol's combat model (<c>SimpleCombatModel</c>): combines a unit's base offence/defence with
 /// situational percentage modifiers, then resolves the round by the odds <c>attack / (attack + defence)</c>.
 /// Pure and deterministic given an <see cref="IGameRandom"/> — no map/unit state here; the attack slice
-/// wires units, targets and outcomes to it. Modifier values are pinned to the classic spec.
+/// wires units, targets and outcomes to it. The situational percentages come from <see cref="CombatModifiers"/>;
+/// the no-argument overloads default to <see cref="CombatModifiers.Classic"/> (the pinned classic spec values).
 /// </summary>
 public static class CombatModel
 {
-    // FreeCol GENERAL_COMBAT_INDEX (50) percentage modifiers, as multipliers.
-    private const double AttackBonus = 0.50;          // +50%
-    private const double SmallMovementPenalty = -0.33; // 2 moves left
-    private const double BigMovementPenalty = -0.66;   // 1 move left
-    private const double AmphibiousPenalty = -0.75;
-    private const double ArtilleryInOpenPenalty = -0.75;
-    private const double ArtilleryAgainstRaidBonus = 1.00; // +100% — artillery defending a colony against a native raid
-    private const double FortifiedBonus = 0.50;        // +50%
-    private const double CargoPenalty = -0.125;        // −12.5% per goods unit carried (naval, both offence & defence)
+    /// <summary>The attacker's total offence power: base offence times the classic situational modifiers.</summary>
+    public static double AttackPower(double baseOffence, AttackContext context) =>
+        AttackPower(baseOffence, context, CombatModifiers.Classic);
 
-    /// <summary>The attacker's total offence power: base offence times the situational modifiers.</summary>
-    public static double AttackPower(double baseOffence, AttackContext context)
+    /// <summary>The attacker's total offence power: base offence times the situational modifiers from <paramref name="modifiers"/>.</summary>
+    public static double AttackPower(double baseOffence, AttackContext context, CombatModifiers modifiers)
     {
         double power = baseOffence;
         if (!context.WithoutAttackBonus)
         {
-            power *= 1 + AttackBonus;
+            power *= 1 + modifiers.AttackBonus;
         }
         power *= context.Movement switch
         {
-            MovementPenalty.Big => 1 + BigMovementPenalty,
-            MovementPenalty.Small => 1 + SmallMovementPenalty,
+            MovementPenalty.Big => 1 + modifiers.BigMovementPenalty,
+            MovementPenalty.Small => 1 + modifiers.SmallMovementPenalty,
             _ => 1.0,
         };
         if (context.Amphibious)
         {
-            power *= 1 + AmphibiousPenalty;
+            power *= 1 + modifiers.AmphibiousPenalty;
         }
         if (context.ArtilleryInOpen)
         {
-            power *= 1 + ArtilleryInOpenPenalty;
+            power *= 1 + modifiers.ArtilleryInOpenPenalty;
         }
         if (context.AmbushBonus != 0)
         {
             power *= 1 + (context.AmbushBonus / 100.0); // strike from cover: gain the defender's terrain bonus as offence
         }
-        power *= System.Math.Max(0, 1 + (CargoPenalty * context.GoodsCarried)); // laden ships attack worse
+        power *= System.Math.Max(0, 1 + (modifiers.CargoPenalty * context.GoodsCarried)); // laden ships attack worse
         return power;
     }
 
-    /// <summary>The defender's total defence power: base defence times terrain, fortification and settlement bonuses.</summary>
-    public static double DefencePower(double baseDefence, DefenceContext context)
+    /// <summary>The defender's total defence power: base defence times the classic terrain, fortification and settlement bonuses.</summary>
+    public static double DefencePower(double baseDefence, DefenceContext context) =>
+        DefencePower(baseDefence, context, CombatModifiers.Classic);
+
+    /// <summary>The defender's total defence power: base defence times the terrain, fortification and settlement bonuses from <paramref name="modifiers"/>.</summary>
+    public static double DefencePower(double baseDefence, DefenceContext context, CombatModifiers modifiers)
     {
         double power = baseDefence;
         power *= 1 + (context.TerrainDefenceBonus / 100.0);
         if (context.Fortified)
         {
-            power *= 1 + FortifiedBonus;
+            power *= 1 + modifiers.FortifiedBonus;
         }
         power *= 1 + (context.SettlementDefenceBonus / 100.0);
         if (context.ArtilleryInOpen)
         {
-            power *= 1 + ArtilleryInOpenPenalty; // artillery caught defending in the field is brittle (−75%)
+            power *= 1 + modifiers.ArtilleryInOpenPenalty; // artillery caught defending in the field is brittle (−75%)
         }
         if (context.ArtilleryAgainstRaid)
         {
-            power *= 1 + ArtilleryAgainstRaidBonus; // but artillery behind a colony's walls shreds a native raid (+100%)
+            power *= 1 + modifiers.ArtilleryAgainstRaidBonus; // but artillery behind a colony's walls shreds a native raid (+100%)
         }
-        power *= System.Math.Max(0, 1 + (CargoPenalty * context.GoodsCarried)); // laden ships defend worse
+        power *= System.Math.Max(0, 1 + (modifiers.CargoPenalty * context.GoodsCarried)); // laden ships defend worse
         return power;
     }
 

@@ -1830,7 +1830,7 @@ public sealed partial class Game
             ArtilleryInOpen: !naval && defender.Type.Bombard && !inColony && !defender.IsFortified,
             ArtilleryAgainstRaid: !naval && inColony && defender.Type.Bombard && attacker.IsNative,
             GoodsCarried: naval ? GoodsSlotsUsed(defender) : 0);
-        return CombatModel.DefencePower(DefenceBase(defender), context);
+        return CombatModel.DefencePower(DefenceBase(defender), context, Ruleset.CombatModifiers);
     }
 
     /// <summary>A free, in-bounds land tile adjacent to a centre (no settlement or unit on it), or null.</summary>
@@ -2094,7 +2094,7 @@ public sealed partial class Game
             ArtilleryInOpen: !naval && attacker.Type.Bombard && !attackerInColony && !attacker.IsFortified && !inColony,
             AmbushBonus: ambush ? Map.TerrainAt(target).DefenceBonus : 0,
             GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0);
-        double attack = CombatModel.AttackPower(OffenceBase(attacker) * OffenceAgainstNativeFactor(attacker, defender), ctx);
+        double attack = CombatModel.AttackPower(OffenceBase(attacker) * OffenceAgainstNativeFactor(attacker, defender), ctx, Ruleset.CombatModifiers);
         double defence = DefencePowerOf(attacker, defender, target);
         return (attack, defence);
     }
@@ -2241,8 +2241,8 @@ public sealed partial class Game
         var attackContext = new AttackContext(Movement: MovementPenaltyFor(attacker));
         var defenceContext = new DefenceContext(SettlementDefenceBonus: type.DefenceModifier);
         // Spanish conquest +50% vs natives (the settlement's implicit defender is a brave — always native).
-        double attackPower = CombatModel.AttackPower(OffenceBase(attacker) * OffenceAgainstNativeFactor(attacker, defender), attackContext);
-        double defencePower = CombatModel.DefencePower(DefenceBase(defender), defenceContext);
+        double attackPower = CombatModel.AttackPower(OffenceBase(attacker) * OffenceAgainstNativeFactor(attacker, defender), attackContext, Ruleset.CombatModifiers);
+        double defencePower = CombatModel.DefencePower(DefenceBase(defender), defenceContext, Ruleset.CombatModifiers);
 
         bool hasPlunderAbility = AbilityForUnit(attacker, PlunderNativesAbility); // Cortés
         int attackerId = attacker.Id;
@@ -2388,8 +2388,8 @@ public sealed partial class Game
         var defender = new Unit(0, Ruleset.Unit(StartingUnitTypeId), target) { OwnerId = formerOwner };
 
         var attackContext = new AttackContext(Movement: MovementPenaltyFor(attacker));
-        double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext);
-        double defencePower = CombatModel.DefencePower(DefenceBase(defender), new DefenceContext(SettlementDefenceBonus: ColonyDefenceBonus(colony)));
+        double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext, Ruleset.CombatModifiers);
+        double defencePower = CombatModel.DefencePower(DefenceBase(defender), new DefenceContext(SettlementDefenceBonus: ColonyDefenceBonus(colony)), Ruleset.CombatModifiers);
         attacker.MovementLeft = 0; // assaulting ends the attacker's turn (before any promotion swap)
 
         // Assaulting a rival colony is an act of war, recorded both ways before the colony changes hands.
@@ -2685,8 +2685,8 @@ public sealed partial class Game
         var defender = new Unit(0, Ruleset.Unit(StartingUnitTypeId), target) { OwnerId = colony.OwnerId };
 
         var attackContext = new AttackContext(Movement: MovementPenaltyFor(brave));
-        double attackPower = CombatModel.AttackPower(OffenceBase(brave), attackContext);
-        double defencePower = CombatModel.DefencePower(DefenceBase(defender), new DefenceContext(SettlementDefenceBonus: ColonyDefenceBonus(colony)));
+        double attackPower = CombatModel.AttackPower(OffenceBase(brave), attackContext, Ruleset.CombatModifiers);
+        double defencePower = CombatModel.DefencePower(DefenceBase(defender), new DefenceContext(SettlementDefenceBonus: ColonyDefenceBonus(colony)), Ruleset.CombatModifiers);
         brave.MovementLeft = 0; // raiding ends the brave's turn
 
         CombatResult result = CombatModel.Resolve(CombatModel.WinProbability(attackPower, defencePower), random);
@@ -3000,7 +3000,7 @@ public sealed partial class Game
     /// </summary>
     private void BombardShip(Unit ship, int power, IGameRandom random)
     {
-        double defence = CombatModel.DefencePower(DefenceBase(ship), new DefenceContext(GoodsCarried: GoodsSlotsUsed(ship)));
+        double defence = CombatModel.DefencePower(DefenceBase(ship), new DefenceContext(GoodsCarried: GoodsSlotsUsed(ship)), Ruleset.CombatModifiers);
         CombatResult result = CombatModel.ResolveNaval(CombatModel.WinProbability(power, defence), random);
         if (result is CombatResult.GreatWin or CombatResult.Win)
         {

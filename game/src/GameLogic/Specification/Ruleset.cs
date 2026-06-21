@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Xml.Linq;
+using CrownAndColony.GameLogic.Combat;
 using CrownAndColony.GameLogic.World.Improvements;
 
 namespace CrownAndColony.GameLogic.Specification;
@@ -59,9 +60,11 @@ public sealed class Ruleset
         InterventionForceComposition interventionForce,
         bool victoryDefeatRef,
         bool victoryDefeatEuropeans,
-        bool victoryDefeatHumans)
+        bool victoryDefeatHumans,
+        CombatModifiers combatModifiers)
     {
         Calendar = calendar;
+        CombatModifiers = combatModifiers;
         FatherAgeYears = fatherAgeYears;
         Difficulty = difficulty;
         GameOptions = gameOptions;
@@ -136,6 +139,17 @@ public sealed class Ruleset
     /// <see cref="GameSession.Game.CurrentYear"/>/<see cref="GameSession.Game.CurrentSeason"/> read it for the current turn.
     /// </summary>
     public Calendar Calendar { get; }
+
+    /// <summary>
+    /// The unattached, top-level combat <c>&lt;modifier&gt;</c> percentages parsed from the spec's
+    /// <c>&lt;modifiers&gt;</c> section (FreeCol's <c>GENERAL_COMBAT_INDEX</c> situational bonuses: the attack
+    /// bonus, the two movement penalties, the amphibious / artillery-in-the-open penalties, the
+    /// artillery-against-raid and fortified bonuses, and the naval cargo penalty). The combat model
+    /// (<see cref="Combat.CombatModel"/>) reads these instead of hardcoding, so a variant retunes combat by data.
+    /// A spec missing one of these modifiers falls back to its classic value (<see cref="Combat.CombatModifiers.Classic"/>),
+    /// so the default classic game is byte-identical.
+    /// </summary>
+    public CombatModifiers CombatModifiers { get; }
 
     /// <summary>
     /// The in-game year thresholds at which the founding-father age weighting changes (classic <c>1600, 1700</c>,
@@ -813,12 +827,17 @@ public sealed class Ruleset
         bool victoryDefeatEuropeans = ParseBooleanOption(root, "model.option.victoryDefeatEuropeans", fallback: true);
         bool victoryDefeatHumans = ParseBooleanOption(root, "model.option.victoryDefeatHumans", fallback: false);
 
+        // The unattached, top-level <modifiers> combat percentages (attack bonus, movement/amphibious/artillery
+        // penalties, fortified/artillery-against-raid bonuses, naval cargo penalty). Each missing modifier falls back
+        // to its hardcoded classic value, so the default classic game is byte-identical (FreeCol Modifier).
+        CombatModifiers combatModifiers = ParseCombatModifiers(root.Element("modifiers"));
+
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
             roles, disasters, unitChanges, experienceUpgrades, educationTurns, europeanNations, events, calendar, fatherAgeYears,
             difficulty, gameOptions, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage, lastColonialYear,
             interventionBells, interventionTurns, interventionForce,
-            victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans);
+            victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, combatModifiers);
     }
 
     /// <summary>
@@ -1502,6 +1521,40 @@ public sealed class Ruleset
         },
         Value: (double?)m.Attribute("value") ?? 0,
         Index: (int?)m.Attribute("index") ?? 0);
+
+    /// <summary>
+    /// Reads the unattached, top-level <c>&lt;modifiers&gt;</c> combat percentages (FreeCol's
+    /// <c>GENERAL_COMBAT_INDEX</c> situational bonuses) into a <see cref="CombatModifiers"/>. Each modifier's spec
+    /// <c>value</c> is a percentage (e.g. <c>-33</c>) divided by 100 into the fraction the combat model multiplies by;
+    /// a modifier absent from the section (or a null <paramref name="section"/>) falls back to its
+    /// <see cref="CombatModifiers.Classic"/> value, so the default classic game is byte-identical. Other top-level
+    /// modifiers (the <c>colonyGoodsParty</c>/<c>shipTradePenalty</c> instantiated-on-the-fly templates and the
+    /// <c>model.goods.food</c> zero-additive) are deliberately left to their own consumers and not read here.
+    /// </summary>
+    internal static CombatModifiers ParseCombatModifiers(XElement? section)
+    {
+        var byId = (section?.Elements("modifier") ?? [])
+            .Where(m => (string?)m.Attribute("id") is not null)
+            .GroupBy(m => (string)m.Attribute("id")!)
+            .ToDictionary(g => g.Key, g => g.Last()); // last definition wins, mirroring FreeCol's add-order semantics
+
+        // The spec stores a percentage (-33, 50, -12.5); the combat model multiplies by the fraction (-0.33, …).
+        double Fraction(string id, double classic) =>
+            byId.TryGetValue(id, out XElement? m) && (double?)m.Attribute("value") is { } v
+                ? v / 100.0
+                : classic;
+
+        CombatModifiers classic = CombatModifiers.Classic;
+        return new CombatModifiers(
+            AttackBonus: Fraction("model.modifier.attackBonus", classic.AttackBonus),
+            SmallMovementPenalty: Fraction("model.modifier.smallMovementPenalty", classic.SmallMovementPenalty),
+            BigMovementPenalty: Fraction("model.modifier.bigMovementPenalty", classic.BigMovementPenalty),
+            AmphibiousPenalty: Fraction("model.modifier.amphibiousAttack", classic.AmphibiousPenalty),
+            ArtilleryInOpenPenalty: Fraction("model.modifier.artilleryInTheOpen", classic.ArtilleryInOpenPenalty),
+            ArtilleryAgainstRaidBonus: Fraction("model.modifier.artilleryAgainstRaid", classic.ArtilleryAgainstRaidBonus),
+            FortifiedBonus: Fraction("model.modifier.fortified", classic.FortifiedBonus),
+            CargoPenalty: Fraction("model.modifier.cargoPenalty", classic.CargoPenalty));
+    }
 
     private static FatherModifier ParseModifier(XElement m) => new(
         TargetId: RequiredAttribute(m, "id"),
