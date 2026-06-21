@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3]
+[gd_scene load_steps=24 format=3]
 
 [ext_resource type="Script" path="res://presentation/GameController.cs" id="1"]
 [ext_resource type="Script" path="res://presentation/MapView.cs" id="2"]
@@ -23,6 +23,7 @@
 [ext_resource type="Script" path="res://presentation/ImprovementOverlay.cs" id="22"]
 [ext_resource type="Script" path="res://presentation/MonarchDialog.cs" id="23"]
 [ext_resource type="Script" path="res://presentation/VictoryPanel.cs" id="24"]
+[ext_resource type="Script" path="res://presentation/HighScoresPanel.cs" id="25"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -618,6 +619,42 @@ size_flags_vertical = 3
 layout_mode = 2
 text = "Close"
 
+[node name="HighScoresPanel" type="PanelContainer" parent="UI"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -360.0
+offset_top = -240.0
+offset_right = 360.0
+offset_bottom = 240.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("25")
+
+[node name="VBox" type="VBoxContainer" parent="UI/HighScoresPanel"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="UI/HighScoresPanel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+horizontal_alignment = 1
+
+[node name="Scroll" type="ScrollContainer" parent="UI/HighScoresPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Dynamic" type="VBoxContainer" parent="UI/HighScoresPanel/VBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="CloseButton" type="Button" parent="UI/HighScoresPanel/VBox"]
+layout_mode = 2
+text = "Close"
+
 [node name="FindSettlementPanel" type="PanelContainer" parent="UI"]
 visible = false
 anchors_preset = 8
@@ -707,6 +744,20 @@ offset_bottom = -152.0
 grow_horizontal = 0
 grow_vertical = 0
 text = "Colopedia"
+
+[node name="HighScoresButton" type="Button" parent="UI"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -140.0
+offset_top = -236.0
+offset_right = -16.0
+offset_bottom = -196.0
+grow_horizontal = 0
+grow_vertical = 0
+text = "High Scores"
 
 [node name="CalendarPanel" type="PanelContainer" parent="UI"]
 anchors_preset = 3

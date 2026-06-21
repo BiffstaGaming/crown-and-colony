@@ -106,6 +106,7 @@ public partial class GameController : Node2D
     private PanelContainer _foundingFatherPanel = null!;
     private PanelContainer _colopediaPanel = null!;
     private PanelContainer _victoryPanel = null!;
+    private PanelContainer _highScoresPanel = null!;
     private Button _endTurnButton = null!;
     private Control _gameOverScreen = null!;
     private Label _gameOverMessage = null!;
@@ -114,6 +115,8 @@ public partial class GameController : Node2D
     private string? _notice;
     private bool _gotoMode;
     private bool _victoryShown;
+    private bool _highScoreRecorded;
+    private string _gameId = "";
     private GotoMarker _gotoMarker = null!;
 
     public override void _Ready()
@@ -174,6 +177,7 @@ public partial class GameController : Node2D
         _foundingFatherPanel = GetNode<PanelContainer>("UI/FoundingFatherPanel");
         _colopediaPanel = GetNode<PanelContainer>("UI/ColopediaPanel");
         _victoryPanel = GetNode<PanelContainer>("UI/VictoryPanel");
+        _highScoresPanel = GetNode<PanelContainer>("UI/HighScoresPanel");
         _endTurnButton = GetNode<Button>("UI/EndTurnButton");
         _gameOverScreen = GetNode<Control>("UI/GameOverScreen");
         _gameOverMessage = GetNode<Label>("UI/GameOverScreen/Panel/VBox/Message");
@@ -182,9 +186,11 @@ public partial class GameController : Node2D
         GetNode<Button>("UI/TradeRoutesButton").Pressed += OpenTradeRoutePanel;
         GetNode<Button>("UI/ReportsButton").Pressed += OpenColonyReportPanel;
         GetNode<Button>("UI/ColopediaButton").Pressed += OpenColopediaPanel;
+        GetNode<Button>("UI/HighScoresButton").Pressed += OpenHighScoresPanel;
         GetNode<Button>("UI/ColopediaPanel/VBox/CloseButton").Pressed += () => _colopediaPanel.Hide();
         GetNode<Button>("UI/ColonyReportPanel/VBox/CloseButton").Pressed += () => _colonyReportPanel.Hide();
         GetNode<Button>("UI/VictoryPanel/VBox/CloseButton").Pressed += () => _victoryPanel.Hide();
+        GetNode<Button>("UI/HighScoresPanel/VBox/CloseButton").Pressed += () => _highScoresPanel.Hide();
         GetNode<Button>("UI/FindSettlementPanel/VBox/CloseButton").Pressed += () => _findSettlementPanel.Hide();
         GetNode<Button>("UI/FoundingFatherPanel/VBox/CloseButton").Pressed += () => _foundingFatherPanel.Hide();
         GetNode<Button>("UI/ColonyPanel/VBox/CloseButton").Pressed += () => _colonyPanel.Hide();
@@ -247,7 +253,10 @@ public partial class GameController : Node2D
         _inspectedTile = null;
         _notice = null;
         _victoryShown = false; // re-arm the one-shot victory screen for the fresh game (new or loaded)
+        _highScoreRecorded = false; // re-arm the one-shot end-of-game high-score record
+        _gameId = System.Guid.NewGuid().ToString(); // per-session game id for high-score de-duplication (not persisted in the save)
         _victoryPanel.Hide();
+        _highScoresPanel.Hide();
         // Centre on the player's first on-map unit; after founding the only colony the player may have
         // none on the map (and the unit list now also holds native braves), so fall back to a colony,
         // then the map centre.
@@ -883,6 +892,7 @@ public partial class GameController : Node2D
 
         UpdateDefeatUi();
         UpdateVictoryUi();
+        RecordHighScoreIfGameEnded();
 
         // A human explorer that stepped onto strange mounds owes an investigate/decline choice — surface the modal
         // (once; resolving it clears the pending state so it won't re-open). Suppressed if the human is defeated.
@@ -970,6 +980,33 @@ public partial class GameController : Node2D
 
     /// <summary>Opens the victory / end-of-game stats screen directly (the winner's score + final stats). Public so scene tests can drive it.</summary>
     public void OpenVictoryPanel() => ((VictoryPanel)_victoryPanel).Open(_game);
+
+    /// <summary>
+    /// Records the human's final score on the persisted leaderboard the first time the game ends — a win
+    /// (<see cref="Game.Winner"/> is the human) or the human's defeat (<see cref="Game.IsHumanDefeated"/>). Once only
+    /// per game (the <see cref="_highScoreRecorded"/> one-shot), so it cannot double-add as the view refreshes. The
+    /// score record + ranking + file all live behind GameLogic / <see cref="HighScoresService"/> (ADR-006): the
+    /// controller only decides <i>when</i> and whether it was a win, then hands the entry over. Writes
+    /// <c>user://highscores.json</c> — never a game save (the save version is unchanged).
+    /// </summary>
+    private void RecordHighScoreIfGameEnded()
+    {
+        if (_highScoreRecorded)
+        {
+            return;
+        }
+        bool won = _game.Winner is { } w && w.PlayerId == _game.HumanPlayer.PlayerId;
+        bool lost = _game.IsHumanDefeated;
+        if (!won && !lost)
+        {
+            return; // game still running
+        }
+        _highScoreRecorded = true;
+        HighScoresService.Record(_game.RecordHighScore(_game.HumanPlayer, won, _gameId));
+    }
+
+    /// <summary>Opens the high-scores leaderboard screen (loads <c>user://highscores.json</c> via <see cref="HighScoresService"/>). Public so the menu and scene tests can drive it.</summary>
+    public void OpenHighScoresPanel() => ((HighScoresPanel)_highScoresPanel).Open(HighScoresService.Load());
 
     /// <summary>One marker per colony, reconciled each refresh (colony count is tiny).</summary>
     private void SyncColonyMarkers()

@@ -658,6 +658,63 @@ public sealed partial class Game
         };
     }
 
+    /// <summary>
+    /// Builds a leaderboard <see cref="HighScore"/> entry for <paramref name="player"/> from the current game state —
+    /// a faithful port of FreeCol's <c>new HighScore(player)</c> constructor (it reads the same fields off the player
+    /// and game): the final <see cref="PlayerScore"/> and the honorific it earns, the nation/nation-type ids, the
+    /// difficulty, the player's end-of-game unit and colony counts, the retirement turn (the current turn) and — if the
+    /// player has won independence — the turn it was declared. <paramref name="won"/> records victory vs. defeat (our
+    /// flag in place of FreeCol's player-type read). A <b>pure, RNG-free read</b> (ADR-009): it draws no randomness and
+    /// mutates nothing, so building a score leaves the game byte-identical; persistence is the caller's concern
+    /// (<see cref="Persistence.HighScoreStore"/>), kept entirely separate from the game save.
+    /// </summary>
+    /// <param name="player">The player to record — normally the human (the leaderboard tracks the human's games).</param>
+    /// <param name="won"><c>true</c> for a victory, <c>false</c> for a defeat.</param>
+    /// <param name="gameId">An optional per-game id for de-duplication (a later higher score from the same game replaces the earlier); empty if unknown.</param>
+    /// <returns>The completed high-score entry, dated <see cref="DateTime.UtcNow"/>.</returns>
+    public HighScore RecordHighScore(Player player, bool won, string gameId = "")
+    {
+        int score = PlayerScore(player);
+        return new HighScore(
+            PlayerName: PlayerDisplayName(player),
+            NationId: player.NationId ?? "",
+            NationTypeId: NationTypeIdOf(player),
+            Score: score,
+            Level: ScoreLevels.ForScore(score),
+            Difficulty: DifficultyLevelId,
+            UnitCount: _units.Count(u => IsOwnedBy(u, player)),
+            ColonyCount: ColoniesOf(player).Count(),
+            RetirementTurn: Turn,
+            IndependenceTurn: player.PlayerType == PlayerType.Independent
+                ? player.DeclaredIndependenceTurn ?? Turn
+                : -1,
+            Won: won,
+            DateUtc: DateTime.UtcNow,
+            GameId: gameId);
+    }
+
+    /// <summary>
+    /// The display name for a player on the leaderboard (FreeCol records <c>player.getName()</c>). Our players carry no
+    /// free-text name, so this is the nation's display name — the capitalised tail of the nation id (e.g.
+    /// <c>model.nation.dutch</c> → "Dutch") — or "Anonymous" for a nation-less default game, mirroring FreeCol's
+    /// "anonymous" fallback.
+    /// </summary>
+    private static string PlayerDisplayName(Player player)
+    {
+        if (player.NationId is { } id && id.LastIndexOf('.') is var dot && dot + 1 < id.Length)
+        {
+            string tail = id[(dot + 1)..];
+            return char.ToUpperInvariant(tail[0]) + tail[1..];
+        }
+        return "Anonymous";
+    }
+
+    /// <summary>The player's nation-type id (national advantage), resolved through the ruleset; null if the game had no nation pick.</summary>
+    private string? NationTypeIdOf(Player player) =>
+        player.NationId is { } nationId
+            ? Ruleset.EuropeanNations.FirstOrDefault(n => n.Id == nationId)?.NationType?.Id
+            : null;
+
     /// <summary>All units in the game — the player's and the natives' (braves).</summary>
     public IReadOnlyList<Unit> Units => _units;
 
