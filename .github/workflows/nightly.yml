@@ -5,6 +5,10 @@ on:
     - cron: "0 16 * * *" # ~02:00 AEST
   workflow_dispatch:
 
+# The QA-report step commits docs/QA-REPORT.md back to the branch.
+permissions:
+  contents: write
+
 jobs:
   soak:
     name: "L5: soak + full logic suite"
@@ -21,9 +25,64 @@ jobs:
           dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj
           --configuration Release --filter "Category=Soak"
           --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=soak.trx"
+          --results-directory TestResults
 
       - name: Run full logic suite
         run: >
           dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj
           --configuration Release --no-build --filter "Category!=Soak"
           --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=logic.trx"
+          --results-directory TestResults
+
+      # Best-effort: pull the L3/L4 scene TRX from the most recent successful CI
+      # run on this branch. The generator degrades gracefully if it's missing
+      # (the scene counts just show "—"), so a failure here must not fail the job.
+      - name: Fetch latest scene TRX from CI (best-effort)
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          run_id=$(gh run list --workflow CI --branch "${GITHUB_REF_NAME}" \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          if [ -n "$run_id" ]; then
+            echo "Latest successful CI run on ${GITHUB_REF_NAME}: $run_id"
+            gh run download "$run_id" --name trx-scene --dir TestResults || \
+              echo "::notice::no trx-scene artifact on run $run_id"
+          else
+            echo "::notice::no successful CI run found for ${GITHUB_REF_NAME}"
+          fi
+          exit 0
+
+      - name: Regenerate docs/QA-REPORT.md from results
+        if: always()
+        run: |
+          python3 scripts/generate-qa-report.py \
+            --logic-trx TestResults/logic.trx \
+            --soak-trx TestResults/soak.trx \
+            --scene-trx TestResults/scene.trx \
+            --commit "$(git rev-parse --short HEAD)"
+
+      - name: Commit QA report if it changed
+        if: always()
+        run: |
+          if git diff --quiet -- docs/QA-REPORT.md; then
+            echo "QA-REPORT.md unchanged — nothing to commit."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/QA-REPORT.md
+          git commit -m "docs(qa): auto-regenerate QA-REPORT.md from nightly CI results"
+          git push
+
+      - name: Upload QA report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-report
+          path: docs/QA-REPORT.md
+          if-no-files-found: warn

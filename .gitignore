@@ -21,3 +21,7 @@ Thumbs.db
 # Claude Code local settings
 .claude/settings.local.json
 TestResults/
+
+# Python (scripts/ tooling — e.g. generate-qa-report.py)
+__pycache__/
+*.pyc

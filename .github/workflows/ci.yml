@@ -25,6 +25,18 @@ jobs:
           dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj
           --configuration Release --filter "Category!=Soak"
           --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=logic.trx"
+          --results-directory TestResults
+
+      # Publish the raw results so the QA-REPORT generator (and humans) can read
+      # them. `always()` keeps the artifact even on a red run, for triage.
+      - name: Upload logic test results (TRX)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trx-logic
+          path: TestResults/logic.trx
+          if-no-files-found: warn
 
   scene-tests:
     name: "L3: Godot interaction tests"
@@ -66,12 +78,22 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             if xvfb-run --auto-servernum dotnet test CrownAndColony.csproj --no-build --settings .runsettings \
-                 --logger "console;verbosity=normal"; then
+                 --logger "console;verbosity=normal" \
+                 --logger "trx;LogFileName=scene.trx" --results-directory TestResults; then
               exit 0
             fi
             echo "::warning::Scene-test attempt $attempt failed; retrying"
           done
           exit 1
+
+      # Publish the L3/L4 results so the QA-REPORT generator can read them.
+      - name: Upload scene test results (TRX)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trx-scene
+          path: game/TestResults/scene.trx
+          if-no-files-found: warn
 
       - name: Upload visual diff artifacts
         if: failure()
