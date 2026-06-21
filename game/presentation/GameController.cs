@@ -93,6 +93,7 @@ public partial class GameController : Node2D
     private PanelContainer _nativePanel = null!;
     private PanelContainer _demandPanel = null!;
     private PanelContainer _moundsPanel = null!;
+    private MonarchDialog _monarchDialog = null!;
     private EmigrationChoicePanel _emigrationPanel = null!;
     private PreCombatPanel _preCombatPanel = null!;
     private TurnMessagePanel _turnMessagePanel = null!;
@@ -158,6 +159,7 @@ public partial class GameController : Node2D
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
         _demandPanel = GetNode<PanelContainer>("UI/NativeDemandPanel");
         _moundsPanel = GetNode<PanelContainer>("UI/MoundsDecisionPanel");
+        _monarchDialog = GetNode<MonarchDialog>("UI/MonarchDialog");
         _emigrationPanel = GetNode<EmigrationChoicePanel>("UI/EmigrationChoicePanel");
         _preCombatPanel = GetNode<PreCombatPanel>("UI/PreCombatPanel");
         _turnMessagePanel = GetNode<TurnMessagePanel>("UI/TurnMessagePanel");
@@ -890,6 +892,22 @@ public partial class GameController : Node2D
         {
             OpenEmigrationChoicePanel();
         }
+
+        // The home-nation King has made a demand awaiting an answer (a tax rise or a mercenary offer set
+        // Game.PendingMonarchDemand during the turn tick) — surface the Monarch dialog (once; resolving it clears the
+        // pending demand in GameLogic, so it won't re-open). Suppressed on defeat. The dialog reads the pending demand
+        // and forwards the accept/decline to Game.RespondToMonarch (ADR-006 — the monarch rules live in GameLogic).
+        if (!_game.IsHumanDefeated && _game.PendingMonarchDemand is not null && !_monarchDialog.Visible)
+        {
+            _monarchDialog.Open(_game, outcome =>
+            {
+                if (!string.IsNullOrEmpty(outcome))
+                {
+                    _notice = outcome;
+                }
+                RefreshView();
+            });
+        }
     }
 
     /// <summary>
@@ -916,6 +934,7 @@ public partial class GameController : Node2D
             _nativePanel.Hide();
             _demandPanel.Hide();
             _moundsPanel.Hide();
+            _monarchDialog.Hide();
         }
         _gameOverScreen.Visible = defeated;
     }

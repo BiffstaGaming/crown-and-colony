@@ -1,4 +1,4 @@
-[gd_scene load_steps=21 format=3]
+[gd_scene load_steps=22 format=3]
 
 [ext_resource type="Script" path="res://presentation/GameController.cs" id="1"]
 [ext_resource type="Script" path="res://presentation/MapView.cs" id="2"]
@@ -21,6 +21,7 @@
 [ext_resource type="Script" path="res://presentation/EmigrationChoicePanel.cs" id="20"]
 [ext_resource type="Script" path="res://presentation/RiverOverlay.cs" id="21"]
 [ext_resource type="Script" path="res://presentation/ImprovementOverlay.cs" id="22"]
+[ext_resource type="Script" path="res://presentation/MonarchDialog.cs" id="23"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -330,6 +331,48 @@ text = "Investigate"
 [node name="DeclineButton" type="Button" parent="UI/MoundsDecisionPanel/VBox/Buttons"]
 layout_mode = 2
 text = "Leave them be"
+
+[node name="MonarchDialog" type="PanelContainer" parent="UI"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -260.0
+offset_top = -110.0
+offset_right = 260.0
+offset_bottom = 110.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("23")
+
+[node name="VBox" type="VBoxContainer" parent="UI/MonarchDialog"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="MonarchTitle" type="Label" parent="UI/MonarchDialog/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+
+[node name="MonarchInfo" type="Label" parent="UI/MonarchDialog/VBox"]
+layout_mode = 2
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Buttons" type="HBoxContainer" parent="UI/MonarchDialog/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="AcceptButton" type="Button" parent="UI/MonarchDialog/VBox/Buttons"]
+layout_mode = 2
+text = "Accept"
+
+[node name="DeclineButton" type="Button" parent="UI/MonarchDialog/VBox/Buttons"]
+layout_mode = 2
+text = "Decline"
 
 [node name="PreCombatPanel" type="PanelContainer" parent="UI"]
 visible = false
