@@ -27,6 +27,22 @@ The heart of "actual testing". Fixture builders create game states ("colony with
 - **FreeCol cross-checks**: same setup, expected outcome taken from FreeCol's behavior (documented in the system doc's Verification section).
 - **Full-game sims**: AI vs AI to completion with invariant assertions (no negative goods, population conserved, no exceptions).
 
+#### Differential-fidelity harness (`[Trait("Category","Fidelity")]`)
+
+A reusable L2 scaffold that runs a **scripted, seeded** scenario on our engine and asserts the observable outcome against a value **extracted from FreeCol's own source/data** — so a silent divergence from the reference behaviour fails CI rather than passing unnoticed. It lives in `game/tests/GameLogic.Tests/Scenarios/DifferentialFidelityTests.cs` and is the structural counterpart to the per-system FreeCol cross-checks: one place to drop a "this must still match FreeCol" guard rail.
+
+- **Shape:** each case is a `FidelityInvariant<T>` — a name, the **FreeCol citation** it pins (file + line + the documented value), the scripted `Observe()` action that drives our engine, and the `Expected` outcome read straight off the FreeCol reference. A shared `Verify(...)` runner asserts equality and surfaces the citation in the failure message ("we drifted from FreeCol's documented X"). Adding a new cross-checked invariant is a few lines.
+- **Determinism:** seeded RNG only (ADR-009), no wall-clock, no ambient state. Run the suite in isolation with `dotnet test … --filter "FullyQualifiedName~Fidelity"`.
+- **Test-infrastructure only:** the harness changes no production code. If a case ever reveals a *real* fidelity bug (engine ≠ FreeCol), it is documented (here + the relevant system doc) and fixed in a separate production change — not patched inside the harness.
+- **Current invariants (5), each FreeCol-sourced:**
+  1. **Combat odds** = `attack / (attack + defence)` — `freecol/src/.../SimpleCombatModel.java:110`; modifiers `ATTACK_BONUS +50%`, `FORTIFIED +50%`, `model.tile.hills` defence `+100%` (classic spec). Fortified soldier (def 1+1) on hills vs armed brave (off 1+2): `4.5 / (4.5 + 6) = 0.4286`.
+  2. **Combat resolution bands** — `SimpleCombatModel.generateAttackResult`: first 10% of the win range = great win, last 10% of the loss range = great loss; a seeded sample never leaves the four valid bands.
+  3. **Market supply price** — `freecol/src/.../MarketData.java:322-324` `price()` supply formula; classic spec `model.goods.sugar` `initial-amount=1500 initial-price=2`. Selling 600 raises inventory 1500→2100, drops the bid 2→1, credits 1200 at 0% tax (driven end-to-end through `Game.SellColonyGoods`).
+  4. **Native tension delta** — `freecol/src/.../Tension.java:45` `TENSION_ADD_LAND_TAKEN = 200`; taking land lifts a calm settlement's alarm by exactly 200, stepping the band HAPPY → CONTENT (`Tension.java:72-76` level limits).
+  5. **Sons of Liberty + production bonus** — `freecol/src/.../Colony.java:1294` `calculateSoLPercentage` with `LIBERTY_PER_REBEL = 200` (`Colony.java:66`): SoL% = `floor(liberty·100 / (200·pop))`, clamped 0–100; the −2..+2 production-bonus tiers (`calculateProductionBonus`).
+  - (Plus a **calendar** invariant: `Turn.getTurnYear`/`getTurnSeason` with `startingYear=1492, seasonYear=1600, seasons=2` — turn 1 = 1492, turn 109 = Spring 1600, turn 110 = Autumn 1600, turn 111 = Spring 1601.)
+- **CI gate:** these run on the every-push L2 gate (they are **not** in the soak category). No engine divergence was found when the harness was first written (2026-06-21) — the only initial failures were mistakes in the test's own expected values, corrected before commit.
+
 ### L3 — Interaction (required for any feature with UI)
 GdUnit4Net scene runner: load the actual scene, simulate input, await signals, assert that the logic layer received the right commands and the UI reflects state changes. State assertions live here — **not** in visual tests.
 
