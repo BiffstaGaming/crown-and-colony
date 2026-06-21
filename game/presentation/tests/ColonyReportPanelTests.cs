@@ -1,5 +1,10 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using CrownAndColony.GameLogic.Colonies;
+using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.Presentation;
 using GdUnit4;
 using Godot;
@@ -180,9 +185,123 @@ public class ColonyReportPanelTests
         AssertThat(first!.Text).Contains(colony.Name); // "Turn N: Founded <colony>."
     }
 
-    private static CrownAndColony.GameLogic.GameSession.Game GetGame(GameController controller) =>
-        (CrownAndColony.GameLogic.GameSession.Game)controller
+    [TestCase]
+    public async Task EducationTab_ListsTheSchoolsTeacherAndStudent()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // Found a colony, then via the save layer give it a schoolhouse staffed by an expert farmer (the teacher) and a
+        // second colonist (the idle free-colonist student) — building/staffing are internal to GameLogic, so we go
+        // through the public SaveGame/Restore path, mirroring ColonyPanelTests.
+        Game game = GetGame(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with
+            {
+                Population = 2, // 1 teacher in the schoolhouse + 1 idle free-colonist student
+                Buildings = c.Buildings!.Append("model.building.schoolhouse").ToList(),
+                BuildingWorkers = new Dictionary<string, int> { ["model.building.schoolhouse"] = 1 },
+                BuildingWorkerTypes = new Dictionary<string, IReadOnlyList<string>>
+                {
+                    ["model.building.schoolhouse"] = new[] { "model.unit.expertFarmer" },
+                },
+            }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Education")
+            .EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Education");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        AssertThat(dynamic.GetNodeOrNull($"School_{founded.Id}")).IsNotNull();
+        var student = dynamic.GetNodeOrNull<Label>($"Student_{founded.Id}_schoolhouse");
+        AssertThat(student).IsNotNull();
+        AssertThat(student!.Text).Contains("Free Colonist"); // the student being raised
+        AssertThat(student.Text).Contains("Expert Farmer");  // toward the teacher's expertise
+    }
+
+    [TestCase]
+    public async Task ProductionTab_SelectsAGood_AndBreaksDownEachColony()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // A founded colony comes with a town hall (produces bells), so picking "bells" shows a producer row.
+        Game game = GetGame(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Production")
+            .EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Production");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var selector = dynamic.GetNodeOrNull<OptionButton>("ProductionGood");
+        AssertThat(selector).IsNotNull();
+
+        // Select "bells" (a non-farmed good the town hall makes) and assert the colony's breakdown row renders.
+        int bellsItem = -1;
+        for (int i = 0; i < selector!.ItemCount; i++)
+        {
+            if (selector.GetItemText(i) == "Bells")
+            {
+                bellsItem = i;
+            }
+        }
+        AssertThat(bellsItem).IsGreaterEqual(0);
+        selector.Select(bellsItem);
+        selector.EmitSignal(OptionButton.SignalName.ItemSelected, bellsItem);
+        await runner.SimulateFrames(1);
+
+        var row = dynamic.GetNodeOrNull<Label>($"Production_{founded.Id}");
+        AssertThat(row).IsNotNull();
+        AssertThat(row!.Text).Contains(founded.Name);
+        AssertThat(row.Text).Contains("Bells");
+    }
+
+    [TestCase]
+    public async Task LabourTab_ListsEveryColonistGroupedByType()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // The start units include free colonists; founding one keeps the rest on the map → the Labour roster is non-empty
+        // and has a free-colonist group.
+        Game game = GetGame(controller);
+        game.FoundColony(game.Units[0]);
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Labour")
+            .EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Labour");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        // A freshly founded colony's lone resident is a free colonist → its group header renders.
+        AssertThat(dynamic.GetNodeOrNull("Labour_freeColonist")).IsNotNull();
+    }
+
+    private static Game GetGame(GameController controller) =>
+        (Game)controller
             .GetType()
             .GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!
             .GetValue(controller)!;
+
+    private static void SetGame(GameController controller, Game game) =>
+        controller.GetType()
+            .GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(controller, game);
 }
