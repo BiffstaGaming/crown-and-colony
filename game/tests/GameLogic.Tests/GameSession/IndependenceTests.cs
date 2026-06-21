@@ -974,6 +974,33 @@ public class IndependenceTests
         Assert.Equal(game.HumanPlayer, game.Winner); // only one non-AI European alive → human victory
     }
 
+    [Fact]
+    public void WithVictoryConditions_OverridesTheThreeFlags_AndIsHonouredByWinner()
+    {
+        // The New-Game game-options section (86d3drn64) threads the player's victory picks via
+        // Ruleset.WithVictoryConditions — a configuration override of which already-implemented win checks fire.
+        // 1) The override flips exactly the three flags the dialog exposes.
+        Ruleset overridden = Ruleset.LoadClassic().WithVictoryConditions(defeatRef: false, defeatEuropeans: false, defeatHumans: true);
+        Assert.False(overridden.VictoryDefeatRef);
+        Assert.False(overridden.VictoryDefeatEuropeans);
+        Assert.True(overridden.VictoryDefeatHumans);
+
+        // 2) A fresh load is unaffected — the spec defaults still parse (REF on / Europeans on / Humans off): the
+        //    override mutates only the instance it is called on (each load is a fresh, unshared parse).
+        Ruleset fresh = Ruleset.LoadClassic();
+        Assert.True(fresh.VictoryDefeatRef);
+        Assert.True(fresh.VictoryDefeatEuropeans);
+        Assert.False(fresh.VictoryDefeatHumans);
+
+        // 3) End-to-end: the engine honours the override. defeatHumans is OFF by spec default, so a default game has no
+        //    winner at turn 1; the same game built from the WithVictoryConditions-enabled ruleset awards the lone human
+        //    the win — proving the dialog's toggle actually changes the game outcome, not just a flag.
+        Assert.Null(Game.New(Ruleset.LoadClassic(), Seed).Winner);
+        Game enabled = Game.New(
+            Ruleset.LoadClassic().WithVictoryConditions(defeatRef: false, defeatEuropeans: false, defeatHumans: true), Seed);
+        Assert.Equal(enabled.HumanPlayer, enabled.Winner);
+    }
+
     /// <summary>The classic ruleset reloaded with the three victory booleans overridden.</summary>
     private static Ruleset ClassicWithVictoryOptions(bool ref_, bool europeans, bool humans)
     {

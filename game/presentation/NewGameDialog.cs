@@ -8,17 +8,28 @@ using Godot;
 namespace CrownAndColony.Presentation;
 
 /// <summary>
-/// New-game world-options overlay (<c>86d3c9w9c</c> + <c>86d3c9y08</c> + the America scenario map + <c>86d3drn5x</c>): the
-/// player picks the <b>map</b> (a procedurally generated random New World, or FreeCol's fixed America), the world
-/// <b>size</b>, how much of the map is <b>land</b> (FreeCol's <c>model.option.mapWidth</c>/<c>mapHeight</c> +
-/// <c>model.option.landMass</c>), the <b>difficulty</b> level (FreeCol's five classic levels) and the <b>nation</b> the
-/// human plays (the ruleset's selectable European powers — Dutch/French/English/Spanish — or "No nation" for the classic
-/// nation-less start) before starting. The size/land choices only apply to the random map (a fixed map sets its own
-/// dimensions), so they are disabled while America is selected. It collects the choices and hands the world options back
-/// to the host via the <c>onStart</c> callback; the chosen nation is forwarded separately through
-/// <see cref="GameController.PendingNation"/> (the human's nation is GameLogic state, not a presentation world-option —
-/// ADR-006). The map generation, difficulty balance and national advantage all live in GameLogic
-/// (<see cref="MapGenerator"/> / <see cref="GameLogic.GameSession.Game.New"/>, forwarded by <see cref="GameController"/>).
+/// New-game world-options overlay (<c>86d3c9w9c</c> + <c>86d3c9y08</c> + the America scenario map + <c>86d3drn5x</c> +
+/// the game-options section <c>86d3drn64</c>): the player picks the <b>map</b> (a procedurally generated random New
+/// World, or FreeCol's fixed America), the world <b>size</b>, how much of the map is <b>land</b> (FreeCol's
+/// <c>model.option.mapWidth</c>/<c>mapHeight</c> + <c>model.option.landMass</c>), the <b>difficulty</b> level (FreeCol's
+/// five classic levels), the <b>nation</b> the human plays (the ruleset's selectable European powers —
+/// Dutch/French/English/Spanish — or "No nation" for the classic nation-less start) and the three alternative
+/// <b>victory conditions</b> (FreeCol's <c>gameOptions.victoryConditions</c> group: defeat the REF / be the last
+/// European / be the last human standing) before starting. The size/land choices only apply to the random map (a fixed
+/// map sets its own dimensions), so they are disabled while America is selected. It collects the choices and hands the
+/// world options back to the host via the <c>onStart</c> callback; the chosen nation and victory conditions are
+/// forwarded separately through <see cref="GameController.PendingNation"/> /
+/// <see cref="GameController.PendingVictoryConditions"/> (these are GameLogic state, not presentation world-options —
+/// ADR-006). The map generation, difficulty balance, national advantage and the win checks all live in GameLogic
+/// (<see cref="MapGenerator"/> / <see cref="GameLogic.GameSession.Game.New"/> / <see cref="GameLogic.GameSession.Game.Winner"/>,
+/// forwarded by <see cref="GameController"/>).
+/// <para><b>Faithful subset.</b> Only the base game options our engine actually <em>reads</em> are surfaced. The victory
+/// conditions are honoured by <see cref="GameLogic.GameSession.Game.Winner"/>. The other <c>gameOptions.map</c> toggles
+/// FreeCol shows at setup — notably <b>fog-of-war</b> (<c>model.option.fogOfWar</c>), exploration points, amphibious
+/// moves, enhanced missionaries — are deliberately <em>not</em> shown: the engine does not consult those options yet
+/// (fog-of-war, for instance, is always-on FreeCol-default — the human's sight is computed from
+/// <see cref="GameLogic.GameSession.Game.CurrentlyVisible"/> with no off switch), so a toggle would be inert. Surface
+/// them here once the engine honours them.</para>
 /// Presentation-only (ADR-006). Built programmatically (no scene file) and added as a child of the main menu like the
 /// other overlays; shares the parchment/wood look via <see cref="ColonyTheme"/>.
 /// </summary>
@@ -41,6 +52,12 @@ public partial class NewGameDialog : Control
     private OptionButton _landStyleOption = null!;
     private OptionButton _difficultyOption = null!;
     private OptionButton _nationOption = null!;
+    // The alternative-victory-condition toggles (FreeCol's gameOptions.victoryConditions group): defeat the REF,
+    // defeat all other Europeans, defeat all other humans. Initialised to the ruleset's parsed spec defaults so an
+    // untouched Start is byte-identical (REF on, Europeans on, Humans off).
+    private CheckBox _victoryRefCheck = null!;
+    private CheckBox _victoryEuropeansCheck = null!;
+    private CheckBox _victoryHumansCheck = null!;
     private Action<WorldSize, LandMass, DifficultyLevel, MapSource>? _onStart;
 
     /// <summary>
@@ -134,6 +151,26 @@ public partial class NewGameDialog : Control
         _nationOption.Selected = 0; // No nation — the classic nation-less human (byte-identical default)
         vbox.AddChild(LabeledRow("Nation", _nationOption));
 
+        // Game-options section: the base game options FreeCol shows at setup that our engine already honours. Today
+        // that is the three alternative VICTORY CONDITIONS (FreeCol's gameOptions.victoryConditions group) — the only
+        // base game options Game.Winner actually reads. Each toggle starts at the ruleset's parsed spec default (read
+        // from the default-variant ruleset, data-driven), so an untouched Start is byte-identical (REF on / Europeans
+        // on / Humans off). (Fog-of-war and the other gameOptions.map toggles are NOT surfaced — the engine doesn't
+        // read them yet; see the dialog summary.)
+        Ruleset defaults = VictoryDefaults();
+        vbox.AddChild(new Label
+        {
+            Name = "VictorySectionLabel",
+            Text = "Victory conditions",
+            HorizontalAlignment = HorizontalAlignment.Center,
+        });
+        _victoryRefCheck = VictoryCheck("VictoryRefCheck", "Defeat the Royal Expeditionary Force", defaults.VictoryDefeatRef);
+        _victoryEuropeansCheck = VictoryCheck("VictoryEuropeansCheck", "Be the last European power standing", defaults.VictoryDefeatEuropeans);
+        _victoryHumansCheck = VictoryCheck("VictoryHumansCheck", "Be the last human power standing", defaults.VictoryDefeatHumans);
+        vbox.AddChild(_victoryRefCheck);
+        vbox.AddChild(_victoryEuropeansCheck);
+        vbox.AddChild(_victoryHumansCheck);
+
         var start = new Button { Name = "StartButton", Text = "Start" };
         start.Pressed += OnStart;
         vbox.AddChild(start);
@@ -165,9 +202,37 @@ public partial class NewGameDialog : Control
         // The landmass style likewise rides a static into Game.New (it shapes only the random map). Continent (the
         // default index) → the historical byte-identical world.
         GameController.PendingLandStyle = WorldSizeOptions.LandStyles[_landStyleOption.Selected];
+        // The chosen victory conditions ride their own static into Game.New, applied to the loaded ruleset (a config
+        // override of which win checks fire — ADR-006). The picks left at their spec defaults make this a no-op
+        // override (byte-identical); we still forward them so the host always knows the player's explicit choice.
+        GameController.PendingVictoryConditions =
+            (_victoryRefCheck.ButtonPressed, _victoryEuropeansCheck.ButtonPressed, _victoryHumansCheck.ButtonPressed);
         _onStart?.Invoke(size, land, difficulty, source);
         EmitSignal(SignalName.Closed);
     }
+
+    /// <summary>
+    /// The ruleset whose parsed <c>gameOptions.victoryConditions</c> defaults seed the victory checkboxes (read from
+    /// the default-variant ruleset — data-driven, so a variant's own spec defaults drive the dialog). On any load
+    /// failure the classic spec defaults (REF on / Europeans on / Humans off) are used via the embedded fallback, so
+    /// the dialog never crashes the main menu.
+    /// </summary>
+    private static Ruleset VictoryDefaults()
+    {
+        try
+        {
+            return GameVariants.Default.LoadRuleset();
+        }
+        catch (Exception e)
+        {
+            GD.PushWarning($"NewGameDialog: could not load victory-condition defaults ({e.Message}); using classic spec defaults.");
+            return Ruleset.LoadClassic();
+        }
+    }
+
+    /// <summary>Builds one victory-condition checkbox, pre-ticked to the ruleset's parsed spec default for that condition.</summary>
+    private static CheckBox VictoryCheck(string name, string label, bool defaultOn) =>
+        new() { Name = name, Text = label, ButtonPressed = defaultOn };
 
     /// <summary>
     /// The selectable, non-REF European nations the human may choose, in ruleset order, read from the default-variant

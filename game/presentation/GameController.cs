@@ -61,6 +61,19 @@ public partial class GameController : Node2D
     public static string? PendingNation { get; set; }
 
     /// <summary>
+    /// Companion to <see cref="PendingWorldSize"/>: the three alternative <b>victory conditions</b> the human chose at
+    /// New Game (defeat-REF / defeat-all-Europeans / defeat-all-humans — FreeCol's <c>gameOptions.victoryConditions</c>
+    /// group, surfaced by <see cref="NewGameDialog"/>). <b>Null = no pick → the ruleset's parsed spec defaults</b> (REF
+    /// on, Europeans on, Humans off — so a default new game is byte-identical, ADR-009). Set by the dialog's Start and
+    /// consumed (and cleared) in <see cref="NewGame"/>, where it is applied to the freshly-loaded ruleset via
+    /// <see cref="Ruleset.WithVictoryConditions"/> so <see cref="Game.Winner"/> evaluates exactly the enabled checks.
+    /// Static because it must survive the scene change, like <see cref="PendingWorldSize"/>. <b>Session-only</b> — the
+    /// override is not written to the save (a reload re-derives the conditions from the variant's spec; persisting them
+    /// would bump the save format, 86d3drn64).
+    /// </summary>
+    public static (bool DefeatRef, bool DefeatEuropeans, bool DefeatHumans)? PendingVictoryConditions { get; set; }
+
+    /// <summary>
     /// New-game seed. 0 (default) = pick a random seed per game; set non-zero to
     /// pin the world (tests, bug reproduction — ADR-009).
     /// </summary>
@@ -220,28 +233,39 @@ public partial class GameController : Node2D
         MapSource mapSource = PendingMapSource ?? MapSource.Random;
         string? nation = PendingNation; // null = no pick → the classic nation-less human (byte-identical default)
         LandStyle landStyle = (PendingLandStyle ?? WorldSizeOptions.DefaultLandStyle).Style; // null = Continent (default)
+        // The chosen victory conditions (null = no pick → the ruleset's parsed spec defaults, byte-identical).
+        (bool DefeatRef, bool DefeatEuropeans, bool DefeatHumans)? victory = PendingVictoryConditions;
         PendingWorldSize = null;
         PendingLandMass = null;
         PendingDifficulty = null;
         PendingMapSource = null;
         PendingNation = null;
         PendingLandStyle = null;
+        PendingVictoryConditions = null;
 
         // Picking the seed may be non-deterministic (player convenience);
         // the game itself is fully determined by the chosen seed.
-        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi(), size, land, difficulty, mapSource, nation, landStyle);
+        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi(), size, land, difficulty, mapSource, nation, landStyle, victory);
     }
 
     /// <summary>Starts a new game from an explicit seed at the shipped-default world size / difficulty / map / nation-less human (tests, visual goldens — ADR-009).</summary>
     public void StartNewGame(ulong seed) =>
         StartNewGame(seed, WorldSizeOptions.DefaultSize, WorldSizeOptions.DefaultLandMass, DifficultyLevels.Default, MapSource.Random);
 
-    /// <summary>Starts a new game from an explicit seed, world size / land amount, difficulty level, map source, (optional) human nation and (optional) landmass style (forwarded from the new-game options). The ruleset is loaded under the chosen level so its balance matches, the level is recorded for the save, a fixed <paramref name="mapSource"/> ignores the size/land/style args (its grid sets the dimensions), <paramref name="humanNationId"/> (null = no pick) seeds the human's national advantage + colony names, and <paramref name="landStyle"/> (default <see cref="LandStyle.Continent"/>) shapes the random map's land.</summary>
-    public void StartNewGame(ulong seed, WorldSize size, LandMass landMass, DifficultyLevel difficulty, MapSource mapSource, string? humanNationId = null, LandStyle landStyle = LandStyle.Continent)
+    /// <summary>Starts a new game from an explicit seed, world size / land amount, difficulty level, map source, (optional) human nation, (optional) landmass style and (optional) victory-condition overrides (forwarded from the new-game options). The ruleset is loaded under the chosen level so its balance matches, the level is recorded for the save, a fixed <paramref name="mapSource"/> ignores the size/land/style args (its grid sets the dimensions), <paramref name="humanNationId"/> (null = no pick) seeds the human's national advantage + colony names, <paramref name="landStyle"/> (default <see cref="LandStyle.Continent"/>) shapes the random map's land, and <paramref name="victory"/> (null = the ruleset's parsed spec defaults) flips which alternative victory conditions <see cref="Game.Winner"/> evaluates — session-only, not persisted (86d3drn64).</summary>
+    public void StartNewGame(ulong seed, WorldSize size, LandMass landMass, DifficultyLevel difficulty, MapSource mapSource, string? humanNationId = null, LandStyle landStyle = LandStyle.Continent, (bool DefeatRef, bool DefeatEuropeans, bool DefeatHumans)? victory = null)
     {
         _currentSeed = seed;
+        // Load the variant's ruleset under the chosen difficulty; if the player picked victory conditions, apply them
+        // to this freshly-parsed (never-shared) instance before building the game — a configuration override of which
+        // already-implemented win checks fire, not a rules change (ADR-006). Null leaves the spec defaults untouched.
+        Ruleset ruleset = _variant.LoadRuleset(difficulty.Id);
+        if (victory is { } v)
+        {
+            ruleset = ruleset.WithVictoryConditions(v.DefeatRef, v.DefeatEuropeans, v.DefeatHumans);
+        }
         StartGame(Game.New(
-            _variant.LoadRuleset(difficulty.Id), _currentSeed, size.Width, size.Height,
+            ruleset, _currentSeed, size.Width, size.Height,
             landMassFraction: landMass.Fraction, difficultyLevelId: difficulty.Id, mapSource: mapSource,
             humanNationId: humanNationId, landStyle: landStyle));
     }

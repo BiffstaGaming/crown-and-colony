@@ -288,8 +288,9 @@ public sealed class Ruleset
     /// <c>model.option.victoryDefeatREF</c> boolean game option in the <c>gameOptions.victoryConditions</c> group;
     /// classic default <b>true</b>). This is the headline War-of-Independence win (FreeCol <c>checkForWinner</c>'s REF
     /// branch). A spec without the option falls back to true, so the default classic game is unchanged.
+    /// The setter is private — only <see cref="WithVictoryConditions"/> (the new-game option seam) ever changes it.
     /// </summary>
-    public bool VictoryDefeatRef { get; }
+    public bool VictoryDefeatRef { get; private set; }
 
     /// <summary>
     /// Victory condition: a player who defeats every other European power wins (the spec
@@ -297,7 +298,7 @@ public sealed class Ruleset
     /// exactly one non-REF European power is still alive (FreeCol <c>checkForWinner</c>'s Europeans branch). A spec
     /// without the option falls back to true.
     /// </summary>
-    public bool VictoryDefeatEuropeans { get; }
+    public bool VictoryDefeatEuropeans { get; private set; }
 
     /// <summary>
     /// Victory condition: a player who defeats every other <em>human</em> player wins (the spec
@@ -305,7 +306,29 @@ public sealed class Ruleset
     /// exactly one non-AI European power is still alive (FreeCol <c>checkForWinner</c>'s humans branch — for our
     /// single-human game it is off by default). A spec without the option falls back to false.
     /// </summary>
-    public bool VictoryDefeatHumans { get; }
+    public bool VictoryDefeatHumans { get; private set; }
+
+    /// <summary>
+    /// Returns this ruleset with the three alternative <b>victory conditions</b> overridden to the player's New-Game
+    /// picks — FreeCol's <c>gameOptions.victoryConditions</c> group, chosen at game setup (FreeCol's
+    /// <c>GameOptionsDialog</c>). This is a <b>configuration</b> seam, not a rules change: it only flips which already-
+    /// implemented win checks <see cref="GameSession.Game.Winner"/> evaluates — the win <em>logic</em> is unchanged.
+    /// Each loaded ruleset is a fresh parse (rulesets are never cached/shared — <see cref="LoadEmbedded"/>), so mutating
+    /// the just-loaded instance in place is safe; the method returns <c>this</c> for a fluent call right after load.
+    /// Passing the parsed defaults (or omitting the call) leaves the ruleset byte-identical, so a default new game and
+    /// every existing host/test are unchanged (ADR-009). Not persisted in the save — a reloaded game re-derives the
+    /// conditions from its variant's spec defaults (a saved override would bump the save format).
+    /// </summary>
+    /// <param name="defeatRef">Whether defeating the Royal Expeditionary Force wins (classic <b>on</b>).</param>
+    /// <param name="defeatEuropeans">Whether being the last European power standing wins (classic <b>on</b>).</param>
+    /// <param name="defeatHumans">Whether being the last human power standing wins (classic <b>off</b>).</param>
+    public Ruleset WithVictoryConditions(bool defeatRef, bool defeatEuropeans, bool defeatHumans)
+    {
+        VictoryDefeatRef = defeatRef;
+        VictoryDefeatEuropeans = defeatEuropeans;
+        VictoryDefeatHumans = defeatHumans;
+        return this;
+    }
 
     /// <summary>All terrain types, in specification order.</summary>
     public IReadOnlyList<TerrainType> TerrainTypes { get; }
