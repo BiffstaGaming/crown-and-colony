@@ -81,6 +81,61 @@ public sealed partial class Game
     }
 
     /// <summary>
+    /// FreeCol <c>equipEuropeanRecruits</c> (<c>model.option.equipEuropeanRecruits</c>, classic default <b>true</b>):
+    /// a recruit emigrating/recruited from the Europe dock steps ashore <b>already equipped in its unit type's default
+    /// role</b> (FreeCol <c>ServerPlayer.csEmigrate</c> spawns <c>new ServerUnit(…, recruit.getRole())</c>, whose role
+    /// is <c>UnitType.getDefaultRole()</c> — see <c>Europe.addRecruitable</c>), instead of the bare unarmed default
+    /// role. In the classic ruleset four expert types carry a non-default <c>&lt;default-role&gt;</c>, so they alone
+    /// arrive equipped (every other recruit keeps <see cref="Specification.RoleType.DefaultRoleId"/>):
+    /// <list type="bullet">
+    ///   <item><description>veteran soldier → <c>model.role.soldier</c> (steps off the boat already a soldier),</description></item>
+    ///   <item><description>hardy pioneer → <c>model.role.pioneer</c> (already a pioneer),</description></item>
+    ///   <item><description>seasoned scout → <c>model.role.scout</c> (already a scout),</description></item>
+    ///   <item><description>jesuit missionary → <c>model.role.missionary</c> (already a missionary).</description></item>
+    /// </list>
+    /// Faithful-subset simplification: FreeCol reads each unit type's parsed <c>&lt;default-role&gt;</c> child; our
+    /// <see cref="Specification.UnitType"/> does not yet parse that field (and the ruleset parser is out of scope for
+    /// this change), so the mapping is the classic ruleset's four declarations, looked up via <see cref="DefaultRecruitRole"/>.
+    /// Like FreeCol's <c>new ServerUnit(…, role)</c> (which calls <c>changeRole(role, role.getMaximumCount())</c>), the
+    /// recruit's <see cref="Unit.RoleCount"/> is the role's <see cref="Specification.RoleType.MaximumCount"/> — so a hardy pioneer
+    /// arrives with the pioneer role's full 5 tool-loads, the others with 1. The equip is purely deterministic — it
+    /// sets the role on an already-spawned unit and draws <b>no RNG</b> — so the human's stream 0 and the seeded
+    /// default game stay byte-identical (ADR-009); only the role/role-count of the (rare, recruit-probability 1) expert
+    /// recruit changes, and that already round-trips through <see cref="Unit.RoleId"/> (no save bump).
+    /// </summary>
+    /// <param name="unit">The freshly docked recruit to equip in place (see <see cref="CreateEuropeRecruit"/>).</param>
+    private void EquipEuropeanRecruit(Unit unit)
+    {
+        if (DefaultRecruitRole(unit.Type.Id) is not { } roleId)
+        {
+            return; // ordinary colonist: keeps the unarmed default role (the common case)
+        }
+        unit.RoleId = roleId;
+        unit.RoleCount = Ruleset.Role(roleId).MaximumCount; // FreeCol ServerUnit ctor: changeRole(role, role.getMaximumCount())
+    }
+
+    /// <summary>
+    /// The non-default role a recruit of <paramref name="unitTypeId"/> arrives equipped in (FreeCol
+    /// <c>UnitType.getDefaultRole()</c>), or <c>null</c> when the type emigrates in the unarmed
+    /// <see cref="Specification.RoleType.DefaultRoleId"/> (every type but the four classic experts). The classic ruleset's
+    /// <c>&lt;default-role&gt;</c> declarations, kept here because <see cref="Specification.UnitType"/> does not parse
+    /// that spec field yet — see <see cref="EquipEuropeanRecruit"/>. Returns null for any type the ruleset does not
+    /// define the mapped role for (a minimal/variant ruleset), so the recruit safely falls back to the default role.
+    /// </summary>
+    private string? DefaultRecruitRole(string unitTypeId)
+    {
+        string? roleId = unitTypeId switch
+        {
+            "model.unit.veteranSoldier" => "model.role.soldier",
+            "model.unit.hardyPioneer" => "model.role.pioneer",
+            "model.unit.seasonedScout" => "model.role.scout",
+            "model.unit.jesuitMissionary" => "model.role.missionary",
+            _ => null,
+        };
+        return roleId is not null && Ruleset.Roles.Any(r => r.Id == roleId) ? roleId : null;
+    }
+
+    /// <summary>
     /// The classic spec's <c>model.option.mandatoryColonyYear</c> (1600): the year by which a colonial power must
     /// have a foothold in the New World. <b>Before</b> this year a player with no colonies and no surviving units —
     /// who also cannot scrape together a normal immigrant — is rescued by a survival auto-recruit (see

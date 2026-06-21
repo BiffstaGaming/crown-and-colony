@@ -19,7 +19,8 @@ public class EmigrationChoiceTests
     private const string Brewster = "model.foundingFather.williamBrewster";
 
     /// <summary>A unit-less, colony-less game (just the Europe dock) with the given congress + immigration banked.</summary>
-    private static Game DockGame(ulong seed, IReadOnlyList<string>? congress, int immigration)
+    private static Game DockGame(ulong seed, IReadOnlyList<string>? congress, int immigration,
+        IReadOnlyList<string>? recruitDock = null)
     {
         var save = new SaveGame
         {
@@ -33,6 +34,7 @@ public class EmigrationChoiceTests
             Explored = [],
             Congress = congress,
             Immigration = immigration,
+            RecruitDock = recruitDock, // null → a fresh dock is drawn; set → pin the recruit types on offer
         };
         return save.Restore(Classic);
     }
@@ -101,5 +103,78 @@ public class EmigrationChoiceTests
 
         Assert.Null(game.PendingEmigration);                          // no selectRecruit → no pause
         Assert.Equal(unitsBefore + 1, game.UnitsInEurope.Count());    // a recruit auto-emigrated as before
+    }
+
+    // ───────────── equipEuropeanRecruits (86d3c7yg8, FreeCol Europe.equipForRole) ─────────────
+    // Certain expert recruits step off the boat already equipped in their unit type's default role, instead of as
+    // an unarmed default-role colonist. The classic ruleset's four non-default <default-role> declarations.
+
+    [Theory]
+    [InlineData("model.unit.veteranSoldier", "model.role.soldier", 1)]   // already a soldier (50 muskets)
+    [InlineData("model.unit.hardyPioneer", "model.role.pioneer", 5)]     // already a pioneer, full 5 tool-loads
+    [InlineData("model.unit.seasonedScout", "model.role.scout", 1)]      // already a scout (50 horses)
+    [InlineData("model.unit.jesuitMissionary", "model.role.missionary", 1)] // already a missionary
+    public void AnExpertRecruit_AutoEmigrates_AlreadyEquippedInItsDefaultRole(string typeId, string roleId, int roleCount)
+    {
+        // The whole dock is the one expert type, so the random auto-emigrate slot is guaranteed to land it.
+        Game game = DockGame(seed: 7, congress: null, immigration: Game.InitialImmigration,
+            recruitDock: [typeId, typeId, typeId]);
+
+        game.EndTurn();
+
+        Unit recruit = Assert.Single(game.UnitsInEurope);
+        Assert.Equal(typeId, recruit.Type.Id);
+        Assert.Equal(roleId, recruit.RoleId);          // arrives equipped, not in the unarmed default role
+        Assert.Equal(roleCount, recruit.RoleCount);    // role count = the role's maximum-count (FreeCol ServerUnit ctor)
+        Assert.False(recruit.HasDefaultRole);
+    }
+
+    [Fact]
+    public void AnOrdinaryColonistRecruit_AutoEmigrates_InTheUnarmedDefaultRole()
+    {
+        // A free colonist has no non-default <default-role> → it still emigrates unarmed (the common case).
+        Game game = DockGame(seed: 7, congress: null, immigration: Game.InitialImmigration,
+            recruitDock: ["model.unit.freeColonist", "model.unit.freeColonist", "model.unit.freeColonist"]);
+
+        game.EndTurn();
+
+        Unit recruit = Assert.Single(game.UnitsInEurope);
+        Assert.Equal("model.unit.freeColonist", recruit.Type.Id);
+        Assert.True(recruit.HasDefaultRole);
+        Assert.Equal(0, recruit.RoleCount);
+    }
+
+    [Fact]
+    public void ABrewsterChosenExpertRecruit_LandsAlreadyEquipped()
+    {
+        // The select-recruit path runs through the same spawn chokepoint, so a chosen veteran soldier is equipped too.
+        Game game = DockGame(seed: 7, congress: [Brewster], immigration: Game.InitialImmigration,
+            recruitDock: ["model.unit.freeColonist", "model.unit.veteranSoldier", "model.unit.freeColonist"]);
+        game.EndTurn();
+        Assert.NotNull(game.PendingEmigration);
+
+        Unit? recruit = game.ChooseEmigrant(1); // pick the veteran soldier
+
+        Assert.NotNull(recruit);
+        Assert.Equal("model.unit.veteranSoldier", recruit!.Type.Id);
+        Assert.Equal("model.role.soldier", recruit.RoleId);
+        Assert.Equal(1, recruit.RoleCount);
+    }
+
+    [Fact]
+    public void AnEquippedRecruit_SurvivesASaveLoadRoundTrip()
+    {
+        // The recruit's equipped role already persists via Unit.RoleId — no save bump needed.
+        Game game = DockGame(seed: 7, congress: null, immigration: Game.InitialImmigration,
+            recruitDock: ["model.unit.hardyPioneer", "model.unit.hardyPioneer", "model.unit.hardyPioneer"]);
+        game.EndTurn();
+        string json = SaveGame.From(game).ToJson();
+
+        Game reloaded = SaveGame.FromJson(json).Restore(Classic);
+
+        Unit recruit = Assert.Single(reloaded.UnitsInEurope);
+        Assert.Equal("model.role.pioneer", recruit.RoleId);
+        Assert.Equal(5, recruit.RoleCount);
+        Assert.Equal(json, SaveGame.From(reloaded).ToJson()); // byte-identical round-trip
     }
 }

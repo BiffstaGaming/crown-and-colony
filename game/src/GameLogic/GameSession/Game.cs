@@ -8007,7 +8007,13 @@ public sealed partial class Game
         return CreateEuropeRecruit(player, typeId);
     }
 
-    /// <summary>Creates a recruited unit docked in <paramref name="player"/>'s Europe (it has never been on the map).</summary>
+    /// <summary>
+    /// Creates a recruited unit docked in <paramref name="player"/>'s Europe (it has never been on the map). Every
+    /// emigration/recruitment path (auto-emigrate, the Brewster choice, the paid recruit, Fountain of Youth, the
+    /// survival auto-recruit) funnels through here — the single spawn chokepoint, mirroring FreeCol's lone
+    /// <c>new ServerUnit(…, role)</c> in <c>ServerPlayer.csEmigrate</c> — so it is also where a recruit is equipped in
+    /// its unit type's default role (FreeCol <c>equipEuropeanRecruits</c>; see <see cref="EquipEuropeanRecruit"/>).
+    /// </summary>
     private Unit CreateEuropeRecruit(Player player, string unitTypeId)
     {
         var unit = new Unit(_nextUnitId++, Ruleset.Unit(unitTypeId), new Position(0, 0))
@@ -8015,6 +8021,7 @@ public sealed partial class Game
             Location = UnitLocation.InEurope,
             OwnerId = player.PlayerId, // the recruit belongs to its player (the human is 0; a foreign power its own id)
         };
+        EquipEuropeanRecruit(unit); // equipEuropeanRecruits: experts (veteran soldier, …) arrive already in their role
         _units.Add(unit);
         return unit;
     }
