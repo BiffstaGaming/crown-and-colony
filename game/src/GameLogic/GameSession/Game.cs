@@ -3983,10 +3983,13 @@ public sealed partial class Game
         // costs more than the unit has left, the move is still allowed — for the
         // full remainder — only if the unit is near full movement (lost at most
         // 2/3 of a move) or the shortfall is small. (A settlement target also
-        // qualifies; none exist yet.) Otherwise the unit must wait.
+        // qualifies; none exist yet.) Otherwise the unit must wait. The +2 slack
+        // is the "make 1/3 and 2/3 count as 3/3" round-up threshold, now routed
+        // through the ruleset (MovementConstants.PartialMoveThreshold = classic 2).
         if (cost > movesLeft)
         {
-            bool allowed = movesLeft + 2 >= InitialMovement(unit) || cost <= movesLeft + 2;
+            int threshold = Ruleset.MovementConstants.PartialMoveThreshold;
+            bool allowed = movesLeft + threshold >= InitialMovement(unit) || cost <= movesLeft + threshold;
             if (!allowed)
             {
                 return MoveCheck.No("Not enough movement left this turn.");

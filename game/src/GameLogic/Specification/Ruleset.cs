@@ -61,11 +61,13 @@ public sealed class Ruleset
         bool victoryDefeatEuropeans,
         bool victoryDefeatHumans,
         CombatModifiers combatModifiers,
-        ColonyConstants colonyConstants)
+        ColonyConstants colonyConstants,
+        MovementConstants movementConstants)
     {
         Calendar = calendar;
         CombatModifiers = combatModifiers;
         ColonyConstants = colonyConstants;
+        MovementConstants = movementConstants;
         FatherAgeYears = fatherAgeYears;
         Difficulty = difficulty;
         GameOptions = gameOptions;
@@ -159,6 +161,17 @@ public sealed class Ruleset
     /// value (<see cref="Specification.ColonyConstants.ClassicDefaults"/>), so the default classic game is byte-identical.
     /// </summary>
     public ColonyConstants ColonyConstants { get; }
+
+    /// <summary>
+    /// The terrain/movement scalar constants (the "one whole move" denominator, the cheapest possible step, and the
+    /// partial-move round-up threshold) FreeCol carries in its spec data or model code, parsed once from the spec.
+    /// <see cref="GameSession.Game"/>'s <c>CheckMove</c> reads the partial-move threshold; the <see cref="World.Pathfinder"/>
+    /// heuristic reads the cheapest step. A spec missing a source falls back to the classic value
+    /// (<see cref="Specification.MovementConstants.ClassicDefaults"/>), so the default classic game is byte-identical.
+    /// The per-terrain enter cost stays on <see cref="TerrainType.MoveCost"/> and a river/road's per-enter cost on
+    /// <see cref="World.Improvements.TileImprovementType.MovementCost"/> — already data-driven.
+    /// </summary>
+    public MovementConstants MovementConstants { get; }
 
     /// <summary>
     /// The in-game year thresholds at which the founding-father age weighting changes (classic <c>1600, 1700</c>,
@@ -847,12 +860,18 @@ public sealed class Ruleset
         // its classic value, so the default classic game is byte-identical (ADR-009).
         ColonyConstants colonyConstants = ParseColonyConstants(root, units);
 
+        // The terrain/movement scalars (the "3 = one whole move" denominator from the plains tile's basic-move-cost, the
+        // cheapest possible step from the cheapest improvement movement-cost, and the +2 partial-move round-up threshold
+        // FreeCol hardcodes in Unit.getMoveCost). Each missing source falls back to its classic value, so the default
+        // classic game is byte-identical (ADR-009).
+        MovementConstants movementConstants = ParseMovementConstants(terrain, improvements);
+
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
             roles, disasters, unitChanges, experienceUpgrades, educationTurns, europeanNations, events, calendar, fatherAgeYears,
             difficulty, gameOptions, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage,
             interventionBells, interventionTurns, interventionForce,
-            victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, combatModifiers, colonyConstants);
+            victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, combatModifiers, colonyConstants, movementConstants);
     }
 
     /// <summary>
@@ -1027,6 +1046,53 @@ public sealed class Ruleset
         }
 
         return classic with { FoodPerColonist = foodPerColonist, FoodForGrowth = foodForGrowth };
+    }
+
+    /// <summary>The classic plains terrain id — the canonical "one whole move" normal terrain whose cost anchors <see cref="MovementConstants.BaseMoveCost"/>.</summary>
+    private const string PlainsTerrainId = "model.tile.plains";
+
+    /// <summary>
+    /// Parses the terrain/movement scalar constants into <see cref="Specification.MovementConstants"/>. Each source is
+    /// FreeCol-faithful, so the result equals <see cref="MovementConstants.ClassicDefaults"/> for the classic spec and the
+    /// default game is byte-identical (ADR-009):
+    /// <list type="bullet">
+    /// <item><c>BaseMoveCost</c> ← the plains terrain's parsed <see cref="TerrainType.MoveCost"/> (the classic
+    /// <c>basic-move-cost="3"</c> normal-terrain cost FreeCol's <c>Unit.getMovesAsString</c> uses as the <c>/3</c>
+    /// denominator).</item>
+    /// <item><c>MinMoveCost</c> ← the cheapest positive <c>movement-cost</c> among the parsed improvement types (a
+    /// river/road's <c>1</c> — the lowest possible per-step cost the <see cref="World.Pathfinder"/> heuristic must not
+    /// overestimate).</item>
+    /// <item><c>PartialMoveThreshold</c> ← the FreeCol <c>Unit.getMoveCost</c> model-code constant (<c>+2</c>) with no
+    /// spec element, so it takes the classic default and becomes data-overridable for a variant.</item>
+    /// </list>
+    /// A missing source falls back to the matching classic default.
+    /// </summary>
+    /// <param name="terrain">The parsed terrain types, keyed by id (the plains cost anchors the base move cost).</param>
+    /// <param name="improvements">The parsed tile-improvement types, keyed by id (their movement-cost sets the minimum step).</param>
+    internal static MovementConstants ParseMovementConstants(
+        IReadOnlyDictionary<string, TerrainType> terrain,
+        IReadOnlyDictionary<string, TileImprovementType> improvements)
+    {
+        MovementConstants classic = MovementConstants.ClassicDefaults;
+
+        // "One whole move" denominator: the plains tile's basic-move-cost (3). FreeCol's normal terrain cost and the /3
+        // it divides moves-left by to show a unit's moves. Fall back to the classic 3 when the spec has no plains type.
+        int baseMoveCost = terrain.TryGetValue(PlainsTerrainId, out TerrainType? plains)
+            ? plains.MoveCost
+            : classic.BaseMoveCost;
+
+        // Cheapest possible step: the lowest positive movement-cost any improvement grants (river/road = 1). The
+        // pathfinder heuristic multiplies the remaining distance by this minimum, so it must equal the true cheapest
+        // step or A* could overestimate and return a suboptimal route. Fall back to the classic 1 when none declare one.
+        int minMoveCost = improvements.Values
+            .Select(i => i.MovementCost)
+            .Where(c => c > 0)
+            .DefaultIfEmpty(classic.MinMoveCost)
+            .Min();
+
+        // PartialMoveThreshold has no spec element (FreeCol hardcodes +2 in Unit.getMoveCost), so it stays at the
+        // classic default and is overridable only by constructing the bundle directly (the variant path).
+        return classic with { BaseMoveCost = baseMoveCost, MinMoveCost = minMoveCost };
     }
 
     /// <summary>

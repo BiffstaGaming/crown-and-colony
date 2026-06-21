@@ -25,15 +25,17 @@ namespace CrownAndColony.GameLogic.World;
 public static class Pathfinder
 {
     /// <summary>
-    /// The cheapest possible enter cost of any step the A* can take. Plain terrain (plains/grassland etc.) costs 3,
-    /// but a land unit following a road or river pays the reduced enter-cost (1) — see
-    /// <see cref="ImprovementMovement.MoveCost"/> / the classic river/road <c>MovementCost</c> of 1. The heuristic
+    /// The classic cheapest possible enter cost of any step the A* can take (FreeCol's lowest positive move cost — a
+    /// road/river's <c>movement-cost</c> of 1). Plain terrain (plains/grassland etc.) costs 3, but a land unit following
+    /// a road or river pays the reduced enter-cost (1) — see <see cref="ImprovementMovement.MoveCost"/>. The heuristic
     /// must never overestimate the true remaining cost (A* admissibility), so it multiplies the remaining Chebyshev
     /// distance by this <i>minimum</i> possible per-step cost. Were it left at 3 (the old plain-terrain minimum) the
-    /// heuristic could exceed the true cost of an all-road route and A* could return a suboptimal path. Using 1
-    /// keeps the heuristic admissible (and consistent) for both improvement-aware land paths and ship paths.
+    /// heuristic could exceed the true cost of an all-road route and A* could return a suboptimal path. Using 1 keeps
+    /// the heuristic admissible (and consistent) for both improvement-aware land paths and ship paths. The value is now
+    /// routed from the ruleset (<c>Ruleset.MovementConstants.MinMoveCost</c>); this constant is the classic default the
+    /// pathfinder uses when a caller (tests) supplies none, so the default game is byte-identical (ADR-009).
     /// </summary>
-    private const int MinEnterCost = 1;
+    public const int DefaultMinEnterCost = 1;
 
     /// <summary>
     /// The ordered tiles to ENTER to walk from <paramref name="start"/> to <paramref name="goal"/> (excludes the start
@@ -50,8 +52,15 @@ public static class Pathfinder
     /// roads are land features, so it pays plain terrain cost. Defaults to false (terrain-only) so existing
     /// terrain-only callers and tests are unchanged.
     /// </param>
+    /// <param name="minEnterCost">
+    /// The cheapest possible per-step cost the admissible heuristic multiplies the remaining distance by (FreeCol's
+    /// lowest positive move cost). Defaults to <see cref="DefaultMinEnterCost"/> (the classic 1); production callers
+    /// pass <c>Ruleset.MovementConstants.MinMoveCost</c>. Only affects expansion efficiency/tie-breaking via the
+    /// heuristic — never the returned least-cost route — so the default keeps existing callers byte-identical.
+    /// </param>
     public static IReadOnlyList<Position> FindPath(
-        GameMap map, Position start, Position goal, Func<Position, bool> passable, bool applyImprovementBonus = false)
+        GameMap map, Position start, Position goal, Func<Position, bool> passable, bool applyImprovementBonus = false,
+        int minEnterCost = DefaultMinEnterCost)
     {
         if (start == goal || !map.InBounds(goal) || !passable(goal))
         {
@@ -62,7 +71,7 @@ public static class Pathfinder
         var cameFrom = new Dictionary<Position, Position>();
         var closed = new HashSet<Position>();
         var open = new PriorityQueue<Position, (int F, int G, int Y, int X)>();
-        open.Enqueue(start, (Heuristic(start, goal), 0, start.Y, start.X));
+        open.Enqueue(start, (Heuristic(start, goal, minEnterCost), 0, start.Y, start.X));
 
         while (open.TryDequeue(out Position current, out _))
         {
@@ -87,7 +96,7 @@ public static class Pathfinder
                 {
                     gScore[n] = tentativeG;
                     cameFrom[n] = current;
-                    open.Enqueue(n, (tentativeG + Heuristic(n, goal), tentativeG, n.Y, n.X));
+                    open.Enqueue(n, (tentativeG + Heuristic(n, goal, minEnterCost), tentativeG, n.Y, n.X));
                 }
             }
         }
@@ -108,8 +117,14 @@ public static class Pathfinder
     /// <param name="goal">The destination tile to arrive <i>beside</i> (never entered; need not be passable).</param>
     /// <param name="passable">Which tiles may be entered (terrain/fog/blocker rules from the caller).</param>
     /// <param name="applyImprovementBonus">True for a land unit (fold the river/road follow-bonus); false for a ship.</param>
+    /// <param name="minEnterCost">
+    /// The cheapest possible per-step cost the admissible heuristic uses (FreeCol's lowest positive move cost). Defaults
+    /// to <see cref="DefaultMinEnterCost"/> (classic 1); production callers pass <c>Ruleset.MovementConstants.MinMoveCost</c>.
+    /// Affects only expansion efficiency, never the returned route — the default keeps existing callers byte-identical.
+    /// </param>
     public static IReadOnlyList<Position> FindPathAdjacent(
-        GameMap map, Position start, Position goal, Func<Position, bool> passable, bool applyImprovementBonus = false)
+        GameMap map, Position start, Position goal, Func<Position, bool> passable, bool applyImprovementBonus = false,
+        int minEnterCost = DefaultMinEnterCost)
     {
         if (start.IsAdjacentTo(goal))
         {
@@ -120,7 +135,7 @@ public static class Pathfinder
         var cameFrom = new Dictionary<Position, Position>();
         var closed = new HashSet<Position>();
         var open = new PriorityQueue<Position, (int F, int G, int Y, int X)>();
-        open.Enqueue(start, (Heuristic(start, goal), 0, start.Y, start.X));
+        open.Enqueue(start, (Heuristic(start, goal, minEnterCost), 0, start.Y, start.X));
 
         while (open.TryDequeue(out Position current, out _))
         {
@@ -145,7 +160,7 @@ public static class Pathfinder
                 {
                     gScore[n] = tentativeG;
                     cameFrom[n] = current;
-                    open.Enqueue(n, (tentativeG + Heuristic(n, goal), tentativeG, n.Y, n.X));
+                    open.Enqueue(n, (tentativeG + Heuristic(n, goal, minEnterCost), tentativeG, n.Y, n.X));
                 }
             }
         }
@@ -170,12 +185,12 @@ public static class Pathfinder
     }
 
     /// <summary>
-    /// Chebyshev distance × the cheapest possible enter cost (<see cref="MinEnterCost"/>) — admissible and
-    /// consistent (diagonals are free, and no single step can cost less than <see cref="MinEnterCost"/>, so this
-    /// never overestimates the true remaining cost).
+    /// Chebyshev distance × the cheapest possible enter cost (<paramref name="minEnterCost"/>) — admissible and
+    /// consistent (diagonals are free, and no single step can cost less than the minimum, so this never overestimates
+    /// the true remaining cost).
     /// </summary>
-    private static int Heuristic(Position p, Position goal) =>
-        Math.Max(Math.Abs(p.X - goal.X), Math.Abs(p.Y - goal.Y)) * MinEnterCost;
+    private static int Heuristic(Position p, Position goal, int minEnterCost) =>
+        Math.Max(Math.Abs(p.X - goal.X), Math.Abs(p.Y - goal.Y)) * minEnterCost;
 
     private static IReadOnlyList<Position> Reconstruct(IReadOnlyDictionary<Position, Position> cameFrom, Position goal)
     {

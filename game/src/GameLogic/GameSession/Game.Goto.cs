@@ -20,7 +20,8 @@ public sealed partial class Game
     /// </summary>
     internal IReadOnlyList<Position> FindPath(Unit unit, Position goal) =>
         Pathfinder.FindPath(
-            Map, unit.Position, goal, p => CanPathEnter(unit, p), applyImprovementBonus: !unit.Type.IsNaval);
+            Map, unit.Position, goal, p => CanPathEnter(unit, p), applyImprovementBonus: !unit.Type.IsNaval,
+            minEnterCost: Ruleset.MovementConstants.MinMoveCost);
 
     /// <summary>
     /// The kind of standing destination a <paramref name="goal"/> tile represents <i>for this unit</i> — derived
@@ -58,7 +59,8 @@ public sealed partial class Game
     private IReadOnlyList<Position> RouteFor(Unit unit, Position goal) =>
         DestinationKindOf(unit, goal) == DestinationKind.Settlement
             ? Pathfinder.FindPathAdjacent(
-                Map, unit.Position, goal, p => CanPathEnter(unit, p), applyImprovementBonus: !unit.Type.IsNaval)
+                Map, unit.Position, goal, p => CanPathEnter(unit, p), applyImprovementBonus: !unit.Type.IsNaval,
+                minEnterCost: Ruleset.MovementConstants.MinMoveCost)
             : FindPath(unit, goal);
 
     /// <summary>Whether <paramref name="unit"/> has reached <paramref name="goal"/> for its destination kind: standing on a tile/sea/high-seas goal, or <i>beside</i> a settlement goal it cannot enter.</summary>
