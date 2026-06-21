@@ -19,7 +19,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 48;
+    public const int CurrentVersion = 49;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -119,6 +119,12 @@ public sealed record SaveGame
     /// stays byte-identical to v47; pre-v48 saves load with no unit improving. The improvement layer also became
     /// multi-valued per tile (a river plus a pioneer-built road/plow), which a v47 river save round-trips identically
     /// — one entry per tile as before (86d3dqr62).
+    /// v49 added the human's chosen <b>nation</b> (the New-Game nation pick, 86d3drn5x): the human <see cref="Player"/>
+    /// may now carry a <see cref="GameSession.Player.NationId"/>, persisted in the existing <see cref="SavedPlayer.NationId"/>
+    /// field that already round-trips every player's nation. No structural field was added — a nation-less human still
+    /// <b>omits</b> the field (serializer <c>WhenWritingNull</c>), so a default (nation-less) game stays byte-identical to
+    /// v48 and pre-v49 saves load the human nation-less (the previously-always-null value). Only a picked nation writes
+    /// the id; the version bump records that the human's nation is now a meaningful, selectable value.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -839,7 +845,7 @@ public sealed record SavedUnit(
 /// and explored fog (compact row-major indexes). Optional fields are omitted when empty/default.
 /// </summary>
 /// <param name="PlayerId">Stable player id (the human is 0).</param>
-/// <param name="NationId">Nation type id (null for the classic human until European nations land).</param>
+/// <param name="NationId">Nation id: a foreign power's/native's nation, or the human's chosen New-Game nation (v49, 86d3drn5x); null for the classic nation-less human (omitted, so a nation-less game stays byte-identical and pre-v49 saves load the human nation-less).</param>
 /// <param name="IsHuman">Whether this is the local human player.</param>
 /// <param name="PlayerType">0 = Colonial, 1 = Native (see <see cref="GameSession.PlayerType"/>).</param>
 /// <param name="Gold">Treasury in gold.</param>

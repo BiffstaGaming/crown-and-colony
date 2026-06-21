@@ -65,7 +65,13 @@ public sealed class Player
     /// <summary>Stable id allocated at creation (the human is 0). Players are found by role/id, never by list index.</summary>
     public int PlayerId { get; }
 
-    /// <summary>The nation type id this player plays (null for the classic human until European nations land in FP-3).</summary>
+    /// <summary>
+    /// The European/native nation id this player plays. For the human it is the nation chosen at New Game
+    /// (<see cref="Game.New"/>'s <c>humanNationId</c>), which grants that nation's advantage + colony names through the
+    /// nation-id-driven seams; <b>null</b> for the classic <em>nation-less</em> default human (no advantage), so an
+    /// unpicked new game is byte-identical (ADR-009). A foreign power carries its assigned European nation, a native a
+    /// native nation-type id. Set once at creation (or restored from the save).
+    /// </summary>
     public string? NationId { get; }
 
     /// <summary>Whether this player is the local human (found via <see cref="Game.HumanPlayer"/>).</summary>

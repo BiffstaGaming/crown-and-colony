@@ -150,6 +150,61 @@ public class MainMenuTests
     }
 
     [TestCase]
+    public async Task NewGameDialog_ForwardsTheChosenNation_ThroughPendingNation()
+    {
+        ISceneRunner runner = ISceneRunner.Load(MenuScene);
+        await runner.SimulateFrames(2);
+        var menu = (Control)runner.Scene();
+
+        var dialog = new NewGameDialog();
+        menu.AddChild(dialog);
+        await runner.SimulateFrames(1); // _Ready builds the controls (incl. the nation dropdown from the ruleset)
+
+        GameController.PendingNation = null; // clean slate (a static survives between tests)
+        dialog.Open((_, _, _, _) => { });
+
+        var nationOption = dialog.FindChild("NationOption", recursive: true, owned: false) as OptionButton;
+        AssertThat(nationOption).IsNotNull();
+        // Index 0 is "No nation (default)"; the selectable European powers follow. Pick the first real nation.
+        AssertThat(nationOption!.ItemCount).IsGreater(1);
+        nationOption.Select(1);
+
+        var start = dialog.FindChild("StartButton", recursive: true, owned: false) as Button;
+        AssertThat(start).IsNotNull();
+        start!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // The first selectable European nation in the default ruleset is forwarded as the human's chosen nation.
+        string firstNation = GameVariants.Default.LoadRuleset().EuropeanNations
+            .First(n => n.Selectable && !n.IsRef).Id;
+        AssertThat(GameController.PendingNation).IsEqual(firstNation);
+        GameController.PendingNation = null; // tidy the static for the next test
+    }
+
+    [TestCase]
+    public async Task NewGameDialog_DefaultingTheNation_LeavesPendingNationNull()
+    {
+        ISceneRunner runner = ISceneRunner.Load(MenuScene);
+        await runner.SimulateFrames(2);
+        var menu = (Control)runner.Scene();
+
+        var dialog = new NewGameDialog();
+        menu.AddChild(dialog);
+        await runner.SimulateFrames(1);
+
+        GameController.PendingNation = "stale"; // a stale value must be overwritten with null when no nation is picked
+        dialog.Open((_, _, _, _) => { });
+
+        // Leave the nation dropdown at its default index 0 ("No nation") and press Start.
+        var start = dialog.FindChild("StartButton", recursive: true, owned: false) as Button;
+        AssertThat(start).IsNotNull();
+        start!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(GameController.PendingNation).IsNull(); // the classic nation-less default
+    }
+
+    [TestCase]
     public async Task NewGameDialog_SelectingAmerica_ForwardsAmerica_AndDisablesWorldSize()
     {
         ISceneRunner runner = ISceneRunner.Load(MenuScene);

@@ -2737,13 +2737,29 @@ public sealed partial class Game
     /// map the <paramref name="mapWidth"/>/<paramref name="mapHeight"/>/<paramref name="landMassFraction"/> shape
     /// parameters are ignored (the loaded grid sets the dimensions) and rivers/resources/regions are laid on top.
     /// </param>
+    /// <param name="humanNationId">
+    /// The European nation the human plays (e.g. <c>model.nation.dutch</c>; FreeCol's New-Game nation pick — see
+    /// [players]). Seeds the human <see cref="Player.NationId"/>, so the human gets that nation's <b>advantage</b> (the
+    /// same nation-type modifiers/abilities the foreign powers already fold — Dutch trade, French native-alarm, Spanish
+    /// offence-vs-natives, English immigration) and that nation's <b>colony-name</b> list. It is also excluded from the
+    /// foreign-power roster so the human's nation is never duplicated by a rival. <b>Default null = the classic
+    /// nation-less human</b>, so an unpicked new game is byte-identical to before (ADR-009). An unknown/non-selectable id
+    /// is treated as null (no advantage).
+    /// </param>
     public static Game New(
         Ruleset ruleset, ulong seed, int mapWidth = 36, int mapHeight = 24,
         int startingGold = 0, int startingTax = 0,
         double landMassFraction = MapGenerator.DefaultLandMassFraction,
         string difficultyLevelId = DifficultyLevels.DefaultId,
-        MapSource mapSource = MapSource.Random)
+        MapSource mapSource = MapSource.Random,
+        string? humanNationId = null)
     {
+        // A picked nation must be a real, selectable, non-REF European power; anything else (null, an unknown id, a
+        // native/REF id) falls back to the nation-less classic human — so the default new game stays byte-identical.
+        string? humanNation = humanNationId is { } nid
+            && ruleset.EuropeanNations.Any(n => n.Id == nid && n.Selectable && !n.IsRef)
+            ? humanNationId
+            : null;
         var random = new Pcg32Random(seed);
 
         // The map: either FreeCol's fixed America terrain (decorated with our rivers/resources/regions) or, by
@@ -2754,8 +2770,10 @@ public sealed partial class Game
             ? MapGenerator.Generate(ruleset, mapWidth, mapHeight, random, landMassFraction)
             : MapGenerator.DecorateFixedMap(fixedTerrain, ruleset, random);
 
-        // The single human player (stream 0; foreign powers and natives become players in FP-3).
-        var human = new Player(playerId: 0, nationId: null, isHuman: true, PlayerType.Colonial, new Market(ruleset))
+        // The single human player (stream 0; foreign powers and natives become players in FP-3). Its nation is the
+        // validated pick (null for the classic nation-less default), which seeds the human's national advantage +
+        // colony names through the existing nation-id-driven seams (NationTypeModifiers / ColonyNamesFor).
+        var human = new Player(playerId: 0, nationId: humanNation, isHuman: true, PlayerType.Colonial, new Market(ruleset))
         {
             Gold = startingGold,
             TaxRate = startingTax,
@@ -2827,7 +2845,7 @@ public sealed partial class Game
             }
         }
 
-        game.SpawnRivalsAndNatives(ruleset, start); // foreign powers (landed) + native nations as players (FP-3b/FP-4)
+        game.SpawnRivalsAndNatives(ruleset, start, humanNation); // foreign powers (landed) + native nations as players (FP-3b/FP-4); the human's own nation is excluded from the rival roster
 
         // Each non-human player draws from its own independent PCG stream (ADR-009); created here from the
         // same seed so the human's stream 0 is untouched (foreign units already placed, drawing nothing). A
@@ -2917,11 +2935,13 @@ public sealed partial class Game
     /// reference it by nation id; its braves act via <see cref="RunNativeTurn"/> from slice 1b); the foreign powers are the first
     /// <see cref="ForeignPowerCount"/> classic playable European nations, <b>landed on the map</b> far from
     /// the human (FP-4) with their starting units, <b>spread along the coast</b> at least
-    /// <see cref="MinDistanceBetweenPowers"/> apart (faithful to FreeCol's per-player spacing). Placement draws no RNG
-    /// (the human's stream 0 stays byte-stable); player ids are allocated densely in a stable order (human 0, then
-    /// natives, then powers).
+    /// <see cref="MinDistanceBetweenPowers"/> apart (faithful to FreeCol's per-player spacing). The human's own
+    /// <paramref name="humanNationId"/> (the New-Game nation pick, null for the classic default) is excluded from the
+    /// foreign roster so the human's nation is never duplicated by a rival (FreeCol removes the human's nation from the
+    /// AI pool). Placement draws no RNG (the human's stream 0 stays byte-stable); player ids are allocated densely in a
+    /// stable order (human 0, then natives, then powers).
     /// </summary>
-    private void SpawnRivalsAndNatives(Ruleset ruleset, Position humanStart)
+    private void SpawnRivalsAndNatives(Ruleset ruleset, Position humanStart, string? humanNationId = null)
     {
         foreach (string nationType in _nativeSettlements.Select(s => s.NationTypeId).Distinct().OrderBy(n => n))
         {
@@ -2931,7 +2951,7 @@ public sealed partial class Game
         var taken = new HashSet<Position>(); // tiles claimed by foreign landings (keeps powers off each other's units)
         var anchors = new List<Position>();  // each placed power's landing anchor (keeps powers spread along the coast)
         foreach (EuropeanNation nation in ruleset.EuropeanNations
-                     .Where(n => n.Selectable && !n.IsRef).Take(ForeignPowerCount))
+                     .Where(n => n.Selectable && !n.IsRef && n.Id != humanNationId).Take(ForeignPowerCount))
         {
             var power = new Player(_players.Count, nation.Id, isHuman: false, PlayerType.Colonial, new Market(ruleset));
             _players.Add(power);
