@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — 50-ITEM RUN · WAVE 6 (REF combat AI · modifier-TTL · expert-swap · unit tribute · immigration-bundle · difficulty AI) — COMPLETE ✅
+
+**Requested:** 50-item run, minimal testing. **Wave 6 = items 13–18.**
+**Did:** 5 lean worktree streams, cherry-picked clean (zero conflicts — different Game.cs/Ruleset.cs regions auto-merged), **6 items shipped**:
+- **REF combat AI** (`86d3drn5a`): bespoke `RunRefTurn` doctrine faithful to FreeCol `REFAIPlayer` — colonies-first (ports +500), no field-chase until a colony falls, navy hunts rebel ships; REF's own RNG stream.
+- **Temporary-modifier TTL** (`86d3drpgz`): FreeCol `Feature.isOutOfDate` — duration-bounded modifiers apply then expire in the EndTurn tick; registry empty in classic → byte-identical, no save bump.
+- **Expert-swap on join** (`86d3drn5j`): an arriving expert evicts a free colonist from its specialty slot (FreeCol `trySwapExpert`), runs before the food auto-assign.
+- **Unit tribute demands** (`86d3drn3b`): armed unit extracts gold from a native settlement by tension band (FreeCol `demandTribute`), 5-turn cooldown, demander's own stream.
+- **Immigration→GameOptions bundle** (`86d3d335r`): the base immigration trio parsed into a `GameOptions` record (pure refactor, values unchanged).
+- **Difficulty-scaled AI constants** (`86d3drn56`): rival-colony cap / Europe-spend floor / seek-range onto `DifficultyOptions.Ai` (honest finding: these are hardcoded in FreeCol's `EuropeanAIPlayer`, not difficulty options → now data-overridable but level-invariant, documented).
+**Status:** Integrated, pushed `b23bd31…515a5e7`. build clean + **1753 L1/L2 + 4 soak green** (full suite once at the boundary; **zero integration fixups needed**). No save bump (stays v52).
+**Changed:** 5 commits. New files: `GameOptions.cs`, `TemporaryModifier.cs`, `AiTuning.cs`, `modifiers.md`. Docs: independence+REF / modifiers+founding-fathers / colonies+diplomacy / immigration / difficulty+players — distinct.
+**Decisions:** Stayed lean (targeted tests per stream, full suite only at the boundary). All foreign/REF/event behaviour on non-stream-0 RNG → default game byte-identical.
+**Scheduled next:** **Wave 7** running now — event/limit engine (`86d3drpha`), spy-on-colony (`86d3drn4m`), AI logistics (`86d3c9vq9`), differential harness (`86d3drphu`), auto-QA-report (`86d3c9y4r`). **18/50 done.**
+**Needs you:** Nothing blocking.
+
 ## 2026-06-21 — 50-ITEM RUN · WAVE 5 (independence cluster · natives→data · unit identity · economy disasters · landmass styles) — COMPLETE ✅
 
 **Requested:** "Do 50 backlog items, minimal testing (batch tests by file, no full-suite-per-item), FreeCol-sourced, blocks→ClickUp task, timestamp every message." (Started 8:55pm AEST.) This is **Wave 5 = the first ~12 items**.
