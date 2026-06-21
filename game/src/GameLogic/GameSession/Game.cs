@@ -116,6 +116,7 @@ public sealed partial class Game
     private readonly List<RumourNotice> _rumourNotices = []; // transient: Lost City Rumours the human resolved this turn (non-mounds outcomes; not saved)
     private readonly List<AttritionNotice> _attritionNotices = []; // transient: the most recent turn's units lost to attrition in the open (not saved)
     private readonly List<DisasterNotice> _disasterNotices = []; // transient: the most recent turn's natural disasters striking human colonies (not saved; empty in classic — naturalDisasters default 0)
+    private readonly List<TemporaryModifier> _temporaryModifiers = []; // transient: duration-bounded modifiers currently in force; empty in classic (nothing registers one), so never saved and the default game is byte-identical (86d3drpgz)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
     private FountainResult _lastFountainResult; // transient: how the most recent FoY burst was handled — picks the player-facing message in ExploreRumour
@@ -714,6 +715,35 @@ public sealed partial class Game
     /// default game (FreeCol <c>ServerPlayer.csNaturalDisasters</c>).
     /// </summary>
     public IReadOnlyList<DisasterNotice> DisasterNotices => _disasterNotices;
+
+    /// <summary>
+    /// The duration-bounded modifiers currently registered (FreeCol's temporary <c>Modifier</c>s — those carrying a
+    /// <c>firstTurn</c>/<c>lastTurn</c>). A modifier stays here from the turn it is registered until the
+    /// <see cref="EndTurn"/> that finds it <see cref="TemporaryModifier.IsOutOfDate"/>, when the per-turn strip
+    /// (<see cref="RemoveExpiredTemporaryModifiers"/>) removes it. <b>Transient</b> — never serialized; in the classic
+    /// ruleset nothing ever registers one, so this is always empty and the default game is byte-identical (ADR-009).
+    /// </summary>
+    public IReadOnlyList<TemporaryModifier> TemporaryModifiers => _temporaryModifiers;
+
+    /// <summary>
+    /// Registers a duration-bounded modifier so it folds into matching values while active and is stripped once it
+    /// expires (FreeCol <c>ChangeSet.addModifier</c> of a <c>makeTimedModifier</c> result). This is the only way a
+    /// temporary modifier enters play; no classic content calls it, which is why the default game registers none and
+    /// stays byte-identical. Use <see cref="TemporaryModifier.MakeTimed"/> to build one bounded to a duration.
+    /// </summary>
+    /// <param name="modifier">The duration-bounded modifier to add.</param>
+    internal void RegisterTemporaryModifier(TemporaryModifier modifier) => _temporaryModifiers.Add(modifier);
+
+    /// <summary>
+    /// The temporary modifiers targeting <paramref name="targetId"/> that are active on the current <see cref="Turn"/>
+    /// (FreeCol <c>FeatureContainer.getModifiers</c> filtered by <c>appliesTo(turn)</c>): a registered modifier
+    /// contributes only inside its <c>[firstTurn, lastTurn]</c> window. Empty whenever the registry is empty (always,
+    /// in the classic default game), so a caller that folds these is a no-op there.
+    /// </summary>
+    /// <param name="targetId">The modifier target to match (e.g. a goods id).</param>
+    /// <returns>The active temporary modifiers for that target, in registration order.</returns>
+    public IEnumerable<TemporaryModifier> ActiveTemporaryModifiers(string targetId) =>
+        _temporaryModifiers.Where(m => m.TargetId == targetId && m.AppliesTo(Turn));
 
     /// <summary>Drains and clears the collected <see cref="RumourNotices"/> (the presentation reads them once, after a move that explored a rumour).</summary>
     public IReadOnlyList<RumourNotice> TakeRumourNotices()
@@ -5999,7 +6029,19 @@ public sealed partial class Game
             unit.MovementLeft = unit.IsUnderRepair ? 0 : InitialMovement(unit); // base + role bonus (dragoon/scout +9)
         }
         Turn++;
+        RemoveExpiredTemporaryModifiers(); // strip any duration-bounded modifier now out of date for the new turn (FreeCol's per-new-turn temporary-modifier removal) — a no-op in classic (registry empty)
     }
+
+    /// <summary>
+    /// Strips every registered temporary modifier that has expired for the turn just entered (FreeCol's per-new-turn
+    /// removal of temporary modifiers — those <c>Modifier.isTemporary()</c> ones whose <c>lastTurn</c> has passed,
+    /// e.g. <c>Player.removeOldTemporaryModifiers</c>). Runs once per <see cref="EndTurn"/>, immediately after the turn
+    /// counter advances, so a modifier with <c>lastTurn = T</c> is active through turn T and removed on entering T+1.
+    /// In the classic ruleset the registry is always empty (nothing registers a temporary modifier), so this is a
+    /// no-op and the default game stays byte-identical (ADR-009).
+    /// </summary>
+    private void RemoveExpiredTemporaryModifiers() =>
+        _temporaryModifiers.RemoveAll(m => m.IsOutOfDate(Turn));
 
     /// <summary>
     /// The classic Indian Convert's maximum attrition (classic spec <c>model.unit.indianConvert
@@ -8108,6 +8150,10 @@ public sealed partial class Game
             // Paine: the spec template modifier (index 40) takes the current tax rate as its value.
             modifiers.Add(new FatherModifier(BellsId, ModifierType.Percentage, player.TaxRate, 40));
         }
+        // Fold any duration-bounded modifier currently active for this goods (FreeCol's temporary Modifiers join the
+        // permanent ones in applyModifiers). The registry is empty in the classic default game, so this adds nothing
+        // there and the result is byte-identical; a registered event/variant bonus folds here while it is in window.
+        modifiers.AddRange(ActiveTemporaryModifiers(goodsId).Select(m => m.Payload));
         if (modifiers.Count == 0)
         {
             return baseAmount;

@@ -1,0 +1,71 @@
+using CrownAndColony.GameLogic.Specification;
+
+namespace CrownAndColony.GameLogic.GameSession;
+
+/// <summary>
+/// A duration-bounded <see cref="FatherModifier"/> that is active only within a turn window
+/// and is stripped once it expires — the runtime, time-limited cousin of the always-on
+/// founding-father / nation modifiers (FreeCol <c>Modifier</c> carrying <c>firstTurn</c>/
+/// <c>lastTurn</c>, built by <c>Modifier.makeTimedModifier</c> and removed by the
+/// per-turn temporary-modifier strip).
+/// </summary>
+/// <remarks>
+/// <para>
+/// FreeCol attaches such a modifier to a player or colony and re-checks it every new turn:
+/// while <see cref="AppliesTo"/> it contributes its bonus (e.g. a disaster's timed goods-party
+/// penalty, an event bonus), and once <see cref="IsOutOfDate"/> the turn-loop strips it. We mirror
+/// only that bounded-lifetime behaviour — the <see cref="Payload"/> reuses the existing
+/// <see cref="FatherModifier"/> arithmetic so a temporary modifier folds into a value exactly like a
+/// permanent one.
+/// </para>
+/// <para>
+/// <b>Classic ships none of these</b> (no classic content registers a timed modifier), so the
+/// registry on <see cref="Game"/> stays empty in the default game; nothing is registered, nothing is
+/// queried, nothing expires, and the slice is never serialized — the default game is byte-identical
+/// (ADR-009) and the save version is unchanged. This is the faithful subset: a variant/event that
+/// wants a duration-bounded bonus registers one and it expires correctly on its last turn.
+/// </para>
+/// </remarks>
+/// <param name="Payload">The modifier value/type/target/scope to fold while active (FreeCol the underlying <c>Modifier</c>).</param>
+/// <param name="FirstTurn">The first turn the modifier is active, inclusive (FreeCol <c>Modifier.firstTurn</c>).</param>
+/// <param name="LastTurn">The last turn the modifier is active, inclusive (FreeCol <c>Modifier.lastTurn</c>); it expires the turn <em>after</em> this.</param>
+public sealed record TemporaryModifier(FatherModifier Payload, int FirstTurn, int LastTurn)
+{
+    /// <summary>What this modifier targets (a goods id, a combat target, …) — the <see cref="Payload"/>'s target.</summary>
+    public string TargetId => Payload.TargetId;
+
+    /// <summary>
+    /// Whether this modifier is active on <paramref name="turn"/> (FreeCol <c>Feature.appliesTo(Turn)</c>):
+    /// true when <c><see cref="FirstTurn"/> &lt;= turn &lt;= <see cref="LastTurn"/></c>. A modifier registered
+    /// for a window contributes its bonus only inside that window.
+    /// </summary>
+    public bool AppliesTo(int turn) => turn >= FirstTurn && turn <= LastTurn;
+
+    /// <summary>
+    /// Whether this modifier has expired by <paramref name="turn"/> (FreeCol <c>Feature.isOutOfDate(Turn)</c>):
+    /// true once <c>turn &gt; <see cref="LastTurn"/></c>. The per-turn strip removes a modifier the first turn
+    /// this becomes true — so a modifier with <see cref="LastTurn"/> = T is still active on turn T and removed
+    /// on turn T+1.
+    /// </summary>
+    public bool IsOutOfDate(int turn) => turn > LastTurn;
+
+    /// <summary>
+    /// Builds a timed modifier active from <paramref name="start"/> for <paramref name="duration"/> turns
+    /// (FreeCol <c>Modifier.makeTimedModifier</c>): the last active turn is <c>start + duration - 1</c>, so a
+    /// duration of 1 is active only on <paramref name="start"/> and expires the next turn. <paramref name="duration"/>
+    /// must be at least 1.
+    /// </summary>
+    /// <param name="template">The modifier value/type/target/scope to apply while active.</param>
+    /// <param name="duration">The number of turns the modifier stays active (≥ 1).</param>
+    /// <param name="start">The turn the modifier becomes active (its <see cref="FirstTurn"/>).</param>
+    /// <returns>A <see cref="TemporaryModifier"/> bounded to <c>[start, start + duration - 1]</c>.</returns>
+    public static TemporaryModifier MakeTimed(FatherModifier template, int duration, int start)
+    {
+        if (duration < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(duration), duration, "A temporary modifier must last at least one turn.");
+        }
+
+        return new TemporaryModifier(template, start, start + duration - 1);
+    }
+}
