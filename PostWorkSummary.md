@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-22 — 50-ITEM RUN · WAVE 10 (game-options panel · DoI signing screen · SFX pack · 2 epic slices) — COMPLETE ✅
+
+**Requested:** 50-item run, minimal testing. **Wave 10 = items 34–38.**
+**Did:** 5 lean worktree streams, cherry-picked (resolved 3-way `presentation.md` doc conflicts; `GameController.cs`/`Ruleset.cs` auto-merged), **5 items shipped**:
+- **New-Game game-options panel** (`86d3drn64`): a Victory-conditions group (defeat-REF/last-European/last-human) via a `Ruleset.WithVictoryConditions` seam honoured by `Game.Winner`; fog-of-war honestly *not* surfaced (engine doesn't read it yet).
+- **DoI signing screen** (`86d3c9xht`): `DeclarationPanel` (confirm consequences → "Liberty or Death!" → signed text), +2 L3 green.
+- **SFX pack** (`86d3c9xrp`): 8 license-clear FreeCol GPL-v2 sound effects + engine-free `SoundEvent` catalog + `SoundService` autoload, colony/combat cues wired. (Proves the FreeCol-asset sourcing path for the remaining ART.)
+- **Spec-driven epic ×2** (`86d3drpgg`): 6 building `<ability>` declarations → parsed `HasAbility`; terrain/movement scalars (BaseMoveCost/MinMoveCost/PartialMoveThreshold) → `MovementConstants`. Both byte-identical.
+**Status:** Integrated, pushed `e75ad4a…a376d32`. build clean + **1918 L1/L2 + 4 soak green**. Also committed the stray `.uid` files the agents had left untracked (repo convention). No save bump (v52).
+**Flags (your call, non-blocking):** S4 found a real fidelity bug — `ColonySightRadius=1` vs FreeCol classic colony `visible-radius=2` (left untouched to keep the refactor byte-identical; will fix as a behaviour change). Spy-evasion + WAIVE_TAX deviations still standing.
+**Scheduled next:** **Wave 11** — negotiation trade dialog (`86d3c9xpt`), native sprites + music (ART, FreeCol-sourced), the sight-radius fix, L4 goldens. **38/50 done.** Epic `86d3drpgg` now 7 slices in (substantially data-driven).
+**Needs you:** Three flagged "your call" items (sight-radius, spy-evasion, WAIVE_TAX) — none blocking.
+
 ## 2026-06-22 — 50-ITEM RUN · WAVE 9 (high-scores screen · map-settlement wiring · 3 spec-driven epic slices) — COMPLETE ✅
 
 **Requested:** 50-item run, minimal testing. **Wave 9 = items 29–33.**
