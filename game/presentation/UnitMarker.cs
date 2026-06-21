@@ -50,16 +50,28 @@ public partial class UnitMarker : Node2D
     /// <param name="roleShortName">The unit's role short name (e.g. <c>soldier</c>, <c>mountedBrave</c>, or <c>default</c> for unarmed).</param>
     public void SetUnit(string typeShortName, string roleShortName)
     {
-        _texture = null;
+        _texture = ResolveTexture(typeShortName, roleShortName);
+        QueueRedraw();
+    }
+
+    /// <summary>
+    /// Resolves the FreeCol sprite for a unit by type + role short names, using the same candidate-path search as
+    /// <see cref="SetUnit"/>, or <c>null</c> when no art exists (the caller then uses its own fallback). Exposed so the
+    /// procedural <see cref="CombatAnimation"/> can lunge the attacker's own sprite without duplicating the lookup or
+    /// touching this marker's draw code.
+    /// </summary>
+    /// <param name="typeShortName">The unit type's short name (e.g. <c>freeColonist</c>, <c>caravel</c>).</param>
+    /// <param name="roleShortName">The unit's role short name (e.g. <c>soldier</c>, <c>pioneer</c>, or <c>default</c>).</param>
+    public static Texture2D? ResolveTexture(string typeShortName, string roleShortName)
+    {
         foreach (string path in UnitSpriteCatalog.CandidatePaths(typeShortName, roleShortName))
         {
             if (ResourceLoader.Exists(path))
             {
-                _texture = GD.Load<Texture2D>(path);
-                break;
+                return GD.Load<Texture2D>(path);
             }
         }
-        QueueRedraw();
+        return null;
     }
 
     public override void _Draw()

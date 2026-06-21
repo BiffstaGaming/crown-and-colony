@@ -676,6 +676,9 @@ public partial class GameController : Node2D
     {
         string who = attacker.Type.ShortName;
         bool naval = attacker.Type.IsNaval;
+        // Snapshot the attacker's tile/sprite before the roll: a loss may demote, move or destroy the unit.
+        Position from = attacker.Position;
+        string roleShortName = attacker.RoleId[(attacker.RoleId.LastIndexOf('.') + 1)..];
         CombatResult result = _game.Attack(attacker, tile);
         _selectedUnit = null; // the attack ends the unit's turn (and may demote/destroy it)
         _notice = result switch
@@ -688,7 +691,26 @@ public partial class GameController : Node2D
         PlaySound(naval && result is CombatResult.GreatWin or CombatResult.Win
             ? SoundEvent.ShipSunk
             : SoundEvent.Combat);
+        PlayCombatAnimation(from, tile, result, who, roleShortName);
         RefreshView();
+    }
+
+    /// <summary>
+    /// Fires the non-blocking procedural attack animation (`86d3drn72`) for a just-resolved combat: a transient sprite
+    /// lunges from <paramref name="from"/> toward <paramref name="defenderTile"/> and snaps back, flavoured by the
+    /// outcome (<see cref="CombatAnimationMap"/>). Presentation-only over the already-resolved combat (ADR-006); the
+    /// turn proceeds immediately. A null unit layer (headless tests that omit it) is a silent no-op.
+    /// </summary>
+    private void PlayCombatAnimation(Position from, Position defenderTile, CombatResult result,
+        string typeShortName, string roleShortName)
+    {
+        if (_unitLayer is null)
+        {
+            return;
+        }
+        CombatAnimationKind kind = CombatAnimationMap.KindFor(result);
+        Texture2D? texture = UnitMarker.ResolveTexture(typeShortName, roleShortName);
+        CombatAnimation.Play(_unitLayer, from, defenderTile, kind, texture);
     }
 
     /// <summary>Assaults an ungarrisoned rival colony on an adjacent tile to capture it, reporting the outcome.</summary>
@@ -701,11 +723,17 @@ public partial class GameController : Node2D
             return;
         }
         string colonyName = _game.ColonyAt(tile)!.Name;
-        CombatResult result = _game.AttackColony(_selectedUnit!, tile);
+        // Snapshot the attacker's tile/sprite before the assault (a loss may demote or destroy it).
+        Unit assaulter = _selectedUnit!;
+        Position from = assaulter.Position;
+        string who = assaulter.Type.ShortName;
+        string roleShortName = assaulter.RoleId[(assaulter.RoleId.LastIndexOf('.') + 1)..];
+        CombatResult result = _game.AttackColony(assaulter, tile);
         _selectedUnit = null; // the assault ends the unit's turn (and may demote/destroy it on a loss)
         _notice = result is CombatResult.GreatWin or CombatResult.Win
             ? $"You captured {colonyName}!"
             : "Your assault on the colony was repelled.";
+        PlayCombatAnimation(from, tile, result, who, roleShortName);
     }
 
     /// <summary>
