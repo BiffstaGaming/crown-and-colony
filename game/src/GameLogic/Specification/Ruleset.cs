@@ -686,27 +686,24 @@ public sealed class Ruleset
                     .Select(m => (int?)m.Attribute("value") ?? 0)
                     .DefaultIfEmpty(0)
                     .Last(),
+                // Every <ability> the building declares, collected down the extends chain into a data-driven map
+                // (id → value; nearest leaf→root definition wins, absent value ⇒ true — FreeCol FreeColObject.hasAbility).
+                // The simple unscoped building capabilities — repairUnits / bombardShips / export / dressMissionary /
+                // produceInWater / teach — are now read off this map via BuildingType.HasAbility instead of six
+                // dedicated ResolveAbility parses, so a variant toggles them in data. For a simple unscoped ability the
+                // collector yields exactly what the per-ability ResolveAbility returned, so the classic result is
+                // byte-identical. (The scoped model.ability.build lands here too but its scope handling stays in the
+                // dedicated CollectBuildUnitTypeScopes/GrantsNavalBuildScope collectors below.)
+                Abilities: CollectAbilitiesUpChain(el, buildingElements),
                 // Build-gating abilities (factory tier → buildFactory, custom house → buildCustomHouse, docks →
                 // hasPort), collected down the extends chain so drydock/shipyard inherit docks' hasPort (FreeCol
                 // BuildableType.getRequiredAbilities; nearest definition wins for a re-stated id).
                 RequiredAbilities: CollectRequiredAbilitiesUpChain(el, buildingElements),
-                // Ship repair: drydock grants model.ability.repairUnits, shipyard inherits it up the extends chain.
-                RepairsNavalUnits: ResolveAbility(el, "model.ability.repairUnits", buildingElements),
                 // Unit construction: model.ability.build scopes (carpenter's house → wagon train, armory →
                 // artillery, shipyard → any naval unit), collected down the extends chain (magazine/arsenal inherit
                 // armory's artillery scope) — drives the unit build-ability gate.
                 BuildableUnitTypeIds: CollectBuildUnitTypeScopes(el, buildingElements),
                 BuildsNavalUnits: GrantsNavalBuildScope(el, buildingElements),
-                // Ship bombardment: the fort grants model.ability.bombardShips, the fortress inherits it.
-                BombardsShips: ResolveAbility(el, "model.ability.bombardShips", buildingElements),
-                // Auto-export: the custom house grants model.ability.export (per-turn auto-sell).
-                GrantsExport: ResolveAbility(el, "model.ability.export", buildingElements),
-                // Missionary ordination: the church grants model.ability.dressMissionary, the cathedral inherits it
-                // (the chapel does not) — the colony-side requirement of the model.role.missionary role.
-                DressesMissionary: ResolveAbility(el, "model.ability.dressMissionary", buildingElements),
-                // Water work: the docks grant model.ability.produceInWater (drydock/shipyard inherit it down the
-                // extends chain) — the colony-side requirement for assigning a colonist to a sea tile to fish.
-                ProducesInWater: ResolveAbility(el, "model.ability.produceInWater", buildingElements),
                 // Horse breeding: pasture/country sets breedingDivisor 50 / breedingFactor 2; stables multiplies the
                 // divisor by 0.5 → 25 (resolved additive-then-multiplicative up the extends chain). 0 = not a breeder.
                 BreedingDivisor: ResolveScalarModifierUpChain(el, "model.modifier.breedingDivisor", buildingElements),
@@ -726,11 +723,10 @@ public sealed class Ruleset
                 // buildings and deducted from the owner's gold each turn — but only when the spec's enableUpkeep option
                 // is on (classic leaves it off, so the classic game charges no upkeep). FreeCol Colony.getUpkeep.
                 Upkeep: ResolveIntAttribute(el, "upkeep", buildingElements) ?? 0,
-                // Teaching: a school's skill window (schoolhouse 1..1 / college 1..2 / university 1..4; the floor + the
-                // teach ability are declared on the schoolhouse and inherited down the extends chain) — only an expert
-                // within the window teaches.
+                // Teaching: a school's skill window (schoolhouse 1..1 / college 1..2 / university 1..4; the floor is
+                // declared on the schoolhouse and inherited down the extends chain) — only an expert within the window
+                // teaches. The teach ability itself (BuildingType.Teaches) is now read off the Abilities map above.
                 MaximumSkill: ResolveIntAttribute(el, "maximum-skill", buildingElements) ?? 0,
-                Teaches: ResolveAbility(el, "model.ability.teach", buildingElements),
                 MinimumSkill: ResolveIntAttribute(el, "minimum-skill", buildingElements) ?? 0);
         }
 

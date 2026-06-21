@@ -214,6 +214,74 @@ public class RulesetTests
     }
 
     [Fact]
+    public void BuildingTypeAbilities_ParseFromSpecIntoHasAbilityMap()
+    {
+        // 86d3drpgg building-ABILITIES slice: repairUnits / bombardShips / export / dressMissionary / produceInWater /
+        // teach are now read from the parsed <ability> map via BuildingType.HasAbility, not six dedicated flags.
+        // HasAbility must agree with the convenience property, and an absent ability must read false (not throw).
+        BuildingType docks = Classic.Building("model.building.docks");
+        Assert.True(docks.HasAbility("model.ability.produceInWater"));
+        Assert.Equal(docks.ProducesInWater, docks.HasAbility("model.ability.produceInWater"));
+
+        // Inheritance down the extends chain: the drydock/shipyard inherit docks' produceInWater (nearest wins).
+        Assert.True(Classic.Building("model.building.drydock").HasAbility("model.ability.produceInWater"));
+        Assert.True(Classic.Building("model.building.shipyard").HasAbility("model.ability.produceInWater"));
+
+        // Custom house declares export; the cathedral inherits the church's dressMissionary; the fortress inherits
+        // the fort's bombardShips; the college/university inherit the schoolhouse's teach.
+        Assert.True(Classic.Building("model.building.customHouse").GrantsExport);
+        Assert.True(Classic.Building("model.building.cathedral").DressesMissionary);
+        Assert.True(Classic.Building("model.building.fortress").BombardsShips);
+        Assert.True(Classic.Building("model.building.university").Teaches);
+
+        // Drydock declares repairUnits; the shipyard inherits it.
+        Assert.True(Classic.Building("model.building.drydock").RepairsNavalUnits);
+        Assert.True(Classic.Building("model.building.shipyard").RepairsNavalUnits);
+
+        // Unknown / undeclared ability id defaults to false rather than throwing.
+        Assert.False(docks.HasAbility("model.ability.thisDoesNotExist"));
+        Assert.False(docks.HasAbility("model.ability.export"));
+    }
+
+    [Theory]
+    // (building, repairUnits, bombardShips, export, dressMissionary, produceInWater, teach) — the classic values the
+    // six data-driven building capabilities resolve to. Pins the byte-identical result of the hardcoded→parsed refactor.
+    [InlineData("model.building.townHall", false, false, false, false, false, false)]
+    [InlineData("model.building.chapel", false, false, false, false, false, false)]   // chapel does NOT dress missionaries
+    [InlineData("model.building.church", false, false, false, true, false, false)]    // church declares dressMissionary
+    [InlineData("model.building.cathedral", false, false, false, true, false, false)] // inherits church's dressMissionary
+    [InlineData("model.building.stockade", false, false, false, false, false, false)]
+    [InlineData("model.building.fort", false, true, false, false, false, false)]      // fort grants bombardShips
+    [InlineData("model.building.fortress", false, true, false, false, false, false)]  // inherits fort's bombardShips
+    [InlineData("model.building.docks", false, false, false, false, true, false)]     // docks grant produceInWater
+    [InlineData("model.building.drydock", true, false, false, false, true, false)]    // repairUnits + inherited produceInWater
+    [InlineData("model.building.shipyard", true, false, false, false, true, false)]   // inherits repairUnits + produceInWater
+    [InlineData("model.building.customHouse", false, false, true, false, false, false)] // customHouse grants export
+    [InlineData("model.building.schoolhouse", false, false, false, false, false, true)] // schoolhouse declares teach
+    [InlineData("model.building.college", false, false, false, false, false, true)]    // inherits teach
+    [InlineData("model.building.university", false, false, false, false, false, true)] // inherits teach
+    public void DataDrivenBuildingAbilities_MatchClassicValues(
+        string id, bool repairUnits, bool bombardShips, bool export, bool dressMissionary, bool produceInWater, bool teach)
+    {
+        BuildingType building = Classic.Building(id);
+
+        Assert.Equal(repairUnits, building.RepairsNavalUnits);
+        Assert.Equal(bombardShips, building.BombardsShips);
+        Assert.Equal(export, building.GrantsExport);
+        Assert.Equal(dressMissionary, building.DressesMissionary);
+        Assert.Equal(produceInWater, building.ProducesInWater);
+        Assert.Equal(teach, building.Teaches);
+
+        // Each convenience property must be exactly its HasAbility consult (no divergence).
+        Assert.Equal(building.HasAbility("model.ability.repairUnits"), building.RepairsNavalUnits);
+        Assert.Equal(building.HasAbility("model.ability.bombardShips"), building.BombardsShips);
+        Assert.Equal(building.HasAbility("model.ability.export"), building.GrantsExport);
+        Assert.Equal(building.HasAbility("model.ability.dressMissionary"), building.DressesMissionary);
+        Assert.Equal(building.HasAbility("model.ability.produceInWater"), building.ProducesInWater);
+        Assert.Equal(building.HasAbility("model.ability.teach"), building.Teaches);
+    }
+
+    [Fact]
     public void GoodsTypes_ParseMilitaryAndTradeFlags()
     {
         // Native tribute-demand goods selection (IndianDemandMission) classifies goods. Spec attributes

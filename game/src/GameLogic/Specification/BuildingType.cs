@@ -25,17 +25,23 @@ namespace CrownAndColony.GameLogic.Specification;
 /// default 0). Printing press +50, newspaper +100 (the newspaper deletes + redefines the inherited modifier —
 /// own-valued one taken, like <see cref="DefenceBonus"/>). Speeds Sons-of-Liberty + founding-father progress.
 /// </param>
+/// <param name="Abilities">
+/// Every <c>&lt;ability&gt;</c> this building type declares, resolved down the <c>extends</c> chain (id → value;
+/// the nearest definition wins, an absent <c>value</c> defaults to true — FreeCol <c>FreeColObject.hasAbility</c>).
+/// Consulted via <see cref="HasAbility"/>; the simple boolean capabilities (<see cref="RepairsNavalUnits"/>,
+/// <see cref="BombardsShips"/>, <see cref="GrantsExport"/>, <see cref="DressesMissionary"/>,
+/// <see cref="ProducesInWater"/>, <see cref="Teaches"/>) read straight off this map rather than a hardcoded flag,
+/// so a variant ruleset toggling the <c>&lt;ability&gt;</c> changes the behaviour without a code change. Classic data
+/// is unchanged, so the resolved values are byte-identical to the previous per-ability <c>ResolveAbility</c> reads.
+/// The scoped <c>model.ability.build</c> lands in this map too, but its scope handling stays in the dedicated
+/// <see cref="Ruleset"/> collectors (<see cref="BuildableUnitTypeIds"/>/<see cref="BuildsNavalUnits"/>).
+/// </param>
 /// <param name="RequiredAbilities">
 /// Abilities the colony must satisfy before this building may be constructed (spec <c>required-ability</c>,
 /// id → required value; inherited down the <c>extends</c> chain so drydock/shipyard keep docks' <c>hasPort</c>).
 /// Empty for an unconditional building. Classic gates: the factory tier + arsenal need <c>buildFactory</c>
 /// (Adam Smith), the custom house needs <c>buildCustomHouse</c> (Stuyvesant), docks/drydock/shipyard need a
 /// coastal colony (<c>hasPort</c>). FreeCol <c>Colony.getNoBuildReason</c> MISSING_ABILITY.
-/// </param>
-/// <param name="RepairsNavalUnits">
-/// Whether this building lets the colony repair damaged ships (spec <c>model.ability.repairUnits</c>, resolved
-/// down the <c>extends</c> chain; drydock grants it, shipyard inherits it). A damaged ship limps to the nearest
-/// owned colony with this ability rather than all the way to Europe (FreeCol <c>Unit.getRepairLocation</c>).
 /// </param>
 /// <param name="BuildableUnitTypeIds">
 /// Unit-type ids this building lets the colony construct (spec <c>model.ability.build</c> with a
@@ -47,16 +53,6 @@ namespace CrownAndColony.GameLogic.Specification;
 /// Whether this building grants the build ability scoped to <c>model.ability.navalUnit</c> (spec
 /// <c>model.ability.build</c> with <c>&lt;scope ability-id="model.ability.navalUnit"/&gt;</c>) — the shipyard,
 /// which enables building any ship. (Ship construction is not yet wired up; this is parsed for completeness.)
-/// </param>
-/// <param name="BombardsShips">
-/// Whether this building lets the colony bombard adjacent enemy ships at the start of its owner's turn (spec
-/// <c>model.ability.bombardShips</c>, resolved down the <c>extends</c> chain; the fort grants it, the fortress
-/// inherits it). FreeCol <c>Settlement.canBombardEnemyShip</c>.
-/// </param>
-/// <param name="GrantsExport">
-/// Whether this building grants the colony the auto-export ability (spec <c>model.ability.export</c>, resolved down
-/// the <c>extends</c> chain) — the custom house declares it (building it is gated on Stuyvesant's
-/// <c>buildCustomHouse</c>). FreeCol <c>Ability.EXPORT</c>; drives the per-turn custom-house auto-sell.
 /// </param>
 /// <param name="BreedingDivisor">
 /// Herd-growth divisor for an auto-production breeder (spec <c>model.modifier.breedingDivisor</c>, resolved
@@ -96,27 +92,10 @@ namespace CrownAndColony.GameLogic.Specification;
 /// schoolhouse 1, college 2, university 4; 0 = not a school). An over-skilled expert (e.g. an elder statesman, skill 3,
 /// in a schoolhouse) cannot teach there. FreeCol <c>Building.canAddType</c> / <c>getNoAddReason</c> MAXIMUM_SKILL.
 /// </param>
-/// <param name="Teaches">
-/// Whether this building can teach (spec <c>model.ability.teach</c>, inherited down the <c>extends</c> chain — only the
-/// schoolhouse declares it; college and university inherit it). The schoolhouse/college/university trio; FreeCol
-/// <c>Ability.CAN_TEACH</c>.
-/// </param>
 /// <param name="MinimumSkill">
 /// The lowest unit <see cref="UnitType.Skill"/> that may occupy this building (spec <c>minimum-skill</c>; the school
 /// trio set 1, inherited down the <c>extends</c> chain — so only an expert teaches, never a free colonist/servant/
 /// criminal; default 0 = no floor). FreeCol <c>Building.getNoAddReason</c> MINIMUM_SKILL.
-/// </param>
-/// <param name="DressesMissionary">
-/// Whether this building lets the colony ordain a missionary — i.e. grants the colony <c>model.ability.dressMissionary</c>
-/// (spec, resolved down the <c>extends</c> chain; the <b>church</b> declares it, the <b>cathedral</b> inherits it, the
-/// chapel does not). It is the colony-side requirement of the <c>model.role.missionary</c> role, so a colonist can only
-/// be equipped as a missionary at a colony with a church or cathedral. FreeCol <c>Ability.DRESS_MISSIONARY</c>.
-/// </param>
-/// <param name="ProducesInWater">
-/// Whether this building lets colonists work the colony's <b>water</b> tiles (ocean/lake) — i.e. grants the colony
-/// <c>model.ability.produceInWater</c>, resolved down the <c>extends</c> chain (the docks grant it; the drydock and
-/// shipyard inherit it). Without it, a colonist cannot be assigned to a sea tile to fish (FreeCol
-/// <c>ColonyTile.getNoWorkReason</c> → <c>MISSING_ABILITY</c> when <c>!hasAbility(PRODUCE_IN_WATER) &amp;&amp; !tile.isLand()</c>).
 /// </param>
 public sealed record BuildingType(
     string Id,
@@ -128,28 +107,76 @@ public sealed record BuildingType(
     int DefenceBonus = 0,
     int WarehouseStorage = 0,
     int BellBonus = 0,
+    IReadOnlyDictionary<string, bool>? Abilities = null,
     IReadOnlyDictionary<string, bool>? RequiredAbilities = null,
-    bool RepairsNavalUnits = false,
     IReadOnlySet<string>? BuildableUnitTypeIds = null,
     bool BuildsNavalUnits = false,
-    bool BombardsShips = false,
-    bool GrantsExport = false,
     int BreedingDivisor = 0,
     int BreedingFactor = 0,
     double RebelFactor = 1.0,
     double CompetenceFactor = 1.0,
     int Upkeep = 0,
     int MaximumSkill = 0,
-    bool Teaches = false,
-    int MinimumSkill = 0,
-    bool DressesMissionary = false,
-    bool ProducesInWater = false)
+    int MinimumSkill = 0)
 {
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
     private static readonly IReadOnlySet<string> NoUnits = new HashSet<string>();
 
     /// <summary>Short name derived from the id: <c>model.building.townHall</c> → <c>townHall</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
+
+    /// <summary>
+    /// Whether this building type declares the given <c>&lt;ability&gt;</c> set true (FreeCol
+    /// <c>FreeColObject.hasAbility</c>): reads the value parsed from the spec (resolved down the <c>extends</c> chain),
+    /// defaulting to false when the type declares no such ability. The data-driven consult that replaces hardcoded
+    /// building-capability flags.
+    /// </summary>
+    /// <param name="abilityId">The ability id, e.g. <c>model.ability.produceInWater</c>.</param>
+    public bool HasAbility(string abilityId) => (Abilities ?? NoAbilities).GetValueOrDefault(abilityId);
+
+    /// <summary>
+    /// Whether this building lets the colony repair damaged ships (data-driven <c>model.ability.repairUnits</c>;
+    /// drydock grants it, shipyard inherits it). A damaged ship limps to the nearest owned colony with this ability
+    /// rather than all the way to Europe (FreeCol <c>Unit.getRepairLocation</c>).
+    /// </summary>
+    public bool RepairsNavalUnits => HasAbility("model.ability.repairUnits");
+
+    /// <summary>
+    /// Whether this building lets the colony bombard adjacent enemy ships at the start of its owner's turn (data-driven
+    /// <c>model.ability.bombardShips</c>; the fort grants it, the fortress inherits it). FreeCol
+    /// <c>Settlement.canBombardEnemyShip</c>.
+    /// </summary>
+    public bool BombardsShips => HasAbility("model.ability.bombardShips");
+
+    /// <summary>
+    /// Whether this building grants the colony the auto-export ability (data-driven <c>model.ability.export</c>) — the
+    /// custom house declares it (building it is gated on Stuyvesant's <c>buildCustomHouse</c>). FreeCol
+    /// <c>Ability.EXPORT</c>; drives the per-turn custom-house auto-sell.
+    /// </summary>
+    public bool GrantsExport => HasAbility("model.ability.export");
+
+    /// <summary>
+    /// Whether this building can teach (data-driven <c>model.ability.teach</c>; only the schoolhouse declares it,
+    /// college and university inherit it down the <c>extends</c> chain). The schoolhouse/college/university trio;
+    /// FreeCol <c>Ability.CAN_TEACH</c>.
+    /// </summary>
+    public bool Teaches => HasAbility("model.ability.teach");
+
+    /// <summary>
+    /// Whether this building lets the colony ordain a missionary — i.e. grants the colony <c>model.ability.dressMissionary</c>
+    /// (data-driven; the <b>church</b> declares it, the <b>cathedral</b> inherits it, the chapel does not). It is the
+    /// colony-side requirement of the <c>model.role.missionary</c> role, so a colonist can only be equipped as a missionary
+    /// at a colony with a church or cathedral. FreeCol <c>Ability.DRESS_MISSIONARY</c>.
+    /// </summary>
+    public bool DressesMissionary => HasAbility("model.ability.dressMissionary");
+
+    /// <summary>
+    /// Whether this building lets colonists work the colony's <b>water</b> tiles (ocean/lake) — i.e. grants the colony
+    /// <c>model.ability.produceInWater</c> (data-driven; the docks grant it, the drydock and shipyard inherit it down the
+    /// <c>extends</c> chain). Without it, a colonist cannot be assigned to a sea tile to fish (FreeCol
+    /// <c>ColonyTile.getNoWorkReason</c> → <c>MISSING_ABILITY</c> when <c>!hasAbility(PRODUCE_IN_WATER) &amp;&amp; !tile.isLand()</c>).
+    /// </summary>
+    public bool ProducesInWater => HasAbility("model.ability.produceInWater");
 
     /// <summary>Abilities required to build this, id → required value (an empty map when unconditional).</summary>
     public IReadOnlyDictionary<string, bool> RequiredAbilitiesOrEmpty => RequiredAbilities ?? NoAbilities;
