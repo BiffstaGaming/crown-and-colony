@@ -77,6 +77,7 @@ public partial class GameController : Node2D
     private Button _roadButton = null!;
     private Button _plowButton = null!;
     private Button _clearForestButton = null!;
+    private Button _sailToEuropeButton = null!;
     private MiniMap _miniMap = null!;
     private PanelContainer _colonyPanel = null!;
     private PanelContainer _europePanel = null!;
@@ -135,6 +136,10 @@ public partial class GameController : Node2D
         _clearForestButton.Pressed += () => ApplyUnitOrder(
             u => _game.CheckBuildImprovement(u, TileImprovementType.ClearForestId).Allowed,
             u => _game.BuildImprovement(u, TileImprovementType.ClearForestId), "Clearing the forest.");
+        // Ship order: sail to Europe from a high-seas tile (the map edge), gated on CheckSailToEurope (ADR-006).
+        _sailToEuropeButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/SailToEuropeButton");
+        _sailToEuropeButton.Pressed += () => ApplyUnitOrder(
+            u => _game.CheckSailToEurope(u).Allowed, _game.SailToEurope, "Setting sail for Europe.");
         _miniMap = GetNode<MiniMap>("UI/MiniMap");
         _miniMap.TileSelected += CenterCameraOnTile;
         GetNode<Button>("UI/MiniMap/ZoomInButton").Pressed += _miniMap.ZoomIn;
@@ -828,6 +833,10 @@ public partial class GameController : Node2D
             _roadButton.Disabled = !_game.CheckBuildImprovement(sel, TileImprovementType.RoadId).Allowed;
             _plowButton.Disabled = !_game.CheckBuildImprovement(sel, TileImprovementType.PlowId).Allowed;
             _clearForestButton.Disabled = !_game.CheckBuildImprovement(sel, TileImprovementType.ClearForestId).Allowed;
+            // Sail to Europe: shown only for ships, enabled once the ship sits on a high-seas tile (the map edge) — the
+            // discoverable surface for the existing CheckSailToEurope/SailToEurope command (ADR-006 oracle).
+            _sailToEuropeButton.Visible = sel.Type.IsNaval;
+            _sailToEuropeButton.Disabled = !_game.CheckSailToEurope(sel).Allowed;
             _selectedUnitPanel.Show();
         }
         else

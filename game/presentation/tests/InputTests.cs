@@ -166,6 +166,43 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task SelectedUnitPanel_SailToEuropeButton_ShownForShipsOnly_EnabledOnHighSeas_AndSails()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        var sail = controller.GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/SailToEuropeButton");
+
+        // A land colonist: the ship-only order is hidden entirely.
+        Unit land = game.PlayerUnits.First(u => u.IsOnMap && !u.Type.IsNaval);
+        await ClickTile(runner, controller, land.Position);
+        AssertThat(sail.Visible).IsFalse();
+
+        // The starting caravel sits on coastal water (not the high seas): the order shows but is disabled.
+        Unit caravel = game.PlayerUnits.First(u => u.IsOnMap && u.Type.IsNaval);
+        AssertThat(game.Map.TerrainAt(caravel.Position).Id).IsNotEqual("model.tile.highSeas"); // precondition for the case
+        await ClickTile(runner, controller, caravel.Position);
+        AssertThat(sail.Visible).IsTrue();
+        AssertThat(sail.Disabled).IsTrue();
+
+        // Put a ship on a high-seas tile (the map edge): the order enables, and pressing it sends the ship sailing.
+        Position highSeas = game.Map.AllPositions().First(p =>
+            game.Map.TerrainAt(p).Id == "model.tile.highSeas"
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p));
+        Unit ship = game.SpawnUnit(game.Ruleset.Unit("model.unit.caravel"), highSeas);
+        await ClickTile(runner, controller, highSeas);
+        AssertThat(sail.Visible).IsTrue();
+        AssertThat(sail.Disabled).IsFalse();
+
+        sail.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(ship.Location).IsEqual(UnitLocation.SailingToEurope); // the existing SailToEurope command fired
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task GotoMode_Arms_AndSetsTheSelectedUnitDestination_AndDrawsTheMarker()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

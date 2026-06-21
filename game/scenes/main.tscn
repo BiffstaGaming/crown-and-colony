@@ -101,6 +101,11 @@ text = "Plow"
 layout_mode = 2
 text = "Clear"
 
+[node name="SailToEuropeButton" type="Button" parent="UI/SelectedUnitPanel/VBox/Orders"]
+layout_mode = 2
+tooltip_text = "Move a ship onto the high seas (the east/west map edge), then sail it to Europe."
+text = "Sail to Europe"
+
 [node name="TileInfoPanel" type="PanelContainer" parent="UI"]
 visible = false
 mouse_filter = 2
