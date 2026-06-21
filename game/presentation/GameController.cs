@@ -120,6 +120,8 @@ public partial class GameController : Node2D
     private PanelContainer _colopediaPanel = null!;
     private PanelContainer _victoryPanel = null!;
     private PanelContainer _highScoresPanel = null!;
+    private PanelContainer _declarationPanel = null!;
+    private Button _independenceButton = null!;
     private Button _endTurnButton = null!;
     private Control _gameOverScreen = null!;
     private Label _gameOverMessage = null!;
@@ -191,6 +193,8 @@ public partial class GameController : Node2D
         _colopediaPanel = GetNode<PanelContainer>("UI/ColopediaPanel");
         _victoryPanel = GetNode<PanelContainer>("UI/VictoryPanel");
         _highScoresPanel = GetNode<PanelContainer>("UI/HighScoresPanel");
+        _declarationPanel = GetNode<PanelContainer>("UI/DeclarationPanel");
+        _independenceButton = GetNode<Button>("UI/IndependenceButton");
         _endTurnButton = GetNode<Button>("UI/EndTurnButton");
         _gameOverScreen = GetNode<Control>("UI/GameOverScreen");
         _gameOverMessage = GetNode<Label>("UI/GameOverScreen/Panel/VBox/Message");
@@ -200,6 +204,7 @@ public partial class GameController : Node2D
         GetNode<Button>("UI/ReportsButton").Pressed += OpenColonyReportPanel;
         GetNode<Button>("UI/ColopediaButton").Pressed += OpenColopediaPanel;
         GetNode<Button>("UI/HighScoresButton").Pressed += OpenHighScoresPanel;
+        _independenceButton.Pressed += OpenDeclarationPanel;
         GetNode<Button>("UI/ColopediaPanel/VBox/CloseButton").Pressed += () => _colopediaPanel.Hide();
         GetNode<Button>("UI/ColonyReportPanel/VBox/CloseButton").Pressed += () => _colonyReportPanel.Hide();
         GetNode<Button>("UI/VictoryPanel/VBox/CloseButton").Pressed += () => _victoryPanel.Hide();
@@ -742,6 +747,15 @@ public partial class GameController : Node2D
     public void OpenFoundingFatherPanel() =>
         ((FoundingFatherPanel)_foundingFatherPanel).Open(_game, RefreshView);
 
+    /// <summary>
+    /// Opens the Declaration-of-Independence signing screen (consequences + confirm, then the signed declaration). The
+    /// panel reads the <see cref="Game.CheckDeclareIndependence"/> gate itself — if the human isn't eligible it explains
+    /// why — so this can be driven unconditionally; the HUD button that drives it is only shown when eligible. Public so
+    /// scene tests can drive it.
+    /// </summary>
+    public void OpenDeclarationPanel() =>
+        ((DeclarationPanel)_declarationPanel).Open(_game, RefreshView);
+
     /// <summary>Opens the Colopedia reference panel (the Goods category — a read-only ruleset reference). Public so scene tests can drive it.</summary>
     public void OpenColopediaPanel() =>
         ((ColopediaPanel)_colopediaPanel).Open(_game);
@@ -913,6 +927,13 @@ public partial class GameController : Node2D
         {
             _tileInfoPanel.Hide();
         }
+
+        // The Declare-Independence HUD action appears only once the human may actually declare (FreeCol surfaces the
+        // declareIndependence menu item the same way) — gated purely on the CheckDeclareIndependence oracle (ADR-006):
+        // a colonial power with ≥ 50% national rebel sentiment, a connected port and still within the colonial era.
+        // Hidden the rest of the game (and once the nation has rebelled) so it never clutters the HUD or the goldens.
+        _independenceButton.Visible = !_game.IsHumanDefeated
+            && _game.CheckDeclareIndependence(_game.HumanPlayer).Allowed;
 
         UpdateDefeatUi();
         UpdateVictoryUi();
