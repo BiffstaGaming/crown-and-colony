@@ -1001,7 +1001,10 @@ public partial class GameController : Node2D
                 Selected = _selectedUnit == unit,
                 OwnerColor = human ? default : OwnerColorOf(unit),
             };
-            marker.SetUnitType(unit.Type.ShortName);
+            // Role short name (e.g. "soldier"/"pioneer", or "default" for unarmed) so the marker can pick the
+            // role-specific FreeCol sprite — a colonist-soldier looks different from a plain colonist.
+            string roleShortName = unit.RoleId[(unit.RoleId.LastIndexOf('.') + 1)..];
+            marker.SetUnit(unit.Type.ShortName, roleShortName);
             _unitLayer.AddChild(marker);
         }
     }

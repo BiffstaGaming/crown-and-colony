@@ -9,12 +9,25 @@ in the Asset Register (ClickUp doc 05).
 Contents: terrain base diamonds (`terrain/<type>/center*.png`, 128×64),
 hills/mountains elevation overlays, generic forest overlays
 (`forest/<type>/<type>.png`), fog art (`terrain/unexplored/`), unit sprites
-(`units/`), settlement sprites (`settlements/`), bonus-resource icons (`bonus/`),
+(`units/` — see below), settlement sprites (`settlements/`), bonus-resource icons (`bonus/`),
 **building images** (`buildings/*.png` — 42 base building sprites for the colony
 screen) and **goods icons** (`goods/*.png` — 22 goods icons for the colony
 screen's production/warehouse bars). All copied unmodified from the same FreeCol
 `data/default/resources/images/{buildings,goods}/` (national/`size2`/`size9`
 variants omitted).
+
+**Unit sprites** (`units/`) — copied unmodified from FreeCol
+`data/default/resources/images/units/`. The **base type** sprites sit flat at
+`units/<type>.png` (the `civilian/`, `ship/` and `wagon/` source folders, e.g.
+`freeColonist`, `veteranSoldier`, `hardyPioneer`, `caravel`, `galleon`,
+`artillery`, `wagonTrain`, `treasureTrain`, `brave`, …). **Role-specific** sprites
+keep FreeCol's per-role subfolders — `units/{role}/<type>.png` for `soldier`,
+`dragoon`, `scout`, `pioneer`, `missionary`, `infantry`, `cavalry`, `armedBrave`,
+`mountedBrave`, `nativeDragoon` — so a colonist in the soldier role draws as a
+soldier, not a plain colonist (`UnitMarker` resolves
+`units/{role}/{type}.png` → `units/{role}/{role}.png` → `units/{type}.png` → a red
+disc when no art exists). The `*-attack*.sza` attack animations and `size2`/`size9`
+hi-res variants are omitted.
 
 **UI skin** (`ui/bg_paper_brown.png`, 291×295) — the colony window's brown
 parchment background, tiled as the panel fill so the map can't show through.
