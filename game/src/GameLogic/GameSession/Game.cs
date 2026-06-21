@@ -5620,6 +5620,7 @@ public sealed partial class Game
         _colonyGiftNotices.Clear(); // and this turn's friendly native gifts to human colonies
         _customHouseSaleNotices.Clear(); // and this turn's custom-house auto-sales from human colonies
         _rumourNotices.Clear(); // and any rumour outcomes the human explored this turn (normally drained by the UI mid-turn; cleared here belt-and-braces)
+        ClearPendingHumanProposals(); // and this round's AI alliance/cease-fire offers to the human (86d3drn4f; drained by the negotiation UI, cleared here belt-and-braces so the seam holds only the current round)
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
         DeclinePendingMounds();     // an unanswered strange-mounds prompt counts as "leave them be" — clears it before the AI turns so it can't strand or block exploration across the round
         int startIndex = _currentPlayerIndex;
@@ -6084,6 +6085,12 @@ public sealed partial class Game
                 .Add(new StanceTradeItem(power.PlayerId, other.PlayerId, Stance.Peace));
             NegotiateTrade(power, other, peace); // settles a truce when both want it; otherwise the talks collapse (no-op)
         }
+
+        // 3) Proactive proposals beyond suing for peace (86d3drn4f): offer ALLIANCE to a strong, friendly power that
+        // shares an enemy, and CEASE_FIRE on a stalemated war. AI-to-AI offers settle through NegotiateTrade on the
+        // proposer's own RNG stream; an offer to the human is queued in PendingHumanProposals for the negotiation UI
+        // (never auto-applied) — so the human's stream 0 stays byte-identical (ADR-009).
+        ProposeProactiveTreaties(power);
     }
 
     /// <summary>

@@ -342,10 +342,14 @@ public sealed partial class Game
     /// <summary>
     /// Lands the foreign Intervention Force to aid <paramref name="rebel"/>: a friendly power's
     /// <see cref="Specification.Ruleset.InterventionForce"/> (classic medium: 2 colonial-regular soldiers + 2 dragoons
-    /// + 2 artillery + 2 men-o-war) appears near one of the rebel's connected ports, owned by — and fighting for — the
-    /// rebel (FreeCol <c>createUnits(ivf…, entry, …)</c> on the rebel itself). The port and the exact landing tiles are
-    /// chosen on the <see cref="InterventionStreamId"/> stream (never stream 0). No port → no landing (the rebel has
-    /// already lost its coast). Land units beach on land tiles, men-o-war on water, around the chosen port.
+    /// + 2 artillery + 2 men-o-war) arrives off one of the rebel's connected ports, owned by — and fighting for — the
+    /// rebel (FreeCol <c>createUnits(ivf…, entry, …)</c> on the rebel itself). The men-o-war drop onto water near the
+    /// port and <b>carry the land units as passengers</b> (FreeCol <c>loadShips</c>): the ally fleet arrives offshore
+    /// with the troops aboard, and the player disembarks them where they choose. This is what lets the ally reach a
+    /// <em>besieged</em> port (its whole purpose) — it needs only water for the ships, not an open ring of beach tiles.
+    /// Land units that don't fit in the fleet's holds are left behind (FreeCol disposes the left-overs).
+    /// <para>The port and landing tiles are chosen on the <see cref="InterventionStreamId"/> stream (never the human's
+    /// stream 0, ADR-009). No port, or no water for even one man-o-war → no landing (the rebel has lost its coast).</para>
     /// </summary>
     private void SpawnInterventionForce(Player rebel)
     {
@@ -364,31 +368,73 @@ public sealed partial class Game
 
         Colony port = ports[rng.Next(ports.Count)];
 
-        foreach (InterventionForceUnit block in Ruleset.InterventionForce.Units)
+        // Pass 1: the men-o-war make landfall on the water around the port (each takes the next free sea tile).
+        var fleet = new List<Unit>();
+        foreach (InterventionForceUnit block in Ruleset.InterventionForce.Units.Where(b => Ruleset.Unit(b.UnitTypeId).IsNaval))
         {
-            bool naval = Ruleset.Unit(block.UnitTypeId).IsNaval;
             for (int i = 0; i < block.Count; i++)
             {
-                Position? spot = FindLandingTileNear(port.Position, naval);
-                if (spot is not { } s)
+                if (FindLandingTileNear(port.Position, naval: true) is not { } spot)
                 {
-                    continue; // no room around this port this turn — that unit doesn't make landfall
+                    continue; // no sea room this turn — that warship can't arrive
                 }
-                var unit = new Unit(_nextUnitId++, Ruleset.Unit(block.UnitTypeId), s)
+                var ship = new Unit(_nextUnitId++, Ruleset.Unit(block.UnitTypeId), spot)
                 {
                     Location = UnitLocation.OnMap,
                     OwnerId = rebel.PlayerId,
                     RoleId = block.RoleId ?? RoleType.DefaultRoleId,
                 };
+                _units.Add(ship);
+                RevealForOwner(ship);
+                fleet.Add(ship);
+            }
+        }
+        if (fleet.Count == 0)
+        {
+            return; // the ally couldn't even bring a ship in — the land troops have no transport, nothing lands
+        }
+
+        // Pass 2: the land units board the fleet as passengers (FreeCol loadShips), spread across the ships by free
+        // hold space. Any that don't fit are left behind (disposed) rather than scattered ashore.
+        int shipIndex = 0;
+        foreach (InterventionForceUnit block in Ruleset.InterventionForce.Units.Where(b => !Ruleset.Unit(b.UnitTypeId).IsNaval))
+        {
+            UnitType type = Ruleset.Unit(block.UnitTypeId);
+            for (int i = 0; i < block.Count; i++)
+            {
+                Unit? carrier = null;
+                for (int probe = 0; probe < fleet.Count; probe++)
+                {
+                    Unit candidate = fleet[(shipIndex + probe) % fleet.Count];
+                    if (CargoSlotsFree(candidate) >= type.CarrySlots)
+                    {
+                        carrier = candidate;
+                        shipIndex = (shipIndex + probe + 1) % fleet.Count; // round-robin so the troops spread across the fleet
+                        break;
+                    }
+                }
+                if (carrier is null)
+                {
+                    continue; // the holds are full — this regiment is left behind (FreeCol disposes the left-over)
+                }
+                var unit = new Unit(_nextUnitId++, type, carrier.Position)
+                {
+                    Location = carrier.Location,
+                    Position = carrier.Position,
+                    CarrierId = carrier.Id,
+                    OwnerId = rebel.PlayerId,
+                    RoleId = block.RoleId ?? RoleType.DefaultRoleId,
+                };
                 _units.Add(unit);
-                RevealForOwner(unit);
             }
         }
     }
 
     /// <summary>Per-turn War-of-Independence resolution: each rebel accrues its intervention bells (landing a foreign
-    /// ally at the threshold), then a rebel that has broken the REF wins its independence.</summary>
-    private void ResolveWarOfIndependence()
+    /// ally at the threshold), then a rebel that has broken the REF wins its independence. Runs in <see cref="EndTurn"/>
+    /// before the REF's own turn; <c>internal</c> so tests can exercise the intervention landing in isolation, before
+    /// the King's army lands and assaults the freshly-arrived ally fleet.</summary>
+    internal void ResolveWarOfIndependence()
     {
         Player? refPlayer = _players.FirstOrDefault(p => p.PlayerType == PlayerType.RoyalExpeditionaryForce);
         if (refPlayer is null)

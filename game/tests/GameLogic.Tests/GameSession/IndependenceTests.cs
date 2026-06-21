@@ -456,7 +456,8 @@ public class IndependenceTests
 
         // Classic medium force: 2 colonial-regular soldiers + 2 dragoons + 2 artillery + 2 men-o-war = 8 units, 6 land.
         Assert.Equal(8, Classic.InterventionForce.TotalCount);
-        Assert.Equal(2, Classic.InterventionForce.Units.Count(u => u.UnitTypeId == "model.unit.manOWar"));
+        Assert.Equal(2, Classic.InterventionForce.Units
+            .Single(u => u.UnitTypeId == "model.unit.manOWar").Count);
         Assert.Equal(2, Classic.InterventionForce.Units
             .Single(u => u.UnitTypeId == "model.unit.colonialRegular" && u.RoleId == "model.role.dragoon").Count);
     }
@@ -488,23 +489,35 @@ public class IndependenceTests
         Assert.Equal(8, fbForce.TotalCount);
     }
 
+    /// <summary>Units the rebel owns aboard a ship (the ally's troops travel in as cargo on the men-o-war).</summary>
+    private static int RebelAboardUnits(Game game, Player rebel) =>
+        game.Units.Count(u => u.OwnerId == rebel.PlayerId && u.IsAboard);
+
     [Fact]
     public void RebelReachingTheThreshold_GetsAnInterventionForce_AndResetsTheCounter()
     {
         (Game game, _) = RebellionReady();
         Player rebel = game.HumanPlayer;
         game.DeclareIndependence(rebel);
-        int before = RebelOwnedUnits(game, rebel);
+        int beforeOnMap = RebelOwnedUnits(game, rebel);
+        int beforeAboard = RebelAboardUnits(game, rebel);
 
         rebel.InterventionBells = Classic.InterventionBells; // at the threshold — the next resolution lands the ally
-        game.EndTurn(); // ResolveWarOfIndependence accrues (gain 0 on first sight) then fires the force
+        // Resolve the war directly (not a full EndTurn): the REF's units are still mustering in Europe, so the ally
+        // fleet makes landfall at the rebel's port unmolested — the same spawn EndTurn runs, isolated from the REF's
+        // own turn (which would otherwise land 60+ redcoats and sink the newly-arrived fleet on the very same turn).
+        game.ResolveWarOfIndependence(); // accrues (gain 0 on first sight) then fires the force
 
         Assert.Equal(0, rebel.InterventionBells); // the counter reset
-        // The whole classic-medium force landed near the rebel's only port (room permitting): +8 rebel-owned units.
-        Assert.Equal(before + Classic.InterventionForce.TotalCount, RebelOwnedUnits(game, rebel));
-        // The composition matches the ruleset: 2 men-o-war on water, 6 land units ashore.
-        int newNaval = game.Units.Count(u => u.OwnerId == rebel.PlayerId && u.IsOnMap && u.Type.IsNaval);
-        Assert.Equal(2, newNaval);
+        // The fleet arrives off the port with the troops aboard (FreeCol loadShips): the 2 men-o-war appear on the
+        // water, carrying the 6 land units as passengers — so the rebel gains 2 on-map ships + 6 aboard = the full 8.
+        // (The rebel began with a caravel, not a man-o-war, so the two men-o-war are unmistakably the ally's.)
+        Assert.Equal(2, game.Units.Count(u => u.OwnerId == rebel.PlayerId && u.IsOnMap && u.Type.Id == "model.unit.manOWar"));
+        Assert.Equal(beforeOnMap + 2, RebelOwnedUnits(game, rebel));
+        Assert.Equal(beforeAboard + 6, RebelAboardUnits(game, rebel));
+        // The whole classic-medium force is accounted for (on the map + aboard).
+        Assert.Equal(beforeOnMap + beforeAboard + Classic.InterventionForce.TotalCount,
+            game.Units.Count(u => u.OwnerId == rebel.PlayerId && (u.IsOnMap || u.IsAboard)));
     }
 
     [Fact]
@@ -513,12 +526,14 @@ public class IndependenceTests
         (Game game, _) = RebellionReady();
         Player rebel = game.HumanPlayer;
         game.DeclareIndependence(rebel);
-        int before = RebelOwnedUnits(game, rebel);
+        int beforeOnMap = RebelOwnedUnits(game, rebel);
+        int beforeAboard = RebelAboardUnits(game, rebel);
 
         rebel.InterventionBells = Classic.InterventionBells - 1; // one short
-        game.EndTurn();
+        game.ResolveWarOfIndependence();
 
-        Assert.Equal(before, RebelOwnedUnits(game, rebel)); // nothing landed
+        Assert.Equal(beforeOnMap, RebelOwnedUnits(game, rebel)); // nothing landed
+        Assert.Equal(beforeAboard, RebelAboardUnits(game, rebel));
         Assert.Equal(Classic.InterventionBells - 1, rebel.InterventionBells); // still accruing (no liberty gain this turn)
     }
 
