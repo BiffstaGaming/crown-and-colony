@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — 50-ITEM RUN · WAVE 5 (independence cluster · natives→data · unit identity · economy disasters · landmass styles) — COMPLETE ✅
+
+**Requested:** "Do 50 backlog items, minimal testing (batch tests by file, no full-suite-per-item), FreeCol-sourced, blocks→ClickUp task, timestamp every message." (Started 8:55pm AEST.) This is **Wave 5 = the first ~12 items**.
+**Did:** 5 lean worktree streams (minimal testing — each batched its edits then ran one targeted filter; **no review workflows** this run), cherry-picked + integrated. **12 backlog items shipped.**
+- **Independence cluster** (`86d3drn4p`/`86d3c9vdb`/`86d3drn5n`/`86d3dbugp`): native re-stancing on declaration (the most-hostile contacted nation swings behind the rebel); Hessian war-mercenary offer (accept/decline seam); alternative victory conditions (defeat-all-Europeans / -humans, ruleset-gated pure reads); Spanish-Succession E2E test.
+- **Natives → ruleset data** (`86d3bb1x3`/`86d3c18n8`/`86d3c9t7z`): convert/burn probabilities moved to `DifficultyOptions` (values unchanged → byte-identical); native **food** tribute demands; **denounce** rival missions (completing capture-convert/burn/denounce).
+- **Unit identity** (`86d3drmzz`/`86d3drmzu`, **save v51→v52**): nationality + ethnicity (omit-when-equals-owner → byte-identical), custom unit naming.
+- **Economy** (`86d3c9ux4`/`86d3c9uu8`): bankruptcy upkeep penalty + natural-disaster data model & colony roll — both classic default-off (reserved RNG stream), byte-identical default.
+- **Worldgen** (`86d3drn76`): multiple landmass styles (continent default byte-identical; archipelago + islands), New-Game dropdown.
+**Status:** Integrated, pushed `5a6923a…031d82d`. build clean + **1712 L1/L2 + 4 soak green** (full suite run once at the integration boundary, per the minimal-testing rule). Integration fixes I made: a missing `using ...Natives;`; an xUnit2029 analyzer error; **made S1's two Spanish-Succession tests robust** to AI evolution over the 108-turn advance (S2's legitimate native-demand change shifted the multi-turn RNG so other AI powers founded colonies — soak green confirms determinism is intact, so this was test fragility, not a regression); the Ruleset constructor + BuildingMaterials merge (kept S2's broadened food-inclusive set + S4's disaster init); v51→v52 test pins.
+**Changed:** 6 commits + integration commit. Save **v51→v52** (one bump — unit identity). Docs: independence / natives+combat+difficulty / units-movement / colonies / map-terrain — distinct.
+**Decisions:** Stayed lean per your token directive (no adversarial-review workflow this run; targeted tests per stream; full suite + soak only at the integration boundary). Marked 17 tasks Shipped (Wave 5 ×12 + the 5 prior Wave-4 items, whose GameLogic is L1+L2-verified).
+**CI / known flake:** L1+L2 green. The L3 scene job hits the **texture-leak-at-exit** harness flake (`86d3c7yk3`) — the *tests pass* (GdUnit runner exit 0); only Godot's leak detector returns exit 1. I removed the freed-while-emitting half (8-panel `QueueFree` sweep) but the texture-leak half is a deeper harness issue I'm not deep-diving mid-run (token directive). Not a port-correctness defect.
+**Scheduled next:** **Wave 6** running now — REF combat AI (`86d3drn5a`), temporary-modifier TTL (`86d3drpgz`), expert-swap + unit tribute (`86d3drn5j`/`86d3drn3b`), immigration-options bundle (`86d3d335r`), difficulty-scaled AI constants (`86d3drn56`). Then more waves toward 50.
+**Follow-ups (noted, not blocked):** tribute-demand **v22-persist** (needs a save bump — fold into a later save-bumping stream); native-ethnicity for converts; timed natural-disaster effects (need persisted per-colony timer); persist the history log so region-discovery + DoI history scores survive save/load.
+**Needs you:** Nothing blocking. (Still the standing Wave-2 question: keep WAIVE_TAX forgiving arrears, or FreeCol message-only?)
+
 ## 2026-06-21 — Parallel WAVE 4 (per-colony muster · trade-route warnings · recruits-equipped · region discovery · native-const verify) — COMPLETE ✅
 
 **Requested:** "5-10 parallel waves, the more the better" — wave 4 of the run.
