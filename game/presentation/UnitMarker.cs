@@ -1,3 +1,4 @@
+using CrownAndColony.GameLogic.Specification;
 using Godot;
 
 namespace CrownAndColony.Presentation;
@@ -40,17 +41,17 @@ public partial class UnitMarker : Node2D
 
     /// <summary>
     /// Picks the sprite for a unit by its ruleset type + role short names (FreeCol resolves a unit's image by type
-    /// <i>and</i> role — a colonist in the soldier role looks different from a plain one). Tries the role-specific
-    /// sprite first (<c>units/{role}/{type}.png</c>, e.g. a veteran soldier), then the generic role sprite
-    /// (<c>units/{role}/{role}.png</c>, e.g. any colonist-soldier), then the bare type sprite
-    /// (<c>units/{type}.png</c>), and finally falls back to the red disc when no art exists.
+    /// <i>and</i> role — a colonist in the soldier role looks different from a plain one; a native brave in the
+    /// mounted role draws mounted). The priority order lives in the engine-free
+    /// <see cref="UnitSpriteCatalog.CandidatePaths"/> (role-specific → generic-role → bare-type) so it can be unit-tested;
+    /// this loads the first candidate that exists and falls back to the red disc when no art does.
     /// </summary>
-    /// <param name="typeShortName">The unit type's short name (e.g. <c>freeColonist</c>, <c>caravel</c>).</param>
-    /// <param name="roleShortName">The unit's role short name (e.g. <c>soldier</c>, <c>pioneer</c>, or <c>default</c> for unarmed).</param>
+    /// <param name="typeShortName">The unit type's short name (e.g. <c>freeColonist</c>, <c>caravel</c>, <c>brave</c>).</param>
+    /// <param name="roleShortName">The unit's role short name (e.g. <c>soldier</c>, <c>mountedBrave</c>, or <c>default</c> for unarmed).</param>
     public void SetUnit(string typeShortName, string roleShortName)
     {
         _texture = null;
-        foreach (string path in CandidateSpritePaths(typeShortName, roleShortName))
+        foreach (string path in UnitSpriteCatalog.CandidatePaths(typeShortName, roleShortName))
         {
             if (ResourceLoader.Exists(path))
             {
@@ -59,17 +60,6 @@ public partial class UnitMarker : Node2D
             }
         }
         QueueRedraw();
-    }
-
-    private static System.Collections.Generic.IEnumerable<string> CandidateSpritePaths(string type, string role)
-    {
-        const string dir = "res://assets/freecol/units";
-        if (!string.IsNullOrEmpty(role) && role != "default")
-        {
-            yield return $"{dir}/{role}/{type}.png"; // role-specific (units/soldier/veteranSoldier.png)
-            yield return $"{dir}/{role}/{role}.png";  // generic role  (units/soldier/soldier.png)
-        }
-        yield return $"{dir}/{type}.png";             // bare type     (units/freeColonist.png)
     }
 
     public override void _Draw()

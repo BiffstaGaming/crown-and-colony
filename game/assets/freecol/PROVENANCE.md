@@ -20,14 +20,23 @@ variants omitted).
 `data/default/resources/images/units/`. The **base type** sprites sit flat at
 `units/<type>.png` (the `civilian/`, `ship/` and `wagon/` source folders, e.g.
 `freeColonist`, `veteranSoldier`, `hardyPioneer`, `caravel`, `galleon`,
-`artillery`, `wagonTrain`, `treasureTrain`, `brave`, …). **Role-specific** sprites
+`artillery`, `wagonTrain`, `treasureTrain`, and the **native** types `brave`,
+`indianConvert`, `nativeColonist`). **Role-specific** sprites
 keep FreeCol's per-role subfolders — `units/{role}/<type>.png` for `soldier`,
-`dragoon`, `scout`, `pioneer`, `missionary`, `infantry`, `cavalry`, `armedBrave`,
-`mountedBrave`, `nativeDragoon` — so a colonist in the soldier role draws as a
-soldier, not a plain colonist (`UnitMarker` resolves
+`dragoon`, `scout`, `pioneer`, `missionary`, `infantry`, `cavalry`, plus the
+**native combat roles** `armedBrave`, `mountedBrave`, `nativeDragoon` (each holds a
+`brave.png`, since the natives reuse the single `brave` base type across every role)
+— so a colonist in the soldier role draws as a soldier, not a plain colonist, and a
+brave draws armed/mounted instead of the red disc. The path priority lives engine-free
+in `GameLogic` (`Specification/UnitSpriteCatalog.CandidatePaths` —
 `units/{role}/{type}.png` → `units/{role}/{role}.png` → `units/{type}.png` → a red
-disc when no art exists). The `*-attack*.sza` attack animations and `size2`/`size9`
-hi-res variants are omitted.
+disc when no art exists) and the Godot `UnitMarker` loads the first that exists. The
+`*-attack*.sza` attack animations and `size2`/`size9` hi-res variants are omitted.
+
+All native unit art (`brave`, `indianConvert`, `nativeColonist`, and the three
+native role folders) is © The FreeCol Team, **GPL v2 or later** — the same license,
+source and attribution as the European unit sprites above; nothing here is from the
+original 1994/2008 game.
 
 **UI skin** (`ui/bg_paper_brown.png`, 291×295) — the colony window's brown
 parchment background, tiled as the panel fill so the map can't show through.
