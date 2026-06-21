@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | In development (Slice B shipped — video + audio) |
-| **Last verified** | 2026-06-17 @ 895f958 |
+| **Status** | In development (Slice B shipped — video + audio; SFX + Music buses both live) |
+| **Last verified** | 2026-06-22 @ `MusicService` (`86d3c9xu1`) |
 | **Code** | `game/src/GameLogic/App/SettingsModel.cs` (pure), `game/presentation/SettingsService.cs` (autoload), `game/presentation/SettingsScreen.cs` + `game/scenes/SettingsScreen.tscn` |
 | **Tests** | `game/tests/GameLogic.Tests/App/SettingsModelTests.cs` (L1); `game/presentation/tests/SettingsScreenTests.cs` (L3) |
 | **FreeCol reference** | FreeCol's client options dialog (conceptual — we ship a minimal subset) |
@@ -25,7 +25,7 @@ A **Settings** screen, opened from the main menu or the in-game pause menu, lets
 
 **What the player sees and does:** one screen with a Video section and an Audio section, each control applying live; a Back button that saves and returns.
 
-> Note: **sound effects now play** through the SFX bus (`SoundService` — e.g. founding a colony, resolving an attack), so the **Sound Effects** slider is live. **Music** is still a later task, so the Music slider drives a bus nothing plays through yet — wired and persisted, ready for when music lands.
+> Note: **sound effects now play** through the SFX bus (`SoundService` — e.g. founding a colony, resolving an attack), so the **Sound Effects** slider is live. **Music now plays too** through the Music bus (`MusicService` — a looping background playlist on the menu and in-game, plus national anthems), so the **Music** slider is live as well.
 
 ## 2. Detailed rules
 
@@ -54,7 +54,7 @@ A **Settings** screen, opened from the main menu or the in-game pause menu, lets
 
 **UI:** `SettingsScreen` (`Control`) is a reusable **overlay**: a host (the main menu or the pause menu) instantiates it as a child and removes it when it emits `Closed`. It resolves the autoload (falling back to a transient `SettingsService` child if absent), populates its controls, and on each control change calls `UpdateAndApply` (live). A `_populating` guard stops the change handlers firing while controls are set programmatically. **Back** calls `Save()` then emits `Closed` — it does not change scenes itself, so the host (and a paused game beneath the pause menu) is preserved. Look is shared with the menu via `ColonyTheme` + `ColonyArt.ParchmentSkin()` + the carved-wood border.
 
-**Audio buses:** the default project has only **Master**. `SettingsService.EnsureAudioBuses` creates **Music** and **SFX** (routed to Master) at startup so all three volume sliders drive real buses. The **SFX** bus now has a consumer — `SoundService` (autoload `/root/Sound`) plays game sound effects through it (`86d3c9xrp`); **Music** still awaits the music [ART] task.
+**Audio buses:** the default project has only **Master**. `SettingsService.EnsureAudioBuses` creates **Music** and **SFX** (routed to Master) at startup so all three volume sliders drive real buses. Both now have consumers — `SoundService` (autoload `/root/Sound`) plays game sound effects on **SFX** (`86d3c9xrp`); `MusicService` (autoload `/root/Music`) plays a looping background playlist + national anthems on **Music** (`86d3c9xu1`). See [presentation.md](../modules/presentation.md).
 
 **Data sources:** none (no ruleset/XML). **Integration points:** opened from the main menu's Settings button; applies via `DisplayServer`/`AudioServer`. **Persistence:** `user://settings.cfg`.
 
@@ -71,7 +71,8 @@ A **Settings** screen, opened from the main menu or the in-game pause menu, lets
 ## 5. Open issues / TODO
 
 - [x] **L4 golden** for the settings screen (`MenuGoldenTests` → `settings-screen`) — added with the bundled font (Slice D).
-- [x] Route **SFX** through the SFX bus — `SoundService` plays FreeCol SFX on the SFX bus (`86d3c9xrp`). Music still pending (ClickUp `86d3c9xu1`).
+- [x] Route **SFX** through the SFX bus — `SoundService` plays FreeCol SFX on the SFX bus (`86d3c9xrp`).
+- [x] Route **Music** through the Music bus — `MusicService` plays a looping FreeCol background playlist + national anthems on the Music bus (`86d3c9xu1`).
 - [ ] Possible later additions: resolution picker, gameplay options tab, key rebinding, language.
 - [x] Reused by the in-game pause menu as an overlay (Slice C — see [pause-menu.md](pause-menu.md)).
 
@@ -83,3 +84,4 @@ A **Settings** screen, opened from the main menu or the in-game pause menu, lets
 | 2026-06-17 | Slice C — made `SettingsScreen` a reusable overlay (emits `Closed`, no self-navigation); menu + pause menu host it | 895f958 |
 | 2026-06-17 | Slice D — bundled UI font (Cardo) cascades here; added the `settings-screen` L4 golden | 0106d9c |
 | 2026-06-22 | The **SFX** bus gets its first consumer: `SoundService` (`/root/Sound`) plays FreeCol GPL-v2 sound effects through it (colony-founded, combat) — so the Sound Effects slider is now live. Music still pending. See [presentation.md](../modules/presentation.md). | `86d3c9xrp` |
+| 2026-06-22 | The **Music** bus gets its consumer: `MusicService` (`/root/Music`) loops a shuffled FreeCol background playlist (CC BY 4.0) on the menu + in-game and plays per-nation anthems (GPL v2) — so the Music slider is now live. See [presentation.md](../modules/presentation.md). | `86d3c9xu1` |

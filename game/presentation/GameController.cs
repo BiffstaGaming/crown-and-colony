@@ -294,6 +294,8 @@ public partial class GameController : Node2D
             ?? _game.Colonies.FirstOrDefault(c => c.OwnerId == _game.HumanPlayer.PlayerId)?.Position
             ?? new Position(_game.Map.Width / 2, _game.Map.Height / 2);
         GetNode<Camera2D>("Camera").Position = MapView.TileCentre(focus);
+        // Cue the human player's national anthem once over the running background music (FreeCol plays it at game start).
+        PlayAnthem(_game.HumanPlayer.NationId);
         RefreshView();
     }
 
@@ -712,6 +714,15 @@ public partial class GameController : Node2D
     /// a missing service is silently a no-op rather than a crash.
     /// </summary>
     private void PlaySound(SoundEvent evt) => GetNodeOrNull<SoundService>("/root/Sound")?.Play(evt);
+
+    /// <summary>
+    /// Plays the human player's national anthem once via the <c>Music</c> autoload (<c>/root/Music</c>), then the
+    /// background playlist resumes. Resolved lazily by node path (no-op if the autoload is absent, e.g. headless scene
+    /// tests) and a no-op for a nation FreeCol ships no anthem for. Faithful to FreeCol, which cues the anthem (a
+    /// <c>"music"</c>-type resource) at game start.
+    /// </summary>
+    private void PlayAnthem(string? nationId) =>
+        GetNodeOrNull<MusicService>("/root/Music")?.PlayAnthem(nationId);
 
     private void FoundColony()
     {

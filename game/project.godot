@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 
 Settings="*res://presentation/SettingsService.cs"
 Sound="*res://presentation/SoundService.cs"
+Music="*res://presentation/MusicService.cs"
 
 [dotnet]
 
