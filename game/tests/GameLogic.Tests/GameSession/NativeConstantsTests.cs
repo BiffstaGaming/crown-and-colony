@@ -116,7 +116,11 @@ public class NativeConstantsTests
         Assert.Equal(1000, NativeSettlement.MaxAlarm); // Hateful.limit
     }
 
-    /// <summary>Hostile-act tension deltas must match FreeCol <c>Tension.TENSION_ADD_*</c>.</summary>
+    /// <summary>
+    /// Hostile-act tension deltas must match FreeCol <c>Tension.TENSION_ADD_*</c>. As of <c>86d3drpgg</c> these are also
+    /// surfaced as the data-overridable <see cref="DifficultyOptions.NativeTension"/> the runtime reads — pinned here so
+    /// the routed value can never diverge from the FreeCol-source const.
+    /// </summary>
     [Fact]
     public void TensionDeltas_MatchFreeColConstants()
     {
@@ -126,26 +130,63 @@ public class NativeConstantsTests
         Assert.Equal(400, NativeSettlement.TensionAddUnitDestroyed);      // TENSION_ADD_UNIT_DESTROYED
         Assert.Equal(500, NativeSettlement.TensionAddSettlementAttacked); // TENSION_ADD_SETTLEMENT_ATTACKED
         Assert.Equal(600, NativeSettlement.TensionAddCapitalAttacked);    // TENSION_ADD_CAPITAL_ATTACKED
+
+        // The routed difficulty layer the runtime now reads from must carry the same values (86d3drpgg).
+        NativeTensionOptions t = Ruleset.LoadClassic().Difficulty.NativeTension;
+        Assert.Equal(100, t.AddMinor);
+        Assert.Equal(200, t.AddNormal);
+        Assert.Equal(300, t.AddMajor);
+        Assert.Equal(400, t.AddUnitDestroyed);
+        Assert.Equal(500, t.AddSettlementAttacked);
+        Assert.Equal(600, t.AddCapitalAttacked);
     }
 
-    /// <summary>Land-taken alarm must match FreeCol <c>Tension.TENSION_ADD_LAND_TAKEN</c> (200).</summary>
+    /// <summary>Land-taken alarm must match FreeCol <c>Tension.TENSION_ADD_LAND_TAKEN</c> (200) — const, source pin, and routed value all agree.</summary>
     [Fact]
-    public void LandTakenAlarm_MatchesFreeColConstant() =>
+    public void LandTakenAlarm_MatchesFreeColConstant()
+    {
         Assert.Equal(200, Game.LandTakenAlarm);
+        Assert.Equal(200, NativeSettlement.TensionAddLandTaken);
+        Assert.Equal(200, Ruleset.LoadClassic().Difficulty.NativeTension.LandTaken);
+    }
 
     /// <summary>The surrendered-nation alarm must match FreeCol <c>Tension.SURRENDERED</c> = (Content + Happy)/2 = 350.</summary>
     [Fact]
-    public void SurrenderedAlarm_MatchesFreeColFormula() =>
+    public void SurrenderedAlarm_MatchesFreeColFormula()
+    {
         Assert.Equal((600 + 100) / 2, NativeSettlement.SurrenderedAlarm);
+        Assert.Equal((600 + 100) / 2, Ruleset.LoadClassic().Difficulty.NativeTension.Surrendered);
+    }
+
+    /// <summary>The per-turn alarm decay terms must match FreeCol <c>ServerPlayer.csNewTurn</c> (<c>-value/100 - 4</c>): divisor 100, base 4.</summary>
+    [Fact]
+    public void AlarmDecayTerms_MatchFreeColFormula()
+    {
+        NativeTensionOptions t = Ruleset.LoadClassic().Difficulty.NativeTension;
+        Assert.Equal(100, t.DecayDivisor);
+        Assert.Equal(4, t.DecayBase);
+    }
+
+    /// <summary>The tales-reveal radius is our scaled classic default (FreeCol <c>TALES_RADIUS</c> 6 → 3 for our smaller map) — routed but value-preserved.</summary>
+    [Fact]
+    public void TalesRevealRadius_IsOurScaledClassicDefault()
+    {
+        Assert.Equal(3, Game.TalesRevealRadius);
+        Assert.Equal(3, Ruleset.LoadClassic().Difficulty.NativeTension.TalesRevealRadius);
+    }
 
     // ---- FreeCol-source constants (IndianSettlement / ServerIndianSettlement / IndianDemandMission) ----
 
-    /// <summary>First-contact gift bounds must match FreeCol <c>IndianSettlement.GIFT_MINIMUM/MAXIMUM</c> (10/80).</summary>
+    /// <summary>First-contact gift bounds must match FreeCol <c>IndianSettlement.GIFT_MINIMUM/MAXIMUM</c> (10/80) — const and routed value agree.</summary>
     [Fact]
     public void GiftBounds_MatchFreeColConstants()
     {
         Assert.Equal(10, Game.GiftMinimum);
         Assert.Equal(80, Game.GiftMaximum);
+
+        NativeTensionOptions t = Ruleset.LoadClassic().Difficulty.NativeTension;
+        Assert.Equal(10, t.GiftMinimum);
+        Assert.Equal(80, t.GiftMaximum);
     }
 
     /// <summary>New-mission goodwill must match FreeCol <c>ServerIndianSettlement.ALARM_NEW_MISSIONARY</c> (−100; stored as the +100 we subtract).</summary>

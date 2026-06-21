@@ -939,7 +939,11 @@ public sealed class Ruleset
             // Ai: FreeCol scales none of the rival-AI constants by difficulty (the colony cap, seek ladder and our
             // Europe spend floor are all hardcoded in EuropeanAIPlayer — see AiTuning), so there is no spec option to
             // read. Kept at the classic-medium value across every level (the ArrearsFactor pattern), data-overridable.
-            Ai: m.Ai);
+            Ai: m.Ai,
+            // NativeTension: FreeCol keeps the tension deltas / decay / gift range as engine consts (Tension.java,
+            // IndianSettlement.java, ServerPlayer), not model.difficulty.* options — so, like Ai/ArrearsFactor, there
+            // is no spec value to read; assign the classic-medium values (data-overridable) — see NativeTensionOptions.
+            NativeTension: m.NativeTension);
     }
 
     /// <summary>

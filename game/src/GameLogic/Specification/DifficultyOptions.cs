@@ -117,6 +117,13 @@ public static class DifficultyLevels
 /// seek/travel range ladder. A faithful-subset: FreeCol hardcodes all three (no <c>model.difficulty.*</c> option), so
 /// they are constant across the shipped levels but now data-overridable. See [players].
 /// </param>
+/// <param name="NativeTension">
+/// The native-tension (alarm) tuning — the hostile-act tension deltas, the land-taken/surrender alarms, the per-turn
+/// alarm decay, and the first-contact gift range / tales-reveal radius. A faithful-subset: FreeCol keeps all of these
+/// as engine <c>const</c>s (<c>Tension.java</c> / <c>IndianSettlement.java</c> / <c>ServerPlayer</c>, no
+/// <c>model.difficulty.*</c> option), so they are constant across the shipped levels but now data-overridable. See
+/// [natives], [combat].
+/// </param>
 public sealed record DifficultyOptions(
     int FoundingFatherFactor,
     int UnitsThatUseNoBells,
@@ -135,7 +142,8 @@ public sealed record DifficultyOptions(
     int TreasureTransportFee,
     int ShipTradePenalty,
     MonarchOptions Monarch,
-    AiTuning Ai)
+    AiTuning Ai,
+    NativeTensionOptions NativeTension)
 {
     /// <summary>
     /// The classic <c>model.difficulty.medium</c> values — the fallback when a spec omits the difficulty group or a
@@ -159,5 +167,6 @@ public sealed record DifficultyOptions(
         TreasureTransportFee: 60,
         ShipTradePenalty: -30,
         Monarch: MonarchOptions.ClassicMedium,
-        Ai: AiTuning.ClassicMedium);
+        Ai: AiTuning.ClassicMedium,
+        NativeTension: NativeTensionOptions.ClassicMedium);
 }

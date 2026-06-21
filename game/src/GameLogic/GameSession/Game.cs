@@ -995,8 +995,8 @@ public sealed partial class Game
     /// <summary>The flat addend in the land price (FreeCol <c>getLandPrice</c> <c>+ 100</c>).</summary>
     private const int LandPriceBase = 100;
 
-    /// <summary>Alarm added to the robbed nation when land is <em>taken</em> rather than bought (FreeCol <c>Tension.TENSION_ADD_LAND_TAKEN</c>).</summary>
-    internal const int LandTakenAlarm = 200;
+    /// <summary>Alarm added to the robbed nation when land is <em>taken</em> rather than bought (FreeCol <c>Tension.TENSION_ADD_LAND_TAKEN</c>). The FreeCol-source pin; the runtime reads the data-overridable <see cref="Specification.NativeTensionOptions.LandTaken"/> (which defaults to this).</summary>
+    internal const int LandTakenAlarm = NativeSettlement.TensionAddLandTaken;
 
     /// <summary>The father modifier id scaling the land price — Peter Minuit's −100% makes native land free.</summary>
     private const string LandPaymentModifierId = "model.modifier.landPaymentModifier";
@@ -1089,7 +1089,7 @@ public sealed partial class Game
         Map.ClaimFromNatives(tile);
         foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == nation))
         {
-            ChangeNativeAlarm(settlement, LandTakenAlarm); // FreeCol TENSION_ADD_LAND_TAKEN, nation-wide (ownership is tracked per nation)
+            ChangeNativeAlarm(settlement, Ruleset.Difficulty.NativeTension.LandTaken); // FreeCol TENSION_ADD_LAND_TAKEN, nation-wide (ownership is tracked per nation)
         }
     }
 
@@ -1498,11 +1498,12 @@ public sealed partial class Game
     /// <summary>The basic chief visit for a non-scout colonist: reveal the surrounding lands + a small flat gift unless hateful.</summary>
     private int VisitAsColonist(Player player, Unit unit, NativeSettlement settlement, IGameRandom random)
     {
-        RevealAround(player, settlement.Position, TalesRevealRadius); // tales of nearby lands
+        RevealAround(player, settlement.Position, Ruleset.Difficulty.NativeTension.TalesRevealRadius); // tales of nearby lands
         int gift = 0;
         if (settlement.AlarmLevel != AlarmLevel.Hateful)
         {
-            gift = random.Next(GiftMinimum, GiftMaximum + 1); // the visitor's own stream (the human is 0)
+            NativeTensionOptions tension = Ruleset.Difficulty.NativeTension;
+            gift = random.Next(tension.GiftMinimum, tension.GiftMaximum + 1); // the visitor's own stream (the human is 0)
             player.Gold += gift;
         }
         unit.MovementLeft = 0; // speaking ends the unit's turn
@@ -1535,7 +1536,7 @@ public sealed partial class Game
         if (unit.Type.Id != SeasonedScoutUnitTypeId && (teachesScouting || rnd == 0))
         {
             UpgradeUnitType(unit, SeasonedScoutUnitTypeId);
-            RevealAround(player, settlement.Position, TalesRevealRadius);
+            RevealAround(player, settlement.Position, Ruleset.Difficulty.NativeTension.TalesRevealRadius);
             return 0;
         }
 
@@ -1543,7 +1544,7 @@ public sealed partial class Game
         int gold = GiftsAmount(type, random);
         if (gold <= 0 || rnd <= 3)
         {
-            RevealAround(player, settlement.Position, TalesRevealRadius); // "tales of nearby lands"
+            RevealAround(player, settlement.Position, Ruleset.Difficulty.NativeTension.TalesRevealRadius); // "tales of nearby lands"
             return 0;
         }
         if (unit.Type.Id == SeasonedScoutUnitTypeId)
@@ -1551,7 +1552,7 @@ public sealed partial class Game
             gold = gold * 11 / 10; // an expert scout haggles 10% more (FreeCol)
         }
         player.Gold += gold;
-        RevealAround(player, settlement.Position, TalesRevealRadius);
+        RevealAround(player, settlement.Position, Ruleset.Difficulty.NativeTension.TalesRevealRadius);
         return gold;
     }
 
@@ -1931,10 +1932,13 @@ public sealed partial class Game
     /// (FreeCol <c>defenderTension</c>): a win adds the slain defender's slaughter tension (+ a minor
     /// insult); a loss subtracts a minor insult, and a further <c>NORMAL</c> if the attacker was slain.
     /// </summary>
-    private static int DefenderCombatTension(bool attackerWon, int slaughterTension, bool attackerSlain) =>
-        attackerWon
-            ? slaughterTension + NativeSettlement.TensionAddMinor
-            : -(NativeSettlement.TensionAddMinor + (attackerSlain ? NativeSettlement.TensionAddNormal : 0));
+    private int DefenderCombatTension(bool attackerWon, int slaughterTension, bool attackerSlain)
+    {
+        NativeTensionOptions t = Ruleset.Difficulty.NativeTension;
+        return attackerWon
+            ? slaughterTension + t.AddMinor
+            : -(t.AddMinor + (attackerSlain ? t.AddNormal : 0));
+    }
 
     /// <summary>The attacker's movement-spent penalty (FreeCol: 1 point left → big, 2 → small).</summary>
     private static MovementPenalty MovementPenaltyFor(Unit attacker) => attacker.MovementLeft switch
@@ -2235,7 +2239,7 @@ public sealed partial class Game
         // the naval-vs-land gate blocks it and natives have no ships — so no `!attacker.Type.Piracy` guard yet.)
         if (defenderNation is not null)
         {
-            int slaughter = _units.Any(u => u.Id == defenderId) ? 0 : NativeSettlement.TensionAddUnitDestroyed;
+            int slaughter = _units.Any(u => u.Id == defenderId) ? 0 : Ruleset.Difficulty.NativeTension.AddUnitDestroyed;
             bool attackerSlain = !_units.Any(u => u.Id == attackerId);
             ApplyNativeCombatTension(defenderNation, DefenderCombatTension(attackerWon, slaughter, attackerSlain));
         }
@@ -2351,20 +2355,20 @@ public sealed partial class Game
             _nativeSettlements.Remove(settlement); // destroyed
             ClaimNativeLand(); // the razed settlement releases its land claim (surviving same-nation settlements keep theirs)
 
+            NativeTensionOptions t = Ruleset.Difficulty.NativeTension;
             if (capital)
             {
                 // Burning a native capital makes the nation surrender — its surviving settlements drop to peace.
                 foreach (NativeSettlement s in _nativeSettlements.Where(s => s.NationTypeId == nation))
                 {
-                    s.Alarm = NativeSettlement.SurrenderedAlarm;
+                    s.Alarm = t.Surrendered;
                 }
             }
             else
             {
                 // In-settlement defender slaughtered (+500) + the settlement destroyed (+300 MAJOR) + a
                 // minor insult (+100) = +900, propagated to the nation's surviving settlements.
-                ApplyNativeCombatTension(nation, NativeSettlement.TensionAddSettlementAttacked
-                    + NativeSettlement.TensionAddMajor + NativeSettlement.TensionAddMinor);
+                ApplyNativeCombatTension(nation, t.AddSettlementAttacked + t.AddMajor + t.AddMinor);
             }
         }
         else
@@ -8369,7 +8373,7 @@ public sealed partial class Game
     /// <c>InGameController.demandTribute</c> — the <see cref="Diplomacy.TradeContext.Tribute"/> negotiation an offensive
     /// unit can make <em>instead of</em> attacking). The settlement evaluates the demand by its alarm band
     /// (<see cref="EvaluateTributeDemand"/>): a calm one pays gold, an angry one refuses. <b>Either way</b> the demand is
-    /// an insult — the settlement's alarm rises by <see cref="NativeSettlement.TensionAddNormal"/> (200) and its tribute
+    /// an insult — the settlement's alarm rises by <see cref="Specification.NativeTensionOptions.AddNormal"/> (200) and its tribute
     /// cooldown is stamped — and the unit's turn ends. Paid gold is minted to the demander (we model no native treasury,
     /// as the scout-beads/plunder paths do). The amount draws from the <b>demander's own RNG stream</b>
     /// (<see cref="RandomFor"/>), so a foreign power demanding never perturbs the human's stream 0 (ADR-009).
@@ -8395,7 +8399,7 @@ public sealed partial class Game
             (PlayerById(unit.OwnerId) ?? _human).Gold += gold; // minted to the demander (no native treasury modelled)
         }
         // Demanding is always an insult, whether or not they paid (FreeCol stamps alarm + lastTribute either way).
-        ChangeNativeAlarm(settlement, NativeSettlement.TensionAddNormal);
+        ChangeNativeAlarm(settlement, Ruleset.Difficulty.NativeTension.AddNormal);
         settlement.LastTribute = Turn;
         unit.MovementLeft = 0; // the demand ends the unit's turn
         return new TributeResult(gold > 0, gold);
@@ -10630,9 +10634,12 @@ public sealed partial class Game
         }
     }
 
-    /// <summary>Each turn a settlement's alarm cools toward 0 (FreeCol tension decay, <c>ServerPlayer</c>: −value/100 − 4).</summary>
-    private static void DecayNativeAlarm(NativeSettlement settlement) =>
-        settlement.Alarm = Math.Max(0, settlement.Alarm - (settlement.Alarm / 100 + 4));
+    /// <summary>Each turn a settlement's alarm cools toward 0 (FreeCol tension decay, <c>ServerPlayer</c>: −value/100 − 4). The divisor/base are the data-overridable <see cref="Specification.NativeTensionOptions.DecayDivisor"/>/<see cref="Specification.NativeTensionOptions.DecayBase"/> (classic 100/4).</summary>
+    private void DecayNativeAlarm(NativeSettlement settlement)
+    {
+        NativeTensionOptions t = Ruleset.Difficulty.NativeTension;
+        settlement.Alarm = Math.Max(0, settlement.Alarm - (settlement.Alarm / t.DecayDivisor + t.DecayBase));
+    }
 
     /// <summary>Extra tiles beyond a settlement's own radius within which the human's presence stirs alarm (FreeCol <c>ALARM_RADIUS</c>).</summary>
     private const int NativeAlarmRadius = 2;

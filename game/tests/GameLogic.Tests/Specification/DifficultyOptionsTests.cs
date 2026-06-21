@@ -1,6 +1,7 @@
 using System.Xml.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
@@ -270,6 +271,71 @@ public class DifficultyOptionsTests
     {
         // The internal static test alias must equal the live difficulty value the founding checks read.
         Assert.Equal(Ruleset.LoadClassic().Difficulty.Ai.MaxColonies, Game.MaxAiColonies);
+    }
+
+    // ── Native-tension tuning (86d3drpgg: tension deltas / decay / gift range routed to data) ─────────────────────────
+    // A faithful-subset like AiTuning: FreeCol keeps all of these as engine consts (Tension.java / IndianSettlement.java /
+    // ServerPlayer), no model.difficulty.* option — so they are level-invariant. The tests pin the classic-medium values
+    // so a future drift stays a deliberate, visible edit, and prove the runtime routes through them (byte-identical).
+
+    [Fact]
+    public void NativeTension_ClassicMedium_HasTheFreeColTensionConstants()
+    {
+        // The values formerly hardcoded as NativeSettlement.TensionAdd*/Game consts (FreeCol Tension.java + IndianSettlement.java).
+        NativeTensionOptions t = NativeTensionOptions.ClassicMedium;
+        Assert.Equal(100, t.AddMinor);              // TENSION_ADD_MINOR
+        Assert.Equal(200, t.AddNormal);             // TENSION_ADD_NORMAL
+        Assert.Equal(300, t.AddMajor);              // TENSION_ADD_MAJOR
+        Assert.Equal(400, t.AddUnitDestroyed);      // TENSION_ADD_UNIT_DESTROYED
+        Assert.Equal(500, t.AddSettlementAttacked); // TENSION_ADD_SETTLEMENT_ATTACKED
+        Assert.Equal(600, t.AddCapitalAttacked);    // TENSION_ADD_CAPITAL_ATTACKED
+        Assert.Equal(200, t.LandTaken);             // TENSION_ADD_LAND_TAKEN
+        Assert.Equal(350, t.Surrendered);           // SURRENDERED = (Content 600 + Happy 100)/2
+        Assert.Equal(100, t.DecayDivisor);          // ServerPlayer.csNewTurn -value/100 - 4
+        Assert.Equal(4, t.DecayBase);
+        Assert.Equal(10, t.GiftMinimum);            // IndianSettlement.GIFT_MINIMUM
+        Assert.Equal(80, t.GiftMaximum);            // IndianSettlement.GIFT_MAXIMUM
+        Assert.Equal(3, t.TalesRevealRadius);       // FreeCol TALES_RADIUS 6, scaled to 3 (our smaller map)
+    }
+
+    [Fact]
+    public void DifficultyOptions_CarriesTheClassicMediumNativeTension()
+    {
+        Assert.Same(NativeTensionOptions.ClassicMedium, DifficultyOptions.ClassicMedium.NativeTension);
+    }
+
+    [Fact]
+    public void ClassicRuleset_AppliesTheClassicMediumNativeTension()
+    {
+        // FreeCol exposes no per-difficulty native-tension option, so the parsed ruleset carries the level-invariant values.
+        Assert.Equal(NativeTensionOptions.ClassicMedium, Ruleset.LoadClassic().Difficulty.NativeTension);
+    }
+
+    [Theory]
+    [InlineData("model.difficulty.veryEasy")]
+    [InlineData("model.difficulty.hard")]
+    [InlineData("model.difficulty.veryHard")]
+    public void NativeTension_IsLevelInvariant_AcrossEveryClassicLevel(string levelId)
+    {
+        // No FreeCol option scales these, so every level reads the same classic-medium values (data-overridable, but the
+        // shipped spec never overrides them) — proving the faithful-subset claim, not just the default.
+        Assert.Equal(NativeTensionOptions.ClassicMedium, Ruleset.LoadClassic(levelId).Difficulty.NativeTension);
+    }
+
+    [Fact]
+    public void NativeTension_PinsMatchTheNativeSettlementSourceConstants()
+    {
+        // The record defaults reference the FreeCol-source-of-truth consts on NativeSettlement (the drift-guarded home),
+        // so routing is value-preserving — this proves the two never diverge.
+        NativeTensionOptions t = NativeTensionOptions.ClassicMedium;
+        Assert.Equal(NativeSettlement.TensionAddMinor, t.AddMinor);
+        Assert.Equal(NativeSettlement.TensionAddNormal, t.AddNormal);
+        Assert.Equal(NativeSettlement.TensionAddMajor, t.AddMajor);
+        Assert.Equal(NativeSettlement.TensionAddUnitDestroyed, t.AddUnitDestroyed);
+        Assert.Equal(NativeSettlement.TensionAddSettlementAttacked, t.AddSettlementAttacked);
+        Assert.Equal(NativeSettlement.TensionAddCapitalAttacked, t.AddCapitalAttacked);
+        Assert.Equal(NativeSettlement.TensionAddLandTaken, t.LandTaken);
+        Assert.Equal(NativeSettlement.SurrenderedAlarm, t.Surrendered);
     }
 
     // ── Player-selectable + persisted difficulty level (86d3c9y08) ───────────────────────────────────────────────────

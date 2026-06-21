@@ -83,8 +83,10 @@ public sealed class NativeSettlement
     internal const int AlarmDispleasedMax = 700;
     internal const int AlarmAngryMax = 800;
 
-    // FreeCol tension deltas for hostile acts (Tension.java TENSION_ADD_*). FreeCol-pinned
-    // tuning constants (transposability-migration items, ADR-018 — see game-modes.md).
+    // FreeCol tension deltas for hostile acts (Tension.java TENSION_ADD_*). These are the FreeCol-source-of-truth
+    // constants (drift-guarded by NativeConstantsTests); the runtime reads them via the data-overridable
+    // Specification.NativeTensionOptions (Ruleset.Difficulty.NativeTension), which defaults to exactly these values
+    // so the classic game is byte-identical. See docs/systems/natives.md (the 86d3drpgg routing).
     /// <summary>Tension added for a minor slight (FreeCol <c>TENSION_ADD_MINOR</c>).</summary>
     internal const int TensionAddMinor = 100;
 
@@ -102,6 +104,9 @@ public sealed class NativeSettlement
 
     /// <summary>Tension added when the capital is attacked (FreeCol <c>TENSION_ADD_CAPITAL_ATTACKED</c>).</summary>
     internal const int TensionAddCapitalAttacked = 600;
+
+    /// <summary>Alarm added to the robbed nation when land is <em>taken</em> by force rather than bought (FreeCol <c>Tension.TENSION_ADD_LAND_TAKEN</c>).</summary>
+    internal const int TensionAddLandTaken = 200;
 
     /// <summary>
     /// The alarm a nation's settlements are set to when it surrenders — its capital sacked
