@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — 5-stream parallel wave (report tabs · Colopedia help · building economy · goto · diplomacy stance) — COMPLETE ✅
+
+**Requested:** "Go ahead with all 5 parallel worktree agents" (the 5 disjoint streams I'd designed from the backlog).
+**Did:** Launched **5 background worktree agents**, each hard-scoped to its own files; all 5 returned green, then I **cherry-picked + integrated** the 6 commits onto main, resolved the 3 predicted doc conflicts (`presentation.md` ×2, `colonies.md` ×1), and adversarially reviewed the combined diff.
+- **Stream 1 — Colony report tabs** (`86d3drn6f`/`6g`/`6m`, commit `4e48dcc`): Education / Production / Labour tabs on `ColonyReportPanel`, composing existing oracles (no new GameLogic). +3 L3.
+- **Stream 2 — Colopedia "Concepts" help tab + Minuit doc** (`86d3drn70`/`86d3drn1v`, `b5afd6e`+`08473ae`): the seed of an in-game help surface (8 curated stub topics, master-detail) + the missing Peter Minuit Effects-table row. +1 L3.
+- **Stream 3 — Building economy** (`86d3drmzf`/`86d3drmzk`, `6d846ff`): `CompetenceFactor` scales an expert's *additive* bonus (FreeCol-faithful — multiplicative untouched; master carpenter in a lumber mill 9→12 hammers); per-turn `Upkeep` deduction **gated on `Ruleset.UpkeepEnabled`** (classic default-off → default game byte-identical). +8 L1, 2 value-pinned tests retargeted.
+- **Stream 4 — Goto everywhere** (`86d3drn06`, `a9c4fc7`): goto a settlement / Europe / open sea; the Europe handoff reuses the existing `SailToEurope`. No save bump. +10 L1/L2.
+- **Stream 5 — Diplomacy stance** (`86d3drn45`/`86d3drn4h`, `cc81d07`): `AreEnemies` now consults stance — you can no longer attack (nor be attacked by) a power you're at Peace with; natives unaffected (short-circuit to owner-inequality, so Uncontacted stays hostile → **zero existing-test retargeting**). Plus AI-to-AI `NegotiateTrade` wired into the foreign turn (own RNG stream). +10 L1/L2.
+**Status:** Integrated, **build clean + 1532 L1/L2 + 4 soak + L3 (new panels + input/colony/scene) + both golden suites green (zero golden churn)**. Adversarial review (combined diff): **no defects** — verified competence-additive-only, the stance legality, the goto→Europe precondition, NegotiateTrade off stream 0, and upkeep turn-order. Pushed (`a9c4fc7…a6b9e76`); CI watching.
+**Changed:** 7 commits. No save-version bump across any stream. Docs: `colonies.md`, `diplomacy.md`, `units-movement.md`, `founding-fathers.md`, `presentation.md` (all both-layers + changelog + Last-verified).
+**Decisions:** Designed the 5 streams for *clean parallelism* (disjoint primary files; only streams 3 & 5 share `Game.cs`, in disjoint methods → auto-merged cleanly). Upkeep gated off in classic (matches FreeCol `enableUpkeep` default-false) so the default game stays byte-identical. Stance gate leaves Uncontacted hostile, which is why no existing combat test needed retargeting.
+**Scheduled next:** Negotiation UI `86d3c9ubw` (human diplomacy front-end — now that AI haggling + stance gating are in), or a high-priority item: Nation selection `86d3drn5x` / Alternative victory `86d3drn5n`.
+**Follow-ups (agent-surfaced):** Production report "net" column reads 0 for building-only goods (bells/crosses/hammers — needs a per-building production oracle); AI building-value estimate doesn't yet account for competence (minor, estimate-only); AI offensive targeting is still human-only (broaden now that stance permits at-war rivals); foreign-foreign wars are rare so the new AI haggle won't fire often yet; goto UI for the new destination kinds is a P7 presentation slice.
+**Needs you:** Nothing blocking — pull and the five land together. Optional: play a turn at peace with a rival and confirm it no longer attacks you, and open the Reports panel's new tabs.
+
 ## 2026-06-21 — ClickUp board reconciliation (dedupe + correctness) — COMPLETE ✅
 
 **Requested:** "Ensure ALL tasks to make the game 100% are in ClickUp. No duplicates. Board 100% correct so I can schedule."
