@@ -83,6 +83,13 @@ public sealed partial class Game
     /// <see cref="LcrStreamId"/>, so it never correlates with or shifts the human's economy stream 0 (ADR-009).</summary>
     private const ulong ResourceQuantityStreamId = 102;
 
+    /// <summary>RNG stream reserved for the per-turn natural-disaster roll (86d3c9uu8) — a high id like
+    /// <see cref="LcrStreamId"/>/<see cref="ResourceQuantityStreamId"/>, so the disaster draw never correlates with or
+    /// shifts the human's economy stream 0 (ADR-006/ADR-009). The roll fires only when the ruleset's
+    /// <see cref="Specification.Ruleset.NaturalDisasterPercentage"/> is above 0 (classic default 0 → never), so the
+    /// classic default game draws nothing on this stream and stays byte-identical.</summary>
+    private const ulong DisasterStreamId = 103;
+
     private readonly List<Unit> _units = [];
     private readonly List<Colony> _colonies = [];
     private readonly List<NativeSettlement> _nativeSettlements = [];
@@ -94,6 +101,7 @@ public sealed partial class Game
     private readonly List<CustomHouseSaleNotice> _customHouseSaleNotices = []; // transient: the most recent turn's custom-house auto-sales from human colonies (not saved)
     private readonly List<RumourNotice> _rumourNotices = []; // transient: Lost City Rumours the human resolved this turn (non-mounds outcomes; not saved)
     private readonly List<AttritionNotice> _attritionNotices = []; // transient: the most recent turn's units lost to attrition in the open (not saved)
+    private readonly List<DisasterNotice> _disasterNotices = []; // transient: the most recent turn's natural disasters striking human colonies (not saved; empty in classic — naturalDisasters default 0)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
     private FountainResult _lastFountainResult; // transient: how the most recent FoY burst was handled — picks the player-facing message in ExploreRumour
@@ -683,6 +691,15 @@ public sealed partial class Game
     /// In the classic ruleset only the Indian Convert is ever subject to attrition, so this is normally empty.
     /// </summary>
     public IReadOnlyList<AttritionNotice> AttritionNotices => _attritionNotices;
+
+    /// <summary>
+    /// Natural disasters that struck the human's colonies during the most recent <see cref="EndTurn"/> (86d3c9uu8).
+    /// Transient per-turn UI scratch (refreshed each <c>EndTurn</c>, never saved); the presentation reads it after the
+    /// turn resolves to tell the player a colony was hit. Disasters roll only when the ruleset's
+    /// <see cref="Ruleset.NaturalDisasterPercentage"/> is above 0 (classic default 0), so this is empty in the classic
+    /// default game (FreeCol <c>ServerPlayer.csNaturalDisasters</c>).
+    /// </summary>
+    public IReadOnlyList<DisasterNotice> DisasterNotices => _disasterNotices;
 
     /// <summary>Drains and clears the collected <see cref="RumourNotices"/> (the presentation reads them once, after a move that explored a rumour).</summary>
     public IReadOnlyList<RumourNotice> TakeRumourNotices()
@@ -5863,6 +5880,7 @@ public sealed partial class Game
         _colonyRaidNotices.Clear(); // and this turn's native pillages of human colonies
         _colonyGiftNotices.Clear(); // and this turn's friendly native gifts to human colonies
         _customHouseSaleNotices.Clear(); // and this turn's custom-house auto-sales from human colonies
+        _disasterNotices.Clear(); // and this turn's natural disasters striking human colonies (empty in classic — naturalDisasters default 0)
         _rumourNotices.Clear(); // and any rumour outcomes the human explored this turn (normally drained by the UI mid-turn; cleared here belt-and-braces)
         ClearPendingHumanProposals(); // and this round's AI alliance/cease-fire offers to the human (86d3drn4f; drained by the negotiation UI, cleared here belt-and-braces so the seam holds only the current round)
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
@@ -6000,7 +6018,8 @@ public sealed partial class Game
         AccumulateLibertyAndElectFathers(player);
         ApplyFreeBuildings(player); // La Salle: a free stockade in each colony that has reached the required population
         AccumulateImmigrationAndEmigrate(player);
-        PayBuildingUpkeep(player); // deduct Σ building upkeep from gold — no-op in classic (enableUpkeep default off)
+        PayBuildingUpkeep(player); // deduct Σ building upkeep from gold; flag bankruptcy if unpayable — no-op in classic (enableUpkeep default off)
+        RollNaturalDisasters(player); // per-turn colony disaster roll on a reserved stream — no-op in classic (naturalDisasters default 0)
         ProcessTradeRoutes(player); // auto-haul any carriers on a trade route (no-op + no RNG when none — stream-0-safe)
 
         if (!player.IsHuman)
@@ -6012,26 +6031,206 @@ public sealed partial class Game
 
     /// <summary>
     /// Deducts each colony's per-turn gold upkeep — Σ over its buildings of <see cref="BuildingType.Upkeep"/> — from
-    /// the player's treasury (FreeCol <c>Colony.getUpkeep</c> summed by <c>ServerPlayer.csPayUpkeep</c>). Gated on the
-    /// ruleset's <see cref="Ruleset.UpkeepEnabled"/> game option (classic <c>model.option.enableUpkeep</c> defaults
-    /// off), so the classic economy charges nothing and stays byte-identical — the deduction runs only when a ruleset
-    /// turns upkeep on. RNG-free. If the player can't cover the bill, gold is floored at 0 (it never goes negative).
+    /// the player's treasury (FreeCol <c>Colony.getUpkeep</c> summed by <c>ServerPlayer.csPayUpkeep</c>), and tracks
+    /// <b>bankruptcy</b> (86d3c9ux4). Gated on the ruleset's <see cref="Ruleset.UpkeepEnabled"/> game option (classic
+    /// <c>model.option.enableUpkeep</c> defaults off), so the classic economy charges nothing, never goes bankrupt,
+    /// and stays byte-identical — everything here runs only when a ruleset turns upkeep on. RNG-free.
+    /// <para>
+    /// Faithful to <c>csPayUpkeep</c>: if the player can afford the whole bill it pays in full and any prior
+    /// bankruptcy is <b>lifted</b> (<see cref="Player.Bankrupt"/> cleared); if it cannot, its gold is drained to 0 and
+    /// it goes <b>bankrupt</b> — which penalises every colony's building production (the FreeCol
+    /// <c>model.disaster.bankruptcy</c> effect: −50% to building-produced goods, applied in
+    /// <see cref="RunBuildingProduction"/>) until it can pay again. Because production runs before upkeep within a
+    /// turn, a bankruptcy declared this turn bites next turn's production — matching FreeCol, where the bankruptcy
+    /// modifier persists across turns until cleared.
+    /// </para>
+    /// <para>
+    /// The bankruptcy flag is transient (recomputed here each turn, never persisted), so this adds no save field and
+    /// the save version is unchanged.
+    /// </para>
     /// </summary>
-    /// <remarks>
-    /// TODO (86d3c9ux4): FreeCol applies a BANKRUPTCY disaster — a production-penalty modifier — to a player who can't
-    /// pay, and lifts it once they can again. That penalty is a separate backlog task; here we only floor gold at 0.
-    /// </remarks>
     private void PayBuildingUpkeep(Player player)
     {
         if (!Ruleset.UpkeepEnabled)
         {
-            return; // classic default: no upkeep, default game byte-identical
+            return; // classic default: no upkeep, no bankruptcy, default game byte-identical
         }
         int upkeep = ColoniesOf(player)
             .Sum(colony => colony.Buildings.Sum(buildingId => Ruleset.Building(buildingId).Upkeep));
-        if (upkeep > 0)
+        if (player.Gold >= upkeep)
         {
-            player.Gold = Math.Max(0, player.Gold - upkeep); // can't pay → floored at 0 (bankruptcy penalty is 86d3c9ux4)
+            player.Gold -= upkeep;       // afford the whole bill (a 0 bill is trivially affordable)
+            player.Bankrupt = false;     // solvent → lift any standing bankruptcy (FreeCol setBankrupt(false))
+        }
+        else
+        {
+            player.Gold = 0;             // can't pay → treasury drained (FreeCol modifyGold(-getGold()))
+            player.Bankrupt = true;      // production-penalty disaster strikes until payable again (FreeCol setBankrupt(true))
+        }
+    }
+
+    /// <summary>
+    /// Rolls the per-turn natural-disaster check for one colonial player (FreeCol <c>ServerPlayer.csNaturalDisasters</c>,
+    /// 86d3c9uu8). With probability <see cref="Ruleset.NaturalDisasterPercentage"/>% a disaster strikes one of the
+    /// player's colonies; the colony is picked at random, a natural disaster is chosen, and its effects are applied
+    /// (loss of money / loss of goods; production-penalty effects are noted but not applied — see below).
+    /// <para>
+    /// <b>Default-off &amp; byte-identical.</b> The whole method is skipped when the percentage is 0 — the classic
+    /// default (<c>model.option.naturalDisasters</c> defaults 0) — so the classic game rolls nothing. When it does
+    /// roll, every draw is taken from a dedicated <see cref="DisasterStreamId"/> generator seeded off the player's
+    /// own RNG state (the human's from the saved stream-0 <em>state</em>, read without advancing it; an AI power's
+    /// from its own stream): the human's economy stream 0 is never advanced, so the human's seeded game stays
+    /// byte-stable (ADR-006/ADR-009). The seed mixes in the turn and player id so successive turns and different
+    /// players roll independently.
+    /// </para>
+    /// <para>
+    /// <b>Faithful subset (documented in docs/systems/colonies.md).</b> Two simplifications keep this within the
+    /// no-save-bump rule and our current model: (1) We do not yet map disasters to specific terrain/tiles, so the
+    /// colony's disaster pool is all <see cref="Ruleset.NaturalDisasters"/> (uniform), rather than only the disasters
+    /// its worked tiles allow (FreeCol <c>Colony.getDisasterChoices</c>). (2) The <c>lossOfTileProduction</c>/
+    /// <c>lossOfBuildingProduction</c> effects are <em>timed</em> modifiers (−50% for 3 turns); applying them would
+    /// need persisted per-colony timed-modifier state (a save bump), so we record that the effect fired but do not
+    /// apply the multi-turn penalty. The immediate effects — loss of money, loss of goods — are applied in full. The
+    /// loss-of-unit / loss-of-building / damaged-ship effects are likewise not yet modelled (no parse, no apply).
+    /// </para>
+    /// </summary>
+    private void RollNaturalDisasters(Player player)
+    {
+        int probability = Ruleset.NaturalDisasterPercentage;
+        if (probability <= 0)
+        {
+            return; // classic default: no disasters, default game byte-identical (no draw on any stream)
+        }
+        List<Colony> colonies = ColoniesOf(player).ToList();
+        IReadOnlyList<Disaster> pool = Ruleset.NaturalDisasters;
+        if (colonies.Count == 0 || pool.Count == 0)
+        {
+            return;
+        }
+
+        // A dedicated disaster generator seeded off this player's own RNG state — never advancing the human's stream 0
+        // (we read its saved state word read-only). The turn and player id mix in so rolls don't repeat across turns.
+        ulong baseState = RandomFor(player).SaveState().State;
+        var rng = new Pcg32Random(baseState ^ ((ulong)Turn << 1) ^ ((ulong)player.PlayerId << 32), DisasterStreamId);
+
+        if (rng.Next(100) >= probability)
+        {
+            return; // no disaster this turn
+        }
+
+        // Pick a starting colony, then walk colonies until one takes an effect (FreeCol wraps around the list).
+        int start = rng.Next(colonies.Count);
+        for (int i = 0; i < colonies.Count; i++)
+        {
+            Colony colony = colonies[(start + i) % colonies.Count];
+            Disaster disaster = pool[rng.Next(pool.Count)];
+            if (ApplyDisaster(player, colony, disaster, rng))
+            {
+                return; // one colony struck per turn (FreeCol returns after the first colony that takes an effect)
+            }
+        }
+    }
+
+    /// <summary>
+    /// Applies a disaster's effects to one colony per its <see cref="DisasterEffects"/> policy (FreeCol
+    /// <c>csApplyDisaster</c>), recording a <see cref="DisasterNotice"/> when the owner is the human. Returns true if
+    /// any effect fired (so the caller stops walking colonies). See <see cref="RollNaturalDisasters"/> for which
+    /// effects are applied vs. noted.
+    /// </summary>
+    private bool ApplyDisaster(Player player, Colony colony, Disaster disaster, IGameRandom rng)
+    {
+        List<DisasterEffect> firing = SelectDisasterEffects(disaster, rng);
+        if (firing.Count == 0)
+        {
+            return false;
+        }
+
+        int goldLost = 0;
+        string? goodsLostId = null;
+        int goodsLost = 0;
+        bool productionPenalty = false;
+        foreach (DisasterEffect effect in firing)
+        {
+            switch (effect.Kind)
+            {
+                case DisasterEffectKind.LossOfMoney:
+                    // FreeCol: plunder max(1, colony plunder value / 5), capped at the owner's purse.
+                    int plunder = Math.Min(Math.Max(1, ColonyPlunderAmount(colony, player, rng) / 5), player.Gold);
+                    if (plunder > 0)
+                    {
+                        player.Gold -= plunder;
+                        goldLost += plunder;
+                    }
+                    break;
+                case DisasterEffectKind.LossOfGoods:
+                    // FreeCol: halve a random stored stack, capped at 50 lost.
+                    var loot = PillageableGoods(colony).ToList();
+                    if (loot.Count > 0)
+                    {
+                        KeyValuePair<string, int> stack = loot[rng.Next(loot.Count)];
+                        int lost = Math.Min(stack.Value / 2, PillageGoodsCap);
+                        if (lost > 0)
+                        {
+                            colony.AddGoods(stack.Key, -lost);
+                            goodsLostId = stack.Key;
+                            goodsLost += lost;
+                        }
+                    }
+                    break;
+                case DisasterEffectKind.ProductionPenalty:
+                    // A timed (3-turn) −50% production modifier in FreeCol; applying it needs persisted per-colony
+                    // timed-modifier state (a save bump), so we record that it fired but do not apply the penalty.
+                    productionPenalty = true;
+                    break;
+            }
+        }
+
+        if (goldLost == 0 && goodsLost == 0 && !productionPenalty)
+        {
+            return false; // every effect was a no-op on this colony — try the next (FreeCol returns empty messages)
+        }
+        if (player.IsHuman)
+        {
+            _disasterNotices.Add(new DisasterNotice(
+                disaster.Id, colony.Name, colony.Position, goldLost, goodsLostId, goodsLost, productionPenalty));
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Selects which of a disaster's effects fire (FreeCol <c>csApplyDisaster</c> ONE/SEVERAL/ALL): for
+    /// <see cref="DisasterEffects.One"/> a single weighted-random effect; for <see cref="DisasterEffects.Several"/>
+    /// each effect rolled independently against its probability; for <see cref="DisasterEffects.All"/> all of them.
+    /// </summary>
+    private static List<DisasterEffect> SelectDisasterEffects(Disaster disaster, IGameRandom rng)
+    {
+        IReadOnlyList<DisasterEffect> effects = disaster.Effects;
+        if (effects.Count == 0)
+        {
+            return [];
+        }
+        switch (disaster.NumberOfEffects)
+        {
+            case DisasterEffects.All:
+                return effects.ToList();
+            case DisasterEffects.Several:
+                return effects.Where(e => rng.Next(100) < e.Probability).ToList();
+            default: // One: weighted-random over the effect probabilities (FreeCol RandomChoice.getWeightedRandom).
+                int totalWeight = effects.Sum(e => Math.Max(0, e.Probability));
+                if (totalWeight <= 0)
+                {
+                    return [effects[rng.Next(effects.Count)]]; // all-zero weights → uniform pick (defensive)
+                }
+                int pick = rng.Next(totalWeight);
+                foreach (DisasterEffect e in effects)
+                {
+                    pick -= Math.Max(0, e.Probability);
+                    if (pick < 0)
+                    {
+                        return [e];
+                    }
+                }
+                return [effects[^1]];
         }
     }
 
@@ -8601,7 +8800,7 @@ public sealed partial class Game
     /// One building's turn: unattended output plus per-worker conversion of
     /// warehouse inputs to outputs (scaled down when inputs run short).
     /// </summary>
-    private void RunBuildingProduction(Colony colony, BuildingType building, int foodProducedThisTurn)
+    private void RunBuildingProduction(Colony colony, BuildingType building, int foodProducedThisTurn, bool ownerBankrupt = false)
     {
         int workers = colony.BuildingWorkers.GetValueOrDefault(building.Id);
         IReadOnlyList<string> occupants = colony.BuildingOccupants(building.Id);
@@ -8677,12 +8876,27 @@ public sealed partial class Game
             {
                 // Each good's own worker-modified total, scaled by the (≤1) input-scarcity factor — the SoL bonus is
                 // already folded in per worker, so a starved building scales the bonus down with the rest (FreeCol).
+                // A bankrupt owner then halves the building's output (FreeCol model.disaster.bankruptcy: −50% to every
+                // building-produced good, applied at DISASTER_PRODUCTION_INDEX — i.e. on the final goods production,
+                // after the input charge above). Off in classic: a player is never bankrupt with upkeep disabled.
+                double total = outputTotals[output.GoodsId] * scarcity;
+                if (ownerBankrupt)
+                {
+                    total *= BankruptcyProductionFactor;
+                }
                 colony.AddGoods(
                     Ruleset.StorageIdOf(output.GoodsId),
-                    (int)Math.Floor(outputTotals[output.GoodsId] * scarcity + Epsilon));
+                    (int)Math.Floor(total + Epsilon));
             }
         }
     }
+
+    /// <summary>
+    /// The factor a bankrupt player's building output is multiplied by — FreeCol <c>model.disaster.bankruptcy</c>'s
+    /// <c>lossOfBuildingProduction</c> effect is a −50% percentage modifier on every building-produced good, so a
+    /// bankrupt colony makes half its normal building output until the player can pay upkeep again.
+    /// </summary>
+    private const double BankruptcyProductionFactor = 0.5;
 
     /// <summary>
     /// Auto-production horse breeding (FreeCol <c>BuildingProductionCalculator</c> autoProduction): a pasture/stables
@@ -9245,9 +9459,12 @@ public sealed partial class Game
         // 1c. Buildings produce: unattended entries always run (town hall bell);
         //     worker entries convert inputs to outputs per colonist, limited by
         //     what the warehouse holds. Horse breeding (auto-production) may eat only this turn's surplus food.
+        //     A bankrupt owner (couldn't pay upkeep last turn) halves all building output — the FreeCol
+        //     model.disaster.bankruptcy −50% building-production penalty (off in classic: never bankrupt).
+        bool ownerBankrupt = owner.Bankrupt;
         foreach (string buildingId in colony.Buildings)
         {
-            RunBuildingProduction(colony, Ruleset.Building(buildingId), foodThisTurn);
+            RunBuildingProduction(colony, Ruleset.Building(buildingId), foodThisTurn, ownerBankrupt);
         }
 
         // 1d. Construction completes when materials are saved up.

@@ -21,6 +21,7 @@ public sealed class Ruleset
     private readonly Dictionary<string, NativeNationType> _nativeNationById;
     private readonly Dictionary<string, SettlementType> _settlementById;
     private readonly Dictionary<string, RoleType> _roleById;
+    private readonly Dictionary<string, Disaster> _disasterById;
     private readonly Dictionary<string, Dictionary<string, UnitChange>> _unitChangeByType;
     private readonly Dictionary<string, Dictionary<string, int>> _experienceUpgradeByFrom; // from-type → (expert-to-type → probability)
     private readonly Dictionary<string, Dictionary<string, int>> _educationByFrom; // from-type → (to-type → base turns of training)
@@ -38,6 +39,7 @@ public sealed class Ruleset
         Dictionary<string, NativeNationType> nativeNationById,
         Dictionary<string, SettlementType> settlementById,
         Dictionary<string, RoleType> roleById,
+        Dictionary<string, Disaster> disasterById,
         Dictionary<string, Dictionary<string, UnitChange>> unitChangeByType,
         Dictionary<string, Dictionary<string, int>> experienceUpgradeByFrom,
         Dictionary<string, Dictionary<string, int>> educationByFrom,
@@ -47,6 +49,7 @@ public sealed class Ruleset
         DifficultyOptions difficulty,
         string difficultyLevelId,
         bool upkeepEnabled,
+        int naturalDisasterPercentage,
         int lastColonialYear,
         int interventionBells,
         int interventionTurns,
@@ -60,6 +63,7 @@ public sealed class Ruleset
         Difficulty = difficulty;
         DifficultyLevelId = difficultyLevelId;
         UpkeepEnabled = upkeepEnabled;
+        NaturalDisasterPercentage = naturalDisasterPercentage;
         LastColonialYear = lastColonialYear;
         InterventionBells = interventionBells;
         InterventionTurns = interventionTurns;
@@ -77,6 +81,7 @@ public sealed class Ruleset
         _nativeNationById = nativeNationById;
         _settlementById = settlementById;
         _roleById = roleById;
+        _disasterById = disasterById;
         _unitChangeByType = unitChangeByType;
         _experienceUpgradeByFrom = experienceUpgradeByFrom;
         _educationByFrom = educationByFrom;
@@ -96,6 +101,8 @@ public sealed class Ruleset
         UnitTypes = _unitById.Values.ToList();
         GoodsTypes = _goodsById.Values.ToList();
         BuildingTypes = _buildingById.Values.ToList();
+        Disasters = _disasterById.Values.ToList();
+        NaturalDisasters = _disasterById.Values.Where(d => d.Natural).ToList();
         // Building-material goods = every goods id any BUILDABLE type requires to construct, FreeCol-faithfully
         // (GoodsType.isBuildingMaterial, derived over buildings + units + roles). Classic content: buildings need
         // hammers + tools; the artillery/wagon/ships need hammers (+tools); the freeColonist's `required-goods
@@ -159,6 +166,24 @@ public sealed class Ruleset
     /// from the player's gold each turn (FreeCol gates <c>ServerPlayer.csPayUpkeep</c> on this same option).
     /// </summary>
     public bool UpkeepEnabled { get; }
+
+    /// <summary>
+    /// The percentage chance (0..100) that a natural disaster strikes one of a colonial player's colonies each turn
+    /// (the spec <c>model.option.naturalDisasters</c> percentage game option; classic default <b>0</b>). At 0 the
+    /// per-player disaster roll never fires, so the default classic game is byte-identical and rolls nothing
+    /// (FreeCol gates <c>ServerPlayer.csNaturalDisasters</c> on <c>disaster &gt; 0</c>). Above 0, each colonial
+    /// player rolls once per turn on a reserved RNG stream (never the human's economy stream 0).
+    /// </summary>
+    public int NaturalDisasterPercentage { get; }
+
+    /// <summary>All disasters in the ruleset (natural + the special bankruptcy/raid/conquest disasters), in spec order.</summary>
+    public IReadOnlyList<Disaster> Disasters { get; }
+
+    /// <summary>The natural disasters eligible for the per-colony natural-disaster roll, in spec order (FreeCol <c>Disaster.isNatural</c>).</summary>
+    public IReadOnlyList<Disaster> NaturalDisasters { get; }
+
+    /// <summary>Looks up a disaster by id (e.g. <see cref="Disaster.BankruptcyId"/>); null when the ruleset defines no such disaster.</summary>
+    public Disaster? FindDisaster(string id) => _disasterById.GetValueOrDefault(id);
 
     /// <summary>
     /// The last in-game year a colonial power may declare independence (the spec
@@ -717,6 +742,7 @@ public sealed class Ruleset
             ParseNativeNationTypes(root.Element("indian-nation-types"));
 
         Dictionary<string, RoleType> roles = ParseRoles(root.Element("roles"));
+        Dictionary<string, Disaster> disasters = ParseDisasters(root.Element("disasters"));
         Dictionary<string, Dictionary<string, UnitChange>> unitChanges =
             ParseUnitChanges(root.Element("unit-change-types"));
         Dictionary<string, Dictionary<string, int>> experienceUpgrades =
@@ -735,6 +761,10 @@ public sealed class Ruleset
         // Building upkeep is a boolean game option (model.option.enableUpkeep); classic ships it defaultValue="false",
         // so the default game charges no upkeep and stays byte-identical (FreeCol gates csPayUpkeep on this option).
         bool upkeepEnabled = ParseBooleanOption(root, "model.option.enableUpkeep", fallback: false);
+        // Natural-disaster chance is a percentage game option (model.option.naturalDisasters); classic ships it
+        // defaultValue="0", so the default game rolls no disasters and stays byte-identical (FreeCol only calls
+        // csNaturalDisasters when this option is > 0).
+        int naturalDisasterPercentage = ParsePercentageOption(root, "model.option.naturalDisasters", fallback: 0);
         // The last colonial game year (model.option.lastColonialYear, in the gameOptions.years group); classic value
         // 1800. Past this year a colonial power may no longer declare independence (FreeCol model.limit.independence.year).
         int lastColonialYear = ParseIntOption(root, "model.option.lastColonialYear", fallback: 1800);
@@ -752,8 +782,8 @@ public sealed class Ruleset
 
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
-            roles, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears,
-            difficulty, difficultyLevelId, upkeepEnabled, lastColonialYear,
+            roles, disasters, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears,
+            difficulty, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage, lastColonialYear,
             interventionBells, interventionTurns, interventionForce,
             victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans);
     }
@@ -940,6 +970,118 @@ public sealed class Ruleset
         return ParseInt((string?)option.Attribute("value"))
             ?? ParseInt((string?)option.Attribute("defaultValue"))
             ?? fallback;
+    }
+
+    /// <summary>
+    /// Reads a top-level <c>&lt;percentageOption&gt;</c> game option by id (its <c>value</c>, else <c>defaultValue</c>),
+    /// falling back to <paramref name="fallback"/> when the option is absent or has no parseable integer. Used for
+    /// <c>model.option.naturalDisasters</c> (classic default 0).
+    /// </summary>
+    internal static int ParsePercentageOption(XElement root, string id, int fallback)
+    {
+        XElement? option = root.Descendants("percentageOption")
+            .FirstOrDefault(o => (string?)o.Attribute("id") == id);
+        if (option is null)
+        {
+            return fallback;
+        }
+        return ParseInt((string?)option.Attribute("value"))
+            ?? ParseInt((string?)option.Attribute("defaultValue"))
+            ?? fallback;
+    }
+
+    /// <summary>
+    /// Parses the <c>&lt;disasters&gt;</c> block into <see cref="Disaster"/>s (FreeCol <c>Disaster</c>). Resolves the
+    /// classic <c>extends="model.disaster.common"</c> inheritance: a child with no effects of its own inherits its
+    /// parent's effect list (the natural disasters all extend the abstract <c>common</c> disaster, which carries the
+    /// shared effect set). An <c>abstract="true"</c> definition is parsed for inheritance but excluded from the
+    /// resulting ruleset (FreeCol never instantiates abstract types). Effects are mapped to the discrete kinds we
+    /// resolve (<see cref="DisasterEffectKind"/>); an effect whose id we do not model (e.g. lossOfUnit/lossOfBuilding/
+    /// damagedUnit — these need full unit/building damage we have not yet wired) is skipped, so a struck colony applies
+    /// only the modelled subset (faithful subset; documented in docs/systems/colonies.md). Order is spec order.
+    /// </summary>
+    internal static Dictionary<string, Disaster> ParseDisasters(XElement? disastersElement)
+    {
+        var result = new Dictionary<string, Disaster>();
+        if (disastersElement is null)
+        {
+            return result;
+        }
+
+        // First pass: index every <disaster> element (incl. abstract parents) so an extends child can find its parent.
+        Dictionary<string, XElement> byId = disastersElement.Elements("disaster")
+            .Where(e => e.Attribute("id") is not null)
+            .GroupBy(e => (string)e.Attribute("id")!)
+            .ToDictionary(g => g.Key, g => g.Last());
+
+        foreach (XElement el in disastersElement.Elements("disaster"))
+        {
+            string id = RequiredAttribute(el, "id");
+            if ((bool?)el.Attribute("abstract") == true)
+            {
+                continue; // abstract parent: usable for inheritance, never instantiated
+            }
+
+            // Inherit attributes/effects from the extends parent (one level, matching classic's single-level chain).
+            XElement? parent = (string?)el.Attribute("extends") is { } parentId && byId.TryGetValue(parentId, out var p)
+                ? p
+                : null;
+            XElement effectSource = el.Elements("effect").Any() ? el : (parent ?? el);
+
+            bool natural = (bool?)el.Attribute("natural")
+                ?? (parent is not null ? (bool?)parent.Attribute("natural") : null)
+                ?? false;
+            DisasterEffects number = ParseDisasterEffects((string?)el.Attribute("effects")
+                ?? (parent is not null ? (string?)parent.Attribute("effects") : null));
+
+            var effects = effectSource.Elements("effect")
+                .Select(ParseDisasterEffect)
+                .Where(e => e is not null)
+                .Select(e => e!)
+                .ToList();
+
+            result[id] = new Disaster(id, natural, number, effects);
+        }
+        return result;
+    }
+
+    private static DisasterEffects ParseDisasterEffects(string? value) => value?.ToLowerInvariant() switch
+    {
+        "several" => DisasterEffects.Several,
+        "all" => DisasterEffects.All,
+        _ => DisasterEffects.One,
+    };
+
+    /// <summary>Maps a single <c>&lt;effect&gt;</c> to a <see cref="DisasterEffect"/>, or null when its id is one we do not yet model.</summary>
+    private static DisasterEffect? ParseDisasterEffect(XElement el)
+    {
+        string id = RequiredAttribute(el, "id");
+        int probability = (int?)el.Attribute("probability") ?? 0;
+        DisasterEffectKind? kind = id switch
+        {
+            "model.disaster.effect.lossOfMoney" => DisasterEffectKind.LossOfMoney,
+            "model.disaster.effect.lossOfGoods" => DisasterEffectKind.LossOfGoods,
+            "model.disaster.effect.lossOfTileProduction" => DisasterEffectKind.ProductionPenalty,
+            "model.disaster.effect.lossOfBuildingProduction" => DisasterEffectKind.ProductionPenalty,
+            _ => null, // lossOfUnit / lossOfBuilding / damagedUnit: not yet modelled (faithful subset)
+        };
+        if (kind is null)
+        {
+            return null;
+        }
+        var modifiers = el.Elements("modifier")
+            .Select(m => new DisasterModifier(
+                GoodsId: RequiredAttribute(m, "id"),
+                Type: (string?)m.Attribute("type") switch
+                {
+                    "multiplicative" => ModifierType.Multiplicative,
+                    "percentage" => ModifierType.Percentage,
+                    _ => ModifierType.Additive,
+                },
+                Value: (double?)m.Attribute("value") ?? 0,
+                Duration: (int?)m.Attribute("duration") ?? 0))
+            .ToList();
+        return new DisasterEffect(kind.Value, probability, modifiers);
     }
 
     /// <summary>

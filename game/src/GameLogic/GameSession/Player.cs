@@ -104,6 +104,17 @@ public sealed class Player
     public int TaxRate { get; internal set; }
 
     /// <summary>
+    /// True while this player is bankrupt — i.e. it could not pay its building upkeep on the most recent upkeep turn
+    /// (FreeCol <c>Player.getBankrupt</c> / <c>model.disaster.bankruptcy</c>). While bankrupt every colony's building
+    /// production is penalised (the bankruptcy disaster's −50% building-production modifier); the flag clears the turn
+    /// the player can pay again. <b>Transient</b>: recomputed each turn in <c>PayBuildingUpkeep</c>, never persisted —
+    /// so it adds no save field and the save version is unchanged. Only ever set when building upkeep is enabled
+    /// (<see cref="Specification.Ruleset.UpkeepEnabled"/>, classic default off), so it is always false in the classic
+    /// default game. See [colonies].
+    /// </summary>
+    public bool Bankrupt { get; internal set; }
+
+    /// <summary>
     /// True once the King is displeased with this player — set when it declines an affordable mercenary offer
     /// (FreeCol <c>Monarch.setDispleasure</c>). While displeased the King offers no more mercenaries or military
     /// support. Persisted with the mercenary slice (omit-when-false). See [monarchy].
