@@ -31,6 +31,65 @@ public class GameOptionsTests
     }
 
     [Fact]
+    public void ParseGameOptions_ReadsEachYearsGateOption_ByItsOwnId()
+    {
+        // The gameOptions.years gate cluster (86d3drpgg): non-default values prove each id is read by name, not falling
+        // back to ClassicDefaults.
+        XElement root = XElement.Parse(
+            "<freecol-specification><optionGroup id='gameOptions'><optionGroup id='gameOptions.years'>" +
+            "  <integerOption id='model.option.mandatoryColonyYear' value='1650' />" +
+            "  <integerOption id='model.option.lastColonialYear' value='1820' />" +
+            "  <integerOption id='model.option.independenceTurn' value='500' />" +
+            "</optionGroup></optionGroup></freecol-specification>");
+        GameOptions o = Ruleset.ParseGameOptions(root);
+        Assert.Equal(1650, o.MandatoryColonyYear);
+        Assert.Equal(1820, o.LastColonialYear);
+        Assert.Equal(500, o.IndependenceTurn);
+    }
+
+    [Fact]
+    public void ParseGameOptions_FallsBackPerOption_WhenAYearsGateOptionIsMissing()
+    {
+        // Group present but omits two years-gate options → those fall back to classic defaults, the present one is read.
+        XElement root = XElement.Parse(
+            "<freecol-specification><optionGroup id='gameOptions'>" +
+            "  <integerOption id='model.option.lastColonialYear' value='1820' />" +
+            "</optionGroup></freecol-specification>");
+        GameOptions o = Ruleset.ParseGameOptions(root);
+        Assert.Equal(GameOptions.ClassicDefaults.MandatoryColonyYear, o.MandatoryColonyYear); // 1600
+        Assert.Equal(1820, o.LastColonialYear);
+        Assert.Equal(GameOptions.ClassicDefaults.IndependenceTurn, o.IndependenceTurn);       // 468
+    }
+
+    [Fact]
+    public void ClassicRuleset_ParsesTheYearsGateCluster()
+    {
+        // Pinned against the classic specification.xml (gameOptions.years group): 1600 / 1800 / 468.
+        GameOptions o = Ruleset.LoadClassic().GameOptions;
+        Assert.Equal(1600, o.MandatoryColonyYear);
+        Assert.Equal(1800, o.LastColonialYear);
+        Assert.Equal(468, o.IndependenceTurn);
+    }
+
+    [Fact]
+    public void RulesetLastColonialYear_DelegatesToTheBundle()
+    {
+        // The standalone Ruleset.LastColonialYear property now surfaces the bundle value (the independence and
+        // limit-engine consumers read it unchanged): the two paths must agree, and the classic value is 1800.
+        Ruleset ruleset = Ruleset.LoadClassic();
+        Assert.Equal(1800, ruleset.LastColonialYear);
+        Assert.Equal(ruleset.GameOptions.LastColonialYear, ruleset.LastColonialYear);
+    }
+
+    [Fact]
+    public void MandatoryColonyYearConst_AliasesTheClassicDefault()
+    {
+        // Game.MandatoryColonyYear is now a classic-default alias of the bundle (static fallback) — it must stay equal
+        // to the bundle's classic value so the const path and the parsed path agree.
+        Assert.Equal(GameOptions.ClassicDefaults.MandatoryColonyYear, Game.MandatoryColonyYear);
+    }
+
+    [Fact]
     public void ParseGameOptions_ReadsTheDefaultValueAttribute_WhenNoValueIsSet()
     {
         // FreeCol options carry a defaultValue; ParseIntOption falls through to it when value is absent.

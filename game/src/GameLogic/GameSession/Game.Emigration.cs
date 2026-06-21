@@ -140,11 +140,13 @@ public sealed partial class Game
     /// have a foothold in the New World. <b>Before</b> this year a player with no colonies and no surviving units —
     /// who also cannot scrape together a normal immigrant — is rescued by a survival auto-recruit (see
     /// <see cref="MaybeSurvivalRecruit"/>); <b>from</b> this year on there is no such rescue (FreeCol
-    /// <c>ServerPlayer.checkForDeath</c> returns <c>IS_DEAD</c> instead of <c>IS_AUTORECRUIT</c>). Held as a constant
-    /// rather than read from the ruleset because the spec option is not yet parsed into the <c>Ruleset</c> (a small
-    /// follow-up); the classic value is fixed.
+    /// <c>ServerPlayer.checkForDeath</c> returns <c>IS_DEAD</c> instead of <c>IS_AUTORECRUIT</c>). This is the
+    /// <em>classic-default alias</em> only; the live value is the parsed <see cref="Specification.Ruleset.GameOptions"/>
+    /// bundle (<see cref="Specification.GameOptions.MandatoryColonyYear"/>), which <see cref="IsSurvivalStalled"/>
+    /// reads. Aliased to <see cref="Specification.GameOptions.ClassicDefaults"/> so the bundle is the single source of
+    /// truth (86d3drpgg).
     /// </summary>
-    internal const int MandatoryColonyYear = 1600;
+    internal static readonly int MandatoryColonyYear = Specification.GameOptions.ClassicDefaults.MandatoryColonyYear;
 
     /// <summary>
     /// FreeCol's <b>survival</b> migration (<c>Europe.MigrationType.SURVIVAL</c>, fired from
@@ -229,7 +231,7 @@ public sealed partial class Game
     private bool IsSurvivalStalled(Player player) =>
         !player.IsHuman
         && player.PlayerType == PlayerType.Colonial
-        && CurrentYear < MandatoryColonyYear
+        && CurrentYear < Ruleset.GameOptions.MandatoryColonyYear
         && player.RecruitDock.Count > 0
         && !ColoniesOf(player).Any()
         && !_units.Any(u => IsOwnedBy(u, player) && u.Type.IsPerson);

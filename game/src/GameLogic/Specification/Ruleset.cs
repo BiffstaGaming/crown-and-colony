@@ -54,7 +54,6 @@ public sealed class Ruleset
         string difficultyLevelId,
         bool upkeepEnabled,
         int naturalDisasterPercentage,
-        int lastColonialYear,
         int interventionBells,
         int interventionTurns,
         InterventionForceComposition interventionForce,
@@ -71,7 +70,6 @@ public sealed class Ruleset
         DifficultyLevelId = difficultyLevelId;
         UpkeepEnabled = upkeepEnabled;
         NaturalDisasterPercentage = naturalDisasterPercentage;
-        LastColonialYear = lastColonialYear;
         InterventionBells = interventionBells;
         InterventionTurns = interventionTurns;
         InterventionForce = interventionForce;
@@ -217,9 +215,11 @@ public sealed class Ruleset
     /// <c>model.option.lastColonialYear</c> integer game option in the <c>gameOptions.years</c> group; classic
     /// <b>1800</b>). Once <see cref="GameSession.Game.CurrentYear"/> passes this year it is too late to declare
     /// (FreeCol <c>model.limit.independence.year</c>, the <c>year ≤ lastColonialYear</c> limit). A spec without the
-    /// option falls back to 1800, so the default classic game is unchanged.
+    /// option falls back to 1800, so the default classic game is unchanged. Surfaced from the parsed
+    /// <see cref="GameOptions"/> bundle (<see cref="Specification.GameOptions.LastColonialYear"/>), which now owns the
+    /// whole <c>gameOptions.years</c> gate cluster.
     /// </summary>
-    public int LastColonialYear { get; }
+    public int LastColonialYear => GameOptions.LastColonialYear;
 
     /// <summary>
     /// The spec <c>&lt;event&gt;</c> elements (FreeCol <c>Specification.getEvents</c>): special game occurrences —
@@ -802,8 +802,10 @@ public sealed class Ruleset
         Calendar calendar = ParseCalendar(root);
         IReadOnlyList<int> fatherAgeYears = ParseFatherAgeYears(root, calendar.StartingYear);
         DifficultyOptions difficulty = ParseDifficulty(root, difficultyLevelId);
-        // The base gameOptions group (immigration trio: initialImmigration / europeanUnitImmigrationPenalty /
-        // playerImmigrationBonus) — read once into a bundle; a spec without an option falls back to its classic value.
+        // The base gameOptions group — read once into a bundle; a spec without an option falls back to its classic
+        // value. Holds the immigration trio (initialImmigration / europeanUnitImmigrationPenalty /
+        // playerImmigrationBonus) and the gameOptions.years gate cluster (mandatoryColonyYear / lastColonialYear /
+        // independenceTurn). LastColonialYear is now surfaced from this bundle (Ruleset.LastColonialYear delegates).
         GameOptions gameOptions = ParseGameOptions(root);
         // Building upkeep is a boolean game option (model.option.enableUpkeep); classic ships it defaultValue="false",
         // so the default game charges no upkeep and stays byte-identical (FreeCol gates csPayUpkeep on this option).
@@ -812,9 +814,6 @@ public sealed class Ruleset
         // defaultValue="0", so the default game rolls no disasters and stays byte-identical (FreeCol only calls
         // csNaturalDisasters when this option is > 0).
         int naturalDisasterPercentage = ParsePercentageOption(root, "model.option.naturalDisasters", fallback: 0);
-        // The last colonial game year (model.option.lastColonialYear, in the gameOptions.years group); classic value
-        // 1800. Past this year a colonial power may no longer declare independence (FreeCol model.limit.independence.year).
-        int lastColonialYear = ParseIntOption(root, "model.option.lastColonialYear", fallback: 1800);
         // The foreign-intervention options (interventionBells / interventionTurns / interventionForce) live in the
         // chosen difficulty level's monarch group (classic medium 5000 / 52 / the 8-unit ally force). Parsed from the
         // selected level so a variant resizes the ally by data alone.
@@ -835,7 +834,7 @@ public sealed class Ruleset
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
             roles, disasters, unitChanges, experienceUpgrades, educationTurns, europeanNations, events, calendar, fatherAgeYears,
-            difficulty, gameOptions, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage, lastColonialYear,
+            difficulty, gameOptions, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage,
             interventionBells, interventionTurns, interventionForce,
             victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, combatModifiers);
     }
@@ -947,11 +946,13 @@ public sealed class Ruleset
     }
 
     /// <summary>
-    /// Parses the base <c>gameOptions</c> group into <see cref="Specification.GameOptions"/> — the immigration trio
-    /// (<c>model.option.initialImmigration</c> / <c>europeanUnitImmigrationPenalty</c> / <c>playerImmigrationBonus</c>).
-    /// Unlike <see cref="ParseDifficulty"/>, these are not restated per level, so each is a plain document-wide
-    /// integer-option lookup (its <c>value</c>, else <c>defaultValue</c>); a missing option falls back to its classic
-    /// value in <see cref="GameOptions.ClassicDefaults"/>, so the default game is byte-identical (ADR-009).
+    /// Parses the base <c>gameOptions</c> group into <see cref="Specification.GameOptions"/>: the immigration trio
+    /// (<c>model.option.initialImmigration</c> / <c>europeanUnitImmigrationPenalty</c> / <c>playerImmigrationBonus</c>)
+    /// and the <c>gameOptions.years</c> year/turn-gate cluster (<c>model.option.mandatoryColonyYear</c> /
+    /// <c>lastColonialYear</c> / <c>independenceTurn</c>). Unlike <see cref="ParseDifficulty"/>, these are not restated
+    /// per level, so each is a plain document-wide integer-option lookup (its <c>value</c>, else <c>defaultValue</c>);
+    /// a missing option falls back to its classic value in <see cref="GameOptions.ClassicDefaults"/>, so the default
+    /// game is byte-identical (ADR-009).
     /// </summary>
     internal static GameOptions ParseGameOptions(XElement root) =>
         new(
@@ -960,7 +961,13 @@ public sealed class Ruleset
             EuropeanUnitImmigrationPenalty: ParseIntOption(
                 root, "model.option.europeanUnitImmigrationPenalty", GameOptions.ClassicDefaults.EuropeanUnitImmigrationPenalty),
             PlayerImmigrationBonus: ParseIntOption(
-                root, "model.option.playerImmigrationBonus", GameOptions.ClassicDefaults.PlayerImmigrationBonus));
+                root, "model.option.playerImmigrationBonus", GameOptions.ClassicDefaults.PlayerImmigrationBonus),
+            MandatoryColonyYear: ParseIntOption(
+                root, "model.option.mandatoryColonyYear", GameOptions.ClassicDefaults.MandatoryColonyYear),
+            LastColonialYear: ParseIntOption(
+                root, "model.option.lastColonialYear", GameOptions.ClassicDefaults.LastColonialYear),
+            IndependenceTurn: ParseIntOption(
+                root, "model.option.independenceTurn", GameOptions.ClassicDefaults.IndependenceTurn));
 
     /// <summary>
     /// Parses the spec <c>model.option.ages</c> text option (classic <c>"1600,1700"</c>) into the two ascending
