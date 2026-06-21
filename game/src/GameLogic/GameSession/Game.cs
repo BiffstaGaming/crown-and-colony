@@ -559,9 +559,13 @@ public sealed partial class Game
     /// (1) FreeCol's <c>sum(getUnits(), Unit::getScoreValue)</c> counts every owned unit including colony workers; our
     /// colony workers are not in the unit list (they are colony population), so only map/Europe units contribute today —
     /// the same modelling deviation noted on the continental-army muster.
-    /// (2) FreeCol also folds in per-event history scores (region discovery, lost-city finds, settlement/nation destruction
-    /// penalties) via <c>HistoryEvent.getScore()</c>; our <see cref="HistoryEvent"/> carries no numeric score and is not yet
-    /// persisted, so those summands are omitted until the history log gains scores (follow-up).
+    /// (2) FreeCol folds in per-event history scores via <c>HistoryEvent.getScore()</c>; our <see cref="HistoryEvent"/> now
+    /// carries a numeric <c>Score</c> and <b>region-discovery</b> events score it (<c>86d3c9w2f</c>), folded into the
+    /// <b>human's</b> total here (the history log is the human's). That score lives only in the <b>in-memory, un-persisted</b>
+    /// history log: the per-region <em>discovered</em> flag is saved (so a region isn't re-discovered on load), but the
+    /// score-bearing event is not, so a discovery's points do not survive a save/load — a documented limitation until the
+    /// history log is persisted. FreeCol's other history summands (settlement/nation destruction penalties) are not yet
+    /// emitted as scored events.
     /// (3) FreeCol derives the independence ordinal from an INDEPENDENCE history event's stored place (0/1/2); with a single
     /// human player, an <see cref="PlayerType.Independent"/> nation is the first to win, so it takes the 100% first-place bonus.</para>
     /// </summary>
