@@ -23,6 +23,9 @@
     <!-- Per-nation colony names (not in the spec XML — extracted from FreeCol's message strings; FP-3a). -->
     <EmbeddedResource Include="..\..\data\rules\classic\european-nation-names.properties"
                       LogicalName="CrownAndColony.GameLogic.Specification.classic.european-nation-names.properties" />
+    <!-- Fixed scenario maps — FreeCol's hand-made America map (terrain grid, extracted from M_America_Mazim.fsm; GPL v2). -->
+    <EmbeddedResource Include="..\..\data\maps\america.txt"
+                      LogicalName="CrownAndColony.GameLogic.Maps.america.txt" />
   </ItemGroup>
 
 </Project>
