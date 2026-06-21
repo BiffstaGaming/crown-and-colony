@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — Unit sprites (no more dots) + FreeCol starting units — COMPLETE ✅
+
+**Requested:** "I want all sprites/assets updated. I don't want to see any just dots on the terrain as units. Also check FreeCol and the correct number/type of starting units."
+**Did:**
+- **Role-aware unit sprites** (`174ae34`): the "dots" were the red-disc fallback — only `caravel`/`freeColonist` had art in `assets/freecol/units/`, so every other unit (soldiers, pioneers, dragoons, scouts, ships, artillery, braves…) fell back to a disc. Imported FreeCol's full `units/` set (**68 GPL-v2 PNGs**): base types flat + per-role subfolders (`soldier/`, `dragoon/`, `scout/`, `pioneer/`, `missionary/`, `infantry/`, `cavalry/`, `armedBrave/`, …). `UnitMarker.SetUnitType` → `SetUnit(type, role)` resolves role-specific → generic-role → bare-type → disc, so a colonist-soldier draws as a soldier, not a plain colonist. PROVENANCE + presentation.md updated. (Terrain/forests/buildings/settlements/bonus already had FreeCol art — units were the only gap.)
+- **FreeCol starting units** (`cf65109`): **checked FreeCol** — the classic European start (`model.nationType.default`) is a **caravel + a pioneer (free colonist + tools) + a soldier (free colonist + muskets)**; we were starting the human with **one bare free colonist**. `Game.New` now lands the full roster at a **coastal** start (so the caravel berths on adjacent water), deterministic (stream 0 byte-stable). You chose "full roster, landed."
+**Status:** **1489 L1/L2 + 4 soak + 109 scene/golden green**; both projects build clean. The 3-unit start churned ~24 L1/L2 + ~8 L3/golden tests (assert the roster, or disband it to what the test controls) + all map/start L4 goldens regenerated + **eyeballed** (the start now shows the caravel + two colonists as proper sprites on a coastal tile). CI green on **both jobs** for both pushes (runs 27889238539, 27890061298).
+**Changed:** 2 commits `174ae34` (sprites: 68 PNGs + `UnitMarker`/`GameController` + PROVENANCE + presentation.md), `cf65109` (`Game.cs` `SpawnHumanStartingUnits`/coastal start + ~32 test files + 9 goldens + players.md).
+**Decisions:** Used **FreeCol's GPL-v2 art** (this project's established source — 240 assets already from it) rather than sourcing a new set. Starting soldier is a **free colonist** (the veteran is the `expert-starting-units` variant, excluded from the regular roster). The roster lands at the start tile (consistent with how rival powers spawn) rather than an at-sea opening. Many tests now **disband the roster** to the unit(s) they control (e.g. the diplomacy decay tests keep the human military-less so the strength-ratio sue-for-peace stays out of the way).
+**Scheduled next:** **Negotiation UI** — `86d3c9ubw`/`86d3c9xpt` (the human side of diplomacy; the AI backend now exists). Or decompose the **P6 endgame epic**.
+**Follow-ups:** role-specific sprites for the experts (they currently fall back to the bare type sprite where FreeCol has no role variant); a Dutch/English/French/Spanish **nation pick** (would tweak the starting ship + bonuses); optional hi-res (`size2`) sprites when zoom quality calls for it.
+**Needs you:** Nothing blocking. Start a new game and you'll see the caravel + pioneer + soldier as sprites on the coast — no dots.
+
 ## 2026-06-21 — AI pioneering + 3-stream parallel wave (rendering, pathfinder, counter-offers) — COMPLETE ✅
 
 **Requested:** "Yes" (do AI pioneering) + "anything else you can do in parallel?" → AI pioneering (me) + 3 region-disjoint background worktree agents, integrated + adversarially reviewed.
