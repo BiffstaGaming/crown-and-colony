@@ -180,9 +180,14 @@ public class ColonyReportPanelTests
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("History");
         var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
-        var first = dynamic.GetNodeOrNull<Label>("History_0");
-        AssertThat(first).IsNotNull();
-        AssertThat(first!.Text).Contains(colony.Name); // "Turn N: Founded <colony>."
+        // The colony-founded event ("Turn N: Founded <colony>.") is listed — it may not be first, since a
+        // region discovery during the human's opening tile reveal can precede it in the history log.
+        bool listsTheFounding = false;
+        for (int i = 0; dynamic.GetNodeOrNull<Label>($"History_{i}") is { } label; i++)
+        {
+            if (label.Text.Contains(colony.Name)) { listsTheFounding = true; break; }
+        }
+        AssertThat(listsTheFounding).IsTrue();
     }
 
     [TestCase]
