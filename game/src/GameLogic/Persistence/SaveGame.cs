@@ -515,6 +515,8 @@ public sealed record SaveGame
                     c.Id, c.Name, new Position(c.X, c.Y), c.Population, c.OwnerId ?? 0)
                 {
                     Government = ruleset.Difficulty.Government, // production-bonus thresholds from the difficulty level (re-derived, not persisted)
+                    RebelLibertyDivisor = ruleset.ColonyConstants.LibertyPerRebel, // liberty-per-rebel from the ruleset (re-derived, not persisted; 86d3drpgg)
+                    ExportRetainDefault = ruleset.ColonyConstants.DefaultExportLevel, // custom-house default retain from the ruleset (86d3drpgg)
                 };
                 foreach ((string goods, int amount) in
                          c.Stores ?? new Dictionary<string, int>())

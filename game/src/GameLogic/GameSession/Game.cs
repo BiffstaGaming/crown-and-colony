@@ -4329,6 +4329,8 @@ public sealed partial class Game
         var colony = new Colony(_nextColonyId++, name, unit.Position, population: 1, ownerId: unit.OwnerId)
         {
             Government = Ruleset.Difficulty.Government, // production-bonus thresholds from the difficulty level
+            RebelLibertyDivisor = Ruleset.ColonyConstants.LibertyPerRebel, // liberty-per-rebel from the ruleset (86d3drpgg)
+            ExportRetainDefault = Ruleset.ColonyConstants.DefaultExportLevel, // custom-house default retain from the ruleset (86d3drpgg)
         };
 
         // Every colony starts with the free base buildings (no build cost, not
@@ -9277,7 +9279,7 @@ public sealed partial class Game
     /// <summary>
     /// A colony's per-turn <b>net production by stored good</b> under its present assignments: each tile worker's
     /// yield (folding the human's Founding-Father goods modifiers) + the colony-centre tile's unattended output,
-    /// less the food the colonists eat (<see cref="Colony.Population"/> × <see cref="Colony.FoodPerColonist"/>).
+    /// less the food the colonists eat (<see cref="Colony.Population"/> × <see cref="Specification.ColonyConstants.FoodPerColonist"/>).
     /// Keyed by the storage good id (so e.g. all grains roll into food). A pure read (no RNG, no mutation) shared
     /// by the colony screen's production bar and the empire colony report so both show one tested figure (ADR-006).
     /// Building-worker conversions (e.g. a weaver's cloth) are not included — this is the tile/centre production
@@ -9302,7 +9304,7 @@ public sealed partial class Game
                 Add(o.GoodsId, o.Amount);
             }
         }
-        Add(Colony.FoodId, -colony.Population * Colony.FoodPerColonist);
+        Add(Colony.FoodId, -colony.Population * Ruleset.ColonyConstants.FoodPerColonist);
         return net;
     }
 
@@ -9860,7 +9862,7 @@ public sealed partial class Game
     /// <c>getAdjustedNetProductionOf(food)</c>, the figure the survival check uses): the colony-centre tile's
     /// unattended food + each food-tile worker's yield (folding <paramref name="owner"/>'s fathers and the colony's
     /// Sons-of-Liberty production bonus, floored at 0), minus what the colonists eat (<see cref="Colony.Population"/> ×
-    /// <see cref="Colony.FoodPerColonist"/>). Mirrors the production + consumption in <see cref="RunColonyTurn"/>;
+    /// <see cref="Specification.ColonyConstants.FoodPerColonist"/>). Mirrors the production + consumption in <see cref="RunColonyTurn"/>;
     /// horse breeding is excluded (it eats only this turn's <em>surplus</em>, never starving colonists). A pure read —
     /// no RNG, no mutation — used by the foreign-power colony worker planner to balance cash crops against starvation.
     /// </summary>
@@ -9874,7 +9876,7 @@ public sealed partial class Game
                 produced += Math.Max(0, TileYield(owner, colony.WorkerTypeAt(tile), tile, goodsId) + colony.ProductionBonus);
             }
         }
-        return produced - colony.Population * Colony.FoodPerColonist;
+        return produced - colony.Population * Ruleset.ColonyConstants.FoodPerColonist;
     }
 
     /// <summary>The colony-centre tile's unattended food production (always worked, no colonist needed).</summary>
@@ -9953,7 +9955,7 @@ public sealed partial class Game
         int Output(Position t, string good) => yield[(t, good)] <= 0 ? 0 : Math.Max(0, yield[(t, good)] + colony.ProductionBonus);
         int NetFood() => centreFood
             + target.Where(kv => Ruleset.StorageIdOf(kv.Value) == Colony.FoodId).Sum(kv => Output(kv.Key, kv.Value))
-            - colony.Population * Colony.FoodPerColonist;
+            - colony.Population * Ruleset.ColonyConstants.FoodPerColonist;
         Position? BestTileFor(string good) => neighbours
             .Where(n => !target.ContainsKey(n) && CanWorkTile(n) && yield[(n, good)] > 0)
             .OrderByDescending(n => Output(n, good)).ThenBy(n => n.Y).ThenBy(n => n.X)
@@ -10365,7 +10367,7 @@ public sealed partial class Game
         //    tile always yields ≥ 2 food (desert/arctic 2, plains 3…), exactly a lone colonist's appetite, so a
         //    size-1 colony never starves in normal play — FreeCol's "last colonist starves → colony disposed"
         //    rule only fires once food production can drop below that (disasters), deferred with that system.
-        int shortfall = colony.ConsumeFood(colony.Population * Colony.FoodPerColonist);
+        int shortfall = colony.ConsumeFood(colony.Population * Ruleset.ColonyConstants.FoodPerColonist);
         if (shortfall > 0 && colony.Population > 1)
         {
             colony.Population--;
@@ -10374,9 +10376,9 @@ public sealed partial class Game
 
         // 3. Growth: a food surplus of 200 raises a new colonist, who reports
         //    to the best free food tile.
-        if (colony.Food >= Colony.FoodForGrowth)
+        if (colony.Food >= Ruleset.ColonyConstants.FoodForGrowth)
         {
-            colony.ConsumeFood(Colony.FoodForGrowth);
+            colony.ConsumeFood(Ruleset.ColonyConstants.FoodForGrowth);
             colony.Population++;
             AutoAssignIdleToFood(colony);
         }

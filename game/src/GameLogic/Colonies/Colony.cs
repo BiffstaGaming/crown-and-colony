@@ -10,11 +10,20 @@ namespace CrownAndColony.GameLogic.Colonies;
 /// </summary>
 public sealed class Colony
 {
-    /// <summary>Food a colonist eats per turn (original's value — cross-check flagged in docs).</summary>
-    public const int FoodPerColonist = 2;
+    /// <summary>
+    /// Food a colonist eats per turn — the classic value (2), now the source-of-truth alias of the ruleset constant
+    /// <see cref="Specification.ColonyConstants.FoodPerColonist"/> (86d3drpgg). The live colony turn reads the ruleset's
+    /// value via <see cref="GameSession.Game"/>; this static alias is for presentation/tests that want the classic figure
+    /// without a ruleset.
+    /// </summary>
+    public static readonly int FoodPerColonist = Specification.ColonyConstants.ClassicDefaults.FoodPerColonist;
 
-    /// <summary>Stored food needed for a new colonist to be born (original's threshold).</summary>
-    public const int FoodForGrowth = 200;
+    /// <summary>
+    /// Stored food a new colonist needs to be born — the classic value (200), now the source-of-truth alias of the
+    /// ruleset constant <see cref="Specification.ColonyConstants.FoodForGrowth"/> (86d3drpgg). The live colony turn reads
+    /// the ruleset's value via <see cref="GameSession.Game"/>; this static alias is for presentation/tests.
+    /// </summary>
+    public static readonly int FoodForGrowth = Specification.ColonyConstants.ClassicDefaults.FoodForGrowth;
 
     /// <summary>
     /// The warehouse food id — grain/fish/meat all store as this
@@ -22,8 +31,21 @@ public sealed class Colony
     /// </summary>
     public const string FoodId = "model.goods.food";
 
-    /// <summary>Liberty points one rebel colonist represents (FreeCol <c>Colony.LIBERTY_PER_REBEL</c> = 200; a real code constant, not a difficulty option).</summary>
-    public const int LibertyPerRebel = 200;
+    /// <summary>
+    /// Liberty points one rebel colonist represents (FreeCol <c>Colony.LIBERTY_PER_REBEL</c> = 200) — the classic value,
+    /// now the source-of-truth alias of the ruleset constant <see cref="Specification.ColonyConstants.LibertyPerRebel"/>
+    /// (86d3drpgg). A colony's own SoL maths read its per-colony <see cref="RebelLibertyDivisor"/> (set from the ruleset);
+    /// this static alias is the classic figure for presentation/tests.
+    /// </summary>
+    public static readonly int LibertyPerRebel = Specification.ColonyConstants.ClassicDefaults.LibertyPerRebel;
+
+    /// <summary>
+    /// The per-colony liberty-per-rebel divisor behind <see cref="SonsOfLiberty"/> and the 100%-SoL liberty cap. Set from
+    /// <c>Ruleset.ColonyConstants.LibertyPerRebel</c> when the colony is founded or loaded; defaults to the classic 200
+    /// so a colony built without a ruleset (tests) behaves as before. A plain value (no <see cref="Ruleset"/> dependency)
+    /// — the <see cref="Government"/> precedent (86d3drpgg). <c>internal set</c>: only the game/save layer assigns it.
+    /// </summary>
+    internal int RebelLibertyDivisor { get; set; } = Specification.ColonyConstants.ClassicDefaults.LibertyPerRebel;
 
     /// <summary>
     /// The government thresholds for <see cref="ProductionBonus"/>, from the difficulty level. Set from
@@ -57,8 +79,21 @@ public sealed class Colony
     /// <param name="ExportLevel">The amount to keep in the warehouse before exporting the rest.</param>
     public readonly record struct ExportSetting(bool Exported, int ExportLevel);
 
-    /// <summary>The default retain level for a good not yet configured (FreeCol <c>ExportData.EXPORT_LEVEL_DEFAULT</c>).</summary>
-    public const int DefaultExportLevel = 50;
+    /// <summary>
+    /// The default retain level for a good not yet configured (FreeCol <c>ExportData.EXPORT_LEVEL_DEFAULT</c> = 50) — the
+    /// classic value, now the source-of-truth alias of the ruleset constant
+    /// <see cref="Specification.ColonyConstants.DefaultExportLevel"/> (86d3drpgg). A colony reads its per-colony
+    /// <see cref="ExportRetainDefault"/> (set from the ruleset) for the live export maths; this static alias is the
+    /// classic figure for presentation/tests.
+    /// </summary>
+    public static readonly int DefaultExportLevel = Specification.ColonyConstants.ClassicDefaults.DefaultExportLevel;
+
+    /// <summary>
+    /// The per-colony custom-house default retain level. Set from <c>Ruleset.ColonyConstants.DefaultExportLevel</c> when
+    /// the colony is founded or loaded; defaults to the classic 50 so a colony built without a ruleset (tests) behaves as
+    /// before. A plain value (no <see cref="Ruleset"/> dependency) — the <see cref="Government"/> precedent (86d3drpgg).
+    /// </summary>
+    internal int ExportRetainDefault { get; set; } = Specification.ColonyConstants.ClassicDefaults.DefaultExportLevel;
 
     /// <summary>Creates a colony owned by a colonial player (the human is 0; ADR-019).</summary>
     public Colony(int id, string name, Position position, int population, int ownerId = 0)
@@ -219,7 +254,7 @@ public sealed class Colony
     /// (applied to the percentage, after the conversion — FreeCol's order), clamped 0–100; 0 for an empty colony.
     /// </summary>
     public int SonsOfLiberty =>
-        Population <= 0 ? 0 : Math.Clamp(Liberty * 100 / (LibertyPerRebel * Population) + SolModifierBonus, 0, 100);
+        Population <= 0 ? 0 : Math.Clamp(Liberty * 100 / (RebelLibertyDivisor * Population) + SolModifierBonus, 0, 100);
 
     /// <summary>Colonists who are rebels: <c>floor(SoL% · population / 100)</c> (FreeCol <c>calculateRebelCount</c>; integer arithmetic — bit-identical to its float floor, ADR-009).</summary>
     public int RebelCount => SonsOfLiberty * Population / 100;
@@ -597,7 +632,7 @@ public sealed class Colony
         Liberty = Math.Max(0, Liberty + amount);
         if (SonsOfLiberty >= 100)
         {
-            Liberty = LibertyPerRebel * Population;
+            Liberty = RebelLibertyDivisor * Population;
         }
     }
 
@@ -612,19 +647,19 @@ public sealed class Colony
     /// <summary>All non-default custom-house export settings (good id → setting), sparse — a default good is absent.</summary>
     public IReadOnlyDictionary<string, ExportSetting> Exports => _exports;
 
-    /// <summary>The export setting for a good — its stored setting, or the default (not exported, retain <see cref="DefaultExportLevel"/>).</summary>
+    /// <summary>The export setting for a good — its stored setting, or the default (not exported, retain <see cref="ExportRetainDefault"/>).</summary>
     public ExportSetting ExportOf(string goodsId) =>
-        _exports.GetValueOrDefault(goodsId, new ExportSetting(false, DefaultExportLevel));
+        _exports.GetValueOrDefault(goodsId, new ExportSetting(false, ExportRetainDefault));
 
     /// <summary>
     /// Sets a good's custom-house export setting (the level is floored at 0). A setting equal to the default
-    /// (not exported, retain <see cref="DefaultExportLevel"/>) is <em>removed</em>, so an untouched/reset good
+    /// (not exported, retain <see cref="ExportRetainDefault"/>) is <em>removed</em>, so an untouched/reset good
     /// leaves no trace and the save stays byte-stable.
     /// </summary>
     internal void SetExport(string goodsId, bool exported, int exportLevel)
     {
         int level = Math.Max(0, exportLevel);
-        if (!exported && level == DefaultExportLevel)
+        if (!exported && level == ExportRetainDefault)
         {
             _exports.Remove(goodsId);
         }

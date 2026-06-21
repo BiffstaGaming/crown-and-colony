@@ -60,10 +60,12 @@ public sealed class Ruleset
         bool victoryDefeatRef,
         bool victoryDefeatEuropeans,
         bool victoryDefeatHumans,
-        CombatModifiers combatModifiers)
+        CombatModifiers combatModifiers,
+        ColonyConstants colonyConstants)
     {
         Calendar = calendar;
         CombatModifiers = combatModifiers;
+        ColonyConstants = colonyConstants;
         FatherAgeYears = fatherAgeYears;
         Difficulty = difficulty;
         GameOptions = gameOptions;
@@ -148,6 +150,15 @@ public sealed class Ruleset
     /// so the default classic game is byte-identical.
     /// </summary>
     public CombatModifiers CombatModifiers { get; }
+
+    /// <summary>
+    /// The colony/production scalar constants (per-colonist food appetite, growth threshold, liberty-per-rebel divisor,
+    /// default custom-house export level) FreeCol carries in its spec data or model code, parsed once from the spec.
+    /// <see cref="GameSession.Game"/> reads the food pair during the colony turn; each <see cref="Colonies.Colony"/>
+    /// carries the liberty/export pair (set when founded or loaded). A spec missing a source falls back to the classic
+    /// value (<see cref="Specification.ColonyConstants.ClassicDefaults"/>), so the default classic game is byte-identical.
+    /// </summary>
+    public ColonyConstants ColonyConstants { get; }
 
     /// <summary>
     /// The in-game year thresholds at which the founding-father age weighting changes (classic <c>1600, 1700</c>,
@@ -831,12 +842,17 @@ public sealed class Ruleset
         // to its hardcoded classic value, so the default classic game is byte-identical (FreeCol Modifier).
         CombatModifiers combatModifiers = ParseCombatModifiers(root.Element("modifiers"));
 
+        // The colony/production scalars (per-colonist food appetite from the colonist's <consumes>, the 200-food growth
+        // threshold, the 200 liberty-per-rebel divisor, the 50 default export level). Each missing source falls back to
+        // its classic value, so the default classic game is byte-identical (ADR-009).
+        ColonyConstants colonyConstants = ParseColonyConstants(root, units);
+
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
             roles, disasters, unitChanges, experienceUpgrades, educationTurns, europeanNations, events, calendar, fatherAgeYears,
             difficulty, gameOptions, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage,
             interventionBells, interventionTurns, interventionForce,
-            victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, combatModifiers);
+            victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, combatModifiers, colonyConstants);
     }
 
     /// <summary>
@@ -968,6 +984,74 @@ public sealed class Ruleset
                 root, "model.option.lastColonialYear", GameOptions.ClassicDefaults.LastColonialYear),
             IndependenceTurn: ParseIntOption(
                 root, "model.option.independenceTurn", GameOptions.ClassicDefaults.IndependenceTurn));
+
+    /// <summary>
+    /// Parses the colony/production scalar constants into <see cref="Specification.ColonyConstants"/>. Each source is
+    /// FreeCol-faithful, so the result equals <see cref="ColonyConstants.ClassicDefaults"/> for the classic spec and the
+    /// default game is byte-identical (ADR-009):
+    /// <list type="bullet">
+    /// <item><c>FoodPerColonist</c> ← the free colonist's <c>&lt;consumes id="model.goods.food"&gt;</c> (resolved up the
+    /// <c>extends</c> chain to the <c>colonist</c> base where the classic value 2 lives, mirroring FreeCol
+    /// <c>UnitType.getConsumptionOf(food)</c>).</item>
+    /// <item><c>FoodForGrowth</c> ← the free colonist's <c>&lt;required-goods id="model.goods.food"&gt;</c> (already parsed
+    /// onto its <see cref="UnitType.BuildCost"/>; the spec mirror of FreeCol's <c>Settlement.FOOD_PER_COLONIST</c> = 200).</item>
+    /// <item><c>LibertyPerRebel</c> / <c>DefaultExportLevel</c> ← FreeCol model-code constants (200 / 50) with no spec
+    /// element, so they take the classic default and become data-overridable for a variant.</item>
+    /// </list>
+    /// A missing source falls back to the matching classic default.
+    /// </summary>
+    internal static ColonyConstants ParseColonyConstants(XElement root, IReadOnlyDictionary<string, UnitType> units)
+    {
+        ColonyConstants classic = ColonyConstants.ClassicDefaults;
+
+        // Per-colonist food appetite: the free colonist's food <consumes>, resolved up the extends chain (the value sits
+        // on the abstract `colonist` base, which freeColonist extends) — FreeCol UnitType.getConsumptionOf(food).
+        XElement? unitTypes = root.Element("unit-types");
+        var unitElements = (unitTypes?.Elements("unit-type") ?? [])
+            .Where(e => (string?)e.Attribute("id") is not null)
+            .ToDictionary(e => (string)e.Attribute("id")!);
+        int foodPerColonist = ResolveConsumes(
+            unitElements, "model.unit.freeColonist", "model.goods.food") ?? classic.FoodPerColonist;
+
+        // Growth threshold: the free colonist's required-goods food (already on its BuildCost); the spec mirror of
+        // FreeCol Settlement.FOOD_PER_COLONIST.
+        int foodForGrowth = classic.FoodForGrowth;
+        if (units.TryGetValue("model.unit.freeColonist", out UnitType? freeColonist))
+        {
+            GoodsOutput? foodReq = freeColonist.BuildCostOrEmpty
+                .FirstOrDefault(g => g.GoodsId == "model.goods.food");
+            if (foodReq is { } req)
+            {
+                foodForGrowth = req.Amount;
+            }
+        }
+
+        return classic with { FoodPerColonist = foodPerColonist, FoodForGrowth = foodForGrowth };
+    }
+
+    /// <summary>
+    /// The value of a unit type's <c>&lt;consumes id="goodsId"&gt;</c>, resolved up its <c>extends</c> chain (nearest
+    /// definition wins; the classic colonist's food/bells consumption lives on its abstract base). Null when neither the
+    /// type nor any ancestor declares that consumption.
+    /// </summary>
+    private static int? ResolveConsumes(
+        IReadOnlyDictionary<string, XElement> unitElements, string unitId, string goodsId)
+    {
+        string? id = unitId;
+        while (id is not null && unitElements.TryGetValue(id, out XElement? el))
+        {
+            int? value = el.Elements("consumes")
+                .Where(c => (string?)c.Attribute("id") == goodsId)
+                .Select(c => (int?)c.Attribute("value"))
+                .FirstOrDefault(v => v is not null);
+            if (value is not null)
+            {
+                return value;
+            }
+            id = (string?)el.Attribute("extends");
+        }
+        return null;
+    }
 
     /// <summary>
     /// Parses the spec <c>model.option.ages</c> text option (classic <c>"1600,1700"</c>) into the two ascending
