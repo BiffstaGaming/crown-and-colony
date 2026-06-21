@@ -465,6 +465,148 @@ public sealed partial class Game
         _human.CurrentFather = fatherId;
     }
 
+    // ── Player score (FreeCol ServerPlayer.updateScore) ─────────────────────────────────────────────────
+    //
+    // A faithful, pure re-implementation of FreeCol's player-score formula. The victory and high-score screens
+    // (separate P7 tasks) consume this read; nothing here mutates state, so the default game stays byte-identical
+    // (ADR-009) and the score is NOT persisted — it is recomputed from current state each time it is read, exactly
+    // as FreeCol recomputes it (FreeCol caches the result in a serialized field for the network protocol; we have no
+    // such need, so we keep it a pure read and add no save field — no save-version bump).
+
+    /// <summary>Score bonus for each founding father (FreeCol <c>ServerPlayer.SCORE_FOUNDING_FATHER</c> = 5; Col1).</summary>
+    private const int ScoreFoundingFather = 5;
+
+    /// <summary>Gold-to-score rate: 1 point per 1000 gold (FreeCol <c>ServerPlayer.SCORE_GOLD</c> = 0.001; Col1).</summary>
+    private const double ScoreGold = 0.001;
+
+    /// <summary>Percentage score bonus for being the first power to win independence (FreeCol <c>SCORE_INDEPENDENCE_BONUS_FIRST</c> = 100; Col1).</summary>
+    private const int ScoreIndependenceBonusFirst = 100;
+
+    /// <summary>Percentage score bonus for the second power to win independence (FreeCol <c>SCORE_INDEPENDENCE_BONUS_SECOND</c> = 50; Col1).</summary>
+    private const int ScoreIndependenceBonusSecond = 50;
+
+    /// <summary>Percentage score bonus for the third power to win independence (FreeCol <c>SCORE_INDEPENDENCE_BONUS_THIRD</c> = 25; Col1).</summary>
+    private const int ScoreIndependenceBonusThird = 25;
+
+    /// <summary>
+    /// Per-unit-type score values from the classic FreeCol ruleset (the <c>score-value</c> attribute on each
+    /// <c>unit-type</c> in <c>freecol/data/rules/classic/specification.xml</c>, lines 1814–2213). FreeCol reads these off
+    /// the parsed <see cref="Specification.UnitType"/> (<c>UnitType.getScoreValue</c>); our <see cref="Specification.UnitType"/>
+    /// does not yet carry that attribute, so this scoring section holds the table directly — keeping the formula faithful and
+    /// self-contained without touching the spec parser. A unit type absent from the table scores 0 (FreeCol's default for a
+    /// type with no <c>score-value</c>). Update this table if the unit ruleset's score values change.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, int> UnitScoreValues = new Dictionary<string, int>
+    {
+        // People (specification.xml lines 1814–2003)
+        ["model.unit.freeColonist"] = 3,
+        ["model.unit.expertFarmer"] = 4,
+        ["model.unit.expertFisherman"] = 4,
+        ["model.unit.expertFurTrapper"] = 4,
+        ["model.unit.expertSilverMiner"] = 4,
+        ["model.unit.expertLumberJack"] = 4,
+        ["model.unit.expertOreMiner"] = 4,
+        ["model.unit.masterSugarPlanter"] = 5,
+        ["model.unit.masterCottonPlanter"] = 5,
+        ["model.unit.masterTobaccoPlanter"] = 5,
+        ["model.unit.firebrandPreacher"] = 6,
+        ["model.unit.elderStatesman"] = 6,
+        ["model.unit.masterCarpenter"] = 4,
+        ["model.unit.masterDistiller"] = 5,
+        ["model.unit.masterWeaver"] = 5,
+        ["model.unit.masterTobacconist"] = 5,
+        ["model.unit.masterFurTrader"] = 5,
+        ["model.unit.masterBlacksmith"] = 5,
+        ["model.unit.masterGunsmith"] = 5,
+        ["model.unit.seasonedScout"] = 4,
+        ["model.unit.hardyPioneer"] = 4,
+        ["model.unit.veteranSoldier"] = 5,
+        ["model.unit.jesuitMissionary"] = 5,
+        ["model.unit.indenturedServant"] = 2,
+        ["model.unit.pettyCriminal"] = 1,
+        ["model.unit.indianConvert"] = 3,
+        // Ships and land vehicles (specification.xml lines 2102–2213)
+        ["model.unit.caravel"] = 3,
+        ["model.unit.frigate"] = 6,
+        ["model.unit.galleon"] = 5,
+        ["model.unit.manOWar"] = 8,
+        ["model.unit.merchantman"] = 4,
+        ["model.unit.privateer"] = 4,
+        ["model.unit.artillery"] = 2,
+        ["model.unit.damagedArtillery"] = 1,
+        ["model.unit.treasureTrain"] = 1,
+        ["model.unit.wagonTrain"] = 1,
+    };
+
+    /// <summary>The classic-ruleset score value of one unit (FreeCol <c>UnitType.getScoreValue</c>); 0 for a type with no score value.</summary>
+    private static int UnitScoreValue(Unit unit) => UnitScoreValues.GetValueOrDefault(unit.Type.Id, 0);
+
+    /// <summary>The score value of the human player (a convenience over <see cref="PlayerScore"/>, mirroring <see cref="Gold"/>/<see cref="Liberty"/>).</summary>
+    public int Score => PlayerScore(_human);
+
+    /// <summary>
+    /// The player's final score, recomputed from current state exactly as FreeCol does
+    /// (<c>ServerPlayer.updateScore</c>). A <b>pure, RNG-free read</b>: it mutates nothing and draws no randomness, so a
+    /// score read leaves the game byte-identical (ADR-009) and the value is never persisted — the victory/high-score
+    /// screens (P7) recompute it on demand.
+    /// <para>
+    /// The sum is: Σ(unit score values) + Σ(colony liberty) + 5·(founding fathers) + ⌊0.001·gold⌋, then the
+    /// independence percentage bonus is applied to that subtotal — <c>subtotal + subtotal·bonus/100</c> — where the
+    /// bonus is 100/50/25% for the first/second/third power to win independence.
+    /// </para>
+    /// <para><b>Faithful-subset notes vs. FreeCol's <c>updateScore</c>:</b>
+    /// (1) FreeCol's <c>sum(getUnits(), Unit::getScoreValue)</c> counts every owned unit including colony workers; our
+    /// colony workers are not in the unit list (they are colony population), so only map/Europe units contribute today —
+    /// the same modelling deviation noted on the continental-army muster.
+    /// (2) FreeCol also folds in per-event history scores (region discovery, lost-city finds, settlement/nation destruction
+    /// penalties) via <c>HistoryEvent.getScore()</c>; our <see cref="HistoryEvent"/> carries no numeric score and is not yet
+    /// persisted, so those summands are omitted until the history log gains scores (follow-up).
+    /// (3) FreeCol derives the independence ordinal from an INDEPENDENCE history event's stored place (0/1/2); with a single
+    /// human player, an <see cref="PlayerType.Independent"/> nation is the first to win, so it takes the 100% first-place bonus.</para>
+    /// </summary>
+    /// <param name="player">The player to score.</param>
+    /// <returns>The player's score (may be negative once destruction penalties land; today it is ≥ 0).</returns>
+    public int PlayerScore(Player player)
+    {
+        int score = _units.Where(u => IsOwnedBy(u, player)).Sum(UnitScoreValue)
+            + ColoniesOf(player).Sum(c => c.Liberty)
+            + ScoreFoundingFather * player.Congress.Count
+            + (int)Math.Floor(ScoreGold * player.Gold);
+
+        int bonus = IndependenceScoreBonusPercent(player);
+        score += score * bonus / 100;
+        return score;
+    }
+
+    /// <summary>
+    /// The independence percentage bonus for <paramref name="player"/> (FreeCol's INDEPENDENCE history-event switch): a
+    /// nation that has won independence takes the bonus for the order in which it did so. With one human player an
+    /// independent nation is always the first, so it takes <see cref="ScoreIndependenceBonusFirst"/> (100%); a player that
+    /// has not won independence gets 0. The second/third constants exist for the multi-power future
+    /// (<see cref="ScoreIndependenceBonusSecond"/>/<see cref="ScoreIndependenceBonusThird"/>).
+    /// </summary>
+    private int IndependenceScoreBonusPercent(Player player)
+    {
+        if (player.PlayerType != PlayerType.Independent)
+        {
+            return 0;
+        }
+        // The order in which independence was won, among all independent nations (FreeCol's stored 0/1/2 ordinal).
+        int place = _players
+            .Where(p => p.PlayerType == PlayerType.Independent)
+            .OrderBy(p => p.DeclaredIndependenceTurn ?? int.MaxValue)
+            .ThenBy(p => p.PlayerId)
+            .ToList()
+            .IndexOf(player);
+        return place switch
+        {
+            0 => ScoreIndependenceBonusFirst,
+            1 => ScoreIndependenceBonusSecond,
+            2 => ScoreIndependenceBonusThird,
+            _ => 0,
+        };
+    }
+
     /// <summary>All units in the game — the player's and the natives' (braves).</summary>
     public IReadOnlyList<Unit> Units => _units;
 
