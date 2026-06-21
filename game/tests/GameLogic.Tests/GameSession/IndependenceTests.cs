@@ -324,6 +324,112 @@ public class IndependenceTests
         Assert.Equal(Stance.War, loaded.StanceBetween(loadedRef.PlayerId, loaded.HumanPlayer.PlayerId));
     }
 
+    // ── Item 8b: specialised REF combat doctrine (86d3drn5a, FreeCol REFAIPlayer) ────────────────────────
+
+    /// <summary>Clears the REF roster down to nothing (so a test can place a single controlled REF unit).</summary>
+    private static void ClearRef(Game game, Player refP)
+    {
+        foreach (Unit u in game.Units.Where(u => u.OwnerId == refP.PlayerId).ToList())
+        {
+            game.Disband(u);
+        }
+    }
+
+    [Fact]
+    public void Ref_DoesNotChaseRebelFieldUnits_UntilAColonyIsCaptured()
+    {
+        // FreeCol REFAIPlayer.adjustMission: "Do not chase units until at least one colony is captured." A REF land
+        // unit standing next to a lone rebel soldier — with no REF-held colony yet — must NOT attack it; it heads for
+        // the rebel's colony instead. We pin the rule by asserting the adjacent rebel unit is left untouched.
+        (Game game, Colony colony) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        Player refP = Ref(game);
+        ClearRef(game, refP);
+
+        // A lone rebel soldier in the open field, away from the colony, with a REF king's regular right beside it.
+        Position fieldTile = EmptyLand(game, 1).First(p => !p.IsAdjacentTo(colony.Position) && p != colony.Position);
+        Unit rebelSoldier = game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), fieldTile);
+        Position refTile = fieldTile.Neighbours().First(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater && game.ColonyAt(n) is null
+            && game.NativeSettlementAt(n) is null && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+        game.SpawnUnit(Classic.Unit("model.unit.kingsRegular"), refTile, refP.PlayerId);
+        Assert.DoesNotContain(game.Colonies, c => c.OwnerId == refP.PlayerId); // the REF holds no colony
+
+        int noticesBefore = game.CombatNotices.Count;
+        game.EndTurn(); // RunRefTurn — colony-only doctrine, the field soldier is ignored
+
+        // The rebel soldier is unharmed and on the map (it was never attacked); no new combat notice fired against it.
+        Unit survivor = game.Units.Single(u => u.Id == rebelSoldier.Id);
+        Assert.Equal("model.unit.veteranSoldier", survivor.Type.Id);
+        Assert.True(survivor.IsOnMap);
+        Assert.Equal(noticesBefore, game.CombatNotices.Count);
+    }
+
+    [Fact]
+    public void Ref_NavyHuntsTheRebelsShips()
+    {
+        // FreeCol REFNavyGoalDecider + the navy block in REFAIPlayer.initialize: a man-o-war seek-and-destroys rebel
+        // warships. A REF man-o-war beside a rebel ship engages it — we pin the doctrine by asserting an attack fires
+        // (a combat notice is recorded), regardless of the RNG outcome.
+        (Game game, Colony colony) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        Player refP = Ref(game);
+        ClearRef(game, refP);
+
+        // A rebel ship on the water by the colony, with a REF man-o-war on an adjacent water tile.
+        Position rebelWater = colony.Position.Neighbours().First(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+        game.SpawnUnit(Classic.Unit("model.unit.caravel"), rebelWater);
+        Position refWater = rebelWater.Neighbours().First(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater
+            && n != colony.Position && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+        game.SpawnUnit(Classic.Unit("model.unit.manOWar"), refWater, refP.PlayerId);
+
+        int noticesBefore = game.CombatNotices.Count;
+        game.EndTurn(); // RunRefTurn — the man-o-war hunts and engages the rebel ship
+
+        Assert.True(game.CombatNotices.Count > noticesBefore); // the REF navy attacked the rebel ship
+    }
+
+    [Fact]
+    public void Ref_MarchesOnTheRebelColony_WhenNoFieldUnitIsInRange()
+    {
+        // FreeCol REFAIPlayer.findColonyTargets: with no rebel field unit near, a REF land unit closes on the rebel's
+        // (connected-port) colony — it steps toward it rather than idling. Place a king's regular a few tiles off the
+        // colony (within the seek ladder, but not adjacent so it marches rather than assaults) with a known closer land
+        // neighbour, and assert it ends the turn nearer the colony.
+        (Game game, Colony colony) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        Player refP = Ref(game);
+        ClearRef(game, refP);
+        // Disband the rebel's units so nothing distracts the REF (and the colony is the only target).
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+
+        // A land staging tile 2-6 tiles from the colony (not adjacent → it marches, not assaults) that has at least one
+        // legal land neighbour strictly closer to the colony — so a single step must reduce the Chebyshev distance.
+        int Dist(Position p) => Math.Max(Math.Abs(p.X - colony.Position.X), Math.Abs(p.Y - colony.Position.Y));
+        Position start = game.Map.AllPositions().First(p =>
+            !game.Map.TerrainAt(p).IsWater && game.ColonyAt(p) is null && game.NativeSettlementAt(p) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p)
+            && Dist(p) is >= 2 and <= 6
+            && p.Neighbours().Any(n => game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+                && game.ColonyAt(n) is null && game.NativeSettlementAt(n) is null
+                && !game.Units.Any(u => u.IsOnMap && u.Position == n) && Dist(n) < Dist(p)));
+        Unit regular = game.SpawnUnit(Classic.Unit("model.unit.kingsRegular"), start, refP.PlayerId);
+        int distanceBefore = Dist(start);
+
+        game.EndTurn(); // RunRefTurn — the regular marches on the colony
+
+        Unit moved = game.Units.Single(u => u.Id == regular.Id);
+        Assert.True(Dist(moved.Position) < distanceBefore,
+            $"REF regular should close on the rebel colony ({distanceBefore} → {Dist(moved.Position)})");
+    }
+
     // ── Item 9: Win — defeat the REF + Spanish Succession ────────────────────────────────────────────────
 
     [Fact]

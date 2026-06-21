@@ -1,4 +1,5 @@
 using CrownAndColony.GameLogic.Colonies;
+using CrownAndColony.GameLogic.Combat;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
@@ -224,15 +225,278 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// The Royal Expeditionary Force's turn (item 8): bring any units still mustering in Europe ashore near a rebel
-    /// port, then prosecute the war. The REF is at war with the rebel (who is the human), so it reuses the
-    /// foreign-power war AI — hunting and assaulting the rebel's units and colonies — drawing entirely from its OWN
-    /// RNG stream (<see cref="RandomFor"/>), never the human's stream 0 (ADR-009).
+    /// The Royal Expeditionary Force's turn (item 8 + <c>86d3drn5a</c> specialised combat AI): bring any units still
+    /// mustering in Europe ashore near a rebel port, then prosecute the war with a <b>bespoke REF doctrine</b> that
+    /// mirrors FreeCol's <c>REFAIPlayer</c> rather than the generic foreign-power war AI.
+    /// <para>FreeCol's REF priorities, faithful-subset:
+    /// <list type="number">
+    /// <item><b>Colonies first, ports first</b> (<c>findColonyTargets</c> / <c>adjustMission</c>): land units make for
+    /// the rebel's <em>connected-port</em> colonies before any inland one (a connected port is valued +500), scoring
+    /// each by SoL (lower = easier), military/repair buildings, and stockade level (fortifications avoided).</item>
+    /// <item><b>No unit-chase until a colony falls</b> (<c>adjustMission</c>: "Do not chase units until at least one
+    /// colony is captured"; "The REF is more interested in colonies."): a REF land unit ignores loose rebel field
+    /// units and marches on colonies until the REF holds a settlement, then it will hunt field units too.</item>
+    /// <item><b>Navy hunts the rebel's ships &amp; supports the landings</b> (<c>REFNavyGoalDecider</c> / the navy block
+    /// in <c>initialize</c>): men-o-war seek-and-destroy rebel naval units, falling back to escorting toward the
+    /// invasion when no rebel ship is in reach.</item>
+    /// <item><b>Thin garrisons</b> (<c>adjustMission</c> DefendSettlementMission → MIN unless badly defended): a REF unit
+    /// standing in a captured colony presses on to the next objective rather than digging in.</item>
+    /// </list>
+    /// Everything draws from the REF's OWN RNG stream (<see cref="RandomFor"/>), never the human's stream 0 (ADR-009).
+    /// <b>Faithful-subset note:</b> we model the priorities (target selection + the colony-first gate + the naval split),
+    /// not FreeCol's full mission/transport scheduler — there is no separate amphibious transport doctrine, units march
+    /// overland from the beachhead. See docs/systems/independence.md.</para>
     /// </summary>
     private void RunRefTurn(Player refPlayer)
     {
         LandRefUnits(refPlayer);
-        RunForeignPowerTurn(refPlayer); // the rebel == the human, so the at-war hunt/assault logic targets it
+
+        Player? rebel = RefRebel(refPlayer);
+        if (rebel is null)
+        {
+            return; // no rebel to fight (defensive — the REF exists only while a rebel does)
+        }
+
+        // Once the REF holds a captured rebel colony it may hunt loose rebel field units; until then it is colony-only
+        // (FreeCol adjustMission: "Do not chase units until at least one colony is captured").
+        bool holdsAColony = ColoniesOf(refPlayer).Any();
+
+        foreach (Unit unit in _units.Where(u => IsOwnedBy(u, refPlayer)).OrderBy(u => u.Id).ToList())
+        {
+            if (!unit.IsOnMap || unit.MovementLeft <= 0 || OffenceBase(unit) <= 0)
+            {
+                continue; // still mustering in Europe, spent, or unarmed — nothing to do this turn
+            }
+            if (unit.Type.IsNaval)
+            {
+                RunRefNavalUnit(refPlayer, rebel, unit);
+            }
+            else
+            {
+                RunRefLandUnit(refPlayer, rebel, unit, holdsAColony);
+            }
+        }
+    }
+
+    /// <summary>The rebel the REF is prosecuting: the (single) player it is at war with that has declared independence
+    /// (<see cref="PlayerType.Rebel"/> or, briefly, <see cref="PlayerType.Independent"/>), or null if none survives.</summary>
+    private Player? RefRebel(Player refPlayer) =>
+        _players.FirstOrDefault(p =>
+            p.PlayerType is PlayerType.Rebel or PlayerType.Independent
+            && StanceBetween(refPlayer.PlayerId, p.PlayerId) == Stance.War);
+
+    /// <summary>
+    /// A REF <b>land</b> unit's turn (FreeCol <c>REFAIPlayer.giveNormalMissions</c> land branch): make for the rebel's
+    /// colonies — connected ports first — capturing an undefended one when adjacent and fighting a garrison as a field
+    /// unit; only once the REF holds a colony does it also hunt loose rebel field units. Standing in a just-captured
+    /// colony, it presses on to the next objective (FreeCol's "garrison thinly") rather than digging in. All combat and
+    /// movement draw the REF's own stream.
+    /// </summary>
+    private void RunRefLandUnit(Player refPlayer, Player rebel, Unit unit, bool holdsAColony)
+    {
+        // Decisive move: capture an adjacent undefended rebel colony right now (the war objective).
+        if (AdjacentCapturableRebelColony(unit, rebel) is { } capture)
+        {
+            CaptureRebelColony(refPlayer, unit, capture);
+            return;
+        }
+
+        // Best scored rebel colony within reach (ports favoured, fortifications/high-SoL avoided) — march on it,
+        // fighting its garrison as a field unit when adjacent.
+        if (PickRefColonyTarget(unit, rebel) is { } colonyTarget)
+        {
+            if (unit.Position.IsAdjacentTo(colonyTarget.Position))
+            {
+                if (CheckAttackColony(unit, colonyTarget.Position).Allowed)
+                {
+                    CaptureRebelColony(refPlayer, unit, colonyTarget.Position); // undefended → take it
+                }
+                else if (DefenderAt(unit, colonyTarget.Position) is not null && CheckAttack(unit, colonyTarget.Position).Allowed)
+                {
+                    AttackRebelUnit(refPlayer, unit, colonyTarget.Position); // garrisoned → fight the defender
+                }
+                else if (StepToward(refPlayer, unit, colonyTarget.Position) is { } sidestep)
+                {
+                    MoveUnit(unit, sidestep); // hemmed in beside a colony it can't take this turn — reposition
+                }
+            }
+            else if (StepToward(refPlayer, unit, colonyTarget.Position) is { } toColony)
+            {
+                MoveUnit(unit, toColony);
+            }
+            return;
+        }
+
+        // Colony captured already → the REF may now also seek-and-destroy loose rebel field units (FreeCol's gate).
+        if (holdsAColony && PickRefUnitTarget(unit, rebel) is { } prey)
+        {
+            if (unit.Position.IsAdjacentTo(prey) && CheckAttack(unit, prey).Allowed)
+            {
+                AttackRebelUnit(refPlayer, unit, prey);
+            }
+            else if (StepToward(refPlayer, unit, prey) is { } chase)
+            {
+                MoveUnit(unit, chase);
+            }
+            return;
+        }
+
+        // Nothing scored in range: close on the nearest rebel colony at any distance so the army besieges rather than
+        // idling (FreeCol keeps land units heading for a port even when the scored search comes up empty).
+        if (NearestRebelColony(unit, rebel) is { } distantColony && StepToward(refPlayer, unit, distantColony.Position) is { } march)
+        {
+            MoveUnit(unit, march);
+        }
+    }
+
+    /// <summary>
+    /// A REF <b>naval</b> unit's turn (FreeCol <c>REFNavyGoalDecider</c> + the navy block in <c>REFAIPlayer.initialize</c>):
+    /// a man-o-war seek-and-destroys the rebel's warships — closing on the best-scored rebel naval tile in reach and
+    /// engaging when adjacent — and, with no rebel ship to hunt, escorts toward the invasion (the nearest rebel port),
+    /// supporting the landings rather than wandering. Draws the REF's own stream.
+    /// </summary>
+    private void RunRefNavalUnit(Player refPlayer, Player rebel, Unit unit)
+    {
+        if (PickRefUnitTarget(unit, rebel) is { } enemyShip)
+        {
+            if (unit.Position.IsAdjacentTo(enemyShip) && CheckAttack(unit, enemyShip).Allowed)
+            {
+                AttackRebelUnit(refPlayer, unit, enemyShip);
+            }
+            else if (StepToward(refPlayer, unit, enemyShip) is { } hunt)
+            {
+                MoveUnit(unit, hunt);
+            }
+            return;
+        }
+        // No rebel ship in reach — patrol toward the invasion (the nearest rebel port), supporting the landings.
+        if (NearestRebelColony(unit, rebel) is { } port && StepToward(refPlayer, unit, port.Position) is { } support)
+        {
+            MoveUnit(unit, support);
+        }
+    }
+
+    // ── REF target selection (86d3drn5a, FreeCol REFAIPlayer.findColonyTargets / adjustMission / REFNavyGoalDecider) ──
+
+    /// <summary>+500 score for a rebel colony with a connected port (FreeCol <c>adjustMission</c> values connected-port
+    /// settlements +500 — the REF strikes the rebel's coast first to cut it off from any foreign ally).</summary>
+    private const int RefConnectedPortBonus = 500;
+
+    /// <summary>
+    /// The best scored rebel colony for a REF land unit to assault within the escalating seek range (FreeCol
+    /// <c>findColonyTargets</c> + <c>adjustMission</c>): each rebel colony in reach is scored by the shared
+    /// <see cref="ScoreColonyTarget"/> heuristic (value − distance, attacker strength, loot, fortifications down) plus a
+    /// <see cref="RefConnectedPortBonus"/> for a connected port — so the REF strikes coastal/port colonies before inland
+    /// ones, and the weakest-defended (low SoL, low stockade) of those first. A garrisoned colony is excluded here (its
+    /// garrison is fought via the unit-tile path on the adjacent step); ties resolve by stable position order, no RNG.
+    /// </summary>
+    private ScoredTarget? PickRefColonyTarget(Unit unit, Player rebel)
+    {
+        foreach (int range in SeekRangeLadder)
+        {
+            ScoredTarget? best = null;
+            foreach (Colony colony in _colonies
+                         .Where(c => c.OwnerId == rebel.PlayerId
+                                     && Chebyshev(c.Position, unit.Position) <= range
+                                     && !_units.Any(u => u.IsOnMap && u.Position == c.Position))
+                         .OrderBy(c => c.Position.Y).ThenBy(c => c.Position.X))
+            {
+                int score = ScoreColonyTarget(unit, colony) + (IsColonyCoastal(colony) ? RefConnectedPortBonus : 0);
+                if (best is null || score > best.Value.Score)
+                {
+                    best = new ScoredTarget(colony.Position, IsColony: true, score);
+                }
+            }
+            if (best is { } found)
+            {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The tile of the best rebel unit for a REF unit to seek-and-destroy within the escalating seek range, scored by
+    /// the shared <see cref="ScoreUnitTarget"/> heuristic (value − distance; weak/valuable targets favoured) — same
+    /// domain as the attacker (a man-o-war hunts ships, a land unit hunts land units, FreeCol <c>REFNavyGoalDecider</c>
+    /// + <c>UnitSeekAndDestroyMission</c>). Only rebel-owned tiles are eligible; ties resolve by stable id order, no RNG.
+    /// Null when no rebel unit is in reach.
+    /// </summary>
+    private Position? PickRefUnitTarget(Unit unit, Player rebel)
+    {
+        foreach (int range in SeekRangeLadder)
+        {
+            Position? best = null;
+            int bestScore = int.MinValue;
+            foreach (Position tile in _units
+                         .Where(u => u.IsOnMap && u.OwnerId == rebel.PlayerId && !u.IsNative
+                                     && u.Type.IsNaval == unit.Type.IsNaval
+                                     && Chebyshev(u.Position, unit.Position) <= range)
+                         .OrderBy(u => u.Id).Select(u => u.Position).Distinct())
+            {
+                int score = ScoreUnitTarget(unit, tile);
+                if (score != int.MinValue && score > bestScore)
+                {
+                    bestScore = score;
+                    best = tile;
+                }
+            }
+            if (best is { } found)
+            {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The tile of an undefended rebel colony this REF land unit may capture right now — adjacent and ungarrisoned, as
+    /// gated by <see cref="CheckAttackColony"/> (ties by position), or null. Mirror of
+    /// <see cref="AdjacentCapturableHumanColony"/> but rebel-scoped (the REF targets the rebel, not generically "the
+    /// human" — they coincide in single-player, but this keeps the doctrine correct against any rebel).
+    /// </summary>
+    private Position? AdjacentCapturableRebelColony(Unit attacker, Player rebel) =>
+        _colonies
+            .Where(c => c.OwnerId == rebel.PlayerId && CheckAttackColony(attacker, c.Position).Allowed)
+            .OrderBy(c => c.Position.Y).ThenBy(c => c.Position.X)
+            .Select(c => (Position?)c.Position)
+            .FirstOrDefault();
+
+    /// <summary>The nearest rebel colony to <paramref name="unit"/> (Chebyshev, ties by position), or null if the rebel
+    /// holds none — the besiege/patrol fallback when the scored search finds nothing in range. Pure (no RNG).</summary>
+    private Colony? NearestRebelColony(Unit unit, Player rebel) =>
+        _colonies.Where(c => c.OwnerId == rebel.PlayerId)
+            .OrderBy(c => Chebyshev(c.Position, unit.Position))
+            .ThenBy(c => c.Position.Y).ThenBy(c => c.Position.X)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// Resolves a REF unit's attack on the rebel unit at <paramref name="target"/> through the REF's OWN RNG stream
+    /// (never stream 0), recording a <see cref="CombatNotice"/> for the presentation. The REF sibling of
+    /// <see cref="AttackHumanUnit"/>: the defender is rebel-owned (filtered upstream by <see cref="PickRefUnitTarget"/>).
+    /// </summary>
+    private void AttackRebelUnit(Player refPlayer, Unit attacker, Position target)
+    {
+        Unit defender = DefenderAt(attacker, target)!;          // rebel-owned (filtered upstream)
+        string defenderTypeId = defender.Type.Id;               // capture before the attack — a beaten loser is removed
+        CombatResult result = Attack(attacker, target, RandomFor(refPlayer)); // INTERNAL overload → the REF's stream
+        _combatNotices.Add(new CombatNotice(refPlayer.NationId!, defenderTypeId, result, target));
+    }
+
+    /// <summary>
+    /// Resolves the REF's assault on the undefended rebel colony at <paramref name="target"/> through the REF's OWN RNG
+    /// stream (never stream 0), recording a <see cref="ColonyLossNotice"/> on a win. The REF sibling of
+    /// <see cref="CapturePlayerColony"/>; a win hands the colony to the REF (its people/buildings/stores), a loss
+    /// disarms/demotes the repelled attacker. Capturing the first colony unlocks the REF's field-unit hunt next turn.
+    /// </summary>
+    private void CaptureRebelColony(Player refPlayer, Unit attacker, Position target)
+    {
+        string colonyName = ColonyAt(target)!.Name; // read before AttackColony hands the colony over
+        CombatResult result = AttackColony(attacker, target, RandomFor(refPlayer)); // INTERNAL overload → the REF's stream
+        if (result is CombatResult.GreatWin or CombatResult.Win)
+        {
+            _colonyLossNotices.Add(new ColonyLossNotice(refPlayer.NationId!, colonyName, target));
+        }
     }
 
     /// <summary>
