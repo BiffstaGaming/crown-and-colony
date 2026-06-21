@@ -31,8 +31,9 @@ public class BuildingWorkerTypeProductionTests
     private const string Indentured = "model.unit.indenturedServant";    // hammers -1 (base 3 → 2)
     private const string Petty = "model.unit.pettyCriminal";             // hammers -2 (base 3 → 1)
     private const string DistillerHouse = "model.building.distillerHouse"; // sugar 3 → rum 3 (base, rebel-factor 1)
-    private const string LumberMill = "model.building.lumberMill";       // lumber 6 → hammers 6, rebel-factor 2
+    private const string LumberMill = "model.building.lumberMill";       // lumber 6 → hammers 6, rebel-factor 2, competence 2
     private const string RumFactory = "model.building.rumFactory";       // sugar 6 → rum 9 (non-1:1 factory)
+    private const string Distillery = "model.building.rumDistillery";    // sugar 6 → rum 6, competence 2 (master distiller ×2 — multiplicative)
     private const string Sugar = "model.goods.sugar";
     private const string Rum = "model.goods.rum";
 
@@ -175,7 +176,9 @@ public class BuildingWorkerTypeProductionTests
     public void RebelFactorBuilding_DoublesTheSoLBonus()
     {
         // Lumber mill has rebel-factor 2, so SoL +1 contributes floor(1×2) = +2 per worker, folded before the modifier.
-        // A free colonist: base 6 + 2 = 8 hammers. A master carpenter: (6+2) + 3 = 11. (Old flat add gave 7 and 10.)
+        // A free colonist: base 6 + 2 = 8 hammers (no expert modifier, so the lumber mill's competence factor 2 is a
+        // no-op for it). A master carpenter: (6+2) + 3×2 = 14 — the lumber mill's competence factor 2 scales the +3
+        // expert bonus to +6 (86d3drmzf). (Before competence this was 11; the old flat-add bug gave 7 and 10.)
         Game free = Game.New(Classic, Seed);
         Colony freeColony = BuildingColony(free, LumberMill, population: 1, liberty: 100, Free);
         Assert.Equal(1, freeColony.ProductionBonus);
@@ -187,7 +190,52 @@ public class BuildingWorkerTypeProductionTests
         Colony masterColony = BuildingColony(master, LumberMill, population: 1, liberty: 100, MasterCarpenter);
         masterColony.AddGoods(Lumber, 30);
         master.EndTurn();
-        Assert.Equal(11, masterColony.StoreOf(Hammers));
+        Assert.Equal(14, masterColony.StoreOf(Hammers));
+    }
+
+    // ---- Competence factor: an upgraded building scales a specialist's ADDITIVE bonus (86d3drmzf) ----
+
+    [Fact]
+    public void CompetenceFactor_ScalesAnAdditiveExpertBonus_LumberMillDoublesTheMasterCarpentersThree()
+    {
+        // No SoL (liberty 0, pop 1 → ProductionBonus 0), so the only effect is the lumber mill's competence factor 2.
+        // Free colonist: base 6 (no modifier, competence is a no-op). Master carpenter: 6 + 3×2 = 12 — the +3 expert
+        // bonus is scaled to +6. So the master out-produces the free colonist by 6, double the +3 he'd add in the
+        // base carpenter's house (competence 1).
+        Game free = Game.New(Classic, Seed);
+        Colony freeColony = BuildingColony(free, LumberMill, population: 1, liberty: 0, Free);
+        Assert.Equal(0, freeColony.ProductionBonus);
+        freeColony.AddGoods(Lumber, 30);
+        free.EndTurn();
+        Assert.Equal(6, freeColony.StoreOf(Hammers));
+
+        Game master = Game.New(Classic, Seed);
+        Colony masterColony = BuildingColony(master, LumberMill, population: 1, liberty: 0, MasterCarpenter);
+        masterColony.AddGoods(Lumber, 30);
+        master.EndTurn();
+        Assert.Equal(12, masterColony.StoreOf(Hammers));
+    }
+
+    [Fact]
+    public void CompetenceFactor_DoesNotScaleAMultiplicativeExpert_MasterDistillerInTheDistilleryStaysDoubled()
+    {
+        // The rum distillery has competence factor 2, but the master distiller's bonus is ×2 rum (multiplicative).
+        // FreeCol scales only ADDITIVE modifiers, so the doubling is untouched: base 6 × 2 = 12 (NOT 6 × 2 × 2 = 24).
+        // No SoL (liberty 0, pop 1) so the figure is exact.
+        Game game = Game.New(Classic, Seed);
+        Colony colony = BuildingColony(game, Distillery, population: 1, liberty: 0, MasterDistiller);
+        Assert.Equal(0, colony.ProductionBonus);
+        colony.AddGoods(Sugar, 30);
+        game.EndTurn();
+        Assert.Equal(12, colony.StoreOf(Rum));
+    }
+
+    [Fact]
+    public void CompetenceFactor_BaseBuildingIsOne_MasterCarpenterAddsOnlyThreeInTheCarpentersHouse()
+    {
+        // The carpenter's house has no competence-factor attribute → defaults to 1, so a master carpenter adds his
+        // plain +3 (base 3 → 6), confirming competence > 1 is exclusive to the upgraded buildings.
+        Assert.Equal(HammersAfterOneTurn([Free], lumber: 10) + 3, HammersAfterOneTurn([MasterCarpenter], lumber: 10));
     }
 
     [Fact]
@@ -205,10 +253,13 @@ public class BuildingWorkerTypeProductionTests
     }
 
     // ---- Non-1:1 factory under short input: FreeCol floors the required input first (+EPSILON), losing no unit ----
+    // The rum factory has competence factor 3, so an indentured servant's −1 rum penalty is scaled to −3 (86d3drmzf):
+    // an indentured makes 9 − 3 = 6 rum here (was 8 before competence). The flooring-edge intent is preserved by
+    // re-picking the sugar amounts: one case where required input == available (full output), one where it exceeds it.
 
     [Theory]
-    [InlineData(new[] { Free, Indentured }, 11, 17, 11)] // total 9+8=17; required floor(6·17/9)=11 == avail → full 17 rum / 11 sugar
-    [InlineData(new[] { Indentured, Indentured }, 9, 14, 9)] // total 16; required floor(6·16/9)=10 > 9 → scale 9/10 → 14 rum / 9 sugar
+    [InlineData(new[] { Free, Indentured }, 10, 15, 10)] // total 9+6=15; required floor(6·15/9)=10 == avail → full 15 rum / 10 sugar
+    [InlineData(new[] { Indentured, Indentured }, 7, 10, 7)] // total 12; required floor(6·12/9)=8 > 7 → scale 7/8 → 10 rum / 7 sugar
     public void Factory_ShortInput_FloorsRequiredFirst(string[] workers, int sugar, int expectedRum, int expectedSugarUsed)
     {
         Game game = Game.New(Classic, Seed);

@@ -5483,12 +5483,38 @@ public sealed partial class Game
         AccumulateLibertyAndElectFathers(player);
         ApplyFreeBuildings(player); // La Salle: a free stockade in each colony that has reached the required population
         AccumulateImmigrationAndEmigrate(player);
+        PayBuildingUpkeep(player); // deduct Σ building upkeep from gold — no-op in classic (enableUpkeep default off)
         ProcessTradeRoutes(player); // auto-haul any carriers on a trade route (no-op + no RNG when none — stream-0-safe)
 
         if (!player.IsHuman)
         {
             RunForeignPowerEconomy(player); // FP-5: pursue a father, sell surplus, recruit (own stream/market)
             RunForeignPowerTurn(player);     // FP-4: move / explore / found
+        }
+    }
+
+    /// <summary>
+    /// Deducts each colony's per-turn gold upkeep — Σ over its buildings of <see cref="BuildingType.Upkeep"/> — from
+    /// the player's treasury (FreeCol <c>Colony.getUpkeep</c> summed by <c>ServerPlayer.csPayUpkeep</c>). Gated on the
+    /// ruleset's <see cref="Ruleset.UpkeepEnabled"/> game option (classic <c>model.option.enableUpkeep</c> defaults
+    /// off), so the classic economy charges nothing and stays byte-identical — the deduction runs only when a ruleset
+    /// turns upkeep on. RNG-free. If the player can't cover the bill, gold is floored at 0 (it never goes negative).
+    /// </summary>
+    /// <remarks>
+    /// TODO (86d3c9ux4): FreeCol applies a BANKRUPTCY disaster — a production-penalty modifier — to a player who can't
+    /// pay, and lifts it once they can again. That penalty is a separate backlog task; here we only floor gold at 0.
+    /// </remarks>
+    private void PayBuildingUpkeep(Player player)
+    {
+        if (!Ruleset.UpkeepEnabled)
+        {
+            return; // classic default: no upkeep, default game byte-identical
+        }
+        int upkeep = ColoniesOf(player)
+            .Sum(colony => colony.Buildings.Sum(buildingId => Ruleset.Building(buildingId).Upkeep));
+        if (upkeep > 0)
+        {
+            player.Gold = Math.Max(0, player.Gold - upkeep); // can't pay → floored at 0 (bankruptcy penalty is 86d3c9ux4)
         }
     }
 
@@ -7615,15 +7641,26 @@ public sealed partial class Game
     /// running production value (ascending index, floored at 0). A free colonist — or a specialist working a good it
     /// isn't expert at — leaves the value unchanged. Indentured/petty penalties bite only on the manufactured goods
     /// they list (no raw-tile modifier, so tile yields are unchanged for them; the penalty lands in building production).
+    /// <para>
+    /// <paramref name="competenceFactor"/> scales an <em>additive</em> modifier's value (the expert's flat bonus) by the
+    /// building's competence — e.g. a master carpenter's +3 hammers becomes +6 in a lumber mill (factor 2) — faithfully
+    /// to FreeCol <c>BuildingType.getCompetenceModifiers</c>, which multiplies only additive modifiers, NOT
+    /// multiplicative ones (a master distiller's ×2 rum is untouched, so the doubling is never amplified). The default
+    /// 1.0 is the no-op used by tile work and base buildings.
+    /// </para>
     /// </summary>
-    private int ApplyWorkerProductionModifiers(string workerTypeId, string goodsId, int value)
+    private int ApplyWorkerProductionModifiers(string workerTypeId, string goodsId, int value, double competenceFactor = 1.0)
     {
         double yield = value;
         foreach (UnitProductionModifier modifier in Ruleset.Unit(workerTypeId).ProductionModifiersOrEmpty
                      .Where(m => m.GoodsId == goodsId)
                      .OrderBy(m => m.Index))
         {
-            yield = modifier.ApplyTo(yield);
+            // Competence scales only the additive (flat expert bonus) modifiers; multiplicative/percentage ones pass
+            // through unchanged — FreeCol scales m.getValue()*competence solely for ModifierType.ADDITIVE.
+            yield = competenceFactor != 1.0 && modifier.Type == ModifierType.Additive
+                ? ModifierMath.Apply(ModifierType.Additive, yield, modifier.Value * competenceFactor)
+                : modifier.ApplyTo(yield);
         }
         return Math.Max(0, (int)yield);
     }
@@ -7944,20 +7981,24 @@ public sealed partial class Game
 
             // Per-good output total (86d3b6nrz slice 5), faithful to FreeCol BuildingProductionCalculator: each worker's
             // own output is its base plus the Sons-of-Liberty bonus (additive, index 20), then its unit type's index-30
-            // expert modifier, then floored at 0 — and the building's total is the sum over its occupants (the non-free
-            // overlay padded with free colonists to the worker count). The SoL bonus is `floor(ProductionBonus ×
-            // rebel-factor)` per worker (lumber mill / cathedral ×2, factory tier ×1.5); folding it BEFORE the index-30
-            // step means a multiplicative expert (master distiller ×2 rum) multiplies the bonus too, and the per-worker
-            // floor means a bad government can't turn a productive colonist negative. An unattended entry (town-hall
-            // bell, church crosses) is a flat single unit — no worker, no bonus. An all-free, bonus-free building sums
-            // to base × workers, identical to the old scalar path.
+            // expert modifier (its ADDITIVE part scaled by the building's competence factor — lumber mill 2, factory
+            // tier 2/3 — so an expert earns a bigger flat bonus in an upgraded manufactory; multiplicative experts are
+            // unscaled), then floored at 0 — and the building's total is the sum over its occupants (the non-free overlay
+            // padded with free colonists to the worker count). The SoL bonus is `floor(ProductionBonus × rebel-factor)`
+            // per worker (lumber mill / cathedral ×2, factory tier ×1.5); folding it BEFORE the index-30 step means a
+            // multiplicative expert (master distiller ×2 rum) multiplies the bonus too, and the per-worker floor means a
+            // bad government can't turn a productive colonist negative. An unattended entry (town-hall bell, church
+            // crosses) is a flat single unit — no worker, no bonus. An all-free, bonus-free building sums to base ×
+            // workers, identical to the old scalar path (free colonists carry no production modifier, so competence is a
+            // no-op for them and competence=1 buildings are byte-identical).
             int rebelBonus = entry.Unattended ? 0 : (int)Math.Floor(colony.ProductionBonus * building.RebelFactor);
             Dictionary<string, int> outputTotals = new(entry.Outputs.Count);
             foreach (GoodsOutput output in entry.Outputs)
             {
                 outputTotals[output.GoodsId] = entry.Unattended
                     ? output.Amount
-                    : occupants.Sum(t => ApplyWorkerProductionModifiers(t, output.GoodsId, output.Amount + rebelBonus));
+                    : occupants.Sum(t => ApplyWorkerProductionModifiers(
+                        t, output.GoodsId, output.Amount + rebelBonus, building.CompetenceFactor));
             }
 
             // Input consumption / scarcity follow FreeCol's minimumRatio: each input is wanted in proportion to the

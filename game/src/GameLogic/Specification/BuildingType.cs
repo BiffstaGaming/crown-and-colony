@@ -73,6 +73,24 @@ namespace CrownAndColony.GameLogic.Specification;
 /// lumber mill and cathedral set 2, the factory tier 1.5 — so good government boosts those buildings more. FreeCol
 /// <c>ProductionUtils.getRebelProductionModifiersForBuilding</c> (<c>floor(productionBonus × rebelFactor)</c>).
 /// </param>
+/// <param name="CompetenceFactor">
+/// Multiplier applied to a SPECIALIST/expert worker's <em>additive</em> production bonus here (spec
+/// <c>competence-factor</c> attribute; default 1, nearest definition wins up the <c>extends</c> chain). The upgraded
+/// manufactories set it &gt; 1 — lumber mill 2, blacksmith shop / tobacconist shop / weaver shop / fur trading post /
+/// distillery 2, iron works / cigar factory / textile mill / fur factory / rum factory 3 — so an expert in them earns
+/// a bigger bonus than in the base house (a master carpenter's +3 hammers becomes +6 in the lumber mill). FreeCol
+/// <c>BuildingType.getCompetenceModifiers</c> multiplies only the unit's <b>additive</b> modifiers, NOT its
+/// multiplicative ones (a master distiller's ×2 rum is untouched — competence scales the flat expert bonus, never the
+/// doubling). Free colonists have no production modifier, so competence does not affect them.
+/// </param>
+/// <param name="Upkeep">
+/// Gold this building costs its owner to maintain each turn (spec <c>upkeep</c> attribute; default 0, resolved up the
+/// <c>extends</c> chain). The upgraded buildings charge it (lumber mill 10, blacksmith shop 5, iron works 15, …);
+/// summed over a colony's buildings it is the colony's per-turn upkeep (FreeCol <c>Colony.getUpkeep</c> →
+/// <c>ServerPlayer.csPayUpkeep</c>). Deducted from the player's gold each turn ONLY when the ruleset's
+/// <see cref="Ruleset.UpkeepEnabled"/> game option is on — which the classic ruleset leaves <b>off</b>, so the classic
+/// game charges no upkeep by default.
+/// </param>
 /// <param name="MaximumSkill">
 /// The highest unit <see cref="UnitType.Skill"/> an expert may teach from this building (spec <c>maximum-skill</c>;
 /// schoolhouse 1, college 2, university 4; 0 = not a school). An over-skilled expert (e.g. an elder statesman, skill 3,
@@ -119,6 +137,8 @@ public sealed record BuildingType(
     int BreedingDivisor = 0,
     int BreedingFactor = 0,
     double RebelFactor = 1.0,
+    double CompetenceFactor = 1.0,
+    int Upkeep = 0,
     int MaximumSkill = 0,
     bool Teaches = false,
     int MinimumSkill = 0,

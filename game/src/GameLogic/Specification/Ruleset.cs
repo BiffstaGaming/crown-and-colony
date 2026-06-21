@@ -45,12 +45,14 @@ public sealed class Ruleset
         Calendar calendar,
         IReadOnlyList<int> fatherAgeYears,
         DifficultyOptions difficulty,
-        string difficultyLevelId)
+        string difficultyLevelId,
+        bool upkeepEnabled)
     {
         Calendar = calendar;
         FatherAgeYears = fatherAgeYears;
         Difficulty = difficulty;
         DifficultyLevelId = difficultyLevelId;
+        UpkeepEnabled = upkeepEnabled;
         _terrainById = terrainById;
         _unitById = unitById;
         _goodsById = goodsById;
@@ -134,6 +136,14 @@ public sealed class Ruleset
     /// a game reloads under the same balance (86d3c9y08).
     /// </summary>
     public string DifficultyLevelId { get; }
+
+    /// <summary>
+    /// Whether buildings charge their owner per-turn gold upkeep (the spec <c>model.option.enableUpkeep</c> boolean
+    /// game option; classic default <b>false</b>). When off, <see cref="GameSession.Game"/> deducts no building upkeep
+    /// and the default classic economy is unchanged; when on, each colony's Σ <see cref="BuildingType.Upkeep"/> is taken
+    /// from the player's gold each turn (FreeCol gates <c>ServerPlayer.csPayUpkeep</c> on this same option).
+    /// </summary>
+    public bool UpkeepEnabled { get; }
 
     /// <summary>All terrain types, in specification order.</summary>
     public IReadOnlyList<TerrainType> TerrainTypes { get; }
@@ -540,6 +550,17 @@ public sealed class Ruleset
                 // worker's output (lumber mill / cathedral ×2, factory tier ×1.5; default 1, nearest definition wins
                 // up the extends chain). FreeCol ProductionUtils.getRebelProductionModifiersForBuilding.
                 RebelFactor: ResolveDoubleAttribute(el, "rebel-factor", buildingElements) ?? 1.0,
+                // Competence factor: a specialist's ADDITIVE production bonus is multiplied by this in this building
+                // (lumber mill 2, the manufactory tier 2/3; default 1, nearest definition wins up the extends chain).
+                // FreeCol BuildingType.getCompetenceModifiers — scales only the unit's additive modifiers, never its
+                // multiplicative ones, so a master carpenter's +3 hammers becomes +6 here but a master distiller's ×2
+                // rum is unchanged. Applied per worker in Game.RunBuildingProduction.
+                CompetenceFactor: ResolveDoubleAttribute(el, "competence-factor", buildingElements) ?? 1.0,
+                // Per-turn gold upkeep (lumber mill 10, blacksmith shop 5, iron works 15, …; default 0, resolved up the
+                // extends chain like FreeCol's xr.getAttribute(UPKEEP_TAG, parent.upkeep)). Summed over a colony's
+                // buildings and deducted from the owner's gold each turn — but only when the spec's enableUpkeep option
+                // is on (classic leaves it off, so the classic game charges no upkeep). FreeCol Colony.getUpkeep.
+                Upkeep: ResolveIntAttribute(el, "upkeep", buildingElements) ?? 0,
                 // Teaching: a school's skill window (schoolhouse 1..1 / college 1..2 / university 1..4; the floor + the
                 // teach ability are declared on the schoolhouse and inherited down the extends chain) — only an expert
                 // within the window teaches.
@@ -635,11 +656,14 @@ public sealed class Ruleset
         Calendar calendar = ParseCalendar(root);
         IReadOnlyList<int> fatherAgeYears = ParseFatherAgeYears(root, calendar.StartingYear);
         DifficultyOptions difficulty = ParseDifficulty(root, difficultyLevelId);
+        // Building upkeep is a boolean game option (model.option.enableUpkeep); classic ships it defaultValue="false",
+        // so the default game charges no upkeep and stays byte-identical (FreeCol gates csPayUpkeep on this option).
+        bool upkeepEnabled = ParseBooleanOption(root, "model.option.enableUpkeep", fallback: false);
 
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
             roles, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears,
-            difficulty, difficultyLevelId);
+            difficulty, difficultyLevelId, upkeepEnabled);
     }
 
     /// <summary>
@@ -788,6 +812,22 @@ public sealed class Ruleset
             StartingYear: YearsOption("model.option.startingYear", Calendar.Classic.StartingYear),
             SeasonYear: YearsOption("model.option.seasonYear", Calendar.Classic.SeasonYear),
             Seasons: YearsOption("model.option.seasons", Calendar.Classic.Seasons));
+    }
+
+    /// <summary>
+    /// Reads a top-level <c>&lt;booleanOption&gt;</c> game option by id (its <c>value</c>, else <c>defaultValue</c>),
+    /// falling back to <paramref name="fallback"/> when the option is absent or has no parseable boolean. Used for
+    /// <c>model.option.enableUpkeep</c> (classic default false).
+    /// </summary>
+    internal static bool ParseBooleanOption(XElement root, string id, bool fallback)
+    {
+        XElement? option = root.Descendants("booleanOption")
+            .FirstOrDefault(o => (string?)o.Attribute("id") == id);
+        if (option is null)
+        {
+            return fallback;
+        }
+        return (bool?)option.Attribute("value") ?? (bool?)option.Attribute("defaultValue") ?? fallback;
     }
 
     /// <summary>Parses an integer attribute value, returning <c>null</c> for a missing or non-numeric string.</summary>
