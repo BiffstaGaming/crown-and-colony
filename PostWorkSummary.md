@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — 50-ITEM RUN · WAVE 7 (event/limit engine · spy-on-colony · AI logistics · differential harness · auto-QA-report) — COMPLETE ✅
+
+**Requested:** 50-item run, minimal testing. **Wave 7 = items 19–23.**
+**Did:** 5 lean worktree streams, cherry-picked clean (zero conflicts), **5 items shipped**:
+- **Generic event/limit engine** (`86d3drpha`): faithful FreeCol `Limit`/`Operand`/`Event` model + parser + `EvaluateLimit`/`CheckSpecEvent`; routed the Spanish-Succession year gate through it (byte-identical proof). +23 tests.
+- **Spy-on-colony** (`86d3drn4m`): `CheckSpyOnColony`/`SpyOnColony` + `ColonyInteriorSnapshot` oracle; evasion on a reserved RNG stream. ⚠️ **deviation flag** — FreeCol's European-colony spy never fails; the 25% rebuff is our extension (task asked for "+ evasion"), one-line-disable-able (`SpyRebuffPercent=0`). **Your call.**
+- **AI logistics** (`86d3c9vq9`): foreign-AI transport missions + worker wishes (experts-first — closes the dock-rot gap) + treasure cash-in; foreign-AI-only, human stream-0 byte-identical (proven). Goods-leg deliberately omitted (our AI auto-sells surplus → would double-sell).
+- **Differential-fidelity harness** (`86d3drphu`): reusable `FidelityInvariant` scaffold + 5 FreeCol-cited cross-checks (combat odds / market price / tension / SoL / calendar). No engine divergence found. Test-infra only.
+- **Auto-QA-report** (`86d3c9y4r`): `scripts/generate-qa-report.py` parses TRX → `QA-REPORT.md`, wired into `ci.yml` + `nightly.yml` (commit-back). (First live nightly run verifies the cross-workflow artifact + commit-back.)
+**Status:** Integrated, pushed `3a3df9b…69d4791`. build clean + **1804 L1/L2 + 4 soak green** (zero integration fixups). No save bump (v52). CI workflow YAML changed (TRX logging) — watching the next run validates.
+**Changed:** 5 commits. New: `Limit.cs`, `Game.Limits.cs`, `ColonyInteriorSnapshot.cs`, `DifferentialFidelityTests.cs`, `generate-qa-report.py`, `events-limits.md`. Docs distinct per stream.
+**Decisions:** Stayed lean (no review workflow despite Ultracode nudge — your token directive governs). Kept spy-evasion as a flagged, disable-able extension (surfaced for your call).
+**Scheduled next:** **Wave 8** — national-advantage AI ranking (`86d3drn5d`), spec-driven epic slices (`86d3drpgg`), map import (`86d3c9wwk`), victory screen (`86d3c9xc6`). **23/50 done.**
+**Needs you:** Two flagged "your call" deviations: spy-evasion (this wave) + WAIVE_TAX-forgives-arrears (Wave 2). Neither blocks.
+
 ## 2026-06-21 — 50-ITEM RUN · WAVE 6 (REF combat AI · modifier-TTL · expert-swap · unit tribute · immigration-bundle · difficulty AI) — COMPLETE ✅
 
 **Requested:** 50-item run, minimal testing. **Wave 6 = items 13–18.**
