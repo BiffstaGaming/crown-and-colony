@@ -1,6 +1,8 @@
+using System.IO;
 using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
@@ -101,6 +103,68 @@ public class AmericaGameTests
         string a = SaveGame.From(Game.New(Classic, seed: 7, mapSource: MapSource.America)).ToJson();
         string b = SaveGame.From(Game.New(Classic, seed: 7, mapSource: MapSource.America)).ToJson();
         Assert.Equal(a, b);
+    }
+
+    // A small scenario map that declares a [settlements] section: two apache settlements in the east column, far from
+    // the ocean-fed west coast where the human lands. Used to drive Game.New's imported-settlement install path.
+    private const string SettlementsScenario = """
+        8 8
+        ocean ocean plains plains plains plains plains plains
+        ocean ocean plains plains plains plains plains plains
+        ocean ocean plains plains plains plains plains plains
+        ocean ocean plains plains plains plains plains plains
+        ocean ocean plains plains plains plains plains plains
+        ocean ocean plains plains plains plains plains plains
+        ocean ocean plains plains plains plains plains plains
+        ocean ocean plains plains plains plains plains plains
+        [settlements]
+        7 1 apache camp capital 5 expertOreMiner
+        7 6 apache village regular 3
+        """;
+
+    [Fact]
+    public void NewGame_FromImportedMapDeclaringSettlements_InstallsThoseExactSettlements_NotGeneratorPlaced()
+    {
+        // A scenario map that declares [settlements] installs those exact settlements (the scenario author placed the
+        // natives) and skips the procedural generator entirely. Drive it through Game.New's real install path via the
+        // test-only importOverride seam.
+        MapImportResult scenario = MapImporter.Import(new StringReader(SettlementsScenario), Classic, "settlements-scenario");
+        Game game = Game.New(Classic, seed: 13, importOverride: scenario);
+
+        // Exactly the two declared settlements, at their declared tiles, with the declared nation/type/capital/size/skill.
+        Assert.Equal(2, game.NativeSettlements.Count);
+
+        NativeSettlement capital = game.NativeSettlementAt(new Position(7, 1))!;
+        Assert.NotNull(capital);
+        Assert.Equal("model.nationType.apache", capital.NationTypeId);
+        Assert.Equal("model.settlement.camp", capital.SettlementTypeId);
+        Assert.True(capital.IsCapital);
+        Assert.Equal(5, capital.Size);
+        Assert.Equal("model.unit.expertOreMiner", capital.LearnableSkill);
+
+        NativeSettlement village = game.NativeSettlementAt(new Position(7, 6))!;
+        Assert.NotNull(village);
+        Assert.False(village.IsCapital);
+        Assert.Equal(3, village.Size);
+        Assert.Null(village.LearnableSkill);
+
+        // The installed settlements were finished as the generator finishes its own: each carries wanted goods, and
+        // each claims the land in its radius (so the imported natives play like generated ones).
+        Assert.All(game.NativeSettlements, s => Assert.NotEmpty(s.WantedGoods));
+        Assert.Contains(game.Map.AllPositions(), p => game.Map.NativeOwnerOf(p) is not null);
+
+        // The apache nation became a Native player (its settlements reference it), exactly as a generated game would.
+        Assert.Contains(game.Players, p => p.PlayerType == PlayerType.Native);
+    }
+
+    [Fact]
+    public void America_NewGame_GeneratesNativeSettlements_BecauseTheFileDeclaresNone()
+    {
+        // america.txt declares no [settlements] section, so Game.New falls back to the procedural generator — the
+        // America game keeps generator-placed natives (byte-identical to before this wiring).
+        Assert.Empty(FixedMap.ImportAmerica(Classic).Settlements); // the file itself declares no settlements
+        Game game = Game.New(Classic, seed: 42, mapSource: MapSource.America);
+        Assert.NotEmpty(game.NativeSettlements); // …yet the new game has natives — placed by the generator
     }
 
     [Fact]

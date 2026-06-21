@@ -35,7 +35,19 @@ public static class FixedMap
     /// <param name="source">The chosen map source.</param>
     /// <param name="ruleset">The ruleset whose <see cref="TerrainType"/>s the tile ids resolve against.</param>
     public static GameMap? TryLoad(MapSource source, Ruleset ruleset) =>
-        source == MapSource.America ? LoadAmerica(ruleset) : null;
+        TryImport(source, ruleset)?.Map;
+
+    /// <summary>
+    /// The full <see cref="MapImportResult"/> (terrain + any declared overlays and native settlements) for a fixed map
+    /// source, or null for <see cref="MapSource.Random"/> (which the caller generates instead). The shipped
+    /// <c>america.txt</c> is terrain-only, so its result carries an empty <see cref="MapImportResult.Settlements"/> list
+    /// and the America new game stays byte-identical; a scenario file declaring a <c>[settlements]</c> section returns
+    /// those settlements here, so <c>Game.New</c> can install them in place of the procedural native generator.
+    /// </summary>
+    /// <param name="source">The chosen map source.</param>
+    /// <param name="ruleset">The ruleset whose ids the definition resolves against.</param>
+    public static MapImportResult? TryImport(MapSource source, Ruleset ruleset) =>
+        source == MapSource.America ? ImportAmerica(ruleset) : null;
 
     /// <summary>Builds the America <see cref="GameMap"/> (FreeCol's M_America, 40×180) from the embedded terrain grid.</summary>
     /// <param name="ruleset">The ruleset whose <see cref="TerrainType"/>s the tile ids resolve against.</param>

@@ -46,6 +46,17 @@ public static class NativeSettlementGenerator
     }
 
     /// <summary>
+    /// Gives each of the supplied native settlements its wanted goods, exactly as <see cref="Place"/> does for
+    /// generated ones — used to finish off settlements that were placed by an imported scenario map
+    /// (<see cref="MapImporter"/>) rather than by this generator, so an imported settlement trades like a generated one
+    /// (a wanted good still earns its selling premium). Draws from <paramref name="random"/> (the native stream) so the
+    /// human's economy stream 0 is untouched (ADR-009).
+    /// </summary>
+    public static void AssignWantedGoodsTo(
+        IReadOnlyList<NativeSettlement> settlements, Ruleset ruleset, IGameRandom random) =>
+        AssignWantedGoods(settlements.ToList(), ruleset, random);
+
+    /// <summary>
     /// Gives each settlement up to 3 wanted goods (FreeCol <c>wantedGoods</c>) — drawn
     /// <em>after</em> placement so the placement RNG sequence (positions/sizes/skills) is
     /// unchanged. FreeCol picks the top-3 by buy-price (settlement-stock-dependent); we

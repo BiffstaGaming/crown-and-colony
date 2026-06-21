@@ -3194,6 +3194,12 @@ public sealed partial class Game
     /// random map path (ignored on a fixed <paramref name="mapSource"/>, whose land shape is loaded). The default keeps
     /// an unpicked new game byte-identical (ADR-009).
     /// </param>
+    /// <param name="importOverride">
+    /// A test-only seam (default null): a pre-built <see cref="MapImportResult"/> (terrain + declared native
+    /// settlements) used in place of importing <paramref name="mapSource"/> from disk. Lets a test drive a scenario map
+    /// that declares a <c>[settlements]</c> section through the real install path without shipping it as a
+    /// <see cref="MapSource"/>. Null in normal play, so the production America/Random paths are unchanged.
+    /// </param>
     public static Game New(
         Ruleset ruleset, ulong seed, int mapWidth = 36, int mapHeight = 24,
         int startingGold = 0, int startingTax = 0,
@@ -3201,7 +3207,8 @@ public sealed partial class Game
         string difficultyLevelId = DifficultyLevels.DefaultId,
         MapSource mapSource = MapSource.Random,
         string? humanNationId = null,
-        LandStyle landStyle = LandStyle.Continent)
+        LandStyle landStyle = LandStyle.Continent,
+        MapImportResult? importOverride = null)
     {
         // A picked nation must be a real, selectable, non-REF European power; anything else (null, an unknown id, a
         // native/REF id) falls back to the nation-less classic human — so the default new game stays byte-identical.
@@ -3211,13 +3218,16 @@ public sealed partial class Game
             : null;
         var random = new Pcg32Random(seed);
 
-        // The map: either FreeCol's fixed America terrain (decorated with our rivers/resources/regions) or, by
-        // default, a procedurally grown New World. A fixed map sets its own dimensions, so the world-size args apply
-        // only to the random path. Both draw from the same stream-0 RNG, so the default (Random) game is unchanged.
-        GameMap? fixedTerrain = FixedMap.TryLoad(mapSource, ruleset);
-        GameMap map = fixedTerrain is null
+        // The map: either a fixed scenario map imported from disk (FreeCol's fixed America terrain, decorated with our
+        // rivers/resources/regions) or, by default, a procedurally grown New World. A fixed map sets its own dimensions,
+        // so the world-size args apply only to the random path. Both draw from the same stream-0 RNG, so the default
+        // (Random) game is unchanged. The import also carries any native settlements the definition declared (the
+        // shipped america.txt declares none → an empty list → procedural native placement, byte-identical).
+        MapImportResult? imported = importOverride ?? FixedMap.TryImport(mapSource, ruleset);
+        IReadOnlyList<NativeSettlement> importedSettlements = imported?.Settlements ?? [];
+        GameMap map = imported is null
             ? MapGenerator.Generate(ruleset, mapWidth, mapHeight, random, landMassFraction, landStyle)
-            : MapGenerator.DecorateFixedMap(fixedTerrain, ruleset, random);
+            : MapGenerator.DecorateFixedMap(imported.Map, ruleset, random);
 
         // The single human player (stream 0; foreign powers and natives become players in FP-3). Its nation is the
         // validated pick (null for the classic nation-less default), which seeds the human's national advantage +
@@ -3263,13 +3273,33 @@ public sealed partial class Game
 
         // Native settlements, on their own RNG stream so placement does not shift the
         // economy/father/immigration draws. They keep clear of the player's landing.
+        //
+        // Two sources. (1) An imported scenario map that declared a [settlements] section installs those exact
+        // settlements (position, nation, type, capital flag, size, learnable skill) instead of generator-placed ones,
+        // and skips the procedural generator entirely — the scenario author placed the natives. (2) Otherwise (the
+        // default Random world, and the terrain-only america.txt, which declares no settlements) the procedural
+        // generator places them exactly as before, so the default and America games stay byte-identical (ADR-006/009).
         var nativeRandom = new Pcg32Random(seed, NativeStreamId);
-        var excluded = new HashSet<Position>(start.Neighbours().Append(start));
-        foreach (NativeSettlement settlement in
-                 NativeSettlementGenerator.Place(ruleset, map, nativeRandom, excluded))
+        if (importedSettlements.Count > 0)
         {
-            game._nativeSettlements.Add(settlement);
-            game._nextSettlementId = Math.Max(game._nextSettlementId, settlement.Id + 1);
+            // Finish the imported settlements as the generator would: give each its wanted goods (drawn on the native
+            // stream, never stream 0). The importer already assigned stable ids from 1, so install them as-is.
+            NativeSettlementGenerator.AssignWantedGoodsTo(importedSettlements, ruleset, nativeRandom);
+            foreach (NativeSettlement settlement in importedSettlements)
+            {
+                game._nativeSettlements.Add(settlement);
+                game._nextSettlementId = Math.Max(game._nextSettlementId, settlement.Id + 1);
+            }
+        }
+        else
+        {
+            var excluded = new HashSet<Position>(start.Neighbours().Append(start));
+            foreach (NativeSettlement settlement in
+                     NativeSettlementGenerator.Place(ruleset, map, nativeRandom, excluded))
+            {
+                game._nativeSettlements.Add(settlement);
+                game._nextSettlementId = Math.Max(game._nextSettlementId, settlement.Id + 1);
+            }
         }
 
         game.ClaimNativeLand(); // each native settlement claims the land in its radius (FreeCol Tile.owner)
