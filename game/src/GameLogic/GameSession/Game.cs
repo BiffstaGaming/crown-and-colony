@@ -851,7 +851,7 @@ public sealed partial class Game
     private const int LandPriceBase = 100;
 
     /// <summary>Alarm added to the robbed nation when land is <em>taken</em> rather than bought (FreeCol <c>Tension.TENSION_ADD_LAND_TAKEN</c>).</summary>
-    private const int LandTakenAlarm = 200;
+    internal const int LandTakenAlarm = 200;
 
     /// <summary>The father modifier id scaling the land price — Peter Minuit's −100% makes native land free.</summary>
     private const string LandPaymentModifierId = "model.modifier.landPaymentModifier";
@@ -1029,8 +1029,8 @@ public sealed partial class Game
     public const int TalesRevealRadius = 3;
 
     /// <summary>Min/max gold in a settlement's first-contact gift (FreeCol <c>IndianSettlement.GIFT_MINIMUM/MAXIMUM</c>).</summary>
-    private const int GiftMinimum = 10;
-    private const int GiftMaximum = 80;
+    internal const int GiftMinimum = 10;
+    internal const int GiftMaximum = 80;
 
     /// <summary>The scout role id — a scout-role unit gets the full chief audience (FreeCol <c>scoutSpeakToChief</c>); other colonists get the basic visit.</summary>
     private const string ScoutRoleId = "model.role.scout";
@@ -1115,7 +1115,7 @@ public sealed partial class Game
     private const string EstablishMissionAbility = "model.ability.establishMission";
 
     /// <summary>Alarm a settlement sheds when a mission is established (FreeCol <c>ServerIndianSettlement.ALARM_NEW_MISSIONARY</c> = −100 goodwill).</summary>
-    private const int AlarmNewMissionary = 100;
+    internal const int AlarmNewMissionary = 100;
 
     /// <summary>The native unit a mission converts (FreeCol <c>model.unit.indianConvert</c>).</summary>
     public const string IndianConvertUnitTypeId = "model.unit.indianConvert";
@@ -1124,28 +1124,28 @@ public sealed partial class Game
     private const string UpgradeConvertAbility = "model.ability.upgradeConvert";
 
     /// <summary>Flat convert progress a mission accrues per turn (FreeCol <c>model.modifier.conversionSkill</c> +6, on the colonist base type).</summary>
-    private const int ConversionSkillBonus = 6;
+    internal const int ConversionSkillBonus = 6;
 
     /// <summary>The expert (jesuit) missionary's extra skill term (FreeCol jesuit <c>skill</c> 3; an ordinary colonist is 0).</summary>
-    private const int JesuitConversionSkill = 3;
+    internal const int JesuitConversionSkill = 3;
 
     /// <summary>Father Jean de Brébeuf's ability: every one of the player's missionaries converts as an expert jesuit (FreeCol <c>model.ability.expertMissionary</c>).</summary>
     private const string ExpertMissionaryAbility = "model.ability.expertMissionary";
 
     /// <summary>Percent of the settlement's alarm added to convert progress each turn (FreeCol <c>model.modifier.conversionAlarmRate</c> +2%).</summary>
-    private const int ConversionAlarmRatePercent = 2;
+    internal const int ConversionAlarmRatePercent = 2;
 
     /// <summary>Furthest a colony may be from a converting settlement to receive the convert (FreeCol <c>ServerIndianSettlement.MAX_CONVERT_DISTANCE</c> = 10, Chebyshev).</summary>
-    private const int MaxConvertDistance = 10;
+    internal const int MaxConvertDistance = 10;
 
-    /// <summary>Base chance (percent) that winning an assault on a settlement you hold a mission in captures a brave as a convert (FreeCol <c>model.option.nativeConvertProbability</c> = 50).</summary>
-    private const int NativeConvertProbabilityPercent = 50;
+    /// <summary>Base chance (percent) that winning an assault on a settlement you hold a mission in captures a brave as a convert (FreeCol <c>model.option.nativeConvertProbability</c>, classic-medium = 30). Verified against the classic-medium spec by <c>NativeConstantsTests</c>; migration to <c>DifficultyOptions</c> is task 86d3bb1x3.</summary>
+    internal const int NativeConvertProbabilityPercent = 30;
 
     /// <summary>The convert-capture modifier (FreeCol <c>model.modifier.nativeConvertBonus</c>): Juan de Sepúlveda's +20% and the Spanish <c>conquest</c> nation type's +200% raise the capture-convert chance.</summary>
     private const string NativeConvertBonusId = "model.modifier.nativeConvertBonus";
 
-    /// <summary>Chance (percent) that winning an assault on a settlement you hold a mission in instead burns the attacker's missions across that nation (FreeCol <c>model.option.burnProbability</c> = 2; no modifier scales it).</summary>
-    private const int NativeBurnProbabilityPercent = 2;
+    /// <summary>Chance (percent) that winning an assault on a settlement you hold a mission in instead burns the attacker's missions across that nation (FreeCol <c>model.option.burnProbability</c>, classic-medium = 6; no modifier scales it). Verified against the classic-medium spec by <c>NativeConstantsTests</c>; migration to <c>DifficultyOptions</c> is task 86d3bb1x3.</summary>
+    internal const int NativeBurnProbabilityPercent = 6;
 
     /// <summary>
     /// Whether <paramref name="unit"/> may attempt to establish a mission at <paramref name="settlement"/> (FreeCol
@@ -6727,10 +6727,10 @@ public sealed partial class Game
     private int NativeDemandsDx => Ruleset.Difficulty.NativeDemands + 1;
 
     /// <summary>Minimum goods a demand asks for (FreeCol <c>GOODS_DEMAND_MIN</c>).</summary>
-    private const int NativeDemandMin = 30;
+    internal const int NativeDemandMin = 30;
 
     /// <summary>Maximum goods a demand asks for — one cargo load (FreeCol <c>GoodsContainer.CARGO_SIZE</c>).</summary>
-    private const int NativeDemandMax = 100;
+    internal const int NativeDemandMax = 100;
 
     /// <summary>Alarm relief across the demanding nation's settlements when a demand is paid (FreeCol
     /// <c>-(5 - nativeDemands) * 50</c> = 150 at medium); the difficulty value is
