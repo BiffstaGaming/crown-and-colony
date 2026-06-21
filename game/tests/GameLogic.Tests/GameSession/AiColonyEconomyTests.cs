@@ -496,10 +496,12 @@ public class AiColonyEconomyTests
 
         game.EndTurn(); // the power's economy runs, including the Europe spend
 
+        // The specialist was trained in the power's Europe; the same turn the transport AI (86d3c9vq9) may already have
+        // boarded it onto the ship the spend bought and set sail — so find it wherever it now is (docked, aboard or
+        // sailing), not strictly InEurope.
         var trainedIds = game.UnitTypesTrainedInEurope().Select(t => t.Id).ToHashSet();
-        Unit? trained = game.Units.FirstOrDefault(u => u.OwnerId == ownerId
-            && u.Location == UnitLocation.InEurope && trainedIds.Contains(u.Type.Id));
-        Assert.NotNull(trained);                                  // it trained a specialist in Europe
+        Unit? trained = game.Units.FirstOrDefault(u => u.OwnerId == ownerId && trainedIds.Contains(u.Type.Id));
+        Assert.NotNull(trained);                                  // it trained a specialist
         Assert.True(trained!.Type.Skill > 0, "the trained unit is not a skilled specialist"); // not a plain recruit/ship
     }
 

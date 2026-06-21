@@ -6851,6 +6851,15 @@ public sealed partial class Game
 
         bool atWarWithHuman = StanceBetween(power.PlayerId, _human.PlayerId) == Stance.War;
 
+        // AI logistics — transport missions (86d3c9vq9, FreeCol TransportMission/WishRealizationMission): drive the
+        // power's carrier ships to ferry its Europe colonists/experts to the colony that most wants a worker (the
+        // worker-wish realisation). Run BEFORE the per-unit loop so a carrier on a transport job holds its
+        // position there (it spent its movement here) instead of being marched off to explore, and so a freshly-landed
+        // colonist is integrated this same turn. Skipped for an armed carrier at war with the human (it hunts below).
+        // Every draw is the power's OWN stream (StepToward); the board/sail/join seams are RNG-free — human stream 0 is
+        // byte-identical (ADR-009).
+        RunForeignPowerTransport(power, atWarWithHuman);
+
         // Snapshot the owned units (founding/combat removes a unit from _units mid-loop).
         foreach (Unit unit in _units.Where(u => IsOwnedBy(u, power)).OrderBy(u => u.Id).ToList())
         {
@@ -7061,6 +7070,220 @@ public sealed partial class Game
             }
         }
     }
+
+    // ===== AI logistics — transport missions + worker/goods wishes (86d3c9vq9) ================================
+    // A faithful subset of FreeCol's TransportMission / WishRealizationMission / Wish: the foreign AI ferries its
+    // colonists by sea so a recruited/trained/bought colonist no longer rots on the Europe dock — it sails over and is
+    // landed into the colony that most wants a worker. Deferred vs FreeCol: no multi-stop cargo planner (Cargo's
+    // 4-waypoint LOAD/PICKUP/UNLOAD/DROPOFF lifecycle, DESTINATION_UPPER_BOUND=4 route optimisation, the 3-strike DUMP)
+    // — each carrier serves one leg at a time; goods are NOT hauled (the economy already auto-sells colony surplus —
+    // shipping it would double-sell, see CollectBySea); a "wish" is the lightweight need-score below (WorkerWishValue),
+    // not a persisted posted/assigned Wish object. Enough to make the worker-transport + treasure-cash-in behaviours
+    // visible without a save-format change.
+
+    /// <summary>The most colonists a foreign carrier loads from its Europe dock in one trip — the carrier's hold (one slot per colonist), so it never over-boards. A documented logistics bound, not a FreeCol constant.</summary>
+    private int AiTransportLoad(Unit carrier) => CargoSlotsFree(carrier);
+
+    /// <summary>
+    /// Drives <paramref name="power"/>'s carrier ships for the turn — the AI transport mission (86d3c9vq9, FreeCol
+    /// <c>TransportMission.doTransport</c> + <c>WishRealizationMission</c>), a one-leg-at-a-time subset:
+    /// <list type="number">
+    /// <item><b>In Europe with passengers</b> → sail to the New World (deliver the load).</item>
+    /// <item><b>In Europe, empty</b> → board own dock colonists (experts first — the colonies' worker wish), capped at
+    /// the hold, then sail; with nothing to carry it waits on the dock.</item>
+    /// <item><b>On the map carrying passengers</b> → make for the colony that most wants a worker
+    /// (<see cref="BestWorkerWishColony"/>) and, on arrival beside it, land each passenger straight into the colony
+    /// (<see cref="JoinColony"/> — the wish realisation). With no own colony it holds.</item>
+    /// <item><b>On the map, empty</b> → if colonists wait in Europe, make for the high seas and sail to collect them;
+    /// with nothing to fetch it is left for the per-unit explore fallback. (Goods are not hauled — the AI economy
+    /// already auto-sells a colony's surplus directly; see <see cref="CollectBySea"/>.)</item>
+    /// </list>
+    /// Each carrier spends its movement here (so the per-unit loop's explore fallback can't also march it); a carrier
+    /// it deliberately holds in place keeps its movement (it has no transport job, so exploring is fine). Skipped for an
+    /// <b>armed</b> carrier while <paramref name="atWarWithHuman"/> — that ship hunts in the per-unit loop instead
+    /// (FreeCol: a transport with no cargo may turn pirate). All movement draws the power's OWN stream via
+    /// <see cref="StepToward"/>; boarding, sailing, disembarking and joining are RNG-free — so the human's stream 0
+    /// stays byte-identical (ADR-009).
+    /// </summary>
+    /// <param name="power">The foreign power taking its transport turn.</param>
+    /// <param name="atWarWithHuman">Whether the power is at war with the human (an armed carrier then hunts, not ferries).</param>
+    private void RunForeignPowerTransport(Player power, bool atWarWithHuman)
+    {
+        foreach (Unit carrier in _units
+            .Where(u => IsOwnedBy(u, power) && u.Type.IsNaval && u.Type.IsCarrier && !u.IsUnderRepair)
+            .OrderBy(u => u.Id).ToList())
+        {
+            if (atWarWithHuman && OffenceBase(carrier) > 0)
+            {
+                continue; // an armed warship hunts the human in the per-unit loop; don't divert it to ferrying
+            }
+
+            if (carrier.Location == UnitLocation.InEurope)
+            {
+                TransportFromEurope(power, carrier);
+                continue;
+            }
+            if (carrier.Location is UnitLocation.SailingToEurope or UnitLocation.SailingToNewWorld)
+            {
+                continue; // in transit — AdvanceSailing lands it; nothing to decide this turn
+            }
+            if (!carrier.IsOnMap)
+            {
+                continue; // any other off-map state (defensive — carriers are InEurope / sailing / on the map)
+            }
+
+            if (Passengers(carrier).Any())
+            {
+                DeliverPassengers(power, carrier);
+            }
+            else
+            {
+                CollectBySea(power, carrier);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A carrier docked in Europe (FreeCol <c>TransportMission</c> collect-then-deliver in Europe): if it already
+    /// carries passengers it sails for the New World; otherwise it boards own dock colonists — <b>experts first</b>
+    /// (the colonies' standing worker wish, FreeCol <c>WorkerWish</c> prefers the wanted expert) up to its free hold,
+    /// then sails if it loaded anyone. With no one to carry it waits on the dock. RNG-free.
+    /// </summary>
+    private void TransportFromEurope(Player power, Unit carrier)
+    {
+        if (Passengers(carrier).Any())
+        {
+            SailToNewWorld(carrier); // a loaded ship heads over (it may have boarded a partial load on an earlier turn)
+            return;
+        }
+        // Only worth a crossing if the power has somewhere to put the colonists (an own colony to deliver to).
+        if (!ColoniesOf(power).Any())
+        {
+            return;
+        }
+        // Board own dock colonists, experts first (an expert satisfies a stronger worker wish), then by id for stability.
+        List<Unit> dock = _units
+            .Where(u => u.Location == UnitLocation.InEurope && u.Type.IsPerson && !u.IsAboard && IsOwnedBy(u, power))
+            .OrderByDescending(u => u.Type.ExpertProduction is not null).ThenBy(u => u.Id)
+            .ToList();
+        int boarded = 0;
+        foreach (Unit colonist in dock)
+        {
+            if (boarded >= AiTransportLoad(carrier) || !CheckBoard(colonist, carrier).Allowed)
+            {
+                break;
+            }
+            Board(colonist, carrier);
+            boarded++;
+        }
+        if (boarded > 0)
+        {
+            SailToNewWorld(carrier); // sail with the load (it re-enters at its departure high-seas tile)
+        }
+    }
+
+    /// <summary>
+    /// A loaded carrier on the map (FreeCol <c>TransportMission</c> delivery + <c>WishRealizationMission</c>): it makes
+    /// for the colony that most wants a worker (<see cref="BestWorkerWishColony"/>) and, when it is beside that colony,
+    /// puts each passenger ashore onto the colony's tile (<see cref="Disembark"/>) and joins it into the colony
+    /// (<see cref="JoinColony"/> — the colonist enters the population and is put to work, which is the wish
+    /// realisation). When no own colony exists it holds (keeps its passengers aboard). The step draws the power's OWN
+    /// stream; disembark and join are RNG-free.
+    /// </summary>
+    private void DeliverPassengers(Player power, Unit carrier)
+    {
+        if (BestWorkerWishColony(power) is not { } colony)
+        {
+            return; // nowhere to deliver yet (no own colony) — hold the load
+        }
+        if (carrier.Position.IsAdjacentTo(colony.Position) || carrier.Position == colony.Position)
+        {
+            // Put each passenger ashore onto the colony's land tile, then join it into the colony. Snapshot first —
+            // Disembark + JoinColony mutate the unit and the global list mid-iteration.
+            foreach (Unit passenger in Passengers(carrier).OrderBy(u => u.Id).ToList())
+            {
+                if (!passenger.Type.IsPerson || !CheckDisembark(passenger, colony.Position).Allowed)
+                {
+                    continue; // only a person joins a colony; a non-person (none today) stays aboard
+                }
+                Disembark(passenger, colony.Position); // ashore on the colony tile (ends its move)
+                if (CheckJoinColony(passenger, colony).Allowed)
+                {
+                    JoinColony(passenger, colony); // realise the worker wish — the colonist is put to work
+                }
+            }
+            return;
+        }
+        if (StepToward(power, carrier, colony.Position) is { } step)
+        {
+            MoveUnit(carrier, step); // close on the wishing colony (passengers ride along via SyncPassengers)
+        }
+    }
+
+    /// <summary>
+    /// An empty carrier on the map (FreeCol <c>TransportMission</c> collection): if the power has colonists waiting in
+    /// its Europe, make for the high seas and sail to fetch them (reaching a high-seas tile sails it across; otherwise
+    /// step toward the nearest known one). With no one to fetch the carrier is left untouched, so the per-unit explore
+    /// fallback may send it scouting. Movement draws the power's OWN stream; sailing is RNG-free.
+    /// <para>
+    /// Deferred (documented vs FreeCol): an empty carrier does <b>not</b> haul a colony's surplus to Europe — our AI
+    /// economy already sells a colony's surplus directly to its market each turn (<see cref="RunForeignPowerEconomy"/>,
+    /// the abstracted "auto-sell" model), so there is no leftover stack for a ship to carry. FreeCol ships the goods;
+    /// shipping them here would double-sell. So this slice covers the worker leg (the real gap — un-shipped Europe
+    /// colonists) and leaves goods transport to the direct-sell economy.
+    /// </para>
+    /// </summary>
+    private void CollectBySea(Player power, Unit carrier)
+    {
+        if (OwnPersonsInEurope(power) == 0)
+        {
+            return; // no colonists waiting in Europe — leave the empty ship for the explore fallback
+        }
+        if (CheckSailToEurope(carrier).Allowed)
+        {
+            SailToEurope(carrier); // standing on the high seas → cross now to fetch the waiting colonists
+        }
+        else if (NearestHighSeasTile(power, carrier.Position) is { } highSeas
+            && StepToward(power, carrier, highSeas) is { } toSea)
+        {
+            MoveUnit(carrier, toSea); // make for the map edge to embark for Europe
+        }
+    }
+
+    /// <summary>
+    /// The own colony that most wants another worker (the AI's standing <b>worker wish</b>, FreeCol <c>WorkerWish</c>):
+    /// the highest <see cref="WorkerWishValue"/> among the power's colonies, ties broken by id. Null when the power
+    /// owns no colony. A coastal colony is preferred (a ship can deliver to it) but an inland colony still counts — a
+    /// passenger lands beside it and joins. Used as the delivery target for a loaded carrier.
+    /// </summary>
+    private Colony? BestWorkerWishColony(Player power) =>
+        ColoniesOf(power)
+            .OrderByDescending(c => WorkerWishValue(c)).ThenBy(c => c.Id)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// How much <paramref name="colony"/> wants another worker (FreeCol <c>WorkerWish.value</c>, simplified): the count
+    /// of unstaffed work positions it could fill — its idle colonists plus the empty building work-slots its current
+    /// population can't fill yet. A bigger number means a stronger pull for a delivered colonist. RNG-free, derived
+    /// from current colony state (no posted/persisted wish object — the deferred subset).
+    /// </summary>
+    private int WorkerWishValue(Colony colony) =>
+        colony.IdleColonists + FreeBuildingWorkSlots(colony);
+
+    /// <summary>The number of empty production-building work-slots in <paramref name="colony"/> (each building's <see cref="BuildingType.Workplaces"/> capacity minus its seated worker count, summed over its work buildings) — the room it has for more workers.</summary>
+    private int FreeBuildingWorkSlots(Colony colony) =>
+        colony.Buildings
+            .Select(Ruleset.Building)
+            .Where(b => b.Workplaces > 0)
+            .Sum(b => Math.Max(0, b.Workplaces - colony.BuildingWorkers.GetValueOrDefault(b.Id)));
+
+    /// <summary>The nearest high-seas tile to <paramref name="origin"/> the <paramref name="power"/> has explored (ties by position), or null when it knows of none — the embarkation point for a crossing to Europe.</summary>
+    private Position? NearestHighSeasTile(Player power, Position origin) =>
+        Map.AllPositions()
+            .Where(p => Map.TerrainAt(p).Id == HighSeasId && power.Explored.Contains(p))
+            .OrderBy(p => Chebyshev(p, origin)).ThenBy(p => p.Y).ThenBy(p => p.X)
+            .Select(p => (Position?)p)
+            .FirstOrDefault();
 
     /// <summary>The nearest Lost City Rumour tile <paramref name="power"/> has already discovered (in its fog), by Chebyshev from <paramref name="unit"/> (ties by position), or null when it knows of none. Sparse (<see cref="GameMap.Rumours"/>) so it stays cheap each turn.</summary>
     private Position? NearestKnownRumour(Player power, Unit unit) =>
