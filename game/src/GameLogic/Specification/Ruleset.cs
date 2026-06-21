@@ -96,17 +96,18 @@ public sealed class Ruleset
         UnitTypes = _unitById.Values.ToList();
         GoodsTypes = _goodsById.Values.ToList();
         BuildingTypes = _buildingById.Values.ToList();
-        // Building-material goods = every goods id any building requires to construct (classic: hammers + tools).
-        // DEVIATION: FreeCol derives `isBuildingMaterial` over ALL buildable types (buildings + units + roles), so
-        // its set also includes model.goods.food (the freeColonist "costs" 200 food to grow) and the role goods
-        // muskets/horses. We derive from the building subset only — we don't model unit/role required-goods. The
-        // role goods are military (caught earlier in the native tribute-demand ladder), so only FOOD is missing:
-        // under Angry/Hateful FreeCol natives often demand food via this rung where we instead demand the priciest
-        // storable stack (food has no market value, so a trade/raw good wins). Documented in natives.md; a faithful
-        // food-demand would require parsing unit/role required-goods (follow-up).
-        BuildingMaterials = _buildingById.Values
-            .SelectMany(b => b.BuildCost)
-            .Select(g => g.GoodsId)
+        // Building-material goods = every goods id any BUILDABLE type requires to construct, FreeCol-faithfully
+        // (GoodsType.isBuildingMaterial, derived over buildings + units + roles). Classic content: buildings need
+        // hammers + tools; the artillery/wagon/ships need hammers (+tools); the freeColonist's `required-goods
+        // food=200` (its in-colony growth cost) makes model.goods.food a building material; and the armed/mounted
+        // roles' required-goods make muskets/horses ones. This drives the native tribute-demand "building material"
+        // rung — so under Angry/Hateful a colony's food is demanded via this rung, as FreeCol does (86d3c18n8).
+        // SAFE for the foreign-power colony planner: food/muskets/horses are all tradeable+storable, so the two
+        // planner uses of this set (NonTradeableOutputValue gated on !IsTradeable; BuildingBuildWeight gated on
+        // !IsStorable) never see them — only the demand rung's behaviour changes.
+        BuildingMaterials = _buildingById.Values.SelectMany(b => b.BuildCost).Select(g => g.GoodsId)
+            .Concat(_unitById.Values.SelectMany(u => u.BuildCostOrEmpty).Select(g => g.GoodsId))
+            .Concat(_roleById.Values.SelectMany(r => r.RequiredGoods).Select(g => g.GoodsId))
             .ToHashSet();
         FoundingFathers = _fatherById.Values.ToList();
         ResourceTypes = _resourceById.Values.ToList();
@@ -258,9 +259,11 @@ public sealed class Ruleset
     public IReadOnlyList<BuildingType> BuildingTypes { get; }
 
     /// <summary>
-    /// The set of goods ids that any building requires to construct (classic: <c>model.goods.hammers</c> +
-    /// <c>model.goods.tools</c>) — the "building material" category used by native tribute-demand goods selection
-    /// (FreeCol <c>GoodsType.isBuildingMaterial</c>, derived from buildable required-goods).
+    /// The set of goods ids that any <b>buildable</b> type (building, unit, or role) requires to construct — the
+    /// "building material" category (FreeCol <c>GoodsType.isBuildingMaterial</c>, derived over all buildables). In
+    /// the classic ruleset: <c>hammers</c> + <c>tools</c> (buildings/units), <c>food</c> (the free colonist's 200-food
+    /// growth cost), and <c>muskets</c> + <c>horses</c> (the armed/mounted roles). Used by native tribute-demand goods
+    /// selection (so a colony's food is demanded via the building-material rung under Angry/Hateful).
     /// </summary>
     public IReadOnlySet<string> BuildingMaterials { get; }
 
@@ -275,10 +278,11 @@ public sealed class Ruleset
     public BuildingType? FindBuilding(string id) => _buildingById.GetValueOrDefault(id);
 
     /// <summary>
-    /// Looks up a <em>colony-constructable</em> unit type by id; null when the id is not one. A build-queue unit
-    /// is one that needs a <b>building material</b> (hammers/tools) — this excludes the free colonist, whose
-    /// <c>required-goods food=200</c> is the born-in-colony growth threshold (a separate mechanism), not a
-    /// build-menu item (FreeCol keeps colonists in a distinct population queue).
+    /// Looks up a <em>colony-constructable</em> unit type by id; null when the id is not one. A build-queue unit is a
+    /// <b>non-person</b> type (artillery / wagon / ships) that needs a building material to construct — the free
+    /// colonist is excluded by the <b>non-person</b> gate (its <c>required-goods food=200</c> is the born-in-colony
+    /// growth threshold, a separate mechanism — FreeCol keeps colonists in a distinct population queue), not by the
+    /// material check (food is a building material; see <see cref="BuildingMaterials"/>).
     /// </summary>
     public UnitType? FindBuildableUnit(string id) =>
         _unitById.TryGetValue(id, out var u) && IsColonyBuildableUnit(u) ? u : null;
@@ -286,7 +290,7 @@ public sealed class Ruleset
     /// <summary>Unit types that can be constructed in a colony (artillery, wagon train, ships), in specification order.</summary>
     public IEnumerable<UnitType> BuildableUnitTypes => UnitTypes.Where(IsColonyBuildableUnit);
 
-    /// <summary>A unit the colony build queue can hold: it costs a building material (hammers/tools) and is not a person (colonist).</summary>
+    /// <summary>A unit the colony build queue can hold: a non-person type (the gate that excludes the free colonist) that costs a building material (artillery/wagon/ships need hammers ± tools).</summary>
     private bool IsColonyBuildableUnit(UnitType unit) =>
         !unit.IsPerson && unit.BuildCostOrEmpty.Any(c => BuildingMaterials.Contains(c.GoodsId));
 
@@ -824,6 +828,8 @@ public sealed class Ruleset
                 VeryBad: IntOption("model.option.veryBadGovernmentLimit", medium.VeryBad)),
             LandPriceFactor: IntOption("model.option.landPriceFactor", m.LandPriceFactor),
             NativeDemands: IntOption("model.option.nativeDemands", m.NativeDemands),
+            NativeConvertProbability: IntOption("model.option.nativeConvertProbability", m.NativeConvertProbability),
+            BurnProbability: IntOption("model.option.burnProbability", m.BurnProbability),
             RumourDifficulty: IntOption("model.option.rumourDifficulty", m.RumourDifficulty),
             RumourBadPercent: PctOption("model.option.badRumour", m.RumourBadPercent),
             RumourGoodPercent: PctOption("model.option.goodRumour", m.RumourGoodPercent),

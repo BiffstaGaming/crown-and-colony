@@ -181,15 +181,18 @@ public class RulesetTests
     }
 
     [Fact]
-    public void BuildingMaterials_DerivedFromBuildCosts()
+    public void BuildingMaterials_DerivedFromAllBuildables()
     {
-        // The building-material category (FreeCol GoodsType.isBuildingMaterial) is derived from buildable
-        // required-goods; classic colonies build with hammers (+ tools for upgrades), so both are present and
-        // non-build goods (food/bells) are not.
+        // The building-material category (FreeCol GoodsType.isBuildingMaterial) is derived over ALL buildable types
+        // (buildings + units + roles). Classic content: buildings/units build with hammers (+ tools); the free
+        // colonist's required-goods food=200 makes food one; the armed/mounted roles make muskets/horses ones
+        // (86d3c18n8 — so the native tribute-demand building rung includes food, as FreeCol does).
         Assert.Contains("model.goods.hammers", Classic.BuildingMaterials);
         Assert.Contains("model.goods.tools", Classic.BuildingMaterials);
-        Assert.DoesNotContain("model.goods.food", Classic.BuildingMaterials);
-        Assert.DoesNotContain("model.goods.bells", Classic.BuildingMaterials);
+        Assert.Contains("model.goods.food", Classic.BuildingMaterials);     // freeColonist required-goods food=200
+        Assert.Contains("model.goods.muskets", Classic.BuildingMaterials);  // armedBrave/soldier role required-goods
+        Assert.Contains("model.goods.horses", Classic.BuildingMaterials);   // mountedBrave/dragoon role required-goods
+        Assert.DoesNotContain("model.goods.bells", Classic.BuildingMaterials); // nothing is built from bells
     }
 
     [Fact]

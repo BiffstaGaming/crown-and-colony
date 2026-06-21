@@ -1150,14 +1150,23 @@ public sealed partial class Game
     /// <summary>Furthest a colony may be from a converting settlement to receive the convert (FreeCol <c>ServerIndianSettlement.MAX_CONVERT_DISTANCE</c> = 10, Chebyshev).</summary>
     internal const int MaxConvertDistance = 10;
 
-    /// <summary>Base chance (percent) that winning an assault on a settlement you hold a mission in captures a brave as a convert (FreeCol <c>model.option.nativeConvertProbability</c>, classic-medium = 30). Verified against the classic-medium spec by <c>NativeConstantsTests</c>; migration to <c>DifficultyOptions</c> is task 86d3bb1x3.</summary>
-    internal const int NativeConvertProbabilityPercent = 30;
+    /// <summary>Base chance (percent) that winning an assault on a settlement you hold a mission in captures a brave as a convert — the difficulty option <c>model.option.nativeConvertProbability</c> (classic-medium = 30; FreeCol <c>Unit.getConvertProbability</c> = 0.01×opt). Routed through <see cref="Specification.DifficultyOptions.NativeConvertProbability"/> (ADR-018, <c>86d3bb1x3</c>) — read from the embedded spec, default game unchanged.</summary>
+    internal int NativeConvertProbabilityPercent => Ruleset.Difficulty.NativeConvertProbability;
 
     /// <summary>The convert-capture modifier (FreeCol <c>model.modifier.nativeConvertBonus</c>): Juan de Sepúlveda's +20% and the Spanish <c>conquest</c> nation type's +200% raise the capture-convert chance.</summary>
     private const string NativeConvertBonusId = "model.modifier.nativeConvertBonus";
 
-    /// <summary>Chance (percent) that winning an assault on a settlement you hold a mission in instead burns the attacker's missions across that nation (FreeCol <c>model.option.burnProbability</c>, classic-medium = 6; no modifier scales it). Verified against the classic-medium spec by <c>NativeConstantsTests</c>; migration to <c>DifficultyOptions</c> is task 86d3bb1x3.</summary>
-    internal const int NativeBurnProbabilityPercent = 6;
+    /// <summary>Chance (percent) that winning an assault on a settlement you hold a mission in instead burns the attacker's missions across that nation — the difficulty option <c>model.option.burnProbability</c> (classic-medium = 6, no modifier scales it; FreeCol <c>Unit.getBurnProbability</c> = 0.01×opt). Routed through <see cref="Specification.DifficultyOptions.BurnProbability"/> (ADR-018, <c>86d3bb1x3</c>) — read from the embedded spec, default game unchanged.</summary>
+    internal int NativeBurnProbabilityPercent => Ruleset.Difficulty.BurnProbability;
+
+    /// <summary>The role ability a missionary carries to denounce a rival's mission (FreeCol <c>model.role.missionary</c> grants <c>model.ability.denounceHeresy</c> alongside establish).</summary>
+    private const string DenounceHeresyAbility = "model.ability.denounceHeresy";
+
+    /// <summary>The expert-missionary skill the denounce roll favours/penalises (FreeCol <c>Ability.EXPERT_MISSIONARY</c>): ±0.2 to the roll for an expert resident / challenger.</summary>
+    private const double DenounceExpertSwing = 0.2;
+
+    /// <summary>The denounce success cutoff (FreeCol <c>InGameController.denounceMission</c>: <c>denounce &lt; 0.5</c> ousts the rival).</summary>
+    private const double DenounceSuccessCutoff = 0.5;
 
     /// <summary>
     /// Whether <paramref name="unit"/> may attempt to establish a mission at <paramref name="settlement"/> (FreeCol
@@ -1165,7 +1174,9 @@ public sealed partial class Game
     /// adjacent to the settlement. The settlement's <b>alarm does not gate the command</b> — establishing at an
     /// Angry/Hateful tribe is a legal action that simply gets the missionary killed (mirrors how a hateful tribe
     /// legally kills a visiting scout); <see cref="EstablishMission(Player, Unit, NativeSettlement)"/> decides
-    /// install-vs-destroy. An existing mission (even another player's) is replaced.
+    /// install-vs-destroy. A settlement that already holds a <b>rival</b> mission routes through the
+    /// <see cref="DenounceMission(Player, Unit, NativeSettlement, IGameRandom)">denounce</see> path (a roll), not an
+    /// unconditional replace; re-establishing over your <b>own</b> mission simply re-installs it.
     /// </summary>
     public MoveCheck CheckEstablishMission(Unit unit, NativeSettlement settlement)
     {
@@ -1190,18 +1201,20 @@ public sealed partial class Game
 
     /// <summary>
     /// Establishes a mission at <paramref name="settlement"/> with the human's missionary <paramref name="unit"/>
-    /// (FreeCol <c>InGameController.establishMission</c>). If the tribe is <b>Angry or Hateful</b> the missionary is
-    /// <b>killed</b> (consumed, no mission); otherwise the mission is installed (the settlement records the owner +
-    /// whether the missionary was a jesuit), the settlement's <b>alarm eases by 100</b> as goodwill (FreeCol
-    /// <c>ALARM_NEW_MISSIONARY</c>), the surrounding tiles are revealed at the missionary's line of sight, and the
-    /// missionary is consumed into the settlement (FreeCol holds it as the settlement's missionary, not an on-map
-    /// unit). Draws <b>no</b> randomness (ADR-009) — the whole mission mechanic is RNG-free.
+    /// (FreeCol <c>InGameController.establishMission</c>). If the settlement already holds a <b>rival</b> player's
+    /// mission, this routes through the <see cref="DenounceMission(Unit, NativeSettlement)">denounce</see> path (an
+    /// immigration-weighted roll) and may draw randomness. With no rival mission present it is the plain establish:
+    /// if the tribe is <b>Angry or Hateful</b> the missionary is <b>killed</b> (consumed, no mission); otherwise the
+    /// mission is installed (the settlement records the owner + whether the missionary was a jesuit), the settlement's
+    /// <b>alarm eases by 100</b> as goodwill (FreeCol <c>ALARM_NEW_MISSIONARY</c>), the surrounding tiles are revealed
+    /// at the missionary's line of sight, and the missionary is consumed into the settlement. The plain-establish path
+    /// draws <b>no</b> randomness (ADR-009); only the rival-denounce branch rolls.
     /// </summary>
-    /// <returns><c>true</c> if the mission was installed; <c>false</c> if the missionary was killed.</returns>
+    /// <returns><c>true</c> if a mission of the player's was installed; <c>false</c> if the missionary was killed or a denounce failed.</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckEstablishMission"/>.</exception>
     public bool EstablishMission(Unit unit, NativeSettlement settlement) => EstablishMission(_human, unit, settlement);
 
-    /// <summary>Establishes a mission on behalf of <paramref name="player"/> (the unit's owner). RNG-free.</summary>
+    /// <summary>Establishes a mission on behalf of <paramref name="player"/> (the unit's owner); routes to denounce if a rival mission is present (drawing the player's stream there).</summary>
     internal bool EstablishMission(Player player, Unit unit, NativeSettlement settlement)
     {
         MoveCheck check = CheckEstablishMission(unit, settlement);
@@ -1210,6 +1223,24 @@ public sealed partial class Game
             throw new InvalidMoveException(check.Reason!);
         }
 
+        // A rival's mission must be denounced (a roll), not silently overwritten (FreeCol routes establish vs denounce
+        // in MissionaryMessage). Our own mission, or none, is a plain (RNG-free) re-establish/install.
+        if (settlement.HasMission && settlement.MissionOwnerId != player.PlayerId)
+        {
+            return DenounceMission(player, unit, settlement, RandomFor(player));
+        }
+        return InstallMission(player, unit, settlement);
+    }
+
+    /// <summary>
+    /// The RNG-free install half of <see cref="EstablishMission(Player, Unit, NativeSettlement)"/>: kill the missionary
+    /// at an Angry/Hateful tribe, else record the mission (owner + jesuit-ness), ease alarm by
+    /// <see cref="AlarmNewMissionary"/>, reveal at line-of-sight, and consume the unit into the settlement. Shared by
+    /// the plain-establish path and a <em>successful</em> denounce (FreeCol's <c>denounceMission</c> success tail calls
+    /// straight back into <c>establishMission</c>, so a denounce over an Angry/Hateful tribe still kills the challenger).
+    /// </summary>
+    private bool InstallMission(Player player, Unit unit, NativeSettlement settlement)
+    {
         if (settlement.AlarmLevel >= AlarmLevel.Angry)
         {
             _units.Remove(unit); // an Angry/Hateful tribe kills the missionary (FreeCol csRemove)
@@ -1218,10 +1249,79 @@ public sealed partial class Game
 
         settlement.MissionOwnerId = player.PlayerId;
         settlement.MissionIsExpert = unit.Type.Id == Ruleset.Role(unit.RoleId).ExpertUnit; // jesuit (the role's expert unit) vs ordinary colonist
+        settlement.ConvertProgress = 0; // a fresh mission (or one taken from a rival) starts its convert accrual from zero
         ChangeNativeAlarm(settlement, -AlarmNewMissionary); // a new mission eases tension (FreeCol ALARM_NEW_MISSIONARY −100, clamped at 0)
         RevealAround(player, settlement.Position, LineOfSightOf(unit)); // missionary line-of-sight reveal
         _units.Remove(unit); // the missionary is installed as the settlement's resident, not left on the map
         return true;
+    }
+
+    /// <summary>Whether <paramref name="unit"/> may denounce the rival mission at <paramref name="settlement"/> (the establish gate + a present rival mission + the <c>denounceHeresy</c> ability).</summary>
+    public MoveCheck CheckDenounceMission(Unit unit, NativeSettlement settlement)
+    {
+        MoveCheck establish = CheckEstablishMission(unit, settlement);
+        if (!establish.Allowed)
+        {
+            return establish; // same on-map / role / moves / adjacency gate
+        }
+        if (!Ruleset.Role(unit.RoleId).GrantedAbilities.GetValueOrDefault(DenounceHeresyAbility))
+        {
+            return MoveCheck.No($"A {unit.Type.ShortName} cannot denounce heresy.");
+        }
+        if (!settlement.HasMission)
+        {
+            return MoveCheck.No("There is no rival mission to denounce here.");
+        }
+        if (settlement.MissionOwnerId == unit.OwnerId)
+        {
+            return MoveCheck.No("You cannot denounce your own mission.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Denounces (and, on success, ousts) the rival mission the human's missionary <paramref name="unit"/> finds at
+    /// <paramref name="settlement"/> (FreeCol <c>InGameController.denounceMission</c>). The denounce roll is
+    /// <c>r × rivalImmigration ÷ (yourImmigration + 1)</c> where <c>r</c> is a uniform [0,1) draw, made <b>harder</b>
+    /// by +0.2 if the resident rival is an expert (jesuit) missionary and <b>easier</b> by −0.2 if your challenger is
+    /// one. A result below <see cref="DenounceSuccessCutoff">0.5</see> succeeds — the rival mission is cleared and your
+    /// mission installed in its place (via the shared <see cref="InstallMission"/>, so an Angry/Hateful tribe kills
+    /// your missionary even on a winning roll); otherwise your missionary is consumed for nothing. Draws the player's
+    /// own RNG stream (the human's stream 0).
+    /// </summary>
+    /// <returns><c>true</c> if your mission was installed; <c>false</c> if the denounce failed or the tribe killed your missionary.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckDenounceMission"/>.</exception>
+    public bool DenounceMission(Unit unit, NativeSettlement settlement) => DenounceMission(_human, unit, settlement, _random);
+
+    /// <summary>The denounce resolution drawing from an explicit RNG (the human's stream 0 by default; tests inject a fixed RNG, as for <see cref="Attack(Unit, Position, IGameRandom)"/>).</summary>
+    internal bool DenounceMission(Unit unit, NativeSettlement settlement, IGameRandom random) => DenounceMission(_human, unit, settlement, random);
+
+    /// <summary>Denounces a rival mission for <paramref name="player"/>, drawing from the supplied RNG (the per-owner stream).</summary>
+    internal bool DenounceMission(Player player, Unit unit, NativeSettlement settlement, IGameRandom random)
+    {
+        MoveCheck check = CheckDenounceMission(unit, settlement);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+
+        Player rival = PlayerById(settlement.MissionOwnerId!.Value)!;
+        double denounce = random.NextDouble() * rival.Immigration / (player.Immigration + 1);
+        if (settlement.MissionIsExpert)
+        {
+            denounce += DenounceExpertSwing; // an expert (jesuit) resident is harder to oust
+        }
+        if (unit.Type.Id == Ruleset.Role(unit.RoleId).ExpertUnit)
+        {
+            denounce -= DenounceExpertSwing; // your own expert (jesuit) challenger denounces more readily
+        }
+
+        if (denounce < DenounceSuccessCutoff)
+        {
+            return InstallMission(player, unit, settlement); // success: clear the rival, install ours (or be killed if Angry/Hateful)
+        }
+        _units.Remove(unit); // failed denounce: the challenger is consumed, the rival mission stands
+        return false;
     }
 
     /// <summary>

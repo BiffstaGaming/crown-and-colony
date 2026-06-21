@@ -440,4 +440,152 @@ public class NativeMissionTests
     }
 
     private const string IndianConvertTypeId = "model.unit.indianConvert";
+
+    // ── Denounce rival missions (86d3c9t7z, FreeCol InGameController.denounceMission) ─────────────────────────────
+    //
+    // A missionary entering a settlement that already holds a RIVAL player's mission denounces it: the roll is
+    // r × rivalImmigration ÷ (myImmigration + 1), +0.2 if the resident is a jesuit, −0.2 if our challenger is.
+    // Below 0.5 the rival is ousted and our mission installed (via the shared establish-install tail, so an
+    // Angry/Hateful tribe still kills our missionary); otherwise our missionary is consumed for nothing.
+
+    /// <summary>A human missionary adjacent to a Content settlement that already holds <paramref name="rivalIsExpert"/>'s rival mission.</summary>
+    private static (Game Game, NativeSettlement Settlement, Unit Missionary, Player Rival) RivalMissionAtSettlement(
+        string challengerType = FreeColonist, bool rivalIsExpert = false)
+    {
+        (Game game, NativeSettlement settlement, Unit missionary) = MissionaryAtSettlement(challengerType);
+        Player rival = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        settlement.MissionOwnerId = rival.PlayerId; // the rival already holds the mission here
+        settlement.MissionIsExpert = rivalIsExpert;
+        return (game, settlement, missionary, rival);
+    }
+
+    [Fact]
+    public void DenounceMission_OnALowRoll_OustsTheRival_AndInstallsOurs()
+    {
+        (Game game, NativeSettlement settlement, Unit missionary, Player rival) = RivalMissionAtSettlement();
+        game.HumanPlayer.Immigration = rival.Immigration = 10; // ratio 10/11 ≈ 0.91; roll 0.0 × 0.91 = 0 < 0.5 → success
+
+        Assert.True(game.DenounceMission(missionary, settlement, new FixedRandom(0.0)));
+        Assert.Equal(game.HumanPlayer.PlayerId, settlement.MissionOwnerId); // ours now
+        Assert.DoesNotContain(missionary, game.Units);                      // consumed into the settlement
+    }
+
+    [Fact]
+    public void DenounceMission_OnAHighRoll_Fails_RivalStands_ChallengerConsumed()
+    {
+        (Game game, NativeSettlement settlement, Unit missionary, Player rival) = RivalMissionAtSettlement();
+        game.HumanPlayer.Immigration = rival.Immigration = 10; // roll 0.99 × 10/11 ≈ 0.90 ≥ 0.5 → failure
+
+        Assert.False(game.DenounceMission(missionary, settlement, new FixedRandom(0.99)));
+        Assert.Equal(rival.PlayerId, settlement.MissionOwnerId); // the rival mission stands
+        Assert.DoesNotContain(missionary, game.Units);           // our challenger is consumed for nothing
+    }
+
+    [Fact]
+    public void DenounceMission_AnExpertResident_IsHarderToOust()
+    {
+        // base = 0.45 × (10/11) ≈ 0.409 < 0.5 would succeed; +0.2 for the jesuit resident → ≈ 0.609 ≥ 0.5 → fails.
+        (Game game, NativeSettlement settlement, Unit missionary, Player rival) =
+            RivalMissionAtSettlement(rivalIsExpert: true);
+        game.HumanPlayer.Immigration = rival.Immigration = 10;
+
+        Assert.False(game.DenounceMission(missionary, settlement, new FixedRandom(0.45)));
+        Assert.Equal(rival.PlayerId, settlement.MissionOwnerId); // the expert (+0.2) resists the denounce
+    }
+
+    [Fact]
+    public void DenounceMission_AnExpertChallenger_DenouncesMoreReadily()
+    {
+        // base = 0.62 × (10/11) ≈ 0.564 ≥ 0.5 would fail; −0.2 for our jesuit challenger → ≈ 0.364 < 0.5 → succeeds.
+        (Game game, NativeSettlement settlement, Unit jesuit, Player rival) = RivalMissionAtSettlement(Jesuit);
+        game.HumanPlayer.Immigration = rival.Immigration = 10;
+
+        Assert.True(game.DenounceMission(jesuit, settlement, new FixedRandom(0.62)));
+        Assert.Equal(game.HumanPlayer.PlayerId, settlement.MissionOwnerId);
+        Assert.True(settlement.MissionIsExpert); // ours is a jesuit
+    }
+
+    [Fact]
+    public void DenounceMission_ScalesWithTheImmigrationRatio()
+    {
+        // Our immigration far exceeds the rival's → the roll is divided down well below 0.5, so even a high draw wins.
+        (Game game, NativeSettlement settlement, Unit missionary, Player rival) = RivalMissionAtSettlement();
+        rival.Immigration = 1;
+        game.HumanPlayer.Immigration = 100; // 0.99 × 1/101 ≈ 0.0098 < 0.5 → success despite a near-1 draw
+
+        Assert.True(game.DenounceMission(missionary, settlement, new FixedRandom(0.99)));
+        Assert.Equal(game.HumanPlayer.PlayerId, settlement.MissionOwnerId);
+    }
+
+    [Fact]
+    public void DenounceMission_AtAnAngryTribe_KillsTheChallenger_EvenOnAWinningRoll()
+    {
+        // A successful denounce routes through the establish-install tail, which kills the missionary at Angry/Hateful.
+        (Game game, NativeSettlement settlement, Unit missionary, Player rival) = RivalMissionAtSettlement();
+        game.ChangeNativeAlarm(settlement, 1000); // Hateful
+        game.HumanPlayer.Immigration = rival.Immigration = 10;
+
+        Assert.False(game.DenounceMission(missionary, settlement, new FixedRandom(0.0))); // roll wins, but the tribe kills it
+        Assert.Equal(rival.PlayerId, settlement.MissionOwnerId); // the rival mission is untouched (we never installed)
+        Assert.DoesNotContain(missionary, game.Units);           // our missionary is dead
+    }
+
+    [Fact]
+    public void EstablishMission_OverARivalMission_RoutesThroughDenounce_AndDrawsRng()
+    {
+        // The plain establish entry point detects the rival mission and routes to the denounce roll (so it now draws
+        // randomness on that branch), instead of silently overwriting the rival as the pre-86d3c9t7z code did.
+        (Game game, NativeSettlement settlement, Unit missionary, Player rival) = RivalMissionAtSettlement();
+        game.HumanPlayer.Immigration = rival.Immigration = 10;
+        var before = game.RandomState;
+
+        game.EstablishMission(missionary, settlement); // routes to denounce → draws stream 0
+        Assert.NotEqual(before, game.RandomState);      // the rival branch is NOT RNG-free
+    }
+
+    [Fact]
+    public void EstablishMission_OverOwnMission_IsAPlainRngFreeReinstall()
+    {
+        // Re-establishing over our OWN mission is not a denounce — it stays the RNG-free install path.
+        (Game game, NativeSettlement settlement, Unit first) = MissionaryAtSettlement();
+        game.EstablishMission(first, settlement); // our mission
+
+        Unit again = game.SpawnUnit(Classic.Unit(FreeColonist),
+            settlement.Position.Neighbours().First(n => game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+                && game.ColonyAt(n) is null && game.NativeSettlementAt(n) is null
+                && !game.Units.Any(u => u.IsOnMap && u.Position == n)));
+        again.RoleId = MissionaryRole;
+        var before = game.RandomState;
+        game.EstablishMission(again, settlement); // re-establish over our own → plain install, no roll
+
+        Assert.Equal(game.HumanPlayer.PlayerId, settlement.MissionOwnerId);
+        Assert.Equal(before, game.RandomState); // our-own re-establish draws no RNG
+    }
+
+    [Fact]
+    public void CheckDenounceMission_RejectsWhenNoRivalMission_OrOwnMission_OrNotADenouncer()
+    {
+        (Game game, NativeSettlement settlement, Unit missionary, Player rival) = RivalMissionAtSettlement();
+
+        // No mission present → nothing to denounce.
+        settlement.MissionOwnerId = null;
+        Assert.False(game.CheckDenounceMission(missionary, settlement).Allowed);
+
+        // Our own mission → cannot denounce ourselves.
+        settlement.MissionOwnerId = game.HumanPlayer.PlayerId;
+        Assert.False(game.CheckDenounceMission(missionary, settlement).Allowed);
+
+        // A rival mission but the unit is not a missionary (no denounceHeresy ability) → rejected.
+        settlement.MissionOwnerId = rival.PlayerId;
+        missionary.RoleId = "model.role.default";
+        Assert.False(game.CheckDenounceMission(missionary, settlement).Allowed);
+    }
+
+    [Fact]
+    public void DenounceMission_ThrowsWhenNotAllowed()
+    {
+        (Game game, NativeSettlement settlement, Unit missionary, _) = RivalMissionAtSettlement();
+        missionary.MovementLeft = 0;
+        Assert.Throws<InvalidMoveException>(() => game.DenounceMission(missionary, settlement));
+    }
 }

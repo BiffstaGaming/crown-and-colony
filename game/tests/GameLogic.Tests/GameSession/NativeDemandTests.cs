@@ -104,6 +104,47 @@ public class NativeDemandTests
     }
 
     [Fact]
+    public void SelectDemand_WhenAngry_DemandsFood_ViaTheBuildingMaterialRung()
+    {
+        // 86d3c18n8: food is now a building material (the freeColonist's required-goods food=200). At Angry/Hateful
+        // branch 2 (priciest non-food non-military) is skipped, so the category ladder runs: military → building →
+        // trade → refined. A food-only colony hits the building rung and is demanded its food — as FreeCol does.
+        (Game game, Colony colony) = Stage();
+        SetFood(colony, 100); // only food present; the food-cutoff branch 1 is gated to Content-or-calmer, so skipped here
+
+        (string? goods, int amount) = game.SelectDemand(colony, AlarmLevel.Hateful)!.Value;
+        Assert.Equal(Colony.FoodId, goods);
+        Assert.Equal(50, amount); // capAmount(100) = clamp(50,30,100) = 50
+    }
+
+    [Fact]
+    public void SelectDemand_WhenAngry_PrefersFoodOverARawTradeStack()
+    {
+        // FreeCol's category ladder ranks the building-material rung (which now includes food) ABOVE trade/refined.
+        // Tobacco is a raw farmed good (not building/trade/refined), so it would only be reached by the priciest
+        // fallback — the building rung claims food first. This is the common Angry/Hateful FreeCol food demand.
+        (Game game, Colony colony) = Stage();
+        SetFood(colony, 100);
+        colony.AddGoods(Tobacco, 100);
+
+        (string? goods, _) = game.SelectDemand(colony, AlarmLevel.Hateful)!.Value;
+        Assert.Equal(Colony.FoodId, goods); // food (building rung) beats the raw tobacco stack at Angry/Hateful
+    }
+
+    [Fact]
+    public void SelectDemand_WhenDispleased_StillPrefersNonFoodOverFood()
+    {
+        // At Displeased-or-calmer branch 2 runs first and excludes food, so a non-food stack still wins there —
+        // the food-via-building-rung change only bites at Angry/Hateful (where branch 2 is skipped).
+        (Game game, Colony colony) = Stage();
+        SetFood(colony, 100);
+        colony.AddGoods(Tobacco, 100);
+
+        (string? goods, _) = game.SelectDemand(colony, AlarmLevel.Displeased)!.Value;
+        Assert.Equal(Tobacco, goods); // branch 2 (non-food) wins at Displeased
+    }
+
+    [Fact]
     public void SelectDemand_WhenAngry_FallsThroughToRefined()
     {
         // No military / building / trade goods present → the refined rung (rum is made-from sugar).
@@ -211,8 +252,10 @@ public class NativeDemandTests
         NativeDemand demand = Assert.IsType<NativeDemand>(game.PendingDemand);
         Assert.Equal(colony.Id, demand.ColonyId);
         Assert.Equal(brave.OwnerNationId, demand.DemandingNationId);
-        Assert.Equal(Tobacco, demand.GoodsId);  // a Hateful demand of a tobacco-only colony lands on the tobacco rung
-        Assert.Equal(50, demand.Amount);
+        // EndTurn produces food, and food is a building material (86d3c18n8), so a Hateful demand lands on food via
+        // the building-material rung (it out-ranks the raw tobacco stack) — the common FreeCol Angry/Hateful case.
+        Assert.Equal(Colony.FoodId, demand.GoodsId);
+        Assert.InRange(demand.Amount, 30, 100); // capAmount clamps to [30,100]
         Assert.Equal(colony.OwnerId, game.Colonies.First(c => c.Id == colony.Id).OwnerId); // not captured — still the human's
     }
 
@@ -224,12 +267,14 @@ public class NativeDemandTests
         NativeDemand demand = game.PendingDemand!;
         NativeSettlement home = game.NativeSettlements.First(s => s.NationTypeId == brave.OwnerNationId);
         int alarmBefore = home.Alarm;
-        int tobaccoBefore = colony.StoreOf(Tobacco);
+        string demanded = demand.GoodsId!;                 // whatever the ladder picked (food after EndTurn production)
+        colony.AddGoods(demanded, demand.Amount);          // ensure the colony can pay in full, so the transfer is exact
+        int heldBefore = colony.StoreOf(demanded);
 
         Assert.True(game.AcceptPendingDemand());
 
         Assert.Null(game.PendingDemand);                                   // resolved
-        Assert.Equal(tobaccoBefore - demand.Amount, colony.StoreOf(Tobacco)); // tribute paid
+        Assert.Equal(heldBefore - demand.Amount, colony.StoreOf(demanded)); // the demanded tribute left the colony
         Assert.Equal(System.Math.Max(0, alarmBefore - 150), home.Alarm);  // appeased by 150
     }
 

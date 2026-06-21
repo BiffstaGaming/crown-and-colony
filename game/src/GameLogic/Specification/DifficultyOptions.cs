@@ -80,6 +80,17 @@ public static class DifficultyLevels
 /// demand amount uses <c>dx = NativeDemands + 1</c> and the accept-alarm relief uses <c>(5 − NativeDemands)·50</c> —
 /// those transforms stay in code; this stores the raw value. See [natives].
 /// </param>
+/// <param name="NativeConvertProbability">
+/// Base percentage chance that winning an assault on a settlement you hold a mission in captures a brave as an Indian
+/// Convert (spec <c>model.option.nativeConvertProbability</c>; classic veryEasy→veryHard = 50/40/30/20/10, medium 30).
+/// FreeCol <c>Unit.getConvertProbability</c> = 0.01 × this, raised by the captor's <c>nativeConvertBonus</c> modifiers.
+/// See [natives].
+/// </param>
+/// <param name="BurnProbability">
+/// Percentage chance that winning such an assault instead burns the attacker's missions across that nation (spec
+/// <c>model.option.burnProbability</c>; classic veryEasy→veryHard = 2/4/6/8/10, medium 6). FreeCol
+/// <c>Unit.getBurnProbability</c> = 0.01 × this, unscaled by any modifier. See [natives].
+/// </param>
 /// <param name="RumourDifficulty">
 /// The raw lost-city-rumour difficulty (spec <c>model.option.rumourDifficulty</c>; medium 2). Reward scaling uses
 /// <c>dx = 10 − RumourDifficulty</c> (the transform stays in code). See [lost-city-rumours].
@@ -107,6 +118,8 @@ public sealed record DifficultyOptions(
     GovernmentLimits Government,
     int LandPriceFactor,
     int NativeDemands,
+    int NativeConvertProbability,
+    int BurnProbability,
     int RumourDifficulty,
     int RumourBadPercent,
     int RumourGoodPercent,
@@ -128,6 +141,8 @@ public sealed record DifficultyOptions(
         Government: GovernmentLimits.ClassicMedium,
         LandPriceFactor: 60,
         NativeDemands: 2,
+        NativeConvertProbability: 30,
+        BurnProbability: 6,
         RumourDifficulty: 2,
         RumourBadPercent: 23,
         RumourGoodPercent: 48,

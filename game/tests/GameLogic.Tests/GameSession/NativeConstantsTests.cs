@@ -17,10 +17,10 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 /// <c>IndianSettlement.java</c>, <c>ServerIndianSettlement.java</c>). If a future edit drifts a
 /// constant off the spec/FreeCol value, the matching assertion fails.
 ///
-/// <para>This is a <b>verification</b> task (86d3drphp): it does not migrate the constants into the
-/// ruleset — that is a separate task (86d3bb1x3). The convert/burn probabilities are still hardcoded
-/// here and read straight from the spec; once migrated, these spec-option tests move to assert the
-/// parsed <see cref="DifficultyOptions"/> value instead.</para>
+/// <para>Originally a pure <b>verification</b> task (86d3drphp). The convert/burn probabilities have since been
+/// <b>migrated into the difficulty record</b> (ADR-018, 86d3bb1x3): their two tests now assert the parsed
+/// <see cref="DifficultyOptions"/> value (read live from the embedded spec), while the remaining FreeCol-source
+/// constants (gift/alarm/mission/demand) stay hardcoded — they have no spec option — and are still pinned here.</para>
 ///
 /// <para>Two genuine mismatches were found and corrected in place by this task:
 /// <c>NativeConvertProbabilityPercent</c> (was 50 → spec 30) and <c>NativeBurnProbabilityPercent</c>
@@ -53,26 +53,27 @@ public class NativeConstantsTests
     // ---- Spec-option constants (classic-medium model.difficulty.natives) ----
 
     /// <summary>
-    /// The capture-convert base chance the assault path uses must equal the classic-medium
-    /// <c>nativeConvertProbability</c> (30) — FreeCol <c>Unit.getConvertProbability</c> = 0.01 × the option.
-    /// (Corrected from 50 by this task.)
+    /// The capture-convert base chance must equal the classic-medium <c>nativeConvertProbability</c> (30) — FreeCol
+    /// <c>Unit.getConvertProbability</c> = 0.01 × the option. Now migrated to the difficulty record (ADR-018,
+    /// <c>86d3bb1x3</c>): asserted against the parsed <see cref="DifficultyOptions"/> value, not a code const.
     /// </summary>
     [Fact]
     public void NativeConvertProbability_MatchesClassicMediumSpec()
     {
         Assert.Equal(30, MediumIntOption("model.option.nativeConvertProbability"));
-        Assert.Equal(30, Game.NativeConvertProbabilityPercent);
+        Assert.Equal(30, Ruleset.LoadClassic().Difficulty.NativeConvertProbability);
     }
 
     /// <summary>
     /// The burn-missions chance must equal the classic-medium <c>burnProbability</c> (6) — FreeCol
-    /// <c>Unit.getBurnProbability</c> = 0.01 × the option, unscaled. (Corrected from 2 by this task.)
+    /// <c>Unit.getBurnProbability</c> = 0.01 × the option, unscaled. Now migrated to the difficulty record (ADR-018,
+    /// <c>86d3bb1x3</c>): asserted against the parsed <see cref="DifficultyOptions"/> value, not a code const.
     /// </summary>
     [Fact]
     public void NativeBurnProbability_MatchesClassicMediumSpec()
     {
         Assert.Equal(6, MediumIntOption("model.option.burnProbability"));
-        Assert.Equal(6, Game.NativeBurnProbabilityPercent);
+        Assert.Equal(6, Ruleset.LoadClassic().Difficulty.BurnProbability);
     }
 
     /// <summary>The tribute-demand <c>dx</c> derives from the medium <c>nativeDemands</c> option (2 → dx 3).</summary>
