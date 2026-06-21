@@ -3,15 +3,15 @@
 | | |
 |---|---|
 | **Status** | Implemented (GameLogic) — declaration + continental muster, REF arrival + War-of-Independence combat, victory (defeat the REF) + Spanish Succession, and defeat (lose your last port). The war UI is P7. |
-| **Last verified** | 2026-06-20 @ REF fixed entry tile near the human start, save v47 (`86d3c9w5n`) |
-| **Code** | `game/src/GameLogic/GameSession/Game.Independence.cs`, `Force.cs`; `Player.PlayerType`/`DeclaredIndependenceTurn` |
+| **Last verified** | 2026-06-21 @ `lastColonialYear` routed from the ruleset (`86d3drn4t`); 1536 L1/L2 + soak green |
+| **Code** | `game/src/GameLogic/GameSession/Game.Independence.cs`, `Force.cs`; `Player.PlayerType`/`DeclaredIndependenceTurn`; `Ruleset.LastColonialYear` (`Specification/Ruleset.cs`) |
 | **Tests** | `game/tests/GameLogic.Tests/GameSession/IndependenceTests.cs` |
 | **FreeCol reference** | `InGameController.csDeclareIndependence`, `Player.getSoL`, `model.event.declareIndependence` |
 | **Related systems** | [monarchy](monarchy.md), [royal-expeditionary-force](royal-expeditionary-force.md), [sons-of-liberty](sons-of-liberty.md), [combat](combat.md) |
 
 ## 1. How it works (plain English)
 
-Once your colonies are fired up enough — at least **half your colonists are rebels** (Sons of Liberty ≥ 50% nationwide) and you hold a **port** — you can **declare independence**. When you do:
+Once your colonies are fired up enough — at least **half your colonists are rebels** (Sons of Liberty ≥ 50% nationwide) and you hold a **port** — you can **declare independence**, as long as it isn't already too late in history. There's a **last year** after which the mother country will no longer let a colony break away — in the classic game that's **1800**. That cutoff year isn't a number baked into the code: it's a **ruleset setting** read from the game's data, so a different scenario (or the Australia variant) can move it without touching any code. When you do declare:
 
 - your nation becomes a **rebel** fighting for freedom;
 - everything you had **waiting in Europe is lost**, and Europe closes its doors (no more recruiting or trade with the mother country);
@@ -24,7 +24,7 @@ From the next turn the **King's army sails in and lands near your ports**, then 
 
 ## 2. Detailed rules
 
-- **The gate** (`CheckDeclareIndependence`, FreeCol `model.event.declareIndependence` limits): still a plain **colonial** power, **national Sons of Liberty ≥ 50%** (rebels across all colonies ÷ total population), **≥ 1 connected-port colony**, and the **year ≤ the last colonial year** (1800).
+- **The gate** (`CheckDeclareIndependence`, FreeCol `model.event.declareIndependence` limits): still a plain **colonial** power, **national Sons of Liberty ≥ 50%** (rebels across all colonies ÷ total population), **≥ 1 connected-port colony**, and the **year ≤ the last colonial year** (`Ruleset.LastColonialYear`, the spec `model.option.lastColonialYear` integer game option in the `gameOptions.years` group; classic **1800**). The cutoff is read from the ruleset, not hardcoded — a variant spec moves it by data alone (a missing option falls back to 1800).
 - **Declaring** (`DeclareIndependence`):
   - the player becomes a **`Rebel`** and records the turn (drives the score and the intervention force later);
   - every unit **in or bound for Europe is removed**; the **recruit dock is cleared**;
@@ -35,13 +35,14 @@ From the next turn the **King's army sails in and lands near your ports**, then 
 - **Spanish Succession** (`RunSpanishSuccession`, a separate event): once, from **1600**, a fading European AI (SoL < 50) is **absorbed** by the dominant one (SoL > 50) — its colonies and units change hands. (Not the win condition; a late-game consolidation.)
 - **Losing** (`IsRebelDefeated`, item 10): once you've declared, holding **no connected port** (`GetNumberOfPorts == 0` — the REF has taken them all) means you've **lost** the War of Independence. This is a flag the presentation reads for the defeat screen; the turn loop keeps running regardless (a defeated human must not freeze stream 0 — ADR-009). A plain colony with no port is never "rebel-defeated".
 
-**Deviations from original / FreeCol:** the gate (SoL ≥ 50, ≥ 1 connected port, year cutoff), the veteran→colonial-regular upgrade, the win thresholds (1.5× / 7 land / 2 naval) and the REF realisation match FreeCol. **Faithful-subset simplifications (documented, not yet faithful):** (1) the **continental muster** caps and draws *nationwide* (the rebel's whole unit count + any on-map veteran), not per-colony from each colony's own residents as FreeCol does — our colony workers aren't in the unit list; this can over-muster in a multi-colony rebellion (per-colony port is a follow-up). (2) the **Spanish Succession** ranks the absorbed/absorbing pair by **Sons-of-Liberty** (we have no overall game-score yet) rather than FreeCol's score, and only an AI (not the human) can satisfy its strong-limit trigger. (3) the REF reuses the foreign-power war AI rather than a bespoke amphibious doctrine; the REF combat ambush-penalty and a dedicated naval transport doctrine are deferred; the last-colonial-year is a code constant pending ruleset routing (`86d3c9rg6`). Native re-stancing on declaration and the on-declaration mercenary offer are deferred.
+**Deviations from original / FreeCol:** the gate (SoL ≥ 50, ≥ 1 connected port, year cutoff), the veteran→colonial-regular upgrade, the win thresholds (1.5× / 7 land / 2 naval) and the REF realisation match FreeCol. **Faithful-subset simplifications (documented, not yet faithful):** (1) the **continental muster** caps and draws *nationwide* (the rebel's whole unit count + any on-map veteran), not per-colony from each colony's own residents as FreeCol does — our colony workers aren't in the unit list; this can over-muster in a multi-colony rebellion (per-colony port is a follow-up). (2) the **Spanish Succession** ranks the absorbed/absorbing pair by **Sons-of-Liberty** (we have no overall game-score yet) rather than FreeCol's score, and only an AI (not the human) can satisfy its strong-limit trigger. (3) the REF reuses the foreign-power war AI rather than a bespoke amphibious doctrine; the REF combat ambush-penalty and a dedicated naval transport doctrine are deferred. Native re-stancing on declaration and the on-declaration mercenary offer are deferred.
 
 ## 3. Technical design
 
 - `PlayerType` gains `Rebel`, `Independent`, `RoyalExpeditionaryForce` (the lifecycle Colonial → Rebel → Independent; the REF is its own type). `RunPlayerTurn` routes Rebel/Independent through the colonial economy path and the REF through `RunRefTurn` (a stub until item 8).
 - `Game.NationalSonsOfLiberty(player)` = `sum(colony.RebelCount) · 100 / max(1, sum(Population))`.
-- `CheckDeclareIndependence`/`DeclareIndependence` (ADR-006). `MusterContinentalArmy` upgrades veterans via the existing `UpgradeUnitType` swap (units are immutable in their type). `CreateRefPlayer` adds a non-human `RoyalExpeditionaryForce` player with its **own RNG stream** (seeded off the human's current state, read non-destructively — stream 0 untouched), sets the WAR stance both ways, and realises `_refForce` into units via `SpawnInEurope`.
+- `CheckDeclareIndependence`/`DeclareIndependence` (ADR-006). The year branch reads `Ruleset.LastColonialYear` (no longer a `LastColonialYear` const). `MusterContinentalArmy` upgrades veterans via the existing `UpgradeUnitType` swap (units are immutable in their type). `CreateRefPlayer` adds a non-human `RoyalExpeditionaryForce` player with its **own RNG stream** (seeded off the human's current state, read non-destructively — stream 0 untouched), sets the WAR stance both ways, and realises `_refForce` into units via `SpawnInEurope`.
+- **`Ruleset.LastColonialYear`** is parsed in `Ruleset.Load` by `ParseIntOption(root, "model.option.lastColonialYear", fallback: 1800)` — a top-level `<integerOption>` reader (mirrors `ParseBooleanOption`; reads `value` then `defaultValue`). It's a **game option, not a difficulty option** (it doesn't vary by level, so it lives on the ruleset root beside the `gameOptions.years` calendar, not in `DifficultyOptions`). Not persisted in the save (re-derived from the ruleset on load, like the calendar) → **no save-version bump**; the default classic spec value is 1800, so the default game's gate is byte-identical to the old const.
 - **Determinism (ADR-009):** the REF runs on its own stream (like a foreign power); the human/rebel on stream 0; the monarch tick stops once the player is no longer `Colonial`.
 - **Save v41:** `SavedPlayer.DeclaredIndependenceTurn` + `InterventionBells` (both omitted before independence); the `PlayerType` ordinals (Rebel/Independent/REF) and the REF **player row** persist for free, and the REF's units via `SavedUnit.OwnerId`; a pre-independence game is byte-identical to v40.
 
@@ -49,7 +50,7 @@ From the next turn the **King's army sails in and lands near your ports**, then 
 
 | Layer | Required? | Tests | Status |
 |---|---|---|---|
-| L1 Unit | Always | `IndependenceTests`: `NationalSonsOfLiberty`; the declare gate (SoL); declaring turns Rebel + loses Europe units + starts the REF at war + realises ≥ 60 REF units; continental muster upgrades veterans (conservation + ≥ 1); pre-independence save omits the tokens | ✅ |
+| L1 Unit | Always | `IndependenceTests`: `NationalSonsOfLiberty`; the declare gate (SoL); the **last-colonial-year gate** (classic ruleset parses 1800; `ParseIntOption` reads a non-default value + falls back; the gate reads the **ruleset** year not a hardcoded 1800; allows on the cutoff year, blocks the year after); declaring turns Rebel + loses Europe units + starts the REF at war + realises ≥ 60 REF units; continental muster upgrades veterans (conservation + ≥ 1); pre-independence save omits the tokens | ✅ |
 | L2 Scenario | Always | `IndependenceTests`: EndTurn runs cleanly after declaration (REF stub + rebel colonial path); the full rebellion (Rebel + REF + war stance + REF units) round-trips save/load | ✅ |
 
 - **FreeCol cross-check:** ✅ gate limits + muster cap + REF realisation match `csDeclareIndependence`.
@@ -61,13 +62,15 @@ From the next turn the **King's army sails in and lands near your ports**, then 
 - [x] REF **fixed entry tile** near the human start (`86d3c9w5n`, save v47) — `Game.RefEntryTile` set at `Game.New` (`NearestWaterTile`), `LandRefUnits` lands the fleet there via `FindLandingTileNear` (falls back to rebel ports / pre-v47 saves).
 - [x] Win: defeat/expel the REF → independence granted + Spanish Succession (`86d3c9vfn`, save v42).
 - [x] Lose: rebel loses its last connected port (`86d3c9vh1`) — `IsRebelDefeated` (derived; EndTurn doesn't short-circuit).
-- [ ] Native re-stancing + on-declaration mercenary offer; last-colonial-year via ruleset (`86d3c9rg6`).
+- [x] Last-colonial-year via ruleset (`86d3drn4t`) — `Ruleset.LastColonialYear` from `model.option.lastColonialYear` (default 1800); the gate reads it instead of a const. No save bump.
+- [ ] Native re-stancing + on-declaration mercenary offer (`86d3c9rg6`).
 - [ ] The War-of-Independence UI (declaration screen, defeat/victory screens, REF-arrival warning) — P7.
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-21 | **`lastColonialYear` from the ruleset** (`86d3drn4t`): the declare-independence year cutoff is now `Ruleset.LastColonialYear` (spec `model.option.lastColonialYear`, classic **1800**), parsed by a new `Ruleset.ParseIntOption` top-level integer-option reader; the hardcoded `LastColonialYear = 1800` const is gone. It's a game option (not a difficulty option) and isn't saved → **no save-version bump**; the default classic game's gate is byte-identical (1800 either way, ADR-009). +5 L1 (`IndependenceTests`: classic parses 1800; `ParseIntOption` reads non-default + falls back; the gate reads the ruleset year not a hardcoded 1800; allows on the cutoff year, blocks the year after). 1536 L1/L2 + soak green | P6 (`86d3drn4t`) |
 | 2026-06-20 | **REF fixed entry tile** (`86d3c9w5n`, FreeCol `Player.entryTile`): `Game.New` fixes the REF's entry tile to the water tile nearest the human's start (`NearestWaterTile`, deterministic — no RNG draw), stored on `Game.RefEntryTile` and persisted (save **v47**, omitted when unset → pre-v47 loads with none). `LandRefUnits` now lands the King's fleet at that beachhead first (`FindLandingTileNear`), falling back to the rebel's connected-port colonies when it's full/unset — so the REF always makes landfall at a fixed, faithful spot. No RNG draw → stream 0 byte-stable. +3 L1 (`MultiPlayerTests`: entry tile set on water nearest the start, save round-trip, omit-when-unset/pre-v47 load); 1328 L1/L2 + soak green. See [save-load](save-load.md) | P5 (`86d3c9w5n`) |
 | 2026-06-19 | **Declare Independence**: `PlayerType` Rebel/Independent/REF; `NationalSonsOfLiberty`; `CheckDeclareIndependence`/`DeclareIndependence` (gate + lose-Europe + continental muster veteran→colonial-regular + REF player at war on its own stream). Save **v41** (`DeclaredIndependenceTurn` + `InterventionBells` + REF player/units). REF landing/combat + win/lose follow | P6 (`86d3c9v28`) |
 | 2026-06-19 | **REF arrival + war combat**: `RunRefTurn` lands the REF (`LandRefUnits`) near rebel ports then reuses the foreign-power war AI to assault the rebel — all on the REF's own RNG stream; the REF↔rebel war stance never decays (colonial-only). No save change (REF units persist via v41). Deterministic twin-game + round-trip tested | P6 (`86d3c9v8k`) |

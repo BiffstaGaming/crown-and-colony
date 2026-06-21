@@ -1,3 +1,5 @@
+using System.Text;
+using System.Xml.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
@@ -19,15 +21,18 @@ public class IndependenceTests
     private const ulong Seed = 0xC0FFEEUL;
 
     /// <summary>A game with one coastal colony at full Sons-of-Liberty, ready to declare independence.</summary>
-    private static (Game Game, Colony Colony) RebellionReady(ulong seed = Seed)
+    private static (Game Game, Colony Colony) RebellionReady(ulong seed = Seed) => RebellionReady(Classic, seed);
+
+    /// <summary>As <see cref="RebellionReady(ulong)"/>, but on a supplied ruleset (e.g. a custom last-colonial-year).</summary>
+    private static (Game Game, Colony Colony) RebellionReady(Ruleset ruleset, ulong seed = Seed)
     {
-        Game game = Game.New(Classic, seed);
+        Game game = Game.New(ruleset, seed);
         Position coastal = game.Map.AllPositions().First(p =>
             !game.Map.TerrainAt(p).IsWater
             && game.ColonyAt(p) is null
             && game.NativeSettlementAt(p) is null
             && p.Neighbours().Any(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater));
-        Unit colonist = game.SpawnUnit(Classic.Unit(Game.StartingUnitTypeId), coastal);
+        Unit colonist = game.SpawnUnit(ruleset.Unit(Game.StartingUnitTypeId), coastal);
         Colony colony = game.FoundColony(colonist);
         colony.Liberty = Colony.LibertyPerRebel * colony.Population; // force national SoL to 100%
         return (game, colony);
@@ -57,6 +62,78 @@ public class IndependenceTests
 
         colony.Liberty = 0; // SoL → 0
         Assert.False(game.CheckDeclareIndependence(game.HumanPlayer).Allowed);
+    }
+
+    // ── model.option.lastColonialYear is a ruleset value, not a magic number (86d3drn4t) ──────────────────
+
+    [Fact]
+    public void ClassicRuleset_ParsesLastColonialYearAs1800()
+    {
+        // ADR-009 byte-identity: the default game's gate threshold is the same 1800 the constant used to hardcode.
+        Assert.Equal(1800, Classic.LastColonialYear);
+    }
+
+    [Fact]
+    public void ParseIntOption_ReadsNonDefaultSpecValue_AndFallsBack()
+    {
+        // Prove the value comes from the parsed game option, not a hardcoded 1800.
+        XElement withOption = XElement.Parse(
+            "<freecol-specification><options><optionGroup id='gameOptions.years'>" +
+            "  <integerOption id='model.option.lastColonialYear' value='1650' />" +
+            "</optionGroup></options></freecol-specification>");
+        Assert.Equal(1650, Ruleset.ParseIntOption(withOption, "model.option.lastColonialYear", fallback: 1800));
+
+        // Absent option → the supplied fallback (a spec without it stays at the classic 1800).
+        XElement empty = XElement.Parse("<freecol-specification />");
+        Assert.Equal(1800, Ruleset.ParseIntOption(empty, "model.option.lastColonialYear", fallback: 1800));
+    }
+
+    [Fact]
+    public void CheckDeclareIndependence_ReadsTheRulesetYear_NotAHardcoded1800()
+    {
+        // A ruleset whose last colonial year is 1493 blocks the declaration in 1494 — a hardcoded 1800 would
+        // wrongly still allow it. Proves the gate reads Ruleset.LastColonialYear.
+        Ruleset earlyCutoff = ClassicWithLastColonialYear(1493);
+        (Game game, _) = RebellionReady(earlyCutoff);
+        Assert.Equal(1492, game.CurrentYear);
+        Assert.True(game.CheckDeclareIndependence(game.HumanPlayer).Allowed); // 1492 ≤ 1493
+
+        game.EndTurn(); // → 1493 (still ≤ cutoff)
+        Assert.True(game.CheckDeclareIndependence(game.HumanPlayer).Allowed);
+
+        game.EndTurn(); // → 1494, now past the ruleset's 1493 cutoff
+        Assert.Equal(1494, game.CurrentYear);
+        MoveCheck check = game.CheckDeclareIndependence(game.HumanPlayer);
+        Assert.False(check.Allowed);
+        Assert.Equal("It is too late in history to declare independence.", check.Reason);
+    }
+
+    [Fact]
+    public void CheckDeclareIndependence_AllowsOnTheCutoffYear_BlocksTheYearAfter()
+    {
+        // Pin the boundary (year ≤ lastColonialYear, FreeCol's "le" limit): 1494 cutoff allows in 1494, blocks in 1495.
+        Ruleset cutoff1494 = ClassicWithLastColonialYear(1494);
+        (Game game, _) = RebellionReady(cutoff1494);
+        game.EndTurn();
+        game.EndTurn(); // → 1494, exactly the cutoff
+        Assert.Equal(1494, game.CurrentYear);
+        Assert.True(game.CheckDeclareIndependence(game.HumanPlayer).Allowed);
+
+        game.EndTurn(); // → 1495, one past
+        Assert.False(game.CheckDeclareIndependence(game.HumanPlayer).Allowed);
+    }
+
+    /// <summary>The classic ruleset reloaded with <c>model.option.lastColonialYear</c> overridden to <paramref name="year"/>.</summary>
+    private static Ruleset ClassicWithLastColonialYear(int year)
+    {
+        var assembly = typeof(Ruleset).Assembly;
+        using Stream raw = assembly.GetManifestResourceStream(GameVariants.ClassicSpecResource)!;
+        XDocument doc = XDocument.Load(raw);
+        XElement option = doc.Descendants("integerOption")
+            .Single(o => (string?)o.Attribute("id") == "model.option.lastColonialYear");
+        option.SetAttributeValue("value", year);
+        using var patched = new MemoryStream(Encoding.UTF8.GetBytes(doc.ToString()));
+        return Ruleset.Load(patched);
     }
 
     [Fact]

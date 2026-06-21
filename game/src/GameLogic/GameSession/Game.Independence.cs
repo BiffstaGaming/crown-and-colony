@@ -16,7 +16,6 @@ public sealed partial class Game
     private const string VeteranSoldierUnitTypeId = "model.unit.veteranSoldier";
     private const string ColonialRegularUnitTypeId = "model.unit.colonialRegular"; // veterans muster into these
     private const int IndependenceSoLThreshold = 50;  // model.limit.independence.rebels (≥ 50% national SoL)
-    private const int LastColonialYear = 1800;        // model.option.lastColonialYear (classic) — TODO(86d3c9rg6) ruleset
 
     /// <summary>
     /// A player's national Sons-of-Liberty percentage (FreeCol <c>Player.getSoL</c>): rebels across all its colonies
@@ -31,7 +30,7 @@ public sealed partial class Game
     /// <summary>
     /// Whether <paramref name="player"/> may declare independence now (FreeCol <c>model.event.declareIndependence</c>
     /// limits): still a colonial power, national Sons of Liberty ≥ 50%, at least one connected-port colony, and not
-    /// past the last colonial year.
+    /// past the ruleset's last colonial year (<see cref="Specification.Ruleset.LastColonialYear"/>; classic 1800).
     /// </summary>
     public MoveCheck CheckDeclareIndependence(Player player)
     {
@@ -47,7 +46,7 @@ public sealed partial class Game
         {
             return MoveCheck.No("Independence needs at least one colony with a connected port.");
         }
-        if (CurrentYear > LastColonialYear)
+        if (CurrentYear > Ruleset.LastColonialYear)
         {
             return MoveCheck.No("It is too late in history to declare independence.");
         }

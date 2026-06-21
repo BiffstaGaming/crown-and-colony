@@ -46,13 +46,15 @@ public sealed class Ruleset
         IReadOnlyList<int> fatherAgeYears,
         DifficultyOptions difficulty,
         string difficultyLevelId,
-        bool upkeepEnabled)
+        bool upkeepEnabled,
+        int lastColonialYear)
     {
         Calendar = calendar;
         FatherAgeYears = fatherAgeYears;
         Difficulty = difficulty;
         DifficultyLevelId = difficultyLevelId;
         UpkeepEnabled = upkeepEnabled;
+        LastColonialYear = lastColonialYear;
         _terrainById = terrainById;
         _unitById = unitById;
         _goodsById = goodsById;
@@ -144,6 +146,15 @@ public sealed class Ruleset
     /// from the player's gold each turn (FreeCol gates <c>ServerPlayer.csPayUpkeep</c> on this same option).
     /// </summary>
     public bool UpkeepEnabled { get; }
+
+    /// <summary>
+    /// The last in-game year a colonial power may declare independence (the spec
+    /// <c>model.option.lastColonialYear</c> integer game option in the <c>gameOptions.years</c> group; classic
+    /// <b>1800</b>). Once <see cref="GameSession.Game.CurrentYear"/> passes this year it is too late to declare
+    /// (FreeCol <c>model.limit.independence.year</c>, the <c>year ≤ lastColonialYear</c> limit). A spec without the
+    /// option falls back to 1800, so the default classic game is unchanged.
+    /// </summary>
+    public int LastColonialYear { get; }
 
     /// <summary>All terrain types, in specification order.</summary>
     public IReadOnlyList<TerrainType> TerrainTypes { get; }
@@ -659,11 +670,14 @@ public sealed class Ruleset
         // Building upkeep is a boolean game option (model.option.enableUpkeep); classic ships it defaultValue="false",
         // so the default game charges no upkeep and stays byte-identical (FreeCol gates csPayUpkeep on this option).
         bool upkeepEnabled = ParseBooleanOption(root, "model.option.enableUpkeep", fallback: false);
+        // The last colonial game year (model.option.lastColonialYear, in the gameOptions.years group); classic value
+        // 1800. Past this year a colonial power may no longer declare independence (FreeCol model.limit.independence.year).
+        int lastColonialYear = ParseIntOption(root, "model.option.lastColonialYear", fallback: 1800);
 
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
             roles, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears,
-            difficulty, difficultyLevelId, upkeepEnabled);
+            difficulty, difficultyLevelId, upkeepEnabled, lastColonialYear);
     }
 
     /// <summary>
@@ -828,6 +842,24 @@ public sealed class Ruleset
             return fallback;
         }
         return (bool?)option.Attribute("value") ?? (bool?)option.Attribute("defaultValue") ?? fallback;
+    }
+
+    /// <summary>
+    /// Reads a top-level <c>&lt;integerOption&gt;</c> game option by id (its <c>value</c>, else <c>defaultValue</c>),
+    /// falling back to <paramref name="fallback"/> when the option is absent or has no parseable integer. Used for
+    /// <c>model.option.lastColonialYear</c> (classic default 1800).
+    /// </summary>
+    internal static int ParseIntOption(XElement root, string id, int fallback)
+    {
+        XElement? option = root.Descendants("integerOption")
+            .FirstOrDefault(o => (string?)o.Attribute("id") == id);
+        if (option is null)
+        {
+            return fallback;
+        }
+        return ParseInt((string?)option.Attribute("value"))
+            ?? ParseInt((string?)option.Attribute("defaultValue"))
+            ?? fallback;
     }
 
     /// <summary>Parses an integer attribute value, returning <c>null</c> for a missing or non-numeric string.</summary>
