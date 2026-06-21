@@ -2929,6 +2929,9 @@ public sealed partial class Game
             OwnerId = unit.OwnerId,
             RoleId = unit.RoleId,
             RoleCount = unit.RoleCount,
+            Nationality = unit.Nationality, // a type swap is the same individual: it keeps its origin + custom name
+            Ethnicity = unit.Ethnicity,
+            Name = unit.Name,
         };
         foreach ((string goodsId, int amount) in unit.Cargo)
         {
@@ -3299,6 +3302,7 @@ public sealed partial class Game
                 RoleId = role,
                 RoleCount = role == RoleType.DefaultRoleId ? 0 : 1,
             };
+            InitNationalityAndEthnicity(unit); // person units take the human's nation (null for the classic human)
             _units.Add(unit);
             taken.Add(pos);
             RevealForOwner(unit); // the human's own units lift its fog around the landing
@@ -3355,6 +3359,7 @@ public sealed partial class Game
                 RoleId = roleId,
                 RoleCount = roleId == RoleType.DefaultRoleId ? 0 : 1,
             };
+            InitNationalityAndEthnicity(unit); // a foreign power's person units take its own nation
             _units.Add(unit);
             if (spot is { } s)
             {
@@ -3379,7 +3384,8 @@ public sealed partial class Game
             int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
             int repairTurns, UnitOrders orders, int treasureAmount, Position? destination,
             int? tradeRouteId, int tradeRouteStopIndex,
-            string? workImprovementId, int workTurnsLeft, int attrition)> units,
+            string? workImprovementId, int workTurnsLeft, int attrition,
+            string? nationality, string? ethnicity, string? name)> units,
         IEnumerable<Colony>? colonies = null,
         IEnumerable<NativeSettlement>? nativeSettlements = null,
         AutoExportMode autoExportMode = AutoExportMode.PerGood,
@@ -3412,7 +3418,8 @@ public sealed partial class Game
                   int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
                   int repairTurns, UnitOrders orders, int treasureAmount, Position? destination,
                   int? tradeRouteId, int tradeRouteStopIndex,
-                  string? workImprovementId, int workTurnsLeft, int attrition) in units)
+                  string? workImprovementId, int workTurnsLeft, int attrition,
+                  string? nationality, string? ethnicity, string? name) in units)
         {
             var unit = new Unit(id, type, position)
             {
@@ -3432,7 +3439,13 @@ public sealed partial class Game
                 WorkImprovementId = workImprovementId,
                 WorkTurnsLeft = workTurnsLeft,
                 Attrition = attrition,
+                Name = name,
             };
+            // Identity (v52): a persisted value is a DIVERGED origin (a captured colonist) and is honoured verbatim; a
+            // null means "equals the owner" (the omit-when-default case — every fresh unit, incl. a brave, and pre-v52
+            // saves) and is re-derived from the now-set owner, mirroring the spawn-time stamp byte-for-byte.
+            unit.Nationality = nationality ?? game.OwnerNationOf(unit);
+            unit.Ethnicity = ethnicity ?? game.OwnerNationOf(unit);
             unit.SetTreasureAmount(treasureAmount); // internal method, like AddCargo — set after the initializer
             foreach ((string goodsId, int amount) in cargo ?? new Dictionary<string, int>())
             {
@@ -3588,10 +3601,42 @@ public sealed partial class Game
         }
 
         var unit = new Unit(_nextUnitId++, type, position) { OwnerId = ownerId, OwnerNationId = ownerNationId };
+        InitNationalityAndEthnicity(unit);
         _units.Add(unit);
         RevealForOwner(unit); // a unit lifts its own owner's fog (the human's, or a foreign power's; natives none)
         return unit;
     }
+
+    /// <summary>
+    /// Stamps a freshly-spawned unit's <see cref="Unit.Nationality"/> and <see cref="Unit.Ethnicity"/> from its
+    /// owner's nation (FreeCol <c>Unit.initialize</c>: <c>setNationality(owner.getNationId())</c> +
+    /// <c>setEthnicity(owner.getNationId())</c>). Only a <b>person</b> gets them — a ship or wagon never does
+    /// (FreeCol gates on <c>isPerson()</c>). The owner's nation is a native brave's <see cref="Unit.OwnerNationId"/>
+    /// (the native nation type id) or, for a colonial unit, its colonial player's <see cref="Player.NationId"/>
+    /// (null for the classic nation-less human, leaving both null = omitted in the save). Called once at spawn; a
+    /// later capture deliberately does <b>not</b> re-stamp them, so a captured colonist keeps its origin.
+    /// </summary>
+    private void InitNationalityAndEthnicity(Unit unit)
+    {
+        if (!unit.Type.IsPerson)
+        {
+            return; // ships/wagons carry no nationality or ethnicity (FreeCol isPerson() gate)
+        }
+        string? nationId = OwnerNationOf(unit);
+        unit.Nationality = nationId;
+        unit.Ethnicity = nationId;
+    }
+
+    /// <summary>
+    /// The nation id a unit's <em>current owner</em> would stamp as its origin (FreeCol <c>owner.getNationId()</c>):
+    /// a native brave's <see cref="Unit.OwnerNationId"/>, else its colonial player's <see cref="Player.NationId"/>
+    /// (null for the nation-less human / a non-person). The save uses this as the omit-when-default baseline so a
+    /// freshly-raised unit — whose origin equals its owner — writes <b>no</b> nationality/ethnicity token (and a
+    /// pre-v52 save re-derives the same value on load); only a unit whose origin has <em>diverged</em> from its owner
+    /// (a captured colonist, a naturalised convert) persists an explicit value.
+    /// </summary>
+    internal string? OwnerNationOf(Unit unit) =>
+        unit.Type.IsPerson ? unit.OwnerNationId ?? PlayerById(unit.OwnerId)?.NationId : null;
 
     /// <summary>
     /// A unit's movement points for a fresh turn: its unit-type base plus its role's movement bonus
@@ -4136,6 +4181,18 @@ public sealed partial class Game
         }
         colony.Name = name.Trim();
     }
+
+    /// <summary>
+    /// Gives an individual unit a <b>custom name</b>, or clears it back to the generic type name (FreeCol
+    /// <c>Unit.setName</c> via the <c>Nameable</c> interface — christening a famous ship, say). A blank or null
+    /// <paramref name="name"/> <b>clears</b> the custom name (FreeCol treats an empty rename as a reset to the default);
+    /// otherwise the trimmed text is stored. RNG-free, so the human's stream stays byte-stable (ADR-009). Persisted
+    /// omit-when-null (save v52), so an unnamed unit serialises byte-identically.
+    /// </summary>
+    /// <param name="unit">The unit to (re)name.</param>
+    /// <param name="name">The new custom name, or null/blank to clear it.</param>
+    public void NameUnit(Unit unit, string? name) =>
+        unit.Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
 
     /// <summary>
     /// Whether a colony may be abandoned (given up and disposed). Faithful to FreeCol: you abandon the **last**

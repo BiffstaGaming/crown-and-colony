@@ -701,7 +701,7 @@ public class RiverTests
 
         SaveGame save = SaveGame.From(game);
         Assert.NotNull(save.Improvements);
-        Assert.Equal(51, SaveGame.CurrentVersion);
+        Assert.Equal(52, SaveGame.CurrentVersion);
 
         Game loaded = SaveGame.FromJson(save.ToJson()).Restore(Classic);
         Assert.Equal(

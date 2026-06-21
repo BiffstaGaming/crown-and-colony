@@ -19,7 +19,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 51;
+    public const int CurrentVersion = 52;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -136,6 +136,16 @@ public sealed record SaveGame
     /// in a fresh game). An undiscovered map therefore serializes byte-identically to v50, and pre-v51 saves load every
     /// region undiscovered. The discovery <i>score</i> rides the (in-memory, un-persisted) history log, not a saved field —
     /// so the persisted per-region discovered flag is what prevents a re-revealed region from being re-discovered.
+    /// v52 added a unit's <b>nationality</b> + <b>ethnicity</b> (its origin nation, FreeCol <c>Unit.nationality</c>/
+    /// <c>Unit.ethnicity</c> — 86d3drmzz) and its individual <b>custom name</b> (FreeCol <c>Unit.name</c>, a
+    /// <c>Nameable</c> — 86d3drmzu): three additive fields (<see cref="SavedUnit.Nationality"/>,
+    /// <see cref="SavedUnit.Ethnicity"/>, <see cref="SavedUnit.Name"/>). <b>Name</b> is omitted when un-christened (the
+    /// common case). <b>Nationality/ethnicity</b> are omitted when they still equal the unit's <em>owner-derived</em>
+    /// nation (<c>Game.OwnerNationOf</c>) — every freshly-raised unit (a nation-less human's colonist → null; a native
+    /// brave → its nation, which already rides <see cref="SavedUnit.Owner"/>) — and re-derived from the owner on load;
+    /// only a unit whose origin has <em>diverged</em> from its owner (a captured colonist) writes an explicit token. So a
+    /// default game serialises byte-identically to v51, and pre-v52 saves (no tokens) re-derive every unit's origin from
+    /// its owner on load.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -310,7 +320,15 @@ public sealed record SaveGame
                     // In-progress pioneer improvement (v48); both omitted when not improving so a unit with no build order stays byte-identical to v47.
                     u.WorkImprovementId, u.WorkTurnsLeft == 0 ? null : u.WorkTurnsLeft,
                     // Accrued attrition (v50); omitted for the common 0 so a unit that has wasted no turns in the open stays byte-identical to v49.
-                    u.Attrition == 0 ? null : u.Attrition))
+                    u.Attrition == 0 ? null : u.Attrition,
+                    // Origin nationality + ethnicity (v52); omitted when they equal the owner-derived nation (the spawn
+                    // default — every freshly-raised unit, incl. a native brave whose nation already rides OwnerNationId),
+                    // so the default game stays byte-identical to v51. Only a DIVERGED origin (a captured colonist) writes
+                    // an explicit token; on load a null re-derives the owner's nation (see Restore).
+                    u.Nationality == game.OwnerNationOf(u) ? null : u.Nationality,
+                    u.Ethnicity == game.OwnerNationOf(u) ? null : u.Ethnicity,
+                    // Individual custom name (v52); omitted when un-christened (the common case), so a default game stays byte-identical to v51.
+                    u.Name))
                 .ToList(),
             Colonies = game.Colonies
                 .Select(c => new SavedColony(
@@ -489,7 +507,8 @@ public sealed record SaveGame
                 u.DestX is { } dx && u.DestY is { } dy ? new Position(dx, dy) : (Position?)null, // pre-v36 / no goto → null
                 u.TradeRouteId, u.TradeRouteStop ?? 0, // pre-v43 / route-less → null/0
                 u.WorkImprovement, u.WorkTurnsLeft ?? 0, // pre-v48 / not improving → null/0
-                u.Attrition ?? 0)), // pre-v50 / no attrition → 0
+                u.Attrition ?? 0, // pre-v50 / no attrition → 0
+                u.Nationality, u.Ethnicity, u.Name)), // pre-v52 / nation-less / un-christened → null
             Colonies?.Select(c =>
             {
                 var colony = new CrownAndColony.GameLogic.Colonies.Colony(
@@ -855,6 +874,9 @@ public sealed record SavedNativeSettlement(
 /// <param name="WorkImprovement">The tile-improvement type id this pioneer is building (null = not improving; v48+). Omitted when not improving, so a unit with no build order serializes byte-identically to v47.</param>
 /// <param name="WorkTurnsLeft">Turns of work left on the in-progress improvement (null/0 = none; v48+). Omitted when 0.</param>
 /// <param name="Attrition">Turns this unit has spent standing in the open wilderness (null/0 = none; v50+). Nullable so a unit that has wasted no turns in the open serializes byte-identically to v49.</param>
+/// <param name="Nationality">The unit's origin nation id — its personal allegiance (FreeCol <c>Unit.nationality</c>; v52+). Omitted (null) when it equals the unit's owner-derived nation — the spawn default for every fresh unit — and re-derived from the owner on load; only a <em>diverged</em> origin (a captured colonist) writes an explicit value. So a default game serializes byte-identically to v51.</param>
+/// <param name="Ethnicity">The unit's ethnicity nation id — the look of the people it was born among (FreeCol <c>Unit.ethnicity</c>; v52+). Inherited through capture (a former convert keeps a native look). Omitted/re-derived exactly as <paramref name="Nationality"/>.</param>
+/// <param name="Name">The unit's individual custom name (FreeCol <c>Unit.name</c>, a <c>Nameable</c>; v52+). Null when un-christened (the common case); omitted so an unnamed unit serializes byte-identically to v51.</param>
 public sealed record SavedUnit(
     int Id, string? TypeId, int X, int Y, int MovementLeft,
     int Location = 0, int SailTurns = 0, IReadOnlyDictionary<string, int>? Cargo = null,
@@ -864,7 +886,8 @@ public sealed record SavedUnit(
     int? DestX = null, int? DestY = null,
     int? TradeRouteId = null, int? TradeRouteStop = null,
     string? WorkImprovement = null, int? WorkTurnsLeft = null,
-    int? Attrition = null);
+    int? Attrition = null,
+    string? Nationality = null, string? Ethnicity = null, string? Name = null);
 
 /// <summary>
 /// A player inside a <see cref="SaveGame"/> (v20+). Holds the player-scoped state that used to sit as

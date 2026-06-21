@@ -226,4 +226,36 @@ public sealed class Unit
     /// <see cref="GameSession.Game"/>'s per-turn attrition step mutates it; persisted omit-when-0 (save v50).
     /// </summary>
     public int Attrition { get; internal set; }
+
+    /// <summary>
+    /// The unit's original <b>nationality</b> — its personal allegiance to a nation (FreeCol <c>Unit.nationality</c>):
+    /// the nation id of the player that <em>created</em> the unit. Set once on spawn from the owner's nation
+    /// (FreeCol <c>Unit.initialize</c> → <c>setNationality(owner.getNationId())</c>) and <b>not</b> changed when the
+    /// unit merely switches owners in combat — so a captured colonist keeps the nationality of the side that raised it
+    /// (FreeCol changes it only when a unit switches owners <em>willingly</em>, e.g. a convert). This can differ from
+    /// the current <see cref="OwnerId"/> owner. Null for a unit raised without a nation (the classic nation-less human)
+    /// and for a non-person (a ship/wagon never gets one — FreeCol gates on <c>isPerson()</c>). Persisted only when it
+    /// has <em>diverged</em> from the owner's nation (a captured colonist); an origin that still equals the owner is
+    /// omitted and re-derived on load, so a default game stays byte-identical (save v52). Only <see cref="GameSession.Game"/> sets it.
+    /// </summary>
+    public string? Nationality { get; internal set; }
+
+    /// <summary>
+    /// The unit's <b>ethnicity</b> — the look of the people it was born among (FreeCol <c>Unit.ethnicity</c>): the
+    /// nation id whose inhabitants the unit resembles. Set once on spawn from the owner's nation (FreeCol
+    /// <c>Unit.initialize</c> → <c>setEthnicity(owner.getNationId())</c>) and inherited through capture, so a former
+    /// convert can keep a native look as a colonist (FreeCol <c>hasNativeEthnicity</c>). Differs from
+    /// <see cref="Nationality"/> only when set deliberately (e.g. a native convert keeps a native ethnicity but takes
+    /// the colony owner's nationality). Null for a nation-less raise and for a non-person. Persisted like
+    /// <see cref="Nationality"/> — only when it has diverged from the owner's nation (save v52). Only <see cref="GameSession.Game"/> sets it.
+    /// </summary>
+    public string? Ethnicity { get; internal set; }
+
+    /// <summary>
+    /// The unit's individual <b>custom name</b> (FreeCol <c>Unit.name</c> via the <c>Nameable</c> interface): a name a
+    /// player has given this one unit (e.g. christening a famous ship). Null by default — the unit shows its type's
+    /// generic name. Set/cleared only through <see cref="GameSession.Game"/>'s <c>NameUnit</c> command. Persisted
+    /// omit-when-null (save v52), so an unnamed unit serialises byte-identically.
+    /// </summary>
+    public string? Name { get; internal set; }
 }
