@@ -1555,7 +1555,7 @@ public sealed partial class Game
     /// <summary>
     /// The probability (0–1) that winning an assault on a settlement the attacker holds a mission in captures a brave
     /// as an Indian Convert (FreeCol <c>Unit.getConvertProbability</c> = 0.01 × the <c>nativeConvertProbability</c>
-    /// option (50), raised by the attacker's <see cref="NativeConvertBonusId"/> modifiers — <b>Juan de Sepúlveda</b>
+    /// option (classic-medium 30), raised by the attacker's <see cref="NativeConvertBonusId"/> modifiers — <b>Juan de Sepúlveda</b>
     /// +20% (a founding-father modifier) and the Spanish <b>conquest</b> nation type +200%, stacked index-ordered like
     /// every modifier fold; capped at 1.0). Returns the bare base for a player with no such modifier (the human's
     /// default), so an ordinary captor's chance is unchanged.

@@ -301,8 +301,8 @@ public class NativeMissionTests
     //
     // FreeCol wires model.modifier.nativeConvertBonus to Unit.getConvertProbability — the chance, on WINNING an
     // assault on a native settlement you hold a mission in, that a brave is captured as a convert (SimpleCombatModel
-    // CAPTURE_CONVERT). It is NOT a missionary-accrual modifier. Base chance 50% (model.option.nativeConvertProbability);
-    // Juan de Sepúlveda's +20% raises it to 60%, the Spanish conquest nation type's +200% to (capped) 100%.
+    // CAPTURE_CONVERT). It is NOT a missionary-accrual modifier. Base chance 30% (model.option.nativeConvertProbability,
+    // classic-medium); Juan de Sepúlveda's +20% raises it to 36%, the Spanish conquest nation type's +200% to 90%.
 
     private const string DeSepulveda = "model.foundingFather.juanDeSepulveda";
     private const string NativeConvertBonus = "model.modifier.nativeConvertBonus";
@@ -354,7 +354,7 @@ public class NativeMissionTests
         game.EstablishMission(missionary, settlement); // the human holds this settlement's mission
         Unit soldier = SpawnSoldierBeside(game, settlement);
 
-        game.AttackSettlement(soldier, settlement.Position, new SequenceRandom(0.0, 0.1)); // win, convert roll 0.1 < base 0.5
+        game.AttackSettlement(soldier, settlement.Position, new SequenceRandom(0.0, 0.1)); // win, convert roll 0.1 < base 0.30
         Assert.Contains(game.Units, u => u.Type.Id == IndianConvertTypeId
             && u.OwnerId == game.HumanPlayer.PlayerId && u.Position == soldier.Position);
     }
@@ -372,9 +372,9 @@ public class NativeMissionTests
     [Fact]
     public void DeSepulveda_RaisesTheCaptureConvertChance()
     {
-        // The combat roll (0.0) always wins; the convert roll 0.55 sits between the 50% base and the 60% de Sepúlveda chance.
-        Assert.False(CapturesConvertAt(0.55, withSepulveda: false)); // 0.55 ≥ base 0.50 → no convert
-        Assert.True(CapturesConvertAt(0.55, withSepulveda: true));   // 0.55 < 0.60 (+20%) → convert captured
+        // The combat roll (0.0) always wins; the convert roll 0.33 sits between the 30% base and the 36% de Sepúlveda chance.
+        Assert.False(CapturesConvertAt(0.33, withSepulveda: false)); // 0.33 ≥ base 0.30 → no convert
+        Assert.True(CapturesConvertAt(0.33, withSepulveda: true));   // 0.33 < 0.36 (base ×1.2) → convert captured
     }
 
     private static bool CapturesConvertAt(double convertRoll, bool withSepulveda)
@@ -412,7 +412,7 @@ public class NativeMissionTests
         Assert.True(other.HasMission);
 
         Unit soldier = SpawnSoldierBeside(game, target);
-        // win (0.0), then a roll in the top 2% → burn (≥ 0.98), not a convert (≥ 0.5 base).
+        // win (0.0), then a roll in the top 6% → burn (≥ 0.94), not a convert (≥ 0.30 base).
         game.AttackSettlement(soldier, target.Position, new SequenceRandom(0.0, 0.99));
 
         Assert.False(other.HasMission); // the natives burned the attacker's mission in the nation's other settlement
@@ -433,7 +433,7 @@ public class NativeMissionTests
         other.MissionOwnerId = game.HumanPlayer.PlayerId;
 
         Unit soldier = SpawnSoldierBeside(game, target);
-        // win, then a mid roll (≥ 0.5 base → no convert, < 0.98 → no burn).
+        // win, then a mid roll (≥ 0.30 base → no convert, < 0.94 → no burn).
         game.AttackSettlement(soldier, target.Position, new SequenceRandom(0.0, 0.75));
 
         Assert.True(other.HasMission); // a mid roll neither converts nor burns
