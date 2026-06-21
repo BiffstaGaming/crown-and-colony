@@ -19,7 +19,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 50;
+    public const int CurrentVersion = 51;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -130,6 +130,12 @@ public sealed record SaveGame
     /// default game, where only the Indian Convert is even subject to attrition and a fresh game has none wandering the
     /// open map) is byte-identical to v49, and pre-v50 saves load every unit at attrition 0. The cap (FreeCol
     /// <c>UnitType.getMaximumAttrition</c>) is re-derived from the ruleset on load, not persisted.
+    /// v51 added per-region <b>discovery</b> state (86d3c9w2f): a discovered region's
+    /// <see cref="SavedRegion.DiscoveredBy"/> player id + <see cref="SavedRegion.Name"/> + <see cref="SavedRegion.DiscoveredInTurn"/>,
+    /// all additive + omitted while the region is undiscovered (<c>DiscoveredBy</c> null — the common case, and every region
+    /// in a fresh game). An undiscovered map therefore serializes byte-identically to v50, and pre-v51 saves load every
+    /// region undiscovered. The discovery <i>score</i> rides the (in-memory, un-persisted) history log, not a saved field —
+    /// so the persisted per-region discovered flag is what prevents a re-revealed region from being re-discovered.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -380,7 +386,11 @@ public sealed record SaveGame
                 : null,
             Regions = game.Map.Regions.Count > 0
                 ? game.Map.Regions
-                    .Select(r => new SavedRegion(r.Id, (int)r.Type, r.ScoreValue, r.Key, r.ParentId))
+                    // Discovery fields (v51) are omitted while undiscovered (DiscoveredBy null), so an undiscovered
+                    // region serializes byte-identically to v50; a discovered region carries its discoverer/name/turn.
+                    .Select(r => new SavedRegion(
+                        r.Id, (int)r.Type, r.ScoreValue, r.Key, r.ParentId,
+                        r.DiscoveredBy, r.Name, r.DiscoveredInTurn))
                     .ToList()
                 : null,
             // Custom-house auto-export mode; omitted for the PerGood default so a default game stays byte-identical to v27.
@@ -428,7 +438,9 @@ public sealed record SaveGame
             Rumours?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList(),
             ClaimedTiles?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList(),
             RegionIds,
-            Regions?.Select(r => new Region(r.Id, (RegionType)r.Type, r.ScoreValue, r.Key, r.ParentId)).ToList(),
+            Regions?.Select(r => new Region(
+                r.Id, (RegionType)r.Type, r.ScoreValue, r.Key, r.ParentId,
+                r.DiscoveredBy, r.Name, r.DiscoveredInTurn)).ToList(), // v51; pre-v51 / omitted → undiscovered (null)
             // Finite resource quantities by tile (v46; pre-v46 / omitted → none).
             ResourceQuantities?.ToDictionary(
                 q => new Position(q.Index % MapWidth, q.Index / MapWidth),
@@ -767,13 +779,18 @@ public sealed record SavedMonarchDemand(
 /// <param name="Count">How many.</param>
 public sealed record SavedForceEntry(string UnitTypeId, string? RoleId, int Count);
 
-/// <summary>A map <see cref="Region"/> inside a <see cref="SaveGame"/> (v35).</summary>
+/// <summary>A map <see cref="Region"/> inside a <see cref="SaveGame"/> (v35; discovery fields v51).</summary>
 /// <param name="Id">Region id (indexed by <see cref="SaveGame.RegionIds"/>).</param>
 /// <param name="Type">The <see cref="RegionType"/> enum ordinal.</param>
 /// <param name="ScoreValue">Discovery score.</param>
 /// <param name="Key">Fixed-region key (e.g. <c>model.region.arctic</c>); null/omitted for a dynamic land/mountain region.</param>
 /// <param name="ParentId">Parent region id (an ocean quadrant's parent ocean); null/omitted at the top level.</param>
-public sealed record SavedRegion(int Id, int Type, int ScoreValue, string? Key = null, int? ParentId = null);
+/// <param name="DiscoveredBy">The player id that first discovered this region (v51; null/omitted while undiscovered, so an undiscovered map stays byte-identical to v50).</param>
+/// <param name="Name">The name assigned on discovery (v51; null/omitted while undiscovered).</param>
+/// <param name="DiscoveredInTurn">The turn the region was discovered in (v51; null/omitted while undiscovered).</param>
+public sealed record SavedRegion(
+    int Id, int Type, int ScoreValue, string? Key = null, int? ParentId = null,
+    int? DiscoveredBy = null, string? Name = null, int? DiscoveredInTurn = null);
 
 /// <summary>A serialised <see cref="GameSession.Force"/> (the Royal Expeditionary Force) inside a <see cref="SaveGame"/> (v40).</summary>
 /// <param name="Land">Land-unit blocks.</param>

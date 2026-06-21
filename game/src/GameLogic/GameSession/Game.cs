@@ -574,6 +574,14 @@ public sealed partial class Game
             + ScoreFoundingFather * player.Congress.Count
             + (int)Math.Floor(ScoreGold * player.Gold);
 
+        // History-event scores (FreeCol folds in HistoryEvent.getScore — region discovery today). The history log is
+        // the human's only, so this contributes solely to the human's score; a foreign power scores its own units etc.
+        // but no history events. This was a documented scoring TODO until region discovery landed (86d3c9w2f).
+        if (player.IsHuman)
+        {
+            score += HistoryEventScore;
+        }
+
         int bonus = IndependenceScoreBonusPercent(player);
         score += score * bonus / 100;
         return score;
@@ -9599,8 +9607,93 @@ public sealed partial class Game
         foreach (Position p in TilesInRange(centre, radius))
         {
             player.ExploredSet.Add(p);
+            CheckDiscoverRegion(player, p); // a freshly-revealed tile may be the first sight of an undiscovered region
         }
     }
+
+    /// <summary>
+    /// Region discovery (FreeCol <c>ServerUnit.csCheckDiscoverRegion</c> + <c>ServerRegion.csDiscover</c>): when a
+    /// colonial (European) <paramref name="player"/> reveals <paramref name="tile"/>, if that tile contributes to a
+    /// still-undiscovered, discoverable region (its own or a discoverable Pacific parent, via
+    /// <see cref="GameMap.DiscoverableRegionOf"/>), that player <b>discovers</b> it: the region is stamped with the
+    /// discoverer, a deterministic <see cref="NameForRegion">name</see> and the discovery turn; and — for the human —
+    /// a scored <see cref="HistoryEventKind.RegionDiscovered"/> event is recorded (the region's
+    /// <see cref="Region.ScoreValue"/> feeds <see cref="PlayerScore"/>). A region is discovered at most once, by the
+    /// first colonial player to reach it.
+    ///
+    /// <para><b>Faithful subset.</b> FreeCol awards the discovery score only when the <c>EXPLORATION_POINTS</c> game
+    /// option is on; the classic ruleset enables it, so we always award it. FreeCol also names regions from per-nation
+    /// name lists with a generic "{Nation} {Type} {n}" fallback; our naming uses that deterministic fallback only (the
+    /// per-nation lists are not yet loaded) — RNG-free, so the default game stays byte-identical (ADR-009). The polar
+    /// bands, the Atlantic and the ocean leaf quadrants are not discoverable; only land/mountain regions and the
+    /// Pacific are (see <see cref="Region.IsDiscoverable"/>).</para>
+    /// </summary>
+    /// <param name="player">The colonial player whose fog just lifted over <paramref name="tile"/>.</param>
+    /// <param name="tile">The freshly-revealed tile.</param>
+    private void CheckDiscoverRegion(Player player, Position tile)
+    {
+        // Only European (colonial/rebel/independent) players discover regions; natives never do (FreeCol isEuropean()).
+        if (player.PlayerType == PlayerType.Native)
+        {
+            return;
+        }
+        if (Map.DiscoverableRegionOf(tile) is not { } region)
+        {
+            return; // no discoverable region here (already discovered, or a polar/atlantic/lake/leaf tile)
+        }
+        string name = region.Name ?? NameForRegion(player, region);
+        Map.UpdateRegion(region with
+        {
+            DiscoveredBy = player.PlayerId,
+            Name = name,
+            DiscoveredInTurn = Turn,
+        });
+        // The discovery score + history notice surface in the human's report only (the history log is human-only,
+        // like every other RecordHistory call). A foreign power still claims the region (DiscoveredBy above) so the
+        // human cannot re-discover it, but earns no entry in the human's history.
+        if (player.IsHuman)
+        {
+            RecordHistory(
+                HistoryEventKind.RegionDiscovered,
+                $"Discovered {name}.",
+                region.ScoreValue);
+        }
+    }
+
+    /// <summary>
+    /// A deterministic name for a newly-discovered region (FreeCol <c>NameCache.getRegionName</c>'s generic fallback):
+    /// a fixed region keeps its predefined label (the Pacific → "Pacific Ocean"); a dynamic land/mountain region is
+    /// named "{Nation} {Type} {n}" where <c>n</c> is the next unused ordinal for that (player, type) pair, scanning the
+    /// names already handed out. RNG-free and order-stable, so it perturbs no RNG stream (ADR-009).
+    /// </summary>
+    private string NameForRegion(Player player, Region region)
+    {
+        // A fixed region (the Pacific) carries its own predefined label — use it verbatim rather than numbering.
+        if (region.Key is not null)
+        {
+            return PredefinedRegionLabel(region.Key);
+        }
+
+        string nationPrefix = player.NationId is { Length: > 0 } ? NationDisplayName(player.PlayerId) + " " : "";
+        string typeName = region.Type.ToString(); // "Land" / "Mountain"
+        string prefix = nationPrefix + typeName + " ";
+
+        // Next unused ordinal: the count of regions of this type this player has already named, plus one. Scanning the
+        // table (rather than a counter) keeps the result a pure function of current state — stable across save/load.
+        int next = 1 + Map.Regions.Count(r =>
+            r.DiscoveredBy == player.PlayerId && r.Type == region.Type && r.Key is null);
+        return prefix + next;
+    }
+
+    /// <summary>A human-readable label for a predefined region key (e.g. <c>model.region.pacific</c> → "Pacific Ocean").</summary>
+    private static string PredefinedRegionLabel(string key) => key switch
+    {
+        "model.region.pacific" => "Pacific Ocean",
+        "model.region.atlantic" => "Atlantic Ocean",
+        "model.region.arctic" => "Arctic Ocean",
+        "model.region.antarctic" => "Antarctic Ocean",
+        _ => key[(key.LastIndexOf('.') + 1)..], // fall back to the short key part
+    };
 
     /// <summary>The in-bounds tiles within a square (Chebyshev) <paramref name="radius"/> of a centre.</summary>
     private IEnumerable<Position> TilesInRange(Position centre, int radius)

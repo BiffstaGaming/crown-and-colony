@@ -129,7 +129,11 @@ public class SaveGameTests
         Assert.Equal(
             game.Map.AllPositions().Select(game.Map.RegionIdAt),  // the layer the original game generated
             loaded.Map.AllPositions().Select(loaded.Map.RegionIdAt)); // == re-derived on load
-        Assert.Equal(game.Map.Regions, loaded.Map.Regions);
+        // Compare the geographic region data only: a pre-v35 save carries no discovery state, so the re-derived layer
+        // is pristine (undiscovered), whereas the original game already discovered regions on its starting fog reveal
+        // (P6). Strip the discovery fields before comparing the geography (ids/type/score/key/parent re-derive exactly).
+        static Region Geography(Region r) => r with { DiscoveredBy = null, Name = null, DiscoveredInTurn = null };
+        Assert.Equal(game.Map.Regions.Select(Geography), loaded.Map.Regions);
     }
 
     [Fact]

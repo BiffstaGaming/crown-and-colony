@@ -104,7 +104,7 @@ public class LostCityRumourTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
         Assert.Equal(before, restored.Map.Rumours.OrderBy(p => p.Y).ThenBy(p => p.X).ToList());
-        Assert.Equal(50, SaveGame.CurrentVersion);
+        Assert.Equal(51, SaveGame.CurrentVersion);
     }
 
     [Fact]

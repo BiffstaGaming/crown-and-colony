@@ -93,13 +93,17 @@ public class ScoreTests
         Game game = NewGame();
         int before = game.PlayerScore(game.HumanPlayer);
 
-        // A veteran soldier has score-value 5 in the classic spec.
+        // A veteran soldier has score-value 5 in the classic spec. SpawnUnit reveals tiles, which may discover a new
+        // region and add its discovery score; net out that exploration delta so this asserts only the unit summand.
+        int discBefore = game.HistoryEventScore;
         game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), FirstEmptyLand(game));
-        Assert.Equal(before + 5, game.PlayerScore(game.HumanPlayer));
+        Assert.Equal(before + 5 + (game.HistoryEventScore - discBefore), game.PlayerScore(game.HumanPlayer));
 
         // A petty criminal has score-value 1.
+        int before2 = game.PlayerScore(game.HumanPlayer);
+        int disc2 = game.HistoryEventScore;
         game.SpawnUnit(Classic.Unit("model.unit.pettyCriminal"), FirstEmptyLand(game));
-        Assert.Equal(before + 5 + 1, game.PlayerScore(game.HumanPlayer));
+        Assert.Equal(before2 + 1 + (game.HistoryEventScore - disc2), game.PlayerScore(game.HumanPlayer));
     }
 
     [Fact]
@@ -107,9 +111,11 @@ public class ScoreTests
     {
         Game game = NewGame();
         // The classic landed roster is two free colonists (3 each) + a caravel (3) = 9, when all three place; on a
-        // landlocked start the caravel is skipped (6). Either way the score equals the sum of the spawned units'
-        // ruleset score values, with no colonies/fathers/gold yet.
-        int expected = game.PlayerUnits.Sum(u => UnitScore(u.Type.Id));
+        // landlocked start the caravel is skipped (6). The starting fog reveal also DISCOVERS the regions the roster
+        // can see (P6: e.g. the Pacific Ocean +100 and the landing's land region), each adding its discovery score —
+        // so the total is the roster's unit score values PLUS the accrued discovery (HistoryEvent) score, with no
+        // colonies/fathers/gold yet.
+        int expected = game.PlayerUnits.Sum(u => UnitScore(u.Type.Id)) + game.HistoryEventScore;
         Assert.Equal(expected, game.PlayerScore(game.HumanPlayer));
         Assert.Equal(game.Score, game.PlayerScore(game.HumanPlayer)); // the human-convenience accessor agrees
         Assert.True(game.PlayerScore(game.HumanPlayer) >= 6);
@@ -137,9 +143,10 @@ public class ScoreTests
         game.HumanPlayer.CongressList.Add("model.foundingFather.henryHudson");
         game.HumanPlayer.Gold = 7500;
 
-        // rosterScore + elderStatesman(6) + wagonTrain(1) + colonyLiberty(600) + fathers(10) + gold(7).
+        // rosterScore + elderStatesman(6) + wagonTrain(1) + colonyLiberty(600) + fathers(10) + gold(7), plus the
+        // exploration-discovery (HistoryEvent) score the spawns + founding accrued by revealing new regions (P6).
         // The founder colonist's own +3 is removed when it joins the colony, so it is NOT in the unit sum.
-        int expected = rosterScore + 6 + 1 + 600 + 10 + 7;
+        int expected = rosterScore + 6 + 1 + 600 + 10 + 7 + game.HistoryEventScore;
         Assert.Equal(expected, game.PlayerScore(game.HumanPlayer));
     }
 
@@ -229,7 +236,8 @@ public class ScoreTests
     {
         int raw = game.PlayerUnits.Sum(u => UnitScore(u.Type.Id))
             + game.HumanPlayer.Congress.Count * 5
-            + (int)System.Math.Floor(0.001 * game.HumanPlayer.Gold);
+            + (int)System.Math.Floor(0.001 * game.HumanPlayer.Gold)
+            + game.HistoryEventScore; // the exploration-discovery summand (P6) is part of the pre-bonus subtotal
         foreach (Colony c in game.Colonies)
         {
             raw += c.Liberty;

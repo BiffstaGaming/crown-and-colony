@@ -18,11 +18,17 @@ public class HistoryTests
     private static int ForeignPowerId(Game game) =>
         game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).PlayerId;
 
+    /// <summary>The human's history events of every kind EXCEPT region discovery (which the starting fog reveal records at game start, P6).</summary>
+    private static System.Collections.Generic.List<HistoryEvent> NonDiscovery(Game game) =>
+        game.History.Where(h => h.Kind != HistoryEventKind.RegionDiscovered).ToList();
+
     [Fact]
-    public void History_StartsEmpty()
+    public void History_StartsWithOnlyDiscoveryEvents()
     {
         var game = Game.New(Classic, seed: 7);
-        Assert.Empty(game.History);
+        // From P6 the starting fog reveal discovers regions, recording RegionDiscovered events at game start. No
+        // colony/war/father event has happened yet, so filtering those out leaves an empty list.
+        Assert.Empty(NonDiscovery(game));
     }
 
     [Fact]
@@ -31,7 +37,7 @@ public class HistoryTests
         var game = Game.New(Classic, seed: 424242);
         Colony colony = game.FoundColony(game.PlayerUnits.First());
 
-        HistoryEvent e = Assert.Single(game.History);
+        HistoryEvent e = Assert.Single(NonDiscovery(game)); // the colony-founded event is the only non-discovery one
         Assert.Equal(HistoryEventKind.ColonyFounded, e.Kind);
         Assert.Equal(game.Turn, e.Turn);
         Assert.Contains(colony.Name, e.Description);
@@ -47,7 +53,7 @@ public class HistoryTests
         // A second SetStance to the same (already-war) state must not re-record.
         game.SetStance(game.HumanPlayer.PlayerId, rival, Stance.War);
 
-        HistoryEvent e = Assert.Single(game.History);
+        HistoryEvent e = Assert.Single(NonDiscovery(game));
         Assert.Equal(HistoryEventKind.WarDeclared, e.Kind);
         Assert.Contains("War", e.Description);
     }
@@ -61,6 +67,6 @@ public class HistoryTests
 
         game.SetStance(rivals[0].PlayerId, rivals[1].PlayerId, Stance.War);
 
-        Assert.Empty(game.History); // a war the human is not party to is off the human's history
+        Assert.Empty(NonDiscovery(game)); // a war the human is not party to is off the human's history (discovery events aside)
     }
 }

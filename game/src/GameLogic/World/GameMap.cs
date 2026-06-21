@@ -14,7 +14,7 @@ public sealed class GameMap
     private readonly Dictionary<Position, string> _nativeOwners = []; // tile → owning native nation type id (derived, not saved)
     private readonly HashSet<Position> _claimedFromNatives; // tiles bought/taken from the natives — a SAVED override the derivation honours
     private int[]? _regionIds; // dense row-major region id per tile (index y*Width+x); null until assigned, NoRegion = unassigned tile
-    private IReadOnlyList<Region> _regions = []; // the region table, indexed by region id (Regions[i].Id == i)
+    private List<Region> _regions = []; // the region table, indexed by region id (Regions[i].Id == i)
 
     /// <summary>Creates a map from a row-major terrain array (length must be Width × Height).</summary>
     /// <param name="width">Map width in tiles.</param>
@@ -250,6 +250,44 @@ public sealed class GameMap
     {
         int id = RegionIdAt(p);
         return id >= 0 && id < _regions.Count ? _regions[id] : null;
+    }
+
+    /// <summary>The region in the table with the given id, or null if out of range.</summary>
+    public Region? RegionById(int id) => id >= 0 && id < _regions.Count ? _regions[id] : null;
+
+    /// <summary>
+    /// The discoverable region a tile contributes to (FreeCol <c>Region.getDiscoverableRegion</c>): the tile's own
+    /// region if it is <see cref="Region.IsDiscoverable"/>, otherwise the nearest discoverable ancestor walked up the
+    /// <see cref="Region.ParentId"/> chain (an ocean leaf quadrant resolves to its discoverable Pacific parent), or
+    /// null if neither the tile's region nor any ancestor is discoverable. A region already discovered is no longer
+    /// discoverable, so this returns null once its discoverable ancestor has been found.
+    /// </summary>
+    public Region? DiscoverableRegionOf(Position p)
+    {
+        Region? region = RegionOf(p);
+        while (region is not null)
+        {
+            if (region.IsDiscoverable)
+            {
+                return region;
+            }
+            region = region.ParentId is { } parent ? RegionById(parent) : null;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Replaces the region at <paramref name="region"/>'s id in the table (the discovery rules stamp the
+    /// discoverer/name/turn this way). The region's <see cref="Region.Id"/> must already index the table.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The region's id is outside the current table.</exception>
+    internal void UpdateRegion(Region region)
+    {
+        if (region.Id < 0 || region.Id >= _regions.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(region), region.Id, "Region id is outside the table.");
+        }
+        _regions[region.Id] = region;
     }
 
     /// <summary>
