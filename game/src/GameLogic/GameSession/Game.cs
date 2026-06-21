@@ -4414,6 +4414,138 @@ public sealed partial class Game
         }
     }
 
+    // ----- Trade-route validation (86d3drn0j) -----------------------------------------------------------------
+    // A pure read mirroring FreeCol's TradeRoute.verify(): it returns advisory WARNINGS for a route (FreeCol warns,
+    // it never blocks — a route with warnings still runs, it just may not behave as the player intends). Each warning
+    // maps to a FreeCol model.tradeRoute.* case. Whereas verify() returns the FIRST problem only, we surface ALL of
+    // them (richer UI) — a strict superset of FreeCol's information. No state changes, no RNG, no save fields.
+
+    /// <summary>
+    /// Whether the ENHANCED_TRADE_ROUTES game option is in effect (FreeCol <c>GameOptions.ENHANCED_TRADE_ROUTES</c>,
+    /// <c>model.option.enhancedTradeRoutes</c>). The classic ruleset ships it <c>defaultValue="false"</c> and we do not
+    /// yet parse it, so it is always <b>off</b> today — the default, faithful behaviour. When on, FreeCol relaxes the
+    /// "always-present goods" check (cargoes are sorted to maximise transfer); we honour that relaxation here so the
+    /// flag becomes a one-line flip once option plumbing lands.
+    /// </summary>
+    private bool EnhancedTradeRoutes => false;
+
+    /// <summary>
+    /// Validates a single trade route and returns its advisory <see cref="TradeRouteWarning"/>s (FreeCol
+    /// <c>TradeRoute.verify()</c>). The route is <b>not</b> changed and warnings never block — they are surfaced for the
+    /// player. Checks, faithful to FreeCol:
+    /// <list type="bullet">
+    /// <item>fewer than two stops (<see cref="TradeRouteWarningKind.NotEnoughStops"/>);</item>
+    /// <item>a stop naming a colony the owner does not own / that no longer exists (<see cref="TradeRouteWarningKind.InvalidStop"/>);</item>
+    /// <item>no stop loads any goods, so nothing would be hauled (<see cref="TradeRouteWarningKind.AllEmpty"/>);</item>
+    /// <item>a good loaded at <em>every</em> stop, so it is never delivered anywhere (<see cref="TradeRouteWarningKind.GoodsAlwaysPresent"/>) —
+    /// suppressed when <see cref="EnhancedTradeRoutes"/> is on.</item>
+    /// </list>
+    /// A valid route returns an empty list. The owning player is resolved from <see cref="Players"/>; a route held by no
+    /// player is treated as ownerless (every stop is then reported invalid).
+    /// </summary>
+    /// <param name="route">The route to validate.</param>
+    /// <returns>The warnings, in check order (empty when the route is valid).</returns>
+    public IReadOnlyList<TradeRouteWarning> ValidateTradeRoute(TradeRoute route)
+    {
+        ArgumentNullException.ThrowIfNull(route);
+        Player? owner = _players.FirstOrDefault(p => p.TradeRoutes.Any(r => ReferenceEquals(r, route)))
+            ?? _players.FirstOrDefault(p => p.TradeRoutes.Any(r => r.Id == route.Id));
+        return ValidateTradeRoute(owner, route);
+    }
+
+    /// <summary>
+    /// Validates every trade route <paramref name="player"/> owns, concatenating their warnings (FreeCol surfaces these
+    /// per-route on the route panel / via <c>checkIntegrity</c>). Returns an empty list when the player has no routes or
+    /// none has a problem. Pure read.
+    /// </summary>
+    /// <param name="player">The route owner whose routes to validate.</param>
+    /// <returns>All warnings across the player's routes, grouped by route (empty when all are valid).</returns>
+    public IReadOnlyList<TradeRouteWarning> ValidateTradeRoutesOf(Player player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        var warnings = new List<TradeRouteWarning>();
+        foreach (TradeRoute route in player.TradeRoutes)
+        {
+            warnings.AddRange(ValidateTradeRoute(player, route));
+        }
+        return warnings;
+    }
+
+    /// <summary>The core validator: produces <paramref name="route"/>'s warnings as if owned by <paramref name="owner"/> (FreeCol <c>TradeRoute.verify()</c>; a null owner means every stop is invalid).</summary>
+    private IReadOnlyList<TradeRouteWarning> ValidateTradeRoute(Player? owner, TradeRoute route)
+    {
+        var warnings = new List<TradeRouteWarning>();
+
+        // FreeCol: a route needs at least two stops to move anything; verify() returns this immediately, so the
+        // cargo checks below (which presuppose a ring of stops to deliver around) never run for a sub-2-stop route.
+        // We short-circuit the same way — a 1-stop route reports only NotEnoughStops, not a spurious "always present".
+        if (route.Stops.Count < 2)
+        {
+            warnings.Add(new TradeRouteWarning(route.Id, TradeRouteWarningKind.NotEnoughStops, null, null,
+                "A trade route needs at least two stops to move goods."));
+            return warnings;
+        }
+
+        // Walk the stops: flag any stop that is not one of the owner's colonies, track whether ANY stop loads goods,
+        // and accumulate the set of goods present at EVERY stop (intersection) — those are never unloaded anywhere.
+        bool anyCargo = false;
+        HashSet<string>? alwaysPresent = null;
+        for (int i = 0; i < route.Stops.Count; i++)
+        {
+            TradeRouteStop stop = route.Stops[i];
+            bool stopValid = owner is not null
+                && _colonies.FirstOrDefault(c => c.Id == stop.ColonyId) is { } colony
+                && colony.OwnerId == owner.PlayerId;
+            if (!stopValid)
+            {
+                warnings.Add(new TradeRouteWarning(route.Id, TradeRouteWarningKind.InvalidStop, i, null,
+                    $"Stop {i + 1} is not one of your colonies."));
+            }
+
+            if (stop.LoadGoodsIds.Count > 0)
+            {
+                anyCargo = true;
+            }
+
+            // Intersect across stops: start from the first stop's load list, then retain only goods every later stop
+            // also loads (FreeCol seeds `always` from stop 0 and `retainAll`s each stop's cargo).
+            if (alwaysPresent is null)
+            {
+                alwaysPresent = new HashSet<string>(stop.LoadGoodsIds);
+            }
+            else
+            {
+                alwaysPresent.IntersectWith(stop.LoadGoodsIds);
+            }
+        }
+
+        // FreeCol: if no stop loads anything, the route hauls nothing.
+        if (!anyCargo)
+        {
+            warnings.Add(new TradeRouteWarning(route.Id, TradeRouteWarningKind.AllEmpty, null, null,
+                "No stop loads any goods, so this route would haul nothing."));
+        }
+        // FreeCol: a good loaded at every stop is never delivered anywhere — unless ENHANCED_TRADE_ROUTES relaxes it.
+        // FreeCol names a single such good (`first(always)`); we report each so the player can fix them all.
+        else if (!EnhancedTradeRoutes && alwaysPresent is { Count: > 0 })
+        {
+            foreach (string goodsId in alwaysPresent.OrderBy(g => g, StringComparer.Ordinal))
+            {
+                warnings.Add(new TradeRouteWarning(route.Id, TradeRouteWarningKind.GoodsAlwaysPresent, null, goodsId,
+                    $"{ShortGoodsName(goodsId)} is loaded at every stop, so it is never delivered anywhere."));
+            }
+        }
+
+        return warnings;
+    }
+
+    /// <summary>The short, human display name for a goods id (e.g. <c>model.goods.sugar</c> → <c>sugar</c>); the raw id if unknown.</summary>
+    private string ShortGoodsName(string goodsId)
+    {
+        int dot = goodsId.LastIndexOf('.');
+        return dot >= 0 && dot + 1 < goodsId.Length ? goodsId[(dot + 1)..] : goodsId;
+    }
+
     /// <summary>Sells goods from a docked ship's hold to the European market, crediting the treasury after tax.</summary>
     /// <returns>The gold credited after tax.</returns>
     /// <exception cref="InvalidMoveException">The ship isn't in Europe, the good is untradeable, or the hold lacks it.</exception>

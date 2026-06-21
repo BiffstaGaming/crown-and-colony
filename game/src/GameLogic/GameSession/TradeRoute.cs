@@ -15,3 +15,45 @@ public sealed record TradeRoute(int Id, string Name, IReadOnlyList<TradeRouteSto
 /// <param name="ColonyId">The colony this stop visits.</param>
 /// <param name="LoadGoodsIds">Goods ids to load at this stop; everything else the carrier holds is unloaded here (delivered).</param>
 public sealed record TradeRouteStop(int ColonyId, IReadOnlyList<string> LoadGoodsIds);
+
+/// <summary>
+/// The kind of problem a trade route can have, mirroring the cases FreeCol's <c>TradeRoute.verify()</c> reports
+/// (each maps to one of its <c>model.tradeRoute.*</c> message keys). A warning is advisory — like FreeCol, the
+/// game <b>warns but never blocks</b>: a route with warnings still runs, it just may not behave as the player hopes.
+/// </summary>
+public enum TradeRouteWarningKind
+{
+    /// <summary>The route has fewer than two stops, so a carrier can never move goods (FreeCol <c>notEnoughStops</c>).</summary>
+    NotEnoughStops,
+
+    /// <summary>A stop names a colony the route's owner does not own or that no longer exists (FreeCol <c>invalidStop</c>).</summary>
+    InvalidStop,
+
+    /// <summary>No stop lists any goods to load, so the route would haul nothing (FreeCol <c>allEmpty</c>).</summary>
+    AllEmpty,
+
+    /// <summary>
+    /// A good is listed to load at <em>every</em> stop, so it is never unloaded anywhere and can never be delivered —
+    /// it just rides the carrier forever (FreeCol <c>alwaysPresent</c>). Relaxed when the ENHANCED_TRADE_ROUTES game
+    /// option is on (off by default in the classic ruleset).
+    /// </summary>
+    GoodsAlwaysPresent,
+}
+
+/// <summary>
+/// One advisory problem found by validating a <see cref="TradeRoute"/> (the C# analogue of a FreeCol
+/// <c>verify()</c> <c>StringTemplate</c>). Pure data: a <see cref="Kind"/>, the <see cref="RouteId"/> it belongs to,
+/// the offending stop index (or <c>null</c> for a whole-route problem), the offending goods id (or <c>null</c>), and
+/// a plain-English <see cref="Message"/> for the UI. Warnings never block — they are surfaced, not enforced.
+/// </summary>
+/// <param name="RouteId">The <see cref="TradeRoute.Id"/> the warning applies to.</param>
+/// <param name="Kind">Which validation check failed.</param>
+/// <param name="StopIndex">The zero-based index of the offending stop, or <c>null</c> for a route-wide problem.</param>
+/// <param name="GoodsId">The offending goods id (for <see cref="TradeRouteWarningKind.GoodsAlwaysPresent"/>), or <c>null</c>.</param>
+/// <param name="Message">A human-readable description suitable for display.</param>
+public sealed record TradeRouteWarning(
+    int RouteId,
+    TradeRouteWarningKind Kind,
+    int? StopIndex,
+    string? GoodsId,
+    string Message);
