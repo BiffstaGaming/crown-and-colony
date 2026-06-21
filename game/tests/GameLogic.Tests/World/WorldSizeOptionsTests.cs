@@ -53,6 +53,44 @@ public class WorldSizeOptionsTests
     }
 
     [Fact]
+    public void TheDefaultLandStyle_IsContinent_AndIndexed()
+    {
+        // The shipped default style is Continent (the historical generator) at the default index — the dialog pre-selects it.
+        Assert.Equal(LandStyle.Continent, WorldSizeOptions.DefaultLandStyle.Style);
+        Assert.Equal(WorldSizeOptions.DefaultLandStyle, WorldSizeOptions.LandStyles[WorldSizeOptions.DefaultLandStyleIndex]);
+        // The three FreeCol shapes are offered, Continent first.
+        Assert.Equal(
+            new[] { LandStyle.Continent, LandStyle.Archipelago, LandStyle.Islands },
+            WorldSizeOptions.LandStyles.Select(s => s.Style));
+    }
+
+    [Fact]
+    public void GameNew_WithDefaultLandStyle_MatchesTheParameterlessDefault()
+    {
+        // Passing the default style (Continent) explicitly must equal omitting it — the byte-identity contract (ADR-009).
+        Game omitted = Game.New(Classic, seed: 31);
+        Game continent = Game.New(Classic, seed: 31, landStyle: LandStyle.Continent);
+
+        Assert.Equal(
+            omitted.Map.AllPositions().Select(p => omitted.Map.TerrainAt(p).Id),
+            continent.Map.AllPositions().Select(p => continent.Map.TerrainAt(p).Id));
+    }
+
+    [Fact]
+    public void AnIslandsStyledGame_RoundTripsThroughSave_WithNoVersionBump()
+    {
+        // The landmass style only shapes which tiles are land; the result persists as terrain (since save v2), so a
+        // non-default style needs no new save field/version — it round-trips like any generated map.
+        Game game = Game.New(Classic, seed: 23, mapWidth: 56, mapHeight: 38, landStyle: LandStyle.Islands);
+        Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(
+            game.Map.AllPositions().Select(p => game.Map.TerrainAt(p).Id),
+            restored.Map.AllPositions().Select(p => restored.Map.TerrainAt(p).Id));
+        Assert.Equal(51, SaveGame.CurrentVersion); // the landmass-style feature adds no save field
+    }
+
+    [Fact]
     public void GameNew_AtTheDefaultSize_MatchesTheParameterlessDefault()
     {
         // Omitting the world-shape params and passing the shipped defaults must produce the identical map (so the

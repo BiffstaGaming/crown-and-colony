@@ -38,6 +38,7 @@ public partial class NewGameDialog : Control
     private OptionButton _mapOption = null!;
     private OptionButton _sizeOption = null!;
     private OptionButton _landOption = null!;
+    private OptionButton _landStyleOption = null!;
     private OptionButton _difficultyOption = null!;
     private OptionButton _nationOption = null!;
     private Action<WorldSize, LandMass, DifficultyLevel, MapSource>? _onStart;
@@ -103,6 +104,15 @@ public partial class NewGameDialog : Control
         _landOption.Selected = WorldSizeOptions.DefaultLandMassIndex;
         vbox.AddChild(LabeledRow("Land mass", _landOption));
 
+        // Landmass style (FreeCol landGeneratorType): one continent (default), a few big islands, or many small ones.
+        _landStyleOption = new OptionButton { Name = "LandStyleOption" };
+        foreach (LandStyleOption s in WorldSizeOptions.LandStyles)
+        {
+            _landStyleOption.AddItem(s.Name);
+        }
+        _landStyleOption.Selected = WorldSizeOptions.DefaultLandStyleIndex; // Continent — the historical default
+        vbox.AddChild(LabeledRow("Landmass", _landStyleOption));
+
         _difficultyOption = new OptionButton { Name = "DifficultyOption" };
         foreach (DifficultyLevel d in DifficultyLevels.All)
         {
@@ -152,6 +162,9 @@ public partial class NewGameDialog : Control
         // The chosen nation rides its own static into Game.New (the human's nation is GameLogic state, not a world
         // option — ADR-006). Index 0 ("No nation") maps to null → the classic nation-less human (byte-identical default).
         GameController.PendingNation = _nationByIndex[_nationOption.Selected];
+        // The landmass style likewise rides a static into Game.New (it shapes only the random map). Continent (the
+        // default index) → the historical byte-identical world.
+        GameController.PendingLandStyle = WorldSizeOptions.LandStyles[_landStyleOption.Selected];
         _onStart?.Invoke(size, land, difficulty, source);
         EmitSignal(SignalName.Closed);
     }
@@ -186,6 +199,7 @@ public partial class NewGameDialog : Control
         bool randomMap = MapChoices[_mapOption.Selected].Source == MapSource.Random;
         _sizeOption.Disabled = !randomMap;
         _landOption.Disabled = !randomMap;
+        _landStyleOption.Disabled = !randomMap; // a fixed map's land shape is loaded, so the style doesn't apply
     }
 
     private static HBoxContainer LabeledRow(string label, Control control)

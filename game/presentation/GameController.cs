@@ -48,6 +48,9 @@ public partial class GameController : Node2D
     /// <summary>Companion to <see cref="PendingWorldSize"/>: the chosen map source (null = the shipped default, <see cref="MapSource.Random"/> — a procedurally generated New World). <see cref="MapSource.America"/> loads FreeCol's fixed America terrain instead (its dimensions override the world-size choice). Consumed (and cleared) in <see cref="NewGame"/>.</summary>
     public static MapSource? PendingMapSource { get; set; }
 
+    /// <summary>Companion to <see cref="PendingWorldSize"/>: the chosen landmass style (null = the shipped default, <see cref="LandStyle.Continent"/>). <see cref="LandStyle.Archipelago"/>/<see cref="LandStyle.Islands"/> shape the random map into separate masses; ignored on a fixed <see cref="PendingMapSource"/>. Consumed (and cleared) in <see cref="NewGame"/>.</summary>
+    public static LandStyleOption? PendingLandStyle { get; set; }
+
     /// <summary>
     /// Companion to <see cref="PendingWorldSize"/>: the European nation the human chose at New Game (e.g.
     /// <c>model.nation.dutch</c>; null = no pick → the classic nation-less human, byte-identical default). Set by
@@ -206,29 +209,31 @@ public partial class GameController : Node2D
         DifficultyLevel difficulty = PendingDifficulty ?? DifficultyLevels.Default;
         MapSource mapSource = PendingMapSource ?? MapSource.Random;
         string? nation = PendingNation; // null = no pick → the classic nation-less human (byte-identical default)
+        LandStyle landStyle = (PendingLandStyle ?? WorldSizeOptions.DefaultLandStyle).Style; // null = Continent (default)
         PendingWorldSize = null;
         PendingLandMass = null;
         PendingDifficulty = null;
         PendingMapSource = null;
         PendingNation = null;
+        PendingLandStyle = null;
 
         // Picking the seed may be non-deterministic (player convenience);
         // the game itself is fully determined by the chosen seed.
-        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi(), size, land, difficulty, mapSource, nation);
+        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi(), size, land, difficulty, mapSource, nation, landStyle);
     }
 
     /// <summary>Starts a new game from an explicit seed at the shipped-default world size / difficulty / map / nation-less human (tests, visual goldens — ADR-009).</summary>
     public void StartNewGame(ulong seed) =>
         StartNewGame(seed, WorldSizeOptions.DefaultSize, WorldSizeOptions.DefaultLandMass, DifficultyLevels.Default, MapSource.Random);
 
-    /// <summary>Starts a new game from an explicit seed, world size / land amount, difficulty level, map source and (optional) human nation (forwarded from the new-game options). The ruleset is loaded under the chosen level so its balance matches, the level is recorded for the save, a fixed <paramref name="mapSource"/> ignores the size/land args (its grid sets the dimensions), and <paramref name="humanNationId"/> (null = no pick) seeds the human's national advantage + colony names.</summary>
-    public void StartNewGame(ulong seed, WorldSize size, LandMass landMass, DifficultyLevel difficulty, MapSource mapSource, string? humanNationId = null)
+    /// <summary>Starts a new game from an explicit seed, world size / land amount, difficulty level, map source, (optional) human nation and (optional) landmass style (forwarded from the new-game options). The ruleset is loaded under the chosen level so its balance matches, the level is recorded for the save, a fixed <paramref name="mapSource"/> ignores the size/land/style args (its grid sets the dimensions), <paramref name="humanNationId"/> (null = no pick) seeds the human's national advantage + colony names, and <paramref name="landStyle"/> (default <see cref="LandStyle.Continent"/>) shapes the random map's land.</summary>
+    public void StartNewGame(ulong seed, WorldSize size, LandMass landMass, DifficultyLevel difficulty, MapSource mapSource, string? humanNationId = null, LandStyle landStyle = LandStyle.Continent)
     {
         _currentSeed = seed;
         StartGame(Game.New(
             _variant.LoadRuleset(difficulty.Id), _currentSeed, size.Width, size.Height,
             landMassFraction: landMass.Fraction, difficultyLevelId: difficulty.Id, mapSource: mapSource,
-            humanNationId: humanNationId));
+            humanNationId: humanNationId, landStyle: landStyle));
     }
 
     private void StartGame(Game game)

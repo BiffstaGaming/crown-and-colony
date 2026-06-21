@@ -61,19 +61,29 @@ public static class MapGenerator
     private const int MaxDistanceToEdge = 10;
 
     /// <summary>
-    /// Generates a width × height map. Same ruleset + same RNG state (+ same <paramref name="landMassFraction"/>) →
-    /// identical map. <paramref name="landMassFraction"/> is the share of tiles grown into land (FreeCol's
-    /// <c>model.option.landMass</c>); it defaults to <see cref="DefaultLandMassFraction"/>, so a call that omits it
-    /// is byte-identical to the historical generator (the default new game and its goldens are unchanged).
+    /// Generates a width × height map. Same ruleset + same RNG state (+ same <paramref name="landMassFraction"/> and
+    /// <paramref name="landStyle"/>) → identical map. <paramref name="landMassFraction"/> is the share of tiles grown
+    /// into land (FreeCol's <c>model.option.landMass</c>); <paramref name="landStyle"/> is the shape that land takes
+    /// (FreeCol's <c>model.option.landGeneratorType</c>). Both default to the shipped values
+    /// (<see cref="DefaultLandMassFraction"/> + <see cref="LandStyle.Continent"/>), so a call that omits them is
+    /// byte-identical to the historical generator (the default new game and its goldens are unchanged): only the land
+    /// stage (<see cref="GrowContinent"/> vs <see cref="GrowSeparateMasses"/>) differs by style; everything downstream
+    /// (climate, mountains, high seas, rivers, resources, regions) is shared.
     /// </summary>
     public static GameMap Generate(
         Ruleset ruleset, int width, int height, IGameRandom random,
-        double landMassFraction = DefaultLandMassFraction)
+        double landMassFraction = DefaultLandMassFraction,
+        LandStyle landStyle = LandStyle.Continent)
     {
         TerrainType ocean = ruleset.Terrain("model.tile.ocean");
         TerrainType highSeas = ruleset.Terrain("model.tile.highSeas");
 
-        bool[,] land = GrowContinent(width, height, random, landMassFraction);
+        // The land stage is the ONLY style-dependent step. Continent (the default) keeps the historical
+        // frontier-grown blob verbatim — its RNG-draw sequence is unchanged, so a default-styled map is
+        // byte-identical (ADR-009). Archipelago / Islands instead grow several separate masses (FreeCol LandMap).
+        bool[,] land = landStyle == LandStyle.Continent
+            ? GrowContinent(width, height, random, landMassFraction)
+            : GrowSeparateMasses(width, height, random, landMassFraction, landStyle);
         int[,] humidity = SmoothedNoise(width, height, random, 0, 101);
 
         var terrain = new TerrainType[width * height];
@@ -367,6 +377,161 @@ public static class MapGenerator
         }
 
         return land;
+    }
+
+    /// <summary>Horizontal watery margin (columns kept clear of land on each side — room for the high seas and coast).</summary>
+    private const int LandMarginX = 4;
+
+    /// <summary>Vertical watery margin (rows kept clear of land at top and bottom).</summary>
+    private const int LandMarginY = 2;
+
+    /// <summary>
+    /// Grows several <b>separate</b> landmasses — the archipelago / islands shapes, faithful to FreeCol
+    /// <c>LandMap.generate</c> (the <c>LAND_GENERATOR_ARCHIPELAGO</c> / <c>LAND_GENERATOR_ISLANDS</c> branches):
+    /// <list type="bullet">
+    /// <item><b>Archipelago</b> — first lay 5 big islands of ≈10% of the land budget each (FreeCol
+    /// <c>archsize = minTiles·10/100</c>, size <c>archsize±5</c>), then fall through to the islands fill.</item>
+    /// <item><b>Islands</b> — keep adding islands of 25..75 tiles (FreeCol <c>25 + rand(50)</c>) until the land budget
+    /// is met.</item>
+    /// </list>
+    /// Each island is a connected blob grown by <see cref="AddLandMass"/> from a fresh sea seed that has no land
+    /// neighbour, so the masses stay unconnected. Keeps the same watery margin the continent grower and the downstream
+    /// high-seas / coast passes assume (<see cref="LandMarginX"/>×<see cref="LandMarginY"/>).
+    /// <para><b>Faithful-subset deviations from FreeCol:</b> FreeCol's <c>LandMap</c> additionally forces a band of polar
+    /// land along the top/bottom rows (<c>addPolarRegions</c>) and a final <c>cleanMap</c> that deletes 1×1 islets; we
+    /// keep the poles as open sea (our polar terrain comes from the climate pass / region layer, not forced land) and
+    /// rely on the same per-island connected growth, so isolated single tiles are already rare. FreeCol's
+    /// <c>distanceToEdge</c>-scaled edge clearance is replaced by our fixed <see cref="LandMarginX"/>/<see cref="LandMarginY"/>
+    /// margin so every map style satisfies the same high-seas-band invariant.</para>
+    /// </summary>
+    private static bool[,] GrowSeparateMasses(
+        int width, int height, IGameRandom random, double landMassFraction, LandStyle style)
+    {
+        var land = new bool[width, height];
+        int targetLand = (int)(width * height * landMassFraction);
+
+        // A guard so a pathological seed / tiny map can't spin forever when no free seed tile remains
+        // (FreeCol's addLandMass loops are similarly bounded by the available sea); each pass adds at most one mass.
+        int attempts = 0;
+        int maxAttempts = width * height; // generous: far more than the number of masses any sane map needs
+
+        if (style == LandStyle.Archipelago)
+        {
+            // Five large islands at ≈10% of the budget each (FreeCol archsize = minTiles·10/100, size archsize±5).
+            int archSize = Math.Max(1, targetLand * 10 / 100);
+            for (int i = 0; i < 5 && CountLand(land) < targetLand; i++)
+            {
+                AddLandMass(land, width, height, random, archSize - 5, archSize + 5);
+            }
+        }
+
+        // Islands fill (used by Islands directly, and as the archipelago's "fall through"): keep adding
+        // 25..75-tile islands until the land budget is reached (FreeCol 25 + rand(50)).
+        while (CountLand(land) < targetLand && attempts++ < maxAttempts)
+        {
+            AddLandMass(land, width, height, random, 25, 25 + random.Next(50));
+        }
+
+        return land;
+    }
+
+    /// <summary>The number of land tiles currently set in <paramref name="land"/>.</summary>
+    private static int CountLand(bool[,] land)
+    {
+        int count = 0;
+        foreach (bool b in land)
+        {
+            if (b) count++;
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Grows a single connected landmass into <paramref name="land"/> and returns the tiles added — a faithful port of
+    /// FreeCol <c>LandMap.addLandMass</c>. Picks a sea seed with no adjacent land (inside the watery margin), then
+    /// repeatedly takes a random frontier sea tile that touches no <i>existing</i> land and sets it, until the mass
+    /// reaches a random target size in <c>[minSize, maxSize]</c> (FreeCol <c>enough = minSize + rand(maxSize−minSize+1)</c>)
+    /// or the frontier runs dry. The "no adjacent existing land" frontier rule is what keeps each mass <b>separate</b>
+    /// from the ones already on the map. If a seed can't be found within a bounded number of tries (the sea is too full),
+    /// nothing is added.
+    /// </summary>
+    private static int AddLandMass(
+        bool[,] land, int width, int height, IGameRandom random, int minSize, int maxSize)
+    {
+        bool InMargin(int x, int y) =>
+            x >= LandMarginX && x < width - LandMarginX && y >= LandMarginY && y < height - LandMarginY;
+
+        bool HasAdjacentLand(int x, int y)
+        {
+            foreach (Position n in new Position(x, y).Neighbours())
+            {
+                if (n.X >= 0 && n.X < width && n.Y >= 0 && n.Y < height && land[n.X, n.Y])
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Find a sea seed inside the margin that touches no existing land (so the new mass is unconnected).
+        int sx = -1, sy = -1;
+        for (int tries = 0; tries < 100; tries++)
+        {
+            int x = LandMarginX + random.Next(Math.Max(1, width - 2 * LandMarginX));
+            int y = LandMarginY + random.Next(Math.Max(1, height - 2 * LandMarginY));
+            if (!land[x, y] && !HasAdjacentLand(x, y))
+            {
+                sx = x;
+                sy = y;
+                break;
+            }
+        }
+        if (sx < 0)
+        {
+            return 0; // the sea is too crowded to drop another separate mass
+        }
+
+        // The blob: this mass's own tiles (kept apart so HasAdjacentLand only blocks on OTHER masses, matching
+        // FreeCol's separate `newLand` array). Frontier holds candidate sea tiles to grow into.
+        var blob = new HashSet<Position> { new(sx, sy) };
+        var frontier = new List<Position>();
+        void AddFrontier(int x, int y)
+        {
+            foreach (Position n in new Position(x, y).Neighbours())
+            {
+                if (InMargin(n.X, n.Y) && !land[n.X, n.Y] && !blob.Contains(n) && !HasAdjacentLand(n.X, n.Y))
+                {
+                    frontier.Add(n);
+                }
+            }
+        }
+        AddFrontier(sx, sy);
+
+        int enough = minSize + random.Next(maxSize - minSize + 1);
+        while (blob.Count < enough && frontier.Count > 0)
+        {
+            int i = random.Next(frontier.Count);
+            Position p = frontier[i];
+            frontier[i] = frontier[^1];
+            frontier.RemoveAt(frontier.Count - 1);
+            if (blob.Contains(p) || HasAdjacentLand(p.X, p.Y))
+            {
+                continue; // grew adjacent to another mass meanwhile — skip to stay separate
+            }
+            blob.Add(p);
+            AddFrontier(p.X, p.Y);
+        }
+
+        // Commit the mass only if it reached the minimum size (FreeCol discards an undersized blob).
+        if (blob.Count < minSize)
+        {
+            return 0;
+        }
+        foreach (Position p in blob)
+        {
+            land[p.X, p.Y] = true;
+        }
+        return blob.Count;
     }
 
     /// <summary>Latitude → temperature: hottest (40) at the equator row, coldest (−20) at the poles, with jitter.</summary>

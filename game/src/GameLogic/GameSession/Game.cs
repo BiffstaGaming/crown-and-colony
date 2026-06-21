@@ -3027,13 +3027,21 @@ public sealed partial class Game
     /// nation-less human</b>, so an unpicked new game is byte-identical to before (ADR-009). An unknown/non-selectable id
     /// is treated as null (no advantage).
     /// </param>
+    /// <param name="landStyle">
+    /// The shape the generated land takes (FreeCol's <c>model.option.landGeneratorType</c>): one
+    /// <see cref="LandStyle.Continent"/> (default — the historical, byte-identical map), a few large
+    /// <see cref="LandStyle.Archipelago"/> islands, or many small <see cref="LandStyle.Islands"/>. Applies only to the
+    /// random map path (ignored on a fixed <paramref name="mapSource"/>, whose land shape is loaded). The default keeps
+    /// an unpicked new game byte-identical (ADR-009).
+    /// </param>
     public static Game New(
         Ruleset ruleset, ulong seed, int mapWidth = 36, int mapHeight = 24,
         int startingGold = 0, int startingTax = 0,
         double landMassFraction = MapGenerator.DefaultLandMassFraction,
         string difficultyLevelId = DifficultyLevels.DefaultId,
         MapSource mapSource = MapSource.Random,
-        string? humanNationId = null)
+        string? humanNationId = null,
+        LandStyle landStyle = LandStyle.Continent)
     {
         // A picked nation must be a real, selectable, non-REF European power; anything else (null, an unknown id, a
         // native/REF id) falls back to the nation-less classic human — so the default new game stays byte-identical.
@@ -3048,7 +3056,7 @@ public sealed partial class Game
         // only to the random path. Both draw from the same stream-0 RNG, so the default (Random) game is unchanged.
         GameMap? fixedTerrain = FixedMap.TryLoad(mapSource, ruleset);
         GameMap map = fixedTerrain is null
-            ? MapGenerator.Generate(ruleset, mapWidth, mapHeight, random, landMassFraction)
+            ? MapGenerator.Generate(ruleset, mapWidth, mapHeight, random, landMassFraction, landStyle)
             : MapGenerator.DecorateFixedMap(fixedTerrain, ruleset, random);
 
         // The single human player (stream 0; foreign powers and natives become players in FP-3). Its nation is the

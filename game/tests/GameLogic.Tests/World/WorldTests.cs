@@ -376,6 +376,89 @@ public class MapGeneratorTests
         Assert.All(equatorLand, t =>
             Assert.DoesNotContain(t.Id, new[] { "model.tile.arctic", "model.tile.tundra", "model.tile.borealForest" }));
     }
+
+    // ---- Landmass styles (FreeCol landGeneratorType: continent / archipelago / islands) ----
+
+    /// <summary>The number of separate land bodies (8-direction connected components) on the map.</summary>
+    private static int LandmassCount(GameMap map)
+    {
+        var seen = new HashSet<Position>();
+        int masses = 0;
+        foreach (Position start in map.AllPositions())
+        {
+            if (map.TerrainAt(start).IsWater || !seen.Add(start))
+            {
+                continue;
+            }
+            masses++;
+            var stack = new Stack<Position>();
+            stack.Push(start);
+            while (stack.Count > 0)
+            {
+                Position p = stack.Pop();
+                foreach (Position n in p.Neighbours())
+                {
+                    if (map.InBounds(n) && !map.TerrainAt(n).IsWater && seen.Add(n))
+                    {
+                        stack.Push(n);
+                    }
+                }
+            }
+        }
+        return masses;
+    }
+
+    [Fact]
+    public void DefaultLandStyle_IsByteIdenticalToOmittingTheParameter()
+    {
+        // The shipped default style (omit the param) must equal passing Continent explicitly — the contract that keeps
+        // the default new game (and its visual goldens / soak baseline) byte-identical (ADR-009).
+        GameMap omitted = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(9));
+        GameMap continent = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(9), MapGenerator.DefaultLandMassFraction, LandStyle.Continent);
+
+        Assert.Equal(
+            omitted.AllPositions().Select(p => omitted.TerrainAt(p).Id),
+            continent.AllPositions().Select(p => continent.TerrainAt(p).Id));
+    }
+
+    [Fact]
+    public void IslandsAndArchipelago_ProduceManySeparateMasses_WhileContinentIsDominatedByOne()
+    {
+        // A big map gives every style room. Continent grows essentially one blob; islands/archipelago grow several
+        // unconnected masses (FreeCol's addLandMass per-island growth), so they have materially more land bodies.
+        GameMap continent = MapGenerator.Generate(Classic, 56, 38, new Pcg32Random(11), 0.45, LandStyle.Continent);
+        GameMap archipelago = MapGenerator.Generate(Classic, 56, 38, new Pcg32Random(11), 0.45, LandStyle.Archipelago);
+        GameMap islands = MapGenerator.Generate(Classic, 56, 38, new Pcg32Random(11), 0.45, LandStyle.Islands);
+
+        Assert.True(LandmassCount(continent) <= 3,
+            $"continent should be one dominant mass, found {LandmassCount(continent)}");
+        Assert.True(LandmassCount(islands) > LandmassCount(continent),
+            $"islands ({LandmassCount(islands)}) should have more masses than continent ({LandmassCount(continent)})");
+        Assert.True(LandmassCount(archipelago) > LandmassCount(continent),
+            $"archipelago ({LandmassCount(archipelago)}) should have more masses than continent ({LandmassCount(continent)})");
+        // Every style still actually grows land (no empty oceans).
+        Assert.True(LandCount(continent) > 0 && LandCount(archipelago) > 0 && LandCount(islands) > 0);
+    }
+
+    [Theory]
+    [InlineData(LandStyle.Continent)]
+    [InlineData(LandStyle.Archipelago)]
+    [InlineData(LandStyle.Islands)]
+    public void EveryLandStyle_IsDeterministicPerSeed_AndKeepsTheWateryMargin(LandStyle style)
+    {
+        GameMap a = MapGenerator.Generate(Classic, 56, 38, new Pcg32Random(17), 0.45, style);
+        GameMap b = MapGenerator.Generate(Classic, 56, 38, new Pcg32Random(17), 0.45, style);
+
+        // Same seed + size + land + style → identical map, every machine (ADR-009).
+        Assert.Equal(
+            a.AllPositions().Select(p => a.TerrainAt(p).Id),
+            b.AllPositions().Select(p => b.TerrainAt(p).Id));
+
+        // The watery margin every downstream pass assumes (high seas / coast) holds for all styles.
+        Assert.All(
+            a.AllPositions().Where(p => p.X < 4 || p.Y < 2 || p.X >= a.Width - 4 || p.Y >= a.Height - 2),
+            p => Assert.True(a.TerrainAt(p).IsWater, $"{p} should be water under the {style} style"));
+    }
 }
 
 /// <summary>
