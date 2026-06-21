@@ -26,6 +26,9 @@
     <!-- Fixed scenario maps — FreeCol's hand-made America map (terrain grid, extracted from M_America_Mazim.fsm; GPL v2). -->
     <EmbeddedResource Include="..\..\data\maps\america.txt"
                       LogicalName="CrownAndColony.GameLogic.Maps.america.txt" />
+    <!-- A tiny example scenario exercising every MapImporter overlay (resources/improvements/rumours/settlements). -->
+    <EmbeddedResource Include="..\..\data\maps\example-overlays.txt"
+                      LogicalName="CrownAndColony.GameLogic.Maps.example-overlays.txt" />
   </ItemGroup>
 
 </Project>

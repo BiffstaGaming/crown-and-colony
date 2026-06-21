@@ -1,0 +1,39 @@
+# example-overlays.txt — a tiny example scenario map exercising the MapImporter overlays.
+#
+# Not a playable scenario; it exists to demonstrate (and test) the importer's four
+# optional overlay sections on top of the terrain grid: bonus resources (with a
+# finite quantity), tile improvements (river/road), lost-city rumours and native
+# settlements. The shipped america.txt is terrain-only; this is the worked example
+# of a fully-overlaid definition. See game/src/GameLogic/World/MapImporter.cs and
+# docs/systems/map-terrain.md (Map import).
+#
+# Format: header "WIDTH HEIGHT", then HEIGHT rows of WIDTH terrain short-names,
+# then any of [resources] / [improvements] / [rumours] / [settlements] sections.
+# '#' starts a comment; blank lines are ignored.
+
+6 5
+ocean plains plains hills mountains ocean
+ocean plains grassland prairie hills ocean
+ocean plains savannah prairie plains ocean
+ocean marsh plains plains plains ocean
+ocean ocean ocean ocean ocean ocean
+
+[resources]
+# A finite minerals deposit in the hills with an explicit remaining quantity, plus a
+# (limitless) grain bonus on the plains with no quantity column.
+4 0 minerals 250
+1 2 grain
+
+[improvements]
+# A river snaking inland and a pioneer road; magnitude is optional (a large river = 2).
+2 1 river 2
+1 1 road
+
+[rumours]
+# A lost-city rumour to be explored.
+3 2
+
+[settlements]
+# An Apache capital camp (size 5, teaches ore mining) and a regular village.
+2 2 apache camp capital 5 expertOreMiner
+3 3 apache village regular 3

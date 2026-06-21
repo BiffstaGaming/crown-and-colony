@@ -15,16 +15,21 @@ public enum MapSource
 }
 
 /// <summary>
-/// Loads a fixed scenario map (its terrain grid) from an embedded resource — FreeCol's hand-made America map,
-/// extracted from <c>data/maps/M_America_Mazim.fsm</c> (GPL v2). <b>Only the terrain layer is loaded</b>: rivers,
-/// bonus resources, native settlements and the player's start are placed on top by the usual game-start generators
-/// (so a fixed map plays with our gameplay layers — the real America landmass, our systems). Engine-free (ADR-006);
-/// loading is deterministic (the embedded bytes never change).
+/// Loads a fixed scenario map from an embedded resource via the general <see cref="MapImporter"/> — FreeCol's hand-made
+/// America map, extracted from <c>data/maps/M_America_Mazim.fsm</c> (GPL v2). The shipped <c>america.txt</c> is
+/// <b>terrain-only</b> (it declares no overlay sections), so importing it yields a terrain-only <see cref="GameMap"/>
+/// with no settlements — rivers, bonus resources, native settlements and the player's start are placed on top by the
+/// usual game-start generators (so the fixed map plays with our gameplay layers — the real America landmass, our
+/// systems). A scenario file that <i>does</i> declare overlays imports them directly (see <see cref="MapImporter"/>).
+/// Engine-free (ADR-006); loading is deterministic (the embedded bytes never change).
 /// </summary>
 public static class FixedMap
 {
     /// <summary>Manifest resource name of the embedded America terrain grid (see <c>GameLogic.csproj</c>).</summary>
     private const string AmericaResource = "CrownAndColony.GameLogic.Maps.america.txt";
+
+    /// <summary>Manifest resource name of the embedded example overlay map (exercises every importer overlay; see <c>GameLogic.csproj</c>).</summary>
+    private const string ExampleOverlaysResource = "CrownAndColony.GameLogic.Maps.example-overlays.txt";
 
     /// <summary>The terrain-only <see cref="GameMap"/> for a fixed map source (or null for <see cref="MapSource.Random"/>, which the caller generates instead).</summary>
     /// <param name="source">The chosen map source.</param>
@@ -34,43 +39,34 @@ public static class FixedMap
 
     /// <summary>Builds the America <see cref="GameMap"/> (FreeCol's M_America, 40×180) from the embedded terrain grid.</summary>
     /// <param name="ruleset">The ruleset whose <see cref="TerrainType"/>s the tile ids resolve against.</param>
-    public static GameMap LoadAmerica(Ruleset ruleset) => Load(AmericaResource, ruleset);
+    public static GameMap LoadAmerica(Ruleset ruleset) => ImportAmerica(ruleset).Map;
 
     /// <summary>
-    /// Parses an embedded terrain-grid resource into a <see cref="GameMap"/>. Format: a header line <c>WIDTH HEIGHT</c>,
-    /// then <c>HEIGHT</c> rows of <c>WIDTH</c> terrain short names (row-major; e.g. <c>plains</c> → <c>model.tile.plains</c>).
+    /// Imports the full America scenario (terrain + any overlays + native settlements) via <see cref="MapImporter"/>.
+    /// The shipped grid is terrain-only, so the result's settlement list is empty and only the terrain layer is set —
+    /// but this is the seam through which a future overlaid America (or another scenario) would carry its bonuses,
+    /// rumours and settlements into the game.
     /// </summary>
-    private static GameMap Load(string resourceName, Ruleset ruleset)
+    /// <param name="ruleset">The ruleset whose ids the definition resolves against.</param>
+    public static MapImportResult ImportAmerica(Ruleset ruleset) => Import(AmericaResource, ruleset);
+
+    /// <summary>
+    /// Imports the embedded example overlay map (<c>example-overlays.txt</c>) — a tiny scenario that declares every
+    /// importer overlay (resources + quantity, river/road improvements, a rumour, native settlements). Demonstrates and
+    /// tests the importer end-to-end through the same embedded-resource path the America map uses.
+    /// </summary>
+    /// <param name="ruleset">The ruleset whose ids the definition resolves against.</param>
+    internal static MapImportResult ImportExampleOverlays(Ruleset ruleset) => Import(ExampleOverlaysResource, ruleset);
+
+    /// <summary>Imports an embedded map-definition resource into a <see cref="MapImportResult"/> via <see cref="MapImporter"/>.</summary>
+    /// <param name="resourceName">The manifest resource name of the embedded definition.</param>
+    /// <param name="ruleset">The ruleset whose ids the definition resolves against.</param>
+    private static MapImportResult Import(string resourceName, Ruleset ruleset)
     {
         Assembly assembly = Assembly.GetExecutingAssembly();
         using Stream stream = assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException($"Embedded map '{resourceName}' is missing from the assembly.");
         using var reader = new StreamReader(stream);
-
-        string header = reader.ReadLine()
-            ?? throw new InvalidDataException($"Map '{resourceName}' is empty.");
-        string[] dims = header.Split(' ', System.StringSplitOptions.RemoveEmptyEntries);
-        if (dims.Length != 2 || !int.TryParse(dims[0], out int width) || !int.TryParse(dims[1], out int height)
-            || width <= 0 || height <= 0)
-        {
-            throw new InvalidDataException($"Map '{resourceName}' header must be 'WIDTH HEIGHT', got '{header}'.");
-        }
-
-        var terrain = new TerrainType[width * height];
-        for (int y = 0; y < height; y++)
-        {
-            string row = reader.ReadLine()
-                ?? throw new InvalidDataException($"Map '{resourceName}' ended at row {y}; expected {height} rows.");
-            string[] cells = row.Split(' ', System.StringSplitOptions.RemoveEmptyEntries);
-            if (cells.Length != width)
-            {
-                throw new InvalidDataException($"Map '{resourceName}' row {y} has {cells.Length} tiles; expected {width}.");
-            }
-            for (int x = 0; x < width; x++)
-            {
-                terrain[(y * width) + x] = ruleset.Terrain($"model.tile.{cells[x]}");
-            }
-        }
-        return new GameMap(width, height, terrain);
+        return MapImporter.Import(reader, ruleset, resourceName);
     }
 }
