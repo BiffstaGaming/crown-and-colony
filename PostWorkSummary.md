@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — "Are you 100% sure?" → port-fidelity verification audit — COMPLETE ✅
+
+**Requested:** "Are you 100% sure that is ALL of the work required to complete the port from FreeCol?"
+**Did:**
+- **Answered honestly: no.** The first audit found missing *features*; it did not verify *data-wiring* or *formula fidelity*. Ran a **second, differently-shaped audit** (9 agents): a data-surface diff (is every classic-spec element parsed AND applied?) + formula-fidelity spot-checks (combat/production/market/immigration/natives/monarch).
+- **Critically reviewed the findings rather than relaying them** — caught a **false positive** (audit claimed "SoL production bonus not applied"; verified it IS applied at `Game.cs:7954`, shipped+tested). Caught genuine verify-items (native constants: our comments vs the audit disagree on alarm-sell `price/50`-vs-`price/5`, convert 50%-vs-30%, burn 2%-vs-6%).
+- **Reframed the audit's "68%":** it conflates two things. **Classic-game faithfulness = high (~90%+)** — features present, core formulas verified, "no gaps break the classic campaign." **Engine spec-driven-ness = ~70%** — ~40 abilities + ~20 modifiers + ~110 options are *parsed but hardcoded*; classic plays right, but a variant reassigning them via XML breaks. **That data-driven-ness gap is the real prerequisite for the locked "Australia variant = data, not code" goal.**
+**Status:** **5 high-signal tasks created** (collapsed from ~25 audit items — dropped the false positive, the dupes of audit-1's 30, and folded ~14 parsed-but-hardcoded items into one ARCH epic). No code change. Session Log page `2kz0t3mf-3816`.
+**Changed:** No source (audit/planning). ClickUp: +5 tasks — `86d3drpgg` (EPIC ARCH: full spec-driven-ness), `86d3drpgz` (temporary-modifier TTL), `86d3drpha` (event/limit engine), `86d3drphp` (P5: verify native constants), `86d3drphu` (QA: differential fidelity harness vs FreeCol).
+**Decisions:** Did **not** create 25 tasks — most were "classic works, mods break" (one coherent ARCH epic, not 14 micro-tasks) or false/dup. Verified the one scary claim (SoL) before dismissing it. Flagged native-constant divergences as *verify*, not *bug* (the SoL false-positive shows the audit isn't infallible). Captured the **differential test harness** as the honest path to *proving* fidelity — static review can't.
+**Scheduled next:** Negotiation UI `86d3c9ubw`, OR start the audit follow-through: the spec-driven-ness epic `86d3drpgg` (variant-blocker) or verify native constants `86d3drphp` (possible live fidelity bug — small, high-confidence).
+**Follow-ups:** the differential harness `86d3drphu` is the highest-leverage way to keep the port honest going forward.
+**Needs you:** Calibration on intent — is the goal a faithful *playable classic game* (we're close; backlog now covers the slivers), or a fully *data-driven engine ready for the Australia variant* (the spec-driven-ness epic is the main remaining lift)? That steers whether `86d3drpgg` is high or normal priority.
+
 ## 2026-06-21 — Full FreeCol-vs-Crown&Colony functionality audit → backlog completed — COMPLETE ✅
 
 **Requested:** "FULL review of functionality of FreeCol vs Crown & Colony. Create ClickUp Tasks to match the work that needs to be done. Include EVERYTHING — I don't want to populate the backlog again."
