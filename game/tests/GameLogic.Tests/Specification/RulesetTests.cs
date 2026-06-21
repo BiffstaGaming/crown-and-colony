@@ -138,6 +138,56 @@ public class RulesetTests
     }
 
     [Fact]
+    public void UnitTypeAbilities_ParseFromSpecIntoHasAbilityMap()
+    {
+        // 86d3drpgg ABILITIES slice: navalUnit / foundColony / captureGoods / piracy / carryTreasure / expertScout
+        // are now read from the parsed <ability> map via HasAbility, not a hardcoded flag. HasAbility must agree with
+        // the convenience property, and an absent ability must read false (not throw).
+        UnitType privateer = Classic.Unit("model.unit.privateer");
+        Assert.True(privateer.HasAbility("model.ability.navalUnit"));
+        Assert.True(privateer.HasAbility("model.ability.captureGoods"));
+        Assert.True(privateer.HasAbility("model.ability.piracy"));
+        Assert.Equal(privateer.IsNaval, privateer.HasAbility("model.ability.navalUnit"));
+        Assert.Equal(privateer.CaptureGoods, privateer.HasAbility("model.ability.captureGoods"));
+        Assert.Equal(privateer.Piracy, privateer.HasAbility("model.ability.piracy"));
+
+        // Unknown / undeclared ability id defaults to false rather than throwing.
+        Assert.False(privateer.HasAbility("model.ability.thisDoesNotExist"));
+        Assert.False(privateer.HasAbility("model.ability.carryTreasure"));
+    }
+
+    [Theory]
+    // (unit, naval, foundColony, captureGoods, piracy, carryTreasure, expertScout) — the classic values these
+    // six data-driven capabilities resolve to. Pins the byte-identical result of the hardcoded→parsed refactor.
+    [InlineData("model.unit.freeColonist", false, true, false, false, false, false)]
+    [InlineData("model.unit.seasonedScout", false, true, false, false, false, true)]  // expertScout + colonist's foundColony
+    [InlineData("model.unit.caravel", true, false, false, false, false, false)]       // naval via 'ship'; foundColony absent
+    [InlineData("model.unit.frigate", true, false, true, false, false, false)]        // naval raider: captureGoods, no piracy
+    [InlineData("model.unit.manOWar", true, false, true, false, false, false)]
+    [InlineData("model.unit.privateer", true, false, true, true, false, false)]       // captureGoods + piracy
+    [InlineData("model.unit.treasureTrain", false, false, false, false, true, false)] // carryTreasure; wagon sets foundColony=false
+    public void DataDrivenUnitAbilities_MatchClassicValues(
+        string id, bool naval, bool foundColony, bool captureGoods, bool piracy, bool carryTreasure, bool expertScout)
+    {
+        UnitType unit = Classic.Unit(id);
+
+        Assert.Equal(naval, unit.IsNaval);
+        Assert.Equal(foundColony, unit.CanFoundColony);
+        Assert.Equal(captureGoods, unit.CaptureGoods);
+        Assert.Equal(piracy, unit.Piracy);
+        Assert.Equal(carryTreasure, unit.CarryTreasure);
+        Assert.Equal(expertScout, unit.ExpertScout);
+
+        // Each convenience property must be exactly its HasAbility consult (no divergence).
+        Assert.Equal(unit.HasAbility("model.ability.navalUnit"), unit.IsNaval);
+        Assert.Equal(unit.HasAbility("model.ability.foundColony"), unit.CanFoundColony);
+        Assert.Equal(unit.HasAbility("model.ability.captureGoods"), unit.CaptureGoods);
+        Assert.Equal(unit.HasAbility("model.ability.piracy"), unit.Piracy);
+        Assert.Equal(unit.HasAbility("model.ability.carryTreasure"), unit.CarryTreasure);
+        Assert.Equal(unit.HasAbility("model.ability.expertScout"), unit.ExpertScout);
+    }
+
+    [Fact]
     public void BuildingTypes_ParseWithProductionsAndCosts()
     {
         // Town hall: free building producing bells (1 unattended, 3 per worker).

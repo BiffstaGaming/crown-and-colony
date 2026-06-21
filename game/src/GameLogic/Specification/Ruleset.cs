@@ -1573,8 +1573,11 @@ public sealed class Ruleset
                 Id: id,
                 Movement: ResolveIntAttribute(el, "movement", elements) ?? 3,
                 LineOfSight: ResolveIntAttribute(el, "line-of-sight", elements) ?? 1,
-                IsNaval: ResolveAbility(el, "model.ability.navalUnit", elements),
-                CanFoundColony: ResolveAbility(el, "model.ability.foundColony", elements),
+                // Every <ability> the type declares, resolved down the extends chain (nearest wins, explicit
+                // value="false" honoured) into a data-driven map. UnitType.IsNaval/CanFoundColony/CaptureGoods/
+                // Piracy/CarryTreasure/ExpertScout read off this via HasAbility instead of a hardcoded flag, so a
+                // variant can toggle them in data; classic values are unchanged (86d3drpgg, ABILITIES slice).
+                Abilities: CollectAbilitiesUpChain(el, elements),
                 // recruit-probability is a direct attribute in the spec (not inherited
                 // via extends), so it is read off the concrete type only.
                 RecruitProbability: (int?)el.Attribute("recruit-probability") ?? 0,
@@ -1609,12 +1612,9 @@ public sealed class Ruleset
                 // hit-points: every concrete ship sets 6 directly (the abstract `ship` base omits it); resolved
                 // through the extends chain like other ints. Default 1 for the non-naval types that never set it.
                 MaxHitPoints: ResolveIntAttribute(el, "hit-points", elements) ?? 1,
-                // captureGoods: a naval raider loots a beaten ship's hold (frigate, privateer, man-o-war).
-                CaptureGoods: ResolveAbility(el, "model.ability.captureGoods", elements),
-                // piracy: a privateer attacks rivals without declaring war, flying no flag.
-                Piracy: ResolveAbility(el, "model.ability.piracy", elements),
-                // carryTreasure: a treasure train holds plundered/discovered gold to cash in.
-                CarryTreasure: ResolveAbility(el, "model.ability.carryTreasure", elements),
+                // captureGoods (naval raider loots a beaten ship's hold), piracy (a privateer attacks rivals without
+                // declaring war), carryTreasure (a treasure train holds plundered gold) and expertScout (the seasoned
+                // scout never vanishes) are now data-driven on UnitType via HasAbility — see Abilities above.
                 // Colony construction: the unit's own required-goods (artillery hammers 192 + tools 40, wagon
                 // train hammers 40); required-population (FreeCol default 1) and required-abilities (collected
                 // down the extends chain, as for buildings — ships' navalUnit-scoped build gate rides here).
@@ -1646,8 +1646,6 @@ public sealed class Ruleset
                     .ToList(),
                 // Experience cap toward an on-the-job expert upgrade (classic: only the free colonist sets 200).
                 MaximumExperience: ResolveIntAttribute(el, "maximum-experience", elements) ?? 0,
-                // Expert scout (seasoned scout): never triggers the vanishing-expedition rumour outcome.
-                ExpertScout: ResolveAbility(el, "model.ability.expertScout", elements),
                 // Lost City Rumour exploration bonus % (seasoned scout +10): tilts rumour odds toward good.
                 ExploreLostCityRumourBonus: el.Elements("modifier")
                     .Where(m => (string?)m.Attribute("id") == "model.modifier.exploreLostCityRumour")
@@ -1790,6 +1788,33 @@ public sealed class Ruleset
             }
         }
         return (int)Math.Round(additive * multiplicative);
+    }
+
+    /// <summary>
+    /// Collects every <c>&lt;ability&gt;</c> a unit type declares (id → value) down the whole <c>extends</c> chain into
+    /// a data-driven map — a child type inherits its parent's abilities, a re-stated id on the nearer element wins, and
+    /// an absent <c>value</c> attribute defaults to true (FreeCol <c>FreeColObject.hasAbility</c> / spec convention).
+    /// For a simple unscoped ability this yields exactly what the old per-ability <see cref="ResolveAbility"/> returned
+    /// (first leaf→root hit, or false when none), so routing a capability through this lookup is byte-identical on the
+    /// classic ruleset. Scoped abilities (e.g. <c>model.ability.build</c>) land in the map keyed by id too; their scope
+    /// handling stays in the dedicated collectors that read them.
+    /// </summary>
+    private static IReadOnlyDictionary<string, bool> CollectAbilitiesUpChain(
+        XElement el, Dictionary<string, XElement> elements)
+    {
+        var result = new Dictionary<string, bool>();
+        for (XElement? current = el; current is not null; current = ParentOf(current, elements))
+        {
+            foreach (XElement ability in current.Elements("ability"))
+            {
+                string id = RequiredAttribute(ability, "id");
+                if (!result.ContainsKey(id)) // leaf → root: the nearer (already-seen) definition wins
+                {
+                    result[id] = (bool?)ability.Attribute("value") ?? true;
+                }
+            }
+        }
+        return result;
     }
 
     /// <summary>

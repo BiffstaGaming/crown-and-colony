@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented (terrain incl. `<gen>` envelopes + resources + defence bonus, unit types incl. offence/defence, goods types incl. market/`stored-as`/`made-from`, building types, founding fathers incl. modifiers/abilities, resource types, native nation + settlement types, European nations + nation-types) |
-| **Last verified** | 2026-06-17 @ unit build fields + building/terrain ambush + build abilities (`86d3c9tp0`) |
+| **Last verified** | 2026-06-21 @ data-driven unit `<ability>` map + `UnitType.HasAbility` (`86d3drpgg`) |
 | **Code** | `game/src/GameLogic/Specification/` |
 | **Tests** | `game/tests/GameLogic.Tests/Specification/RulesetTests.cs`, `NativeNationTypeTests.cs`, `EuropeanNationTypeTests.cs` |
 | **FreeCol reference** | `freecol/data/rules/classic/specification.xml` (copied to `game/data/rules/classic/`) |
@@ -15,12 +15,15 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 
 **Worked example:** the rules file says plains cost 3 movement to enter, take 3 turns to plough, and yield 5 grain when farmed. Our code reads those numbers; it never hard-codes them.
 
+The same "rules are data" principle applies to a unit's *capabilities* — its `<ability>` tags. The rules file is what says a caravel sails the sea, a free colonist can found a town, a privateer is a pirate, and a treasure train carries gold. Our code reads those flags from the file and asks "does this unit have ability X?"; it does not bake "the caravel is a ship" into the program. So a variant could, for instance, make a new unit found colonies just by adding one line to its data — no code change. (Six such capabilities now work this way — see Detailed rules; the rest are being migrated over time.)
+
 ## 2. Detailed rules
 
 - The classic ruleset defines **23 terrain types**: 8 base land, 8 forest variants, hills, mountains, arctic, and 4 water types (ocean, lake, high seas, great river).
 - Flags: `is-forest`, `is-water`, `is-elevation`, `can-settle` (default true; false for mountains and all water), `is-connected` (high-seas access: true for ocean/high seas; **false for great rivers and lakes**).
 - Every type has `basic-move-cost` (3/6/9 scale; 3 = one normal move) and `basic-work-turns`.
 - Production entries: one `unattended` (colony-centre yield), plus attended options per goods type.
+- **Unit abilities are data, consulted by id.** Every `<ability>` a unit type declares is parsed (resolved down the `extends` chain, nearest wins, explicit `value="false"` honoured, absent `value` defaults to true) into a map and asked via `UnitType.HasAbility("model.ability.X")` — exactly FreeCol's `hasAbility`. Six capabilities are now read this way instead of from a hardcoded flag: `navalUnit` (`IsNaval`), `foundColony` (`CanFoundColony`), `captureGoods` (`CaptureGoods`), `piracy` (`Piracy`), `carryTreasure` (`CarryTreasure`), `expertScout` (`ExpertScout`). The classic resolved values are unchanged — caravel naval, free colonist/seasoned scout found, frigate/man-o-war/privateer raid cargo, privateer also pirate, treasure train carries treasure, seasoned scout is the expert scout. (Other unit abilities — `person`, the combat-outcome flags `disposeOnCombatLoss`/`canBeCaptured`/`captureUnits`/`captureEquipment`/`disposeOnAllEquipLost`/`demoteOnAllEquipLost`/`bombard` — still resolve into their own named fields for now; they can migrate to the same map incrementally.)
 
 **Deviations from FreeCol:** none — the file is used verbatim.
 
@@ -29,13 +32,14 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 - `Ruleset.LoadEmbedded(resource)` reads a `specification.xml` **embedded in GameLogic.dll** (identical bytes for game, tests, CI); `Ruleset.LoadClassic()` is the convenience for the classic variant. Which spec loads is chosen by the selected **game variant** (`GameVariant.LoadRuleset`, ADR-018 — see [game-modes](game-modes.md)). `Ruleset.Load(Stream)` parses any spec — the engine is variant-agnostic.
 - Parse: `System.Xml.Linq`; strict — missing ids/costs or duplicate ids throw `RulesetFormatException`.
 - Model: `TerrainType` (immutable record; `ShortName` strips the `model.tile.` prefix), `ProductionEntry`, `GoodsOutput`. Lookup via `Ruleset.Terrain(id)` (throws `KeyNotFoundException` on unknown id).
+- **Data-driven unit abilities (`86d3drpgg`):** `Ruleset.CollectAbilitiesUpChain` walks a unit type's `<ability>` elements down the `extends` chain into `UnitType.Abilities` (id → bool; nearest leaf→root definition wins, absent `value` ⇒ true), mirroring the existing `CollectRequiredAbilitiesUpChain`/`RoleType.GrantedAbilities` pattern. `UnitType.HasAbility(id)` is `Abilities.GetValueOrDefault(id)` (false when undeclared) — FreeCol `FreeColObject.hasAbility`. The convenience properties `IsNaval`/`CanFoundColony`/`CaptureGoods`/`Piracy`/`CarryTreasure`/`ExpertScout` are now computed from `HasAbility(...)` rather than parsed into dedicated record fields, so all existing call sites are unchanged. For a simple unscoped ability this yields byte-identical results to the previous per-ability `ResolveAbility` parse (verified by the full L1/L2 suite). `ResolveAbility` remains for the not-yet-migrated unit abilities and the building abilities. Scoped abilities (e.g. `model.ability.build`) also land in the map keyed by id, but their scope handling stays in the dedicated `CollectBuildUnitTypeScopes`/`GrantsNavalBuildScope` collectors.
 - The copied spec file is upstream data — never edit (see `game/data/README.md`); deviations happen in code or future overlay rulesets.
 
 ## 4. Verification
 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
-| L1 Unit | Always | `RulesetTests`: 23-type count, plains/mountains/water values pinned against the file, defaults, malformed-XML rejection | ✅ |
+| L1 Unit | Always | `RulesetTests`: 23-type count, plains/mountains/water values pinned against the file, defaults, malformed-XML rejection; `UnitTypeAbilities_ParseFromSpecIntoHasAbilityMap` + `DataDrivenUnitAbilities_MatchClassicValues` (the six migrated unit abilities resolve to their classic values via `HasAbility`, undeclared ⇒ false) | ✅ |
 | L2 Scenario | Always | Exercised by every scenario test (all gameplay reads this data) | ✅ |
 | L3 Interaction | No UI | — | — |
 | L4 Visual | No screen | — | — |
@@ -51,6 +55,7 @@ All the game's rule numbers — what each terrain produces, how hard it is to cr
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-21 | Unit `<ability>` tags parsed into a data-driven `UnitType.Abilities` map (`Ruleset.CollectAbilitiesUpChain`, resolved down `extends`; nearest wins, absent `value` ⇒ true) + `UnitType.HasAbility(id)` consult (FreeCol `hasAbility`). Six capabilities migrated from hardcoded parsed-into-named-field flags to `HasAbility` reads — `navalUnit`→`IsNaval`, `foundColony`→`CanFoundColony`, `captureGoods`→`CaptureGoods`, `piracy`→`Piracy`, `carryTreasure`→`CarryTreasure`, `expertScout`→`ExpertScout` — so a variant can toggle them in data; classic resolved values byte-identical (whole suite green, no save bump). Other unit abilities (`person`, combat-outcome flags, `bombard`) and building abilities still use the per-ability `ResolveAbility` path and can migrate incrementally. | P-EPIC (`86d3drpgg`) |
 | 2026-06-21 | `<events>` section parsed (`86d3drpha`): `Ruleset.ParseEvents`/`ParseLimit` read each `<event>` (id + `score-value` + child `<limit>` gates) into `SpecEvent`/`Limit`/`Operand` records (`Specification/Limit.cs`), exposed via `Ruleset.Events`/`Event(id)`. Feeds the generic limit-evaluation engine (see [events-limits](events-limits.md)). Missing `<events>` → empty map (still loads). | P6 (`86d3drpha`) |
 | 2026-06-18 | School data (`86d3c9p7f` slice 1): building `maximum-skill` → `BuildingType.MaximumSkill` (schoolhouse 1/college 2/university 4) + `model.ability.teach` → `BuildingType.Teaches` (inherited down the extends chain); unit `skill-taught` → `UnitType.SkillTaught`/`SkillTaughtOrSelf` (own attribute, non-inherited; only the colonial regular overrides, → veteran soldier); the `model.unitChange.education` table parsed by `(from,to)→turns` into `Ruleset.NeededTurnsOfTraining` + `GetTeachingType` (the generic `<unit-type-change>` parse keys on `from` only, collapsing the many free→expert rows — a parallel parse keeps them all, like the experience table). Drives the teaching system (see [education-schools](education-schools.md)). | Phase 5 (`86d3c9p7f`) |
 | 2026-06-18 | Unit `model.ability.expertScout` → `UnitType.ExpertScout` + `model.modifier.exploreLostCityRumour` value → `UnitType.ExploreLostCityRumourBonus` (% , seasoned scout +10). Drive the Lost City Rumour scout bias — never-vanish + tilt toward good (see [lost-city-rumours](lost-city-rumours.md)) | Phase 5 (`86d3c9uhj`) |

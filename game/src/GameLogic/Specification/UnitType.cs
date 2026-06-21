@@ -25,8 +25,14 @@ public sealed record UnitProductionModifier(string GoodsId, ModifierType Type, d
 /// <param name="Id">Ruleset id, e.g. <c>model.unit.freeColonist</c>.</param>
 /// <param name="Movement">Movement points per turn (spec scale: 3 = one normal move).</param>
 /// <param name="LineOfSight">Sight radius in tiles (fog of war reveal).</param>
-/// <param name="IsNaval">Naval unit: moves on water, not land (<c>model.ability.navalUnit</c>).</param>
-/// <param name="CanFoundColony">May found a colony (<c>model.ability.foundColony</c>).</param>
+/// <param name="Abilities">
+/// Every <c>&lt;ability&gt;</c> this unit type declares, resolved down the <c>extends</c> chain (id → value; the
+/// nearest definition wins, matching FreeCol <c>FreeColObject.hasAbility</c>). Consulted via <see cref="HasAbility"/>;
+/// the simple boolean capabilities (<see cref="IsNaval"/>, <see cref="CanFoundColony"/>, <see cref="CaptureGoods"/>,
+/// <see cref="Piracy"/>, <see cref="CarryTreasure"/>, <see cref="ExpertScout"/>) read straight off this map rather than
+/// a hardcoded flag, so a variant ruleset toggling the <c>&lt;ability&gt;</c> changes the behaviour without a code
+/// change. Classic data is unchanged, so the resolved values are byte-identical to the previous hardcoded reads.
+/// </param>
 /// <param name="RecruitProbability">
 /// Relative weight for the Europe recruitment draw (spec <c>recruit-probability</c>);
 /// 0 means not recruitable. Classic: free colonist / indentured servant / petty
@@ -55,9 +61,6 @@ public sealed record UnitProductionModifier(string GoodsId, ModifierType Type, d
 /// <param name="DisposeOnAllEquipmentLost">Losing the last equipment destroys this unit (<c>model.ability.disposeOnAllEquipLost</c>; king's regular).</param>
 /// <param name="DemoteOnAllEquipmentLost">Losing the last equipment demotes this unit's type (<c>model.ability.demoteOnAllEquipLost</c>; colonial regular).</param>
 /// <param name="Bombard">Artillery-style unit (<c>model.ability.bombard</c>): suffers the −75% artillery-in-the-open penalty when fighting outside a settlement.</param>
-/// <param name="CaptureGoods">Naval raider (<c>model.ability.captureGoods</c>; frigate, privateer, man-o-war): a win lets it plunder as much of the beaten ship's cargo as its hold can take, before that ship sinks or limps to repair.</param>
-/// <param name="Piracy">Privateer (<c>model.ability.piracy</c>): it can attack a rival colonial power <em>without declaring war</em>, and its nationality is hidden from its victims (it flies no flag).</param>
-/// <param name="CarryTreasure">Treasure train (<c>model.ability.carryTreasure</c>): it carries plundered/discovered gold (<see cref="Units.Unit.TreasureAmount"/>) to be cashed in at a colony or in Europe.</param>
 /// <param name="OffenceAdditive">The pre-role offence base (the attribute + the type's own additive offence modifiers, e.g. king's regular +4), before any percentage. A unit's role additive folds onto this before <see cref="OffenceMultiplier"/>.</param>
 /// <param name="DefenceAdditive">The pre-role defence base (attribute + additive defence modifiers), before any percentage.</param>
 /// <param name="OffenceMultiplier">The post-role offence multiplier from the type's own percentage modifiers (veteran soldier +50% → 1.5), applied after the role additive.</param>
@@ -99,10 +102,6 @@ public sealed record UnitProductionModifier(string GoodsId, ModifierType Type, d
 /// experience-upgrade). The per-turn upgrade chance peaks at <c>maximum-experience / (100·maxExp/probability)</c>
 /// once the cap is reached (FreeCol <c>ServerUnit</c> experience upgrade). 0 disables the upgrade for this type.
 /// </param>
-/// <param name="ExpertScout">
-/// An expert scout (spec <c>model.ability.expertScout</c>; classic: the seasoned scout). Such a unit <b>never</b>
-/// triggers the "expedition vanishes" Lost City Rumour outcome (FreeCol <c>LostCityRumour.chooseType</c> allowVanish).
-/// </param>
 /// <param name="ExploreLostCityRumourBonus">
 /// This unit's Lost City Rumour exploration bonus as a percentage (spec <c>model.modifier.exploreLostCityRumour</c>;
 /// classic: the seasoned scout +10, every other type 0). Tilts a rumour's odds toward good: the good chance is scaled
@@ -118,8 +117,7 @@ public sealed record UnitType(
     string Id,
     int Movement,
     int LineOfSight,
-    bool IsNaval,
-    bool CanFoundColony,
+    IReadOnlyDictionary<string, bool> Abilities,
     int RecruitProbability = 0,
     bool IsPerson = false,
     int Space = 0,
@@ -139,9 +137,6 @@ public sealed record UnitType(
     double OffenceMultiplier = 1,
     double DefenceMultiplier = 1,
     int MaxHitPoints = 1,
-    bool CaptureGoods = false,
-    bool Piracy = false,
-    bool CarryTreasure = false,
     IReadOnlyList<GoodsOutput>? BuildCost = null,
     int RequiredPopulation = 1,
     IReadOnlyDictionary<string, bool>? RequiredAbilities = null,
@@ -150,7 +145,6 @@ public sealed record UnitType(
     string? ExpertProduction = null,
     IReadOnlyList<UnitProductionModifier>? ProductionModifiers = null,
     int MaximumExperience = 0,
-    bool ExpertScout = false,
     int ExploreLostCityRumourBonus = 0,
     string? SkillTaught = null)
 {
@@ -160,6 +154,45 @@ public sealed record UnitType(
 
     /// <summary>Short name derived from the id: <c>model.unit.freeColonist</c> → <c>freeColonist</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
+
+    /// <summary>
+    /// Whether this unit type has the given <c>&lt;ability&gt;</c> set true (FreeCol <c>FreeColObject.hasAbility</c>):
+    /// reads the value parsed from the spec (resolved down the <c>extends</c> chain), defaulting to false when the
+    /// type declares no such ability. This is the data-driven consult that replaces hardcoded type capability flags.
+    /// </summary>
+    /// <param name="abilityId">The ability id, e.g. <c>model.ability.navalUnit</c>.</param>
+    public bool HasAbility(string abilityId) => Abilities.GetValueOrDefault(abilityId);
+
+    /// <summary>Naval unit: moves on water, not land (data-driven <c>model.ability.navalUnit</c>).</summary>
+    public bool IsNaval => HasAbility("model.ability.navalUnit");
+
+    /// <summary>May found a colony (data-driven <c>model.ability.foundColony</c>).</summary>
+    public bool CanFoundColony => HasAbility("model.ability.foundColony");
+
+    /// <summary>
+    /// Naval raider (data-driven <c>model.ability.captureGoods</c>; frigate, privateer, man-o-war): a win lets it
+    /// plunder as much of the beaten ship's cargo as its hold can take, before that ship sinks or limps to repair.
+    /// </summary>
+    public bool CaptureGoods => HasAbility("model.ability.captureGoods");
+
+    /// <summary>
+    /// Privateer (data-driven <c>model.ability.piracy</c>): it can attack a rival colonial power <em>without
+    /// declaring war</em>, and its nationality is hidden from its victims (it flies no flag).
+    /// </summary>
+    public bool Piracy => HasAbility("model.ability.piracy");
+
+    /// <summary>
+    /// Treasure train (data-driven <c>model.ability.carryTreasure</c>): it carries plundered/discovered gold
+    /// (<see cref="Units.Unit.TreasureAmount"/>) to be cashed in at a colony or in Europe.
+    /// </summary>
+    public bool CarryTreasure => HasAbility("model.ability.carryTreasure");
+
+    /// <summary>
+    /// An expert scout (data-driven <c>model.ability.expertScout</c>; classic: the seasoned scout). Such a unit
+    /// <b>never</b> triggers the "expedition vanishes" Lost City Rumour outcome (FreeCol <c>LostCityRumour.chooseType</c>
+    /// allowVanish).
+    /// </summary>
+    public bool ExpertScout => HasAbility("model.ability.expertScout");
 
     /// <summary>Goods needed to build this unit in a colony (empty when it cannot be built).</summary>
     public IReadOnlyList<GoodsOutput> BuildCostOrEmpty => BuildCost ?? NoCost;
