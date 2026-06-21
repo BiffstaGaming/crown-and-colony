@@ -112,6 +112,11 @@ public static class DifficultyLevels
 /// tax cap/spread, mercenary pricing, support size, boycott factor and the REF base composition. See [monarchy],
 /// [royal-expeditionary-force].
 /// </param>
+/// <param name="Ai">
+/// The foreign-power (rival) AI tuning — the colony cap it expands to, its Europe spend reserve, and its offensive
+/// seek/travel range ladder. A faithful-subset: FreeCol hardcodes all three (no <c>model.difficulty.*</c> option), so
+/// they are constant across the shipped levels but now data-overridable. See [players].
+/// </param>
 public sealed record DifficultyOptions(
     int FoundingFatherFactor,
     int UnitsThatUseNoBells,
@@ -129,7 +134,8 @@ public sealed record DifficultyOptions(
     int ArtilleryPriceIncrease,
     int TreasureTransportFee,
     int ShipTradePenalty,
-    MonarchOptions Monarch)
+    MonarchOptions Monarch,
+    AiTuning Ai)
 {
     /// <summary>
     /// The classic <c>model.difficulty.medium</c> values — the fallback when a spec omits the difficulty group or a
@@ -152,5 +158,6 @@ public sealed record DifficultyOptions(
         ArtilleryPriceIncrease: 100,
         TreasureTransportFee: 60,
         ShipTradePenalty: -30,
-        Monarch: MonarchOptions.ClassicMedium);
+        Monarch: MonarchOptions.ClassicMedium,
+        Ai: AiTuning.ClassicMedium);
 }

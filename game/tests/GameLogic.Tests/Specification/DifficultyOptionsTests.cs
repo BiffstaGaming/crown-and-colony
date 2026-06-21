@@ -221,6 +221,57 @@ public class DifficultyOptionsTests
         Assert.Equal(60, Ruleset.LoadClassic().Difficulty.TreasureTransportFee);
     }
 
+    // ── Foreign-power AI tuning (86d3drn56: colony cap, Europe spend floor, seek/travel ladder) ──────────────────────
+    // A faithful-subset: FreeCol hardcodes all three (no model.difficulty.* option), so they are level-invariant. The
+    // tests pin the classic-medium values so a future change to the AI constants stays a deliberate, visible edit.
+
+    [Fact]
+    public void AiTuning_ClassicMedium_HasTheHistoricalConstants()
+    {
+        // The values formerly hardcoded as Game.cs consts: MaxAiColonies=3, AiEuropeSpendFloor=1500, SeekRangeLadder=8/12/16.
+        AiTuning ai = AiTuning.ClassicMedium;
+        Assert.Equal(3, ai.MaxColonies);
+        Assert.Equal(1500, ai.EuropeSpendFloor);
+        Assert.Equal(new[] { 8, 12, 16 }, ai.SeekRangeLadder);
+    }
+
+    [Fact]
+    public void DifficultyOptions_CarriesTheClassicMediumAiTuning()
+    {
+        Assert.Same(AiTuning.ClassicMedium, DifficultyOptions.ClassicMedium.Ai);
+    }
+
+    [Fact]
+    public void ClassicRuleset_AppliesTheClassicMediumAiTuning()
+    {
+        // FreeCol exposes no per-difficulty AI option, so the parsed ruleset carries the level-invariant classic values.
+        AiTuning ai = Ruleset.LoadClassic().Difficulty.Ai;
+        Assert.Equal(3, ai.MaxColonies);
+        Assert.Equal(1500, ai.EuropeSpendFloor);
+        Assert.Equal(new[] { 8, 12, 16 }, ai.SeekRangeLadder);
+    }
+
+    [Theory]
+    [InlineData("model.difficulty.veryEasy")]
+    [InlineData("model.difficulty.hard")]
+    [InlineData("model.difficulty.veryHard")]
+    public void AiTuning_IsLevelInvariant_AcrossEveryClassicLevel(string levelId)
+    {
+        // No FreeCol option scales these, so every level reads the same classic-medium values (data-overridable, but the
+        // shipped spec never overrides them) — proving the faithful-subset claim, not just the default.
+        AiTuning ai = Ruleset.LoadClassic(levelId).Difficulty.Ai;
+        Assert.Equal(3, ai.MaxColonies);
+        Assert.Equal(1500, ai.EuropeSpendFloor);
+        Assert.Equal(new[] { 8, 12, 16 }, ai.SeekRangeLadder);
+    }
+
+    [Fact]
+    public void GameMaxAiColoniesAlias_MatchesTheDifficultyValue()
+    {
+        // The internal static test alias must equal the live difficulty value the founding checks read.
+        Assert.Equal(Ruleset.LoadClassic().Difficulty.Ai.MaxColonies, Game.MaxAiColonies);
+    }
+
     // ── Player-selectable + persisted difficulty level (86d3c9y08) ───────────────────────────────────────────────────
 
     [Fact]

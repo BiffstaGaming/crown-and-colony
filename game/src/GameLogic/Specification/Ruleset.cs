@@ -895,7 +895,11 @@ public sealed class Ruleset
                 RefBaseArtillery: RefSize("model.option.refSize.artillery", mon.RefBaseArtillery),
                 RefBaseManOWar: RefSize("model.option.refSize.menOfWar", mon.RefBaseManOWar),
                 WarSupportForce: WarSupportForce(mon.WarSupportForce),
-                WarSupportGold: IntOption("model.option.warSupportGold", mon.WarSupportGold)));
+                WarSupportGold: IntOption("model.option.warSupportGold", mon.WarSupportGold)),
+            // Ai: FreeCol scales none of the rival-AI constants by difficulty (the colony cap, seek ladder and our
+            // Europe spend floor are all hardcoded in EuropeanAIPlayer — see AiTuning), so there is no spec option to
+            // read. Kept at the classic-medium value across every level (the ArrearsFactor pattern), data-overridable.
+            Ai: m.Ai);
     }
 
     /// <summary>

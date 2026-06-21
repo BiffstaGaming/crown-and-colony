@@ -3218,12 +3218,14 @@ public sealed partial class Game
     /// <summary>How far (Chebyshev) a foreign power lands from the human's start, so rivals stay outside the human's view.</summary>
     private const int ForeignLandingMinDistance = 6;
 
-    /// <summary>Colonies a foreign power's AI founds before its remaining colonists explore instead (FP-4 minimal AI).
+    /// <summary>Colonies a foreign power's AI founds before its remaining colonists explore instead (FP-4 minimal AI;
+    /// difficulty-scoped via <see cref="DifficultyOptions.Ai"/>, classic value 3 — see <see cref="AiTuning"/>).
     /// Lifted from 1 to 3 once the colony economy (`86d3c9vmr`: food-first tile plan + building-worker fill) was proven
     /// to keep multiple AI colonies fed and solvent under the soak (no starvation / negative treasury at 25 seeds ×
-    /// 200 turns). Bounded in practice by each power's handful of founder colonists. <c>internal</c> so AI tests can
-    /// drive a power to its cap without hard-coding the number.</summary>
-    internal const int MaxAiColonies = 3;
+    /// 200 turns). Bounded in practice by each power's handful of founder colonists. The instance-level founding checks
+    /// read <c>Ruleset.Difficulty.Ai.MaxColonies</c>; this <c>internal static</c> alias exposes the (level-invariant)
+    /// classic value so AI tests can drive a power to its cap without hard-coding the number.</summary>
+    internal static int MaxAiColonies => DifficultyOptions.ClassicMedium.Ai.MaxColonies;
 
     /// <summary>
     /// Minimum spacing (Chebyshev) between two foreign powers' landing anchors, so the rivals spread along the coast
@@ -6395,8 +6397,10 @@ public sealed partial class Game
     private int OwnPersonsInEurope(Player player) => _units.Count(u =>
         u.Location == UnitLocation.InEurope && u.Type.IsPerson && !u.IsAboard && IsOwnedBy(u, player));
 
-    /// <summary>Gold a foreign power keeps in reserve before it splurges on Europe units — so a poor power keeps recruiting/building rather than draining its treasury (a documented AI budget floor, not a FreeCol constant).</summary>
-    private const int AiEuropeSpendFloor = 1500;
+    /// <summary>Gold a foreign power keeps in reserve before it splurges on Europe units — so a poor power keeps
+    /// recruiting/building rather than draining its treasury (a documented AI budget floor, not a FreeCol constant;
+    /// difficulty-scoped via <see cref="DifficultyOptions.Ai"/>, classic value 1500 — see <see cref="AiTuning"/>).</summary>
+    private int AiEuropeSpendFloor => Ruleset.Difficulty.Ai.EuropeSpendFloor;
 
     /// <summary>
     /// The flush-treasury Europe spend (<c>86d3c9vmr</c>, FreeCol <c>EuropeanAIPlayer.trainAIUnitInEurope</c> + the
@@ -6766,7 +6770,7 @@ public sealed partial class Game
                     continue; // already standing guard in an own colony
                 }
                 bool willFound = unit.Type.CanFoundColony
-                    && ColoniesOf(power).Count() < MaxAiColonies && CheckFoundColony(unit).Allowed;
+                    && ColoniesOf(power).Count() < Ruleset.Difficulty.Ai.MaxColonies && CheckFoundColony(unit).Allowed;
                 if (!willFound && NearestUndefendedOwnColony(power, unit) is { } garrisonTile
                     && StepToward(power, unit, garrisonTile) is { } toGarrison)
                 {
@@ -6803,7 +6807,7 @@ public sealed partial class Game
                 continue; // non-founders (e.g. an idle soldier at peace) wait
             }
             // A tooled pioneer never founds (it would destroy its 20 tools); it improves, or — out of plans — explores.
-            if (!IsPioneer(unit) && ColoniesOf(power).Count() < MaxAiColonies && CheckFoundColony(unit).Allowed)
+            if (!IsPioneer(unit) && ColoniesOf(power).Count() < Ruleset.Difficulty.Ai.MaxColonies && CheckFoundColony(unit).Allowed)
             {
                 FoundColony(unit);
                 continue;
@@ -7623,8 +7627,9 @@ public sealed partial class Game
     private const int SeekBaseValue = 1020;
     private const int SeekDistancePenalty = 100;
 
-    /// <summary>The offensive seek-and-destroy range ladder (FreeCol's 8/12/16): the first gate yielding any eligible target wins.</summary>
-    private static readonly int[] SeekRangeLadder = [8, 12, 16];
+    /// <summary>The offensive seek-and-destroy range ladder (FreeCol's 8/12/16): the first gate yielding any eligible
+    /// target wins. Difficulty-scoped via <see cref="DifficultyOptions.Ai"/> (classic 8/12/16 — see <see cref="AiTuning"/>).</summary>
+    private IReadOnlyList<int> SeekRangeLadder => Ruleset.Difficulty.Ai.SeekRangeLadder;
 
     /// <summary>
     /// The best scored attack target for an armed foreign-power unit at war with the human (FP-6a, FreeCol
