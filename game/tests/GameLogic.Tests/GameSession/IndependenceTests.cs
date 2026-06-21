@@ -903,8 +903,12 @@ public class IndependenceTests
 
         Colony strongColony = FoundColonyFor(game, strong);
         Colony weakColony = FoundColonyFor(game, weak);
-        strongColony.Liberty = Colony.LibertyPerRebel * strongColony.Population;     // SoL 100 → dominant
-        weakColony.Liberty = 0;                                                       // SoL 0 → fading
+        // Robust to whatever colonies the OTHER AI powers founded over the 108-turn advance: make EVERY AI colony
+        // dominant (SoL 100), then drop the fading power's colonies alone to 0. So `weak` is the unique fading power
+        // and `strong` (the lowest-id AI power, hence the lowest-id SoL-100 power) the unique dominant — regardless of
+        // how the AI evolved. (RunSpanishSuccession ranks across all AI colonial powers with colonies, not just two.)
+        foreach (Colony col in AiColonies(game)) col.Liberty = Colony.LibertyPerRebel * col.Population; // SoL 100
+        foreach (Colony col in game.Colonies.Where(c => c.OwnerId == weak.PlayerId)) col.Liberty = 0;   // weak fades
         Unit weakUnit = SpawnLandUnitFor(game, weak);
         int weakColonyId = weakColony.Id;
         int weakUnitId = weakUnit.Id;
@@ -915,7 +919,7 @@ public class IndependenceTests
         Assert.True(game.SpanishSuccessionDone);
         Assert.Equal(strong.PlayerId, game.Colonies.Single(c => c.Id == weakColonyId).OwnerId); // colony ceded
         Assert.Equal(strong.PlayerId, game.Units.Single(u => u.Id == weakUnitId).OwnerId);      // unit ceded
-        Assert.Empty(game.Colonies.Where(c => c.OwnerId == weak.PlayerId));                     // the fading power is emptied
+        Assert.DoesNotContain(game.Colonies, c => c.OwnerId == weak.PlayerId);                  // the fading power is emptied
     }
 
     [Fact]
@@ -929,8 +933,9 @@ public class IndependenceTests
             .OrderBy(p => p.PlayerId).Take(2).ToList();
         Colony c0 = FoundColonyFor(game, powers[0]);
         Colony c1 = FoundColonyFor(game, powers[1]);
-        c0.Liberty = Colony.LibertyPerRebel * c0.Population; // both at SoL 100 → no fading power
-        c1.Liberty = Colony.LibertyPerRebel * c1.Population;
+        // Robust: make EVERY AI colony dominant (SoL 100) — including any the other AI powers founded during the
+        // advance — so no fading (SoL < 50) power exists anywhere and the succession cannot consolidate.
+        foreach (Colony col in AiColonies(game)) col.Liberty = Colony.LibertyPerRebel * col.Population;
 
         game.EndTurn();
 
@@ -946,6 +951,11 @@ public class IndependenceTests
             game.EndTurn();
         }
     }
+
+    /// <summary>Every colony owned by a non-human colonial (European) AI power — the players the Spanish Succession ranks.</summary>
+    private static IEnumerable<Colony> AiColonies(Game game) =>
+        game.Colonies.Where(c => game.Players.Any(p =>
+            p.PlayerId == c.OwnerId && !p.IsHuman && p.PlayerType == PlayerType.Colonial));
 
     /// <summary>Founds a colony owned by <paramref name="power"/> on the first free coastal land tile not adjacent to an existing colony (reusing a spawned colonist).</summary>
     private static Colony FoundColonyFor(Game game, Player power)

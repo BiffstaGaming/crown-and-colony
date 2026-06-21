@@ -1,4 +1,5 @@
 using CrownAndColony.GameLogic.Colonies;
+using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Trade;
