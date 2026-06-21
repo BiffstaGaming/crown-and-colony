@@ -83,6 +83,6 @@ public class WorldSizeOptionsTests
         Assert.Equal(
             game.Map.AllPositions().Select(p => game.Map.TerrainAt(p).Id),
             restored.Map.AllPositions().Select(p => restored.Map.TerrainAt(p).Id));
-        Assert.Equal(49, SaveGame.CurrentVersion); // the map-size feature itself added no save field (later bumps are unrelated slices)
+        Assert.Equal(50, SaveGame.CurrentVersion); // the map-size feature itself added no save field (later bumps are unrelated slices)
     }
 }

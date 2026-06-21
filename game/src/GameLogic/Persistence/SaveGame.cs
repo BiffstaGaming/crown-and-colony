@@ -19,7 +19,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 49;
+    public const int CurrentVersion = 50;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -125,6 +125,11 @@ public sealed record SaveGame
     /// <b>omits</b> the field (serializer <c>WhenWritingNull</c>), so a default (nation-less) game stays byte-identical to
     /// v48 and pre-v49 saves load the human nation-less (the previously-always-null value). Only a picked nation writes
     /// the id; the version bump records that the human's nation is now a meaningful, selectable value.
+    /// v50 added a unit's accrued <b>attrition</b> (<see cref="SavedUnit.Attrition"/> — turns spent standing in the open
+    /// wilderness, 86d3drmzp): additive + omitted when 0, so a unit that has accrued none (every unit in the classic
+    /// default game, where only the Indian Convert is even subject to attrition and a fresh game has none wandering the
+    /// open map) is byte-identical to v49, and pre-v50 saves load every unit at attrition 0. The cap (FreeCol
+    /// <c>UnitType.getMaximumAttrition</c>) is re-derived from the ruleset on load, not persisted.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -297,7 +302,9 @@ public sealed record SaveGame
                     // Trade-route assignment (v43); omitted for a route-less unit so it stays byte-identical to v42.
                     u.TradeRouteId, u.TradeRouteStopIndex == 0 ? null : u.TradeRouteStopIndex,
                     // In-progress pioneer improvement (v48); both omitted when not improving so a unit with no build order stays byte-identical to v47.
-                    u.WorkImprovementId, u.WorkTurnsLeft == 0 ? null : u.WorkTurnsLeft))
+                    u.WorkImprovementId, u.WorkTurnsLeft == 0 ? null : u.WorkTurnsLeft,
+                    // Accrued attrition (v50); omitted for the common 0 so a unit that has wasted no turns in the open stays byte-identical to v49.
+                    u.Attrition == 0 ? null : u.Attrition))
                 .ToList(),
             Colonies = game.Colonies
                 .Select(c => new SavedColony(
@@ -469,7 +476,8 @@ public sealed record SaveGame
                 u.TreasureAmount ?? 0,      // pre-v27 / non-treasure → 0
                 u.DestX is { } dx && u.DestY is { } dy ? new Position(dx, dy) : (Position?)null, // pre-v36 / no goto → null
                 u.TradeRouteId, u.TradeRouteStop ?? 0, // pre-v43 / route-less → null/0
-                u.WorkImprovement, u.WorkTurnsLeft ?? 0)), // pre-v48 / not improving → null/0
+                u.WorkImprovement, u.WorkTurnsLeft ?? 0, // pre-v48 / not improving → null/0
+                u.Attrition ?? 0)), // pre-v50 / no attrition → 0
             Colonies?.Select(c =>
             {
                 var colony = new CrownAndColony.GameLogic.Colonies.Colony(
@@ -829,6 +837,7 @@ public sealed record SavedNativeSettlement(
 /// <param name="TradeRouteStop">The carrier's current route stop index (null/0 = the first stop; v43+). Omitted when 0.</param>
 /// <param name="WorkImprovement">The tile-improvement type id this pioneer is building (null = not improving; v48+). Omitted when not improving, so a unit with no build order serializes byte-identically to v47.</param>
 /// <param name="WorkTurnsLeft">Turns of work left on the in-progress improvement (null/0 = none; v48+). Omitted when 0.</param>
+/// <param name="Attrition">Turns this unit has spent standing in the open wilderness (null/0 = none; v50+). Nullable so a unit that has wasted no turns in the open serializes byte-identically to v49.</param>
 public sealed record SavedUnit(
     int Id, string? TypeId, int X, int Y, int MovementLeft,
     int Location = 0, int SailTurns = 0, IReadOnlyDictionary<string, int>? Cargo = null,
@@ -837,7 +846,8 @@ public sealed record SavedUnit(
     int? OwnerId = null, int? RepairTurns = null, int? Orders = null, int? TreasureAmount = null,
     int? DestX = null, int? DestY = null,
     int? TradeRouteId = null, int? TradeRouteStop = null,
-    string? WorkImprovement = null, int? WorkTurnsLeft = null);
+    string? WorkImprovement = null, int? WorkTurnsLeft = null,
+    int? Attrition = null);
 
 /// <summary>
 /// A player inside a <see cref="SaveGame"/> (v20+). Holds the player-scoped state that used to sit as

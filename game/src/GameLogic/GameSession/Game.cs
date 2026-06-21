@@ -93,6 +93,7 @@ public sealed partial class Game
     private readonly List<ColonyGiftNotice> _colonyGiftNotices = []; // transient: the most recent turn's friendly native gifts to human colonies (not saved)
     private readonly List<CustomHouseSaleNotice> _customHouseSaleNotices = []; // transient: the most recent turn's custom-house auto-sales from human colonies (not saved)
     private readonly List<RumourNotice> _rumourNotices = []; // transient: Lost City Rumours the human resolved this turn (non-mounds outcomes; not saved)
+    private readonly List<AttritionNotice> _attritionNotices = []; // transient: the most recent turn's units lost to attrition in the open (not saved)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
     private FountainResult _lastFountainResult; // transient: how the most recent FoY burst was handled — picks the player-facing message in ExploreRumour
@@ -661,6 +662,15 @@ public sealed partial class Game
     /// the UI, ADR-006).
     /// </summary>
     public IReadOnlyList<RumourNotice> RumourNotices => _rumourNotices;
+
+    /// <summary>
+    /// Units a player lost to <b>attrition</b> — wasting away after too many turns standing in the open wilderness —
+    /// during the most recent <see cref="EndTurn"/> (86d3drmzp). Transient per-turn UI scratch (refreshed each
+    /// <c>EndTurn</c>'s attrition step, never saved); the presentation reads it after the turn resolves to tell the
+    /// player "your X wasted away in the wilderness near Y" (FreeCol's <c>model.unit.attrition</c> UNIT_LOST message).
+    /// In the classic ruleset only the Indian Convert is ever subject to attrition, so this is normally empty.
+    /// </summary>
+    public IReadOnlyList<AttritionNotice> AttritionNotices => _attritionNotices;
 
     /// <summary>Drains and clears the collected <see cref="RumourNotices"/> (the presentation reads them once, after a move that explored a rumour).</summary>
     public IReadOnlyList<RumourNotice> TakeRumourNotices()
@@ -3232,7 +3242,7 @@ public sealed partial class Game
             int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
             int repairTurns, UnitOrders orders, int treasureAmount, Position? destination,
             int? tradeRouteId, int tradeRouteStopIndex,
-            string? workImprovementId, int workTurnsLeft)> units,
+            string? workImprovementId, int workTurnsLeft, int attrition)> units,
         IEnumerable<Colony>? colonies = null,
         IEnumerable<NativeSettlement>? nativeSettlements = null,
         AutoExportMode autoExportMode = AutoExportMode.PerGood,
@@ -3265,7 +3275,7 @@ public sealed partial class Game
                   int? carrierId, string? ownerNationId, string? roleId, int roleCount, int ownerId,
                   int repairTurns, UnitOrders orders, int treasureAmount, Position? destination,
                   int? tradeRouteId, int tradeRouteStopIndex,
-                  string? workImprovementId, int workTurnsLeft) in units)
+                  string? workImprovementId, int workTurnsLeft, int attrition) in units)
         {
             var unit = new Unit(id, type, position)
             {
@@ -3284,6 +3294,7 @@ public sealed partial class Game
                 TradeRouteStopIndex = tradeRouteStopIndex,
                 WorkImprovementId = workImprovementId,
                 WorkTurnsLeft = workTurnsLeft,
+                Attrition = attrition,
             };
             unit.SetTreasureAmount(treasureAmount); // internal method, like AddCargo — set after the initializer
             foreach ((string goodsId, int amount) in cargo ?? new Dictionary<string, int>())
@@ -5633,6 +5644,7 @@ public sealed partial class Game
         {
             DecayNativeAlarm(settlement);
         }
+        ProcessAttrition();          // units left standing in the open wilderness waste away (FreeCol csNewTurn attrition) — RNG-free, dormant in classic except the Indian Convert
         foreach (Unit unit in _units)
         {
             if (unit.Orders == UnitOrders.Fortifying)
@@ -5643,6 +5655,66 @@ public sealed partial class Game
             unit.MovementLeft = unit.IsUnderRepair ? 0 : InitialMovement(unit); // base + role bonus (dragoon/scout +9)
         }
         Turn++;
+    }
+
+    /// <summary>
+    /// The classic Indian Convert's maximum attrition (classic spec <c>model.unit.indianConvert
+    /// maximum-attrition="8"</c>): a convert that ends 9 consecutive turns standing in the open wilderness wastes
+    /// away. It is the <b>only</b> classic unit type with a finite cap — every other type's maximum attrition is
+    /// infinite (FreeCol <c>UnitType.INFINITY</c>), so no other classic unit ever accrues attrition.
+    /// </summary>
+    /// <remarks>
+    /// This constant is a deliberate, documented stopgap: the faithful source of the cap is the unit type's
+    /// <c>maximum-attrition</c> attribute (FreeCol <c>UnitType.getMaximumAttrition</c>), which our
+    /// <see cref="UnitType"/> does not yet parse. The mechanic below is data-shaped — it routes through
+    /// <see cref="MaxAttritionOf"/>, a single lookup point — so promoting it to a real parsed <c>UnitType</c>
+    /// field (the proper variant-friendly fix, follow-up 86d3drmzp) is a one-line change there. See the doc.
+    /// </remarks>
+    private const int IndianConvertMaximumAttrition = 8;
+
+    /// <summary>
+    /// The maximum attrition a unit of this type may accumulate before it wastes away (FreeCol
+    /// <c>UnitType.getMaximumAttrition</c>), or <see cref="int.MaxValue"/> (FreeCol <c>INFINITY</c>) when the type
+    /// is not subject to attrition at all — in which case a unit of that type never accrues. In the classic ruleset
+    /// only the Indian Convert has a finite cap (<see cref="IndianConvertMaximumAttrition"/>).
+    /// </summary>
+    private int MaxAttritionOf(UnitType type) =>
+        type.Id == IndianConvertUnitTypeId ? IndianConvertMaximumAttrition : int.MaxValue;
+
+    /// <summary>
+    /// The shared world's per-turn <b>attrition</b> step (FreeCol <c>ServerUnit.csNewTurn</c>): a unit ending the
+    /// turn on a settlement-less map tile, and whose type has a finite <see cref="MaxAttritionOf"/>, gains +1
+    /// attrition; once its attrition <em>exceeds</em> that maximum the unit wastes away and is removed, its owner
+    /// notified (<see cref="AttritionNotice"/>). A unit anywhere else — in a colony or native settlement, sailing,
+    /// in Europe, or aboard a ship — has its attrition reset to 0 (FreeCol's <c>else setAttrition(0)</c>). RNG-free
+    /// and self-contained; runs once per <see cref="EndTurn"/> after the per-player turns, in the world-advance
+    /// phase. In the classic ruleset this is effectively dormant: only the Indian Convert is subject to attrition,
+    /// so a typical game never destroys a unit here and the default game stays byte-identical (the field omits
+    /// when 0).
+    /// </summary>
+    private void ProcessAttrition()
+    {
+        _attritionNotices.Clear(); // refresh each turn (transient UI scratch; never saved)
+        // Snapshot: removing a wasted unit mutates _units mid-iteration.
+        foreach (Unit unit in _units.ToList())
+        {
+            // "In the open" = on a map tile (not sailing/Europe), not aboard a ship, and no settlement on that tile.
+            bool inTheOpen = unit.IsOnMap
+                && ColonyAt(unit.Position) is null
+                && NativeSettlementAt(unit.Position) is null;
+            if (!inTheOpen || MaxAttritionOf(unit.Type) == int.MaxValue)
+            {
+                unit.Attrition = 0; // sheltered (or not subject to attrition) → the count resets / stays 0
+                continue;
+            }
+
+            unit.Attrition++;
+            if (unit.Attrition > MaxAttritionOf(unit.Type))
+            {
+                _attritionNotices.Add(new AttritionNotice(unit.OwnerId, unit.Type.Id, unit.Position));
+                _units.Remove(unit); // the unit wastes away in the wilderness (FreeCol csRemove + model.unit.attrition message)
+            }
+        }
     }
 
     /// <summary>
@@ -9420,3 +9492,20 @@ public sealed class InvalidMoveException : Exception
     /// <summary>Creates the exception with the player-facing reason.</summary>
     public InvalidMoveException(string message) : base(message) { }
 }
+
+/// <summary>
+/// A record of a unit lost to <b>attrition</b> — wasting away after too many turns standing in the open
+/// wilderness — during the world-advance phase of <see cref="Game.EndTurn"/> (86d3drmzp; FreeCol
+/// <c>ServerUnit.csNewTurn</c> + the <c>model.unit.attrition</c> UNIT_LOST message). The unit is removed inside the
+/// per-turn attrition step with no return value the UI can read, so the game collects these notices and the
+/// presentation surfaces them after the turn ("your X wasted away in the wilderness").
+/// </summary>
+/// <remarks>
+/// Transient per-turn UI scratch: refreshed at the start of every attrition step and never saved or restored (no
+/// save-format impact). Fields are raw ids/positions — formatting the English message is the presentation layer's
+/// job (ADR-006).
+/// </remarks>
+/// <param name="OwnerId">The owning colonial player's id (0 = the human) of the unit that wasted away.</param>
+/// <param name="UnitTypeId">The lost unit's type id (e.g. <c>model.unit.indianConvert</c>).</param>
+/// <param name="Position">The open tile the unit wasted away on.</param>
+public readonly record struct AttritionNotice(int OwnerId, string UnitTypeId, Position Position);

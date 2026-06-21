@@ -215,4 +215,15 @@ public sealed class Unit
 
     /// <summary>Sets the carried treasure (negative floors to 0); only <see cref="GameSession.Game"/> mutates it.</summary>
     internal void SetTreasureAmount(int amount) => _treasureAmount = Math.Max(0, amount);
+
+    /// <summary>
+    /// Turns this unit has spent standing in the open wilderness — its accrued <b>attrition</b> (FreeCol
+    /// <c>Unit.attrition</c>, "the number of turns it has spent in the open"). A unit whose <see cref="UnitType"/>
+    /// has a finite maximum attrition gains +1 each world turn it ends on a settlement-less map tile; when the total
+    /// exceeds that maximum the unit wastes away and is removed. Entering a settlement (or sailing to Europe) resets
+    /// it to 0. In the classic ruleset only the Indian Convert (<c>maximum-attrition="8"</c>) is subject to this — every
+    /// other unit type's maximum attrition is infinite, so it never accrues and stays at 0. Only
+    /// <see cref="GameSession.Game"/>'s per-turn attrition step mutates it; persisted omit-when-0 (save v50).
+    /// </summary>
+    public int Attrition { get; internal set; }
 }
