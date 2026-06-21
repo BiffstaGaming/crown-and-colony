@@ -48,7 +48,7 @@ GdUnit4Net scene runner: load the actual scene, simulate input, await signals, a
 
 ### L4 — Visual regression (required for each game screen)
 - Goldens are PNGs committed under `game/tests/visual/goldens/`, rendered at a **fixed resolution, fixed theme, fixed seed, software renderer**.
-- Each golden has a definition file from `templates/TEMPLATE-visual-test.md` (scene, fixture state, tolerance, what a human checks on failure).
+- Each golden has a definition file from `templates/TEMPLATE-visual-test.md` (scene, fixture state, tolerance, what a human checks on failure). Current definition sets: [map-goldens.md](visual-tests/map-goldens.md) (the map view), [menu-goldens.md](visual-tests/menu-goldens.md) (the front-end menus), and [ui-panel-goldens.md](visual-tests/ui-panel-goldens.md) (the in-game colony + Europe management screens).
 - Diff with per-pixel tolerance + max-differing-pixel threshold to absorb minor AA/font noise; CI uploads baseline/actual/diff artifacts on failure.
 - **Keep this suite small and targeted**: a handful of curated states per key screen (map, colony, Europe, …). If it can be asserted as state, it belongs in L1–L3, not here.
 - Intentional UI change → regenerate goldens via the update script; new goldens are reviewed in the PR like any code change.

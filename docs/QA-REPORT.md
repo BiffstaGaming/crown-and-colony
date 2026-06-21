@@ -27,10 +27,16 @@ dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings       
 
 ## Visual goldens (committed screenshots)
 
-These are the reference images the L4 suite diffs every render against. A push that changes the rendered output fails CI unless the golden is deliberately regenerated. See [map-goldens.md](visual-tests/map-goldens.md) and [menu-goldens.md](visual-tests/menu-goldens.md) for the per-golden definitions (scene, seed, tolerance, human-check list).
+These are the reference images the L4 suite diffs every render against. A push that changes the rendered output fails CI unless the golden is deliberately regenerated. See [map-goldens.md](visual-tests/map-goldens.md), [menu-goldens.md](visual-tests/menu-goldens.md) and [ui-panel-goldens.md](visual-tests/ui-panel-goldens.md) for the per-golden definitions (scene, seed, tolerance, human-check list).
+
+### `colony-panel-seed424242`
+![colony-panel-seed424242 golden](../game/tests/visual/goldens/colony-panel-seed424242.png)
 
 ### `colony-seed424242`
 ![colony-seed424242 golden](../game/tests/visual/goldens/colony-seed424242.png)
+
+### `europe-panel`
+![europe-panel golden](../game/tests/visual/goldens/europe-panel.png)
 
 ### `info-popup`
 ![info-popup golden](../game/tests/visual/goldens/info-popup.png)
