@@ -205,6 +205,15 @@ public sealed class NativeSettlement
         }
     }
 
+    /// <summary>
+    /// The turn number of the last tribute this settlement paid (FreeCol <c>IndianSettlement.lastTribute</c>), or 0 if
+    /// never demanded of. A demander can only extract tribute again once <see cref="GameSession.Game.TributeCooldownTurns"/>
+    /// turns have passed (<c>lastTribute + 5 &lt; year</c>) — so a settlement can't be shaken down every turn. <b>Transient</b>
+    /// (not serialized): defaults to 0, so a generated/loaded settlement is freshly demandable and every save round-trips
+    /// byte-identically — consistent with the no-native-treasury abstraction the gift/pillage/native-demand paths make.
+    /// </summary>
+    public int LastTribute { get; internal set; }
+
     /// <summary>The wanted-good slot of a goods id (0 = most wanted), or -1 if not wanted.</summary>
     public int WantedSlot(string goodsId)
     {

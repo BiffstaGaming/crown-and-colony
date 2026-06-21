@@ -4182,7 +4182,45 @@ public sealed partial class Game
         colony.Population++;
         colony.AddIdleColonist(unit.Type.Id); // the joining colonist keeps its identity
         _units.Remove(unit);
+        // An arriving expert claims its specialty slot FIRST (bumping a free colonist off that good) before the
+        // generic auto-assign — otherwise the still-idle expert would be seated on a food tile and never reach its
+        // specialty. The displaced free colonist (and any other idle) is then sent to the fields.
+        TrySeatExpertBySwap(colony, unit.Type.Id);
         AutoAssignIdleToFood(colony);
+    }
+
+    /// <summary>
+    /// Full expert-swap (86d3drn5j, FreeCol <c>Unit.trySwapExpert</c>/<c>swapWork</c>): when a just-joined colonist of
+    /// <paramref name="joinedType"/> is still <b>idle</b> and is an <b>expert</b> at some good, it displaces a
+    /// <b>free</b> colonist already working that good so the expert takes the specialist slot it is best at — exactly
+    /// FreeCol's rule that an expert evicts a non-expert from its specialty. The bumped free colonist is left idle for
+    /// the caller's <see cref="AutoAssignIdleToFood(Colony)"/> to re-seat on the next-best food tile. A no-op when the
+    /// joiner is a free colonist (or a non-goods expert), isn't idle, or no free colonist is working its good (nothing
+    /// to swap — the expert stays idle and is seated normally). RNG-free, so the human's stream 0 stays byte-stable
+    /// (ADR-009). Tiles are scanned in the same row-major order the rest of the colony code uses, so the swap is
+    /// deterministic.
+    /// </summary>
+    private void TrySeatExpertBySwap(Colony colony, string joinedType)
+    {
+        if (Ruleset.Unit(joinedType).ExpertProduction is not { } specialty)
+        {
+            return; // a free colonist (or a non-goods expert) never bumps anyone
+        }
+        if (!colony.IdleWorkerTypes.Contains(joinedType))
+        {
+            return; // the expert is not idle (already seated) — nothing to swap
+        }
+        // The first free colonist (no overlay entry) working the expert's specialty good, in row-major order.
+        Position? target = colony.TileWorkers
+            .Where(kv => kv.Value == specialty && colony.WorkerTypeAt(kv.Key) == Colony.FreeColonistTypeId)
+            .Select(kv => kv.Key)
+            .OrderBy(t => t.Y).ThenBy(t => t.X)
+            .Cast<Position?>()
+            .FirstOrDefault();
+        if (target is { } tile)
+        {
+            colony.SwapInExpertForTile(tile, joinedType); // expert takes the tile; the free colonist is freed (idle)
+        }
     }
 
     /// <summary>Whether a colonist may be detached from <paramref name="colony"/> (it must keep at least one).</summary>
@@ -7651,6 +7689,136 @@ public sealed partial class Game
     /// alarm bump. A no-op if none is pending. RNG-free.
     /// </summary>
     public void RefusePendingDemand() => _pendingDemand = null;
+
+    // ───────────────────────── tribute demands by offensive units (86d3drn3b) ─────────────────────────
+
+    /// <summary>Turns that must pass before a native settlement can be shaken down for tribute again (FreeCol <c>InGameController.demandTribute</c> <c>TURNS_PER_TRIBUTE</c>).</summary>
+    public const int TributeCooldownTurns = 5;
+
+    /// <summary>The per-demand gold cap (FreeCol caps <c>demandTribute</c> gold at 100 regardless of the rolled range).</summary>
+    private const int TributeGoldCap = 100;
+
+    /// <summary>
+    /// The outcome of a <see cref="DemandTribute(Unit, Position)"/> attempt (FreeCol <c>scoutSettlement.tributeAgree/tributeDisagree</c>):
+    /// <see cref="Paid"/> says whether the settlement yielded, and <see cref="Gold"/> is the tribute extracted (0 on a
+    /// refusal). A blocking, single-shot result the presentation reports as "they paid N gold" or "they refused".
+    /// </summary>
+    /// <param name="Paid">True when the settlement yielded tribute (gold &gt; 0); false when it refused (too angry, on cooldown, or it has no gift range).</param>
+    /// <param name="Gold">The gold extracted (0 on a refusal).</param>
+    public readonly record struct TributeResult(bool Paid, int Gold);
+
+    /// <summary>
+    /// Whether <paramref name="unit"/> may demand tribute from the native settlement on <paramref name="target"/> now
+    /// (FreeCol <c>DemandTributeMessage</c> validation): the unit must be on the map, a <b>colonial</b> (non-native) unit
+    /// with offensive strength (our faithful subset of FreeCol's "armed or has the <c>demandTribute</c> ability" — we
+    /// gate on offence, the same test <see cref="CheckAttackSettlement"/> uses, since the unarmed-scout demand ability
+    /// is not yet modelled), with movement left, standing on or next to a native settlement. A read oracle (ADR-006) —
+    /// no RNG, no mutation; the presentation enables the "Demand tribute" action from it.
+    /// </summary>
+    public MoveCheck CheckDemandTribute(Unit unit, Position target)
+    {
+        if (!unit.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (unit.IsNative)
+        {
+            return MoveCheck.No("Native units do not demand tribute of settlements."); // braves use the native-demand path
+        }
+        if (!Map.InBounds(target))
+        {
+            return MoveCheck.No("Target is off the map.");
+        }
+        if (!unit.Position.IsAdjacentTo(target) && unit.Position != target)
+        {
+            return MoveCheck.No("Move next to the settlement to demand tribute.");
+        }
+        if (unit.MovementLeft <= 0)
+        {
+            return MoveCheck.No("No movement left this turn.");
+        }
+        if (OffenceBase(unit) <= 0)
+        {
+            return MoveCheck.No($"A {unit.Type.ShortName} has no offensive strength — arm it first.");
+        }
+        if (NativeSettlementAt(target) is null)
+        {
+            return MoveCheck.No("There is no native settlement to demand tribute of there.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// The tribute a settlement would yield to a demand right now (FreeCol <c>InGameController.demandTribute</c>'s
+    /// accept/refuse rule), as a pure function of its <see cref="NativeSettlement.AlarmLevel"/>, its <c>gifts</c> range,
+    /// the cooldown, and one RNG draw from <paramref name="random"/>:
+    /// <list type="bullet">
+    /// <item><b>Happy/Content</b> → <c>giftsRoll / 10</c>, capped at <see cref="TributeGoldCap"/> (100).</item>
+    /// <item><b>Displeased</b> → <c>giftsRoll / 20</c>, capped at 100.</item>
+    /// <item><b>Angry/Hateful</b> → 0 (refuses outright — no RNG drawn).</item>
+    /// </list>
+    /// Returns 0 (a refusal) when on cooldown (<c>lastTribute + 5 ≥ year</c>) or the settlement type has no gift range —
+    /// matching FreeCol's "no tribute" branches. <c>internal</c> so the band rule can be unit-tested directly (ADR-006).
+    /// </summary>
+    internal int EvaluateTributeDemand(NativeSettlement settlement, IGameRandom random)
+    {
+        // FreeCol gates on the actual game year (lastTribute + 5 < year); a settlement never demanded of has a
+        // lastTribute far in the past and always passes. We track the turn number (1-based), so a fresh settlement
+        // (LastTribute 0 — never demanded) is always demandable, and a stamped one waits out the 5-turn cooldown.
+        if (settlement.LastTribute > 0 && settlement.LastTribute + TributeCooldownTurns >= Turn)
+        {
+            return 0; // recently demanded of — nothing this time (FreeCol cooldown), no RNG drawn
+        }
+        int divisor = settlement.AlarmLevel switch
+        {
+            AlarmLevel.Happy or AlarmLevel.Content => 10,
+            AlarmLevel.Displeased => 20,
+            _ => 0, // Angry / Hateful → refuse
+        };
+        if (divisor == 0)
+        {
+            return 0; // too alarmed — refuses (no RNG drawn, matching FreeCol's switch default)
+        }
+        SettlementType type = Ruleset.Settlement(settlement.SettlementTypeId);
+        return Math.Min(GiftsAmount(type, random) / divisor, TributeGoldCap);
+    }
+
+    /// <summary>
+    /// Demands tribute from the native settlement on <paramref name="target"/> under threat (86d3drn3b, FreeCol
+    /// <c>InGameController.demandTribute</c> — the <see cref="Diplomacy.TradeContext.Tribute"/> negotiation an offensive
+    /// unit can make <em>instead of</em> attacking). The settlement evaluates the demand by its alarm band
+    /// (<see cref="EvaluateTributeDemand"/>): a calm one pays gold, an angry one refuses. <b>Either way</b> the demand is
+    /// an insult — the settlement's alarm rises by <see cref="NativeSettlement.TensionAddNormal"/> (200) and its tribute
+    /// cooldown is stamped — and the unit's turn ends. Paid gold is minted to the demander (we model no native treasury,
+    /// as the scout-beads/plunder paths do). The amount draws from the <b>demander's own RNG stream</b>
+    /// (<see cref="RandomFor"/>), so a foreign power demanding never perturbs the human's stream 0 (ADR-009).
+    /// </summary>
+    /// <returns>Whether tribute was paid and how much (0 on a refusal).</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckDemandTribute"/>.</exception>
+    public TributeResult DemandTribute(Unit unit, Position target) =>
+        DemandTribute(unit, target, RandomFor(PlayerById(unit.OwnerId) ?? _human));
+
+    /// <summary>The tribute-demand resolution drawing from an explicit RNG (tests inject a fixed RNG to force the rolled amount, as for <see cref="Attack(Unit, Position, IGameRandom)"/>).</summary>
+    internal TributeResult DemandTribute(Unit unit, Position target, IGameRandom random)
+    {
+        MoveCheck check = CheckDemandTribute(unit, target);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+
+        NativeSettlement settlement = NativeSettlementAt(target)!;
+        int gold = EvaluateTributeDemand(settlement, random);
+        if (gold > 0)
+        {
+            (PlayerById(unit.OwnerId) ?? _human).Gold += gold; // minted to the demander (no native treasury modelled)
+        }
+        // Demanding is always an insult, whether or not they paid (FreeCol stamps alarm + lastTribute either way).
+        ChangeNativeAlarm(settlement, NativeSettlement.TensionAddNormal);
+        settlement.LastTribute = Turn;
+        unit.MovementLeft = 0; // the demand ends the unit's turn
+        return new TributeResult(gold > 0, gold);
+    }
 
     /// <summary>One legal random neighbour for an idle brave to wander to (drawn from the nation's own stream), or null if hemmed in.</summary>
     private Position? Wander(Player player, Unit brave)

@@ -401,6 +401,22 @@ public sealed class Colony
         }
     }
 
+    /// <summary>
+    /// Seats an idle <paramref name="expertType"/> into <paramref name="tile"/> (currently worked by a <b>free</b>
+    /// colonist), bumping that free colonist into the idle pool — the full expert-swap of FreeCol
+    /// <c>Unit.swapWork</c> (86d3drn5j): the expert takes the specialist slot it is best at and the displaced free
+    /// colonist is freed to be re-seated elsewhere. The tile keeps its goods assignment; only the worker type changes.
+    /// Caller guarantees the tile holds a free colonist and an <paramref name="expertType"/> is idle (checked by
+    /// <see cref="GameSession.Game"/> before the call). Resets the tile's accrued experience (a new occupant starts at 0).
+    /// </summary>
+    internal void SwapInExpertForTile(Position tile, string expertType)
+    {
+        RemoveOneIdle(expertType);            // the expert leaves the idle pool…
+        _tileWorkerTypes[tile] = expertType;  // …and takes the tile (it was free, so previously had no overlay entry)
+        _tileWorkerExperience.Remove(tile);   // a (re)seated tile restarts the occupant's experience at 0
+        // The displaced free colonist becomes idle. A free colonist is implicit in the idle count, so no overlay add.
+    }
+
     /// <summary>Assigns a colonist of <paramref name="type"/> (from idle) into a building, bumping the count and overlay.</summary>
     internal void AssignBuildingWorker(string buildingId, string type)
     {

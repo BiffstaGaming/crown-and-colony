@@ -20,6 +20,8 @@ public class ColonyMembershipTests
     private const string Colonist = "model.unit.freeColonist";
     private const string Caravel = "model.unit.caravel";
     private const string Grain = "model.goods.grain";
+    private const string Ore = "model.goods.ore";
+    private const string ExpertOreMiner = "model.unit.expertOreMiner";
 
     /// <summary>3×3: ocean corner (0,0), mountains corner (2,2), rest plains; colony at centre (1,1).</summary>
     private static Game Setup(int population, SavedUnit[] units)
@@ -88,6 +90,45 @@ public class ColonyMembershipTests
         }.Restore(Classic);
 
         Assert.False(game.CheckJoinColony(game.Units[0], game.Colonies[0]).Allowed); // (4,0) far from (0,0)
+    }
+
+    // ──────────────────── full expert-swap on join (86d3drn5j) ────────────────────
+
+    [Fact]
+    public void JoinColony_ExpertEvictsAFreeColonist_FromItsSpecialtyTile()
+    {
+        // A free colonist mining ore on the mountains tile (2,2); an expert ore miner then joins. Every food tile is
+        // staffed, so the expert can't be seated idle-free → it bumps the free colonist off the ore tile and takes it.
+        Game game = Setup(population: 1, [new SavedUnit(1, ExpertOreMiner, 2, 1, 3)]); // expert adjacent to (1,1)
+        Colony colony = game.Colonies[0];
+        var oreTile = new Position(2, 2);
+        game.AssignWork(colony, oreTile, Ore);            // the founding free colonist works ore
+        Assert.Equal(Colonist, colony.WorkerTypeAt(oreTile));
+
+        game.JoinColony(game.Units[0], colony);
+
+        Assert.Equal(2, colony.Population);
+        Assert.Equal(Ore, colony.TileWorkers[oreTile]);                 // the tile still produces ore…
+        Assert.Equal(ExpertOreMiner, colony.WorkerTypeAt(oreTile));     // …now worked by the expert (the swap)
+        Assert.DoesNotContain(ExpertOreMiner, colony.IdleWorkerTypes);  // the expert is seated, not idle
+        // The displaced free colonist was re-seated on a food tile (AutoAssignIdleToFood), so nobody is left idle.
+        Assert.Equal(0, colony.IdleColonists);
+    }
+
+    [Fact]
+    public void JoinColony_ExpertIsNotSwapped_WhenNoFreeColonistWorksItsGood()
+    {
+        // An expert ore miner joins a colony where nobody is mining ore (only food tiles worked). There is no specialty
+        // slot to claim, so FreeCol leaves it un-swapped — here it lands on a food tile via the normal auto-assign.
+        Game game = Setup(population: 1, [new SavedUnit(1, ExpertOreMiner, 2, 1, 3)]);
+        Colony colony = game.Colonies[0];
+        var oreTile = new Position(2, 2);
+
+        game.JoinColony(game.Units[0], colony);
+
+        Assert.Equal(2, colony.Population);
+        Assert.False(colony.TileWorkers.ContainsKey(oreTile)); // nobody mines ore — no swap target existed
+        Assert.Contains(ExpertOreMiner, colony.TileWorkerTypes.Values); // the expert was still seated (on a food tile)
     }
 
     // ───────────────────────── leave ─────────────────────────
