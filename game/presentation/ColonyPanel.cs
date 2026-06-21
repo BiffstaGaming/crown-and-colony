@@ -144,7 +144,7 @@ public partial class ColonyPanel : PanelContainer
         root.AddThemeConstantOverride("separation", 8);
         foreach (Node child in root.GetChildren())
         {
-            child.Free();
+            root.RemoveChild(child); child.QueueFree(); // detach now (signal-safe), free deferred — avoids freed-while-emitting when a child button's handler drives the rebuild
         }
 
         // All bands live inside a content "card" that sizes to its content and CENTRES (ShrinkCenter): on wide

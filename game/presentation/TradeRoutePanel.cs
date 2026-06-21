@@ -43,7 +43,7 @@ public partial class TradeRoutePanel : PanelContainer
         var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
-            child.Free(); // immediate — Rebuild reuses names
+            dynamic.RemoveChild(child); child.QueueFree(); // detach now (Rebuild reuses names), free deferred — signal-safe
         }
 
         var colonies = _game.Colonies

@@ -21,7 +21,7 @@ public partial class FindSettlementPanel : PanelContainer
         var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
-            child.Free();
+            dynamic.RemoveChild(child); child.QueueFree(); // detach now (signal-safe), free deferred — avoids freed-while-emitting when a child button's handler drives the rebuild
         }
 
         var colonies = game.Colonies

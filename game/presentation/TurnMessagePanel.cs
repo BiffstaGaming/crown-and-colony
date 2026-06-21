@@ -33,7 +33,7 @@ public partial class TurnMessagePanel : PanelContainer
         var dynamic = GetNode<VBoxContainer>("VBox/Scroll/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
-            child.Free();
+            dynamic.RemoveChild(child); child.QueueFree(); // detach now (signal-safe), free deferred — avoids freed-while-emitting when a child button's handler drives the rebuild
         }
 
         if (list.Count == 0)
