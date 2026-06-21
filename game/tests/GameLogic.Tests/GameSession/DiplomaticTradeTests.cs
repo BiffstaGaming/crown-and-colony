@@ -807,4 +807,82 @@ public class DiplomaticTradeTests
         Assert.Null(game.CounterOffer(humanId, offer)); // the human never auto-counters
         Assert.Equal(before, game.RandomState);          // and no stream-0 draw
     }
+
+    // ---- TradeContext (86d3drn2g) ----
+
+    [Fact]
+    public void NewTrade_DefaultsToTheDiplomaticContext_PreservingTheStrengthGatedEvaluation()
+    {
+        // A trade built without a context is DIPLOMATIC — the established (strength-gated) evaluation, so the default
+        // game is unchanged.
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+
+        var trade = new DiplomaticTrade(0, fid);
+        Assert.Equal(TradeContext.Diplomatic, trade.Context);
+
+        var withContext = new DiplomaticTrade(0, fid, TradeContext.Contact);
+        Assert.Equal(TradeContext.Contact, withContext.Context); // the context is carried on the treaty
+    }
+
+    [Fact]
+    public void PeaceOnContact_IsFree_EvenWhenAStrongPowerWouldOtherwiseRefuseIt()
+    {
+        // A power much STRONGER than the other (ratio > 0.66) refuses peace under the DIPLOMATIC context (it sees no
+        // value in stopping a war it is winning) — but the SAME peace clause offered at first CONTACT is FREE (scored 0,
+        // never refused), exactly as FreeCol's CONTACT branch forces a peace/uncontacted clause to 0.
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        int other = SecondForeignPowerId(game);
+        GiveSoldiers(game, fid, 10);  // strong
+        GiveSoldiers(game, other, 1); // weak → ratio ≈ 0.91 for fid
+
+        var diplomatic = new DiplomaticTrade(other, fid, TradeContext.Diplomatic)
+            .Add(new StanceTradeItem(fid, other, Stance.Peace));
+        Assert.False(game.EvaluateTrade(fid, diplomatic).Accept); // a strong power refuses peace at the table
+
+        var contact = new DiplomaticTrade(other, fid, TradeContext.Contact)
+            .Add(new StanceTradeItem(fid, other, Stance.Peace));
+        TradeEvaluation onContact = game.EvaluateTrade(fid, contact);
+        Assert.True(onContact.Accept);     // the same clause is free at first contact
+        Assert.Equal(0, onContact.Value);  // a CONTACT peace clause scores exactly 0 (never a cost, never refused)
+    }
+
+    [Fact]
+    public void StrengthRatio_StillGatesAPeaceClause_OutsideTheContactContext()
+    {
+        // The strength-ratio gate applies in DIPLOMATIC (and so the default for an unspecified context): a weak power
+        // still leaps at peace (+1000) and a balanced pair takes it for a small positive — only CONTACT bypasses it.
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        int other = SecondForeignPowerId(game);
+        GiveSoldiers(game, fid, 1);    // weak
+        GiveSoldiers(game, other, 10); // strong → ratio ≈ 0.09 for fid
+
+        // Default (unspecified) context == DIPLOMATIC → the weak power still values peace at +1000.
+        int defaultScore = game.EvaluateTradeItem(fid, new StanceTradeItem(fid, other, Stance.Peace));
+        Assert.Equal(1000, defaultScore);
+
+        // Explicit DIPLOMATIC matches the default; CONTACT instead forces it to 0 — the gate is bypassed only at contact.
+        int diplomatic = game.EvaluateTradeItem(fid, new StanceTradeItem(fid, other, Stance.Peace), TradeContext.Diplomatic);
+        int contact = game.EvaluateTradeItem(fid, new StanceTradeItem(fid, other, Stance.Peace), TradeContext.Contact);
+        Assert.Equal(1000, diplomatic);
+        Assert.Equal(0, contact);
+    }
+
+    [Fact]
+    public void TradeContext_DoesNotChangeWhatSettlingDoes_OnlyHowItIsWeighed()
+    {
+        // The context is an evaluation-only property: a CONTACT-context peace treaty still settles to Peace exactly as a
+        // DIPLOMATIC one (Apply ignores the context).
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        game.SetStance(0, fid, Stance.War);
+
+        var contactPeace = new DiplomaticTrade(0, fid, TradeContext.Contact)
+            .Add(new StanceTradeItem(0, fid, Stance.Peace));
+        game.SettleTrade(contactPeace);
+
+        Assert.Equal(Stance.Peace, game.StanceBetween(0, fid)); // settling is context-agnostic
+    }
 }

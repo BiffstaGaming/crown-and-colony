@@ -309,7 +309,7 @@ public sealed partial class Game
         int unacceptable = 0;
         foreach (TradeItem item in trade.Items)
         {
-            int score = EvaluateTradeItem(powerId, item);
+            int score = EvaluateTradeItem(powerId, item, trade.Context);
             if (score == InvalidTradeItem)
             {
                 unacceptable++;
@@ -327,13 +327,17 @@ public sealed partial class Game
     /// <summary>
     /// Values one clause of a treaty from <paramref name="powerId"/>'s point of view (FreeCol the per-clause
     /// <c>TradeItem.evaluateFor</c>): positive = good for the power, negative = a cost, <see cref="InvalidTradeItem"/> =
-    /// the power will not take this clause at any price. Pure; draws no RNG.
+    /// the power will not take this clause at any price. The <paramref name="context"/> the offer arose in shifts how a
+    /// stance clause is weighed — a peace/cease-fire/alliance clause is <b>free</b> (scored 0) at
+    /// <see cref="TradeContext.Contact"/> (FreeCol's <c>CONTACT</c> branch of <c>acceptDiplomaticTrade</c>: formalising
+    /// first contact is never a cost and never refused), and otherwise weighed by the military strength ratio. Pure;
+    /// draws no RNG.
     /// </summary>
-    internal int EvaluateTradeItem(int powerId, TradeItem item) => item switch
+    internal int EvaluateTradeItem(int powerId, TradeItem item, TradeContext context = TradeContext.Diplomatic) => item switch
     {
         GoldTradeItem gold => item.Source == powerId ? -gold.Amount : gold.Amount,
         GoodsTradeItem goods => EvaluateGoods(powerId, goods),
-        StanceTradeItem stance => EvaluateStance(powerId, stance.Source == powerId ? stance.Destination : stance.Source, stance.Stance),
+        StanceTradeItem stance => EvaluateStance(powerId, stance.Source == powerId ? stance.Destination : stance.Source, stance.Stance, context),
         InciteTradeItem incite => EvaluateIncite(powerId, incite.Victim),
         ColonyTradeItem colony => EvaluateColony(powerId, colony),
         UnitTradeItem unit => EvaluateUnit(powerId, unit),
@@ -358,12 +362,15 @@ public sealed partial class Game
     /// other party. Going to war is worth taking only when we're not badly outmatched (ratio &lt; 0.33 → invalid,
     /// &lt; 0.5 → a negative); making peace/cease-fire/alliance is the reverse (ratio &gt; 0.66 → invalid, &gt; 0.5 →
     /// negative, &lt; 0.33 → a strong +1000). An uncontacted stance is invalid.
-    /// <para><b>Benjamin Franklin</b> (FreeCol's <c>franklin</c> branch in <c>acceptDiplomaticTrade</c>): when the
-    /// <em>other</em> party (<paramref name="otherId"/>) holds <c>alwaysOfferedPeace</c>, a peace/cease-fire/alliance
-    /// clause is forced neutral (scored 0) — never a cost and never invalid — so the AI always accepts a Franklin
-    /// power's peace offer (and a too-strong opponent no longer rejects it). War clauses are unaffected.</para>
+    /// <para><b>First contact</b> (FreeCol's <c>CONTACT</c> branch in <c>acceptDiplomaticTrade</c>): when
+    /// <paramref name="context"/> is <see cref="TradeContext.Contact"/>, a peace/cease-fire/alliance clause is forced
+    /// neutral (scored 0) — never a cost and never invalid — so formalising "we have just met" with a peace treaty is
+    /// always taken regardless of the strength ratio. War clauses are unaffected.</para>
+    /// <para><b>Benjamin Franklin</b> (FreeCol's <c>franklin</c> branch): when the <em>other</em> party
+    /// (<paramref name="otherId"/>) holds <c>alwaysOfferedPeace</c>, the same neutral-0 forcing applies — the AI always
+    /// accepts a Franklin power's peace offer (and a too-strong opponent no longer rejects it).</para>
     /// </summary>
-    private int EvaluateStance(int powerId, int otherId, Stance stance)
+    private int EvaluateStance(int powerId, int otherId, Stance stance, TradeContext context = TradeContext.Diplomatic)
     {
         double ratio = StrengthRatio(powerId, otherId);
         int value = (int)Math.Round(100 * ratio, MidpointRounding.AwayFromZero);
@@ -373,7 +380,8 @@ public sealed partial class Game
                 if (ratio < 0.33) return InvalidTradeItem;
                 return ratio < 0.5 ? -value : value;
             case Stance.Peace or Stance.CeaseFire or Stance.Alliance:
-                if (OtherPartyAlwaysOffersPeace(otherId)) return 0; // Franklin: the other party's peace is always taken
+                if (context == TradeContext.Contact) return 0;       // first contact: a peace clause is free (FreeCol CONTACT branch)
+                if (OtherPartyAlwaysOffersPeace(otherId)) return 0;  // Franklin: the other party's peace is always taken
                 if (ratio > 0.66) return InvalidTradeItem;
                 if (ratio > 0.5) return -value;
                 return ratio < 0.33 ? 1000 : value;
@@ -491,7 +499,7 @@ public sealed partial class Game
         int unacceptable = 0;
         foreach (TradeItem item in received.Items)
         {
-            int score = EvaluateTradeItem(powerId, item);
+            int score = EvaluateTradeItem(powerId, item, received.Context);
             scored.Add((item, score));
             if (score == InvalidTradeItem)
             {
@@ -560,11 +568,146 @@ public sealed partial class Game
             return null;
         }
 
-        var counter = new DiplomaticTrade(received.ProposerId, received.RecipientId);
+        var counter = new DiplomaticTrade(received.ProposerId, received.RecipientId, received.Context);
         foreach (TradeItem item in counterItems)
         {
             counter.Add(item);
         }
         return counter;
+    }
+
+    // ---- AI proactive alliance + cease-fire proposals (86d3drn4f) ----
+
+    /// <summary>
+    /// The strength ratio at or above which a power feels <b>strong enough</b> to seek an alliance against a shared enemy
+    /// (FreeCol's <c>EuropeanAIPlayer.determineStances</c>/<c>acceptDiplomaticTrade</c> uses the same military-strength
+    /// ratio for stance decisions). At ≥ 0.5 the power is at least an even match for its prospective ally's enemy, so an
+    /// alliance is a net gain rather than a liability it would be dragged into.
+    /// </summary>
+    private const double AllianceStrengthThreshold = 0.5;
+
+    /// <summary>
+    /// The half-width of the "stalemate" band around an even strength ratio (0.5) within which a power offers a
+    /// <b>cease-fire</b> rather than fighting on: a war is judged stalemated when neither side has a decisive edge —
+    /// <c>|ratio − 0.5| ≤ </c> this value (so 0.35..0.65). Outside the band one side is winning and presses on (a
+    /// winner has no reason to stop; a loser sues for outright peace via the existing sue-for-peace path).
+    /// </summary>
+    private const double CeaseFireStalemateBand = 0.15;
+
+    private readonly List<DiplomaticTrade> _pendingHumanProposals = []; // transient: treaties AI powers have offered the human this turn, awaiting the (backlogged) negotiation UI; not saved
+
+    /// <summary>
+    /// Treaties the foreign powers have proactively offered the <b>human</b> this turn (alliance / cease-fire), queued
+    /// for the human's negotiation UI to answer (the UI is backlogged — this is the seam it will read). Transient and
+    /// <b>not saved</b>; cleared each round and drained by the presentation via <see cref="TakePendingHumanProposals"/>.
+    /// An AI-to-AI proactive offer never lands here — it is negotiated immediately on the proposer's own RNG stream.
+    /// </summary>
+    public IReadOnlyList<DiplomaticTrade> PendingHumanProposals => _pendingHumanProposals;
+
+    /// <summary>Drains and clears the queued <see cref="PendingHumanProposals"/> (the negotiation UI reads them once). Clearing here keeps the seam from growing unbounded if no UI consumes it yet.</summary>
+    public IReadOnlyList<DiplomaticTrade> TakePendingHumanProposals()
+    {
+        var taken = _pendingHumanProposals.ToList();
+        _pendingHumanProposals.Clear();
+        return taken;
+    }
+
+    /// <summary>Clears any queued <see cref="PendingHumanProposals"/> (called at the start of each round so the seam holds only this round's offers — belt-and-braces if the UI did not drain them).</summary>
+    internal void ClearPendingHumanProposals() => _pendingHumanProposals.Clear();
+
+    /// <summary>
+    /// A foreign power's <b>proactive</b> diplomacy on its own turn (FreeCol <c>EuropeanAIPlayer.determineStances</c> +
+    /// the proposal side of <c>acceptDiplomaticTrade</c>): beyond suing for peace when losing, a power now <em>offers</em>
+    /// treaties off its own back —
+    /// <list type="bullet">
+    /// <item><b>Alliance</b> — when <paramref name="power"/> is militarily <b>strong</b> (strength ratio ≥
+    /// <see cref="AllianceStrengthThreshold"/>) and at <see cref="Stance.Peace"/> (friendly) with another colonial power
+    /// with whom it <b>shares an enemy</b> (both are at <see cref="Stance.War"/> with some third colonial power), it
+    /// proposes an alliance to that friend.</item>
+    /// <item><b>Cease-fire</b> — when a war it is in is <b>stalemated</b> (neither side has a decisive strength edge:
+    /// <c>|ratio − 0.5| ≤ </c> <see cref="CeaseFireStalemateBand"/>), it proposes a cease-fire truce to the rival.</item>
+    /// </list>
+    /// An offer to <b>another AI</b> is settled immediately by routing it through the existing
+    /// <see cref="NegotiateTrade"/> backend on <paramref name="power"/>'s own RNG stream (the answerer accepts / counters /
+    /// gives up). An offer to the <b>human</b> is queued in <see cref="PendingHumanProposals"/> for the backlogged
+    /// negotiation UI (it is <em>not</em> applied here — the human decides at the table). Both proposal kinds are built at
+    /// <see cref="TradeContext.Diplomatic"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Determinism (ADR-009):</b> the only randomness is the AI-to-AI <see cref="NegotiateTrade"/> give-up roll, drawn
+    /// from each AI power's <b>own</b> stream via <see cref="RandomFor"/> — never the human's stream 0. Queuing a
+    /// human-bound proposal draws nothing. So the human's seeded game stays byte-identical and the default game (no war,
+    /// no alliance opportunity) is unchanged. Both prospective-partner lists are iterated in stable <see cref="Player.PlayerId"/>
+    /// order and snapshotted, since a settled alliance/cease-fire mutates stance mid-iteration. <b>Faithful subset:</b>
+    /// FreeCol weighs each candidate via the full nation-summary/strength machinery and may offer gold-for-peace; we offer
+    /// a single bare stance clause and rely on the existing strength-ratio evaluation to accept or decline it.
+    /// </remarks>
+    /// <param name="power">The foreign power taking its proactive-diplomacy turn (a non-human colonial power; a no-op otherwise).</param>
+    public void ProposeProactiveTreaties(Player power)
+    {
+        if (power.IsHuman || power.PlayerType != PlayerType.Colonial)
+        {
+            return;
+        }
+
+        // 1) Cease-fire on a stalemated war (offered before alliance: ending a deadlocked war frees the power up).
+        foreach (Player rival in ColonialPowersAtWarWith(power))
+        {
+            double ratio = StrengthRatio(power.PlayerId, rival.PlayerId);
+            if (Math.Abs(ratio - 0.5) <= CeaseFireStalemateBand)
+            {
+                OfferStance(power, rival, Stance.CeaseFire);
+            }
+        }
+
+        // 2) Alliance with a strong-and-friendly power that shares an enemy.
+        foreach (Player friend in ColonialPowersAtPeaceWith(power))
+        {
+            if (StrengthRatio(power.PlayerId, friend.PlayerId) >= AllianceStrengthThreshold
+                && SharesAnEnemy(power, friend))
+            {
+                OfferStance(power, friend, Stance.Alliance);
+            }
+        }
+    }
+
+    /// <summary>The colonial powers (the human + foreign powers) <paramref name="power"/> is at <see cref="Stance.War"/> with, in stable id order (snapshotted — a settled truce mutates stance mid-iteration).</summary>
+    private List<Player> ColonialPowersAtWarWith(Player power) =>
+        _players.Where(p => p.PlayerId != power.PlayerId && p.PlayerType == PlayerType.Colonial
+                            && StanceBetween(power.PlayerId, p.PlayerId) == Stance.War)
+                .OrderBy(p => p.PlayerId).ToList();
+
+    /// <summary>The colonial powers <paramref name="power"/> is at <see cref="Stance.Peace"/> with, in stable id order (snapshotted — a settled alliance mutates stance mid-iteration).</summary>
+    private List<Player> ColonialPowersAtPeaceWith(Player power) =>
+        _players.Where(p => p.PlayerId != power.PlayerId && p.PlayerType == PlayerType.Colonial
+                            && StanceBetween(power.PlayerId, p.PlayerId) == Stance.Peace)
+                .OrderBy(p => p.PlayerId).ToList();
+
+    /// <summary>Whether <paramref name="power"/> and <paramref name="friend"/> share a common enemy — some <em>third</em> colonial power both are at <see cref="Stance.War"/> with (FreeCol's "enemy of my enemy" alliance trigger).</summary>
+    private bool SharesAnEnemy(Player power, Player friend) =>
+        _players.Any(third => third.PlayerId != power.PlayerId && third.PlayerId != friend.PlayerId
+                              && third.PlayerType == PlayerType.Colonial
+                              && StanceBetween(power.PlayerId, third.PlayerId) == Stance.War
+                              && StanceBetween(friend.PlayerId, third.PlayerId) == Stance.War);
+
+    /// <summary>
+    /// Offers a single-clause stance treaty from <paramref name="proposer"/> to <paramref name="target"/>: against
+    /// another AI it is negotiated immediately via <see cref="NegotiateTrade"/> (the proposer's own stream); against the
+    /// human it is queued in <see cref="PendingHumanProposals"/> for the negotiation UI (applied only when the human
+    /// later accepts). Built at <see cref="TradeContext.Diplomatic"/>.
+    /// </summary>
+    private void OfferStance(Player proposer, Player target, Stance stance)
+    {
+        var offer = new DiplomaticTrade(proposer.PlayerId, target.PlayerId, TradeContext.Diplomatic)
+            .Add(new StanceTradeItem(proposer.PlayerId, target.PlayerId, stance));
+
+        if (target.IsHuman)
+        {
+            _pendingHumanProposals.Add(offer); // surfaced for the (backlogged) negotiation UI; the human decides — never auto-applied
+        }
+        else
+        {
+            NegotiateTrade(proposer, target, offer); // AI-to-AI: settled now on the proposer's own RNG stream, or the talks collapse
+        }
     }
 }

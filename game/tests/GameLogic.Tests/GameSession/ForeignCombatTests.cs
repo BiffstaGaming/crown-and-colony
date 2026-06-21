@@ -955,4 +955,137 @@ public class ForeignCombatTests
         Assert.False(game.NegotiateTrade(human, power, offer)); // refused: a human party never auto-counters
         Assert.Equal(before, game.RandomState);                  // stream 0 byte-identical
     }
+
+    // ── AI proactive alliance + cease-fire proposals (86d3drn4f) ───────────────────────────────────────────────────────
+
+    private static int ThirdForeignPowerId(Game game) =>
+        game.Players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).Skip(2).First().PlayerId;
+
+    [Fact]
+    public void AStrongFriendlyPower_SharingAnEnemy_ProactivelyOffersAlliance()
+    {
+        // Proactive (86d3drn4f): A is strong, at peace with B, and both A and B are at war with C (a shared enemy). On
+        // A's proactive-diplomacy step it offers B an alliance, which B — also wanting a partner against C — accepts via
+        // the existing NegotiateTrade backend, so the two ally.
+        Game game = Game.New(Classic, seed: 7);
+        Player a = game.Players.First(p => p.PlayerId == ForeignPowerId(game));
+        Player b = game.Players.First(p => p.PlayerId == SecondForeignPowerId(game));
+        Player c = game.Players.First(p => p.PlayerId == ThirdForeignPowerId(game));
+
+        // A and B are even (so allying scores positive for both); C is the shared enemy.
+        GiveSoldiers(game, a.PlayerId, 3);
+        GiveSoldiers(game, b.PlayerId, 3);
+        game.SetStance(a.PlayerId, b.PlayerId, Stance.Peace);     // friendly
+        game.SetStance(a.PlayerId, c.PlayerId, Stance.War);       // A's enemy
+        game.SetStance(b.PlayerId, c.PlayerId, Stance.War);       // …who is also B's enemy
+        Assert.Equal(Stance.Peace, game.StanceBetween(a.PlayerId, b.PlayerId));
+
+        game.ProposeProactiveTreaties(a);
+
+        Assert.Equal(Stance.Alliance, game.StanceBetween(a.PlayerId, b.PlayerId)); // A proactively allied with B
+    }
+
+    [Fact]
+    public void AStrongPower_DoesNotAlly_WithAFriendThatSharesNoEnemy()
+    {
+        // The "enemy of my enemy" trigger is required: a strong power at peace with a friend who shares NO enemy makes
+        // no alliance offer (so an un-provoked friendly relationship is left untouched).
+        Game game = Game.New(Classic, seed: 7);
+        Player a = game.Players.First(p => p.PlayerId == ForeignPowerId(game));
+        Player b = game.Players.First(p => p.PlayerId == SecondForeignPowerId(game));
+        GiveSoldiers(game, a.PlayerId, 5);
+        GiveSoldiers(game, b.PlayerId, 1);
+        game.SetStance(a.PlayerId, b.PlayerId, Stance.Peace); // friendly but no shared enemy
+
+        game.ProposeProactiveTreaties(a);
+
+        Assert.Equal(Stance.Peace, game.StanceBetween(a.PlayerId, b.PlayerId)); // unchanged — no alliance without a shared foe
+    }
+
+    [Fact]
+    public void AStalematedWar_DrawsACeaseFireOffer_ThatBothSidesAccept()
+    {
+        // Proactive cease-fire: two evenly-matched powers at war (a stalemate — neither can win) → the lower-id power
+        // offers a cease-fire on its turn, the other accepts, and the war cools to a truce.
+        Game game = Game.New(Classic, seed: 7);
+        Player a = game.Players.First(p => p.PlayerId == ForeignPowerId(game));
+        Player b = game.Players.First(p => p.PlayerId == SecondForeignPowerId(game));
+        GiveSoldiers(game, a.PlayerId, 3);
+        GiveSoldiers(game, b.PlayerId, 3); // ratio ≈ 0.5 → stalemate
+        game.SetStance(a.PlayerId, b.PlayerId, Stance.War);
+        game.ChangeTension(a.PlayerId, b.PlayerId, Game.TensionWar);
+
+        game.ProposeProactiveTreaties(a);
+
+        Assert.Equal(Stance.CeaseFire, game.StanceBetween(a.PlayerId, b.PlayerId)); // the stalemate drew a truce
+    }
+
+    [Fact]
+    public void AnAllianceOfferToTheHuman_IsQueuedForTheUI_AndNeverAutoApplied()
+    {
+        // An offer to the HUMAN is surfaced via the pending-proposal seam (for the backlogged negotiation UI) — it is NOT
+        // applied: the human decides at the table, and the AI never auto-allies the human.
+        Game game = Game.New(Classic, seed: 7);
+        Player a = game.Players.First(p => p.PlayerId == ForeignPowerId(game));
+        Player human = game.HumanPlayer;
+        Player c = game.Players.First(p => p.PlayerId == SecondForeignPowerId(game));
+        GiveSoldiers(game, a.PlayerId, 3);
+        game.SetStance(a.PlayerId, human.PlayerId, Stance.Peace);   // A is friendly with the human
+        game.SetStance(a.PlayerId, c.PlayerId, Stance.War);         // shared enemy C
+        game.SetStance(human.PlayerId, c.PlayerId, Stance.War);
+
+        var before = game.RandomState;
+        game.ProposeProactiveTreaties(a);
+
+        Assert.Equal(Stance.Peace, game.StanceBetween(a.PlayerId, human.PlayerId)); // NOT auto-allied — still peace
+        Assert.Single(game.PendingHumanProposals);                                  // the offer is queued for the UI
+        DiplomaticTrade queued = game.PendingHumanProposals[0];
+        Assert.Equal(a.PlayerId, queued.ProposerId);
+        Assert.Equal(human.PlayerId, queued.RecipientId);
+        Assert.Equal(Stance.Alliance, Assert.IsType<StanceTradeItem>(Assert.Single(queued.Items)).Stance);
+        Assert.Equal(before, game.RandomState);                                     // queuing draws nothing from stream 0
+
+        // The seam drains once.
+        Assert.Single(game.TakePendingHumanProposals());
+        Assert.Empty(game.PendingHumanProposals);
+    }
+
+    [Fact]
+    public void TheProactiveHaggle_IsDeterministic_AndLeavesTheHumanStream0ByteIdentical()
+    {
+        // ADR-009: the proactive AI-to-AI proposals draw only the proposer's own stream — two same-seed runs settle
+        // identically, and the human's stream 0 is never advanced by queuing a human-bound offer.
+        Game Build(ulong seed)
+        {
+            Game g = Game.New(Classic, seed);
+            Player a = g.Players.First(p => p.PlayerId == ForeignPowerId(g));
+            Player b = g.Players.First(p => p.PlayerId == SecondForeignPowerId(g));
+            GiveSoldiers(g, a.PlayerId, 3);
+            GiveSoldiers(g, b.PlayerId, 3);
+            g.SetStance(a.PlayerId, b.PlayerId, Stance.War);
+            g.ChangeTension(a.PlayerId, b.PlayerId, Game.TensionWar);
+            return g;
+        }
+
+        Game x = Build(4242);
+        Game y = Build(4242);
+        game_ProposeFor(x);
+        game_ProposeFor(y);
+        Assert.Equal(SaveGame.From(x).ToJson(), SaveGame.From(y).ToJson()); // identical outcome per seed
+
+        // Queuing a human-bound proposal advances NO stream-0 state.
+        Game z = Game.New(Classic, seed: 4242);
+        Player za = z.Players.First(p => p.PlayerId == ForeignPowerId(z));
+        Player zc = z.Players.First(p => p.PlayerId == SecondForeignPowerId(z));
+        GiveSoldiers(z, za.PlayerId, 3);
+        z.SetStance(za.PlayerId, z.HumanPlayer.PlayerId, Stance.Peace);
+        z.SetStance(za.PlayerId, zc.PlayerId, Stance.War);
+        z.SetStance(z.HumanPlayer.PlayerId, zc.PlayerId, Stance.War);
+        var before = z.RandomState;
+        z.ProposeProactiveTreaties(za);
+        Assert.Equal(before, z.RandomState); // stream 0 untouched by queuing a human offer
+
+        static void game_ProposeFor(Game g) =>
+            g.ProposeProactiveTreaties(g.Players.First(p => p.PlayerId == ForeignPowerId(g)));
+    }
 }
