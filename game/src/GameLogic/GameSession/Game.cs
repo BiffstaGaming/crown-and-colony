@@ -192,12 +192,37 @@ public sealed partial class Game
     private static bool SameOwner(Unit a, Unit b) => a.OwnerNationId == b.OwnerNationId && a.OwnerId == b.OwnerId;
 
     /// <summary>
-    /// Whether two units are combat/fog enemies — a different owner. The stance hook: diplomacy
-    /// (<see cref="Stance"/>) is now <em>recorded</em> (FP-6a) but does not yet gate this — every distinct
-    /// owner is still hostile for move/attack/fog legality; making this stance-aware (no attacking at peace)
-    /// is FP-6b, which would change current behaviour and needs a playtest.
+    /// Whether two units are combat/fog enemies. A shared owner is never an enemy. Beyond that the rule splits by
+    /// player kind (86d3drn45, gating combat legality on <see cref="Stance"/>):
+    /// <list type="bullet">
+    /// <item>If <b>either</b> unit is native, owner-inequality alone decides — natives are not on the colonial stance
+    /// system but on per-settlement alarm (<see cref="NativeSettlement.Alarm"/>), so a brave and a colonist are
+    /// enemies exactly as before. This keeps native raids / colonist-vs-brave combat unaffected.</item>
+    /// <item>If <b>both</b> are colonial powers, the pair is an enemy only at <see cref="Stance.War"/> — or while
+    /// <see cref="Stance.Uncontacted"/>, the FreeCol edge case where the two haven't formally met (the human starts
+    /// Uncontacted with every rival, and an attack-while-uncontacted is what declares the war). At
+    /// <see cref="Stance.Peace"/>, <see cref="Stance.CeaseFire"/> or <see cref="Stance.Alliance"/> they are <b>not</b>
+    /// enemies: an attack is rejected and neither may move into the other's tile until war is declared.</item>
+    /// </list>
+    /// Used by <see cref="DefenderAt"/> (and through it <see cref="CheckAttack"/>/<see cref="CheckMove"/>), so making
+    /// it stance-aware is the single seam that stops a power attacking — or being attacked at — peace. Pure; no RNG.
     /// </summary>
-    private static bool AreEnemies(Unit a, Unit b) => !SameOwner(a, b);
+    private bool AreEnemies(Unit a, Unit b)
+    {
+        if (SameOwner(a, b))
+        {
+            return false;
+        }
+        // A native on either side is off the colonial stance system: owner-inequality decides (raids unaffected).
+        if (a.OwnerNationId is not null || b.OwnerNationId is not null)
+        {
+            return true;
+        }
+        // Two distinct colonial powers: hostile only at War, or while still Uncontacted (the FreeCol edge case where
+        // the attack itself makes first contact + declares the war). Peace/CeaseFire/Alliance are NOT hostile.
+        Stance stance = StanceBetween(a.OwnerId, b.OwnerId);
+        return stance is Stance.War or Stance.Uncontacted;
+    }
 
     // ===== Diplomacy (FP-6a, ADR-019): colonial-player ↔ colonial-player stance + tension, RECORDED only.
     // Each player holds its own directional view (FreeCol Player.stance/tension maps). Natives stay on the
@@ -1653,10 +1678,13 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Whether <paramref name="attacker"/> may attack the strongest enemy on <paramref name="target"/> now.
-    /// Native units may attack from slice 1b (the gate is gone), so this admits any owner-inequality enemy
-    /// (<see cref="AreEnemies"/>) — restricting a brave to human targets is the native AI's job
-    /// (<see cref="NearestHumanUnit"/>), not this legality check.
+    /// Whether <paramref name="attacker"/> may attack the strongest enemy on <paramref name="target"/> now. An "enemy"
+    /// is decided by <see cref="AreEnemies"/>: a native pair is hostile on owner-inequality (native units may attack
+    /// from slice 1b — restricting a brave to human targets is the native AI's job, <see cref="NearestHumanUnit"/>,
+    /// not this legality check), while a colonial pair is hostile only at <see cref="Stance.War"/> or
+    /// <see cref="Stance.Uncontacted"/> (86d3drn45). So an attack on a colonial power you are at <see cref="Stance.Peace"/>,
+    /// <see cref="Stance.CeaseFire"/> or <see cref="Stance.Alliance"/> with returns "no enemy to attack there" — you
+    /// must declare war first; an attack while Uncontacted is still allowed and is what declares the war (FreeCol).
     /// </summary>
     public MoveCheck CheckAttack(Unit attacker, Position target)
     {
@@ -3275,8 +3303,11 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Whether <paramref name="unit"/> may move to <paramref name="target"/> right now,
-    /// and why not if not.
+    /// Whether <paramref name="unit"/> may move to <paramref name="target"/> right now, and why not if not. A tile
+    /// held by an <em>enemy</em> unit (<see cref="AreEnemies"/>) routes to "attack it instead"; a tile held by a
+    /// foreign power's unit you are <b>not</b> at war with — a colonial rival at <see cref="Stance.Peace"/>,
+    /// <see cref="Stance.CeaseFire"/> or <see cref="Stance.Alliance"/> (86d3drn45) — blocks the move outright: you
+    /// cannot enter a peaceful neighbour's territory (nor attack them) until war is declared.
     /// </summary>
     public MoveCheck CheckMove(Unit unit, Position target)
     {
@@ -3305,6 +3336,13 @@ public sealed partial class Game
         if (DefenderAt(unit, target) is not null)
         {
             return MoveCheck.No("An enemy unit holds that tile — attack it instead.");
+        }
+        // A non-enemy foreign unit (a colonial rival at Peace/CeaseFire/Alliance, now that AreEnemies gates on stance)
+        // still occupies the tile — you cannot share it or attack them, so the move is blocked (FreeCol: you may not
+        // enter a tile a power you are not at war with stands on). A friendly stack of your OWN units does not block.
+        if (_units.Any(u => u.IsOnMap && u.Position == target && !SameOwner(unit, u)))
+        {
+            return MoveCheck.No("A foreign power's unit holds that tile — you are not at war with them.");
         }
         if (!unit.IsNative && NativeSettlementAt(target) is not null)
         {
@@ -5765,26 +5803,53 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// The foreign power's per-turn diplomacy (`86d3c9uar` turn-wiring, FreeCol <c>EuropeanAIPlayer</c> suing for peace):
-    /// called only when the power was <b>already at war</b> with the human (a freshly-declared war is pressed, not undone).
-    /// While at war it weighs a single-clause <b>peace</b> treaty with the human (a
-    /// <see cref="StanceTradeItem"/> to <see cref="Stance.Peace"/>) and, when its own <see cref="EvaluateTrade(int, DiplomaticTrade)"/>
-    /// accepts — i.e. it is militarily weak enough (<see cref="EvaluateStance"/>: a low strength ratio scores peace
-    /// positive) — settles it via <see cref="RespondToTrade"/>, ending the war. Bounded: one peace offer per turn, no
-    /// haggling, no clauses but the stance change (a clean truce, no gold/colony trade). A strong power's evaluation
-    /// rejects the peace, so it fights on. Deterministic; draws <b>no</b> RNG, so human stream 0 stays byte-identical
-    /// (ADR-009). The human is never an AI here — this models the AI <i>offering</i> peace and the war ending; a
-    /// human-driven negotiation will route an offered treaty through <see cref="RespondToTrade"/> the same way.
+    /// The foreign power's per-turn diplomacy (FreeCol <c>EuropeanAIPlayer</c>): two parts.
+    /// <list type="number">
+    /// <item><b>Sue for peace with the human</b> (`86d3c9uar`) — only when <paramref name="alreadyAtWar"/> with the human
+    /// (a freshly-declared war is pressed, not undone). It weighs a single-clause <b>peace</b> treaty with the human
+    /// (a <see cref="StanceTradeItem"/> to <see cref="Stance.Peace"/>) and, when its own
+    /// <see cref="EvaluateTrade(int, DiplomaticTrade)"/> accepts — i.e. it is militarily weak enough
+    /// (<see cref="EvaluateStance"/>: a low strength ratio scores peace positive) — settles it via
+    /// <see cref="RespondToTrade"/>, ending the war. Bounded (one peace offer/turn, no haggling). A strong power's
+    /// evaluation rejects the peace, so it fights on. RNG-free.</item>
+    /// <item><b>Haggle foreign-foreign wars to a treaty</b> (`86d3drn4h`) — for each <em>other</em> foreign power this one
+    /// is at <see cref="Stance.War"/> with, the <b>lower-id</b> party drives a bounded multi-round
+    /// <see cref="NegotiateTrade"/> over a peace offer (so each war pair is negotiated once per round, not twice). The
+    /// answerer accepts, prunes/cheapens and counters, or gives up — until a truce settles or the talks collapse. Each
+    /// give-up roll draws <b>that power's own</b> RNG stream (never the human's stream 0), and both parties are non-human,
+    /// so the human's seeded game stays byte-identical (ADR-009).</item>
+    /// </list>
+    /// Deterministic and (for the human path) RNG-free; no save change. A human-driven negotiation will later route an
+    /// offered treaty through <see cref="RespondToTrade"/>/<see cref="NegotiateTrade"/> the same way.
     /// </summary>
-    private void RunForeignPowerDiplomacy(Player power)
+    /// <param name="power">The foreign power taking its diplomacy turn.</param>
+    /// <param name="alreadyAtWar">Whether <paramref name="power"/> was already at war with the human coming into this turn (the sue-for-peace gate; a war declared from territorial tension <em>this</em> turn is excluded so it isn't instantly undone).</param>
+    private void RunForeignPowerDiplomacy(Player power, bool alreadyAtWar)
     {
-        if (StanceBetween(power.PlayerId, _human.PlayerId) != Stance.War)
+        // 1) Sue for peace with the HUMAN when losing a war that predates this turn.
+        if (alreadyAtWar && StanceBetween(power.PlayerId, _human.PlayerId) == Stance.War)
         {
-            return; // only a war is worth ending; at peace the power simply expands/trades
+            var peace = new DiplomaticTrade(power.PlayerId, _human.PlayerId)
+                .Add(new StanceTradeItem(power.PlayerId, _human.PlayerId, Stance.Peace));
+            RespondToTrade(power, peace); // settles iff the power's own evaluation accepts (a weak power sues for peace)
         }
-        var peace = new DiplomaticTrade(power.PlayerId, _human.PlayerId)
-            .Add(new StanceTradeItem(power.PlayerId, _human.PlayerId, Stance.Peace));
-        RespondToTrade(power, peace); // settles iff the power's own evaluation accepts (a weak power sues for peace)
+
+        // 2) Haggle each FOREIGN-FOREIGN war to a peace treaty via the multi-round NegotiateTrade (86d3drn4h). Only the
+        // lower-id party drives a given war pair, so it is negotiated exactly once per round (the higher-id power's own
+        // turn finds the pair already at peace, or still at war if the talks broke down, and skips it). NegotiateTrade is
+        // AI-to-AI only and draws each power's own stream — never the human's stream 0. Iterate the other powers in stable
+        // id order for determinism; snapshot to a list as a settled treaty mutates stance mid-iteration.
+        foreach (Player other in _players
+                     .Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial
+                                 && power.PlayerId < p.PlayerId // lower-id party drives each war pair exactly once
+                                 && StanceBetween(power.PlayerId, p.PlayerId) == Stance.War)
+                     .OrderBy(p => p.PlayerId)
+                     .ToList())
+        {
+            var peace = new DiplomaticTrade(power.PlayerId, other.PlayerId)
+                .Add(new StanceTradeItem(power.PlayerId, other.PlayerId, Stance.Peace));
+            NegotiateTrade(power, other, peace); // settles a truce when both want it; otherwise the talks collapse (no-op)
+        }
     }
 
     /// <summary>
@@ -5822,17 +5887,15 @@ public sealed partial class Game
             ChangeTension(power.PlayerId, _human.PlayerId, TensionWar);
         }
 
-        // Sue for peace when losing a war (86d3c9uar, FreeCol EuropeanAIPlayer suing for peace): a power that was already
-        // at war with the human weighs a peace treaty through the SAME pure EvaluateTrade the rules expose, and — when its
-        // own evaluation accepts (it is militarily weak enough that ending the war is worth more than continuing) —
-        // settles it, so the war actually ends instead of grinding on. Gated on alreadyAtWar so a war just declared from
-        // territorial tension this turn is pressed, not instantly undone. Drawn before atWarWithHuman is read, so a power
-        // that makes peace stands down the same turn. Deterministic (EvaluateTrade is pure, SettleTrade a deterministic
-        // transfer) — no RNG draw, so human stream 0 stays byte-identical (ADR-009).
-        if (alreadyAtWar)
-        {
-            RunForeignPowerDiplomacy(power);
-        }
+        // Per-turn diplomacy (86d3c9uar sue-for-peace + 86d3drn4h foreign-foreign haggle): a power already at war with the
+        // human weighs a peace treaty through the SAME pure EvaluateTrade the rules expose and settles it when its own
+        // evaluation accepts (it is militarily weak), so the war ends instead of grinding on — gated on `alreadyAtWar` so a
+        // war just declared from territorial tension this turn is pressed, not instantly undone. The same call ALSO drives a
+        // bounded NegotiateTrade haggle over any FOREIGN-FOREIGN war this power is in (the lower-id party drives each pair
+        // once). Run unconditionally now (the human-peace path self-gates on `alreadyAtWar`); the human-peace settle is
+        // RNG-free and the foreign-foreign haggle draws only the AI powers' own streams — so human stream 0 stays
+        // byte-identical (ADR-009). Drawn before atWarWithHuman is read, so a power that makes peace stands down the same turn.
+        RunForeignPowerDiplomacy(power, alreadyAtWar);
 
         bool atWarWithHuman = StanceBetween(power.PlayerId, _human.PlayerId) == Stance.War;
 

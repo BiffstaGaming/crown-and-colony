@@ -93,6 +93,24 @@ public class ForeignCombatTests
         Assert.DoesNotContain(game.CombatNotices, n => n.AttackerNationId == power.NationId);
     }
 
+    [Fact]
+    public void AtPeace_DoesNotAttackTheHuman_AndCheckAttackRefuses()
+    {
+        // 86d3drn45: once met and at PEACE, a foreign power is not an enemy — its armed unit beside the human does not
+        // raid (the offensive is war-gated), and the legality oracle itself refuses an attack on the human's unit.
+        (Game game, Player power, Unit prey) = Stage(seed: 7, atWar: false);
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.Peace); // they've met; peace, not war
+        // The staged armed soldier stands on a tile adjacent to the prey (Stage spawns it on prey.Neighbours().First).
+        Unit soldier = game.Units.First(u =>
+            u.OwnerId == power.PlayerId && u.RoleId == SoldierRole && u.Position.IsAdjacentTo(prey.Position));
+
+        Assert.False(game.CheckAttack(soldier, prey.Position).Allowed); // peace → no enemy to attack, though it's adjacent
+
+        game.EndTurn();
+
+        Assert.DoesNotContain(game.CombatNotices, n => n.AttackerNationId == power.NationId); // and it never raids at peace
+    }
+
     // ---- Defend-settlement garrisoning (86d3c9vxj) ----
 
     [Fact]
@@ -869,6 +887,54 @@ public class ForeignCombatTests
 
         Assert.False(game.NegotiateTrade(a, b, offer)); // unsalvageable → collapses
         Assert.Equal(b.PlayerId, only.OwnerId);          // and nothing changed hands
+    }
+
+    // ── AI-to-AI NegotiateTrade wired into the foreign turn (86d3drn4h) ──────────────────────────────────────────────────
+
+    /// <summary>Two evenly-matched foreign powers set at war with EACH OTHER (no human colonies near them, so neither
+    /// accrues tension toward the human and the foreign turn's only diplomacy is the foreign-foreign haggle).</summary>
+    private static (Game game, Player a, Player b) TwoForeignPowersAtWar(ulong seed)
+    {
+        Game game = Game.New(Classic, seed);
+        Player a = game.Players.First(p => p.PlayerId == ForeignPowerId(game));
+        Player b = game.Players.First(p => p.PlayerId == SecondForeignPowerId(game));
+        // Even land strength so a mutual peace scores positive for BOTH (ratio ≈ 0.5 → not refused either way).
+        GiveSoldiers(game, a.PlayerId, 3);
+        GiveSoldiers(game, b.PlayerId, 3);
+        game.SetStance(a.PlayerId, b.PlayerId, Stance.War);
+        game.ChangeTension(a.PlayerId, b.PlayerId, Game.TensionWar); // a genuine war (won't decay off in one turn)
+        return (game, a, b);
+    }
+
+    [Fact]
+    public void OnTheForeignTurn_TwoPowersAtWarWithEachOther_HaggleToPeaceViaNegotiateTrade()
+    {
+        // Turn-wiring (86d3drn4h): RunForeignPowerDiplomacy now drives the multi-round NegotiateTrade over a power's
+        // foreign-foreign wars. Two evenly-matched rivals both want peace → on the lower-id power's turn the haggle fires
+        // and settles a truce, ending the war without any human action.
+        (Game game, Player a, Player b) = TwoForeignPowersAtWar(seed: 7);
+        Assert.Equal(Stance.War, game.StanceBetween(a.PlayerId, b.PlayerId));
+
+        game.EndTurn();
+
+        Assert.Equal(Stance.Peace, game.StanceBetween(a.PlayerId, b.PlayerId)); // the AI-to-AI haggle ended the war
+        Assert.Equal(Stance.Peace, game.StanceBetween(b.PlayerId, a.PlayerId)); // both ways (the truce is symmetric)
+    }
+
+    [Fact]
+    public void TheForeignForeignHaggle_IsReplayStable_AndLeavesTheHumanStream0ByteIdentical()
+    {
+        // ADR-009: the foreign-foreign NegotiateTrade draws only the AI powers' own streams — two same-seed games play
+        // identically, and the human's stream 0 is byte-identical to a same-seed game with no staged foreign war.
+        (Game x, _, _) = TwoForeignPowersAtWar(seed: 4242);
+        (Game y, _, _) = TwoForeignPowersAtWar(seed: 4242);
+        for (int i = 0; i < 3; i++) { x.EndTurn(); y.EndTurn(); }
+        Assert.Equal(SaveGame.From(x).ToJson(), SaveGame.From(y).ToJson());
+
+        (Game withWar, _, _) = TwoForeignPowersAtWar(seed: 4242);
+        Game noWar = Game.New(Classic, seed: 4242);
+        for (int i = 0; i < 3; i++) { withWar.EndTurn(); noWar.EndTurn(); }
+        Assert.Equal(noWar.RandomState, withWar.RandomState); // stream 0 untouched by the foreign-foreign haggle
     }
 
     [Fact]

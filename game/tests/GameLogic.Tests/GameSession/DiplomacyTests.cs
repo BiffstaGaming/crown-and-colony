@@ -160,7 +160,7 @@ public class DiplomacyTests
         rival.OwnerId = fid; // a rival colonial power's unit standing next to the human
 
         Assert.Equal(Stance.Uncontacted, game.StanceBetween(0, fid));
-        Assert.True(game.CheckAttack(human, rivalTile).Allowed); // attacking is allowed even while Uncontacted — no gate (FP-6a)
+        Assert.True(game.CheckAttack(human, rivalTile).Allowed); // attacking is allowed while Uncontacted — the edge case that declares the war (86d3drn45)
 
         game.Attack(human, rivalTile, new FixedRandom(0.0));
 
@@ -168,6 +168,85 @@ public class DiplomacyTests
         Assert.Equal(Stance.War, game.StanceBetween(fid, 0));
         Assert.Equal(Game.TensionWar, game.TensionBetween(0, fid));
         Assert.Equal(Game.TensionWar, game.TensionBetween(fid, 0));
+    }
+
+    // ---- Stance gates combat & movement legality (86d3drn45) ----
+
+    /// <summary>An armed human soldier with a foreign-power colonist on an adjacent free tile, the pair set to <paramref name="stance"/>.</summary>
+    private static (Game game, Unit human, Unit rival, Position rivalTile, int fid) StageAdjacentColonialPair(Stance stance)
+    {
+        var game = Game.New(Classic, seed: 7);
+        Unit human = game.PlayerUnits.First(u => u.IsOnMap);
+        human.RoleId = Soldier; // armed → has offensive strength
+        human.RoleCount = 1;
+        int fid = ForeignPowerId(game);
+        Position rivalTile = AdjacentFreeLand(game, human.Position);
+        Unit rival = game.SpawnUnit(Classic.Unit(FreeColonist), rivalTile);
+        rival.OwnerId = fid;
+        game.SetStance(0, fid, stance);
+        return (game, human, rival, rivalTile, fid);
+    }
+
+    [Theory]
+    [InlineData(Stance.Peace)]
+    [InlineData(Stance.CeaseFire)]
+    [InlineData(Stance.Alliance)]
+    public void CheckAttack_OnAColonialRival_IsRejected_AtPeaceCeaseFireOrAlliance(Stance stance)
+    {
+        (Game game, Unit human, _, Position rivalTile, _) = StageAdjacentColonialPair(stance);
+
+        // The rival is no longer an enemy at this stance, so there is "no enemy to attack" — you must declare war first.
+        Assert.False(game.CheckAttack(human, rivalTile).Allowed);
+        Assert.Throws<InvalidMoveException>(() => game.Attack(human, rivalTile, new FixedRandom(0.0)));
+    }
+
+    [Fact]
+    public void CheckAttack_OnAColonialRival_IsAllowed_AtWar()
+    {
+        (Game game, Unit human, _, Position rivalTile, int fid) = StageAdjacentColonialPair(Stance.War);
+
+        Assert.True(game.CheckAttack(human, rivalTile).Allowed); // war → hostile, the attack is legal
+        Assert.Equal(Stance.War, game.StanceBetween(0, fid));
+    }
+
+    [Fact]
+    public void CheckMove_OntoAPeaceRivalsTile_IsRejected_NotRoutedToAttack()
+    {
+        (Game game, Unit human, _, Position rivalTile, _) = StageAdjacentColonialPair(Stance.Peace);
+
+        MoveCheck check = game.CheckMove(human, rivalTile);
+        Assert.False(check.Allowed); // can't enter a peaceful neighbour's tile…
+        Assert.DoesNotContain("attack", check.Reason!, System.StringComparison.OrdinalIgnoreCase); // …and it is NOT "attack instead"
+    }
+
+    [Fact]
+    public void CheckMove_OntoAWarRivalsTile_RoutesToAttack()
+    {
+        (Game game, Unit human, _, Position rivalTile, _) = StageAdjacentColonialPair(Stance.War);
+
+        MoveCheck check = game.CheckMove(human, rivalTile);
+        Assert.False(check.Allowed); // still can't step onto the tile…
+        Assert.Contains("attack", check.Reason!, System.StringComparison.OrdinalIgnoreCase); // …but now it routes to "attack instead" (enemy)
+    }
+
+    [Fact]
+    public void CheckAttack_OnANativeBrave_IsUnaffectedByColonialStance()
+    {
+        // Native combat keys on alarm, not colonial stance: a brave is always an enemy on owner-inequality, so a human
+        // soldier may attack an adjacent brave regardless of any colonial Peace the human holds with a foreign power.
+        var game = Game.New(Classic, seed: 7);
+        Unit human = game.PlayerUnits.First(u => u.IsOnMap);
+        human.RoleId = Soldier;
+        human.RoleCount = 1;
+        int fid = ForeignPowerId(game);
+        game.SetStance(0, fid, Stance.Peace); // at peace with a colonial rival — must not bleed into native legality
+
+        Unit brave = game.NativeUnits.First();
+        Position spot = AdjacentFreeLand(game, human.Position);
+        brave.Position = spot; // move a brave next to the human soldier
+
+        Assert.True(brave.IsNative);
+        Assert.True(game.CheckAttack(human, spot).Allowed); // the brave is still a legal target (native alarm system, not stance)
     }
 
     // ---- Decay ----
