@@ -7479,6 +7479,12 @@ public sealed partial class Game
             ReduceImmigration(player);
             player.ImmigrationRequired += Ruleset.Difficulty.CrossesIncrement;
         }
+
+        // FreeCol survival auto-recruit (Europe.MigrationType.SURVIVAL): a cross-starved colonial player with a dry
+        // pool and no New-World presence gets one free emigrant so it is never permanently extinguished. The gate is
+        // false for the default cross-producing game, so this draws no RNG and stays byte-identical (see
+        // Game.Emigration.cs). One-line hook only; the logic lives in the immigration partial.
+        MaybeSurvivalRecruit(player);
     }
 
     /// <summary>William Brewster's gift (FreeCol <c>model.ability.selectRecruit</c>): the player picks which dock recruit emigrates.</summary>

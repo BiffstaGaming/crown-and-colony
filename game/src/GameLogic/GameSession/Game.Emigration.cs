@@ -1,4 +1,5 @@
 using System.Linq;
+using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Units;
 
 namespace CrownAndColony.GameLogic.GameSession;
@@ -78,4 +79,103 @@ public sealed partial class Game
             : null;
         return recruit;
     }
+
+    /// <summary>
+    /// The classic spec's <c>model.option.mandatoryColonyYear</c> (1600): the year by which a colonial power must
+    /// have a foothold in the New World. <b>Before</b> this year a player with no colonies and no surviving units —
+    /// who also cannot scrape together a normal immigrant — is rescued by a survival auto-recruit (see
+    /// <see cref="MaybeSurvivalRecruit"/>); <b>from</b> this year on there is no such rescue (FreeCol
+    /// <c>ServerPlayer.checkForDeath</c> returns <c>IS_DEAD</c> instead of <c>IS_AUTORECRUIT</c>). Held as a constant
+    /// rather than read from the ruleset because the spec option is not yet parsed into the <c>Ruleset</c> (a small
+    /// follow-up); the classic value is fixed.
+    /// </summary>
+    internal const int MandatoryColonyYear = 1600;
+
+    /// <summary>
+    /// FreeCol's <b>survival</b> migration (<c>Europe.MigrationType.SURVIVAL</c>, fired from
+    /// <c>ServerPlayer.checkForDeath</c> returning <c>IS_AUTORECRUIT</c> and resolved by
+    /// <c>ServerPlayer.csEmigrate(0, SURVIVAL, …)</c>): a colonial player who has been starved of immigrants — no
+    /// colonies producing crosses, an empty/stalled pool, and nothing left in the New World — gets one <b>free</b>
+    /// colonist on its Europe dock so it is never permanently extinguished by a dry immigration pipeline. The forced
+    /// emigrant <b>does not</b> consume immigration or raise the target (it is an emergency top-up, not a normal
+    /// emigration), and is drawn on the player's own immigration RNG stream (<see cref="RandomFor"/>, ADR-009) so the
+    /// default game — whose chapels always make crosses, so its pool is never perpetually empty — stays byte-identical
+    /// and the rule only fires for a genuinely cross-starved player.
+    /// <para>
+    /// In-boundary derivation (no persisted stall counter, so no save bump): the "stall" is <b>structural</b>, read
+    /// from current state rather than counted over turns — a player with no colonies, an empty pool, and no viable
+    /// unit on the map simply cannot reach the recruit threshold, which is exactly the sustained-empty-pool condition
+    /// FreeCol rescues. The turn gate is the <see cref="MandatoryColonyYear"/> upper bound.
+    /// </para>
+    /// </summary>
+    /// <param name="player">The colonial player to check at the end of its immigration accrual.</param>
+    /// <returns>The survival colonist docked in Europe, or null when the gate did not fire.</returns>
+    private Unit? MaybeSurvivalRecruit(Player player)
+    {
+        if (!IsSurvivalStalled(player))
+        {
+            return null;
+        }
+
+        // FreeCol csEmigrate(slot 0, SURVIVAL): take the front dock recruit, refill the dock, land it in Europe.
+        // No ReduceImmigration / no target raise — the SURVIVAL case does not fall through to NORMAL. The dock refill
+        // draws on a dedicated SURVIVAL stream (see SurvivalRandom), NOT the player's main stream, so the human's
+        // stream 0 stays byte-identical whether or not the AI ever strands the player (ADR-009 — the same isolation
+        // IsHumanDefeated relies on: the human's turn sequence must not depend on AI actions).
+        IGameRandom random = SurvivalRandom(player);
+        string typeId = player.RecruitDock[0];
+        player.RecruitDockList.RemoveAt(0);
+        player.RecruitDockList.Add(DrawRecruitType(player, random));
+        return CreateEuropeRecruit(player, typeId);
+    }
+
+    /// <summary>RNG stream reserved for survival auto-recruit draws (86d3drn0e) — a high id well clear of every
+    /// per-player stream (<c>Player.RngStreamId</c> = playerId + 1) and the other reserved streams, so a forced
+    /// survival emigrant never correlates with or shifts the human's economy stream 0 (ADR-009).</summary>
+    private const ulong SurvivalStreamId = 104;
+
+    /// <summary>
+    /// The generator a survival auto-recruit draws its colonist type from: a <b>transient, isolated</b> stream so the
+    /// rescue never perturbs the player's main stream (for the human, stream 0). It is forked deterministically from
+    /// the player's current RNG state (<see cref="IGameRandom.SaveState"/>) — which for the human is byte-identical
+    /// across AI-divergent games (stream 0 is the ADR-009 invariant), so the draw is reproducible per seed and on
+    /// reload without any persisted survival-RNG field (no save bump) — salted by the <see cref="SurvivalStreamId"/>
+    /// stream and the current <see cref="Game.Turn"/> so a player stranded again on a later turn need not draw the
+    /// same type. Reading the source state via <c>SaveState</c> does <b>not</b> advance it, so the player's main
+    /// stream is untouched.
+    /// </summary>
+    private IGameRandom SurvivalRandom(Player player) =>
+        new Pcg32Random(RandomFor(player).SaveState().State + (ulong)Turn, SurvivalStreamId);
+
+    /// <summary>
+    /// Whether <paramref name="player"/> qualifies for a survival auto-recruit this turn (the in-boundary, derivable
+    /// distillation of FreeCol's <c>checkForDeath ⇒ IS_AUTORECRUIT</c> gate): a <b>non-human colonial</b> power
+    /// (a foreign power — see the human carve-out below; a rebel or independent nation gets no resupply from Europe),
+    /// <b>before</b> the <see cref="MandatoryColonyYear"/>, with a live Europe dock (no dock ⇒ no Europe ⇒ no rescue),
+    /// and <b>no colonist anywhere</b> — <b>no colonies</b> (so nothing producing crosses: its only immigration inflow
+    /// is the flat player bonus, which alone can never sustain the nation) and <b>no person unit on the map, in
+    /// Europe, or at sea</b>. This <em>structural</em> starvation is FreeCol's sustained-empty-pool condition: a
+    /// player in this state cannot recover on its own. The "no colonist anywhere" clause mirrors FreeCol's
+    /// <c>hasColonist ⇒ IS_ALIVE</c> short-circuit — once a survival colonist is waiting (in Europe, ready to ship
+    /// home) the player is no longer stranded, so the rescue does <b>not</b> refire next turn (it tops the player up
+    /// to exactly one free colonist, not one per turn). The check reads banked state, not a turn counter, so it needs
+    /// no persisted field (no save bump).
+    /// <para>
+    /// <b>Human carve-out (ADR-009).</b> The survival recruit only ever fires <em>because</em> a player was stripped
+    /// of all units — for the human that can only happen through AI actions, and the human's entire scoped state
+    /// (stream 0, gold, dock) must stay independent of what the AI does within a turn (the invariant
+    /// <see cref="IsHumanDefeated"/> documents and the stream-0 byte-stability tests guard). So the rescue is wired
+    /// for <b>foreign powers only</b>, each drawing on its own isolated stream; the human keeps the existing
+    /// conservative "alive on any surviving unit, no false defeat" stance (the pre-1600 free-recruit nuance for the
+    /// human remains an explicitly-unmodelled corner, as <see cref="IsHumanDefeated"/> already notes). The default
+    /// human therefore never triggers this, and the seeded default game is byte-identical.
+    /// </para>
+    /// </summary>
+    private bool IsSurvivalStalled(Player player) =>
+        !player.IsHuman
+        && player.PlayerType == PlayerType.Colonial
+        && CurrentYear < MandatoryColonyYear
+        && player.RecruitDock.Count > 0
+        && !ColoniesOf(player).Any()
+        && !_units.Any(u => IsOwnedBy(u, player) && u.Type.IsPerson);
 }

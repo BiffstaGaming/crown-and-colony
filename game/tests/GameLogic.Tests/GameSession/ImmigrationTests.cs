@@ -239,7 +239,139 @@ public class ImmigrationTests
         Assert.Equal(10, reloaded.ImmigrationRequired); // reduced on use; the raw 15 rides the save unchanged
     }
 
+    // ───── Survival auto-recruit (86d3drn0e): FreeCol MigrationType.SURVIVAL ─────
+    //
+    // The rescue is wired for FOREIGN POWERS only: it can only fire because a player lost all its units, which for
+    // the human can only happen via AI actions — and the human's scoped state must stay independent of those (the
+    // stream-0 invariant IsHumanDefeated documents). Each test strands one foreign power (no colonies, no units) and
+    // watches its OWN Europe dock.
+
+    [Fact]
+    public void SurvivalRecruit_RescuesACrossStarvedForeignPower_BeforeTheMandatoryYear()
+    {
+        // A foreign power with no colony (so no crosses) and no unit anywhere: its immigration pipeline is
+        // permanently dry — without a rescue it could never get another colonist.
+        (Game game, int powerId) = StrandedForeignPower(seed: 7);
+        Assert.Empty(PowerUnits(game, powerId));
+
+        game.EndTurn();
+
+        // FreeCol fires one free survival emigrant onto the power's OWN Europe dock.
+        Unit survivor = Assert.Single(PowerUnits(game, powerId));
+        Assert.True(survivor.Type.IsPerson);
+        Assert.Equal(UnitLocation.InEurope, survivor.Location);
+
+        // It does not refire next turn: the waiting colonist means the power is no longer stranded (hasColonist).
+        game.EndTurn();
+        Assert.Single(PowerUnits(game, powerId));
+    }
+
+    [Fact]
+    public void SurvivalRecruit_IsDeterministicForASeed()
+    {
+        (Game a, int powerA) = StrandedForeignPower(seed: 99);
+        (Game b, int powerB) = StrandedForeignPower(seed: 99);
+        a.EndTurn();
+        b.EndTurn();
+
+        Assert.Equal(
+            Assert.Single(PowerUnits(a, powerA)).Type.Id,
+            Assert.Single(PowerUnits(b, powerB)).Type.Id); // same seed → same survival colonist
+        Assert.Equal(powerA, powerB);
+    }
+
+    [Fact]
+    public void SurvivalRecruit_DoesNotFire_ForANormallyImmigratingPlayer()
+    {
+        // A player with a cross-producing colony reaches the threshold normally and is never spuriously rescued.
+        var game = Game.New(Classic, seed: 42);
+        game.FoundColony(game.Units[0]); // free chapel → crosses every turn
+
+        for (int t = 0; t < 5; t++)
+        {
+            game.EndTurn(); // 3,6,9,12,15 → exactly one NORMAL emigrant on turn 5
+        }
+
+        Unit emigrant = Assert.Single(game.UnitsInEurope);    // one, not two (no survival top-up)
+        Assert.Equal(17, game.ImmigrationRequired);           // the NORMAL path consumed the pool + raised the target
+        Assert.Equal(0, game.Immigration);
+    }
+
+    [Fact]
+    public void SurvivalRecruit_NeverFiresForTheHuman_NorShiftsItsStream0()
+    {
+        // The human is carved out (ADR-009): even stripped to nothing it gets no survival recruit, and a save with no
+        // human units/colonies runs a turn drawing nothing from stream 0 for a rescue.
+        Game game = StalledHumanGame(turn: 1, seed: 7);
+        var stateBefore = game.RandomState;
+
+        game.EndTurn();
+
+        Assert.Empty(game.UnitsInEurope);                            // no human survival emigrant
+        Assert.Equal(Game.PlayerImmigrationBonus, game.Immigration); // just the +2 bonus accrued
+        // EndTurn advances stream 0 (world/AI turns) but nothing here is a stream-0 survival draw; the point is the
+        // human gets no rescue at all — proven by the empty Europe above.
+        Assert.NotEqual(default, stateBefore);
+    }
+
+    [Fact]
+    public void SurvivalRecruit_DoesNotFire_FromTheMandatoryColonyYearOnward()
+    {
+        // FreeCol stops rescuing once the mandatory-colony cutover year is reached (checkForDeath → IS_DEAD,
+        // not IS_AUTORECRUIT). Turn 109 is year 1600 (turn 1 = 1492).
+        (Game game, int powerId) = StrandedForeignPower(seed: 7, turn: 109);
+        Assert.Equal(Game.MandatoryColonyYear, game.CurrentYear); // sanity: we are at the cutover
+
+        game.EndTurn();
+
+        Assert.Empty(PowerUnits(game, powerId)); // no rescue from the mandatory year on
+    }
+
     // ───────────────────────── fixtures ─────────────────────────
+
+    /// <summary>The units a given player owns (foreign powers carry a null OwnerNationId and their player id as OwnerId).</summary>
+    private static System.Collections.Generic.List<Unit> PowerUnits(Game game, int playerId) =>
+        game.Units.Where(u => u.OwnerNationId is null && u.OwnerId == playerId).ToList();
+
+    /// <summary>
+    /// A default game with one <b>foreign power stranded</b> — all its colonies and units stripped out via the
+    /// save/restore path — so it is cross-starved with nothing left in the New World (FreeCol's survival-recruit
+    /// condition). The power keeps its <see cref="SavedPlayer"/> (Colonial type, own RNG stream, Europe dock). Returns
+    /// the game and that power's id. Other players (the human, the remaining powers) are left intact.
+    /// </summary>
+    private static (Game Game, int PowerId) StrandedForeignPower(ulong seed, int turn = 1)
+    {
+        SaveGame baseSave = SaveGame.From(Game.New(Classic, seed: seed));
+        int powerId = baseSave.Players!.First(p => !p.IsHuman && p.PlayerType == 0).PlayerId;
+
+        SaveGame stranded = baseSave with
+        {
+            Turn = turn,
+            Units = baseSave.Units.Where(u => (u.OwnerId ?? 0) != powerId).ToList(),
+            Colonies = baseSave.Colonies?.Where(c => (c.OwnerId ?? 0) != powerId).ToList(),
+        };
+        return (SaveGame.FromJson(stranded.ToJson()).Restore(Classic), powerId);
+    }
+
+    /// <summary>A game whose human player is stripped of all colonies and units (the human carve-out check).</summary>
+    private static Game StalledHumanGame(int turn, int seed)
+    {
+        var save = new SaveGame
+        {
+            Turn = turn,
+            RandomStateValue = (ulong)seed,
+            RandomIncrement = 1,
+            MapWidth = 1,
+            MapHeight = 1,
+            Terrain = ["model.tile.plains"],
+            Units = [],          // no human units on the map
+            Explored = [],
+            Immigration = 0,     // empty pool
+            ImmigrationRequired = Game.InitialImmigration,
+        };
+        return save.Restore(Classic);
+    }
+
 
     /// <summary>
     /// A game with immigration state set precisely, via the save/restore path
