@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — Two playtest bugs: no Sail-to-Europe UI + fishing without a Docks — COMPLETE ✅
+
+**Requested:** "I don't see a way to send a Ship to Europe at all. I'm able to fish without a Docks."
+**Did:**
+- **Investigated first** (parallel workflow: 2 agents over engine + presentation + FreeCol) to root-cause both before any code.
+- **Sail to Europe** (`00ebcda`, presentation-only): the engine command `SailToEurope` (3-turn crossing) existed and was tested, but **no UI ever called it** — the Europe screen only handles ships already in port. Added a **Sail to Europe** button to the selected-unit HUD; shown only for ships, enabled only on a **high-seas tile** (the map's outer-edge deep water), tooltip points there. +1 L3.
+- **Fishing needs Docks** (`fdb276f`, GameLogic): `CheckAssignWork` never checked water-vs-Docks and the `produceInWater` ability wasn't parsed. Now `BuildingType.ProducesInWater` (docks grants it; drydock inherits), `CheckAssignWork` refuses a sea tile without it, the **AI planner is gated the same way** (else a dockless coastal AI colony would crash its turn), and the colony screen won't offer fish you can't work. Faithful to FreeCol's `ColonyTile.getNoWorkReason`. +4 L1, 1 L3 retargeted.
+- **Adversarial review** (4-lens workflow → adjudication): 3 confirmed findings → **2 applied, 1 refuted** (`49172ee`). Refuted: "use `ColonyHasAbility`" would make **docks stop counting** (it only aggregates fathers) — verified against the code, kept the building-sourced check. Applied: `CheckSailToEurope` now refuses a ship under repair (peer-oracle consistency); `SaveGame.Restore` drops a dockless sea-worker so a **pre-fix save self-heals** the illegal fisher (no-op for valid saves → byte-identical). +2 L1.
+**Status:** **1505 L1/L2 + 4 soak green**; full solution builds clean (0 warnings). Bug-1, bug-2 and the fish-gate commits **CI-green on both jobs**; the review-follow-up commit's CI is in flight (GameLogic+docs only). No save-format/version change; no RNG change; no golden churn (HUD/colony goldens unaffected — verified).
+**Changed:** 4 commits `fdb276f`, `00ebcda`, `49172ee` (+ this summary). GameLogic (`BuildingType`/`Ruleset` produceInWater, `Game.cs` `ColonyCanWorkWater`/`ColonyCanWorkTile`/`CheckAssignWork`/`PlanColonyTileWork`/`CheckSailToEurope`, `SaveGame.cs` restore cleanup), presentation (`main.tscn` button, `GameController.cs` wiring, `ColonyPanel.cs` gating), tests (`TileWorkerTests`, `SailingTests`, `InputTests`, `ColonyPanelTests`). Docs: `colonies.md`, `europe.md`, `presentation.md` (both layers + verification + changelog). ClickUp Shipped: `86d3drj98`, `86d3drj9e`; Session Log page `2kz0t3mf-3776`.
+**Decisions:** Diagnosed both bugs with a parallel investigation pass before coding; gated the **AI tile planner** as well as the human path (the non-obvious correctness point — the planner applies via `AssignWork`, which would throw); kept `ColonyCanWorkWater` building-sourced (mirrors `ColonyHasExportAbility`; classic grants `produceInWater` only via docks) and **refuted** the review's `ColonyHasAbility` suggestion after reading the code. The sail button (not an auto-prompt) is the minimal discoverable fix; auto-prompt-on-entering-high-seas is a noted follow-up.
+**Scheduled next:** **Negotiation UI** — `86d3c9ubw` (the human side of diplomacy; the AI backend exists). Or decompose the **P6 endgame epic** (`86d3b3r7a`).
+**Follow-ups:** FreeCol's confirm-dialog auto-prompt when a ship *moves onto* a high-seas tile (most discoverable sailing UX); a founding-father `produceInWater` source if a variant adds one (extend `ColonyCanWorkWater`).
+**Needs you:** Nothing blocking. To sail: move a ship to the map's east/west edge (the high seas) and press **Sail to Europe**. To fish: build **Docks** in a coastal colony first. Your current game's existing dockless fisher self-cleans on next load.
+
 ## 2026-06-21 — America map as a New-Game option (Random vs fixed America) — COMPLETE ✅
 
 **Requested:** "I'd like the default America map AND procedurally-created as options on New Game."
