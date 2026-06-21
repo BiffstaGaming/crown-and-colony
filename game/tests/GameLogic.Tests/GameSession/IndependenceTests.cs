@@ -440,4 +440,151 @@ public class IndependenceTests
         Assert.True(a.IsRebelDefeated(a.HumanPlayer));
         Assert.Equal(a.RandomState, b.RandomState);
     }
+
+    // ── Foreign Intervention Force (86d3c9vap) ───────────────────────────────────────────────────────────
+
+    /// <summary>The units the rebel owns that aren't its starting roster — i.e. the freshly-landed intervention force.</summary>
+    private static int RebelOwnedUnits(Game game, Player rebel) =>
+        game.Units.Count(u => u.OwnerId == rebel.PlayerId && u.IsOnMap);
+
+    [Fact]
+    public void ClassicRuleset_ParsesTheInterventionOptions()
+    {
+        // ADR-009: the default game's intervention threshold/force come from the medium difficulty data, not magic numbers.
+        Assert.Equal(5000, Classic.InterventionBells);
+        Assert.Equal(52, Classic.InterventionTurns);
+
+        // Classic medium force: 2 colonial-regular soldiers + 2 dragoons + 2 artillery + 2 men-o-war = 8 units, 6 land.
+        Assert.Equal(8, Classic.InterventionForce.TotalCount);
+        Assert.Equal(2, Classic.InterventionForce.Units.Count(u => u.UnitTypeId == "model.unit.manOWar"));
+        Assert.Equal(2, Classic.InterventionForce.Units
+            .Single(u => u.UnitTypeId == "model.unit.colonialRegular" && u.RoleId == "model.role.dragoon").Count);
+    }
+
+    [Fact]
+    public void ParseIntervention_ReadsTheChosenLevel_AndFallsBack()
+    {
+        // A spec with a single difficulty level overriding the bells; proves the value is parsed, not hardcoded.
+        XElement withOption = XElement.Parse(
+            "<freecol-specification><options>" +
+            "  <optionGroup id='model.difficulty.medium'>" +
+            "    <integerOption id='model.option.interventionBells' value='1234' />" +
+            "    <integerOption id='model.option.interventionTurns' value='9' />" +
+            "    <unitListOption id='model.option.interventionForce'>" +
+            "      <unitOption id='x'><unitType value='model.unit.manOWar' /><role value='model.role.default' /><number value='3' /></unitOption>" +
+            "    </unitListOption>" +
+            "  </optionGroup>" +
+            "</options></freecol-specification>");
+        (int bells, int turns, InterventionForceComposition force) = Ruleset.ParseIntervention(withOption);
+        Assert.Equal(1234, bells);
+        Assert.Equal(9, turns);
+        Assert.Equal(3, force.TotalCount);
+
+        // Absent options → the classic-medium fallback (5000 / 52 / the 8-unit force).
+        (int fbBells, int fbTurns, InterventionForceComposition fbForce) =
+            Ruleset.ParseIntervention(XElement.Parse("<freecol-specification />"));
+        Assert.Equal(5000, fbBells);
+        Assert.Equal(52, fbTurns);
+        Assert.Equal(8, fbForce.TotalCount);
+    }
+
+    [Fact]
+    public void RebelReachingTheThreshold_GetsAnInterventionForce_AndResetsTheCounter()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        int before = RebelOwnedUnits(game, rebel);
+
+        rebel.InterventionBells = Classic.InterventionBells; // at the threshold — the next resolution lands the ally
+        game.EndTurn(); // ResolveWarOfIndependence accrues (gain 0 on first sight) then fires the force
+
+        Assert.Equal(0, rebel.InterventionBells); // the counter reset
+        // The whole classic-medium force landed near the rebel's only port (room permitting): +8 rebel-owned units.
+        Assert.Equal(before + Classic.InterventionForce.TotalCount, RebelOwnedUnits(game, rebel));
+        // The composition matches the ruleset: 2 men-o-war on water, 6 land units ashore.
+        int newNaval = game.Units.Count(u => u.OwnerId == rebel.PlayerId && u.IsOnMap && u.Type.IsNaval);
+        Assert.Equal(2, newNaval);
+    }
+
+    [Fact]
+    public void RebelBelowTheThreshold_GetsNoInterventionForce()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        int before = RebelOwnedUnits(game, rebel);
+
+        rebel.InterventionBells = Classic.InterventionBells - 1; // one short
+        game.EndTurn();
+
+        Assert.Equal(before, RebelOwnedUnits(game, rebel)); // nothing landed
+        Assert.Equal(Classic.InterventionBells - 1, rebel.InterventionBells); // still accruing (no liberty gain this turn)
+    }
+
+    [Fact]
+    public void InterventionBells_AccrueTheRebelsLibertyEachTurn()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        game.EndTurn(); // first resolution seeds the liberty snapshot (no accrual yet)
+        int bellsAfterSeed = rebel.InterventionBells;
+
+        rebel.Liberty += 250; // simulate a turn's liberty production
+        game.EndTurn();
+
+        Assert.Equal(bellsAfterSeed + 250, rebel.InterventionBells); // the gain banked toward the threshold
+    }
+
+    [Fact]
+    public void InterventionForce_IsDeterministic_AcrossTwinGames()
+    {
+        // The ally lands on its own dedicated stream (InterventionStreamId), never stream 0 — twins stay byte-identical.
+        (Game a, _) = RebellionReady(4242);
+        (Game b, _) = RebellionReady(4242);
+        a.DeclareIndependence(a.HumanPlayer);
+        b.DeclareIndependence(b.HumanPlayer);
+        a.HumanPlayer.InterventionBells = Classic.InterventionBells;
+        b.HumanPlayer.InterventionBells = Classic.InterventionBells;
+        a.EndTurn();
+        b.EndTurn();
+
+        // Same seed → the same port, the same landing tiles, the same unit ids.
+        var aSpots = a.Units.Where(u => u.OwnerId == a.HumanPlayer.PlayerId && u.IsOnMap).Select(u => (u.Id, u.Position)).OrderBy(x => x.Id).ToList();
+        var bSpots = b.Units.Where(u => u.OwnerId == b.HumanPlayer.PlayerId && u.IsOnMap).Select(u => (u.Id, u.Position)).OrderBy(x => x.Id).ToList();
+        Assert.Equal(aSpots, bSpots);
+    }
+
+    [Fact]
+    public void InterventionForce_LandingDrawsNothingFromStreamZero()
+    {
+        // The friendly ally's landfall must not perturb the human's stream 0 (ADR-009 isolation): it draws only on
+        // the dedicated InterventionStreamId. With the human idle, stream 0 stays frozen across the landing.
+        (Game game, _) = RebellionReady(4242);
+        game.DeclareIndependence(game.HumanPlayer);
+        game.EndTurn(); // settle the REF/rebel turn, seed snapshots
+        RandomState frozen = game.RandomState;
+
+        game.HumanPlayer.InterventionBells = Classic.InterventionBells;
+        game.EndTurn(); // the intervention force lands
+
+        Assert.Equal(frozen, game.RandomState);
+    }
+
+    [Fact]
+    public void InterventionForce_RoundTripsSaveLoad()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        rebel.InterventionBells = Classic.InterventionBells;
+        game.EndTurn(); // the ally lands; counter resets to 0
+        int rebelOnMap = RebelOwnedUnits(game, rebel);
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(rebelOnMap, RebelOwnedUnits(loaded, loaded.HumanPlayer)); // the landed force persisted
+        Assert.Equal(0, loaded.HumanPlayer.InterventionBells); // the reset counter persisted (omitted at 0)
+    }
 }

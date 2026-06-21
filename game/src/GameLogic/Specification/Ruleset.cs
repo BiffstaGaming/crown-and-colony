@@ -47,7 +47,10 @@ public sealed class Ruleset
         DifficultyOptions difficulty,
         string difficultyLevelId,
         bool upkeepEnabled,
-        int lastColonialYear)
+        int lastColonialYear,
+        int interventionBells,
+        int interventionTurns,
+        InterventionForceComposition interventionForce)
     {
         Calendar = calendar;
         FatherAgeYears = fatherAgeYears;
@@ -55,6 +58,9 @@ public sealed class Ruleset
         DifficultyLevelId = difficultyLevelId;
         UpkeepEnabled = upkeepEnabled;
         LastColonialYear = lastColonialYear;
+        InterventionBells = interventionBells;
+        InterventionTurns = interventionTurns;
+        InterventionForce = interventionForce;
         _terrainById = terrainById;
         _unitById = unitById;
         _goodsById = goodsById;
@@ -155,6 +161,31 @@ public sealed class Ruleset
     /// option falls back to 1800, so the default classic game is unchanged.
     /// </summary>
     public int LastColonialYear { get; }
+
+    /// <summary>
+    /// The liberty (bells) a rebel must accrue during the War of Independence before a friendly foreign power lands
+    /// an <see cref="InterventionForce"/> to aid it (the spec <c>model.option.interventionBells</c> integer option in
+    /// the difficulty <c>monarch</c> group; classic medium <b>5000</b>). A rebel banks the same net liberty figure it
+    /// produces each turn toward this threshold (FreeCol <c>Player.modifyLiberty</c> for a rebel); once it is reached
+    /// the force arrives and the counter resets. A spec without the option falls back to 5000.
+    /// </summary>
+    public int InterventionBells { get; }
+
+    /// <summary>
+    /// How often (in turns) FreeCol grows the standing intervention force before it lands (the spec
+    /// <c>model.option.interventionTurns</c> integer option in the difficulty <c>monarch</c> group; classic medium
+    /// <b>52</b>). We parse it for fidelity and a follow-up repeat/growth, but the base game lands the fixed
+    /// <see cref="InterventionForce"/> once at the threshold (see [independence]). A spec without it falls back to 52.
+    /// </summary>
+    public int InterventionTurns { get; }
+
+    /// <summary>
+    /// The composition of the foreign Intervention Force a friendly power sends to a rebel that holds out long enough
+    /// (the spec <c>model.option.interventionForce</c> <c>unitListOption</c> in the difficulty <c>monarch</c> group;
+    /// classic medium 2 colonial-regular soldiers + 2 colonial-regular dragoons + 2 artillery + 2 men-o-war). A spec
+    /// without the option falls back to that classic-medium composition.
+    /// </summary>
+    public InterventionForceComposition InterventionForce { get; }
 
     /// <summary>All terrain types, in specification order.</summary>
     public IReadOnlyList<TerrainType> TerrainTypes { get; }
@@ -673,11 +704,17 @@ public sealed class Ruleset
         // The last colonial game year (model.option.lastColonialYear, in the gameOptions.years group); classic value
         // 1800. Past this year a colonial power may no longer declare independence (FreeCol model.limit.independence.year).
         int lastColonialYear = ParseIntOption(root, "model.option.lastColonialYear", fallback: 1800);
+        // The foreign-intervention options (interventionBells / interventionTurns / interventionForce) live in the
+        // chosen difficulty level's monarch group (classic medium 5000 / 52 / the 8-unit ally force). Parsed from the
+        // selected level so a variant resizes the ally by data alone.
+        (int interventionBells, int interventionTurns, InterventionForceComposition interventionForce) =
+            ParseIntervention(root, difficultyLevelId);
 
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
             roles, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears,
-            difficulty, difficultyLevelId, upkeepEnabled, lastColonialYear);
+            difficulty, difficultyLevelId, upkeepEnabled, lastColonialYear,
+            interventionBells, interventionTurns, interventionForce);
     }
 
     /// <summary>
@@ -860,6 +897,54 @@ public sealed class Ruleset
         return ParseInt((string?)option.Attribute("value"))
             ?? ParseInt((string?)option.Attribute("defaultValue"))
             ?? fallback;
+    }
+
+    /// <summary>
+    /// Parses the foreign-intervention options from the chosen difficulty level's <c>monarch</c> group (FreeCol
+    /// <c>GameOptions.INTERVENTION_BELLS</c>/<c>INTERVENTION_TURNS</c>/<c>INTERVENTION_FORCE</c>): the bell threshold,
+    /// the growth period, and the ally force composition. Like <see cref="ParseDifficulty"/>, these options are
+    /// restated under every level, so this FIRST selects the chosen level's subtree (avoiding the first <c>veryEasy</c>
+    /// block), THEN reads within it. A missing level — or any missing option — falls back to the classic-medium values
+    /// (5000 / 52 / the 8-unit ally force), so the default game and a spec without the options are unchanged.
+    /// </summary>
+    internal static (int Bells, int Turns, InterventionForceComposition Force) ParseIntervention(XElement root, string levelId = "model.difficulty.medium")
+    {
+        InterventionForceComposition fallbackForce = InterventionForceComposition.ClassicMedium;
+        XElement? level = root.Descendants("optionGroup")
+            .FirstOrDefault(g => (string?)g.Attribute("id") == levelId);
+        if (level is null)
+        {
+            return (InterventionForceComposition.ClassicMediumBells, InterventionForceComposition.ClassicMediumTurns, fallbackForce);
+        }
+
+        int IntOption(string id, int fallback) =>
+            level.Descendants("integerOption")
+                .Where(o => (string?)o.Attribute("id") == id)
+                .Select(o => ParseInt((string?)o.Attribute("value")))
+                .FirstOrDefault(v => v is not null) ?? fallback;
+
+        // The ally force: a <unitListOption id="model.option.interventionForce"> of <unitOption> blocks, each a
+        // <unitType>/<role>/<number>. Parses every block into a unit; falls back to the classic-medium force if absent.
+        XElement? forceOption = level.Descendants("unitListOption")
+            .FirstOrDefault(o => (string?)o.Attribute("id") == "model.option.interventionForce");
+        IReadOnlyList<InterventionForceUnit> force = forceOption is null
+            ? fallbackForce.Units
+            : forceOption.Elements("unitOption")
+                .Select(u => new InterventionForceUnit(
+                    UnitTypeId: (string?)u.Element("unitType")?.Attribute("value") ?? "",
+                    RoleId: (string?)u.Element("role")?.Attribute("value"),
+                    Count: ParseInt((string?)u.Element("number")?.Attribute("value")) ?? 0))
+                .Where(b => b.UnitTypeId.Length > 0 && b.Count > 0)
+                .ToList();
+        if (force.Count == 0)
+        {
+            force = fallbackForce.Units;
+        }
+
+        return (
+            IntOption("model.option.interventionBells", InterventionForceComposition.ClassicMediumBells),
+            IntOption("model.option.interventionTurns", InterventionForceComposition.ClassicMediumTurns),
+            new InterventionForceComposition(force));
     }
 
     /// <summary>Parses an integer attribute value, returning <c>null</c> for a missing or non-numeric string.</summary>
@@ -1772,6 +1857,47 @@ public sealed class Ruleset
     private static string RequiredAttribute(XElement el, string name) =>
         el.Attribute(name)?.Value
             ?? throw new RulesetFormatException($"<{el.Name}> lacks required attribute '{name}'.");
+}
+
+/// <summary>
+/// One block of the foreign Intervention Force (FreeCol <c>AbstractUnit</c> in <c>model.option.interventionForce</c>):
+/// a count of a unit type in a given military role (a null role = the unit's default role).
+/// </summary>
+/// <param name="UnitTypeId">The unit type id (e.g. <c>model.unit.colonialRegular</c>, <c>model.unit.manOWar</c>).</param>
+/// <param name="RoleId">The military role id the units carry (e.g. <c>model.role.dragoon</c>); null = the default role.</param>
+/// <param name="Count">How many units of this (type, role) the ally lands.</param>
+public sealed record InterventionForceUnit(string UnitTypeId, string? RoleId, int Count);
+
+/// <summary>
+/// The composition of the foreign Intervention Force (FreeCol <c>Monarch.getInterventionForce</c>): the unit blocks a
+/// friendly power sends to aid a rebel that has held out long enough during the War of Independence. Parsed from the
+/// spec <c>model.option.interventionForce</c>; the classic-medium default is 2 colonial-regular soldiers + 2
+/// colonial-regular dragoons + 2 artillery + 2 men-o-war. The land/naval split is decided at spawn time from each
+/// unit type's <c>IsNaval</c> flag, so this record stays ruleset-agnostic.
+/// </summary>
+/// <param name="Units">The force's unit blocks, in spec order.</param>
+public sealed record InterventionForceComposition(IReadOnlyList<InterventionForceUnit> Units)
+{
+    /// <summary>The classic-medium bell threshold (<c>model.option.interventionBells</c>), the parse fallback.</summary>
+    public const int ClassicMediumBells = 5000;
+
+    /// <summary>The classic-medium growth period (<c>model.option.interventionTurns</c>), the parse fallback.</summary>
+    public const int ClassicMediumTurns = 52;
+
+    /// <summary>
+    /// The classic-medium intervention force (the parse fallback): 2 colonial-regular soldiers, 2 colonial-regular
+    /// dragoons, 2 artillery, 2 men-o-war (FreeCol <c>model.difficulty.medium</c> <c>interventionForce</c>).
+    /// </summary>
+    public static readonly InterventionForceComposition ClassicMedium = new(
+    [
+        new InterventionForceUnit("model.unit.colonialRegular", "model.role.soldier", 2),
+        new InterventionForceUnit("model.unit.colonialRegular", "model.role.dragoon", 2),
+        new InterventionForceUnit("model.unit.artillery", "model.role.default", 2),
+        new InterventionForceUnit("model.unit.manOWar", "model.role.default", 2),
+    ]);
+
+    /// <summary>Total units across all blocks (land + naval).</summary>
+    public int TotalCount => Units.Sum(u => u.Count);
 }
 
 /// <summary>Thrown when a ruleset specification file is malformed.</summary>

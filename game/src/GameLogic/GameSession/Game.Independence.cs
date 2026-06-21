@@ -1,5 +1,6 @@
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Randomness;
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Trade;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
@@ -295,7 +296,98 @@ public sealed partial class Game
     public bool IsRebelDefeated(Player player) =>
         player.PlayerType is PlayerType.Rebel or PlayerType.Independent && GetNumberOfPorts(player) == 0;
 
-    /// <summary>Per-turn War-of-Independence resolution: a rebel that has broken the REF wins its independence.</summary>
+    // ── Foreign Intervention Force (FreeCol ServerPlayer intervention handling + Monarch.getInterventionForce) ──
+
+    /// <summary>RNG stream reserved for the foreign Intervention Force's landfall draws (which rebel port, which beach
+    /// tile) — a high id like <see cref="LcrStreamId"/>/<see cref="ResourceQuantityStreamId"/> so the friendly ally's
+    /// arrival never correlates with, or shifts, the human's economy stream 0 (ADR-009). The default game never reaches
+    /// the war, so this stream is never drawn there — the default game stays byte-identical.</summary>
+    private const ulong InterventionStreamId = 103;
+
+    /// <summary>Per-rebel snapshot of <see cref="Player.Liberty"/> as the intervention accrual last saw it, so each
+    /// turn's net liberty gain can be banked toward <see cref="Player.InterventionBells"/> (FreeCol accrues the same
+    /// figure in <c>Player.modifyLiberty</c>). Transient: reseeded from the rebel's current liberty on first sight
+    /// (e.g. after a save/load), which can drop a single straddling turn's bells — negligible against the threshold.</summary>
+    private readonly Dictionary<int, int> _interventionLibertySnapshot = [];
+
+    /// <summary>
+    /// Banks a rebel's net liberty this turn toward its Foreign Intervention Force, and — once the accrued total
+    /// reaches the ruleset's <see cref="Specification.Ruleset.InterventionBells"/> threshold (classic medium 5000) —
+    /// lands a friendly foreign power's <see cref="Specification.Ruleset.InterventionForce"/> near one of the rebel's
+    /// ports and resets the counter. Faithful to FreeCol <c>ServerPlayer.csNewTurn</c> (the <c>isRebel()</c> branch):
+    /// the rebel accrues the liberty it generates each turn, and the ally's troops join the rebel's own army.
+    /// <para>The landfall's only random choices (which port, which beach tile) draw from the dedicated
+    /// <see cref="InterventionStreamId"/> stream, never the human's stream 0 (ADR-009) — so even a human rebel's game
+    /// is not perturbed off-band.</para>
+    /// </summary>
+    private void AccrueInterventionBells(Player rebel)
+    {
+        // The liberty banked this turn = the rise in the rebel's spendable liberty since we last looked (FreeCol's
+        // modifyLiberty amount). On first sight (fresh declaration or a reload) the snapshot seeds to the current
+        // value, so nothing pre-rebellion is counted. A father election can drop liberty between snapshots; we clamp
+        // the gain at 0 (that one turn's contribution is lost — a tiny, documented deviation).
+        int previous = _interventionLibertySnapshot.TryGetValue(rebel.PlayerId, out int seen) ? seen : rebel.Liberty;
+        int gain = Math.Max(0, rebel.Liberty - previous);
+        _interventionLibertySnapshot[rebel.PlayerId] = rebel.Liberty;
+        rebel.InterventionBells += gain;
+
+        if (rebel.InterventionBells < Ruleset.InterventionBells)
+        {
+            return; // not yet — the foreign power is still weighing whether to commit
+        }
+        rebel.InterventionBells = 0; // the ally has committed; the count restarts (FreeCol can repeat on interventionTurns)
+        SpawnInterventionForce(rebel);
+    }
+
+    /// <summary>
+    /// Lands the foreign Intervention Force to aid <paramref name="rebel"/>: a friendly power's
+    /// <see cref="Specification.Ruleset.InterventionForce"/> (classic medium: 2 colonial-regular soldiers + 2 dragoons
+    /// + 2 artillery + 2 men-o-war) appears near one of the rebel's connected ports, owned by — and fighting for — the
+    /// rebel (FreeCol <c>createUnits(ivf…, entry, …)</c> on the rebel itself). The port and the exact landing tiles are
+    /// chosen on the <see cref="InterventionStreamId"/> stream (never stream 0). No port → no landing (the rebel has
+    /// already lost its coast). Land units beach on land tiles, men-o-war on water, around the chosen port.
+    /// </summary>
+    private void SpawnInterventionForce(Player rebel)
+    {
+        var ports = ColoniesOf(rebel).Where(IsColonyCoastal).OrderBy(c => c.Id).ToList();
+        if (ports.Count == 0)
+        {
+            return; // nowhere to land — the rebel holds no connected port
+        }
+
+        // Deterministic ally stream, seeded off the rebel's own stream state + the turn (never stream 0). For a human
+        // rebel RandomFor returns stream 0, so we seed off the REF's persisted stream instead when present, else the
+        // rebel's — either way the seed is reproducible and the draws come from InterventionStreamId, not stream 0.
+        Player? refPlayer = _players.FirstOrDefault(p => p.PlayerType == PlayerType.RoyalExpeditionaryForce);
+        ulong seed = (refPlayer?.Rng ?? rebel.Rng)?.SaveState().State ?? _random.SaveState().State;
+        var rng = new Pcg32Random(seed + (ulong)Turn, InterventionStreamId);
+
+        Colony port = ports[rng.Next(ports.Count)];
+
+        foreach (InterventionForceUnit block in Ruleset.InterventionForce.Units)
+        {
+            bool naval = Ruleset.Unit(block.UnitTypeId).IsNaval;
+            for (int i = 0; i < block.Count; i++)
+            {
+                Position? spot = FindLandingTileNear(port.Position, naval);
+                if (spot is not { } s)
+                {
+                    continue; // no room around this port this turn — that unit doesn't make landfall
+                }
+                var unit = new Unit(_nextUnitId++, Ruleset.Unit(block.UnitTypeId), s)
+                {
+                    Location = UnitLocation.OnMap,
+                    OwnerId = rebel.PlayerId,
+                    RoleId = block.RoleId ?? RoleType.DefaultRoleId,
+                };
+                _units.Add(unit);
+                RevealForOwner(unit);
+            }
+        }
+    }
+
+    /// <summary>Per-turn War-of-Independence resolution: each rebel accrues its intervention bells (landing a foreign
+    /// ally at the threshold), then a rebel that has broken the REF wins its independence.</summary>
     private void ResolveWarOfIndependence()
     {
         Player? refPlayer = _players.FirstOrDefault(p => p.PlayerType == PlayerType.RoyalExpeditionaryForce);
@@ -305,6 +397,7 @@ public sealed partial class Game
         }
         foreach (Player rebel in _players.Where(p => p.PlayerType == PlayerType.Rebel).ToList())
         {
+            AccrueInterventionBells(rebel); // hold out long enough and a foreign ally sends troops
             if (CheckForRefDefeat(refPlayer, rebel))
             {
                 GiveIndependence(refPlayer, rebel);
