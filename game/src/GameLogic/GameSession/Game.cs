@@ -7362,7 +7362,12 @@ public sealed partial class Game
             .SelectMany(f => f.Abilities)
             .Any(a => a.Id == CanRecruitUnitAbility && !a.Value && a.ScopeTypes.Contains(unitTypeId));
 
-    /// <summary>Replaces any dock recruit a newly-elected father now forbids (e.g. Brewster's scum ban).</summary>
+    /// <summary>
+    /// Replaces any dock recruit a newly-elected father now forbids (e.g. Brewster's scum ban) — the
+    /// <c>model.event.newRecruits</c> event (FreeCol <c>ServerEurope.replaceRecruits</c>: drop the recruits the
+    /// player can no longer recruit, then refill). A fresh draw never re-rolls a banned type (it goes through
+    /// <see cref="IsRecruitable"/>), so the dock ends with only legal recruits.
+    /// </summary>
     private void RefreshDockForRecruitability(Player player)
     {
         for (int i = 0; i < player.RecruitDock.Count; i++)
@@ -7372,6 +7377,82 @@ public sealed partial class Game
                 player.RecruitDockList[i] = DrawRecruitType(player);
             }
         }
+    }
+
+    // ─────────────────────────── Founding-father diplomacy (Franklin, Jan de Witt) ───────────────────────────
+
+    /// <summary>Benjamin Franklin's ability (FreeCol <c>model.ability.alwaysOfferedPeace</c>): a European power at war with this player always accepts/offers peace — the AI never scores a peace/cease-fire/alliance clause from a Franklin holder as a cost or a refusal.</summary>
+    private const string AlwaysOfferedPeaceAbility = "model.ability.alwaysOfferedPeace";
+
+    /// <summary>Jan de Witt's ability (FreeCol <c>model.ability.tradeWithForeignColonies</c>): this player may trade with rival nations' colonies.</summary>
+    private const string TradeWithForeignColoniesAbility = "model.ability.tradeWithForeignColonies";
+
+    /// <summary>Jan de Witt's ability (FreeCol <c>model.ability.customHouseTradesWithForeignCountries</c>): this player's custom houses may sell to foreign markets even when a good is boycotted, provided he is at peace with a European power.</summary>
+    private const string CustomHouseForeignTradeAbility = "model.ability.customHouseTradesWithForeignCountries";
+
+    /// <summary>Jan de Witt's ability (FreeCol <c>model.ability.betterForeignAffairsReport</c>): this player's foreign-affairs report reveals every rival nation's diplomatic stance.</summary>
+    private const string BetterForeignAffairsReportAbility = "model.ability.betterForeignAffairsReport";
+
+    /// <summary>
+    /// Whether the European power offering a peace clause to the evaluator holds Benjamin Franklin's
+    /// <c>alwaysOfferedPeace</c> (FreeCol <c>EuropeanAIPlayer.acceptDiplomaticTrade</c>'s <c>franklin</c> branch):
+    /// <paramref name="otherId"/> is the trade's other party, and when it holds the ability a peace/cease-fire/alliance
+    /// stance clause is forced neutral (scored 0) for the evaluator — so a Franklin power's peace is always accepted.
+    /// Pure; draws no RNG.
+    /// </summary>
+    internal bool OtherPartyAlwaysOffersPeace(int otherId) =>
+        PlayerById(otherId) is { } other && HasAbilityFor(other, AlwaysOfferedPeaceAbility);
+
+    /// <summary>
+    /// Whether the colonial player <paramref name="playerId"/> may trade with foreign (rival) colonies — Jan de Witt's
+    /// <c>tradeWithForeignColonies</c> ability (FreeCol <c>Player.hasAbility(TRADE_WITH_FOREIGN_COLONIES)</c>). The
+    /// GameLogic oracle the trade-with-rival-settlement path (and a future trade UI) gates on; false for every player
+    /// until de Witt sits in their Congress, so the default game is unaffected.
+    /// </summary>
+    public bool CanTradeWithForeignColonies(int playerId) =>
+        PlayerById(playerId) is { PlayerType: PlayerType.Colonial } p && HasAbilityFor(p, TradeWithForeignColoniesAbility);
+
+    /// <summary>
+    /// Whether <paramref name="playerId"/>'s custom houses may sell to foreign markets — Jan de Witt's
+    /// <c>customHouseTradesWithForeignCountries</c> ability, and (faithful to FreeCol <c>Player.canTrade</c>) only while
+    /// he is at <see cref="Stance.Peace"/> or <see cref="Stance.Alliance"/> with at least one other European power. The
+    /// oracle that will let a custom house auto-sell a boycotted good once the custom-house boycott gate lands; false
+    /// for every player until de Witt is elected, so the default game's custom-house behaviour is unchanged.
+    /// </summary>
+    public bool CustomHouseTradesWithForeignCountries(int playerId) =>
+        PlayerById(playerId) is { PlayerType: PlayerType.Colonial } p
+        && HasAbilityFor(p, CustomHouseForeignTradeAbility)
+        && _players.Any(o => o.PlayerId != p.PlayerId && o.PlayerType == PlayerType.Colonial
+            && p.Stances.GetValueOrDefault(o.PlayerId) is Stance.Peace or Stance.Alliance);
+
+    /// <summary>
+    /// Whether <paramref name="playerId"/> sees the full foreign-affairs report — Jan de Witt's
+    /// <c>betterForeignAffairsReport</c> ability (FreeCol <c>Player.hasAbility(BETTER_FOREIGN_AFFAIRS_REPORT)</c>).
+    /// The report UI is a separate P7 task; this exposes the GameLogic flag and <see cref="ForeignNationStances"/>
+    /// supplies the data. False until de Witt is elected.
+    /// </summary>
+    public bool HasBetterForeignAffairsReport(int playerId) =>
+        PlayerById(playerId) is { PlayerType: PlayerType.Colonial } p && HasAbilityFor(p, BetterForeignAffairsReportAbility);
+
+    /// <summary>
+    /// The diplomatic stance <paramref name="playerId"/> holds toward every <em>other</em> colonial power — the data
+    /// behind Jan de Witt's foreign-affairs report (the rival nations' stances his <c>betterForeignAffairsReport</c>
+    /// reveals). Returns each rival's player id with the stance from <paramref name="playerId"/>'s point of view, in
+    /// stable player-id order. Read-only (ADR-006); empty for a non-colonial player. The values are always available —
+    /// de Witt unlocks the report <em>presentation</em> (see <see cref="HasBetterForeignAffairsReport"/>); this oracle
+    /// is the raw stance data the report (or any caller) reads.
+    /// </summary>
+    public IReadOnlyList<(int PlayerId, Stance Stance)> ForeignNationStances(int playerId)
+    {
+        if (PlayerById(playerId) is not { PlayerType: PlayerType.Colonial } self)
+        {
+            return [];
+        }
+        return _players
+            .Where(o => o.PlayerId != self.PlayerId && o.PlayerType == PlayerType.Colonial)
+            .OrderBy(o => o.PlayerId)
+            .Select(o => (o.PlayerId, self.Stances.GetValueOrDefault(o.PlayerId)))
+            .ToList();
     }
 
     /// <summary>

@@ -358,6 +358,10 @@ public sealed partial class Game
     /// other party. Going to war is worth taking only when we're not badly outmatched (ratio &lt; 0.33 → invalid,
     /// &lt; 0.5 → a negative); making peace/cease-fire/alliance is the reverse (ratio &gt; 0.66 → invalid, &gt; 0.5 →
     /// negative, &lt; 0.33 → a strong +1000). An uncontacted stance is invalid.
+    /// <para><b>Benjamin Franklin</b> (FreeCol's <c>franklin</c> branch in <c>acceptDiplomaticTrade</c>): when the
+    /// <em>other</em> party (<paramref name="otherId"/>) holds <c>alwaysOfferedPeace</c>, a peace/cease-fire/alliance
+    /// clause is forced neutral (scored 0) — never a cost and never invalid — so the AI always accepts a Franklin
+    /// power's peace offer (and a too-strong opponent no longer rejects it). War clauses are unaffected.</para>
     /// </summary>
     private int EvaluateStance(int powerId, int otherId, Stance stance)
     {
@@ -369,6 +373,7 @@ public sealed partial class Game
                 if (ratio < 0.33) return InvalidTradeItem;
                 return ratio < 0.5 ? -value : value;
             case Stance.Peace or Stance.CeaseFire or Stance.Alliance:
+                if (OtherPartyAlwaysOffersPeace(otherId)) return 0; // Franklin: the other party's peace is always taken
                 if (ratio > 0.66) return InvalidTradeItem;
                 if (ratio > 0.5) return -value;
                 return ratio < 0.33 ? 1000 : value;
