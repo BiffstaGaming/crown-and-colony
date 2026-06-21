@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — Full FreeCol-vs-Crown&Colony functionality audit → backlog completed — COMPLETE ✅
+
+**Requested:** "FULL review of functionality of FreeCol vs Crown & Colony. Create ClickUp Tasks to match the work that needs to be done. Include EVERYTHING — I don't want to populate the backlog again."
+**Did:**
+- **16-agent audit workflow** (15 parallel domain readers + synthesis): each domain compared FreeCol's classic feature set against our code + all 35 `docs/systems/*.md` (Status/Deviations/Open-issues) + the full **245-task backlog**. ~1.5M subagent tokens, ~12 min. Then a **conservative second dedup pass by me** against the open backlog before creating anything.
+- **Headline:** Crown & Colony is **~95% feature-complete vs FreeCol classic** — nearly all of P2–P6 and most P7 UI is already Shipped (combat 99%, colonies 98%, Europe/market 98%, natives 95%, map 99%, 24/25 founding fathers). The gaps are slivers, not systems.
+- **Created 30 net-new Backlog tasks**, **skipped 9** that duplicated existing open items. Clusters: diplomacy depth (5), AI depth (4), endgame/independence (3), New-Game options incl. **nation selection** (3), units/colonies rules (5), movement/trade/spy (4), UI report tabs + help (4), polish (2). Out of scope (not created): multiplayer/networking (locked single-player decision), map editor + Australia variant (already epics).
+**Status:** 30 ClickUp tasks created (all status **Backlog**, prefixed `[P5]/[P6]/[P7]/[ARCH]/[ART]/[QA]`, each with FreeCol ref + our-gap + acceptance). No code change (this was a planning/backlog task); a small `chore` commit `e3144ab` added 3 stray Godot `.uid` files for repo consistency. Session Log page `2kz0t3mf-3796` records the full method + the task-id map.
+**Changed:** No source. ClickUp: +30 tasks (`86d3drmzf … 86d3drn76`). Docs: ClickUp Session Log (doc 06).
+**Decisions:** Respected the locked single-player-native decision (no FreeCol multiplayer/networking/observer tasks). Deduped hard — skipped 9 audit gaps already captured (scout-negotiate, Foreign Intervention Force, Hessian-on-DoI, AI transport+wishes, scoring/highscore engine, de Witt's foreign-trade ability). Relabelled one gap the audit mis-phased (AreEnemies-on-Stance: P8 → P6, it's a combat-legality correctness item). Left a couple of audit suggestions (building upkeep, unit attrition) flagged "verify classic applicability" in their task bodies, since Col1 may not charge them.
+**Scheduled next:** **Negotiation UI** — `86d3c9ubw` (the human diplomacy front-end; the backend + several new diplomacy-depth tasks now queue behind it). Or pick a new high-priority item: **nation selection at New Game** (`86d3drn5x`) or **alternative victory conditions** (`86d3drn5n`).
+**Follow-ups:** the 30 new tasks ARE the follow-up list — the backlog is now comprehensive vs FreeCol classic.
+**Needs you:** A quick prioritisation pass when you have a moment — reorder the new Backlog items in ClickUp by what you want next; I treated task order/priority as your steer.
+
 ## 2026-06-21 — Two playtest bugs: no Sail-to-Europe UI + fishing without a Docks — COMPLETE ✅
 
 **Requested:** "I don't see a way to send a Ship to Europe at all. I'm able to fish without a Docks."
