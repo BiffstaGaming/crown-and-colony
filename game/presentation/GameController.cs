@@ -122,6 +122,7 @@ public partial class GameController : Node2D
     private PanelContainer _victoryPanel = null!;
     private PanelContainer _highScoresPanel = null!;
     private PanelContainer _declarationPanel = null!;
+    private PanelContainer _negotiationPanel = null!;
     private Button _independenceButton = null!;
     private Button _endTurnButton = null!;
     private Control _gameOverScreen = null!;
@@ -195,6 +196,7 @@ public partial class GameController : Node2D
         _victoryPanel = GetNode<PanelContainer>("UI/VictoryPanel");
         _highScoresPanel = GetNode<PanelContainer>("UI/HighScoresPanel");
         _declarationPanel = GetNode<PanelContainer>("UI/DeclarationPanel");
+        _negotiationPanel = GetNode<PanelContainer>("UI/NegotiationPanel");
         _independenceButton = GetNode<Button>("UI/IndependenceButton");
         _endTurnButton = GetNode<Button>("UI/EndTurnButton");
         _gameOverScreen = GetNode<Control>("UI/GameOverScreen");
@@ -205,6 +207,7 @@ public partial class GameController : Node2D
         GetNode<Button>("UI/ReportsButton").Pressed += OpenColonyReportPanel;
         GetNode<Button>("UI/ColopediaButton").Pressed += OpenColopediaPanel;
         GetNode<Button>("UI/HighScoresButton").Pressed += OpenHighScoresPanel;
+        GetNode<Button>("UI/DiplomacyButton").Pressed += OpenNegotiationPanel;
         _independenceButton.Pressed += OpenDeclarationPanel;
         GetNode<Button>("UI/ColopediaPanel/VBox/CloseButton").Pressed += () => _colopediaPanel.Hide();
         GetNode<Button>("UI/ColonyReportPanel/VBox/CloseButton").Pressed += () => _colonyReportPanel.Hide();
@@ -214,6 +217,7 @@ public partial class GameController : Node2D
         GetNode<Button>("UI/FoundingFatherPanel/VBox/CloseButton").Pressed += () => _foundingFatherPanel.Hide();
         GetNode<Button>("UI/ColonyPanel/VBox/CloseButton").Pressed += () => _colonyPanel.Hide();
         GetNode<Button>("UI/EuropePanel/VBox/CloseButton").Pressed += () => _europePanel.Hide();
+        GetNode<Button>("UI/NegotiationPanel/VBox/CloseButton").Pressed += () => _negotiationPanel.Hide();
         GetNode<Button>("UI/NativeSettlementPanel/VBox/CloseButton").Pressed += () => _nativePanel.Hide();
         GetNode<Button>("UI/TradeRoutePanel/VBox/CloseButton").Pressed += () => _tradeRoutePanel.Hide();
         GetNode<Button>("UI/GameOverScreen/Panel/VBox/NewGameButton").Pressed += NewGame;
@@ -629,7 +633,12 @@ public partial class GameController : Node2D
             }
             else if (_game.ColonyAt(tile) is { } rival && rival.OwnerId != _game.HumanPlayer.PlayerId && _game.IsExplored(tile))
             {
-                AttackColonyAt(tile); // a discovered, ungarrisoned rival colony → assault to capture it
+                // A scout adjacent to a rival colony opens the scout-mission menu (spy / negotiate, FreeCol
+                // moveScoutColony); any other unit falls through to the click-to-capture assault.
+                if (!TryOpenScoutColonyMissions(rival, _selectedUnit))
+                {
+                    AttackColonyAt(tile); // a discovered, ungarrisoned rival colony → assault to capture it
+                }
             }
             else
             {
@@ -823,6 +832,80 @@ public partial class GameController : Node2D
             }
             RefreshView();
         });
+
+    /// <summary>
+    /// Opens the diplomacy / negotiation dialog (86d3c9xpt): the human answers any queued AI treaty offers
+    /// (<see cref="Game.PendingHumanProposals"/>) and may open a fresh negotiation with a contacted rival. The
+    /// callback surfaces the outcome and refreshes (a settled treaty may flip a stance). Public so the HUD button
+    /// and scene tests can drive it.
+    /// </summary>
+    public void OpenNegotiationPanel() =>
+        ((NegotiationPanel)_negotiationPanel).Open(_game, () =>
+        {
+            _notice = "Diplomacy updated.";
+            RefreshView();
+        });
+
+    /// <summary>
+    /// Opens the negotiation dialog pinned to the rival colony <paramref name="rivalColony"/> — the scout-at-the-gate
+    /// "negotiate" mission (86d3c9ubw, FreeCol <c>SCOUT_COLONY_NEGOTIATE</c>): the proposer chooser is pre-targeted at
+    /// the colony's owner. Public so the scout entry point and scene tests can drive it.
+    /// </summary>
+    public void OpenNegotiationForColony(Colony rivalColony) =>
+        ((NegotiationPanel)_negotiationPanel).OpenForColony(_game, rivalColony, () =>
+        {
+            _notice = "Diplomacy updated.";
+            RefreshView();
+        });
+
+    /// <summary>
+    /// The scout-enters-rival-colony entry point (86d3c9ubw, FreeCol <c>moveScoutColony</c>): a selected scout adjacent
+    /// to <paramref name="rivalColony"/> chooses a mission — <b>spy</b> on the interior (<see cref="Game.SpyOnColony(Unit, World.Position)"/>)
+    /// or open a <b>negotiation</b> with the owner. Each is gated on its Game oracle; the menu only appears when at least
+    /// the spy mission is legal (the scout carries the spyOnColony ability and has movement left). Returns whether the
+    /// menu was opened.
+    /// </summary>
+    private bool TryOpenScoutColonyMissions(Colony rivalColony, Unit scout)
+    {
+        if (!_game.CheckSpyOnColony(scout, rivalColony.Position).Allowed)
+        {
+            return false; // not a scout, no moves, or not adjacent — fall through to the normal click handling
+        }
+
+        int scoutId = scout.Id;
+        ((NegotiationPanel)_negotiationPanel).OpenScoutMissions(
+            _game, rivalColony, scoutId,
+            onSpy: () =>
+            {
+                SpyOnRivalColony(scoutId, rivalColony.Position);
+            },
+            onNegotiate: () =>
+            {
+                OpenNegotiationForColony(rivalColony);
+            });
+        return true;
+    }
+
+    /// <summary>Runs the scout's spy mission on <paramref name="target"/> and surfaces the glimpse (or the rebuff) — the interior snapshot is shown in the colony panel as a read-only view; either way the scout's turn ends.</summary>
+    private void SpyOnRivalColony(int scoutId, Position target)
+    {
+        Unit? scout = _game.Units.FirstOrDefault(u => u.Id == scoutId && u.IsOnMap);
+        if (scout is null || !_game.CheckSpyOnColony(scout, target).Allowed)
+        {
+            return;
+        }
+        SpyResult result = _game.SpyOnColony(scout, target);
+        _selectedUnit = null; // the spy attempt ends the scout's turn
+        if (result.Rebuffed || result.Snapshot is not { } snapshot)
+        {
+            _notice = "Your scout was turned away at the colony gate.";
+        }
+        else
+        {
+            _notice = $"Your scout glimpsed inside {snapshot.Name} (pop {snapshot.Population}, SoL {snapshot.SonsOfLiberty}%).";
+        }
+        RefreshView();
+    }
 
     /// <summary>Opens the native-settlement interaction panel, acting with <paramref name="actingUnit"/> (may be null — the panel then prompts to select one).</summary>
     public void OpenNativeSettlementPanel(NativeSettlement settlement, Unit? actingUnit)
@@ -1028,6 +1111,15 @@ public partial class GameController : Node2D
                 RefreshView();
             });
         }
+
+        // A foreign power has proactively offered the human a treaty this turn (alliance / cease-fire, queued in
+        // Game.PendingHumanProposals by ProposeProactiveTreaties) — surface the negotiation dialog so the human can
+        // accept or decline (once; opening it drains the queue via TakePendingHumanProposals, so it won't re-loop).
+        // Suppressed on defeat. PendingHumanProposals is a non-draining peek, so this check is side-effect-free.
+        if (!_game.IsHumanDefeated && _game.PendingHumanProposals.Count > 0 && !_negotiationPanel.Visible)
+        {
+            OpenNegotiationPanel();
+        }
     }
 
     /// <summary>
@@ -1052,6 +1144,7 @@ public partial class GameController : Node2D
             _colonyPanel.Hide();
             _europePanel.Hide();
             _nativePanel.Hide();
+            _negotiationPanel.Hide();
             _demandPanel.Hide();
             _moundsPanel.Hide();
             _monarchDialog.Hide();
