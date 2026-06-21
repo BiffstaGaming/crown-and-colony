@@ -2703,14 +2703,28 @@ public sealed partial class Game
     /// The balance numbers themselves come from <paramref name="ruleset"/> (which must have been loaded with the same
     /// level); this only tags the game so a reload re-loads the matching balance (86d3c9y08).
     /// </param>
+    /// <param name="mapSource">
+    /// Which map to play on (default <see cref="MapSource.Random"/> → a procedurally generated New World, the historical
+    /// default game). <see cref="MapSource.America"/> loads FreeCol's fixed 40×180 America terrain instead; on a fixed
+    /// map the <paramref name="mapWidth"/>/<paramref name="mapHeight"/>/<paramref name="landMassFraction"/> shape
+    /// parameters are ignored (the loaded grid sets the dimensions) and rivers/resources/regions are laid on top.
+    /// </param>
     public static Game New(
         Ruleset ruleset, ulong seed, int mapWidth = 36, int mapHeight = 24,
         int startingGold = 0, int startingTax = 0,
         double landMassFraction = MapGenerator.DefaultLandMassFraction,
-        string difficultyLevelId = DifficultyLevels.DefaultId)
+        string difficultyLevelId = DifficultyLevels.DefaultId,
+        MapSource mapSource = MapSource.Random)
     {
         var random = new Pcg32Random(seed);
-        GameMap map = MapGenerator.Generate(ruleset, mapWidth, mapHeight, random, landMassFraction);
+
+        // The map: either FreeCol's fixed America terrain (decorated with our rivers/resources/regions) or, by
+        // default, a procedurally grown New World. A fixed map sets its own dimensions, so the world-size args apply
+        // only to the random path. Both draw from the same stream-0 RNG, so the default (Random) game is unchanged.
+        GameMap? fixedTerrain = FixedMap.TryLoad(mapSource, ruleset);
+        GameMap map = fixedTerrain is null
+            ? MapGenerator.Generate(ruleset, mapWidth, mapHeight, random, landMassFraction)
+            : MapGenerator.DecorateFixedMap(fixedTerrain, ruleset, random);
 
         // The single human player (stream 0; foreign powers and natives become players in FP-3).
         var human = new Player(playerId: 0, nationId: null, isHuman: true, PlayerType.Colonial, new Market(ruleset))
@@ -2739,7 +2753,7 @@ public sealed partial class Game
         }
         bool HasWaterNeighbour(Position p) => p.Neighbours().Any(n => map.InBounds(n) && map.TerrainAt(n).IsWater);
         bool HasLandNeighbour(Position p) => p.Neighbours().Any(n => map.InBounds(n) && !map.TerrainAt(n).IsWater);
-        int equator = mapHeight / 2;
+        int equator = map.Height / 2; // map.Height == mapHeight for Random; a fixed map sets its own height
         var settleable = map.AllPositions().Where(Settleable).OrderBy(p => Math.Abs(p.Y - equator)).ToList();
         Position start =
             settleable.Where(p => HasWaterNeighbour(p) && HasLandNeighbour(p)).Cast<Position?>().FirstOrDefault()

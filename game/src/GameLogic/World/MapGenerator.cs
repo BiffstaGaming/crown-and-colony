@@ -77,7 +77,6 @@ public static class MapGenerator
         int[,] humidity = SmoothedNoise(width, height, random, 0, 101);
 
         var terrain = new TerrainType[width * height];
-        var resources = new Dictionary<Position, string>();
         for (int y = 0; y < height; y++)
         {
             int temperature = TemperatureAtLatitude(y, height, random);
@@ -115,16 +114,32 @@ public static class MapGenerator
         // subtypes, so the region layer is unchanged.
         ResetHighSeas(terrain, highSeas, width, height, ocean);
 
+        // Rivers, bonus resources and the region/lake layer are laid on the finished terrain by the shared tail
+        // (BuildDecoratedMap) — the same pass a fixed scenario map reuses on its pre-loaded terrain (DecorateFixedMap).
+        return BuildDecoratedMap(ruleset, terrain, width, height, random);
+    }
+
+    /// <summary>
+    /// Lays rivers, bonus resources and the region/lake layer onto a <b>finished terrain grid</b>, returning the
+    /// complete <see cref="GameMap"/>. This is the shared tail of map building: the random generator calls it after
+    /// its terrain/mountain/high-seas passes, and a fixed scenario map (<see cref="DecorateFixedMap"/>) calls it on
+    /// the terrain it loaded from disk — so both play with the same river/resource/region systems. Draws RNG for
+    /// rivers and bonuses (from <paramref name="random"/>, the map stream); the region/lake pass is RNG-free.
+    /// </summary>
+    private static GameMap BuildDecoratedMap(
+        Ruleset ruleset, TerrainType[] terrain, int width, int height, IGameRandom random)
+    {
         // Rivers (FreeCol TerrainGenerator.createRivers + River.flowFromSource): springs on high inland ground walk
         // downhill to the sea, laying a river improvement on each lowland tile. Runs after the terrain (mountains +
-        // high-seas) is settled and before bonuses (so a later slice's river-mouth fish bonus could fire). Draws RNG,
-        // so it reorders the stream-0 draw sequence (a deliberate map-gen change for this item, 86d3b3qdx).
+        // high-seas) is settled and before bonuses (so the river-mouth fish bonus can fire). Draws RNG, so it
+        // reorders the stream-0 draw sequence (a deliberate map-gen change for this item, 86d3b3qdx).
         var improvements = MakeRivers(ruleset, terrain, width, height, random);
 
         // Bonus resources, picked from each tile's final terrain table by weight — placed only AFTER the terrain is
         // complete (FreeCol adds bonuses last, "otherwise we risk creating resources on fields where they do not
         // belong, like tobacco on hills"), so a tile retyped to mountains gets mountain resources, not the lowland
         // resource it might have rolled before the range pass.
+        var resources = new Dictionary<Position, string>();
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
@@ -177,6 +192,27 @@ public static class MapGenerator
         }
         return new GameMap(
             width, height, terrain, resources, regionIds: regionIds, regions: regions, improvements: improvements);
+    }
+
+    /// <summary>
+    /// Decorates a <b>fixed (pre-loaded) terrain map</b> — FreeCol's hand-made America map (<see cref="FixedMap"/>),
+    /// whose terrain/mountain/high-seas layout is baked into the loaded grid — with the rivers, bonus resources and
+    /// region/lake layer a scenario file doesn't carry, so it plays with our gameplay systems. Runs the same tail as
+    /// the random generator (<see cref="BuildDecoratedMap"/>); deterministic per seed (the map stream).
+    /// </summary>
+    /// <param name="terrainMap">A terrain-only map (e.g. from <see cref="FixedMap.LoadAmerica"/>).</param>
+    /// <param name="ruleset">The ruleset (terrain tables, lake type).</param>
+    /// <param name="random">The map RNG stream that rivers and bonuses draw from.</param>
+    public static GameMap DecorateFixedMap(GameMap terrainMap, Ruleset ruleset, IGameRandom random)
+    {
+        int width = terrainMap.Width;
+        int height = terrainMap.Height;
+        var terrain = new TerrainType[width * height];
+        foreach (Position p in terrainMap.AllPositions())
+        {
+            terrain[(p.Y * width) + p.X] = terrainMap.TerrainAt(p);
+        }
+        return BuildDecoratedMap(ruleset, terrain, width, height, random);
     }
 
     /// <summary>
