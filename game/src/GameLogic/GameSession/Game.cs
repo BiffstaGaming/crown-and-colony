@@ -601,24 +601,32 @@ public sealed partial class Game
     /// </summary>
     /// <param name="player">The player to score.</param>
     /// <returns>The player's score (may be negative once destruction penalties land; today it is ≥ 0).</returns>
-    public int PlayerScore(Player player)
+    public int PlayerScore(Player player) => ScoreBreakdown(player).Total;
+
+    /// <summary>
+    /// The itemised components of <see cref="PlayerScore"/> for <paramref name="player"/> — the same pure, RNG-free read
+    /// (FreeCol <c>ServerPlayer.updateScore</c>), exposed line-by-line so the victory / end-of-game screen can show the
+    /// player <i>why</i> their score is what it is without re-deriving the formula. <see cref="PlayerScore"/> is exactly
+    /// <c>ScoreBreakdown(player).Total</c>, keeping this the single source of truth. Like <see cref="PlayerScore"/> it
+    /// mutates nothing, draws no randomness and is never persisted (no save-version bump) — see the section header.
+    /// </summary>
+    /// <param name="player">The player to break the score down for.</param>
+    /// <returns>The summands (unit values, colony liberty, founding-father points, gold points, history-event points)
+    /// and the independence percentage bonus, from which <see cref="ScoreComponents.Total"/> follows.</returns>
+    public ScoreComponents ScoreBreakdown(Player player)
     {
-        int score = _units.Where(u => IsOwnedBy(u, player)).Sum(UnitScoreValue)
-            + ColoniesOf(player).Sum(c => c.Liberty)
-            + ScoreFoundingFather * player.Congress.Count
-            + (int)Math.Floor(ScoreGold * player.Gold);
+        int unitValues = _units.Where(u => IsOwnedBy(u, player)).Sum(UnitScoreValue);
+        int colonyLiberty = ColoniesOf(player).Sum(c => c.Liberty);
+        int fatherPoints = ScoreFoundingFather * player.Congress.Count;
+        int goldPoints = (int)Math.Floor(ScoreGold * player.Gold);
 
         // History-event scores (FreeCol folds in HistoryEvent.getScore — region discovery today). The history log is
         // the human's only, so this contributes solely to the human's score; a foreign power scores its own units etc.
         // but no history events. This was a documented scoring TODO until region discovery landed (86d3c9w2f).
-        if (player.IsHuman)
-        {
-            score += HistoryEventScore;
-        }
+        int historyPoints = player.IsHuman ? HistoryEventScore : 0;
 
-        int bonus = IndependenceScoreBonusPercent(player);
-        score += score * bonus / 100;
-        return score;
+        int bonusPercent = IndependenceScoreBonusPercent(player);
+        return new ScoreComponents(unitValues, colonyLiberty, fatherPoints, goldPoints, historyPoints, bonusPercent);
     }
 
     /// <summary>

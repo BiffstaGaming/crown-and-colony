@@ -105,6 +105,7 @@ public partial class GameController : Node2D
     private PanelContainer _findSettlementPanel = null!;
     private PanelContainer _foundingFatherPanel = null!;
     private PanelContainer _colopediaPanel = null!;
+    private PanelContainer _victoryPanel = null!;
     private Button _endTurnButton = null!;
     private Control _gameOverScreen = null!;
     private Label _gameOverMessage = null!;
@@ -112,6 +113,7 @@ public partial class GameController : Node2D
     private Position? _inspectedTile;
     private string? _notice;
     private bool _gotoMode;
+    private bool _victoryShown;
     private GotoMarker _gotoMarker = null!;
 
     public override void _Ready()
@@ -171,6 +173,7 @@ public partial class GameController : Node2D
         _findSettlementPanel = GetNode<PanelContainer>("UI/FindSettlementPanel");
         _foundingFatherPanel = GetNode<PanelContainer>("UI/FoundingFatherPanel");
         _colopediaPanel = GetNode<PanelContainer>("UI/ColopediaPanel");
+        _victoryPanel = GetNode<PanelContainer>("UI/VictoryPanel");
         _endTurnButton = GetNode<Button>("UI/EndTurnButton");
         _gameOverScreen = GetNode<Control>("UI/GameOverScreen");
         _gameOverMessage = GetNode<Label>("UI/GameOverScreen/Panel/VBox/Message");
@@ -181,6 +184,7 @@ public partial class GameController : Node2D
         GetNode<Button>("UI/ColopediaButton").Pressed += OpenColopediaPanel;
         GetNode<Button>("UI/ColopediaPanel/VBox/CloseButton").Pressed += () => _colopediaPanel.Hide();
         GetNode<Button>("UI/ColonyReportPanel/VBox/CloseButton").Pressed += () => _colonyReportPanel.Hide();
+        GetNode<Button>("UI/VictoryPanel/VBox/CloseButton").Pressed += () => _victoryPanel.Hide();
         GetNode<Button>("UI/FindSettlementPanel/VBox/CloseButton").Pressed += () => _findSettlementPanel.Hide();
         GetNode<Button>("UI/FoundingFatherPanel/VBox/CloseButton").Pressed += () => _foundingFatherPanel.Hide();
         GetNode<Button>("UI/ColonyPanel/VBox/CloseButton").Pressed += () => _colonyPanel.Hide();
@@ -242,6 +246,8 @@ public partial class GameController : Node2D
         _selectedUnit = null;
         _inspectedTile = null;
         _notice = null;
+        _victoryShown = false; // re-arm the one-shot victory screen for the fresh game (new or loaded)
+        _victoryPanel.Hide();
         // Centre on the player's first on-map unit; after founding the only colony the player may have
         // none on the map (and the unit list now also holds native braves), so fall back to a colony,
         // then the map centre.
@@ -876,6 +882,7 @@ public partial class GameController : Node2D
         }
 
         UpdateDefeatUi();
+        UpdateVictoryUi();
 
         // A human explorer that stepped onto strange mounds owes an investigate/decline choice — surface the modal
         // (once; resolving it clears the pending state so it won't re-open). Suppressed if the human is defeated.
@@ -943,6 +950,26 @@ public partial class GameController : Node2D
         }
         _gameOverScreen.Visible = defeated;
     }
+
+    /// <summary>
+    /// Surfaces the victory / end-of-game statistics screen once the game has a <see cref="Game.Winner"/> (the rebel
+    /// broke the REF, or an alternate victory condition fired). Presentation-only (ADR-006): the win is decided in
+    /// GameLogic; <see cref="VictoryPanel.Open"/> reads the winner, score breakdown and end-game stats and shows
+    /// itself — a no-op while the game is still running. Auto-opened only the first time (the player can Close it and
+    /// keep looking around the final board); the panel is not re-forced on subsequent refreshes.
+    /// </summary>
+    private void UpdateVictoryUi()
+    {
+        if (_game.Winner is null || _victoryShown)
+        {
+            return;
+        }
+        _victoryShown = true;
+        ((VictoryPanel)_victoryPanel).Open(_game);
+    }
+
+    /// <summary>Opens the victory / end-of-game stats screen directly (the winner's score + final stats). Public so scene tests can drive it.</summary>
+    public void OpenVictoryPanel() => ((VictoryPanel)_victoryPanel).Open(_game);
 
     /// <summary>One marker per colony, reconciled each refresh (colony count is tiny).</summary>
     private void SyncColonyMarkers()

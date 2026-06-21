@@ -246,6 +246,50 @@ public class ScoreTests
         return raw == 0 ? 0 : (actual - raw) * 100 / raw;
     }
 
+    // ── ScoreBreakdown: the itemised oracle the victory screen reads ──────────────────────────────────────
+
+    [Fact]
+    public void ScoreBreakdown_SummandsAndTotal_MatchPlayerScore()
+    {
+        Game game = NewGame();
+        game.SpawnUnit(Classic.Unit("model.unit.galleon"), FirstCoastalWater(game));
+        game.HumanPlayer.CongressList.Add("model.foundingFather.adamSmith");
+        game.HumanPlayer.Gold = 4321; // floor(0.001·4321) = 4 gold points
+
+        ScoreComponents b = game.ScoreBreakdown(game.HumanPlayer);
+
+        // Each summand equals its independent re-derivation from public reads.
+        Assert.Equal(game.PlayerUnits.Sum(u => UnitScore(u.Type.Id)), b.UnitValues);
+        Assert.Equal(game.Colonies.Where(c => c.OwnerId == game.HumanPlayer.PlayerId).Sum(c => c.Liberty), b.ColonyLiberty);
+        Assert.Equal(game.HumanPlayer.Congress.Count * 5, b.FoundingFatherPoints);
+        Assert.Equal(4, b.GoldPoints);
+        Assert.Equal(game.HistoryEventScore, b.HistoryPoints);
+        Assert.Equal(0, b.IndependenceBonusPercent); // still Colonial — no win yet
+
+        // The breakdown reassembles to exactly PlayerScore (single source of truth).
+        Assert.Equal(b.Subtotal, b.UnitValues + b.ColonyLiberty + b.FoundingFatherPoints + b.GoldPoints + b.HistoryPoints);
+        Assert.Equal(b.Subtotal, b.Total); // no bonus → total is the subtotal
+        Assert.Equal(game.PlayerScore(game.HumanPlayer), b.Total);
+    }
+
+    [Fact]
+    public void ScoreBreakdown_AfterWinningIndependence_CarriesTheFirstPlaceBonus()
+    {
+        Game game = NewGame();
+        Position coastal = FirstCoastalLand(game);
+        Colony colony = game.FoundColony(game.SpawnUnit(Classic.Unit(Game.StartingUnitTypeId), coastal));
+        colony.Liberty = Colony.LibertyPerRebel * colony.Population;
+        game.HumanPlayer.Gold = 10000;
+        game.DeclareIndependence(game.HumanPlayer);
+        game.HumanPlayer.PlayerType = PlayerType.Independent; // first power to win → 100% bonus
+
+        ScoreComponents b = game.ScoreBreakdown(game.HumanPlayer);
+        Assert.Equal(100, b.IndependenceBonusPercent);
+        Assert.Equal(b.Subtotal, b.IndependenceBonus); // +100% doubles the subtotal
+        Assert.Equal(b.Subtotal * 2, b.Total);
+        Assert.Equal(game.PlayerScore(game.HumanPlayer), b.Total); // still agrees with PlayerScore
+    }
+
     /// <summary>The first empty water tile, for spawning a ship.</summary>
     private static Position FirstCoastalWater(Game game) =>
         game.Map.AllPositions().First(p =>

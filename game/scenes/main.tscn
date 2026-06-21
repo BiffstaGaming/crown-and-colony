@@ -1,4 +1,4 @@
-[gd_scene load_steps=22 format=3]
+[gd_scene load_steps=23 format=3]
 
 [ext_resource type="Script" path="res://presentation/GameController.cs" id="1"]
 [ext_resource type="Script" path="res://presentation/MapView.cs" id="2"]
@@ -22,6 +22,7 @@
 [ext_resource type="Script" path="res://presentation/RiverOverlay.cs" id="21"]
 [ext_resource type="Script" path="res://presentation/ImprovementOverlay.cs" id="22"]
 [ext_resource type="Script" path="res://presentation/MonarchDialog.cs" id="23"]
+[ext_resource type="Script" path="res://presentation/VictoryPanel.cs" id="24"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -583,6 +584,37 @@ layout_mode = 2
 size_flags_vertical = 3
 
 [node name="CloseButton" type="Button" parent="UI/ColonyReportPanel/VBox"]
+layout_mode = 2
+text = "Close"
+
+[node name="VictoryPanel" type="PanelContainer" parent="UI"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -220.0
+offset_right = 300.0
+offset_bottom = 220.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("24")
+
+[node name="VBox" type="VBoxContainer" parent="UI/VictoryPanel"]
+layout_mode = 2
+
+[node name="VictoryTitle" type="Label" parent="UI/VictoryPanel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+horizontal_alignment = 1
+
+[node name="Dynamic" type="VBoxContainer" parent="UI/VictoryPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CloseButton" type="Button" parent="UI/VictoryPanel/VBox"]
 layout_mode = 2
 text = "Close"
 

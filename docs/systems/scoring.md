@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Implemented (engine read; victory/high-score screens pending — P7) |
-| **Last verified** | 2026-06-21 @ region-discovery history-event score folded into the total (`86d3c9w2f`) |
-| **Code** | `game/src/GameLogic/GameSession/Game.cs` (`PlayerScore`, `Score`, the unit-score table + independence-bonus helper — the "Player score" section) · history-event score: `Game.History.cs` (`HistoryEvent.Score`, `Game.HistoryEventScore`) |
-| **Tests** | `game/tests/GameLogic.Tests/GameSession/ScoreTests.cs` |
+| **Status** | Implemented (engine read + **victory / end-of-game screen** consuming it via `Game.ScoreBreakdown`; high-score table still pending — P7) |
+| **Last verified** | 2026-06-22 @ `Game.ScoreBreakdown` oracle + the `VictoryPanel` that reads it (`86d3c9xc6`) |
+| **Code** | `game/src/GameLogic/GameSession/Game.cs` (`PlayerScore`, **`ScoreBreakdown`**, `Score`, the unit-score table + independence-bonus helper — the "Player score" section) · `game/src/GameLogic/GameSession/ScoreComponents.cs` (the itemised-breakdown value object) · history-event score: `Game.History.cs` (`HistoryEvent.Score`, `Game.HistoryEventScore`) · victory screen: `game/presentation/VictoryPanel.cs` |
+| **Tests** | `game/tests/GameLogic.Tests/GameSession/ScoreTests.cs` (engine, incl. `ScoreBreakdown`) · `game/presentation/tests/VictoryPanelTests.cs` (L3 victory screen) |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/server/model/ServerPlayer.java` (`updateScore`, L858–888; the `SCORE_*` constants, L155–171), `freecol/src/.../common/model/Unit.java` (`getScoreValue`, L621), `freecol/src/.../common/model/UnitType.java` (`getScoreValue`, L179), `freecol/src/.../common/model/HistoryEvent.java` (`getScore`, L194), `freecol/src/.../common/model/HighScore.java`, `freecol/data/rules/classic/specification.xml` (unit `score-value` attributes, L1814–2213; `declareIndependence` event score, L68) |
 | **Related systems** | [independence.md](independence.md), [founding-fathers.md](founding-fathers.md), [sons-of-liberty.md](sons-of-liberty.md), [colonies.md](colonies.md), [game-modes.md](game-modes.md) |
 
@@ -75,13 +75,13 @@ A unit type with no `score-value` in the ruleset scores **0** (FreeCol's default
 
 ## 3. Technical design
 
-**Domain model:** a self-contained "Player score" section on `Game` (`Game.cs`). `Game.PlayerScore(Player)` is the pure read; `Game.Score` is a human-convenience accessor (`PlayerScore(_human)`) mirroring the existing `Game.Gold`/`Game.Liberty` pattern. A private `IndependenceScoreBonusPercent(Player)` resolves the percentage bonus. No state was added to `Player`: `Player` holds no back-reference to `Game`, so a player-side `Score` property cannot compute the cross-cutting sum (units/colonies live on `Game`) — the read is exposed on `Game` only, where the state lives (ADR-006: rules in engine-free `GameLogic`; presentation reads the oracle).
+**Domain model:** a self-contained "Player score" section on `Game` (`Game.cs`). `Game.ScoreBreakdown(Player)` returns the itemised `ScoreComponents` (a small `readonly record struct` in `ScoreComponents.cs`: the five summands + the independence bonus percent, with `Subtotal`/`IndependenceBonus`/`Total` derived); `Game.PlayerScore(Player)` is now defined as `ScoreBreakdown(player).Total`, so the breakdown is the **single source of truth** and the total can never drift from its parts. `Game.Score` is a human-convenience accessor (`PlayerScore(_human)`) mirroring the existing `Game.Gold`/`Game.Liberty` pattern. A private `IndependenceScoreBonusPercent(Player)` resolves the percentage bonus. The **victory / end-of-game screen** (`VictoryPanel`, `86d3c9xc6`) reads `ScoreBreakdown` to show the winner *why* their score is what it is, line by line — presentation-only (ADR-006), no rules in the panel. No state was added to `Player`: `Player` holds no back-reference to `Game`, so a player-side `Score` property cannot compute the cross-cutting sum (units/colonies live on `Game`) — the read is exposed on `Game` only, where the state lives (ADR-006: rules in engine-free `GameLogic`; presentation reads the oracle).
 
 **Data sources:** the unit `score-value` numbers come from `freecol/data/rules/classic/specification.xml` (L1814–2213). Our `Specification.UnitType` record does **not** parse the `score-value` attribute, so the scoring section holds a static `UnitScoreValues` dictionary (id → value) transcribed from that spec, rather than editing the spec parser. A unit type absent from the table scores 0. (If unit `score-value`s are ever added to `UnitType`, this table should be replaced by reading `unit.Type.ScoreValue`.)
 
 **Algorithms & formulas:** see §2. The C# mirrors `updateScore` line-for-line: integer arithmetic throughout, `Math.Floor` on the gold term, and the percentage bonus applied to the subtotal with integer division (`score += score * bonus / 100`) — bit-identical to FreeCol's `(this.score * bonus) / 100`.
 
-**Integration points:** **none on the turn loop.** Nothing calls `PlayerScore` during `EndTurn`/AI turns — it is a pull-only oracle. The victory screen and high-score table (P7) will call it when rendering. Because it is never invoked inside the turn, it cannot perturb the deterministic stream-0 sequence (ADR-009).
+**Integration points:** **none on the turn loop.** Nothing calls `PlayerScore`/`ScoreBreakdown` during `EndTurn`/AI turns — they are pull-only oracles. The **victory / end-of-game screen** (`VictoryPanel`) now calls `ScoreBreakdown` when it renders (opened by `GameController.UpdateVictoryUi` once `Game.Winner` is set); the high-score table (P7) is still to come. Because it is never invoked inside the turn, it cannot perturb the deterministic stream-0 sequence (ADR-009).
 
 **Persistence:** the **score itself** is still *not* saved — it is recomputed from existing persisted state (units, colonies+liberty, congress, gold, player type, independence turn) on each read. The **history-event score summand** rides the in-memory history log, which is **not persisted** either, so a reloaded game's discovery score is re-earned as regions are re-revealed (the per-region *discovered* flag IS persisted at save v51 by the [region-discovery slice](map-terrain.md), so a re-revealed region is not re-discovered — only its score, riding the un-persisted log, accrues again). The score read added **no save-version bump** of its own; the v51 bump belongs to region discovery (the discovery state it persists), not to scoring.
 
@@ -91,10 +91,10 @@ A unit type with no `score-value` in the ruleset scores **0** (FreeCol's default
 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
-| L1 Unit | Always | `game/tests/GameLogic.Tests/GameSession/ScoreTests.cs` — each summand (father +5, gold ⌊0.001×g⌋, colony liberty, unit score-value), a known-fixture total, the default new-game roster total, the independence ×2 first-place bonus, determinism, RNG-free + no-mutation, unknown/native unit → 0 | ✅ |
+| L1 Unit | Always | `game/tests/GameLogic.Tests/GameSession/ScoreTests.cs` — each summand (father +5, gold ⌊0.001×g⌋, colony liberty, unit score-value), a known-fixture total, the default new-game roster total, the independence ×2 first-place bonus, determinism, RNG-free + no-mutation, unknown/native unit → 0; **`ScoreBreakdown` summands reassemble to `PlayerScore` (incl. the +100% independence-bonus path)** | ✅ |
 | L2 Scenario | Always | Covered by the global Soak/autoplay suite (score is a read; the autoplay games are byte-identical, proving the default game is unchanged) | ✅ |
-| L3 Interaction | If the system has UI | The victory/high-score **screens** are separate P7 tasks; the engine has no UI of its own | — (n/a this task) |
-| L4 Visual | If the system has a screen | As L3 — the screens that render the score arrive in P7 | — (n/a this task) |
+| L3 Interaction | If the system has UI | `game/presentation/tests/VictoryPanelTests.cs` — an independence win opens the `VictoryPanel` showing the score header (= `PlayerScore`), the breakdown lines (`ScoreLiberty`/`ScoreBonus`) and the end-game stats (`StatColonies`/`StatTurns`/`StatYear`) then Closes; a no-winner `Open` is a no-op. **GdUnit scene harness ran** (2 green). | ✅ |
+| L4 Visual | If the system has a screen | No golden yet — `VictoryPanel` is hidden by default (opens only on a win), so it adds no churn to the existing scene goldens; a dedicated victory-screen golden is a follow-up | — (deferred) |
 | L5 Soak | Covered by global suite | `--filter "Category=Soak"` green (4 tests) — default game byte-identical, no stream-0 drift | ✅ |
 
 - **FreeCol cross-check:** the formula and every constant are transcribed directly from `ServerPlayer.updateScore` (L858–888) and the `SCORE_*` constants (L155–171); the unit values from `specification.xml` (L1814–2213). The **region-discovery** history-event score is now folded in (`86d3c9w2f`); the remaining gaps (lost-city-find scores, the settlement/nation-destruction penalties, colony-worker unit scores) stay omitted pending their supporting state — see the deviations in §2.
@@ -105,11 +105,12 @@ A unit type with no `score-value` in the ruleset scores **0** (FreeCol's default
 - [ ] Add the remaining history-event scores once those events record one (lost-city finds; settlement/nation destruction penalties of −5/−50) **and** persist the history log so they survive load (region-discovery score is in-memory today).
 - [ ] Count colony-worker units in the unit sum once colony workers live in the unit list (the colony-worker-as-unit refactor) — also closes the muster-fidelity deviation in [independence.md](independence.md).
 - [ ] If `Specification.UnitType` gains a parsed `ScoreValue`, retire the `UnitScoreValues` table and read it from the type.
-- [ ] Consume `PlayerScore`/`Score` from the victory screen and the high-score table (P7).
+- [x] Consume the score from the **victory / end-of-game screen** (`86d3c9xc6`): `VictoryPanel` reads the new `Game.ScoreBreakdown` oracle. **Follow-up:** the **high-score table** (P7) still to consume it.
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-22 | **`ScoreBreakdown` oracle + victory screen consume it** (`86d3c9xc6`): added pure `Game.ScoreBreakdown(Player)` returning the itemised `ScoreComponents` (five summands + independence bonus %, `Subtotal`/`Total` derived); refactored `PlayerScore` to `ScoreBreakdown(player).Total` so the total can't drift from its parts. New presentation `VictoryPanel` reads it (shown when `Game.Winner` is set) for the end-of-game stats screen. Still recomputed-on-read, RNG-free, **no save bump**. +2 L1 (`ScoreBreakdown` summands/bonus) + 2 L3 (`VictoryPanelTests`). | `86d3c9xc6` |
 | 2026-06-21 | **Region-discovery score folded in** (P6): `HistoryEvent` gained an additive `Score`; `Game.HistoryEventScore` sums the human's history-event scores (today region discovery) and `PlayerScore` adds it for the human — closing the history-event-score deviation for discovery. Still recomputed-on-read, RNG-free; the v51 save bump belongs to the discovery state, not the score. `ScoreTests` updated to account for the discovery summand. | `86d3c9w2f` |
 | 2026-06-21 | Initial scoring engine: pure `Game.PlayerScore` read (units + colony liberty + 5×fathers + ⌊0.001×gold⌋ + independence %bonus), faithful to FreeCol `ServerPlayer.updateScore`; not persisted, RNG-free, no save bump. | `86d3c9vjm` |
