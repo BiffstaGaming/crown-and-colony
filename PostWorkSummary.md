@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-22 — 50-ITEM RUN · WAVE 11 (negotiation dialog + scout entry · native sprites · music · combat animations · L4 goldens) — COMPLETE ✅
+
+**Requested:** 50-item run, minimal testing. **Wave 11 = items 39–44.**
+**Did:** 5 lean worktree streams (one a 2-item cluster), cherry-picked (resolved `UnitMarker.cs` S2+S4 + 3× `presentation.md` doc conflicts), **6 items shipped**:
+- **Negotiation dialog + scout-colony entry** (`86d3c9xpt` + `86d3c9ubw`): `NegotiationPanel` (AI proposals accept/decline + human stance offers) + a scout's Spy/Negotiate menu at a rival colony, +3 L3.
+- **Native sprites** (`86d3bmfcx`): the art was already wired — extracted a testable engine-free `UnitSpriteCatalog` + 17 tests + provenance.
+- **Music + anthems** (`86d3c9xu1`): 6 CC-BY tracks + 8 GPL-v2 anthems from FreeCol, `MusicService` autoload.
+- **Combat animations** (`86d3drn72`): procedural lunge/flash tween (FreeCol `.sza` frames unusable as Godot assets), engine-free trigger map.
+- **L4 goldens** (`86d3b4653`): colony + Europe panel baselines via the headless golden harness (14/14 green).
+**Status:** Integrated, pushed `9a2b71f…a349377`. build clean + **1960 L1/L2 + 4 soak green**. **All 4 ART tasks now done** (SFX/music/native-sprites/combat-anim) — all sourced license-clear from FreeCol's GPL/CC-BY assets. No save bump (v52).
+**Scheduled next:** **Wave 12 (final)** — to reach 50: the `ColonySightRadius` 1→2 fidelity fix, the L3 texture-leak flake (`86d3c7yk3`), epic `86d3drpgg` finalization, + map-import / founding-father-diplomacy follow-ups. **44/50 done.**
+**Needs you:** Standing "your call" deviations (sight-radius, spy-evasion, WAIVE_TAX) — none blocking.
+
 ## 2026-06-22 — 50-ITEM RUN · WAVE 10 (game-options panel · DoI signing screen · SFX pack · 2 epic slices) — COMPLETE ✅
 
 **Requested:** 50-item run, minimal testing. **Wave 10 = items 34–38.**
