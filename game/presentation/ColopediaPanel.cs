@@ -99,7 +99,11 @@ public partial class ColopediaPanel : PanelContainer
         var dynamic = GetNode<VBoxContainer>("VBox/Scroll/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
-            child.Free();
+            // Detach immediately (no stale-vs-fresh tab-row collision) but QUEUE the free: a category/topic button's
+            // Pressed handler calls Rebuild(), so a synchronous Free() would free that button mid-signal ("object freed
+            // while a signal is being emitted"). RemoveChild + QueueFree is the Godot-safe idiom.
+            dynamic.RemoveChild(child);
+            child.QueueFree();
         }
 
         // Category tab row (named buttons for the L3 tests; the active category's button is disabled).

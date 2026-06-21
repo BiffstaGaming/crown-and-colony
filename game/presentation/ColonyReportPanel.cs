@@ -88,7 +88,11 @@ public partial class ColonyReportPanel : PanelContainer
         var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
-            child.Free();
+            // Detach immediately (so the freshly-built tab row below never collides with a stale one) but QUEUE the
+            // free: a tab button's Pressed handler calls Rebuild(), so freeing that button synchronously would free it
+            // mid-signal ("object freed while a signal is being emitted"). RemoveChild + QueueFree is the Godot-safe idiom.
+            dynamic.RemoveChild(child);
+            child.QueueFree();
         }
 
         // Tab row (named buttons for the L3 tests; the active tab is disabled).
