@@ -570,7 +570,13 @@ public sealed partial class Game
     private const double RefDefeatPowerRatio = 1.5;   // the rebel must hold 1.5× the REF's land power
     private const int RefDefeatLandThreshold = 7;     // …and the REF be reduced below 7 land
     private const int RefDefeatNavalThreshold = 2;    //    or below 2 naval units
-    private const int SpanishSuccessionYear = 1600;
+    private const int SpanishSuccessionYear = 1600;       // classic model.limit.spanishSuccession.year (engine fallback)
+
+    /// <summary>The spec event whose limits gate the Spanish Succession (FreeCol <c>model.event.spanishSuccession</c>).</summary>
+    private const string SpanishSuccessionEventId = "model.event.spanishSuccession";
+
+    /// <summary>The year-gate limit on that event (FreeCol <c>model.limit.spanishSuccession.year</c>): <c>year ≥ 1600</c>.</summary>
+    private const string SpanishSuccessionYearLimitId = "model.limit.spanishSuccession.year";
 
     private bool _spanishSuccessionDone;
 
@@ -864,7 +870,7 @@ public sealed partial class Game
     /// </summary>
     private void RunSpanishSuccession()
     {
-        if (_spanishSuccessionDone || CurrentYear < SpanishSuccessionYear)
+        if (_spanishSuccessionDone || !SpanishSuccessionYearReached())
         {
             return;
         }
@@ -893,6 +899,24 @@ public sealed partial class Game
             unit.OwnerId = strongest.PlayerId;
         }
         _spanishSuccessionDone = true;
+    }
+
+    /// <summary>
+    /// Whether the Spanish Succession's year gate is met (FreeCol <c>ServerGame.spanishSuccessionReady</c>'s
+    /// <c>event.getLimit("model.limit.spanishSuccession.year").evaluate(this)</c>): routed through the generic
+    /// limit-evaluation engine (<see cref="EvaluateLimit"/>) when the spec carries the event/limit, so a variant
+    /// retunes the trigger year by editing the XML alone. Falls back to the hardcoded <see cref="SpanishSuccessionYear"/>
+    /// (1600) only when the spec defines no such limit. The classic spec's limit is <c>year ≥ 1600</c> — identical to
+    /// the fallback — so the default game's trigger is byte-identical (ADR-006/009). Player-agnostic (a game-scoped
+    /// year limit ignores the player), so any live player is passed.
+    /// </summary>
+    private bool SpanishSuccessionYearReached()
+    {
+        if (Ruleset.Event(SpanishSuccessionEventId)?.Limit(SpanishSuccessionYearLimitId) is { } yearLimit)
+        {
+            return EvaluateLimit(yearLimit, _players[0]); // game-scoped: the player argument is unused
+        }
+        return CurrentYear >= SpanishSuccessionYear; // spec without the limit → the classic 1600 fallback
     }
 
     /// <summary>The first empty tile (in expanding rings around the targets) matching the unit's domain, or null if none within reach.</summary>

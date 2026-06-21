@@ -27,6 +27,7 @@ public sealed class Ruleset
     private readonly Dictionary<string, Dictionary<string, int>> _educationByFrom; // from-type → (to-type → base turns of training)
     private readonly Dictionary<string, string> _expertForProducing; // goods id → the unit type that is its expert
     private readonly Dictionary<string, EuropeanNation> _europeanNationById;
+    private readonly Dictionary<string, SpecEvent> _eventById; // spec <event> elements, keyed by id
 
     private Ruleset(
         Dictionary<string, TerrainType> terrainById,
@@ -44,6 +45,7 @@ public sealed class Ruleset
         Dictionary<string, Dictionary<string, int>> experienceUpgradeByFrom,
         Dictionary<string, Dictionary<string, int>> educationByFrom,
         Dictionary<string, EuropeanNation> europeanNationById,
+        Dictionary<string, SpecEvent> eventById,
         Calendar calendar,
         IReadOnlyList<int> fatherAgeYears,
         DifficultyOptions difficulty,
@@ -88,6 +90,7 @@ public sealed class Ruleset
         _experienceUpgradeByFrom = experienceUpgradeByFrom;
         _educationByFrom = educationByFrom;
         _europeanNationById = europeanNationById;
+        _eventById = eventById;
         // Reverse the expert→good mapping into good→expert (FreeCol Specification.getExpertForProducing): the unit type
         // whose expert-production is a given good (grain → expert farmer, fish → expert fisherman, …). First definition
         // wins on the (classic-impossible) duplicate.
@@ -125,6 +128,7 @@ public sealed class Ruleset
         SettlementTypes = _settlementById.Values.ToList();
         Roles = _roleById.Values.ToList();
         EuropeanNations = _europeanNationById.Values.ToList();
+        Events = _eventById.Values.ToList();
     }
 
     /// <summary>
@@ -202,6 +206,19 @@ public sealed class Ruleset
     /// option falls back to 1800, so the default classic game is unchanged.
     /// </summary>
     public int LastColonialYear { get; }
+
+    /// <summary>
+    /// The spec <c>&lt;event&gt;</c> elements (FreeCol <c>Specification.getEvents</c>): special game occurrences —
+    /// declaring independence, the Spanish succession — each gated by its own <see cref="SpecEvent.Limits"/>. The
+    /// limit-evaluation engine (<c>Game.CheckSpecEvent</c>) reads these to decide when an event may fire. Empty when
+    /// the spec defines no <c>&lt;events&gt;</c> section (a variant could add or remove events by data alone).
+    /// </summary>
+    public IReadOnlyList<SpecEvent> Events { get; }
+
+    /// <summary>The spec event with the given id (FreeCol <c>Specification.getEvent</c>), e.g.
+    /// <c>model.event.spanishSuccession</c>; <c>null</c> if the ruleset defines no such event.</summary>
+    /// <param name="id">The event id.</param>
+    public SpecEvent? Event(string id) => _eventById.GetValueOrDefault(id);
 
     /// <summary>
     /// The liberty (bells) a rebel must accrue during the War of Independence before a friendly foreign power lands
@@ -764,6 +781,10 @@ public sealed class Ruleset
         Dictionary<string, EuropeanNation> europeanNations = ParseEuropeanNations(
             root.Element("nations"), europeanNationTypes, ParseColonyNames(colonyNames));
 
+        // The spec <events> section (declare-independence + Spanish-succession events, each with its <limit> gates).
+        // Missing → an empty map, so a spec without events still loads (the default game's hardcoded paths fall back).
+        Dictionary<string, SpecEvent> events = ParseEvents(root.Element("events"));
+
         Calendar calendar = ParseCalendar(root);
         IReadOnlyList<int> fatherAgeYears = ParseFatherAgeYears(root, calendar.StartingYear);
         DifficultyOptions difficulty = ParseDifficulty(root, difficultyLevelId);
@@ -794,7 +815,7 @@ public sealed class Ruleset
 
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
-            roles, disasters, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears,
+            roles, disasters, unitChanges, experienceUpgrades, educationTurns, europeanNations, events, calendar, fatherAgeYears,
             difficulty, gameOptions, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage, lastColonialYear,
             interventionBells, interventionTurns, interventionForce,
             victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans);
@@ -2074,6 +2095,100 @@ public sealed class Ruleset
     private static string RequiredAttribute(XElement el, string name) =>
         el.Attribute(name)?.Value
             ?? throw new RulesetFormatException($"<{el.Name}> lacks required attribute '{name}'.");
+
+    /// <summary>
+    /// Parses the spec <c>&lt;events&gt;</c> section (FreeCol <c>Specification</c> reading <c>Event</c> elements) into a
+    /// map of <see cref="SpecEvent"/> keyed by id. Each <c>&lt;event&gt;</c> carries an optional <c>score-value</c> and
+    /// any number of child <c>&lt;limit&gt;</c> gates (<see cref="ParseLimit"/>). A null section (no <c>&lt;events&gt;</c>)
+    /// yields an empty map. <c>&lt;ability&gt;</c> children on an event (the independence event's
+    /// <c>independenceDeclared</c>/<c>independentNation</c> abilities) are not consumed here — the limit engine only
+    /// needs the limits — matching the faithful-subset scope.
+    /// </summary>
+    private static Dictionary<string, SpecEvent> ParseEvents(XElement? eventsRoot)
+    {
+        var events = new Dictionary<string, SpecEvent>();
+        if (eventsRoot is null)
+        {
+            return events;
+        }
+        foreach (XElement el in eventsRoot.Elements("event"))
+        {
+            string id = RequiredAttribute(el, "id");
+            var limits = new Dictionary<string, Limit>();
+            foreach (XElement limEl in el.Elements("limit"))
+            {
+                Limit limit = ParseLimit(limEl);
+                limits[limit.Id] = limit;
+            }
+            var ev = new SpecEvent(id, (int?)el.Attribute("score-value") ?? 0, limits);
+            if (!events.TryAdd(id, ev))
+            {
+                throw new RulesetFormatException($"Duplicate event id '{id}'.");
+            }
+        }
+        return events;
+    }
+
+    /// <summary>
+    /// Parses one spec <c>&lt;limit&gt;</c> (FreeCol <c>Limit.readChild</c>) into a <see cref="Limit"/>: the
+    /// <c>operator</c> attribute plus the <c>&lt;left-hand-side&gt;</c> and <c>&lt;right-hand-side&gt;</c> operands
+    /// (<see cref="ParseOperand"/>). Used both for an event's gates and standalone unit-build limits.
+    /// </summary>
+    internal static Limit ParseLimit(XElement el)
+    {
+        string id = (string?)el.Attribute("id") ?? "";
+        LimitOperator op = ParseOperator(RequiredAttribute(el, "operator"));
+        Operand lhs = ParseOperand(el.Element("left-hand-side")
+            ?? throw new RulesetFormatException($"<limit> '{id}' lacks a <left-hand-side>."));
+        Operand rhs = ParseOperand(el.Element("right-hand-side")
+            ?? throw new RulesetFormatException($"<limit> '{id}' lacks a <right-hand-side>."));
+        return new Limit(id, lhs, op, rhs);
+    }
+
+    /// <summary>Maps a spec <c>operator</c> attribute (<c>eq</c>/<c>lt</c>/<c>gt</c>/<c>le</c>/<c>ge</c>) to a <see cref="LimitOperator"/>.</summary>
+    private static LimitOperator ParseOperator(string op) => op switch
+    {
+        "eq" => LimitOperator.Eq,
+        "lt" => LimitOperator.Lt,
+        "gt" => LimitOperator.Gt,
+        "le" => LimitOperator.Le,
+        "ge" => LimitOperator.Ge,
+        _ => throw new RulesetFormatException($"Unknown limit operator '{op}'."),
+    };
+
+    /// <summary>
+    /// Parses one operand element (<c>&lt;left-hand-side&gt;</c> / <c>&lt;right-hand-side&gt;</c>, FreeCol
+    /// <c>Operand.readAttributes</c>): its <c>operand-type</c>, <c>scope-level</c>, optional literal <c>value</c>,
+    /// optional <c>method-name</c>/<c>method-value</c>, and optional <c>type</c> (the option id for an option operand).
+    /// </summary>
+    private static Operand ParseOperand(XElement el) => new(
+        ParseOperandType((string?)el.Attribute("operand-type")),
+        ParseScopeLevel((string?)el.Attribute("scope-level")),
+        (int?)el.Attribute("value"),
+        (string?)el.Attribute("method-name"),
+        (string?)el.Attribute("method-value"),
+        (string?)el.Attribute("type"));
+
+    /// <summary>Maps a spec <c>operand-type</c> attribute to an <see cref="OperandType"/> (default <see cref="OperandType.None"/>).</summary>
+    private static OperandType ParseOperandType(string? type) => type switch
+    {
+        "units" => OperandType.Units,
+        "settlements" => OperandType.Settlements,
+        "foundingFathers" => OperandType.FoundingFathers,
+        "year" => OperandType.Year,
+        "option" => OperandType.Option,
+        null or "none" => OperandType.None,
+        _ => OperandType.None, // an unrecognised operand type counts as a literal/none operand (evaluates to null → no constraint)
+    };
+
+    /// <summary>Maps a spec <c>scope-level</c> attribute to a <see cref="LimitScopeLevel"/> (default <see cref="LimitScopeLevel.None"/>).</summary>
+    private static LimitScopeLevel ParseScopeLevel(string? level) => level switch
+    {
+        "settlement" => LimitScopeLevel.Settlement,
+        "player" => LimitScopeLevel.Player,
+        "game" => LimitScopeLevel.Game,
+        _ => LimitScopeLevel.None,
+    };
 }
 
 /// <summary>
