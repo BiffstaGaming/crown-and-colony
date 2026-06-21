@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — ClickUp board reconciliation (dedupe + correctness) — COMPLETE ✅
+
+**Requested:** "Ensure ALL tasks to make the game 100% are in ClickUp. No duplicates. Board 100% correct so I can schedule."
+**Did:**
+- **Scanned all 277 tasks** (3 pages) for name collisions. Found **3 true duplicates** — a task batch created twice in the `86d3c7*` id range, each duplicating an earlier `86d3c9*` twin: Split Europe Train (`86d3c7x6k` **backlog** dup of shipped `86d3c9qgy` — the important one, it was sitting in Backlog as schedulable but already done), Artillery-in-the-open (`86d3c7ybm`→`86d3c9trh`), Horse breeding (`86d3c7x8a`→`86d3c9nwr`).
+- **Merged** each duplicate into its canonical (merge keeps the canonical, consumes the dup — no data loss). Board: 280 → 277 tasks, **0 duplicates remaining**.
+- **Confirmed the apparent "overlaps" are NOT duplicates** but the board's consistent **P6-backend / P7-UI split** (e.g. monarch `86d3c9qvr`+`86d3c9xdb`; DoI `86d3c9v28`+`86d3c9xht`; scoring `86d3c9vjm`+`86d3c9xc6`/`86d3c9xb1`). Left intact — schedule P6 logic then P7 screen.
+**Status:** Board deduped + verified. ~72 open/schedulable tasks remain (35 added today across the two audits + ~37 pre-existing), grouped P5/P6/P7/ARCH/ART/QA + 4 EPIC umbrellas. No code change.
+**Changed:** No source. ClickUp: 3 merges (`86d3c9qgy`←`86d3c7x6k`, `86d3c9trh`←`86d3c7ybm`, `86d3c9nwr`←`86d3c7x8a`).
+**Decisions:** Merged (not deleted) — reversible, no data loss. Did NOT rescope the P6/P7 split tasks (they're the board's intended pattern, not dups). Left two shipped-but-overlapping drydock-repair tasks (`86d3caxe6`/`86d3c9p51`) as-is — different scopes (repair vs repair+construction), both shipped, no scheduling impact.
+**Completeness:** the board now captures all statically-findable remaining work (two exhaustive audits + dedup). Provable 100% still needs the differential test harness `86d3drphu` + playtesting — static analysis can't prove behavioural equivalence.
+**Scheduled next (your call):** highest-value open items — Negotiation UI `86d3c9ubw`, Nation selection `86d3drn5x` (high), Alt victory conditions `86d3drn5n` (high); or the variant-prerequisite epic `86d3drpgg`.
+**Needs you:** Scheduling/prioritisation — the board is yours to order now; I treat task order as your steer.
+
 ## 2026-06-21 — "Are you 100% sure?" → port-fidelity verification audit — COMPLETE ✅
 
 **Requested:** "Are you 100% sure that is ALL of the work required to complete the port from FreeCol?"
