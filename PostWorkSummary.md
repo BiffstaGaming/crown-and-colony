@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-22 — 50-ITEM RUN · WAVE 9 (high-scores screen · map-settlement wiring · 3 spec-driven epic slices) — COMPLETE ✅
+
+**Requested:** 50-item run, minimal testing. **Wave 9 = items 29–33.**
+**Did:** 5 lean worktree streams, cherry-picked clean (the 3-way `Ruleset.cs` + constructor merge auto-resolved), **5 items shipped**:
+- **High-scores screen + persistence** (`86d3c9xb1`): `HighScore`/`HighScoreStore` (FreeCol-faithful 10-cap ranking + honorific ladder) persisted to its **own** `user://highscores.json` — game save untouched (v52); +23 L1 + 3 L3 green.
+- **Imported-settlement wiring** (`86d3c9wwk` follow-up): a map declaring `[settlements]` installs those exact villages via `Game.New`; America byte-identical.
+- **Spec-driven epic ×3** (`86d3drpgg`): native-tension deltas → `NativeTensionOptions` (promotion prob was already data-driven); colony/production scalars (FoodPerColonist/FoodForGrowth/LibertyPerRebel/DefaultExportLevel) → `ColonyConstants`; `gameOptions.years` gates → the `GameOptions` bundle. All byte-identical.
+**Status:** Integrated, pushed `0fc1695…8073f55`. build clean + **1885 L1/L2 + 4 soak green** (zero integration fixups). No save bump (v52).
+**Changed:** 5 commits. New: `HighScore.cs`, `HighScoreStore.cs`, `HighScoresPanel.cs`, `NativeTensionOptions.cs`, `ColonyConstants.cs`. Epic `86d3drpgg` now has **5 slices done** (abilities, combat-modifiers, native-tension, colony-constants, game-options) — substantially data-driven; stays open for the remainder (alarm band limits, terrain/building abilities).
+**Decisions:** Stayed lean. High-scores per-game dedup id not persisted (avoids a save bump) — documented follow-up.
+**Scheduled next:** **Wave 10** — base game-options panel (`86d3drn64`), more epic slices, an SFX/ART stream (sourcing FreeCol's GPL/CC-BY audio), L4 goldens. **33/50 done.**
+**Needs you:** Standing "your call" deviations (spy-evasion, WAIVE_TAX) — non-blocking.
+
 ## 2026-06-22 — 50-ITEM RUN · WAVE 8 (spec-driven abilities + modifiers · national-advantage AI · map import · victory screen) — COMPLETE ✅
 
 **Requested:** 50-item run, minimal testing. **Wave 8 = items 24–28.** (Hit the Anthropic monthly spend limit mid-wave overnight — 4 agents died; Chris raised the limit, I re-launched them. Only S2 had completed before the limit.)
