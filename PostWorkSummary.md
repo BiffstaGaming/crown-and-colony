@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — Parallel WAVE 2 (fathers · monarch tax · nation selection · survival recruit · lastColonialYear) — COMPLETE ✅
+
+**Requested:** "5-10 parallel waves, the more the better" — wave 2 of the run.
+**Did:** 5 worktree agents, integrated + reviewed + pushed; **CI green both jobs**. **Zero manual merge conflicts** (disjoint design; even the v49 save-bump auto-merged across shared test files; every stream a different system doc).
+- **Founding-father effects** (`5e38fdd`/`ba2c3e9`): Franklin `alwaysOfferedPeace` (a dominant AI still accepts your peace) + de Witt's three foreign-trade/report oracles. Found Brewster + Franklin's `ignoreEuropeanWars` were already wired. `86d3c7y7h`/`86d3c7xu6`/`86d3c7xbk`.
+- **Monarch tax goodwill** (`309c271`): WAIVE_TAX added (LOWER_TAX was already done). **Deliberate FreeCol deviation** (the agent flagged it): FreeCol's WAIVE_TAX is message-only; ours forgives boycott arrears as a real goodwill effect — arrears-gated so the default game's monarch table is unchanged. `86d3c9r68`. **(Your call: keep the goodwill effect, or revert to FreeCol's message-only?)**
+- **Nation + advantage selection at New Game** (`5537397`, **save v48→v49**): pick your nation; the human gets its advantage + colony names (every advantage was already nation-id-driven, so seeding `Player.NationId` was the whole wiring). Default (no nation) byte-identical. `86d3drn5x`.
+- **Survival auto-recruit** (`8515f81`): a colony-less foreign power before 1600 gets one free dock colonist (FreeCol `MigrationType.SURVIVAL`); wired foreign-only on a dedicated stream to preserve human stream-0 determinism. `86d3drn0e`.
+- **lastColonialYear via ruleset** (`b3f4546`): the independence cutoff reads `model.option.lastColonialYear` (default 1800), not a const. `86d3drn4t`.
+**Status:** Integrated, **CI green both jobs** (`27896729582`). build clean + **1566 L1/L2** + 4 soak + nation-selection L3 + golden suites (zero churn). Adversarial review: **no defects**. Pushed `b3f4546…6fef781`; 7 ClickUp tasks **Shipped**.
+**Changed:** 6 commits. Save **v48→v49** (one bump, omit-when-null → default byte-identical). Docs: founding-fathers / monarchy / players+map-terrain / immigration / independence — each a distinct file (no doc conflicts).
+**Decisions:** Kept the WAIVE_TAX-forgives-arrears deviation (documented + safe — surfaced for your call). Survival-recruit human carve-out (determinism). Nation advantages reused the existing nation-id seams (no per-advantage code).
+**Scheduled next:** **Wave 3** launching now — scoring engine, Foreign Intervention Force, unit attrition (save v50), diplomacy depth (TradeContext + AI proactive peace/alliance), multiple landmass styles.
+**Follow-ups:** de Witt's foreign-affairs report UI (P7); a richer nation/advantage picker; parse `mandatoryColonyYear` (1600) into the ruleset.
+**Needs you:** One call when convenient — keep the WAIVE_TAX goodwill effect (forgives arrears) or make it FreeCol-faithful (message-only)? I kept the former.
+
 ## 2026-06-21 — 5-stream parallel wave (report tabs · Colopedia help · building economy · goto · diplomacy stance) — COMPLETE ✅
 
 **Requested:** "Go ahead with all 5 parallel worktree agents" (the 5 disjoint streams I'd designed from the backlog).
