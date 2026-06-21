@@ -13,18 +13,24 @@ public class GameTests
     private static readonly Ruleset Classic = Ruleset.LoadClassic();
 
     [Fact]
-    public void NewGame_StartsAtTurn1_WithAColonistOnSettleableLand()
+    public void NewGame_StartsAtTurn1_WithTheFreeColStartingRoster()
     {
         var game = Game.New(Classic, seed: 42);
 
         Assert.Equal(1, game.Turn);
-        Unit unit = Assert.Single(game.PlayerUnits); // native braves also exist on the map
-        Assert.Equal(Game.StartingUnitTypeId, unit.Type.Id);
+        // FreeCol's classic European start (model.nationType.default): a pioneer + a soldier (both free colonists,
+        // role-equipped) and a caravel — landed, the colonists on land and the ship on adjacent water.
+        var human = game.PlayerUnits.ToList(); // native braves are not the human's
+        Assert.Equal(3, human.Count);
+        Unit pioneer = Assert.Single(human, u => u.Type.Id == Game.StartingUnitTypeId && u.RoleId == "model.role.pioneer");
+        Assert.Single(human, u => u.Type.Id == Game.StartingUnitTypeId && u.RoleId == "model.role.soldier");
+        Unit caravel = Assert.Single(human, u => u.Type.Id == "model.unit.caravel");
 
-        TerrainType startTerrain = game.Map.TerrainAt(unit.Position);
-        Assert.False(startTerrain.IsWater);
-        Assert.True(startTerrain.CanSettle);
-        Assert.Equal(unit.Type.Movement, unit.MovementLeft);
+        TerrainType pioneerTerrain = game.Map.TerrainAt(pioneer.Position);
+        Assert.False(pioneerTerrain.IsWater);          // colonists land on settleable ground
+        Assert.True(pioneerTerrain.CanSettle);
+        Assert.True(game.Map.TerrainAt(caravel.Position).IsWater); // the caravel berths on adjacent water
+        Assert.Equal(pioneer.Type.Movement, pioneer.MovementLeft);
     }
 
     [Fact]
@@ -152,14 +158,16 @@ public class GameTests
     }
 
     [Fact]
-    public void FogOfWar_NewGame_RevealsOnlyAroundStartingUnit()
+    public void FogOfWar_NewGame_RevealsOnlyAroundTheStartingUnits()
     {
         var game = Game.New(Classic, seed: 42);
-        Unit unit = game.Units[0];
 
-        // Line of sight 1 → at most a 3×3 block is known.
-        Assert.InRange(game.Explored.Count, 4, 9);
-        Assert.True(game.IsExplored(unit.Position));
+        // The starting roster (pioneer + soldier + caravel) reveals a small clustered area, not the whole map.
+        foreach (Unit u in game.PlayerUnits)
+        {
+            Assert.True(game.IsExplored(u.Position));
+        }
+        Assert.True(game.Explored.Count > 0);
         Assert.True(game.Explored.Count < game.Map.Width * game.Map.Height);
     }
 
@@ -167,10 +175,15 @@ public class GameTests
     public void FogOfWar_Moving_RevealsNewGround()
     {
         var game = Game.New(Classic, seed: 42);
-        Unit unit = game.Units[0];
+        Unit unit = game.PlayerUnits.First(u => !u.Type.IsNaval); // a land unit (the pioneer)
         int before = game.Explored.Count;
 
-        game.MoveUnit(unit, AdjacentLand(game, unit.Position));
+        // Step toward the fog frontier (an adjacent land tile whose own neighbourhood still holds a fogged tile), so
+        // the move lifts new ground even though the dense starting roster already revealed the immediate cluster.
+        Position target = unit.Position.Neighbours().First(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater && game.CheckMove(unit, n).Allowed
+            && n.Neighbours().Any(m => game.Map.InBounds(m) && !game.IsExplored(m)));
+        game.MoveUnit(unit, target);
 
         Assert.True(game.Explored.Count > before, "moving should reveal new tiles");
         Assert.True(game.IsExplored(unit.Position));
@@ -180,12 +193,14 @@ public class GameTests
     public void FoundColony_OnSettleableLand_ConsumesUnitAndCreatesColony()
     {
         var game = Game.New(Classic, seed: 42);
-        Unit unit = game.Units[0];
+        Unit unit = game.PlayerUnits.First(u => u.Type.CanFoundColony && game.CheckFoundColony(u).Allowed);
         Position site = unit.Position;
+        int before = game.PlayerUnits.Count();
 
         var colony = game.FoundColony(unit);
 
-        Assert.Empty(game.PlayerUnits);                // founder settled down (braves remain)
+        Assert.Equal(before - 1, game.PlayerUnits.Count()); // only the founder settled down (the rest of the roster remains)
+        Assert.DoesNotContain(unit, game.PlayerUnits);
         Assert.Single(game.Colonies);
         Assert.Equal(site, colony.Position);
         Assert.Equal(1, colony.Population);

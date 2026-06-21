@@ -2728,22 +2728,24 @@ public sealed partial class Game
         // minerals/ore/silver deposits), so the L4 map golden and soak baseline are regenerated this wave.
         game.RollResourceQuantities(seed);
 
-        // Start on settleable land that has somewhere to walk to (not a 1-tile
-        // islet), preferring temperate latitudes (nearest the equator row) over
-        // a polar landfall.
+        // Start on settleable land, preferring temperate latitudes (nearest the equator row) over a polar landfall,
+        // and — so the human can land its starting caravel beside its colonists (FreeCol's coastal arrival) — a
+        // COASTAL tile: settleable land with both a water neighbour (a berth for the ship) and a land neighbour (room
+        // to expand, not a 1-tile islet). Falls back to any non-islet settleable tile, then any settleable tile.
         bool Settleable(Position p)
         {
             TerrainType t = map.TerrainAt(p);
             return !t.IsWater && t.CanSettle;
         }
+        bool HasWaterNeighbour(Position p) => p.Neighbours().Any(n => map.InBounds(n) && map.TerrainAt(n).IsWater);
+        bool HasLandNeighbour(Position p) => p.Neighbours().Any(n => map.InBounds(n) && !map.TerrainAt(n).IsWater);
         int equator = mapHeight / 2;
-        Position start = map.AllPositions()
-            .Where(Settleable)
-            .OrderBy(p => Math.Abs(p.Y - equator))
-            .FirstOrDefault(
-                p => p.Neighbours().Any(n => map.InBounds(n) && !map.TerrainAt(n).IsWater),
-                map.AllPositions().First(Settleable));
-        game.SpawnUnit(ruleset.Unit(StartingUnitTypeId), start);
+        var settleable = map.AllPositions().Where(Settleable).OrderBy(p => Math.Abs(p.Y - equator)).ToList();
+        Position start =
+            settleable.Where(p => HasWaterNeighbour(p) && HasLandNeighbour(p)).Cast<Position?>().FirstOrDefault()
+            ?? settleable.Where(HasLandNeighbour).Cast<Position?>().FirstOrDefault()
+            ?? settleable.First();
+        game.SpawnHumanStartingUnits(ruleset, start);
 
         // The REF's entry tile: the nearest water tile to the human's start (FreeCol picks a non-land tile within
         // distance 10 of the start and stores it as the REF player's entry tile). Chosen deterministically — no RNG
@@ -2895,6 +2897,60 @@ public sealed partial class Game
             {
                 anchors.Add(anchor);
             }
+        }
+    }
+
+    /// <summary>
+    /// FreeCol's classic European starting roster (<c>model.nationType.default</c> <c>RegularStartingUnits</c>): a
+    /// <b>pioneer</b> (free colonist + tools) and a <b>soldier</b> (free colonist + muskets), and a <b>caravel</b>.
+    /// The veteran soldier is the <c>expert-starting-units</c> variant (excluded from the regular roster), so the
+    /// regular start uses a free-colonist soldier — the iconic, neutral start, matching what a default-nation rival gets.
+    /// </summary>
+    private static readonly (string TypeId, string? RoleId)[] HumanStartingRoster =
+    [
+        ("model.unit.freeColonist", "model.role.pioneer"),
+        ("model.unit.freeColonist", "model.role.soldier"),
+        ("model.unit.caravel", null),
+    ];
+
+    /// <summary>
+    /// Places the human's starting units around <paramref name="start"/> (FreeCol's classic landed roster — see
+    /// <see cref="HumanStartingRoster"/>): the land units (pioneer, soldier) on <paramref name="start"/> and its free
+    /// land neighbours, the caravel on a free adjacent water tile. Deterministic — draws no RNG, so the human's
+    /// stream 0 stays byte-stable (ADR-009); each unit lifts the human's fog (<see cref="RevealForOwner"/>). A unit
+    /// type a ruleset variant omits, or a ship with no adjacent water (a landlocked start), is simply skipped.
+    /// </summary>
+    private void SpawnHumanStartingUnits(Ruleset ruleset, Position start)
+    {
+        var taken = new HashSet<Position>();
+        bool Free(Position p, bool water) =>
+            Map.InBounds(p) && Map.TerrainAt(p).IsWater == water
+            && !taken.Contains(p) && !_units.Any(u => u.IsOnMap && u.Position == p);
+        Position? Place(bool water) =>
+            Free(start, water) ? start
+            : start.Neighbours().Where(n => Free(n, water)).Cast<Position?>().FirstOrDefault();
+
+        foreach ((string typeId, string? roleId) in HumanStartingRoster)
+        {
+            if (!ruleset.UnitTypes.Any(u => u.Id == typeId))
+            {
+                continue; // a variant may omit a starting unit type
+            }
+            UnitType type = ruleset.Unit(typeId);
+            if (Place(type.IsNaval) is not { } pos)
+            {
+                continue; // no room (e.g. a landlocked start has no water for the caravel) → skip it
+            }
+            string role = roleId ?? RoleType.DefaultRoleId;
+            var unit = new Unit(_nextUnitId++, type, pos)
+            {
+                OwnerId = 0,
+                RoleId = role,
+                RoleCount = role == RoleType.DefaultRoleId ? 0 : 1,
+            };
+            _units.Add(unit);
+            taken.Add(pos);
+            RevealForOwner(unit); // the human's own units lift its fog around the landing
         }
     }
 

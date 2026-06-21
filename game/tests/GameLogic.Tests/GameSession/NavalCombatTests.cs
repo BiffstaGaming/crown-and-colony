@@ -365,6 +365,10 @@ public class NavalCombatTests
     private static (Game game, Unit humanShip, int foreignId) StageNavalWar(bool atWar)
     {
         Game game = Game.New(Classic, Seed);
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u); // clear the starting roster (incl. its caravel) so the foreign warship's only human target is the test's ship
+        }
         Position a = game.Map.AllPositions().First(p => Water(game, p) && p.Neighbours().Any(n => Water(game, n)));
         Position b = a.Neighbours().First(n => Water(game, n));
         Unit humanShip = game.SpawnUnit(Classic.Unit(Caravel), a); // human transport
@@ -442,6 +446,10 @@ public class NavalCombatTests
     public void ForeignPrivateerRaid_HidesItsNationInTheNotice()
     {
         Game game = Game.New(Classic, Seed);
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u); // clear the starting roster so the privateer's only human target is the test's ship
+        }
         Position a = game.Map.AllPositions().First(p => Water(game, p) && p.Neighbours().Any(n => Water(game, n)));
         Position b = a.Neighbours().First(n => Water(game, n));
         Unit humanShip = game.SpawnUnit(Classic.Unit(Caravel), a);

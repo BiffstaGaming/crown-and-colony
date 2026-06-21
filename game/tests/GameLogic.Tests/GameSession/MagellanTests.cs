@@ -25,6 +25,10 @@ public class MagellanTests
     private static Game ShipGame(bool magellan)
     {
         Game game = Game.New(Classic, Seed);
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap && u.Type.IsNaval).ToList())
+        {
+            game.Disband(u); // disband the starting coastal caravel so the only naval unit is the high-seas one below (the land colonists stay)
+        }
         Position seas = game.Map.AllPositions().First(p => game.Map.TerrainAt(p).Id == HighSeas);
         game.SpawnUnit(Classic.Unit(Caravel), seas);
         if (!magellan)

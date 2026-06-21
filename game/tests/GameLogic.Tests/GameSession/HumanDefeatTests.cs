@@ -26,13 +26,23 @@ public class HumanDefeatTests
         Assert.False(game.IsHumanDefeated);
     }
 
+    /// <summary>Disbands every on-map unit the human owns — to reach the "no units" defeat states now that the human starts with a full roster (pioneer + soldier + caravel), not a lone colonist.</summary>
+    private static void DisbandAllHumanUnits(Game game)
+    {
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+    }
+
     [Fact]
     public void WithAColonyButNoUnits_IsNotDefeated()
     {
         Game game = Game.New(Classic, Seed);
-        game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony)); // consumes the only unit
-        Assert.DoesNotContain(game.PlayerUnits, _ => true); // no human units left…
-        Assert.False(game.IsHumanDefeated);                 // …but the colony keeps the human alive
+        game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony)); // a colony
+        DisbandAllHumanUnits(game);                          // and disband the rest of the roster
+        Assert.DoesNotContain(game.PlayerUnits, _ => true);  // no human units left…
+        Assert.False(game.IsHumanDefeated);                  // …but the colony keeps the human alive
     }
 
     [Fact]
@@ -40,6 +50,7 @@ public class HumanDefeatTests
     {
         Game game = Game.New(Classic, Seed);
         Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        DisbandAllHumanUnits(game); // remove the rest of the starting roster
         int rivalId = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).PlayerId;
 
         colony.OwnerId = rivalId; // the last colony is captured — now 0 human colonies, 0 human units
@@ -52,6 +63,7 @@ public class HumanDefeatTests
     {
         Game game = Game.New(Classic, Seed);
         Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        DisbandAllHumanUnits(game);
         colony.OwnerId = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).PlayerId;
         Assert.True(game.IsHumanDefeated);
 

@@ -36,6 +36,15 @@ public class DiplomacyTests
     private static int NativePlayerId(Game game) =>
         game.Players.First(p => p.PlayerType == PlayerType.Native).PlayerId;
 
+    /// <summary>Disbands the human's starting roster — leaving it military-less, so a power's strength ratio against it stays high and the orthogonal sue-for-peace never fires (these tests exercise the tension→stance decay, not diplomacy).</summary>
+    private static void DisbandHumanUnits(Game game)
+    {
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+    }
+
     // ---- Defaults & API ----
 
     [Fact]
@@ -119,15 +128,16 @@ public class DiplomacyTests
         game.EndTurn();
         int fid = ForeignPowerId(game);
         Colony rivalColony = game.Colonies.First(c => c.OwnerId == fid);
+        // Keep the power's strength ratio against the human high so its own turn never sues for peace (an orthogonal,
+        // strength-ratio mechanism) — this isolates the test to its real intent: that *contact* does not downgrade an
+        // existing war. Disband the human's starting roster (so it is military-less) and arm one of the power's units.
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+        game.Units.First(u => u.OwnerId == fid && u.IsOnMap && !u.Type.IsNaval).RoleId = Soldier;
         game.SetStance(0, fid, Stance.War); // already at war before "meeting"
         game.ChangeTension(0, fid, 1000);   // a hot war (so the tension→stance machine keeps it at War this turn)
-
-        // Arm one of the power's land units so its strength ratio against the (military-less) human stays high — a
-        // strong power's own turn never sues for peace (an orthogonal, strength-ratio mechanism). This isolates the
-        // test to its real intent: that *contact* does not downgrade an existing war. Without it the assertion is
-        // brittle to whether the seed's AI happens to hold any armed unit by this turn (its own RNG trajectory — e.g.
-        // it now fields a pioneer that improves tiles instead of idling, shifting that trajectory; 86d3c9vta).
-        game.Units.First(u => u.OwnerId == fid && u.IsOnMap && !u.Type.IsNaval).RoleId = Soldier;
 
         game.HumanPlayer.ExploredSet.Add(rivalColony.Position);
         game.EndTurn();
@@ -167,6 +177,7 @@ public class DiplomacyTests
     {
         var game = Game.New(Classic, seed: 7);
         int fid = ForeignPowerId(game);
+        DisbandHumanUnits(game); // a military-less human keeps the power's strength ratio high so it never sues for peace (isolates the pure tension→stance decay)
         game.SetStance(0, fid, Stance.War);
         game.ChangeTension(0, fid, 1000);
 
@@ -198,6 +209,7 @@ public class DiplomacyTests
     {
         var game = Game.New(Classic, seed: 7);
         int fid = ForeignPowerId(game);
+        DisbandHumanUnits(game); // a military-less human keeps the power's strength ratio high so it never sues for peace (isolates the pure tension→stance decay)
         game.SetStance(0, fid, Stance.War);
         game.ChangeTension(0, fid, 595); // one turn's decay (→586) drops it to ≤590
 

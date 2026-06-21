@@ -33,7 +33,12 @@ public class JourneyE2ETests
         Game game = GameOf(controller);
 
         // ── select the starting unit by clicking its tile ──
-        var unit = game.Units[0];
+        // Trim the starting roster (pioneer + soldier + caravel) to a single founder so select/move/found is unambiguous.
+        var unit = game.PlayerUnits.First(u => u.IsOnMap && !u.Type.IsNaval && u.Type.CanFoundColony);
+        foreach (var other in game.PlayerUnits.Where(u => u.IsOnMap && u != unit).ToList())
+        {
+            game.Disband(other);
+        }
         await ClickTile(runner, controller, unit.Position);
         int selected = controller.GetNode<Node2D>("MapView/UnitLayer").GetChildren().OfType<UnitMarker>().Count(m => m.Selected);
         AssertThat(selected).IsEqual(1);

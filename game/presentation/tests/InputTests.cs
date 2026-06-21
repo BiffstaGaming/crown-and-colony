@@ -34,7 +34,7 @@ public class InputTests
         await runner.SimulateFrames(2);
 
         Game game = GameOf(controller);
-        Unit unit = game.Units[0];
+        Unit unit = TrimHumanRosterToOne(game); // a single human unit → unambiguous click/select/move
         Position start = unit.Position;
 
         // Click the unit's tile: it becomes selected (exactly one marker in the unit layer is selected).
@@ -255,8 +255,9 @@ public class InputTests
         controller.StartNewGame(Seed);
         await runner.SimulateFrames(2);
         Game game = GameOf(controller);
+        Unit founder = TrimHumanRosterToOne(game); // a single founder so founding it leaves the human with no units
 
-        await ClickTile(runner, controller, game.Units[0].Position); // select
+        await ClickTile(runner, controller, founder.Position); // select
         runner.SimulateKeyPressed(Key.B);
         await runner.SimulateFrames(2);
 
@@ -516,6 +517,7 @@ public class InputTests
         // via the save layer — leaving the human with no colonies and no units: IsHumanDefeated. End Turn must
         // surface the defeat as a turn-message row.
         Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        DisbandAllHuman(game); // remove the rest of the starting roster so the human truly has no units
         SaveGame save = SaveGame.From(game);
         SavedPlayer rival = save.Players!.First(p => !p.IsHuman && p.PlayerType == (int)PlayerType.Colonial);
         var colonies = save.Colonies!.Select(c => c.Id == colony.Id ? c with { OwnerId = rival.PlayerId } : c).ToList();
@@ -578,6 +580,7 @@ public class InputTests
         // Wipe the human out (same setup as the defeat-notice test above): found a colony with the only unit, then
         // hand that colony to a rival via the save layer → no human colonies, no human units = IsHumanDefeated.
         Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        DisbandAllHuman(game); // remove the rest of the starting roster so the human truly has no units
         SaveGame save = SaveGame.From(game);
         SavedPlayer rival = save.Players!.First(p => !p.IsHuman && p.PlayerType == (int)PlayerType.Colonial);
         var colonies = save.Colonies!.Select(c => c.Id == colony.Id ? c with { OwnerId = rival.PlayerId } : c).ToList();
@@ -663,6 +666,7 @@ public class InputTests
 
         // Spawn a second human-owned unit next to the first, then refresh: the unit layer draws both (the old
         // single-marker HUD only ever showed the first).
+        TrimHumanRosterToOne(game); // start from a single human unit so "both render" means exactly two
         Position humanPos = game.PlayerUnits.First(u => u.IsOnMap).Position;
         Position spot = humanPos.Neighbours().First(n => Free(game, n));
         game.SpawnUnit(game.Ruleset.Unit("model.unit.freeColonist"), spot);
@@ -684,6 +688,7 @@ public class InputTests
         // A brave adjacent to the human is in sight → drawn (with a non-transparent owner ring); the braves that
         // spawned far away near their settlements are out of sight → not drawn. So exactly two markers: the
         // human's own (no ring) and the one visible brave (ring).
+        TrimHumanRosterToOne(game); // a single human unit so the count is exactly the human + the in-sight brave
         Position humanPos = game.PlayerUnits.First(u => u.IsOnMap).Position;
         string nation = game.NativeSettlements.First().NationTypeId;
         Position nearTile = humanPos.Neighbours().First(n => Free(game, n));
@@ -763,6 +768,26 @@ public class InputTests
 
     private static void SetGame(GameController controller, Game game) =>
         controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(controller, game);
+
+    /// <summary>Trims the human's starting roster (pioneer + soldier + caravel) to a single land founder and returns it — keeps these single-unit-era input tests unambiguous.</summary>
+    private static Unit TrimHumanRosterToOne(Game game)
+    {
+        Unit keep = game.PlayerUnits.First(u => u.IsOnMap && !u.Type.IsNaval && u.Type.CanFoundColony);
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap && u != keep).ToList())
+        {
+            game.Disband(u);
+        }
+        return keep;
+    }
+
+    /// <summary>Disbands every on-map unit the human owns (for the "wiped out" defeat tests).</summary>
+    private static void DisbandAllHuman(Game game)
+    {
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+    }
 
     private static bool Free(Game game, Position n) =>
         game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater

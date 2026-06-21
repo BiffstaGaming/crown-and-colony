@@ -39,11 +39,14 @@ public class VisibilityTests
     public void NewGame_VisibleEqualsTheStartingUnitsSight()
     {
         Game game = Game.New(Classic, Seed);
-        Unit unit = game.Units[0];
 
-        // Only the starting colonist exists, so visibility is exactly its line of sight.
-        Assert.Equal(Square(game, unit.Position, unit.Type.LineOfSight), game.CurrentlyVisible.ToHashSet());
-        Assert.True(game.IsVisible(unit.Position));
+        // Visibility is exactly the union of the starting roster's lines of sight (pioneer + soldier + caravel).
+        var expected = game.PlayerUnits.SelectMany(u => Square(game, u.Position, u.Type.LineOfSight)).ToHashSet();
+        Assert.Equal(expected, game.CurrentlyVisible.ToHashSet());
+        foreach (Unit u in game.PlayerUnits)
+        {
+            Assert.True(game.IsVisible(u.Position));
+        }
     }
 
     [Fact]
@@ -82,7 +85,11 @@ public class VisibilityTests
     public void Colony_KeepsItsSurroundingsVisibleAfterTheFounderIsConsumed()
     {
         Game game = Game.New(Classic, Seed);
-        Colony colony = game.FoundColony(game.Units[0]); // founder leaves the map
+        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.Type.CanFoundColony && game.CheckFoundColony(u).Allowed));
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u); // disband the rest of the roster so only the colony lifts the player's fog
+        }
 
         Assert.Empty(game.PlayerUnits); // braves (native) remain, but they don't lift the player's fog
         Assert.True(game.IsVisible(colony.Position));

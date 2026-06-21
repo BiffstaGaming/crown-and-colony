@@ -64,20 +64,21 @@ public class SaveGameTests
         // Format v1 (Phase 1) had no Explored list and no unit TypeId. Loading
         // must still work: units default to free colonists, fog reveals around them.
         var game = Game.New(Classic, seed: 5);
-        // A v1 save predates natives — only the player's lone starting colonist existed.
+        // A v1 save predates natives, roles and the multi-unit roster — only the player's lone starting colonist
+        // existed; model that (one typeless land unit) so the v1 default-load path is exercised faithfully.
+        Unit colonist = game.PlayerUnits.First(u => !u.Type.IsNaval);
         SaveGame v1 = SaveGame.From(game) with
         {
             Version = 1,
             Explored = null,
-            Units = game.PlayerUnits.Select(u =>
-                new SavedUnit(u.Id, null, u.Position.X, u.Position.Y, u.MovementLeft)).ToList(),
+            Units = [new SavedUnit(colonist.Id, null, colonist.Position.X, colonist.Position.Y, colonist.MovementLeft)],
         };
 
         Game loaded = SaveGame.FromJson(v1.ToJson()).Restore(Classic);
 
         Assert.Equal(Game.StartingUnitTypeId, loaded.Units[0].Type.Id);
         Assert.True(loaded.IsExplored(loaded.Units[0].Position));
-        Assert.InRange(loaded.Explored.Count, 4, 9);
+        Assert.InRange(loaded.Explored.Count, 4, 9); // one colonist, sight 1 → a 3×3 block
     }
 
     [Fact]
@@ -148,8 +149,11 @@ public class SaveGameTests
     {
         var game = Game.New(Classic, seed: 5);
         SaveGame save = SaveGame.From(game);
-        // A default-role, human-owned unit serializes with no role/owner tokens (byte-identical to a v17 unit).
-        SavedUnit human = save.Units.First(u => u.Id == game.PlayerUnits.First().Id);
+        // A default-role, human-owned unit serializes with no role/owner tokens (byte-identical to a v17 unit). The
+        // starting caravel carries the unarmed default role (the pioneer/soldier are role-equipped — they correctly
+        // DO emit role tokens), so pick a default-role human unit.
+        Unit defaultRoleUnit = game.PlayerUnits.First(u => u.HasDefaultRole);
+        SavedUnit human = save.Units.First(u => u.Id == defaultRoleUnit.Id);
         Assert.Null(human.Role);
         Assert.Null(human.RoleCount);
         Assert.Null(human.OwnerId); // the human (id 0) is omitted

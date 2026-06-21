@@ -36,6 +36,10 @@ public class ForeignColonyCaptureTests
 
         Unit founder = game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony);
         Colony colony = game.FoundColony(founder); // human-owned; undefended (the founder became its population)
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u); // clear the rest of the starting roster so the test alone controls the human's units near the colony
+        }
 
         Position adj = colony.Position.Neighbours().First(n => FreeLand(game, n));
         Unit attacker = game.SpawnUnit(Classic.Unit(Artillery), adj);
@@ -124,6 +128,10 @@ public class ForeignColonyCaptureTests
         Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
         int humanId = game.HumanPlayer.PlayerId;
         Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u); // disband the rest of the roster (incl. the soldier) so there is no field prey
+        }
         Assert.DoesNotContain(game.PlayerUnits, u => u.IsOnMap); // no field prey for a foreign land unit
 
         // A free land tile at distance 2 from the colony that has a free-land neighbour at distance 1 (a legal closer step).

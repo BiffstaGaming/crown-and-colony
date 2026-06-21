@@ -38,7 +38,14 @@ public class JourneyTests
         // M1 — new game.
         var game = Game.New(Classic, seed: FoundSeed);
         Assert.Equal(1, game.Turn);
-        Unit unit = Assert.Single(game.PlayerUnits); // native braves also exist
+        // Keep this journey to a single pioneer: disband the rest of the starting roster (soldier + caravel) so the
+        // explore→found flow below mirrors the classic lone-colonist journey.
+        Unit unit = game.PlayerUnits.First(u => !u.Type.IsNaval && u.Type.CanFoundColony);
+        foreach (Unit other in game.PlayerUnits.Where(u => u != unit && u.IsOnMap).ToList())
+        {
+            game.Disband(other);
+        }
+        Assert.Single(game.PlayerUnits); // now just the pioneer (native braves are not the human's)
         Assert.True(game.IsExplored(unit.Position), "start tile must be explored");
         Assert.False(game.Map.TerrainAt(unit.Position).IsWater);
         Assert.True(game.Map.TerrainAt(unit.Position).CanSettle);
@@ -49,7 +56,8 @@ public class JourneyTests
         int exploredBefore = game.Explored.Count;
         Position startPos = unit.Position;
         Position? step = unit.Position.Neighbours()
-            .Where(n => game.CheckMove(unit, n).Allowed)
+            .Where(n => game.CheckMove(unit, n).Allowed
+                && n.Neighbours().Any(m => game.Map.InBounds(m) && !game.IsExplored(m))) // step toward the fog frontier
             .Cast<Position?>()
             .FirstOrDefault();
         if (step is not null)

@@ -55,8 +55,8 @@ public class NativeSettlementTests
         Game game = Game.New(Classic, Seed);
         var settlements = game.NativeSettlements;
 
-        // The lone starting colonist's tile — nothing should sit on or beside it.
-        Position start = Assert.Single(game.PlayerUnits).Position;
+        // The player's landing tile (the pioneer stands on the chosen start) — settlements keep clear of it.
+        Position start = game.PlayerUnits.First(u => !u.Type.IsNaval && u.Type.CanFoundColony).Position;
 
         for (int i = 0; i < settlements.Count; i++)
         {

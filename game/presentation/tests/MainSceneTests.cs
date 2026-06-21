@@ -91,13 +91,15 @@ public class MainSceneTests
 
         var controller = (GameController)runner.Scene();
         var layer = controller.GetNode<Node2D>("MapView/UnitLayer");
-        AssertThat(layer.GetChildCount()).IsEqual(1); // turn 1: just the human's start unit, no rivals/braves in sight
-        var marker = (UnitMarker)layer.GetChild(0);
+        int count = layer.GetChildCount();
+        AssertThat(count).IsEqual(3); // turn 1: the human's starting roster (pioneer + soldier + caravel), no rivals/braves in sight
 
-        // The marker must sit at the centre of some diamond: isometric centres
-        // land on multiples of half the tile width/height.
-        Vector2 pos = marker.Position;
-        AssertThat(pos.X % (MapView.TileW / 2f)).IsEqual(0f);
-        AssertThat(pos.Y % (MapView.TileH / 2f)).IsEqual(0f);
+        // Every marker must sit at the centre of some diamond: isometric centres land on multiples of half the tile width/height.
+        for (int i = 0; i < count; i++)
+        {
+            Vector2 pos = ((UnitMarker)layer.GetChild(i)).Position;
+            AssertThat(pos.X % (MapView.TileW / 2f)).IsEqual(0f);
+            AssertThat(pos.Y % (MapView.TileH / 2f)).IsEqual(0f);
+        }
     }
 }

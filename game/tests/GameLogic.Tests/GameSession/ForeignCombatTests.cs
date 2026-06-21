@@ -366,7 +366,11 @@ public class ForeignCombatTests
         // an at-war soldier then attacks nobody — no notice, and no native/rival is lost to combat.
         (Game game, _, Unit prey) = Stage(seed: 7, atWar: true);
         Assert.True(game.CheckFoundColony(prey).Allowed);
-        game.FoundColony(prey); // consumes the human's only on-map unit
+        game.FoundColony(prey); // a colony from one starting unit
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u); // disband the rest of the roster so the map holds no human unit at all
+        }
         Assert.DoesNotContain(game.PlayerUnits, u => u.IsOnMap);
 
         int nativeCountStart = game.NativeUnits.Count();

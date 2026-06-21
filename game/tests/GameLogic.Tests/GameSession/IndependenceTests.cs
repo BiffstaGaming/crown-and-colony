@@ -84,10 +84,13 @@ public class IndependenceTests
     {
         (Game game, Colony colony) = RebellionReady();
         Player rebel = game.HumanPlayer;
-        // Disband the leftover starting colonist so the rebel's unit count is exactly the 3 veterans below; with one
+        // Disband the leftover starting roster so the rebel's unit count is exactly the 3 veterans below; with one
         // SoL-100 colony the cap is then (3 + 2) * (100 - 50) / 100 = 2 upgrades, leaving 1 (pins the cap + the
         // "some veterans un-mustered" branch).
-        game.Disband(game.Units.First(u => u.OwnerId == rebel.PlayerId && u.IsOnMap && u.Type.Id == "model.unit.freeColonist"));
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
         foreach (Position p in EmptyLand(game, 3))
         {
             game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), p);

@@ -169,9 +169,13 @@ public class NativeAiTests
         // its only unit) so no on-map human unit exists: enraged braves then attack nothing at all — no raid
         // notice ever, and no brave is ever lost in combat (they never fight foreign powers or each other).
         Game game = Game.New(Classic, seed: 31);
-        Unit settler = game.PlayerUnits.First(u => u.IsOnMap);
+        Unit settler = game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony);
         Assert.True(game.CheckFoundColony(settler).Allowed);
         game.FoundColony(settler);
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u); // disband the rest of the starting roster so no on-map human unit remains
+        }
         Assert.DoesNotContain(game.PlayerUnits, u => u.IsOnMap); // no on-map human unit for braves to hunt
 
         int nativeCountStart = game.NativeUnits.Count();
