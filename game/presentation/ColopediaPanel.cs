@@ -18,6 +18,8 @@ namespace CrownAndColony.Presentation;
 /// <item><b>Fathers</b> — every Founding Father with its category and the bonus it grants.</item>
 /// <item><b>Nations</b> — every European nation with its advantage type and whether it is playable.</item>
 /// <item><b>Resources</b> — every bonus resource with the yield bonus it grants.</item>
+/// <item><b>Concepts</b> — free-text help topics (FreeCol's <c>ConceptDetailPanel</c>): a left list of topic titles
+/// over a right detail pane, the seed of an in-game help/tutorial surface.</item>
 /// </list>
 /// <para>
 /// Pure presentation (ADR-006): reads <see cref="Game.Ruleset"/> and <see cref="Game.Market"/> only, never mutates.
@@ -27,10 +29,13 @@ namespace CrownAndColony.Presentation;
 /// </summary>
 public partial class ColopediaPanel : PanelContainer
 {
-    private enum Category { Goods, Terrain, Units, Buildings, Fathers, Nations, Resources }
+    private enum Category { Goods, Terrain, Units, Buildings, Fathers, Nations, Resources, Concepts }
 
     private Game _game = null!;
     private Category _category = Category.Goods;
+
+    /// <summary>The Concepts topic currently shown in the detail pane (the first topic by default).</summary>
+    private string _concept = ConceptTopics[0].Title;
 
     private static readonly Dictionary<Category, string> Titles = new()
     {
@@ -41,6 +46,42 @@ public partial class ColopediaPanel : PanelContainer
         [Category.Fathers] = "Colopedia — Founding Fathers",
         [Category.Nations] = "Colopedia — Nations",
         [Category.Resources] = "Colopedia — Resources",
+        [Category.Concepts] = "Colopedia — Concepts",
+    };
+
+    /// <summary>
+    /// A free-text help topic in the Concepts tab: a short title and a couple of explanatory sentences.
+    /// FreeCol pulls these from ruleset help-strings; we have none yet, so this is a small curated stub set
+    /// (the seed of an in-game help/tutorial surface — presentation-only, no rules).
+    /// </summary>
+    private readonly record struct ConceptTopic(string Title, string Text);
+
+    private static readonly ConceptTopic[] ConceptTopics =
+    {
+        new("Founding a colony",
+            "Move a colonist onto a buildable land tile and give the Build Colony order to found a new settlement. "
+            + "A colony grows by gathering food, works the surrounding tiles, and is where you produce goods and train colonists."),
+        new("Working tiles & production",
+            "Each colonist in a colony works either a surrounding tile (for food or a raw good) or a building (to refine "
+            + "goods or ring liberty bells). Terrain, bonus resources and the worker's expertise decide how much that tile or building yields each turn."),
+        new("Trade & Europe",
+            "Sail a ship loaded with goods across the high seas to your home port in Europe to sell them for gold, and buy goods or "
+            + "recruit colonists to bring back. The Crown taxes your sales, and prices drift as the market is flooded or runs short."),
+        new("Sons of Liberty & bells",
+            "Statesmen working the town hall produce liberty bells, which raise a colony's Sons of Liberty membership. "
+            + "High membership grants a production bonus; a discontented colony (too many Tories) suffers a penalty instead."),
+        new("Founding Fathers",
+            "Liberty bells also accrue toward your Continental Congress: spend enough and a Founding Father joins, granting a lasting "
+            + "bonus. Each round you are offered one candidate per category (trade, exploration, military, political, religious) to recruit."),
+        new("Combat basics",
+            "A unit's strength comes from its base power, its role and equipment, plus bonuses from terrain, fortification and ambush. "
+            + "The defender's modifiers matter as much as the attacker's, so fortified troops on good ground are hard to dislodge."),
+        new("Native relations",
+            "Indian settlements start wary and grow alarmed as your colonies and troops encroach on their land or you attack them. "
+            + "Trade, gifts and missionaries calm them; raids and land-grabs provoke retaliation. Keep an eye on each tribe's mood."),
+        new("Declaring Independence",
+            "Once enough of your colonists support the rebellion, you may declare independence from the Crown. The King then sends his "
+            + "Royal Expeditionary Force to crush you — survive the war of independence to win the game."),
     };
 
     /// <summary>Opens the Colopedia on the Goods category over the current ruleset / market.</summary>
@@ -70,6 +111,7 @@ public partial class ColopediaPanel : PanelContainer
         tabs.AddChild(CategoryButton("Fathers", Category.Fathers));
         tabs.AddChild(CategoryButton("Nations", Category.Nations));
         tabs.AddChild(CategoryButton("Resources", Category.Resources));
+        tabs.AddChild(CategoryButton("Concepts", Category.Concepts));
         dynamic.AddChild(tabs);
         dynamic.AddChild(new HSeparator());
 
@@ -82,6 +124,7 @@ public partial class ColopediaPanel : PanelContainer
             case Category.Fathers: BuildFathers(dynamic); break;
             case Category.Nations: BuildNations(dynamic); break;
             case Category.Resources: BuildResources(dynamic); break;
+            case Category.Concepts: BuildConcepts(dynamic); break;
         }
     }
 
@@ -287,6 +330,58 @@ public partial class ColopediaPanel : PanelContainer
         }
     }
 
+    // ── Concepts (free-text help topics) ─────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// FreeCol's <c>ConceptDetailPanel</c>: a master-detail help view — a left column of topic-title buttons
+    /// (<c>Concept_{slug}</c>, a space-free slug of the title, the active one disabled) over a right detail pane that shows the selected topic's
+    /// title (<c>ConceptTitle</c>) and its explanatory text (<c>ConceptText</c>, word-wrapped). Pure presentation —
+    /// the topics are a small curated stub set (no ruleset help-strings yet), no game state read.
+    /// </summary>
+    private void BuildConcepts(VBoxContainer dynamic)
+    {
+        // If a previous tab/build left the selected topic unset (defensive), fall back to the first topic.
+        if (!ConceptTopics.Any(t => t.Title == _concept))
+        {
+            _concept = ConceptTopics[0].Title;
+        }
+
+        var row = new HBoxContainer { Name = "ConceptsRow" };
+
+        // Left: one named button per help topic; pressing it shows that topic in the detail pane.
+        // The node name is a space-free slug of the title (Godot node-path lookups dislike spaces); Text keeps the title.
+        var list = new VBoxContainer { Name = "ConceptList" };
+        foreach (ConceptTopic topic in ConceptTopics)
+        {
+            var b = new Button
+            {
+                Name = $"Concept_{Slug(topic.Title)}",
+                Text = topic.Title,
+                Disabled = topic.Title == _concept,
+            };
+            string title = topic.Title;
+            b.Pressed += () => { _concept = title; Rebuild(); };
+            list.AddChild(b);
+        }
+        row.AddChild(list);
+        row.AddChild(new VSeparator());
+
+        // Right: the detail pane — the selected topic's title and its word-wrapped text.
+        ConceptTopic selected = ConceptTopics.First(t => t.Title == _concept);
+        var detail = new VBoxContainer { Name = "ConceptDetail", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        detail.AddChild(new Label { Name = "ConceptTitle", Text = selected.Title });
+        detail.AddChild(new Label
+        {
+            Name = "ConceptText",
+            Text = selected.Text,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            CustomMinimumSize = new Vector2(360, 0),
+        });
+        row.AddChild(detail);
+
+        dynamic.AddChild(row);
+    }
+
     /// <summary>A compact modifier label: additive <c>+3</c>, multiplicative <c>×2</c>, percentage <c>+50%</c>.</summary>
     private static string ModifierLabel(ModifierType type, double value) => type switch
     {
@@ -299,6 +394,10 @@ public partial class ColopediaPanel : PanelContainer
 
     /// <summary>A percentage label for a defence bonus (0 → "+0%").</summary>
     private static string Pct(double v) => $"{(v >= 0 ? "+" : "")}{v:0.#}%";
+
+    /// <summary>A space-free node-name slug of a Concepts topic title (keeps letters/digits, drops everything else).</summary>
+    private static string Slug(string title) =>
+        new string(title.Where(char.IsLetterOrDigit).ToArray());
 
     /// <summary>Title-cases a short id for display (e.g. <c>tradeGoods</c> → <c>Trade Goods</c>, <c>food</c> → <c>Food</c>).</summary>
     private static string Title(string shortName)
