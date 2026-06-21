@@ -9,7 +9,7 @@ namespace CrownAndColony.GameLogic.GameSession;
 
 /// <summary>
 /// The home-nation Monarch (FreeCol <c>Monarch</c> + the server's per-turn monarch tick): each turn past a grace
-/// period the player's King weighs a list of actions and may act — raise/lower tax, grow the Royal Expeditionary
+/// period the player's King weighs a list of actions and may act — raise/lower/waive tax, grow the Royal Expeditionary
 /// Force, declare war/peace, or offer mercenaries/support. This file holds the weighted chooser and the per-turn
 /// tick; each action's effect is wired in its own slice (items 2-6 of the independence arc).
 ///
@@ -134,7 +134,11 @@ public sealed partial class Game
         MonarchAction.RaiseTaxAct or MonarchAction.RaiseTaxWar => _human.TaxRate < MonarchOpts.MaximumTaxRate,
         MonarchAction.ForceTax => false,
         MonarchAction.LowerTaxWar or MonarchAction.LowerTaxOther => _human.TaxRate > MonarchMinTaxRate + 10,
-        MonarchAction.WaiveTax => true,
+        // FreeCol's WAIVE_TAX is always valid (a message-only "we waive a tax increase"). We make it a tangible
+        // goodwill — the King forgives outstanding boycott back-taxes — so we only offer it when there is something
+        // to forgive (a boycotted good). This keeps the default game's chooser unchanged: with no arrears the action
+        // is never offered, so the weighted table (and every existing seeded game) is untouched. See monarchy.md §2.
+        MonarchAction.WaiveTax => HumanHasArrears(),
         MonarchAction.AddToRef => true, // the ruleset always has REF land + naval unit types (king's regular, man-o-war)
         MonarchAction.DeclarePeace => MonarchPotentialFriends().Any(),
         MonarchAction.DeclareWar => MonarchPotentialEnemies().Any(),
@@ -175,6 +179,10 @@ public sealed partial class Game
         Add(MonarchAction.RaiseTaxWar, 5 + dx);
         Add(MonarchAction.LowerTaxWar, 5 - dx);
         Add(MonarchAction.LowerTaxOther, 5 - dx);
+        // WAIVE_TAX is our deliberate deviation (FreeCol leaves it out of the table — see monarchy.md §2): a goodwill
+        // weight mirroring its LOWER_TAX siblings (5 − dx = 2 at medium, hardcoded — FreeCol has no ruleset weight for
+        // it). Add() only includes it when valid (arrears outstanding), so the default game's table is unchanged.
+        Add(MonarchAction.WaiveTax, 5 - dx);
         Add(MonarchAction.AddToRef, 10 + dx);
         Add(MonarchAction.DeclarePeace, 6 - dx);
         Add(MonarchAction.DeclareWar, 5 + dx);
@@ -231,7 +239,8 @@ public sealed partial class Game
                 SetTax(_human, LowerTaxAmount(rng)); // immediate goodwill, no player choice
                 break;
             case MonarchAction.WaiveTax:
-                break; // message only — no change
+                WaiveTaxArrears(); // the King forgives outstanding boycott back-taxes (our goodwill — see monarchy.md §2)
+                break;
             case MonarchAction.MonarchMercenaries:
             case MonarchAction.HessianMercenaries:
                 if (LoadMercenaries(rng) is { } offer) // an offer trimmed to what the player can afford (or none)
@@ -515,6 +524,27 @@ public sealed partial class Game
         int divisor = Math.Max(1, (6 - MonarchOpts.TaxAdjustment) * 10); // 40 at medium
         int adjust = 1 + rng.Next(3 + Turn / divisor);
         return Math.Min(_human.TaxRate + adjust, MonarchOpts.MaximumTaxRate);
+    }
+
+    /// <summary>
+    /// Whether the human currently owes any boycott back-taxes (a good is under boycott). Gates <see cref="MonarchAction.WaiveTax"/>:
+    /// the King only forgives tax when there is an obligation to forgive, so the action is never offered in a game with
+    /// no arrears — keeping the default game's weighted table (and every existing seeded game) byte-identical.
+    /// </summary>
+    private bool HumanHasArrears() => _human.Market.TradeableGoods.Any(g => _human.Market.Arrears(g) > 0);
+
+    /// <summary>
+    /// The King forgives the human's outstanding boycott back-taxes (our WAIVE_TAX goodwill — a deliberate, documented
+    /// deviation from FreeCol, whose WAIVE_TAX only shows a "we waive a tax increase" message). Every boycotted good's
+    /// arrears are cleared for free, lifting the boycott (mirrors <see cref="PayArrears"/> without the gold cost).
+    /// No save change — <see cref="Trade.Market.Arrears"/> already persists; clearing it produces the omit-when-empty default.
+    /// </summary>
+    private void WaiveTaxArrears()
+    {
+        foreach (string goodsId in _human.Market.TradeableGoods.Where(g => _human.Market.Arrears(g) > 0).ToList())
+        {
+            _human.Market.SetArrears(goodsId, 0);
+        }
     }
 
     /// <summary>The new tax rate after a reduction: <c>max(tax − 1 − rnd[0, 8), 20)</c> (FreeCol <c>Monarch.lowerTax</c>).</summary>
