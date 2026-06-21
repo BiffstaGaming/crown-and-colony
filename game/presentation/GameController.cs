@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using CrownAndColony.GameLogic.Audio;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Combat;
 using CrownAndColony.GameLogic.GameSession;
@@ -672,6 +673,7 @@ public partial class GameController : Node2D
     private void ResolveAttackOn(Position tile, Unit attacker)
     {
         string who = attacker.Type.ShortName;
+        bool naval = attacker.Type.IsNaval;
         CombatResult result = _game.Attack(attacker, tile);
         _selectedUnit = null; // the attack ends the unit's turn (and may demote/destroy it)
         _notice = result switch
@@ -680,6 +682,10 @@ public partial class GameController : Node2D
             CombatResult.Evade => $"The enemy evaded your {who}.", // naval: the defender slipped away
             _ => $"Your {who} was beaten back.",
         };
+        // A decisive naval win sinks the enemy ship — play the sinking cue; otherwise the generic combat cue.
+        PlaySound(naval && result is CombatResult.GreatWin or CombatResult.Win
+            ? SoundEvent.ShipSunk
+            : SoundEvent.Combat);
         RefreshView();
     }
 
@@ -700,6 +706,13 @@ public partial class GameController : Node2D
             : "Your assault on the colony was repelled.";
     }
 
+    /// <summary>
+    /// Plays the SFX cue for <paramref name="evt"/> via the <c>Sound</c> autoload (<c>/root/Sound</c>). Resolved lazily
+    /// by node path so this works whether or not the autoload is present (e.g. headless scene tests that don't boot it):
+    /// a missing service is silently a no-op rather than a crash.
+    /// </summary>
+    private void PlaySound(SoundEvent evt) => GetNodeOrNull<SoundService>("/root/Sound")?.Play(evt);
+
     private void FoundColony()
     {
         if (_selectedUnit is null)
@@ -719,6 +732,7 @@ public partial class GameController : Node2D
             var colony = _game.FoundColony(_selectedUnit);
             _selectedUnit = null;
             _notice = $"{colony.Name} founded!";
+            PlaySound(SoundEvent.ColonyFounded);
         }
         RefreshView();
     }
