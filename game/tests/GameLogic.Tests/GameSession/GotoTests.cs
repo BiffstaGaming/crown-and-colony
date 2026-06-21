@@ -469,4 +469,165 @@ public class GotoTests
 
         Assert.Equal(game.FindPath(unit, goal), game.FindPath(unit, goal)); // byte-stable on a repeat (ADR-009)
     }
+
+    // ── Settlement / Europe / open-sea goto destinations (86d3drn06) ──────────────────────────────────────
+
+    /// <summary>Builds a game on a hand-crafted map via save/restore (with the whole map revealed for the human).</summary>
+    private static Game GameOn(
+        string[] terrain, int w, int h, SavedUnit[] units,
+        SavedColony[]? colonies = null, SavedNativeSettlement[]? natives = null)
+    {
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = w,
+            MapHeight = h,
+            Terrain = terrain,
+            Units = units,
+            Explored = [],
+            Colonies = colonies ?? [],
+            NativeSettlements = natives,
+        };
+        Game game = save.Restore(Classic);
+        game.HumanPlayer.ExploredSet.UnionWith(game.Map.AllPositions()); // reveal so a goal isn't rejected as unexplored
+        return game;
+    }
+
+    [Fact]
+    public void CheckSetDestination_ClassifiesAndRoutesEachDestinationKind()
+    {
+        // A 3×3 land strip across the middle row, water above/below; a native camp at (2,1).
+        //   row0: O O O
+        //   row1: L L C   (C = camp on land at (2,1))
+        //   row2: O O O
+        Game game = GameOn(
+            ["model.tile.ocean", "model.tile.ocean", "model.tile.ocean",
+             "model.tile.plains", "model.tile.plains", "model.tile.plains",
+             "model.tile.ocean", "model.tile.ocean", "model.tile.ocean"],
+            3, 3,
+            [new SavedUnit(1, "model.unit.freeColonist", 0, 1, 3)],
+            natives:
+            [new SavedNativeSettlement(7777, "model.nationType.apache", "model.settlement.camp", false, 2, 1, 5)]);
+        Unit colonist = game.Units.First(u => u.Id == 1);
+        var camp = new Position(2, 1);
+
+        // The camp tile itself is classified as a Settlement destination (the unit can't enter it).
+        Assert.Equal(DestinationKind.Settlement, game.DestinationKindOf(colonist, camp));
+        // A plain land tile is a Tile destination.
+        Assert.Equal(DestinationKind.Tile, game.DestinationKindOf(colonist, new Position(1, 1)));
+        // Goto to the camp is allowed (route to an adjacent tile exists).
+        Assert.True(game.CheckSetDestination(colonist, camp).Allowed);
+    }
+
+    [Fact]
+    public void Goto_LandUnit_ReachesASettlement_ByArrivingAdjacent()
+    {
+        // A long land row with a native camp at the east end; the colonist marches up beside it and stops.
+        Game game = GameOn(
+            ["model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.plains"],
+            5, 1,
+            [new SavedUnit(1, "model.unit.freeColonist", 0, 0, 3)],
+            natives:
+            [new SavedNativeSettlement(7777, "model.nationType.apache", "model.settlement.camp", false, 4, 0, 5)]);
+        Unit colonist = game.Units.First(u => u.Id == 1);
+        var camp = new Position(4, 0);
+        game.SetDestination(colonist, camp);
+
+        int turns = 0;
+        while (colonist.IsGoingTo && turns < 20)
+        {
+            game.EndTurn();
+            turns++;
+        }
+
+        Assert.False(colonist.IsGoingTo);                         // arrived → goto cleared
+        Assert.True(colonist.Position.IsAdjacentTo(camp));        // stopped BESIDE the camp (never on it)
+        Assert.NotEqual(camp, colonist.Position);                 // and not on the camp tile
+        Assert.Null(game.NativeSettlementAt(colonist.Position));  // the camp tile is still the camp's
+    }
+
+    [Fact]
+    public void Goto_Ship_WithAEuropeDestination_RoutesToTheHighSeas_ThenSailsToEurope()
+    {
+        // ocean … ocean highSeas — a caravel at the west end with a goto onto the high-seas tile.
+        Game game = GameOn(
+            ["model.tile.ocean", "model.tile.ocean", "model.tile.highSeas"],
+            3, 1,
+            [new SavedUnit(1, "model.unit.caravel", 0, 0, 12)]);
+        Unit ship = game.Units.First(u => u.Id == 1);
+        var highSeas = new Position(2, 0);
+
+        Assert.Equal(DestinationKind.Europe, game.DestinationKindOf(ship, highSeas)); // a ship → high seas = Europe
+        game.SetDestination(ship, highSeas);
+
+        GotoAdvance result = game.AdvanceDestination(ship); // 12 MP sails the two ocean steps onto the high seas this turn
+
+        Assert.Equal(GotoOutcome.SailedToEurope, result.Outcome);
+        Assert.Equal(UnitLocation.SailingToEurope, ship.Location); // handed off to the existing SailToEurope command
+        Assert.Null(ship.Destination);                             // goto cleared on the hand-off
+        Assert.Equal(3, ship.SailTurnsRemaining);                  // the standard crossing length
+    }
+
+    [Fact]
+    public void Goto_Ship_NavalPathsOverOpenWater_ToASeaDestination()
+    {
+        // A 5-wide ocean row (no land, no high seas); the ship sails to the far open-water tile.
+        Game game = GameOn(
+            ["model.tile.ocean", "model.tile.ocean", "model.tile.ocean", "model.tile.ocean", "model.tile.ocean"],
+            5, 1,
+            [new SavedUnit(1, "model.unit.caravel", 0, 0, 12)]);
+        Unit ship = game.Units.First(u => u.Id == 1);
+        var seaGoal = new Position(4, 0);
+
+        Assert.Equal(DestinationKind.Tile, game.DestinationKindOf(ship, seaGoal)); // open water = a plain Tile destination
+        Assert.True(game.CheckSetDestination(ship, seaGoal).Allowed);
+        game.SetDestination(ship, seaGoal);
+
+        GotoAdvance result = game.AdvanceDestination(ship);
+
+        Assert.Equal(GotoOutcome.Reached, result.Outcome);
+        Assert.Equal(seaGoal, ship.Position);   // sailed the whole open-water route onto the goal
+        Assert.Null(ship.Destination);          // arrived → cleared
+        Assert.True(ship.IsOnMap);              // a plain sea destination does NOT sail to Europe
+    }
+
+    [Fact]
+    public void CheckSetDestination_RejectsIllegalDestinations()
+    {
+        // Land row with a coastal native camp on land, ocean below.
+        //   row0: L L C
+        //   row1: O O O
+        Game game = GameOn(
+            ["model.tile.plains", "model.tile.plains", "model.tile.plains",
+             "model.tile.ocean", "model.tile.ocean", "model.tile.ocean"],
+            3, 2,
+            [new SavedUnit(1, "model.unit.freeColonist", 0, 0, 3),
+             new SavedUnit(2, "model.unit.caravel", 0, 1, 12)],
+            natives:
+            [new SavedNativeSettlement(7777, "model.nationType.apache", "model.settlement.camp", false, 2, 0, 5)]);
+        Unit colonist = game.Units.First(u => u.Id == 1);
+        Unit ship = game.Units.First(u => u.Id == 2);
+
+        // A land unit cannot set a course onto open water (an open-sea tile is a ships-only destination).
+        Assert.False(game.CheckSetDestination(colonist, new Position(1, 1)).Allowed);
+        // A ship cannot set a course onto open land (only a settlement is the terrain exception — and there the ship
+        // still arrives on an adjacent WATER tile; plain land is rejected).
+        Assert.False(game.CheckSetDestination(ship, new Position(0, 0)).Allowed);
+        // A land unit cannot reach a settlement that is walled off from it (no land tile adjacent to the camp that the
+        // unit can path to): isolate the camp by surrounding its land neighbours with water — here the camp at (2,0)
+        // has only (1,0) land adjacent; flood that to ocean so no reachable land neighbour remains.
+        Game walled = GameOn(
+            ["model.tile.plains", "model.tile.ocean", "model.tile.plains",
+             "model.tile.ocean", "model.tile.ocean", "model.tile.ocean"],
+            3, 2,
+            [new SavedUnit(1, "model.unit.freeColonist", 0, 0, 3)],
+            natives:
+            [new SavedNativeSettlement(7777, "model.nationType.apache", "model.settlement.camp", false, 2, 0, 5)]);
+        Unit isolated = walled.Units.First(u => u.Id == 1);
+        // The camp at (2,0): its neighbours are (1,0)O (1,1)O (2,1)O — no land tile a land unit can stand on, and the
+        // unit at (0,0) is separated from (2,0) by water — so no adjacent route exists → the goto is rejected.
+        Assert.False(walled.CheckSetDestination(isolated, new Position(2, 0)).Allowed);
+    }
 }

@@ -17,7 +17,10 @@ namespace CrownAndColony.GameLogic.World;
 /// path cost, then lower row, then lower column — so the expansion order, and hence the returned path, is byte-stable
 /// regardless of hash-set iteration order. No randomness is drawn (ADR-009). The caller supplies a
 /// <c>passable</c> predicate (terrain, fog, enemy/settlement/colony blocking) so this stays a pure
-/// graph search with no game-rules knowledge.</para>
+/// graph search with no game-rules knowledge — it is the predicate, not this class, that decides land-vs-water,
+/// so the same A* routes a <b>ship over open water</b> (water tiles passable, land impassable) exactly as it routes a
+/// land unit over land. <see cref="FindPathAdjacent"/> is the same search but stops <i>beside</i> a goal the unit
+/// cannot step onto (a settlement it does not own) — FreeCol's "arrive adjacent" settlement destination.</para>
 /// </summary>
 public static class Pathfinder
 {
@@ -89,6 +92,64 @@ public static class Pathfinder
             }
         }
         return []; // no route
+    }
+
+    /// <summary>
+    /// The ordered tiles to ENTER to walk from <paramref name="start"/> to a tile <b>adjacent to</b>
+    /// <paramref name="goal"/> (the goal tile itself is never entered), or an empty list when no such tile is reachable.
+    /// This is the routing for a destination the unit must <i>arrive beside</i> rather than step onto — a settlement it
+    /// cannot enter (a native settlement, or a rival colony): FreeCol's <c>setDestination(settlement)</c> arrives the
+    /// unit on/adjacent to the settlement. When the unit already stands adjacent to the goal the route is empty
+    /// (it is already there). Determinism is preserved: a single A* search runs over the same passability/cost rules,
+    /// returning the first (least-cost, byte-stable tie-broken) neighbour of <paramref name="goal"/> it dequeues.
+    /// </summary>
+    /// <param name="map">The world grid (terrain + the sparse improvement layer the road/river bonus reads).</param>
+    /// <param name="start">The tile the unit stands on (not included in the returned route).</param>
+    /// <param name="goal">The destination tile to arrive <i>beside</i> (never entered; need not be passable).</param>
+    /// <param name="passable">Which tiles may be entered (terrain/fog/blocker rules from the caller).</param>
+    /// <param name="applyImprovementBonus">True for a land unit (fold the river/road follow-bonus); false for a ship.</param>
+    public static IReadOnlyList<Position> FindPathAdjacent(
+        GameMap map, Position start, Position goal, Func<Position, bool> passable, bool applyImprovementBonus = false)
+    {
+        if (start.IsAdjacentTo(goal))
+        {
+            return []; // already standing beside the goal — nothing to walk
+        }
+
+        var gScore = new Dictionary<Position, int> { [start] = 0 };
+        var cameFrom = new Dictionary<Position, Position>();
+        var closed = new HashSet<Position>();
+        var open = new PriorityQueue<Position, (int F, int G, int Y, int X)>();
+        open.Enqueue(start, (Heuristic(start, goal), 0, start.Y, start.X));
+
+        while (open.TryDequeue(out Position current, out _))
+        {
+            if (current != start && current.IsAdjacentTo(goal))
+            {
+                return Reconstruct(cameFrom, current); // the first least-cost tile beside the goal
+            }
+            if (!closed.Add(current))
+            {
+                continue; // a stale duplicate queued before this node was expanded
+            }
+
+            int currentG = gScore[current];
+            foreach (Position n in current.Neighbours())
+            {
+                if (!map.InBounds(n) || closed.Contains(n) || !passable(n))
+                {
+                    continue;
+                }
+                int tentativeG = currentG + EnterCost(map, current, n, applyImprovementBonus);
+                if (!gScore.TryGetValue(n, out int known) || tentativeG < known)
+                {
+                    gScore[n] = tentativeG;
+                    cameFrom[n] = current;
+                    open.Enqueue(n, (tentativeG + Heuristic(n, goal), tentativeG, n.Y, n.X));
+                }
+            }
+        }
+        return []; // no tile beside the goal is reachable
     }
 
     /// <summary>

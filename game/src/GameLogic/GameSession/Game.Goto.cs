@@ -23,6 +23,51 @@ public sealed partial class Game
             Map, unit.Position, goal, p => CanPathEnter(unit, p), applyImprovementBonus: !unit.Type.IsNaval);
 
     /// <summary>
+    /// The kind of standing destination a <paramref name="goal"/> tile represents <i>for this unit</i> — derived
+    /// purely from what occupies the tile, so no extra state is persisted (the save still stores only the
+    /// destination's X/Y). FreeCol's <c>setDestination</c> takes a <c>Location</c> that can be a tile, a
+    /// <c>Settlement</c>, the high seas, or <c>Europe</c>; we recover that kind from the tile:
+    /// <list type="bullet">
+    /// <item><see cref="DestinationKind.Europe"/> — a naval unit aimed at a <b>high-seas</b> tile: the ship routes
+    /// to that tile and then sails to Europe (the existing <see cref="SailToEurope"/>).</item>
+    /// <item><see cref="DestinationKind.Settlement"/> — a settlement the unit <b>cannot step onto</b> (a native
+    /// settlement, or a colony it does not own): it routes to a tile <i>adjacent</i> to the settlement and stops
+    /// there (FreeCol "arrive adjacent"). An <b>own</b> colony is enterable, so it is a plain <see cref="DestinationKind.Tile"/>.</item>
+    /// <item><see cref="DestinationKind.Tile"/> — a tile the unit can step onto: open land for a land unit, or
+    /// <b>open water</b> for a ship (naval/open-sea goto), or an own colony.</item>
+    /// </list>
+    /// </summary>
+    internal DestinationKind DestinationKindOf(Unit unit, Position goal)
+    {
+        if (unit.Type.IsNaval && Map.TerrainAt(goal).Id == HighSeasId)
+        {
+            return DestinationKind.Europe; // a ship aimed at the high seas → sail to Europe on arrival
+        }
+        bool blockingSettlement =
+            (!unit.IsNative && NativeSettlementAt(goal) is not null)
+            || (ColonyAt(goal) is { } colony && (unit.IsNative || colony.OwnerId != unit.OwnerId));
+        return blockingSettlement ? DestinationKind.Settlement : DestinationKind.Tile;
+    }
+
+    /// <summary>
+    /// The route this turn for <paramref name="unit"/> heading to <paramref name="goal"/>, honouring the
+    /// destination kind: a settlement the unit can't enter is routed <i>adjacent to</i> (<see cref="Pathfinder.FindPathAdjacent"/>),
+    /// every other destination (a plain tile, open sea, or the Europe high-seas tile) is routed <i>onto</i>
+    /// (<see cref="FindPath"/>). Empty = no route / already arrived.
+    /// </summary>
+    private IReadOnlyList<Position> RouteFor(Unit unit, Position goal) =>
+        DestinationKindOf(unit, goal) == DestinationKind.Settlement
+            ? Pathfinder.FindPathAdjacent(
+                Map, unit.Position, goal, p => CanPathEnter(unit, p), applyImprovementBonus: !unit.Type.IsNaval)
+            : FindPath(unit, goal);
+
+    /// <summary>Whether <paramref name="unit"/> has reached <paramref name="goal"/> for its destination kind: standing on a tile/sea/high-seas goal, or <i>beside</i> a settlement goal it cannot enter.</summary>
+    private bool HasArrivedAt(Unit unit, Position goal) =>
+        DestinationKindOf(unit, goal) == DestinationKind.Settlement
+            ? unit.Position.IsAdjacentTo(goal)
+            : unit.Position == goal;
+
+    /// <summary>
     /// Whether <paramref name="unit"/> may path through <paramref name="p"/>: the same blocking rules as
     /// <see cref="CheckMove"/> (terrain match, no enemy, no native settlement, only an own colony) minus the
     /// single-step/movement checks, plus a fog gate so a goto only routes through tiles its owner has seen
@@ -57,7 +102,15 @@ public sealed partial class Game
         return true;
     }
 
-    /// <summary>Whether <paramref name="unit"/> may be given a goto order to <paramref name="goal"/>, and why not if not.</summary>
+    /// <summary>
+    /// Whether <paramref name="unit"/> may be given a goto order to <paramref name="goal"/>, and why not if not.
+    /// Accepts the three faithful destination kinds (FreeCol <c>setDestination</c>): a plain <b>tile</b> (open land for
+    /// a land unit, or <b>open water</b> for a ship), a <b>settlement</b> the unit arrives <i>beside</i> (a native
+    /// settlement or a colony it can't enter), and <b>Europe</b> (a naval unit aimed at a high-seas tile, which it
+    /// then sails from). For a plain tile the goal's terrain must match the unit's element (a land unit can't target
+    /// water; a ship can't target open land); a settlement target skips that gate (the unit arrives on an adjacent
+    /// tile of its own element). The target must be explored, and a route to it (or beside it) must exist.
+    /// </summary>
     public MoveCheck CheckSetDestination(Unit unit, Position goal)
     {
         if (!unit.IsOnMap)
@@ -72,7 +125,12 @@ public sealed partial class Game
         {
             return MoveCheck.No("The unit is already there.");
         }
-        if (Map.TerrainAt(goal).IsWater != unit.Type.IsNaval)
+
+        DestinationKind kind = DestinationKindOf(unit, goal);
+        // Terrain legality: a land/open-sea/Europe target must match the unit's element (land for land, water for a
+        // ship). A SETTLEMENT target is the one tile-terrain exception — the unit arrives on an ADJACENT tile of its
+        // own element, so the settlement's own terrain need not match (a land unit may target a coastal settlement).
+        if (kind != DestinationKind.Settlement && Map.TerrainAt(goal).IsWater != unit.Type.IsNaval)
         {
             return MoveCheck.No(unit.Type.IsNaval ? "A ship can only sail to water." : "A land unit can only march to land.");
         }
@@ -80,7 +138,7 @@ public sealed partial class Game
         {
             return MoveCheck.No("You cannot set a course into unexplored territory.");
         }
-        if (FindPath(unit, goal).Count == 0)
+        if (RouteFor(unit, goal).Count == 0 && !HasArrivedAt(unit, goal))
         {
             return MoveCheck.No("There is no route to that destination.");
         }
@@ -105,7 +163,10 @@ public sealed partial class Game
     /// <summary>
     /// Walks <paramref name="unit"/> toward its <see cref="Unit.Destination"/> as far as this turn's movement allows,
     /// recomputing the route each step. Stops on: reached (the goto clears), out of moves, or no route (the goto is
-    /// kept so it resumes next turn). Returns what happened. RNG-free except for any event a step itself triggers
+    /// kept so it resumes next turn). Honours the destination kind: a <b>settlement</b> the unit can't enter is
+    /// reached by arriving on an <i>adjacent</i> tile; a <b>Europe</b> destination (a ship aimed at the high seas) is
+    /// reached by stepping onto the high-seas tile, at which point the unit <see cref="SailToEurope"/> and the goto
+    /// clears (<see cref="GotoOutcome.SailedToEurope"/>). RNG-free except for any event a step itself triggers
     /// (e.g. the owning player's own Lost City Rumour). A no-op for a unit with no destination.
     /// </summary>
     public GotoAdvance AdvanceDestination(Unit unit)
@@ -118,10 +179,9 @@ public sealed partial class Game
         int steps = 0;
         while (unit.MovementLeft > 0)
         {
-            if (unit.Position == goal)
+            if (HasArrivedAt(unit, goal))
             {
-                unit.Destination = null;
-                return new GotoAdvance(GotoOutcome.Reached, steps);
+                return Arrive(unit, goal, steps);
             }
             if (Map.HasRumour(unit.Position))
             {
@@ -131,7 +191,7 @@ public sealed partial class Game
                 // resumes once the rumour is cleared.
                 return new GotoAdvance(GotoOutcome.Interrupted, steps);
             }
-            IReadOnlyList<Position> path = FindPath(unit, goal);
+            IReadOnlyList<Position> path = RouteFor(unit, goal);
             if (path.Count == 0)
             {
                 return new GotoAdvance(GotoOutcome.NoPath, steps); // walled off this turn — keep the goto, retry next turn
@@ -149,12 +209,28 @@ public sealed partial class Game
             unit.Destination = goal;
         }
 
-        if (unit.Position == goal)
+        if (HasArrivedAt(unit, goal))
         {
-            unit.Destination = null;
-            return new GotoAdvance(GotoOutcome.Reached, steps);
+            return Arrive(unit, goal, steps);
         }
         return new GotoAdvance(GotoOutcome.OutOfMoves, steps);
+    }
+
+    /// <summary>
+    /// Completes a goto: clears the destination and, for a <b>Europe</b> destination (a ship now standing on the
+    /// high-seas tile), hands off to the existing <see cref="SailToEurope"/> command and reports
+    /// <see cref="GotoOutcome.SailedToEurope"/>; otherwise reports <see cref="GotoOutcome.Reached"/>. The sailing
+    /// itself is not reimplemented here — this only invokes the shipped command at the right moment.
+    /// </summary>
+    private GotoAdvance Arrive(Unit unit, Position goal, int steps)
+    {
+        unit.Destination = null;
+        if (DestinationKindOf(unit, goal) == DestinationKind.Europe && CheckSailToEurope(unit).Allowed)
+        {
+            SailToEurope(unit); // the ship reached its high-seas entry tile → cross to Europe (existing command)
+            return new GotoAdvance(GotoOutcome.SailedToEurope, steps);
+        }
+        return new GotoAdvance(GotoOutcome.Reached, steps);
     }
 
     /// <summary>
@@ -199,8 +275,11 @@ public enum GotoOutcome
     /// <summary>The unit had no destination (or was not on the map).</summary>
     NotGoing = 0,
 
-    /// <summary>The unit reached its destination; the goto was cleared.</summary>
+    /// <summary>The unit reached its destination (on a tile/open-sea goal, or beside a settlement goal); the goto was cleared.</summary>
     Reached,
+
+    /// <summary>A naval unit reached its Europe destination's high-seas tile and set sail for Europe (via <see cref="Game.SailToEurope"/>); the goto was cleared.</summary>
+    SailedToEurope,
 
     /// <summary>The unit ran out of movement; the goto is kept and resumes next turn.</summary>
     OutOfMoves,
@@ -210,6 +289,22 @@ public enum GotoOutcome
 
     /// <summary>A step landed on (or the unit started on) an unresolved Lost City Rumour; it stops there, goto kept.</summary>
     Interrupted,
+}
+
+/// <summary>
+/// The kind of standing goto destination a tile represents for a unit, derived at runtime from what occupies the
+/// tile (no extra state is persisted). Mirrors the destination types of FreeCol's <c>Unit.setDestination(Location)</c>.
+/// </summary>
+public enum DestinationKind
+{
+    /// <summary>A tile the unit steps onto: open land for a land unit, <b>open water</b> for a ship (naval/open-sea goto), or an own colony.</summary>
+    Tile = 0,
+
+    /// <summary>A settlement the unit cannot enter (a native settlement, or a colony it does not own) — it arrives on an <i>adjacent</i> tile.</summary>
+    Settlement,
+
+    /// <summary>A naval unit's high-seas tile — the ship routes to it and then sails to Europe (<see cref="Game.SailToEurope"/>).</summary>
+    Europe,
 }
 
 /// <summary>The result of advancing a unit along its goto for one turn.</summary>

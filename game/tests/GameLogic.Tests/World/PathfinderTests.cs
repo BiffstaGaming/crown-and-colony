@@ -250,4 +250,58 @@ public class PathfinderTests
 
         Assert.Equal(a, b); // byte-stable: identical sequence on a repeat run (ADR-009, RNG-free)
     }
+
+    // ── Arrive-adjacent routing (settlement destinations, 86d3drn06) ─────────────────────────────────────
+
+    [Fact]
+    public void FindPathAdjacent_StopsBesideAnImpassableGoal()
+    {
+        // The goal tile (2,0) is impassable (it stands in for a settlement the unit can't enter). The route must end
+        // on a tile ADJACENT to it and never include the goal itself.
+        GameMap map = FromRows("LLL", "LLL");
+        var goal = new Position(2, 0);
+        IReadOnlyList<Position> path = Pathfinder.FindPathAdjacent(
+            map, new Position(0, 0), goal, p => p != goal); // passable everywhere except the goal
+
+        Assert.NotEmpty(path);
+        Assert.DoesNotContain(goal, path);              // never steps onto the goal
+        Assert.True(path[^1].IsAdjacentTo(goal));       // arrives beside it
+    }
+
+    [Fact]
+    public void FindPathAdjacent_IsEmpty_WhenAlreadyAdjacent()
+    {
+        GameMap map = FromRows("LLL", "LLL");
+        var goal = new Position(2, 0);
+        // Start at (1,0), already adjacent to the goal → nothing to walk.
+        Assert.Empty(Pathfinder.FindPathAdjacent(map, new Position(1, 0), goal, p => p != goal));
+    }
+
+    [Fact]
+    public void FindPathAdjacent_IsEmpty_WhenNoAdjacentTileIsReachable()
+    {
+        // The goal (2,0) is ringed by water; with a land-only predicate none of its neighbours is reachable.
+        GameMap map = FromRows(
+            "LOL",
+            "LOO");
+        var goal = new Position(2, 0); // neighbours (1,0)O (1,1)O (2,1)O are all water
+        Assert.Empty(Pathfinder.FindPathAdjacent(
+            map, new Position(0, 0), goal, p => p != goal && !map.TerrainAt(p).IsWater));
+    }
+
+    [Fact]
+    public void FindPath_RoutesAShipOverOpenWater()
+    {
+        // The same A* routes a ship: water passable, land impassable. A diagonal open-ocean hop is 2 steps.
+        GameMap map = FromRows(
+            "OOO",
+            "OOO",
+            "OOO");
+        IReadOnlyList<Position> path = Pathfinder.FindPath(
+            map, new Position(0, 0), new Position(2, 2), p => map.TerrainAt(p).IsWater);
+
+        Assert.Equal(2, path.Count);                                  // 2 diagonal water steps
+        Assert.Equal(new Position(2, 2), path[^1]);
+        Assert.All(path, p => Assert.True(map.TerrainAt(p).IsWater)); // never leaves the water
+    }
 }
