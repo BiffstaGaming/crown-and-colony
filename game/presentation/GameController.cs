@@ -45,6 +45,9 @@ public partial class GameController : Node2D
     /// <summary>Companion to <see cref="PendingWorldSize"/>: the chosen difficulty level (null = the shipped default, Conquistador/medium). Consumed (and cleared) in <see cref="NewGame"/>. (86d3c9y08)</summary>
     public static DifficultyLevel? PendingDifficulty { get; set; }
 
+    /// <summary>Companion to <see cref="PendingWorldSize"/>: the chosen map source (null = the shipped default, <see cref="MapSource.Random"/> — a procedurally generated New World). <see cref="MapSource.America"/> loads FreeCol's fixed America terrain instead (its dimensions override the world-size choice). Consumed (and cleared) in <see cref="NewGame"/>.</summary>
+    public static MapSource? PendingMapSource { get; set; }
+
     /// <summary>
     /// New-game seed. 0 (default) = pick a random seed per game; set non-zero to
     /// pin the world (tests, bug reproduction — ADR-009).
@@ -185,26 +188,28 @@ public partial class GameController : Node2D
         WorldSize size = PendingWorldSize ?? WorldSizeOptions.DefaultSize;
         LandMass land = PendingLandMass ?? WorldSizeOptions.DefaultLandMass;
         DifficultyLevel difficulty = PendingDifficulty ?? DifficultyLevels.Default;
+        MapSource mapSource = PendingMapSource ?? MapSource.Random;
         PendingWorldSize = null;
         PendingLandMass = null;
         PendingDifficulty = null;
+        PendingMapSource = null;
 
         // Picking the seed may be non-deterministic (player convenience);
         // the game itself is fully determined by the chosen seed.
-        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi(), size, land, difficulty);
+        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi(), size, land, difficulty, mapSource);
     }
 
-    /// <summary>Starts a new game from an explicit seed at the shipped-default world size / difficulty (tests, visual goldens — ADR-009).</summary>
+    /// <summary>Starts a new game from an explicit seed at the shipped-default world size / difficulty / map (tests, visual goldens — ADR-009).</summary>
     public void StartNewGame(ulong seed) =>
-        StartNewGame(seed, WorldSizeOptions.DefaultSize, WorldSizeOptions.DefaultLandMass, DifficultyLevels.Default);
+        StartNewGame(seed, WorldSizeOptions.DefaultSize, WorldSizeOptions.DefaultLandMass, DifficultyLevels.Default, MapSource.Random);
 
-    /// <summary>Starts a new game from an explicit seed, world size / land amount and difficulty level (forwarded from the new-game options). The ruleset is loaded under the chosen level so its balance matches, and the level is recorded for the save.</summary>
-    public void StartNewGame(ulong seed, WorldSize size, LandMass landMass, DifficultyLevel difficulty)
+    /// <summary>Starts a new game from an explicit seed, world size / land amount, difficulty level and map source (forwarded from the new-game options). The ruleset is loaded under the chosen level so its balance matches, the level is recorded for the save, and a fixed <paramref name="mapSource"/> ignores the size/land args (its grid sets the dimensions).</summary>
+    public void StartNewGame(ulong seed, WorldSize size, LandMass landMass, DifficultyLevel difficulty, MapSource mapSource)
     {
         _currentSeed = seed;
         StartGame(Game.New(
             _variant.LoadRuleset(difficulty.Id), _currentSeed, size.Width, size.Height,
-            landMassFraction: landMass.Fraction, difficultyLevelId: difficulty.Id));
+            landMassFraction: landMass.Fraction, difficultyLevelId: difficulty.Id, mapSource: mapSource));
     }
 
     private void StartGame(Game game)

@@ -117,7 +117,14 @@ public class MainMenuTests
         WorldSize? chosenSize = null;
         LandMass? chosenLand = null;
         DifficultyLevel? chosenDifficulty = null;
-        dialog.Open((size, land, difficulty) => { chosenSize = size; chosenLand = land; chosenDifficulty = difficulty; });
+        MapSource? chosenMap = null;
+        dialog.Open((size, land, difficulty, map) =>
+        {
+            chosenSize = size;
+            chosenLand = land;
+            chosenDifficulty = difficulty;
+            chosenMap = map;
+        });
 
         var sizeOption = dialog.FindChild("SizeOption", recursive: true, owned: false) as OptionButton;
         var landOption = dialog.FindChild("LandOption", recursive: true, owned: false) as OptionButton;
@@ -139,6 +146,44 @@ public class MainMenuTests
         AssertThat(chosenLand!.Name).IsEqual(WorldSizeOptions.LandMasses[2].Name);
         AssertThat(chosenDifficulty).IsNotNull();
         AssertThat(chosenDifficulty!.Id).IsEqual(DifficultyLevels.All[4].Id);
+        AssertThat(chosenMap).IsEqual(MapSource.Random); // map defaults to the random New World
+    }
+
+    [TestCase]
+    public async Task NewGameDialog_SelectingAmerica_ForwardsAmerica_AndDisablesWorldSize()
+    {
+        ISceneRunner runner = ISceneRunner.Load(MenuScene);
+        await runner.SimulateFrames(2);
+        var menu = (Control)runner.Scene();
+
+        var dialog = new NewGameDialog();
+        menu.AddChild(dialog);
+        await runner.SimulateFrames(1); // _Ready builds the controls
+
+        MapSource? chosenMap = null;
+        dialog.Open((_, _, _, map) => chosenMap = map);
+
+        var mapOption = dialog.FindChild("MapOption", recursive: true, owned: false) as OptionButton;
+        var sizeOption = dialog.FindChild("SizeOption", recursive: true, owned: false) as OptionButton;
+        var landOption = dialog.FindChild("LandOption", recursive: true, owned: false) as OptionButton;
+        AssertThat(mapOption).IsNotNull();
+        AssertThat(sizeOption).IsNotNull();
+        AssertThat(landOption).IsNotNull();
+
+        // The size/land dropdowns start enabled (Random) and disable when America (a fixed-size map) is picked.
+        AssertThat(sizeOption!.Disabled).IsFalse();
+        mapOption!.Select(1); // "America (fixed)"
+        mapOption.EmitSignal(OptionButton.SignalName.ItemSelected, 1);
+        await runner.SimulateFrames(1);
+        AssertThat(sizeOption.Disabled).IsTrue();
+        AssertThat(landOption!.Disabled).IsTrue();
+
+        var start = dialog.FindChild("StartButton", recursive: true, owned: false) as Button;
+        AssertThat(start).IsNotNull();
+        start!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(chosenMap).IsEqual(MapSource.America);
     }
 
     [TestCase]

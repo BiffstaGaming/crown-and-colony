@@ -52,20 +52,21 @@ public partial class MainMenu : Control
     }
 
     /// <summary>
-    /// Opens the new-game world-options overlay (world size + land mass); choosing Start forwards the picks to the
-    /// game scene via <see cref="GameController.PendingWorldSize"/>/<see cref="GameController.PendingLandMass"/> and
-    /// boots it (which builds a fresh game from those options, defaulting to the shipped world if none were changed).
+    /// Opens the new-game world-options overlay (map source + world size + land mass + difficulty); choosing Start
+    /// forwards the picks to the game scene via <see cref="GameController.PendingWorldSize"/>/<see cref="GameController.PendingLandMass"/>/<see cref="GameController.PendingMapSource"/>
+    /// and boots it (which builds a fresh game from those options, defaulting to the shipped random world if none were changed).
     /// </summary>
     private void OnNewGame()
     {
         var dialog = new NewGameDialog();
         dialog.Closed += dialog.QueueFree;
         AddChild(dialog);
-        dialog.Open((size, land, difficulty) =>
+        dialog.Open((size, land, difficulty, mapSource) =>
         {
             GameController.PendingWorldSize = size;
             GameController.PendingLandMass = land;
             GameController.PendingDifficulty = difficulty;
+            GameController.PendingMapSource = mapSource;
             GetTree().ChangeSceneToFile(GameScenePath);
         });
     }
