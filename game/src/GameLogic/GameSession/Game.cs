@@ -7003,6 +7003,23 @@ public sealed partial class Game
             // A tooled pioneer never founds (it would destroy its 20 tools); it improves, or — out of plans — explores.
             if (!IsPioneer(unit) && ColoniesOf(power).Count() < Ruleset.Difficulty.Ai.MaxColonies && CheckFoundColony(unit).Allowed)
             {
+                // National-advantage site ranking (86d3drn5d, FreeCol getColonyValue × getAIAdvantage tilt): for an
+                // EXPANSION colony (the power already owns at least one), rather than always settling the exact tile it
+                // stands on, the founder compares its current site against each legal adjacent site it could step to
+                // (ScoreColonySite) and, if a neighbour scores STRICTLY higher for this power's advantage, hill-climbs one
+                // step toward it to found from the better tile — so a trade power drifts toward a coastal cash site and a
+                // production power toward fertile land. Because terrain is fixed and only a STRICTLY-better neighbour
+                // lures it, the walk climbs to a local maximum in a few steps and then founds (no neighbour beats a local
+                // max → no thrash, guaranteed termination). The power's FIRST colony is NEVER deferred (the gate below):
+                // it settles its landing immediately, so a power always gets a foothold on turn one. Scoring + the step
+                // draw the power's OWN stream (StepToward); the human plans no sites here → stream 0 byte-identical (ADR-009).
+                if (ColoniesOf(power).Any()
+                    && BetterAdjacentColonySite(power, unit) is { } betterSite
+                    && StepToward(power, unit, betterSite) is { } toSite)
+                {
+                    MoveUnit(unit, toSite);
+                    continue;
+                }
                 FoundColony(unit);
                 continue;
             }
@@ -7304,6 +7321,147 @@ public sealed partial class Game
             .OrderBy(c => Chebyshev(c.Position, unit.Position)).ThenBy(c => c.Position.Y).ThenBy(c => c.Position.X)
             .Select(c => (Position?)c.Position)
             .FirstOrDefault();
+
+    // --- AI colony-site planning — national-advantage ranking (86d3drn5d, FreeCol EuropeanAIPlayer.getColonyValue
+    //     weighted by the nation's advantage; ColonyPlan's getAIAdvantage ×1.2 production tilt) ----------------------
+
+    /// <summary>The national-advantage site multiplier a favoured tile/site gets (FreeCol <c>ColonyPlan</c> production tilt: <c>×1.2</c> on the advantage's preferred goods/tiles).</summary>
+    private const double ColonySiteAdvantageFactor = 1.2;
+
+    /// <summary>A tile counts as "good production" of a good when its best single-good potential reaches this (FreeCol <c>Player.getColonyValue</c> <c>GOOD_PRODUCTION = 4</c>) — a production-advantage power gives such a neighbour the extra ×1.2 site tilt.</summary>
+    private const int GoodProductionYield = 4;
+
+    /// <summary>The advantage short name of <paramref name="power"/> (FreeCol <c>AIPlayer.getAIAdvantage</c>: the part after <c>model.nationType.</c> — <c>trade</c>/<c>conquest</c>/<c>cooperation</c>/<c>immigration</c>), or the empty string for a power with no nation (the no-advantage default). Read straight off the resolved nation type.</summary>
+    private string AdvantageOf(Player power) =>
+        power.NationId is { } nationId && Ruleset.EuropeanNations.FirstOrDefault(n => n.Id == nationId) is { } nation
+            ? nation.NationType.ShortName
+            : string.Empty;
+
+    /// <summary>The European sale value of one unit of <paramref name="goods"/> for colony-site scoring: its own market price, or — for a good with no market of its own (grain/fish, which store as food) — the price of the good it stores as (food = 1). 0 for a good that trades nowhere and stores as nothing priced.</summary>
+    private int GoodsUnitValue(GoodsType goods) =>
+        goods.Market?.InitialPrice ?? Ruleset.Goods(goods.StoredAs).Market?.InitialPrice ?? 0;
+
+    /// <summary>
+    /// How a foreign power values founding a colony on <paramref name="tile"/> — a faithful subset of FreeCol's
+    /// <c>Player.getColonyValue</c> tilted by the power's national advantage (FreeCol <c>ColonyPlan</c>'s
+    /// <c>getAIAdvantage</c> ×1.2 production tilt). It sums, over the centre tile and its eight land neighbours, the
+    /// potential output of every tradeable good the tile could yield. <b>What that output is worth depends on the
+    /// power's advantage</b> — which is exactly how a trade power and a production power rank the same land differently:
+    /// <list type="bullet">
+    /// <item><b>No nation / neutral advantage</b> (<c>cooperation</c>/<c>immigration</c>, or no nation at all) — each
+    /// good is valued at its <b>European sale price</b> (yield × price): a cash-crop neighbourhood out-scores barren
+    /// ground. This is the un-tilted base; the human, who plans no sites here, is never affected.</item>
+    /// <item><b><c>trade</c></b> (Dutch) — the same price-weighted base, but tradeable value is taken at
+    /// <see cref="ColonySiteAdvantageFactor"/> (×1.2) and a <b>coastal</b> site (any water neighbour — a port a ship can
+    /// reach) earns another ×1.2. A trade power therefore prizes coastal, high-value cash sites above inland ones.</item>
+    /// <item><b><c>conquest</c></b> (Spanish — the production archetype) — value is the <b>raw yield amount</b> itself,
+    /// <em>ignoring</em> market price, with a tile's contribution taken at ×1.2 when its best single-good yield is among
+    /// the higher ones (the <c>GoodProductionYield</c> band). A production power therefore prizes high-output land —
+    /// ore/grain volume — even when that output sells cheaply, so it ranks a thin-but-pricey site below a fertile one.</item>
+    /// </list>
+    /// Pure read of terrain + market seed (no RNG, no mutation), so it never touches the human's stream 0 (ADR-009).
+    /// Deferred vs FreeCol (documented): no high-seas-distance / settlement-spacing / food-floor categories — this is the
+    /// advantage-ranking subset, layered on the existing legality (<see cref="CheckFoundColony"/>) and spacing checks.
+    /// </summary>
+    /// <param name="power">The foreign power evaluating the site (its advantage drives the weighting).</param>
+    /// <param name="tile">The candidate centre tile a colony would be founded on.</param>
+    /// <returns>The site's value to this power (a non-negative score; higher is better). Not comparable across advantages — each advantage scores on its own scale; only same-advantage comparisons rank sites.</returns>
+    internal double ScoreColonySite(Player power, Position tile)
+    {
+        string advantage = AdvantageOf(power);
+        bool tradeAdvantage = advantage == "trade";
+        bool productionAdvantage = advantage == "conquest";
+
+        double score = 0.0;
+        foreach (Position t in tile.Neighbours().Append(tile))
+        {
+            if (!Map.InBounds(t) || Map.TerrainAt(t).IsWater)
+            {
+                continue; // value is drawn from the workable land tiles of the colony's footprint
+            }
+
+            int bestSingleYield = 0;
+            double tileValue = 0.0;
+            foreach (GoodsType goods in Ruleset.GoodsTypes)
+            {
+                int yield = TileYieldPotential(t, goods.Id);
+                if (yield <= 0)
+                {
+                    continue;
+                }
+                bestSingleYield = Math.Max(bestSingleYield, yield);
+                // A production power weighs RAW YIELD (it wants output volume); every other advantage weighs the good's
+                // European sale PRICE (it wants cash). This single switch is what makes ore land win for conquest and
+                // cash-crop land win for trade — the core of the advantage ranking. Food-class goods (grain/fish) have
+                // no market of their own, so their cash value comes from the good they store as (food, price 1) via
+                // GoodsUnitValue — a thin but real cash contribution that still counts the colony's breadbasket tiles.
+                tileValue += productionAdvantage ? yield : yield * GoodsUnitValue(goods);
+            }
+
+            if (tradeAdvantage)
+            {
+                // Trade advantage: count this tile's tradeable value at ×1.2 (a trade power prizes a cash-crop neighbourhood).
+                tileValue *= ColonySiteAdvantageFactor;
+            }
+            else if (productionAdvantage && bestSingleYield >= GoodProductionYield)
+            {
+                // Production advantage: a high-output neighbour earns the ×1.2 tilt on ITS OWN value (per tile, so the
+                // result is order-independent) — a production power prizes fertile/high-ore land.
+                tileValue *= ColonySiteAdvantageFactor;
+            }
+
+            score += tileValue;
+        }
+
+        // Trade advantage also prizes a coastal site (a port a ship can reach) — ×1.2 when any neighbour is water.
+        if (tradeAdvantage && tile.Neighbours().Any(n => Map.InBounds(n) && Map.TerrainAt(n).IsWater))
+        {
+            score *= ColonySiteAdvantageFactor;
+        }
+
+        return score;
+    }
+
+    /// <summary>
+    /// Whether a foreign power could legally found a colony on <paramref name="tile"/> if a founder stood there
+    /// (FreeCol <c>Player.canClaimToFoundSettlementReason</c>): in-bounds settleable land, empty of a colony, and not
+    /// adjacent to an existing colony (the universal spacing rule, mirroring <see cref="CheckFoundColony"/> but keyed on a
+    /// position rather than a unit). Used to enumerate the candidate sites the founder could step to and rank by
+    /// <see cref="ScoreColonySite"/>. Pure read — no RNG, no mutation.
+    /// </summary>
+    private bool IsLegalColonySite(Position tile) =>
+        Map.InBounds(tile)
+        && Map.TerrainAt(tile).CanSettle
+        && ColonyAt(tile) is null
+        && !tile.Neighbours().Any(n => Map.InBounds(n) && ColonyAt(n) is not null);
+
+    /// <summary>
+    /// The legal adjacent colony site <paramref name="unit"/> could step to that scores <b>strictly higher</b> for
+    /// <paramref name="power"/>'s national advantage than the unit's current tile (<see cref="ScoreColonySite"/>), or
+    /// null when its own tile is the best nearby (the common case — found in place). Candidates are the unit's eight
+    /// neighbours that are a legal site (<see cref="IsLegalColonySite"/>) AND a legal move (so it can actually reach
+    /// them); ties break deterministically by score then position, so the choice is replay-stable. A strict improvement
+    /// is required, so an equally-good neighbour never lures the founder off its tile (no thrash). Pure ranking — no
+    /// mutation; the only stream draw happens later in <see cref="StepToward"/> (the power's own stream, never stream 0).
+    /// </summary>
+    private Position? BetterAdjacentColonySite(Player power, Unit unit)
+    {
+        double here = ScoreColonySite(power, unit.Position);
+        Position? best = null;
+        double bestScore = here;
+        foreach (Position n in unit.Position.Neighbours()
+                     .Where(n => IsLegalColonySite(n) && CheckMove(unit, n).Allowed)
+                     .OrderBy(n => n.Y).ThenBy(n => n.X))
+        {
+            double score = ScoreColonySite(power, n);
+            if (score > bestScore) // strict: an equal neighbour never lures the founder off its current tile
+            {
+                bestScore = score;
+                best = n;
+            }
+        }
+        return best;
+    }
 
     // --- AI pioneering helpers (86d3c9vta, FreeCol PioneeringMission / TileImprovementPlan / pioneersNeeded) ---
 
