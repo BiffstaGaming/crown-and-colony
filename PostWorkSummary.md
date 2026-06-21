@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-22 — 50-ITEM RUN · WAVE 8 (spec-driven abilities + modifiers · national-advantage AI · map import · victory screen) — COMPLETE ✅
+
+**Requested:** 50-item run, minimal testing. **Wave 8 = items 24–28.** (Hit the Anthropic monthly spend limit mid-wave overnight — 4 agents died; Chris raised the limit, I re-launched them. Only S2 had completed before the limit.)
+**Did:** 5 lean worktree streams, cherry-picked, **5 items shipped**:
+- **Spec-driven ABILITIES slice** (`86d3drpgg`): routed 6 unit `<ability>` declarations (navalUnit, foundColony, captureGoods, piracy, carryTreasure, expertScout) through a parsed `HasAbility` map (`Ruleset.CollectAbilitiesUpChain`), byte-identical.
+- **Spec-driven MODIFIERS slice** (`86d3drpgg`): routed the 8 unattached spec `<modifiers>` combat constants (attackBonus, fortified, amphibious, artillery, cargo-penalty…) through `Ruleset.CombatModifiers`, byte-identical.
+- **National-advantage AI ranking** (`86d3drn5d`): `ScoreColonySite` tilts foreign-AI site choice by nation advantage (trade→coastal cash / conquest→raw yield), foreign-AI-only.
+- **Map import** (`86d3c9wwk`): generalised the America loader into a faithful `MapImporter` (terrain + resources/improvements/rumours/settlements overlays); America byte-identical (settlement-install wiring is the noted follow-up).
+- **Victory + end-game stats screen** (`86d3c9xc6`): new `VictoryPanel` + a `ScoreBreakdown` oracle; GdUnit scene test green.
+**Status:** Integrated, pushed `f7696ce…cea6cdc`. build clean + **1841 L1/L2 + 4 soak green**. Integration fix: updated the `ColonyReportPanel` HistoryTab L3 test for region-discovery event ordering (Wave-4 interaction the L3 flake had masked). The **overnight nightly auto-QA-report ran + committed back** — proving Wave 7's `86d3c9y4r` mechanism end-to-end. No save bump (v52).
+**Changed:** 5 commits + integration fix. New: `MapImporter.cs`, `VictoryPanel.cs`, `ScoreComponents.cs`, `CombatModifiers` (in Combat). The spec-driven **epic `86d3drpgg` stays open** (2 of N slices done).
+**Decisions:** Re-launched the 4 spend-limit-killed agents from main-with-S2 (so the S2/S5 Ruleset paths didn't collide). Stayed lean (no review workflow).
+**Scheduled next:** **Wave 9** — high-scores screen (`86d3c9xb1`), map-settlement wiring, more `86d3drpgg` slices (tension/promotion, colony constants, game-options). **28/50 done.**
+**Needs you:** Two standing "your call" deviations (spy-evasion, WAIVE_TAX) — non-blocking. ART tasks (combat anims/music/SFX/native sprites) remain — they may be sourceable from FreeCol's GPL/CC-BY assets; flag if you want me to pursue that vs. leave them.
+
 ## 2026-06-21 — 50-ITEM RUN · WAVE 7 (event/limit engine · spy-on-colony · AI logistics · differential harness · auto-QA-report) — COMPLETE ✅
 
 **Requested:** 50-item run, minimal testing. **Wave 7 = items 19–23.**
