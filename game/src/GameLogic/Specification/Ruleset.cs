@@ -529,6 +529,9 @@ public sealed class Ruleset
                 // Missionary ordination: the church grants model.ability.dressMissionary, the cathedral inherits it
                 // (the chapel does not) — the colony-side requirement of the model.role.missionary role.
                 DressesMissionary: ResolveAbility(el, "model.ability.dressMissionary", buildingElements),
+                // Water work: the docks grant model.ability.produceInWater (drydock/shipyard inherit it down the
+                // extends chain) — the colony-side requirement for assigning a colonist to a sea tile to fish.
+                ProducesInWater: ResolveAbility(el, "model.ability.produceInWater", buildingElements),
                 // Horse breeding: pasture/country sets breedingDivisor 50 / breedingFactor 2; stables multiplies the
                 // divisor by 0.5 → 25 (resolved additive-then-multiplicative up the extends chain). 0 = not a breeder.
                 BreedingDivisor: ResolveScalarModifierUpChain(el, "model.modifier.breedingDivisor", buildingElements),

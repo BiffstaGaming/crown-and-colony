@@ -340,7 +340,8 @@ public partial class ColonyPanel : PanelContainer
                     release.Pressed += () => { _game.UnassignWork(_colony, worked); _heldFrom = null; Changed(); };
                     Place(view, release, topLeft + new Vector2(64, 50));
                 }
-                else if (_colony.IdleColonists > 0 && _game.TileWorkOptions(tile) is { Count: > 0 } options)
+                else if (_colony.IdleColonists > 0 && _game.ColonyCanWorkTile(_colony, tile)
+                         && _game.TileWorkOptions(tile) is { Count: > 0 } options)
                 {
                     var picker = new OptionButton { Name = $"Work_{tile.X}_{tile.Y}", CustomMinimumSize = new Vector2(104, 24) };
                     picker.AddItem("Work…");
@@ -376,7 +377,8 @@ public partial class ColonyPanel : PanelContainer
                 {
                     _game.UnassignWork(_colony, from); // drop on the town → send the colonist idle
                 }
-                else if (!_colony.TileWorkers.ContainsKey(tile) && _game.TileWorkOptions(tile) is { Count: > 0 } target)
+                else if (!_colony.TileWorkers.ContainsKey(tile) && _game.ColonyCanWorkTile(_colony, tile)
+                         && _game.TileWorkOptions(tile) is { Count: > 0 } target)
                 {
                     _game.UnassignWork(_colony, from);
                     _game.AssignWork(_colony, tile, target[0].GoodsId); // move → the new tile's best-yield good
@@ -388,7 +390,8 @@ public partial class ColonyPanel : PanelContainer
         {
             _heldFrom = tile; // pick the colonist up
         }
-        else if (!isCentre && _colony.IdleColonists > 0 && _game.TileWorkOptions(tile) is { Count: > 0 } free)
+        else if (!isCentre && _colony.IdleColonists > 0 && _game.ColonyCanWorkTile(_colony, tile)
+                 && _game.TileWorkOptions(tile) is { Count: > 0 } free)
         {
             _game.AssignWork(_colony, tile, free[0].GoodsId); // no one held + an idle colonist → put it to work here
         }

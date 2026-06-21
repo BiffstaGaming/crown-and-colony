@@ -7778,6 +7778,13 @@ public sealed partial class Game
         {
             return MoveCheck.No("No idle colonists.");
         }
+        // Sea tiles (ocean/lake) can only be fished once the colony has built the Docks (or an upgrade that inherits
+        // its model.ability.produceInWater). FreeCol ColonyTile.getNoWorkReason: !hasAbility(PRODUCE_IN_WATER) &&
+        // !tile.isLand() ⇒ MISSING_ABILITY. The colony centre is always land, so this only ever gates the 8 ring tiles.
+        if (Map.TerrainAt(tile).IsWater && !ColonyCanWorkWater(colony))
+        {
+            return MoveCheck.No("Build Docks before colonists can work the sea.");
+        }
         int yield = TileYield(player, tile, goodsId);
         if (yield <= 0)
         {
@@ -7785,6 +7792,23 @@ public sealed partial class Game
         }
         return MoveCheck.Yes(yield);
     }
+
+    /// <summary>
+    /// Whether <paramref name="colony"/> may put colonists on its <b>water</b> tiles — i.e. it has built a building
+    /// granting <c>model.ability.produceInWater</c> (the docks, or a drydock/shipyard that inherits it). FreeCol
+    /// <c>Colony.hasAbility(Ability.PRODUCE_IN_WATER)</c> (building-sourced; the classic ruleset grants it only via docks).
+    /// </summary>
+    private bool ColonyCanWorkWater(Colony colony) =>
+        colony.Buildings.Any(b => Ruleset.Building(b).ProducesInWater);
+
+    /// <summary>
+    /// Whether <paramref name="colony"/> may put a colonist on <paramref name="tile"/> on <b>terrain</b> grounds: a land
+    /// tile always; a <b>water</b> tile only once the colony has Docks (<see cref="ColonyCanWorkWater"/>). A rules query
+    /// (ADR-006) the colony screen uses to decide whether to offer tile work at all — the full per-good gate (idle
+    /// colonist, not already worked, positive yield, and this same water rule) is <see cref="CheckAssignWork(Colony, Position, string)"/>.
+    /// </summary>
+    public bool ColonyCanWorkTile(Colony colony, Position tile) =>
+        Map.InBounds(tile) && (!Map.TerrainAt(tile).IsWater || ColonyCanWorkWater(colony));
 
     /// <summary>Puts an idle colonist to work on a tile producing one goods type.</summary>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAssignWork(Colony, Position, string)"/>.</exception>
@@ -8099,6 +8123,13 @@ public sealed partial class Game
         List<GoodsType> cashRaws = Ruleset.GoodsTypes.Where(g => g.IsFarmed && !g.IsFood && g.IsTradeable).ToList();
         List<string> foodGoods = Ruleset.GoodsTypes.Where(g => g.IsFarmed && g.IsFood).Select(g => g.Id).ToList(); // grain (land) + fish (ocean)
 
+        // A sea tile is only workable once the colony has Docks (the same produceInWater gate CheckAssignWork enforces).
+        // The planner must respect it: a fish plan on an ungated water tile would be rejected by AssignWork below and
+        // throw mid-turn, so such tiles are excluded from candidacy here (matching FreeCol's plan, which never staffs sea
+        // tiles a dockless colony cannot work).
+        bool worksWater = ColonyCanWorkWater(colony);
+        bool CanWorkTile(Position n) => worksWater || !Map.TerrainAt(n).IsWater;
+
         // Precompute each neighbour's player-folded yield for every candidate good (cash raws + food goods) ONCE —
         // the modifier fold (TileYield) is the cost, and both the ranking and the greedy read these same numbers.
         var yield = new Dictionary<(Position Tile, string Good), int>();
@@ -8135,14 +8166,15 @@ public sealed partial class Game
             + target.Where(kv => Ruleset.StorageIdOf(kv.Value) == Colony.FoodId).Sum(kv => Output(kv.Key, kv.Value))
             - colony.Population * Colony.FoodPerColonist;
         Position? BestTileFor(string good) => neighbours
-            .Where(n => !target.ContainsKey(n) && yield[(n, good)] > 0)
+            .Where(n => !target.ContainsKey(n) && CanWorkTile(n) && yield[(n, good)] > 0)
             .OrderByDescending(n => Output(n, good)).ThenBy(n => n.Y).ThenBy(n => n.X)
             .Select(n => (Position?)n)
             .FirstOrDefault();
         // The best (tile, food good) across every farmed food good — grain on land, fish on ocean — so a coastal
-        // colony feeds itself from fish, not only grain (FreeCol's food plans include both).
+        // colony feeds itself from fish, not only grain (FreeCol's food plans include both). Sea tiles only count once
+        // the colony has Docks (CanWorkTile), so a dockless coastal colony plans grain only.
         (Position Tile, string Good)? BestFood() => neighbours
-            .Where(n => !target.ContainsKey(n))
+            .Where(n => !target.ContainsKey(n) && CanWorkTile(n))
             .SelectMany(n => foodGoods.Where(g => yield[(n, g)] > 0).Select(g => (Tile: n, Good: g)))
             .OrderByDescending(x => Output(x.Tile, x.Good)).ThenBy(x => x.Tile.Y).ThenBy(x => x.Tile.X).ThenBy(x => x.Good, StringComparer.Ordinal)
             .Select(x => ((Position Tile, string Good)?)x)

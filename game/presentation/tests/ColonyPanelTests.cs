@@ -256,8 +256,10 @@ public class ColonyPanelTests
         // The founder is auto-assigned to a food tile. Click it to pick the colonist up, then click a free,
         // producible neighbour to drop it there (click-to-move).
         Position from = colony.TileWorkers.Keys.First();
+        // A free, producible neighbour the colony can actually work — excludes sea tiles, which need Docks (a fresh
+        // colony has none), so the click-to-move lands on workable land.
         Position to = colony.Position.Neighbours().First(n =>
-            !colony.TileWorkers.ContainsKey(n) && game.TileWorkOptions(n).Count > 0);
+            !colony.TileWorkers.ContainsKey(n) && game.ColonyCanWorkTile(colony, n) && game.TileWorkOptions(n).Count > 0);
 
         TileButton(panel, from).EmitSignal(BaseButton.SignalName.Pressed); // pick up
         await runner.SimulateFrames(1);

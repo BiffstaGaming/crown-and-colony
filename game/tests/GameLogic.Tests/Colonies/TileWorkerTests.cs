@@ -70,7 +70,9 @@ public class TileWorkerTests
         Assert.False(game.CheckAssignWork(colony, new Position(2, 2), Grain).Allowed);
         // Non-adjacent tile (the colony's own square).
         Assert.False(game.CheckAssignWork(colony, new Position(1, 1), Grain).Allowed);
-        // Ocean fishing is legal.
+        // Ocean fishing needs Docks: refused on this dockless colony, allowed once it is built (see Fishing_RequiresDocks).
+        Assert.False(game.CheckAssignWork(colony, new Position(0, 0), Fish).Allowed);
+        colony.AddBuilding("model.building.docks");
         Assert.True(game.CheckAssignWork(colony, new Position(0, 0), Fish).Allowed);
 
         game.AssignWork(colony, new Position(0, 1), Grain);
@@ -83,6 +85,60 @@ public class TileWorkerTests
         game.UnassignWork(colony, new Position(0, 1));
         Assert.Equal(1, colony.IdleColonists);
         Assert.True(game.CheckAssignWork(colony, new Position(1, 0), Grain).Allowed);
+    }
+
+    [Fact]
+    public void Fishing_RequiresDocks()
+    {
+        Game game = ColonyOnCross(population: 1);
+        Colony colony = game.Colonies[0];
+
+        // FreeCol produceInWater gate: a dockless colony cannot work the sea (ocean corner at 0,0), though its land
+        // tiles stay workable. The order command refuses too (not just the check).
+        Assert.False(game.CheckAssignWork(colony, new Position(0, 0), Fish).Allowed);
+        Assert.True(game.CheckAssignWork(colony, new Position(0, 1), Grain).Allowed);
+        Assert.Throws<InvalidMoveException>(() => game.AssignWork(colony, new Position(0, 0), Fish));
+
+        // Build the Docks → the sea opens up, and a colonist can be put to work fishing.
+        colony.AddBuilding("model.building.docks");
+        Assert.True(game.CheckAssignWork(colony, new Position(0, 0), Fish).Allowed);
+        game.AssignWork(colony, new Position(0, 0), Fish);
+        Assert.Equal(Fish, colony.TileWorkers[new Position(0, 0)]);
+    }
+
+    [Fact]
+    public void Fishing_DrydockInheritsTheDocksWaterAbility()
+    {
+        Game game = ColonyOnCross(population: 1);
+        Colony colony = game.Colonies[0];
+
+        // The drydock extends docks, so it inherits model.ability.produceInWater down the extends chain.
+        colony.AddBuilding("model.building.drydock");
+        Assert.True(game.CheckAssignWork(colony, new Position(0, 0), Fish).Allowed);
+    }
+
+    [Fact]
+    public void ColonyCanWorkTile_LandAlways_WaterNeedsDocks()
+    {
+        Game game = ColonyOnCross(population: 1);
+        Colony colony = game.Colonies[0];
+
+        Assert.True(game.ColonyCanWorkTile(colony, new Position(0, 1)));  // a plains tile is always workable terrain
+        Assert.False(game.ColonyCanWorkTile(colony, new Position(0, 0))); // the ocean corner — not without docks
+        colony.AddBuilding("model.building.docks");
+        Assert.True(game.ColonyCanWorkTile(colony, new Position(0, 0)));  // docks open the sea
+    }
+
+    [Fact]
+    public void Planner_NeverFishesWithoutDocks()
+    {
+        // The AI/colony tile planner must honour the same gate: on a dockless coastal colony it staffs only land tiles
+        // and never the ocean corner — otherwise it would hand AssignWork a sea tile and throw mid-AI-turn.
+        Game game = ColonyOnCross(population: 4);
+        Colony colony = game.Colonies[0];
+
+        game.PlanColonyTileWork(game.HumanPlayer, colony); // must not throw
+        Assert.DoesNotContain(colony.TileWorkers.Keys, t => game.Map.TerrainAt(t).IsWater);
     }
 
     [Fact]

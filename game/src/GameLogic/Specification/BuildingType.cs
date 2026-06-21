@@ -94,6 +94,12 @@ namespace CrownAndColony.GameLogic.Specification;
 /// chapel does not). It is the colony-side requirement of the <c>model.role.missionary</c> role, so a colonist can only
 /// be equipped as a missionary at a colony with a church or cathedral. FreeCol <c>Ability.DRESS_MISSIONARY</c>.
 /// </param>
+/// <param name="ProducesInWater">
+/// Whether this building lets colonists work the colony's <b>water</b> tiles (ocean/lake) — i.e. grants the colony
+/// <c>model.ability.produceInWater</c>, resolved down the <c>extends</c> chain (the docks grant it; the drydock and
+/// shipyard inherit it). Without it, a colonist cannot be assigned to a sea tile to fish (FreeCol
+/// <c>ColonyTile.getNoWorkReason</c> → <c>MISSING_ABILITY</c> when <c>!hasAbility(PRODUCE_IN_WATER) &amp;&amp; !tile.isLand()</c>).
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -116,7 +122,8 @@ public sealed record BuildingType(
     int MaximumSkill = 0,
     bool Teaches = false,
     int MinimumSkill = 0,
-    bool DressesMissionary = false)
+    bool DressesMissionary = false,
+    bool ProducesInWater = false)
 {
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
     private static readonly IReadOnlySet<string> NoUnits = new HashSet<string>();
