@@ -47,6 +47,7 @@ public sealed class Ruleset
         Calendar calendar,
         IReadOnlyList<int> fatherAgeYears,
         DifficultyOptions difficulty,
+        GameOptions gameOptions,
         string difficultyLevelId,
         bool upkeepEnabled,
         int naturalDisasterPercentage,
@@ -61,6 +62,7 @@ public sealed class Ruleset
         Calendar = calendar;
         FatherAgeYears = fatherAgeYears;
         Difficulty = difficulty;
+        GameOptions = gameOptions;
         DifficultyLevelId = difficultyLevelId;
         UpkeepEnabled = upkeepEnabled;
         NaturalDisasterPercentage = naturalDisasterPercentage;
@@ -151,6 +153,13 @@ public sealed class Ruleset
     /// Balance constants read these instead of hardcoding values.
     /// </summary>
     public DifficultyOptions Difficulty { get; }
+
+    /// <summary>
+    /// The base <c>gameOptions</c>-group tuning numbers (not per-difficulty-level) — currently the immigration trio
+    /// (<c>initialImmigration</c> / <c>europeanUnitImmigrationPenalty</c> / <c>playerImmigrationBonus</c>), parsed once
+    /// from the spec. Balance constants read these instead of hardcoding values. See [immigration].
+    /// </summary>
+    public GameOptions GameOptions { get; }
 
     /// <summary>
     /// The spec id of the difficulty level this ruleset was loaded with (e.g. <c>model.difficulty.medium</c>) — the
@@ -758,6 +767,9 @@ public sealed class Ruleset
         Calendar calendar = ParseCalendar(root);
         IReadOnlyList<int> fatherAgeYears = ParseFatherAgeYears(root, calendar.StartingYear);
         DifficultyOptions difficulty = ParseDifficulty(root, difficultyLevelId);
+        // The base gameOptions group (immigration trio: initialImmigration / europeanUnitImmigrationPenalty /
+        // playerImmigrationBonus) — read once into a bundle; a spec without an option falls back to its classic value.
+        GameOptions gameOptions = ParseGameOptions(root);
         // Building upkeep is a boolean game option (model.option.enableUpkeep); classic ships it defaultValue="false",
         // so the default game charges no upkeep and stays byte-identical (FreeCol gates csPayUpkeep on this option).
         bool upkeepEnabled = ParseBooleanOption(root, "model.option.enableUpkeep", fallback: false);
@@ -783,7 +795,7 @@ public sealed class Ruleset
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
             roles, disasters, unitChanges, experienceUpgrades, educationTurns, europeanNations, calendar, fatherAgeYears,
-            difficulty, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage, lastColonialYear,
+            difficulty, gameOptions, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage, lastColonialYear,
             interventionBells, interventionTurns, interventionForce,
             victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans);
     }
@@ -885,6 +897,22 @@ public sealed class Ruleset
                 WarSupportForce: WarSupportForce(mon.WarSupportForce),
                 WarSupportGold: IntOption("model.option.warSupportGold", mon.WarSupportGold)));
     }
+
+    /// <summary>
+    /// Parses the base <c>gameOptions</c> group into <see cref="Specification.GameOptions"/> — the immigration trio
+    /// (<c>model.option.initialImmigration</c> / <c>europeanUnitImmigrationPenalty</c> / <c>playerImmigrationBonus</c>).
+    /// Unlike <see cref="ParseDifficulty"/>, these are not restated per level, so each is a plain document-wide
+    /// integer-option lookup (its <c>value</c>, else <c>defaultValue</c>); a missing option falls back to its classic
+    /// value in <see cref="GameOptions.ClassicDefaults"/>, so the default game is byte-identical (ADR-009).
+    /// </summary>
+    internal static GameOptions ParseGameOptions(XElement root) =>
+        new(
+            InitialImmigration: ParseIntOption(
+                root, "model.option.initialImmigration", GameOptions.ClassicDefaults.InitialImmigration),
+            EuropeanUnitImmigrationPenalty: ParseIntOption(
+                root, "model.option.europeanUnitImmigrationPenalty", GameOptions.ClassicDefaults.EuropeanUnitImmigrationPenalty),
+            PlayerImmigrationBonus: ParseIntOption(
+                root, "model.option.playerImmigrationBonus", GameOptions.ClassicDefaults.PlayerImmigrationBonus));
 
     /// <summary>
     /// Parses the spec <c>model.option.ages</c> text option (classic <c>"1600,1700"</c>) into the two ascending

@@ -49,14 +49,28 @@ public sealed partial class Game
     /// <summary>The warehouse goods id for religious crosses (immigration points).</summary>
     private const string CrossesId = "model.goods.crosses";
 
-    /// <summary>Immigration points needed for the first emigrant (spec <c>model.option.initialImmigration</c>, classic 15).</summary>
-    public const int InitialImmigration = 15;
+    /// <summary>
+    /// Immigration points needed for the first emigrant — the classic <c>model.option.initialImmigration</c> default
+    /// (15). This is the <em>classic-default fallback</em> only (a fresh <see cref="Player.ImmigrationRequired"/> and the
+    /// pre-v12 save fallback); the live value is the parsed <see cref="Specification.Ruleset.GameOptions"/> bundle
+    /// (<see cref="GameOptions.InitialImmigration"/>). Aliased to <see cref="GameOptions.ClassicDefaults"/> so the
+    /// bundle is the single source of truth (86d3d335r).
+    /// </summary>
+    public static readonly int InitialImmigration = GameOptions.ClassicDefaults.InitialImmigration;
 
-    /// <summary>Immigration lost per person idling in Europe each turn (spec <c>europeanUnitImmigrationPenalty</c>, classic −4).</summary>
-    public const int EuropeUnitImmigrationPenalty = -4;
+    /// <summary>
+    /// Immigration lost per person idling in Europe each turn — the classic
+    /// <c>model.option.europeanUnitImmigrationPenalty</c> default (−4). Classic-default alias; the live value is read
+    /// from <see cref="Specification.Ruleset.GameOptions"/> (86d3d335r).
+    /// </summary>
+    public static readonly int EuropeUnitImmigrationPenalty = GameOptions.ClassicDefaults.EuropeanUnitImmigrationPenalty;
 
-    /// <summary>Flat immigration a colonial player gains each turn (spec <c>playerImmigrationBonus</c>, classic +2).</summary>
-    public const int PlayerImmigrationBonus = 2;
+    /// <summary>
+    /// Flat immigration a colonial player gains each turn — the classic <c>model.option.playerImmigrationBonus</c>
+    /// default (+2). Classic-default alias; the live value is read from <see cref="Specification.Ruleset.GameOptions"/>
+    /// (86d3d335r).
+    /// </summary>
+    public static readonly int PlayerImmigrationBonus = GameOptions.ClassicDefaults.PlayerImmigrationBonus;
 
     /// <summary>Recruit slots on the Europe dock (FreeCol <c>MigrationType.MIGRANT_COUNT</c>).</summary>
     public const int RecruitSlots = 3;
@@ -8285,8 +8299,10 @@ public sealed partial class Game
 
         // Europe contribution: penalty per person standing on the dock (not aboard a
         // ship), plus the flat player bonus, clamped so this turn's immigration
-        // production cannot be negative.
-        int europe = (OwnPersonsInEurope(player) * EuropeUnitImmigrationPenalty) + PlayerImmigrationBonus;
+        // production cannot be negative. Both numbers come from the parsed base
+        // gameOptions bundle (the classic −4 / +2; 86d3d335r).
+        int europe = (OwnPersonsInEurope(player) * Ruleset.GameOptions.EuropeanUnitImmigrationPenalty)
+            + Ruleset.GameOptions.PlayerImmigrationBonus;
         if (europe + crossesThisTurn < 0)
         {
             europe = -crossesThisTurn;
