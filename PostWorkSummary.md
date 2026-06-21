@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-21 — America map as a New-Game option (Random vs fixed America) — COMPLETE ✅
+
+**Requested:** "I'd like the default America map AND procedurally-created as options on New Game."
+**Did:**
+- **Slice A** (`cb894b0`, prior): `FixedMap` loader + embedded `game/data/maps/america.txt` — FreeCol's `M_America_Mazim.fsm` **terrain grid** (40×180, GPL v2, terrain layer only), `PROVENANCE.md`, `FixedMapTests` (4 L1). CI green (27890968416).
+- **Slice B** (`8bb30a6`): `Game.New` gains `MapSource mapSource = MapSource.Random`. On `America` it loads the fixed terrain and runs the new **`MapGenerator.DecorateFixedMap`** — I factored the river→resource→region→lake tail of `Generate` into a shared `BuildDecoratedMap`, reused verbatim by both paths — so the fixed map gets our rivers/fish/minerals/regions. The 40×180 grid overrides the world-size args (those now apply only to Random); the start latitude reads `map.Height`. **Default (Random) draw order unchanged → byte-identical** (1499 L1/L2 green incl. every position-pinned test; no golden/soak regen). +6 L1/L2 (`AmericaGameTests`).
+- **Slice C** (`2c37e17`): `NewGameDialog` **Map** dropdown (Random New World / America (fixed)); picking America disables the size/land dropdowns (a fixed map sets its own size). Threaded via new `GameController.PendingMapSource` → `StartNewGame(seed, size, land, difficulty, mapSource)` → `Game.New`. +1 L3 + 1 L3-updated (`MainMenuTests`, all 9 green locally).
+**Status:** Both projects build clean (0 warnings). **1499 L1/L2 green** (slice B); **9/9 MainMenuTests L3 green** locally (slice C). Slices A+B **CI green on both jobs** (27890968416, 27891184649); slice C CI (PR-tier L1–L4, run **27891307969**) in flight at hand-off — presentation-only, so L1/L2 are slice B's green set and L4 is unaffected (the on-demand dialog isn't in any golden frame).
+**Changed:** 3 commits `cb894b0`, `8bb30a6`, `2c37e17`. GameLogic (`FixedMap.cs` new, `MapGenerator.cs` `BuildDecoratedMap`/`DecorateFixedMap`, `Game.cs` `mapSource`, `GameLogic.csproj` embed, `america.txt`+`PROVENANCE.md`), presentation (`NewGameDialog.cs`, `GameController.cs`, `MainMenu.cs`), tests (`FixedMapTests`, `AmericaGameTests`, `MainMenuTests`). Docs: `map-terrain.md` (both layers + changelog), `presentation.md`. ClickUp: new Shipped task `86d3drgac`.
+**Decisions:** "America" = FreeCol's `M_America` (full N+S Americas, 40×180). **Terrain only** is taken from the `.fsm` — rivers/resources/natives/start are laid by our own generators (so the fixed landmass plays with all our systems and still varies by seed). World-size/land-mass apply only to Random. The factor (shared `BuildDecoratedMap`) was the clean way to give the fixed map our gameplay layers without duplicating the generator tail — and it kept the default game byte-identical.
+**Scheduled next:** **Negotiation UI** — `86d3c9ubw` (the human side of diplomacy; the AI backend `EvaluateTrade`/`RespondToTrade`/`CounterOffer`/`NegotiateTrade` all exist). Or decompose the **P6 endgame epic** (`86d3b3r7a`).
+**Follow-ups:** import the `.fsm`'s native settlements / lost-city rumours / player starts too (full importer = P7 `86d3c9wwk`); a southern-hemisphere start-latitude tweak (the temperate-start heuristic assumes the equator at mid-height); a map-source explored-frame golden if ever needed.
+**Needs you:** Nothing blocking. Start a New Game, set **Map → America (fixed)**, and you'll play the real Americas (size/land greyed out); leave it on Random for the usual generated world.
+
 ## 2026-06-21 — Unit sprites (no more dots) + FreeCol starting units — COMPLETE ✅
 
 **Requested:** "I want all sprites/assets updated. I don't want to see any just dots on the terrain as units. Also check FreeCol and the correct number/type of starting units."
