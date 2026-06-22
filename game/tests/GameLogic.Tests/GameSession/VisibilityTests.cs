@@ -94,7 +94,8 @@ public class VisibilityTests
         Assert.Empty(game.PlayerUnits); // braves (native) remain, but they don't lift the player's fog
         Assert.True(game.IsVisible(colony.Position));
         Assert.True(game.IsExplored(colony.Position));
-        // No on-map units → visibility is exactly the colony's sight.
-        Assert.Equal(Square(game, colony.Position, Game.ColonySightRadius), game.CurrentlyVisible.ToHashSet());
+        // No on-map units → visibility is exactly the colony's sight (classic visible-radius 2, a 5×5 ring).
+        Assert.Equal(2, game.ColonySightRadius); // FreeCol classic colony visible-radius
+        Assert.Equal(Square(game, colony.Position, game.ColonySightRadius), game.CurrentlyVisible.ToHashSet());
     }
 }

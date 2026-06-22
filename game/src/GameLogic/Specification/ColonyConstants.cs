@@ -41,20 +41,28 @@ namespace CrownAndColony.GameLogic.Specification;
 /// (FreeCol <c>ExportData.EXPORT_LEVEL_DEFAULT</c>; classic <b>50</b>). A model-code constant in FreeCol; made data here.
 /// See [colonies].
 /// </param>
+/// <param name="ColonySightRadius">
+/// How far a colony sees: the Chebyshev ring of tiles it reveals when founded and keeps in sight. FreeCol's
+/// <c>Settlement.getLineOfSight</c> returns the settlement type's <c>visible-radius</c>; the classic colony
+/// settlement (<c>model.settlement.colony</c> under <c>european-nation-types</c>) declares <c>visible-radius="2"</c>,
+/// matching <c>SettlementType.visibleRadius</c>'s default of <b>2</b>. Parsed from that attribute. See [fog-of-war].
+/// </param>
 public sealed record ColonyConstants(
     int FoodPerColonist,
     int FoodForGrowth,
     int LibertyPerRebel,
-    int DefaultExportLevel)
+    int DefaultExportLevel,
+    int ColonySightRadius)
 {
     /// <summary>
     /// The classic ruleset's colony constants — the fallback when a spec omits a source, the source of truth for the
-    /// default game's colony economy (2 / 200 / 200 / 50), and the value a colony built without a ruleset (tests)
-    /// carries so its behaviour is unchanged.
+    /// default game's colony economy (2 / 200 / 200 / 50) and colony sight (radius 2), and the value a colony built
+    /// without a ruleset (tests) carries so its behaviour is unchanged.
     /// </summary>
     public static readonly ColonyConstants ClassicDefaults = new(
         FoodPerColonist: 2,
         FoodForGrowth: 200,
         LibertyPerRebel: 200,
-        DefaultExportLevel: 50);
+        DefaultExportLevel: 50,
+        ColonySightRadius: 2);
 }

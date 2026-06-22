@@ -23,12 +23,14 @@ public class ColonyConstantsTests
     {
         // Each constant parses to the exact FreeCol classic figure: food appetite 2 (the colonist's <consumes food>),
         // growth threshold 200 (Settlement.FOOD_PER_COLONIST / freeColonist required-goods), liberty-per-rebel 200
-        // (Colony.LIBERTY_PER_REBEL), default export level 50 (ExportData.EXPORT_LEVEL_DEFAULT).
+        // (Colony.LIBERTY_PER_REBEL), default export level 50 (ExportData.EXPORT_LEVEL_DEFAULT), colony sight radius 2
+        // (the colony settlement's visible-radius / FreeCol Settlement.getLineOfSight).
         ColonyConstants c = Classic.ColonyConstants;
         Assert.Equal(2, c.FoodPerColonist);
         Assert.Equal(200, c.FoodForGrowth);
         Assert.Equal(200, c.LibertyPerRebel);
         Assert.Equal(50, c.DefaultExportLevel);
+        Assert.Equal(2, c.ColonySightRadius); // parsed from model.settlement.colony visible-radius="2"
     }
 
     [Fact]

@@ -1064,7 +1064,26 @@ public sealed class Ruleset
             }
         }
 
-        return classic with { FoodPerColonist = foodPerColonist, FoodForGrowth = foodForGrowth };
+        // Colony sight: the colony settlement's visible-radius (FreeCol Settlement.getLineOfSight = the settlement
+        // type's visibleRadius; classic model.settlement.colony declares visible-radius="2"). The colony <settlement>
+        // lives under each european-nation-type; take the first one declaring the attribute (the default nation type
+        // carries it in classic). Falls back to the classic radius (2) when no european-nation-type declares it.
+        int colonySightRadius = classic.ColonySightRadius;
+        XElement? colonySettlement = (root.Element("european-nation-types")?.Elements("european-nation-type") ?? [])
+            .SelectMany(n => n.Elements("settlement"))
+            .FirstOrDefault(s => (string?)s.Attribute("id") == "model.settlement.colony"
+                && s.Attribute("visible-radius") is not null);
+        if ((int?)colonySettlement?.Attribute("visible-radius") is { } radius)
+        {
+            colonySightRadius = radius;
+        }
+
+        return classic with
+        {
+            FoodPerColonist = foodPerColonist,
+            FoodForGrowth = foodForGrowth,
+            ColonySightRadius = colonySightRadius,
+        };
     }
 
     /// <summary>The classic plains terrain id — the canonical "one whole move" normal terrain whose cost anchors <see cref="MovementConstants.BaseMoveCost"/>.</summary>

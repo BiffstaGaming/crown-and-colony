@@ -3174,8 +3174,12 @@ public sealed partial class Game
     /// <summary>Whether a tile has ever been revealed to the human player.</summary>
     public bool IsExplored(Position p) => _human.Explored.Contains(p);
 
-    /// <summary>How far a colony sees (FreeCol settlements carry a line of sight): its 3×3 surroundings.</summary>
-    public const int ColonySightRadius = 1;
+    /// <summary>
+    /// How far a colony sees: the Chebyshev radius it reveals when founded and keeps in sight. Read data-driven from the
+    /// ruleset (the colony settlement's <c>visible-radius</c> — FreeCol <c>Settlement.getLineOfSight</c>); classic
+    /// <b>2</b>, a 5×5 ring. See <see cref="Specification.ColonyConstants.ColonySightRadius"/>.
+    /// </summary>
+    public int ColonySightRadius => Ruleset.ColonyConstants.ColonySightRadius;
 
     /// <summary>
     /// Tiles the player can see <em>right now</em> — within the line of sight of an
@@ -8747,7 +8751,11 @@ public sealed partial class Game
             {
                 foreach (Colony c in _colonies)
                 {
-                    RevealAround(player, c.Position, 1); // Francisco de Coronado (model.event.seeAllColonies) — every colony + its ring revealed
+                    // Francisco de Coronado (model.event.seeAllColonies): every colony + its line-of-sight ring revealed.
+                    // FreeCol reveals at colony.getLineOfSight() (the colony's visible-radius) further widened by the
+                    // father's exposedTilesRadius modifier (classic +3, an 11×11 block); that father modifier is not yet
+                    // modelled, so we reveal the colony's own sight radius (the LoS base) for now. See [fog-of-war].
+                    RevealAround(player, c.Position, ColonySightRadius);
                 }
             }
             if (Ruleset.Father(elected).Abilities.Any(a => a.Id == UpgradeConvertAbility && a.Value))
