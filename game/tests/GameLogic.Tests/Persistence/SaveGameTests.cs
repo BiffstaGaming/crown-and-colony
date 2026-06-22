@@ -1,3 +1,4 @@
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
@@ -451,6 +452,77 @@ public class SaveGameTests
         SaveGame save = SaveGame.From(game);
         Assert.All(save.Players!, p => Assert.Null(p.PeaceTurns));
     }
+
+    [Fact]
+    public void StoredV41Save_LoadsCleanlyOnCurrentVersion_AndIsPlayable()
+    {
+        // Save-compat regression (86d3dze09): a REAL, hand-authored v41 save FILE — committed as a test
+        // resource, NOT produced by today's From() — must still load on the current format (v53+). Every field
+        // added since v41 (region discovery, REF force/entry, Spanish succession, difficulty, monarch demand,
+        // pioneer work-state, attrition, unit nationality/ethnicity/name, peace turns, …) is absent from the file;
+        // Restore must default each one safely (the ??/default fallbacks). This guards the additive-migration
+        // promise as CurrentVersion keeps climbing — a round-trip of a current game can't, since it writes today's
+        // shape. The fixture pre-dates Players[] (v20), so it also exercises the legacy flat-field fold to one human.
+        string json = File.ReadAllText(FixturePath("save-v41.json"));
+        SaveGame save = SaveGame.FromJson(json);
+        Assert.Equal(41, save.Version);                 // the file really is an old-version save
+        Assert.True(save.Version < SaveGame.CurrentVersion); // …older than what we run today
+
+        Game loaded = save.Restore(Classic);
+
+        // ── The world restored ──────────────────────────────────────────────────────────────────────
+        Assert.Equal(12, loaded.Turn);
+        Assert.Equal(6, loaded.Map.Width);
+        Assert.Equal(4, loaded.Map.Height);
+
+        // ── The player folded from the flat fields (no Players[] in a v41 save) ─────────────────────
+        Player human = Assert.Single(loaded.Players);
+        Assert.True(human.IsHuman);
+        Assert.Equal(350, human.Gold);
+        Assert.Equal(8, human.TaxRate);
+        Assert.Equal(24, human.Liberty);
+        Assert.Equal(
+            new[] { "model.unit.freeColonist", "model.unit.expertFisherman", "model.unit.veteranSoldier" },
+            human.RecruitDock);
+        Assert.Equal(4, human.Market.AmountInMarket("model.goods.sugar")); // moved market entry survives
+
+        // ── Units restored, with post-v41 fields defaulted ─────────────────────────────────────────
+        Assert.Equal(2, loaded.Units.Count);
+        Unit colonist = loaded.Units.Single(u => u.Id == 1);
+        Assert.Equal("model.unit.freeColonist", colonist.Type.Id);
+        Assert.Equal(new Position(3, 1), colonist.Position);
+        Assert.Equal(0, colonist.Attrition);                       // v50: absent → 0
+        Assert.Null(colonist.Name);                                // v52: un-christened
+        Assert.Equal(UnitOrders.Active, colonist.Orders);          // v23: absent → Active
+        Assert.Null(colonist.Destination);                         // v36: no goto
+
+        // ── Colony restored, with its buildings + build queue ──────────────────────────────────────
+        Colony colony = Assert.Single(loaded.Colonies);
+        Assert.Equal("Jamestown", colony.Name);
+        Assert.Equal(new Position(2, 1), colony.Position);
+        Assert.Equal(3, colony.Population);
+        Assert.Equal("model.building.docks", colony.CurrentBuild); // queue front restored
+
+        // ── Post-v41 game-wide fields default safely ────────────────────────────────────────────────
+        Assert.False(loaded.SpanishSuccessionDone);                 // v42: absent → not done
+        Assert.Null(loaded.PendingMonarchDemand);                   // v46: absent → none
+        Assert.Equal(DifficultyLevels.DefaultId, loaded.DifficultyLevelId); // v46: absent → medium
+        Assert.NotEmpty(loaded.Map.Regions);                        // v35: absent → re-derived deterministically
+        Assert.All(loaded.Map.Regions, r => Assert.Null(r.DiscoveredBy)); // v51: absent → every region undiscovered
+        Assert.False(human.MonarchDispleasure);                     // v38: absent → content
+        Assert.False(human.SupportSeaGranted);                      // v39: absent → not granted
+        Assert.Null(human.DeclaredIndependenceTurn);                // v41: absent → never declared
+        Assert.Empty(human.PeaceTurns);                             // v53: absent → no recorded peace
+
+        // ── Playable: an EndTurn runs without throwing and advances the turn ────────────────────────
+        int before = loaded.Turn;
+        loaded.EndTurn();
+        Assert.Equal(before + 1, loaded.Turn);
+    }
+
+    /// <summary>Absolute path to a committed save fixture (copied next to the test assembly by the csproj).</summary>
+    private static string FixturePath(string name) =>
+        Path.Combine(AppContext.BaseDirectory, "Persistence", "fixtures", name);
 
     private static Position AdjacentLand(Game game, Position from) =>
         from.Neighbours().First(n => game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater);

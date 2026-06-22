@@ -22,4 +22,10 @@
     <ProjectReference Include="..\..\src\GameLogic\GameLogic.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Stored old-version save fixtures (e.g. save-v41.json): copied next to the test
+         assembly so the save-compat regression test can read a real on-disk old save. -->
+    <None Include="Persistence\fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
