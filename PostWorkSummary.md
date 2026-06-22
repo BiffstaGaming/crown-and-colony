@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-22 — FreeCol parity gap audit (16-agent workflow) — "what's missing for a 100% port" 📋
+
+**Requested:** Chris asked what's actually missing from the FreeCol→Crown & Colony port (Australia variant explicitly AFTER 100% port). No code change — an audit.
+**Did:** Ran a 16-agent parity workflow — 14 read-only domain agents each diffed FreeCol's CLASSIC ruleset source vs our actual code (verified in source, not docs), then synthesis + a completeness critic. ~1.9M tokens.
+**Verdict:** **~84% complete.** Sim core faithful (most domains 88–95%); gaps concentrated in 5 themes: (1) **AI is the long pole** — rivals never arm/fortify troops, pick fathers at random, never declare independence, foreign powers idle as non-economic rivals (AI 70%, diplomacy 72%); (2) human's reachable surface thinner than backend (custom-house smuggling [also a latent EndTurn throw], full negotiation table, treasure-galleon, Europe route stops, per-good accounting); (3) native tension single-channel (human-only) + sell-only trade + natives never arm — also blocks foreign-powers/Australia; (4) nation choice ≠ starting units, ~50 options unread, no scenario picker; (5) endgame combat (P6) — REF bombardBonus/popularSupport/ambushPenalty, intervention growth, starvation-death; reports/polish.
+**Recommended sequence:** A AI-makes-rivals-real → B human-reachable gaps → C native-tension refactor → D endgame combat (P6) → E setup/score/reports (P7).
+**Caveats:** a couple of findings slightly stale (REF *does* sail — WoI domain confirms; Coronado continuous-ring flagged post-fix, needs verify). "100%" partly a scope call (AI economic sophistication + multiplayer arguably out-of-scope → high-90s after A–E).
+**Status:** Analysis only, no repo change. Full report in the workflow output (wf_204644db-2c9).
+**Scheduled next:** Awaiting Chris's steer — formalize into the Project Plan doc + decomposed board tasks, or start **Phase A item 1 (colonial AI arms/fortifies its troops)** as the highest-impact fidelity win.
+**Needs you:** Priority + scope call (is AI economic depth / multiplayer in or out of the "100%" definition?), then I turn this into the roadmap + tasks.
+
 ## 2026-06-22 — Polish & release-readiness (P7) — first wave: 5/6 tasks shipped ✅
 
 **Requested:** You chose "Polish & release readiness (P7)" as a next step. I decomposed the epic into 6 board tasks and shipped the 5 clear-cut ones (held the Godot export build for you).
