@@ -69,6 +69,16 @@ Boot to main menu and into a new game headlessly; autoplay N full AI games; asse
 - CI uses a software GPU (SwiftShader/OSMesa) for L3/L4 headless rendering.
 - Planned guard: warn when `GameLogic` changes without a `docs/systems/` change in the same PR.
 
+### Known CI host behaviour: GdUnit leak-at-exit (kanban 86d3c7yk3)
+
+When the L3/L4 GdUnit job finishes, the **runner reports the test outcome correctly (all tests pass, exit 0 from the runner's point of view)**, but the Godot *host process* can still exit **non-zero** because Godot's object/RID/texture leak detector fires during process teardown and prints `Texture … leaked` / `N RIDs of type "CanvasItem" were leaked` / `ObjectDB instances leaked at exit`.
+
+**Root cause (two compounding factors, neither a test failure):**
+1. **Scenes are never freed.** GdUnit4Net's `ISceneRunner.Load(...)` defaults to `autoFree:false`, and `ISceneRunner.Dispose()` only calls `Free()` on the scene when `autoFree:true`. Our scene tests load a scene per `[TestCase]` and don't dispose the runner, so every loaded scene tree (its `CanvasItem`s and the textures it holds) stays alive until the process exits — at which point the renderer's `_free_rids` leak check reports them. Even a single trivial scene test leaks (≈14 `CanvasItem` RIDs + the scene's textures).
+2. **C#/Godot finalizer timing.** Godot's C# bindings finalize `RefCounted` resources (`Texture2D`, `ImageTexture`, `StyleBoxTexture`, …) on the **.NET GC, which runs after the engine main loop has already exited** (Godot issues [#107579](https://github.com/godotengine/godot/issues/107579), [#84483](https://github.com/godotengine/godot/issues/84483)). Static texture caches (`ColonyArt._terrain`, `ColonyMarker.Settlement`, `NativeSettlementMarker.*`, `ColonyPanel._panelBackground`) hold process-lifetime refs that the detector also flags. This makes a fully-clean process exit essentially unachievable for a headless C# Godot host, independent of how carefully scenes are freed.
+
+**Mitigation (in `ci.yml`, documented and bounded):** the scene-test step treats the **TRX as the source of truth, not the process exit code.** An attempt is a real pass iff the TRX shows tests ran with `failed=0` **and** `error=0`; in that case a non-zero host exit is logged as a warning and treated as success. A genuine test failure (`failed>0`/`error>0`) or a host crash/connect-timeout (no TRX produced) still fails the step and triggers the retry/`exit 1` path. **This masks only the leak-at-exit warning — never a real test failure.** If a future change ever needs the host to exit cleanly (e.g. a leak-count assertion), the leak source must be fixed first: pass `autoFree:true` to every `ISceneRunner.Load` *and* dispose the runner (`using`), plus clear the static texture caches on teardown.
+
 ## Per-system coverage contract
 
 Every system doc's **Verification** section carries this table (template updated accordingly):
