@@ -1,3 +1,6 @@
+using System.IO;
+using System.Linq;
+using System.Xml.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
@@ -10,6 +13,34 @@ namespace CrownAndColony.GameLogic.Tests.Colonies;
 public class ColonyEconomyTests
 {
     private static readonly Ruleset Classic = Ruleset.LoadClassic();
+
+    /// <summary>
+    /// The classic ruleset with <c>model.tile.plains</c>'s <b>unattended</b> (colony-centre) production stripped of
+    /// its grain output, so a colony founded on plains produces <b>no food</b> at its centre. Everything else is
+    /// identical. This is the only way to reach FreeCol's "last colonist starves → colony disposed" rule on an
+    /// otherwise-classic map (the real classic centre tile always yields ≥ 2 food, a lone colonist's appetite).
+    /// </summary>
+    private static readonly Ruleset PlainsNoCentreFood = LoadClassicWithFoodlessPlainsCentre();
+
+    private static Ruleset LoadClassicWithFoodlessPlainsCentre()
+    {
+        using Stream spec = typeof(Ruleset).Assembly.GetManifestResourceStream(GameVariants.ClassicSpecResource)!;
+        XDocument doc = XDocument.Load(spec);
+        XElement plains = doc.Descendants("tile-type")
+            .Single(t => (string?)t.Attribute("id") == "model.tile.plains");
+        foreach (XElement output in plains.Elements("production")
+                     .Where(p => (bool?)p.Attribute("unattended") == true)
+                     .Elements("output")
+                     .Where(o => (string?)o.Attribute("goods-type") == "model.goods.grain")
+                     .ToList())
+        {
+            output.Remove();
+        }
+        var buffer = new MemoryStream();
+        doc.Save(buffer);
+        buffer.Position = 0;
+        return Ruleset.Load(buffer);
+    }
 
     private const string Food = Colony.FoodId;
     private const string Cotton = "model.goods.cotton";
@@ -228,5 +259,102 @@ public class ColonyEconomyTests
         // Cotton (2/turn, untouched by appetite) piles up to the depot's warehouse capacity (100) and the
         // overflow then spills each turn — FreeCol's warehouse waste — so it stabilises at the cap, not 2×250.
         Assert.Equal(100, colony.StoreOf(Cotton));
+    }
+
+    /// <summary>A pop-1 human colony on the foodless-centre plains, larder empty, with a soldier garrisoned on its tile.</summary>
+    private static Game StarvingColony()
+    {
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 1,
+            MapHeight = 1,
+            Terrain = ["model.tile.plains"],
+            // A garrison unit standing on the colony tile (0,0) — it must survive the colony's destruction.
+            Units = [new SavedUnit(1, "model.unit.freeColonist", 0, 0, 1)],
+            Explored = [0],
+            Colonies = [new SavedColony(1, "Doomed", 0, 0, 1)],
+        };
+        return save.Restore(PlainsNoCentreFood);
+    }
+
+    [Fact]
+    public void LastColonistStarves_ColonyIsDestroyed_OwnerNotified_HistoryRecorded()
+    {
+        // FreeCol ServerColony.csNewTurn: a colony whose food production + stored carryover can't feed its LAST
+        // colonist is disposed (csDisposeSettlement) — its tile clears and the colony is removed.
+        Game game = StarvingColony();
+        Colony colony = game.Colonies[0];
+        colony.AddGoods(Food, -colony.Food); // empty the larder; the centre produces no food this turn
+        Position where = colony.Position;
+
+        game.EndTurn();
+
+        Assert.Empty(game.Colonies);                                  // the colony is gone (tile cleared = absent)
+        Assert.Null(game.ColonyAt(where));                            // nothing stands where it was
+        ColonyStarvedNotice notice = Assert.Single(game.ColonyStarvedNotices); // the human owner is notified
+        Assert.Equal("Doomed", notice.ColonyName);
+        Assert.Equal(where, notice.Position);
+        HistoryEvent destroyed = Assert.Single(game.History,          // a destruction history event is recorded (feeds E2 score)
+            h => h.Kind == HistoryEventKind.ColonyDestroyed);
+        Assert.Equal(0, destroyed.Score);                             // no score itself today
+        // The garrison unit on the colony tile survives on the now-empty land (FreeCol leaves tile units in place).
+        Assert.Single(game.Units, u => u.Position == where && u.IsOnMap);
+    }
+
+    [Fact]
+    public void DestroyedColony_IsAbsentAfterSaveLoadRoundTrip()
+    {
+        // No persisted ghost: a destroyed colony is simply not in the save (no new save state).
+        Game game = StarvingColony();
+        game.Colonies[0].AddGoods(Food, -game.Colonies[0].Food);
+        game.EndTurn();
+        Assert.Empty(game.Colonies);
+
+        Game reloaded = SaveGame.From(game).ToJson() is var json
+            ? SaveGame.FromJson(json).Restore(PlainsNoCentreFood)
+            : throw new System.InvalidOperationException();
+        Assert.Empty(reloaded.Colonies);
+    }
+
+    [Fact]
+    public void StarvationToDeath_OnlyTakesTheLastColonist_NotASizeTwoColony()
+    {
+        // A pop-2 colony in the same foodless scenario loses ONE colonist (down to 1), it is not destroyed —
+        // disposal is reserved for the LAST colonist (the pop>1 branch still fires first).
+        Game game = StarvingColony();
+        Colony colony = game.Colonies[0];
+        colony.Population = 2;
+        colony.AddGoods(Food, -colony.Food);
+
+        game.EndTurn();
+
+        Colony survivor = Assert.Single(game.Colonies);
+        Assert.Equal(1, survivor.Population);          // one starved, the colony lives
+        Assert.Empty(game.ColonyStarvedNotices);       // not destroyed yet
+        Assert.DoesNotContain(game.History, h => h.Kind == HistoryEventKind.ColonyDestroyed);
+
+        // …and the very next turn the last colonist can't be fed either → now the colony is destroyed.
+        game.EndTurn();
+        Assert.Empty(game.Colonies);
+        Assert.Single(game.ColonyStarvedNotices);
+        Assert.Single(game.History, h => h.Kind == HistoryEventKind.ColonyDestroyed);
+    }
+
+    [Fact]
+    public void ClassicPlainsColony_NeverStarvesToDeath_NoNotice()
+    {
+        // The default game keeps its colonies: a classic plains centre yields 3 food ≥ a lone colonist's appetite,
+        // so a pop-1 colony survives indefinitely with no starvation notice and no destruction history event.
+        Game game = PlainsColony();
+        for (int i = 0; i < 50; i++)
+        {
+            game.EndTurn();
+        }
+        Assert.Single(game.Colonies);
+        Assert.Empty(game.ColonyStarvedNotices);
+        Assert.DoesNotContain(game.History, h => h.Kind == HistoryEventKind.ColonyDestroyed);
     }
 }

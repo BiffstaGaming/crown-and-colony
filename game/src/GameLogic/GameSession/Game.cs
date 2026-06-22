@@ -116,6 +116,7 @@ public sealed partial class Game
     private readonly List<RumourNotice> _rumourNotices = []; // transient: Lost City Rumours the human resolved this turn (non-mounds outcomes; not saved)
     private readonly List<AttritionNotice> _attritionNotices = []; // transient: the most recent turn's units lost to attrition in the open (not saved)
     private readonly List<DisasterNotice> _disasterNotices = []; // transient: the most recent turn's natural disasters striking human colonies (not saved; empty in classic — naturalDisasters default 0)
+    private readonly List<ColonyStarvedNotice> _colonyStarvedNotices = []; // transient: human colonies destroyed by starvation this turn (not saved; empty in classic — centre tile feeds the last colonist)
     private readonly List<TemporaryModifier> _temporaryModifiers = []; // transient: duration-bounded modifiers currently in force; empty in classic (nothing registers one), so never saved and the default game is byte-identical (86d3drpgz)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
@@ -818,6 +819,17 @@ public sealed partial class Game
     /// default game (FreeCol <c>ServerPlayer.csNaturalDisasters</c>).
     /// </summary>
     public IReadOnlyList<DisasterNotice> DisasterNotices => _disasterNotices;
+
+    /// <summary>
+    /// Human colonies <b>destroyed by starvation</b> during the most recent <see cref="EndTurn"/> (FreeCol
+    /// <c>ServerColony.csNewTurn</c>'s <c>model.colony.colonyStarved</c> → <c>csDisposeSettlement</c>). Transient
+    /// per-turn UI scratch (cleared each <c>EndTurn</c>, never saved); the presentation reads it after the turn
+    /// resolves to tell the player a colony starved out of existence. A colony only starves once its food production
+    /// plus stored carryover can no longer feed its <b>last</b> colonist; the classic colony-centre tile always
+    /// yields ≥ 2 food (a lone colonist's appetite), so this is empty in the classic default game (and the L5 soak
+    /// keeps every colony).
+    /// </summary>
+    public IReadOnlyList<ColonyStarvedNotice> ColonyStarvedNotices => _colonyStarvedNotices;
 
     /// <summary>
     /// The duration-bounded modifiers currently registered (FreeCol's temporary <c>Modifier</c>s — those carrying a
@@ -6578,6 +6590,7 @@ public sealed partial class Game
         _colonyGiftNotices.Clear(); // and this turn's friendly native gifts to human colonies
         _customHouseSaleNotices.Clear(); // and this turn's custom-house auto-sales from human colonies
         _disasterNotices.Clear(); // and this turn's natural disasters striking human colonies (empty in classic — naturalDisasters default 0)
+        _colonyStarvedNotices.Clear(); // and any human colonies starved out of existence this turn (empty in classic — the centre tile feeds the last colonist)
         _rumourNotices.Clear(); // and any rumour outcomes the human explored this turn (normally drained by the UI mid-turn; cleared here belt-and-braces)
         ClearPendingHumanProposals(); // and this round's AI alliance/cease-fire offers to the human (86d3drn4f; drained by the negotiation UI, cleared here belt-and-braces so the seam holds only the current round)
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
@@ -6720,7 +6733,9 @@ public sealed partial class Game
 
         ProcessGotos(player); // walk any units on a standing goto toward their destination (no-op when none — RNG-free)
 
-        foreach (Colony colony in ColoniesOf(player))
+        // Materialise: a colony that starves out its last colonist is disposed mid-turn (RunColonyTurn → DisposeColony
+        // removes it from _colonies), so we cannot enumerate the lazy ColoniesOf view while it mutates.
+        foreach (Colony colony in ColoniesOf(player).ToList())
         {
             RunColonyTurn(player, colony);
         }
@@ -11010,15 +11025,23 @@ public sealed partial class Game
         //     to a cap here) are exempt. Run after construction so a build isn't starved of materials it consumes.
         SpillWarehouseOverflow(colony);
 
-        // 2. Colonists eat; an unfed colonist starves (population floors at 1). Note: the classic colony-centre
-        //    tile always yields ≥ 2 food (desert/arctic 2, plains 3…), exactly a lone colonist's appetite, so a
-        //    size-1 colony never starves in normal play — FreeCol's "last colonist starves → colony disposed"
-        //    rule only fires once food production can drop below that (disasters), deferred with that system.
+        // 2. Colonists eat; an unfed colonist starves. With more than one colonist a single colonist is lost that
+        //    turn (FreeCol's per-turn famine victim); with only the LAST colonist left and still no food, the colony
+        //    is DESTROYED — disposed exactly like an abandon (FreeCol ServerColony.csNewTurn's model.colony.colonyStarved
+        //    branch → ServerPlayer.csDisposeSettlement). Note: the classic colony-centre tile always yields ≥ 2 food
+        //    (desert/arctic 2, plains 3…), exactly a lone colonist's appetite, so a size-1 colony never reaches a
+        //    shortfall in normal play and the L5 soak keeps every colony — destruction only becomes reachable once
+        //    food production can drop below that (e.g. disasters).
         int shortfall = colony.ConsumeFood(colony.Population * Ruleset.ColonyConstants.FoodPerColonist);
         if (shortfall > 0 && colony.Population > 1)
         {
             colony.Population--;
             TrimAssignments(colony);
+        }
+        else if (shortfall > 0) // the last colonist could not be fed → the colony starves out of existence
+        {
+            StarveColonyToDeath(owner, colony);
+            return; // a destroyed colony does not grow, teach, or export this turn (FreeCol returns after disposal)
         }
 
         // 3. Growth: a food surplus of 200 raises a new colonist, who reports
@@ -11041,6 +11064,30 @@ public sealed partial class Game
         //    can't rob this turn's growth of the food it would otherwise consume. No-op without a custom house, and —
         //    in the default PerGood mode with no toggles — sells nothing, so the L5 soak stays byte-stable.
         AutoSellExports(owner, colony);
+    }
+
+    /// <summary>
+    /// Destroys a colony that has starved out its last colonist (FreeCol <c>ServerColony.csNewTurn</c>'s
+    /// <c>model.colony.colonyStarved</c> branch → <c>ServerPlayer.csDisposeSettlement</c>). The colony is
+    /// <see cref="DisposeColony">disposed</see> — removed from the game, its tile cleared and its tile-work
+    /// assignments dropped — exactly like an abandon; the last colonist dies with the colony (no unit walks out,
+    /// unlike <see cref="AbandonColony"/>), and any <b>garrison units standing on the colony tile survive</b> on the
+    /// now-empty land. When <paramref name="owner"/> is the human, the loss is <b>notified</b> (a transient
+    /// <see cref="ColonyStarvedNotice"/> the presentation surfaces after the turn) and recorded as a
+    /// <see cref="HistoryEventKind.ColonyDestroyed"/> history event (FreeCol <c>COLONY_DESTROYED</c>; carries no score
+    /// itself today but feeds the later colony-lost score penalty). <b>Deterministic</b> — no RNG is drawn (ADR-009),
+    /// and <b>no new persisted state</b>: a destroyed colony is simply absent from the save (no format bump).
+    /// </summary>
+    /// <param name="owner">The colony's owner (the human or a foreign power); only the human is notified / recorded.</param>
+    /// <param name="colony">The starving colony to destroy.</param>
+    private void StarveColonyToDeath(Player owner, Colony colony)
+    {
+        if (owner.PlayerId == _human.PlayerId)
+        {
+            _colonyStarvedNotices.Add(new ColonyStarvedNotice(colony.Name, colony.Position));
+            RecordHistory(HistoryEventKind.ColonyDestroyed, $"{colony.Name} starved and was lost.");
+        }
+        DisposeColony(colony); // clears the tile + drops the colony; garrison units on the tile stay (per FreeCol)
     }
 
     /// <summary>Where a school student currently sits, so it can be upgraded in place (86d3c9p7f).</summary>

@@ -32,6 +32,13 @@ public enum HistoryEventKind
 
     /// <summary>The human declared independence from the Crown (FreeCol <c>DECLARE_INDEPENDENCE</c>).</summary>
     DeclaredIndependence,
+
+    /// <summary>
+    /// One of the human's colonies was destroyed (FreeCol <c>COLONY_DESTROYED</c>) — today only by <b>starvation</b>:
+    /// its last colonist could not be fed, so the colony was disposed (see <see cref="Game.RunColonyTurn"/>). Recorded
+    /// so the later score system (E2) can apply the colony-destroyed penalty; carries no score itself today.
+    /// </summary>
+    ColonyDestroyed,
 }
 
 public sealed partial class Game
