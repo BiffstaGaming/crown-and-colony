@@ -63,6 +63,16 @@ namespace CrownAndColony.GameLogic.Specification;
 /// (FreeCol <c>getPercentageMultiplier</c> = <c>0.01 × percentage</c>). Benjamin Franklin's <c>peaceTreaty +50%</c>
 /// then scales the rolled probability. See [founding-fathers], [diplomacy].
 /// </param>
+/// <param name="FogOfWar">
+/// Whether fog of war is in effect (spec <c>model.option.fogOfWar</c>, a <c>booleanOption</c> in the
+/// <c>gameOptions.map</c> group, classic default <b>true</b>). With fog <b>on</b> (the classic default) a tile the
+/// player has explored but no longer has a unit/colony watching is "remembered" — drawn dimmed, its contents (foreign
+/// units) hidden until looked at again, i.e. visibility is just the union of current lines of sight (FreeCol
+/// <c>Player.getVisibleTileSet</c>'s fog branch). With fog <b>off</b>, every explored tile stays permanently visible
+/// (FreeCol's else branch returns all explored tiles), so the player keeps a live view of everywhere they have ever
+/// been. Read by <see cref="GameSession.Game.CurrentlyVisible"/> / <see cref="GameSession.Game.IsVisible"/>. See
+/// [fog-of-war].
+/// </param>
 public sealed record GameOptions(
     int InitialImmigration,
     int EuropeanUnitImmigrationPenalty,
@@ -70,13 +80,14 @@ public sealed record GameOptions(
     int MandatoryColonyYear,
     int LastColonialYear,
     int IndependenceTurn,
-    int PeaceProbability)
+    int PeaceProbability,
+    bool FogOfWar)
 {
     /// <summary>
     /// The classic ruleset's <c>gameOptions</c> values — the fallback when a spec omits an option, and the source of
     /// truth for the default game's base numbers: the immigration trio (15 / −4 / +2), the
     /// <c>gameOptions.years</c> gate cluster (mandatoryColonyYear 1600 / lastColonialYear 1800 / independenceTurn 468),
-    /// and the peace-hold base (peaceProbability 90).
+    /// the peace-hold base (peaceProbability 90), and fog of war (on).
     /// </summary>
     public static readonly GameOptions ClassicDefaults = new(
         InitialImmigration: 15,
@@ -85,7 +96,8 @@ public sealed record GameOptions(
         MandatoryColonyYear: 1600,
         LastColonialYear: 1800,
         IndependenceTurn: 468,
-        PeaceProbability: 90);
+        PeaceProbability: 90,
+        FogOfWar: true);
 
     /// <summary>
     /// The peace-hold base as a 0–1 multiplier (FreeCol <c>Specification.getPercentageMultiplier</c> =

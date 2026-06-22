@@ -196,10 +196,12 @@ public sealed class Ruleset
 
     /// <summary>
     /// The base <c>gameOptions</c>-group tuning numbers (not per-difficulty-level) — currently the immigration trio
-    /// (<c>initialImmigration</c> / <c>europeanUnitImmigrationPenalty</c> / <c>playerImmigrationBonus</c>), parsed once
-    /// from the spec. Balance constants read these instead of hardcoding values. See [immigration].
+    /// (<c>initialImmigration</c> / <c>europeanUnitImmigrationPenalty</c> / <c>playerImmigrationBonus</c>), the
+    /// <c>gameOptions.years</c> gate cluster, the peace-hold base, and the <c>fogOfWar</c> toggle — parsed once from the
+    /// spec. Balance constants read these instead of hardcoding values. The setter is private — only
+    /// <see cref="WithFogOfWar"/> (the new-game option seam) ever swaps the bundle. See [immigration], [fog-of-war].
     /// </summary>
-    public GameOptions GameOptions { get; }
+    public GameOptions GameOptions { get; private set; }
 
     /// <summary>
     /// The spec id of the difficulty level this ruleset was loaded with (e.g. <c>model.difficulty.medium</c>) — the
@@ -327,6 +329,25 @@ public sealed class Ruleset
         VictoryDefeatRef = defeatRef;
         VictoryDefeatEuropeans = defeatEuropeans;
         VictoryDefeatHumans = defeatHumans;
+        return this;
+    }
+
+    /// <summary>
+    /// Returns this ruleset with the <b>fog-of-war</b> game option (<see cref="GameOptions.FogOfWar"/>) overridden to the
+    /// player's New-Game pick — FreeCol's <c>model.option.fogOfWar</c>, chosen at game setup. Like
+    /// <see cref="WithVictoryConditions"/> this is a <b>configuration</b> seam, not a rules change: it only flips how
+    /// <see cref="GameSession.Game.CurrentlyVisible"/> / <see cref="GameSession.Game.IsVisible"/> derive the visible set
+    /// from the (unchanged) explored set — fog off keeps every explored tile visible, fog on re-hides explored tiles out
+    /// of current sight. Each loaded ruleset is a fresh parse (never cached/shared — <see cref="LoadEmbedded"/>), so
+    /// replacing the bundle on the just-loaded instance is safe; the method returns <c>this</c> for a fluent call right
+    /// after load. Passing the parsed default (classic <b>true</b>) leaves the ruleset byte-identical, so a default new
+    /// game is unchanged (ADR-009). Not persisted in the save — a reloaded game re-derives the option from its variant's
+    /// spec default (a saved override would bump the save format, matching the victory-condition seam).
+    /// </summary>
+    /// <param name="fogOfWar">Whether fog of war is in effect (classic <b>on</b>).</param>
+    public Ruleset WithFogOfWar(bool fogOfWar)
+    {
+        GameOptions = GameOptions with { FogOfWar = fogOfWar };
         return this;
     }
 
@@ -1001,11 +1022,13 @@ public sealed class Ruleset
 
     /// <summary>
     /// Parses the base <c>gameOptions</c> group into <see cref="Specification.GameOptions"/>: the immigration trio
-    /// (<c>model.option.initialImmigration</c> / <c>europeanUnitImmigrationPenalty</c> / <c>playerImmigrationBonus</c>)
-    /// and the <c>gameOptions.years</c> year/turn-gate cluster (<c>model.option.mandatoryColonyYear</c> /
-    /// <c>lastColonialYear</c> / <c>independenceTurn</c>). Unlike <see cref="ParseDifficulty"/>, these are not restated
-    /// per level, so each is a plain document-wide integer-option lookup (its <c>value</c>, else <c>defaultValue</c>);
-    /// a missing option falls back to its classic value in <see cref="GameOptions.ClassicDefaults"/>, so the default
+    /// (<c>model.option.initialImmigration</c> / <c>europeanUnitImmigrationPenalty</c> / <c>playerImmigrationBonus</c>),
+    /// the <c>gameOptions.years</c> year/turn-gate cluster (<c>model.option.mandatoryColonyYear</c> /
+    /// <c>lastColonialYear</c> / <c>independenceTurn</c>), the peace-hold base (<c>model.option.peaceProbability</c>),
+    /// and the <c>fogOfWar</c> toggle (<c>model.option.fogOfWar</c>, a boolean). Unlike <see cref="ParseDifficulty"/>,
+    /// these are not restated per level, so each is a plain document-wide option lookup (its <c>value</c>, else
+    /// <c>defaultValue</c>); a missing option falls back to its classic value in
+    /// <see cref="GameOptions.ClassicDefaults"/>, so the default
     /// game is byte-identical (ADR-009).
     /// </summary>
     internal static GameOptions ParseGameOptions(XElement root) =>
@@ -1023,7 +1046,9 @@ public sealed class Ruleset
             IndependenceTurn: ParseIntOption(
                 root, "model.option.independenceTurn", GameOptions.ClassicDefaults.IndependenceTurn),
             PeaceProbability: ParsePercentageOption(
-                root, "model.option.peaceProbability", GameOptions.ClassicDefaults.PeaceProbability));
+                root, "model.option.peaceProbability", GameOptions.ClassicDefaults.PeaceProbability),
+            FogOfWar: ParseBooleanOption(
+                root, "model.option.fogOfWar", GameOptions.ClassicDefaults.FogOfWar));
 
     /// <summary>
     /// Parses the colony/production scalar constants into <see cref="Specification.ColonyConstants"/>. Each source is

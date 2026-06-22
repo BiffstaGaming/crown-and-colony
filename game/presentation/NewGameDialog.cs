@@ -58,6 +58,9 @@ public partial class NewGameDialog : Control
     private CheckBox _victoryRefCheck = null!;
     private CheckBox _victoryEuropeansCheck = null!;
     private CheckBox _victoryHumansCheck = null!;
+    // The fog-of-war toggle (FreeCol's model.option.fogOfWar). Initialised to the ruleset's parsed spec default (classic
+    // on) so an untouched Start is byte-identical; unticking it keeps every explored tile permanently visible.
+    private CheckBox _fogOfWarCheck = null!;
     private Action<WorldSize, LandMass, DifficultyLevel, MapSource>? _onStart;
 
     /// <summary>
@@ -151,12 +154,12 @@ public partial class NewGameDialog : Control
         _nationOption.Selected = 0; // No nation — the classic nation-less human (byte-identical default)
         vbox.AddChild(LabeledRow("Nation", _nationOption));
 
-        // Game-options section: the base game options FreeCol shows at setup that our engine already honours. Today
-        // that is the three alternative VICTORY CONDITIONS (FreeCol's gameOptions.victoryConditions group) — the only
-        // base game options Game.Winner actually reads. Each toggle starts at the ruleset's parsed spec default (read
-        // from the default-variant ruleset, data-driven), so an untouched Start is byte-identical (REF on / Europeans
-        // on / Humans off). (Fog-of-war and the other gameOptions.map toggles are NOT surfaced — the engine doesn't
-        // read them yet; see the dialog summary.)
+        // Game-options section: the base game options FreeCol shows at setup that our engine already honours. The three
+        // alternative VICTORY CONDITIONS (FreeCol's gameOptions.victoryConditions group, read by Game.Winner) plus the
+        // FOG-OF-WAR toggle (model.option.fogOfWar, read by Game.CurrentlyVisible/IsVisible). Each toggle starts at the
+        // ruleset's parsed spec default (read from the default-variant ruleset, data-driven), so an untouched Start is
+        // byte-identical (REF on / Europeans on / Humans off / fog on). (The other gameOptions.map toggles are still NOT
+        // surfaced — the engine doesn't read them yet; see the dialog summary.)
         Ruleset defaults = VictoryDefaults();
         vbox.AddChild(new Label
         {
@@ -170,6 +173,11 @@ public partial class NewGameDialog : Control
         vbox.AddChild(_victoryRefCheck);
         vbox.AddChild(_victoryEuropeansCheck);
         vbox.AddChild(_victoryHumansCheck);
+
+        // Fog of war (model.option.fogOfWar): ticked = the classic remembered-but-hidden fog; unticked = explored tiles
+        // stay permanently visible. Starts at the ruleset's parsed spec default (classic on) — byte-identical default.
+        _fogOfWarCheck = VictoryCheck("FogOfWarCheck", "Fog of war", defaults.GameOptions.FogOfWar);
+        vbox.AddChild(_fogOfWarCheck);
 
         var start = new Button { Name = "StartButton", Text = "Start" };
         start.Pressed += OnStart;
@@ -207,6 +215,9 @@ public partial class NewGameDialog : Control
         // override (byte-identical); we still forward them so the host always knows the player's explicit choice.
         GameController.PendingVictoryConditions =
             (_victoryRefCheck.ButtonPressed, _victoryEuropeansCheck.ButtonPressed, _victoryHumansCheck.ButtonPressed);
+        // The fog-of-war toggle rides its own static into Game.New, applied to the loaded ruleset (a config override of
+        // how visibility is derived — ADR-006). Left at the spec default (on) it is a no-op override (byte-identical).
+        GameController.PendingFogOfWar = _fogOfWarCheck.ButtonPressed;
         _onStart?.Invoke(size, land, difficulty, source);
         EmitSignal(SignalName.Closed);
     }

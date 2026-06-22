@@ -98,4 +98,82 @@ public class VisibilityTests
         Assert.Equal(2, game.ColonySightRadius); // FreeCol classic colony visible-radius
         Assert.Equal(Square(game, colony.Position, game.ColonySightRadius), game.CurrentlyVisible.ToHashSet());
     }
+
+    // -------- model.option.fogOfWar (86d3dzdw3) --------
+    // FreeCol Player.getVisibleTileSet: fog ON → visible is the union of current lines of sight (explored-but-unseen
+    // tiles are re-hidden); fog OFF → visible is *all* explored tiles (everywhere ever seen stays visible).
+
+    /// <summary>Chebyshev "tile p within radius of centre" — mirrors Game.InSight (which is private).</summary>
+    private static bool Within(Position centre, Position p, int radius) =>
+        Math.Abs(centre.X - p.X) <= radius && Math.Abs(centre.Y - p.Y) <= radius;
+
+    /// <summary>The classic spec parses fog of war ON, and a fog-off override flips just that one option.</summary>
+    [Fact]
+    public void FogOfWar_ClassicDefaultsOn_OverrideFlipsIt()
+    {
+        Assert.True(Ruleset.LoadClassic().GameOptions.FogOfWar); // classic default (byte-identical game)
+        Assert.False(Ruleset.LoadClassic().WithFogOfWar(false).GameOptions.FogOfWar);
+        Assert.True(Ruleset.LoadClassic().WithFogOfWar(true).GameOptions.FogOfWar);
+    }
+
+    /// <summary>
+    /// Fog OFF: a tile the player explored stays visible after the only unit that saw it walks two tiles away — there is
+    /// no remembered-but-hidden state, every explored tile is in sight (FreeCol's no-fog branch).
+    /// </summary>
+    [Fact]
+    public void FogOff_KeepsAnExploredTileVisibleAfterTheUnitLeaves()
+    {
+        Game game = Game.New(Ruleset.LoadClassic().WithFogOfWar(false), Seed);
+        // Reduce the roster to a single land unit so exactly one mover lifts the fog (others would keep tiles in sight).
+        Unit mover = game.PlayerUnits.First(u => u.IsOnMap && !u.Type.IsNaval);
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap && u != mover).ToList())
+        {
+            game.Disband(u);
+        }
+        Position origin = mover.Position;
+
+        // The tile two steps "behind" the destination: explored from the start, but it will fall out of current sight
+        // once the mover steps away (a radius-1 colonist).
+        Position dest = origin.Neighbours().First(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater && game.CheckMove(mover, n).Allowed);
+        var behind = new Position(origin.X * 2 - dest.X, origin.Y * 2 - dest.Y);
+        Assert.True(game.Map.InBounds(behind));
+        Assert.True(game.IsExplored(behind));
+
+        game.MoveUnit(mover, dest);
+
+        Assert.False(Within(dest, behind, mover.Type.LineOfSight)); // it really is out of the mover's line of sight now
+        Assert.True(game.IsExplored(behind));
+        Assert.True(game.IsVisible(behind));                         // …but fog is off, so it stays visible
+        Assert.Contains(behind, game.CurrentlyVisible);
+        // With fog off the visible set is exactly the explored set.
+        Assert.Equal(game.Explored.ToHashSet(), game.CurrentlyVisible.ToHashSet());
+    }
+
+    /// <summary>
+    /// Fog ON (the classic default): the same explored tile is re-hidden once the unit walks away — visibility is only
+    /// the current line of sight. This pins the byte-identical default behaviour against the fog-off case above.
+    /// </summary>
+    [Fact]
+    public void FogOn_ReHidesAnExploredTileAfterTheUnitLeaves()
+    {
+        Game game = Game.New(Classic, Seed); // classic = fog on
+        Unit mover = game.PlayerUnits.First(u => u.IsOnMap && !u.Type.IsNaval);
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap && u != mover).ToList())
+        {
+            game.Disband(u);
+        }
+        Position origin = mover.Position;
+
+        Position dest = origin.Neighbours().First(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater && game.CheckMove(mover, n).Allowed);
+        var behind = new Position(origin.X * 2 - dest.X, origin.Y * 2 - dest.Y);
+        Assert.True(game.Map.InBounds(behind));
+
+        game.MoveUnit(mover, dest);
+
+        Assert.True(game.IsExplored(behind));        // still remembered…
+        Assert.False(game.IsVisible(behind));        // …but re-hidden (fog on)
+        Assert.DoesNotContain(behind, game.CurrentlyVisible);
+    }
 }

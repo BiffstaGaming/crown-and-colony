@@ -3214,11 +3214,26 @@ public sealed partial class Game
     /// on-map unit or a colony. Always a subset of <see cref="Explored"/>; recomputed
     /// from current positions (not stored, never stale). Explored-but-not-visible tiles
     /// are "remembered" (drawn dimmed); foreign units there are hidden.
+    /// <para>
+    /// When the <c>model.option.fogOfWar</c> game option is <b>off</b>
+    /// (<see cref="Specification.GameOptions.FogOfWar"/> = <c>false</c>) there is no remembered-but-hidden state: every
+    /// tile the player has ever explored counts as visible (FreeCol <c>Player.getVisibleTileSet</c>'s no-fog branch =
+    /// all explored tiles). With fog <b>on</b> (the classic default) visibility is just the union of current lines of
+    /// sight, so a tile the player has walked away from is re-hidden — exactly as before, so the default game is
+    /// byte-identical.
+    /// </para>
     /// </summary>
     public IReadOnlySet<Position> CurrentlyVisible
     {
         get
         {
+            // Fog off: every explored tile is visible (FreeCol's no-fog branch). A defensive copy so callers can't
+            // mutate the explored set through this read-only view.
+            if (!Ruleset.GameOptions.FogOfWar)
+            {
+                return new HashSet<Position>(_human.Explored);
+            }
+
             var visible = new HashSet<Position>();
             foreach (Unit unit in _units)
             {
@@ -3238,10 +3253,16 @@ public sealed partial class Game
         }
     }
 
-    /// <summary>Whether a tile is currently in sight (not merely explored).</summary>
+    /// <summary>
+    /// Whether a tile is currently in sight (not merely explored). With fog of war <b>off</b> every explored tile is in
+    /// sight (FreeCol's no-fog branch); with fog <b>on</b> (the classic default) only tiles within a current line of
+    /// sight are — so the default game is byte-identical.
+    /// </summary>
     public bool IsVisible(Position p) =>
-        _units.Any(u => u.IsOnMap && IsHumanOwned(u) && InSight(u.Position, p, LineOfSightOf(u)))
-        || _colonies.Any(c => IsHumanOwned(c) && InSight(c.Position, p, ColonySightRadius));
+        !Ruleset.GameOptions.FogOfWar
+            ? _human.Explored.Contains(p)
+            : _units.Any(u => u.IsOnMap && IsHumanOwned(u) && InSight(u.Position, p, LineOfSightOf(u)))
+              || _colonies.Any(c => IsHumanOwned(c) && InSight(c.Position, p, ColonySightRadius));
 
     private static bool InSight(Position centre, Position p, int radius) =>
         Math.Abs(centre.X - p.X) <= radius && Math.Abs(centre.Y - p.Y) <= radius;
