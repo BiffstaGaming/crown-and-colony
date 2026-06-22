@@ -1021,7 +1021,9 @@ public sealed class Ruleset
             LastColonialYear: ParseIntOption(
                 root, "model.option.lastColonialYear", GameOptions.ClassicDefaults.LastColonialYear),
             IndependenceTurn: ParseIntOption(
-                root, "model.option.independenceTurn", GameOptions.ClassicDefaults.IndependenceTurn));
+                root, "model.option.independenceTurn", GameOptions.ClassicDefaults.IndependenceTurn),
+            PeaceProbability: ParsePercentageOption(
+                root, "model.option.peaceProbability", GameOptions.ClassicDefaults.PeaceProbability));
 
     /// <summary>
     /// Parses the colony/production scalar constants into <see cref="Specification.ColonyConstants"/>. Each source is

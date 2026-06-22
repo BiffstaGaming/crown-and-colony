@@ -132,16 +132,69 @@ public class FoundingFatherDiplomacyTests
     }
 
     [Fact]
-    public void PeaceTreatyHoldProbability_IsZeroWithoutFranklin_AndHalfWithHim()
+    public void PeaceTreatyModifierFactor_IsOneWithoutFranklin_AndOneAndAHalfWithHim()
     {
-        // The reprieve probability folds the other party's peaceTreaty modifiers onto a 0 base: no Franklin → 0 (the war
-        // always proceeds, default game unchanged); Franklin's +50% → 0.5, clamped to [0,1].
+        // FreeCol p.apply(prob, turn, PEACE_TREATY): a percentage-additive +50% scales the base by 1.5; no Franklin → 1.0.
         var game = Game.New(Classic, seed: 7);
         Player human = game.HumanPlayer;
-        Assert.Equal(0.0, game.PeaceTreatyHoldProbability(human));
+        Assert.Equal(1.0, game.PeaceTreatyModifierFactor(human), precision: 6);
 
         human.CongressList.Add(Franklin);
-        Assert.Equal(0.5, game.PeaceTreatyHoldProbability(human), precision: 6);
+        Assert.Equal(1.5, game.PeaceTreatyModifierFactor(human), precision: 6);
+    }
+
+    [Fact]
+    public void PeaceTreatyHoldProbability_IsZeroWithoutFranklin_EvenWithARecordedPeace()
+    {
+        // The Wave-12 gate is preserved: with no Franklin the probability is 0 regardless of any recorded peace, so the
+        // war always proceeds and the default game is unchanged (a deliberate divergence from raw FreeCol's 0.90 base).
+        var game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.Peace); // stamps the peace turn (turn 1)
+        Assert.Equal(0.0, game.PeaceTreatyHoldProbability(power, game.HumanPlayer));
+    }
+
+    [Fact]
+    public void PeaceTreatyHoldProbability_WithFranklin_AppliesTheDecayingBaseScaledByTheModifier()
+    {
+        // FreeCol peaceHolds: prob = (PEACE_PROBABILITY/100)^n, then × the peaceTreaty factor (1.5). Classic base 0.90.
+        // n = 0 the turn peace takes force → 0.90^0 × 1.5 = 1.5, clamped to 1.0.
+        var game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        game.HumanPlayer.CongressList.Add(Franklin);
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.Peace); // peace turn = current turn (n = 0)
+
+        Assert.Equal(1.0, game.PeaceTreatyHoldProbability(power, game.HumanPlayer), precision: 6); // 0.90^0 × 1.5 clamped
+
+        // Stamp an older peace turn so n grows, and watch the probability decay: 0.90^n × 1.5.
+        power.PeaceTurnMap[game.HumanPlayer.PlayerId] = game.Turn - 5;
+        double expected = System.Math.Pow(0.90, 5) * 1.5; // ≈ 0.8857
+        Assert.Equal(expected, game.PeaceTreatyHoldProbability(power, game.HumanPlayer), precision: 6);
+
+        // Far enough out the decay drives it below 1 and keeps falling — strictly monotone in n.
+        power.PeaceTurnMap[game.HumanPlayer.PlayerId] = game.Turn - 40;
+        double far = game.PeaceTreatyHoldProbability(power, game.HumanPlayer);
+        Assert.True(far < expected);
+        Assert.Equal(System.Math.Clamp(System.Math.Pow(0.90, 40) * 1.5, 0.0, 1.0), far, precision: 6);
+    }
+
+    [Fact]
+    public void PeaceTreatyHoldProbability_DecaysMonotonically_AsTheTreatyAges()
+    {
+        // The whole point of the decay: the longer a Franklin peace has held, the LESS likely it survives another turn.
+        var game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        game.HumanPlayer.CongressList.Add(Franklin);
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.Peace);
+
+        double previous = 1.1; // above any possible clamped probability
+        foreach (int age in new[] { 0, 3, 6, 10, 20, 40, 80 })
+        {
+            power.PeaceTurnMap[game.HumanPlayer.PlayerId] = game.Turn - age;
+            double p = game.PeaceTreatyHoldProbability(power, game.HumanPlayer);
+            Assert.True(p <= previous, $"probability should not rise with age (age {age}: {p} vs {previous})");
+            previous = p;
+        }
     }
 
     [Fact]
@@ -151,6 +204,7 @@ public class FoundingFatherDiplomacyTests
         // stream is untouched (and, since the human's is stream 0, stream 0 is byte-stable too).
         var game = Game.New(Classic, seed: 7);
         Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.Peace); // even with a recorded peace…
         RandomState before = game.RandomState;
         for (int i = 0; i < 50; i++)
         {
@@ -160,23 +214,57 @@ public class FoundingFatherDiplomacyTests
     }
 
     [Fact]
-    public void PeaceTreatyHolds_WithFranklin_SometimesHolds_OnThePowersOwnStream()
+    public void PeaceTreatyHolds_WithNoRecordedPeace_IsFalse_AndDrawsNoRng()
     {
-        // With Franklin (p = 0.5) the reprieve fires on roughly half the rolls — so over many rolls at least one holds
-        // and at least one does not, confirming the roll is live and probabilistic (drawn on the power's own stream).
+        // Even with Franklin, a pair that has no peace on record (never met, or war was the last transition) has nothing
+        // to hold → probability 0 → no roll drawn (the rolling power's stream is untouched).
         var game = Game.New(Classic, seed: 7);
         Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
         game.HumanPlayer.CongressList.Add(Franklin);
+        Assert.False(power.PeaceTurns.ContainsKey(game.HumanPlayer.PlayerId)); // no stamp yet
+        for (int i = 0; i < 50; i++)
+        {
+            Assert.False(game.PeaceTreatyHolds(power, game.HumanPlayer));
+        }
+    }
+
+    [Fact]
+    public void PeaceTreatyHolds_WithFranklin_OnAnAgedPeace_SometimesHolds_OnThePowersOwnStream()
+    {
+        // With a decayed probability strictly inside (0,1) the reprieve fires on some rolls and not others — confirming
+        // the roll is live and probabilistic. We age the peace so prob = 0.90^20 × 1.5 ≈ 0.18 (well inside the band).
+        var game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        game.HumanPlayer.CongressList.Add(Franklin);
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.Peace);
+        power.PeaceTurnMap[game.HumanPlayer.PlayerId] = game.Turn - 20; // prob ≈ 0.18
 
         int held = 0;
-        for (int i = 0; i < 200; i++)
+        for (int i = 0; i < 400; i++)
         {
             if (game.PeaceTreatyHolds(power, game.HumanPlayer))
             {
                 held++;
             }
         }
-        Assert.InRange(held, 1, 199); // not all-true, not all-false → a genuine ~50% roll
+        Assert.InRange(held, 1, 399); // not all-true, not all-false → a genuine probabilistic roll
+    }
+
+    [Fact]
+    public void PeaceTurn_IsStampedOnPeace_AndClearedOnWar()
+    {
+        // The stamp underpins the decay: a transition INTO peace records the turn; a declaration of war removes it.
+        var game = Game.New(Classic, seed: 7);
+        Player a = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        int b = SecondForeignPowerId(game);
+
+        game.SetStance(a.PlayerId, b, Stance.Peace);
+        Assert.Equal(game.Turn, a.PeaceTurns[b]);                 // stamped on both sides
+        Assert.Equal(game.Turn, game.Players.First(p => p.PlayerId == b).PeaceTurns[a.PlayerId]);
+
+        game.SetStance(a.PlayerId, b, Stance.War);
+        Assert.False(a.PeaceTurns.ContainsKey(b));                // cleared on war
+        Assert.False(game.Players.First(p => p.PlayerId == b).PeaceTurns.ContainsKey(a.PlayerId));
     }
 
     // ───────────────────────── Jan de Witt — foreign trade + report ─────────────────────────

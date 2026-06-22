@@ -72,6 +72,36 @@ public class GameOptionsTests
     }
 
     [Fact]
+    public void ParseGameOptions_ReadsThePeaceProbabilityPercentageOption_ByItsOwnId()
+    {
+        // peaceProbability is a percentageOption (FreeCol's peace-hold base): a non-default value proves it is read by id.
+        XElement root = XElement.Parse(
+            "<freecol-specification><optionGroup id='gameOptions'>" +
+            "  <percentageOption id='model.option.peaceProbability' value='75' />" +
+            "</optionGroup></freecol-specification>");
+        GameOptions o = Ruleset.ParseGameOptions(root);
+        Assert.Equal(75, o.PeaceProbability);
+        Assert.Equal(0.75, o.PeaceProbabilityMultiplier, precision: 6);
+    }
+
+    [Fact]
+    public void ParseGameOptions_FallsBackToClassicPeaceProbability_WhenMissing()
+    {
+        // Absent → classic 90 (the spec's defaultValue), so the default game is byte-identical.
+        XElement root = XElement.Parse("<freecol-specification><optionGroup id='gameOptions'/></freecol-specification>");
+        Assert.Equal(GameOptions.ClassicDefaults.PeaceProbability, Ruleset.ParseGameOptions(root).PeaceProbability); // 90
+    }
+
+    [Fact]
+    public void ClassicRuleset_ParsesThePeaceProbability_As90Percent()
+    {
+        // Pinned against the classic specification.xml: model.option.peaceProbability defaultValue='90' → 0.90 multiplier.
+        GameOptions o = Ruleset.LoadClassic().GameOptions;
+        Assert.Equal(90, o.PeaceProbability);
+        Assert.Equal(0.90, o.PeaceProbabilityMultiplier, precision: 6);
+    }
+
+    [Fact]
     public void RulesetLastColonialYear_DelegatesToTheBundle()
     {
         // The standalone Ruleset.LastColonialYear property now surfaces the bundle value (the independence and

@@ -49,6 +49,7 @@ public sealed class Player
     private readonly HashSet<Position> _explored = [];
     private readonly Dictionary<int, Stance> _stance = [];   // this player's directional view of each other player (FP-6a)
     private readonly Dictionary<int, int> _tension = [];     // this player's tension toward each other player (0..MaxTension)
+    private readonly Dictionary<int, int> _peaceTurn = [];   // turn this player's peace with each other player was established (FreeCol peaceHolds' peaceTurn; cleared on war)
     private readonly Dictionary<string, int> _unitPrices = []; // this player's escalated Europe purchase prices (artillery); absent = the ruleset base
     private readonly List<TradeRoute> _tradeRoutes = []; // this player's defined trade routes (carriers attach by id)
 
@@ -169,6 +170,15 @@ public sealed class Player
     /// <summary>This player's tension toward each other player, by their <see cref="PlayerId"/> (0..<see cref="Game.MaxTension"/>; an absent entry = 0).</summary>
     public IReadOnlyDictionary<int, int> Tensions => _tension;
 
+    /// <summary>
+    /// The <see cref="Game.Turn"/> on which this player's <b>peace</b> (or alliance) with each other player was last
+    /// established, by their <see cref="PlayerId"/> — FreeCol <c>EuropeanAIPlayer.peaceHolds</c>' <c>peaceTurn</c>. An
+    /// absent entry means no peace is currently on record (never met, or the last transition with that player was a
+    /// declaration of war), and <see cref="Game"/>'s peace-hold decay treats it as "no recent treaty". Stamped when a
+    /// Peace/Alliance stance is set, cleared when War is declared.
+    /// </summary>
+    public IReadOnlyDictionary<int, int> PeaceTurns => _peaceTurn;
+
     /// <summary>This player's <b>escalated</b> Europe purchase prices by unit-type id (FreeCol per-player <c>unitPrices</c>): an absent entry means the ruleset base price still applies. Today only artillery escalates (+100 per purchase).</summary>
     public IReadOnlyDictionary<string, int> UnitPriceOverrides => _unitPrices;
 
@@ -201,6 +211,9 @@ public sealed class Player
 
     /// <summary>Mutable view of <see cref="Tensions"/> for the diplomacy rules on <see cref="Game"/>.</summary>
     internal Dictionary<int, int> TensionMap => _tension;
+
+    /// <summary>Mutable view of <see cref="PeaceTurns"/> for the diplomacy rules on <see cref="Game"/>.</summary>
+    internal Dictionary<int, int> PeaceTurnMap => _peaceTurn;
 
     /// <summary>
     /// Current gold price to buy one recruit from the dock (FreeCol
@@ -241,4 +254,5 @@ public sealed record RestoredPlayer(
     int? DeclaredIndependenceTurn = null,
     int InterventionBells = 0,
     IReadOnlyList<TradeRoute>? TradeRoutes = null,
-    int? NextTradeRouteId = null);
+    int? NextTradeRouteId = null,
+    IReadOnlyDictionary<int, int>? PeaceTurns = null);

@@ -425,6 +425,33 @@ public class SaveGameTests
         Assert.Null(SaveGame.From(game).Gold); // carried under Players[], not the legacy flat field
     }
 
+    [Fact]
+    public void RoundTrip_PreservesPeaceTurnStamps()
+    {
+        // v53: the per-pair peace-turn (FreeCol peaceHolds' peaceTurn) survives a save/load round-trip on both sides.
+        var game = Game.New(Classic, seed: 99);
+        Player a = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        int b = game.HumanPlayer.PlayerId;
+        game.SetStance(a.PlayerId, b, Stance.Peace); // stamps the peace turn (turn 1) both ways
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+        Player loadedA = loaded.Players.First(p => p.PlayerId == a.PlayerId);
+        Assert.Equal(a.PeaceTurns[b], loadedA.PeaceTurns[b]);
+        Assert.Equal(
+            game.HumanPlayer.PeaceTurns[a.PlayerId],
+            loaded.HumanPlayer.PeaceTurns[a.PlayerId]);
+    }
+
+    [Fact]
+    public void PeaceTurns_WhenNoneRecorded_AreOmittedFromTheSave()
+    {
+        // Omit-when-empty: a fresh game with no established peace writes no PeaceTurns map on any player, so it stays
+        // byte-identical to a v52 save (the gate is inert without a recorded peace anyway).
+        var game = Game.New(Classic, seed: 99);
+        SaveGame save = SaveGame.From(game);
+        Assert.All(save.Players!, p => Assert.Null(p.PeaceTurns));
+    }
+
     private static Position AdjacentLand(Game game, Position from) =>
         from.Neighbours().First(n => game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater);
 }

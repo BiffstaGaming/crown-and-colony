@@ -54,18 +54,29 @@ namespace CrownAndColony.GameLogic.Specification;
 /// scoring cutoff that reads it is not yet wired (our independence bonus is currently order-based, see
 /// <see cref="GameSession.Game"/> score components), so a missing option simply falls back to the classic 468.
 /// </param>
+/// <param name="PeaceProbability">
+/// The per-turn <b>percentage</b> chance (0–100) that an angry AI keeps honouring a recent peace treaty (spec
+/// <c>model.option.peaceProbability</c>, a <c>percentageOption</c>, classic <b>90</b>). This is the <em>base</em> of
+/// FreeCol's decaying peace-hold: a power whose grievance would flip a recent peace back to war first rolls against
+/// <c>(PeaceProbability/100)^turnsSincePeace</c> (FreeCol <c>EuropeanAIPlayer.peaceHolds</c>), so the longer the peace
+/// has held the more likely it eventually breaks. Exposed as a 0–1 multiplier by <see cref="PeaceProbabilityMultiplier"/>
+/// (FreeCol <c>getPercentageMultiplier</c> = <c>0.01 × percentage</c>). Benjamin Franklin's <c>peaceTreaty +50%</c>
+/// then scales the rolled probability. See [founding-fathers], [diplomacy].
+/// </param>
 public sealed record GameOptions(
     int InitialImmigration,
     int EuropeanUnitImmigrationPenalty,
     int PlayerImmigrationBonus,
     int MandatoryColonyYear,
     int LastColonialYear,
-    int IndependenceTurn)
+    int IndependenceTurn,
+    int PeaceProbability)
 {
     /// <summary>
     /// The classic ruleset's <c>gameOptions</c> values — the fallback when a spec omits an option, and the source of
-    /// truth for the default game's base numbers: the immigration trio (15 / −4 / +2) and the
-    /// <c>gameOptions.years</c> gate cluster (mandatoryColonyYear 1600 / lastColonialYear 1800 / independenceTurn 468).
+    /// truth for the default game's base numbers: the immigration trio (15 / −4 / +2), the
+    /// <c>gameOptions.years</c> gate cluster (mandatoryColonyYear 1600 / lastColonialYear 1800 / independenceTurn 468),
+    /// and the peace-hold base (peaceProbability 90).
     /// </summary>
     public static readonly GameOptions ClassicDefaults = new(
         InitialImmigration: 15,
@@ -73,5 +84,13 @@ public sealed record GameOptions(
         PlayerImmigrationBonus: 2,
         MandatoryColonyYear: 1600,
         LastColonialYear: 1800,
-        IndependenceTurn: 468);
+        IndependenceTurn: 468,
+        PeaceProbability: 90);
+
+    /// <summary>
+    /// The peace-hold base as a 0–1 multiplier (FreeCol <c>Specification.getPercentageMultiplier</c> =
+    /// <c>0.01 × percentage</c>): the per-turn probability that a recent peace holds before any decay or father
+    /// modifier. Classic <b>0.90</b>.
+    /// </summary>
+    public double PeaceProbabilityMultiplier => 0.01 * PeaceProbability;
 }

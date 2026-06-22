@@ -19,7 +19,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 52;
+    public const int CurrentVersion = 53;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -146,6 +146,13 @@ public sealed record SaveGame
     /// only a unit whose origin has <em>diverged</em> from its owner (a captured colonist) writes an explicit token. So a
     /// default game serialises byte-identically to v51, and pre-v52 saves (no tokens) re-derive every unit's origin from
     /// its owner on load.
+    /// v53 added each colonial player's <b>peace-turn</b> stamps (<see cref="SavedPlayer.PeaceTurns"/> — the turn its peace
+    /// with each other player took force, FreeCol <c>EuropeanAIPlayer.peaceHolds</c>' <c>peaceTurn</c>), so Benjamin
+    /// Franklin's <c>peaceTreaty</c> peace-hold can decay the hold-probability over turns-since-peace
+    /// (<c>(PEACE_PROBABILITY/100)^n</c>). Additive + <b>omitted when empty</b>: a player with no recorded peace (every
+    /// player in a no-contact game, and the common pre-contact case) emits no map, so a default game serialises
+    /// byte-identically to v52, and pre-v53 saves load with no stamps — the peace-hold gate is inert without Franklin
+    /// anyway (probability 0, no roll), so the default game is unaffected.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -654,7 +661,8 @@ public sealed record SaveGame
         p.DeclaredIndependenceTurn, p.InterventionBells ?? 0,
         p.TradeRoutes?.Select(r => new TradeRoute(r.Id, r.Name,
             r.Stops.Select(stop => new TradeRouteStop(stop.ColonyId, stop.Load ?? [])).ToList())).ToList(),
-        p.NextTradeRouteId);
+        p.NextTradeRouteId,
+        p.PeaceTurns); // v53; pre-v53 / omitted → no recorded peace
 
     /// <summary>
     /// Folds the legacy flat top-level fields into the single human player — taken for a ≤v19 save, or any save
@@ -698,7 +706,8 @@ public sealed record SaveGame
                     r.Stops.Select(s => new SavedTradeRouteStop(
                         s.ColonyId, s.LoadGoodsIds.Count > 0 ? s.LoadGoodsIds.ToList() : null)).ToList())).ToList()
                 : null,
-            p.NextTradeRouteId == 1 ? null : p.NextTradeRouteId); // omit-when-default (1) → byte-identical to v44 until a route is made
+            p.NextTradeRouteId == 1 ? null : p.NextTradeRouteId, // omit-when-default (1) → byte-identical to v44 until a route is made
+            p.PeaceTurns.Count > 0 ? new Dictionary<int, int>(p.PeaceTurns) : null); // v53; omit-when-empty → byte-identical to v52 with no recorded peace
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -925,6 +934,7 @@ public sealed record SavedUnit(
 /// <param name="InterventionBells">Bells accrued toward the Foreign Intervention Force (v41 additive; null/omitted when 0).</param>
 /// <param name="TradeRoutes">This player's trade routes (v43 additive; null/omitted when it has none, so a route-free game stays byte-identical to v42).</param>
 /// <param name="NextTradeRouteId">The player's monotonic next-trade-route id counter (v45 additive; null/omitted when still 1 — the default — so a game that never created a route stays byte-identical to v44). Persisted (FreeCol persists <c>Game.nextId</c>) so ids are never reused after a route is deleted and the game is reloaded; pre-v45 saves fall back to <c>max(route id) + 1</c>.</param>
+/// <param name="PeaceTurns">The turn this player's peace took force with each other player, by their id (v53 additive, FreeCol <c>EuropeanAIPlayer.peaceHolds</c>' <c>peaceTurn</c>; null/omitted when it has no recorded peace — the common case and every player in a no-contact game, so a default game stays byte-identical to v52). Feeds the decaying peace-hold (<c>(PEACE_PROBABILITY/100)^(turn − peaceTurn)</c>); pre-v53 saves load with no stamps (the gate is inert without Franklin anyway).</param>
 public sealed record SavedPlayer(
     int PlayerId, string? NationId, bool IsHuman, int PlayerType,
     int Gold = 0, int Tax = 0,
@@ -945,7 +955,8 @@ public sealed record SavedPlayer(
     int? DeclaredIndependenceTurn = null,
     int? InterventionBells = null,
     IReadOnlyList<SavedTradeRoute>? TradeRoutes = null,
-    int? NextTradeRouteId = null);
+    int? NextTradeRouteId = null,
+    IReadOnlyDictionary<int, int>? PeaceTurns = null);
 
 /// <summary>A saved trade route (v43): a player's named ring of stops a carrier hauls along automatically. Omitted entirely when the player has none.</summary>
 /// <param name="Id">Per-player route id.</param>
