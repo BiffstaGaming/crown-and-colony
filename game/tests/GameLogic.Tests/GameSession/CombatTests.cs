@@ -701,6 +701,165 @@ public class CombatTests
             loaded.NativeSettlements.Select(s => s.Id).OrderBy(i => i));
     }
 
+    // ---- Amphibious (ship-to-shore) assault (86d3e4bmp) ----
+
+    private const string VeteranSoldier = "model.unit.veteranSoldier";
+    private const string Caravel = "model.unit.caravel";
+
+    /// <summary>
+    /// A game (amphibious moves optionally enabled), a human <paramref name="attackerType"/> aboard a caravel that sits
+    /// on a water tile beside a land tile, and a rival European <paramref name="defenderType"/> (already at war) standing
+    /// on that land tile — staged for an amphibious assault straight off the ship. The aboard attacker's movement is
+    /// restored (boarding spends it) so it can act.
+    /// </summary>
+    private static (Game game, Unit attacker, Unit ship, Unit defender, Position land) SetupAmphibious(
+        bool amphibiousMoves = true, string attackerType = VeteranSoldier, string? attackerRole = Soldier,
+        string defenderType = FreeColonist, string? defenderRole = null)
+    {
+        Ruleset ruleset = Ruleset.LoadClassic().WithAmphibiousMoves(amphibiousMoves);
+        Game game = Game.New(ruleset, Seed);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        game.SetStance(game.HumanPlayer.PlayerId, power.PlayerId, Stance.War);
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.War);
+
+        bool FreeLand(Position p) =>
+            game.Map.InBounds(p) && !game.Map.TerrainAt(p).IsWater
+            && game.ColonyAt(p) is null && game.NativeSettlementAt(p) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p);
+        bool FreeWater(Position p) =>
+            game.Map.InBounds(p) && game.Map.TerrainAt(p).IsWater
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p);
+
+        // A water tile with a free land neighbour (the assault target) and a second free land neighbour (to spawn +
+        // board the attacker from). The board happens before the soldier is positioned amphibiously.
+        Position water = game.Map.AllPositions().First(w => FreeWater(w)
+            && w.Neighbours().Count(FreeLand) >= 2);
+        Position land = water.Neighbours().First(FreeLand);
+        Position boardFrom = water.Neighbours().First(n => n != land && FreeLand(n));
+
+        Unit ship = game.SpawnUnit(ruleset.Unit(Caravel), water);
+        Unit attacker = game.SpawnUnit(ruleset.Unit(attackerType), boardFrom);
+        if (attackerRole is not null)
+        {
+            attacker.RoleId = attackerRole;
+            attacker.RoleCount = 1;
+        }
+        game.Board(attacker, ship);    // the soldier embarks (its Position now mirrors the ship's water tile)
+        attacker.MovementLeft = attacker.Type.Movement; // boarding spent its move; restore it so it can assault
+
+        Unit defender = game.SpawnUnit(ruleset.Unit(defenderType), land, power.PlayerId);
+        if (defenderRole is not null)
+        {
+            defender.RoleId = defenderRole;
+            defender.RoleCount = 1;
+        }
+        return (game, attacker, ship, defender, land);
+    }
+
+    [Fact]
+    public void CheckAttackAmphibious_AllowedFromALoadedShip_WhenTheOptionIsOn()
+    {
+        (Game game, Unit attacker, Unit ship, _, Position land) = SetupAmphibious();
+        Assert.True(attacker.IsAboard);                  // the soldier is a passenger…
+        Assert.False(attacker.IsOnMap);                  // …so it is NOT itself on the map (it rides the ship)
+        Assert.True(ship.Position.IsAdjacentTo(land));   // the ship sits beside the target land tile
+        Assert.True(game.CheckAttackAmphibious(attacker, land).Allowed);
+    }
+
+    [Fact]
+    public void CheckAttackAmphibious_Refused_WhenTheOptionIsOff()
+    {
+        // FreeCol allowMoveFrom: with model.option.amphibiousMoves off (the classic default) a unit must land first.
+        (Game game, Unit attacker, _, _, Position land) = SetupAmphibious(amphibiousMoves: false);
+        MoveCheck check = game.CheckAttackAmphibious(attacker, land);
+        Assert.False(check.Allowed);
+        Assert.Contains("ashore", check.Reason);
+    }
+
+    [Fact]
+    public void CheckAttackAmphibious_Refused_ForAUnitNotAboardAShip()
+    {
+        // An ordinary on-map unit takes the normal CheckAttack path; the amphibious oracle refuses it.
+        (Game game, Unit onMap, _, _) = SetupAttack(VeteranSoldier, Soldier);
+        Position anywhere = onMap.Position.Neighbours().First(game.Map.InBounds);
+        MoveCheck check = game.CheckAttackAmphibious(onMap, anywhere);
+        Assert.False(check.Allowed);
+        Assert.Contains("aboard a ship", check.Reason);
+    }
+
+    [Fact]
+    public void AmphibiousAssault_AppliesThe75PercentPenalty_FlippingAWinToALoss()
+    {
+        // The −75% amphibious penalty cuts the attacker's offence to a quarter, so a roll picked between the amphibious
+        // and the (un-penalised) land win chance WINS on dry land but LOSES from the ship — proving AttackContext is
+        // amphibious. Computed from the actual base offence so it doesn't hardcode the veteran soldier's numbers.
+        (Game game, Unit attacker, _, Unit defender, Position land) = SetupAmphibious();
+        int defenderId = defender.Id;
+
+        double offence = game.OffenceBase(attacker);          // soldier base offence (type + role)
+        double defence = 1;                                   // a free colonist on open land
+        double landWin = (offence * 1.5) / ((offence * 1.5) + defence);                 // attack-bonus only
+        double amphibiousWin = (offence * 1.5 * 0.25) / ((offence * 1.5 * 0.25) + defence); // + −75%
+        Assert.True(amphibiousWin < landWin);                 // the penalty must lower the odds
+
+        Game.CombatOdds odds = game.CombatOddsAgainst(attacker, land)!; // the on-map (non-amphibious) preview
+        Assert.Equal(landWin, odds.WinProbability, 5);                  // CombatOddsAgainst is NOT amphibious (contrast)
+
+        // A roll strictly between the two win chances: a win on land, a loss amphibiously.
+        double roll = (landWin + amphibiousWin) / 2;
+        CombatResult result = game.AttackAmphibious(attacker, land, new FixedRandom(roll));
+
+        Assert.True(result is CombatResult.Loss or CombatResult.GreatLoss); // beaten back — only the −75% makes this a loss
+        Assert.Contains(game.Units, u => u.Id == defenderId);              // the (unarmed) defender survives on its tile
+    }
+
+    [Fact]
+    public void AmphibiousAssault_ABeatenCapturableDefender_IsSlain_NotCaptured()
+    {
+        // FreeCol gates the capture-unit branch on !combatIsAmphibious: a capturable colonist beaten by an assault
+        // fired straight off a ship is SLAIN, not captured. Contrast the on-map path, which DOES capture it.
+        (Game game, Unit attacker, _, Unit defender, Position land) = SetupAmphibious();
+        int defenderId = defender.Id;
+        Assert.True(defender.Type.CanBeCaptured);            // a free colonist can be captured…
+        int humanUnitsBefore = game.PlayerUnits.Count();
+
+        game.AttackAmphibious(attacker, land, new FixedRandom(0.0)); // force an attacker great-win
+
+        Assert.DoesNotContain(game.Units, u => u.Id == defenderId);  // …but amphibiously it is slain, not captured
+        Assert.Equal(humanUnitsBefore, game.PlayerUnits.Count());    // no captive added to the human's roster
+    }
+
+    [Fact]
+    public void OnMapAttack_ABeatenCapturableDefender_IsCaptured_NotSlain()
+    {
+        // The contrast case: the SAME capturable colonist beaten in an ORDINARY (non-amphibious) attack changes side
+        // (amphibious=false → the capture branch runs), so the slain-not-captured rule above is amphibious-specific.
+        Game game = Game.New(Classic, Seed);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        game.SetStance(game.HumanPlayer.PlayerId, power.PlayerId, Stance.War);
+        game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.War);
+        Position tile = game.Map.AllPositions().First(p => !game.Map.TerrainAt(p).IsWater
+            && game.ColonyAt(p) is null && game.NativeSettlementAt(p) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p)
+            && p.Neighbours().Any(n => game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+                && game.ColonyAt(n) is null && game.NativeSettlementAt(n) is null
+                && !game.Units.Any(u => u.IsOnMap && u.Position == n)));
+        Unit defender = game.SpawnUnit(Classic.Unit(FreeColonist), tile, power.PlayerId);
+        int defenderId = defender.Id;
+        Position spot = tile.Neighbours().First(n => !game.Map.TerrainAt(n).IsWater
+            && game.ColonyAt(n) is null && game.NativeSettlementAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+        Unit attacker = game.SpawnUnit(Classic.Unit(VeteranSoldier), spot);
+        attacker.RoleId = Soldier;
+        attacker.RoleCount = 1;
+
+        game.Attack(attacker, tile, new FixedRandom(0.0)); // force an attacker great-win on dry land
+
+        Unit? captive = game.Units.FirstOrDefault(u => u.Id == defenderId);
+        Assert.NotNull(captive);                                  // it survives…
+        Assert.Equal(game.HumanPlayer.PlayerId, captive!.OwnerId); // …captured: it now belongs to the attacker's side
+    }
+
     // ---- Save round-trip (v18) ----
 
     [Fact]

@@ -2694,6 +2694,135 @@ public sealed partial class Game
         return result;
     }
 
+    /// <summary>
+    /// Whether <paramref name="attacker"/> — a land unit <b>aboard a ship</b> — may launch an <b>amphibious assault</b>
+    /// on the strongest enemy standing on the adjacent land tile <paramref name="target"/>, attacking straight off the
+    /// ship without disembarking first. Gated by FreeCol's <c>Unit.allowMoveFrom</c>: the move from water is only legal
+    /// when the <see cref="GameOptions.AmphibiousMoves"/> game option is on and the attacker is <b>not</b> the Royal
+    /// Expeditionary Force (the REF must land before it fights). The defender must be a land unit on a land tile next to
+    /// the carrier (a ship can't reach a sea defender as an amphibious target — that's ordinary naval combat). The
+    /// −75% amphibious-attack penalty is applied in <see cref="AttackAmphibious(Unit, Position)"/>.
+    /// </summary>
+    public MoveCheck CheckAttackAmphibious(Unit attacker, Position target)
+    {
+        if (!attacker.IsAboard)
+        {
+            return MoveCheck.No("Only a unit aboard a ship can make an amphibious assault.");
+        }
+        if (attacker.Type.IsNaval)
+        {
+            return MoveCheck.No("A ship cannot be carried, and so cannot assault from a carrier.");
+        }
+        if (!Ruleset.GameOptions.AmphibiousMoves || IsRefUnit(attacker))
+        {
+            // FreeCol allowMoveFrom: a move off water needs AMPHIBIOUS_MOVES and a non-REF owner — otherwise land first.
+            return MoveCheck.No("Put the unit ashore before it can attack.");
+        }
+        if (UnitById(attacker.CarrierId!.Value) is not { } carrier || !carrier.IsOnMap)
+        {
+            return MoveCheck.No("The ship must be on the map to assault from it.");
+        }
+        if (!Map.InBounds(target))
+        {
+            return MoveCheck.No("Target is off the map.");
+        }
+        if (!carrier.Position.IsAdjacentTo(target))
+        {
+            return MoveCheck.No("Assault a tile next to the ship.");
+        }
+        if (Map.TerrainAt(target).IsWater)
+        {
+            return MoveCheck.No("An amphibious assault strikes a land tile.");
+        }
+        if (attacker.MovementLeft <= 0)
+        {
+            return MoveCheck.No("No movement left this turn.");
+        }
+        if (OffenceBase(attacker) <= 0)
+        {
+            return MoveCheck.No($"A {attacker.Type.ShortName} has no offensive strength — arm it first.");
+        }
+        if (DefenderAt(attacker, target) is not { } defender)
+        {
+            return MoveCheck.No("There is no enemy to attack there.");
+        }
+        if (defender.Type.IsNaval)
+        {
+            // A naval defender can't stand on the land tile we just required; this guard is belt-and-braces (a ship
+            // sharing a coastal land tile is impossible) — an amphibious target is always a land unit/settlement.
+            return MoveCheck.No("An amphibious assault strikes a land defender.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Resolves an amphibious assault: a land unit aboard a ship attacks the strongest enemy on the adjacent land tile
+    /// <paramref name="target"/> through the pure <see cref="CombatModel"/> with the <b>−75% amphibious-attack
+    /// penalty</b> set (FreeCol <c>model.modifier.amphibiousAttack</c>, applied because the attacker fights from a water
+    /// tile onto land — <c>combatIsAmphibious</c>). The attacker stays aboard the ship the whole time (win or lose; it
+    /// does not disembark). A unit beaten in an amphibious assault is <b>slain, not captured</b> (FreeCol gates the
+    /// capture branch on <c>!combatIsAmphibious</c>) — <see cref="ResolveLoserOutcome"/> is called with
+    /// <c>amphibious: true</c>. Like the on-map <see cref="Attack(Unit, Position)"/> it declares war / spikes tension on
+    /// a rival colonial defender, raises native alarm, and ends the attacker's turn. Uses the game's main saved RNG
+    /// (resume-deterministic).
+    /// </summary>
+    /// <returns>The graded combat result.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAttackAmphibious"/>.</exception>
+    public CombatResult AttackAmphibious(Unit attacker, Position target) => AttackAmphibious(attacker, target, _random);
+
+    /// <summary>The amphibious-assault resolution drawing from an explicit RNG (tests inject a fixed RNG to force a band).</summary>
+    internal CombatResult AttackAmphibious(Unit attacker, Position target, IGameRandom random)
+    {
+        MoveCheck check = CheckAttackAmphibious(attacker, target);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+
+        Unit defender = DefenderAt(attacker, target)!;
+        int attackerId = attacker.Id; // ids survive a promotion/demotion swap; the object reference may not
+        int defenderId = defender.Id;
+        string? defenderNation = defender.OwnerNationId;
+
+        // Assaulting a rival colonial power's unit declares war and spikes tension, both ways (as on-map Attack);
+        // a no-op for native defenders (the alarm system below) and for piracy (a privateer can't be carried, so
+        // the attacker is never a pirate here — but a defender privateer keeps the deniable-raid exception).
+        if (defenderNation is null && !attacker.Type.Piracy && !defender.Type.Piracy)
+        {
+            SetStance(attacker.OwnerId, defender.OwnerId, Stance.War);
+            ChangeTension(attacker.OwnerId, defender.OwnerId, TensionWar);
+        }
+
+        // Offence with the −75% amphibious penalty (Amphibious: true). The defender's terrain/fortify/settlement/etc.
+        // fold through DefencePowerOf, exactly as on-map combat — only the attacker's context differs.
+        double attack = CombatModel.AttackPower(
+            OffenceBase(attacker) * OffenceAgainstNativeFactor(attacker, defender),
+            new AttackContext(Amphibious: true, Movement: MovementPenaltyFor(attacker)),
+            Ruleset.CombatModifiers);
+        double defence = DefencePowerOf(attacker, defender, target);
+
+        attacker.MovementLeft = 0; // the assault ends the attacker's turn (before any promotion/demotion swap)
+
+        CombatResult result = CombatModel.Resolve(CombatModel.WinProbability(attack, defence), random);
+        bool attackerWon = result is CombatResult.GreatWin or CombatResult.Win;
+        bool great = result is CombatResult.GreatWin or CombatResult.GreatLoss;
+        Unit winner = attackerWon ? attacker : defender;
+        Unit loser = attackerWon ? defender : attacker;
+
+        // The slain-not-captured rule: pass amphibious: true so a capturable defender that loses is slain, not taken.
+        ResolveLoserOutcome(winner, loser, great, amphibious: true);
+        ApplyWinnerPromotion(winner, great, random);
+
+        if (defenderNation is not null)
+        {
+            int slaughter = _units.Any(u => u.Id == defenderId) ? 0 : Ruleset.Difficulty.NativeTension.AddUnitDestroyed;
+            bool attackerSlain = !_units.Any(u => u.Id == attackerId);
+            ApplyNativeCombatTension(defenderNation, attacker.OwnerId, DefenderCombatTension(attackerWon, slaughter, attackerSlain));
+        }
+
+        return result;
+    }
+
     /// <summary>The role ability a unit must carry to spy on a rival colony's interior (FreeCol <c>model.ability.spyOnColony</c>, granted by <c>model.role.scout</c>).</summary>
     private const string SpyOnColonyAbility = "model.ability.spyOnColony";
 
@@ -3000,7 +3129,17 @@ public sealed partial class Game
     /// (the winner may capture the equipment to arm itself) and may then be killed/demoted on losing its
     /// last equipment; else a capturable unit changes side; else a demotable type steps down; else it dies.
     /// </summary>
-    private void ResolveLoserOutcome(Unit winner, Unit loser, bool greatLoss)
+    /// <param name="winner">The unit that won the round (captures equipment / takes the captive).</param>
+    /// <param name="loser">The unit that lost the round (disarmed / captured / demoted / slain).</param>
+    /// <param name="greatLoss">True on a decisive loss (a great loss): a defeated ship sinks rather than limps.</param>
+    /// <param name="amphibious">
+    /// True when the combat was an amphibious assault (the attacker struck straight off a ship). FreeCol gates the
+    /// capture-unit branch on <c>!combatIsAmphibious</c> (<c>SimpleCombatModel.resolveAttack</c>): a unit beaten in an
+    /// amphibious assault is <b>slain, not captured</b> — there is no neutral land to march a captive back across. When
+    /// set, the capturable-unit branch (#3) is skipped, so the loser falls through to demotion (#4) or slaughter (#5).
+    /// Defaults to <c>false</c> for the on-the-map attack paths, which are never amphibious.
+    /// </param>
+    private void ResolveLoserOutcome(Unit winner, Unit loser, bool greatLoss, bool amphibious = false)
     {
         // 0. A defeated ship: a naval raider winner first loots what its hold can take (1c-3c), then the ship is
         // damaged and limps to repair (1c-3b) — UNLESS the defeat was decisive (a great loss) or it has nowhere
@@ -3052,11 +3191,12 @@ public sealed partial class Game
             return;
         }
 
-        // 3. A capturable unit changes side (and may downgrade its type on capture). FreeCol also requires
-        // !combatIsAmphibious here (a unit beaten by an assault fired straight off a ship is slain, not captured) —
-        // omitted because we model no amphibious assault yet (CheckAttack requires the attacker be on the map, not
-        // aboard), so this branch is never reached amphibiously. The guard lands with amphibious assault (86d3c9tzv).
-        if (loser.Type.CanBeCaptured && CanCaptureUnits(winner))
+        // 3. A capturable unit changes side (and may downgrade its type on capture) — UNLESS the combat was an
+        // amphibious assault. FreeCol gates this branch on !combatIsAmphibious (SimpleCombatModel.resolveAttack): a unit
+        // beaten in an assault fired straight off a ship is SLAIN, not captured — there's no friendly shore to march a
+        // captive across, so it falls through to demotion (#4) or slaughter (#5). The on-the-map attack paths pass
+        // amphibious=false, so they capture as before (86d3e4bmp).
+        if (!amphibious && loser.Type.CanBeCaptured && CanCaptureUnits(winner))
         {
             CaptureUnit(loser, winner);
             return;

@@ -83,6 +83,16 @@ namespace CrownAndColony.GameLogic.Specification;
 /// simply skipped by the custom-house auto-sell (the player must lift the boycott to resume selling it). Read by
 /// <see cref="GameSession.Game"/>'s custom-house auto-sell (<c>AutoSellExports</c>). See [custom-house], [market].
 /// </param>
+/// <param name="AmphibiousMoves">
+/// Whether a land unit may launch an <b>amphibious assault</b> straight off a ship — attacking an adjacent land
+/// tile/unit/settlement without first disembarking (spec <c>model.option.amphibiousMoves</c>, a <c>booleanOption</c>
+/// in the <c>gameOptions</c> group, classic default <b>false</b>). When this is <b>off</b> (the classic default) a unit
+/// aboard a ship must be put ashore before it can attack — <see cref="GameSession.Game.CheckAttackAmphibious"/> refuses
+/// it. When <b>on</b>, a non-REF unit aboard a ship may assault directly, paying the −75% amphibious-attack penalty and
+/// being slain-not-captured if it loses (FreeCol <c>Unit.allowMoveFrom</c>: <c>from.isLand() || (!owner.isREF() &amp;&amp;
+/// AMPHIBIOUS_MOVES)</c>). The REF is excluded even when the option is on, matching FreeCol. Read by
+/// <see cref="GameSession.Game.CheckAttackAmphibious"/>. See [combat].
+/// </param>
 public sealed record GameOptions(
     int InitialImmigration,
     int EuropeanUnitImmigrationPenalty,
@@ -92,13 +102,15 @@ public sealed record GameOptions(
     int IndependenceTurn,
     int PeaceProbability,
     bool FogOfWar,
-    bool CustomIgnoreBoycott)
+    bool CustomIgnoreBoycott,
+    bool AmphibiousMoves)
 {
     /// <summary>
     /// The classic ruleset's <c>gameOptions</c> values — the fallback when a spec omits an option, and the source of
     /// truth for the default game's base numbers: the immigration trio (15 / −4 / +2), the
     /// <c>gameOptions.years</c> gate cluster (mandatoryColonyYear 1600 / lastColonialYear 1800 / independenceTurn 468),
-    /// the peace-hold base (peaceProbability 90), fog of war (on), and custom-house boycott smuggling (on).
+    /// the peace-hold base (peaceProbability 90), fog of war (on), custom-house boycott smuggling (on), and
+    /// amphibious moves (off — the classic spec defaults <c>model.option.amphibiousMoves</c> to <c>false</c>).
     /// </summary>
     public static readonly GameOptions ClassicDefaults = new(
         InitialImmigration: 15,
@@ -109,7 +121,8 @@ public sealed record GameOptions(
         IndependenceTurn: 468,
         PeaceProbability: 90,
         FogOfWar: true,
-        CustomIgnoreBoycott: true);
+        CustomIgnoreBoycott: true,
+        AmphibiousMoves: false);
 
     /// <summary>
     /// The peace-hold base as a 0–1 multiplier (FreeCol <c>Specification.getPercentageMultiplier</c> =

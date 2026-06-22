@@ -613,6 +613,21 @@ public partial class GameController : Node2D
             }
         }
 
+        // Amphibious assault: a selected carrier with an armed passenger clicks an adjacent enemy-held land tile →
+        // the passenger assaults straight off the ship (the −75% amphibious penalty applies). Takes priority over
+        // disembark below, which only puts a unit onto an EMPTY tile (an enemy holds this one). Gated on the
+        // amphibiousMoves option + a non-REF passenger via CheckAttackAmphibious.
+        if (_selectedUnit is { IsOnMap: true } assaultShip && assaultShip.Type.IsCarrier)
+        {
+            Unit? marine = _game.Passengers(assaultShip).FirstOrDefault(p => _game.CheckAttackAmphibious(p, tile).Allowed);
+            if (marine is not null)
+            {
+                AmphibiousAssaultFrom(marine, tile);
+                RefreshView();
+                return;
+            }
+        }
+
         // Disembark: a selected carrier with passengers clicks an adjacent land tile → put a passenger ashore.
         if (_selectedUnit is { IsOnMap: true } carrier && carrier.Type.IsCarrier)
         {
@@ -740,6 +755,26 @@ public partial class GameController : Node2D
         CombatAnimationKind kind = CombatAnimationMap.KindFor(result);
         Texture2D? texture = UnitMarker.ResolveTexture(typeShortName, roleShortName);
         CombatAnimation.Play(_unitLayer, from, defenderTile, kind, texture);
+    }
+
+    /// <summary>
+    /// Resolves an amphibious assault: <paramref name="marine"/> attacks the enemy on the adjacent land tile straight
+    /// off its ship (the −75% amphibious penalty applies; a beaten capturable defender is slain, not captured), reports
+    /// the outcome, and plays the combat cue/animation. The marine stays aboard the ship throughout; the assault ends
+    /// its turn. Selection is cleared (the marine spent its move and may have been demoted/destroyed on a loss).
+    /// </summary>
+    private void AmphibiousAssaultFrom(Unit marine, Position tile)
+    {
+        string who = marine.Type.ShortName;
+        string roleShortName = marine.RoleId[(marine.RoleId.LastIndexOf('.') + 1)..];
+        Position from = marine.Position; // the ship's water tile — the lunge animates from there
+        CombatResult result = _game.AttackAmphibious(marine, tile);
+        _selectedUnit = null; // the assault ends the marine's turn (and may demote/destroy it on a loss)
+        _notice = result is CombatResult.GreatWin or CombatResult.Win
+            ? $"Your {who} stormed ashore and won the battle."
+            : $"Your {who}'s landing was beaten back.";
+        PlaySound(SoundEvent.Combat);
+        PlayCombatAnimation(from, tile, result, who, roleShortName);
     }
 
     /// <summary>Assaults an ungarrisoned rival colony on an adjacent tile to capture it, reporting the outcome.</summary>

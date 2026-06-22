@@ -218,4 +218,13 @@ public class CombatModelTests
         Assert.Equal(0, CombatModel.DefencePower(8, new DefenceContext(GoodsCarried: 8)), 5);             // full hold → floored at 0
         Assert.Equal(8, CombatModel.DefencePower(8, new DefenceContext(GoodsCarried: 0)), 5);             // empty → no penalty
     }
+
+    [Fact]
+    public void AmphibiousAttack_CutsOffenceBy75Percent_OnTopOfTheAttackBonus()
+    {
+        // FreeCol model.modifier.amphibiousAttack (−75%): a unit striking straight off a ship attacks at a quarter
+        // strength — after the standing +50% attack bonus, so base 4 → 4 × 1.5 × 0.25 = 1.5 (vs 6 for a normal attack).
+        Assert.Equal(4 * 1.5 * 0.25, CombatModel.AttackPower(4, new AttackContext(Amphibious: true)), 5);
+        Assert.Equal(4 * 1.5, CombatModel.AttackPower(4, new AttackContext()), 5); // the same attacker on dry land
+    }
 }

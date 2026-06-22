@@ -155,6 +155,37 @@ public class GameOptionsTests
     }
 
     [Fact]
+    public void ParseGameOptions_ReadsTheAmphibiousMovesBoolean_ByItsOwnId()
+    {
+        // amphibiousMoves is a booleanOption (FreeCol's ship-to-shore-assault gate): a non-default value (true) proves
+        // it is read by id, not falling back to the classic default (false).
+        XElement root = XElement.Parse(
+            "<freecol-specification><optionGroup id='gameOptions'>" +
+            "  <booleanOption id='model.option.amphibiousMoves' value='true' />" +
+            "</optionGroup></freecol-specification>");
+        Assert.True(Ruleset.ParseGameOptions(root).AmphibiousMoves);
+    }
+
+    [Fact]
+    public void ClassicRuleset_DefaultsAmphibiousMovesToOff()
+    {
+        // Pinned against the classic specification.xml: model.option.amphibiousMoves defaultValue='false', so the
+        // default game does not offer the amphibious-assault action (a unit must disembark before it can attack).
+        Assert.False(Ruleset.LoadClassic().GameOptions.AmphibiousMoves);
+        Assert.False(GameOptions.ClassicDefaults.AmphibiousMoves);
+    }
+
+    [Fact]
+    public void WithAmphibiousMoves_OverridesTheOption_ButOtherwiseLeavesTheBundleIntact()
+    {
+        // The New-Game seam flips just the one toggle (a configuration override, not a rules change), leaving every
+        // other gameOption at its classic value — mirroring WithFogOfWar / WithCustomIgnoreBoycott.
+        Ruleset ruleset = Ruleset.LoadClassic().WithAmphibiousMoves(true);
+        Assert.True(ruleset.GameOptions.AmphibiousMoves);
+        Assert.Equal(GameOptions.ClassicDefaults with { AmphibiousMoves = true }, ruleset.GameOptions);
+    }
+
+    [Fact]
     public void ClassicDefaults_MatchTheParsedClassicGroup()
     {
         // Guards the duplication: the hardcoded ClassicDefaults fallback must equal the spec's gameOptions group, so a

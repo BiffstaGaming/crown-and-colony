@@ -426,6 +426,72 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task SelectingALoadedShip_AndClickingAnAdjacentEnemy_AmphibiouslyAssaultsIt()
+    {
+        // 86d3e4bmp: with the amphibiousMoves option on, selecting a carrier and clicking an adjacent enemy-held land
+        // tile fires an amphibious assault straight off the ship (the armed passenger never disembarks). Staged through
+        // the save layer (the presentation project can't set CarrierId / OwnerId / stance / the option directly): a
+        // human caravel on water beside a land tile, a veteran soldier aboard it (full movement), and a rival colonist
+        // on the land tile, the two at war. Restoring with WithAmphibiousMoves(true) turns the action on.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+
+        // A water tile with two free land neighbours: one to assault, one only to keep the scan deterministic.
+        Position water = game.Map.AllPositions().First(w => game.Map.TerrainAt(w).IsWater
+            && !game.Units.Any(u => u.IsOnMap && u.Position == w)
+            && w.Neighbours().Count(n => game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+                && game.ColonyAt(n) is null && game.NativeSettlementAt(n) is null
+                && !game.Units.Any(u => u.IsOnMap && u.Position == n)) >= 1);
+        Position land = water.Neighbours().First(n => game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.ColonyAt(n) is null && game.NativeSettlementAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+
+        SaveGame save = SaveGame.From(game);
+        SavedPlayer rival = save.Players!.First(p => !p.IsHuman && p.PlayerType == (int)PlayerType.Colonial);
+        int shipId = game.Units.Max(u => u.Id) + 1;
+        int marineId = shipId + 1;
+        int defenderId = shipId + 2;
+        int caravelMove = game.Ruleset.Unit("model.unit.caravel").Movement;
+        int marineMove = game.Ruleset.Unit("model.unit.veteranSoldier").Movement;
+        var staged = new List<SavedUnit>
+        {
+            new(shipId, "model.unit.caravel", water.X, water.Y, caravelMove, OwnerId: humanId),
+            // The marine rides the ship (CarrierId = shipId): aboard, with full movement so it can assault.
+            new(marineId, "model.unit.veteranSoldier", water.X, water.Y, marineMove,
+                CarrierId: shipId, OwnerId: humanId, Role: "model.role.soldier", RoleCount: 1),
+            new(defenderId, "model.unit.freeColonist", land.X, land.Y, 1, OwnerId: rival.PlayerId),
+        };
+        List<SavedPlayer> players = save.Players!.Select(p =>
+            p.PlayerId == rival.PlayerId ? p with { Stances = WithWar(p.Stances, humanId) }
+            : p.PlayerId == humanId ? p with { Stances = WithWar(p.Stances, rival.PlayerId) }
+            : p).ToList();
+        Game injected = (save with { Units = save.Units.Concat(staged).ToList(), Players = players })
+            .Restore(game.Ruleset.WithAmphibiousMoves(true));
+        SetGame(controller, injected);
+
+        // Sanity: the marine is aboard the ship with movement, and the engine offers the amphibious assault.
+        Unit marine = injected.Units.First(u => u.Id == marineId);
+        AssertThat(marine.IsAboard).IsTrue();
+        AssertThat(marine.MovementLeft).IsGreater(0);
+        AssertThat(injected.CheckAttackAmphibious(marine, land).Allowed).IsTrue();
+
+        // Select the ship, then click the adjacent enemy land tile → the marine assaults straight off the ship.
+        await ClickTile(runner, controller, water);
+        await ClickTile(runner, controller, land);
+
+        // The assault resolved: the marine spent its turn (0 movement) and is STILL ABOARD (it never disembarked),
+        // unless it was destroyed on the loss. A rejected action would have left it with full movement.
+        Unit? after = injected.Units.FirstOrDefault(u => u.Id == marineId);
+        AssertThat(after == null || (after.MovementLeft == 0 && after.IsAboard)).IsTrue();
+        // And the marine is NOT standing on the land tile (an amphibious assault does not put it ashore).
+        AssertThat(injected.Units.Any(u => u.Id == marineId && u.IsOnMap && u.Position == land)).IsFalse();
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task NativeRaid_DuringEndTurn_ShowsANoticeInTheStatusBar()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

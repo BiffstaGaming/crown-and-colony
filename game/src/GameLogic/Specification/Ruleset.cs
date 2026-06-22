@@ -372,6 +372,24 @@ public sealed class Ruleset
         return this;
     }
 
+    /// <summary>
+    /// Returns this ruleset with the <b>amphibious-moves</b> game option (<see cref="GameOptions.AmphibiousMoves"/>)
+    /// overridden — FreeCol's <c>model.option.amphibiousMoves</c>. Like <see cref="WithFogOfWar"/> /
+    /// <see cref="WithCustomIgnoreBoycott"/> this is a <b>configuration</b> seam, not a rules change: it only flips
+    /// whether a land unit may assault straight off a ship (<see cref="GameSession.Game.CheckAttackAmphibious"/>) or
+    /// must disembark first. Each loaded ruleset is a fresh parse (never cached/shared — <see cref="LoadEmbedded"/>),
+    /// so replacing the bundle on the just-loaded instance is safe; the method returns <c>this</c> for a fluent call
+    /// right after load. Passing the parsed default (classic <b>false</b>) leaves the ruleset byte-identical, so a
+    /// default new game is unchanged (ADR-009). Not persisted in the save — a reloaded game re-derives the option from
+    /// its variant's spec default (matching the victory-condition / fog-of-war / boycott seams).
+    /// </summary>
+    /// <param name="amphibiousMoves">Whether a land unit may launch an amphibious assault off a ship (classic <b>off</b>).</param>
+    public Ruleset WithAmphibiousMoves(bool amphibiousMoves)
+    {
+        GameOptions = GameOptions with { AmphibiousMoves = amphibiousMoves };
+        return this;
+    }
+
     /// <summary>All terrain types, in specification order.</summary>
     public IReadOnlyList<TerrainType> TerrainTypes { get; }
 
@@ -1065,8 +1083,9 @@ public sealed class Ruleset
     /// (<c>model.option.initialImmigration</c> / <c>europeanUnitImmigrationPenalty</c> / <c>playerImmigrationBonus</c>),
     /// the <c>gameOptions.years</c> year/turn-gate cluster (<c>model.option.mandatoryColonyYear</c> /
     /// <c>lastColonialYear</c> / <c>independenceTurn</c>), the peace-hold base (<c>model.option.peaceProbability</c>),
-    /// the <c>fogOfWar</c> toggle (<c>model.option.fogOfWar</c>, a boolean), and the custom-house boycott-smuggling
-    /// toggle (<c>model.option.customIgnoreBoycott</c>, a boolean, classic <b>true</b>). Unlike <see cref="ParseDifficulty"/>,
+    /// the <c>fogOfWar</c> toggle (<c>model.option.fogOfWar</c>, a boolean), the custom-house boycott-smuggling
+    /// toggle (<c>model.option.customIgnoreBoycott</c>, a boolean, classic <b>true</b>), and the amphibious-moves
+    /// toggle (<c>model.option.amphibiousMoves</c>, a boolean, classic <b>false</b>). Unlike <see cref="ParseDifficulty"/>,
     /// these are not restated per level, so each is a plain document-wide option lookup (its <c>value</c>, else
     /// <c>defaultValue</c>); a missing option falls back to its classic value in
     /// <see cref="GameOptions.ClassicDefaults"/>, so the default
@@ -1091,7 +1110,9 @@ public sealed class Ruleset
             FogOfWar: ParseBooleanOption(
                 root, "model.option.fogOfWar", GameOptions.ClassicDefaults.FogOfWar),
             CustomIgnoreBoycott: ParseBooleanOption(
-                root, "model.option.customIgnoreBoycott", GameOptions.ClassicDefaults.CustomIgnoreBoycott));
+                root, "model.option.customIgnoreBoycott", GameOptions.ClassicDefaults.CustomIgnoreBoycott),
+            AmphibiousMoves: ParseBooleanOption(
+                root, "model.option.amphibiousMoves", GameOptions.ClassicDefaults.AmphibiousMoves));
 
     /// <summary>
     /// Parses the colony/production scalar constants into <see cref="Specification.ColonyConstants"/>. Each source is
