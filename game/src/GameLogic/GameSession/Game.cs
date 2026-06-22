@@ -1120,7 +1120,7 @@ public sealed partial class Game
         Map.ClaimFromNatives(tile);
         foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == nation))
         {
-            ChangeNativeAlarm(settlement, Ruleset.Difficulty.NativeTension.LandTaken); // FreeCol TENSION_ADD_LAND_TAKEN, nation-wide (ownership is tracked per nation)
+            ChangeNativeAlarm(settlement, player.PlayerId, Ruleset.Difficulty.NativeTension.LandTaken); // FreeCol TENSION_ADD_LAND_TAKEN toward the robber, nation-wide (ownership is tracked per nation)
         }
     }
 
@@ -1222,22 +1222,80 @@ public sealed partial class Game
     private static readonly string[] SkillLearnerTypeIds =
         ["model.unit.freeColonist", "model.unit.indenturedServant"];
 
-    /// <summary>
-    /// Changes a native settlement's alarm toward the player, clamped to [0, <c>Ruleset.Difficulty.NativeTension.MaxAlarm</c>]
-    /// (the data-overridable alarm ceiling, classic 1000). The mutation point hostile acts (combat, taking land) call
-    /// (FreeCol <c>csModifyAlarm</c>).
-    /// </summary>
-    public void ChangeNativeAlarm(NativeSettlement settlement, int delta) =>
-        settlement.Alarm = Math.Clamp(settlement.Alarm + delta, 0, Ruleset.Difficulty.NativeTension.MaxAlarm);
+    /// <summary>Player id of the human — channel 0 of a settlement's per-player alarm map (the migrated single scalar).</summary>
+    private const int HumanAlarmChannel = 0;
 
     /// <summary>
-    /// The hostility band of <paramref name="settlement"/> against the <b>data-overridable</b> band limits
-    /// (<c>Ruleset.Difficulty.NativeTension</c>) — the rules-engine form, so a variant's retuned Happy/Content/Displeased/Angry
-    /// thresholds drive every gameplay gate. Equivalent to the classic <see cref="NativeSettlement.AlarmLevel"/> property
-    /// for the default ruleset (byte-identical), which the presentation layer reads.
+    /// Changes a native settlement's alarm toward the <b>human</b> (channel <see cref="HumanAlarmChannel"/>), clamped to
+    /// [0, <c>Ruleset.Difficulty.NativeTension.MaxAlarm</c>]. The human-centric overload of
+    /// <see cref="ChangeNativeAlarm(NativeSettlement, int, int)"/>, kept for the per-turn ambient/decay path, the raid AI,
+    /// and tests — all of which are human-centric today (FreeCol <c>csModifyAlarm</c>).
+    /// </summary>
+    public void ChangeNativeAlarm(NativeSettlement settlement, int delta) =>
+        ChangeNativeAlarm(settlement, HumanAlarmChannel, delta);
+
+    /// <summary>
+    /// Changes <paramref name="settlement"/>'s alarm toward the player with <paramref name="playerId"/> by
+    /// <paramref name="delta"/>, clamped to [0, <c>Ruleset.Difficulty.NativeTension.MaxAlarm</c>] (the data-overridable
+    /// alarm ceiling, classic 1000), then refreshes its <see cref="NativeSettlement.MostHated"/>. The single mutation
+    /// point hostile (or appeasing) acts call, keyed on the <b>acting player's</b> perspective — so a settlement can be
+    /// friendly to one power and hostile to another (FreeCol <c>IndianSettlement.setAlarm(Player, Tension)</c> /
+    /// <c>ServerIndianSettlement.changeAlarm</c>). ADR-009: never perturbs a player's channel but the acting one's, so
+    /// an AI power's provocation leaves the human's channel 0 untouched.
+    /// </summary>
+    /// <param name="settlement">The settlement whose alarm changes.</param>
+    /// <param name="playerId">The colonial player whose channel changes (the human is <see cref="HumanAlarmChannel"/>).</param>
+    /// <param name="delta">The signed amount to add (clamped into range afterwards).</param>
+    public void ChangeNativeAlarm(NativeSettlement settlement, int playerId, int delta)
+    {
+        settlement.SetAlarm(playerId, Math.Clamp(settlement.AlarmFor(playerId) + delta, 0, Ruleset.Difficulty.NativeTension.MaxAlarm));
+        UpdateMostHated(settlement);
+    }
+
+    /// <summary>
+    /// Recomputes <paramref name="settlement"/>'s <see cref="NativeSettlement.MostHated"/> (FreeCol
+    /// <c>ServerIndianSettlement.updateMostHated</c>): the live <b>colonial</b> player whose alarm band is not Happy and
+    /// is the highest; <c>null</c> if every channel is Happy/absent. Ties break to the lowest player id (deterministic).
+    /// Cheap and RNG-free; called after every alarm change.
+    /// </summary>
+    private void UpdateMostHated(NativeSettlement settlement)
+    {
+        NativeTensionOptions tension = Ruleset.Difficulty.NativeTension;
+        int? hated = null;
+        int hatedAlarm = 0;
+        foreach (Player p in _players.Where(p => p.PlayerType == PlayerType.Colonial))
+        {
+            int alarm = settlement.AlarmFor(p.PlayerId);
+            if (settlement.AlarmLevelFor(p.PlayerId, tension) == AlarmLevel.Happy)
+            {
+                continue; // FreeCol skips Happy channels — not "hated"
+            }
+            if (hated is null || alarm > hatedAlarm)
+            {
+                hated = p.PlayerId;
+                hatedAlarm = alarm;
+            }
+        }
+        settlement.MostHated = hated;
+    }
+
+    /// <summary>
+    /// The hostility band of <paramref name="settlement"/> toward the <b>human</b> against the <b>data-overridable</b>
+    /// band limits (<c>Ruleset.Difficulty.NativeTension</c>). The human-centric overload of
+    /// <see cref="AlarmLevelOf(NativeSettlement, int)"/> — the raid AI and the human's interaction gates read it.
+    /// Equivalent to the classic <see cref="NativeSettlement.AlarmLevel"/> property for the default ruleset.
     /// </summary>
     private AlarmLevel AlarmLevelOf(NativeSettlement settlement) =>
-        settlement.AlarmLevelFor(Ruleset.Difficulty.NativeTension);
+        AlarmLevelOf(settlement, HumanAlarmChannel);
+
+    /// <summary>
+    /// The hostility band of <paramref name="settlement"/> toward the player with <paramref name="playerId"/> against the
+    /// <b>data-overridable</b> band limits (<c>Ruleset.Difficulty.NativeTension</c>) — the per-player rules-engine form,
+    /// so a variant's retuned Happy/Content/Displeased/Angry thresholds drive every gameplay gate and a settlement can
+    /// gate differently for different powers.
+    /// </summary>
+    private AlarmLevel AlarmLevelOf(NativeSettlement settlement, int playerId) =>
+        settlement.AlarmLevelFor(playerId, Ruleset.Difficulty.NativeTension);
 
     /// <summary>Whether <paramref name="unit"/> may speak with <paramref name="settlement"/>'s chief now.</summary>
     public MoveCheck CheckVisit(Unit unit, NativeSettlement settlement)
@@ -1414,7 +1472,7 @@ public sealed partial class Game
     /// </summary>
     private bool InstallMission(Player player, Unit unit, NativeSettlement settlement)
     {
-        if (AlarmLevelOf(settlement) >= AlarmLevel.Angry)
+        if (AlarmLevelOf(settlement, player.PlayerId) >= AlarmLevel.Angry)
         {
             _units.Remove(unit); // an Angry/Hateful tribe kills the missionary (FreeCol csRemove)
             return false;
@@ -1423,7 +1481,7 @@ public sealed partial class Game
         settlement.MissionOwnerId = player.PlayerId;
         settlement.MissionIsExpert = unit.Type.Id == Ruleset.Role(unit.RoleId).ExpertUnit; // jesuit (the role's expert unit) vs ordinary colonist
         settlement.ConvertProgress = 0; // a fresh mission (or one taken from a rival) starts its convert accrual from zero
-        ChangeNativeAlarm(settlement, -AlarmNewMissionary); // a new mission eases tension (FreeCol ALARM_NEW_MISSIONARY −100, clamped at 0)
+        ChangeNativeAlarm(settlement, player.PlayerId, -AlarmNewMissionary); // a new mission eases tension toward this player (FreeCol ALARM_NEW_MISSIONARY −100, clamped at 0)
         RevealAround(player, settlement.Position, LineOfSightOf(unit)); // missionary line-of-sight reveal
         _units.Remove(unit); // the missionary is installed as the settlement's resident, not left on the map
         return true;
@@ -1519,7 +1577,9 @@ public sealed partial class Game
             // Father Jean de Brébeuf makes every one of the owner's missionaries count as an expert jesuit.
             bool expert = settlement.MissionIsExpert || HasAbilityFor(owner, ExpertMissionaryAbility);
             int skill = expert ? JesuitConversionSkill : 0;
-            int alarm = Math.Min(settlement.Alarm, Ruleset.Difficulty.NativeTension.MaxAlarm);
+            // The conversion rate scales by the settlement's alarm toward the MISSION OWNER (a friendlier tribe converts
+            // faster for that power). For a human-only game this is channel 0 — byte-identical to the old single scalar.
+            int alarm = Math.Min(settlement.AlarmFor(owner.PlayerId), Ruleset.Difficulty.NativeTension.MaxAlarm);
             settlement.ConvertProgress += (skill + ConversionSkillBonus) + alarm * ConversionAlarmRatePercent / 100;
 
             int threshold = Ruleset.Settlement(settlement.SettlementTypeId).ConvertThreshold;
@@ -1540,7 +1600,7 @@ public sealed partial class Game
     {
         RevealAround(player, settlement.Position, Ruleset.Difficulty.NativeTension.TalesRevealRadius); // tales of nearby lands
         int gift = 0;
-        if (AlarmLevelOf(settlement) != AlarmLevel.Hateful)
+        if (AlarmLevelOf(settlement, player.PlayerId) != AlarmLevel.Hateful)
         {
             NativeTensionOptions tension = Ruleset.Difficulty.NativeTension;
             gift = random.Next(tension.GiftMinimum, tension.GiftMaximum + 1); // the visitor's own stream (the human is 0)
@@ -1561,7 +1621,7 @@ public sealed partial class Game
     private int ScoutSpeakToChief(Player player, Unit unit, NativeSettlement settlement, IGameRandom random)
     {
         // Hateful natives kill the scout outright.
-        if (AlarmLevelOf(settlement) == AlarmLevel.Hateful)
+        if (AlarmLevelOf(settlement, player.PlayerId) == AlarmLevel.Hateful)
         {
             _units.Remove(unit);
             return 0;
@@ -1639,7 +1699,7 @@ public sealed partial class Game
         {
             return MoveCheck.No($"A {unit.Type.ShortName} cannot learn a new skill here.");
         }
-        if (AlarmLevelOf(settlement) >= AlarmLevel.Angry)
+        if (AlarmLevelOf(settlement, unit.OwnerId) >= AlarmLevel.Angry)
         {
             return MoveCheck.No("The settlement is too hostile to teach you.");
         }
@@ -1711,7 +1771,7 @@ public sealed partial class Game
         {
             return MoveCheck.No("The ship must be next to the settlement to trade.");
         }
-        if (AlarmLevelOf(settlement) >= AlarmLevel.Angry)
+        if (AlarmLevelOf(settlement, ship.OwnerId) >= AlarmLevel.Angry)
         {
             return MoveCheck.No("The settlement is too hostile to trade.");
         }
@@ -1749,7 +1809,7 @@ public sealed partial class Game
         int price = check.Cost;
         ship.AddCargo(goodsId, -amount);
         player.Gold += price; // natives pay in gold; no European market tax
-        ChangeNativeAlarm(settlement, -Math.Max(1, price / 50)); // goodwill (FreeCol ALARM_BONUS_SELL ≈ 20% → price/50; min 1 per trade)
+        ChangeNativeAlarm(settlement, player.PlayerId, -Math.Max(1, price / 50)); // goodwill toward this trader (FreeCol ALARM_BONUS_SELL ≈ 20% → price/50; min 1 per trade)
         ship.MovementLeft = 0; // opening a trade session ends the ship's turn
         return price;
     }
@@ -1949,11 +2009,16 @@ public sealed partial class Game
             .FirstOrDefault();
 
     /// <summary>
-    /// Applies a combat tension change (FreeCol <c>defenderTension</c>) to every settlement of a native
-    /// nation — its alarm toward the player (positive after a European win, negative after a repelled
-    /// attack). FreeCol propagates the full delta to all the nation's settlements (<c>csModifyTension</c>).
+    /// Applies a combat tension change (FreeCol <c>defenderTension</c>) to every settlement of a native nation — its
+    /// alarm <b>toward the colonial combatant</b> with <paramref name="playerId"/> (positive after a European win,
+    /// negative after a repelled attack). FreeCol propagates the full delta to all the nation's settlements
+    /// (<c>csModifyTension</c>), keyed on the offending player — so two powers warring with the same tribe build
+    /// independent alarm.
     /// </summary>
-    private void ApplyNativeCombatTension(string nationTypeId, int defenderTension)
+    /// <param name="nationTypeId">The defending native nation whose settlements take the tension.</param>
+    /// <param name="playerId">The colonial player the tension is directed at (the attacker's owner).</param>
+    /// <param name="defenderTension">The signed tension delta (a no-op when 0).</param>
+    private void ApplyNativeCombatTension(string nationTypeId, int playerId, int defenderTension)
     {
         if (defenderTension == 0)
         {
@@ -1963,7 +2028,7 @@ public sealed partial class Game
         // per-turn ambient proximity alarm — see ApplyAmbientNativeAlarm.
         foreach (NativeSettlement s in _nativeSettlements.Where(s => s.NationTypeId == nationTypeId))
         {
-            ChangeNativeAlarm(s, defenderTension);
+            ChangeNativeAlarm(s, playerId, defenderTension);
         }
     }
 
@@ -2281,7 +2346,7 @@ public sealed partial class Game
         {
             int slaughter = _units.Any(u => u.Id == defenderId) ? 0 : Ruleset.Difficulty.NativeTension.AddUnitDestroyed;
             bool attackerSlain = !_units.Any(u => u.Id == attackerId);
-            ApplyNativeCombatTension(defenderNation, DefenderCombatTension(attackerWon, slaughter, attackerSlain));
+            ApplyNativeCombatTension(defenderNation, attacker.OwnerId, DefenderCombatTension(attackerWon, slaughter, attackerSlain));
         }
 
         return result;
@@ -2398,27 +2463,30 @@ public sealed partial class Game
             NativeTensionOptions t = Ruleset.Difficulty.NativeTension;
             if (capital)
             {
-                // Burning a native capital makes the nation surrender — its surviving settlements drop to peace.
+                // Burning a native capital makes the nation surrender to the attacker — its surviving settlements drop
+                // their alarm TOWARD THE ATTACKER to peace (FreeCol Tension.SURRENDERED). Other powers' channels are
+                // untouched — a tribe the human conquers stays hostile to whoever else it was angry at.
                 foreach (NativeSettlement s in _nativeSettlements.Where(s => s.NationTypeId == nation))
                 {
-                    s.Alarm = t.Surrendered;
+                    s.SetAlarm(attacker.OwnerId, t.Surrendered);
+                    UpdateMostHated(s);
                 }
             }
             else
             {
                 // In-settlement defender slaughtered (+500) + the settlement destroyed (+300 MAJOR) + a
-                // minor insult (+100) = +900, propagated to the nation's surviving settlements.
-                ApplyNativeCombatTension(nation, t.AddSettlementAttacked + t.AddMajor + t.AddMinor);
+                // minor insult (+100) = +900, propagated to the nation's surviving settlements (toward the attacker).
+                ApplyNativeCombatTension(nation, attacker.OwnerId, t.AddSettlementAttacked + t.AddMajor + t.AddMinor);
             }
         }
         else
         {
             // The attacker loses to the garrison: disarm/demote/destroy it via the shared precedence.
-            // A repelled assault lowers the nation's alarm (the natives prevailed) — across all its settlements.
+            // A repelled assault lowers the nation's alarm toward the attacker (the natives prevailed) — across all its settlements.
             // (The attacker is a land unit here, so the naval damage/sink branch never applies.)
             ResolveLoserOutcome(defender, attacker, great);
             bool attackerSlain = !_units.Any(u => u.Id == attackerId);
-            ApplyNativeCombatTension(nation, DefenderCombatTension(attackerWon: false, slaughterTension: 0, attackerSlain));
+            ApplyNativeCombatTension(nation, attacker.OwnerId, DefenderCombatTension(attackerWon: false, slaughterTension: 0, attackerSlain));
         }
         return result;
     }
@@ -5700,7 +5768,7 @@ public sealed partial class Game
                 SpawnTreasureTrain(target, unit.OwnerId, random.Next(RumourDifficultyDx * 600) + (RumourDifficultyDx * 300));
                 break;
             case LostCityRumourType.BurialGround:
-                ApplyBurialGround(target); // the owning nation turns hateful
+                ApplyBurialGround(target, unit.OwnerId); // the owning nation turns hateful toward the desecrator
                 break;
             case LostCityRumourType.Nothing:
             default:
@@ -5777,12 +5845,15 @@ public sealed partial class Game
     internal void DeclineMounds(Position target) => Map.RemoveRumour(target);
 
     /// <summary>
-    /// A desecrated burial ground (FreeCol <c>csNativeBurialGround</c>): the natives who own the tile turn hateful.
-    /// FreeCol sets the nation's tension to HATEFUL and forces war; we have no native-vs-colonial stance model, so we
-    /// raise every settlement of the owning nation to maximum alarm — the nation-wide hostility analogue used by the
-    /// other land-grievance acts (cf. <c>ClaimLandByStealing</c>). No gold or unit change.
+    /// A desecrated burial ground (FreeCol <c>csNativeBurialGround</c>): the natives who own the tile turn hateful
+    /// <b>toward the desecrating player</b> (<paramref name="playerId"/>). FreeCol sets the nation's tension to HATEFUL
+    /// and forces war; we have no native-vs-colonial stance model, so we raise every settlement of the owning nation to
+    /// maximum alarm toward that power — the nation-wide hostility analogue used by the other land-grievance acts (cf.
+    /// <c>ClaimLandByStealing</c>). No gold or unit change.
     /// </summary>
-    private void ApplyBurialGround(Position target)
+    /// <param name="target">The desecrated tile (its native owner's settlements turn hateful).</param>
+    /// <param name="playerId">The player who desecrated the ground.</param>
+    private void ApplyBurialGround(Position target, int playerId)
     {
         if (Map.NativeOwnerOf(target) is not { } nation)
         {
@@ -5790,7 +5861,7 @@ public sealed partial class Game
         }
         foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == nation))
         {
-            ChangeNativeAlarm(settlement, Ruleset.Difficulty.NativeTension.MaxAlarm); // clamps to max (hateful)
+            ChangeNativeAlarm(settlement, playerId, Ruleset.Difficulty.NativeTension.MaxAlarm); // clamps to max (hateful)
         }
     }
 
@@ -8556,7 +8627,7 @@ public sealed partial class Game
     /// Returns 0 (a refusal) when on cooldown (<c>lastTribute + 5 ≥ year</c>) or the settlement type has no gift range —
     /// matching FreeCol's "no tribute" branches. <c>internal</c> so the band rule can be unit-tested directly (ADR-006).
     /// </summary>
-    internal int EvaluateTributeDemand(NativeSettlement settlement, IGameRandom random)
+    internal int EvaluateTributeDemand(NativeSettlement settlement, int playerId, IGameRandom random)
     {
         // FreeCol gates on the actual game year (lastTribute + 5 < year); a settlement never demanded of has a
         // lastTribute far in the past and always passes. We track the turn number (1-based), so a fresh settlement
@@ -8565,7 +8636,8 @@ public sealed partial class Game
         {
             return 0; // recently demanded of — nothing this time (FreeCol cooldown), no RNG drawn
         }
-        int divisor = AlarmLevelOf(settlement) switch
+        // The settlement weighs the demand by its alarm TOWARD THE DEMANDER (a tribe friendly to this power pays more).
+        int divisor = AlarmLevelOf(settlement, playerId) switch
         {
             AlarmLevel.Happy or AlarmLevel.Content => 10,
             AlarmLevel.Displeased => 20,
@@ -8604,13 +8676,13 @@ public sealed partial class Game
         }
 
         NativeSettlement settlement = NativeSettlementAt(target)!;
-        int gold = EvaluateTributeDemand(settlement, random);
+        int gold = EvaluateTributeDemand(settlement, unit.OwnerId, random);
         if (gold > 0)
         {
             (PlayerById(unit.OwnerId) ?? _human).Gold += gold; // minted to the demander (no native treasury modelled)
         }
-        // Demanding is always an insult, whether or not they paid (FreeCol stamps alarm + lastTribute either way).
-        ChangeNativeAlarm(settlement, Ruleset.Difficulty.NativeTension.AddNormal);
+        // Demanding is always an insult to the demander, whether or not they paid (FreeCol stamps alarm + lastTribute either way).
+        ChangeNativeAlarm(settlement, unit.OwnerId, Ruleset.Difficulty.NativeTension.AddNormal);
         settlement.LastTribute = Turn;
         unit.MovementLeft = 0; // the demand ends the unit's turn
         return new TributeResult(gold > 0, gold);
@@ -9127,12 +9199,13 @@ public sealed partial class Game
         return (int)scaled;
     }
 
-    /// <summary>Zeroes every native settlement's alarm toward the human (FreeCol <c>resetNativeAlarm</c> → <c>Tension.TENSION_MIN</c>, the Happy band).</summary>
+    /// <summary>Zeroes every native settlement's alarm toward the <b>human</b> only (FreeCol <c>resetNativeAlarm</c> → <c>Tension.TENSION_MIN</c>, the Happy band); other powers' channels are untouched. Refreshes most-hated.</summary>
     private void ResetAllNativeAlarm()
     {
         foreach (NativeSettlement settlement in _nativeSettlements)
         {
-            settlement.Alarm = 0;
+            settlement.Alarm = 0; // channel 0 (human)
+            UpdateMostHated(settlement);
         }
     }
 
@@ -11002,11 +11075,22 @@ public sealed partial class Game
         }
     }
 
-    /// <summary>Each turn a settlement's alarm cools toward 0 (FreeCol tension decay, <c>ServerPlayer</c>: −value/100 − 4). The divisor/base are the data-overridable <see cref="Specification.NativeTensionOptions.DecayDivisor"/>/<see cref="Specification.NativeTensionOptions.DecayBase"/> (classic 100/4).</summary>
+    /// <summary>
+    /// Each turn a settlement's alarm cools toward 0, <b>independently for every player it holds a channel toward</b>
+    /// (FreeCol tension decay, <c>ServerPlayer</c>: −value/100 − 4 per player). The divisor/base are the
+    /// data-overridable <see cref="Specification.NativeTensionOptions.DecayDivisor"/>/<see cref="Specification.NativeTensionOptions.DecayBase"/>
+    /// (classic 100/4). RNG-free; <see cref="NativeSettlement.SetAlarm"/> drops any channel that reaches 0, so a
+    /// human-only game decays exactly as before (only channel 0 exists). Refreshes most-hated once after.
+    /// </summary>
     private void DecayNativeAlarm(NativeSettlement settlement)
     {
         NativeTensionOptions t = Ruleset.Difficulty.NativeTension;
-        settlement.Alarm = Math.Max(0, settlement.Alarm - (settlement.Alarm / t.DecayDivisor + t.DecayBase));
+        // Snapshot the channels first — SetAlarm mutates the backing map (and may drop a channel) mid-iteration.
+        foreach ((int playerId, int alarm) in settlement.AlarmChannels.ToList())
+        {
+            settlement.SetAlarm(playerId, Math.Max(0, alarm - (alarm / t.DecayDivisor + t.DecayBase)));
+        }
+        UpdateMostHated(settlement);
     }
 
     /// <summary>Extra tiles beyond a settlement's own radius within which the human's presence stirs alarm (FreeCol <c>ALARM_RADIUS</c>).</summary>

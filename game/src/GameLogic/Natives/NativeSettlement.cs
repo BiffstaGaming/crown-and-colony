@@ -118,39 +118,120 @@ public sealed class NativeSettlement
     /// </summary>
     internal const int SurrenderedAlarm = (AlarmContentMax + AlarmHappyMax) / 2;
 
-    /// <summary>
-    /// Alarm toward the player (0–<see cref="MaxAlarm"/>); starts peaceful at 0, raised
-    /// by hostile acts (combat/land-taking, later slices) and cools each turn.
-    /// </summary>
-    public int Alarm { get; internal set; }
+    /// <summary>Player id of the human (the original single-player first-contact flag, and the migrated single alarm scalar, ride this id).</summary>
+    private const int HumanVisitorId = 0;
 
     /// <summary>
-    /// The hostility band (FreeCol <c>Tension.getLevel</c>) derived from <see cref="Alarm"/> against the <b>classic</b>
-    /// band limits. A convenience read for callers without a ruleset (the presentation panels, the legacy save path)
-    /// that delegates to <see cref="AlarmLevelFor"/> with <see cref="Specification.NativeTensionOptions.ClassicMedium"/>,
+    /// Alarm toward each colonial player, keyed by <see cref="GameSession.Player.PlayerId"/> (FreeCol
+    /// <c>IndianSettlement</c>'s <c>Map&lt;Player, Tension&gt;</c> — a settlement can be friendly to one power and
+    /// hostile to another). A missing channel reads as 0 (peaceful), matching FreeCol's "uncontacted → null alarm,
+    /// treated as the minimum". The human is channel <see cref="HumanVisitorId"/> (0); before this slice a settlement
+    /// held a single scalar that was effectively the human's alarm, so old saves migrate that value into channel 0
+    /// (see <see cref="Persistence.SavedNativeSettlement.Alarm"/>). Mutated only via <see cref="SetAlarm"/> /
+    /// <c>Game.ChangeNativeAlarm</c>, which key on the acting player's perspective (ADR-009).
+    /// </summary>
+    private readonly Dictionary<int, int> _alarm = [];
+
+    /// <summary>
+    /// Alarm this settlement holds toward the player with <paramref name="playerId"/> (0–<see cref="MaxAlarm"/>);
+    /// 0 (peaceful) for a player it holds no channel for. FreeCol <c>IndianSettlement.getAlarm(Player)</c> (a null
+    /// channel there reads as the minimum here).
+    /// </summary>
+    public int AlarmFor(int playerId) => _alarm.GetValueOrDefault(playerId);
+
+    /// <summary>
+    /// Sets this settlement's alarm toward <paramref name="playerId"/> to <paramref name="value"/> (the caller clamps to
+    /// [0, <see cref="MaxAlarm"/>]). A value of 0 <b>drops the channel</b> rather than storing a zero, so a settlement
+    /// that only ever held the human's (now-zero) alarm round-trips byte-identically to a settlement with no channels
+    /// at all — the additive + omit-when-default save shape (<see cref="AlarmChannels"/>). Internal: the rules engine
+    /// mutates alarm through <c>Game.ChangeNativeAlarm</c>.
+    /// </summary>
+    /// <param name="playerId">The colonial player whose channel to set (the human is 0).</param>
+    /// <param name="value">The new alarm, already clamped to the legal range.</param>
+    internal void SetAlarm(int playerId, int value)
+    {
+        if (value <= 0)
+        {
+            _alarm.Remove(playerId);
+        }
+        else
+        {
+            _alarm[playerId] = value;
+        }
+    }
+
+    /// <summary>
+    /// The non-default alarm channels as player-id → alarm pairs (only players this settlement actually holds a
+    /// non-zero alarm toward, ordered by player id for a stable serialization), or an empty sequence when it holds
+    /// none. The serializer (save v55) emits this only when non-empty and omits any zero channel, so a settlement
+    /// that is peaceful toward everyone (the fresh / single-power-at-peace case) is byte-identical to one with no
+    /// field (ADR-009). The human (channel 0) is included here when non-zero — old v54 saves' single scalar migrates
+    /// into it.
+    /// </summary>
+    public IEnumerable<KeyValuePair<int, int>> AlarmChannels =>
+        _alarm.Where(kv => kv.Value != 0).OrderBy(kv => kv.Key);
+
+    /// <summary>
+    /// Alarm toward the <b>human</b> (channel <see cref="HumanVisitorId"/>, id 0); the original single-scalar field,
+    /// now backed by the per-player map (<see cref="AlarmFor"/>). Kept for the presentation panels, the per-turn ambient
+    /// pressure / decay, and the native raid AI — all of which are human-centric today (natives only raid the human, and
+    /// only the human's footprint stirs ambient alarm). Reading/writing it is exactly reading/writing channel 0.
+    /// </summary>
+    public int Alarm
+    {
+        get => AlarmFor(HumanVisitorId);
+        internal set => SetAlarm(HumanVisitorId, value);
+    }
+
+    /// <summary>
+    /// The colonial player this settlement most hates (FreeCol <c>IndianSettlement.getMostHated</c>): among the players
+    /// it holds a channel toward whose band is <b>not</b> <see cref="AlarmLevel.Happy"/>, the one with the highest
+    /// alarm; <c>null</c> when every channel is calm (Happy) or absent. Recomputed by <c>Game</c> whenever a channel
+    /// changes (it knows the live colonial players). Drives the future foreign-power native-relations and the
+    /// declaration-of-independence native re-stancing; not used by the human-only raid AI today.
+    /// </summary>
+    public int? MostHated { get; internal set; }
+
+    /// <summary>
+    /// The hostility band (FreeCol <c>Tension.getLevel</c>) of this settlement's alarm toward the <b>human</b>
+    /// (channel 0) against the <b>classic</b> band limits. A convenience read for callers without a ruleset (the
+    /// presentation panels) that delegates to <see cref="AlarmLevelFor(int, Specification.NativeTensionOptions)"/>,
     /// so it stays byte-identical to the original hardcoded thresholds. The rules engine reads the
-    /// <b>data-overridable</b> band via <see cref="AlarmLevelFor"/> with <c>Ruleset.Difficulty.NativeTension</c>, so a
-    /// variant's retuned thresholds drive gameplay.
+    /// <b>data-overridable</b> band, per acting player, via <see cref="AlarmLevelFor(int, Specification.NativeTensionOptions)"/>
+    /// with <c>Ruleset.Difficulty.NativeTension</c>, so a variant's retuned thresholds drive gameplay.
     /// </summary>
-    public AlarmLevel AlarmLevel => AlarmLevelFor(Specification.NativeTensionOptions.ClassicMedium);
+    public AlarmLevel AlarmLevel => AlarmLevelFor(HumanVisitorId, Specification.NativeTensionOptions.ClassicMedium);
 
     /// <summary>
-    /// The hostility band (FreeCol <c>Tension.getLevel</c>) of this settlement's current <see cref="Alarm"/> against the
-    /// band limits in <paramref name="tension"/> (<c>Ruleset.Difficulty.NativeTension</c>) — the data-overridable form
-    /// the rules engine uses, so a variant can retune the Happy/Content/Displeased/Angry thresholds. The classic limits
-    /// (100/600/700/800, Hateful above) reproduce the original bands exactly. Like FreeCol's <c>getLevel</c>, the band
-    /// is the first whose inclusive upper limit the alarm does not exceed, defaulting to Hateful.
+    /// The hostility band of this settlement's alarm toward the <b>human</b> (channel 0) against the band limits in
+    /// <paramref name="tension"/>. Convenience overload of
+    /// <see cref="AlarmLevelFor(int, Specification.NativeTensionOptions)"/> for the human-centric callers (raid AI,
+    /// presentation); the rules engine passes the acting player explicitly.
     /// </summary>
     /// <param name="tension">The native-tension options carrying the band limits (<c>Ruleset.Difficulty.NativeTension</c>).</param>
     public AlarmLevel AlarmLevelFor(Specification.NativeTensionOptions tension) =>
-        Alarm <= tension.HappyMax ? AlarmLevel.Happy
-        : Alarm <= tension.ContentMax ? AlarmLevel.Content
-        : Alarm <= tension.DispleasedMax ? AlarmLevel.Displeased
-        : Alarm <= tension.AngryMax ? AlarmLevel.Angry
-        : AlarmLevel.Hateful;
+        AlarmLevelFor(HumanVisitorId, tension);
 
-    /// <summary>Player id of the human (the original single-player first-contact flag rides this id).</summary>
-    private const int HumanVisitorId = 0;
+    /// <summary>
+    /// The hostility band (FreeCol <c>Tension.getLevel</c>) of this settlement's alarm toward
+    /// <paramref name="playerId"/> against the band limits in <paramref name="tension"/>
+    /// (<c>Ruleset.Difficulty.NativeTension</c>) — the data-overridable, per-player form the rules engine uses, so a
+    /// variant can retune the Happy/Content/Displeased/Angry thresholds and a settlement can sit in different bands for
+    /// different powers. The classic limits (100/600/700/800, Hateful above) reproduce the original bands exactly. Like
+    /// FreeCol's <c>getLevel</c>, the band is the first whose inclusive upper limit the alarm does not exceed,
+    /// defaulting to Hateful. A player with no channel reads as <see cref="AlarmLevel.Happy"/> (alarm 0).
+    /// </summary>
+    /// <param name="playerId">The colonial player whose perspective to band (the human is 0).</param>
+    /// <param name="tension">The native-tension options carrying the band limits (<c>Ruleset.Difficulty.NativeTension</c>).</param>
+    public AlarmLevel AlarmLevelFor(int playerId, Specification.NativeTensionOptions tension)
+    {
+        int alarm = AlarmFor(playerId);
+        return alarm <= tension.HappyMax ? AlarmLevel.Happy
+            : alarm <= tension.ContentMax ? AlarmLevel.Content
+            : alarm <= tension.DispleasedMax ? AlarmLevel.Displeased
+            : alarm <= tension.AngryMax ? AlarmLevel.Angry
+            : AlarmLevel.Hateful;
+    }
 
     /// <summary>Colonial player ids that have spoken with this settlement's chief — FreeCol's per-player first contact; each player gets the first-contact gift once.</summary>
     private readonly HashSet<int> _visitedBy = [];

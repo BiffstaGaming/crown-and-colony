@@ -1122,7 +1122,7 @@ public class MonarchTests
         // A game with no open demand (the common case) writes no PendingMonarchDemand token → byte-identical to v45.
         string json = CrownAndColony.GameLogic.Persistence.SaveGame.From(FoundedGame()).ToJson();
         Assert.DoesNotContain("\"PendingMonarchDemand\"", json);
-        Assert.Equal(54, CrownAndColony.GameLogic.Persistence.SaveGame.CurrentVersion);
+        Assert.Equal(55, CrownAndColony.GameLogic.Persistence.SaveGame.CurrentVersion);
     }
 
     [Fact]

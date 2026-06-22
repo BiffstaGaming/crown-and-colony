@@ -19,7 +19,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 54;
+    public const int CurrentVersion = 55;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -161,6 +161,18 @@ public sealed record SaveGame
     /// the seed never writes a zero entry), so an empty-stock settlement serialises byte-identically to v53 and pre-v54
     /// saves load every settlement with no stock (the equip chain stays inert, exactly as before this version). The
     /// seed and the equip spend are both RNG-free, so the human's stream 0 stays byte-stable (ADR-009).
+    /// v55 made a native settlement's alarm <b>per-player</b> (<see cref="SavedNativeSettlement.AlarmChannels"/> — a
+    /// player-id → alarm map, FreeCol <c>IndianSettlement</c>'s <c>Map&lt;Player, Tension&gt;</c>, 86d3e4bfb), so a
+    /// tribe can be friendly to one colonial power and hostile to another and a rival power builds its own native
+    /// relations. Additive + <b>omit-when-default</b>: the map is written only when the settlement holds a non-zero
+    /// alarm toward someone (the fresh / fully-at-peace case writes nothing), and any zero channel is dropped, so a
+    /// human-only-at-peace settlement serialises byte-identically to v54. <b>Migration:</b> a pre-v55 save's single
+    /// <see cref="SavedNativeSettlement.Alarm"/> scalar (which was effectively the human's alarm) loads into the human's
+    /// channel (player id 0); a v55 save omits that legacy scalar (writes 0). Determinism (ADR-009): a single-power
+    /// (human-only) game keeps exactly its old behaviour — only channel 0 ever exists, so raid-targeting, ambient
+    /// pressure and decay are unchanged. (Making alarm per-player DOES change native raid-targeting in a multi-power
+    /// game — that is the intended behaviour change; the soak runs multiple powers but its determinism twin-run stays
+    /// byte-identical because nothing draws new randomness.)
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -459,7 +471,10 @@ public sealed record SaveGame
                     .Select(s => new SavedNativeSettlement(
                         s.Id, s.NationTypeId, s.SettlementTypeId, s.IsCapital,
                         s.Position.X, s.Position.Y, s.Size, s.LearnableSkill,
-                        s.Alarm, s.HasBeenVisited, s.SkillConsumed,
+                        // v55: the single Alarm scalar is retired — per-player alarm rides AlarmChannels below. We write
+                        // 0 here (omitted) so it never duplicates channel 0; old v54 saves still populate it on read and
+                        // migrate it into the human's channel.
+                        0, s.HasBeenVisited, s.SkillConsumed,
                         s.WantedGoods.Count > 0 ? s.WantedGoods.ToList() : null,
                         s.MissionOwnerId, s.HasMission ? s.MissionIsExpert : null, // omitted when no mission
                         s.ConvertProgress != 0 ? s.ConvertProgress : null,         // omitted when no progress banked
@@ -468,6 +483,11 @@ public sealed record SaveGame
                         // empty-stock settlement is byte-identical to v53.
                         s.MilitaryStock.Any()
                             ? s.MilitaryStock.ToDictionary(kv => kv.Key, kv => kv.Value)
+                            : null,
+                        // v55; per-player alarm (player id → alarm, including the human as channel 0) — omitted when the
+                        // settlement is at peace with everyone, so a fully-calm camp is byte-identical to v54.
+                        s.AlarmChannels.Any()
+                            ? s.AlarmChannels.ToDictionary(kv => kv.Key, kv => kv.Value)
                             : null))
                     .ToList()
                 : null,
@@ -628,7 +648,6 @@ public sealed record SaveGame
                     s.Id, s.NationTypeId, s.SettlementTypeId, s.IsCapital,
                     new Position(s.X, s.Y), s.Size, s.LearnableSkill)
                 {
-                    Alarm = s.Alarm,
                     HasBeenVisited = s.HasBeenVisited,        // the human's first-contact flag (rides player 0)
                     SkillConsumed = s.SkillConsumed,
                     WantedGoods = s.WantedGoods ?? [],
@@ -636,6 +655,20 @@ public sealed record SaveGame
                     MissionIsExpert = s.MissionIsExpert ?? false, // v33; default free-colonist missionary
                     ConvertProgress = s.ConvertProgress ?? 0,    // v34; pre-v34 → 0
                 };
+                // v55: restore per-player alarm. A v55 save carries AlarmChannels (player id → alarm, the human as
+                // channel 0). A pre-v55 save (or a v55 save written before this slice) carries only the single Alarm
+                // scalar, which was effectively the human's alarm — migrate it into channel 0.
+                if (s.AlarmChannels is { } channels)
+                {
+                    foreach ((int playerId, int alarm) in channels)
+                    {
+                        settlement.SetAlarm(playerId, alarm);
+                    }
+                }
+                else if (s.Alarm != 0)
+                {
+                    settlement.SetAlarm(0, s.Alarm); // pre-v55 single scalar → human channel (MostHated is rebuilt by the first alarm change / decay)
+                }
                 foreach (int powerId in s.VisitedByPowers ?? []) // v44; pre-v44 → no foreign power has visited
                 {
                     settlement.MarkVisitedBy(powerId);
@@ -881,7 +914,7 @@ public sealed record SavedWorker(int X, int Y, string GoodsId, string? UnitTypeI
 /// <param name="Y">Map row.</param>
 /// <param name="Size">Resident population.</param>
 /// <param name="LearnableSkill">Expert unit type the settlement can teach (null = none).</param>
-/// <param name="Alarm">Alarm toward the player, 0–1000 (v16+; pre-v16 = 0).</param>
+/// <param name="Alarm"><b>Legacy</b> single alarm scalar toward the human, 0–1000 (v16–v54). Retired at v55 in favour of <paramref name="AlarmChannels"/>; v55 saves write 0 (omitted) and load migrates a non-zero pre-v55 value into the human's channel (player id 0).</param>
 /// <param name="HasBeenVisited">Whether the chief has been spoken with (v16+).</param>
 /// <param name="SkillConsumed">Whether the skill has been taught/consumed (v16+).</param>
 /// <param name="WantedGoods">Goods the settlement most wants to buy, most-wanted first (v17+).</param>
@@ -890,6 +923,7 @@ public sealed record SavedWorker(int X, int Y, string GoodsId, string? UnitTypeI
 /// <param name="ConvertProgress">Accrued convert progress under a mission (v34+; null/omitted when 0).</param>
 /// <param name="VisitedByPowers">Non-human player ids that have spoken with the chief (v44+; null/omitted when none, so a game where only the human (or nobody) has visited is byte-identical to v43). The human rides <see cref="HasBeenVisited"/>.</param>
 /// <param name="MilitaryStock">The muskets/horses the settlement holds to arm its braves (FreeCol <c>IndianSettlement</c>'s military-goods retention), as goods-id → amount (v54+; null/omitted when the settlement holds none, so an empty-stock settlement is byte-identical to v53). Seeded by <see cref="World.NativeSettlementGenerator"/>, spent by <see cref="GameSession.Game.TryEquipBrave"/>.</param>
+/// <param name="AlarmChannels">Per-player alarm as player-id → alarm 0–1000 (v55+; FreeCol <c>IndianSettlement</c>'s <c>Map&lt;Player, Tension&gt;</c>). The human is player id 0. Null/omitted when the settlement is at peace with everyone, and any zero channel is dropped, so a fully-calm settlement is byte-identical to v54. A pre-v55 save has no map — its single <paramref name="Alarm"/> scalar migrates into channel 0 on load.</param>
 public sealed record SavedNativeSettlement(
     int Id, string NationTypeId, string SettlementTypeId, bool IsCapital,
     int X, int Y, int Size, string? LearnableSkill = null,
@@ -898,7 +932,8 @@ public sealed record SavedNativeSettlement(
     int? MissionOwnerId = null, bool? MissionIsExpert = null,
     int? ConvertProgress = null,
     IReadOnlyList<int>? VisitedByPowers = null,
-    IReadOnlyDictionary<string, int>? MilitaryStock = null);
+    IReadOnlyDictionary<string, int>? MilitaryStock = null,
+    IReadOnlyDictionary<int, int>? AlarmChannels = null);
 
 /// <summary>A unit inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Id">Unit id.</param>

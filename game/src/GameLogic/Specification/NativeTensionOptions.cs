@@ -31,7 +31,7 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <para>
 /// The <b>alarm band limits</b> (<see cref="HappyMax"/>…<see cref="AngryMax"/>) and the alarm ceiling
 /// (<see cref="MaxAlarm"/>) are now carried here too (the EPIC final wrap-up slice, <c>86d3drpgg</c>): the band is
-/// computed by <see cref="NativeSettlement.AlarmLevelFor"/> taking these options, so a variant can retune the
+/// computed by <see cref="NativeSettlement.AlarmLevelFor(int, NativeTensionOptions)"/> taking these options, so a variant can retune the
 /// Happy/Content/Displeased/Angry thresholds in data. The parameterless <see cref="NativeSettlement.AlarmLevel"/>
 /// convenience property delegates to <see cref="ClassicMedium"/>, so any caller without a ruleset (the presentation
 /// panels) and every existing save stay byte-identical. The <b>unit-promotion probability</b> is <i>already</i>

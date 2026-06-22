@@ -115,7 +115,7 @@ public class TributeDemandTests
     public void EvaluateTributeDemand_PaysByBand(int alarm, int divisor)
     {
         (Game game, NativeSettlement settlement, _) = Stage(alarm);
-        int gold = game.EvaluateTributeDemand(settlement, new TestRandom(next: 0)); // roll-range draw forced to 0
+        int gold = game.EvaluateTributeDemand(settlement, playerId: 0, new TestRandom(next: 0)); // roll-range draw forced to 0 (human channel)
         Assert.Equal(ExpectedMinRollGold(settlement, divisor), gold);
         Assert.True(gold > 0); // a calm settlement always yields at least its floor
     }
@@ -124,7 +124,7 @@ public class TributeDemandTests
     public void EvaluateTributeDemand_CapsAtOneHundred()
     {
         (Game game, NativeSettlement settlement, _) = Stage(alarm: 0); // Happy, /10
-        int gold = game.EvaluateTributeDemand(settlement, new TestRandom(next: 9999)); // force the roll high
+        int gold = game.EvaluateTributeDemand(settlement, playerId: 0, new TestRandom(next: 9999)); // force the roll high (human channel)
         Assert.InRange(gold, 1, 100); // never above the 100-gold ceiling
     }
 
@@ -134,7 +134,7 @@ public class TributeDemandTests
     public void EvaluateTributeDemand_RefusesWhenTooAlarmed(int alarm)
     {
         (Game game, NativeSettlement settlement, _) = Stage(alarm);
-        Assert.Equal(0, game.EvaluateTributeDemand(settlement, new TestRandom(next: 0)));
+        Assert.Equal(0, game.EvaluateTributeDemand(settlement, playerId: 0, new TestRandom(next: 0)));
     }
 
     [Fact]
@@ -142,7 +142,7 @@ public class TributeDemandTests
     {
         (Game game, NativeSettlement settlement, _) = Stage(alarm: 0);
         settlement.LastTribute = game.Turn; // demanded of this very turn → lastTribute + 5 >= turn
-        Assert.Equal(0, game.EvaluateTributeDemand(settlement, new TestRandom(next: 0)));
+        Assert.Equal(0, game.EvaluateTributeDemand(settlement, playerId: 0, new TestRandom(next: 0)));
     }
 
     // ---- DemandTribute command (transfer + alarm + cooldown + turn) -----------------------------------------

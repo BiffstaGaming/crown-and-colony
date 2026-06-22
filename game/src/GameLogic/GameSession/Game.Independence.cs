@@ -182,7 +182,7 @@ public sealed partial class Game
         string? ally = _nativeSettlements
             .Where(s => s.HasBeenVisitedBy(rebel.PlayerId))
             .GroupBy(s => s.NationTypeId)
-            .OrderByDescending(g => g.Max(s => s.Alarm))
+            .OrderByDescending(g => g.Max(s => s.AlarmFor(rebel.PlayerId)))
             .ThenBy(g => g.Key) // deterministic tie-break
             .Select(g => g.Key)
             .FirstOrDefault();
@@ -193,9 +193,10 @@ public sealed partial class Game
 
         // The ally is calmed to at most the CONTENT band: it stops resenting the rebel now the Crown it really hated
         // has gone (FreeCol sets the tension into the CONTENT/HAPPY range). Settlements calmer than CONTENT are left.
-        foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == ally && s.Alarm > NativeAllyCalmedAlarm))
+        // Only the rebel's own channel shifts — a tribe stays as angry as it was at any other power.
+        foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == ally && s.AlarmFor(rebel.PlayerId) > NativeAllyCalmedAlarm))
         {
-            ChangeNativeAlarm(settlement, NativeAllyCalmedAlarm - settlement.Alarm); // down to the CONTENT limit
+            ChangeNativeAlarm(settlement, rebel.PlayerId, NativeAllyCalmedAlarm - settlement.AlarmFor(rebel.PlayerId)); // down to the CONTENT limit
         }
     }
 

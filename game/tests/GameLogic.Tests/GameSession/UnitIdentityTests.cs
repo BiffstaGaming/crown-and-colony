@@ -173,7 +173,7 @@ public class UnitIdentityTests
         Assert.Equal(Dutch, back.Ethnicity);
         Assert.Equal("Pocahontas", back.Name);
         Assert.Equal(json, SaveGame.From(restored).ToJson()); // acid test: byte-identical round-trip
-        Assert.Equal(54, SaveGame.CurrentVersion);
+        Assert.Equal(55, SaveGame.CurrentVersion);
     }
 
     [Fact]
