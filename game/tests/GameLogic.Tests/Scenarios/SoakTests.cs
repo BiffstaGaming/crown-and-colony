@@ -38,6 +38,12 @@ public class SoakTests
             });
             Assert.All(game.Explored, p => Assert.True(game.Map.InBounds(p)));
 
+            // ADR-009 (86d3e49jp): the RNG-free AI-declaration gate must NOT fire in the default soak window — no AI
+            // power amasses a 1.5×-REF army in 200 turns, so the game stays a peacetime colonial race. (If this ever
+            // trips, the byte-identical round-trip below would also shift; this asserts the *cause* explicitly.)
+            Assert.DoesNotContain(game.Players, p =>
+                p.PlayerType is PlayerType.Rebel or PlayerType.Independent or PlayerType.RoyalExpeditionaryForce);
+
             // FP-5 economy invariants: no colonial player runs its treasury into debt (the overspend guards
             // hold), and the foreign economies are bounded — neither stalling nor running away.
             Assert.All(game.Players, p =>

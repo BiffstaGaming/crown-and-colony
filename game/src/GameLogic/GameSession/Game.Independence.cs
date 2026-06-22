@@ -57,6 +57,82 @@ public sealed partial class Game
     }
 
     /// <summary>
+    /// The multiple of the King's amassed Royal Expeditionary Force land strength an <b>AI</b> colonial power must
+    /// command before it will declare independence (<see cref="ShouldAiDeclareIndependence"/>). Deliberately set to the
+    /// same <see cref="RefDefeatPowerRatio"/> (1.5×) the <see cref="CheckForRefDefeat"/> win uses, so an AI only rebels
+    /// when it already holds the strength that would let it <em>win</em> the war — a conservative, faithful-spirit gate.
+    /// </summary>
+    private const double AiDeclareStrengthRatio = RefDefeatPowerRatio;
+
+    /// <summary>
+    /// The combined land-offence strength of the King's amassed Royal Expeditionary Force <em>as it currently stands</em>
+    /// (FreeCol <c>Player.calculateStrength(false)</c> applied to <c>Monarch.getExpeditionaryForce()</c>): the same
+    /// per-unit <see cref="OffenceBase"/> the live yardstick <see cref="LandPowerOf"/> sums, but computed directly from
+    /// the un-spawned <see cref="Force"/> blocks (each block's unit-type offence-additive + role offence, times the type
+    /// multiplier, times the count) so it can be read <b>before</b> a declaration spawns the REF into units. The REF
+    /// holds no Founding Fathers, so its per-unit combat factor is 1.0 — making this directly comparable to
+    /// <see cref="LandPowerOf"/>. RNG-free; reads only the ruleset and the current REF force.
+    /// </summary>
+    internal double RefLandStrength()
+    {
+        Force force = EnsureRefForce();
+        return force.LandUnits.Sum(entry =>
+            (Ruleset.Unit(entry.UnitTypeId).OffenceAdditive + Ruleset.Role(entry.RoleId ?? RoleType.DefaultRoleId).Offence)
+            * Ruleset.Unit(entry.UnitTypeId).OffenceMultiplier
+            * entry.Count);
+    }
+
+    /// <summary>
+    /// Whether a <b>non-human</b> colonial power should declare independence this turn — the AI trigger
+    /// (<see cref="MaybeDeclareIndependence"/>) for kanban <c>86d3e49jp</c>. It declares only when it both
+    /// <see cref="CheckDeclareIndependence">may legally declare</see> (still colonial, national SoL ≥ 50%, a connected
+    /// port, before the last colonial year) <b>and</b> its own land strength (<see cref="LandPowerOf"/>) is at least
+    /// <see cref="AiDeclareStrengthRatio"/> (1.5×) the King's amassed REF land strength (<see cref="RefLandStrength"/>) —
+    /// the same yardstick <see cref="CheckForRefDefeat"/> measures the win by, so an AI rebels only when it already holds
+    /// a war-winning army. The human is never auto-declared (the human pulls its own trigger from the UI).
+    /// <para><b>Faithful-SPIRIT addition (documented deviation, docs/systems/independence.md §2).</b> Vanilla FreeCol's
+    /// AI does <em>not</em> autonomously declare independence — <c>Player.getRebelStrengthRatio</c> appears only in a
+    /// debug log line in <c>EuropeanAIPlayer.startWorking</c>, never driving a declaration. This gate is the
+    /// faithful-<em>spirit</em> version of that latent yardstick: it reuses the same strength-ratio concept to let a
+    /// dominant AI break away, where vanilla leaves the trigger human/Monarch-only.</para>
+    /// <para><b>ADR-009.</b> Wholly RNG-free — it reads SoL, ports, the year, and the two strength sums — so it draws
+    /// <em>no</em> stream (least of all the human's stream 0). Because no AI reaches a 1.5×-REF army within the soak
+    /// window, it never fires in the default game, which therefore stays byte-identical.</para>
+    /// </summary>
+    internal bool ShouldAiDeclareIndependence(Player power)
+    {
+        if (power.IsHuman || !CheckDeclareIndependence(power).Allowed)
+        {
+            return false;
+        }
+        double refLand = RefLandStrength();
+        // A zero-strength REF (a ruleset with no land force) can't gate a multiple — require a real, winnable army.
+        return refLand > 0 && LandPowerOf(power) >= AiDeclareStrengthRatio * refLand;
+    }
+
+    /// <summary>
+    /// The AI declaration step (kanban <c>86d3e49jp</c>), run once for each non-human colonial power on its turn
+    /// (<see cref="RunPlayerTurn"/>): if <see cref="ShouldAiDeclareIndependence"/> holds, the power declares through the
+    /// very same <see cref="DeclareIndependence"/> the human UI calls — flipping to a <see cref="PlayerType.Rebel"/>,
+    /// forfeiting its Europe units, mustering its continental army, and bringing the REF into the field at war with it.
+    /// From the next turn <see cref="RunRefTurn"/> prosecutes the war and <see cref="ResolveWarOfIndependence"/> resolves
+    /// it, both of which already handle a rebel of either kind; the AI rebel itself runs the colonial economy path and
+    /// <b>defends</b> (arms idle colonists, garrisons and digs into its colonies — A1's fortify/arming). Offensive
+    /// rebel-vs-REF AI is deliberately <b>descoped</b> to a follow-up (the rebel's offensive in
+    /// <see cref="RunForeignPowerTurn"/> is keyed to the human, and the REF is the aggressor) — documented in
+    /// docs/systems/independence.md §5.
+    /// <para>RNG-free up to the declaration; <see cref="OfferWarMercenaries"/> self-gates to the human, so an AI rebel
+    /// draws no monarch stream. The default game never reaches the gate, so this is byte-identical there (ADR-009).</para>
+    /// </summary>
+    private void MaybeDeclareIndependence(Player power)
+    {
+        if (ShouldAiDeclareIndependence(power))
+        {
+            DeclareIndependence(power);
+        }
+    }
+
+    /// <summary>
     /// Declares independence (FreeCol <c>csDeclareIndependence</c>): the player becomes a <see cref="PlayerType.Rebel"/>,
     /// loses every unit in or sailing to Europe (and its recruiting), musters its veterans into colonial regulars, the
     /// King's Royal Expeditionary Force takes the field at war with the new nation, the natives who most resented the

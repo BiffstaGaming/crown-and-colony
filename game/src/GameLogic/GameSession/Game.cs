@@ -6493,8 +6493,9 @@ public sealed partial class Game
 
         if (!player.IsHuman)
         {
+            MaybeDeclareIndependence(player); // 86d3e49jp: a dominant AI colonial power that out-strengthens the amassed REF rebels (RNG-free gate; no-op in the default game) — flips to Rebel, spawns the REF; it then runs the path below and DEFENDS this same turn
             RunForeignPowerEconomy(player); // FP-5: pursue a father, sell surplus, recruit (own stream/market)
-            RunForeignPowerTurn(player);     // FP-4: move / explore / found
+            RunForeignPowerTurn(player);     // FP-4: move / explore / found (a rebel at war with the REF — not the human — falls through to the FP-5 garrison/arming defence)
         }
     }
 

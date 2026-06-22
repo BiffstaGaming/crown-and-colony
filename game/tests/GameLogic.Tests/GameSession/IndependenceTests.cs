@@ -1113,4 +1113,196 @@ public class IndependenceTests
         unit.OwnerId = power.PlayerId;
         return unit;
     }
+
+    // ── A4 (86d3e49jp): a rival AI can declare independence ───────────────────────────────────────────────
+    // FreeCol's AI does NOT self-declare (getRebelStrengthRatio is debug-logging only) — this is a faithful-SPIRIT
+    // addition: a dominant AI colonial power that out-strengthens the amassed REF (1.5×, the CheckForRefDefeat
+    // yardstick) declares through the same DeclareIndependence the human UI calls. The gate is RNG-free (ADR-009).
+
+    private const string KingsRegular = "model.unit.kingsRegular";
+    private const string InfantryRole = "model.role.infantry";
+
+    /// <summary>The first non-human colonial power.</summary>
+    private static Player AiPower(Game game) =>
+        game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+
+    /// <summary>
+    /// Arms <paramref name="power"/> with king's-regular infantry standing in <paramref name="colony"/> until its land
+    /// strength clears the AI-declaration gate (<see cref="Game.RefLandStrength"/> × 1.5 + a margin). Returns the count
+    /// spawned. The veterans garrison the colony tile (so the muster can draw them too).
+    /// </summary>
+    private static int ArmPastTheRefRatio(Game game, Player power, Colony colony)
+    {
+        int spawned = 0;
+        double target = 1.5 * game.RefLandStrength() + 1; // strictly clear 1.5×
+        while (game.LandPowerOf(power) < target)
+        {
+            Unit regular = game.SpawnUnit(game.Ruleset.Unit(KingsRegular), colony.Position, power.PlayerId);
+            regular.RoleId = InfantryRole; // an armed king's regular — high land offence
+            spawned++;
+        }
+        return spawned;
+    }
+
+    /// <summary>An AI colonial power with one coastal colony forced to 100% national SoL (the SoL/port/year half of the gate met).</summary>
+    private static (Game Game, Player Power, Colony Colony) AiRebellionReady(ulong seed = Seed)
+    {
+        Game game = Game.New(Classic, seed);
+        Player power = AiPower(game);
+        Colony colony = FoundColonyFor(game, power);
+        colony.Liberty = Colony.LibertyPerRebel * colony.Population; // force this AI's national SoL to 100%
+        return (game, power, colony);
+    }
+
+    [Fact]
+    public void RefLandStrength_EqualsTheLandPowerOfTheSpawnedRefAfterDeclaration()
+    {
+        // The un-spawned Force computation must match the live LandPowerOf the gate is measured against, so the gate
+        // and the win (CheckForRefDefeat) speak the same units — read it before, declare, sum it after.
+        (Game game, _) = RebellionReady();
+        double before = game.RefLandStrength();
+        game.DeclareIndependence(game.HumanPlayer);
+        Assert.True(before > 0);
+        Assert.Equal(before, game.LandPowerOf(Ref(game)), precision: 6);
+    }
+
+    [Fact]
+    public void ShouldAiDeclareIndependence_IsFalse_UntilTheAiOutStrengthsTheRef()
+    {
+        (Game game, Player power, Colony colony) = AiRebellionReady();
+        // SoL + port + year are met, but the AI has no army → the REF-strength half of the gate fails.
+        Assert.True(game.CheckDeclareIndependence(power).Allowed);
+        Assert.False(game.ShouldAiDeclareIndependence(power));
+
+        // Arm it past 1.5× the amassed REF — now every limb of the gate is satisfied.
+        ArmPastTheRefRatio(game, power, colony);
+        Assert.True(game.ShouldAiDeclareIndependence(power));
+    }
+
+    [Fact]
+    public void ShouldAiDeclareIndependence_IsRngFree()
+    {
+        // ADR-009: the gate reads SoL/ports/year/strength only — it must draw NO randomness (least of all stream 0),
+        // whichever side of the threshold the power sits on.
+        (Game game, Player power, Colony colony) = AiRebellionReady();
+        RandomState before = game.RandomState;
+        Assert.False(game.ShouldAiDeclareIndependence(power)); // under-strength branch
+        ArmPastTheRefRatio(game, power, colony);
+        Assert.True(game.ShouldAiDeclareIndependence(power));   // over-strength branch
+        Assert.Equal(before, game.RandomState);                 // neither branch advanced stream 0
+    }
+
+    [Fact]
+    public void ShouldAiDeclareIndependence_NeverFiresForTheHuman()
+    {
+        // The human pulls its own trigger from the UI; the AI auto-gate must ignore it even at 100% SoL + a huge army.
+        (Game game, Colony colony) = RebellionReady();
+        Player human = game.HumanPlayer;
+        for (int i = 0; i < 200; i++)
+        {
+            Unit r = game.SpawnUnit(game.Ruleset.Unit(KingsRegular), colony.Position, human.PlayerId);
+            r.RoleId = InfantryRole;
+        }
+        Assert.True(game.LandPowerOf(human) >= 1.5 * game.RefLandStrength());
+        Assert.False(game.ShouldAiDeclareIndependence(human));
+    }
+
+    [Fact]
+    public void ShouldAiDeclareIndependence_IsFalse_WhenLandlockedOrPastTheLastColonialYear()
+    {
+        // The strength half alone is not enough — the CheckDeclareIndependence limbs (a port, the year) still bind.
+        // Landlocked: a colony with no coastal neighbour fails the connected-port limb.
+        Game game = Game.New(Classic, Seed);
+        Player power = AiPower(game);
+        Position inland = game.Map.AllPositions().First(p =>
+            !game.Map.TerrainAt(p).IsWater && game.ColonyAt(p) is null && game.NativeSettlementAt(p) is null
+            && !p.Neighbours().Any(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater)
+            && !p.Neighbours().Any(n => game.Map.InBounds(n) && game.ColonyAt(n) is not null));
+        Unit colonist = game.SpawnUnit(game.Ruleset.Unit(Game.StartingUnitTypeId), inland, power.PlayerId);
+        Colony landlocked = game.FoundColony(colonist);
+        landlocked.Liberty = Colony.LibertyPerRebel * landlocked.Population;
+        ArmPastTheRefRatio(game, power, landlocked);
+        Assert.False(game.ShouldAiDeclareIndependence(power)); // armed + 100% SoL, but no port
+    }
+
+    [Fact]
+    public void AiPower_DeclaresIndependence_OnItsTurn_WhenItOutStrengthsTheRef()
+    {
+        // The headline acceptance criterion: a dominant AI power reaches the gate → it calls DeclareIndependence on its
+        // own turn (run by EndTurn) → flips to Rebel, forfeits its Europe units, musters regulars, the REF spawns at war.
+        (Game game, Player power, Colony colony) = AiRebellionReady();
+        ArmPastTheRefRatio(game, power, colony);
+        // Park a unit of this power in Europe — the declaration forfeits it (FreeCol: in/bound-for-Europe units lost).
+        Unit inEurope = game.SpawnUnit(game.Ruleset.Unit(Game.StartingUnitTypeId), colony.Position, power.PlayerId);
+        inEurope.Location = UnitLocation.InEurope;
+        int europeUnitId = inEurope.Id;
+        Assert.Equal(PlayerType.Colonial, power.PlayerType);
+
+        game.EndTurn(); // the AI power takes its turn → MaybeDeclareIndependence fires
+
+        Assert.Equal(PlayerType.Rebel, power.PlayerType);                              // it rebelled
+        Assert.DoesNotContain(game.Units, u => u.Id == europeUnitId);                   // the Europe unit is forfeit
+        Player refP = Ref(game);                                                        // a REF now exists…
+        Assert.Equal(Stance.War, game.StanceBetween(refP.PlayerId, power.PlayerId));    // …at war with the new rebel
+        Assert.Contains(game.Units, u => u.OwnerId == refP.PlayerId);                   // its force is mustered
+    }
+
+    [Fact]
+    public void AfterAiDeclares_TheRefLands_AndTheAiRebelSurvivesAndDefends()
+    {
+        // Acceptance: ResolveWarOfIndependence + RunRefTurn run against an AI rebel unchanged (the REF lands & assaults),
+        // and the AI rebel at minimum defends (it runs the colonial path: garrison/arming per A1, and stays alive).
+        (Game game, Player power, Colony colony) = AiRebellionReady();
+        ArmPastTheRefRatio(game, power, colony);
+        game.EndTurn();                       // turn 1: the AI declares; the REF is still mustering in Europe
+        Assert.Equal(PlayerType.Rebel, power.PlayerType);
+        Player refP = Ref(game);
+
+        for (int i = 0; i < 4; i++)
+        {
+            game.EndTurn();                   // the REF sails in and lands (RunRefTurn), the rebel runs its colonial path
+        }
+
+        Assert.Contains(game.Units, u => u.OwnerId == refP.PlayerId && u.IsOnMap);      // the King's army made landfall
+        Assert.True(power.PlayerType is PlayerType.Rebel or PlayerType.Independent);    // the rebel still stands (defended)
+    }
+
+    [Fact]
+    public void AiDeclaration_DrawsNothingFromStream0()
+    {
+        // ADR-009: an AI declaring (and the war that follows) draws ONLY the per-player/REF streams — never the human's
+        // stream 0. Two games share a seed and an idle human; in one the AI is armed past the gate (so it declares and
+        // the REF war runs), in the other it is left under-strength (so it never declares). The human's stream-0 state
+        // (Game.RandomState) must be byte-identical between them: nothing on the AI-declaration / REF-war path touched it.
+        (Game declares, Player dPower, Colony dColony) = AiRebellionReady(4242);
+        (Game quiet, Player qPower, _) = AiRebellionReady(4242);
+        ArmPastTheRefRatio(declares, dPower, dColony); // only this game's AI reaches the gate
+
+        for (int i = 0; i < 6; i++)
+        {
+            declares.EndTurn();
+            quiet.EndTurn();
+        }
+
+        Assert.Equal(PlayerType.Rebel, dPower.PlayerType);        // the armed AI rebelled…
+        Assert.Equal(PlayerType.Colonial, qPower.PlayerType);     // …the under-strength one never did
+        Assert.Equal(quiet.RandomState, declares.RandomState);    // yet the human's stream 0 is identical — untouched (ADR-009)
+    }
+
+    [Fact]
+    public void AiDeclaration_IsTwinDeterministic()
+    {
+        // Twin games (same seed, same provocation) stay byte-identical across the whole declare-and-war arc.
+        (Game a, Player pa, Colony ca) = AiRebellionReady(909090);
+        (Game b, Player pb, Colony cb) = AiRebellionReady(909090);
+        ArmPastTheRefRatio(a, pa, ca);
+        ArmPastTheRefRatio(b, pb, cb);
+        for (int i = 0; i < 5; i++)
+        {
+            a.EndTurn();
+            b.EndTurn();
+        }
+        Assert.Equal(PlayerType.Rebel, pa.PlayerType);                      // it really did declare in the driven game
+        Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson()); // byte-identical whole-state
+    }
 }
