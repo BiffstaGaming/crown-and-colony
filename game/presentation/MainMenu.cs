@@ -52,9 +52,13 @@ public partial class MainMenu : Control
     }
 
     /// <summary>
-    /// Opens the new-game world-options overlay (map source + world size + land mass + difficulty); choosing Start
-    /// forwards the picks to the game scene via <see cref="GameController.PendingWorldSize"/>/<see cref="GameController.PendingLandMass"/>/<see cref="GameController.PendingMapSource"/>
-    /// and boots it (which builds a fresh game from those options, defaulting to the shipped random world if none were changed).
+    /// Opens the new-game options overlay (scenario/variant + map source + world size + land mass + landmass style +
+    /// difficulty + nation + the honoured base game options — victory conditions, fog of war, custom-house smuggling);
+    /// choosing Start forwards the size/land/difficulty/map picks to the game scene via
+    /// <see cref="GameController.PendingWorldSize"/>/<see cref="GameController.PendingLandMass"/>/<see cref="GameController.PendingDifficulty"/>/<see cref="GameController.PendingMapSource"/>
+    /// (the variant, nation and game-option picks ride their own <c>GameController.Pending*</c> statics, set by the
+    /// dialog) and boots it (which builds a fresh game from those options, defaulting to the shipped Classic random world
+    /// if none were changed).
     /// </summary>
     private void OnNewGame()
     {

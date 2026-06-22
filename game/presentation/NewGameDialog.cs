@@ -8,28 +8,40 @@ using Godot;
 namespace CrownAndColony.Presentation;
 
 /// <summary>
-/// New-game world-options overlay (<c>86d3c9w9c</c> + <c>86d3c9y08</c> + the America scenario map + <c>86d3drn5x</c> +
-/// the game-options section <c>86d3drn64</c>): the player picks the <b>map</b> (a procedurally generated random New
-/// World, or FreeCol's fixed America), the world <b>size</b>, how much of the map is <b>land</b> (FreeCol's
-/// <c>model.option.mapWidth</c>/<c>mapHeight</c> + <c>model.option.landMass</c>), the <b>difficulty</b> level (FreeCol's
-/// five classic levels), the <b>nation</b> the human plays (the ruleset's selectable European powers —
-/// Dutch/French/English/Spanish — or "No nation" for the classic nation-less start) and the three alternative
-/// <b>victory conditions</b> (FreeCol's <c>gameOptions.victoryConditions</c> group: defeat the REF / be the last
-/// European / be the last human standing) before starting. The size/land choices only apply to the random map (a fixed
-/// map sets its own dimensions), so they are disabled while America is selected. It collects the choices and hands the
-/// world options back to the host via the <c>onStart</c> callback; the chosen nation and victory conditions are
-/// forwarded separately through <see cref="GameController.PendingNation"/> /
-/// <see cref="GameController.PendingVictoryConditions"/> (these are GameLogic state, not presentation world-options —
-/// ADR-006). The map generation, difficulty balance, national advantage and the win checks all live in GameLogic
-/// (<see cref="MapGenerator"/> / <see cref="GameLogic.GameSession.Game.New"/> / <see cref="GameLogic.GameSession.Game.Winner"/>,
-/// forwarded by <see cref="GameController"/>).
-/// <para><b>Faithful subset.</b> Only the base game options our engine actually <em>reads</em> are surfaced. The victory
-/// conditions are honoured by <see cref="GameLogic.GameSession.Game.Winner"/>. The other <c>gameOptions.map</c> toggles
-/// FreeCol shows at setup — notably <b>fog-of-war</b> (<c>model.option.fogOfWar</c>), exploration points, amphibious
-/// moves, enhanced missionaries — are deliberately <em>not</em> shown: the engine does not consult those options yet
-/// (fog-of-war, for instance, is always-on FreeCol-default — the human's sight is computed from
-/// <see cref="GameLogic.GameSession.Game.CurrentlyVisible"/> with no off switch), so a toggle would be inert. Surface
-/// them here once the engine honours them.</para>
+/// New-game options overlay (<c>86d3c9w9c</c> + <c>86d3c9y08</c> + the America scenario map + <c>86d3drn5x</c> +
+/// the game-options section <c>86d3drn64</c> + the options-surface widening <c>86d3e4bu0</c>): the player picks the
+/// <b>scenario / variant</b> (the ruleset that defines the world — Colonial America today; the seam a future Australia
+/// variant plugs into, FreeCol's "rules" dropdown on its New-game panel), the <b>map</b> (a procedurally generated
+/// random New World, or FreeCol's fixed America), the world <b>size</b>, how much of the map is <b>land</b> (FreeCol's
+/// <c>model.option.mapWidth</c>/<c>mapHeight</c> + <c>model.option.landMass</c>), the landmass <b>style</b>
+/// (<c>model.option.landGeneratorType</c>), the <b>difficulty</b> level (FreeCol's five classic levels), the
+/// <b>nation</b> the human plays (the ruleset's selectable European powers — Dutch/French/English/Spanish — or "No
+/// nation" for the classic nation-less start), and the honoured base <b>game options</b>, grouped as FreeCol's
+/// <c>GameOptionsDialog</c> groups them: the three alternative <b>victory conditions</b>
+/// (<c>gameOptions.victoryConditions</c>: defeat the REF / be the last European / be the last human standing),
+/// <b>fog of war</b> (<c>gameOptions.map</c> → <c>model.option.fogOfWar</c>) and <b>custom-house boycott smuggling</b>
+/// (<c>gameOptions.colony</c> → <c>model.option.customIgnoreBoycott</c>). The size/land/style choices only apply to the
+/// random map (a fixed map sets its own dimensions), so they are disabled while America is selected. It collects the
+/// choices and hands the size/land/difficulty/map back to the host via the <c>onStart</c> callback; the variant, nation,
+/// victory conditions, fog-of-war and custom-house options are forwarded separately through the matching
+/// <c>GameController.Pending*</c> statics (<see cref="GameController.PendingVariant"/> /
+/// <see cref="GameController.PendingNation"/> / <see cref="GameController.PendingVictoryConditions"/> /
+/// <see cref="GameController.PendingFogOfWar"/> / <see cref="GameController.PendingCustomIgnoreBoycott"/>) — these are
+/// GameLogic state / ruleset config, not presentation world-options (ADR-006). The map generation, difficulty balance,
+/// national advantage and the win checks all live in GameLogic (<see cref="MapGenerator"/> /
+/// <see cref="GameLogic.GameSession.Game.New"/> / <see cref="GameLogic.GameSession.Game.Winner"/>, forwarded by
+/// <see cref="GameController"/>).
+/// <para><b>Faithful subset — honoured options only (ADR-009).</b> Only the options our engine actually <em>reads</em>
+/// are surfaced, so a shown toggle never implies a behaviour the engine ignores. Honoured-but-deliberately-omitted, and
+/// why: the other <c>gameOptions.map</c>/<c>.colony</c> toggles FreeCol shows (exploration points, amphibious moves,
+/// enhanced missionaries, customs-on-coast, …) are not consulted by the engine yet — surface each once it is honoured.
+/// The richer <b>map-generator counts</b> FreeCol exposes (<c>model.option.riverNumber</c>/<c>mountainNumber</c>/
+/// <c>rumourNumber</c>/<c>bonusNumber</c>) are <em>not</em> surfaced either: they are still hard-coded constants in
+/// <see cref="MapGenerator"/> / <see cref="GameLogic.World.LostCityRumourGenerator"/>, not plumbed through
+/// <see cref="GameLogic.GameSession.Game.New"/>, so a dial here would be inert — the only wired map-generator options
+/// (size / land mass / landmass style) <em>are</em> surfaced. The difficulty <em>level</em> is surfaced (its own
+/// dropdown); the per-level difficulty option <em>values</em> (FreeCol's editable <c>DifficultyDialog</c>) are not, as
+/// the engine reads them from the level's spec, not a live override.</para>
 /// Presentation-only (ADR-006). Built programmatically (no scene file) and added as a child of the main menu like the
 /// other overlays; shares the parchment/wood look via <see cref="ColonyTheme"/>.
 /// </summary>
@@ -46,6 +58,7 @@ public partial class NewGameDialog : Control
         (MapSource.America, "America (fixed)"),
     };
 
+    private OptionButton _variantOption = null!;
     private OptionButton _mapOption = null!;
     private OptionButton _sizeOption = null!;
     private OptionButton _landOption = null!;
@@ -58,10 +71,23 @@ public partial class NewGameDialog : Control
     private CheckBox _victoryRefCheck = null!;
     private CheckBox _victoryEuropeansCheck = null!;
     private CheckBox _victoryHumansCheck = null!;
-    // The fog-of-war toggle (FreeCol's model.option.fogOfWar). Initialised to the ruleset's parsed spec default (classic
-    // on) so an untouched Start is byte-identical; unticking it keeps every explored tile permanently visible.
+    // The fog-of-war toggle (FreeCol's model.option.fogOfWar, gameOptions.map group). Initialised to the ruleset's
+    // parsed spec default (classic on) so an untouched Start is byte-identical; unticking it keeps every explored tile
+    // permanently visible.
     private CheckBox _fogOfWarCheck = null!;
+    // The custom-house boycott-smuggling toggle (FreeCol's model.option.customIgnoreBoycott, gameOptions.colony group).
+    // Initialised to the ruleset's parsed spec default (classic on) so an untouched Start is byte-identical; unticking it
+    // makes a colony's custom house skip a boycotted good instead of smuggling it.
+    private CheckBox _customIgnoreBoycottCheck = null!;
     private Action<WorldSize, LandMass, DifficultyLevel, MapSource>? _onStart;
+
+    /// <summary>
+    /// The variant each <see cref="_variantOption"/> dropdown row maps to, by item index — the shipped
+    /// <see cref="GameVariants.All"/> in menu order. The selected one becomes the new game's ruleset source (forwarded
+    /// through <see cref="GameController.PendingVariant"/>). The Classic variant is index 0 and the byte-identical
+    /// default; a future variant (e.g. Australia) appears here automatically once registered (no dialog change).
+    /// </summary>
+    private readonly List<GameVariant> _variantByIndex = new();
 
     /// <summary>
     /// The nation each <see cref="_nationOption"/> dropdown row maps to, by item index. Index 0 is "No nation" (null →
@@ -98,6 +124,18 @@ public partial class NewGameDialog : Control
             Text = "New Game",
             HorizontalAlignment = HorizontalAlignment.Center,
         });
+
+        // Scenario / variant picker (the ruleset that defines the world) — FreeCol's "rules" dropdown. The shipped
+        // variants are read from the registry (data-driven, ADR-018), so a future variant becomes a row here for free.
+        // Classic (index 0) is the byte-identical default. This is the seam a variant like Australia plugs into.
+        _variantOption = new OptionButton { Name = "VariantOption" };
+        foreach (GameVariant variant in GameVariants.All)
+        {
+            _variantOption.AddItem(variant.DisplayName);
+            _variantByIndex.Add(variant);
+        }
+        _variantOption.Selected = VariantDefaultIndex(); // the default variant (Classic) — byte-identical
+        vbox.AddChild(LabeledRow("Scenario", _variantOption));
 
         _mapOption = new OptionButton { Name = "MapOption" };
         foreach ((MapSource _, string label) in MapChoices)
@@ -154,30 +192,35 @@ public partial class NewGameDialog : Control
         _nationOption.Selected = 0; // No nation — the classic nation-less human (byte-identical default)
         vbox.AddChild(LabeledRow("Nation", _nationOption));
 
-        // Game-options section: the base game options FreeCol shows at setup that our engine already honours. The three
-        // alternative VICTORY CONDITIONS (FreeCol's gameOptions.victoryConditions group, read by Game.Winner) plus the
-        // FOG-OF-WAR toggle (model.option.fogOfWar, read by Game.CurrentlyVisible/IsVisible). Each toggle starts at the
-        // ruleset's parsed spec default (read from the default-variant ruleset, data-driven), so an untouched Start is
-        // byte-identical (REF on / Europeans on / Humans off / fog on). (The other gameOptions.map toggles are still NOT
-        // surfaced — the engine doesn't read them yet; see the dialog summary.)
+        // Game-options section: the base game options FreeCol shows at setup that our engine already honours, grouped as
+        // FreeCol's GameOptionsDialog groups them. Each toggle starts at the ruleset's parsed spec default (read from the
+        // default-variant ruleset, data-driven), so an untouched Start is byte-identical (REF on / Europeans on / Humans
+        // off / fog on / custom-house smuggling on). (The other gameOptions toggles are still NOT surfaced — the engine
+        // doesn't read them yet; see the dialog summary.)
         Ruleset defaults = VictoryDefaults();
-        vbox.AddChild(new Label
-        {
-            Name = "VictorySectionLabel",
-            Text = "Victory conditions",
-            HorizontalAlignment = HorizontalAlignment.Center,
-        });
-        _victoryRefCheck = VictoryCheck("VictoryRefCheck", "Defeat the Royal Expeditionary Force", defaults.VictoryDefeatRef);
-        _victoryEuropeansCheck = VictoryCheck("VictoryEuropeansCheck", "Be the last European power standing", defaults.VictoryDefeatEuropeans);
-        _victoryHumansCheck = VictoryCheck("VictoryHumansCheck", "Be the last human power standing", defaults.VictoryDefeatHumans);
+
+        // gameOptions.victoryConditions — the three alternative win checks (read by Game.Winner).
+        vbox.AddChild(SectionLabel("VictorySectionLabel", "Victory conditions"));
+        _victoryRefCheck = OptionCheck("VictoryRefCheck", "Defeat the Royal Expeditionary Force", defaults.VictoryDefeatRef);
+        _victoryEuropeansCheck = OptionCheck("VictoryEuropeansCheck", "Be the last European power standing", defaults.VictoryDefeatEuropeans);
+        _victoryHumansCheck = OptionCheck("VictoryHumansCheck", "Be the last human power standing", defaults.VictoryDefeatHumans);
         vbox.AddChild(_victoryRefCheck);
         vbox.AddChild(_victoryEuropeansCheck);
         vbox.AddChild(_victoryHumansCheck);
 
-        // Fog of war (model.option.fogOfWar): ticked = the classic remembered-but-hidden fog; unticked = explored tiles
-        // stay permanently visible. Starts at the ruleset's parsed spec default (classic on) — byte-identical default.
-        _fogOfWarCheck = VictoryCheck("FogOfWarCheck", "Fog of war", defaults.GameOptions.FogOfWar);
+        // gameOptions.map — fog of war (model.option.fogOfWar): ticked = the classic remembered-but-hidden fog; unticked
+        // = explored tiles stay permanently visible. Read by Game.CurrentlyVisible/IsVisible. Spec default classic on.
+        vbox.AddChild(SectionLabel("MapOptionsSectionLabel", "Map options"));
+        _fogOfWarCheck = OptionCheck("FogOfWarCheck", "Fog of war", defaults.GameOptions.FogOfWar);
         vbox.AddChild(_fogOfWarCheck);
+
+        // gameOptions.colony — custom-house boycott smuggling (model.option.customIgnoreBoycott): ticked = a colony's
+        // custom house sells (smuggles) goods under boycott; unticked = it skips a boycotted good. Read by the
+        // custom-house auto-sell. Spec default classic on.
+        vbox.AddChild(SectionLabel("ColonyOptionsSectionLabel", "Colony options"));
+        _customIgnoreBoycottCheck = OptionCheck(
+            "CustomIgnoreBoycottCheck", "Custom house sells boycotted goods", defaults.GameOptions.CustomIgnoreBoycott);
+        vbox.AddChild(_customIgnoreBoycottCheck);
 
         var start = new Button { Name = "StartButton", Text = "Start" };
         start.Pressed += OnStart;
@@ -204,6 +247,9 @@ public partial class NewGameDialog : Control
         WorldSize size = WorldSizeOptions.Sizes[_sizeOption.Selected];
         LandMass land = WorldSizeOptions.LandMasses[_landOption.Selected];
         DifficultyLevel difficulty = DifficultyLevels.All[_difficultyOption.Selected];
+        // The chosen scenario / variant rides its own static into Game.New (it selects which ruleset the game loads —
+        // ADR-018). The default variant (Classic, index 0) → the byte-identical default world.
+        GameController.PendingVariant = _variantByIndex[_variantOption.Selected];
         // The chosen nation rides its own static into Game.New (the human's nation is GameLogic state, not a world
         // option — ADR-006). Index 0 ("No nation") maps to null → the classic nation-less human (byte-identical default).
         GameController.PendingNation = _nationByIndex[_nationOption.Selected];
@@ -218,8 +264,24 @@ public partial class NewGameDialog : Control
         // The fog-of-war toggle rides its own static into Game.New, applied to the loaded ruleset (a config override of
         // how visibility is derived — ADR-006). Left at the spec default (on) it is a no-op override (byte-identical).
         GameController.PendingFogOfWar = _fogOfWarCheck.ButtonPressed;
+        // The custom-house boycott-smuggling toggle rides its own static into Game.New, applied to the loaded ruleset (a
+        // config override of whether a custom house smuggles — ADR-006). Left at the spec default (on) it is a no-op.
+        GameController.PendingCustomIgnoreBoycott = _customIgnoreBoycottCheck.ButtonPressed;
         _onStart?.Invoke(size, land, difficulty, source);
         EmitSignal(SignalName.Closed);
+    }
+
+    /// <summary>The dropdown index of the default variant (<see cref="GameVariants.Default"/>) in <see cref="GameVariants.All"/> — pre-selected so an untouched Start loads the byte-identical Classic world.</summary>
+    private static int VariantDefaultIndex()
+    {
+        for (int i = 0; i < GameVariants.All.Count; i++)
+        {
+            if (GameVariants.All[i].Id == GameVariants.Default.Id)
+            {
+                return i;
+            }
+        }
+        return 0; // the registry always contains the default; the guard keeps the dropdown valid regardless
     }
 
     /// <summary>
@@ -241,9 +303,13 @@ public partial class NewGameDialog : Control
         }
     }
 
-    /// <summary>Builds one victory-condition checkbox, pre-ticked to the ruleset's parsed spec default for that condition.</summary>
-    private static CheckBox VictoryCheck(string name, string label, bool defaultOn) =>
+    /// <summary>Builds one game-option checkbox, pre-ticked to the ruleset's parsed spec default for that option (so an untouched Start is byte-identical, ADR-009).</summary>
+    private static CheckBox OptionCheck(string name, string label, bool defaultOn) =>
         new() { Name = name, Text = label, ButtonPressed = defaultOn };
+
+    /// <summary>Builds one centred section header (the FreeCol option-group label — "Victory conditions" / "Map options" / "Colony options").</summary>
+    private static Label SectionLabel(string name, string text) =>
+        new() { Name = name, Text = text, HorizontalAlignment = HorizontalAlignment.Center };
 
     /// <summary>
     /// The selectable, non-REF European nations the human may choose, in ruleset order, read from the default-variant

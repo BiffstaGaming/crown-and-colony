@@ -2,12 +2,12 @@
 
 | | |
 |---|---|
-| **Status** | In development (selection layer + Classic variant; further variants — e.g. Australia — are future data) |
-| **Last verified** | 2026-06-13 @ Phase 5 (variant layer) |
-| **Code** | `game/src/GameLogic/Specification/GameVariant.cs`, `Ruleset.LoadEmbedded`; selection in `game/presentation/GameController.cs` |
-| **Tests** | `game/tests/GameLogic.Tests/Specification/GameVariantTests.cs` |
-| **FreeCol reference** | FreeCol ships multiple rulesets (`data/rules/classic`, `data/rules/freecol`) + mods (`data/mods/`) — same "data selects the world" idea |
-| **Related systems** | [ruleset-data](ruleset-data.md), [save-load](save-load.md), [founding-fathers](founding-fathers.md), [natives](natives.md) |
+| **Status** | In development (selection layer + Classic variant; **scenario selector now surfaced at New Game**; further variants — e.g. Australia — are future data) |
+| **Last verified** | 2026-06-22 @ New-Game options surface (`86d3e4bu0`) |
+| **Code** | `game/src/GameLogic/Specification/GameVariant.cs`, `Ruleset.LoadEmbedded`; selection + `Pending*` threading in `game/presentation/GameController.cs`; the New-Game UI in `game/presentation/NewGameDialog.cs` |
+| **Tests** | `game/tests/GameLogic.Tests/Specification/GameVariantTests.cs` (L1/L2); `game/presentation/tests/MainMenuTests.cs` + `MainSceneTests.cs` (L3 — dialog forwarding + applied-to-started-game) |
+| **FreeCol reference** | FreeCol ships multiple rulesets (`data/rules/classic`, `data/rules/freecol`) + mods (`data/mods/`) — same "data selects the world" idea; the New-Game UI mirrors FreeCol's `NewPanel` (the "rules" dropdown) + `GameOptionsDialog` (option grouping) + `MapGeneratorOptionsDialog` |
+| **Related systems** | [ruleset-data](ruleset-data.md), [save-load](save-load.md), [founding-fathers](founding-fathers.md), [natives](natives.md), [fog-of-war](fog-of-war.md), [custom-house](custom-house.md), [independence](independence.md) (victory conditions), [map-terrain](map-terrain.md) |
 
 ## 1. How it works (plain English)
 
@@ -18,7 +18,21 @@ The important promise: **picking a variant is the only thing that changes the da
 **Worked example:**
 > In the Classic variant you might recruit Thomas Jefferson (+50% bells). A future Australia variant would define its own historical figures with their own perks in its own data file — the election screen, the bonus maths, and everything else work unchanged, because they just apply whatever the selected variant's people grant.
 
-**What the player sees and does:** today the game starts in the Classic variant. A variant-select screen is future UI; the plumbing to choose one and have its data flow through is what this slice builds.
+**What the player sees and does:** the **New Game** screen now opens with a **Scenario** dropdown at the top — the world the game tells. Today it lists only "Colonial America (Classic)", so a normal player leaves it as-is; the value of having it is that the *next* variant (Australia) becomes one more line in that dropdown, with no other change to the screen or the code. Below the scenario, the same screen lets the player tune the world before starting:
+
+- **Scenario** — which variant (ruleset) the game plays (Classic today).
+- **Map** — a procedurally generated random New World, or FreeCol's fixed America map.
+- **World size / Land mass / Landmass** — how big the map is, how much of it is land, and whether the land is one continent, a few big islands, or many small ones. (These apply only to the random map — a fixed map sets its own shape, so they grey out when America is chosen.)
+- **Difficulty** — the five classic levels (Discoverer … Viceroy); Conquistador is the historical default.
+- **Nation** — which European power the player leads (or "No nation" for the classic nation-less start).
+- **Game options**, grouped the way FreeCol groups them:
+  - *Victory conditions* — which ways of winning are switched on: defeat the Royal Expeditionary Force (on), be the last European power standing (on), be the last human standing (off).
+  - *Map options* — **Fog of war** (on): explored land you can't currently see is remembered but its contents hidden; turn it off to keep everywhere you've ever been permanently in view.
+  - *Colony options* — **Custom house sells boycotted goods** (on): a colony's custom house smuggles goods even when they're under boycott; turn it off and it skips boycotted goods.
+
+**Every option is pre-set to its current default, so a player who just presses Start gets exactly the game they got before this screen existed** (the default game is unchanged, bit for bit).
+
+> **Why only these options?** The screen shows only the options the engine actually *acts on*. FreeCol's setup dialogs expose dozens more (exploration points, amphibious moves, customs-on-coast, and map-generator dials like river/mountain/rumour counts). Ours doesn't yet read most of those — a switch that did nothing would be a lie to the player — so each is added here only once the engine honours it. The map-generator counts in particular are still fixed constants inside the map generator, not yet wired to a setting, so they aren't shown.
 
 ## 2. Detailed rules
 
@@ -39,7 +53,22 @@ The important promise: **picking a variant is the only thing that changes the da
 
 **Data sources:** each variant points at an embedded `specification.xml`. `Ruleset.LoadEmbedded(resource)` reads it; `Ruleset.LoadClassic()` is now a convenience for the classic variant. The generic `Ruleset.Load(Stream)` parses *any* spec — the engine is variant-agnostic by construction.
 
-**Integration points:** `GameController` holds the selected `_variant`; a new game loads `_variant.LoadRuleset()`. On save it records `_variant.Id`; on load it reads the save's variant, resolves it (`GameVariants.Resolve`), and restores under that ruleset.
+**Integration points:** `GameController` holds the selected `_variant`; a new game loads `_variant.LoadRuleset(difficulty.Id)`. On save it records `_variant.Id`; on load it reads the save's variant, resolves it (`GameVariants.Resolve`), and restores under that ruleset.
+
+**New-Game options surface (`86d3e4bu0`):** `NewGameDialog` (presentation, built programmatically) collects the picks and threads them to the started game through the existing **`GameController.Pending*` static pattern** (statics survive the menu→game scene change). The `onStart` callback carries the world-options (`WorldSize` / `LandMass` / `DifficultyLevel` / `MapSource`) that `MainMenu` stores on `PendingWorldSize` / `PendingLandMass` / `PendingDifficulty` / `PendingMapSource`; the dialog sets the remaining picks directly on their own statics:
+
+| Pick | Static | Applied in `GameController` | Honoured by | Persisted? |
+|---|---|---|---|---|
+| Scenario / variant | `PendingVariant` (`GameVariant?`) | `NewGame()` sets `_variant` before `StartNewGame` | `_variant.LoadRuleset` (ADR-018) | **Yes** — save records the variant id (existing field, no bump) |
+| Human nation | `PendingNation` (`string?`) | forwarded to `Game.New(humanNationId:)` | national advantage + colony names | yes (player state) |
+| Landmass style | `PendingLandStyle` (`LandStyleOption?`) | forwarded to `Game.New(landStyle:)` | `MapGenerator` (random map only) | n/a (map baked into save) |
+| Victory conditions | `PendingVictoryConditions` (`(bool,bool,bool)?`) | `Ruleset.WithVictoryConditions` | `Game.Winner` | **No** — session-only override |
+| Fog of war | `PendingFogOfWar` (`bool?`) | `Ruleset.WithFogOfWar` | `Game.CurrentlyVisible` / `IsVisible` | **No** — session-only override |
+| Custom-house smuggling | `PendingCustomIgnoreBoycott` (`bool?`) | `Ruleset.WithCustomIgnoreBoycott` | custom-house auto-sell | **No** — session-only override |
+
+The three `Ruleset.With*` overrides are configuration seams, not rules changes (ADR-006): each is applied to the freshly-parsed, never-shared ruleset instance right after `LoadRuleset`, and **a `null` pick leaves the spec default untouched** — so the dialog's pre-selected defaults reproduce the byte-identical default game (ADR-009). The victory/fog/custom-house overrides are deliberately **not** persisted (a saved override would bump the save format — see [save-load](save-load.md)); a reload re-derives them from the variant's spec. The variant id *is* persisted (the save already carries it), so a saved variant game reloads under the right ruleset.
+
+**Honoured-but-omitted (and why), per ADR-009 "don't surface an inert option":** the other `gameOptions.map`/`.colony` toggles FreeCol shows (`explorationPoints`, `amphibiousMoves`, `enhancedMissionaries`, `customsOnCoast`, …) are not consulted by the engine yet. The map-generator **counts** FreeCol exposes (`model.option.riverNumber` / `mountainNumber` / `rumourNumber` / `bonusNumber`) are still hard-coded constants in `MapGenerator` / `LostCityRumourGenerator`, **not plumbed through `Game.New`** — so they are not surfaced (a dial here would be inert; the only wired map-generator options — size / land mass / landmass style — *are* surfaced). The per-level difficulty option *values* (FreeCol's editable `DifficultyDialog`) are not surfaced — the engine reads them from the chosen level's spec, not a live override; the difficulty *level* dropdown is.
 
 **Persistence:** save format **v15** adds the variant id (`SaveGame.Variant`); `SaveGame.From(game, variantId)` records it. Pre-v15 saves load as Default.
 
@@ -52,21 +81,24 @@ The important promise: **picking a variant is the only thing that changes the da
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
 | L1 Unit | Always | `GameVariantTests`: registry/`Default`/`ById`/`Resolve`; classic loads the American world | ✅ |
-| L2 Scenario | Always | `GameVariantTests.DifferentRuleset_YieldsDifferentFathersAndNations` — the transposability proof (a custom spec → a custom father with its own perk, no shared content) | ✅ |
-| L3 Interaction | Via save/load | `InputTests` F5/F9 round-trip drives the variant-aware load path | ✅ |
-| L4 Visual | No screen yet | — (variant-select UI is future) | — |
+| L2 Scenario | Always | `GameVariantTests.DifferentRuleset_YieldsDifferentFathersAndNations` — the transposability proof (a custom spec → a custom father with its own perk, no shared content); `SoakTests` byte-identical default (option defaults don't shift the default game) | ✅ |
+| L3 Interaction | New-Game UI + save/load | `MainMenuTests` — the dialog forwards the chosen scenario/variant + game options onto their `Pending*` statics; `MainSceneTests.NewGame_AppliesAChosenNonDefaultOptionSet_ToTheStartedGame` — a non-default option set reaches the started game's ruleset (+ a companion default-byte-identical check); `InputTests` F5/F9 round-trip drives the variant-aware load path | ✅ |
+| L4 Visual | No golden yet | — (the New-Game dialog has no visual golden; the menu golden is unaffected) | — |
 
-- **FreeCol cross-check:** conceptual — FreeCol is ruleset+mod driven; we match the "data selects the world" model (without mod overlays yet).
+- **FreeCol cross-check:** conceptual — FreeCol is ruleset+mod driven and groups its New-Game options into `gameOptions.{map,colony,victoryConditions,years}` (`GameOptions.java`) shown via `GameOptionsDialog`, with the ruleset chosen in `NewPanel`; we match the "data selects the world" model and mirror the group taxonomy for the honoured subset (without mod overlays yet).
 
 ## 5. Open issues / TODO
 
-- [ ] Variant-select screen (UI) when there is more than one variant.
+- [x] Variant-select screen (UI) — the **Scenario** dropdown is now on the New-Game dialog (`86d3e4bu0`); a future variant is a registry entry, not a dialog change.
+- [ ] Surface more honoured game options as the engine grows to read them (the omitted `gameOptions.map`/`.colony` toggles), and wire + surface the map-generator counts (`riverNumber`/`mountainNumber`/`rumourNumber`/`bonusNumber`) through `Game.New` (today they are fixed constants in `MapGenerator`/`LostCityRumourGenerator`).
+- [ ] Optional: an editable difficulty (FreeCol's `model.difficulty.custom` + `DifficultyDialog`) — today only the five preset *levels* are offered.
 - [ ] Migrate the remaining hard-coded America-specific data into nation/ruleset data (colony names via `<nation>` parsing; review the well-known-id contract).
 - [ ] Decide on mod-overlay support (patch a base ruleset) vs. whole-spec variants, before the Australia variant (Phase 8).
-- [ ] The Australia variant itself (Phase 8): author its spec + register a `GameVariant`.
+- [ ] The Australia variant itself (Phase 8): author its spec + register a `GameVariant` (it then appears in the Scenario dropdown automatically).
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-22 | New-Game options surface (`86d3e4bu0`): a **Scenario/variant** dropdown (the seam future variants plug into) + the honoured base game options grouped FreeCol-style (victory conditions / fog of war / custom-house smuggling), threaded through `GameController.PendingVariant`/`PendingCustomIgnoreBoycott` (+ existing `Pending*`). Defaults pre-selected = byte-identical default game (soak green); no save change. L3 dialog-forwarding + applied-to-started-game tests | _this commit_ |
 | 2026-06-13 | Variant/game-mode selection layer (`GameVariant`/`GameVariants`, `Ruleset.LoadEmbedded`), variant-aware saves (v15), transposability proof test (ADR-018) | Phase 5 (variant layer) |

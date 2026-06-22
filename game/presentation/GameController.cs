@@ -87,6 +87,32 @@ public partial class GameController : Node2D
     public static bool? PendingFogOfWar { get; set; }
 
     /// <summary>
+    /// Companion to <see cref="PendingWorldSize"/>: the <b>custom-house boycott-smuggling</b> game option the human
+    /// chose at New Game (FreeCol's <c>model.option.customIgnoreBoycott</c>, the <c>gameOptions.colony</c> group,
+    /// surfaced by <see cref="NewGameDialog"/>). <b>Null = no pick → the ruleset's parsed spec default</b> (classic
+    /// <b>on</b> — so a default new game is byte-identical, ADR-009). Set by the dialog's Start and consumed (and
+    /// cleared) in <see cref="NewGame"/>, where it is applied to the freshly-loaded ruleset via
+    /// <see cref="Ruleset.WithCustomIgnoreBoycott"/> so a colony's custom house auto-sell smuggles a boycotted good
+    /// (on) or skips it (off). Static because it must survive the scene change, like <see cref="PendingWorldSize"/>.
+    /// <b>Session-only</b> — the override is not written to the save (a reload re-derives the option from the variant's
+    /// spec; persisting it would bump the save format, matching the victory-condition / fog-of-war seams, 86d3e4bu0).
+    /// </summary>
+    public static bool? PendingCustomIgnoreBoycott { get; set; }
+
+    /// <summary>
+    /// Companion to <see cref="PendingWorldSize"/>: the <b>ruleset / variant</b> the human chose at New Game (the
+    /// scenario selector surfaced by <see cref="NewGameDialog"/> — FreeCol's "rules" dropdown on its New-game panel).
+    /// <b>Null = no pick → <see cref="GameVariants.Default"/></b> (Colonial America / Classic — so a default new game is
+    /// byte-identical, ADR-009). Set by the dialog's Start and consumed (and cleared) in <see cref="NewGame"/>, where it
+    /// becomes the controller's active <c>_variant</c> so the new game loads that variant's ruleset (its nations,
+    /// Founding Fathers, units, terrain — ADR-018). This is the seam a future variant (e.g. Australia) plugs into: it
+    /// becomes a dropdown entry in <see cref="GameVariants.All"/>, not a code change. Static because it must survive the
+    /// scene change, like <see cref="PendingWorldSize"/>. The chosen variant <b>is</b> persisted (the save already
+    /// records its variant id so it reloads under the right ruleset — no new save field).
+    /// </summary>
+    public static GameVariant? PendingVariant { get; set; }
+
+    /// <summary>
     /// New-game seed. 0 (default) = pick a random seed per game; set non-zero to
     /// pin the world (tests, bug reproduction — ADR-009).
     /// </summary>
@@ -259,6 +285,11 @@ public partial class GameController : Node2D
         (bool DefeatRef, bool DefeatEuropeans, bool DefeatHumans)? victory = PendingVictoryConditions;
         // The chosen fog-of-war toggle (null = no pick → the ruleset's parsed spec default, classic on, byte-identical).
         bool? fogOfWar = PendingFogOfWar;
+        // The chosen custom-house boycott-smuggling toggle (null = no pick → the spec default, classic on, byte-identical).
+        bool? customIgnoreBoycott = PendingCustomIgnoreBoycott;
+        // The chosen variant becomes the active ruleset source (null = no pick → the default Classic variant). Set BEFORE
+        // StartNewGame so the new game loads the picked variant's ruleset (ADR-018); the save then records its id.
+        _variant = PendingVariant ?? GameVariants.Default;
         PendingWorldSize = null;
         PendingLandMass = null;
         PendingDifficulty = null;
@@ -267,24 +298,27 @@ public partial class GameController : Node2D
         PendingLandStyle = null;
         PendingVictoryConditions = null;
         PendingFogOfWar = null;
+        PendingCustomIgnoreBoycott = null;
+        PendingVariant = null;
 
         // Picking the seed may be non-deterministic (player convenience);
         // the game itself is fully determined by the chosen seed.
-        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi(), size, land, difficulty, mapSource, nation, landStyle, victory, fogOfWar);
+        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi(), size, land, difficulty, mapSource, nation, landStyle, victory, fogOfWar, customIgnoreBoycott);
     }
 
     /// <summary>Starts a new game from an explicit seed at the shipped-default world size / difficulty / map / nation-less human (tests, visual goldens — ADR-009).</summary>
     public void StartNewGame(ulong seed) =>
         StartNewGame(seed, WorldSizeOptions.DefaultSize, WorldSizeOptions.DefaultLandMass, DifficultyLevels.Default, MapSource.Random);
 
-    /// <summary>Starts a new game from an explicit seed, world size / land amount, difficulty level, map source, (optional) human nation, (optional) landmass style, (optional) victory-condition overrides and (optional) fog-of-war override (forwarded from the new-game options). The ruleset is loaded under the chosen level so its balance matches, the level is recorded for the save, a fixed <paramref name="mapSource"/> ignores the size/land/style args (its grid sets the dimensions), <paramref name="humanNationId"/> (null = no pick) seeds the human's national advantage + colony names, <paramref name="landStyle"/> (default <see cref="LandStyle.Continent"/>) shapes the random map's land, <paramref name="victory"/> (null = the ruleset's parsed spec defaults) flips which alternative victory conditions <see cref="Game.Winner"/> evaluates, and <paramref name="fogOfWar"/> (null = the spec default, classic on) flips whether explored-but-unseen tiles are re-hidden — both session-only, not persisted (86d3drn64, 86d3dzdw3).</summary>
-    public void StartNewGame(ulong seed, WorldSize size, LandMass landMass, DifficultyLevel difficulty, MapSource mapSource, string? humanNationId = null, LandStyle landStyle = LandStyle.Continent, (bool DefeatRef, bool DefeatEuropeans, bool DefeatHumans)? victory = null, bool? fogOfWar = null)
+    /// <summary>Starts a new game from an explicit seed, world size / land amount, difficulty level, map source, (optional) human nation, (optional) landmass style, (optional) victory-condition overrides, (optional) fog-of-war override and (optional) custom-house boycott-smuggling override (forwarded from the new-game options). The active <c>_variant</c>'s ruleset is loaded under the chosen level so its balance matches, the level is recorded for the save, a fixed <paramref name="mapSource"/> ignores the size/land/style args (its grid sets the dimensions), <paramref name="humanNationId"/> (null = no pick) seeds the human's national advantage + colony names, <paramref name="landStyle"/> (default <see cref="LandStyle.Continent"/>) shapes the random map's land, <paramref name="victory"/> (null = the ruleset's parsed spec defaults) flips which alternative victory conditions <see cref="Game.Winner"/> evaluates, <paramref name="fogOfWar"/> (null = the spec default, classic on) flips whether explored-but-unseen tiles are re-hidden, and <paramref name="customIgnoreBoycott"/> (null = the spec default, classic on) flips whether a custom house smuggles boycotted goods — all three session-only, not persisted (86d3drn64, 86d3dzdw3, 86d3e4bu0). The chosen <em>variant</em> is set by the caller (<see cref="NewGame"/>) before this runs and is recorded in the save.</summary>
+    public void StartNewGame(ulong seed, WorldSize size, LandMass landMass, DifficultyLevel difficulty, MapSource mapSource, string? humanNationId = null, LandStyle landStyle = LandStyle.Continent, (bool DefeatRef, bool DefeatEuropeans, bool DefeatHumans)? victory = null, bool? fogOfWar = null, bool? customIgnoreBoycott = null)
     {
         _currentSeed = seed;
-        // Load the variant's ruleset under the chosen difficulty; if the player picked victory conditions / fog of war,
-        // apply them to this freshly-parsed (never-shared) instance before building the game — a configuration override
-        // (of which win checks fire / how visibility is derived), not a rules change (ADR-006). Null leaves the spec
-        // defaults untouched, so a default new game is byte-identical.
+        // Load the active variant's ruleset under the chosen difficulty; if the player picked victory conditions / fog
+        // of war / custom-house smuggling, apply them to this freshly-parsed (never-shared) instance before building the
+        // game — a configuration override (of which win checks fire / how visibility is derived / whether a custom house
+        // smuggles), not a rules change (ADR-006). Null leaves each spec default untouched, so a default new game is
+        // byte-identical.
         Ruleset ruleset = _variant.LoadRuleset(difficulty.Id);
         if (victory is { } v)
         {
@@ -293,6 +327,10 @@ public partial class GameController : Node2D
         if (fogOfWar is { } fog)
         {
             ruleset = ruleset.WithFogOfWar(fog);
+        }
+        if (customIgnoreBoycott is { } smuggle)
+        {
+            ruleset = ruleset.WithCustomIgnoreBoycott(smuggle);
         }
         StartGame(Game.New(
             ruleset, _currentSeed, size.Width, size.Height,

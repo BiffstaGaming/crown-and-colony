@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Threading.Tasks;
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.Presentation;
 using GdUnit4;
 using Godot;
@@ -81,6 +83,77 @@ public class MainSceneTests
             .EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
         AssertThat(panel.Visible).IsFalse();
+    }
+
+    [TestCase]
+    public async Task NewGame_AppliesAChosenNonDefaultOptionSet_ToTheStartedGame()
+    {
+        // L3 (86d3e4bu0): the NewGameDialog forwards the player's option picks through the GameController.Pending*
+        // statics; this drives the REAL consume-and-apply path (the private NewGame()) and asserts a NON-DEFAULT set
+        // reaches the started game's ruleset — the new-game options actually take effect, not just get collected.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // A deliberately non-default option set, every value flipped away from the byte-identical default:
+        //   variant   = Classic (explicit — only shipped variant; still exercises the PendingVariant → _variant seam)
+        //   victory   = REF off / Europeans off / Humans ON (default is on / on / off)
+        //   fog of war = OFF        (default on)
+        //   custom-house smuggling = OFF (default on)
+        GameController.PendingVariant = GameVariants.ClassicAmerica;
+        GameController.PendingVictoryConditions = (DefeatRef: false, DefeatEuropeans: false, DefeatHumans: true);
+        GameController.PendingFogOfWar = false;
+        GameController.PendingCustomIgnoreBoycott = false;
+
+        // Invoke the production NewGame() (private — the same method the N hotkey / Game Over → New Game button call),
+        // which consumes the statics, applies them to the freshly-loaded ruleset, and starts the game.
+        typeof(GameController)
+            .GetMethod("NewGame", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(controller, null);
+        await runner.SimulateFrames(1);
+
+        var game = (CrownAndColony.GameLogic.GameSession.Game)typeof(GameController)
+            .GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(controller)!;
+
+        // The chosen option set is reflected on the started game's ruleset (the win checks + the game-option bundle).
+        AssertThat(game.Ruleset.VictoryDefeatRef).IsFalse();
+        AssertThat(game.Ruleset.VictoryDefeatEuropeans).IsFalse();
+        AssertThat(game.Ruleset.VictoryDefeatHumans).IsTrue();
+        AssertThat(game.Ruleset.GameOptions.FogOfWar).IsFalse();
+        AssertThat(game.Ruleset.GameOptions.CustomIgnoreBoycott).IsFalse();
+
+        // The statics were consumed (cleared) so a later default new game isn't surprised by a stale pick.
+        AssertThat(GameController.PendingVictoryConditions).IsNull();
+        AssertThat(GameController.PendingFogOfWar).IsNull();
+        AssertThat(GameController.PendingCustomIgnoreBoycott).IsNull();
+        AssertThat(GameController.PendingVariant).IsNull();
+    }
+
+    [TestCase]
+    public async Task NewGame_WithNoOptionPicks_StartsTheByteIdenticalDefault()
+    {
+        // The companion to the non-default test: with NO Pending* picks, the started game's ruleset carries the spec
+        // defaults (REF on / Europeans on / Humans off / fog on / smuggling on) — proving the dialog's defaults map to
+        // the byte-identical default game (ADR-009).
+        GameController.PendingVariant = null;
+        GameController.PendingVictoryConditions = null;
+        GameController.PendingFogOfWar = null;
+        GameController.PendingCustomIgnoreBoycott = null;
+
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        var game = (CrownAndColony.GameLogic.GameSession.Game)typeof(GameController)
+            .GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(controller)!;
+
+        AssertThat(game.Ruleset.VictoryDefeatRef).IsTrue();
+        AssertThat(game.Ruleset.VictoryDefeatEuropeans).IsTrue();
+        AssertThat(game.Ruleset.VictoryDefeatHumans).IsFalse();
+        AssertThat(game.Ruleset.GameOptions.FogOfWar).IsTrue();
+        AssertThat(game.Ruleset.GameOptions.CustomIgnoreBoycott).IsTrue();
     }
 
     [TestCase]

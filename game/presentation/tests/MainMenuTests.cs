@@ -205,6 +205,93 @@ public class MainMenuTests
     }
 
     [TestCase]
+    public async Task NewGameDialog_ForwardsTheChosenScenarioVariant_ThroughPendingVariant()
+    {
+        ISceneRunner runner = ISceneRunner.Load(MenuScene);
+        await runner.SimulateFrames(2);
+        var menu = (Control)runner.Scene();
+
+        var dialog = new NewGameDialog();
+        menu.AddChild(dialog);
+        await runner.SimulateFrames(1); // _Ready builds the controls (incl. the scenario dropdown from the registry)
+
+        GameController.PendingVariant = null; // clean slate (a static survives between tests)
+        dialog.Open((_, _, _, _) => { });
+
+        var variantOption = dialog.FindChild("VariantOption", recursive: true, owned: false) as OptionButton;
+        AssertThat(variantOption).IsNotNull();
+        // Every shipped variant is offered, in registry order; the default (Classic) is pre-selected.
+        AssertThat(variantOption!.ItemCount).IsEqual(GameVariants.All.Count);
+        variantOption.Select(0); // Classic — the only shipped variant today (still exercises the forwarding seam)
+
+        var start = dialog.FindChild("StartButton", recursive: true, owned: false) as Button;
+        AssertThat(start).IsNotNull();
+        start!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // The chosen variant is forwarded as the new game's ruleset source.
+        AssertThat(GameController.PendingVariant).IsNotNull();
+        AssertThat(GameController.PendingVariant!.Id).IsEqual(GameVariants.All[0].Id);
+        GameController.PendingVariant = null; // tidy the static for the next test
+    }
+
+    [TestCase]
+    public async Task NewGameDialog_ForwardsTheChosenGameOptions_ThroughTheirPendingStatics()
+    {
+        ISceneRunner runner = ISceneRunner.Load(MenuScene);
+        await runner.SimulateFrames(2);
+        var menu = (Control)runner.Scene();
+
+        var dialog = new NewGameDialog();
+        menu.AddChild(dialog);
+        await runner.SimulateFrames(1); // _Ready builds the controls (incl. the game-option checkboxes from the ruleset)
+
+        GameController.PendingVictoryConditions = null;
+        GameController.PendingFogOfWar = null;
+        GameController.PendingCustomIgnoreBoycott = null;
+        dialog.Open((_, _, _, _) => { });
+
+        // The checkboxes start at the spec defaults (REF on / Europeans on / Humans off / fog on / smuggling on).
+        var victoryHumans = dialog.FindChild("VictoryHumansCheck", recursive: true, owned: false) as CheckBox;
+        var fogOfWar = dialog.FindChild("FogOfWarCheck", recursive: true, owned: false) as CheckBox;
+        var customHouse = dialog.FindChild("CustomIgnoreBoycottCheck", recursive: true, owned: false) as CheckBox;
+        AssertThat(victoryHumans).IsNotNull();
+        AssertThat(fogOfWar).IsNotNull();
+        AssertThat(customHouse).IsNotNull();
+        AssertThat(fogOfWar!.ButtonPressed).IsTrue();   // default on
+        AssertThat(customHouse!.ButtonPressed).IsTrue(); // default on
+
+        // Flip a non-default set: last-human-standing victory ON, fog OFF, custom-house smuggling OFF.
+        victoryHumans!.ButtonPressed = true;
+        fogOfWar.ButtonPressed = false;
+        customHouse.ButtonPressed = false;
+
+        var start = dialog.FindChild("StartButton", recursive: true, owned: false) as Button;
+        AssertThat(start).IsNotNull();
+        start!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // The picks are forwarded onto their statics. (Extract to plain bools: AssertThat on a nullable bool resolves to
+        // the object overload, which rejects the boxed primitive — so assert HasValue + Value as plain booleans.)
+        AssertThat(GameController.PendingVictoryConditions).IsNotNull();
+        bool humansWin = GameController.PendingVictoryConditions!.Value.DefeatHumans;
+        AssertThat(humansWin).IsTrue();
+        bool fogSet = GameController.PendingFogOfWar.HasValue;
+        bool fogValue = GameController.PendingFogOfWar ?? true;
+        AssertThat(fogSet).IsTrue();
+        AssertThat(fogValue).IsFalse();
+        bool smuggleSet = GameController.PendingCustomIgnoreBoycott.HasValue;
+        bool smuggleValue = GameController.PendingCustomIgnoreBoycott ?? true;
+        AssertThat(smuggleSet).IsTrue();
+        AssertThat(smuggleValue).IsFalse();
+
+        // Tidy the statics for the next test.
+        GameController.PendingVictoryConditions = null;
+        GameController.PendingFogOfWar = null;
+        GameController.PendingCustomIgnoreBoycott = null;
+    }
+
+    [TestCase]
     public async Task NewGameDialog_SelectingAmerica_ForwardsAmerica_AndDisablesWorldSize()
     {
         ISceneRunner runner = ISceneRunner.Load(MenuScene);
