@@ -61,7 +61,9 @@ GdUnit4Net scene runner: load the actual scene, simulate input, await signals, a
 - Intentional UI change → regenerate goldens via the update script; new goldens are reviewed in the PR like any code change.
 
 ### L5 — Smoke & soak (global, nightly)
-Boot to main menu and into a new game headlessly; autoplay N full AI games; assert zero errors/warnings-as-errors; assert per-turn time stays within the performance budget (average `EndTurn` < 2 ms, enforced by `SoakTests.TurnProcessing_StaysWithinPerformanceBudget`).
+Boot to main menu and into a new game headlessly; autoplay N full AI games; assert zero errors/warnings-as-errors; assert per-turn time stays within the performance budget. Two perf gates, both in the `Category=Soak` suite the nightly runs (and excluded from the every-push gate):
+- **Idle-tick budget** — `SoakTests.TurnProcessing_StaysWithinPerformanceBudget`: a single managed game then 1000 bare `EndTurn` ticks, average < 2 ms.
+- **AI-autoplay turn-time gate** — `SoakTests.AiAutoplay_TurnTime_StaysWithinPerformanceBudget` (kanban 86d3dzdzr): a seeded full-game all-AI autoplay (`Game.New(seed)` + 250 `EndTurn`s over 5 seeds; the human idles, so every foreign-power economy/turn and native nation runs each round) asserting **both** the per-turn average **and** the total wall-time stay under budget, so a perf regression in the AI turn loop fails the nightly. Budget: **6 ms/turn average and 8 s total** — ~4× the dev-box measurement (~1.5 ms/turn, ~1.9 s for 1250 turns; 2026-06-22), generous headroom so a noisy CI runner can't flake it while an order-of-magnitude regression still trips it. Deterministic seeds; never drives the human, so it leaves stream 0 and all soak-asserted state untouched.
 
 ## CI gates (GitHub Actions)
 

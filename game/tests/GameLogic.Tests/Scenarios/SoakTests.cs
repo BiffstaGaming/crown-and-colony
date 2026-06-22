@@ -161,6 +161,66 @@ public class SoakTests
         Assert.True(average < 2.0, $"average EndTurn took {average:F3} ms (budget 2 ms)");
     }
 
+    /// <summary>
+    /// L5 AI-autoplay performance-budget gate (docs/TESTING.md L5, kanban 86d3dzdzr).
+    ///
+    /// Runs a seeded full-game AI autoplay — every player but the idle human is AI, and a real
+    /// <see cref="Game.EndTurn"/> drives all of them (foreign-power economy + turn, native raids,
+    /// the shared world) — and asserts the wall-time stays under a budget, both the per-turn average
+    /// and the total. A perf regression in the AI turn loop (an O(n²) creeping into a per-turn scan,
+    /// say) therefore fails the nightly even though no behaviour assertion changed.
+    ///
+    /// Budget rationale: on the dev box (Opus-4.8 session, 2026-06-22) a 250-turn autoplay over five
+    /// seeds measured a per-turn average of ~1.5 ms (worst single seed ~1.8 ms; total ≈ 1.9 s for the
+    /// 1250 turns). The ceilings here are ~4× that — 6.0 ms/turn and 8.0 s total — generous enough that
+    /// a slower/noisier CI shared runner can't flake the gate, yet still tight enough to catch a real
+    /// order-of-magnitude regression. (4× matches the headroom the task floated; the AI turn is heavier
+    /// than the idle-tick budget below because every foreign power runs its economy + turn each round.)
+    ///
+    /// Determinism: fixed seeds, and the human is never driven, so this neither draws the human's stream 0
+    /// nor mutates any game state that the invariant/round-trip soak tests assert. It only times them.
+    /// </summary>
+    [Fact]
+    public void AiAutoplay_TurnTime_StaysWithinPerformanceBudget()
+    {
+        const int turnsPerSeed = 250;
+        const double perTurnBudgetMs = 6.0;   // ~4× the measured ~1.5 ms/turn dev-box average
+        const double totalBudgetSec = 8.0;    // ~4× the measured ~1.9 s total over 5 seeds (1250 turns)
+
+        int totalTurns = 0;
+        double worstSeedAvgMs = 0.0;
+        var overall = Stopwatch.StartNew();
+
+        // Five independent seeds so the budget reflects the spread of map/economy shapes, not one lucky layout.
+        for (ulong seed = 9000; seed < 9005; seed++)
+        {
+            // All-AI autoplay: build a normal game (human + foreign powers + native nations) and tick whole
+            // turns without ever driving the human. EndTurn runs every AI economy/turn and the shared world.
+            Game game = Game.New(Classic, seed);
+
+            var seedWatch = Stopwatch.StartNew();
+            for (int turn = 0; turn < turnsPerSeed; turn++)
+            {
+                game.EndTurn();
+            }
+            seedWatch.Stop();
+
+            double seedAvgMs = seedWatch.Elapsed.TotalMilliseconds / turnsPerSeed;
+            worstSeedAvgMs = Math.Max(worstSeedAvgMs, seedAvgMs);
+            totalTurns += turnsPerSeed;
+        }
+
+        overall.Stop();
+        double averageMs = overall.Elapsed.TotalMilliseconds / totalTurns;
+
+        Assert.True(averageMs < perTurnBudgetMs,
+            $"AI-autoplay average EndTurn took {averageMs:F3} ms over {totalTurns} turns " +
+            $"(worst-seed avg {worstSeedAvgMs:F3} ms; budget {perTurnBudgetMs} ms)");
+        Assert.True(overall.Elapsed.TotalSeconds < totalBudgetSec,
+            $"AI-autoplay total took {overall.Elapsed.TotalSeconds:F2} s over {totalTurns} turns " +
+            $"(budget {totalBudgetSec} s)");
+    }
+
     /// <summary>Plays a game: wander a few turns, found a colony, manage it greedily.</summary>
     private static Game PlayGame(ulong seed, int turns)
     {
