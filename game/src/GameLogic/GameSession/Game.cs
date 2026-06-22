@@ -1192,12 +1192,21 @@ public sealed partial class Game
         ["model.unit.freeColonist", "model.unit.indenturedServant"];
 
     /// <summary>
-    /// Changes a native settlement's alarm toward the player, clamped to
-    /// [0, <see cref="NativeSettlement.MaxAlarm"/>]. The mutation point hostile acts
-    /// (combat, taking land) will call in later slices (FreeCol <c>csModifyAlarm</c>).
+    /// Changes a native settlement's alarm toward the player, clamped to [0, <c>Ruleset.Difficulty.NativeTension.MaxAlarm</c>]
+    /// (the data-overridable alarm ceiling, classic 1000). The mutation point hostile acts (combat, taking land) call
+    /// (FreeCol <c>csModifyAlarm</c>).
     /// </summary>
     public void ChangeNativeAlarm(NativeSettlement settlement, int delta) =>
-        settlement.Alarm = Math.Clamp(settlement.Alarm + delta, 0, NativeSettlement.MaxAlarm);
+        settlement.Alarm = Math.Clamp(settlement.Alarm + delta, 0, Ruleset.Difficulty.NativeTension.MaxAlarm);
+
+    /// <summary>
+    /// The hostility band of <paramref name="settlement"/> against the <b>data-overridable</b> band limits
+    /// (<c>Ruleset.Difficulty.NativeTension</c>) — the rules-engine form, so a variant's retuned Happy/Content/Displeased/Angry
+    /// thresholds drive every gameplay gate. Equivalent to the classic <see cref="NativeSettlement.AlarmLevel"/> property
+    /// for the default ruleset (byte-identical), which the presentation layer reads.
+    /// </summary>
+    private AlarmLevel AlarmLevelOf(NativeSettlement settlement) =>
+        settlement.AlarmLevelFor(Ruleset.Difficulty.NativeTension);
 
     /// <summary>Whether <paramref name="unit"/> may speak with <paramref name="settlement"/>'s chief now.</summary>
     public MoveCheck CheckVisit(Unit unit, NativeSettlement settlement)
@@ -1374,7 +1383,7 @@ public sealed partial class Game
     /// </summary>
     private bool InstallMission(Player player, Unit unit, NativeSettlement settlement)
     {
-        if (settlement.AlarmLevel >= AlarmLevel.Angry)
+        if (AlarmLevelOf(settlement) >= AlarmLevel.Angry)
         {
             _units.Remove(unit); // an Angry/Hateful tribe kills the missionary (FreeCol csRemove)
             return false;
@@ -1479,7 +1488,7 @@ public sealed partial class Game
             // Father Jean de Brébeuf makes every one of the owner's missionaries count as an expert jesuit.
             bool expert = settlement.MissionIsExpert || HasAbilityFor(owner, ExpertMissionaryAbility);
             int skill = expert ? JesuitConversionSkill : 0;
-            int alarm = Math.Min(settlement.Alarm, NativeSettlement.MaxAlarm);
+            int alarm = Math.Min(settlement.Alarm, Ruleset.Difficulty.NativeTension.MaxAlarm);
             settlement.ConvertProgress += (skill + ConversionSkillBonus) + alarm * ConversionAlarmRatePercent / 100;
 
             int threshold = Ruleset.Settlement(settlement.SettlementTypeId).ConvertThreshold;
@@ -1500,7 +1509,7 @@ public sealed partial class Game
     {
         RevealAround(player, settlement.Position, Ruleset.Difficulty.NativeTension.TalesRevealRadius); // tales of nearby lands
         int gift = 0;
-        if (settlement.AlarmLevel != AlarmLevel.Hateful)
+        if (AlarmLevelOf(settlement) != AlarmLevel.Hateful)
         {
             NativeTensionOptions tension = Ruleset.Difficulty.NativeTension;
             gift = random.Next(tension.GiftMinimum, tension.GiftMaximum + 1); // the visitor's own stream (the human is 0)
@@ -1521,7 +1530,7 @@ public sealed partial class Game
     private int ScoutSpeakToChief(Player player, Unit unit, NativeSettlement settlement, IGameRandom random)
     {
         // Hateful natives kill the scout outright.
-        if (settlement.AlarmLevel == AlarmLevel.Hateful)
+        if (AlarmLevelOf(settlement) == AlarmLevel.Hateful)
         {
             _units.Remove(unit);
             return 0;
@@ -1599,7 +1608,7 @@ public sealed partial class Game
         {
             return MoveCheck.No($"A {unit.Type.ShortName} cannot learn a new skill here.");
         }
-        if (settlement.AlarmLevel >= AlarmLevel.Angry)
+        if (AlarmLevelOf(settlement) >= AlarmLevel.Angry)
         {
             return MoveCheck.No("The settlement is too hostile to teach you.");
         }
@@ -1671,7 +1680,7 @@ public sealed partial class Game
         {
             return MoveCheck.No("The ship must be next to the settlement to trade.");
         }
-        if (settlement.AlarmLevel >= AlarmLevel.Angry)
+        if (AlarmLevelOf(settlement) >= AlarmLevel.Angry)
         {
             return MoveCheck.No("The settlement is too hostile to trade.");
         }
@@ -5695,7 +5704,7 @@ public sealed partial class Game
         }
         foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == nation))
         {
-            ChangeNativeAlarm(settlement, NativeSettlement.MaxAlarm); // clamps to max (hateful)
+            ChangeNativeAlarm(settlement, Ruleset.Difficulty.NativeTension.MaxAlarm); // clamps to max (hateful)
         }
     }
 
@@ -7837,7 +7846,7 @@ public sealed partial class Game
             }
 
             NativeSettlement? home = HomeSettlement(player, brave);
-            bool hostile = home is not null && home.AlarmLevel >= RaidAlarmThreshold;
+            bool hostile = home is not null && AlarmLevelOf(home) >= RaidAlarmThreshold;
             if (hostile && AdjacentPillageableHumanColony(brave) is { } colonyTile)
             {
                 PillageColony(brave, colonyTile, RandomFor(player)); // storm an undefended human colony (own stream)
@@ -7951,11 +7960,11 @@ public sealed partial class Game
             while (true)
             {
                 NativeSettlement? donor = nationSettlements
-                    .Where(s => s.AlarmLevel < RaidAlarmThreshold && s.StockOf(good) >= 2 * BraveEquipGoods)
+                    .Where(s => AlarmLevelOf(s) < RaidAlarmThreshold && s.StockOf(good) >= 2 * BraveEquipGoods)
                     .OrderByDescending(s => s.StockOf(good)).ThenBy(s => s.Position.Y).ThenBy(s => s.Position.X)
                     .FirstOrDefault();
                 NativeSettlement? recipient = nationSettlements
-                    .Where(s => s.AlarmLevel >= RaidAlarmThreshold && s.StockOf(good) < BraveEquipGoods)
+                    .Where(s => AlarmLevelOf(s) >= RaidAlarmThreshold && s.StockOf(good) < BraveEquipGoods)
                     .OrderBy(s => s.StockOf(good)).ThenBy(s => s.Position.Y).ThenBy(s => s.Position.X)
                     .FirstOrDefault();
                 if (donor is null || recipient is null)
@@ -7982,7 +7991,7 @@ public sealed partial class Game
     private void EquipBravesAtThreatenedSettlements(Player nation)
     {
         foreach (NativeSettlement settlement in _nativeSettlements
-            .Where(s => s.NationTypeId == nation.NationId && s.AlarmLevel >= RaidAlarmThreshold)
+            .Where(s => s.NationTypeId == nation.NationId && AlarmLevelOf(s) >= RaidAlarmThreshold)
             .OrderBy(s => s.Position.Y).ThenBy(s => s.Position.X))
         {
             // The settlement's braves, strongest first (offence+defence, ties by id). FreeCol arms the strongest
@@ -8096,7 +8105,7 @@ public sealed partial class Game
     /// </summary>
     private Colony? AdjacentDemandableHumanColony(Player nation, Unit brave)
     {
-        AlarmLevel level = HomeSettlement(nation, brave)?.AlarmLevel ?? AlarmLevel.Hateful;
+        AlarmLevel level = HomeSettlement(nation, brave) is { } home ? AlarmLevelOf(home) : AlarmLevel.Hateful;
         return _colonies
             .Where(c => IsHumanOwned(c) && brave.Position.IsAdjacentTo(c.Position) && SelectDemand(c, level) is not null)
             .OrderBy(c => c.Position.Y).ThenBy(c => c.Position.X)
@@ -8227,7 +8236,7 @@ public sealed partial class Game
         {
             return;
         }
-        AlarmLevel level = HomeSettlement(nation, brave)?.AlarmLevel ?? AlarmLevel.Hateful;
+        AlarmLevel level = HomeSettlement(nation, brave) is { } home ? AlarmLevelOf(home) : AlarmLevel.Hateful;
         if (SelectDemand(colony, level) is not { } demand)
         {
             return; // empty-handed — nothing to take
@@ -8363,7 +8372,7 @@ public sealed partial class Game
         {
             return 0; // recently demanded of — nothing this time (FreeCol cooldown), no RNG drawn
         }
-        int divisor = settlement.AlarmLevel switch
+        int divisor = AlarmLevelOf(settlement) switch
         {
             AlarmLevel.Happy or AlarmLevel.Content => 10,
             AlarmLevel.Displeased => 20,

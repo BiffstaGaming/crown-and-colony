@@ -74,10 +74,14 @@ public sealed class NativeSettlement
     /// </summary>
     public string? LearnableSkill { get; }
 
-    /// <summary>Maximum alarm value (FreeCol <c>Tension</c> caps the Hateful band at 1000).</summary>
+    /// <summary>Maximum alarm value (FreeCol <c>Tension</c> caps the Hateful band at 1000). FreeCol-source-of-truth pin;
+    /// the runtime clamps and bands against the data-overridable <c>NativeTensionOptions.MaxAlarm</c> (defaults here).</summary>
     public const int MaxAlarm = 1000;
 
-    // FreeCol Tension.Level upper limits (Tension.java).
+    // FreeCol Tension.Level upper limits (Tension.java). These are the FreeCol-source-of-truth constants
+    // (drift-guarded by NativeConstantsTests); the runtime bands alarm via the data-overridable
+    // Specification.NativeTensionOptions (HappyMax/ContentMax/DispleasedMax/AngryMax, defaulting to exactly these
+    // values so the classic game is byte-identical) consumed by AlarmLevelFor. See docs/systems/natives.md (86d3drpgg).
     internal const int AlarmHappyMax = 100;
     internal const int AlarmContentMax = 600;
     internal const int AlarmDispleasedMax = 700;
@@ -120,12 +124,29 @@ public sealed class NativeSettlement
     /// </summary>
     public int Alarm { get; internal set; }
 
-    /// <summary>The hostility band (FreeCol <c>Tension.Level</c>) derived from <see cref="Alarm"/>.</summary>
-    public AlarmLevel AlarmLevel =>
-        Alarm <= AlarmHappyMax ? AlarmLevel.Happy
-        : Alarm <= AlarmContentMax ? AlarmLevel.Content
-        : Alarm <= AlarmDispleasedMax ? AlarmLevel.Displeased
-        : Alarm <= AlarmAngryMax ? AlarmLevel.Angry
+    /// <summary>
+    /// The hostility band (FreeCol <c>Tension.getLevel</c>) derived from <see cref="Alarm"/> against the <b>classic</b>
+    /// band limits. A convenience read for callers without a ruleset (the presentation panels, the legacy save path)
+    /// that delegates to <see cref="AlarmLevelFor"/> with <see cref="Specification.NativeTensionOptions.ClassicMedium"/>,
+    /// so it stays byte-identical to the original hardcoded thresholds. The rules engine reads the
+    /// <b>data-overridable</b> band via <see cref="AlarmLevelFor"/> with <c>Ruleset.Difficulty.NativeTension</c>, so a
+    /// variant's retuned thresholds drive gameplay.
+    /// </summary>
+    public AlarmLevel AlarmLevel => AlarmLevelFor(Specification.NativeTensionOptions.ClassicMedium);
+
+    /// <summary>
+    /// The hostility band (FreeCol <c>Tension.getLevel</c>) of this settlement's current <see cref="Alarm"/> against the
+    /// band limits in <paramref name="tension"/> (<c>Ruleset.Difficulty.NativeTension</c>) — the data-overridable form
+    /// the rules engine uses, so a variant can retune the Happy/Content/Displeased/Angry thresholds. The classic limits
+    /// (100/600/700/800, Hateful above) reproduce the original bands exactly. Like FreeCol's <c>getLevel</c>, the band
+    /// is the first whose inclusive upper limit the alarm does not exceed, defaulting to Hateful.
+    /// </summary>
+    /// <param name="tension">The native-tension options carrying the band limits (<c>Ruleset.Difficulty.NativeTension</c>).</param>
+    public AlarmLevel AlarmLevelFor(Specification.NativeTensionOptions tension) =>
+        Alarm <= tension.HappyMax ? AlarmLevel.Happy
+        : Alarm <= tension.ContentMax ? AlarmLevel.Content
+        : Alarm <= tension.DispleasedMax ? AlarmLevel.Displeased
+        : Alarm <= tension.AngryMax ? AlarmLevel.Angry
         : AlarmLevel.Hateful;
 
     /// <summary>Player id of the human (the original single-player first-contact flag rides this id).</summary>

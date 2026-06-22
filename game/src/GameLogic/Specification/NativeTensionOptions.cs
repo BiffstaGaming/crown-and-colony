@@ -29,12 +29,16 @@ namespace CrownAndColony.GameLogic.Specification;
 /// Pure/immutable (ADR-009): no state, no RNG.
 /// </para>
 /// <para>
-/// Not routed here (deliberately): the <b>alarm band limits</b> (<c>AlarmHappyMax</c>…) and <see cref="NativeSettlement.MaxAlarm"/>
-/// remain on <see cref="NativeSettlement"/> because the band is computed by <see cref="NativeSettlement.AlarmLevel"/>,
-/// which has no <see cref="Ruleset"/> reference; and the <b>unit-promotion probability</b> is <i>already</i> data-driven
-/// — it is the per-row <c>probability</c> on the spec's <c>&lt;unit-change-type id="model.unitChange.promotion"&gt;</c>
-/// rows (parsed into <see cref="UnitChange.Probability"/>, classic 100), consumed directly by <c>Game.ApplyWinnerPromotion</c>,
-/// with no hardcoded constant to route. See <c>docs/systems/natives.md</c> / <c>combat.md</c>.
+/// The <b>alarm band limits</b> (<see cref="HappyMax"/>…<see cref="AngryMax"/>) and the alarm ceiling
+/// (<see cref="MaxAlarm"/>) are now carried here too (the EPIC final wrap-up slice, <c>86d3drpgg</c>): the band is
+/// computed by <see cref="NativeSettlement.AlarmLevelFor"/> taking these options, so a variant can retune the
+/// Happy/Content/Displeased/Angry thresholds in data. The parameterless <see cref="NativeSettlement.AlarmLevel"/>
+/// convenience property delegates to <see cref="ClassicMedium"/>, so any caller without a ruleset (the presentation
+/// panels) and every existing save stay byte-identical. The <b>unit-promotion probability</b> is <i>already</i>
+/// data-driven — it is the per-row <c>probability</c> on the spec's
+/// <c>&lt;unit-change-type id="model.unitChange.promotion"&gt;</c> rows (parsed into <see cref="UnitChange.Probability"/>,
+/// classic 100), consumed directly by <c>Game.ApplyWinnerPromotion</c>, with no hardcoded constant to route. See
+/// <c>docs/systems/natives.md</c> / <c>combat.md</c>.
 /// </para>
 /// </remarks>
 /// <param name="AddMinor">Tension added for a minor slight (FreeCol <c>Tension.TENSION_ADD_MINOR</c>, 100).</param>
@@ -57,6 +61,14 @@ namespace CrownAndColony.GameLogic.Specification;
 /// classic default is the existing scaled-down 3 (a documented deviation for our smaller default map — routing the
 /// value preserves it, it does not change it). See [natives].
 /// </param>
+/// <param name="HappyMax">Inclusive upper alarm of the Happy band — at-peace (FreeCol <c>Tension.Level.HAPPY.limit</c>, 100). See [natives].</param>
+/// <param name="ContentMax">Inclusive upper alarm of the Content band — tolerant (FreeCol <c>Tension.Level.CONTENT.limit</c>, 600). See [natives].</param>
+/// <param name="DispleasedMax">Inclusive upper alarm of the Displeased band — wary (FreeCol <c>Tension.Level.DISPLEASED.limit</c>, 700). See [natives].</param>
+/// <param name="AngryMax">Inclusive upper alarm of the Angry band — hostile; above it the settlement is Hateful (FreeCol <c>Tension.Level.ANGRY.limit</c>, 800). See [natives].</param>
+/// <param name="MaxAlarm">
+/// The alarm ceiling the band caps at — the Hateful limit (FreeCol <c>Tension.Level.HATEFUL.limit</c>, 1000). Used to
+/// clamp <see cref="NativeSettlement.Alarm"/> and as the upper bound of the Hateful band. See [natives].
+/// </param>
 public sealed record NativeTensionOptions(
     int AddMinor,
     int AddNormal,
@@ -70,7 +82,12 @@ public sealed record NativeTensionOptions(
     int DecayBase,
     int GiftMinimum,
     int GiftMaximum,
-    int TalesRevealRadius)
+    int TalesRevealRadius,
+    int HappyMax,
+    int ContentMax,
+    int DispleasedMax,
+    int AngryMax,
+    int MaxAlarm)
 {
     /// <summary>
     /// The classic <c>medium</c> native-tension tuning — the fallback and default, and (since FreeCol scales none of
@@ -91,5 +108,10 @@ public sealed record NativeTensionOptions(
         DecayBase: 4,
         GiftMinimum: 10,                                                  // IndianSettlement.GIFT_MINIMUM
         GiftMaximum: 80,                                                  // IndianSettlement.GIFT_MAXIMUM
-        TalesRevealRadius: 3);                                            // FreeCol TALES_RADIUS 6, scaled to 3 (our map)
+        TalesRevealRadius: 3,                                             // FreeCol TALES_RADIUS 6, scaled to 3 (our map)
+        HappyMax: NativeSettlement.AlarmHappyMax,                         // Tension.Level.HAPPY.limit (100)
+        ContentMax: NativeSettlement.AlarmContentMax,                     // Tension.Level.CONTENT.limit (600)
+        DispleasedMax: NativeSettlement.AlarmDispleasedMax,              // Tension.Level.DISPLEASED.limit (700)
+        AngryMax: NativeSettlement.AlarmAngryMax,                         // Tension.Level.ANGRY.limit (800)
+        MaxAlarm: NativeSettlement.MaxAlarm);                            // Tension.Level.HATEFUL.limit (1000)
 }

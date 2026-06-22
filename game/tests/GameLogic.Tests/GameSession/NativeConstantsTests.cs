@@ -105,7 +105,11 @@ public class NativeConstantsTests
 
     // ---- FreeCol-source constants (Tension.java) ----
 
-    /// <summary>Tension band upper limits must match FreeCol <c>Tension.Level</c> (Happy 100, Content 600, Displeased 700, Angry 800, Hateful 1000).</summary>
+    /// <summary>
+    /// Tension band upper limits must match FreeCol <c>Tension.Level</c> (Happy 100, Content 600, Displeased 700, Angry
+    /// 800, Hateful 1000) — the FreeCol-source consts and the data-overridable <see cref="NativeTensionOptions"/> the
+    /// runtime now bands/clamps against (<c>86d3drpgg</c>) must agree.
+    /// </summary>
     [Fact]
     public void AlarmBandLimits_MatchFreeColTensionLevels()
     {
@@ -114,6 +118,42 @@ public class NativeConstantsTests
         Assert.Equal(700, NativeSettlement.AlarmDispleasedMax);
         Assert.Equal(800, NativeSettlement.AlarmAngryMax);
         Assert.Equal(1000, NativeSettlement.MaxAlarm); // Hateful.limit
+
+        // The routed difficulty layer the runtime bands/clamps against must carry the same FreeCol-source values.
+        NativeTensionOptions t = Ruleset.LoadClassic().Difficulty.NativeTension;
+        Assert.Equal(100, t.HappyMax);
+        Assert.Equal(600, t.ContentMax);
+        Assert.Equal(700, t.DispleasedMax);
+        Assert.Equal(800, t.AngryMax);
+        Assert.Equal(1000, t.MaxAlarm);
+    }
+
+    /// <summary>
+    /// The data-overridable band classifier <see cref="NativeSettlement.AlarmLevelFor"/> must reproduce the classic
+    /// <see cref="NativeSettlement.AlarmLevel"/> convenience property at every band boundary for the classic limits — so
+    /// routing the bands through <see cref="NativeTensionOptions"/> is value-preserving (byte-identical default, ADR-009).
+    /// </summary>
+    [Theory]
+    [InlineData(0, AlarmLevel.Happy)]
+    [InlineData(100, AlarmLevel.Happy)]
+    [InlineData(101, AlarmLevel.Content)]
+    [InlineData(600, AlarmLevel.Content)]
+    [InlineData(601, AlarmLevel.Displeased)]
+    [InlineData(700, AlarmLevel.Displeased)]
+    [InlineData(701, AlarmLevel.Angry)]
+    [InlineData(800, AlarmLevel.Angry)]
+    [InlineData(801, AlarmLevel.Hateful)]
+    [InlineData(1000, AlarmLevel.Hateful)]
+    public void AlarmLevelFor_ClassicLimits_MatchesConvenienceProperty(int alarm, AlarmLevel expected)
+    {
+        var settlement = new NativeSettlement(
+            id: 1, nationTypeId: "model.nationType.apache", settlementTypeId: "model.settlement.camp",
+            isCapital: false, position: new CrownAndColony.GameLogic.World.Position(0, 0), size: 4, learnableSkill: null)
+        { Alarm = alarm };
+
+        Assert.Equal(expected, settlement.AlarmLevel); // classic convenience property
+        Assert.Equal(expected, settlement.AlarmLevelFor(NativeTensionOptions.ClassicMedium)); // routed, classic limits
+        Assert.Equal(settlement.AlarmLevel, settlement.AlarmLevelFor(NativeTensionOptions.ClassicMedium));
     }
 
     /// <summary>
