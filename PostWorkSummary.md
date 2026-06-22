@@ -19,6 +19,18 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-22 — Path-to-100% coding WAVE 2 shipped (A4+B2+C1) ✅ — Phase A complete
+
+**Requested:** Continue coding the path-to-100% tasks via parallel agents.
+**Did:** 3-stream parallel worktree wave, integrated CI-green:
+- **A4** (`1c722e0`) — **rival AI declares independence** (gate = `CheckDeclareIndependence` + land strength ≥ 1.5× amassed REF, RNG-free); soak asserts no AI declares in the default window. Offensive rebel-vs-REF AI descoped → follow-up `86d3e4q65`; the rebel defends via A1's arm/fortify. **Phase A (A1–A4) now complete.** No save bump.
+- **B2** (`eda0663`) — **full negotiation table**: `NegotiationPanel` is now a multi-clause offer-builder (gold/goods/colony/unit/incite/stance) → `EvaluateTrade` → AI accept/counter/reject → accept-counter; queued AI proposals answerable. Presentation-only (ADR-006), L3 journey green, no save change.
+- **C1** (`0b07e9b`) — **keystone: multi-channel native tension**. `NativeSettlement` alarm is now per-player (human = channel 0) + `MostHated` + per-channel decay; one-power game byte-identical to the old scalar; old v54 saves migrate the scalar into channel 0. **Save v54→v55.** Unblocks C2/C3 + foreign-power native relations + Australia.
+**Status:** Integrated, pushed `eda0663…0b07e9b`. Build clean + **2060 L1/L2 + 5 soak green**. Save **v54→v55** (C1's per-player alarm map). Soak twin-determinism green.
+**Decisions:** A4 shipped declaration + passive defence (offensive AI descoped to `86d3e4q65`). C1 designed so a single-power game matches old behaviour exactly (ADR-009).
+**Scheduled next:** **Wave 3 — D1 (REF combat modifiers), E1 (nation-specific starting units), C3 (forced land-claim trigger), B4 (per-good trade accounting, save v55→v56)**.
+**Needs you:** Nothing blocking. (Optional: review the A4 offensive-AI descope.)
+
 ## 2026-06-22 — Path-to-100% coding WAVE 1 shipped (A1+A2+A3+B1) ✅
 
 **Requested:** Decompose all phases into individual ClickUp tasks + start coding via parallel agents.
