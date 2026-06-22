@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-22 — 🎉 50-ITEM RUN COMPLETE (50/50) · WAVE 12 (L3 flake · sight-radius · founding-father · map-starts · epic wrap-up · fidelity harness) ✅
+
+**Requested:** "Do 50 backlog items, minimal testing, FreeCol-sourced, blocks→ClickUp, timestamp every message." **This is the FINAL wave — items 45–50 — the run is COMPLETE at 50/50.**
+**Did (Wave 12, 6 items):**
+- **L3 texture-leak flake** (`86d3c7yk3`, `8541e87`): root-caused as harness-level (gdUnit4Net never frees loaded scenes + C#/Godot finalizer timing — can't be fully eliminated). Applied the sanctioned mitigation — `ci.yml` now treats the **TRX as source of truth** (leak-at-exit passes; real failures/crashes still fail). Documented in TESTING.md.
+- **Colony sight radius 1→2** (`c6f2424`): the real FreeCol fidelity bug — colony `visible-radius=2`, now data-driven from spec.
+- **Franklin `peaceTreaty +50%` peace-hold** (`9da6d48`): the last unwired founding-father diplomacy effect.
+- **Map importer `[starts]` + `[regions]`** (`05f4f87`): scenario maps can fix the human/REF start + carry a region layer.
+- **Spec-driven epic wrap-up** (`86d3drpgg`, `ae44a41`): routed the native alarm-band limits → `NativeTensionOptions`; **epic now substantially complete** (8 slices across Waves 8–12).
+- **Differential-harness +6 invariants** (`d5c1e36`): more FreeCol cross-checks — **no divergence found**.
+**Status:** Integrated, pushed `d5c1e36…9da6d48`. build clean + **1999 L1/L2 + 4 soak green** (started the run at ~1604). Survived **two overnight spend-limit pauses** (re-launched the killed agents both times). No save bump (v52).
+
+### 📊 THE WHOLE 50-ITEM RUN (Waves 5–12, 2026-06-21 8:55pm → 2026-06-22 8:50am AEST)
+**50/50 backlog items shipped, every wave CI-green (L1+L2), zero regressions.** Test count **1604 → 1999** (+395). Save **v50 → v52** (2 deliberate bumps: unit identity, +omit-when-default → default byte-identical). **All 4 ART tasks done** (SFX/music/native-sprites/combat-anim — all license-clear from FreeCol's GPL/CC-BY assets). The **spec-driven epic** (`86d3drpgg`, Australia-variant prerequisite) is substantially complete. The granular backlog is now exhausted — what remains are EPIC containers (Australia P8, Polish P7, Endgame P6) + the mostly-done foreign-powers foundation.
+**Process:** lean minimal-testing per the directive (targeted tests per stream; full suite + soak only at each wave's integration boundary; **no review workflows** — the token saver). 8 ClickUp tasks created for decomposed/discovered work; **1 genuine block hit (the spend limit) — you resolved it twice**.
+**Needs you (non-blocking):** 4 flagged "your call" fidelity deviations to confirm — spy-evasion (25% rebuff, FreeCol's is 0), WAIVE_TAX-forgives-arrears (FreeCol message-only), Franklin peace-hold uses the flat 0.5 fraction (FreeCol decays `peaceProb^n`), Coronado `exposedTilesRadius`. And **`86d3dyywj`** (the InputTests L3 input-ordering flake I discovered + filed) is the one open QA item that can still flake L3.
+
 ## 2026-06-22 — 50-ITEM RUN · WAVE 11 (negotiation dialog + scout entry · native sprites · music · combat animations · L4 goldens) — COMPLETE ✅
 
 **Requested:** 50-item run, minimal testing. **Wave 11 = items 39–44.**
