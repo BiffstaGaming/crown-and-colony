@@ -79,7 +79,7 @@ public class NegotiationPanelTests
     }
 
     [TestCase]
-    public async Task OpenNegotiation_OffersAStanceProposal_ThatRoutesThroughTheBackend()
+    public async Task OfferBuilder_AssembleAStanceClause_Submit_RoutesThroughTheBackend()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
         await runner.SimulateFrames(2);
@@ -88,7 +88,7 @@ public class NegotiationPanelTests
         int humanId = game.HumanPlayer.PlayerId;
         int foreignId = ForeignPowerId(game);
 
-        // At war with a contacted rival → the panel should offer "Offer peace" / "Offer cease-fire".
+        // At war with a contacted rival → open the builder, add a peace clause, and submit it.
         SetStance(game, humanId, foreignId, Stance.War);
 
         controller.OpenNegotiationPanel();
@@ -97,17 +97,109 @@ public class NegotiationPanelTests
         var panel = controller.GetNode<PanelContainer>("UI/NegotiationPanel");
         AssertThat(panel.Visible).IsTrue();
 
-        // A peace-offer button exists for the contacted rival; pressing it runs the AI's evaluation + settle path.
-        Button? offerPeace = FindButton(panel, "OfferPeace");
-        AssertThat(offerPeace != null).IsTrue();
-
-        offerPeace!.EmitSignal(BaseButton.SignalName.Pressed);
+        // Step 1: choose the rival to negotiate with (opens the offer table).
+        PressFirstButton(panel, $"Negotiate_{foreignId}");
         await runner.SimulateFrames(1);
 
-        // The backend either accepted (stance now Peace) or rejected (still War) — both are valid; what matters is the
-        // proposal routed through Game.EvaluateTrade/SettleTrade without error and produced a terminal stance.
+        // Step 2: add a peace stance clause (the de-escalation ladder offers it at War).
+        Button? addPeace = FindButton(panel, "AddStancePeace");
+        AssertThat(addPeace != null).IsTrue();
+        addPeace!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // Step 3: submit the assembled offer → Game.EvaluateTrade (+ CounterOffer) without error.
+        PressFirstButton(panel, "Submit");
+        await runner.SimulateFrames(1);
+
+        // The backend accepted (stance now Peace), rejected (still War), or returned a counter (still War, awaiting the
+        // human). All are valid terminal/intermediate states — what matters is the offer routed through the backend.
         Stance after = game.StanceBetween(humanId, foreignId);
         AssertThat(after == Stance.War || after == Stance.Peace).IsTrue();
+    }
+
+    [TestCase]
+    public async Task OfferBuilder_UnacceptableGoldDemand_SurfacesACounter_ThenAcceptSettlesIt()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+        int foreignId = ForeignPowerId(game);
+
+        // Peace with a contacted rival. We will build a two-clause offer: demand a LARGE gold sum from them AND offer
+        // them peace. The gold demand (a clause they value at −amount) swamps the peace value, so the raw offer is net-
+        // negative for them and they cannot accept it as-is. Instead, CounterOffer HALVES the gold they would pay (the
+        // FreeCol prune+halve branch) until the deal nets ≥ 0, and hands that trimmed treaty back — which the human then
+        // accepts. Demanding gold (vs map-dependent units/colonies) makes the counter deterministic regardless of seed:
+        // the gold-halve closes the gap, and peace is the kept positive.
+        SetStance(game, humanId, foreignId, Stance.Peace);
+
+        controller.OpenNegotiationPanel();
+        await runner.SimulateFrames(1);
+        var panel = controller.GetNode<PanelContainer>("UI/NegotiationPanel");
+
+        PressFirstButton(panel, $"Negotiate_{foreignId}");
+        await runner.SimulateFrames(1);
+
+        // First a small gold GIVE (we pay the rival 100 — a clause they value positively, kept in the counter).
+        PressFirstButton(panel, "AddGoldGive");
+        await runner.SimulateFrames(1);
+
+        // Now pump the spinner to a large gold DEMAND (5100) — a clause they value at −5100, swamping the give, so the
+        // raw offer nets clearly negative for them. CounterOffer halves the gold they'd pay until net ≥ 0 and hands the
+        // trimmed deal back. Gold valuation is strength-independent, so this counter is deterministic across seeds.
+        for (int i = 0; i < 50; i++) // 100 (default) + 50×100 = 5100g
+        {
+            PressFirstButton(panel, "GoldPlus");
+        }
+        await runner.SimulateFrames(1);
+        PressFirstButton(panel, "AddGoldDemand");
+        await runner.SimulateFrames(1);
+
+        // Submit → the rival can't accept (the gold demand is a net cost), so CounterOffer returns a trimmed deal.
+        PressFirstButton(panel, "Submit");
+        await runner.SimulateFrames(1);
+
+        // A counter is surfaced for the human's accept/reject (the panel exposes an AcceptCounter button only then).
+        Button? acceptCounter = FindButton(panel, "AcceptCounter");
+        AssertThat(acceptCounter != null).IsTrue();
+
+        // Accept the counter → SettleTrade applies the trimmed treaty without error and the builder closes.
+        acceptCounter!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // The settle ran cleanly and the counter is consumed (no AcceptCounter button remains).
+        AssertThat(FindButton(panel, "AcceptCounter") == null).IsTrue();
+    }
+
+    [TestCase]
+    public async Task QueuedAiProposal_IsStillAnswerable_WithTheBuilderInPlace()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+        int foreignId = ForeignPowerId(game);
+
+        // A foreign power has proactively offered the human a cease-fire (queued by ProposeProactiveTreaties).
+        SetStance(game, humanId, foreignId, Stance.War);
+        QueuePendingOffer(game, StanceOffer(foreignId, humanId, Stance.CeaseFire));
+
+        controller.OpenNegotiationPanel();
+        await runner.SimulateFrames(1);
+
+        var panel = controller.GetNode<PanelContainer>("UI/NegotiationPanel");
+        AssertThat(panel.Visible).IsTrue();
+
+        // The queued offer is surfaced alongside the builder entry; accepting it settles the cease-fire both ways.
+        PressFirstButton(panel, "Accept");
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.StanceBetween(humanId, foreignId)).IsEqual(Stance.CeaseFire);
+        AssertThat(game.StanceBetween(foreignId, humanId)).IsEqual(Stance.CeaseFire);
+        AssertThat(game.PendingHumanProposals.Count).IsEqual(0);
     }
 
     // ---- helpers ----
