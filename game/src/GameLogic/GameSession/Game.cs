@@ -3153,6 +3153,25 @@ public sealed partial class Game
     public int ColonySightRadius => Ruleset.ColonyConstants.ColonySightRadius;
 
     /// <summary>
+    /// The Chebyshev radius Coronado's see-all-colonies reveal uses around every colony: the colony's own sight radius
+    /// (<see cref="ColonySightRadius"/>) widened by Coronado's <c>model.modifier.exposedTilesRadius</c> father modifier
+    /// (FreeCol <c>father.apply(colony.getLineOfSight(), …, EXPOSED_TILES_RADIUS)</c>). Classic Coronado adds +3, so
+    /// <c>2 + 3 = 5</c> — an 11×11 block. A father without the modifier (or a ruleset that drops it) reveals at the bare
+    /// colony sight radius. <paramref name="father"/> is the elected Coronado.
+    /// </summary>
+    private int CoronadoRevealRadius(FoundingFather father)
+    {
+        double radius = ColonySightRadius;
+        foreach (FatherModifier modifier in father.Modifiers
+                     .Where(m => m.TargetId == ExposedTilesRadiusModifierId)
+                     .OrderBy(m => m.Index))
+        {
+            radius = modifier.ApplyTo(radius);
+        }
+        return (int)radius;
+    }
+
+    /// <summary>
     /// Tiles the player can see <em>right now</em> — within the line of sight of an
     /// on-map unit or a colony. Always a subset of <see cref="Explored"/>; recomputed
     /// from current positions (not stored, never stale). Explored-but-not-visible tiles
@@ -8743,13 +8762,13 @@ public sealed partial class Game
             }
             if (Ruleset.Father(elected).RevealsAllColonies)
             {
+                // Francisco de Coronado (model.event.seeAllColonies): every colony + a wide ring revealed. FreeCol reveals
+                // at father.apply(colony.getLineOfSight(), …, EXPOSED_TILES_RADIUS) — the colony's visible-radius widened by
+                // Coronado's own exposedTilesRadius modifier (classic additive +3). Classic 2 + 3 = 5 → an 11×11 block. See [fog-of-war].
+                int revealRadius = CoronadoRevealRadius(Ruleset.Father(elected));
                 foreach (Colony c in _colonies)
                 {
-                    // Francisco de Coronado (model.event.seeAllColonies): every colony + its line-of-sight ring revealed.
-                    // FreeCol reveals at colony.getLineOfSight() (the colony's visible-radius) further widened by the
-                    // father's exposedTilesRadius modifier (classic +3, an 11×11 block); that father modifier is not yet
-                    // modelled, so we reveal the colony's own sight radius (the LoS base) for now. See [fog-of-war].
-                    RevealAround(player, c.Position, ColonySightRadius);
+                    RevealAround(player, c.Position, revealRadius);
                 }
             }
             if (Ruleset.Father(elected).Abilities.Any(a => a.Id == UpgradeConvertAbility && a.Value))
@@ -8839,6 +8858,14 @@ public sealed partial class Game
 
     /// <summary>The percentage modifier by which Pocahontas damps native-alarm increases (FreeCol <c>NATIVE_ALARM_MODIFIER</c>, −50%).</summary>
     private const string NativeAlarmModifierId = "model.modifier.nativeAlarmModifier";
+
+    /// <summary>
+    /// The additive radius Coronado adds on top of a colony's line of sight when his see-all-colonies reveal fires
+    /// (FreeCol <c>Modifier.EXPOSED_TILES_RADIUS</c>, classic +3): <c>ColonySightRadius (2) + 3 = 5</c>, an 11×11 block.
+    /// Among fathers only Francisco de Coronado carries it; default (no modifier) leaves the reveal at the colony's own
+    /// sight radius.
+    /// </summary>
+    private const string ExposedTilesRadiusModifierId = "model.modifier.exposedTilesRadius";
 
     /// <summary>The movement-point modifier (additive). Among fathers only Magellan carries it (+3, naval-scoped).</summary>
     private const string MovementBonusId = "model.modifier.movementBonus";

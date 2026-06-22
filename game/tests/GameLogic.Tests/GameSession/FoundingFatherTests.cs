@@ -173,29 +173,79 @@ public class FoundingFatherTests
     }
 
     [Fact]
+    public void Spec_ParsesCoronadoExposedTilesRadiusModifier()
+    {
+        // FreeCol classic Coronado: <modifier id="model.modifier.exposedTilesRadius" type="additive" value="3"/>.
+        FatherModifier exposed = Assert.Single(
+            Classic.Father("model.foundingFather.franciscoDeCoronado").Modifiers,
+            m => m.TargetId == "model.modifier.exposedTilesRadius");
+        Assert.Equal(ModifierType.Additive, exposed.Type);
+        Assert.Equal(3, exposed.Value);
+        // No other father carries the exposed-tiles-radius modifier.
+        Assert.DoesNotContain(Classic.Father("model.foundingFather.ferdinandMagellan").Modifiers,
+            m => m.TargetId == "model.modifier.exposedTilesRadius");
+    }
+
+    [Fact]
     public void Coronado_RevealsEveryColony_OnElection()
     {
+        // 13×13 so a radius-5 reveal around the colony at (10,10) does not spill over the far map edges,
+        // letting us assert the exact 11×11 block boundary below.
         var save = new SaveGame
         {
             Turn = 1,
             RandomStateValue = 1,
             RandomIncrement = 1,
-            MapWidth = 5,
-            MapHeight = 5,
-            Terrain = [.. System.Linq.Enumerable.Repeat("model.tile.plains", 25)],
+            MapWidth = 13,
+            MapHeight = 13,
+            Terrain = [.. System.Linq.Enumerable.Repeat("model.tile.plains", 13 * 13)],
             Units = [],
             Explored = [0], // only (0,0) has been seen
-            Colonies = [new SavedColony(1, "Far", 4, 4, 1)],
+            Colonies = [new SavedColony(1, "Far", 10, 10, 1)],
             CurrentFather = "model.foundingFather.franciscoDeCoronado",
             Liberty = 100_000, // well over the first father's cost
         };
         Game game = save.Restore(Classic);
-        Assert.False(game.IsExplored(new Position(4, 4))); // the distant colony is unseen before election
+        Assert.False(game.IsExplored(new Position(10, 10))); // the distant colony is unseen before election
 
         game.EndTurn(); // Coronado elected → every colony on the map revealed
 
         Assert.Contains("model.foundingFather.franciscoDeCoronado", game.Congress);
-        Assert.True(game.IsExplored(new Position(4, 4)));
+        Assert.True(game.IsExplored(new Position(10, 10)));
+    }
+
+    [Fact]
+    public void Coronado_RevealsFull11x11Block_AroundEachColony()
+    {
+        // Classic ColonySightRadius (2) + Coronado exposedTilesRadius (+3) = 5 → an 11×11 block (FreeCol Col1 behaviour).
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 13,
+            MapHeight = 13,
+            Terrain = [.. System.Linq.Enumerable.Repeat("model.tile.plains", 13 * 13)],
+            Units = [],
+            Explored = [], // nothing pre-seen, so every explored tile below comes from the reveal
+            Colonies = [new SavedColony(1, "Far", 6, 6, 1)], // centred so radius 5 stays in bounds
+            CurrentFather = "model.foundingFather.franciscoDeCoronado",
+            Liberty = 100_000,
+        };
+        Game game = save.Restore(Classic);
+
+        game.EndTurn(); // Coronado elected
+
+        // Tiles at Chebyshev distance 5 (the 11×11 boundary) are revealed…
+        Assert.True(game.IsExplored(new Position(1, 6)));  // 5 west
+        Assert.True(game.IsExplored(new Position(11, 6))); // 5 east
+        Assert.True(game.IsExplored(new Position(1, 1)));  // 5 diagonal corner
+        Assert.True(game.IsExplored(new Position(11, 11)));
+        // …but distance 6 is not (the block stops at radius 5, not the whole map).
+        Assert.False(game.IsExplored(new Position(0, 6)));  // 6 west
+        Assert.False(game.IsExplored(new Position(12, 6))); // 6 east
+        Assert.False(game.IsExplored(new Position(0, 0)));  // 6 diagonal corner
+        Assert.False(game.IsExplored(new Position(12, 12)));
     }
 
     [Fact]
