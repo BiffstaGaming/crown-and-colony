@@ -84,6 +84,18 @@ public class DifficultyOptionsTests
         Assert.Equal(2, d.UnitsThatUseNoBells);
     }
 
+    [Theory]
+    [InlineData("model.difficulty.veryEasy", true)]
+    [InlineData("model.difficulty.easy", true)]
+    [InlineData("model.difficulty.medium", false)]
+    [InlineData("model.difficulty.hard", false)]
+    [InlineData("model.difficulty.veryHard", false)]
+    public void ClassicRuleset_ParsesExpertStartingUnits_PerLevel(string levelId, bool expected)
+    {
+        // expertStartingUnits lives in each level's immigration sub-group (true only on the two easiest levels).
+        Assert.Equal(expected, Ruleset.LoadClassic(levelId).Difficulty.ExpertStartingUnits);
+    }
+
     [Fact]
     public void ClassicMedium_MatchesTheParsedMediumLevel()
     {

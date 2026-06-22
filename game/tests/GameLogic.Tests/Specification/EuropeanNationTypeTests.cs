@@ -99,6 +99,27 @@ public class EuropeanNationTypeTests
     }
 
     [Fact]
+    public void StartingUnitsFor_OverlaysTheExpertVariantPerSlot_OnlyWhenEnabled()
+    {
+        EuropeanNationType immigration = Classic.EuropeanNation(English).NationType; // == the default nation type's roster
+
+        // Expert OFF == the regular roster: the soldier slot is a free colonist, no expert variant placed.
+        var regular = immigration.StartingUnitsFor(expertStartingUnits: false).ToList();
+        Assert.Equal(3, regular.Count); // pioneer + soldier + ship, one unit per slot
+        Assert.DoesNotContain(regular, u => u.Expert);
+        Assert.Equal("model.unit.freeColonist", regular.Single(u => u.Slot == "soldier").UnitTypeId);
+
+        // Expert ON overlays the expert variant on the slots that define one (here: soldier → veteran), keeping the
+        // count at one unit per slot and leaving the other slots (pioneer, ship) on their regular unit.
+        var expert = immigration.StartingUnitsFor(expertStartingUnits: true).ToList();
+        Assert.Equal(3, expert.Count);
+        Assert.Equal("model.unit.veteranSoldier", expert.Single(u => u.Slot == "soldier").UnitTypeId);
+        Assert.True(expert.Single(u => u.Slot == "soldier").Expert);
+        Assert.Equal("model.unit.freeColonist", expert.Single(u => u.Slot == "pioneer").UnitTypeId); // no expert pioneer → unchanged
+        Assert.Equal("model.unit.caravel", expert.Single(u => u.Slot == "ship").UnitTypeId);
+    }
+
+    [Fact]
     public void NationTypeAdvantages_AreParsed_Inherited_AndOwn()
     {
         EuropeanNationType trade = Classic.EuropeanNation(Dutch).NationType;

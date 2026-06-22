@@ -124,6 +124,13 @@ public static class DifficultyLevels
 /// <c>model.difficulty.*</c> option), so they are constant across the shipped levels but now data-overridable. See
 /// [natives], [combat].
 /// </param>
+/// <param name="ExpertStartingUnits">
+/// Whether each colonial power lands the <b>expert</b> variant of a starting-unit slot instead of its free-colonist
+/// version (spec <c>model.option.expertStartingUnits</c> boolean, in the level's <c>immigration</c> sub-group; classic
+/// <b>true</b> on the two easiest levels — veryEasy/easy — and <b>false</b> on medium and harder, so the default
+/// medium game is unaffected). Routed into <see cref="EuropeanNationType.StartingUnitsFor"/>: when on, e.g. the
+/// default nation's soldier upgrades from a free colonist to a veteran soldier. See [players].
+/// </param>
 public sealed record DifficultyOptions(
     int FoundingFatherFactor,
     int UnitsThatUseNoBells,
@@ -143,7 +150,8 @@ public sealed record DifficultyOptions(
     int ShipTradePenalty,
     MonarchOptions Monarch,
     AiTuning Ai,
-    NativeTensionOptions NativeTension)
+    NativeTensionOptions NativeTension,
+    bool ExpertStartingUnits)
 {
     /// <summary>
     /// The classic <c>model.difficulty.medium</c> values — the fallback when a spec omits the difficulty group or a
@@ -168,5 +176,8 @@ public sealed record DifficultyOptions(
         ShipTradePenalty: -30,
         Monarch: MonarchOptions.ClassicMedium,
         Ai: AiTuning.ClassicMedium,
-        NativeTension: NativeTensionOptions.ClassicMedium);
+        NativeTension: NativeTensionOptions.ClassicMedium,
+        // Medium and harder ship expertStartingUnits=false (only veryEasy/easy enable it) — so the default game keeps
+        // the free-colonist roster, byte-identical (ADR-009).
+        ExpertStartingUnits: false);
 }

@@ -973,6 +973,13 @@ public sealed class Ruleset
                 .Select(o => ParseInt((string?)o.Attribute("value")))
                 .FirstOrDefault(v => v is not null) ?? fallback;
 
+        // A <booleanOption> within the level (e.g. expertStartingUnits, in the immigration sub-group).
+        bool BoolOption(string id, bool fallback) =>
+            level.Descendants("booleanOption")
+                .Where(o => (string?)o.Attribute("id") == id)
+                .Select(o => (bool?)o.Attribute("value"))
+                .FirstOrDefault(v => v is not null) ?? fallback;
+
         // A REF entry's <number> within the <unitListOption id="model.option.refSize"> group: each block (soldiers,
         // dragoons, …) is a <unitOption> carrying a <number value="…"/>. Reads it by the block's option id.
         int RefSize(string unitOptionId, int fallback) =>
@@ -1047,7 +1054,10 @@ public sealed class Ruleset
             // NativeTension: FreeCol keeps the tension deltas / decay / gift range as engine consts (Tension.java,
             // IndianSettlement.java, ServerPlayer), not model.difficulty.* options — so, like Ai/ArrearsFactor, there
             // is no spec value to read; assign the classic-medium values (data-overridable) — see NativeTensionOptions.
-            NativeTension: m.NativeTension);
+            NativeTension: m.NativeTension,
+            // expertStartingUnits lives in the level's immigration sub-group (Descendants reaches it); classic medium
+            // ships it false, so the default game keeps the free-colonist roster (ADR-009 byte-identical default).
+            ExpertStartingUnits: BoolOption("model.option.expertStartingUnits", m.ExpertStartingUnits));
     }
 
     /// <summary>

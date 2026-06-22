@@ -3674,6 +3674,11 @@ public sealed partial class Game
     /// <b>pioneer</b> (free colonist + tools) and a <b>soldier</b> (free colonist + muskets), and a <b>caravel</b>.
     /// The veteran soldier is the <c>expert-starting-units</c> variant (excluded from the regular roster), so the
     /// regular start uses a free-colonist soldier — the iconic, neutral start, matching what a default-nation rival gets.
+    /// <para>This array is the roster used only for the <b>nation-less classic human</b> (the New-Game default pick): it
+    /// is held verbatim so that default game stays byte-identical (ADR-009 soak), independent of how the spec's
+    /// <c>model.nationType.default</c> happens to enumerate its slots. A human who <i>picks</i> a nation instead reads
+    /// that nation's own roster from <see cref="EuropeanNationType.StartingUnitsFor"/> (see
+    /// <see cref="SpawnHumanStartingUnits"/>).</para>
     /// </summary>
     private static readonly (string TypeId, string? RoleId)[] HumanStartingRoster =
     [
@@ -3683,11 +3688,18 @@ public sealed partial class Game
     ];
 
     /// <summary>
-    /// Places the human's starting units around <paramref name="start"/> (FreeCol's classic landed roster — see
-    /// <see cref="HumanStartingRoster"/>): the land units (pioneer, soldier) on <paramref name="start"/> and its free
-    /// land neighbours, the caravel on a free adjacent water tile. Deterministic — draws no RNG, so the human's
-    /// stream 0 stays byte-stable (ADR-009); each unit lifts the human's fog (<see cref="RevealForOwner"/>). A unit
-    /// type a ruleset variant omits, or a ship with no adjacent water (a landlocked start), is simply skipped.
+    /// Places the human's starting units around <paramref name="start"/> — the land units (pioneer, soldier) on
+    /// <paramref name="start"/> and its free land neighbours, the ship on a free adjacent water tile.
+    /// <para>The <b>roster reads from the human's chosen nation</b> (FreeCol <c>EuropeanNationType.getStartingUnits</c>):
+    /// the nation type's <see cref="EuropeanNationType.StartingUnitsFor"/> with the difficulty's
+    /// <see cref="DifficultyOptions.ExpertStartingUnits"/> flag — so the Dutch land a merchantman, the French a hardy
+    /// pioneer, the Spanish a mounted veteran soldier, and the two easiest levels upgrade each slot's expert variant.
+    /// The <b>nation-less classic human</b> (default New-Game pick, <see cref="Player.NationId"/> null) keeps the verbatim
+    /// <see cref="HumanStartingRoster"/>, so the default/soak game is byte-identical (ADR-009).</para>
+    /// Land units are placed before the ship so a coastal start always has a water tile free for the ship. Deterministic
+    /// — draws no RNG, so the human's stream 0 stays byte-stable (ADR-009); each unit lifts the human's fog
+    /// (<see cref="RevealForOwner"/>). A unit type a ruleset variant omits, or a ship with no adjacent water (a
+    /// landlocked start), is simply skipped.
     /// </summary>
     private void SpawnHumanStartingUnits(Ruleset ruleset, Position start)
     {
@@ -3699,7 +3711,7 @@ public sealed partial class Game
             Free(start, water) ? start
             : start.Neighbours().Where(n => Free(n, water)).Cast<Position?>().FirstOrDefault();
 
-        foreach ((string typeId, string? roleId) in HumanStartingRoster)
+        foreach ((string typeId, string? roleId) in HumanStartingRosterFor(ruleset))
         {
             if (!ruleset.UnitTypes.Any(u => u.Id == typeId))
             {
@@ -3722,6 +3734,29 @@ public sealed partial class Game
             taken.Add(pos);
             RevealForOwner(unit); // the human's own units lift its fog around the landing
         }
+    }
+
+    /// <summary>
+    /// Resolves the human's starting roster as (unit type id, role id) pairs, land units first so the ship lands last.
+    /// A human who picked a nation uses that nation type's <see cref="EuropeanNationType.StartingUnitsFor"/> (applying
+    /// the difficulty's <see cref="DifficultyOptions.ExpertStartingUnits"/>); the nation-less classic human keeps the
+    /// verbatim <see cref="HumanStartingRoster"/> so the default game is byte-identical (ADR-009). Each slot resolves
+    /// the unit type once to order ships after land units (FreeCol places no ship before its colonists need a berth).
+    /// </summary>
+    private IEnumerable<(string TypeId, string? RoleId)> HumanStartingRosterFor(Ruleset ruleset)
+    {
+        if (HumanPlayer.NationId is not { } nationId
+            || ruleset.EuropeanNations.FirstOrDefault(n => n.Id == nationId) is not { } nation)
+        {
+            return HumanStartingRoster; // nation-less classic human → today's exact roster (byte-identical default)
+        }
+
+        // Naval-last ordering (stable: land slots keep their spec order, then the ship), so the ship still finds a
+        // free water tile on a coastal start regardless of how the spec enumerates the nation type's slots.
+        return nation.NationType.StartingUnitsFor(ruleset.Difficulty.ExpertStartingUnits)
+            .Select(u => (u.UnitTypeId, u.RoleId, IsNaval: ruleset.UnitTypes.Any(t => t.Id == u.UnitTypeId) && ruleset.Unit(u.UnitTypeId).IsNaval))
+            .OrderBy(u => u.IsNaval)
+            .Select(u => (u.UnitTypeId, u.RoleId));
     }
 
     /// <summary>
@@ -3758,7 +3793,9 @@ public sealed partial class Game
                 p => placedAnchors.All(a => Chebyshev(p!.Value, a) >= MinDistanceBetweenPowers))
             ?? candidates.Cast<Position?>().FirstOrDefault(); // relax the spacing on a crowded map
 
-        foreach (EuropeanStartingUnit start in nation.NationType.RegularStartingUnits)
+        // Same expert-aware resolution as the human (FreeCol: all players read the spec-level expertStartingUnits) —
+        // on the default medium level the flag is off, so this is exactly RegularStartingUnits (byte-identical default).
+        foreach (EuropeanStartingUnit start in nation.NationType.StartingUnitsFor(ruleset.Difficulty.ExpertStartingUnits))
         {
             if (!ruleset.UnitTypes.Any(u => u.Id == start.UnitTypeId))
             {

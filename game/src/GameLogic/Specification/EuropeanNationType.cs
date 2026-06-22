@@ -36,6 +36,35 @@ public sealed record EuropeanNationType(
 
     /// <summary>The starting units actually placed for a new nation — the non-expert variant of each slot.</summary>
     public IEnumerable<EuropeanStartingUnit> RegularStartingUnits => StartingUnits.Where(u => !u.Expert);
+
+    /// <summary>
+    /// The starting units this nation actually lands, resolved exactly like FreeCol
+    /// <c>EuropeanNationType.getStartingUnits</c>: the regular (non-<see cref="EuropeanStartingUnit.Expert"/>)
+    /// unit of each slot, with the slot's expert variant <b>overlaid on top</b> when
+    /// <paramref name="expertStartingUnits"/> is on (FreeCol overlays the <c>expert</c> map onto the <c>default</c>
+    /// map by slot). With it off this equals <see cref="RegularStartingUnits"/>; with it on, any slot that has an
+    /// expert variant uses that variant while every other slot keeps its regular unit. A slot that only ever defines
+    /// an expert variant is still skipped when the option is off (it never appears in the default map).
+    /// </summary>
+    /// <param name="expertStartingUnits">
+    /// Whether the <c>model.option.expertStartingUnits</c> difficulty option is on (classic: <c>true</c> on the two
+    /// easiest levels, <c>false</c> on medium and harder — see <see cref="DifficultyOptions.ExpertStartingUnits"/>).
+    /// </param>
+    /// <returns>One unit per slot, the expert variant winning that slot when <paramref name="expertStartingUnits"/> is on.</returns>
+    public IEnumerable<EuropeanStartingUnit> StartingUnitsFor(bool expertStartingUnits)
+    {
+        // Group by slot; per slot take the expert variant when the option is on and one exists, else the regular one
+        // (FreeCol keys both its default and expert maps by slot id and overlays expert over default).
+        foreach (IGrouping<string, EuropeanStartingUnit> slot in StartingUnits.GroupBy(u => u.Slot))
+        {
+            EuropeanStartingUnit? expert = expertStartingUnits ? slot.FirstOrDefault(u => u.Expert) : null;
+            EuropeanStartingUnit? regular = slot.FirstOrDefault(u => !u.Expert);
+            if ((expert ?? regular) is { } chosen)
+            {
+                yield return chosen;
+            }
+        }
+    }
 }
 
 /// <summary>
