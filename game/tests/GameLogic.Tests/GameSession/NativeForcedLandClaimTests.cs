@@ -307,7 +307,7 @@ public class NativeForcedLandClaimTests
         string json = SaveGame.From(game).ToJson();
         Game restored = SaveGame.FromJson(json).Restore(Classic);
 
-        Assert.Equal(57, SaveGame.CurrentVersion);                                 // forced land-claim adds no save field of its own (no pending-claim state); 56 comes from other slices
+        Assert.Equal(58, SaveGame.CurrentVersion);                                 // forced land-claim adds no save field of its own (no pending-claim state); 56 comes from other slices
         Assert.Equal(json, SaveGame.From(restored).ToJson());                      // byte-identical round-trip
         Assert.Equal(game.Colonies.Count, restored.Colonies.Count);
     }

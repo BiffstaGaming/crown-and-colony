@@ -187,7 +187,7 @@ public class TradeRouteTests
         Assert.DoesNotContain("\"TradeRouteId\"", json);
         Assert.DoesNotContain("\"TradeRouteStop\"", json);
         Assert.DoesNotContain("NextTradeRouteId", json); // omit-when-default (counter still 1) → byte-identical to v44
-        Assert.Equal(57, SaveGame.CurrentVersion);
+        Assert.Equal(58, SaveGame.CurrentVersion);
     }
 
     [Fact]

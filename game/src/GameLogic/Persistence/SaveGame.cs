@@ -20,7 +20,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 57;
+    public const int CurrentVersion = 58;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -196,6 +196,17 @@ public sealed record SaveGame
     /// and buying/recompute draw no RNG, so the soak twin-run stays byte-identical (the soak never buys from natives) and
     /// every save round-trips byte-identically. Haggling (interactive, human-only) draws on a dedicated native-trade
     /// stream that is not serialized (it is not replayed), so it never perturbs stream 0.
+    /// v58 added the human's <b>history log</b> (<see cref="History"/> — the turn-stamped, score-bearing notable events
+    /// FreeCol keeps on the player: colonies founded, wars entered, regions discovered, cities of gold found,
+    /// settlements/nations razed, 86d3e4btq). Persisting it makes the discovery / independence / destruction events
+    /// <b>and their scores</b> survive reload, so the History report and the history-event summand of
+    /// <see cref="Game.PlayerScore"/> are stable across save/load (before v58 the log was in-memory only — a reloaded
+    /// game lost its discovery score and any destruction penalty). Additive + <b>omitted when the log is empty</b> (a
+    /// goods-id-free list written only when something has been recorded), so a fresh / event-free game serialises
+    /// byte-identically to v57 and pre-v58 saves load with an empty log exactly as before persistence. Determinism
+    /// (ADR-009): the log is pure UI/score scratch with no feedback into game evolution, so a reloaded game continues on
+    /// the identical random sequence and the soak twin-run stays byte-identical (it never records the score-bearing
+    /// events the human earns by exploring/razing).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -332,6 +343,19 @@ public sealed record SaveGame
     /// fields are folded into a single human player on load (ADR-019).
     /// </summary>
     public IReadOnlyList<SavedPlayer>? Players { get; init; }
+
+    /// <summary>
+    /// The human's history log — notable events in chronological order (FreeCol's player <c>HistoryEvent</c> list:
+    /// colonies founded, wars entered, regions discovered, cities of gold found, settlements razed), each with the
+    /// turn-stamped, score-bearing detail (v58). Persisting it makes the discovery / independence / destruction events
+    /// <b>and their scores</b> survive a save/load round-trip, so the History report and the history-event score
+    /// summand of <see cref="Game.PlayerScore"/> are stable across reload. Additive + <b>omitted when the log is
+    /// empty</b> (null), so a game with no recorded events serialises byte-identically to v57; pre-v58 saves (or any
+    /// with no log) load with an empty history exactly as before persistence — events then accrue again as play
+    /// continues. Determinism (ADR-009): the log is pure UI/score scratch with no feedback into game evolution, so a
+    /// reloaded game continues on the identical random sequence whether or not the log was persisted.
+    /// </summary>
+    public IReadOnlyList<SavedHistoryEvent>? History { get; init; }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -489,6 +513,13 @@ public sealed record SaveGame
             // v20 saves (the fold path), but the v20 load path was always Players[]-only, so the format
             // version stays 20 and new v20 saves are simply smaller.
             Players = game.Players.Select(p => ToSavedPlayer(p, game.Map)).ToList(),
+            // The human's history log (v58); omitted when empty so a game with no recorded events stays byte-identical
+            // to v57. Each event keeps its kind/turn/description/score so the report and the score summand round-trip.
+            History = game.History.Count > 0
+                ? game.History
+                    .Select(h => new SavedHistoryEvent((int)h.Kind, h.Turn, h.Description, h.Score))
+                    .ToList()
+                : null,
             NativeSettlements = game.NativeSettlements.Count > 0
                 ? game.NativeSettlements
                     .Select(s => new SavedNativeSettlement(
@@ -736,6 +767,11 @@ public sealed record SaveGame
         {
             game.RestoreNextUnitId(nextUnitId);
         }
+        if (History is { } history) // v58; pre-v58 / omitted → the log stays empty (it accrues again as play continues)
+        {
+            game.RestoreHistory(history.Select(h =>
+                new HistoryEvent((HistoryEventKind)h.Kind, h.Turn, h.Description, h.Score)));
+        }
         return game;
     }
 
@@ -939,6 +975,17 @@ public sealed record SavedRegion(
 /// <param name="Land">Land-unit blocks.</param>
 /// <param name="Naval">Naval-unit blocks.</param>
 public sealed record SavedForce(IReadOnlyList<ForceEntry> Land, IReadOnlyList<ForceEntry> Naval);
+
+/// <summary>
+/// One <see cref="HistoryEvent"/> in the human's history log inside a <see cref="SaveGame"/> (v58). The whole log is
+/// additive + <b>omitted when empty</b> (see <see cref="SaveGame.History"/>), so a game with no recorded events stays
+/// byte-identical to v57; pre-v58 saves load with an empty log exactly as before persistence.
+/// </summary>
+/// <param name="Kind">The <see cref="HistoryEventKind"/> enum ordinal.</param>
+/// <param name="Turn">The game turn the event happened on.</param>
+/// <param name="Description">The player-facing one-line description (carries no ids — safe to round-trip verbatim).</param>
+/// <param name="Score">The score the event contributed (region discovery positive; −5/−50 destruction penalties; 0 otherwise). Omitted when 0 so a score-less event (the common case) stays compact.</param>
+public sealed record SavedHistoryEvent(int Kind, int Turn, string Description, int Score = 0);
 
 /// <summary>A colonist's tile assignment inside a <see cref="SavedColony"/>.</summary>
 /// <param name="X">Worked tile column.</param>

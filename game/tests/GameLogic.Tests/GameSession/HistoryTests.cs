@@ -1,7 +1,9 @@
 using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.World;
 using Xunit;
 
 namespace CrownAndColony.GameLogic.Tests.GameSession;
@@ -68,5 +70,53 @@ public class HistoryTests
         game.SetStance(rivals[0].PlayerId, rivals[1].PlayerId, Stance.War);
 
         Assert.Empty(NonDiscovery(game)); // a war the human is not party to is off the human's history (discovery events aside)
+    }
+
+    // ── Persistence (save v58): the history log survives save/load ───────────────────────────────────────
+
+    [Fact]
+    public void History_SurvivesSaveLoad_WithEveryEventAndScore()
+    {
+        var game = Game.New(Classic, seed: 424242);
+        game.FoundColony(game.PlayerUnits.First());      // a ColonyFounded event
+        game.SetStance(game.HumanPlayer.PlayerId, ForeignPowerId(game), Stance.War); // a WarDeclared event
+        // The starting fog reveal also recorded scored RegionDiscovered events — so the log mixes scored + score-less.
+        Assert.NotEmpty(game.History);
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        // The whole log round-trips: same count, same (kind, turn, description, score) tuple in the same order.
+        Assert.Equal(game.History.Count, loaded.History.Count);
+        Assert.Equal(
+            game.History.Select(h => (h.Kind, h.Turn, h.Description, h.Score)),
+            loaded.History.Select(h => (h.Kind, h.Turn, h.Description, h.Score)));
+        // …and the score summand it feeds is preserved exactly (no re-earning, no loss).
+        Assert.Equal(game.HistoryEventScore, loaded.HistoryEventScore);
+        Assert.Equal(game.Score, loaded.Score);
+    }
+
+    [Fact]
+    public void EmptyHistory_IsOmittedFromTheSave()
+    {
+        // Omit-when-empty: a SaveGame whose history log is empty writes no History token, so an event-free game stays
+        // byte-identical to v57 (the field simply does not appear). A loaded such save has an empty history.
+        var game = Game.New(Classic, seed: 7);
+        SaveGame emptyLog = SaveGame.From(game) with { History = null };
+
+        Assert.DoesNotContain("\"History\"", emptyLog.ToJson()); // WhenWritingNull → the field is absent
+        Game loaded = SaveGame.FromJson(emptyLog.ToJson()).Restore(Classic);
+        Assert.Empty(loaded.History);                            // pre-v58 / omitted → empty log
+    }
+
+    [Fact]
+    public void FreshGame_HistoryRoundTripsByteIdentical()
+    {
+        // A fresh game's log is NOT empty (the starting fog reveal records RegionDiscovered events), but it must still
+        // round-trip byte-identically: save → load → save reproduces the same JSON exactly (the log feeds no game
+        // evolution, so reloading does not perturb the stream — ADR-009).
+        var game = Game.New(Classic, seed: 99);
+        string json = SaveGame.From(game).ToJson();
+        Assert.Contains("\"History\"", json); // a fresh game DID record discovery events, so the field is present
+        Assert.Equal(json, SaveGame.From(SaveGame.FromJson(json).Restore(Classic)).ToJson());
     }
 }

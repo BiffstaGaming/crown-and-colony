@@ -566,6 +566,68 @@ public class CombatTests
         Assert.Equal(expected, train.TreasureAmount); // the .extra-range value (Cortés grants model.ability.plunderNatives)
     }
 
+    // ── Score penalties: razing a native settlement (FreeCol DESTROY_SETTLEMENT −5 / DESTROY_NATION −50) ──
+
+    [Fact]
+    public void RazingASettlement_RecordsTheMinusFivePenalty_InTheHumansHistory_AndDocksTheScore()
+    {
+        (Game game, Unit attacker, NativeSettlement settlement) = SetupSettlementAttack();
+        string nation = settlement.NationTypeId;
+        // Pick a settlement whose nation has another settlement, so razing it is NOT a nation kill (just −5).
+        int sameNation = game.NativeSettlements.Count(s => s.NationTypeId == nation);
+        Assert.True(sameNation >= 2, "fixture needs a multi-settlement nation for the −5-only case");
+        int historyScoreBefore = game.HistoryEventScore;
+
+        game.AttackSettlement(attacker, settlement.Position, new FixedRandom(0.0)); // a win razes it
+
+        HistoryEvent e = Assert.Single(game.History, h => h.Kind == HistoryEventKind.SettlementDestroyed);
+        Assert.Equal(-5, e.Score);
+        Assert.DoesNotContain(game.History, h => h.Kind == HistoryEventKind.NationDestroyed); // nation survives
+        // The −5 is folded into the human's history-event score (which feeds PlayerScore). Razing reveals no new tiles
+        // (the camp tile was already in sight to attack it), so the only history-score change is the −5 penalty.
+        Assert.Equal(historyScoreBefore - 5, game.HistoryEventScore);
+    }
+
+    [Fact]
+    public void RazingANationsLastSettlement_AlsoRecordsTheMinusFiftyNationPenalty()
+    {
+        Game game = Game.New(Classic, Seed);
+        // Find a nation with exactly one settlement that has a free neighbour to attack from.
+        bool Free(Game g, Position n) =>
+            g.Map.InBounds(n) && !g.Map.TerrainAt(n).IsWater
+            && g.NativeSettlementAt(n) is null && g.ColonyAt(n) is null
+            && !g.Units.Any(u => u.IsOnMap && u.Position == n);
+        var byNation = game.NativeSettlements.GroupBy(s => s.NationTypeId);
+        NativeSettlement settlement = byNation
+            .Where(grp => grp.Count() == 1)
+            .Select(grp => grp.Single())
+            .First(s => s.Position.Neighbours().Any(n => Free(game, n)));
+        Position spot = settlement.Position.Neighbours().First(n => Free(game, n));
+        Unit attacker = game.SpawnUnit(Classic.Unit(Artillery), spot);
+        int historyScoreBefore = game.HistoryEventScore;
+
+        game.AttackSettlement(attacker, settlement.Position, new FixedRandom(0.0)); // win razes the nation's last camp
+
+        // Both penalties recorded: the −5 settlement razing AND the −50 nation kill.
+        HistoryEvent razed = Assert.Single(game.History, h => h.Kind == HistoryEventKind.SettlementDestroyed);
+        Assert.Equal(-5, razed.Score);
+        HistoryEvent killed = Assert.Single(game.History, h => h.Kind == HistoryEventKind.NationDestroyed);
+        Assert.Equal(-50, killed.Score);
+        // The two penalties together fold −55 into the human's history-event score (razing reveals no new tile).
+        Assert.Equal(historyScoreBefore - 55, game.HistoryEventScore);
+    }
+
+    [Fact]
+    public void AFreshGame_RecordsNoDestructionPenalty_InTheHumansHistory()
+    {
+        // The penalty rides the HUMAN's history (FreeCol records it on the attacker; our log is the human's). A
+        // settlement that vanishes by other means (here: not via a human attack) must not dock the human's score.
+        // We exercise this by asserting the human's history holds no destruction penalty in a fresh game (no razings).
+        Game game = Game.New(Classic, Seed);
+        Assert.DoesNotContain(game.History, h =>
+            h.Kind is HistoryEventKind.SettlementDestroyed or HistoryEventKind.NationDestroyed);
+    }
+
     [Fact]
     public void AttackSettlement_Loss_LowersAlarmAndDemotesArtillery()
     {

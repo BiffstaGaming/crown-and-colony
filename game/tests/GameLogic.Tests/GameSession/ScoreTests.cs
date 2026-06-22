@@ -80,9 +80,10 @@ public class ScoreTests
         Colony colony = game.FoundColony(colonist);
         colony.Liberty = 350;
 
-        // The colonist became colony population (no longer a map unit), so its unit score (3) is gone and the colony's
-        // 350 liberty is added: net change is +350 − 3 over the pre-founding score.
-        Assert.Equal(before - 3 + 350, game.PlayerScore(game.HumanPlayer));
+        // The colonist became colony population: it leaves the map-unit list but is now counted as a COLONY WORKER
+        // (still a free colonist worth 3), so its unit score is unchanged — only relocated. The colony's 350 liberty
+        // is added on top: net change is +350 over the pre-founding score (the worker's 3 stays in the unit sum).
+        Assert.Equal(before + 350, game.PlayerScore(game.HumanPlayer));
     }
 
     // ── Summand: unit score values (FreeCol sum(getUnits(), Unit::getScoreValue)) ─────────────────────────
@@ -104,6 +105,67 @@ public class ScoreTests
         int disc2 = game.HistoryEventScore;
         game.SpawnUnit(Classic.Unit("model.unit.pettyCriminal"), FirstEmptyLand(game));
         Assert.Equal(before2 + 1 + (game.HistoryEventScore - disc2), game.PlayerScore(game.HumanPlayer));
+    }
+
+    // ── Summand: colony-worker units (FreeCol's getUnits() counts colonists inside colonies) ──────────────
+
+    [Fact]
+    public void ColonyWorker_FreeColonist_CountsTowardTheUnitScore()
+    {
+        Game game = NewGame();
+        Position spot = FirstEmptyLand(game);
+        Unit colonist = game.SpawnUnit(Classic.Unit(Game.StartingUnitTypeId), spot);
+        int withMapUnit = game.PlayerScore(game.HumanPlayer); // the colonist scores 3 as a map unit
+
+        game.FoundColony(colonist); // the colonist becomes colony population (one free colonist)
+
+        // It left the map-unit list but is now counted as a colony worker (still a free colonist, 3) — so the unit
+        // score is unchanged. (No liberty/fathers/gold added, and founding reveals already-seen tiles → no new score.)
+        Assert.Equal(withMapUnit, game.PlayerScore(game.HumanPlayer));
+    }
+
+    [Fact]
+    public void ColonyWorker_Experts_ScoreTheirHigherTypeValue()
+    {
+        Game game = NewGame();
+        Colony colony = game.FoundColony(game.SpawnUnit(Classic.Unit(Game.StartingUnitTypeId), FirstEmptyLand(game)));
+        int withOneFreeColonist = game.PlayerScore(game.HumanPlayer); // one free-colonist worker (3)
+
+        // Add an idle elder statesman (score 6) and an idle master carpenter (score 4) to the colony's population.
+        colony.Population += 2;
+        colony.AddIdleColonist("model.unit.elderStatesman");
+        colony.AddIdleColonist("model.unit.masterCarpenter");
+
+        // The two new colony workers add 6 + 4 = 10 to the unit score; nothing else changed.
+        Assert.Equal(withOneFreeColonist + 6 + 4, game.PlayerScore(game.HumanPlayer));
+    }
+
+    [Fact]
+    public void ColonyWorker_BuildingExpert_ScoresToo()
+    {
+        Game game = NewGame();
+        Colony colony = game.FoundColony(game.SpawnUnit(Classic.Unit(Game.StartingUnitTypeId), FirstEmptyLand(game)));
+        int withOneFreeColonist = game.PlayerScore(game.HumanPlayer);
+
+        // Seat an elder statesman (score 6) into the town hall — a brand-new population colonist.
+        colony.Population += 1;
+        colony.AssignBuildingWorker("model.building.townHall", "model.unit.elderStatesman");
+        Assert.Equal(withOneFreeColonist + 6, game.PlayerScore(game.HumanPlayer));
+    }
+
+    [Fact]
+    public void ScoreBreakdown_UnitValues_IncludeColonyWorkers()
+    {
+        Game game = NewGame();
+        Colony colony = game.FoundColony(game.SpawnUnit(Classic.Unit(Game.StartingUnitTypeId), FirstEmptyLand(game)));
+        colony.Population += 1;
+        colony.AddIdleColonist("model.unit.firebrandPreacher"); // score 6
+
+        // UnitValues now = map/Europe units + the colony's workers (one free colonist 3 + a firebrand preacher 6 = 9).
+        ScoreComponents b = game.ScoreBreakdown(game.HumanPlayer);
+        int mapUnits = game.PlayerUnits.Sum(u => UnitScore(u.Type.Id));
+        Assert.Equal(mapUnits + 3 + 6, b.UnitValues);
+        Assert.Equal(game.PlayerScore(game.HumanPlayer), b.Total); // still the single source of truth
     }
 
     [Fact]
@@ -145,8 +207,10 @@ public class ScoreTests
 
         // rosterScore + elderStatesman(6) + wagonTrain(1) + colonyLiberty(600) + fathers(10) + gold(7), plus the
         // exploration-discovery (HistoryEvent) score the spawns + founding accrued by revealing new regions (P6).
-        // The founder colonist's own +3 is removed when it joins the colony, so it is NOT in the unit sum.
-        int expected = rosterScore + 6 + 1 + 600 + 10 + 7 + game.HistoryEventScore;
+        // The founder colonist becomes a COLONY WORKER (still worth 3) — it leaves the map-unit list but is counted in
+        // the colony-worker unit sum, so its +3 stays in the unit summand (just relocated).
+        int founderColonyWorker = 3; // the free-colonist founder, now colony population
+        int expected = rosterScore + 6 + 1 + founderColonyWorker + 600 + 10 + 7 + game.HistoryEventScore;
         Assert.Equal(expected, game.PlayerScore(game.HumanPlayer));
     }
 

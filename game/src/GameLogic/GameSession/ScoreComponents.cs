@@ -7,11 +7,13 @@ namespace CrownAndColony.GameLogic.GameSession;
 /// summands, then the independence percentage bonus applied to that subtotal. Holds no game references and is never
 /// persisted; the victory / end-of-game screen reads it to show the score line-by-line.
 /// </summary>
-/// <param name="UnitValues">Σ of the player's units' ruleset score values (FreeCol <c>UnitType.getScoreValue</c>).</param>
+/// <param name="UnitValues">Σ of the player's units' ruleset score values (FreeCol <c>UnitType.getScoreValue</c>) —
+/// both map/Europe units and the colonists working inside the player's colonies (colony population).</param>
 /// <param name="ColonyLiberty">Σ of the liberty (bells) banked across the player's colonies.</param>
 /// <param name="FoundingFatherPoints">5 points per elected Founding Father (FreeCol <c>SCORE_FOUNDING_FATHER</c>).</param>
 /// <param name="GoldPoints">⌊0.001·gold⌋ — one point per 1000 gold (FreeCol <c>SCORE_GOLD</c>).</param>
-/// <param name="HistoryPoints">Σ of the human's scored history events (region discovery today); 0 for a non-human.</param>
+/// <param name="HistoryPoints">Σ of the human's scored history events — region-discovery points (positive) minus the
+/// settlement/nation-destruction penalties (−5 / −50); 0 for a non-human (the history log is the human's).</param>
 /// <param name="IndependenceBonusPercent">The percentage bonus applied to the subtotal for a nation that has won
 /// independence — 100/50/25 for the first/second/third such power, else 0 (FreeCol's INDEPENDENCE history switch).</param>
 public readonly record struct ScoreComponents(

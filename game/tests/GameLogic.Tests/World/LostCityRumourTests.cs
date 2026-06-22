@@ -104,7 +104,7 @@ public class LostCityRumourTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
         Assert.Equal(before, restored.Map.Rumours.OrderBy(p => p.Y).ThenBy(p => p.X).ToList());
-        Assert.Equal(57, SaveGame.CurrentVersion);
+        Assert.Equal(58, SaveGame.CurrentVersion);
     }
 
     [Fact]
@@ -457,6 +457,29 @@ public class LostCityRumourTests
         Assert.Equal(Game.LostCityRumourType.Cibola, outcome);
         Unit train = game.Units.Single(u => u.Type.Id == TreasureTrain);
         Assert.Equal(2400, train.TreasureAmount);
+
+        // The find is recorded in the human's History (FreeCol CITY_OF_GOLD) with score 0 — its value rides the
+        // treasure (→ gold summand once cashed in), so it adds no direct points but survives in the report.
+        HistoryEvent e = Assert.Single(game.History, h => h.Kind == HistoryEventKind.CityOfGold);
+        Assert.Equal(0, e.Score);
+        Assert.Contains("2400", e.Description);
+    }
+
+    [Fact]
+    public void Explore_Cibola_ByAForeignPower_RecordsNoEntryInTheHumansHistory()
+    {
+        Game game = Game.New(Classic, Seed);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        Position tile = game.Map.AllPositions().First(p => !game.Map.TerrainAt(p).IsWater
+            && game.ColonyAt(p) is null && game.NativeSettlementAt(p) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p));
+        game.Map.AddRumour(tile);
+        Unit explorer = game.SpawnUnit(Classic.Unit(FreeColonist), tile, power.PlayerId);
+
+        game.ExploreRumour(explorer, tile, new ScriptedRandom(4224, 0)); // a foreign power finds Cibola
+
+        // The history log is the human's only — a foreign power's find earns no entry (mirrors every RecordHistory).
+        Assert.DoesNotContain(game.History, h => h.Kind == HistoryEventKind.CityOfGold);
     }
 
     // ---- Scout + de Soto modifiers (86d3c9uhj) ----

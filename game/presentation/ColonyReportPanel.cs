@@ -684,13 +684,13 @@ public partial class ColonyReportPanel : PanelContainer
 
     private void BuildHistory(VBoxContainer dynamic)
     {
-        // FreeCol's player history log: colonies founded, wars entered, fathers elected — in turn order, already
-        // formatted to player-facing strings by GameLogic. In-memory only this wave (not saved); a reloaded game's
-        // history begins empty (a header note flags that). Read-only over Game.History (ADR-006).
+        // FreeCol's player history log: colonies founded, wars entered, fathers elected, regions discovered,
+        // settlements razed — in turn order, already formatted to player-facing strings by GameLogic. Persisted from
+        // save v58, so the log survives a save/load round-trip. Read-only over Game.History (ADR-006).
         dynamic.AddChild(new Label
         {
             Name = "HistoryNote",
-            Text = "Notable events this game (not carried across save/load yet):",
+            Text = "Notable events this game:",
         });
 
         if (_game.History.Count == 0)

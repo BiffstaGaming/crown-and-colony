@@ -546,16 +546,28 @@ public sealed partial class Game
     // ── Player score (FreeCol ServerPlayer.updateScore) ─────────────────────────────────────────────────
     //
     // A faithful, pure re-implementation of FreeCol's player-score formula. The victory and high-score screens
-    // (separate P7 tasks) consume this read; nothing here mutates state, so the default game stays byte-identical
-    // (ADR-009) and the score is NOT persisted — it is recomputed from current state each time it is read, exactly
-    // as FreeCol recomputes it (FreeCol caches the result in a serialized field for the network protocol; we have no
-    // such need, so we keep it a pure read and add no save field — no save-version bump).
+    // consume this read; nothing here mutates state, so the default game stays byte-identical (ADR-009) and the score
+    // itself is NOT persisted — it is recomputed from current state each time it is read, exactly as FreeCol recomputes
+    // it (FreeCol caches the result in a serialized field for the network protocol; we have no such need, so we keep it
+    // a pure read). The history-event summand reads the persisted history log (saved from v58), so the discovery and
+    // destruction scores it folds in survive a save/load — but the score value is still derived on read, never stored.
 
     /// <summary>Score bonus for each founding father (FreeCol <c>ServerPlayer.SCORE_FOUNDING_FATHER</c> = 5; Col1).</summary>
     private const int ScoreFoundingFather = 5;
 
     /// <summary>Gold-to-score rate: 1 point per 1000 gold (FreeCol <c>ServerPlayer.SCORE_GOLD</c> = 0.001; Col1).</summary>
     private const double ScoreGold = 0.001;
+
+    /// <summary>
+    /// Score penalty for razing a native settlement (FreeCol <c>ServerPlayer.SCORE_SETTLEMENT_DESTROYED</c> = −5; Col1).
+    /// Recorded as a <see cref="HistoryEventKind.SettlementDestroyed"/> event and folded into the human's score.
+    /// (FreeCol's <c>destroySettlementScore</c> <i>game option</i> defaults to −2 in the classic ruleset; we use the
+    /// <c>SCORE_SETTLEMENT_DESTROYED</c> code constant −5 the task pins, keeping the penalty a fixed, faithful value.)
+    /// </summary>
+    internal const int ScoreSettlementDestroyed = -5;
+
+    /// <summary>Score penalty for wiping out a native nation — razing its last settlement (FreeCol <c>ServerPlayer.SCORE_NATION_DESTROYED</c> = −50; FreeCol extension).</summary>
+    internal const int ScoreNationDestroyed = -50;
 
     /// <summary>Percentage score bonus for being the first power to win independence (FreeCol <c>SCORE_INDEPENDENCE_BONUS_FIRST</c> = 100; Col1).</summary>
     private const int ScoreIndependenceBonusFirst = 100;
@@ -619,6 +631,29 @@ public sealed partial class Game
     /// <summary>The classic-ruleset score value of one unit (FreeCol <c>UnitType.getScoreValue</c>); 0 for a type with no score value.</summary>
     private static int UnitScoreValue(Unit unit) => UnitScoreValues.GetValueOrDefault(unit.Type.Id, 0);
 
+    /// <summary>The classic-ruleset score value of a unit <b>type</b> id (FreeCol <c>UnitType.getScoreValue</c>); 0 for a type with no score value. Used for colony-worker colonists, which are colony population rather than map units.</summary>
+    private static int UnitScoreValue(string unitTypeId) => UnitScoreValues.GetValueOrDefault(unitTypeId, 0);
+
+    /// <summary>
+    /// The Σ score value of every colonist working inside <paramref name="player"/>'s colonies (FreeCol's
+    /// <c>sum(getUnits(), Unit::getScoreValue)</c> counts colony workers, which in our model are colony <i>population</i>
+    /// rather than entries in the unit list). Each colony's colonists are its non-free overlay types — tile workers,
+    /// building occupants, and idle colonists — plus free colonists (score 3) padding out the rest of its
+    /// <see cref="Colony.Population"/>. A free-colonist-only colony therefore contributes <c>3 × Population</c>.
+    /// </summary>
+    private int ColonyWorkerScore(Player player) =>
+        ColoniesOf(player).Sum(c =>
+        {
+            int nonFree = c.TileWorkerTypes.Values.Sum(UnitScoreValue)
+                + c.BuildingWorkerTypes.Values.SelectMany(occupants => occupants).Sum(UnitScoreValue)
+                + c.IdleWorkerTypes.Sum(UnitScoreValue);
+            int nonFreeCount = c.TileWorkerTypes.Count
+                + c.BuildingWorkerTypes.Values.Sum(occupants => occupants.Count)
+                + c.IdleWorkerTypes.Count;
+            int freeColonists = c.Population - nonFreeCount; // the remainder are free colonists
+            return nonFree + freeColonists * UnitScoreValue(Colony.FreeColonistTypeId);
+        });
+
     /// <summary>The score value of the human player (a convenience over <see cref="PlayerScore"/>, mirroring <see cref="Gold"/>/<see cref="Liberty"/>).</summary>
     public int Score => PlayerScore(_human);
 
@@ -634,15 +669,14 @@ public sealed partial class Game
     /// </para>
     /// <para><b>Faithful-subset notes vs. FreeCol's <c>updateScore</c>:</b>
     /// (1) FreeCol's <c>sum(getUnits(), Unit::getScoreValue)</c> counts every owned unit including colony workers; our
-    /// colony workers are not in the unit list (they are colony population), so only map/Europe units contribute today —
-    /// the same modelling deviation noted on the continental-army muster.
-    /// (2) FreeCol folds in per-event history scores via <c>HistoryEvent.getScore()</c>; our <see cref="HistoryEvent"/> now
-    /// carries a numeric <c>Score</c> and <b>region-discovery</b> events score it (<c>86d3c9w2f</c>), folded into the
-    /// <b>human's</b> total here (the history log is the human's). That score lives only in the <b>in-memory, un-persisted</b>
-    /// history log: the per-region <em>discovered</em> flag is saved (so a region isn't re-discovered on load), but the
-    /// score-bearing event is not, so a discovery's points do not survive a save/load — a documented limitation until the
-    /// history log is persisted. FreeCol's other history summands (settlement/nation destruction penalties) are not yet
-    /// emitted as scored events.
+    /// colony workers are colony <em>population</em>, not unit-list entries, so they are scored explicitly via
+    /// <see cref="ColonyWorkerScore"/> and added to the map/Europe units — the unit summand now matches FreeCol.
+    /// (2) FreeCol folds in per-event history scores via <c>HistoryEvent.getScore()</c>; our <see cref="HistoryEvent"/>
+    /// carries a numeric <c>Score</c> and these events score it, folded into the <b>human's</b> total here (the history
+    /// log is the human's): <b>region-discovery</b> (positive, <c>86d3c9w2f</c>) and the <b>settlement/nation-destruction
+    /// penalties</b> (−5 / −50). Lost-city finds are recorded score-less (their value rides the treasure → gold summand),
+    /// exactly as FreeCol. The history log — and the scores it carries — is <b>persisted</b> from save v58, so a
+    /// discovery's points and an atrocity's penalty survive a save/load round-trip.
     /// (3) FreeCol derives the independence ordinal from an INDEPENDENCE history event's stored place (0/1/2); with a single
     /// human player, an <see cref="PlayerType.Independent"/> nation is the first to win, so it takes the 100% first-place bonus.</para>
     /// </summary>
@@ -662,7 +696,10 @@ public sealed partial class Game
     /// and the independence percentage bonus, from which <see cref="ScoreComponents.Total"/> follows.</returns>
     public ScoreComponents ScoreBreakdown(Player player)
     {
-        int unitValues = _units.Where(u => IsOwnedBy(u, player)).Sum(UnitScoreValue);
+        // FreeCol's sum(getUnits(), Unit::getScoreValue) counts every owned unit, including colonists working inside
+        // colonies. Our colony workers are colony population (not unit-list entries), so we add their score explicitly
+        // (ColonyWorkerScore) alongside the map/Europe units — closing the old "colony workers don't score" deviation.
+        int unitValues = _units.Where(u => IsOwnedBy(u, player)).Sum(UnitScoreValue) + ColonyWorkerScore(player);
         int colonyLiberty = ColoniesOf(player).Sum(c => c.Liberty);
         int fatherPoints = ScoreFoundingFather * player.Congress.Count;
         int goldPoints = (int)Math.Floor(ScoreGold * player.Gold);
@@ -2838,6 +2875,20 @@ public sealed partial class Game
             }
             _nativeSettlements.Remove(settlement); // destroyed
             ClaimNativeLand(); // the razed settlement releases its land claim (surviving same-nation settlements keep theirs)
+
+            // The atrocity's score penalties (FreeCol csDestroySettlement): −5 for razing the camp and a further −50 if
+            // it was the nation's LAST settlement (DESTROY_NATION). Recorded as history events on the human attacker —
+            // the history log is the human's, so only the human's razings carry a penalty (an AI razing scores nothing
+            // for the human). Score-bearing, so they fold into the human's PlayerScore via HistoryEventScore.
+            if (attacker.OwnerId == _human.PlayerId)
+            {
+                string nationName = SettlementNationDisplayName(nation);
+                RecordHistory(HistoryEventKind.SettlementDestroyed, $"Razed a {nationName} settlement.", ScoreSettlementDestroyed);
+                if (!_nativeSettlements.Any(s => s.NationTypeId == nation)) // that was the nation's last settlement
+                {
+                    RecordHistory(HistoryEventKind.NationDestroyed, $"Destroyed the {nationName} nation.", ScoreNationDestroyed);
+                }
+            }
 
             NativeTensionOptions t = Ruleset.Difficulty.NativeTension;
             if (capital)
@@ -6494,7 +6545,14 @@ public sealed partial class Game
                 break;
             case LostCityRumourType.Cibola:
                 // FreeCol: a city of gold → rand(0, dx·600) + dx·300 as a treasure train (medium dx=8 → 2400–7199).
-                SpawnTreasureTrain(target, unit.OwnerId, random.Next(RumourDifficultyDx * 600) + (RumourDifficultyDx * 300));
+                int cibolaTreasure = random.Next(RumourDifficultyDx * 600) + (RumourDifficultyDx * 300);
+                SpawnTreasureTrain(target, unit.OwnerId, cibolaTreasure);
+                // Record the find for the History report (FreeCol CITY_OF_GOLD) when the human discovers it — score 0,
+                // its value rides the treasure (→ gold summand once cashed in). The history log is the human's only.
+                if (unit.OwnerId == _human.PlayerId)
+                {
+                    RecordHistory(HistoryEventKind.CityOfGold, $"Found one of the Seven Cities of Gold — {cibolaTreasure} gold in treasure.");
+                }
                 break;
             case LostCityRumourType.BurialGround:
                 ApplyBurialGround(target, unit.OwnerId); // the owning nation turns hateful toward the desecrator
@@ -11622,9 +11680,9 @@ public sealed partial class Game
     /// unlike <see cref="AbandonColony"/>), and any <b>garrison units standing on the colony tile survive</b> on the
     /// now-empty land. When <paramref name="owner"/> is the human, the loss is <b>notified</b> (a transient
     /// <see cref="ColonyStarvedNotice"/> the presentation surfaces after the turn) and recorded as a
-    /// <see cref="HistoryEventKind.ColonyDestroyed"/> history event (FreeCol <c>COLONY_DESTROYED</c>; carries no score
-    /// itself today but feeds the later colony-lost score penalty). <b>Deterministic</b> — no RNG is drawn (ADR-009),
-    /// and <b>no new persisted state</b>: a destroyed colony is simply absent from the save (no format bump).
+    /// <see cref="HistoryEventKind.ColonyDestroyed"/> history event (FreeCol <c>COLONY_DESTROYED</c>; <b>carries no
+    /// score</b> — FreeCol never sets one, the lost colony's units/liberty already leave the score). <b>Deterministic</b>
+    /// — no RNG is drawn (ADR-009); the colony is gone from the save but the history event now persists (v58).
     /// </summary>
     /// <param name="owner">The colony's owner (the human or a foreign power); only the human is notified / recorded.</param>
     /// <param name="colony">The starving colony to destroy.</param>
