@@ -914,7 +914,16 @@ public sealed class Ruleset
         // The unattached, top-level <modifiers> combat percentages (attack bonus, movement/amphibious/artillery
         // penalties, fortified/artillery-against-raid bonuses, naval cargo penalty). Each missing modifier falls back
         // to its hardcoded classic value, so the default classic game is byte-identical (FreeCol Modifier).
-        CombatModifiers combatModifiers = ParseCombatModifiers(root.Element("modifiers"));
+        // bombardBonus is the exception: the classic spec attaches it to the REF nation type (model.nationType.ref)
+        // rather than the top-level section, so we lift it from there (already resolved up the extends chain into the
+        // type's Modifiers) and pass it through — a variant can still override via a top-level <modifiers> entry.
+        double? refBombardBonusPercent = europeanNationTypes.Values
+            .Where(t => t.IsRef)
+            .SelectMany(t => t.Modifiers)
+            .Where(m => m.TargetId == "model.modifier.bombardBonus")
+            .Select(m => (double?)m.Value)
+            .FirstOrDefault();
+        CombatModifiers combatModifiers = ParseCombatModifiers(root.Element("modifiers"), refBombardBonusPercent);
 
         // The colony/production scalars (per-colonist food appetite from the colonist's <consumes>, the 200-food growth
         // threshold, the 200 liberty-per-rebel divisor, the 50 default export level). Each missing source falls back to
@@ -1781,7 +1790,17 @@ public sealed class Ruleset
     /// modifiers (the <c>colonyGoodsParty</c>/<c>shipTradePenalty</c> instantiated-on-the-fly templates and the
     /// <c>model.goods.food</c> zero-additive) are deliberately left to their own consumers and not read here.
     /// </summary>
-    internal static CombatModifiers ParseCombatModifiers(XElement? section)
+    /// <summary>
+    /// Parses the unattached, top-level combat <c>&lt;modifier&gt;</c> percentages into <see cref="CombatModifiers"/>.
+    /// Each modifier the section omits falls back to its hardcoded classic value, so a spec missing the section (or any
+    /// one modifier) yields a byte-identical classic bundle. The <c>bombardBonus</c> is special: in the classic spec it
+    /// lives on the REF nation type rather than the top-level <c>&lt;modifiers&gt;</c> section, so <see cref="Load"/>
+    /// passes its parsed REF value through <paramref name="refBombardBonusPercent"/>; a top-level definition (a variant
+    /// could move it there) takes precedence, then the REF value, then the classic +50%.
+    /// </summary>
+    /// <param name="section">The spec's <c>&lt;modifiers&gt;</c> element, or null when absent.</param>
+    /// <param name="refBombardBonusPercent">The REF nation type's <c>model.modifier.bombardBonus</c> percentage (e.g. 50), or null when the REF type declares none.</param>
+    internal static CombatModifiers ParseCombatModifiers(XElement? section, double? refBombardBonusPercent = null)
     {
         var byId = (section?.Elements("modifier") ?? [])
             .Where(m => (string?)m.Attribute("id") is not null)
@@ -1795,6 +1814,11 @@ public sealed class Ruleset
                 : classic;
 
         CombatModifiers classic = CombatModifiers.Classic;
+        // bombardBonus precedence: a top-level <modifiers> entry (variant), else the REF nation type's value, else classic.
+        double bombardBonus =
+            byId.TryGetValue("model.modifier.bombardBonus", out XElement? bb) && (double?)bb.Attribute("value") is { } bbv
+                ? bbv / 100.0
+                : refBombardBonusPercent is { } refBb ? refBb / 100.0 : classic.BombardBonus;
         return new CombatModifiers(
             AttackBonus: Fraction("model.modifier.attackBonus", classic.AttackBonus),
             SmallMovementPenalty: Fraction("model.modifier.smallMovementPenalty", classic.SmallMovementPenalty),
@@ -1803,7 +1827,8 @@ public sealed class Ruleset
             ArtilleryInOpenPenalty: Fraction("model.modifier.artilleryInTheOpen", classic.ArtilleryInOpenPenalty),
             ArtilleryAgainstRaidBonus: Fraction("model.modifier.artilleryAgainstRaid", classic.ArtilleryAgainstRaidBonus),
             FortifiedBonus: Fraction("model.modifier.fortified", classic.FortifiedBonus),
-            CargoPenalty: Fraction("model.modifier.cargoPenalty", classic.CargoPenalty));
+            CargoPenalty: Fraction("model.modifier.cargoPenalty", classic.CargoPenalty),
+            BombardBonus: bombardBonus);
     }
 
     private static FatherModifier ParseModifier(XElement m) => new(

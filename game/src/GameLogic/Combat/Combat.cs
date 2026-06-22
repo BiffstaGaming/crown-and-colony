@@ -46,13 +46,15 @@ public enum CombatResult
 /// <param name="ArtilleryInOpen">Artillery attacking in the open, not in a settlement (−75%).</param>
 /// <param name="AmbushBonus">Ambush offence bonus — the defender's terrain defence percentage, gained as offence when ambushing from concealing terrain (FreeCol <c>AMBUSH_BONUS</c>).</param>
 /// <param name="GoodsCarried">Goods units in the (naval) attacker's hold — each unit is a −12.5% cargo penalty.</param>
+/// <param name="Bombard">The attacker carries the bombard (siege) bonus assaulting a settlement (FreeCol <c>model.modifier.bombardBonus</c>, REF-only, +50%).</param>
 public readonly record struct AttackContext(
     bool WithoutAttackBonus = false,
     MovementPenalty Movement = MovementPenalty.None,
     bool Amphibious = false,
     bool ArtilleryInOpen = false,
     double AmbushBonus = 0,
-    int GoodsCarried = 0);
+    int GoodsCarried = 0,
+    bool Bombard = false);
 
 /// <summary>Situational modifiers on the defender (all percentages).</summary>
 /// <param name="TerrainDefenceBonus">The defending tile's defence bonus percentage (hills 100, forest 50, …).</param>
@@ -61,13 +63,15 @@ public readonly record struct AttackContext(
 /// <param name="ArtilleryInOpen">Artillery defending in the open, not in a settlement and not dug in (−75%, FreeCol <c>ARTILLERY_IN_THE_OPEN</c>).</param>
 /// <param name="ArtilleryAgainstRaid">Artillery defending a settlement against a native raid (+100%, FreeCol <c>ARTILLERY_AGAINST_RAID</c>).</param>
 /// <param name="GoodsCarried">Goods units in the (naval) defender's hold — each unit is a −12.5% cargo penalty.</param>
+/// <param name="PopularSupportBonus">Popular-support defence percentage in a War-of-Independence settlement battle (FreeCol <c>model.modifier.popularSupport</c>): a rebel-held colony defends at its Sons-of-Liberty %, the REF attacks against <c>100 − SoL%</c> (a higher figure is added as the colony's defence either way; 0 outside the war). See <see cref="CombatModel.PopularSupportPercent"/>.</param>
 public readonly record struct DefenceContext(
     double TerrainDefenceBonus = 0,
     bool Fortified = false,
     double SettlementDefenceBonus = 0,
     bool ArtilleryInOpen = false,
     bool ArtilleryAgainstRaid = false,
-    int GoodsCarried = 0);
+    int GoodsCarried = 0,
+    double PopularSupportBonus = 0);
 
 /// <summary>
 /// The unattached, top-level combat <c>&lt;modifier&gt;</c> percentages FreeCol keeps in the spec's
@@ -85,6 +89,7 @@ public readonly record struct DefenceContext(
 /// <param name="ArtilleryAgainstRaidBonus">Artillery defending a settlement against a native raid (<c>model.modifier.artilleryAgainstRaid</c>, classic +1.00).</param>
 /// <param name="FortifiedBonus">The fortified defence bonus (<c>model.modifier.fortified</c>, classic +0.50).</param>
 /// <param name="CargoPenalty">Per-goods-unit naval cargo penalty (<c>model.modifier.cargoPenalty</c>, classic −0.125).</param>
+/// <param name="BombardBonus">The siege (bombard) bonus an attacker gets assaulting a <em>settlement</em> (<c>model.modifier.bombardBonus</c>, classic +0.50). In the classic spec this lives on the Royal Expeditionary Force nation type, so only the REF carries it; <see cref="CombatModel"/> applies it only when <see cref="AttackContext.Bombard"/> is set.</param>
 public readonly record struct CombatModifiers(
     double AttackBonus,
     double SmallMovementPenalty,
@@ -93,7 +98,8 @@ public readonly record struct CombatModifiers(
     double ArtilleryInOpenPenalty,
     double ArtilleryAgainstRaidBonus,
     double FortifiedBonus,
-    double CargoPenalty)
+    double CargoPenalty,
+    double BombardBonus)
 {
     /// <summary>
     /// The hardcoded classic FreeCol combat percentages (as fractions), used as the default when no ruleset value
@@ -108,7 +114,8 @@ public readonly record struct CombatModifiers(
         ArtilleryInOpenPenalty: -0.75,
         ArtilleryAgainstRaidBonus: 1.00, // +100% — artillery defending a colony against a native raid
         FortifiedBonus: 0.50,            // +50%
-        CargoPenalty: -0.125);           // −12.5% per goods unit carried (naval, both offence & defence)
+        CargoPenalty: -0.125,            // −12.5% per goods unit carried (naval, both offence & defence)
+        BombardBonus: 0.50);             // +50% — the REF battering a rebel settlement (REF nation type only)
 }
 
 /// <summary>
@@ -150,6 +157,10 @@ public static class CombatModel
         {
             power *= 1 + (context.AmbushBonus / 100.0); // strike from cover: gain the defender's terrain bonus as offence
         }
+        if (context.Bombard)
+        {
+            power *= 1 + modifiers.BombardBonus; // the REF's siege train hammering a rebel settlement (+50%)
+        }
         power *= System.Math.Max(0, 1 + (modifiers.CargoPenalty * context.GoodsCarried)); // laden ships attack worse
         return power;
     }
@@ -168,6 +179,10 @@ public static class CombatModel
             power *= 1 + modifiers.FortifiedBonus;
         }
         power *= 1 + (context.SettlementDefenceBonus / 100.0);
+        if (context.PopularSupportBonus != 0)
+        {
+            power *= 1 + (context.PopularSupportBonus / 100.0); // popular support: a town behind the cause defends harder (War of Independence)
+        }
         if (context.ArtilleryInOpen)
         {
             power *= 1 + modifiers.ArtilleryInOpenPenalty; // artillery caught defending in the field is brittle (−75%)
@@ -188,6 +203,27 @@ public static class CombatModel
     {
         double total = attackPower + defencePower;
         return total <= 0 ? 0 : attackPower / total;
+    }
+
+    /// <summary>
+    /// The popular-support defence percentage a colony adds in a War-of-Independence settlement battle (FreeCol
+    /// <c>SimpleCombatModel.addPopularSupportBonus</c>): a colony's Sons-of-Liberty membership measures how hard the
+    /// townsfolk fight. When the <b>rebel</b> defends, the bonus is its <paramref name="sonsOfLiberty"/> % directly
+    /// (a town fully behind the revolution gets +100%); when the <b>REF</b> attacks, the figure flips to
+    /// <c>100 − SoL%</c> — the loyalist remnant rallies hardest where rebel sentiment is weakest. Either way the
+    /// result is the colony's <em>defence</em> bonus. Outside the war (and at the trivial 0%/100% endpoints where the
+    /// flipped or raw figure is 0) it is 0 — no draw, no modifier (ADR-009). Clamped to 0..100.
+    /// </summary>
+    /// <param name="sonsOfLiberty">The defending colony's Sons-of-Liberty membership percentage (0..100).</param>
+    /// <param name="attackerIsRef">Whether the attacker is the Royal Expeditionary Force (flips the figure to <c>100 − SoL%</c>).</param>
+    public static int PopularSupportPercent(int sonsOfLiberty, bool attackerIsRef)
+    {
+        int bonus = System.Math.Clamp(sonsOfLiberty, 0, 100);
+        if (attackerIsRef)
+        {
+            bonus = 100 - bonus;
+        }
+        return bonus;
     }
 
     /// <summary>

@@ -30,6 +30,7 @@ public class CombatModifiersTests
         Assert.Equal(1.00, m.ArtilleryAgainstRaidBonus, 5);     // model.modifier.artilleryAgainstRaid = 100
         Assert.Equal(0.50, m.FortifiedBonus, 5);                // model.modifier.fortified = 50
         Assert.Equal(-0.125, m.CargoPenalty, 5);                // model.modifier.cargoPenalty = -12.5
+        Assert.Equal(0.50, m.BombardBonus, 5);                  // model.modifier.bombardBonus = 50 (on the REF nation type)
     }
 
     [Fact]
@@ -85,6 +86,28 @@ public class CombatModifiersTests
     {
         // A spec without a <modifiers> section still yields the full classic bundle (byte-identical default game).
         Assert.Equal(CombatModifiers.Classic, Ruleset.ParseCombatModifiers(null));
+    }
+
+    [Fact]
+    public void ParseCombatModifiers_ReadsBombardBonus_FromTheRefNationTypeValue()
+    {
+        // bombardBonus lives on the REF nation type in the classic spec (not the top-level <modifiers>), so Load lifts
+        // it and passes the percentage through — a non-50 value proves it is actually read, not a classic fallback.
+        XElement section = XElement.Parse("<modifiers/>");
+        CombatModifiers m = Ruleset.ParseCombatModifiers(section, refBombardBonusPercent: 75);
+        Assert.Equal(0.75, m.BombardBonus, 5);
+        // A REF type without the modifier (null) falls back to the classic +50%.
+        Assert.Equal(0.50, Ruleset.ParseCombatModifiers(section, refBombardBonusPercent: null).BombardBonus, 5);
+    }
+
+    [Fact]
+    public void ParseCombatModifiers_TopLevelBombardBonus_TakesPrecedenceOverTheRefValue()
+    {
+        // A variant may relocate bombardBonus into the top-level <modifiers> section; that wins over the REF value.
+        XElement section = XElement.Parse(
+            "<modifiers><modifier id='model.modifier.bombardBonus' value='30' type='percentage'/></modifiers>");
+        CombatModifiers m = Ruleset.ParseCombatModifiers(section, refBombardBonusPercent: 75);
+        Assert.Equal(0.30, m.BombardBonus, 5);
     }
 
     [Fact]

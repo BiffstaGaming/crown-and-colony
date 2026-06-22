@@ -1988,14 +1988,23 @@ public sealed partial class Game
     private double DefencePowerOf(Unit attacker, Unit defender, Position target)
     {
         bool naval = defender.Type.IsNaval;
-        bool inColony = !naval && ColonyAt(target) is not null;
+        Colony? colony = naval ? null : ColonyAt(target);
+        bool inColony = colony is not null;
+        // Popular support (FreeCol getDefensiveModifiers settlement branch): when the REF fights a rebel colony's
+        // GARRISON on the colony tile, the town's Sons-of-Liberty still scales its defence — a rebel defends at SoL%,
+        // the REF attacks against 100−SoL%. Only in a War-of-Independence battle, and only when the defender stands in
+        // the colony, so every other fight is unchanged (ADR-009).
+        double popularSupport = inColony && IsWarOfIndependenceColonyBattle(attacker, defender.OwnerId)
+            ? CombatModel.PopularSupportPercent(colony!.SonsOfLiberty, IsRefUnit(attacker))
+            : 0;
         var context = new DefenceContext(
             TerrainDefenceBonus: (naval || inColony) ? 0 : Map.TerrainAt(target).DefenceBonus,
             Fortified: !naval && defender.IsFortified,
             SettlementDefenceBonus: naval ? 0 : ColonyDefenceBonusAt(target),
             ArtilleryInOpen: !naval && defender.Type.Bombard && !inColony && !defender.IsFortified,
             ArtilleryAgainstRaid: !naval && inColony && defender.Type.Bombard && attacker.IsNative,
-            GoodsCarried: naval ? GoodsSlotsUsed(defender) : 0);
+            GoodsCarried: naval ? GoodsSlotsUsed(defender) : 0,
+            PopularSupportBonus: popularSupport);
         return CombatModel.DefencePower(DefenceBase(defender), context, Ruleset.CombatModifiers);
     }
 
@@ -2261,13 +2270,20 @@ public sealed partial class Game
         bool naval = defender.Type.IsNaval;
         bool inColony = !naval && ColonyAt(target) is not null;
         bool attackerInColony = ColonyAt(attacker.Position) is not null;
-        bool ambush = !naval && !inColony && !attackerInColony && attacker.IsNative && !defender.IsFortified
+        // Ambush (FreeCol Unit.canAmbush): an open-field strike from/at concealing terrain on an unfortified defender,
+        // fired when the ATTACKER has the ambush bonus (a native) OR the DEFENDER has the ambush penalty (a REF unit) —
+        // this is the REF mirror (P6). Either way the attacker gains the defender's terrain bonus as offence.
+        bool ambush = !naval && !inColony && !attackerInColony && !defender.IsFortified
+            && (attacker.IsNative || IsRefUnit(defender))
             && (Map.TerrainAt(attacker.Position).AmbushTerrain || Map.TerrainAt(target).AmbushTerrain);
         var ctx = new AttackContext(
             Movement: MovementPenaltyFor(attacker),
             ArtilleryInOpen: !naval && attacker.Type.Bombard && !attackerInColony && !attacker.IsFortified && !inColony,
             AmbushBonus: ambush ? Map.TerrainAt(target).DefenceBonus : 0,
-            GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0);
+            GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0,
+            // The REF's bombard bonus also applies battering a garrison standing on a settlement tile (FreeCol
+            // getOffensiveModifiers: defender's tile hasSettlement → BOMBARD_BONUS), not just the colony-capture path.
+            Bombard: inColony && IsRefUnit(attacker));
         double attack = CombatModel.AttackPower(OffenceBase(attacker) * OffenceAgainstNativeFactor(attacker, defender), ctx, Ruleset.CombatModifiers);
         double defence = DefencePowerOf(attacker, defender, target);
         return (attack, defence);
@@ -2564,9 +2580,20 @@ public sealed partial class Game
         // by the colony's fortification bonus below (FreeCol also Revere-auto-equips it — deferred).
         var defender = new Unit(0, Ruleset.Unit(StartingUnitTypeId), target) { OwnerId = formerOwner };
 
-        var attackContext = new AttackContext(Movement: MovementPenaltyFor(attacker));
+        // REF siege fidelity (FreeCol getOffensiveModifiers settlement branch): the Royal Expeditionary Force batters a
+        // settlement with its bombard bonus (+50%), and in a War of Independence the colony's popular support scales its
+        // defence — a rebel-held town defends at its Sons-of-Liberty %, the REF assaults against 100−SoL%. Both are 0 in
+        // an ordinary (non-REF, non-WoI) capture, so that path is byte-identical (ADR-009).
+        bool attackerIsRef = IsRefUnit(attacker);
+        double popularSupport = IsWarOfIndependenceColonyBattle(attacker, formerOwner)
+            ? CombatModel.PopularSupportPercent(colony.SonsOfLiberty, attackerIsRef)
+            : 0;
+        var attackContext = new AttackContext(Movement: MovementPenaltyFor(attacker), Bombard: attackerIsRef);
         double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext, Ruleset.CombatModifiers);
-        double defencePower = CombatModel.DefencePower(DefenceBase(defender), new DefenceContext(SettlementDefenceBonus: ColonyDefenceBonus(colony)), Ruleset.CombatModifiers);
+        double defencePower = CombatModel.DefencePower(
+            DefenceBase(defender),
+            new DefenceContext(SettlementDefenceBonus: ColonyDefenceBonus(colony), PopularSupportBonus: popularSupport),
+            Ruleset.CombatModifiers);
         attacker.MovementLeft = 0; // assaulting ends the attacker's turn (before any promotion swap)
 
         // Assaulting a rival colony is an act of war, recorded both ways before the colony changes hands.

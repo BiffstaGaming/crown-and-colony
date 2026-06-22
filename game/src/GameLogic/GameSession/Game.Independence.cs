@@ -363,6 +363,30 @@ public sealed partial class Game
             && StanceBetween(refPlayer.PlayerId, p.PlayerId) == Stance.War);
 
     /// <summary>
+    /// Whether the player owning <paramref name="unit"/> is the Royal Expeditionary Force (FreeCol <c>Player.isREF</c>).
+    /// Native-owned units are never the REF. Drives the REF-only siege bonus (<c>model.modifier.bombardBonus</c>) and
+    /// the ambush-penalty mirror.
+    /// </summary>
+    private bool IsRefUnit(Unit unit) =>
+        unit.OwnerNationId is null && PlayerById(unit.OwnerId) is { PlayerType: PlayerType.RoyalExpeditionaryForce };
+
+    /// <summary>
+    /// Whether a combat between the player owning <paramref name="attacker"/> and the colonial player
+    /// <paramref name="defenderOwnerId"/> is a War-of-Independence battle for a colony (FreeCol
+    /// <c>CombatModel.combatIsWarOfIndependence</c>): one side is the Royal Expeditionary Force and the other its
+    /// rebelling colonial power (<see cref="PlayerType.Rebel"/>/<see cref="PlayerType.Independent"/>). Drives the
+    /// popular-support defence bonus. Returns the defending colony's owner so the caller can read its SoL.
+    /// </summary>
+    private bool IsWarOfIndependenceColonyBattle(Unit attacker, int defenderOwnerId) =>
+        attacker.OwnerNationId is null
+        && PlayerById(attacker.OwnerId) is { } aPlayer
+        && PlayerById(defenderOwnerId) is { } dPlayer
+        && ((aPlayer.PlayerType is PlayerType.RoyalExpeditionaryForce
+                && dPlayer.PlayerType is PlayerType.Rebel or PlayerType.Independent)
+            || (aPlayer.PlayerType is PlayerType.Rebel or PlayerType.Independent
+                && dPlayer.PlayerType is PlayerType.RoyalExpeditionaryForce));
+
+    /// <summary>
     /// A REF <b>land</b> unit's turn (FreeCol <c>REFAIPlayer.giveNormalMissions</c> land branch): make for the rebel's
     /// colonies — connected ports first — capturing an undefended one when adjacent and fighting a garrison as a field
     /// unit; only once the REF holds a colony does it also hunt loose rebel field units. Standing in a just-captured

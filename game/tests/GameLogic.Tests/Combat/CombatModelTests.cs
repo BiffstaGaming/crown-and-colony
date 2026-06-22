@@ -116,6 +116,53 @@ public class CombatModelTests
         Assert.Equal(20.0, CombatModel.DefencePower(5, new DefenceContext(SettlementDefenceBonus: 100, ArtilleryAgainstRaid: true)), 5);
     }
 
+    // ---- REF / rebellion modifiers (P6, 86d3e4bkk) ----
+
+    [Fact]
+    public void AttackPower_AppliesTheBombardBonus_WhenAttackingASettlement()
+    {
+        // The REF's siege train (model.modifier.bombardBonus, +50%) stacks on the +50% attack bonus when it batters a
+        // settlement: a colonial regular (offence 7) → 7 × 1.5 (attack) × 1.5 (bombard) = 15.75.
+        Assert.Equal(15.75, CombatModel.AttackPower(7, new AttackContext(Bombard: true)), 5);
+        // Without the bombard flag (an ordinary attacker) only the attack bonus applies — 7 × 1.5 = 10.5.
+        Assert.Equal(10.5, CombatModel.AttackPower(7, new AttackContext()), 5);
+    }
+
+    [Fact]
+    public void DefencePower_AppliesThePopularSupportBonus()
+    {
+        // A rebel colonist (defence 1) behind a stockade (+100%) in a town at 80% Sons-of-Liberty (+80% popular
+        // support) = 1 × 2 × 1.8 = 3.6.
+        Assert.Equal(3.6, CombatModel.DefencePower(1,
+            new DefenceContext(SettlementDefenceBonus: 100, PopularSupportBonus: 80)), 5);
+        // 0% popular support leaves the colony at its bare stockade defence — 1 × 2 = 2.
+        Assert.Equal(2.0, CombatModel.DefencePower(1,
+            new DefenceContext(SettlementDefenceBonus: 100, PopularSupportBonus: 0)), 5);
+    }
+
+    [Theory]
+    // Rebel defends: the bonus is the SoL% directly (a town fully behind the revolution defends at +100%).
+    [InlineData(80, false, 80)]
+    [InlineData(100, false, 100)]
+    [InlineData(0, false, 0)]
+    // REF attacks: the figure flips to 100 − SoL% (loyalists rally where rebel sentiment is weakest).
+    [InlineData(80, true, 20)]
+    [InlineData(0, true, 100)]
+    [InlineData(100, true, 0)]
+    public void PopularSupportPercent_MatchesFreeCol(int sonsOfLiberty, bool attackerIsRef, int expected)
+    {
+        // FreeCol SimpleCombatModel.addPopularSupportBonus: bonus = SoL, flipped to 100−SoL when the attacker is the REF.
+        Assert.Equal(expected, CombatModel.PopularSupportPercent(sonsOfLiberty, attackerIsRef));
+    }
+
+    [Fact]
+    public void PopularSupportPercent_ClampsOutOfRangeSoL()
+    {
+        // Defensive: a stray over-100 / negative SoL is clamped before the flip (FreeCol caps SoL at 0..100).
+        Assert.Equal(100, CombatModel.PopularSupportPercent(150, attackerIsRef: false));
+        Assert.Equal(0, CombatModel.PopularSupportPercent(-20, attackerIsRef: false));
+    }
+
     [Fact]
     public void RolePower_FoldsIntoTheBase()
     {

@@ -430,6 +430,107 @@ public class IndependenceTests
             $"REF regular should close on the rebel colony ({distanceBefore} → {Dist(moved.Position)})");
     }
 
+    // ── REF/rebellion combat modifiers (86d3e4bkk): bombardBonus + popularSupport + ambushPenalty ────────
+
+    /// <summary>
+    /// Spawns a REF king's regular on a land tile adjacent to <paramref name="colony"/>, ready to assault it. Returns
+    /// the regular. The REF's roster is cleared first so it is the only REF unit in play.
+    /// </summary>
+    private static Unit RefRegularBeside(Game game, Player refP, Colony colony)
+    {
+        ClearRef(game, refP);
+        Position refTile = colony.Position.Neighbours().First(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater && game.ColonyAt(n) is null
+            && game.NativeSettlementAt(n) is null && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+        return game.SpawnUnit(Classic.Unit("model.unit.kingsRegular"), refTile, refP.PlayerId);
+    }
+
+    [Fact]
+    public void RefSiege_BombardBonusAndPopularSupport_ShiftTheOdds_VersusAnOrdinaryCapture()
+    {
+        // L2 REF-siege scenario. A REF king's regular assaults a rebel colony defended by a lone veteran soldier
+        // garrison. The corrected odds fold in (a) the REF's +50% bombard bonus on offence and (b) the colony's
+        // popular-support defence (100−SoL% for a REF attacker). We pin the corrected attacker win probability against
+        // a hand-computed FreeCol figure, then show it differs from the old (pre-fix) odds with neither modifier.
+        (Game game, Colony colony) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        Player refP = Ref(game);
+
+        // Garrison the colony with a veteran soldier (the defender DefenderAt will pick); SoL 40% (a contested town).
+        game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), colony.Position);
+        colony.Liberty = Colony.LibertyPerRebel * colony.Population * 40 / 100; // ~40% Sons-of-Liberty
+        Assert.Equal(40, colony.SonsOfLiberty);
+
+        Game.CombatOdds odds = game.CombatOddsAgainst(RefRegularBeside(game, refP, colony), colony.Position)!;
+
+        // Attacker: king's regular base offence (4) × 1.5 attack bonus × 1.5 bombard bonus.
+        double baseOff = Classic.Unit("model.unit.kingsRegular").Offence;
+        Assert.Equal(baseOff * 1.5 * 1.5, odds.AttackPower, 4);
+        // Defender: veteran-soldier (unarmed) defence × popular support (REF attacker → 100−40 = +60% defence).
+        double baseDef = Classic.Unit("model.unit.veteranSoldier").Defence;
+        Assert.Equal(baseDef * 1.60, odds.DefencePower, 4);
+        Assert.Equal(odds.AttackPower / (odds.AttackPower + odds.DefencePower), odds.WinProbability, 6);
+
+        // Contrast: the SAME assault with NEITHER modifier (the old, wrong odds) — offence loses the bombard ×1.5 and
+        // defence loses the +60% popular support. The corrected odds must DIFFER (the bug was that they were equal to
+        // this un-modified figure); here the two roughly cancel so the corrected odds land a touch below — the point is
+        // that the resolution is no longer the bare attack-bonus-vs-bare-defence number it used to be.
+        double oldAttack = baseOff * 1.5;        // attack bonus only, no bombard
+        double oldDefence = baseDef;             // no popular support
+        double oldWin = oldAttack / (oldAttack + oldDefence);
+        Assert.NotEqual(oldWin, odds.WinProbability, 6);
+    }
+
+    [Fact]
+    public void RefSiege_PopularSupport_FavoursTheDefenderMoreInAHighLoyaltyRebelTown()
+    {
+        // The popular-support flip (100−SoL% for a REF attacker) means the REF has an EASIER time against a high-SoL
+        // (deeply rebel) town than a low-SoL one: high SoL → small loyalist defence bonus; low SoL → large one.
+        (Game game, Colony colony) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        Player refP = Ref(game);
+        game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), colony.Position);
+
+        colony.Liberty = Colony.LibertyPerRebel * colony.Population; // 100% SoL → REF faces 0% popular support
+        double winHighSoL = game.CombatOddsAgainst(RefRegularBeside(game, refP, colony), colony.Position)!.WinProbability;
+
+        colony.Liberty = Colony.LibertyPerRebel * colony.Population * 20 / 100; // 20% SoL → REF faces +80% popular support
+        double winLowSoL = game.CombatOddsAgainst(RefRegularBeside(game, refP, colony), colony.Position)!.WinProbability;
+
+        Assert.True(winHighSoL > winLowSoL,
+            $"REF should win more easily against a 100%-SoL town ({winHighSoL:F3}) than a 20% one ({winLowSoL:F3})");
+    }
+
+    [Fact]
+    public void NativeAttacker_OnARebelColony_GetsNoBombardOrPopularSupport()
+    {
+        // ADR-009 byte-identity guard: a NON-REF attacker (a native brave) assaulting the same garrisoned rebel colony
+        // gets neither the bombard bonus (REF-only) nor popular support (it is not a War-of-Independence battle) — its
+        // odds are the plain attack-bonus vs role-defence figure, exactly as before this feature.
+        (Game game, Colony colony) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer); // the colony is rebel-held
+        colony.Liberty = Colony.LibertyPerRebel * colony.Population * 40 / 100; // 40% SoL — would matter only in a WoI battle
+        game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), colony.Position); // garrison
+
+        // A native brave on an adjacent NON-ambush (open) tile so the ambush bonus does not muddy the offence figure.
+        // Reuse a live brave's nation-type id so the owner is a real native nation.
+        string nationTypeId = game.NativeUnits.First().OwnerNationId!;
+        Position tile = colony.Position.Neighbours().First(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater && !game.Map.TerrainAt(n).AmbushTerrain
+            && game.ColonyAt(n) is null && game.NativeSettlementAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+        Unit brave = game.SpawnUnit(Classic.Unit("model.unit.brave"), tile, nationTypeId);
+
+        Game.CombatOdds odds = game.CombatOddsAgainst(brave, colony.Position)!;
+
+        // Offence: brave base offence × 1.5 attack bonus only (no bombard — natives never get it).
+        Assert.Equal(Classic.Unit("model.unit.brave").Offence * 1.5, odds.AttackPower, 4);
+        // Defence: bare (unarmed) veteran-soldier defence, no popular support despite the 40% SoL (not a WoI battle).
+        Assert.Equal(Classic.Unit("model.unit.veteranSoldier").Defence, odds.DefencePower, 4);
+    }
+
     // ── Item 9: Win — defeat the REF + Spanish Succession ────────────────────────────────────────────────
 
     [Fact]
