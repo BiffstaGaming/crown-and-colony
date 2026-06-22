@@ -706,6 +706,109 @@ public class ForeignCombatTests
         Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
     }
 
+    // ---- Benjamin Franklin's peaceTreaty +50% holds the peace (FreeCol EuropeanAIPlayer.peaceHolds) ----
+
+    private const string BenjaminFranklin = "model.foundingFather.benjaminFranklin";
+
+    /// <summary>The first turn (1..max) on which the crowded power breaks the peace and declares war, or <c>max+1</c> if it
+    /// never did within the window. Optionally elects Benjamin Franklin to the human first (his peaceTreaty +50% gives the
+    /// power a per-turn reprieve from re-declaring war).</summary>
+    private static int TurnsUntilWar(ulong seed, bool humanHasFranklin, int max = 60)
+    {
+        (Game game, Player power) = PowerCrowdedByHuman(seed);
+        if (humanHasFranklin)
+        {
+            game.HumanPlayer.CongressList.Add(BenjaminFranklin);
+        }
+        for (int turn = 1; turn <= max; turn++)
+        {
+            game.EndTurn();
+            if (game.StanceBetween(power.PlayerId, game.HumanPlayer.PlayerId) == Stance.War)
+            {
+                return turn;
+            }
+        }
+        return max + 1;
+    }
+
+    [Fact]
+    public void Franklin_HoldsThePeace_SoWarComesLater_AcrossManySeeds()
+    {
+        // Faithful to FreeCol's peaceHolds: with Franklin's peaceTreaty +50% the human's treaty holds each turn the power
+        // WOULD break it (a 50% reprieve roll on the power's own stream), so across a spread of seeds war arrives strictly
+        // LATER on aggregate than without Franklin (some games it is averted within the whole window). Aggregating over
+        // seeds keeps the test robust to a single unlucky run while still pinning the effect's direction. (A handful of
+        // seeds place the staged AI colony on un-settleable terrain in PowerWithColony — those throw on setup and are
+        // skipped; we just need a healthy sample.)
+        int withoutTotal = 0, withTotal = 0, used = 0;
+        for (ulong seed = 1; seed <= 24 && used < 12; seed++)
+        {
+            int without, with;
+            try
+            {
+                without = TurnsUntilWar(seed, humanHasFranklin: false);
+                with = TurnsUntilWar(seed, humanHasFranklin: true);
+            }
+            catch (InvalidMoveException)
+            {
+                continue; // this seed's staged colony site is un-settleable — skip it
+            }
+            withoutTotal += without;
+            withTotal += with;
+            used++;
+        }
+
+        Assert.True(used >= 8, $"expected a healthy sample of usable seeds, got {used}");
+        Assert.True(withTotal > withoutTotal,
+            $"Franklin's peaceTreaty should delay (or avert) war: with={withTotal} should exceed without={withoutTotal} (over {used} seeds)");
+    }
+
+    [Fact]
+    public void WithoutFranklin_TheWarTiming_IsByteIdenticalToBefore_NoRollDrawn()
+    {
+        // The peace-hold roll is short-circuited (no draw) when the human holds no Franklin: the probability is 0, so
+        // PeaceTreatyHolds returns false without touching any stream. Two same-seed no-Franklin games therefore reach war
+        // on the exact same turn and replay byte-identically — the new gate is inert in the default game (ADR-009).
+        Assert.Equal(TurnsUntilWar(7, humanHasFranklin: false), TurnsUntilWar(7, humanHasFranklin: false));
+
+        (Game a, Player _) = PowerCrowdedByHuman(seed: 21);
+        (Game b, Player _) = PowerCrowdedByHuman(seed: 21);
+        for (int turn = 0; turn < 25; turn++)
+        {
+            a.EndTurn();
+            b.EndTurn();
+        }
+        Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
+    }
+
+    [Fact]
+    public void Franklin_PeaceHold_DrawsOnlyThePowersStream_HumanStream0ByteStable()
+    {
+        // The reprieve roll is drawn from the POWER'S own RNG stream, never the human's stream 0 — so even with Franklin
+        // elected and the power repeatedly tempted to break the peace, the human's stream 0 is untouched until something
+        // the human does draws from it. We assert stream 0 is byte-stable across the crowded turns up to (and not past)
+        // the war declaration, which is the diplomacy bookkeeping the gate governs.
+        (Game game, Player power) = PowerCrowdedByHuman(seed: 99);
+        game.HumanPlayer.CongressList.Add(BenjaminFranklin);
+        RandomState before = game.RandomState;
+
+        for (int turn = 0; turn < 40
+            && game.StanceBetween(power.PlayerId, game.HumanPlayer.PlayerId) != Stance.War; turn++)
+        {
+            game.AccrueTerritorialTension(power);
+            if (power.Stances.GetValueOrDefault(game.HumanPlayer.PlayerId) is Stance.Peace or Stance.CeaseFire
+                && Game.StanceFromTension(power.Stances[game.HumanPlayer.PlayerId],
+                                          power.Tensions.GetValueOrDefault(game.HumanPlayer.PlayerId)) == Stance.War
+                && !game.PeaceTreatyHolds(power, game.HumanPlayer))
+            {
+                game.SetStance(power.PlayerId, game.HumanPlayer.PlayerId, Stance.War);
+                game.ChangeTension(power.PlayerId, game.HumanPlayer.PlayerId, Game.TensionWar);
+            }
+        }
+
+        Assert.Equal(before, game.RandomState); // the peace-hold roll never advanced the human's stream 0
+    }
+
     // ── AI answers / proposes treaties (86d3c9uar turn-wiring) ────────────────────────────────────────────────────────
 
     /// <summary>A foreign power at war with the human, stripped of its land units so it is militarily weak (a low strength

@@ -1,6 +1,7 @@
 using System.Linq;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.GameSession.Diplomacy;
+using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
@@ -117,6 +118,65 @@ public class FoundingFatherDiplomacyTests
         Assert.False(game.OtherPartyAlwaysOffersPeace(other));
         Elect(game, other, Franklin);
         Assert.True(game.OtherPartyAlwaysOffersPeace(other));
+    }
+
+    // ───────────────────────── Benjamin Franklin — peaceTreaty +50% (peace-hold) ─────────────────────────
+
+    [Fact]
+    public void Ruleset_Franklin_CarriesThePeaceTreatyModifier()
+    {
+        // The third Franklin effect, now wired: model.modifier.peaceTreaty, percentage +50%.
+        FoundingFather franklin = Classic.Father(Franklin);
+        Assert.Contains(franklin.Modifiers,
+            m => m.TargetId == "model.modifier.peaceTreaty" && m.Type == ModifierType.Percentage && m.Value == 50);
+    }
+
+    [Fact]
+    public void PeaceTreatyHoldProbability_IsZeroWithoutFranklin_AndHalfWithHim()
+    {
+        // The reprieve probability folds the other party's peaceTreaty modifiers onto a 0 base: no Franklin → 0 (the war
+        // always proceeds, default game unchanged); Franklin's +50% → 0.5, clamped to [0,1].
+        var game = Game.New(Classic, seed: 7);
+        Player human = game.HumanPlayer;
+        Assert.Equal(0.0, game.PeaceTreatyHoldProbability(human));
+
+        human.CongressList.Add(Franklin);
+        Assert.Equal(0.5, game.PeaceTreatyHoldProbability(human), precision: 6);
+    }
+
+    [Fact]
+    public void PeaceTreatyHolds_IsAlwaysFalseWithoutFranklin_AndDrawsNoRng()
+    {
+        // No Franklin → probability 0 → PeaceTreatyHolds short-circuits to false WITHOUT drawing, so the rolling power's
+        // stream is untouched (and, since the human's is stream 0, stream 0 is byte-stable too).
+        var game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        RandomState before = game.RandomState;
+        for (int i = 0; i < 50; i++)
+        {
+            Assert.False(game.PeaceTreatyHolds(power, game.HumanPlayer)); // never a reprieve without the father
+        }
+        Assert.Equal(before, game.RandomState); // …and no draw from the human's stream 0
+    }
+
+    [Fact]
+    public void PeaceTreatyHolds_WithFranklin_SometimesHolds_OnThePowersOwnStream()
+    {
+        // With Franklin (p = 0.5) the reprieve fires on roughly half the rolls — so over many rolls at least one holds
+        // and at least one does not, confirming the roll is live and probabilistic (drawn on the power's own stream).
+        var game = Game.New(Classic, seed: 7);
+        Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        game.HumanPlayer.CongressList.Add(Franklin);
+
+        int held = 0;
+        for (int i = 0; i < 200; i++)
+        {
+            if (game.PeaceTreatyHolds(power, game.HumanPlayer))
+            {
+                held++;
+            }
+        }
+        Assert.InRange(held, 1, 199); // not all-true, not all-false → a genuine ~50% roll
     }
 
     // ───────────────────────── Jan de Witt — foreign trade + report ─────────────────────────

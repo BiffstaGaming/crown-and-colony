@@ -6964,7 +6964,13 @@ public sealed partial class Game
         // actually engages. The accrual is RNG-free, so the human's stream 0 stays byte-identical (ADR-009).
         AccrueTerritorialTension(power);
         if (power.Stances.GetValueOrDefault(_human.PlayerId) is Stance.Peace or Stance.CeaseFire
-            && StanceFromTension(power.Stances[_human.PlayerId], power.Tensions.GetValueOrDefault(_human.PlayerId)) == Stance.War)
+            && StanceFromTension(power.Stances[_human.PlayerId], power.Tensions.GetValueOrDefault(_human.PlayerId)) == Stance.War
+            // Benjamin Franklin's peaceTreaty modifier (FreeCol EuropeanAIPlayer.peaceHolds): a power that WOULD break
+            // the peace from grievance first rolls against the peace-hold probability — a Franklin human's treaty holds
+            // (war averted) with probability = his modifier fraction (+50% → 0.5). Drawn on the POWER'S OWN stream
+            // (never the human's stream 0), and skipped entirely (no draw) for a non-Franklin human — so the default
+            // game declares war exactly as before and stays byte-identical (ADR-009).
+            && !PeaceTreatyHolds(power, _human))
         {
             // Declare war exactly as an attack does (FreeCol: war is mutual): set the stance both ways and spike the
             // pair's tension symmetrically to the WAR modifier, so the end-of-turn UpdateColonialStances keeps it at War
@@ -8999,6 +9005,9 @@ public sealed partial class Game
     /// <summary>Jan de Witt's ability (FreeCol <c>model.ability.betterForeignAffairsReport</c>): this player's foreign-affairs report reveals every rival nation's diplomatic stance.</summary>
     private const string BetterForeignAffairsReportAbility = "model.ability.betterForeignAffairsReport";
 
+    /// <summary>Benjamin Franklin's modifier (FreeCol <c>model.modifier.peaceTreaty</c>, +50%): scales the probability that a recent peace treaty with the holder still holds — a rival is less willing to re-declare war on a Franklin power (FreeCol <c>EuropeanAIPlayer.peaceHolds</c>: <c>prob = p.apply(prob, turn, PEACE_TREATY)</c>).</summary>
+    private const string PeaceTreatyModifierId = "model.modifier.peaceTreaty";
+
     /// <summary>
     /// Whether the European power offering a peace clause to the evaluator holds Benjamin Franklin's
     /// <c>alwaysOfferedPeace</c> (FreeCol <c>EuropeanAIPlayer.acceptDiplomaticTrade</c>'s <c>franklin</c> branch):
@@ -9008,6 +9017,60 @@ public sealed partial class Game
     /// </summary>
     internal bool OtherPartyAlwaysOffersPeace(int otherId) =>
         PlayerById(otherId) is { } other && HasAbilityFor(other, AlwaysOfferedPeaceAbility);
+
+    /// <summary>
+    /// The probability (in <c>[0, 1]</c>) that a peace with <paramref name="otherParty"/> <b>holds</b> — i.e. that a
+    /// colonial power which has accrued enough grievance to re-declare war on <paramref name="otherParty"/> instead lets
+    /// the treaty stand this turn. Benjamin Franklin's <c>model.modifier.peaceTreaty</c> (+50%) is the only contributor:
+    /// each of the <paramref name="otherParty"/>'s elected fathers' <c>peaceTreaty</c> percentage modifiers contributes
+    /// its value as a fraction (his +50% → <c>0.5</c>), summed and clamped to <c>[0, 1]</c>. A non-Franklin party
+    /// contributes nothing → <b>0</b> (no reprieve — the war proceeds, exactly as before).
+    /// <para>This is the faithful home of FreeCol <c>EuropeanAIPlayer.peaceHolds</c>'s
+    /// <c>prob = p.apply(prob, turn, Modifier.PEACE_TREATY)</c>: in FreeCol the base is the per-turn-decaying
+    /// <c>peaceProb^n</c> and the +50% modifier <em>scales</em> it. We don't track turns-since-peace or the
+    /// <c>PEACE_PROBABILITY</c> option, so we reduce the base to the modifier's own contribution — a Franklin holder's
+    /// peace holds with probability = his modifier fraction, every turn a rival would otherwise break it. (Reading the
+    /// percentage as a direct fraction, rather than folding it onto a 0 base — which would stay 0 — is the deliberate
+    /// reduction: the modifier <em>is</em> the probability here.) Pure; draws no RNG (the roll is in
+    /// <see cref="PeaceTreatyHolds"/>).</para>
+    /// </summary>
+    internal double PeaceTreatyHoldProbability(Player otherParty)
+    {
+        double prob = 0.0;
+        foreach (FatherModifier modifier in otherParty.Congress.Select(Ruleset.Father)
+            .SelectMany(f => f.Modifiers)
+            .Where(m => m.TargetId == PeaceTreatyModifierId && m.Type == ModifierType.Percentage))
+        {
+            prob += modifier.Value / 100.0; // Franklin's +50% → 0.5; a fraction, not a fold onto a (zero) base
+        }
+        return Math.Clamp(prob, 0.0, 1.0);
+    }
+
+    /// <summary>
+    /// Whether a peace between <paramref name="power"/> and <paramref name="otherParty"/> <b>holds</b> this turn rather
+    /// than collapsing into a fresh war — FreeCol <c>EuropeanAIPlayer.peaceHolds</c>: when <paramref name="power"/> has
+    /// accrued enough grievance that its stance would flip Peace/CeaseFire → War, it first rolls against the peace-hold
+    /// probability and, on success, lets the treaty stand. Returns <c>true</c> (war averted) with probability
+    /// <see cref="PeaceTreatyHoldProbability"/> — driven solely by Benjamin Franklin's <c>peaceTreaty</c> modifier on
+    /// <paramref name="otherParty"/>, so a <paramref name="otherParty"/> <b>without</b> Franklin yields probability 0 and
+    /// this <b>always returns false</b> (the war proceeds exactly as before — the default game is unchanged).
+    /// </summary>
+    /// <remarks>
+    /// <b>Determinism (ADR-009):</b> the roll is drawn from <paramref name="power"/>'s <b>own</b> RNG stream
+    /// (<see cref="RandomFor"/>) — never the human's stream 0 — so a Franklin human's seeded game stays byte-identical
+    /// (the reprieve perturbs only the rolling power's stream, exactly as FreeCol rolls on the AI's own random). With no
+    /// Franklin party the probability is 0, so no roll is drawn at all and even the rolling power's stream is untouched
+    /// (FreeCol's <c>prob &gt; 0.0f</c> short-circuit). Mirrors FreeCol's <c>randomInt(100) &lt; (int)(100·prob)</c>.
+    /// </remarks>
+    internal bool PeaceTreatyHolds(Player power, Player otherParty)
+    {
+        double prob = PeaceTreatyHoldProbability(otherParty);
+        if (prob <= 0.0)
+        {
+            return false; // no Franklin → no reprieve; the war proceeds and the power's stream is untouched
+        }
+        return RandomFor(power).Next(100) < (int)(100.0 * prob);
+    }
 
     /// <summary>
     /// Whether the colonial player <paramref name="playerId"/> may trade with foreign (rival) colonies — Jan de Witt's
