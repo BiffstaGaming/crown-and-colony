@@ -1,6 +1,6 @@
 # QA Report — Crown & Colony
 
-> **Auto-generated from CI** on 2026-06-21 at commit `2029a45` (save format **v52**). Do not hand-edit — this file is rewritten by [`scripts/generate-qa-report.py`](../scripts/generate-qa-report.py) on every CI run from the actual `dotnet test` results.
+> **Auto-generated from CI** on 2026-06-22 at commit `770e25c` (save format **v57**). Do not hand-edit — this file is rewritten by [`scripts/generate-qa-report.py`](../scripts/generate-qa-report.py) on every CI run from the actual `dotnet test` results.
 > This is a committed, point-in-time QA snapshot combining the **test results** (below) and the **visual goldens** (screenshots) in one place.
 > **End-to-end journeys:** the connected player-journey coverage is specified in [TEST-PLAN.md](TEST-PLAN.md).
 > **Live, always-current results:** the [GitHub Actions CI runs](https://github.com/BiffstaGaming/crown-and-colony/actions) — every push is gated on these same suites.
@@ -9,25 +9,25 @@
 
 | Layer | What it checks | Tooling | Count | Status | Where it runs |
 |---|---|---|---:|:--:|---|
-| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 1800 | ✅ | every push |
-| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 1800 | ✅ | every push |
-| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **1800** | ✅ | every push |
-| ↳ of which **E2E journeys** | Connected player journeys, milestone-asserted ([TEST-PLAN.md](TEST-PLAN.md)) | xUnit `[Trait E2E]` | 10 | ✅ | every push |
+| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 2129 | ✅ | every push |
+| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 2129 | ✅ | every push |
+| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **2129** | ✅ | every push |
+| ↳ of which **E2E journeys** | Connected player journeys, milestone-asserted ([TEST-PLAN.md](TEST-PLAN.md)) | xUnit `[Trait E2E]` | 11 | ✅ | every push |
 | **L3 Interaction** | Real scenes driven by simulated input/signals | GdUnit4 | 0 | — | every push (CI) |
 | **L4 Visual** | Golden-screenshot diff of the rendered map/UI | GdUnit4 + custom diff | 0 | — | every push (CI) |
-| **L5 Soak** | Multi-seed long runs + per-turn perf budget | xUnit | 4 | ✅ | nightly |
-| | | | **1804** | **all green** | |
+| **L5 Soak** | Multi-seed long runs + per-turn perf budget | xUnit | 5 | ✅ | nightly |
+| | | | **2134** | **all green** | |
 
 Reproduce locally (toolchain in [CLAUDE.md](../CLAUDE.md)):
 ```
-dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (1800)
-dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category=Soak"    # L5 (4)
+dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (2129)
+dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category=Soak"    # L5 (5)
 dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings                 # L3+L4 (0), needs GODOT_BIN
 ```
 
 ## Visual goldens (committed screenshots)
 
-These are the reference images the L4 suite diffs every render against. A push that changes the rendered output fails CI unless the golden is deliberately regenerated. See [map-goldens.md](visual-tests/map-goldens.md), [menu-goldens.md](visual-tests/menu-goldens.md) and [ui-panel-goldens.md](visual-tests/ui-panel-goldens.md) for the per-golden definitions (scene, seed, tolerance, human-check list).
+These are the reference images the L4 suite diffs every render against. A push that changes the rendered output fails CI unless the golden is deliberately regenerated. See [map-goldens.md](visual-tests/map-goldens.md) and [menu-goldens.md](visual-tests/menu-goldens.md) for the per-golden definitions (scene, seed, tolerance, human-check list).
 
 ### `colony-panel-seed424242`
 ![colony-panel-seed424242 golden](../game/tests/visual/goldens/colony-panel-seed424242.png)
