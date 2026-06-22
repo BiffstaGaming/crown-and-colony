@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-22 — Polish & release-readiness (P7) — first wave: 5/6 tasks shipped ✅
+
+**Requested:** You chose "Polish & release readiness (P7)" as a next step. I decomposed the epic into 6 board tasks and shipped the 5 clear-cut ones (held the Godot export build for you).
+**Did (5 streams, integrated CI-green):**
+- **`CREDITS.md`** (`86d3dzdqg`): authoritative top-level asset-attribution file aggregating all 5 per-folder PROVENANCE files (fonts OFL; sprites/SFX/anthems/data FreeCol GPL-v2; music CC-BY). **Verified no original 1994/2008 Sid Meier assets present.**
+- **`README.md`** (`86d3dzdug`): full rewrite of the stale "pre-alpha" README — accurate build/run (the real toolchain), feature list, the two L4 golden screenshots, GPL-v2 + CREDITS link, "Crown & Colony" trademark note.
+- **Honour `model.option.fogOfWar`** (`86d3dzdw3`, first game-options slice): fog-off keeps all explored tiles visible (FreeCol no-fog branch); classic ships fog-on → default game byte-identical; New-Game "Fog of war" toggle added.
+- **Save-compat migration test** (`86d3dze09`): a frozen **v41** fixture loads cleanly on current **v53** — no migration gap (additive-promise holds).
+- **L5 perf gate** (`86d3dzdzr`): AI-autoplay turn-time budget (measured ~1.5 ms/turn, ceiling 6 ms), nightly-only.
+**Status:** Integrated, pushed `79e4ae9…ffd8d63`. build clean + **2014 L1/L2 + 5 soak green**. No save bump (v53).
+**Held for you:** **Godot export / Windows release build** (`86d3dzdtp`) — needs your machine's export templates + distribution preferences.
+**Open Polish follow-ups:** more game-options slices (amphibious-moves, exploration-points, enhanced-missionaries — `86d3dzdw3` was the first); a download/install README section once a build exists.
+**Needs you:** Priority steer + the export-build decision; otherwise the base game + release docs/credits are in good shape.
+
 ## 2026-06-22 — Post-run fidelity fixes (your 4 "your-call" decisions) + InputTests flake ✅
 
 **Requested:** After the 50-item run, Chris answered the 4 flagged "your-call" deviations + chose to fix the InputTests flake. **Did all five** (4 worktree streams, integrated CI-green).
