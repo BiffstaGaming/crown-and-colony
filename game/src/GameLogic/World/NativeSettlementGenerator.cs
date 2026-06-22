@@ -35,13 +35,14 @@ public static class NativeSettlementGenerator
     /// <summary>
     /// Generates the native settlements for a map. <paramref name="excluded"/> are
     /// tiles to stay clear of (the player's landing site and its surrounds). Returns
-    /// settlements with ids assigned from 1, each with its wanted goods.
+    /// settlements with ids assigned from 1, each seeded with a general goods store and a
+    /// military stock; the caller (<c>Game</c>) then computes their stock-driven wanted goods.
     /// </summary>
     public static List<NativeSettlement> Place(
         Ruleset ruleset, GameMap map, IGameRandom random, IReadOnlySet<Position> excluded)
     {
         List<NativeSettlement> settlements = PlaceSettlements(ruleset, map, random, excluded);
-        AssignWantedGoods(settlements, ruleset, random);
+        SeedGeneralStock(settlements, ruleset, random);
         SeedMilitaryStock(settlements);
         return settlements;
     }
@@ -85,35 +86,49 @@ public static class NativeSettlementGenerator
     }
 
     /// <summary>
-    /// Gives each of the supplied native settlements its wanted goods, exactly as <see cref="Place"/> does for
-    /// generated ones — used to finish off settlements that were placed by an imported scenario map
-    /// (<see cref="MapImporter"/>) rather than by this generator, so an imported settlement trades like a generated one
-    /// (a wanted good still earns its selling premium). Draws from <paramref name="random"/> (the native stream) so the
-    /// human's economy stream 0 is untouched (ADR-009).
+    /// Seeds the general goods stock of each supplied settlement, exactly as <see cref="Place"/> does for generated
+    /// ones — used to finish off settlements placed by an imported scenario map (<see cref="MapImporter"/>) rather than
+    /// by this generator, so an imported settlement trades like a generated one. Draws from <paramref name="random"/>
+    /// (the native stream) so the human's economy stream 0 is untouched (ADR-009). The caller (<c>Game</c>) recomputes
+    /// each settlement's stock-driven wanted goods afterwards.
     /// </summary>
-    public static void AssignWantedGoodsTo(
+    public static void SeedGeneralStockTo(
         IReadOnlyList<NativeSettlement> settlements, Ruleset ruleset, IGameRandom random) =>
-        AssignWantedGoods(settlements.ToList(), ruleset, random);
+        SeedGeneralStock(settlements, ruleset, random);
+
+    /// <summary>The New World raw goods native settlements gather (sugar/tobacco/cotton/furs/ore) — the candidates for the seeded general store; FreeCol seeds from tile auto-potential, which on native land is dominated by these.</summary>
+    private static readonly string[] SeedGoods =
+        ["model.goods.sugar", "model.goods.tobacco", "model.goods.cotton", "model.goods.furs", "model.goods.ore"];
+
+    /// <summary>Largest seeded amount of any one good — under one full hold so a fresh store has room (FreeCol <c>GoodsContainer.CARGO_SIZE</c> = 100).</summary>
+    private const int MaxSeedAmount = 60;
 
     /// <summary>
-    /// Gives each settlement up to 3 wanted goods (FreeCol <c>wantedGoods</c>) — drawn
-    /// <em>after</em> placement so the placement RNG sequence (positions/sizes/skills) is
-    /// unchanged. FreeCol picks the top-3 by buy-price (settlement-stock-dependent); we
-    /// don't model settlement stock yet, so we draw 3 distinct tradeable goods.
+    /// Seeds each settlement's <b>general goods stock</b> (the wares a trader can buy and the basis of its stock-driven
+    /// wanted goods, FreeCol <c>IndianSettlement.addRandomGoods</c>: "they have been here for some time"). Each
+    /// settlement gets a per-settlement-varied amount (0–<see cref="MaxSeedAmount"/>) of each New World raw good
+    /// (<see cref="SeedGoods"/>), drawn on the <paramref name="random"/> native stream so two settlements hold different
+    /// stores and therefore <b>want different goods</b> (each is shortest of, and so most wants, what it gathered least
+    /// of). A bigger settlement (more residents) holds proportionally more. Drawn on the native stream only — never the
+    /// human's economy stream 0 (ADR-009); a zero draw simply leaves that good unstocked (omit-when-default save).
     /// </summary>
-    private static void AssignWantedGoods(
-        List<NativeSettlement> settlements, Ruleset ruleset, IGameRandom random)
+    private static void SeedGeneralStock(
+        IReadOnlyList<NativeSettlement> settlements, Ruleset ruleset, IGameRandom random)
     {
-        var tradeable = ruleset.GoodsTypes.Where(g => g.Market is not null).Select(g => g.Id).ToList();
-        if (tradeable.Count == 0)
-        {
-            return;
-        }
+        // Only seed goods the ruleset actually defines (the classic set always does; a stripped variant may not).
+        var present = SeedGoods.Where(id => ruleset.GoodsTypes.Any(g => g.Id == id)).ToArray();
         foreach (NativeSettlement settlement in settlements)
         {
-            var pool = new List<string>(tradeable);
-            Shuffle(pool, random);
-            settlement.WantedGoods = pool.Take(Math.Min(3, pool.Count)).ToList();
+            foreach (string good in present)
+            {
+                // 0..MaxSeedAmount scaled lightly by size (a 4-resident camp ~⅔ of a 6-resident one), rounded down.
+                int roll = random.Next(MaxSeedAmount + 1);
+                int amount = roll * Math.Max(1, settlement.Size) / 6;
+                if (amount > 0)
+                {
+                    settlement.AddGoods(good, amount);
+                }
+            }
         }
     }
 

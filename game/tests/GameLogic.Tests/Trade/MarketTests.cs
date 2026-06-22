@@ -371,14 +371,17 @@ public class MarketTests
 
         Assert.DoesNotContain("TradeAccounts", json); // the field is omitted entirely when nothing has been traded
 
-        // A v55 save of the untraded game (TradeAccounts cleared) is byte-identical to the v56 save bar the version int.
-        SaveGame v56 = SaveGame.From(game);
-        SaveGame asV55 = v56 with
+        // A save of the untraded game with TradeAccounts cleared is byte-identical to the real save bar the version int —
+        // proving the field is genuinely absent (not merely null) when nothing has been traded.
+        SaveGame current = SaveGame.From(game);
+        SaveGame cleared = current with
         {
             Version = 55,
-            Players = v56.Players!.Select(p => p with { TradeAccounts = null }).ToList(),
+            Players = current.Players!.Select(p => p with { TradeAccounts = null }).ToList(),
         };
-        Assert.Equal(asV55.ToJson().Replace("\"Version\": 55", "\"Version\": 56"), v56.ToJson());
+        Assert.Equal(
+            cleared.ToJson().Replace("\"Version\": 55", $"\"Version\": {SaveGame.CurrentVersion}"),
+            current.ToJson());
     }
 
     [Fact]

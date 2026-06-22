@@ -104,6 +104,21 @@ public sealed partial class Game
     /// classic default game draws nothing on this stream and stays byte-identical.</summary>
     private const ulong DisasterStreamId = 103;
 
+    /// <summary>RNG stream reserved for native-trade <b>haggling</b> (86d3e4bh2) — a high id like
+    /// <see cref="LcrStreamId"/>, so the offer/counter patience roll never correlates with or shifts the human's economy
+    /// stream 0 (ADR-009). Haggling is a human-only interactive action (the AI never calls it) and is not part of
+    /// turn-replay, so this stream's running state is <b>not serialized</b>: it is seeded lazily from the game's base
+    /// state (<see cref="_nativeHaggleRandom"/>). The soak/twin-determinism runs never haggle, so the default game draws
+    /// nothing on it and round-trips byte-identically.</summary>
+    private const ulong NativeTradeStreamId = 104;
+
+    private Pcg32Random? _nativeHaggleRandomField; // lazily seeded from the base state; see _nativeHaggleRandom
+
+    /// <summary>The lazily-seeded native-haggle RNG (<see cref="NativeTradeStreamId"/>), derived from the game's base
+    /// state so it is deterministic per game without being serialized — haggling is interactive and not replayed.</summary>
+    private Pcg32Random _nativeHaggleRandom =>
+        _nativeHaggleRandomField ??= new Pcg32Random(_random.SaveState().State, NativeTradeStreamId);
+
     private readonly List<Unit> _units = [];
     private readonly List<Colony> _colonies = [];
     private readonly List<NativeSettlement> _nativeSettlements = [];
@@ -1810,28 +1825,57 @@ public sealed partial class Game
     /// <summary>Base price per good unit in native trade (FreeCol <c>IndianSettlement.GOODS_BASE_PRICE</c>).</summary>
     private const int NativeGoodsBasePrice = 12;
 
+    /// <summary>The most goods of one type a single trade may move, FreeCol <c>GoodsContainer.CARGO_SIZE</c> (one full hold).</summary>
+    internal const int NativeTradeCargoSize = 100;
+
+    /// <summary>Below this per-unit price the natives will not buy a good at all, FreeCol <c>IndianSettlement.TRADE_MINIMUM_PRICE</c>.</summary>
+    private const int NativeTradeMinimumPrice = 3;
+
+    /// <summary>
+    /// A settlement's goods <b>storage capacity</b> per type (FreeCol <c>SettlementType.getWarehouseCapacity</c> =
+    /// <c>CARGO_SIZE × claimableRadius</c>): camp 100, capital/village 200, city capital 300. Drives the stock-fill price
+    /// decay — a fuller store pays less when buying and sells cheaper.
+    /// </summary>
+    private int NativeGoodsCapacity(NativeSettlement settlement) =>
+        NativeTradeCargoSize * Ruleset.Settlement(settlement.SettlementTypeId).ClaimableRadius;
+
+    /// <summary>
+    /// The wanted-goods premium multiplier (percent) for <paramref name="goodsId"/> at <paramref name="settlement"/>:
+    /// 150 / 125 / 110 for its 1st / 2nd / 3rd wanted good, else 100 (FreeCol <c>getPriceToBuy</c>'s <c>wantedBonus</c>).
+    /// </summary>
+    private static int NativeWantedMultiplier(NativeSettlement settlement, string goodsId) =>
+        settlement.WantedSlot(goodsId) switch { 0 => 150, 1 => 125, 2 => 110, _ => 100 };
+
+    /// <summary>
+    /// The per-unit base price a settlement applies before the wanted-goods premium — what it would pay to take one unit
+    /// into a store that is <paramref name="current"/> full of <paramref name="goodsId"/> (FreeCol
+    /// <c>getNormalGoodsPriceToBuy</c>'s unit price): <c>(12 + trade-bonus) × (capacity − current) / capacity</c>. Falls
+    /// to 0 once the store is full, so the more a settlement already holds the less it pays — and the more it wants to be
+    /// paid when selling that surplus on. (FreeCol additionally halves farmed/raw-building goods and fakes raw-material
+    /// production; we keep the bare stock-fill decay, which preserves the established empty-store sell price while making
+    /// it stock-driven — a documented simplification, see docs/systems/natives.md.)
+    /// </summary>
+    private int NativeNormalUnitPrice(NativeSettlement settlement, string goodsId, int current)
+    {
+        int capacity = NativeGoodsCapacity(settlement);
+        int full = NativeGoodsBasePrice + Ruleset.Settlement(settlement.SettlementTypeId).TradeBonus;
+        return Math.Max(0, full * Math.Max(0, capacity - current) / capacity);
+    }
+
     /// <summary>
     /// What a settlement pays for <paramref name="amount"/> of <paramref name="goodsId"/> you sell it
     /// (FreeCol <c>getPriceToSell</c> ≈ <c>amount + 11·getPriceToBuy/10</c>): a per-unit base of
-    /// <c>12 + the settlement's trade bonus</c>, times a wanted-goods premium (150 / 125 / 110% for its
-    /// 1st / 2nd / 3rd wanted good), then the classic <b>ship-trade penalty</b> (a settlement pays a
-    /// ship-borne trader less — <see cref="DifficultyOptions.ShipTradePenalty"/>, −30% at medium; FreeCol
-    /// <c>model.option.shipTradePenalty</c> applied with <c>sense=true</c> for the player's sale). Native
-    /// trade here is ship-only (<see cref="CheckSellToNatives"/>), so the penalty always applies. Settlement
-    /// goods stock — which lowers the price as they fill up — is not modelled yet, so the price assumes they
-    /// still want it.
+    /// <c>12 + the settlement's trade bonus</c>, <b>reduced as its store of that good fills toward capacity</b>
+    /// (<see cref="NativeNormalUnitPrice"/>, FreeCol's stock-fill decay), times a wanted-goods premium (150 / 125 / 110%
+    /// for its 1st / 2nd / 3rd wanted good), then the classic <b>ship-trade penalty</b> (a settlement pays a ship-borne
+    /// trader less — <see cref="DifficultyOptions.ShipTradePenalty"/>, −30% at medium; FreeCol
+    /// <c>model.option.shipTradePenalty</c> applied with <c>sense=true</c> for the player's sale). Native trade here is
+    /// ship-only (<see cref="CheckSellToNatives"/>), so the penalty always applies.
     /// </summary>
     public int NativeSalePrice(NativeSettlement settlement, string goodsId, int amount)
     {
-        int full = NativeGoodsBasePrice + Ruleset.Settlement(settlement.SettlementTypeId).TradeBonus;
-        int wantedMultiplier = settlement.WantedSlot(goodsId) switch
-        {
-            0 => 150,
-            1 => 125,
-            2 => 110,
-            _ => 100,
-        };
-        int perUnit = full * wantedMultiplier / 100;
+        int basePerUnit = NativeNormalUnitPrice(settlement, goodsId, settlement.GeneralStockOf(goodsId));
+        int perUnit = basePerUnit * NativeWantedMultiplier(settlement, goodsId) / 100;
         int price = amount + (11 * perUnit * amount) / 10;
         // The ship-trade penalty is a percentage modifier on the whole sale price (FreeCol applyModifiers).
         return price * (100 + Ruleset.Difficulty.ShipTradePenalty) / 100;
@@ -1885,10 +1929,240 @@ public sealed partial class Game
         }
         int price = check.Cost;
         ship.AddCargo(goodsId, -amount);
+        settlement.AddGoods(goodsId, amount); // the goods join the settlement's store (FreeCol moveGoods unit→settlement)
         player.Gold += price; // natives pay in gold; no European market tax
         ChangeNativeAlarm(settlement, player.PlayerId, -Math.Max(1, price / 50)); // goodwill toward this trader (FreeCol ALARM_BONUS_SELL ≈ 20% → price/50; min 1 per trade)
+        RecomputeWantedGoods(settlement); // the fuller store re-prices its cravings (FreeCol csSell → updateWantedGoods)
         ship.MovementLeft = 0; // opening a trade session ends the ship's turn
         return price;
+    }
+
+    // ===== Buying FROM a native settlement (Phase 5; FreeCol getSellGoods / getPriceToSell / csBuy) =====
+
+    /// <summary>
+    /// What you pay a settlement to <b>buy</b> <paramref name="amount"/> of <paramref name="goodsId"/> from its store
+    /// (FreeCol <c>IndianSettlement.getPriceToSell</c>, the settlement's asking price): <c>amount + max(0,
+    /// 11·getPriceToBuy/10)</c> — i.e. the settlement's own buy valuation (<see cref="NativeSalePrice"/>'s un-penalised
+    /// per-unit base × the wanted premium) marked up ~10%, with a one-unit floor per unit. Unlike selling <em>to</em>
+    /// the natives there is no ship-trade penalty (FreeCol applies that only to the player's sale, <c>sense=true</c>).
+    /// The price rises as their store empties (the stock-fill term), so each purchase makes the next dearer.
+    /// </summary>
+    public int NativeBuyPrice(NativeSettlement settlement, string goodsId, int amount)
+    {
+        int basePerUnit = NativeNormalUnitPrice(settlement, goodsId, settlement.GeneralStockOf(goodsId));
+        int perUnit = basePerUnit * NativeWantedMultiplier(settlement, goodsId) / 100;
+        int priceToBuy = perUnit * amount; // the settlement's own valuation of the lot (its getPriceToBuy)
+        return amount + Math.Max(0, 11 * priceToBuy / 10); // marked up ~10%, FreeCol getPriceToSell
+    }
+
+    /// <summary>
+    /// The goods a settlement is willing to <b>sell</b> a visiting trader, most-valuable first (FreeCol
+    /// <c>IndianSettlement.getSellGoods</c>): the goods in its <see cref="NativeSettlement.GeneralStock"/> it holds at
+    /// least <see cref="NativeTradeMinimumSize"/> of (a settlement won't part with a token amount), capped at one full
+    /// hold (<see cref="NativeTradeCargoSize"/>) each, ranked by the price it would charge. Each entry is the goods id
+    /// and the amount on offer.
+    /// </summary>
+    public IReadOnlyList<(string GoodsId, int Amount)> GoodsToSell(NativeSettlement settlement) =>
+        settlement.GeneralStock
+            .Select(kv => (kv.Key, Amount: Math.Min(kv.Value, NativeTradeCargoSize)))
+            .Where(g => g.Amount >= NativeTradeMinimumSize)
+            .OrderByDescending(g => NativeBuyPrice(settlement, g.Key, g.Amount))
+            .ThenByDescending(g => g.Amount)
+            .ThenBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => (g.Key, g.Amount))
+            .ToList();
+
+    /// <summary>A settlement won't sell fewer than this many units of a good (FreeCol <c>IndianSettlement.TRADE_MINIMUM_SIZE</c>).</summary>
+    private const int NativeTradeMinimumSize = 20;
+
+    /// <summary>Whether <paramref name="ship"/> may buy <paramref name="amount"/> of a good from <paramref name="settlement"/> now.</summary>
+    public MoveCheck CheckBuyFromNatives(Unit ship, NativeSettlement settlement, string goodsId, int amount)
+    {
+        if (!ship.Type.IsCarrier || !ship.IsOnMap)
+        {
+            return MoveCheck.No("Only a ship on the map can trade with a settlement.");
+        }
+        if (ship.Position != settlement.Position && !ship.Position.IsAdjacentTo(settlement.Position))
+        {
+            return MoveCheck.No("The ship must be next to the settlement to trade.");
+        }
+        if (AlarmLevelOf(settlement, ship.OwnerId) >= AlarmLevel.Angry)
+        {
+            return MoveCheck.No("The settlement is too hostile to trade.");
+        }
+        if (amount <= 0)
+        {
+            return MoveCheck.No("Nothing to buy.");
+        }
+        if (settlement.GeneralStockOf(goodsId) < amount)
+        {
+            return MoveCheck.No($"The settlement does not have {amount} {goodsId} to sell.");
+        }
+        int price = NativeBuyPrice(settlement, goodsId, amount);
+        if (PlayerById(ship.OwnerId)!.Gold < price)
+        {
+            return MoveCheck.No("You cannot afford that.");
+        }
+        return MoveCheck.Yes(price);
+    }
+
+    /// <summary>
+    /// Buys goods from an adjacent native settlement's store into a ship's hold for gold (no European tax), at the native
+    /// asking price. Draining the store re-prices the settlement's wanted goods and ends the ship's turn. (Inland
+    /// settlements still need wagon trains — a later slice — so only coastal settlements are reachable today.)
+    /// </summary>
+    /// <returns>The gold paid.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBuyFromNatives"/>.</exception>
+    public int BuyFromNatives(Unit ship, NativeSettlement settlement, string goodsId, int amount) =>
+        BuyFromNatives(_human, ship, settlement, goodsId, amount);
+
+    /// <summary>Buys goods from a native settlement on behalf of <paramref name="player"/> (the ship's owner).</summary>
+    internal int BuyFromNatives(Player player, Unit ship, NativeSettlement settlement, string goodsId, int amount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
+        MoveCheck check = CheckBuyFromNatives(ship, settlement, goodsId, amount);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        int price = check.Cost;
+        settlement.AddGoods(goodsId, -amount); // drained from the settlement's store (FreeCol moveGoods settlement→unit)
+        ship.AddCargo(goodsId, amount);
+        player.Gold -= price; // no European market tax
+        ChangeNativeAlarm(settlement, player.PlayerId, -Math.Max(1, price / 200)); // a little goodwill (FreeCol ALARM_BONUS_BUY ≈ 5% → price/200; min 1)
+        RecomputeWantedGoods(settlement); // the emptier store re-prices its cravings (FreeCol csBuy → updateWantedGoods)
+        ship.MovementLeft = 0; // opening a trade session ends the ship's turn
+        return price;
+    }
+
+    // ===== Stock-driven wanted goods (FreeCol IndianSettlement.updateWantedGoods) =====
+
+    /// <summary>
+    /// Recomputes a settlement's top-3 <see cref="NativeSettlement.WantedGoods"/> from what it currently stocks (FreeCol
+    /// <c>IndianSettlement.updateWantedGoods</c>): of the storable, non-military, tradeable goods, the three it would pay
+    /// the most per full hold for — most-wanted first, dropping any whose value is below the trade-minimum floor
+    /// (<c>capacity-worth × <see cref="NativeTradeMinimumPrice"/></c>). The valuation is FreeCol's
+    /// <c>getNormalGoodsPriceToBuy</c>: the stock-fill base (<see cref="NativeNormalUnitPrice"/>, falling as a store
+    /// fills) <b>halved for farmed goods</b> (natives value raw farm produce less) — so manufactured wares they cannot
+    /// make and hold none of (rum, cloth, coats, tools, trade goods) out-rank the raw goods they gather, and among the
+    /// raw goods the one they are shortest of wins. Ties break by goods id so the result is deterministic and RNG-free —
+    /// never the human's stream 0 (ADR-009). Called at generation and after every buy/sell, so a settlement's cravings
+    /// track its stores.
+    /// </summary>
+    internal void RecomputeWantedGoods(NativeSettlement settlement)
+    {
+        int floor = NativeTradeCargoSize * NativeTradeMinimumPrice;
+        settlement.WantedGoods = Ruleset.GoodsTypes
+            .Where(g => g.Market is not null && g.IsStorable && !g.IsMilitary)
+            // Value a full hold at the current stock level (FreeCol ranks on the bare normal price, no slot premium),
+            // farmed goods halved as FreeCol getNormalGoodsPriceToBuy does, so cravings reflect scarcity + worth.
+            .Select(g => (g.Id, Value: WantedRankingValue(settlement, g)))
+            .Where(g => g.Value > floor)
+            .OrderByDescending(g => g.Value)
+            .ThenBy(g => g.Id, StringComparer.Ordinal)
+            .Take(3)
+            .Select(g => g.Id)
+            .ToList();
+    }
+
+    /// <summary>
+    /// The wanted-goods ranking value of one good for a settlement (FreeCol <c>getNormalGoodsPriceToBuy(CARGO_SIZE)</c>):
+    /// the stock-fill base per unit, halved for farmed goods, times a full hold. Used only to rank cravings — the sell
+    /// price keeps its established un-halved base.
+    /// </summary>
+    private int WantedRankingValue(NativeSettlement settlement, GoodsType good)
+    {
+        int perUnit = NativeNormalUnitPrice(settlement, good.Id, settlement.GeneralStockOf(good.Id));
+        if (good.IsFarmed)
+        {
+            perUnit /= 2; // farmed goods are always less interesting (FreeCol getNormalGoodsPriceToBuy)
+        }
+        return perUnit * NativeTradeCargoSize;
+    }
+
+    // ===== Haggling (FreeCol NativeAIPlayer.handleTrade: offer/counter up to 3 rounds) =====
+
+    /// <summary>The number of haggle rounds beyond which a settlement walks away, FreeCol <c>NativeAIPlayer.HAGGLE_NUMBER</c>.</summary>
+    private const int NativeHaggleNumber = 3;
+
+    /// <summary>
+    /// The outcome of one haggle round: whether the natives <see cref="Accepted"/> the offered price, the
+    /// <see cref="CounterPrice"/> they will accept (their current asking/bidding price — unchanged on acceptance), and
+    /// whether the session is <see cref="Done"/> (they have run out of patience and will not haggle further this visit).
+    /// </summary>
+    /// <param name="Accepted">True if the player's offer is good enough and the trade may proceed at <see cref="CounterPrice"/>.</param>
+    /// <param name="CounterPrice">The price the natives are holding out for (their counter-offer when not accepted; the agreed price when accepted).</param>
+    /// <param name="Done">True if the natives have lost patience (too many rounds) and the haggle is over without a deal.</param>
+    public readonly record struct NativeHaggleResult(bool Accepted, int CounterPrice, bool Done);
+
+    /// <summary>The next price up when the natives haggle a buyer upward, FreeCol <c>NativeTrade.haggleUp</c> (×11/10).</summary>
+    private static int HaggleUp(int price) => price * 11 / 10;
+
+    /// <summary>The next price down when the natives haggle a seller downward, FreeCol <c>NativeTrade.haggleDown</c> (×9/10).</summary>
+    private static int HaggleDown(int price) => price * 9 / 10;
+
+    /// <summary>
+    /// Offers to <b>sell</b> <paramref name="amount"/> of <paramref name="goodsId"/> to a settlement at the player's
+    /// asking <paramref name="offerPrice"/> after <paramref name="round"/> prior haggle rounds (0 = the opening offer) —
+    /// FreeCol <c>NativeAIPlayer.handleTrade</c>'s SELL branch. The settlement's fair price is
+    /// <see cref="NativeSalePrice"/> walked <b>down</b> ×9/10 per round so far (each round the natives offer a little
+    /// less). If the player asks no more than that, the trade is accepted at the player's price; otherwise the natives
+    /// either counter (their lower price) or — with rising probability the longer it drags on (FreeCol's
+    /// <c>randomInt(HAGGLE_NUMBER + haggle) ≥ HAGGLE_NUMBER</c>) — lose patience and walk away
+    /// (<see cref="NativeHaggleResult.Done"/>). The haggle roll is drawn on the <b>native</b> stream, never the human's
+    /// economy stream 0 (ADR-009). This surfaces the offer/counter loop without committing the sale — call
+    /// <see cref="SellToNatives(Unit, NativeSettlement, string, int)"/> once a price is agreed.
+    /// </summary>
+    public NativeHaggleResult TryHaggleSell(NativeSettlement settlement, string goodsId, int amount, int offerPrice, int round)
+    {
+        int fair = NativeSalePrice(settlement, goodsId, amount);
+        for (int h = 0; h < round; h++)
+        {
+            fair = HaggleDown(fair);
+        }
+        if (offerPrice <= fair)
+        {
+            return new NativeHaggleResult(Accepted: true, CounterPrice: offerPrice, Done: false);
+        }
+        return ResolveHaggle(fair, round);
+    }
+
+    /// <summary>
+    /// Offers to <b>buy</b> <paramref name="amount"/> of <paramref name="goodsId"/> from a settlement at the player's
+    /// <paramref name="offerPrice"/> after <paramref name="round"/> prior haggle rounds (0 = the opening offer) — FreeCol
+    /// <c>NativeAIPlayer.handleTrade</c>'s BUY branch. The settlement's asking price is <see cref="NativeBuyPrice"/>
+    /// walked <b>up</b> ×11/10 per round so far (each round they hold out for a little more). If the player offers at
+    /// least that, the trade is accepted at the player's price; otherwise the natives counter (their higher price) or
+    /// lose patience and walk away. The haggle roll is drawn on the <b>native</b> stream, never the human's stream 0
+    /// (ADR-009).
+    /// </summary>
+    public NativeHaggleResult TryHaggleBuy(NativeSettlement settlement, string goodsId, int amount, int offerPrice, int round)
+    {
+        int asking = NativeBuyPrice(settlement, goodsId, amount);
+        for (int h = 0; h < round; h++)
+        {
+            asking = HaggleUp(asking);
+        }
+        if (offerPrice >= asking)
+        {
+            return new NativeHaggleResult(Accepted: true, CounterPrice: offerPrice, Done: false);
+        }
+        return ResolveHaggle(asking, round);
+    }
+
+    /// <summary>
+    /// The shared "they didn't accept" branch of a haggle round (FreeCol <c>handleTrade</c>'s post-reject tail): roll
+    /// <c>randomInt(HAGGLE_NUMBER + (round+1))</c> on the native stream; if it lands at or above
+    /// <see cref="NativeHaggleNumber"/> the natives lose patience (<see cref="NativeHaggleResult.Done"/>), otherwise they
+    /// counter at <paramref name="counterPrice"/> and the player may haggle once more. The longer the haggle, the likelier
+    /// they walk.
+    /// </summary>
+    private NativeHaggleResult ResolveHaggle(int counterPrice, int round)
+    {
+        int haggle = round + 1;
+        int roll = _nativeHaggleRandom.Next(NativeHaggleNumber + haggle);
+        bool done = roll >= NativeHaggleNumber;
+        return new NativeHaggleResult(Accepted: false, CounterPrice: counterPrice, Done: done);
     }
 
     // ===== Combat (Phase 5 slice 5b): roles/equipment + the attack action =====
@@ -3725,9 +3999,9 @@ public sealed partial class Game
         var nativeRandom = new Pcg32Random(seed, NativeStreamId);
         if (importedSettlements.Count > 0)
         {
-            // Finish the imported settlements as the generator would: give each its wanted goods (drawn on the native
-            // stream, never stream 0). The importer already assigned stable ids from 1, so install them as-is.
-            NativeSettlementGenerator.AssignWantedGoodsTo(importedSettlements, ruleset, nativeRandom);
+            // Finish the imported settlements as the generator would: seed each a general goods store (drawn on the
+            // native stream, never stream 0). The importer already assigned stable ids from 1, so install them as-is.
+            NativeSettlementGenerator.SeedGeneralStockTo(importedSettlements, ruleset, nativeRandom);
             foreach (NativeSettlement settlement in importedSettlements)
             {
                 game._nativeSettlements.Add(settlement);
@@ -3743,6 +4017,13 @@ public sealed partial class Game
                 game._nativeSettlements.Add(settlement);
                 game._nextSettlementId = Math.Max(game._nextSettlementId, settlement.Id + 1);
             }
+        }
+
+        // Each settlement's wanted goods are derived from the seeded store it now holds (FreeCol updateWantedGoods).
+        // RNG-free, so the native placement stream is not advanced and stream 0 is untouched (ADR-009).
+        foreach (NativeSettlement settlement in game._nativeSettlements)
+        {
+            game.RecomputeWantedGoods(settlement);
         }
 
         game.ClaimNativeLand(); // each native settlement claims the land in its radius (FreeCol Tile.owner)

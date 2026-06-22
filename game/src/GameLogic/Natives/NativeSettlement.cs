@@ -280,8 +280,11 @@ public sealed class NativeSettlement
     public int ConvertProgress { get; internal set; }
 
     /// <summary>
-    /// The goods this settlement most wants to buy (FreeCol <c>wantedGoods</c>, up to 3,
-    /// most-wanted first). Selling a wanted good earns a premium (150/125/110%).
+    /// The goods this settlement most wants to buy (FreeCol <c>wantedGoods</c>, up to 3, most-wanted first). Selling a
+    /// wanted good earns a premium (150/125/110%). <b>Stock-driven</b> (FreeCol <c>updateWantedGoods</c>): recomputed by
+    /// <c>Game.RecomputeWantedGoods</c> from the settlement's <see cref="GeneralStock"/> — the storable, non-military
+    /// goods it can pay the most for (those it is shortest of) — at generation and again after every buy/sell, so its
+    /// cravings shift as its stores change. (Pre-v57 it was 3 fixed random goods assigned at placement.)
     /// </summary>
     public IReadOnlyList<string> WantedGoods { get; internal set; } = [];
 
@@ -321,6 +324,52 @@ public sealed class NativeSettlement
         else
         {
             _militaryStock[goodsId] = next;
+        }
+    }
+
+    /// <summary>
+    /// The settlement's <b>general goods stock</b> — the (non-military) wares it has accumulated and offers a visiting
+    /// trader to <b>buy</b> (FreeCol <c>IndianSettlement</c>'s <c>GoodsContainer</c>, distinct from the
+    /// <see cref="_militaryStock"/> muskets/horses it keeps to arm braves). Unlike FreeCol we do not simulate the
+    /// natives' tile production turn by turn; this stock is <b>seeded at generation</b> (sized by settlement
+    /// type/capital) then <b>drained as the trader buys from it</b>, which re-prices the goods — a fuller store sells
+    /// cheaper, so each purchase nudges the price up (FreeCol <c>getNormalGoodsPriceToBuy</c>). It also drives the
+    /// <b>stock-driven wanted goods</b> (FreeCol <c>updateWantedGoods</c>): the goods it can pay the most for — the ones
+    /// it is shortest of — become the goods it most wants to buy. Serialized additively (save v57,
+    /// <see cref="Persistence.SavedNativeSettlement.GeneralStock"/>): emitted only when non-empty, so a settlement with
+    /// no general stock round-trips byte-identically (ADR-009). The seed is deterministic (a pure function of the
+    /// settlement type, drawn on the native stream at generation) and the buy-drain is RNG-free, so neither touches the
+    /// human's economy stream 0.
+    /// </summary>
+    private readonly Dictionary<string, int> _goodsStock = [];
+
+    /// <summary>Units of <paramref name="goodsId"/> in the settlement's general (non-military) goods stock (0 if none). See <see cref="_goodsStock"/>.</summary>
+    public int GeneralStockOf(string goodsId) => _goodsStock.GetValueOrDefault(goodsId);
+
+    /// <summary>
+    /// The settlement's general goods stock as goods-id → amount pairs (only goods it actually holds, ordered by goods
+    /// id for a stable serialization), or an empty sequence when it holds none. The serializer (save v57) emits this
+    /// only when non-empty, so a no-general-stock settlement is byte-identical to one with no field (ADR-009). See
+    /// <see cref="_goodsStock"/>.
+    /// </summary>
+    public IEnumerable<KeyValuePair<string, int>> GeneralStock =>
+        _goodsStock.OrderBy(kv => kv.Key, System.StringComparer.Ordinal);
+
+    /// <summary>
+    /// Adds <paramref name="amount"/> of <paramref name="goodsId"/> to the settlement's general goods stock (clamping at
+    /// 0 and dropping an emptied entry, so the omit-when-default save shape holds). The generator seeds it; the human's
+    /// buying from the settlement drains it.
+    /// </summary>
+    public void AddGoods(string goodsId, int amount)
+    {
+        int next = GeneralStockOf(goodsId) + amount;
+        if (next <= 0)
+        {
+            _goodsStock.Remove(goodsId);
+        }
+        else
+        {
+            _goodsStock[goodsId] = next;
         }
     }
 

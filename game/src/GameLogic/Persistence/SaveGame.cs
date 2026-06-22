@@ -20,7 +20,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 56;
+    public const int CurrentVersion = 57;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -183,6 +183,19 @@ public sealed record SaveGame
     /// game (no trade yet) serialises byte-identically to v55; pre-v56 saves load with all counters 0. Determinism
     /// (ADR-009): the counters accumulate on the existing sells/buys with no new RNG and never feed the market price
     /// model, so the default game's market evolution is unchanged and the soak twin-run stays byte-identical.
+    /// v57 added a native settlement's <b>general goods stock</b> (<see cref="SavedNativeSettlement.GeneralStock"/> — the
+    /// non-military wares it offers a trader to buy and the basis of its stock-driven wanted goods, FreeCol
+    /// <c>IndianSettlement</c>'s goods container, 86d3e4bh2), enabling <b>buy-from-settlement</b> two-way trade. The
+    /// generator now seeds this store at game creation (a per-settlement-varied spread of New World raw goods, drawn on
+    /// the native stream) and each settlement's <see cref="SavedNativeSettlement.WantedGoods"/> is <b>derived from it</b>
+    /// (FreeCol <c>updateWantedGoods</c>) rather than being 3 fixed random goods. Additive + <b>omit-when-default</b> (a
+    /// goods-id → amount map, written only when the settlement holds general stock), so a no-stock settlement serialises
+    /// without the field; pre-v57 saves load with no general stock. <b>Determinism / behaviour shift (ADR-009):</b>
+    /// stock-driven wanted goods <em>do</em> change the default game's native cravings vs. the old random pick — an
+    /// intended, documented shift — but the seeding is RNG-free of stream 0 (drawn on the native stream at generation)
+    /// and buying/recompute draw no RNG, so the soak twin-run stays byte-identical (the soak never buys from natives) and
+    /// every save round-trips byte-identically. Haggling (interactive, human-only) draws on a dedicated native-trade
+    /// stream that is not serialized (it is not replayed), so it never perturbs stream 0.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -498,6 +511,11 @@ public sealed record SaveGame
                         // settlement is at peace with everyone, so a fully-calm camp is byte-identical to v54.
                         s.AlarmChannels.Any()
                             ? s.AlarmChannels.ToDictionary(kv => kv.Key, kv => kv.Value)
+                            : null,
+                        // v57; the general goods store a trader can buy from — omitted when the settlement holds none, so
+                        // a no-general-stock settlement is byte-identical to v56.
+                        s.GeneralStock.Any()
+                            ? s.GeneralStock.ToDictionary(kv => kv.Key, kv => kv.Value)
                             : null))
                     .ToList()
                 : null,
@@ -687,6 +705,11 @@ public sealed record SaveGame
                     s.MilitaryStock ?? (IReadOnlyDictionary<string, int>)new Dictionary<string, int>())
                 {
                     settlement.AddStock(goodsId, amount);
+                }
+                foreach ((string goodsId, int amount) in // v57; pre-v57 / omitted → no general stock (untradeable until visited again)
+                    s.GeneralStock ?? (IReadOnlyDictionary<string, int>)new Dictionary<string, int>())
+                {
+                    settlement.AddGoods(goodsId, amount);
                 }
                 return settlement;
             }),
@@ -944,6 +967,7 @@ public sealed record SavedWorker(int X, int Y, string GoodsId, string? UnitTypeI
 /// <param name="VisitedByPowers">Non-human player ids that have spoken with the chief (v44+; null/omitted when none, so a game where only the human (or nobody) has visited is byte-identical to v43). The human rides <see cref="HasBeenVisited"/>.</param>
 /// <param name="MilitaryStock">The muskets/horses the settlement holds to arm its braves (FreeCol <c>IndianSettlement</c>'s military-goods retention), as goods-id → amount (v54+; null/omitted when the settlement holds none, so an empty-stock settlement is byte-identical to v53). Seeded by <see cref="World.NativeSettlementGenerator"/>, spent by <see cref="GameSession.Game.TryEquipBrave"/>.</param>
 /// <param name="AlarmChannels">Per-player alarm as player-id → alarm 0–1000 (v55+; FreeCol <c>IndianSettlement</c>'s <c>Map&lt;Player, Tension&gt;</c>). The human is player id 0. Null/omitted when the settlement is at peace with everyone, and any zero channel is dropped, so a fully-calm settlement is byte-identical to v54. A pre-v55 save has no map — its single <paramref name="Alarm"/> scalar migrates into channel 0 on load.</param>
+/// <param name="GeneralStock">The general (non-military) goods store a trader can buy from and the basis of the stock-driven <paramref name="WantedGoods"/> (FreeCol <c>IndianSettlement</c>'s goods container), as goods-id → amount (v57+; null/omitted when the settlement holds no general stock, so a no-stock settlement is byte-identical to v56). Seeded by <see cref="World.NativeSettlementGenerator"/>, drained by <see cref="GameSession.Game.BuyFromNatives(Units.Unit, Natives.NativeSettlement, string, int)"/> and grown by selling to the settlement.</param>
 public sealed record SavedNativeSettlement(
     int Id, string NationTypeId, string SettlementTypeId, bool IsCapital,
     int X, int Y, int Size, string? LearnableSkill = null,
@@ -953,7 +977,8 @@ public sealed record SavedNativeSettlement(
     int? ConvertProgress = null,
     IReadOnlyList<int>? VisitedByPowers = null,
     IReadOnlyDictionary<string, int>? MilitaryStock = null,
-    IReadOnlyDictionary<int, int>? AlarmChannels = null);
+    IReadOnlyDictionary<int, int>? AlarmChannels = null,
+    IReadOnlyDictionary<string, int>? GeneralStock = null);
 
 /// <summary>A unit inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Id">Unit id.</param>

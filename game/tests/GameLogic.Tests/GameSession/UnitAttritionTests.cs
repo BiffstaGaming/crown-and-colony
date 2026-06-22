@@ -176,7 +176,7 @@ public class UnitAttritionTests
 
         Assert.Equal(3, restored.Units.First(u => u.Id == id).Attrition);
         Assert.Equal(json, SaveGame.From(restored).ToJson()); // acid test: byte-identical round-trip
-        Assert.Equal(56, SaveGame.CurrentVersion);
+        Assert.Equal(57, SaveGame.CurrentVersion);
     }
 
     [Fact]
