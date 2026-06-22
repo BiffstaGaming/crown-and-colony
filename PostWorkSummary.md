@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-22 — Parity audit formalized: path-to-100% roadmap + board tasks ✅
+
+**Requested:** Chris's call — "formalize roadmap + tasks first" (and "decide later" on whether deep-AI/multiplayer is in the 100% scope).
+**Did:** Turned the parity audit into durable, tracked work (following the rolling-wave rule — only the next phase is decomposed):
+- **Roadmap doc** "Path to 100% FreeCol Parity — Roadmap" added to the ClickUp Project Plan (doc `2kz0t3mf-716`, page `2kz0t3mf-3836`): verdict (~84%), per-domain table, the A→E sequence, the scope note (deep-AI economic sophistication + multiplayer = provisionally out-of-scope → high-90s after A–E), kanban mapping.
+- **3 new epics** in list `901615382059`: **[EPIC PA]** `86d3e496u` (Ready for Dev), **[EPIC PB]** `86d3e4985` (Backlog), **[EPIC PC]** `86d3e4992` (Backlog).
+- **4 granular Phase-A tasks** (Ready for Dev), FreeCol-verified with file refs/line numbers + ADR-009 invariants + acceptance criteria: A1 arms/fortifies `86d3e49cm` (M), A2 value-weighted father choice `86d3e49ej` (S), A3 native military stock `86d3e49gq` (M), A4 AI declares independence `86d3e49jp` (L, depends A1).
+- **Phases D & E** map to the existing **P6 Endgame `86d3b3r7a`** / **P7 Polish `86d3b3r7e`** epics — left as containers (decompose when their phase becomes current); their D1–D4 / E1–E4 item lists are defined in the roadmap doc.
+**Status:** No code change (planning). Doc + 7 board items created. Generated via a 3-agent drafting workflow (FreeCol-grounded).
+**Decisions:** Rolling-wave — only Phase A decomposed now. Didn't duplicate D/E items onto P6/P7 (roadmap doc is the single source, avoids drift). Deep-AI/multiplayer scope left provisionally out per Chris.
+**Scheduled next:** Start **Phase A1 — colonial AI arms/fortifies its troops** (`86d3e49cm`), the highest-impact fidelity win — pending Chris's go.
+**Needs you:** Just a go-ahead to start Phase A (A1, or A1+A2+A3 in parallel since they're independent). A4 waits on A1.
+
 ## 2026-06-22 — FreeCol parity gap audit (16-agent workflow) — "what's missing for a 100% port" 📋
 
 **Requested:** Chris asked what's actually missing from the FreeCol→Crown & Colony port (Australia variant explicitly AFTER 100% port). No code change — an audit.
