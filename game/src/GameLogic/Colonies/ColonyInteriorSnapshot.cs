@@ -56,17 +56,14 @@ public sealed record ColonyInteriorSnapshot(
 }
 
 /// <summary>
-/// The outcome of a <see cref="GameSession.Game.SpyOnColony(Units.Unit, World.Position)">spy-on-colony</see> attempt: the
-/// scout either gets its glimpse (<see cref="Snapshot"/> populated, <see cref="Rebuffed"/> false) or is turned away at the
-/// gate by the colony's watch (<see cref="Rebuffed"/> true, <see cref="Snapshot"/> null). Either way the scout's turn ends.
+/// The outcome of a <see cref="GameSession.Game.SpyOnColony(Units.Unit, World.Position)">spy-on-colony</see>: the scout
+/// always gets its glimpse — FreeCol's <c>spySettlement</c> never fails — so <see cref="Snapshot"/> is always populated.
+/// The scout's turn ends and the colony tile is revealed regardless. (The result is kept as a small wrapper so the
+/// presentation has one return type; there is no rebuff/failure path.)
 /// </summary>
-/// <param name="Rebuffed">Whether the colony's watch rebuffed the scout (no interior was revealed).</param>
-/// <param name="Snapshot">The colony interior the scout glimpsed, or null when rebuffed.</param>
-public readonly record struct SpyResult(bool Rebuffed, ColonyInteriorSnapshot? Snapshot)
+/// <param name="Snapshot">The colony interior the scout glimpsed (always present).</param>
+public readonly record struct SpyResult(ColonyInteriorSnapshot Snapshot)
 {
-    /// <summary>A successful spy revealing <paramref name="snapshot"/>.</summary>
-    public static SpyResult Revealed(ColonyInteriorSnapshot snapshot) => new(false, snapshot);
-
-    /// <summary>A rebuffed spy — the scout saw nothing.</summary>
-    public static SpyResult Rebuff() => new(true, null);
+    /// <summary>A successful spy revealing <paramref name="snapshot"/> (the only outcome — FreeCol-exact, the spy never fails).</summary>
+    public static SpyResult Revealed(ColonyInteriorSnapshot snapshot) => new(snapshot);
 }

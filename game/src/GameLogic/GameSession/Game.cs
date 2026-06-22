@@ -104,13 +104,6 @@ public sealed partial class Game
     /// classic default game draws nothing on this stream and stays byte-identical.</summary>
     private const ulong DisasterStreamId = 103;
 
-    /// <summary>RNG stream reserved for the scout's <b>spy-on-colony</b> evasion roll (86d3drn4m) — a high id like
-    /// <see cref="LcrStreamId"/>/<see cref="DisasterStreamId"/>, so the rebuff draw <b>never</b> correlates with or
-    /// shifts the human's economy stream 0 (ADR-006/ADR-009). Spying is a player-initiated action that fires nothing in
-    /// the default autoplay, so a default game draws nothing on this stream and stays byte-identical; an AI scout uses
-    /// its own per-player stream instead (<see cref="RandomFor"/>), which is likewise independent of stream 0.</summary>
-    private const ulong SpyEvasionStreamId = 104;
-
     private readonly List<Unit> _units = [];
     private readonly List<Colony> _colonies = [];
     private readonly List<NativeSettlement> _nativeSettlements = [];
@@ -2495,15 +2488,6 @@ public sealed partial class Game
     private const string SpyOnColonyAbility = "model.ability.spyOnColony";
 
     /// <summary>
-    /// Base chance (percent) that a rival colony's watch <b>rebuffs</b> a spying scout before it can glimpse the
-    /// interior (86d3drn4m). FreeCol's <c>spySettlement</c> never fails — the spy always succeeds — so this evasion is a
-    /// documented faithful-<em>extension</em> (flagged in [colonies]): we give the colony a small chance to turn the
-    /// scout away, paid for by the scout's wasted turn either way. The roll is on the scout's own RNG stream (never
-    /// stream 0), so a default game is byte-identical (ADR-009).
-    /// </summary>
-    public const int SpyRebuffPercent = 25;
-
-    /// <summary>
     /// Whether <paramref name="unit"/> may spy on the rival colony on <paramref name="target"/> (FreeCol
     /// <c>SpySettlementMessage.serverHandler</c> + <c>Unit.MoveType.ENTER_FOREIGN_COLONY_WITH_SCOUT</c>): an on-map unit
     /// carrying the <c>spyOnColony</c> ability (the scout role), with movement left, adjacent to a colony owned by
@@ -2537,28 +2521,21 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Spies on the rival colony on <paramref name="target"/> with the human's scout <paramref name="unit"/> (FreeCol
-    /// <c>InGameController.spySettlement</c>): the scout walks up to the gate, and unless the colony's watch
-    /// <see cref="SpyRebuffPercent">rebuffs</see> it (a documented faithful-extension — FreeCol's spy never fails), the
-    /// player gets a one-shot glimpse of the colony's full interior — buildings, the worked-tile/building layout, the
-    /// warehouse stockpile and the Sons-of-Liberty standing — returned as a <see cref="ColonyInteriorSnapshot"/> oracle
-    /// the presentation renders. Either way the scout's turn ends (FreeCol <c>setMovesLeft(0)</c>) and the colony's tile
-    /// is revealed. The interior is a <b>snapshot</b>: the player gains no ongoing visibility (FreeCol reveals it for the
-    /// one look only). The evasion roll draws the scout's own RNG stream — never the human's stream 0 (ADR-006/009).
+    /// Spies on the rival colony on <paramref name="target"/> with the scout <paramref name="unit"/> (FreeCol
+    /// <c>InGameController.spySettlement</c>): the scout walks up to the gate and <b>always succeeds</b> — the player
+    /// gets a one-shot glimpse of the colony's full interior (buildings, the worked-tile/building layout, the warehouse
+    /// stockpile and the Sons-of-Liberty standing), returned as a <see cref="ColonyInteriorSnapshot"/> oracle the
+    /// presentation renders. The scout's turn ends (FreeCol <c>setMovesLeft(0)</c>) and the colony's tile is revealed.
+    /// The interior is a <b>snapshot</b>: the player gains no ongoing visibility (FreeCol reveals it for the one look
+    /// only). Spying draws <b>no RNG</b> at all (FreeCol's spy never fails), so the human's economy stream 0 is never
+    /// shifted — a default game stays byte-identical (ADR-006/009).
     /// </summary>
-    /// <returns>The spy outcome: the colony interior glimpsed, or a rebuff.</returns>
+    /// <returns>The spy outcome: the colony interior glimpsed.</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckSpyOnColony"/>.</exception>
     public SpyResult SpyOnColony(Unit unit, Position target) => SpyOnColony(_human, unit, target);
 
-    /// <summary>Spies on behalf of <paramref name="player"/> (the unit's owner), drawing its spy-evasion stream (never stream 0).</summary>
-    internal SpyResult SpyOnColony(Player player, Unit unit, Position target) =>
-        SpyOnColony(player, unit, target, SpyEvasionRandomFor(player));
-
-    /// <summary>
-    /// Spies drawing from the supplied <see cref="IGameRandom"/> (the overload exists for scripted tests, like
-    /// <see cref="Attack(Unit, Position, IGameRandom)"/>; production callers route through the per-player evasion stream).
-    /// </summary>
-    internal SpyResult SpyOnColony(Player player, Unit unit, Position target, IGameRandom random)
+    /// <summary>Spies on behalf of <paramref name="player"/> (the unit's owner). Always reveals the interior — no RNG drawn (FreeCol-exact).</summary>
+    internal SpyResult SpyOnColony(Player player, Unit unit, Position target)
     {
         MoveCheck check = CheckSpyOnColony(unit, target);
         if (!check.Allowed)
@@ -2567,27 +2544,12 @@ public sealed partial class Game
         }
 
         Colony colony = ColonyAt(target)!;
-        unit.MovementLeft = 0;                                   // the spy attempt ends the scout's turn (FreeCol setMovesLeft(0))
-        RevealAround(player, colony.Position, ColonySightRadius); // the scout at least learns the colony's tile/surroundings
+        unit.MovementLeft = 0;                                   // the spy ends the scout's turn (FreeCol setMovesLeft(0))
+        RevealAround(player, colony.Position, ColonySightRadius); // the scout learns the colony's tile/surroundings
 
-        // The colony's watch may rebuff the scout before it sees anything (faithful-extension, on the scout's own stream).
-        if (random.Next(100) < SpyRebuffPercent)
-        {
-            return SpyResult.Rebuff();
-        }
+        // FreeCol's spySettlement always succeeds — no failure roll, so the spy draws no randomness at all.
         return SpyResult.Revealed(ColonyInteriorSnapshot.Of(colony));
     }
-
-    /// <summary>
-    /// The RNG a player's spy-evasion roll draws from — <b>never</b> stream 0 (86d3drn4m). An AI scout uses its owner's
-    /// own per-player stream (<see cref="RandomFor"/>, already independent of stream 0). The human's spy roll, which
-    /// would otherwise fall on stream 0, instead draws a dedicated reserved <see cref="SpyEvasionStreamId"/> stream
-    /// seeded off the current stream-0 state without consuming it (<see cref="Pcg32Random.SaveState"/> is non-mutating),
-    /// the same synthesis pattern <see cref="Restore"/> uses for a player's stream. So the human's economy stream 0 is
-    /// never shifted by spying — a default game (no spying) stays byte-identical.
-    /// </summary>
-    private IGameRandom SpyEvasionRandomFor(Player player) =>
-        player.IsHuman ? new Pcg32Random(_random.SaveState().State, SpyEvasionStreamId) : player.Rng!;
 
     /// <summary>
     /// Hands <paramref name="colony"/> to <paramref name="newOwnerId"/> (FreeCol <c>csChangeOwner</c>): its people,

@@ -886,7 +886,7 @@ public partial class GameController : Node2D
         return true;
     }
 
-    /// <summary>Runs the scout's spy mission on <paramref name="target"/> and surfaces the glimpse (or the rebuff) — the interior snapshot is shown in the colony panel as a read-only view; either way the scout's turn ends.</summary>
+    /// <summary>Runs the scout's spy mission on <paramref name="target"/> and surfaces the glimpse — the interior snapshot is shown in the colony panel as a read-only view; the scout's turn ends. The spy always succeeds (FreeCol-exact).</summary>
     private void SpyOnRivalColony(int scoutId, Position target)
     {
         Unit? scout = _game.Units.FirstOrDefault(u => u.Id == scoutId && u.IsOnMap);
@@ -894,16 +894,9 @@ public partial class GameController : Node2D
         {
             return;
         }
-        SpyResult result = _game.SpyOnColony(scout, target);
-        _selectedUnit = null; // the spy attempt ends the scout's turn
-        if (result.Rebuffed || result.Snapshot is not { } snapshot)
-        {
-            _notice = "Your scout was turned away at the colony gate.";
-        }
-        else
-        {
-            _notice = $"Your scout glimpsed inside {snapshot.Name} (pop {snapshot.Population}, SoL {snapshot.SonsOfLiberty}%).";
-        }
+        ColonyInteriorSnapshot snapshot = _game.SpyOnColony(scout, target).Snapshot;
+        _selectedUnit = null; // the spy ends the scout's turn
+        _notice = $"Your scout glimpsed inside {snapshot.Name} (pop {snapshot.Population}, SoL {snapshot.SonsOfLiberty}%).";
         RefreshView();
     }
 

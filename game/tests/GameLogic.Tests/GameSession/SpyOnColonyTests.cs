@@ -11,10 +11,10 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 
 /// <summary>
 /// Spy-on-colony (<c>86d3drn4m</c>, FreeCol <c>InGameController.spySettlement</c> + <c>model.ability.spyOnColony</c>):
-/// a scout-role unit adjacent to a <b>rival</b> colony may spy — getting a one-shot <see cref="ColonyInteriorSnapshot"/>
-/// of the colony's interior (buildings / worker layout / stockpile / Sons-of-Liberty) — unless the colony's watch
-/// rebuffs it (a documented faithful-extension). Either way the scout's turn ends and the colony tile is revealed. The
-/// evasion roll is on the scout's own RNG stream, never the human's stream 0 (ADR-006/009).
+/// a scout-role unit adjacent to a <b>rival</b> colony may spy — <b>always succeeding</b> (FreeCol-exact: the spy never
+/// fails) to get a one-shot <see cref="ColonyInteriorSnapshot"/> of the colony's interior (buildings / worker layout /
+/// stockpile / Sons-of-Liberty). The scout's turn ends and the colony tile is revealed. Spying draws <b>no RNG</b> at
+/// all, so the human's economy stream 0 is never shifted (ADR-006/009).
 /// </summary>
 public class SpyOnColonyTests
 {
@@ -22,16 +22,6 @@ public class SpyOnColonyTests
     private const ulong Seed = 0xC0FFEEUL;
     private const string ScoutRole = "model.role.scout";
     private const string FreeColonist = "model.unit.freeColonist";
-
-    /// <summary>A scripted RNG returning queued values for the bounded <c>Next</c> draws (the evasion roll uses <c>Next(100)</c>).</summary>
-    private sealed class ScriptedRandom(params int[] values) : IGameRandom
-    {
-        private readonly System.Collections.Generic.Queue<int> _values = new(values);
-        public int Next(int maxExclusive) => _values.Dequeue();
-        public int Next(int minInclusive, int maxExclusive) => _values.Dequeue();
-        public double NextDouble() => 0;
-        public RandomState SaveState() => new(0, 0);
-    }
 
     private static bool FreeLand(Game g, Position p) =>
         g.Map.InBounds(p) && !g.Map.TerrainAt(p).IsWater
@@ -114,18 +104,16 @@ public class SpyOnColonyTests
     // ---- Command (SpyOnColony) ----
 
     [Fact]
-    public void Spy_OnSuccess_RevealsTheColonyInterior()
+    public void Spy_AlwaysRevealsTheColonyInterior()
     {
         (Game game, Colony colony, Unit scout, int foreignId) = StageScoutBesideRivalColony();
         colony.AddBuilding("model.building.townHall");
         colony.AddGoods("model.goods.muskets", 42);
 
-        // Next(100) = 99 ≥ SpyRebuffPercent (25) → success.
-        SpyResult result = game.SpyOnColony(game.HumanPlayer, scout, colony.Position, new ScriptedRandom(99));
+        // FreeCol's spySettlement never fails — the spy always succeeds (no RNG drawn).
+        SpyResult result = game.SpyOnColony(game.HumanPlayer, scout, colony.Position);
 
-        Assert.False(result.Rebuffed);
-        Assert.NotNull(result.Snapshot);
-        Assert.Equal(colony.Id, result.Snapshot!.ColonyId);
+        Assert.Equal(colony.Id, result.Snapshot.ColonyId);
         Assert.Equal(foreignId, result.Snapshot.OwnerId);
         Assert.Equal(colony.Population, result.Snapshot.Population);
         Assert.Contains("model.building.townHall", result.Snapshot.Buildings);
@@ -133,27 +121,14 @@ public class SpyOnColonyTests
     }
 
     [Fact]
-    public void Spy_WhenRebuffed_RevealsNoInterior()
+    public void Spy_EndsTheScoutsTurn_AndRevealsTheColonyTile()
     {
         (Game game, Colony colony, Unit scout, _) = StageScoutBesideRivalColony();
 
-        // Next(100) = 0 < SpyRebuffPercent (25) → rebuffed.
-        SpyResult result = game.SpyOnColony(game.HumanPlayer, scout, colony.Position, new ScriptedRandom(0));
+        game.SpyOnColony(game.HumanPlayer, scout, colony.Position);
 
-        Assert.True(result.Rebuffed);
-        Assert.Null(result.Snapshot);
-    }
-
-    [Fact]
-    public void Spy_EndsTheScoutsTurn_AndRevealsTheColonyTile_EvenWhenRebuffed()
-    {
-        (Game game, Colony colony, Unit scout, _) = StageScoutBesideRivalColony();
-
-        SpyResult result = game.SpyOnColony(game.HumanPlayer, scout, colony.Position, new ScriptedRandom(0)); // rebuffed
-
-        Assert.True(result.Rebuffed);
-        Assert.Equal(0, scout.MovementLeft);              // the attempt ends the turn either way (FreeCol setMovesLeft(0))
-        Assert.True(game.IsExplored(colony.Position));    // the scout still learns the colony's tile
+        Assert.Equal(0, scout.MovementLeft);              // the spy ends the turn (FreeCol setMovesLeft(0))
+        Assert.True(game.IsExplored(colony.Position));    // the scout learns the colony's tile
     }
 
     [Fact]
@@ -162,8 +137,8 @@ public class SpyOnColonyTests
         (Game game, Colony colony, Unit scout, _) = StageScoutBesideRivalColony();
         colony.AddGoods("model.goods.food", 10);
 
-        SpyResult result = game.SpyOnColony(game.HumanPlayer, scout, colony.Position, new ScriptedRandom(99)); // success
-        int seen = result.Snapshot!.Stores["model.goods.food"];
+        SpyResult result = game.SpyOnColony(game.HumanPlayer, scout, colony.Position);
+        int seen = result.Snapshot.Stores["model.goods.food"];
 
         colony.AddGoods("model.goods.food", 100); // the colony changes after the glimpse
 
@@ -173,27 +148,13 @@ public class SpyOnColonyTests
     [Fact]
     public void Spy_DoesNotDrawTheHumansStream0()
     {
-        // Spying through the production entry point (the human's own stream is synthesised off stream 0 without
-        // consuming it) must not shift the economy stream 0 — a default game stays byte-identical (ADR-009).
+        // The spy draws no randomness at all (FreeCol-exact), so the economy stream 0 is never shifted — a default
+        // game stays byte-identical (ADR-009).
         (Game game, Colony colony, Unit scout, _) = StageScoutBesideRivalColony();
         RandomState before = game.RandomState;
 
-        game.SpyOnColony(scout, colony.Position); // the public human entry point (real evasion stream)
+        game.SpyOnColony(scout, colony.Position); // the public human entry point
 
         Assert.Equal(before, game.RandomState); // stream 0 untouched
-    }
-
-    [Fact]
-    public void Spy_IsDeterministic_OnTheHumansEvasionStream()
-    {
-        // Two identical games spied identically resolve the same way (the evasion stream is seeded deterministically
-        // off stream 0), so the rebuff/reveal outcome is replay-stable.
-        (Game a, Colony ca, Unit sa, _) = StageScoutBesideRivalColony();
-        (Game b, Colony cb, Unit sb, _) = StageScoutBesideRivalColony();
-
-        SpyResult ra = a.SpyOnColony(sa, ca.Position);
-        SpyResult rb = b.SpyOnColony(sb, cb.Position);
-
-        Assert.Equal(ra.Rebuffed, rb.Rebuffed);
     }
 }

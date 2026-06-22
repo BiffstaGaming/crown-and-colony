@@ -293,13 +293,13 @@ public class MonarchTests
         Assert.Equal(37, game.HumanPlayer.TaxRate); // 40 − 1 − 2
     }
 
-    // ── WAIVE_TAX: the King forgives outstanding boycott back-taxes (86d3c9r68) ──────────────────────────
+    // ── WAIVE_TAX: message-only, no mechanical effect (FreeCol-exact) ────────────────────────────────────
 
     [Fact]
-    public void DispatchWaiveTax_ForgivesArrears_LiftsEveryBoycott()
+    public void DispatchWaiveTax_ForgivesNothing_MessageOnly()
     {
-        // Our WAIVE_TAX goodwill (a documented deviation from FreeCol's message-only action): the King clears all
-        // outstanding boycott back-taxes for free, lifting the boycott — no gold spent (unlike PayArrears).
+        // FreeCol-exact: WAIVE_TAX is a message-only "we graciously waive a tax increase" — it changes NO game state.
+        // Outstanding boycott back-taxes are left exactly as they were (the King forgives nothing).
         Game game = FoundedGame();
         game.HumanPlayer.Market.SetArrears("model.goods.furs", 1500);
         game.HumanPlayer.Market.SetArrears("model.goods.rum", 800);
@@ -307,36 +307,36 @@ public class MonarchTests
 
         game.DispatchMonarchAction(MonarchAction.WaiveTax, new ScriptedRandom());
 
-        Assert.Equal(0, game.HumanPlayer.Market.Arrears("model.goods.furs"));
-        Assert.Equal(0, game.HumanPlayer.Market.Arrears("model.goods.rum"));
-        Assert.True(game.HumanPlayer.Market.CanTrade("model.goods.furs")); // boycott lifted
-        Assert.True(game.HumanPlayer.Market.CanTrade("model.goods.rum"));
-        Assert.Equal(goldBefore, game.HumanPlayer.Gold);                   // forgiveness is free
-        Assert.Null(game.PendingMonarchDemand);                            // immediate, no player choice
+        Assert.Equal(1500, game.HumanPlayer.Market.Arrears("model.goods.furs")); // arrears untouched
+        Assert.Equal(800, game.HumanPlayer.Market.Arrears("model.goods.rum"));
+        Assert.False(game.HumanPlayer.Market.CanTrade("model.goods.furs"));      // boycott still in force
+        Assert.False(game.HumanPlayer.Market.CanTrade("model.goods.rum"));
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);                         // no gold change
+        Assert.Null(game.PendingMonarchDemand);                                  // no player choice (message-only)
     }
 
     [Fact]
-    public void MonarchActionIsValid_WaiveTax_OnlyWhenArrearsOutstanding()
+    public void MonarchActionIsValid_WaiveTax_AlwaysValid()
     {
-        // WAIVE_TAX is gated on there being a boycott to forgive — so a game with no arrears never offers it,
-        // leaving the default weighted table (and every existing seeded game) untouched.
+        // FreeCol's Monarch.actionIsValid returns true for WAIVE_TAX unconditionally (it has no precondition — it is a
+        // pure announcement). Arrears are irrelevant to its validity.
         Game game = FoundedGame();
-        Assert.False(game.MonarchActionIsValid(MonarchAction.WaiveTax)); // nothing to forgive
+        Assert.True(game.MonarchActionIsValid(MonarchAction.WaiveTax)); // valid with no arrears
 
         game.HumanPlayer.Market.SetArrears("model.goods.furs", 1500);
-        Assert.True(game.MonarchActionIsValid(MonarchAction.WaiveTax));  // a boycott exists
+        Assert.True(game.MonarchActionIsValid(MonarchAction.WaiveTax)); // still valid with arrears
     }
 
     [Fact]
-    public void WaiveTax_OfferedFromTheChooser_OnlyWhenArrears()
+    public void WaiveTax_IsNeverOfferedFromTheChooser()
     {
+        // FreeCol omits WAIVE_TAX from getActionChoices entirely — the dice never picks it (it is only the server's
+        // framing for a King who forbore a tax rise). It stays out of the table whether or not arrears exist.
         Game game = FoundedGame();
-        // No arrears → not in the table (default-game determinism guard).
         Assert.DoesNotContain(MonarchAction.WaiveTax, game.GetMonarchActionChoices(50).Select(c => c.Action));
 
         game.HumanPlayer.Market.SetArrears("model.goods.furs", 1500);
-        var choices = game.GetMonarchActionChoices(50).ToDictionary(c => c.Action, c => c.Weight);
-        Assert.Equal(2, choices[MonarchAction.WaiveTax]); // 5 − dx, mirroring its LOWER_TAX goodwill siblings
+        Assert.DoesNotContain(MonarchAction.WaiveTax, game.GetMonarchActionChoices(50).Select(c => c.Action));
     }
 
     [Fact]
