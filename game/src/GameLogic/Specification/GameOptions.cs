@@ -73,6 +73,16 @@ namespace CrownAndColony.GameLogic.Specification;
 /// been. Read by <see cref="GameSession.Game.CurrentlyVisible"/> / <see cref="GameSession.Game.IsVisible"/>. See
 /// [fog-of-war].
 /// </param>
+/// <param name="CustomIgnoreBoycott">
+/// Whether a colony's <b>custom house</b> sells goods that are under boycott (spec
+/// <c>model.option.customIgnoreBoycott</c>, a <c>booleanOption</c> in the <c>gameOptions.colony</c> group, classic
+/// default <b>true</b>). In classic Colonization the custom house is a smuggling operation — it <b>always</b> moves a
+/// colony's surplus, boycott or not (FreeCol <c>Player.canTrade(type, CUSTOM_HOUSE)</c>: a boycotted good still trades
+/// through a custom house when this option is on). The sale is otherwise an ordinary market sale — tax is withheld and
+/// the price still moves; classic applies no extra smuggling penalty. With this option <b>off</b>, a boycotted good is
+/// simply skipped by the custom-house auto-sell (the player must lift the boycott to resume selling it). Read by
+/// <see cref="GameSession.Game"/>'s custom-house auto-sell (<c>AutoSellExports</c>). See [custom-house], [market].
+/// </param>
 public sealed record GameOptions(
     int InitialImmigration,
     int EuropeanUnitImmigrationPenalty,
@@ -81,13 +91,14 @@ public sealed record GameOptions(
     int LastColonialYear,
     int IndependenceTurn,
     int PeaceProbability,
-    bool FogOfWar)
+    bool FogOfWar,
+    bool CustomIgnoreBoycott)
 {
     /// <summary>
     /// The classic ruleset's <c>gameOptions</c> values — the fallback when a spec omits an option, and the source of
     /// truth for the default game's base numbers: the immigration trio (15 / −4 / +2), the
     /// <c>gameOptions.years</c> gate cluster (mandatoryColonyYear 1600 / lastColonialYear 1800 / independenceTurn 468),
-    /// the peace-hold base (peaceProbability 90), and fog of war (on).
+    /// the peace-hold base (peaceProbability 90), fog of war (on), and custom-house boycott smuggling (on).
     /// </summary>
     public static readonly GameOptions ClassicDefaults = new(
         InitialImmigration: 15,
@@ -97,7 +108,8 @@ public sealed record GameOptions(
         LastColonialYear: 1800,
         IndependenceTurn: 468,
         PeaceProbability: 90,
-        FogOfWar: true);
+        FogOfWar: true,
+        CustomIgnoreBoycott: true);
 
     /// <summary>
     /// The peace-hold base as a 0–1 multiplier (FreeCol <c>Specification.getPercentageMultiplier</c> =

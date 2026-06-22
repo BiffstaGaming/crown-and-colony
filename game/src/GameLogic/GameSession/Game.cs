@@ -4680,15 +4680,21 @@ public sealed partial class Game
     public int SellColonyGoods(Colony colony, string goodsId, int amount) =>
         SellColonyGoods(_human, colony, goodsId, amount);
 
-    /// <summary>Sells a colony's goods to <paramref name="player"/>'s European market (the colony's owner today).</summary>
-    internal int SellColonyGoods(Player player, Colony colony, string goodsId, int amount)
+    /// <summary>
+    /// Sells a colony's goods to <paramref name="player"/>'s European market (the colony's owner today). When
+    /// <paramref name="ignoreBoycott"/> is true the boycott gate is bypassed — the custom-house smuggling path
+    /// (FreeCol <c>Player.canTrade(type, Market.Access.CUSTOM_HOUSE)</c> under <c>customIgnoreBoycott</c>): a boycotted
+    /// good still sells, with tax withheld and the price still moving exactly as a normal sale (classic applies no
+    /// extra smuggling penalty). The default (false) keeps the manual-sale gate that refuses a boycotted good.
+    /// </summary>
+    internal int SellColonyGoods(Player player, Colony colony, string goodsId, int amount, bool ignoreBoycott = false)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
         if (!player.Market.IsTradeable(goodsId))
         {
             throw new InvalidMoveException($"{goodsId} cannot be sold in Europe.");
         }
-        if (!player.Market.CanTrade(goodsId))
+        if (!ignoreBoycott && !player.Market.CanTrade(goodsId))
         {
             throw new InvalidMoveException($"{goodsId} is under boycott — pay the back taxes to lift it.");
         }
@@ -10784,13 +10790,21 @@ public sealed partial class Game
     /// The per-turn custom-house auto-sell (FreeCol <c>ServerColony.csNewTurn</c>'s customs sale): if the colony has
     /// the export ability (a custom house), each eligible storable, tradeable good's surplus above its retain level
     /// is sold to <paramref name="owner"/>'s European market — the same after-tax, price-moving path as a manual sale
-    /// (<see cref="SellColonyGoods(Player, Colony, string, int)"/>). Eligibility follows <see cref="AutoExportMode"/>:
+    /// (<see cref="SellColonyGoods(Player, Colony, string, int, bool)"/>). Eligibility follows <see cref="AutoExportMode"/>:
     /// in <see cref="GameSession.AutoExportMode.PerGood"/> only goods flagged <c>Exported</c> sell (food included if
     /// flagged — FreeCol-faithful); in <see cref="GameSession.AutoExportMode.ExportAllOverLevel"/> every sellable good
     /// does <b>except food</b> (auto-dumping food would halt growth). Goods are iterated in stable id order for
     /// determinism (ADR-009); a colony with no custom house — and the default PerGood mode with no toggles — sells
-    /// nothing, so the soak stays byte-stable. (No boycott check yet — FreeCol's <c>canTrade(CUSTOM_HOUSE)</c> gate is
-    /// deferred with the boycott system.) Each sale from a <b>human-owned</b> colony records a transient
+    /// nothing, so the soak stays byte-stable.
+    /// <para>
+    /// Boycott handling follows FreeCol's <c>Player.canTrade(type, Market.Access.CUSTOM_HOUSE)</c>: when the
+    /// <c>customIgnoreBoycott</c> game option is on (classic default, <see cref="GameOptions.CustomIgnoreBoycott"/>)
+    /// the custom house <b>smuggles</b> a boycotted good — it still sells, with tax and price movement, no extra
+    /// penalty (the sale is made with the boycott gate bypassed). When the option is off a boycotted good is
+    /// <b>skipped</b> safely — it is never sold and, crucially, the sell path is never even entered, so End Turn never
+    /// throws <see cref="InvalidMoveException"/> on a boycotted custom-house good.
+    /// </para>
+    /// Each sale from a <b>human-owned</b> colony records a transient
     /// <see cref="CustomHouseSaleNotice"/> (good + amount + after-tax gold) the HUD surfaces after End Turn.
     /// </summary>
     private void AutoSellExports(Player owner, Colony colony)
@@ -10800,6 +10814,7 @@ public sealed partial class Game
             return;
         }
         bool exportAll = AutoExportMode == AutoExportMode.ExportAllOverLevel;
+        bool ignoreBoycott = Ruleset.GameOptions.CustomIgnoreBoycott;
         foreach (string goodsId in colony.Stores.Keys.OrderBy(g => g, StringComparer.Ordinal).ToList())
         {
             GoodsType goods = Ruleset.Goods(goodsId);
@@ -10813,10 +10828,16 @@ public sealed partial class Game
             {
                 continue;
             }
+            // Boycott gate (FreeCol canTrade(CUSTOM_HOUSE)): smuggle when customIgnoreBoycott is on, otherwise skip the
+            // good entirely so End Turn never throws on it. Either way the sell path is only entered when allowed.
+            if (!ignoreBoycott && !owner.Market.CanTrade(goodsId))
+            {
+                continue;
+            }
             int surplus = colony.StoreOf(goodsId) - setting.ExportLevel;
             if (surplus > 0)
             {
-                int gold = SellColonyGoods(owner, colony, goodsId, surplus);
+                int gold = SellColonyGoods(owner, colony, goodsId, surplus, ignoreBoycott);
                 if (IsHumanOwned(colony))
                 {
                     // Transient player-facing notice (ADR-006): the HUD surfaces what each custom house sold after

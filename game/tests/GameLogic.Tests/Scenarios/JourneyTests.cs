@@ -553,6 +553,57 @@ public class JourneyTests
         Assert.Equal(2, reloaded.Colonies[0].Population);
     }
 
+    // ──────────── Journey 10: Custom house smuggles a boycotted good through End Turn ────────────
+
+    [Fact]
+    public void Journey10_BoycottedGood_IsSmuggledByTheCustomHouse_AndEndTurnNeverThrows()
+    {
+        // A coastal-style pop-1 colony with a custom house, 90 sugar in store, sugar flagged for export at level 50.
+        // The good is boycotted (as after a Boston Tea Party). In classic (customIgnoreBoycott on) the custom house
+        // must smuggle it out anyway — and End Turn must complete (this is the regression guard for the latent crash
+        // where the auto-sell called the throwing manual-sale path on a boycotted good).
+        const string Customs = "model.building.customHouse";
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 3,
+            MapHeight = 3,
+            Terrain = [.. Enumerable.Repeat("model.tile.plains", 9)],
+            Units = [],
+            Explored = [],
+            Colonies =
+            [
+                new SavedColony(1, "Smugglers' Cove", 1, 1, 1,
+                    Stores: new Dictionary<string, int> { [Sugar] = 90 },
+                    Buildings: [Customs],
+                    Exports: new Dictionary<string, SavedExport> { [Sugar] = new SavedExport(true, 50) }),
+            ],
+        };
+        Game game = save.Restore(Classic);
+        Colony colony = game.Colonies[0];
+        Assert.True(colony.HasBuilding(Customs));
+        Assert.True(game.Ruleset.GameOptions.CustomIgnoreBoycott); // classic default
+
+        // M1 — boycott the good (the Tea Party outcome) and confirm it is genuinely un-tradeable by hand.
+        game.HumanPlayer.Market.SetArrears(Sugar, 5000);
+        Assert.False(game.HumanPlayer.Market.CanTrade(Sugar));
+        int goldBefore = game.HumanPlayer.Gold;
+
+        // M2 — End Turn runs the custom-house auto-sell. The crash is gone; the boycotted surplus smuggles out.
+        game.EndTurn();
+        Assert.Equal(50, colony.StoreOf(Sugar));                    // smuggled down to the retain level
+        Assert.True(game.HumanPlayer.Gold > goldBefore);            // for gold (tax still withheld)
+        Assert.Equal(5000, game.HumanPlayer.Market.Arrears(Sugar)); // the boycott itself is untouched
+
+        // M3 — acid round-trip: the post-sale state survives identically (no save bump — the option is session-only).
+        string json = SaveGame.From(game).ToJson();
+        Game reloaded = SaveGame.FromJson(json).Restore(Classic);
+        Assert.Equal(json, SaveGame.From(reloaded).ToJson());
+        Assert.Equal(50, reloaded.Colonies[0].StoreOf(Sugar));
+    }
+
     // ───────────────────────── fixtures ─────────────────────────
 
     /// <summary>A pop-N colony at the centre of a 3×3 all-plains map (free base buildings re-derived).</summary>

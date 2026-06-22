@@ -197,9 +197,11 @@ public sealed class Ruleset
     /// <summary>
     /// The base <c>gameOptions</c>-group tuning numbers (not per-difficulty-level) — currently the immigration trio
     /// (<c>initialImmigration</c> / <c>europeanUnitImmigrationPenalty</c> / <c>playerImmigrationBonus</c>), the
-    /// <c>gameOptions.years</c> gate cluster, the peace-hold base, and the <c>fogOfWar</c> toggle — parsed once from the
+    /// <c>gameOptions.years</c> gate cluster, the peace-hold base, the <c>fogOfWar</c> toggle, and the custom-house
+    /// boycott-smuggling toggle (<c>customIgnoreBoycott</c>) — parsed once from the
     /// spec. Balance constants read these instead of hardcoding values. The setter is private — only
-    /// <see cref="WithFogOfWar"/> (the new-game option seam) ever swaps the bundle. See [immigration], [fog-of-war].
+    /// <see cref="WithFogOfWar"/> (the new-game option seam) ever swaps the bundle. See [immigration], [fog-of-war],
+    /// [custom-house].
     /// </summary>
     public GameOptions GameOptions { get; private set; }
 
@@ -348,6 +350,25 @@ public sealed class Ruleset
     public Ruleset WithFogOfWar(bool fogOfWar)
     {
         GameOptions = GameOptions with { FogOfWar = fogOfWar };
+        return this;
+    }
+
+    /// <summary>
+    /// Returns this ruleset with the <b>custom-house boycott-smuggling</b> game option
+    /// (<see cref="GameOptions.CustomIgnoreBoycott"/>) overridden to the player's New-Game pick — FreeCol's
+    /// <c>model.option.customIgnoreBoycott</c>, chosen at game setup. Like <see cref="WithFogOfWar"/> this is a
+    /// <b>configuration</b> seam, not a rules change: it only flips whether a colony's custom-house auto-sell smuggles
+    /// a boycotted good (on, classic) or skips it (off) — see <see cref="GameSession.Game"/>'s <c>AutoSellExports</c>.
+    /// Each loaded ruleset is a fresh parse (never cached/shared — <see cref="LoadEmbedded"/>), so replacing the bundle
+    /// on the just-loaded instance is safe; the method returns <c>this</c> for a fluent call right after load. Passing
+    /// the parsed default (classic <b>true</b>) leaves the ruleset byte-identical, so a default new game is unchanged
+    /// (ADR-009). Not persisted in the save — a reloaded game re-derives the option from its variant's spec default (a
+    /// saved override would bump the save format, matching the victory-condition and fog-of-war seams).
+    /// </summary>
+    /// <param name="customIgnoreBoycott">Whether a custom house sells boycotted goods (classic <b>on</b>).</param>
+    public Ruleset WithCustomIgnoreBoycott(bool customIgnoreBoycott)
+    {
+        GameOptions = GameOptions with { CustomIgnoreBoycott = customIgnoreBoycott };
         return this;
     }
 
@@ -1025,7 +1046,8 @@ public sealed class Ruleset
     /// (<c>model.option.initialImmigration</c> / <c>europeanUnitImmigrationPenalty</c> / <c>playerImmigrationBonus</c>),
     /// the <c>gameOptions.years</c> year/turn-gate cluster (<c>model.option.mandatoryColonyYear</c> /
     /// <c>lastColonialYear</c> / <c>independenceTurn</c>), the peace-hold base (<c>model.option.peaceProbability</c>),
-    /// and the <c>fogOfWar</c> toggle (<c>model.option.fogOfWar</c>, a boolean). Unlike <see cref="ParseDifficulty"/>,
+    /// the <c>fogOfWar</c> toggle (<c>model.option.fogOfWar</c>, a boolean), and the custom-house boycott-smuggling
+    /// toggle (<c>model.option.customIgnoreBoycott</c>, a boolean, classic <b>true</b>). Unlike <see cref="ParseDifficulty"/>,
     /// these are not restated per level, so each is a plain document-wide option lookup (its <c>value</c>, else
     /// <c>defaultValue</c>); a missing option falls back to its classic value in
     /// <see cref="GameOptions.ClassicDefaults"/>, so the default
@@ -1048,7 +1070,9 @@ public sealed class Ruleset
             PeaceProbability: ParsePercentageOption(
                 root, "model.option.peaceProbability", GameOptions.ClassicDefaults.PeaceProbability),
             FogOfWar: ParseBooleanOption(
-                root, "model.option.fogOfWar", GameOptions.ClassicDefaults.FogOfWar));
+                root, "model.option.fogOfWar", GameOptions.ClassicDefaults.FogOfWar),
+            CustomIgnoreBoycott: ParseBooleanOption(
+                root, "model.option.customIgnoreBoycott", GameOptions.ClassicDefaults.CustomIgnoreBoycott));
 
     /// <summary>
     /// Parses the colony/production scalar constants into <see cref="Specification.ColonyConstants"/>. Each source is

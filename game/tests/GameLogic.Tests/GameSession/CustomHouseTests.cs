@@ -280,4 +280,79 @@ public class CustomHouseTests
 
         Assert.Empty(game.CustomHouseSaleNotices);       // last turn's notices were cleared; nothing new sold
     }
+
+    // ---- Boycott smuggling (86d3e4bac): the custom house always sells boycotted goods in classic ----
+    //
+    // FreeCol's customIgnoreBoycott (classic default true) makes the custom house a smuggler: a boycotted good still
+    // sells, with tax and price movement, no extra penalty. Critically this also fixes a latent EndTurn crash — the
+    // auto-sell used to call the throwing manual-sale path on every eligible good, so a boycotted custom-house good
+    // would throw InvalidMoveException during EndTurn. The fix routes the boycott decision through the option: on →
+    // smuggle (sell); off → skip safely (never enter the sell path, never throw).
+
+    [Fact]
+    public void GameOption_CustomIgnoreBoycott_ParsesClassicTrue_AndSeamCanOverride()
+    {
+        Assert.True(Classic.GameOptions.CustomIgnoreBoycott);                              // classic ships defaultValue="true"
+        Assert.True(GameOptions.ClassicDefaults.CustomIgnoreBoycott);                      // fallback matches the spec
+        Assert.False(Ruleset.LoadClassic().WithCustomIgnoreBoycott(false).GameOptions.CustomIgnoreBoycott);
+        Assert.True(Ruleset.LoadClassic().WithCustomIgnoreBoycott(true).GameOptions.CustomIgnoreBoycott);
+    }
+
+    [Fact]
+    public void AutoSell_BoycottedGood_Smuggles_WhenCustomIgnoreBoycottOn_AndEndTurnNeverThrows()
+    {
+        // Classic default (on): a boycotted, exported good still sells through the custom house — and EndTurn
+        // completes (the latent crash is gone).
+        (Game game, Colony colony) = CustomHouseColony();
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 50);
+        colony.AddGoods(Sugar, 90);                                   // 40 surplus over the level
+        game.HumanPlayer.Market.SetArrears(Sugar, 5000);             // boycott the good (a tea-party-style arrears)
+        Assert.False(game.HumanPlayer.Market.CanTrade(Sugar));       // confirm it is genuinely boycotted
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.EndTurn();                                              // must NOT throw despite the boycott
+
+        Assert.Equal(50, colony.StoreOf(Sugar));                     // smuggled down to the retain level
+        Assert.True(game.HumanPlayer.Gold > goldBefore);             // …for gold (tax still applied, price still moved)
+        Assert.Equal(5000, game.HumanPlayer.Market.Arrears(Sugar));  // smuggling does not lift the boycott
+    }
+
+    [Fact]
+    public void AutoSell_BoycottedGood_SkipsSafely_WhenCustomIgnoreBoycottOff_AndEndTurnNeverThrows()
+    {
+        // Option off: the custom house refuses a boycotted good — it is skipped (never sold), and EndTurn still
+        // completes cleanly (no InvalidMoveException leaks out of the auto-sell).
+        Game game = Game.New(Ruleset.LoadClassic().WithCustomIgnoreBoycott(false), Seed);
+        Colony colony = FoundColony(game);
+        colony.AddBuilding(CustomHouse);
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 50);
+        colony.AddGoods(Sugar, 90);
+        game.HumanPlayer.Market.SetArrears(Sugar, 5000);
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.EndTurn();                                              // must NOT throw
+
+        Assert.True(colony.StoreOf(Sugar) >= 90);                    // the boycotted good was left alone (not sold)
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);             // no sale → no gold
+        Assert.Empty(game.CustomHouseSaleNotices);                   // nothing shipped → no notice
+    }
+
+    [Fact]
+    public void AutoSell_OptionOff_StillSellsNonBoycottedGoods()
+    {
+        // Option off must only block the *boycotted* good — other flagged goods still sell normally.
+        Game game = Game.New(Ruleset.LoadClassic().WithCustomIgnoreBoycott(false), Seed);
+        Colony colony = FoundColony(game);
+        colony.AddBuilding(CustomHouse);
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 50);  // boycotted
+        game.SetColonyExport(colony, Ore, exported: true, exportLevel: 50);    // freely tradeable
+        colony.AddGoods(Sugar, 90);
+        colony.AddGoods(Ore, 90);
+        game.HumanPlayer.Market.SetArrears(Sugar, 5000);
+
+        game.EndTurn();
+
+        Assert.True(colony.StoreOf(Sugar) >= 90);     // boycotted sugar skipped
+        Assert.Equal(50, colony.StoreOf(Ore));        // un-boycotted ore still sold down to its level
+    }
 }
