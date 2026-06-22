@@ -10,6 +10,7 @@ This file defines what documentation exists, where it lives, who it's written fo
 | **Repo `docs/modules/`** | One doc per code module/namespace — technical audience, from `TEMPLATE-code-module.md` | Same-commit rule |
 | **Repo `docs/templates/`** | The templates themselves | Versioned with the standards |
 | **Repo — inline** | C# XML doc comments (`///`) on all public types/members | Lives closest to the code; IDE & generated reference |
+| **Repo `CREDITS.md`** (root) | Consolidated asset license/attribution for GPL-v2 distribution — aggregates the per-folder `PROVENANCE.md` files | Ships with the distributed game; mirrors the Asset Register (doc 05) |
 | **ClickUp doc 01** | Project Plan & Roadmap | Project-level, not code-coupled |
 | **ClickUp doc 02** | Architecture Decision Records | Decision history |
 | **ClickUp doc 03** | Game Design Reference + index of repo system docs | High-level design; links down to `docs/systems/` |
