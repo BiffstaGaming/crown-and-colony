@@ -6735,7 +6735,7 @@ public sealed partial class Game
                 {
                     continue;
                 }
-                int reserve = goodsId == ToolsGoodsId ? toolsReserve : AiTradeReserve;
+                int reserve = goodsId == ToolsGoodsId ? toolsReserve : MilitaryReserveFor(power, colony, goodsId);
                 int surplus = colony.StoreOf(goodsId) - reserve;
                 if (surplus > 0)
                 {
@@ -7150,11 +7150,15 @@ public sealed partial class Game
             // so the power's colonies aren't left open to capture/pillage (a garrisoned colony is fought as a field unit
             // first). Founding a new colony keeps priority (expansion over defence); a unit already standing in an own
             // colony stays put (no thrash). The step draws from the power's own stream (StepToward), never stream 0.
+            // A guard that has reached/holds its post **digs in** (FreeCol DefendSettlementMission ends in Unit.fortify):
+            // calling Fortify (RNG-free) when CheckFortify allows it ages FORTIFYING → FORTIFIED next turn for the +50%
+            // dig-in bonus, instead of standing un-entrenched. (86d3e49cm)
             if (!unit.Type.IsNaval && OffenceBase(unit) > 0)
             {
                 if (ColonyAt(unit.Position) is { } here && here.OwnerId == power.PlayerId)
                 {
-                    continue; // already standing guard in an own colony
+                    GarrisonFortify(unit); // already standing guard in an own colony → dig in (no-op if already fortified)
+                    continue;
                 }
                 bool willFound = unit.Type.CanFoundColony
                     && ColoniesOf(power).Count() < Ruleset.Difficulty.Ai.MaxColonies && CheckFoundColony(unit).Allowed;
@@ -7162,6 +7166,12 @@ public sealed partial class Game
                     && StepToward(power, unit, garrisonTile) is { } toGarrison)
                 {
                     MoveUnit(unit, toGarrison);
+                    // If that step landed the unit on the undefended own colony it was marching to, dig in this turn
+                    // rather than waiting a full turn un-entrenched (the move already spent its remaining movement).
+                    if (ColonyAt(unit.Position) is { } reached && reached.OwnerId == power.PlayerId)
+                    {
+                        GarrisonFortify(unit);
+                    }
                     continue;
                 }
             }
@@ -7192,6 +7202,26 @@ public sealed partial class Game
             if (!unit.Type.CanFoundColony)
             {
                 continue; // non-founders (e.g. an idle soldier at peace) wait
+            }
+            // AI defence — arm a colonist (86d3e49cm, FreeCol EuropeanAIPlayer.giveNormalMissions arming + buyDragoon's
+            // ARMED+MOUNTED preference): an idle plain-role colonist (HasDefaultRole, OffenceBase 0) standing in an
+            // UNDER-DEFENDED own colony whose stock can cover it is armed to the strongest affordable military role,
+            // preferring model.role.dragoon (50 muskets + 50 horses) over model.role.soldier (50 muskets). Gated on the
+            // colony lacking a military land defender (ColonyHasMilitaryDefender) so it arms toward defence rather than
+            // stripping every worker — and placed BEFORE the found-colony branch so a defenceless colony entrenches a
+            // guard rather than marching the colonist off to found another undefended colony (expansion yields to
+            // defence when the colony is badly defended, mirroring FreeCol's early badlyDefended pass). EquipRole
+            // consumes the colony's OWN muskets/horses and is RNG-free; the role pick is by ordinal preference — no RNG
+            // draw, so human stream 0 stays byte-identical (ADR-009). The armed colonist digs in via the FP-5 garrison
+            // branch on its following turn. Faithful SUBSET: this is a single under-defended check, not FreeCol's full
+            // badlyDefended + ColonyPlan military scheduler (no role/strength target, no multi-unit garrison plan).
+            if (unit.HasDefaultRole && OffenceBase(unit) <= 0
+                && ColonyAt(unit.Position) is { } armColony && armColony.OwnerId == power.PlayerId
+                && !ColonyHasMilitaryDefender(armColony)
+                && BestAffordableMilitaryRole(unit, armColony) is { } armRole)
+            {
+                EquipRole(unit, armColony, armRole);
+                continue;
             }
             // A tooled pioneer never founds (it would destroy its 20 tools); it improves, or — out of plans — explores.
             if (!IsPioneer(unit) && ColoniesOf(power).Count() < Ruleset.Difficulty.Ai.MaxColonies && CheckFoundColony(unit).Allowed)
@@ -7514,6 +7544,73 @@ public sealed partial class Game
             .OrderBy(c => Chebyshev(c.Position, unit.Position)).ThenBy(c => c.Position.Y).ThenBy(c => c.Position.X)
             .Select(c => (Position?)c.Position)
             .FirstOrDefault();
+
+    /// <summary>The infantry military role a foreign power arms an idle colonist into for defence (50 muskets) — FreeCol <c>model.role.soldier</c>.</summary>
+    private const string SoldierRoleId = "model.role.soldier";
+
+    /// <summary>The mounted military role a foreign power prefers when its colony also stocks horses (50 muskets + 50 horses) — FreeCol <c>model.role.dragoon</c>, the ARMED+MOUNTED role <c>buyDragoon</c> favours.</summary>
+    private const string DragoonRoleId = "model.role.dragoon";
+
+    /// <summary>
+    /// The strongest military role <paramref name="unit"/> can be armed into from <paramref name="colony"/>'s own stock
+    /// right now (86d3e49cm, FreeCol <c>EuropeanAIPlayer.buyDragoon</c> preferring an ARMED+MOUNTED role over a plain
+    /// armed one): <see cref="DragoonRoleId"/> (muskets + horses) when the colony can equip it, else <see cref="SoldierRoleId"/>
+    /// (muskets) when it can, else <c>null</c> when neither is affordable. Affordability is the existing
+    /// <see cref="CheckEquipRole"/> guard, which checks the colony store covers the role's required goods — so the choice
+    /// is purely by ordinal preference and colony stock, drawing <b>no</b> RNG (ADR-009).
+    /// </summary>
+    private string? BestAffordableMilitaryRole(Unit unit, Colony colony) =>
+        CheckEquipRole(unit, colony, DragoonRoleId).Allowed ? DragoonRoleId
+        : CheckEquipRole(unit, colony, SoldierRoleId).Allowed ? SoldierRoleId
+        : null;
+
+    /// <summary>
+    /// How much of <paramref name="goodsId"/> <paramref name="colony"/> keeps back from the surplus sell for the AI
+    /// defence-arming step (86d3e49cm) — the equipment-reserve counterpart to the pioneer tools reserve, so the
+    /// economy does not cash out the very muskets/horses the arm step would spend a turn later (FreeCol's AI reserves
+    /// equipment for the military roles it plans to fill). Non-zero only when the colony is <b>under-defended</b>
+    /// (no military land defender) and holds an idle plain-role colonist that could be armed: it then reserves the
+    /// <em>strongest affordable</em> military role's required amount of this good — 50 muskets for the soldier, plus
+    /// 50 horses when the colony also stocks enough horses to mount a dragoon (the role the arm step prefers). Returns
+    /// 0 (sell everything) otherwise. RNG-free read.
+    /// </summary>
+    private int MilitaryReserveFor(Player power, Colony colony, string goodsId)
+    {
+        if ((goodsId != MusketsId && goodsId != HorsesId) || ColonyHasMilitaryDefender(colony))
+        {
+            return AiTradeReserve; // not military equipment, or already defended → sell the surplus as usual
+        }
+        Unit? armable = _units.FirstOrDefault(u => IsOwnedBy(u, power) && u.IsOnMap && u.HasDefaultRole
+            && OffenceBase(u) <= 0 && u.Position == colony.Position);
+        if (armable is null)
+        {
+            return AiTradeReserve; // no idle colonist here to arm → nothing to reserve for
+        }
+        // Reserve the strongest role the colony could currently equip (dragoon when both goods are stocked, else
+        // soldier) — the same preference the arm step applies — so its required goods survive the sell.
+        string? role = BestAffordableMilitaryRole(armable, colony);
+        if (role is null)
+        {
+            return AiTradeReserve;
+        }
+        return Ruleset.Role(role).RequiredGoods
+            .Where(g => g.GoodsId == goodsId)
+            .Sum(g => g.Amount);
+    }
+
+    /// <summary>
+    /// Orders <paramref name="unit"/> to fortify (dig in for the +50% defence bonus) when <see cref="CheckFortify"/>
+    /// allows it (86d3e49cm, the FreeCol <c>DefendSettlementMission</c> garrison ending in <c>Unit.fortify</c>): a no-op
+    /// when the unit is already fortifying/fortified, so a guard standing post does not re-issue the order each turn.
+    /// <see cref="Fortify"/> is RNG-free, so this never touches the human's stream 0 (ADR-009).
+    /// </summary>
+    private void GarrisonFortify(Unit unit)
+    {
+        if (CheckFortify(unit).Allowed)
+        {
+            Fortify(unit);
+        }
+    }
 
     // --- AI colony-site planning — national-advantage ranking (86d3drn5d, FreeCol EuropeanAIPlayer.getColonyValue
     //     weighted by the nation's advantage; ColonyPlan's getAIAdvantage ×1.2 production tilt) ----------------------
