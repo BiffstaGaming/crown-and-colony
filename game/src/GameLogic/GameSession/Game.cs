@@ -3895,6 +3895,10 @@ public sealed partial class Game
         {
             market.LoadArrears(saved.Arrears); // boycott back-taxes (v37)
         }
+        if (saved.TradeAccounts is { Count: > 0 })
+        {
+            market.LoadCounters(saved.TradeAccounts); // per-good trade accounting for the Trade report (v56)
+        }
         var player = new Player(saved.PlayerId, saved.NationId, saved.IsHuman, saved.PlayerType, market)
         {
             Gold = saved.Gold,

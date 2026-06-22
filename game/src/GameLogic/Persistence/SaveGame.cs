@@ -4,6 +4,7 @@ using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.Trade;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 using CrownAndColony.GameLogic.World.Improvements;
@@ -19,7 +20,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 55;
+    public const int CurrentVersion = 56;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -173,6 +174,15 @@ public sealed record SaveGame
     /// pressure and decay are unchanged. (Making alarm per-player DOES change native raid-targeting in a multi-power
     /// game — that is the intended behaviour change; the soak runs multiple powers but its determinism twin-run stays
     /// byte-identical because nothing draws new randomness.)
+    /// v56 added per-good <b>trade accounting</b> for the classic Trade report (<see cref="SavedPlayer.TradeAccounts"/> —
+    /// each good's cumulative net <c>Sales</c>/<c>IncomeBeforeTaxes</c>/<c>IncomeAfterTaxes</c>, FreeCol <c>MarketData</c>'s
+    /// <c>sales</c>/<c>incomeBeforeTaxes</c>/<c>incomeAfterTaxes</c>, 86d3e4bdm). A sell adds the units + pre/post-tax
+    /// revenue, a buy subtracts the units + cost (a buy is a negative sale; FreeCol charges no tax on a buy, so the same
+    /// cost comes off both incomes). Additive + <b>omit-when-default</b>: the map is written only for goods that have
+    /// actually been traded (any of the three counters non-zero), so a never-traded market emits nothing and a default
+    /// game (no trade yet) serialises byte-identically to v55; pre-v56 saves load with all counters 0. Determinism
+    /// (ADR-009): the counters accumulate on the existing sells/buys with no new RNG and never feed the market price
+    /// model, so the default game's market evolution is unchanged and the soak twin-run stays byte-identical.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -732,7 +742,11 @@ public sealed record SaveGame
         p.TradeRoutes?.Select(r => new TradeRoute(r.Id, r.Name,
             r.Stops.Select(stop => new TradeRouteStop(stop.ColonyId, stop.Load ?? [])).ToList())).ToList(),
         p.NextTradeRouteId,
-        p.PeaceTurns); // v53; pre-v53 / omitted → no recorded peace
+        p.PeaceTurns, // v53; pre-v53 / omitted → no recorded peace
+        // v56; per-good trade accounting → the live TradeAccount triples. Pre-v56 / omitted → no counters (all 0).
+        p.TradeAccounts?.ToDictionary(
+            kv => kv.Key,
+            kv => new TradeAccount(kv.Value.Sales, kv.Value.IncomeBeforeTaxes, kv.Value.IncomeAfterTaxes)));
 
     /// <summary>
     /// Folds the legacy flat top-level fields into the single human player — taken for a ≤v19 save, or any save
@@ -777,7 +791,13 @@ public sealed record SaveGame
                         s.ColonyId, s.LoadGoodsIds.Count > 0 ? s.LoadGoodsIds.ToList() : null)).ToList())).ToList()
                 : null,
             p.NextTradeRouteId == 1 ? null : p.NextTradeRouteId, // omit-when-default (1) → byte-identical to v44 until a route is made
-            p.PeaceTurns.Count > 0 ? new Dictionary<int, int>(p.PeaceTurns) : null); // v53; omit-when-empty → byte-identical to v52 with no recorded peace
+            p.PeaceTurns.Count > 0 ? new Dictionary<int, int>(p.PeaceTurns) : null, // v53; omit-when-empty → byte-identical to v52 with no recorded peace
+            // v56; per-good trade accounting for the Trade report — only goods actually traded (a non-zero counter) are
+            // written, so a never-traded market omits the map and a default game stays byte-identical to v55.
+            p.Market.SaveCounters() is { Count: > 0 } accounts
+                ? accounts.ToDictionary(kv => kv.Key, kv => new SavedTradeAccount(
+                    kv.Value.Sales, kv.Value.IncomeBeforeTaxes, kv.Value.IncomeAfterTaxes))
+                : null);
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -1009,6 +1029,7 @@ public sealed record SavedUnit(
 /// <param name="TradeRoutes">This player's trade routes (v43 additive; null/omitted when it has none, so a route-free game stays byte-identical to v42).</param>
 /// <param name="NextTradeRouteId">The player's monotonic next-trade-route id counter (v45 additive; null/omitted when still 1 — the default — so a game that never created a route stays byte-identical to v44). Persisted (FreeCol persists <c>Game.nextId</c>) so ids are never reused after a route is deleted and the game is reloaded; pre-v45 saves fall back to <c>max(route id) + 1</c>.</param>
 /// <param name="PeaceTurns">The turn this player's peace took force with each other player, by their id (v53 additive, FreeCol <c>EuropeanAIPlayer.peaceHolds</c>' <c>peaceTurn</c>; null/omitted when it has no recorded peace — the common case and every player in a no-contact game, so a default game stays byte-identical to v52). Feeds the decaying peace-hold (<c>(PEACE_PROBABILITY/100)^(turn − peaceTurn)</c>); pre-v53 saves load with no stamps (the gate is inert without Franklin anyway).</param>
+/// <param name="TradeAccounts">This player's cumulative per-good trade accounting for the Trade report (v56 additive; FreeCol <c>MarketData</c>'s <c>sales</c>/<c>incomeBeforeTaxes</c>/<c>incomeAfterTaxes</c>), as goods-id → net <see cref="SavedTradeAccount"/>. Null/omitted when the player has traded nothing (every counter still 0 — the common pre-trade case and a fresh game), so a never-traded market stays byte-identical to v55; only goods that have actually been traded are written. Pre-v56 saves load with all counters 0.</param>
 public sealed record SavedPlayer(
     int PlayerId, string? NationId, bool IsHuman, int PlayerType,
     int Gold = 0, int Tax = 0,
@@ -1030,7 +1051,18 @@ public sealed record SavedPlayer(
     int? InterventionBells = null,
     IReadOnlyList<SavedTradeRoute>? TradeRoutes = null,
     int? NextTradeRouteId = null,
-    IReadOnlyDictionary<int, int>? PeaceTurns = null);
+    IReadOnlyDictionary<int, int>? PeaceTurns = null,
+    IReadOnlyDictionary<string, SavedTradeAccount>? TradeAccounts = null);
+
+/// <summary>
+/// One good's cumulative trade accounting inside a <see cref="SavedPlayer"/> (v56; FreeCol <c>MarketData</c>'s
+/// <c>sales</c>/<c>incomeBeforeTaxes</c>/<c>incomeAfterTaxes</c>). All three are <b>net</b> totals — a sell adds, a buy
+/// subtracts. Only written for goods that have been traded; mirrors <see cref="Trade.TradeAccount"/>.
+/// </summary>
+/// <param name="Sales">Net units sold (sells +, buys −).</param>
+/// <param name="IncomeBeforeTaxes">Net pre-tax income.</param>
+/// <param name="IncomeAfterTaxes">Net after-tax income.</param>
+public sealed record SavedTradeAccount(int Sales, int IncomeBeforeTaxes, int IncomeAfterTaxes);
 
 /// <summary>A saved trade route (v43): a player's named ring of stops a carrier hauls along automatically. Omitted entirely when the player has none.</summary>
 /// <param name="Id">Per-player route id.</param>

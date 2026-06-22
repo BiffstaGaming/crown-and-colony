@@ -111,7 +111,7 @@ public class HumanNationTests
     {
         Game original = Game.New(Classic, seed: 55, humanNationId: Dutch);
         SaveGame save = SaveGame.From(original);
-        Assert.Equal(55, save.Version); // the current save version (the human's chosen nation rides the existing NationId field, added at v49)
+        Assert.Equal(56, save.Version); // the current save version (the human's chosen nation rides the existing NationId field, added at v49)
         Assert.Equal(Dutch, save.Players!.Single(p => p.IsHuman).NationId); // the picked nation IS persisted on the human
         Game loaded = SaveGame.FromJson(save.ToJson()).Restore(Classic);
         Assert.Equal(Dutch, loaded.HumanPlayer.NationId); // …and restores

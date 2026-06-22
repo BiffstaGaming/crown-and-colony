@@ -276,6 +276,131 @@ public class MarketTests
         Assert.True(dutch.AskPrice(Furs) <= plain.AskPrice(Furs));            // so the Dutch buy price rose less
     }
 
+    // ── Per-good trade accounting (86d3e4bdm): cumulative Sales / IncomeBeforeTaxes / IncomeAfterTaxes for the Trade report ──
+
+    [Fact]
+    public void Selling_AccumulatesTheThreeCounters_AcrossATaxChange()
+    {
+        // Silver: amount 500, bid 16; a 7-unit sale leaves the bid at 16 (round(16×500/507) = 16), so each batch
+        // is priced identically. Two batches, the second taxed, exercise the FreeCol sign convention:
+        //   modifySales(+a), modifyIncomeBeforeTaxes(+revenue), modifyIncomeAfterTaxes(+post-tax gold) per chunk.
+        var market = new Market(Classic);
+        Assert.Equal(0, market.SalesOf(Silver)); // untraded → all three start at 0
+        Assert.Equal(0, market.IncomeBeforeTaxesOf(Silver));
+        Assert.Equal(0, market.IncomeAfterTaxesOf(Silver));
+
+        market.Sell(Silver, 7, taxPercent: 0);   // +7 units, +112 before tax, +112 after tax
+        market.Sell(Silver, 7, taxPercent: 33);  // +7 units, +112 before tax, +75 after tax ((67×112)/100 = 75)
+
+        Assert.Equal(14, market.SalesOf(Silver));            // 7 + 7
+        Assert.Equal(224, market.IncomeBeforeTaxesOf(Silver)); // 112 + 112 (tax never touches the pre-tax total)
+        Assert.Equal(187, market.IncomeAfterTaxesOf(Silver));  // 112 + 75 (the second batch lost 37 to tax)
+    }
+
+    [Fact]
+    public void Buying_DecrementsTheCounters_FreeColSignConvention()
+    {
+        // A buy is a NEGATIVE sale (FreeCol buyInEurope negates modifySales/modifyIncome*): it subtracts the units and
+        // the cost from all three running totals; FreeCol charges no tax on a buy, so the same cost comes off both incomes.
+        var market = new Market(Classic);
+        int askBefore = market.AskPrice(Furs); // first chunk priced here
+
+        int cost = market.Buy(Furs, 50); // a single sub-chunk buy (≤100) → priced wholly at the opening ask
+        Assert.Equal(50 * askBefore, cost);
+
+        Assert.Equal(-50, market.SalesOf(Furs));               // net units sold went negative
+        Assert.Equal(-cost, market.IncomeBeforeTaxesOf(Furs)); // cost subtracted from net pre-tax income
+        Assert.Equal(-cost, market.IncomeAfterTaxesOf(Furs));  // …and the same cost off net after-tax income (no buy tax)
+    }
+
+    [Fact]
+    public void BuyCost_DoesNotTouchTheCounters()
+    {
+        // BuyCost is a non-mutating quote on a throwaway copy — it must leave the live trade accounting untouched.
+        var market = new Market(Classic);
+        market.BuyCost(Furs, 800);
+        Assert.Equal(0, market.SalesOf(Furs));
+        Assert.Equal(0, market.IncomeBeforeTaxesOf(Furs));
+        Assert.Equal(0, market.IncomeAfterTaxesOf(Furs));
+    }
+
+    [Fact]
+    public void SellThenBuy_NetsTheCounters()
+    {
+        // Sell then buy the same good: the counters read NET (a sell adds, a buy subtracts), so the units net toward zero.
+        var market = new Market(Classic);
+        market.Sell(Furs, 100, taxPercent: 0);
+        int salesAfterSell = market.SalesOf(Furs);
+        Assert.Equal(100, salesAfterSell);
+
+        market.Buy(Furs, 40);
+        Assert.Equal(60, market.SalesOf(Furs)); // 100 sold − 40 bought back = 60 net units
+    }
+
+    [Fact]
+    public void TradeAccounting_SurvivesSaveLoad_RoundTrip()
+    {
+        // L2: the three counters round-trip through a save/load. Sell silver from a colony at a tax, so the human's
+        // market carries non-zero Sales/IncomeBeforeTaxes/IncomeAfterTaxes, then save and restore.
+        var game = Game.New(Classic, seed: 7, startingGold: 100, startingTax: 25);
+        game.FoundColony(game.Units[0]);
+        Colony colony = game.Colonies[0];
+        colony.AddGoods(Silver, 30);
+        game.SellColonyGoods(colony, Silver, 30); // moves silver's market AND its trade accounting
+
+        int sales = game.Market.SalesOf(Silver);
+        int before = game.Market.IncomeBeforeTaxesOf(Silver);
+        int after = game.Market.IncomeAfterTaxesOf(Silver);
+        Assert.Equal(30, sales);
+        Assert.True(before > 0 && after > 0 && after < before); // taxed: after-tax strictly below pre-tax
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(sales, loaded.Market.SalesOf(Silver));
+        Assert.Equal(before, loaded.Market.IncomeBeforeTaxesOf(Silver));
+        Assert.Equal(after, loaded.Market.IncomeAfterTaxesOf(Silver));
+    }
+
+    [Fact]
+    public void DefaultGame_OmitsTradeAccounts_AndIsByteIdentical()
+    {
+        // Omit-when-default proof: a fresh game has traded nothing, so the per-good TradeAccounts map is omitted —
+        // the v56 save is byte-identical to the same game serialized as a v55 save with the field cleared.
+        var game = Game.New(Classic, seed: 7);
+        string json = SaveGame.From(game).ToJson();
+
+        Assert.DoesNotContain("TradeAccounts", json); // the field is omitted entirely when nothing has been traded
+
+        // A v55 save of the untraded game (TradeAccounts cleared) is byte-identical to the v56 save bar the version int.
+        SaveGame v56 = SaveGame.From(game);
+        SaveGame asV55 = v56 with
+        {
+            Version = 55,
+            Players = v56.Players!.Select(p => p with { TradeAccounts = null }).ToList(),
+        };
+        Assert.Equal(asV55.ToJson().Replace("\"Version\": 55", "\"Version\": 56"), v56.ToJson());
+    }
+
+    [Fact]
+    public void PreV56Save_LoadsWithZeroedCounters()
+    {
+        // A pre-v56 save carries no TradeAccounts → every counter loads at 0.
+        var game = Game.New(Classic, seed: 7, startingGold: 100);
+        game.FoundColony(game.Units[0]);
+        game.Colonies[0].AddGoods(Silver, 20);
+        game.SellColonyGoods(game.Colonies[0], Silver, 20);
+
+        SaveGame pre = SaveGame.From(game) with
+        {
+            Version = 55,
+            Players = SaveGame.From(game).Players!.Select(p => p with { TradeAccounts = null }).ToList(),
+        };
+        Game loaded = SaveGame.FromJson(pre.ToJson()).Restore(Classic);
+
+        Assert.Equal(0, loaded.Market.SalesOf(Silver)); // counters absent → 0 (the market inventory still round-trips)
+        Assert.Equal(0, loaded.Market.IncomeBeforeTaxesOf(Silver));
+    }
+
     /// <summary>Founds a colony for a human (Dutch or no-nation), sells 600 furs from it, and returns the market's resulting absorbed volume.</summary>
     private static int MarketAmountAfterColonySale(bool asDutch)
     {

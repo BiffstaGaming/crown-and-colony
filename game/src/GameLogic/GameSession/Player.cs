@@ -255,4 +255,5 @@ public sealed record RestoredPlayer(
     int InterventionBells = 0,
     IReadOnlyList<TradeRoute>? TradeRoutes = null,
     int? NextTradeRouteId = null,
-    IReadOnlyDictionary<int, int>? PeaceTurns = null);
+    IReadOnlyDictionary<int, int>? PeaceTurns = null,
+    IReadOnlyDictionary<string, TradeAccount>? TradeAccounts = null);

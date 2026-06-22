@@ -28,6 +28,12 @@ public sealed class Market
         public int AmountInMarket { get; set; }
         public int Bid { get; set; }  // paidForSale — what the player receives
         public int Ask { get; set; }  // costToBuy — what the player pays
+
+        // Cumulative trade accounting (FreeCol MarketData.sales / incomeBeforeTaxes / incomeAfterTaxes). Selling
+        // increments all three; buying decrements all three (a buy is a negative sale), so they read as NET trade.
+        public int Sales { get; set; }
+        public int IncomeBeforeTaxes { get; set; }
+        public int IncomeAfterTaxes { get; set; }
     }
 
     private readonly Dictionary<string, Datum> _data = [];
@@ -72,6 +78,29 @@ public sealed class Market
     public int AmountInMarket(string goodsId) => _data.TryGetValue(goodsId, out var d) ? d.AmountInMarket : 0;
 
     /// <summary>
+    /// The cumulative <b>net units sold</b> of a good for the Trade report (FreeCol <c>MarketData.getSales</c>): every
+    /// <see cref="Sell"/> adds the units, every <see cref="Buy"/> subtracts them, so a player who has bought back more
+    /// than sold reads negative. 0 for an untraded or untradeable good.
+    /// </summary>
+    public int SalesOf(string goodsId) => _data.TryGetValue(goodsId, out var d) ? d.Sales : 0;
+
+    /// <summary>
+    /// The cumulative <b>net pre-tax income</b> from a good for the Trade report (FreeCol
+    /// <c>MarketData.getIncomeBeforeTaxes</c>): every <see cref="Sell"/> adds its pre-tax revenue, every <see cref="Buy"/>
+    /// subtracts its cost (a buy is a negative sale, with no tax notion), so this is net trade profit before tax. 0 for an
+    /// untraded or untradeable good.
+    /// </summary>
+    public int IncomeBeforeTaxesOf(string goodsId) => _data.TryGetValue(goodsId, out var d) ? d.IncomeBeforeTaxes : 0;
+
+    /// <summary>
+    /// The cumulative <b>net after-tax income</b> from a good for the Trade report (FreeCol
+    /// <c>MarketData.getIncomeAfterTaxes</c>): every <see cref="Sell"/> adds its post-tax gold, every <see cref="Buy"/>
+    /// subtracts its cost (FreeCol charges no tax on a buy, so the same cost is taken off both income totals), so this is
+    /// the net gold the trade actually moved through the treasury. 0 for an untraded or untradeable good.
+    /// </summary>
+    public int IncomeAfterTaxesOf(string goodsId) => _data.TryGetValue(goodsId, out var d) ? d.IncomeAfterTaxes : 0;
+
+    /// <summary>
     /// Sells goods into the European market, applying <paramref name="taxPercent"/>
     /// to the revenue and pushing the price down as the inventory grows. Sales are
     /// chunked (<see cref="CargoChunk"/>) so each batch is priced after the previous
@@ -100,8 +129,14 @@ public sealed class Market
         {
             int chunk = Math.Min(remaining, CargoChunk);
             int chunkRevenue = chunk * d.Bid;        // priced at the current bid…
+            int chunkAfterTax = (100 - taxPercent) * chunkRevenue / 100; // integer truncation, as FreeCol
             beforeTax += chunkRevenue;
-            afterTax += (100 - taxPercent) * chunkRevenue / 100; // integer truncation, as FreeCol
+            afterTax += chunkAfterTax;
+            // Trade accounting (FreeCol ServerPlayer.sellInEurope → modifySales/modifyIncomeBeforeTaxes/
+            // modifyIncomeAfterTaxes): a sell adds the chunk's units + pre/post-tax revenue to the running totals.
+            d.Sales += chunk;
+            d.IncomeBeforeTaxes += chunkRevenue;
+            d.IncomeAfterTaxes += chunkAfterTax;
             d.AmountInMarket += (int)MathF.Round(chunk * (float)volumeFactor, MidpointRounding.AwayFromZero); // …the market absorbs the goods (a trade advantage absorbs less)…
             Recompute(d);                            // …and the price falls for the next chunk.
             remaining -= chunk;
@@ -143,7 +178,12 @@ public sealed class Market
         return ChunkedBuy(preview, amount, volumeFactor); // mutates the throwaway copy only
     }
 
-    /// <summary>The chunked buy loop shared by <see cref="Buy"/> (on the live datum) and <see cref="BuyCost"/> (on a copy).</summary>
+    /// <summary>
+    /// The chunked buy loop shared by <see cref="Buy"/> (on the live datum) and <see cref="BuyCost"/> (on a copy). The
+    /// trade-accounting decrements land on whichever datum is passed: on the live one for a real <see cref="Buy"/>, and
+    /// on the throwaway copy for a <see cref="BuyCost"/> quote — where they are discarded with the copy, so a price quote
+    /// never moves the running totals.
+    /// </summary>
     private static int ChunkedBuy(Datum d, int amount, double volumeFactor)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(amount);
@@ -152,7 +192,14 @@ public sealed class Market
         while (remaining > 0)
         {
             int chunk = Math.Min(remaining, CargoChunk);
-            cost += chunk * d.Ask; // priced at the current ask…
+            int chunkCost = chunk * d.Ask; // priced at the current ask…
+            cost += chunkCost;
+            // Trade accounting (FreeCol ServerPlayer.buyInEurope → modifySales/modifyIncomeBeforeTaxes/
+            // modifyIncomeAfterTaxes, all NEGATED): a buy is a negative sale — it subtracts the chunk's units and its
+            // cost from the running totals (FreeCol charges no tax on a buy, so the same cost comes off both incomes).
+            d.Sales -= chunk;
+            d.IncomeBeforeTaxes -= chunkCost;
+            d.IncomeAfterTaxes -= chunkCost;
             d.AmountInMarket = Math.Max(
                 d.AmountInMarket - (int)MathF.Round(chunk * (float)volumeFactor, MidpointRounding.AwayFromZero),
                 MinimumAmountInMarket); // …buying removes supply (a trade advantage removes less)…
@@ -273,6 +320,35 @@ public sealed class Market
             d.AmountInMarket = d.Goods.Market!.InitialAmount;
             d.Ask = -1; // disable the jump-clamp for the recompute (as LoadDeltas does)
             Recompute(d);
+            // FreeCol's reinitialiseMarket builds a fresh Market, so the cumulative trade accounting resets too —
+            // a newly-independent nation's Trade report starts from a clean slate.
+            d.Sales = 0;
+            d.IncomeBeforeTaxes = 0;
+            d.IncomeAfterTaxes = 0;
+        }
+    }
+
+    /// <summary>
+    /// Captures the cumulative trade accounting of every good that has actually been traded (any of the three counters
+    /// non-zero) for the save — sparse + omit-when-default, so a market that has seen no trade serializes to an empty map
+    /// and a default game round-trips byte-identically. Keyed by goods id.
+    /// </summary>
+    internal IReadOnlyDictionary<string, TradeAccount> SaveCounters() =>
+        _data.Values
+            .Where(d => d.Sales != 0 || d.IncomeBeforeTaxes != 0 || d.IncomeAfterTaxes != 0)
+            .ToDictionary(d => d.Goods.Id, d => new TradeAccount(d.Sales, d.IncomeBeforeTaxes, d.IncomeAfterTaxes));
+
+    /// <summary>Restores the cumulative trade accounting (from a save). Goods absent from the map keep their zero counters.</summary>
+    internal void LoadCounters(IReadOnlyDictionary<string, TradeAccount> counters)
+    {
+        foreach ((string goodsId, TradeAccount account) in counters)
+        {
+            if (_data.TryGetValue(goodsId, out Datum? d))
+            {
+                d.Sales = account.Sales;
+                d.IncomeBeforeTaxes = account.IncomeBeforeTaxes;
+                d.IncomeAfterTaxes = account.IncomeAfterTaxes;
+            }
         }
     }
 
@@ -302,3 +378,13 @@ public sealed class Market
 /// <param name="GoldBeforeTax">Revenue before sales tax.</param>
 /// <param name="GoldAfterTax">Gold actually credited to the treasury.</param>
 public readonly record struct SaleResult(int GoldBeforeTax, int GoldAfterTax);
+
+/// <summary>
+/// One good's cumulative trade accounting for the Trade report (FreeCol <c>MarketData</c>'s
+/// <c>sales</c>/<c>incomeBeforeTaxes</c>/<c>incomeAfterTaxes</c>). All three are <b>net</b> totals: a sell adds, a buy
+/// subtracts. Carries the per-good counters across a save (see <see cref="Market.SaveCounters"/>/<see cref="Market.LoadCounters"/>).
+/// </summary>
+/// <param name="Sales">Net units sold (sell adds, buy subtracts).</param>
+/// <param name="IncomeBeforeTaxes">Net pre-tax income (sell adds revenue, buy subtracts cost).</param>
+/// <param name="IncomeAfterTaxes">Net after-tax income (sell adds post-tax gold, buy subtracts cost).</param>
+public readonly record struct TradeAccount(int Sales, int IncomeBeforeTaxes, int IncomeAfterTaxes);
