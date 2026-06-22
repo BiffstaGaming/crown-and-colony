@@ -233,11 +233,14 @@ public sealed partial class Game
                 break;
             case MonarchAction.LowerTaxWar:
             case MonarchAction.LowerTaxOther:
-                SetTax(_human, LowerTaxAmount(rng)); // immediate goodwill, no player choice
+                int newRate = LowerTaxAmount(rng);
+                SetTax(_human, newRate); // immediate goodwill, no player choice
+                _monarchDecreeNotices.Add(new MonarchDecreeNotice(action, TaxRate: newRate)); // tell the human the King lowered the tax
                 break;
             case MonarchAction.WaiveTax:
                 // Message-only (FreeCol-exact): the King announces he graciously waives a tax increase, with no
                 // mechanical effect. The presentation surfaces the announcement; nothing in game state changes.
+                _monarchDecreeNotices.Add(new MonarchDecreeNotice(action));
                 break;
             case MonarchAction.MonarchMercenaries:
             case MonarchAction.HessianMercenaries:
@@ -247,14 +250,22 @@ public sealed partial class Game
                 }
                 break;
             case MonarchAction.SupportSea:
-                GrantSupport(GetSupport(naval: true)); // free naval aid after privateer raids
+                IReadOnlyList<ForceEntry> seaAid = GetSupport(naval: true); // free naval aid after privateer raids
+                GrantSupport(seaAid);
                 _human.SupportSeaGranted = true;       // one-shot
+                _monarchDecreeNotices.Add(new MonarchDecreeNotice(action, UnitCount: seaAid.Sum(e => e.Count)));
                 break;
             case MonarchAction.SupportLand:
-                GrantSupport(GetSupport(naval: false)); // free land aid (unreachable via the chooser at medium; handler kept for fidelity)
+                IReadOnlyList<ForceEntry> landAid = GetSupport(naval: false); // free land aid (unreachable via the chooser at medium; handler kept for fidelity)
+                GrantSupport(landAid);
+                _monarchDecreeNotices.Add(new MonarchDecreeNotice(action, UnitCount: landAid.Sum(e => e.Count)));
                 break;
             case MonarchAction.AddToRef:
+                Force refBefore = EnsureRefForce();
+                int landNavalBefore = refBefore.LandUnitCount + refBefore.NavalUnitCount;
                 AddToRef(rng); // the King grows the army he'll send if you rebel
+                int added = (refBefore.LandUnitCount + refBefore.NavalUnitCount) - landNavalBefore;
+                _monarchDecreeNotices.Add(new MonarchDecreeNotice(action, UnitCount: added));
                 break;
             case MonarchAction.DeclareWar:
                 // The King drags you into his war with a rival European power (FreeCol MONARCH_DECLARE_WAR):
@@ -264,7 +275,10 @@ public sealed partial class Game
                 break;
             case MonarchAction.DeclarePeace:
                 // The King makes peace for you with a power you're at war/cease-fire with (FreeCol MONARCH_DECLARE_PEACE).
-                ImposeMonarchStance(Stance.Peace, MonarchPotentialFriends(), rng);
+                if (ImposeMonarchStance(Stance.Peace, MonarchPotentialFriends(), rng) is { } pacified)
+                {
+                    _monarchDecreeNotices.Add(new MonarchDecreeNotice(action, RivalNationId: pacified.NationId));
+                }
                 break;
             default:
                 break;
@@ -277,15 +291,16 @@ public sealed partial class Game
     /// <paramref name="candidates"/> on the monarch's own RNG (never stream 0); a no-op when none are eligible
     /// (the action gate normally prevents that). Stance only — no tension delta and no save change (stances persist).
     /// </summary>
-    private void ImposeMonarchStance(Stance stance, IEnumerable<Player> candidates, IGameRandom rng)
+    private Player? ImposeMonarchStance(Stance stance, IEnumerable<Player> candidates, IGameRandom rng)
     {
         List<Player> eligible = candidates.OrderBy(p => p.PlayerId).ToList();
         if (eligible.Count == 0)
         {
-            return;
+            return null;
         }
         Player target = eligible[rng.Next(eligible.Count)];
         SetStance(_human.PlayerId, target.PlayerId, stance);
+        return target;
     }
 
     // FreeCol getWarSupport tuning: the Crown is cautious — it always helps when the rival is at least as strong
@@ -310,6 +325,8 @@ public sealed partial class Game
         }
         Player enemy = eligible[rng.Next(eligible.Count)];
 
+        int supportUnits = 0;
+        int supportGold = 0;
         IReadOnlyList<ForceEntry> support = GetWarSupport(enemy, rng);
         if (support.Count > 0)
         {
@@ -317,9 +334,14 @@ public sealed partial class Game
             int gold = MonarchOpts.WarSupportGold;
             gold += gold / 10 * (rng.Next(5) - 2); // ±2 tenths → ±20%, on the monarch RNG
             _human.Gold += gold;
+            supportUnits = support.Sum(e => e.Count);
+            supportGold = gold;
         }
 
         SetStance(_human.PlayerId, enemy.PlayerId, Stance.War);
+        // Tell the human their King dragged them into a war (with any free support he sent).
+        _monarchDecreeNotices.Add(new MonarchDecreeNotice(
+            MonarchAction.DeclareWar, RivalNationId: enemy.NationId, UnitCount: supportUnits, Gold: supportGold));
     }
 
     /// <summary>

@@ -152,6 +152,8 @@ public partial class GameController : Node2D
     private EmigrationChoicePanel _emigrationPanel = null!;
     private PreCombatPanel _preCombatPanel = null!;
     private TurnMessagePanel _turnMessagePanel = null!;
+    private MessageLogPanel _messageLogPanel = null!;
+    private readonly List<MessageLogPanel.Entry> _messageLog = []; // in-session history of per-turn notices (ADR-009 / no save bump — never serialized)
     private PanelContainer _tradeRoutePanel = null!;
     private PanelContainer _colonyReportPanel = null!;
     private PanelContainer _findSettlementPanel = null!;
@@ -226,6 +228,7 @@ public partial class GameController : Node2D
         _emigrationPanel = GetNode<EmigrationChoicePanel>("UI/EmigrationChoicePanel");
         _preCombatPanel = GetNode<PreCombatPanel>("UI/PreCombatPanel");
         _turnMessagePanel = GetNode<TurnMessagePanel>("UI/TurnMessagePanel");
+        _messageLogPanel = GetNode<MessageLogPanel>("UI/MessageLogPanel");
         _tradeRoutePanel = GetNode<PanelContainer>("UI/TradeRoutePanel");
         _colonyReportPanel = GetNode<PanelContainer>("UI/ColonyReportPanel");
         _findSettlementPanel = GetNode<PanelContainer>("UI/FindSettlementPanel");
@@ -243,6 +246,7 @@ public partial class GameController : Node2D
         GetNode<Button>("UI/EuropeButton").Pressed += OpenEuropePanel;
         GetNode<Button>("UI/TradeRoutesButton").Pressed += OpenTradeRoutePanel;
         GetNode<Button>("UI/ReportsButton").Pressed += OpenColonyReportPanel;
+        GetNode<Button>("UI/MessageLogButton").Pressed += OpenMessageLogPanel;
         GetNode<Button>("UI/ColopediaButton").Pressed += OpenColopediaPanel;
         GetNode<Button>("UI/HighScoresButton").Pressed += OpenHighScoresPanel;
         GetNode<Button>("UI/DiplomacyButton").Pressed += OpenNegotiationPanel;
@@ -439,12 +443,21 @@ public partial class GameController : Node2D
         var messages = _game.CombatNotices.Select(FormatCombatNotice)
             .Concat(_game.ColonyRaidNotices.Select(FormatColonyRaidNotice))
             .Concat(_game.ColonyLossNotices.Select(FormatColonyLossNotice))
+            .Concat(_game.WarehouseOverflowNotices.Select(FormatWarehouseOverflowNotice)) // warehouse spilling over capacity
+            .Concat(_game.ColonyFamineNotices.Select(FormatColonyFamineNotice))           // a colony lost a colonist to famine
+            .Concat(_game.ColonyStarvedNotices.Select(FormatColonyStarvedNotice))         // a colony starved out of existence
+            .Concat(_game.MonarchDecreeNotices.Select(FormatMonarchDecreeNotice))         // immediate King's decrees (war/peace/tax/support/REF)
             .Concat(_game.CustomHouseSaleNotices.Select(FormatCustomHouseSaleNotice))
             .ToList();
         if (_game.IsHumanDefeated)
         {
             // The AI phase took the human's last colony/unit — surface the defeat after the loss notice that caused it.
             messages.Add("💀 You have been defeated — your last colony and units are gone.");
+        }
+        // Keep an in-session record so the player can re-open the log later (session-only; never saved — no save bump).
+        if (messages.Count > 0)
+        {
+            _messageLog.Add(new MessageLogPanel.Entry(_game.Turn, messages));
         }
         _turnMessagePanel.Open(messages); // no-op (stays hidden) when there were no events this turn
         RefreshView();
@@ -509,6 +522,52 @@ public partial class GameController : Node2D
     /// <summary>Turns a custom-house auto-sale into a turn-message row ("💰 Your custom house in X sold N goods for G gold.").</summary>
     private string FormatCustomHouseSaleNotice(CustomHouseSaleNotice notice) =>
         $"💰 Your custom house in {notice.ColonyName} sold {notice.Amount} {_game.Ruleset.Goods(notice.GoodsId).ShortName} for {notice.Gold} gold.";
+
+    /// <summary>Turns a warehouse-overflow notice into a turn-message row (goods wasted over the warehouse cap).</summary>
+    private string FormatWarehouseOverflowNotice(WarehouseOverflowNotice notice) =>
+        $"📦 {notice.ColonyName}'s warehouse is full — {notice.Wasted} {_game.Ruleset.Goods(notice.GoodsId).ShortName} spoiled this turn.";
+
+    /// <summary>Turns a survivable-famine notice into a turn-message row (a colony lost a colonist but lives on).</summary>
+    private static string FormatColonyFamineNotice(ColonyFamineNotice notice) =>
+        $"🍞 {notice.ColonyName} could not feed everyone — a colonist starved (population now {notice.PopulationAfter}).";
+
+    /// <summary>Turns a colony-destroyed-by-starvation notice into a turn-message row.</summary>
+    private static string FormatColonyStarvedNotice(ColonyStarvedNotice notice) =>
+        $"☠ {notice.ColonyName} starved and was lost at ({notice.Position.X},{notice.Position.Y}).";
+
+    /// <summary>
+    /// Turns an immediate King's-decree notice into a turn-message row (the no-choice monarch actions — lower/waive
+    /// tax, declare war/peace on the player's behalf, free support, REF growth). The tax-rise and mercenary
+    /// <em>demands</em> never reach here; they surface through <see cref="MonarchDialog"/> instead.
+    /// </summary>
+    private string FormatMonarchDecreeNotice(MonarchDecreeNotice notice)
+    {
+        switch (notice.Action)
+        {
+            case MonarchAction.LowerTaxWar:
+            case MonarchAction.LowerTaxOther:
+                return $"👑 The Crown lowered your tax rate to {notice.TaxRate}%.";
+            case MonarchAction.WaiveTax:
+                return "👑 The Crown graciously waived a tax increase this year.";
+            case MonarchAction.DeclareWar:
+                string atWar = notice.RivalNationId is { } w ? NationLabel(w) : "a rival power";
+                string support = notice.UnitCount > 0
+                    ? $" He sends {notice.UnitCount} units" + (notice.Gold > 0 ? $" and {notice.Gold} gold to aid the fight." : " to aid the fight.")
+                    : "";
+                return $"👑 The Crown declared war on the {atWar} on your behalf.{support}";
+            case MonarchAction.DeclarePeace:
+                string atPeace = notice.RivalNationId is { } p ? NationLabel(p) : "a rival power";
+                return $"👑 The Crown made peace with the {atPeace} on your behalf.";
+            case MonarchAction.SupportSea:
+                return $"👑 The Crown sent {notice.UnitCount} warship(s) to your defence.";
+            case MonarchAction.SupportLand:
+                return $"👑 The Crown sent {notice.UnitCount} soldier(s) to your defence.";
+            case MonarchAction.AddToRef:
+                return $"👑 The Crown reinforced the Royal Expeditionary Force with {notice.UnitCount} unit(s).";
+            default:
+                return "👑 The Crown issued a decree.";
+        }
+    }
 
     /// <summary>The display label for a nation id (e.g. <c>model.nation.dutch</c> → "Dutch").</summary>
     private static string NationLabel(string nationId)
@@ -951,6 +1010,15 @@ public partial class GameController : Node2D
     /// <summary>Opens the empire colony report (per-colony population / production / build requirements). Public so scene tests can drive it.</summary>
     public void OpenColonyReportPanel() =>
         ((ColonyReportPanel)_colonyReportPanel).Open(_game);
+
+    /// <summary>
+    /// Opens the in-session message log — the accumulated per-turn notices that the dismissible
+    /// <see cref="TurnMessagePanel"/> showed and then forgot. Session-only (the <see cref="_messageLog"/> history is
+    /// never serialized, so the save format is unchanged — ADR-009); a reloaded game's log starts empty. Public so
+    /// scene tests can drive it directly.
+    /// </summary>
+    public void OpenMessageLogPanel() =>
+        _messageLogPanel.Open(_messageLog);
 
     /// <summary>Opens the Find Settlement dialog (pick a colony to recenter the camera on it). Public so scene tests can drive it.</summary>
     public void OpenFindSettlementPanel() =>

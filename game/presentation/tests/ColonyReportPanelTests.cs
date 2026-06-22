@@ -119,7 +119,7 @@ public class ColonyReportPanelTests
     }
 
     [TestCase]
-    public async Task MarketTab_ListsTradeableGoodsWithPrices()
+    public async Task TradeTab_ListsTradeableGoodsWithPricesAndVolume()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
         await runner.SimulateFrames(2);
@@ -128,16 +128,86 @@ public class ColonyReportPanelTests
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
 
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Market").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Trade").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
-        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Trade & market prices");
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Trade");
         var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
-        // Tobacco is always market-tradeable in the classic ruleset → its priced row renders, named by the good.
-        var tobacco = dynamic.GetNodeOrNull<Label>("Market_tobacco");
+        // The net-after-tax summary line always renders.
+        AssertThat(dynamic.GetNodeOrNull("TradeTotal")).IsNotNull();
+        // Tobacco is always market-tradeable in the classic ruleset → its row renders, with price + sold + income.
+        var tobacco = dynamic.GetNodeOrNull<Label>("Trade_tobacco");
         AssertThat(tobacco).IsNotNull();
         AssertThat(tobacco!.Text).Contains("sell");
         AssertThat(tobacco.Text).Contains("buy");
+        AssertThat(tobacco.Text).Contains("sold");   // B4 cumulative units-sold column
+        AssertThat(tobacco.Text).Contains("income"); // B4 income before/after tax column
+    }
+
+    [TestCase]
+    public async Task ExplorationTab_RendersFromASeededGame()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Exploration").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Exploration");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        // The human's opening tile reveal discovers at least one land region, so the header + a Region_ row render;
+        // if (rarely) none is discovered, the empty-state line renders instead — either way the tab built a row.
+        bool rendered = dynamic.GetNodeOrNull("ExplorationHeader") is not null
+            || dynamic.GetNodeOrNull("ExplorationEmpty") is not null;
+        AssertThat(rendered).IsTrue();
+    }
+
+    [TestCase]
+    public async Task RequirementsTab_RendersAColonyWarningSection()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // Found a colony so the requirements report has a per-colony section.
+        Game game = GetGame(controller);
+        Colony colony = game.FoundColony(game.Units[0]);
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Requirements").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Requirements");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        AssertThat(dynamic.GetNodeOrNull($"Requirements_{colony.Id}")).IsNotNull(); // the per-colony section header
+    }
+
+    [TestCase]
+    public async Task MilitaryTab_ShowsHumanStrengthAndRefComparison()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Military").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Military");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var human = dynamic.GetNodeOrNull<Label>("MilitaryHuman");
+        AssertThat(human).IsNotNull();
+        AssertThat(human!.Text).Contains("Land units");
+        // The REF comparison row renders with the King's expeditionary-force counts.
+        var ref_ = dynamic.GetNodeOrNull<Label>("MilitaryRef");
+        AssertThat(ref_).IsNotNull();
+        AssertThat(ref_!.Text).Contains("Naval units");
     }
 
     [TestCase]

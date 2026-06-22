@@ -534,6 +534,66 @@ public class MonarchTests
         Assert.DoesNotContain(MonarchAction.SupportLand, game.GetMonarchActionChoices(50).Select(c => c.Action));
     }
 
+    // ── King's-decree notices: immediate (no-choice) monarch actions surface a player-facing notice ────────
+
+    [Fact]
+    public void DispatchLowerTax_RecordsADecreeNotice_WithTheNewRate()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.TaxRate = 40;
+
+        game.DispatchMonarchAction(MonarchAction.LowerTaxWar, new ScriptedRandom(3));
+
+        MonarchDecreeNotice notice = Assert.Single(game.MonarchDecreeNotices);
+        Assert.Equal(MonarchAction.LowerTaxWar, notice.Action);
+        Assert.Equal(36, notice.TaxRate); // 40 − 1 − 3
+    }
+
+    [Fact]
+    public void DispatchWaiveTax_RecordsAMessageOnlyDecreeNotice()
+    {
+        Game game = FoundedGame();
+
+        game.DispatchMonarchAction(MonarchAction.WaiveTax, new ScriptedRandom());
+
+        MonarchDecreeNotice notice = Assert.Single(game.MonarchDecreeNotices);
+        Assert.Equal(MonarchAction.WaiveTax, notice.Action);
+    }
+
+    [Fact]
+    public void DispatchSupportSea_RecordsADecreeNotice_WithTheUnitCount()
+    {
+        Game game = FoundedGame();
+
+        game.DispatchMonarchAction(MonarchAction.SupportSea, new Pcg32Random(1));
+
+        MonarchDecreeNotice notice = Assert.Single(game.MonarchDecreeNotices);
+        Assert.Equal(MonarchAction.SupportSea, notice.Action);
+        Assert.Equal(1, notice.UnitCount); // one frigate
+    }
+
+    [Fact]
+    public void DispatchAddToRef_RecordsADecreeNotice_WithTheUnitsAdded()
+    {
+        Game game = FoundedGame();
+
+        game.DispatchMonarchAction(MonarchAction.AddToRef, new Pcg32Random(1));
+
+        MonarchDecreeNotice notice = Assert.Single(game.MonarchDecreeNotices);
+        Assert.Equal(MonarchAction.AddToRef, notice.Action);
+        Assert.True(notice.UnitCount > 0); // the King added at least one unit
+    }
+
+    [Fact]
+    public void DispatchNoAction_RecordsNoDecreeNotice()
+    {
+        Game game = FoundedGame();
+
+        game.DispatchMonarchAction(MonarchAction.NoAction, new ScriptedRandom());
+
+        Assert.Empty(game.MonarchDecreeNotices);
+    }
+
     [Fact]
     public void SupportSeaGranted_PersistsAcrossSaveLoad()
     {

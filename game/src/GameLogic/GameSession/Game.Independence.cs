@@ -750,6 +750,36 @@ public sealed partial class Game
         _units.Where(u => u.OwnerId == player.PlayerId && !u.IsNative && !u.Type.IsNaval).Sum(OffenceBase);
 
     /// <summary>
+    /// The human's military strength for the Military report (a read-only oracle, ADR-006): the combined land attack
+    /// power of every owned land unit (<see cref="LandPowerOf"/>, the War-of-Independence yardstick), plus a count of
+    /// the player's land and naval units. The presentation surfaces these next to the King's
+    /// <see cref="ExpeditionaryForceStrength"/> so the player can gauge the rebellion's odds. RNG-free; never mutates.
+    /// </summary>
+    /// <returns>The human's combined land attack power and its land / naval unit counts.</returns>
+    public (double LandPower, int LandUnits, int NavalUnits) HumanMilitaryStrength()
+    {
+        double landPower = LandPowerOf(_human);
+        int land = _units.Count(u => u.OwnerId == _human.PlayerId && !u.IsNative && !u.Type.IsNaval);
+        int naval = _units.Count(u => u.OwnerId == _human.PlayerId && !u.IsNative && u.Type.IsNaval);
+        return (landPower, land, naval);
+    }
+
+    /// <summary>
+    /// The Royal Expeditionary Force as it currently stands, for the Military report (a read-only oracle, ADR-006):
+    /// the King's growing army that lands if the human declares independence (FreeCol
+    /// <c>Monarch.getExpeditionaryForce</c>). Returns the REF <see cref="Force"/>'s land and naval <b>unit counts</b>;
+    /// the force materialises its base composition for the read without storing it (no save change — the persisted REF
+    /// is whatever <see cref="RefForceOrNull"/> holds). The presentation surfaces this beside
+    /// <see cref="HumanMilitaryStrength"/> as the strength comparison.
+    /// </summary>
+    /// <returns>The REF's land and naval unit counts.</returns>
+    public (int LandUnits, int NavalUnits) ExpeditionaryForceStrength()
+    {
+        Force ref_ = _refForce ?? BuildBaseRef(); // read-only: don't store a lazily-built base (RefForceOrNull stays the saved truth)
+        return (ref_.LandUnitCount, ref_.NavalUnitCount);
+    }
+
+    /// <summary>
     /// Whether the rebel has broken the Royal Expeditionary Force (FreeCol <c>checkForREFDefeat</c>): the REF holds no
     /// settlements, the rebel's land power is at least 1.5× the REF's, and the REF is reduced below 7 land or 2 naval
     /// units (counting the whole force, including reinforcements still mustering — so the win can't fire before it lands).

@@ -1,4 +1,4 @@
-[gd_scene load_steps=26 format=3]
+[gd_scene load_steps=27 format=3]
 
 [ext_resource type="Script" path="res://presentation/GameController.cs" id="1"]
 [ext_resource type="Script" path="res://presentation/MapView.cs" id="2"]
@@ -26,6 +26,7 @@
 [ext_resource type="Script" path="res://presentation/HighScoresPanel.cs" id="25"]
 [ext_resource type="Script" path="res://presentation/DeclarationPanel.cs" id="26"]
 [ext_resource type="Script" path="res://presentation/NegotiationPanel.cs" id="27"]
+[ext_resource type="Script" path="res://presentation/MessageLogPanel.cs" id="28"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -457,6 +458,44 @@ size_flags_vertical = 3
 [node name="OkButton" type="Button" parent="UI/TurnMessagePanel/VBox"]
 layout_mode = 2
 text = "OK"
+
+[node name="MessageLogPanel" type="PanelContainer" parent="UI"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -220.0
+offset_right = 300.0
+offset_bottom = 220.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("28")
+
+[node name="VBox" type="VBoxContainer" parent="UI/MessageLogPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="MessageLogTitle" type="Label" parent="UI/MessageLogPanel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+text = "Message log"
+
+[node name="Scroll" type="ScrollContainer" parent="UI/MessageLogPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Dynamic" type="VBoxContainer" parent="UI/MessageLogPanel/VBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="CloseButton" type="Button" parent="UI/MessageLogPanel/VBox"]
+layout_mode = 2
+text = "Close"
 
 [node name="EmigrationChoicePanel" type="PanelContainer" parent="UI"]
 visible = false
@@ -919,6 +958,21 @@ offset_bottom = -16.0
 grow_horizontal = 0
 grow_vertical = 0
 text = "End Turn"
+
+[node name="MessageLogButton" type="Button" parent="UI"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -140.0
+offset_top = -100.0
+offset_right = -16.0
+offset_bottom = -60.0
+grow_horizontal = 0
+grow_vertical = 0
+tooltip_text = "Re-open the log of this session's per-turn events."
+text = "Messages"
 
 [node name="MiniMap" type="Control" parent="UI"]
 clip_contents = true

@@ -1268,6 +1268,34 @@ public class IndependenceTests
     }
 
     [Fact]
+    public void ExpeditionaryForceStrength_MatchesTheBaseRefCounts_WithoutMaterialisingIt()
+    {
+        // The read-only Military-report oracle reports the King's growing army's land/naval counts and must NOT store
+        // a lazily-built base force (RefForceOrNull stays the saved truth — no spurious save state, ADR-009).
+        (Game game, _) = RebellionReady();
+        (int land, int naval) = game.ExpeditionaryForceStrength();
+        Assert.Equal(31 + 15 + 14, land); // medium base: infantry + cavalry + artillery
+        Assert.Equal(8, naval);            // 8 men-o-war
+        Assert.Null(game.RefForceOrNull);  // the read did not materialise/store the base force
+    }
+
+    [Fact]
+    public void HumanMilitaryStrength_CountsTheHumansLandUnits_AndReportsTheGateYardstickPower()
+    {
+        (Game game, Colony colony) = RebellionReady();
+        Player human = game.HumanPlayer;
+        int landBefore = game.HumanMilitaryStrength().LandUnits;
+
+        Unit soldier = game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), colony.Position, human.PlayerId);
+        soldier.RoleId = InfantryRole; // arm it so it carries land offence
+
+        (double landPower, int land, _) = game.HumanMilitaryStrength();
+        Assert.Equal(landBefore + 1, land);                            // one more land unit counted
+        Assert.Equal(game.LandPowerOf(human), landPower, precision: 6); // power matches the independence-gate yardstick
+        Assert.True(landPower > 0);
+    }
+
+    [Fact]
     public void ShouldAiDeclareIndependence_IsFalse_UntilTheAiOutStrengthsTheRef()
     {
         (Game game, Player power, Colony colony) = AiRebellionReady();

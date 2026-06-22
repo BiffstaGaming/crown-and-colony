@@ -31,11 +31,22 @@ namespace CrownAndColony.Presentation;
 /// <item><b>Labour</b> (`86d3drn6m` — FreeCol's ReportLabourPanel): every human colonist listed by type, location and job —
 /// the colony residents from the worker overlays (<see cref="Colony.TileWorkers"/> / <see cref="Colony.BuildingOccupants"/> /
 /// idle) plus the on-map person units, grouped by unit type.</item>
-/// <item><b>Foreign</b> / <b>Natives</b> / <b>Religion</b> (`86d3c9x3c`): rival-power, discovered-settlement and
-/// immigration summaries.</item>
-/// <item><b>Market</b> (`86d3dmn6d` — FreeCol's ReportTradePanel, price subset): every tradeable good's current
-/// sell (bid) and buy (ask) price plus a boycott marker, read straight from the human's <see cref="Game.Market"/>.
-/// Volume/income columns need accumulated trade history (no oracle yet) and are scoped out.</item>
+/// <item><b>Requirements</b> (`86d3e4buh` — FreeCol's ReportRequirementsPanel): per colony, the production
+/// shortfalls — a worked tile / manned building whose good wants an expert that isn't doing the job (bad assignment),
+/// or that no expert in the colony produces (missing expert). Reads the colony worker overlays + the ruleset's
+/// <see cref="Specification.Ruleset.ExpertForProducing"/> good→expert map; "All requirements met" when a colony has none.</item>
+/// <item><b>Military</b> (`86d3e4buh` — FreeCol's ReportMilitaryPanel): the human's land/naval unit counts and combined
+/// land attack power (<see cref="Game.HumanMilitaryStrength"/>) shown beside the Royal Expeditionary Force the King
+/// would send (<see cref="Game.ExpeditionaryForceStrength"/>) — the strength comparison ahead of independence.</item>
+/// <item><b>Foreign</b> / <b>Natives</b> / <b>Religion</b> (`86d3c9x3c`): rival-power and discovered-settlement
+/// summaries, plus (Religion) the crosses-to-immigration bar and the per-colony church/cathedral cross producers.</item>
+/// <item><b>Trade</b> (`86d3e4buh` — FreeCol's ReportTradePanel): every tradeable good's current sell (bid) / buy (ask)
+/// price, plus its cumulative <b>net units sold</b> and <b>income before & after tax</b> (B4's market trade counters —
+/// <see cref="Trade.Market.SalesOf"/> / <see cref="Trade.Market.IncomeBeforeTaxesOf"/> /
+/// <see cref="Trade.Market.IncomeAfterTaxesOf"/>), plus a boycott marker. Read straight from the human's <see cref="Game.Market"/>.</item>
+/// <item><b>Exploration</b> (`86d3e4buh` — FreeCol's ReportExplorationPanel): the regions the human has discovered
+/// (<see cref="Game.Map"/>'s <see cref="World.GameMap.Regions"/> filtered to the human's), newest first, with each
+/// region's type, discovery turn and score.</item>
 /// <item><b>Congress</b> (`86d3c9x53` — FreeCol's ReportReligiousPanel sibling, the Continental Congress facet):
 /// the founding-father election state — the father currently being recruited (<see cref="Game.CurrentFather"/>),
 /// the liberty (bells) progress (<see cref="Game.Liberty"/> / <see cref="Game.TotalFoundingFatherCost"/>), and one
@@ -50,7 +61,7 @@ namespace CrownAndColony.Presentation;
 /// </summary>
 public partial class ColonyReportPanel : PanelContainer
 {
-    private enum Tab { Colonies, Units, Education, Production, Labour, Foreign, Natives, Religion, Market, Congress, History }
+    private enum Tab { Colonies, Units, Education, Production, Labour, Requirements, Military, Foreign, Natives, Religion, Trade, Exploration, Congress, History }
 
     private Game _game = null!;
     private Tab _tab = Tab.Colonies;
@@ -65,10 +76,13 @@ public partial class ColonyReportPanel : PanelContainer
         [Tab.Education] = "Education",
         [Tab.Production] = "Production",
         [Tab.Labour] = "Labour",
+        [Tab.Requirements] = "Requirements",
+        [Tab.Military] = "Military",
         [Tab.Foreign] = "Foreign affairs",
         [Tab.Natives] = "Native nations",
         [Tab.Religion] = "Religion",
-        [Tab.Market] = "Trade & market prices",
+        [Tab.Trade] = "Trade",
+        [Tab.Exploration] = "Exploration",
         [Tab.Congress] = "Continental Congress",
         [Tab.History] = "History",
     };
@@ -95,17 +109,21 @@ public partial class ColonyReportPanel : PanelContainer
             child.QueueFree();
         }
 
-        // Tab row (named buttons for the L3 tests; the active tab is disabled).
-        var tabs = new HBoxContainer { Name = "Tabs" };
+        // Tab row (named buttons for the L3 tests; the active tab is disabled). An HFlowContainer wraps the row onto a
+        // second line rather than overflowing the panel — there are now more report tabs than fit one line.
+        var tabs = new HFlowContainer { Name = "Tabs" };
         tabs.AddChild(TabButton("Colonies", Tab.Colonies));
         tabs.AddChild(TabButton("Units", Tab.Units));
         tabs.AddChild(TabButton("Education", Tab.Education));
         tabs.AddChild(TabButton("Production", Tab.Production));
         tabs.AddChild(TabButton("Labour", Tab.Labour));
+        tabs.AddChild(TabButton("Requirements", Tab.Requirements));
+        tabs.AddChild(TabButton("Military", Tab.Military));
         tabs.AddChild(TabButton("Foreign", Tab.Foreign));
         tabs.AddChild(TabButton("Natives", Tab.Natives));
         tabs.AddChild(TabButton("Religion", Tab.Religion));
-        tabs.AddChild(TabButton("Market", Tab.Market));
+        tabs.AddChild(TabButton("Trade", Tab.Trade));
+        tabs.AddChild(TabButton("Exploration", Tab.Exploration));
         tabs.AddChild(TabButton("Congress", Tab.Congress));
         tabs.AddChild(TabButton("History", Tab.History));
         dynamic.AddChild(tabs);
@@ -118,10 +136,13 @@ public partial class ColonyReportPanel : PanelContainer
             case Tab.Education: BuildEducation(dynamic); break;
             case Tab.Production: BuildProduction(dynamic); break;
             case Tab.Labour: BuildLabour(dynamic); break;
+            case Tab.Requirements: BuildRequirements(dynamic); break;
+            case Tab.Military: BuildMilitary(dynamic); break;
             case Tab.Foreign: BuildForeign(dynamic); break;
             case Tab.Natives: BuildNatives(dynamic); break;
             case Tab.Religion: BuildReligion(dynamic); break;
-            case Tab.Market: BuildMarket(dynamic); break;
+            case Tab.Trade: BuildTrade(dynamic); break;
+            case Tab.Exploration: BuildExploration(dynamic); break;
             case Tab.Congress: BuildCongress(dynamic); break;
             case Tab.History: BuildHistory(dynamic); break;
         }
@@ -599,29 +620,73 @@ public partial class ColonyReportPanel : PanelContainer
         }
     }
 
-    // ── Religion tab (faithful subset: the immigration bar) ──────────────────────────────────────────────
+    // ── Religion tab (FreeCol ReportReligiousPanel: the immigration bar + per-church cross producers) ─────
 
     private void BuildReligion(VBoxContainer dynamic)
     {
+        // FreeCol's religion report: the crosses-toward-immigration progress bar, then for each colony the building(s)
+        // that produce crosses (church/cathedral) with their cross output. We read the immigration bar from the human
+        // and the per-church output from each colony's net production + building staffing (ADR-006 reads only).
         dynamic.AddChild(new Label
         {
             Name = "ReligionImmigration",
             Text = $"Crosses toward the next emigrant: {_game.Immigration} / {_game.ImmigrationRequired}",
         });
         dynamic.AddChild(new Label { Text = $"Recruit a waiting emigrant now: {_game.RecruitPrice} gold" });
-        dynamic.AddChild(new Label
+        dynamic.AddChild(new HSeparator());
+
+        // Per-church cross breakdown: each human colony's churches/cathedrals and the crosses they make.
+        const string crossesId = "model.goods.crosses";
+        if (!_game.Ruleset.GoodsTypes.Any(g => g.Id == crossesId))
         {
-            Text = "(Per-church cross output is a follow-up; map-region exploration discovery is deferred.)",
-        });
+            return; // a ruleset with no crosses good (defensive — classic always has it)
+        }
+
+        List<Colony> colonies = HumanColonies();
+        bool anyChurch = false;
+        foreach (Colony c in colonies)
+        {
+            List<string> churches = c.Buildings
+                .Where(b => _game.Ruleset.Building(b).Productions
+                    .Any(p => p.Outputs.Any(o => o.GoodsId == crossesId)))
+                .ToList();
+            if (churches.Count == 0)
+            {
+                continue;
+            }
+            anyChurch = true;
+            int colonyCrosses = _game.ColonyNetProduction(c).GetValueOrDefault(crossesId);
+            dynamic.AddChild(new Label
+            {
+                Name = $"Church_{c.Id}",
+                Text = $"{c.Name} — {Signed(colonyCrosses)} crosses/turn",
+            });
+            foreach (string buildingId in churches)
+            {
+                BuildingType church = _game.Ruleset.Building(buildingId);
+                int workers = c.BuildingWorkers.GetValueOrDefault(buildingId);
+                dynamic.AddChild(new Label { Text = $"    {Display(church.ShortName)}: {workers}/{church.Workplaces} preachers" });
+            }
+        }
+        if (!anyChurch)
+        {
+            dynamic.AddChild(new Label
+            {
+                Name = "ReligionNoChurch",
+                Text = "No colony is producing crosses (every colony's town hall aside).",
+                HorizontalAlignment = HorizontalAlignment.Center,
+            });
+        }
     }
 
-    // ── Trade & market prices tab (faithful subset: per-good bid/ask + boycott) ──────────────────────────
+    // ── Trade tab (FreeCol ReportTradePanel: per-good prices + cumulative units sold + income before/after tax) ──
 
-    private void BuildMarket(VBoxContainer dynamic)
+    private void BuildTrade(VBoxContainer dynamic)
     {
-        // FreeCol's ReportTradePanel lists every tradeable good with its sale (bid) and purchase (ask) price plus
-        // a boycott marker. Volume/income columns need accumulated trade history (no oracle yet), so they are
-        // scoped out here — this is the price/boycott subset, read straight from the human's Market (ADR-006).
+        // FreeCol's ReportTradePanel shows, per tradeable good, its current sale/purchase price plus the cumulative
+        // units sold and the income before & after taxes. The volume/income columns are B4's market trade counters —
+        // SalesOf / IncomeBeforeTaxesOf / IncomeAfterTaxesOf — read straight from the human's Market (ADR-006); each is
+        // a NET total (a sale adds, a buy back subtracts). A boycott marker follows FreeCol's warn colour.
         List<GoodsType> goods = _game.Ruleset.GoodsTypes
             .Where(g => _game.Market.IsTradeable(g.Id))
             .ToList();
@@ -631,20 +696,180 @@ public partial class ColonyReportPanel : PanelContainer
             return;
         }
 
-        dynamic.AddChild(new Label { Name = "MarketHeader", Text = "Good — sell / buy (gold per unit)" });
+        // Player-wide totals (FreeCol's report.trade.afterTaxes summary line).
+        int totalAfterTax = goods.Sum(g => _game.Market.IncomeAfterTaxesOf(g.Id));
+        dynamic.AddChild(new Label
+        {
+            Name = "TradeHeader",
+            Text = "Good — sell / buy price · units sold · income before / after tax",
+        });
+        dynamic.AddChild(new Label { Name = "TradeTotal", Text = $"Net trade income after tax (all goods): {totalAfterTax} gold" });
+        dynamic.AddChild(new HSeparator());
+
         foreach (GoodsType g in goods)
         {
             int bid = _game.Market.BidPrice(g.Id);
             int ask = _game.Market.AskPrice(g.Id);
+            int sold = _game.Market.SalesOf(g.Id);
+            int before = _game.Market.IncomeBeforeTaxesOf(g.Id);
+            int after = _game.Market.IncomeAfterTaxesOf(g.Id);
             string boycott = _game.Market.CanTrade(g.Id)
                 ? ""
                 : $"  ·  BOYCOTT (arrears {_game.Market.Arrears(g.Id)} gold)";
             dynamic.AddChild(new Label
             {
-                Name = $"Market_{Strip(g.Id)}",
-                Text = $"{g.ShortName} — sell {bid} / buy {ask}{boycott}",
+                Name = $"Trade_{Strip(g.Id)}",
+                Text = $"{g.ShortName} — sell {bid} / buy {ask}  ·  sold {sold}  ·  income {before} / {after}{boycott}",
             });
         }
+    }
+
+    // ── Exploration tab (FreeCol ReportExplorationPanel: discovered regions, newest first) ────────────────
+
+    private void BuildExploration(VBoxContainer dynamic)
+    {
+        // FreeCol's exploration report lists every discovered region with its name, type, the turn discovered and a
+        // score. We read the map's region table (Game.Map.Regions), filtered to those the HUMAN discovered, ordered
+        // newest-first then by score (FreeCol's regionComparator). Reads only (ADR-006) — discovery is GameLogic's.
+        List<Region> regions = _game.Map.Regions
+            .Where(r => r.IsDiscovered && r.DiscoveredBy == _game.HumanPlayer.PlayerId)
+            .OrderByDescending(r => r.DiscoveredInTurn ?? 0)
+            .ThenByDescending(r => r.ScoreValue)
+            .ThenBy(r => r.Id)
+            .ToList();
+        if (regions.Count == 0)
+        {
+            dynamic.AddChild(new Label
+            {
+                Name = "ExplorationEmpty",
+                Text = "You have not discovered any named regions yet.",
+                HorizontalAlignment = HorizontalAlignment.Center,
+            });
+            return;
+        }
+
+        dynamic.AddChild(new Label { Name = "ExplorationHeader", Text = "Region — type · discovered turn · score" });
+        foreach (Region r in regions)
+        {
+            dynamic.AddChild(new Label
+            {
+                Name = $"Region_{r.Id}",
+                Text = $"{r.Name} — {r.Type} · turn {r.DiscoveredInTurn} · {r.ScoreValue} pts",
+            });
+        }
+    }
+
+    // ── Requirements tab (FreeCol ReportRequirementsPanel: expert mis-assignment / missing-expert warnings) ──
+
+    private void BuildRequirements(VBoxContainer dynamic)
+    {
+        // FreeCol's ReportRequirementsPanel warns, per colony, where production is sub-optimal: a non-expert doing a
+        // job a resident expert should do (bad assignment), and a job done with no expert anywhere in the colony
+        // (missing expert). We read the colony's worker overlays + Ruleset.ExpertForProducing (pure ruleset data, no
+        // rules logic in the panel; ADR-006) to assemble the warnings. "Requirements met" when a colony has none.
+        List<Colony> colonies = HumanColonies();
+        if (colonies.Count == 0)
+        {
+            dynamic.AddChild(new Label { Text = "You have no colonies yet.", HorizontalAlignment = HorizontalAlignment.Center });
+            return;
+        }
+
+        foreach (Colony c in colonies)
+        {
+            dynamic.AddChild(new Label { Name = $"Requirements_{c.Id}", Text = $"{c.Name}" });
+            var warnings = new List<string>();
+
+            // Each worked tile: the good it farms wants an expert; warn if the worker isn't that expert.
+            foreach ((Position tile, string good) in c.TileWorkers.OrderBy(kv => kv.Key.Y).ThenBy(kv => kv.Key.X))
+            {
+                if (_game.Ruleset.ExpertForProducing(good) is not { } expert)
+                {
+                    continue;
+                }
+                string worker = c.WorkerTypeAt(tile);
+                if (worker != expert)
+                {
+                    warnings.Add(MissingOrMisassigned(c, good, expert, worker));
+                }
+            }
+            // Each manned building output: warn when no expert for that output works the colony.
+            foreach (string buildingId in c.Buildings)
+            {
+                BuildingType b = _game.Ruleset.Building(buildingId);
+                if (b.Teaches)
+                {
+                    continue; // teachers are staff, not producers
+                }
+                int workers = c.BuildingWorkers.GetValueOrDefault(buildingId);
+                if (workers == 0)
+                {
+                    continue;
+                }
+                foreach (ProductionEntry prod in b.Productions)
+                {
+                    foreach (GoodsOutput output in prod.Outputs)
+                    {
+                        if (_game.Ruleset.ExpertForProducing(output.GoodsId) is not { } expert)
+                        {
+                            continue;
+                        }
+                        if (!c.BuildingOccupants(buildingId).Contains(expert))
+                        {
+                            warnings.Add(
+                                $"    {Display(b.ShortName)} makes {Display(_game.Ruleset.Goods(output.GoodsId).ShortName)} " +
+                                $"with no {Display(Strip(expert))}.");
+                        }
+                    }
+                }
+            }
+
+            foreach (string w in warnings.Distinct())
+            {
+                dynamic.AddChild(new Label { Text = w, AutowrapMode = TextServer.AutowrapMode.WordSmart });
+            }
+            if (warnings.Count == 0)
+            {
+                dynamic.AddChild(new Label { Name = $"RequirementsMet_{c.Id}", Text = "    All requirements met." });
+            }
+            dynamic.AddChild(new HSeparator());
+        }
+    }
+
+    /// <summary>A bad-assignment / missing-expert warning line for a worked tile (FreeCol's two requirement messages).</summary>
+    private string MissingOrMisassigned(Colony colony, string good, string expert, string worker)
+    {
+        string goodName = Display(_game.Ruleset.Goods(good).ShortName);
+        // A resident expert sitting elsewhere → bad assignment; no expert at all → missing expert.
+        bool expertPresent = colony.TileWorkers.Values.Contains(expert)
+            || colony.Buildings.Any(b => colony.BuildingOccupants(b).Contains(expert));
+        return expertPresent
+            ? $"    {goodName}: worked by a {Display(Strip(worker))}, but a {Display(Strip(expert))} could do it better."
+            : $"    {goodName}: no {Display(Strip(expert))} to work it.";
+    }
+
+    // ── Military tab (FreeCol ReportMilitaryPanel: strength totals + REF comparison) ──────────────────────
+
+    private void BuildMilitary(VBoxContainer dynamic)
+    {
+        // FreeCol's ReportMilitaryPanel tallies the player's offensive forces and shows the Royal Expeditionary Force
+        // beside them. We read the strength oracles (Game.HumanMilitaryStrength / ExpeditionaryForceStrength; ADR-006)
+        // — combined land attack power + land/naval unit counts for the human, and the REF's land/naval unit counts.
+        (double landPower, int land, int naval) = _game.HumanMilitaryStrength();
+        dynamic.AddChild(new Label { Name = "MilitaryTitle", Text = "Your forces" });
+        dynamic.AddChild(new Label
+        {
+            Name = "MilitaryHuman",
+            Text = $"    Land units: {land}  ·  Naval units: {naval}  ·  Land attack power: {landPower:0.#}",
+        });
+        dynamic.AddChild(new HSeparator());
+
+        (int refLand, int refNaval) = _game.ExpeditionaryForceStrength();
+        dynamic.AddChild(new Label { Name = "MilitaryRefTitle", Text = "Royal Expeditionary Force (the army the King would send)" });
+        dynamic.AddChild(new Label
+        {
+            Name = "MilitaryRef",
+            Text = $"    Land units: {refLand}  ·  Naval units: {refNaval}",
+        });
     }
 
     // ── Continental Congress tab (faithful subset: the founding-father election state) ───────────────────

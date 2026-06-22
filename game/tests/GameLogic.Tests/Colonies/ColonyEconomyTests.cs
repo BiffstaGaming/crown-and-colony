@@ -196,6 +196,33 @@ public class ColonyEconomyTests
     }
 
     [Fact]
+    public void SurvivableFamine_AtAHumanColony_RecordsAWarningNotice()
+    {
+        // Pop 3 on a bare plains square (centre 3 food, appetite 6) starves one colonist but the colony survives →
+        // a famine WARNING notice is recorded (distinct from the colony-destroyed notice).
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 1,
+            MapHeight = 1,
+            Terrain = ["model.tile.plains"],
+            Units = [],
+            Explored = [0],
+            Colonies = [new SavedColony(1, "Hungry", 0, 0, 3)],
+        };
+        Game game = save.Restore(Classic);
+
+        game.EndTurn(); // +3, eat 6 → shortfall → pop 2 (survived)
+
+        ColonyFamineNotice notice = Assert.Single(game.ColonyFamineNotices);
+        Assert.Equal("Hungry", notice.ColonyName);
+        Assert.Equal(2, notice.PopulationAfter);
+        Assert.Empty(game.ColonyStarvedNotices); // the colony was not destroyed
+    }
+
+    [Fact]
     public void Starvation_TrimsExcessAssignments()
     {
         // Pop 2, both assigned (1 field, 1 workshop). Starvation to pop 1 must

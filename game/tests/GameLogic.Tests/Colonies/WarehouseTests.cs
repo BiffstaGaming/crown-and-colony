@@ -108,4 +108,30 @@ public class WarehouseTests
 
         Assert.Equal(200, colony.StoreOf(Cotton)); // capped at the warehouse tier, not the depot's 100
     }
+
+    [Fact]
+    public void Overflow_AtAHumanColony_RecordsAWarningNotice()
+    {
+        Game game = PlainsColony(); // a human-owned colony
+        Colony colony = game.Colonies[0];
+        colony.AddGoods(Cotton, 150); // 50 over the depot's 100
+
+        game.EndTurn(); // +2 cotton production, then the spill warns
+
+        WarehouseOverflowNotice notice = Assert.Single(game.WarehouseOverflowNotices);
+        Assert.Equal(colony.Name, notice.ColonyName);
+        Assert.Equal(Cotton, notice.GoodsId);
+        Assert.Equal(52, notice.Wasted); // 150 held + 2 produced − 100 cap
+    }
+
+    [Fact]
+    public void NoOverflow_RecordsNoNotice()
+    {
+        Game game = PlainsColony();
+        game.Colonies[0].AddGoods(Cotton, 10); // well under the cap
+
+        game.EndTurn();
+
+        Assert.Empty(game.WarehouseOverflowNotices);
+    }
 }

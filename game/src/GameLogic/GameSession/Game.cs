@@ -132,6 +132,9 @@ public sealed partial class Game
     private readonly List<AttritionNotice> _attritionNotices = []; // transient: the most recent turn's units lost to attrition in the open (not saved)
     private readonly List<DisasterNotice> _disasterNotices = []; // transient: the most recent turn's natural disasters striking human colonies (not saved; empty in classic — naturalDisasters default 0)
     private readonly List<ColonyStarvedNotice> _colonyStarvedNotices = []; // transient: human colonies destroyed by starvation this turn (not saved; empty in classic — centre tile feeds the last colonist)
+    private readonly List<ColonyFamineNotice> _colonyFamineNotices = []; // transient: human colonies that lost a colonist (but survived) to famine this turn (not saved; empty in classic)
+    private readonly List<WarehouseOverflowNotice> _warehouseOverflowNotices = []; // transient: human-colony storable goods wasted over warehouse capacity this turn (not saved)
+    private readonly List<MonarchDecreeNotice> _monarchDecreeNotices = []; // transient: immediate (no-choice) monarch actions taken this turn (not saved; empty before the grace period)
     private readonly List<TemporaryModifier> _temporaryModifiers = []; // transient: duration-bounded modifiers currently in force; empty in classic (nothing registers one), so never saved and the default game is byte-identical (86d3drpgz)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
@@ -882,6 +885,36 @@ public sealed partial class Game
     /// keeps every colony).
     /// </summary>
     public IReadOnlyList<ColonyStarvedNotice> ColonyStarvedNotices => _colonyStarvedNotices;
+
+    /// <summary>
+    /// Human colonies that <b>lost a colonist to famine</b> (but survived) during the most recent <see cref="EndTurn"/>
+    /// — the survivable sibling of <see cref="ColonyStarvedNotices"/> (FreeCol <c>ServerColony.csNewTurn</c>'s
+    /// <c>model.colony.colonyStarving</c> per-turn famine victim). Transient per-turn UI scratch (cleared each
+    /// <c>EndTurn</c>, never saved); the presentation reads it after the turn resolves to warn the player a colony is
+    /// starving. A colony loses a colonist only when its food production plus stored carryover can no longer feed its
+    /// whole population <b>and</b> more than one colonist remains; in the classic default game production never falls
+    /// that low, so this is normally empty.
+    /// </summary>
+    public IReadOnlyList<ColonyFamineNotice> ColonyFamineNotices => _colonyFamineNotices;
+
+    /// <summary>
+    /// Storable goods a human colony produced <b>past its warehouse capacity</b> during the most recent
+    /// <see cref="EndTurn"/>, so the surplus was wasted (FreeCol <c>ServerColony.csNewTurn</c>'s warehouse-overflow
+    /// warning). Transient per-turn UI scratch (cleared each <c>EndTurn</c>, never saved); the presentation reads it
+    /// after the turn resolves to warn the player which goods are spilling. One entry per (colony, good) that
+    /// overflowed; empty when nothing spilled.
+    /// </summary>
+    public IReadOnlyList<WarehouseOverflowNotice> WarehouseOverflowNotices => _warehouseOverflowNotices;
+
+    /// <summary>
+    /// Immediate <b>King's-decree</b> actions the home-nation Monarch took on the human's behalf during the most recent
+    /// <see cref="EndTurn"/> — lower/waive tax, declare war/peace, grant free support, or grow the Royal Expeditionary
+    /// Force (FreeCol's auto-applied monarch actions, distinct from the tax-rise / mercenary <em>demands</em> that
+    /// surface through <see cref="PendingMonarchDemand"/>). Transient per-turn UI scratch (cleared each <c>EndTurn</c>,
+    /// never saved); the presentation reads it after the turn resolves to tell the player what the King decreed. Empty
+    /// before the monarch grace period.
+    /// </summary>
+    public IReadOnlyList<MonarchDecreeNotice> MonarchDecreeNotices => _monarchDecreeNotices;
 
     /// <summary>
     /// The duration-bounded modifiers currently registered (FreeCol's temporary <c>Modifier</c>s — those carrying a
@@ -7197,6 +7230,9 @@ public sealed partial class Game
         _customHouseSaleNotices.Clear(); // and this turn's custom-house auto-sales from human colonies
         _disasterNotices.Clear(); // and this turn's natural disasters striking human colonies (empty in classic — naturalDisasters default 0)
         _colonyStarvedNotices.Clear(); // and any human colonies starved out of existence this turn (empty in classic — the centre tile feeds the last colonist)
+        _colonyFamineNotices.Clear(); // and any human colonies that lost a colonist (but survived) to famine this turn
+        _warehouseOverflowNotices.Clear(); // and any human-colony goods wasted over warehouse capacity this turn
+        _monarchDecreeNotices.Clear(); // and any immediate (no-choice) King's decrees this turn (empty before the monarch grace period)
         _rumourNotices.Clear(); // and any rumour outcomes the human explored this turn (normally drained by the UI mid-turn; cleared here belt-and-braces)
         ClearPendingHumanProposals(); // and this round's AI alliance/cease-fire offers to the human (86d3drn4f; drained by the negotiation UI, cleared here belt-and-braces so the seam holds only the current round)
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
@@ -11629,7 +11665,7 @@ public sealed partial class Game
         //     (FreeCol csNewTurnWarnings — getWarehouseCapacity). Non-storable goods (bells/crosses/hammers,
         //     which accrue toward liberty/immigration/construction) and food (consumed/grown, never warehoused
         //     to a cap here) are exempt. Run after construction so a build isn't starved of materials it consumes.
-        SpillWarehouseOverflow(colony);
+        SpillWarehouseOverflow(owner, colony);
 
         // 2. Colonists eat; an unfed colonist starves. With more than one colonist a single colonist is lost that
         //    turn (FreeCol's per-turn famine victim); with only the LAST colonist left and still no food, the colony
@@ -11643,6 +11679,12 @@ public sealed partial class Game
         {
             colony.Population--;
             TrimAssignments(colony);
+            if (owner.PlayerId == _human.PlayerId)
+            {
+                // A survivable famine: one colonist starved but the colony lives on — warn the human (the per-turn
+                // famine victim of FreeCol's model.colony.colonyStarving, distinct from total destruction below).
+                _colonyFamineNotices.Add(new ColonyFamineNotice(colony.Name, colony.Position, colony.Population));
+            }
         }
         else if (shortfall > 0) // the last colonist could not be fed → the colony starves out of existence
         {
@@ -11871,20 +11913,27 @@ public sealed partial class Game
     /// Food (consumed/grown) and non-storable goods (bells/crosses/hammers) are exempt. A guard skips a colony
     /// with no capacity data (0) so a malformed/legacy colony never silently loses everything.
     /// </summary>
-    private void SpillWarehouseOverflow(Colony colony)
+    private void SpillWarehouseOverflow(Player owner, Colony colony)
     {
         int capacity = WarehouseCapacity(colony);
         if (capacity <= 0)
         {
             return;
         }
+        bool notify = owner.PlayerId == _human.PlayerId;
         foreach (string goodsId in colony.Stores.Keys.ToList())
         {
             GoodsType goods = Ruleset.Goods(goodsId);
             int held = colony.StoreOf(goodsId);
             if (goods.IsStorable && !goods.IsFood && held > capacity)
             {
-                colony.AddGoods(goodsId, capacity - held); // drop the overflow to the cap
+                int wasted = held - capacity;
+                colony.AddGoods(goodsId, -wasted); // drop the overflow to the cap
+                if (notify)
+                {
+                    // Warn the human their warehouse is spilling this good (FreeCol's warehouse-overflow message).
+                    _warehouseOverflowNotices.Add(new WarehouseOverflowNotice(colony.Name, colony.Position, goodsId, wasted));
+                }
             }
         }
     }
