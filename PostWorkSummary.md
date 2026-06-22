@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-22 — Path-to-100% coding WAVE 1 shipped (A1+A2+A3+B1) ✅
+
+**Requested:** Decompose all phases into individual ClickUp tasks + start coding via parallel agents.
+**Did:** Decomposed B/C/D/E into 15 granular tasks (joining A1–A4) under epics [PA]/[PB]/[PC] (+ D→P6, E→P7); then ran a 4-stream parallel worktree wave, integrated CI-green:
+- **B1** (`8dbe018`) — custom-house smuggling: `customIgnoreBoycott` (classic default true, session option, no bump); **fixes the latent EndTurn crash** (boycotted custom-house good now smuggles instead of throwing).
+- **A1** (`3e1975b`) — colonial AI arms idle colonists (dragoon>soldier) when a colony is under-defended + fortifies its garrison; added a military-goods reserve so the economy step stops selling the muskets/horses first. RNG-free.
+- **A2** (`5009eef`) — value-weighted AI founding-father pick (max age-weight + build-custom-house override), RNG removed; **also fixed a latent `_nextUnitId`-not-persisted bug → save v54** (`NextUnitId`).
+- **A3** (`c828607`) — native settlements seeded with serialized military stock (25 muskets/camp + horses for capitals) so the already-built equip chain fires → braves/dragoons arm in real games; **save v54** (`MilitaryStock`, omit-when-empty).
+**Status:** Integrated, pushed `8dbe018…c828607`. Build clean + **2040 L1/L2 + 5 soak green**. Save **v53→v54** (one bump carrying both `NextUnitId` + `MilitaryStock` — A2/A3 auto-merged on the identical version change). Soak twin-determinism green despite the AI/native behaviour changes.
+**Decisions:** Disjoint-stream wave (2 distinct Game.cs regions + 1 save-bumper rule respected, though A2's bug-fix made it a 2nd v54 field — merged cleanly). A3 chose seed-at-generation (B) over per-turn accrual (no native production model exists).
+**Scheduled next:** **Wave 2 — A4 (AI declares independence, now A1 exists), B2 (negotiation-table UI), C1 (keystone multi-channel native tension)**.
+**Needs you:** Optional playtest — anger a tribe (armed braves now appear) + watch rival AI defend its colonies. Native arms currently seed-once (refill model is a follow-up).
+
 ## 2026-06-22 — Parity audit formalized: path-to-100% roadmap + board tasks ✅
 
 **Requested:** Chris's call — "formalize roadmap + tasks first" (and "decide later" on whether deep-AI/multiplayer is in the 100% scope).
