@@ -153,7 +153,7 @@ public class NativeMissionTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
         NativeSettlement r = restored.NativeSettlements.Single(s => s.Id == settlement.Id);
 
-        Assert.Equal(53, SaveGame.CurrentVersion);
+        Assert.Equal(54, SaveGame.CurrentVersion);
         Assert.Equal(game.HumanPlayer.PlayerId, r.MissionOwnerId); // owner survives
         Assert.True(r.MissionIsExpert);                            // jesuit-ness survives
     }
@@ -257,7 +257,7 @@ public class NativeMissionTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
         NativeSettlement r = restored.NativeSettlements.Single(s => s.Id == settlement.Id);
 
-        Assert.Equal(53, SaveGame.CurrentVersion);
+        Assert.Equal(54, SaveGame.CurrentVersion);
         Assert.Equal(47, r.ConvertProgress);
     }
 

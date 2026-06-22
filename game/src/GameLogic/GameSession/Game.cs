@@ -3903,6 +3903,22 @@ public sealed partial class Game
     internal RandomState RandomState => _random.SaveState();
 
     /// <summary>
+    /// The next unit id the allocator will hand out, captured for saving. This counter monotonically increases as units
+    /// are created and is <b>not</b> rewound when a unit is destroyed, so it can run ahead of <c>max(existing id) + 1</c>.
+    /// Persisting it (rather than only re-deriving it from surviving units on load) keeps a save/load round-trip
+    /// byte-identical when the highest-id unit ever created has since been removed — see save-load.
+    /// </summary>
+    internal int NextUnitId => _nextUnitId;
+
+    /// <summary>
+    /// Restores the persisted next-unit-id counter (v54). Clamped with <see cref="Math.Max(int,int)"/> so it can only
+    /// move the counter <b>forward</b> of the value already re-derived from the restored units — never below a surviving
+    /// unit's id, which would risk an id collision on the next spawn.
+    /// </summary>
+    /// <param name="nextUnitId">The saved counter value.</param>
+    internal void RestoreNextUnitId(int nextUnitId) => _nextUnitId = Math.Max(_nextUnitId, nextUnitId);
+
+    /// <summary>
     /// Creates a new unit at a position. A player unit reveals its surroundings; a native-owned unit
     /// (a brave, <paramref name="ownerNationId"/> set) does not — natives don't lift the player's fog.
     /// </summary>
@@ -6701,10 +6717,13 @@ public sealed partial class Game
     /// </summary>
     private void RunForeignPowerEconomy(Player power)
     {
-        // Bank toward a father so accrued liberty is eventually spent (deterministic pick from the own stream).
+        // Bank toward a father so accrued liberty is eventually spent. The pick is value-weighted, not random
+        // (86d3e49ej): FreeCol's EuropeanAIPlayer.selectFoundingFather chooses the offered father most worth having
+        // this age — no RNG draw is taken here (the offer SET is still seeded in GenerateOffers; only this SELECT
+        // is deterministic now). See SelectFoundingFatherFor.
         if (power.CurrentFather is null && power.OfferedFathers.Count > 0)
         {
-            power.CurrentFather = power.OfferedFathers[RandomFor(power).Next(power.OfferedFathers.Count)];
+            power.CurrentFather = SelectFoundingFatherFor(power);
         }
 
         // Plan each colony's workers before selling — so worked tiles + staffed buildings, not just the unattended
@@ -8991,6 +9010,43 @@ public sealed partial class Game
                 }
             }
         }
+    }
+
+    /// <summary>The ability granting a colony the custom house (FreeCol <c>Ability.BUILD_CUSTOM_HOUSE</c>); among fathers only Peter Stuyvesant carries it.</summary>
+    private const string BuildCustomHouseAbility = "model.ability.buildCustomHouse";
+
+    /// <summary>
+    /// Picks which of a foreign power's currently-offered fathers it banks toward — a value-weighted, RNG-free choice
+    /// faithful to FreeCol's <c>EuropeanAIPlayer.selectFoundingFather</c> (<c>86d3e49ej</c>). Two rules, in order:
+    /// <list type="number">
+    /// <item><b>Custom-house override</b>: if any offered father grants <see cref="BuildCustomHouseAbility"/> (Peter
+    /// Stuyvesant), pick it outright — FreeCol always grabs the custom house, since building it early eases the AI's
+    /// shipping/transport burden.</item>
+    /// <item><b>Highest age weight</b>: otherwise the offered father with the greatest
+    /// <see cref="FoundingFather.WeightForAge"/> for the <see cref="CurrentAge"/> — the same weight that biased the offer
+    /// draw, reused here to value the candidates. Ties (equal weight, or two custom-house grantors) break deterministically
+    /// by ordinal father-id order, so the choice is fully reproducible without consuming the power's RNG stream.</item>
+    /// </list>
+    /// Assumes <paramref name="power"/> has at least one offered father (the caller guards the empty case).
+    /// </summary>
+    /// <param name="power">The foreign power choosing a father from its own <see cref="Player.OfferedFathers"/>.</param>
+    /// <returns>The id of the offered father to pursue.</returns>
+    private string SelectFoundingFatherFor(Player power)
+    {
+        int age = CurrentAge;
+        string? customHouse = power.OfferedFathers
+            .Where(id => Ruleset.Father(id).Abilities.Any(a => a.Id == BuildCustomHouseAbility && a.Value))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (customHouse is not null)
+        {
+            return customHouse; // FreeCol: a custom-house grantor is chosen outright, ahead of any weight.
+        }
+
+        return power.OfferedFathers
+            .OrderByDescending(id => Ruleset.Father(id).WeightForAge(age))
+            .ThenBy(id => id, StringComparer.Ordinal) // deterministic tie-break — no RNG (ADR-009)
+            .First();
     }
 
     /// <summary>The player's standing Sons-of-Liberty %-modifier from Congress (Simón Bolívar's +20, FreeCol <c>model.modifier.SoL</c> additive); 0 without such a father.</summary>

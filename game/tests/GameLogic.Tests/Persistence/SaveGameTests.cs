@@ -37,6 +37,62 @@ public class SaveGameTests
     }
 
     [Fact]
+    public void NextUnitId_IsOmitted_ForAFreshGame_AndReDerivedOnLoad()
+    {
+        // The common case: the counter equals max(unit id)+1, so the field is omitted (byte-identical to pre-v54) and
+        // re-derived from the units on load — exactly the legacy behaviour.
+        var game = Game.New(Classic, seed: 99);
+        SaveGame save = SaveGame.From(game);
+
+        Assert.Null(save.NextUnitId);                            // omitted in the common case
+        Assert.DoesNotContain("NextUnitId", save.ToJson());      // …so no token in the JSON
+
+        Game loaded = SaveGame.FromJson(save.ToJson()).Restore(Classic);
+        Assert.Equal(game.NextUnitId, loaded.NextUnitId);        // re-derived to the same value
+    }
+
+    [Fact]
+    public void NextUnitId_SurvivesRoundTrip_WhenAheadOfMaxExistingId()
+    {
+        // The bug this fixes: the id counter is monotonic and not rewound when a unit is destroyed, so it can run AHEAD
+        // of max(existing id)+1. Persisting it (v54) keeps a save/load round-trip byte-identical instead of resetting
+        // the counter to max+1 and risking a divergent (lower) id for the next unit created.
+        var game = Game.New(Classic, seed: 99);
+        int ahead = game.Units.Max(u => u.Id) + 50; // simulate having created + destroyed many higher-id units
+        SaveGame save = SaveGame.From(game) with { NextUnitId = ahead };
+
+        Assert.Contains("\"NextUnitId\": " + ahead, save.ToJson()); // written when ahead of max+1
+
+        Game loaded = SaveGame.FromJson(save.ToJson()).Restore(Classic);
+        Assert.Equal(ahead, loaded.NextUnitId);                     // counter preserved, not reset to max+1
+    }
+
+    [Fact]
+    public void NextUnitId_NeverGoesBelowASurvivingUnit_OnLoad()
+    {
+        // A defensive clamp: a (corrupt or hand-edited) saved counter below the highest surviving unit id must not
+        // pull the allocator down into collision range — RestoreNextUnitId takes the max with the re-derived value.
+        var game = Game.New(Classic, seed: 99);
+        int maxId = game.Units.Max(u => u.Id);
+        SaveGame save = SaveGame.From(game) with { NextUnitId = 1 }; // absurdly low
+
+        Game loaded = SaveGame.FromJson(save.ToJson()).Restore(Classic);
+        Assert.True(loaded.NextUnitId > maxId, "the counter was pulled below a surviving unit id");
+    }
+
+    [Fact]
+    public void PreV54Save_LoadsWithoutTheCounter_ReDerivingItFromUnits()
+    {
+        // Back-compat: a save with no NextUnitId field (pre-v54, or any omitted-default save) loads and re-derives the
+        // counter from the surviving units exactly as before — no exception, counter ≥ max+1.
+        var game = Game.New(Classic, seed: 99);
+        SaveGame v53 = SaveGame.From(game) with { Version = 53, NextUnitId = null };
+
+        Game loaded = SaveGame.FromJson(v53.ToJson()).Restore(Classic);
+        Assert.Equal(game.Units.Max(u => u.Id) + 1, loaded.NextUnitId);
+    }
+
+    [Fact]
     public void RoundTrip_PreservesExploredTilesExactly()
     {
         var game = Game.New(Classic, seed: 99);

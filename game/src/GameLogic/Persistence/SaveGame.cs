@@ -19,7 +19,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 53;
+    public const int CurrentVersion = 54;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -172,6 +172,16 @@ public sealed record SaveGame
     /// <summary>RNG stream increment.</summary>
     public required ulong RandomIncrement { get; init; }
 
+    /// <summary>
+    /// The next unit id the allocator will hand out (v54). The id counter is monotonic and never rewound when a unit is
+    /// destroyed, so it can run ahead of <c>max(existing unit id) + 1</c>; persisting it keeps a save/load round-trip
+    /// byte-identical when the highest-id unit ever created has since been removed. <b>Omitted</b> (null) whenever it
+    /// equals <c>max(existing unit id) + 1</c> — the common case — so a typical game serialises byte-identically and
+    /// only a game that has destroyed its highest-id unit writes the field; pre-v54 / omitted saves re-derive it from
+    /// the surviving units exactly as before.
+    /// </summary>
+    public int? NextUnitId { get; init; }
+
     /// <summary>Map width in tiles.</summary>
     public required int MapWidth { get; init; }
 
@@ -298,6 +308,11 @@ public sealed record SaveGame
             Turn = game.Turn,
             RandomStateValue = rng.State,
             RandomIncrement = rng.Increment,
+            // Persist the id counter only when it runs ahead of max+1 (a higher-id unit was created then destroyed);
+            // otherwise omit it so the common case stays byte-identical and re-derives from the units on load (v54).
+            NextUnitId = game.NextUnitId > (game.Units.Count > 0 ? game.Units.Max(u => u.Id) + 1 : 1)
+                ? game.NextUnitId
+                : null,
             MapWidth = game.Map.Width,
             MapHeight = game.Map.Height,
             Terrain = game.Map.AllPositions().Select(p => game.Map.TerrainAt(p).Id).ToList(),
@@ -632,6 +647,10 @@ public sealed record SaveGame
         if (PendingMonarchDemand is { } md) // v46; pre-v46 / omitted → no demand was pending
         {
             game.RestorePendingMonarchDemand(md.ToDemand());
+        }
+        if (NextUnitId is { } nextUnitId) // v54; pre-v54 / omitted → the counter stays re-derived from the units above
+        {
+            game.RestoreNextUnitId(nextUnitId);
         }
         return game;
     }

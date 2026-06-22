@@ -406,7 +406,7 @@ public class DifficultyOptionsTests
         // A default (medium) game writes no DifficultyLevel token → byte-identical to a v45 default, and the version is current.
         string json = SaveGame.From(Game.New(Ruleset.LoadClassic(), seed: 5)).ToJson();
         Assert.DoesNotContain("\"DifficultyLevel\"", json);
-        Assert.Equal(53, SaveGame.CurrentVersion);
+        Assert.Equal(54, SaveGame.CurrentVersion);
     }
 
     [Fact]

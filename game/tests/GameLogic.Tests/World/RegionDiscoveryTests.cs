@@ -227,7 +227,7 @@ public class RegionDiscoveryTests
     }
 
     [Fact]
-    public void SaveVersion_IsCurrent() => Assert.Equal(53, SaveGame.CurrentVersion);
+    public void SaveVersion_IsCurrent() => Assert.Equal(54, SaveGame.CurrentVersion);
 
     /// <summary>Classic-ruleset unit score values used to predict the unit summand (mirrors the scoring engine table).</summary>
     private static int UnitScore(string typeId) => typeId switch
