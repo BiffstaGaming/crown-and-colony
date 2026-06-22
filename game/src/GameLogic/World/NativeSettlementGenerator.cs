@@ -42,7 +42,46 @@ public static class NativeSettlementGenerator
     {
         List<NativeSettlement> settlements = PlaceSettlements(ruleset, map, random, excluded);
         AssignWantedGoods(settlements, ruleset, random);
+        SeedMilitaryStock(settlements);
         return settlements;
+    }
+
+    /// <summary>Muskets/horses one brave role count requires (FreeCol armed/mounted brave = 25); matches <c>Game.BraveEquipGoods</c>.</summary>
+    private const int BraveEquipGoods = 25;
+
+    /// <summary>Muskets goods id (the armed-brave equipment); matches <c>Game.MusketsId</c>.</summary>
+    private const string MusketsId = "model.goods.muskets";
+
+    /// <summary>Horses goods id (the mounted-brave equipment); matches <c>Game.HorsesId</c>.</summary>
+    private const string HorsesId = "model.goods.horses";
+
+    /// <summary>
+    /// Capital / city settlement size at/above which a camp also stocks horses (so its braves can mount and, with
+    /// muskets too, reach native dragoon). Smaller camps stock muskets only — they arm but do not field dragoons.
+    /// </summary>
+    private const int MountedStockSizeThreshold = 7;
+
+    /// <summary>
+    /// Seeds each settlement's <b>military stock</b> at game creation (Option B, faithful to FreeCol's military-goods
+    /// retention <c>Settlement.getWantedGoodsAmount</c>: a settlement keeps enough muskets/horses to arm its braves).
+    /// Every settlement stocks one armed-brave's worth of <b>muskets</b> (<see cref="BraveEquipGoods"/>); a
+    /// <b>capital</b> — or any settlement of size ≥ <see cref="MountedStockSizeThreshold"/> (a village/city) — also
+    /// stocks one mounted-brave's worth of <b>horses</b>, so the better, larger settlements field native dragoons while
+    /// small frontier camps merely arm. Entirely <b>deterministic and RNG-free</b> (a pure function of each
+    /// settlement's type/capital/size), so it draws no random numbers at all — never the human's stream 0 (ADR-009).
+    /// This is what makes the runtime equip chain (<c>Game.EquipBravesAtThreatenedSettlements</c> → <c>TryEquipBrave</c>)
+    /// fire on a real game's data rather than only on stock deposited by tests.
+    /// </summary>
+    private static void SeedMilitaryStock(IReadOnlyList<NativeSettlement> settlements)
+    {
+        foreach (NativeSettlement settlement in settlements)
+        {
+            settlement.AddStock(MusketsId, BraveEquipGoods);
+            if (settlement.IsCapital || settlement.Size >= MountedStockSizeThreshold)
+            {
+                settlement.AddStock(HorsesId, BraveEquipGoods);
+            }
+        }
     }
 
     /// <summary>

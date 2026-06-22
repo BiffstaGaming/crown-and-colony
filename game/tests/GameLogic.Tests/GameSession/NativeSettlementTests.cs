@@ -119,6 +119,44 @@ public class NativeSettlementTests
     }
 
     [Fact]
+    public void MilitaryStock_SurvivesASaveRoundTrip_V54()
+    {
+        // 86d3e49gq: the generator-seeded muskets/horses are serialized (save v54) and restored exactly.
+        Game game = Game.New(Classic, Seed);
+        Assert.Contains(game.NativeSettlements, s => s.StockOf("model.goods.muskets") > 0); // the seed put arms in
+
+        string json = SaveGame.From(game).ToJson();
+        Game restored = SaveGame.FromJson(json).Restore(Classic);
+
+        foreach (NativeSettlement before in game.NativeSettlements)
+        {
+            NativeSettlement after = restored.NativeSettlements.Single(s => s.Id == before.Id);
+            Assert.Equal(before.StockOf("model.goods.muskets"), after.StockOf("model.goods.muskets"));
+            Assert.Equal(before.StockOf("model.goods.horses"), after.StockOf("model.goods.horses"));
+        }
+        // The whole game round-trips byte-identically with the stock present.
+        Assert.Equal(json, SaveGame.From(restored).ToJson());
+    }
+
+    [Fact]
+    public void AnEmptyStockSettlement_OmitsTheMilitaryStockField_ByteIdenticalToV53()
+    {
+        // The additive field is omit-when-empty (ADR-009): a settlement holding no stock emits NO MilitaryStock field,
+        // so an empty-stock save is byte-identical to v53 but for the version. Empty every settlement's seeded stock.
+        Game game = Game.New(Classic, Seed);
+        foreach (NativeSettlement s in game.NativeSettlements)
+        {
+            s.AddStock("model.goods.muskets", -s.StockOf("model.goods.muskets"));
+            s.AddStock("model.goods.horses", -s.StockOf("model.goods.horses"));
+        }
+
+        string json = SaveGame.From(game).ToJson();
+
+        Assert.DoesNotContain("MilitaryStock", json);                 // omitted entirely when empty
+        Assert.Equal(json, SaveGame.From(SaveGame.FromJson(json).Restore(Classic)).ToJson()); // round-trips
+    }
+
+    [Fact]
     public void SaveVersion_IsCurrent()
     {
         Assert.Equal(54, SaveGame.CurrentVersion);

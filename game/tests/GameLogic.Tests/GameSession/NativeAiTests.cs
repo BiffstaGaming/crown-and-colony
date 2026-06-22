@@ -256,10 +256,43 @@ public class NativeAiTests
             .ThenBy(s => s.Position.Y).ThenBy(s => s.Position.X)
             .First();
 
+    /// <summary>
+    /// Empties every settlement's generator-seeded military stock (save v54), so a test that needs a <b>controlled</b>
+    /// starting stock can deposit exactly the muskets/horses it intends to exercise. (The generator now seeds each camp
+    /// with arms — 86d3e49gq — which would otherwise pre-arm these unit tests' braves.)
+    /// </summary>
+    private static void ClearAllStock(Game game)
+    {
+        foreach (NativeSettlement s in game.NativeSettlements)
+        {
+            s.AddStock(Muskets, -s.StockOf(Muskets));
+            s.AddStock(Horses, -s.StockOf(Horses));
+        }
+    }
+
+    [Fact]
+    public void EveryGeneratedSettlement_IsSeededWithMilitaryStock_SoThreatenedCampsArmTheirBravesInARealGame()
+    {
+        // 86d3e49gq: the generator seeds real military stock, so the equip chain fires on live data (not just on stock
+        // a test deposits). Every camp holds muskets; capitals / larger settlements also hold horses. With the nation
+        // enraged and NO test-deposited stock, a homed brave arms itself purely from the seed during a normal EndTurn.
+        Game game = Game.New(Classic, seed: 7);
+        Assert.All(game.NativeSettlements, s => Assert.True(s.StockOf(Muskets) >= 25,
+            "every generated settlement should be seeded with muskets to arm its brave"));
+        Assert.Contains(game.NativeSettlements, s => s.StockOf(Horses) >= 25); // the better/larger camps also stock horses
+
+        Unit brave = game.NativeUnits.First();
+        EnrageNationOf(game, brave); // its nation is now Hateful → its camps secure themselves
+        game.EndTurn();
+
+        Assert.NotEqual(DefaultRole, brave.RoleId); // armed itself from the seeded stock alone — no test deposit needed
+    }
+
     [Fact]
     public void AThreatenedSettlement_WithMuskets_ArmsItsBrave_FromItsOwnStock()
     {
         Game game = Game.New(Classic, seed: 7);
+        ClearAllStock(game); // start from a controlled empty stock (the generator now seeds arms — 86d3e49gq)
         Unit brave = game.NativeUnits.First();
         Assert.Equal(DefaultRole, brave.RoleId); // braves start unarmed
 
@@ -280,6 +313,7 @@ public class NativeAiTests
     public void AThreatenedSettlement_WithoutMuskets_LeavesItsBraveUnarmed()
     {
         Game game = Game.New(Classic, seed: 7);
+        ClearAllStock(game); // the premise is an unstocked camp — empty the generator-seeded arms (86d3e49gq)
         Unit brave = game.NativeUnits.First();
         foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == brave.OwnerNationId))
         {
@@ -314,6 +348,7 @@ public class NativeAiTests
         Game bare = Game.New(Classic, seed: 999);
         foreach (Game g in new[] { equips, bare })
         {
+            ClearAllStock(g); // start both from empty so "bare" genuinely can't equip (the generator seeds arms — 86d3e49gq)
             foreach (NativeSettlement s in g.NativeSettlements)
             {
                 g.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // both enraged so the native paths run identically…
@@ -362,6 +397,7 @@ public class NativeAiTests
         // FreeCol favours the strongest affordable military role: an unarmed brave with both halves in stock becomes a
         // native dragoon outright (not a coin-flip between armed and mounted).
         Game game = Game.New(Classic, seed: 7);
+        ClearAllStock(game); // controlled stock: deposit exactly both halves (the generator now seeds arms — 86d3e49gq)
         Unit brave = game.NativeUnits.First();
         Assert.Equal(DefaultRole, brave.RoleId);
         NativeSettlement home = HomeOf(game, brave);
@@ -382,6 +418,7 @@ public class NativeAiTests
         // The headline new facet: a partially-equipped (armed) brave is promoted to full dragoon by adding only the
         // half it lacks — the camp is charged the horses, NOT a fresh set of muskets (FreeCol getGoodsDifference).
         Game game = Game.New(Classic, seed: 7);
+        ClearAllStock(game); // controlled stock: only the missing half (the generator now seeds arms — 86d3e49gq)
         Unit brave = game.NativeUnits.First();
         brave.RoleId = ArmedBrave; // already armed (has its muskets)
         brave.RoleCount = 1;
@@ -404,6 +441,7 @@ public class NativeAiTests
         // dragoon, consuming the lone 25 horses; a weaker unarmed brave at the same camp is then left with nothing it
         // can equip from (no muskets, horses gone) and stays unarmed.
         Game game = Game.New(Classic, seed: 7);
+        ClearAllStock(game); // scarce-stock premise: deposit just the lone good (the generator now seeds arms — 86d3e49gq)
         NativeSettlement home = game.NativeSettlements.First(s => s.Position.Neighbours().Count(n => Free(game, n)) >= 2);
         string nation = home.NationTypeId;
         var spots = home.Position.Neighbours().Where(n => Free(game, n)).Take(2).ToList();
@@ -431,6 +469,7 @@ public class NativeAiTests
         Game bare = Game.New(Classic, seed: 2024);
         foreach (Game g in new[] { equips, bare })
         {
+            ClearAllStock(g); // start both from empty so "bare" genuinely can't equip (the generator seeds arms — 86d3e49gq)
             foreach (NativeSettlement s in g.NativeSettlements)
             {
                 g.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // both enraged so the native paths run identically…
@@ -475,6 +514,7 @@ public class NativeAiTests
         // A calm, well-stocked camp sends one half-unit (25) of its surplus muskets to a threatened same-nation camp
         // that has none — the tribe's arms reach the front line (FreeCol secureSettlements arms-spreading).
         Game game = Game.New(Classic, seed: 7);
+        ClearAllStock(game); // controlled stock: only the donor is stocked (the generator now seeds arms — 86d3e49gq)
         (string nation, var camps) = NationWithTwoCamps(game);
         NativeSettlement donor = camps[0];
         NativeSettlement recipient = camps[1];
@@ -494,6 +534,7 @@ public class NativeAiTests
         // End-to-end through EndTurn: a bare threatened camp receives muskets from a calm stocked camp and arms one of
         // its own braves the SAME turn (redistribution runs before equipBraves), drawing the delivered stock down to 0.
         Game game = Game.New(Classic, seed: 7);
+        ClearAllStock(game); // controlled: the recipient must start bare so the delivery is what arms it (generator seeds arms — 86d3e49gq)
         (string nation, var camps) = NationWithTwoCamps(game);
         NativeSettlement recipient = camps[0];                    // its game-spawned brave will arm from the delivery
         NativeSettlement donor = camps.First(s => s.Id != recipient.Id);
@@ -515,6 +556,7 @@ public class NativeAiTests
     {
         // No threatened recipient → a calm tribe keeps its weapons in store (no movement).
         Game game = Game.New(Classic, seed: 7);
+        ClearAllStock(game); // controlled stock counts (the generator now seeds arms — 86d3e49gq)
         (string nation, var camps) = NationWithTwoCamps(game);
         camps[0].AddStock(Muskets, 100);
 
@@ -530,6 +572,7 @@ public class NativeAiTests
         // A donor must be CALM: a threatened, stocked camp keeps its arms for its own braves (it isn't a donor), so a
         // second threatened bare camp gets nothing from it.
         Game game = Game.New(Classic, seed: 7);
+        ClearAllStock(game); // controlled stock counts (the generator now seeds arms — 86d3e49gq)
         (string nation, var camps) = NationWithTwoCamps(game);
         camps[0].AddStock(Muskets, 100);
         foreach (NativeSettlement s in camps)
@@ -548,6 +591,7 @@ public class NativeAiTests
     {
         // Horses spread the same way as muskets, and the whole transfer draws no randomness (ADR-009).
         Game game = Game.New(Classic, seed: 7);
+        ClearAllStock(game); // controlled stock counts (the generator now seeds arms — 86d3e49gq)
         (string nation, var camps) = NationWithTwoCamps(game);
         NativeSettlement donor = camps[0];
         NativeSettlement recipient = camps[1];
@@ -569,6 +613,8 @@ public class NativeAiTests
         // byte-identical to a game whose tribes hold no stock — only the native state diverges.
         Game spreads = Game.New(Classic, seed: 4242);
         Game bare = Game.New(Classic, seed: 4242);
+        ClearAllStock(spreads); // start both from empty so "bare" genuinely holds no stock (the generator seeds arms — 86d3e49gq)
+        ClearAllStock(bare);
         foreach (NativeSettlement s in spreads.NativeSettlements)
         {
             s.AddStock(Muskets, 60); // every spreading camp is stocked

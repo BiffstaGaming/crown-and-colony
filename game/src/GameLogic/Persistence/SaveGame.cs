@@ -153,6 +153,14 @@ public sealed record SaveGame
     /// player in a no-contact game, and the common pre-contact case) emits no map, so a default game serialises
     /// byte-identically to v52, and pre-v53 saves load with no stamps — the peace-hold gate is inert without Franklin
     /// anyway (probability 0, no roll), so the default game is unaffected.
+    /// v54 added a native settlement's <b>military stock</b> (<see cref="SavedNativeSettlement.MilitaryStock"/> — the
+    /// muskets/horses it retains to arm its braves, FreeCol <c>IndianSettlement</c>'s military-goods retention,
+    /// 86d3e49gq). The generator now <b>seeds</b> this stock at game creation (sized by settlement type/capital/size),
+    /// so a real game's threatened camps actually arm their braves via the existing equip chain. Additive +
+    /// <b>omitted when empty</b> (a goods-id → amount map, serialized only when the settlement holds something — and
+    /// the seed never writes a zero entry), so an empty-stock settlement serialises byte-identically to v53 and pre-v54
+    /// saves load every settlement with no stock (the equip chain stays inert, exactly as before this version). The
+    /// seed and the equip spend are both RNG-free, so the human's stream 0 stays byte-stable (ADR-009).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -455,7 +463,12 @@ public sealed record SaveGame
                         s.WantedGoods.Count > 0 ? s.WantedGoods.ToList() : null,
                         s.MissionOwnerId, s.HasMission ? s.MissionIsExpert : null, // omitted when no mission
                         s.ConvertProgress != 0 ? s.ConvertProgress : null,         // omitted when no progress banked
-                        s.VisitedByPowers.Count > 0 ? s.VisitedByPowers.ToList() : null)) // v44; omitted when no foreign power has visited
+                        s.VisitedByPowers.Count > 0 ? s.VisitedByPowers.ToList() : null, // v44; omitted when no foreign power has visited
+                        // v54; the muskets/horses the camp holds to arm its braves — omitted when it holds none, so an
+                        // empty-stock settlement is byte-identical to v53.
+                        s.MilitaryStock.Any()
+                            ? s.MilitaryStock.ToDictionary(kv => kv.Key, kv => kv.Value)
+                            : null))
                     .ToList()
                 : null,
             // The chosen difficulty level (v46); omitted for the default medium so a default game stays byte-identical to v45.
@@ -626,6 +639,11 @@ public sealed record SaveGame
                 foreach (int powerId in s.VisitedByPowers ?? []) // v44; pre-v44 → no foreign power has visited
                 {
                     settlement.MarkVisitedBy(powerId);
+                }
+                foreach ((string goodsId, int amount) in // v54; pre-v54 / omitted → no stock
+                    s.MilitaryStock ?? (IReadOnlyDictionary<string, int>)new Dictionary<string, int>())
+                {
+                    settlement.AddStock(goodsId, amount);
                 }
                 return settlement;
             }),
@@ -871,6 +889,7 @@ public sealed record SavedWorker(int X, int Y, string GoodsId, string? UnitTypeI
 /// <param name="MissionIsExpert">Whether the resident missionary is a jesuit (v33+; null when no mission, omitted).</param>
 /// <param name="ConvertProgress">Accrued convert progress under a mission (v34+; null/omitted when 0).</param>
 /// <param name="VisitedByPowers">Non-human player ids that have spoken with the chief (v44+; null/omitted when none, so a game where only the human (or nobody) has visited is byte-identical to v43). The human rides <see cref="HasBeenVisited"/>.</param>
+/// <param name="MilitaryStock">The muskets/horses the settlement holds to arm its braves (FreeCol <c>IndianSettlement</c>'s military-goods retention), as goods-id → amount (v54+; null/omitted when the settlement holds none, so an empty-stock settlement is byte-identical to v53). Seeded by <see cref="World.NativeSettlementGenerator"/>, spent by <see cref="GameSession.Game.TryEquipBrave"/>.</param>
 public sealed record SavedNativeSettlement(
     int Id, string NationTypeId, string SettlementTypeId, bool IsCapital,
     int X, int Y, int Size, string? LearnableSkill = null,
@@ -878,7 +897,8 @@ public sealed record SavedNativeSettlement(
     IReadOnlyList<string>? WantedGoods = null,
     int? MissionOwnerId = null, bool? MissionIsExpert = null,
     int? ConvertProgress = null,
-    IReadOnlyList<int>? VisitedByPowers = null);
+    IReadOnlyList<int>? VisitedByPowers = null,
+    IReadOnlyDictionary<string, int>? MilitaryStock = null);
 
 /// <summary>A unit inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Id">Unit id.</param>

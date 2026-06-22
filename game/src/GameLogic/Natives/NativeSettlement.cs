@@ -207,15 +207,27 @@ public sealed class NativeSettlement
     /// <summary>
     /// Muskets and horses the settlement holds, by goods id (FreeCol <c>IndianSettlement</c> goods container — the
     /// stock the native AI arms its braves from, <see cref="GameSession.Game.TryEquipBrave"/>). We do not model a
-    /// full native warehouse: this is a <b>minimal, transient</b> military stock that is <em>not serialized</em>
-    /// (consistent with the "no native goods store" abstraction the gift/pillage paths already make) and defaults to
-    /// empty, so a generated/loaded game holds none and the equip step never fires — the human's stream 0 and every
-    /// save round-trip stay byte-identical (ADR-009). Only gameplay/tests that deposit muskets/horses here activate it.
+    /// full native warehouse: this is a <b>minimal military stock</b> — only the muskets/horses a settlement retains
+    /// to arm its braves (FreeCol's military-goods retention, <c>Settlement.getWantedGoodsAmount</c> for military
+    /// goods). The generator <b>seeds</b> it at game creation, sized by settlement type/capital
+    /// (<see cref="World.NativeSettlementGenerator"/>), so a real game's threatened camps actually arm their braves.
+    /// It is <b>serialized additively</b> (save v54, <see cref="Persistence.SavedNativeSettlement.MilitaryStock"/>):
+    /// emitted only when non-empty, so an empty-stock settlement round-trips byte-identically (ADR-009). Spending
+    /// (equipping braves) and the deterministic seed are RNG-free, never the human's stream 0.
     /// </summary>
     private readonly Dictionary<string, int> _militaryStock = [];
 
     /// <summary>Units of <paramref name="goodsId"/> the settlement holds (0 if none). See <see cref="_militaryStock"/>.</summary>
     public int StockOf(string goodsId) => _militaryStock.GetValueOrDefault(goodsId);
+
+    /// <summary>
+    /// The settlement's military stock as goods-id → amount pairs (only goods it actually holds, ordered by goods id
+    /// for a stable serialization), or an empty sequence when it holds none. The serializer (save v54) emits this only
+    /// when non-empty, so an empty-stock settlement is byte-identical to one with no field (ADR-009). See
+    /// <see cref="_militaryStock"/>.
+    /// </summary>
+    public IEnumerable<KeyValuePair<string, int>> MilitaryStock =>
+        _militaryStock.OrderBy(kv => kv.Key, System.StringComparer.Ordinal);
 
     /// <summary>Adds <paramref name="amount"/> of <paramref name="goodsId"/> to the settlement's military stock (clamped at 0); the native AI consumes it when equipping braves.</summary>
     public void AddStock(string goodsId, int amount)

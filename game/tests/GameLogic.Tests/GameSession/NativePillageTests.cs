@@ -192,6 +192,8 @@ public class NativePillageTests
         (Game game, Colony colony, Unit brave) = Stage(seed: 13);
         foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == brave.OwnerNationId))
         {
+            s.AddStock("model.goods.muskets", -s.StockOf("model.goods.muskets")); // keep the brave unarmed so the seed-13 pillage roll stands…
+            s.AddStock("model.goods.horses", -s.StockOf("model.goods.horses"));   // …(the generator now seeds arms — 86d3e49gq) — this test is about pillage, not arming
             game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // its nation is now Hateful → it raids
         }
 
