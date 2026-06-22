@@ -25,6 +25,36 @@ public class InputTests
 {
     private const ulong Seed = 424242;
 
+    /// <summary>
+    /// Resets the process-global Godot <see cref="Input"/> singleton before and after every case so the L3 suite is
+    /// order-independent. Each case loads a fresh scene, but <see cref="Input"/> is a process singleton the scene
+    /// runner mutates: <c>SetMousePos</c>/<c>SimulateMouseMove</c> leave the cursor parked at the previous case's last
+    /// tile, and parsed button/key events can still sit in the buffer. A stale cursor makes the next case's relative
+    /// mouse-move start from the wrong origin (so the click can land on the corner HUD instead of the target tile),
+    /// which is the input-bleed flake (the failing set shifted run-to-run). We release the left mouse button and the
+    /// keys these cases press, warp the cursor to the origin, then flush the buffer — so every case starts clean.
+    /// </summary>
+    [BeforeTest]
+    public void ResetGlobalInputStateBeforeEachTest() => ResetGlobalInputState();
+
+    [AfterTest]
+    public void ResetGlobalInputStateAfterEachTest() => ResetGlobalInputState();
+
+    private static void ResetGlobalInputState()
+    {
+        // Release the left mouse button in case a press is still flagged held on the global Input.
+        Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        // Release every key these cases drive (W/G/N/B/F5/F9), so no key stays flagged pressed across cases.
+        foreach (Key key in new[] { Key.W, Key.G, Key.N, Key.B, Key.F5, Key.F9 })
+        {
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, Pressed = false });
+        }
+        // Park the cursor at a neutral origin so the next case's first mouse-move starts from a known position.
+        Input.WarpMouse(Vector2.Zero);
+        // Drain anything queued above (and any leftover from the previous case) before the next case runs.
+        Input.FlushBufferedEvents();
+    }
+
     [TestCase(Timeout = 60000)]
     public async Task ClickUnit_Selects_ThenClickAdjacentTile_Moves()
     {
@@ -680,16 +710,26 @@ public class InputTests
         AssertThat(panel.Visible).IsTrue();
         AssertThat(game.PendingDemand).IsNotNull();
 
-        // Pay tribute → the demanded goods leave the colony and the modal closes.
+        // Pay tribute → the demanded payment leaves the human and the modal closes. A demand is for either a specific
+        // goods (GoodsId set → comes out of the colony store) or gold (GoodsId null → comes out of the player's purse);
+        // assert against whichever the seed produced, mirroring the engine's clamp-to-available (AcceptPendingDemand).
         int demanded = game.PendingDemand!.Amount;
-        string goodsId = game.PendingDemand!.GoodsId!;
-        int before = colony.StoreOf(goodsId);
+        string? goodsId = game.PendingDemand!.GoodsId;
+        int goodsBefore = goodsId is null ? 0 : colony.StoreOf(goodsId);
+        int goldBefore = game.HumanPlayer.Gold;
         controller.GetNode<Button>("UI/NativeDemandPanel/VBox/Buttons/PayButton").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(panel.Visible).IsFalse();
         AssertThat(game.PendingDemand).IsNull();
-        AssertThat(colony.StoreOf(goodsId)).IsEqual(before - demanded);
+        if (goodsId is null)
+        {
+            AssertThat(game.HumanPlayer.Gold).IsEqual(goldBefore - System.Math.Min(demanded, goldBefore)); // gold demand
+        }
+        else
+        {
+            AssertThat(colony.StoreOf(goodsId)).IsEqual(goodsBefore - System.Math.Min(demanded, goodsBefore)); // goods demand
+        }
     }
 
     [TestCase(Timeout = 60000)]
@@ -844,8 +884,9 @@ public class InputTests
         Vector2 screen = MapView.TileCentre(tile) - camera.Position + viewportSize / 2f;
 
         runner.SetMousePos(screen);
+        Input.FlushBufferedEvents(); // make the warp land before the press, so the click fires at this tile (not a stale pos)
         await runner.SimulateFrames(1);
-        runner.SimulateMouseButtonPressed(MouseButton.Left);
+        runner.SimulateMouseButtonPressed(MouseButton.Left); // press+release (one click) — never leaves the button held
         await runner.SimulateFrames(2);
     }
 
