@@ -1406,4 +1406,84 @@ public class IndependenceTests
         Assert.Equal(PlayerType.Rebel, pa.PlayerType);                      // it really did declare in the driven game
         Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson()); // byte-identical whole-state
     }
+
+    // ── Intervention force grows every interventionTurns (86d3e4bm9, FreeCol Monarch.updateInterventionForce) ──
+
+    /// <summary>The land-unit count of a grown intervention force (the part that scales with the war's length).</summary>
+    private static int LandCount(InterventionForceComposition force) =>
+        force.Units.Where(u => Classic.Unit(u.UnitTypeId).IsNaval is false).Sum(u => u.Count);
+
+    [Fact]
+    public void GrownInterventionForce_GrowsLandBlocksByOnePerInterval()
+    {
+        // FreeCol updateInterventionForce: updates = turn / interventionTurns extra of each land block. Classic medium
+        // is 2+2+2 land (6) + 2 men-o-war, interventionTurns = 52. The growth is deterministic on the turn alone.
+        (Game game, _) = RebellionReady();
+        int turns = Classic.InterventionTurns; // 52
+
+        // Before the first interval (turns 1..51): the base force, unchanged — no growth yet.
+        Assert.Equal(Classic.InterventionForce.TotalCount, game.GrownInterventionForce(1).TotalCount);
+        Assert.Equal(6, LandCount(game.GrownInterventionForce(turns - 1)));
+
+        // One interval (turn 52): each of the 3 land blocks gains 1 → 3+3+3 = 9 land units.
+        InterventionForceComposition oneInterval = game.GrownInterventionForce(turns);
+        Assert.Equal(9, LandCount(oneInterval));
+        Assert.All(oneInterval.Units.Where(u => Classic.Unit(u.UnitTypeId).IsNaval is false),
+            u => Assert.Equal(3, u.Count));
+
+        // Two intervals (turn 104): 4+4+4 = 12 land. Three intervals (turn 156): 5+5+5 = 15 land — monotone growth.
+        Assert.Equal(12, LandCount(game.GrownInterventionForce(turns * 2)));
+        Assert.Equal(15, LandCount(game.GrownInterventionForce(turns * 3)));
+    }
+
+    [Fact]
+    public void GrownInterventionForce_AddsTransportShips_SoTheEnlargedLandForceStillFitsTheFleet()
+    {
+        // FreeCol Force.prepareToBoard: once the grown land force needs more hold slots than the 2 base men-o-war
+        // provide (2 × space 6 = 12 slots), extra men-o-war are added to carry it. At 3 intervals the land force is
+        // 15 units (15 slots > 12) so the fleet must grow beyond the base 2 men-o-war.
+        (Game game, _) = RebellionReady();
+        InterventionForceComposition force = game.GrownInterventionForce(Classic.InterventionTurns * 3);
+
+        int navalCount = force.Units.Where(u => Classic.Unit(u.UnitTypeId).IsNaval).Sum(u => u.Count);
+        int capacity = force.Units.Where(u => Classic.Unit(u.UnitTypeId).IsNaval)
+            .Sum(u => Classic.Unit(u.UnitTypeId).Space * u.Count);
+        int required = force.Units.Where(u => Classic.Unit(u.UnitTypeId).IsNaval is false)
+            .Sum(u => Classic.Unit(u.UnitTypeId).CarrySlots * u.Count);
+
+        Assert.True(navalCount > 2, "the fleet grew past the 2 base men-o-war to carry the enlarged land force");
+        Assert.True(capacity >= required, "the grown fleet can berth the whole enlarged land force (no troops stranded)");
+    }
+
+    /// <summary>Lands the intervention force at a chosen turn by round-tripping the in-flight war through a save with
+    /// that turn, then resolving — a faithful long-rebellion snapshot without driving dozens of real turns.</summary>
+    private static int LandInterventionAtTurn(Game declared, int turn)
+    {
+        SaveGame snapshot = SaveGame.From(declared) with { Turn = turn };
+        Game atTurn = snapshot.Restore(Classic);
+        Player rebel = atTurn.HumanPlayer;
+        rebel.InterventionBells = Classic.InterventionBells; // at the threshold — the next resolution lands the ally
+        int before = atTurn.Units.Count(u => u.OwnerId == rebel.PlayerId && (u.IsOnMap || u.IsAboard));
+        atTurn.ResolveWarOfIndependence(); // the ally lands (the REF is still mustering, so the fleet arrives unmolested)
+        return atTurn.Units.Count(u => u.OwnerId == rebel.PlayerId && (u.IsOnMap || u.IsAboard)) - before;
+    }
+
+    [Fact]
+    public void LongRebellion_BringsProgressivelyLargerAllyLandings()
+    {
+        // L2 scenario: the same rebellion, held out to ever-later turns, draws ever-bigger ally landings (FreeCol
+        // updateInterventionForce). Base force = 8 (6 land + 2 naval). Each interval adds 3 land units (+ transport).
+        (Game game, _) = RebellionReady(4242);
+        game.DeclareIndependence(game.HumanPlayer);
+
+        int early = LandInterventionAtTurn(game, 1);                                    // before the first interval: the base 8
+        int oneInterval = LandInterventionAtTurn(game, Classic.InterventionTurns);       // +3 land = 11 (+ any transport)
+        int twoIntervals = LandInterventionAtTurn(game, Classic.InterventionTurns * 2);  // +6 land
+        int threeIntervals = LandInterventionAtTurn(game, Classic.InterventionTurns * 3); // +9 land (+ extra men-o-war)
+
+        Assert.Equal(Classic.InterventionForce.TotalCount, early); // turn < interventionTurns → the unchanged base force
+        Assert.True(oneInterval > early, "one interval of war brings a larger landing than the first");
+        Assert.True(twoIntervals > oneInterval, "two intervals brings a larger landing than one");
+        Assert.True(threeIntervals > twoIntervals, "the landings keep growing the longer the war drags on");
+    }
 }

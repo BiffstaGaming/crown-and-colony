@@ -853,14 +853,81 @@ public sealed partial class Game
     }
 
     /// <summary>
+    /// The Intervention Force composition <em>as it has grown by the current turn</em> (FreeCol
+    /// <c>Monarch.updateInterventionForce</c>): the longer the war drags on, the larger the friendly ally's landing.
+    /// FreeCol grows the standing force once at declaration by <c>updates = turnNumber / interventionTurns</c> extra
+    /// units per land block; our model lands the ally repeatedly (each time the rebel re-banks
+    /// <see cref="Specification.Ruleset.InterventionBells"/>), so we recompute the growth from the <em>current</em> turn
+    /// at each landing — a progressively bigger ally arriving every <c>interventionTurns</c>-worth of war, derived purely
+    /// from existing state (the turn counter), so nothing new is persisted (no save bump, ADR-009).
+    /// <para><b>Growth (exactly FreeCol's formula).</b> With <c>updates = turn / interventionTurns</c> (integer
+    /// division; 0 when <c>interventionTurns ≤ 0</c> or before the first interval): every <b>land</b> block of base
+    /// count <c>c</c> becomes <c>c + updates</c> (so the classic-medium 2+2+2 land force is 3+3+3 after one interval,
+    /// 4+4+4 after two…). The <b>naval</b> blocks keep their base count and are then topped up with transport ships so
+    /// the fleet can still carry the enlarged land force — FreeCol's <c>Force.prepareToBoard</c>: if the land force's
+    /// required hold slots exceed the fleet's capacity, add <c>(deficit / shipSpace) + 1</c> more of the first
+    /// unit-carrying ship type. This keeps the grown land units from being left behind for want of a berth.</para>
+    /// <para>Pure and RNG-free — it reads only the ruleset force and the turn, drawing no stream (least of all the
+    /// human's stream 0). <c>internal</c> so the growth is unit-testable at a chosen turn without driving the war.</para>
+    /// </summary>
+    /// <param name="turn">The current turn (FreeCol <c>getTurn().getNumber()</c>); the growth scales with it.</param>
+    /// <returns>The grown force composition: land blocks enlarged by the interval count, naval blocks plus transport.</returns>
+    internal InterventionForceComposition GrownInterventionForce(int turn)
+    {
+        InterventionForceComposition baseForce = Ruleset.InterventionForce;
+        int updates = Ruleset.InterventionTurns > 0 ? turn / Ruleset.InterventionTurns : 0;
+        if (updates <= 0)
+        {
+            return baseForce; // before the first interval (or no growth period) the base force lands unchanged
+        }
+
+        // Land blocks grow by `updates` each (FreeCol: ivf.add(type, role, updates) merges onto the matching block).
+        var grown = new List<InterventionForceUnit>();
+        int spaceRequired = 0; // hold slots the enlarged land force needs (FreeCol Force.spaceRequired)
+        int capacity = 0;      // hold slots the fleet provides (FreeCol Force.capacity)
+        foreach (InterventionForceUnit block in baseForce.Units)
+        {
+            UnitType type = Ruleset.Unit(block.UnitTypeId);
+            if (type.IsNaval)
+            {
+                grown.Add(block); // naval blocks keep their base count; transport is topped up below
+                capacity += type.Space * block.Count;
+            }
+            else
+            {
+                int count = block.Count + updates;
+                grown.Add(block with { Count = count });
+                spaceRequired += type.CarrySlots * count;
+            }
+        }
+
+        // prepareToBoard: top up the first carrier ship type so the fleet can berth the enlarged land force.
+        if (spaceRequired > capacity)
+        {
+            InterventionForceUnit? carrierBlock = grown
+                .FirstOrDefault(b => Ruleset.Unit(b.UnitTypeId) is { IsNaval: true, Space: > 0 });
+            if (carrierBlock is { } carrier)
+            {
+                int shipSpace = Ruleset.Unit(carrier.UnitTypeId).Space;
+                int more = (spaceRequired - capacity) / shipSpace + 1;
+                int index = grown.IndexOf(carrier);
+                grown[index] = carrier with { Count = carrier.Count + more };
+            }
+        }
+
+        return new InterventionForceComposition(grown);
+    }
+
+    /// <summary>
     /// Lands the foreign Intervention Force to aid <paramref name="rebel"/>: a friendly power's
     /// <see cref="Specification.Ruleset.InterventionForce"/> (classic medium: 2 colonial-regular soldiers + 2 dragoons
-    /// + 2 artillery + 2 men-o-war) arrives off one of the rebel's connected ports, owned by — and fighting for — the
-    /// rebel (FreeCol <c>createUnits(ivf…, entry, …)</c> on the rebel itself). The men-o-war drop onto water near the
-    /// port and <b>carry the land units as passengers</b> (FreeCol <c>loadShips</c>): the ally fleet arrives offshore
-    /// with the troops aboard, and the player disembarks them where they choose. This is what lets the ally reach a
-    /// <em>besieged</em> port (its whole purpose) — it needs only water for the ships, not an open ring of beach tiles.
-    /// Land units that don't fit in the fleet's holds are left behind (FreeCol disposes the left-overs).
+    /// + 2 artillery + 2 men-o-war) — grown for the current turn by <see cref="GrownInterventionForce"/> so a long war
+    /// brings progressively larger landings — arrives off one of the rebel's connected ports, owned by — and fighting
+    /// for — the rebel (FreeCol <c>createUnits(ivf…, entry, …)</c> on the rebel itself). The men-o-war drop onto water
+    /// near the port and <b>carry the land units as passengers</b> (FreeCol <c>loadShips</c>): the ally fleet arrives
+    /// offshore with the troops aboard, and the player disembarks them where they choose. This is what lets the ally
+    /// reach a <em>besieged</em> port (its whole purpose) — it needs only water for the ships, not an open ring of beach
+    /// tiles. Land units that don't fit in the fleet's holds are left behind (FreeCol disposes the left-overs).
     /// <para>The port and landing tiles are chosen on the <see cref="InterventionStreamId"/> stream (never the human's
     /// stream 0, ADR-009). No port, or no water for even one man-o-war → no landing (the rebel has lost its coast).</para>
     /// </summary>
@@ -871,6 +938,10 @@ public sealed partial class Game
         {
             return; // nowhere to land — the rebel holds no connected port
         }
+
+        // The force grows with the war's length (FreeCol updateInterventionForce): each landing is sized for the
+        // current turn, so a protracted rebellion draws ever-larger ally reinforcements. Pure — no stream drawn.
+        InterventionForceComposition force = GrownInterventionForce(Turn);
 
         // Deterministic ally stream, seeded off the rebel's own stream state + the turn (never stream 0). For a human
         // rebel RandomFor returns stream 0, so we seed off the REF's persisted stream instead when present, else the
@@ -883,7 +954,7 @@ public sealed partial class Game
 
         // Pass 1: the men-o-war make landfall on the water around the port (each takes the next free sea tile).
         var fleet = new List<Unit>();
-        foreach (InterventionForceUnit block in Ruleset.InterventionForce.Units.Where(b => Ruleset.Unit(b.UnitTypeId).IsNaval))
+        foreach (InterventionForceUnit block in force.Units.Where(b => Ruleset.Unit(b.UnitTypeId).IsNaval))
         {
             for (int i = 0; i < block.Count; i++)
             {
@@ -910,7 +981,7 @@ public sealed partial class Game
         // Pass 2: the land units board the fleet as passengers (FreeCol loadShips), spread across the ships by free
         // hold space. Any that don't fit are left behind (disposed) rather than scattered ashore.
         int shipIndex = 0;
-        foreach (InterventionForceUnit block in Ruleset.InterventionForce.Units.Where(b => !Ruleset.Unit(b.UnitTypeId).IsNaval))
+        foreach (InterventionForceUnit block in force.Units.Where(b => !Ruleset.Unit(b.UnitTypeId).IsNaval))
         {
             UnitType type = Ruleset.Unit(block.UnitTypeId);
             for (int i = 0; i < block.Count; i++)
