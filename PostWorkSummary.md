@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-22 — Path-to-100% coding WAVE 4 shipped (C2+D3+D4+E3) ✅
+
+**Requested:** Continue coding the path-to-100% tasks via parallel agents.
+**Did:** 4-stream parallel worktree wave, integrated CI-green:
+- **C2** (`2557c9c`) — native two-way trade: settlements hold a serialized general goods stock; human can buy (priciest-first) + sell (stock-driven price); wanted-goods top-3 derive from stock; haggle round on stream 104. **Save v56→v57.**
+- **D3** (`d27b008`) — amphibious ship-to-shore assault (fires the −75% modifier; slay-not-capture enabled); gated on `amphibiousMoves` (classic default false → default byte-identical). No save bump.
+- **D4** (`5c44d15`) — starvation destroys a pop-1 colony (dispose + owner notice + `ColonyDestroyed` history event for E2); unreachable in classic (centre ≥2 food). No save bump.
+- **E3** (`092b821`) — New-Game options surface + map-gen options + **scenario/variant selector** (`GameVariants` registry — the Australia seam); surfaced honoured options only (omitted inert map-gen counts, documented). No save bump.
+**Status:** Integrated, pushed `5c44d15…2557c9c`. Build clean + **2134 L1/L2 + 5 soak green** (+ L3 green for D3/E3). Save **v56→v57** (C2). Distinct regions auto-merged.
+**Decisions:** C2/E3 left their out-of-scope pieces (AI native trading, inert map-gen dials) as documented follow-ups. The scenario selector is data-driven so Australia is a registry row, not code.
+**Scheduled next:** **Wave 5 (final parity wave) — E2 (persist history + finish score, save bump), B3 (treasure-galleon + Europe route stops), D2 (intervention-force growth), E4 (report panels)**. Then only the A4 offensive-AI follow-up `86d3e4q65` remains.
+**Needs you:** Nothing blocking. **15 of 19 path-to-100% tasks shipped.**
+
 ## 2026-06-22 — Path-to-100% coding WAVE 3 shipped (D1+E1+C3+B4) ✅
 
 **Requested:** Continue coding the path-to-100% tasks via parallel agents.
