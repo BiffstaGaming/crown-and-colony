@@ -220,4 +220,69 @@ public class TreasureTrainTests
         Assert.True(check.Allowed);
         Assert.Equal(400, check.Cost); // the net the player would bank (preview)
     }
+
+    // ---- Load onto a galleon + sail home fee-free (86d3e4bcp, GAP A) ----
+
+    private const string Galleon = "model.unit.galleon"; // space 6 — the only carrier that fits a treasure train (spaceTaken 6)
+
+    /// <summary>A 3×1 coastal strip (plains port colony at (0,0), ocean at (1,0), high seas at (2,0)) with a human galleon on the ocean beside the colony and a treasure train standing in the colony.</summary>
+    private static (Game game, Unit train, Unit galleon) TrainAndGalleonAtColony(int amount)
+    {
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 3,
+            MapHeight = 1,
+            Terrain = ["model.tile.plains", "model.tile.ocean", "model.tile.highSeas"],
+            Units =
+            [
+                new SavedUnit(1, Galleon, 1, 0, 18),                              // on the ocean beside the colony
+                new SavedUnit(2, TreasureTrain, 0, 0, 3, TreasureAmount: amount), // in the port colony
+            ],
+            Explored = [0, 1, 2],
+            Colonies = [new SavedColony(1, "Port", 0, 0, 1)],
+        };
+        Game game = save.Restore(Classic);
+        game.HumanPlayer.TaxRate = 0; // isolate the (waived) King's cut from the monarch tax
+        return (game, game.Units.First(u => u.Id == 2), game.Units.First(u => u.Id == 1));
+    }
+
+    [Fact]
+    public void TreasureTrain_AboardAGalleon_CannotBeCashedInWhileStillOnTheMap()
+    {
+        (Game game, Unit train, Unit galleon) = TrainAndGalleonAtColony(1000);
+        game.Board(train, galleon); // loaded as cargo, but the galleon is still in the New World
+
+        Assert.True(train.IsAboard);
+        Assert.False(game.CheckCashInTreasureTrain(train).Allowed); // not yet home → no cash-in here
+    }
+
+    [Fact]
+    public void TreasureTrain_CarriedHomeOnAGalleon_CashesInFeeFree()
+    {
+        (Game game, Unit train, Unit galleon) = TrainAndGalleonAtColony(1000);
+        game.Board(train, galleon);
+        int goldBefore = game.HumanPlayer.Gold;
+        int trainId = train.Id;
+
+        game.MoveUnit(galleon, new Position(2, 0)); // step out to the high seas (the train rides along)
+        game.SailToEurope(galleon);
+        for (int i = 0; i < Game.SailTurns; i++)
+        {
+            game.EndTurn();                         // cross the Atlantic
+        }
+
+        Assert.Equal(UnitLocation.InEurope, galleon.Location);
+        Assert.Equal(UnitLocation.InEurope, train.Location);   // the aboard train arrived with the ship
+        Assert.True(game.CheckCashInTreasureTrain(train).Allowed);
+        Assert.Equal(1000, game.CashInValue(train));           // fee-free — you carried it yourself (no King's cut)
+
+        game.CashInTreasureTrain(train);
+
+        Assert.Equal(goldBefore + 1000, game.HumanPlayer.Gold); // full amount banked (no fee, no tax)
+        Assert.DoesNotContain(game.Units, u => u.Id == trainId);// the train is spent
+        Assert.Empty(game.Passengers(galleon));                 // and the galleon's hold is freed
+    }
 }

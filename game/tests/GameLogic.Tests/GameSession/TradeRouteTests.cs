@@ -88,6 +88,97 @@ public class TradeRouteTests
         Assert.Equal(0, alpha.StoreOf(Sugar)); // picked up at the source
     }
 
+    // ───────────────────────── Europe stops (86d3e4bcp, GAP B) ─────────────────────────
+
+    private const string Galleon = "model.unit.galleon";
+
+    /// <summary>
+    /// A 3×1 coastal strip — plains port colony Alpha at (0,0) holding 200 sugar, ocean at (1,0), high seas at (2,0) —
+    /// with a human galleon on the ocean beside the colony. Returns the game, the galleon and Alpha.
+    /// </summary>
+    private static Game CoastalPort(out Unit galleon, out Colony alpha)
+    {
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 3,
+            MapHeight = 1,
+            Terrain = ["model.tile.plains", "model.tile.ocean", "model.tile.highSeas"],
+            Units = [new SavedUnit(1, Galleon, 1, 0, 18)],
+            Explored = [0, 1, 2],
+            Colonies = [new SavedColony(1, "Alpha", 0, 0, 1, new Dictionary<string, int> { [Sugar] = 200 })],
+        };
+        Game game = save.Restore(Classic);
+        galleon = game.Units[0];
+        alpha = game.Colonies[0];
+        return game;
+    }
+
+    [Fact]
+    public void CreateTradeRoute_AcceptsAEuropeStop()
+    {
+        Game game = CoastalPort(out _, out Colony alpha);
+        TradeRoute route = game.CreateTradeRoute(game.HumanPlayer, "Export run",
+            [new TradeRouteStop(alpha.Id, [Sugar]), TradeRouteStop.Europe([])]); // Alpha → Europe
+        Assert.Equal(2, route.Stops.Count);
+        Assert.True(route.Stops[1].IsEurope);
+        Assert.Empty(game.ValidateTradeRoute(route)); // a Europe stop is a valid location → no warnings
+    }
+
+    [Fact]
+    public void AEuropeStopRoute_HaulsColonyGoodsToEurope_AndSellsThem()
+    {
+        Game game = CoastalPort(out Unit galleon, out Colony alpha);
+        TradeRoute route = game.CreateTradeRoute(game.HumanPlayer, "Sugar export",
+            [new TradeRouteStop(alpha.Id, [Sugar]), TradeRouteStop.Europe([])]); // load sugar at Alpha, sell everything in Europe
+        game.AssignTradeRoute(galleon, route.Id);
+        int goldBefore = game.HumanPlayer.Gold;
+        int sugarBefore = alpha.StoreOf(Sugar);
+
+        for (int turn = 0; turn < 14; turn++)
+        {
+            game.EndTurn(); // pick up at Alpha → sail to Europe → sell → sail home → repeat
+        }
+
+        Assert.True(alpha.StoreOf(Sugar) < sugarBefore, "the carrier should have shipped sugar out of Alpha");
+        Assert.True(game.HumanPlayer.Gold > goldBefore, "selling the sugar in Europe should have credited the treasury");
+    }
+
+    [Fact]
+    public void AEuropeStop_SurvivesSaveRoundTrip_WithoutAVersionBump()
+    {
+        Game game = CoastalPort(out _, out Colony alpha);
+        game.CreateTradeRoute(game.HumanPlayer, "Export",
+            [new TradeRouteStop(alpha.Id, [Sugar]), TradeRouteStop.Europe([Sugar])]); // Europe stop loads sugar (buy)
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        TradeRoute restored = Assert.Single(loaded.HumanPlayer.TradeRoutes);
+        Assert.Equal(2, restored.Stops.Count);
+        Assert.False(restored.Stops[0].IsEurope);          // the colony stop
+        Assert.True(restored.Stops[1].IsEurope);           // the Europe stop round-trips via the sentinel ColonyId (0)
+        Assert.Equal([Sugar], restored.Stops[1].LoadGoodsIds);
+        Assert.Equal(57, SaveGame.CurrentVersion);         // no save bump — Europe uses the existing TradeRouteStop shape
+    }
+
+    [Fact]
+    public void AWagonAssignedAEuropeStop_SkipsIt_RatherThanStallingForever()
+    {
+        Game game = CoastalPort(out _, out Colony alpha);
+        Unit wagon = game.SpawnUnit(Classic.Unit("model.unit.wagonTrain"), alpha.Position); // a land carrier, cannot sail
+        TradeRoute route = game.CreateTradeRoute(game.HumanPlayer, "Mixed",
+            [new TradeRouteStop(alpha.Id, [Sugar]), TradeRouteStop.Europe([])]);
+        game.AssignTradeRoute(wagon, route.Id);
+        wagon.TradeRouteStopIndex = 1; // park it on the Europe stop
+
+        game.EndTurn();
+
+        Assert.Equal(0, wagon.TradeRouteStopIndex); // the un-sailable Europe stop was skipped (wrapped back to stop 0), not stuck
+        Assert.True(wagon.IsOnMap);                 // and the wagon never left the map
+    }
+
     [Fact]
     public void ARouteLessGame_OmitsTheV43Tokens_AndStaysCurrent()
     {

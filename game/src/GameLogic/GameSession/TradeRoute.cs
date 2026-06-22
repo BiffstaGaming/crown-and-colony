@@ -11,10 +11,33 @@ namespace CrownAndColony.GameLogic.GameSession;
 /// <param name="Stops">The ordered stops; a route needs at least two to move goods (a 0/1-stop route is inert).</param>
 public sealed record TradeRoute(int Id, string Name, IReadOnlyList<TradeRouteStop> Stops);
 
-/// <summary>One stop on a <see cref="TradeRoute"/>: a colony to visit and the goods to load there.</summary>
-/// <param name="ColonyId">The colony this stop visits.</param>
-/// <param name="LoadGoodsIds">Goods ids to load at this stop; everything else the carrier holds is unloaded here (delivered).</param>
-public sealed record TradeRouteStop(int ColonyId, IReadOnlyList<string> LoadGoodsIds);
+/// <summary>
+/// One stop on a <see cref="TradeRoute"/>: a location to visit (a colony, or <b>Europe</b>) and the goods to load
+/// there. FreeCol's <c>TradeRouteStop.location</c> is any <c>Location</c> — a <c>Colony</c> or the player's
+/// <c>Europe</c>. We carry no <c>Location</c> graph, so a stop's location is encoded in <see cref="ColonyId"/>:
+/// a positive id names a colony, while the reserved sentinel <see cref="EuropeColonyId"/> (0) means Europe. Colony
+/// ids are always assigned from 1 upward (<c>Game._nextColonyId</c>), so 0 can never collide with a real colony —
+/// this lets a Europe stop ride the <em>existing</em> <c>TradeRouteStop</c> serialization with no new save field
+/// and no version bump (ADR / SAVE: save version stays 57).
+/// </summary>
+/// <param name="ColonyId">The colony this stop visits, or <see cref="EuropeColonyId"/> (0) for Europe.</param>
+/// <param name="LoadGoodsIds">Goods ids to load at this stop; everything else the carrier holds is unloaded here (delivered/sold).</param>
+public sealed record TradeRouteStop(int ColonyId, IReadOnlyList<string> LoadGoodsIds)
+{
+    /// <summary>
+    /// The reserved <see cref="ColonyId"/> sentinel meaning "this stop is Europe", not a colony. Colony ids are
+    /// assigned from 1 upward, so 0 is never a real colony and is safe to overload as the Europe marker — keeping a
+    /// Europe stop within the existing save shape (no new field, save version unchanged).
+    /// </summary>
+    public const int EuropeColonyId = 0;
+
+    /// <summary>Whether this stop is the player's Europe (the docked-ship buy/sell market) rather than a colony.</summary>
+    public bool IsEurope => ColonyId == EuropeColonyId;
+
+    /// <summary>Builds a Europe trade-route stop loading the given goods (bought at the European market on arrival).</summary>
+    /// <param name="loadGoodsIds">Goods ids to buy in Europe and load aboard; everything else the carrier holds is sold there.</param>
+    public static TradeRouteStop Europe(IReadOnlyList<string> loadGoodsIds) => new(EuropeColonyId, loadGoodsIds);
+}
 
 /// <summary>
 /// The kind of problem a trade route can have, mirroring the cases FreeCol's <c>TradeRoute.verify()</c> reports

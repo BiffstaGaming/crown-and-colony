@@ -1231,13 +1231,22 @@ public sealed partial class Game
         ApplyGoodsModifiers(owner, TreasureTransportFeeModifierId, Ruleset.Difficulty.TreasureTransportFee * train.TreasureAmount / 100);
 
     /// <summary>
+    /// Whether <paramref name="train"/> is in Europe — either docked there itself <em>or</em> loaded as cargo on a ship
+    /// that is docked there (FreeCol <c>Unit.isInEurope</c> follows the carrier). A train that reached Europe — under its
+    /// own (test) location or carried home on a galleon — pays no King's transport fee.
+    /// </summary>
+    private bool TreasureIsInEurope(Unit train) =>
+        train.Location == UnitLocation.InEurope
+        || (train.IsAboard && UnitById(train.CarrierId!.Value) is { Location: UnitLocation.InEurope });
+
+    /// <summary>
     /// The gold <paramref name="owner"/> nets cashing in <paramref name="train"/>: the carried amount less the King's
-    /// <see cref="TransportFee"/> (0 if the train is already in Europe — you carried it yourself), then the monarch's
-    /// tax on the remainder. Integer-truncated, like the rest of the economy.
+    /// <see cref="TransportFee"/> (0 if the train reached Europe — <see cref="TreasureIsInEurope"/>, i.e. you carried it
+    /// yourself), then the monarch's tax on the remainder. Integer-truncated, like the rest of the economy.
     /// </summary>
     private int CashInValue(Player owner, Unit train)
     {
-        int fee = train.Location == UnitLocation.InEurope ? 0 : TransportFee(owner, train);
+        int fee = TreasureIsInEurope(train) ? 0 : TransportFee(owner, train);
         return (train.TreasureAmount - fee) * (100 - owner.TaxRate) / 100;
     }
 
@@ -1248,7 +1257,10 @@ public sealed partial class Game
     /// <summary>
     /// Whether <paramref name="train"/> may be cashed in where it stands: it must be a treasure-carrying unit with
     /// gold aboard, standing at a colony its owner holds (FreeCol requires a port connected to Europe — we have no
-    /// connectivity graph, so any owned colony qualifies) or docked in Europe. The check's cost carries the net gold.
+    /// connectivity graph, so any owned colony qualifies), docked in Europe, <b>or loaded as cargo on a ship docked in
+    /// Europe</b> (the classic "carry the treasure home on a galleon, fee-free" play — FreeCol
+    /// <c>canCashInTreasureTrain</c> accepts <c>loc instanceof Unit &amp;&amp; ((Unit)loc).isInEurope()</c>). The check's
+    /// cost carries the net gold.
     /// </summary>
     public MoveCheck CheckCashInTreasureTrain(Unit train)
     {
@@ -1261,10 +1273,10 @@ public sealed partial class Game
             return MoveCheck.No("The treasure train carries no gold.");
         }
         bool atOwnColony = train.IsOnMap && ColonyAt(train.Position) is { } colony && colony.OwnerId == train.OwnerId;
-        bool inEurope = train.Location == UnitLocation.InEurope;
+        bool inEurope = TreasureIsInEurope(train); // docked itself, or aboard a galleon docked in Europe (fee-free)
         if (!atOwnColony && !inEurope)
         {
-            return MoveCheck.No("Bring the treasure train to one of your colonies (or to Europe) to cash it in.");
+            return MoveCheck.No("Bring the treasure train to one of your colonies (or aboard a ship to Europe) to cash it in.");
         }
         return PlayerById(train.OwnerId) is { } owner ? MoveCheck.Yes(CashInValue(owner, train)) : MoveCheck.No("The treasure train has no owner.");
     }
@@ -5544,17 +5556,22 @@ public sealed partial class Game
 
     /// <summary>
     /// Creates a trade route for <paramref name="player"/> from an ordered list of stops and returns it (FreeCol
-    /// <c>Player.newTradeRoute</c>). Every stop must name a colony <paramref name="player"/> owns. The route is given
-    /// the next per-player id and added to <see cref="Player.TradeRoutes"/>.
+    /// <c>Player.newTradeRoute</c>). Every stop must name a colony <paramref name="player"/> owns <b>or be Europe</b>
+    /// (<see cref="TradeRouteStop.IsEurope"/>). The route is given the next per-player id and added to
+    /// <see cref="Player.TradeRoutes"/>.
     /// </summary>
-    /// <exception cref="InvalidMoveException">A stop names a colony the player does not own.</exception>
+    /// <exception cref="InvalidMoveException">A stop names a colony the player does not own (a Europe stop is always allowed).</exception>
     public TradeRoute CreateTradeRoute(Player player, string name, IReadOnlyList<TradeRouteStop> stops)
     {
         foreach (TradeRouteStop stop in stops)
         {
+            if (stop.IsEurope)
+            {
+                continue; // a Europe stop is always a valid location for any player (FreeCol Player.getEurope)
+            }
             if (_colonies.FirstOrDefault(c => c.Id == stop.ColonyId) is not { } colony || colony.OwnerId != player.PlayerId)
             {
-                throw new InvalidMoveException("A trade-route stop must be one of your own colonies.");
+                throw new InvalidMoveException("A trade-route stop must be one of your own colonies (or Europe).");
             }
         }
         var route = new TradeRoute(player.NextTradeRouteId++, name, stops.ToList());
@@ -5615,16 +5632,20 @@ public sealed partial class Game
 
     /// <summary>
     /// Runs <paramref name="player"/>'s trade-route carriers for the turn (FreeCol's trade-route haul): each assigned
-    /// carrier heads for its current stop's colony; on arrival it <b>delivers</b> everything it holds that the stop
-    /// doesn't list to load (<see cref="UnloadToColony"/>), <b>loads</b> the stop's goods up to its hold
-    /// (<see cref="LoadFromColony"/>), and advances to the next stop (wrapping). A carrier whose route was deleted is
-    /// dropped; a stop whose colony is gone is skipped. The step uses <see cref="StepToward"/> on the owner's stream —
-    /// a route-less player iterates nothing, so it never perturbs the human's stream 0 or churns goldens (ADR-009).
+    /// carrier heads for its current stop; on arrival it <b>delivers</b> everything it holds that the stop doesn't list
+    /// to load (<see cref="UnloadToColony"/>), <b>loads</b> the stop's goods up to its hold (<see cref="LoadFromColony"/>),
+    /// and advances to the next stop (wrapping). A <b>Europe</b> stop (<see cref="TradeRouteStop.IsEurope"/>) is served at
+    /// the European market instead: a docked carrier <b>sells</b> what the stop doesn't load and <b>buys</b> what it does
+    /// (<see cref="ServeEuropeStop"/>); a carrier still in the New World sails across (reaching the high seas) or steps
+    /// toward the nearest high-seas tile; a carrier mid-crossing simply waits for it to arrive. A carrier whose route was
+    /// deleted is dropped; a stop whose colony is gone — or a Europe stop a non-sea carrier can never reach — is skipped.
+    /// The step uses <see cref="StepToward"/> on the owner's stream — a route-less player iterates nothing, so it never
+    /// perturbs the human's stream 0 or churns goldens (ADR-009).
     /// </summary>
     private void ProcessTradeRoutes(Player player)
     {
         foreach (Unit unit in _units
-            .Where(u => u.OwnerId == player.PlayerId && u.IsOnTradeRoute && u.IsOnMap)
+            .Where(u => u.OwnerId == player.PlayerId && u.IsOnTradeRoute && (u.IsOnMap || u.Location is UnitLocation.InEurope))
             .OrderBy(u => u.Id).ToList())
         {
             if (player.TradeRoutes.FirstOrDefault(r => r.Id == unit.TradeRouteId) is not { Stops.Count: > 0 } route)
@@ -5634,6 +5655,23 @@ public sealed partial class Game
             }
             int stopIndex = unit.TradeRouteStopIndex % route.Stops.Count;
             TradeRouteStop stop = route.Stops[stopIndex];
+            if (stop.IsEurope)
+            {
+                ProcessEuropeStop(player, unit, route, stopIndex, stop);
+                continue;
+            }
+            if (unit.Location is UnitLocation.InEurope)
+            {
+                if (unit.Type.IsNaval && !unit.IsUnderRepair)
+                {
+                    SailToNewWorld(unit); // a colony stop is served on the map → leave Europe and cross back
+                }
+                continue; // under repair (or a stuck non-sailer) → wait to re-enter the map before serving the colony
+            }
+            if (unit.Location is not UnitLocation.OnMap)
+            {
+                continue; // sailing the high seas (just left a Europe stop) → wait for the crossing to finish
+            }
             if (_colonies.FirstOrDefault(c => c.Id == stop.ColonyId) is not { } colony)
             {
                 unit.TradeRouteStopIndex = (stopIndex + 1) % route.Stops.Count; // the stop's colony is gone → skip it
@@ -5649,6 +5687,93 @@ public sealed partial class Game
                 MoveUnit(unit, step);
             }
         }
+    }
+
+    /// <summary>
+    /// Advances a carrier toward, or serves it at, a <b>Europe</b> trade-route stop. If the carrier is docked in Europe it
+    /// is served (<see cref="ServeEuropeStop"/>) and the route advances; if it's on the map it sails across (standing on
+    /// the high seas) or steps toward the nearest high-seas tile to embark; if it's mid-crossing it waits. A non-naval
+    /// carrier (a wagon train) can never reach Europe, so the stop is skipped — the self-healing analogue of a vanished
+    /// colony. Sailing/selling/buying draw no RNG; the only RNG is <see cref="StepToward"/>'s tie-break on the owner's
+    /// stream (ADR-009).
+    /// </summary>
+    private void ProcessEuropeStop(Player player, Unit unit, TradeRoute route, int stopIndex, TradeRouteStop stop)
+    {
+        if (!unit.Type.IsNaval)
+        {
+            unit.TradeRouteStopIndex = (stopIndex + 1) % route.Stops.Count; // a wagon train cannot sail to Europe → skip the stop
+            return;
+        }
+        if (unit.Location is UnitLocation.InEurope)
+        {
+            ServeEuropeStop(player, unit, stop);
+            unit.TradeRouteStopIndex = (stopIndex + 1) % route.Stops.Count;
+            return;
+        }
+        if (unit.Location is not UnitLocation.OnMap)
+        {
+            return; // sailing the high seas (to Europe or back) → wait for the crossing to finish
+        }
+        if (CheckSailToEurope(unit).Allowed)
+        {
+            SailToEurope(unit); // standing on the high seas → cross now
+        }
+        else if (NearestHighSeasTile(player, unit.Position) is { } highSeas && StepToward(player, unit, highSeas) is { } step)
+        {
+            MoveUnit(unit, step); // make for the map edge to embark for Europe
+        }
+    }
+
+    /// <summary>
+    /// Serves a docked carrier at a <b>Europe</b> stop (FreeCol's trade-route Europe leg): <b>sells</b> to the European
+    /// market everything the carrier holds that <paramref name="stop"/> does not list to load (the delivery half), then
+    /// <b>buys</b> the stop's listed goods up to the carrier's free hold and the owner's gold (the load half). Boycotted or
+    /// untradeable goods are simply left aboard (they stay until a stop can take them). Mirrors <see cref="ServeTradeRouteStop"/>
+    /// but against the market (<see cref="SellShipCargo(Player, Unit, string, int)"/>/<see cref="BuyEuropeGoods(Player, Unit, string, int)"/>) instead of a colony warehouse.
+    /// </summary>
+    private void ServeEuropeStop(Player player, Unit carrier, TradeRouteStop stop)
+    {
+        foreach ((string goodsId, int amount) in carrier.Cargo.Where(c => !stop.LoadGoodsIds.Contains(c.Key)).ToList())
+        {
+            if (player.Market.IsTradeable(goodsId) && player.Market.CanTrade(goodsId)) // skip boycotted/untradeable → keep it aboard
+            {
+                SellShipCargo(player, carrier, goodsId, amount); // sell what this stop doesn't want
+            }
+        }
+        foreach (string goodsId in stop.LoadGoodsIds)
+        {
+            if (!player.Market.IsTradeable(goodsId))
+            {
+                continue;
+            }
+            int partial = SlotsFor(carrier.CargoOf(goodsId)) * CargoSlotSize - carrier.CargoOf(goodsId); // slack in the current stack
+            int room = partial + CargoSlotsFree(carrier) * CargoSlotSize;
+            // buy as much as fits AND the treasury affords (chunked price rises as we drain the market) — binary-narrow the max
+            int buy = MaxAffordableBuy(player, carrier, goodsId, room);
+            if (buy > 0)
+            {
+                BuyEuropeGoods(player, carrier, goodsId, buy);
+            }
+        }
+    }
+
+    /// <summary>The largest amount of <paramref name="goodsId"/> (≤ <paramref name="cap"/>) the docked <paramref name="carrier"/> can buy for <paramref name="player"/> right now — fits the hold and the treasury at the chunked market ask. 0 if none is affordable.</summary>
+    private int MaxAffordableBuy(Player player, Unit carrier, string goodsId, int cap)
+    {
+        int lo = 0, hi = cap;
+        while (lo < hi)
+        {
+            int mid = lo + (hi - lo + 1) / 2;
+            if (CheckBuyEuropeGoods(player, carrier, goodsId, mid).Allowed)
+            {
+                lo = mid;
+            }
+            else
+            {
+                hi = mid - 1;
+            }
+        }
+        return lo;
     }
 
     /// <summary>Serves one trade-route stop: deliver everything the carrier holds that <paramref name="stop"/> doesn't load, then load the stop's goods up to the carrier's free hold.</summary>
@@ -5749,13 +5874,15 @@ public sealed partial class Game
         for (int i = 0; i < route.Stops.Count; i++)
         {
             TradeRouteStop stop = route.Stops[i];
+            // A Europe stop is always a valid location (the player always has a Europe); a colony stop must be one the
+            // owner currently holds. (FreeCol TradeRouteStop.isValid: a Europe Location is valid, a Colony must be owned.)
             bool stopValid = owner is not null
-                && _colonies.FirstOrDefault(c => c.Id == stop.ColonyId) is { } colony
-                && colony.OwnerId == owner.PlayerId;
+                && (stop.IsEurope
+                    || (_colonies.FirstOrDefault(c => c.Id == stop.ColonyId) is { } colony && colony.OwnerId == owner.PlayerId));
             if (!stopValid)
             {
                 warnings.Add(new TradeRouteWarning(route.Id, TradeRouteWarningKind.InvalidStop, i, null,
-                    $"Stop {i + 1} is not one of your colonies."));
+                    $"Stop {i + 1} is not one of your colonies (or Europe)."));
             }
 
             if (stop.LoadGoodsIds.Count > 0)
