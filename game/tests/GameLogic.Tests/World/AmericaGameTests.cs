@@ -157,6 +157,73 @@ public class AmericaGameTests
         Assert.Contains(game.Players, p => p.PlayerType == PlayerType.Native);
     }
 
+    // A scenario map that fixes the human's landing tile + the REF entry tile ([starts]) and declares a per-tile region
+    // layer ([regions]). The human is fixed inland at (5,4) — NOT the coastal tile the heuristic would pick — so the test
+    // can tell the fixed start was honoured; the REF enters at the west-coast water tile (0,4).
+    private const string StartsAndRegionsScenario = """
+        8 8
+        ocean plains plains plains plains plains plains plains
+        ocean plains plains plains plains plains plains plains
+        ocean plains plains plains plains plains plains plains
+        ocean plains plains plains plains plains plains plains
+        ocean plains plains plains plains plains plains plains
+        ocean plains plains plains plains plains plains plains
+        ocean plains plains plains plains plains plains plains
+        ocean plains plains plains plains plains plains plains
+        [starts]
+        human 5 4
+        ref 0 4
+        """;
+
+    [Fact]
+    public void NewGame_FromImportedMapDeclaringStarts_FixesTheHumanAndRefEntryTiles()
+    {
+        // The [starts] section fixes both the human's landing and the REF's entry tile; Game.New must honour them in
+        // place of its coastal-start heuristic / nearest-water REF tile.
+        MapImportResult scenario =
+            MapImporter.Import(new StringReader(StartsAndRegionsScenario), Classic, "starts-scenario");
+        Game game = Game.New(Classic, seed: 21, importOverride: scenario);
+
+        // The human's land units sit on the fixed start (and its free land neighbours), never the coastal heuristic tile.
+        Unit landUnit = game.PlayerUnits.First(u => u.IsOnMap && !u.Type.IsNaval);
+        var startArea = new System.Collections.Generic.HashSet<Position>(
+            new Position(5, 4).Neighbours()) { new(5, 4) };
+        Assert.Contains(landUnit.Position, startArea);
+
+        // The REF entry tile is the declared (0,4), not the nearest-water fallback.
+        Assert.Equal(new Position(0, 4), game.RefEntryTile);
+    }
+
+    // A 2×2 scenario whose [regions] layer tags every tile, so we can prove the imported ids survive into the played
+    // game rather than being re-derived by the generator's RegionGenerator.Assign.
+    private const string RegionLayerScenario = """
+        2 2
+        plains plains
+        ocean ocean
+        [regions]
+        region 0 Land 777
+        region 1 Ocean 0 model.region.atlantic
+        0 0 0
+        1 0 0
+        0 1 1
+        1 1 1
+        """;
+
+    [Fact]
+    public void NewGame_FromImportedMapDeclaringRegions_KeepsTheImportedRegionLayer_NotAReDerivedOne()
+    {
+        MapImportResult scenario =
+            MapImporter.Import(new StringReader(RegionLayerScenario), Classic, "regions-scenario");
+        Game game = Game.New(Classic, seed: 21, importOverride: scenario);
+
+        // Exactly the two imported regions (a re-derivation would always create the 8 fixed regions first), with the
+        // imported score, and every tile carries the imported id.
+        Assert.Equal(2, game.Map.Regions.Count);
+        Assert.Equal(777, game.Map.Regions[0].ScoreValue);
+        Assert.Equal(0, game.Map.RegionIdAt(new Position(0, 0)));
+        Assert.Equal(1, game.Map.RegionIdAt(new Position(0, 1)));
+    }
+
     [Fact]
     public void America_NewGame_GeneratesNativeSettlements_BecauseTheFileDeclaresNone()
     {

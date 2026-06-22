@@ -8,8 +8,9 @@ namespace CrownAndColony.GameLogic.World;
 
 /// <summary>
 /// The result of importing a map definition (<see cref="MapImporter"/>): the loaded <see cref="GameMap"/> — terrain
-/// plus any imported overlays (bonus resources + their quantities, river/road improvements, lost-city rumours) — and
-/// the native settlements the file places, as initial entities the caller installs into the game.
+/// plus any imported overlays (bonus resources + their quantities, river/road improvements, lost-city rumours, a
+/// region layer) — the native settlements the file places, and any fixed start positions, as initial entities the
+/// caller installs into the game.
 /// </summary>
 /// <param name="Map">The imported world grid, carrying every overlay the definition declared (empty layers when it declared none).</param>
 /// <param name="Settlements">
@@ -17,7 +18,21 @@ namespace CrownAndColony.GameLogic.World;
 /// caller wires these into the game (turning their nations into players, claiming their land); the importer only parses
 /// their placement, mirroring FreeCol <c>FreeColMapLoader</c> importing a saved map's <c>IndianSettlement</c>s.
 /// </param>
-public sealed record MapImportResult(GameMap Map, IReadOnlyList<NativeSettlement> Settlements);
+/// <param name="HumanStart">
+/// The tile the human player is fixed to land on (the <c>human</c> entry in a <c>[starts]</c> section), or null when
+/// the definition declares none — then the caller falls back to its coastal-start heuristic. Mirrors FreeCol fixing a
+/// player's start tile in a saved scenario (<c>Player.entryTile</c> / the European starting-positions generator).
+/// </param>
+/// <param name="RefEntry">
+/// The tile the Royal Expeditionary Force enters at (the <c>ref</c> entry in a <c>[starts]</c> section), or null when
+/// the definition declares none — then the caller falls back to the nearest water tile to the human's start. Mirrors
+/// FreeCol storing the REF player's <c>entryTile</c> (<c>ourREF.setEntryTile</c>).
+/// </param>
+public sealed record MapImportResult(
+    GameMap Map,
+    IReadOnlyList<NativeSettlement> Settlements,
+    Position? HumanStart = null,
+    Position? RefEntry = null);
 
 /// <summary>
 /// Parses a map definition (a terrain grid plus optional resource/bonus, rumour and settlement overlays) into a
@@ -40,7 +55,7 @@ public sealed record MapImportResult(GameMap Map, IReadOnlyList<NativeSettlement
 /// <item><description>A header line <c>WIDTH HEIGHT</c>.</description></item>
 /// <item><description><c>HEIGHT</c> terrain rows, each <c>WIDTH</c> terrain short names (row-major; <c>plains</c> → <c>model.tile.plains</c>).</description></item>
 /// <item><description>
-/// Then any of four optional, order-independent overlay sections, each introduced by a bracketed header:
+/// Then any of six optional, order-independent overlay sections, each introduced by a bracketed header:
 /// <list type="bullet">
 /// <item><description>
 /// <c>[resources]</c> — rows <c>X Y resourceShortName [QUANTITY]</c> placing a bonus resource on a tile (a finite
@@ -55,16 +70,28 @@ public sealed record MapImportResult(GameMap Map, IReadOnlyList<NativeSettlement
 /// <c>[settlements]</c> — rows <c>X Y nationTypeShortName settlementTypeShortName capital|regular SIZE [skillUnitShortName]</c>
 /// placing a native settlement (FreeCol <c>IndianSettlement</c>).
 /// </description></item>
+/// <item><description>
+/// <c>[starts]</c> — rows <c>human X Y</c> and/or <c>ref X Y</c> fixing the human's landing tile and the REF's entry
+/// tile (FreeCol <c>Player.entryTile</c>). Either may be omitted; a missing one falls back to the caller's heuristic.
+/// </description></item>
+/// <item><description>
+/// <c>[regions]</c> — a region layer: <c>region ID TYPE [SCORE [KEY [PARENT]]]</c> rows declaring the region table
+/// (id from 0, dense, in order) and <c>X Y REGION_ID</c> rows assigning tiles to a declared region (FreeCol saved-map
+/// <c>tile.setRegion</c>). Every in-bounds tile must be assigned; an unassigned tile is a parse error.
+/// </description></item>
 /// </list>
 /// </description></item>
 /// </list>
 /// <para>
 /// <b>Faithful-subset scope.</b> We import the overlay kinds the gameplay layers already model: bonus resources (+ a
-/// finite quantity), river/road improvements, lost-city rumours and native settlements (placement + size + capital flag
-/// + learnable skill). Deliberately <i>deferred</i> (documented in <c>docs/systems/map-terrain.md</c>): river
-/// connection styling, per-tile region ids (we re-derive regions from terrain), tile ownership without a settlement,
-/// European colonies/units and player start positions, and the binary FreeCol <c>.fsm</c>/Colonization <c>.MP</c>
-/// containers (we read our extracted text form — see <c>game/data/maps/PROVENANCE.md</c>).
+/// finite quantity), river/road improvements, lost-city rumours, native settlements (placement + size + capital flag
+/// + learnable skill), fixed player start positions (<c>[starts]</c>) and a per-tile region layer (<c>[regions]</c>).
+/// A map that declares no <c>[regions]</c> section leaves the region layer for the generator to re-derive from terrain;
+/// one that declares no <c>[starts]</c> section leaves the start tiles to the caller's heuristic — so a definition
+/// declaring neither (the shipped <c>america.txt</c>) is unchanged. Deliberately <i>deferred</i> (documented in
+/// <c>docs/systems/map-terrain.md</c>): river connection styling, tile ownership without a settlement, European
+/// colonies/units, and the binary FreeCol <c>.fsm</c>/Colonization <c>.MP</c> containers (we read our extracted text
+/// form — see <c>game/data/maps/PROVENANCE.md</c>).
 /// </para>
 /// </remarks>
 public static class MapImporter
@@ -83,11 +110,26 @@ public static class MapImporter
     /// <summary>The <c>[settlements]</c> overlay section header (native settlements).</summary>
     private const string SettlementsSection = "[settlements]";
 
+    /// <summary>The <c>[starts]</c> overlay section header (fixed human + REF start tiles; FreeCol <c>Player.entryTile</c>).</summary>
+    private const string StartsSection = "[starts]";
+
+    /// <summary>The <c>[regions]</c> overlay section header (the per-tile region layer).</summary>
+    private const string RegionsSection = "[regions]";
+
     /// <summary>The settlement-row keyword marking a nation's capital (vs. <c>regular</c>).</summary>
     private const string CapitalKeyword = "capital";
 
     /// <summary>The settlement-row keyword marking an ordinary (non-capital) settlement.</summary>
     private const string RegularKeyword = "regular";
+
+    /// <summary>The <c>[starts]</c>-row keyword for the human player's landing tile.</summary>
+    private const string HumanStartKeyword = "human";
+
+    /// <summary>The <c>[starts]</c>-row keyword for the Royal Expeditionary Force's entry tile.</summary>
+    private const string RefStartKeyword = "ref";
+
+    /// <summary>The <c>[regions]</c>-row keyword opening a region-table declaration (vs. a tile-assignment row).</summary>
+    private const string RegionDeclarationKeyword = "region";
 
     /// <summary>
     /// Imports a map definition from <paramref name="reader"/> into a <see cref="MapImportResult"/> (the
@@ -112,6 +154,9 @@ public static class MapImporter
         var improvements = new Dictionary<Position, List<TileImprovementType>>();
         var rumours = new HashSet<Position>();
         var settlements = new List<NativeSettlement>();
+        Position? humanStart = null;
+        Position? refEntry = null;
+        RegionLayer? regionLayer = null;
 
         // Optional overlay sections follow the grid in any order; each begins with a '[name]' header. A terrain-only
         // file (america.txt) has none, so every layer stays empty — the historical terrain-only import.
@@ -131,9 +176,16 @@ public static class MapImporter
                 case SettlementsSection:
                     ReadSettlements(lines, ruleset, width, height, settlements);
                     break;
+                case StartsSection:
+                    ReadStarts(lines, width, height, ref humanStart, ref refEntry);
+                    break;
+                case RegionsSection:
+                    regionLayer = ReadRegions(lines, width, height);
+                    break;
                 default:
                     throw lines.Error($"expected an overlay section header ('{ResourcesSection}', "
-                        + $"'{ImprovementsSection}', '{RumoursSection}', '{SettlementsSection}'), got '{line}'");
+                        + $"'{ImprovementsSection}', '{RumoursSection}', '{SettlementsSection}', '{StartsSection}', "
+                        + $"'{RegionsSection}'), got '{line}'");
             }
         }
 
@@ -144,8 +196,10 @@ public static class MapImporter
             resourceQuantities: resourceQuantities.Count > 0 ? resourceQuantities : null,
             improvements: improvements.Count > 0
                 ? improvements.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<TileImprovementType>)kv.Value)
-                : null);
-        return new MapImportResult(map, settlements);
+                : null,
+            regionIds: regionLayer?.Ids,
+            regions: regionLayer?.Regions);
+        return new MapImportResult(map, settlements, humanStart, refEntry);
     }
 
     private static (int Width, int Height) ReadHeader(LineCursor lines)
@@ -255,6 +309,120 @@ public static class MapImporter
                 size: size,
                 learnableSkill: skill));
         }
+    }
+
+    private static void ReadStarts(
+        LineCursor lines, int width, int height, ref Position? humanStart, ref Position? refEntry)
+    {
+        // human X Y  /  ref X Y — either may be present (at most once each); a missing one is the caller's heuristic.
+        foreach (string[] fields in ReadSectionRows(lines, min: 3, max: 3, "start"))
+        {
+            // The keyword leads, so the X/Y pair sits in fields[1..2]; reuse ParsePosition by shifting past it.
+            Position p = ParsePosition(lines, fields[1..], width, height);
+            switch (fields[0].ToLowerInvariant())
+            {
+                case HumanStartKeyword:
+                    if (humanStart is not null)
+                    {
+                        throw lines.Error($"the '{HumanStartKeyword}' start tile is declared more than once");
+                    }
+                    humanStart = p;
+                    break;
+                case RefStartKeyword:
+                    if (refEntry is not null)
+                    {
+                        throw lines.Error($"the '{RefStartKeyword}' start tile is declared more than once");
+                    }
+                    refEntry = p;
+                    break;
+                default:
+                    throw lines.Error(
+                        $"a start row must begin '{HumanStartKeyword}' or '{RefStartKeyword}', got '{fields[0]}'");
+            }
+        }
+    }
+
+    /// <summary>The parsed region layer: the region table plus a dense row-major region id per tile (FreeCol saved-map regions).</summary>
+    private sealed record RegionLayer(IReadOnlyList<Region> Regions, int[] Ids);
+
+    private static RegionLayer ReadRegions(LineCursor lines, int width, int height)
+    {
+        var regions = new List<Region>();
+        var ids = new int[width * height];
+        Array.Fill(ids, GameMap.NoRegion);
+
+        // Two row kinds: 'region ID TYPE [SCORE [KEY [PARENT]]]' declares a table entry (ids dense from 0, in order);
+        // 'X Y REGION_ID' assigns a tile to a declared region. Declarations may interleave with assignments, but every
+        // assignment must reference an already-declared id and every in-bounds tile must end up assigned.
+        foreach (string[] fields in ReadSectionRows(lines, min: 3, max: 6, "region"))
+        {
+            if (fields[0].Equals(RegionDeclarationKeyword, StringComparison.OrdinalIgnoreCase))
+            {
+                regions.Add(ParseRegionDeclaration(lines, fields, regions.Count));
+            }
+            else
+            {
+                AssignTileRegion(lines, fields, width, height, regions.Count, ids);
+            }
+        }
+
+        if (regions.Count == 0)
+        {
+            throw lines.Error($"a '{RegionsSection}' section must declare at least one '{RegionDeclarationKeyword}'");
+        }
+        for (int i = 0; i < ids.Length; i++)
+        {
+            if (ids[i] == GameMap.NoRegion)
+            {
+                throw lines.Error($"tile ({i % width},{i / width}) was left with no region (every tile must be assigned)");
+            }
+        }
+        return new RegionLayer(regions, ids);
+    }
+
+    private static Region ParseRegionDeclaration(LineCursor lines, string[] fields, int expectedId)
+    {
+        // region ID TYPE [SCORE [KEY [PARENT]]] — ID must be the next dense id (0,1,2,…) so Region.Id indexes the table.
+        if (!TryNonNegative(fields[1], out int id) || id != expectedId)
+        {
+            throw lines.Error($"region ids must be declared densely from 0 in order; expected {expectedId}, got '{fields[1]}'");
+        }
+        if (!Enum.TryParse(fields[2], ignoreCase: true, out RegionType type))
+        {
+            throw lines.Error($"unknown region type '{fields[2]}' (one of {string.Join(", ", Enum.GetNames<RegionType>())})");
+        }
+        int score = 0;
+        if (fields.Length >= 4 && (!TryNonNegative(fields[3], out score)))
+        {
+            throw lines.Error($"region score must be a non-negative integer, got '{fields[3]}'");
+        }
+        string? key = fields.Length >= 5 && fields[4] != "-" ? fields[4] : null;
+        int? parent = null;
+        if (fields.Length == 6)
+        {
+            if (!TryNonNegative(fields[5], out int parentId) || parentId >= expectedId)
+            {
+                throw lines.Error($"region parent must be an already-declared id (< {expectedId}), got '{fields[5]}'");
+            }
+            parent = parentId;
+        }
+        return new Region(id, type, score, key, parent);
+    }
+
+    private static void AssignTileRegion(
+        LineCursor lines, string[] fields, int width, int height, int regionCount, int[] ids)
+    {
+        // X Y REGION_ID — a tile-assignment row (exactly three fields, none the 'region' keyword).
+        if (fields.Length != 3)
+        {
+            throw lines.Error($"a region tile-assignment row needs 3 fields (X Y REGION_ID), got {fields.Length}");
+        }
+        Position p = ParsePosition(lines, fields, width, height);
+        if (!TryNonNegative(fields[2], out int regionId) || regionId >= regionCount)
+        {
+            throw lines.Error($"region id '{fields[2]}' is not a declared region (declare it with '{RegionDeclarationKeyword}' first)");
+        }
+        ids[p.Y * width + p.X] = regionId;
     }
 
     // --- shared row reading -------------------------------------------------

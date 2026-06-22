@@ -3270,9 +3270,10 @@ public sealed partial class Game
     /// </param>
     /// <param name="importOverride">
     /// A test-only seam (default null): a pre-built <see cref="MapImportResult"/> (terrain + declared native
-    /// settlements) used in place of importing <paramref name="mapSource"/> from disk. Lets a test drive a scenario map
-    /// that declares a <c>[settlements]</c> section through the real install path without shipping it as a
-    /// <see cref="MapSource"/>. Null in normal play, so the production America/Random paths are unchanged.
+    /// settlements, fixed start tiles, region layer) used in place of importing <paramref name="mapSource"/> from disk.
+    /// Lets a test drive a scenario map that declares <c>[settlements]</c>/<c>[starts]</c>/<c>[regions]</c> sections
+    /// through the real install path without shipping it as a <see cref="MapSource"/>. Null in normal play, so the
+    /// production America/Random paths are unchanged.
     /// </param>
     public static Game New(
         Ruleset ruleset, ulong seed, int mapWidth = 36, int mapHeight = 24,
@@ -3303,6 +3304,17 @@ public sealed partial class Game
             ? MapGenerator.Generate(ruleset, mapWidth, mapHeight, random, landMassFraction, landStyle)
             : MapGenerator.DecorateFixedMap(imported.Map, ruleset, random);
 
+        // A scenario map that declared a [regions] layer keeps it: the decorate pass re-derives regions from terrain
+        // (RegionGenerator.Assign), so we re-install the imported region table + per-tile ids over that result. This is
+        // RNG-free and runs only when the import carried regions — the default/America maps declare none, so they keep
+        // the generator-derived regions, byte-identical (ADR-006/009). FreeCol's FreeColMapLoader likewise imports each
+        // saved tile's Region rather than re-deriving it.
+        if (imported?.Map is { Regions.Count: > 0 } importedMap)
+        {
+            int[] importedRegionIds = [.. importedMap.AllPositions().Select(importedMap.RegionIdAt)];
+            map.SetRegions(importedRegionIds, importedMap.Regions);
+        }
+
         // The single human player (stream 0; foreign powers and natives become players in FP-3). Its nation is the
         // validated pick (null for the classic nation-less default), which seeds the human's national advantage +
         // colony names through the existing nation-id-driven seams (NationTypeModifiers / ColonyNamesFor).
@@ -3332,18 +3344,23 @@ public sealed partial class Game
         }
         bool HasWaterNeighbour(Position p) => p.Neighbours().Any(n => map.InBounds(n) && map.TerrainAt(n).IsWater);
         bool HasLandNeighbour(Position p) => p.Neighbours().Any(n => map.InBounds(n) && !map.TerrainAt(n).IsWater);
+        // A scenario map may FIX the human's landing tile (an imported [starts] `human X Y`, FreeCol Player.entryTile).
+        // When it does, the human starts exactly there — the scenario author owns placement; otherwise the coastal
+        // heuristic chooses. Either way no RNG is drawn, so stream 0 stays byte-stable (the default/America maps declare
+        // no [starts], so they keep the heuristic result, byte-identical).
         int equator = map.Height / 2; // map.Height == mapHeight for Random; a fixed map sets its own height
         var settleable = map.AllPositions().Where(Settleable).OrderBy(p => Math.Abs(p.Y - equator)).ToList();
-        Position start =
-            settleable.Where(p => HasWaterNeighbour(p) && HasLandNeighbour(p)).Cast<Position?>().FirstOrDefault()
+        Position start = imported?.HumanStart
+            ?? settleable.Where(p => HasWaterNeighbour(p) && HasLandNeighbour(p)).Cast<Position?>().FirstOrDefault()
             ?? settleable.Where(HasLandNeighbour).Cast<Position?>().FirstOrDefault()
             ?? settleable.First();
         game.SpawnHumanStartingUnits(ruleset, start);
 
-        // The REF's entry tile: the nearest water tile to the human's start (FreeCol picks a non-land tile within
-        // distance 10 of the start and stores it as the REF player's entry tile). Chosen deterministically — no RNG
-        // draw, so the human's stream 0 stays byte-stable; on independence the King's fleet arrives here. Persisted.
-        game.SetRefEntryTile(game.NearestWaterTile(start));
+        // The REF's entry tile: a scenario map may fix it (an imported [starts] `ref X Y`, FreeCol ourREF.setEntryTile);
+        // otherwise it is the nearest water tile to the human's start (FreeCol picks a non-land tile within distance 10
+        // of the start). Chosen deterministically — no RNG draw, so the human's stream 0 stays byte-stable; on
+        // independence the King's fleet arrives here. Persisted. (The default/America maps declare none → heuristic.)
+        game.SetRefEntryTile(imported?.RefEntry ?? game.NearestWaterTile(start));
 
         // Native settlements, on their own RNG stream so placement does not shift the
         // economy/father/immigration draws. They keep clear of the player's landing.

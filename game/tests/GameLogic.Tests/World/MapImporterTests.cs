@@ -114,6 +114,100 @@ public class MapImporterTests
         Assert.Null(village.LearnableSkill); // no skill column → teaches nothing
     }
 
+    // A definition exercising the two new optional sections: fixed start tiles ([starts]) and a per-tile region layer
+    // ([regions]) declaring two regions and assigning every tile to one of them.
+    private const string StartsAndRegionsMap = """
+        2 2
+        plains plains
+        ocean ocean
+        [starts]
+        human 0 0
+        ref 1 1
+        [regions]
+        region 0 Land 500
+        region 1 Ocean 0 model.region.atlantic
+        0 0 0
+        1 0 0
+        0 1 1
+        1 1 1
+        """;
+
+    [Fact]
+    public void ImportsStarts_HumanAndRefEntryTiles()
+    {
+        MapImportResult result = Import(StartsAndRegionsMap);
+
+        Assert.Equal(new Position(0, 0), result.HumanStart);
+        Assert.Equal(new Position(1, 1), result.RefEntry);
+    }
+
+    [Fact]
+    public void ImportsRegions_PerTileIdsAndRegionTable()
+    {
+        GameMap map = Import(StartsAndRegionsMap).Map;
+
+        // The two declared regions populate the table (id == index), with their type/score/key.
+        Assert.Equal(2, map.Regions.Count);
+        Assert.Equal(RegionType.Land, map.Regions[0].Type);
+        Assert.Equal(500, map.Regions[0].ScoreValue);
+        Assert.Equal(RegionType.Ocean, map.Regions[1].Type);
+        Assert.Equal("model.region.atlantic", map.Regions[1].Key);
+
+        // Every tile carries the imported id (not a re-derived one): the two plains tiles → Land, the two ocean → Ocean.
+        Assert.Equal(0, map.RegionIdAt(new Position(0, 0)));
+        Assert.Equal(0, map.RegionIdAt(new Position(1, 0)));
+        Assert.Equal(1, map.RegionIdAt(new Position(0, 1)));
+        Assert.Equal(1, map.RegionIdAt(new Position(1, 1)));
+    }
+
+    [Fact]
+    public void StartsSection_EitherEntryMayBeOmitted()
+    {
+        // Only a human start declared → RefEntry stays null (the caller falls back to the nearest water tile).
+        MapImportResult result = Import("""
+            2 2
+            plains plains
+            ocean ocean
+            [starts]
+            human 1 0
+            """);
+
+        Assert.Equal(new Position(1, 0), result.HumanStart);
+        Assert.Null(result.RefEntry);
+    }
+
+    [Fact]
+    public void DefinitionWithoutStartsOrRegions_LeavesThemUnset_AndNoRegionLayer()
+    {
+        // No [starts]/[regions] → no fixed starts and no imported region layer (the generator re-derives regions). This
+        // is the america.txt shape: the new sections must not perturb a definition that omits them.
+        MapImportResult result = Import("""
+            2 2
+            plains plains
+            ocean ocean
+            [rumours]
+            0 0
+            """);
+
+        Assert.Null(result.HumanStart);
+        Assert.Null(result.RefEntry);
+        Assert.Empty(result.Map.Regions); // no region layer imported — left for the generator
+    }
+
+    [Theory]
+    [InlineData("2 2\nplains plains\nocean ocean\n[starts]\nhuman 9 9", "off the")] // off-map start tile
+    [InlineData("2 2\nplains plains\nocean ocean\n[starts]\nelf 0 0", "must begin")] // bad start keyword
+    [InlineData("2 2\nplains plains\nocean ocean\n[starts]\nhuman 0 0\nhuman 1 1", "more than once")] // duplicate human start
+    [InlineData("2 2\nplains plains\nocean ocean\n[regions]\nregion 0 Bogus\n0 0 0\n1 0 0\n0 1 0\n1 1 0", "unknown region type")]
+    [InlineData("2 2\nplains plains\nocean ocean\n[regions]\nregion 1 Land\n0 0 1", "densely from 0")] // first id must be 0
+    [InlineData("2 2\nplains plains\nocean ocean\n[regions]\nregion 0 Land\n0 0 5", "not a declared region")] // unknown tile region id
+    [InlineData("2 2\nplains plains\nocean ocean\n[regions]\nregion 0 Land\n0 0 0", "no region")] // a tile left unassigned
+    public void RejectsMalformedStartsAndRegions(string definition, string expectedMessageFragment)
+    {
+        var ex = Assert.Throws<InvalidDataException>(() => Import(definition.Replace("\n", "\r\n")));
+        Assert.Contains(expectedMessageFragment, ex.Message);
+    }
+
     [Fact]
     public void TerrainOnlyDefinition_ImportsWithEmptyOverlays_AndNoSettlements()
     {
@@ -199,6 +293,8 @@ public class MapImporterTests
         Assert.True(result.Map.HasRumour(new Position(3, 2)));                       // a lost-city rumour
         Assert.Equal(2, result.Settlements.Count);                                   // two native settlements
         Assert.Contains(result.Settlements, s => s.IsCapital && s.LearnableSkill == "model.unit.expertOreMiner");
+        Assert.Equal(new Position(1, 1), result.HumanStart);                          // a fixed human landing tile
+        Assert.Equal(new Position(0, 2), result.RefEntry);                            // a fixed REF entry tile
     }
 
     [Fact]

@@ -8,8 +8,8 @@
 # docs/systems/map-terrain.md (Map import).
 #
 # Format: header "WIDTH HEIGHT", then HEIGHT rows of WIDTH terrain short-names,
-# then any of [resources] / [improvements] / [rumours] / [settlements] sections.
-# '#' starts a comment; blank lines are ignored.
+# then any of [resources] / [improvements] / [rumours] / [settlements] / [starts]
+# / [regions] sections. '#' starts a comment; blank lines are ignored.
 
 6 5
 ocean plains plains hills mountains ocean
@@ -37,3 +37,9 @@ ocean ocean ocean ocean ocean ocean
 # An Apache capital camp (size 5, teaches ore mining) and a regular village.
 2 2 apache camp capital 5 expertOreMiner
 3 3 apache village regular 3
+
+[starts]
+# Fix where the human lands and where the King's army (REF) arrives. Either row may
+# be omitted; an omitted one falls back to the game's own heuristic.
+human 1 1
+ref 0 2
