@@ -19,6 +19,18 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-22 — Post-run fidelity fixes (your 4 "your-call" decisions) + InputTests flake ✅
+
+**Requested:** After the 50-item run, Chris answered the 4 flagged "your-call" deviations + chose to fix the InputTests flake. **Did all five** (4 worktree streams, integrated CI-green).
+- **Spy → FreeCol-exact** (`092d5d8`): removed the 25% rebuff + its reserved RNG stream — the colony spy now always succeeds and draws zero RNG, matching FreeCol `spySettlement`.
+- **WAIVE_TAX → message-only** (`092d5d8`): removed the boycott-arrears forgiveness; it's now a no-op King's message (never offered from the chooser), matching FreeCol.
+- **Coronado full reveal** (`c15998a`): wired `exposedTilesRadius +3` → see-all-colonies now fills the full 11×11 block (radius 2+3=5), Coronado-only, byte-identical default.
+- **Franklin decaying peace-hold** (`98f791d`, **save v52→v53**): replaced the flat 0.5 with FreeCol's exact `(peaceProbability 0.90)^(turns-since-peace) × Franklin's +50%`; added an omit-when-empty per-pair `PeaceTurns` stamp. **Deliberate divergence kept:** the no-Franklin gate (FreeCol applies the decaying reprieve to *all* powers always; we gate on Franklin to preserve the byte-identical default — extending it to all powers is a separate default-AI decision).
+- **InputTests L3 flake** (`86d3dyywj`, `77bf4ee`): root-caused as the process-global Godot `Input` singleton bleeding between cases (parked cursor + buffered events); fixed with per-test input-reset hooks — **25/25 green across 8 standalone + mixed-order runs**. Also fixed a separate deterministic tribute-test bug (it assumed a goods demand; the seed gives a gold demand — engine was correct).
+**Status:** Integrated, pushed; build clean + **2009 L1/L2 + 4 soak green**. Save **v52→v53** (Franklin's PeaceTurns; omit-when-empty → default byte-identical). All 4 "your-call" items resolved + the flake closed.
+**Then:** decomposed the **Polish & release-readiness epic (P7)** into 6 board tasks (CREDITS file, Godot export/Windows build, README, honour-remaining-game-options, L5 perf gate, save-compat migration test).
+**Needs you:** Confirm the Franklin no-Franklin-gate is OK (kept for byte-identity), and a priority among the 6 Polish tasks if you have one.
+
 ## 2026-06-22 — 🎉 50-ITEM RUN COMPLETE (50/50) · WAVE 12 (L3 flake · sight-radius · founding-father · map-starts · epic wrap-up · fidelity harness) ✅
 
 **Requested:** "Do 50 backlog items, minimal testing, FreeCol-sourced, blocks→ClickUp, timestamp every message." **This is the FINAL wave — items 45–50 — the run is COMPLETE at 50/50.**
