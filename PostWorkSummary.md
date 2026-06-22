@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-23 — 🎉 PATH-TO-100% COMPLETE — coding WAVE 5 shipped (E2+B3+D2+E4); all 19 tasks done
+
+**Requested:** Finish the path-to-100% tasks via parallel agents (the usage limit had paused the first attempt at this wave; re-ran on reset).
+**Did:** Final 4-stream parallel worktree wave, integrated CI-green — **completing Phases A–E (19/19)**:
+- **E2** (`88679c1`, **save v57→v58**) — persist the history log (omit-when-empty → fresh game byte-identical) so discovery/destruction events + scores survive reload; finished Score (colony-worker units, lost-city-find events, −5/−50 settlement/nation destruction penalties).
+- **B3** (`e8d7acb`) — treasure-by-galleon cash-in (fee-free via a carrier that reaches Europe) + Europe trade-route stops (sentinel `ColonyId 0` → **no save bump**).
+- **D2** (`afeb140`) — intervention force grows each `interventionTurns` interval (`Monarch.updateInterventionForce`; derived from the turn counter → no save bump).
+- **E4** (`3342129`) — Trade/Exploration/Requirements/Military report tabs + Religion per-church; warehouse-overflow/famine/King's-decree notices + an in-session `MessageLogPanel` (no save bump; log-persistence deferred → new task).
+**Status:** Integrated, pushed `…754d820`. Build clean + **2164 L1/L2 + 5 soak green** (+ L3 for B3/E4; pause-menu L4 golden regenerated for E4's Messages button). Save **v57→v58** (E2). Cross-wave fixes: independence.md conflict (D2∩E4) kept both; B3's stray v57 assertion bumped → 58.
+**🏁 Milestone:** All **19 path-to-100% tasks (Phases A–E) shipped** across 5 waves (A1–A4, B1–B4, C1–C3, D1–D4, E1–E4). Save v53→v58 over the run. The base game is now ~parity with FreeCol classic for the in-scope set.
+**Remaining (not "100%-in-scope"):** A4 offensive rebel-vs-REF AI follow-up (`86d3e4q65`); message-log persistence (new follow-up); the Godot export/Windows build (`86d3dzdtp`, your machine); and the deliberately out-of-scope deep-AI-economy + multiplayer ("decide later").
+**Needs you:** Playtest the new systems; decide the deep-AI/multiplayer scope when ready; the export build when you want a distributable.
+
 ## 2026-06-22 — Path-to-100% coding WAVE 4 shipped (C2+D3+D4+E3) ✅
 
 **Requested:** Continue coding the path-to-100% tasks via parallel agents.
