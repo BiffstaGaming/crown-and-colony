@@ -156,7 +156,8 @@ public class LimitEngineTests
 
         // An inland colony does NOT satisfy the connected-port count (the predicate filters it out).
         Position inland = game.Map.AllPositions().First(p =>
-            !game.Map.TerrainAt(p).IsWater && game.ColonyAt(p) is null && game.NativeSettlementAt(p) is null
+            !game.Map.TerrainAt(p).IsWater && game.Map.TerrainAt(p).CanSettle
+            && game.ColonyAt(p) is null && game.NativeSettlementAt(p) is null && !game.Map.IsNativeOwned(p) // non-native settleable (86d3e4bj7)
             && !p.Neighbours().Any(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater));
         colony.OwnerId = -1; // remove the coastal colony from the human's tally
         Unit inlandColonist = game.SpawnUnit(Classic.Unit(Game.StartingUnitTypeId), inland);

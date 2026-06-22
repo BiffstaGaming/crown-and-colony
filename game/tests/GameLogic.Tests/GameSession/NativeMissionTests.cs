@@ -170,14 +170,16 @@ public class NativeMissionTests
 
     // ── Convert accrual + spawn (slice 2) ────────────────────────────────────────────────────────────────────────
 
-    /// <summary>A mission installed, then a human colony founded on a free land tile beside the settlement (within 10).</summary>
+    /// <summary>A mission installed, then a human colony founded on a land tile beside the settlement (within 10). The
+    /// tile sits inside the settlement's native claim radius, so founding forces a claim — resolved by stealing it
+    /// (86d3e4bj7; free, so the colony lands exactly where intended; the convert tests set alarm/size explicitly).</summary>
     private static (Game Game, NativeSettlement Settlement, Colony Colony) MissionWithNearbyColony()
     {
         (Game game, NativeSettlement settlement, Unit jesuit) = MissionaryAtSettlement(Jesuit);
         game.EstablishMission(jesuit, settlement); // consumes the missionary, freeing its tile
         Position colonyTile = settlement.Position.Neighbours()
             .First(n => game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater && game.Colonies.All(c => c.Position != n));
-        Colony colony = game.FoundColony(game.SpawnUnit(Classic.Unit(FreeColonist), colonyTile));
+        Colony colony = game.FoundColony(game.SpawnUnit(Classic.Unit(FreeColonist), colonyTile), LandClaimChoice.Steal);
         settlement.Size = 5;
         return (game, settlement, colony);
     }

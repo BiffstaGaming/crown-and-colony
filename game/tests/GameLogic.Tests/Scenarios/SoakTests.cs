@@ -241,7 +241,18 @@ public class SoakTests
             {
                 if (turn >= 5 && game.CheckFoundColony(unit).Allowed)
                 {
-                    game.FoundColony(unit);
+                    // Founding on native-owned land forces a buy-or-steal-or-abandon claim (86d3e4bj7). This human-driven
+                    // harness resolves it deterministically like a player would — buy if affordable, else steal — so the
+                    // soak now exercises the forced-claim path and stays twin-deterministic (the claim itself is RNG-free).
+                    Game.ForcedLandClaim forced = game.RequiredLandClaim(unit.Position);
+                    if (forced.Required)
+                    {
+                        game.FoundColony(unit, game.AiResolveLandClaim(game.HumanPlayer, unit.Position));
+                    }
+                    else
+                    {
+                        game.FoundColony(unit);
+                    }
                 }
                 else
                 {

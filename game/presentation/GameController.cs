@@ -794,15 +794,73 @@ public partial class GameController : Node2D
         if (!check.Allowed)
         {
             _notice = check.Reason;
+            RefreshView();
+            return;
         }
-        else
+
+        // Founding on a native-OWNED tile forces a buy-or-steal-or-abandon claim FIRST (86d3e4bj7): raise the choice
+        // dialog and resolve through FoundColonyWithClaim. On free land we found immediately (no dialog). The decision
+        // itself lives in GameLogic (ADR-006) — this only surfaces the choice and forwards it.
+        Game.ForcedLandClaim forced = _game.RequiredLandClaim(_selectedUnit.Position);
+        if (forced.Required)
         {
-            var colony = _game.FoundColony(_selectedUnit);
-            _selectedUnit = null;
-            _notice = $"{colony.Name} founded!";
-            PlaySound(SoundEvent.ColonyFounded);
+            PromptLandClaim(forced, FoundColonyWithClaim);
+            return;
         }
+
+        FoundColonyWithClaim(LandClaimChoice.Buy); // free land → Buy is a zero-cost, peaceful claim (no-op), then found
+    }
+
+    /// <summary>Founds a colony, resolving any forced native-land claim with the human's <paramref name="choice"/>
+    /// (the thin GameController command for the buy/steal path; <see cref="LandClaimChoice.Abandon"/> cancels).</summary>
+    private void FoundColonyWithClaim(LandClaimChoice choice)
+    {
+        if (_selectedUnit is null || choice == LandClaimChoice.Abandon)
+        {
+            RefreshView();
+            return;
+        }
+        Colony colony = _game.FoundColony(_selectedUnit, choice);
+        _selectedUnit = null;
+        _notice = $"{colony.Name} founded!";
+        PlaySound(SoundEvent.ColonyFounded);
         RefreshView();
+    }
+
+    /// <summary>
+    /// Raises the buy-or-steal-or-abandon choice for a forced native-land claim (86d3e4bj7) and invokes
+    /// <paramref name="onChosen"/> with the human's <see cref="LandClaimChoice"/>. A code-built modal — no pending-claim
+    /// state is stored in <see cref="Game"/> (the founding/working context is held by the caller's closure and the
+    /// claim is resolved synchronously on the click). Buy is disabled when the player cannot afford the price.
+    /// </summary>
+    private void PromptLandClaim(Game.ForcedLandClaim forced, System.Action<LandClaimChoice> onChosen)
+    {
+        string nation = NationLabel(forced.OwningNation!);
+        bool canAfford = _game.HumanPlayer.Gold >= forced.BuyPrice;
+        var dialog = new ConfirmationDialog
+        {
+            Title = "Native land",
+            DialogText = $"The {nation} own this land.\nBuy it for {forced.BuyPrice} gold, take it by force (angering them), or abandon the attempt?",
+            OkButtonText = canAfford ? $"Buy ({forced.BuyPrice}g)" : $"Buy ({forced.BuyPrice}g — can't afford)",
+            CancelButtonText = "Abandon",
+        };
+        Button stealButton = dialog.AddButton("Steal", right: true, action: "steal");
+        if (!canAfford)
+        {
+            dialog.GetOkButton().Disabled = true;
+        }
+
+        void Finish(LandClaimChoice choice)
+        {
+            dialog.QueueFree();
+            onChosen(choice);
+        }
+
+        dialog.Confirmed += () => Finish(LandClaimChoice.Buy);
+        dialog.Canceled += () => Finish(LandClaimChoice.Abandon);
+        stealButton.Pressed += () => Finish(LandClaimChoice.Steal);
+        AddChild(dialog);
+        dialog.PopupCentered();
     }
 
     /// <summary>Opens the interactive colony screen. Public so scene tests can drive it directly.</summary>

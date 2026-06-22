@@ -1124,6 +1124,71 @@ public sealed partial class Game
         }
     }
 
+    // ----- Forced buy-or-steal-or-abandon claim trigger (86d3e4bj7) ------------------------------------------
+    // Founding a colony on, or working, a native-OWNED tile is no longer free: it forces a claim FIRST (FreeCol
+    // ServerPlayer.csClaimLand, invoked from InGameController.claimLand before BuildColonyMission builds). The human's
+    // pay-vs-steal choice is a UI dialog (GameController.FoundColonyWithClaim / AssignWorkWithClaim); the AI resolves
+    // it deterministically (AiResolveLandClaim — RNG-free, ADR-009). Abandon is simply not calling the action. The
+    // claim is resolved synchronously through the existing ClaimLandByPaying/Stealing paths — NO pending-claim state is
+    // stored, so the save format is unchanged.
+
+    /// <summary>Whether founding/working a tile must first resolve a forced native-land claim, and at what cost.</summary>
+    /// <param name="Required">True when the tile is native-owned (and not a settlement tile), so a
+    /// <see cref="LandClaimChoice"/> must be made before the tile can be founded on or worked.</param>
+    /// <param name="BuyPrice">The gold the buy option costs (the <see cref="LandPrice(Player, Position)"/>; 0 under Peter
+    /// Minuit, or when no claim is required).</param>
+    /// <param name="OwningNation">The native nation type id that owns the tile (e.g. <c>model.nationType.apache</c>), or null when no claim is required.</param>
+    public readonly record struct ForcedLandClaim(bool Required, int BuyPrice, string? OwningNation);
+
+    /// <summary>Whether founding/working <paramref name="tile"/> forces the <b>human</b> into a buy-or-steal-or-abandon
+    /// claim, and its buy price (see <see cref="RequiredLandClaim(Player, Position)"/>). The presentation reads this to
+    /// decide whether to raise the claim dialog before founding a colony on, or working, the tile.</summary>
+    public ForcedLandClaim RequiredLandClaim(Position tile) => RequiredLandClaim(_human, tile);
+
+    /// <summary>
+    /// Whether <paramref name="player"/> founding a colony on, or working, <paramref name="tile"/> must first claim it
+    /// from the natives (FreeCol: a native-owned, non-settlement tile is claimed via <c>csClaimLand</c> before use).
+    /// A tile that is unclaimed, already the player's, or a native-settlement tile (not for sale) forces nothing.
+    /// </summary>
+    internal ForcedLandClaim RequiredLandClaim(Player player, Position tile) =>
+        Map.IsNativeOwned(tile) && NativeSettlementAt(tile) is null
+            ? new ForcedLandClaim(true, LandPrice(player, tile), Map.NativeOwnerOf(tile))
+            : new ForcedLandClaim(false, 0, null);
+
+    /// <summary>
+    /// The deterministic claim an AI player makes for a forced native-land tile (FreeCol <c>BuildColonyMission</c>:
+    /// <c>price == 0 ? 0 : checkGold(price) ? price : STEAL_LAND</c>). The AI <see cref="LandClaimChoice.Buy"/>s when it
+    /// can afford the price (a free tile under Peter Minuit is always "bought" — a zero-cost, peaceful claim) and
+    /// <see cref="LandClaimChoice.Steal"/>s only when it cannot. RNG-free (ADR-009): FreeCol's optional 1-in-4 gold-cheat
+    /// is omitted — we never cheat gold, and a random draw would break twin-determinism — so the rule is the pure
+    /// pay-if-affordable-else-steal. The human never calls this; their choice comes from the UI dialog.
+    /// </summary>
+    internal LandClaimChoice AiResolveLandClaim(Player player, Position tile) =>
+        player.Gold >= LandPrice(player, tile) ? LandClaimChoice.Buy : LandClaimChoice.Steal;
+
+    /// <summary>
+    /// Performs <paramref name="player"/>'s forced claim of the native-owned <paramref name="tile"/> per
+    /// <paramref name="choice"/>: <see cref="LandClaimChoice.Buy"/> pays the price (<see cref="ClaimLandByPaying(Player, Position)"/>),
+    /// <see cref="LandClaimChoice.Steal"/> takes it and raises the owning nation's per-player alarm
+    /// (<see cref="ClaimLandByStealing(Player, Position)"/>). Reuses the voluntary-purchase paths so the two stay in lock-step.
+    /// </summary>
+    /// <exception cref="InvalidMoveException"><paramref name="choice"/> is <see cref="LandClaimChoice.Abandon"/> (the action
+    /// should simply not be called), or the underlying claim is illegal (e.g. not enough gold to buy).</exception>
+    private void ResolveForcedLandClaim(Player player, Position tile, LandClaimChoice choice)
+    {
+        switch (choice)
+        {
+            case LandClaimChoice.Buy:
+                ClaimLandByPaying(player, tile);
+                break;
+            case LandClaimChoice.Steal:
+                ClaimLandByStealing(player, tile);
+                break;
+            default:
+                throw new InvalidMoveException("The natives own this land — choose to buy or steal it, or abandon the attempt.");
+        }
+    }
+
     // ===== Treasure-train cash-in (86d3c9rzu) =================================================================
     // Escort a treasure train to a colony (or Europe) to bank its gold (FreeCol Unit.canCashInTreasureTrain /
     // getTransportFee + the cash-in handler): at a colony the King ships it across for a transport cut, then the
@@ -4533,9 +4598,9 @@ public sealed partial class Game
         }
         // Minimum colony spacing (FreeCol Player.canClaimToFoundSettlementReason: tile.getAdjacentColonies()
         // must be empty): no colony may be founded on a tile adjacent to an existing colony, so colony
-        // footprints never touch. Native-owned tiles do not block founding here: the land-claim API exists
-        // (LandPrice / ClaimLandByPaying / ClaimLandByStealing), but the founding/working TRIGGER — being forced
-        // to buy-or-steal the tile first — is deferred pending the pay-vs-steal UI choice (see natives.md).
+        // footprints never touch. A native-owned tile is still legal to found on — founding remains Allowed — but
+        // FoundColony forces a buy-or-steal-or-abandon claim first (RequiredLandClaim / FoundColony's LandClaimChoice
+        // overload); CheckFoundColony stays a pure legality gate (see natives.md).
         if (unit.Position.Neighbours().Any(n => Map.InBounds(n) && ColonyAt(n) is not null))
         {
             return MoveCheck.No("A colony cannot be founded next to another colony.");
@@ -4544,16 +4609,52 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Founds a colony where the unit stands. The founding unit settles down and
-    /// becomes the colony's first colonist (it leaves the map).
+    /// Founds a colony where the unit stands. The founding unit settles down and becomes the colony's first colonist
+    /// (it leaves the map). If the centre tile is <b>native-owned</b>, this overload resolves the forced claim
+    /// automatically for an <b>AI</b> founder (<see cref="AiResolveLandClaim"/> — pay if affordable, else steal) but
+    /// throws <see cref="LandClaimRequiredException"/> for the <b>human</b>, who must surface the pay/steal/abandon
+    /// choice (call the <see cref="FoundColony(Unit, LandClaimChoice)"/> overload).
     /// </summary>
     /// <exception cref="InvalidMoveException">Founding is not allowed; see <see cref="CheckFoundColony"/>.</exception>
-    public Colony FoundColony(Unit unit)
+    /// <exception cref="LandClaimRequiredException">The human is founding on native-owned land without a claim choice.</exception>
+    public Colony FoundColony(Unit unit) => FoundColony(unit, claim: null);
+
+    /// <summary>
+    /// Founds a colony on a <b>native-owned</b> centre tile, resolving the forced claim with the human's
+    /// <paramref name="claim"/> (FreeCol <c>csClaimLand</c> before the build): <see cref="LandClaimChoice.Buy"/> pays
+    /// the land price, <see cref="LandClaimChoice.Steal"/> takes it and angers the owning nation (per-player alarm).
+    /// On a tile that is not native-owned, <paramref name="claim"/> is ignored. Use <see cref="RequiredLandClaim(Position)"/>
+    /// to learn the price before offering the choice.
+    /// </summary>
+    /// <exception cref="InvalidMoveException">Founding is not allowed (see <see cref="CheckFoundColony"/>), or the buy
+    /// is unaffordable / the choice is <see cref="LandClaimChoice.Abandon"/>.</exception>
+    public Colony FoundColony(Unit unit, LandClaimChoice claim) => FoundColony(unit, (LandClaimChoice?)claim);
+
+    /// <summary>Shared founding core; <paramref name="claim"/> null means "no explicit choice" — auto-resolved for an AI founder, rejected for the human (forces the UI choice).</summary>
+    private Colony FoundColony(Unit unit, LandClaimChoice? claim)
     {
         MoveCheck check = CheckFoundColony(unit);
         if (!check.Allowed)
         {
             throw new InvalidMoveException(check.Reason!);
+        }
+
+        // The centre tile is claimed from the natives BEFORE the colony exists (FreeCol claims the build tile in
+        // InGameController.claimLand, then builds): a native-owned site forces buy-or-steal-or-abandon. The human must
+        // pass an explicit choice (else throw, so the UI raises its dialog); an AI founder resolves deterministically.
+        Player founder = PlayerById(unit.OwnerId) ?? _human;
+        ForcedLandClaim forced = RequiredLandClaim(founder, unit.Position);
+        if (forced.Required)
+        {
+            if (claim is null)
+            {
+                if (founder.PlayerId == _human.PlayerId)
+                {
+                    throw new LandClaimRequiredException(forced.BuyPrice, forced.OwningNation!);
+                }
+                claim = AiResolveLandClaim(founder, unit.Position);
+            }
+            ResolveForcedLandClaim(founder, unit.Position, claim.Value);
         }
 
         IReadOnlyList<string> names = ColonyNamesFor(unit.OwnerId);
@@ -10074,20 +10175,68 @@ public sealed partial class Game
     public bool ColonyCanWorkTile(Colony colony, Position tile) =>
         Map.InBounds(tile) && (!Map.TerrainAt(tile).IsWater || ColonyCanWorkWater(colony));
 
-    /// <summary>Puts an idle colonist to work on a tile producing one goods type.</summary>
+    /// <summary>
+    /// Puts an idle colonist to work on a tile producing one goods type. If <paramref name="tile"/> is
+    /// <b>native-owned</b>, working it forces a buy-or-steal-or-abandon claim first (FreeCol claims a worked tile via
+    /// <c>csClaimLand</c>): this overload throws <see cref="LandClaimRequiredException"/> so the presentation surfaces
+    /// the pay/steal/abandon choice (then calls <see cref="AssignWork(Colony, Position, string, LandClaimChoice)"/>).
+    /// </summary>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAssignWork(Colony, Position, string)"/>.</exception>
+    /// <exception cref="LandClaimRequiredException">The tile is native-owned and no claim choice was given.</exception>
     public void AssignWork(Colony colony, Position tile, string goodsId) =>
-        AssignWork(_human, colony, tile, goodsId);
+        AssignWork(_human, colony, tile, goodsId, claim: null);
 
-    /// <summary>Puts an idle colonist to work on behalf of <paramref name="player"/> (the colony owner), gating on that player's yields.</summary>
-    internal void AssignWork(Player player, Colony colony, Position tile, string goodsId)
+    /// <summary>
+    /// Puts an idle colonist to work on a <b>native-owned</b> tile, resolving the forced claim with the human's
+    /// <paramref name="claim"/>: <see cref="LandClaimChoice.Buy"/> pays the land price, <see cref="LandClaimChoice.Steal"/>
+    /// takes it and angers the owning nation (per-player alarm). Ignored on a tile that is not native-owned. Use
+    /// <see cref="RequiredLandClaim(Position)"/> to learn the price before offering the choice.
+    /// </summary>
+    /// <exception cref="InvalidMoveException">Not allowed (see <see cref="CheckAssignWork(Colony, Position, string)"/>), or the buy is unaffordable / the choice is <see cref="LandClaimChoice.Abandon"/>.</exception>
+    public void AssignWork(Colony colony, Position tile, string goodsId, LandClaimChoice claim) =>
+        AssignWork(_human, colony, tile, goodsId, claim);
+
+    /// <summary>Puts an idle colonist to work on behalf of <paramref name="player"/> (the colony owner), gating on that
+    /// player's yields. A native-owned tile is auto-claimed for an <b>AI</b> owner (<see cref="AiResolveLandClaim"/>);
+    /// the human path arrives here only with an explicit choice via the public overloads.</summary>
+    internal void AssignWork(Player player, Colony colony, Position tile, string goodsId) =>
+        AssignWork(player, colony, tile, goodsId, claim: null);
+
+    /// <summary>Shared work-assignment core; <paramref name="claim"/> null means "no explicit choice" — auto-resolved for an AI owner, rejected for the human (forces the UI choice).</summary>
+    private void AssignWork(Player player, Colony colony, Position tile, string goodsId, LandClaimChoice? claim)
     {
         MoveCheck check = CheckAssignWork(player, colony, tile, goodsId);
         if (!check.Allowed)
         {
             throw new InvalidMoveException(check.Reason!);
         }
+        ClaimWorkTileIfNeeded(player, tile, claim);
         colony.SetWorker(tile, goodsId, PickIdleWorkerFor(colony, goodsId));
+    }
+
+    /// <summary>
+    /// Resolves the forced native-land claim for a worked <paramref name="tile"/> (86d3e4bj7), if one is required:
+    /// the human must supply an explicit <paramref name="claim"/> (else <see cref="LandClaimRequiredException"/>, so the
+    /// UI raises its dialog); an AI owner auto-resolves via <see cref="AiResolveLandClaim"/> (RNG-free). A no-op when the
+    /// tile is not native-owned. The single seam every worker-seating path (tile-work picker, AI planner, food
+    /// auto-assign) funnels through, so a colonist is never seated on un-claimed native ground.
+    /// </summary>
+    private void ClaimWorkTileIfNeeded(Player player, Position tile, LandClaimChoice? claim)
+    {
+        ForcedLandClaim forced = RequiredLandClaim(player, tile);
+        if (!forced.Required)
+        {
+            return;
+        }
+        if (claim is null)
+        {
+            if (player.PlayerId == _human.PlayerId)
+            {
+                throw new LandClaimRequiredException(forced.BuyPrice, forced.OwningNation!);
+            }
+            claim = AiResolveLandClaim(player, tile);
+        }
+        ResolveForcedLandClaim(player, tile, claim.Value);
     }
 
     /// <summary>Returns a tile's worker to the idle pool.</summary>
@@ -10133,10 +10282,15 @@ public sealed partial class Game
     internal void AutoAssignIdleToFood(Player player, Colony colony)
     {
         const string grain = "model.goods.grain";
+        // Auto food-assignment never raises the human's claim dialog (it runs unattended on founding/growth): for the
+        // HUMAN a native-owned tile is skipped (they can later choose to claim + work it via the tile picker); an AI
+        // owner auto-claims it (AiResolveLandClaim) so its colonists still feed themselves on native ground (86d3e4bj7).
+        bool isHuman = player.PlayerId == _human.PlayerId;
         while (colony.IdleColonists > 0)
         {
             var best = colony.Position.Neighbours()
-                .Where(n => Map.InBounds(n) && !colony.TileWorkers.ContainsKey(n))
+                .Where(n => Map.InBounds(n) && !colony.TileWorkers.ContainsKey(n)
+                    && !(isHuman && RequiredLandClaim(player, n).Required)) // the human's auto-assign leaves native tiles for a deliberate claim
                 .Select(n => (tile: n, yield: TileYield(player, n, grain)))
                 .Where(t => t.yield > 0)
                 .OrderByDescending(t => t.yield)
@@ -10148,6 +10302,7 @@ public sealed partial class Game
             {
                 return; // nowhere productive left — colonist stays idle
             }
+            ClaimWorkTileIfNeeded(player, best.Value.tile, claim: null); // no-op off native land; AI auto-resolves, human tiles already filtered out
             colony.SetWorker(best.Value.tile, grain, PickIdleWorkerFor(colony, grain));
         }
     }
@@ -11459,6 +11614,30 @@ public sealed class InvalidMoveException : Exception
 {
     /// <summary>Creates the exception with the player-facing reason.</summary>
     public InvalidMoveException(string message) : base(message) { }
+}
+
+/// <summary>
+/// Thrown when founding a colony on, or working, a <b>native-owned</b> tile is attempted without resolving the forced
+/// buy-or-steal-or-abandon claim first (86d3e4bj7; FreeCol's pre-build <c>csClaimLand</c>). The presentation should
+/// consult <see cref="Game.RequiredLandClaim(Position)"/> beforehand and, when a claim is required, raise its
+/// pay/steal/abandon dialog and call the <see cref="LandClaimChoice"/> overload — this exception is the guard for when
+/// it did not. Carries the buy price and owning nation so the dialog can be built from the caught instance if needed.
+/// </summary>
+public sealed class LandClaimRequiredException : Exception
+{
+    /// <summary>The gold the buy option costs (the land price; 0 under Peter Minuit).</summary>
+    public int BuyPrice { get; }
+
+    /// <summary>The native nation type id that owns the tile.</summary>
+    public string OwningNation { get; }
+
+    /// <summary>Creates the exception describing the forced claim the caller must resolve.</summary>
+    public LandClaimRequiredException(int buyPrice, string owningNation)
+        : base($"The natives own this land — buy it for {buyPrice} gold, steal it, or abandon the attempt.")
+    {
+        BuyPrice = buyPrice;
+        OwningNation = owningNation;
+    }
 }
 
 /// <summary>

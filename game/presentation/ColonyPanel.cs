@@ -354,8 +354,7 @@ public partial class ColonyPanel : PanelContainer
                     {
                         if (index > 0)
                         {
-                            _game.AssignWork(_colony, free, options[(int)index - 1].GoodsId);
-                            Changed();
+                            AssignWorkWithClaim(free, options[(int)index - 1].GoodsId);
                         }
                     };
                     Place(view, picker, topLeft + new Vector2(28, 28));
@@ -381,7 +380,8 @@ public partial class ColonyPanel : PanelContainer
                          && _game.TileWorkOptions(tile) is { Count: > 0 } target)
                 {
                     _game.UnassignWork(_colony, from);
-                    _game.AssignWork(_colony, tile, target[0].GoodsId); // move → the new tile's best-yield good
+                    AssignWorkWithClaim(tile, target[0].GoodsId); // move → the new tile's best-yield good
+                    return; // AssignWorkWithClaim refreshes (possibly after the claim dialog)
                 }
             }
             _heldFrom = null;
@@ -393,9 +393,66 @@ public partial class ColonyPanel : PanelContainer
         else if (!isCentre && _colony.IdleColonists > 0 && _game.ColonyCanWorkTile(_colony, tile)
                  && _game.TileWorkOptions(tile) is { Count: > 0 } free)
         {
-            _game.AssignWork(_colony, tile, free[0].GoodsId); // no one held + an idle colonist → put it to work here
+            AssignWorkWithClaim(tile, free[0].GoodsId); // no one held + an idle colonist → put it to work here
+            return; // AssignWorkWithClaim refreshes (possibly after the claim dialog)
         }
         Changed();
+    }
+
+    /// <summary>
+    /// Assigns a colonist to <paramref name="tile"/> to produce <paramref name="goodsId"/>, first resolving the forced
+    /// buy-or-steal-or-abandon claim if the tile is native-owned (86d3e4bj7): on free land it assigns immediately; on
+    /// native land it raises the choice modal and routes through the <see cref="Game.AssignWork(Colony, Position, string, LandClaimChoice)"/>
+    /// overload (Abandon leaves the colonist idle). No pending state is stored — the (tile, good) context is held by the
+    /// closure and the claim is resolved synchronously on the click. Always <see cref="Changed"/>s afterward.
+    /// </summary>
+    private void AssignWorkWithClaim(Position tile, string goodsId)
+    {
+        Game.ForcedLandClaim forced = _game.RequiredLandClaim(tile);
+        if (!forced.Required)
+        {
+            _game.AssignWork(_colony, tile, goodsId);
+            Changed();
+            return;
+        }
+
+        string nation = NationLabel(forced.OwningNation!);
+        bool canAfford = _game.HumanPlayer.Gold >= forced.BuyPrice;
+        var dialog = new ConfirmationDialog
+        {
+            Title = "Native land",
+            DialogText = $"The {nation} own this tile.\nBuy it for {forced.BuyPrice} gold, take it by force (angering them), or abandon working it?",
+            OkButtonText = canAfford ? $"Buy ({forced.BuyPrice}g)" : $"Buy ({forced.BuyPrice}g — can't afford)",
+            CancelButtonText = "Abandon",
+        };
+        Button stealButton = dialog.AddButton("Steal", right: true, action: "steal");
+        if (!canAfford)
+        {
+            dialog.GetOkButton().Disabled = true;
+        }
+
+        void Finish(LandClaimChoice? choice)
+        {
+            dialog.QueueFree();
+            if (choice is not null)
+            {
+                _game.AssignWork(_colony, tile, goodsId, choice.Value);
+            }
+            Changed();
+        }
+
+        dialog.Confirmed += () => Finish(LandClaimChoice.Buy);
+        dialog.Canceled += () => Finish(null); // Abandon → colonist stays idle
+        stealButton.Pressed += () => Finish(LandClaimChoice.Steal);
+        AddChild(dialog);
+        dialog.PopupCentered();
+    }
+
+    /// <summary>Human-readable nation name from a nation-type id (e.g. <c>model.nationType.apache</c> → "Apache").</summary>
+    private static string NationLabel(string nationId)
+    {
+        string shortName = nationId[(nationId.LastIndexOf('.') + 1)..];
+        return shortName.Length == 0 ? shortName : char.ToUpperInvariant(shortName[0]) + shortName[1..];
     }
 
     private Control ConstructionPanel()

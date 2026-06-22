@@ -39,7 +39,7 @@ public class ForeignCombatTests
             Position tile = game.Map.AllPositions().First(p =>
                 Free(game, p) && game.Map.TerrainAt(p).CanSettle
                 && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n))
-                && taken.All(t => Cheb(t, p) > 3)); // spaced so footprints never touch (founding's min-spacing rule)
+                && taken.All(t => Cheb(t, p) > 3)); // spaced so footprints never touch (founding's min-spacing rule). AI founder → auto-resolves any native claim (86d3e4bj7)
             Unit founder = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), tile);
             founder.OwnerId = power.PlayerId;
             Colony colony = game.FoundColony(founder);
@@ -128,10 +128,10 @@ public class ForeignCombatTests
 
         // An undefended colony for the power on open inland ground.
         Position colonyTile = game.Map.AllPositions().First(p =>
-            Free(game, p) && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n)));
+            Free(game, p) && game.Map.TerrainAt(p).CanSettle && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n)));
         Unit founder = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), colonyTile);
         founder.OwnerId = power.PlayerId;
-        Colony colony = game.FoundColony(founder);
+        Colony colony = game.FoundColony(founder); // AI founder → auto-resolves any native claim (86d3e4bj7)
         colony.OwnerId = power.PlayerId;
 
         // An armed artillery (a non-founder → always reaches the garrison logic) two tiles from the colony, at peace.
@@ -566,10 +566,10 @@ public class ForeignCombatTests
         power.Gold = 0;
 
         Position colonyTile = game.Map.AllPositions().First(p =>
-            Free(game, p) && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n)));
+            Free(game, p) && game.Map.TerrainAt(p).CanSettle && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n)));
         Unit founder = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), colonyTile);
         founder.OwnerId = power.PlayerId;
-        Colony colony = game.FoundColony(founder);
+        Colony colony = game.FoundColony(founder); // AI founder → auto-resolves any native claim (86d3e4bj7)
         colony.OwnerId = power.PlayerId;
         return (game, power, colony);
     }
@@ -619,9 +619,11 @@ public class ForeignCombatTests
         (Game game, Player power, Colony powerColony) = PowerWithColony(seed);
         // A human colony two tiles from the power's colony (inside ColonialTensionRadius = 3, so it counts as encroachment).
         Position humanTile = powerColony.Position.Neighbours().SelectMany(n => n.Neighbours())
-            .First(p => Free(game, p) && Cheb(p, powerColony.Position) == 2);
+            .First(p => Free(game, p) && game.Map.TerrainAt(p).CanSettle && Cheb(p, powerColony.Position) == 2);
         Unit settler = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), humanTile);
-        Colony humanColony = game.FoundColony(settler); // human-owned (OwnerId 0)
+        // The tile may sit on native land here; the human founds it by stealing (86d3e4bj7 — free + RNG-free, so the
+        // power-tension/stream-0 assertions are unaffected). This test is about colonial encroachment, not the claim.
+        Colony humanColony = game.FoundColony(settler, LandClaimChoice.Steal); // human-owned (OwnerId 0)
         Assert.True(game.ColonyAt(humanColony.Position) is { OwnerId: 0 });
         if (atPeace)
         {

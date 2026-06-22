@@ -54,7 +54,7 @@ public class DiplomaticTradeTests
 
     private static bool FreeLand(Game g, Position p) =>
         g.Map.InBounds(p) && !g.Map.TerrainAt(p).IsWater && g.Map.TerrainAt(p).CanSettle
-        && g.ColonyAt(p) is null && g.NativeSettlementAt(p) is null
+        && g.ColonyAt(p) is null && g.NativeSettlementAt(p) is null && !g.Map.IsNativeOwned(p) // non-native: these tests aren't about the forced land-claim (86d3e4bj7)
         && !g.Units.Any(u => u.IsOnMap && u.Position == p);
 
     private static int Chebyshev(Position a, Position b) =>
