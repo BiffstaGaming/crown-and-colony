@@ -8,6 +8,7 @@ using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Trade;
+using CrownAndColony.GameLogic.Units;
 using Xunit;
 
 namespace CrownAndColony.GameLogic.Tests.Scenarios;
@@ -324,6 +325,193 @@ public class DifferentialFidelityTests
             Observe: () => (cal.YearForTurn(111), cal.SeasonForTurn(111)),
             Expected: (1601, 0));
         Verify(nextYearInv);
+    }
+
+    // ───────────────────────────── Invariant 6: net-food colony growth ─────────────────────────────
+
+    [Fact]
+    public void Fidelity_ColonyGrowth_HappensAtFreeColFoodPerColonistThreshold()
+    {
+        // FreeCol Settlement.FOOD_PER_COLONIST = 200: a colony grows a new colonist once its stored food
+        // reaches that threshold (ServerColony's born-in-colony build consumes FOOD_PER_COLONIST of food and
+        // adds a colonist). Drive the engine's real turn: found a 1-pop colony, bank well over the threshold
+        // (so per-tile production variance can never block the single growth), end one turn, and assert it
+        // grew by exactly one colonist and that the engine's growth constant equals FreeCol's 200.
+
+        var thresholdInv = new FidelityInvariant<int>(
+            Name: "engine food-for-growth threshold = FreeCol FOOD_PER_COLONIST",
+            // Settlement.java:54  public static final int FOOD_PER_COLONIST = 200;
+            FreeColRef: "freecol Settlement.java:54 (FOOD_PER_COLONIST = 200)",
+            Observe: () => Colony.FoodForGrowth,
+            Expected: 200);
+        Verify(thresholdInv);
+
+        // A colony banking ≥ threshold + one colonist's appetite grows by exactly one on the next turn. We dump
+        // 400 food (≥ 200 growth + 2 eaten) but < 2×200, so the turn yields a single growth regardless of the
+        // colony-centre tile's own food output (which only ever adds to the surplus). Seeded (ADR-009).
+        var growthInv = new FidelityInvariant<int>(
+            Name: "a colony at/above the 200 food threshold grows by one colonist in a turn",
+            FreeColRef: "freecol Settlement.java:54 (FOOD_PER_COLONIST = 200) + ServerColony born-in-colony growth",
+            Observe: () =>
+            {
+                Game game = Game.New(Classic, seed: 0xC0FFEEUL);
+                Colony colony = game.FoundColony(game.Units[0]);
+                int popBefore = colony.Population;
+                colony.AddGoods(Colony.FoodId, 400 - colony.Food); // exactly 400 stored: one growth, never two
+                game.EndTurn();
+                return colony.Population - popBefore;
+            },
+            Expected: 1);
+        Verify(growthInv);
+    }
+
+    // ───────────────────────────── Invariant 7: emigration crosses-required increment ─────────────────────────────
+
+    [Fact]
+    public void Fidelity_EmigrationRaisesTheTarget_ByFreeColCrossesIncrement()
+    {
+        // FreeCol Player.updateImmigrationRequired: after each emigrant the immigration target rises by the
+        // CROSSES_INCREMENT game option (classic-medium 2). Drive the whole engine: found a cross-producing
+        // colony, run turns until an emigrant steps ashore in Europe, and assert the target rose 15 → 17.
+        var deltaInv = new FidelityInvariant<int>(
+            Name: "immigration target rises by CROSSES_INCREMENT after an emigrant (15 → 17)",
+            // Player.java:1267-1279 updateImmigrationRequired (immigrationRequired += CROSSES_INCREMENT);
+            // classic-medium model.option.crossesIncrement = 2.
+            FreeColRef: "freecol Player.java:1267-1279 (updateImmigrationRequired) + classic-medium crossesIncrement=2",
+            Observe: () =>
+            {
+                Game game = Game.New(Classic, seed: 42);
+                game.FoundColony(game.Units[0]); // free chapel → 3 immigration/turn (1 cross + 2 player bonus)
+                int requiredBefore = game.ImmigrationRequired; // 15
+                for (int t = 0; t < 5; t++)
+                {
+                    game.EndTurn(); // 3,6,9,12,15 — the fifth turn meets the target and emigrates one colonist
+                }
+                Assert.Single(game.UnitsInEurope); // an emigrant did arrive (so the target actually advanced)
+                return game.ImmigrationRequired - requiredBefore;
+            },
+            Expected: 2);
+        Verify(deltaInv);
+    }
+
+    // ───────────────────────────── Invariant 8: founding-father total cost ─────────────────────────────
+
+    [Theory]
+    // elected fathers → expected total liberty cost for the NEXT father (FreeCol getTotalFoundingFatherCost,
+    // factor = classic-medium foundingFatherFactor = 40): count 0 → factor; else 2·(count+1)·factor + 1.
+    [InlineData(0, 40)]    // first father is the bare factor
+    [InlineData(1, 161)]   // 2·2·40 + 1 = 161
+    [InlineData(2, 241)]   // 2·3·40 + 1 = 241
+    [InlineData(3, 321)]   // 2·4·40 + 1 = 321
+    public void Fidelity_FoundingFatherCost_MatchesFreeColFactorFormula(int electedCount, int expectedCost)
+    {
+        // FreeCol Player.getTotalFoundingFatherCost: base = FOUNDING_FATHER_FACTOR (classic-medium 40);
+        // return (count == 0) ? base : 2*(count+1)*base + 1. Seat `electedCount` fathers in the human's
+        // Congress and read the engine's TotalFoundingFatherCost(), which routes through the same formula.
+        var inv = new FidelityInvariant<int>(
+            Name: $"total founding-father cost with {electedCount} elected (factor 40)",
+            // Player.java:1544 getTotalFoundingFatherCost: (count==0)?base : 2*(count+1)*base + 1; FOUNDING_FATHER_FACTOR medium 40.
+            FreeColRef: "freecol Player.java:1544 (getTotalFoundingFatherCost) + classic-medium foundingFatherFactor=40",
+            Observe: () =>
+            {
+                Game game = Game.New(Classic, seed: 0xC0FFEEUL);
+                for (int i = 0; i < electedCount; i++)
+                {
+                    game.HumanPlayer.CongressList.Add($"model.foundingFather.stub{i}"); // count is all the formula reads
+                }
+                return game.TotalFoundingFatherCost();
+            },
+            Expected: expectedCost);
+        Verify(inv);
+    }
+
+    // ───────────────────────────── Invariant 9: native land price ─────────────────────────────
+
+    [Fact]
+    public void Fidelity_NativeLandPrice_MatchesFreeColFactorYieldPlusBase()
+    {
+        // FreeCol Player.getLandPrice: LAND_PRICE_FACTOR · Σ(tile potential of every good except the primary-food
+        // aggregate) + 100. Classic-medium landPriceFactor = 60, the +100 base. Pick a real native-owned land tile
+        // and assert the engine prices it by that exact formula (the potential sum is read off the same engine, so
+        // the case is data-driven, not a hand-copied number).
+        const int factor = 60;  // classic-medium landPriceFactor
+        const int landBase = 100;  // getLandPrice +100
+        const string foodAggregate = "model.goods.food"; // the primary-food aggregate (getPrimaryFoodType), the only good dropped
+
+        Game game = Game.New(Classic, seed: 0xC0FFEEUL);
+        var (tile, _) = game.Map.NativeOwners
+            .Where(kv => game.NativeSettlementAt(kv.Key) is null) // a settlement tile is not for sale (price −1)
+            .OrderBy(kv => kv.Key.Y).ThenBy(kv => kv.Key.X)
+            .Select(kv => (kv.Key, kv.Value)).First();
+        int pricedSum = Classic.GoodsTypes.Where(g => g.Id != foodAggregate).Sum(g => game.TileYieldPotential(tile, g.Id));
+
+        var inv = new FidelityInvariant<int>(
+            Name: "native land price = landPriceFactor · Σ(non-food-aggregate potential) + 100",
+            // Player.java:3245 getLandPrice: LAND_PRICE_FACTOR * Σ(gt != primaryFood: potential) + 100; medium factor 60.
+            FreeColRef: "freecol Player.java:3245 (getLandPrice) + classic-medium landPriceFactor=60, +100 base",
+            Observe: () => game.LandPrice(tile),
+            Expected: factor * pricedSum + landBase);
+        Verify(inv);
+    }
+
+    // ───────────────────────────── Invariant 10: treasure transport fee ─────────────────────────────
+
+    [Fact]
+    public void Fidelity_TreasureTransportFee_MatchesFreeColPercentOfAmount()
+    {
+        // FreeCol Unit.getTransportFee: TREASURE_TRANSPORT_FEE% · treasure amount (classic-medium 60%). Cashing a
+        // 1000-gold train in at a colony, with tax zeroed to isolate the King's cut, banks amount − fee = 400.
+        // We read the engine's CashInValue (which subtracts the fee then applies tax) at 0 tax, so the gap from
+        // the raw amount IS the transport fee.
+        var inv = new FidelityInvariant<int>(
+            Name: "treasure cash-in value at 0 tax = amount − 60% transport fee (1000 → 400)",
+            // Unit.java:3797 getTransportFee: TREASURE_TRANSPORT_FEE * amount / 100; classic-medium treasureTransportFee=60.
+            FreeColRef: "freecol Unit.java:3797 (getTransportFee) + classic-medium treasureTransportFee=60",
+            Observe: () =>
+            {
+                Game game = Game.New(Classic, seed: 0xC0FFEEUL);
+                Colony colony = game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
+                game.HumanPlayer.TaxRate = 0; // isolate the King's transport cut from the monarch tax
+                Unit train = game.SpawnUnit(Classic.Unit("model.unit.treasureTrain"), colony.Position);
+                train.SetTreasureAmount(1000);
+                return game.CashInValue(train); // 1000 − 60% fee, no tax
+            },
+            Expected: 400);
+        Verify(inv);
+    }
+
+    // ───────────────────────────── Invariant 11: monarch tax ceiling ─────────────────────────────
+
+    [Fact]
+    public void Fidelity_MonarchTaxRaise_IsClampedToFreeColMaximumTax()
+    {
+        // FreeCol Monarch.raiseTax clamps the new rate to taxMaximum() = MAXIMUM_TAX (classic-medium 65). Starting
+        // from a tax already at the cap, any raise the King computes must stay at 65 — never above. We sample the
+        // engine's RaiseTaxAmount across seeds and turns to show the clamp holds for every draw (ADR-009 seeded RNG).
+        const int maxTax = 65; // classic-medium model.option.maximumTax
+
+        var clampInv = new FidelityInvariant<int>(
+            Name: "a raise from the cap stays at MAXIMUM_TAX (65)",
+            // Monarch.java:480 raiseTax → min(oldTax + adjust, taxMaximum()); taxMaximum = MAXIMUM_TAX (Monarch.java:297), medium 65.
+            FreeColRef: "freecol Monarch.java:480 (raiseTax min-with-taxMaximum) + Monarch.java:297 (MAXIMUM_TAX) = classic-medium 65",
+            Observe: () =>
+            {
+                Game game = Game.New(Classic, seed: 0xC0FFEEUL);
+                game.HumanPlayer.TaxRate = maxTax; // already at the ceiling
+                return game.RaiseTaxAmount(new Pcg32Random(0xBEEFUL)); // any positive adjust is clamped back to 65
+            },
+            Expected: maxTax);
+        Verify(clampInv);
+
+        // No seeded draw, from any tax ≤ cap and any turn, ever exceeds the ceiling.
+        for (ulong seed = 1; seed <= 200; seed++)
+        {
+            Game game = Game.New(Classic, seed: seed);
+            game.HumanPlayer.TaxRate = (int)(seed % (ulong)(maxTax + 1)); // 0..65
+            int raised = game.RaiseTaxAmount(new Pcg32Random(seed));
+            Assert.True(raised <= maxTax, $"raiseTax produced {raised} > MAXIMUM_TAX {maxTax} (seed {seed}).");
+            Assert.True(raised >= game.HumanPlayer.TaxRate, "a raise never lowers the tax below the current rate.");
+        }
     }
 
     // ───────────────────────────── Scenario helpers ─────────────────────────────
