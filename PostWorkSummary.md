@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-22 — Path-to-100% coding WAVE 3 shipped (D1+E1+C3+B4) ✅
+
+**Requested:** Continue coding the path-to-100% tasks via parallel agents.
+**Did:** 4-stream parallel worktree wave, integrated CI-green:
+- **D1** (`d7cc251`) — REF/rebellion combat modifiers (bombardBonus +50% from the REF nation type, popularSupport = SoL%/100−SoL%, ambushPenalty mirror), spec-parsed so Australia inherits them. Honest nuance: at ~40% SoL the bonuses cancel → odds *correct*, not REF-favouring. No save bump.
+- **E1** (`8d52f55`) — nation-specific human starting units (Dutch merchantman / French hardy pioneer / Spanish veteran) + `expertStartingUnits` per difficulty; default game is nation-less → byte-identical. No save bump.
+- **C3** (`1794d19`) — forced buy/steal/abandon land-claim trigger (steal → +200 land-taken alarm on the actor's own C1 channel; AI resolves deterministically). No save bump.
+- **B4** (`b32aae4`) — per-good trade accounting (cumulative Sales/IncomeBeforeTaxes/IncomeAfterTaxes, sell adds/buy subtracts; exposed for E4's Trade panel). **Save v55→v56.**
+**Status:** Integrated, pushed `b32aae4…c46ff14`. Build clean + **2109 L1/L2 + 5 soak green**. Save **v55→v56** (B4). One cross-wave fix: bumped C3's stale v55 assertion → 56 (B4's bump).
+**Decisions:** Disjoint regions auto-merged (1 doc conflict resolved keeping both rows). Only B4 bumped the save.
+**Scheduled next:** **Wave 4 — C2 (native two-way trade, save bump), D3 (amphibious assault), D4 (starvation destroys colony), E3 (New-Game options + scenario selector)**. Remaining after: B3, D2, E2, E4 (+ A4 offensive-AI follow-up `86d3e4q65`).
+**Needs you:** Nothing blocking. **11 of 19 path-to-100% tasks shipped.**
+
 ## 2026-06-22 — Path-to-100% coding WAVE 2 shipped (A4+B2+C1) ✅ — Phase A complete
 
 **Requested:** Continue coding the path-to-100% tasks via parallel agents.
