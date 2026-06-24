@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-25 — Playability sweep + P0 economic-loop UI fixes ✅ (the "engine done ≠ playable" reckoning)
+
+**Context:** after the cargo/Europe gaps, ran a **7-cluster playability sweep** (read-only workflow) auditing every "done" player-facing feature for real UI reachability + an L3 test that drives the player flow. **Verdict: ~1 in 8 "done" features was a UI dead-end** — "Shipped" had meant "engine works", not "playable".
+**Found 7 UNREACHABLE (engine+unit-test+CI-green, no UI):** treasure cash-in, custom-house export, native buy, native sell, train-specialist, missionary, first-contact notice — filed `86d3f62q1`/`q8`/`qh`/`qn`/`qr`/`qw` + an L3-coverage task `86d3f62r5` for the PARTIAL (reachable-but-untested) list.
+**Built + integrated the 3 P0 economic loops (UI over existing engine, L3-verified locally THEN CI-green):**
+- **Custom-house export UI** (`e7374a4`, `86d3f62q8`): per-good Export toggle + retain level in the colony screen (gated on having a custom house) → `Game.SetColonyExport`; default game can now custom-house-sell. L3 incl. EndTurn-auto-sells.
+- **Treasure cash-in** (`a9517c6`, `86d3f62q1`): "Cash in treasure" order button (value + King's-cut/fee-free confirmation). L3 at colony + aboard a galleon in Europe.
+- **Native two-way trade** (`89e4e85`, `86d3f62qh`): Buy/Sell + haggle in the settlement panel. L3 drives a buy + a sell. (Haggle is advisory — price-honouring is a documented follow-up.)
+**Status:** Pushed `…89e4e85`. **CI run 28127913463 = GREEN both jobs.** Local: build + 2194 L1/L2 + 5 soak + **full L3 184/184**. No save change (all v59; additive read oracles only).
+**Decisions:** the new bar — **playable = UI path + an L3 test driving the real control** + verify the actual CI run. The sweep is how I now find unreachable "done" before Chris does.
+**Scheduled next (awaiting Chris's steer):** P1 — train-specialist UI + buy/train fix (`86d3f62qn`), missionary (`86d3f62qr`); P2 — first-contact notice (`86d3f62qw`); the L3 player-flow coverage pass (`86d3f62r5`).
+**Needs you:** Priority among P1/P2/coverage; playtest the new economic-loop UIs.
+
 ## 2026-06-25 — Cargo-transport UI gaps closed (playtest found B3 shipped engine-only) ✅
 
 **Requested (Chris, playtesting):** "how do I load cargo onto a ship from a colony?" → found you CAN'T, and trade routes can't target Europe in the UI — despite B3 being marked Shipped. **Own it:** B3 (`86d3e4bcp`) shipped the Europe-stop ENGINE + a unit test + CI-green, but never wired the panel UI — a player-unreachable "done", exactly the front-door gap Phase B was meant to close. CI-green ≠ playable.
