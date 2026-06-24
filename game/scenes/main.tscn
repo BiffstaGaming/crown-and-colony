@@ -1136,6 +1136,10 @@ text = "Load Game"
 layout_mode = 2
 text = "Settings"
 
+[node name="AboutButton" type="Button" parent="UI/PauseMenu/Panel/VBox"]
+layout_mode = 2
+text = "About"
+
 [node name="QuitToMenuButton" type="Button" parent="UI/PauseMenu/Panel/VBox"]
 layout_mode = 2
 text = "Quit to Main Menu"

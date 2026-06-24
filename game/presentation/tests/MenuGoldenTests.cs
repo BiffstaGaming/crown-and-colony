@@ -63,6 +63,17 @@ public class MenuGoldenTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task AboutPanel_MatchesGolden()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/AboutPanel.tscn");
+        var scene = (Control)runner.Scene();
+        scene.GetWindow().Size = CaptureSize;
+        await runner.SimulateFrames(5);
+
+        GoldenAssert.Assert("about-panel", scene.GetViewport().GetTexture().GetImage(), TextTolerance);
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task InfoPopup_MatchesGolden()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");

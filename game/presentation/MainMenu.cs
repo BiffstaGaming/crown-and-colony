@@ -25,6 +25,9 @@ public partial class MainMenu : Control
     /// <summary>The settings / options screen, opened from the Settings button.</summary>
     private const string SettingsScenePath = "res://scenes/SettingsScreen.tscn";
 
+    /// <summary>The About / version / license screen, opened from the About button.</summary>
+    private const string AboutScenePath = "res://scenes/AboutPanel.tscn";
+
     /// <summary>FreeCol's antique New-World map (GPL v2 — see <c>assets/freecol/PROVENANCE.md</c>), the menu backdrop.</summary>
     private const string BackdropPath = "res://assets/freecol/ui/map.jpg";
 
@@ -48,6 +51,7 @@ public partial class MainMenu : Control
         GetNode<Button>("Panel/VBox/NewGameButton").Pressed += OnNewGame;
         GetNode<Button>("Panel/VBox/LoadGameButton").Pressed += OnLoadGame;
         GetNode<Button>("Panel/VBox/SettingsButton").Pressed += OnSettings;
+        GetNode<Button>("Panel/VBox/AboutButton").Pressed += OnAbout;
         GetNode<Button>("Panel/VBox/QuitButton").Pressed += OnQuit;
     }
 
@@ -96,6 +100,17 @@ public partial class MainMenu : Control
         AddChild(settings);
     }
 
-    /// <summary>Exits the application.</summary>
+    /// <summary>Opens the About / version / license screen as an overlay; removes it again when the player presses Back.</summary>
+    private void OnAbout()
+    {
+        var about = GD.Load<PackedScene>(AboutScenePath).Instantiate<AboutPanel>();
+        about.Closed += about.QueueFree;
+        AddChild(about);
+    }
+
+    /// <summary>
+    /// Exits the application. No confirmation is shown from the title screen: no game is in progress here, so there is
+    /// nothing unsaved to lose. (The in-game quit paths in <see cref="PauseMenu"/> do confirm.)
+    /// </summary>
     private void OnQuit() => GetTree().Quit();
 }

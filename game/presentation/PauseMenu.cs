@@ -19,8 +19,10 @@ namespace CrownAndColony.Presentation;
 public partial class PauseMenu : Control
 {
     private const string SettingsScenePath = "res://scenes/SettingsScreen.tscn";
+    private const string AboutScenePath = "res://scenes/AboutPanel.tscn";
 
     private Control? _overlay;
+    private ConfirmationDialog? _quitConfirm;
 
     /// <summary>The host game controller (this menu's scene root) and the UI layer it lives in.</summary>
     private GameController Game => (GameController)Owner;
@@ -39,15 +41,16 @@ public partial class PauseMenu : Control
         GetNode<Button>("Panel/VBox/SaveButton").Pressed += OnSave;
         GetNode<Button>("Panel/VBox/LoadButton").Pressed += OnLoad;
         GetNode<Button>("Panel/VBox/SettingsButton").Pressed += OnSettings;
-        GetNode<Button>("Panel/VBox/QuitToMenuButton").Pressed += QuitToMenu;
-        GetNode<Button>("Panel/VBox/QuitToDesktopButton").Pressed += () => GetTree().Quit();
+        GetNode<Button>("Panel/VBox/AboutButton").Pressed += OnAbout;
+        GetNode<Button>("Panel/VBox/QuitToMenuButton").Pressed += OnQuitToMenu;
+        GetNode<Button>("Panel/VBox/QuitToDesktopButton").Pressed += OnQuitToDesktop;
         Hide();
     }
 
     /// <summary>Esc toggles the menu — open it over the paused game, or resume if it is already open (ignored while a sub-overlay is up; use its own Back button).</summary>
     public override void _UnhandledInput(InputEvent @event)
     {
-        if (_overlay is not null || !@event.IsActionPressed("ui_cancel"))
+        if (_overlay is not null || _quitConfirm is not null || !@event.IsActionPressed("ui_cancel"))
         {
             return;
         }
@@ -99,6 +102,8 @@ public partial class PauseMenu : Control
         OnLoad();
     }
 
+    private void OnAbout() => TrackOverlay(GD.Load<PackedScene>(AboutScenePath).Instantiate<AboutPanel>());
+
     private void OnSave()
     {
         var dialog = OpenDialog();
@@ -149,9 +154,47 @@ public partial class PauseMenu : Control
         Ui.AddChild(overlay);
     }
 
+    /// <summary>
+    /// Confirms before leaving the in-progress game for the title screen — quitting to the menu discards any unsaved
+    /// progress, so we ask first (Cancel is a no-op; the game stays paused with the pause menu still up).
+    /// </summary>
+    private void OnQuitToMenu() => ConfirmQuit("Quit to the main menu without saving?", QuitToMenu);
+
+    /// <summary>
+    /// Confirms before closing the application from within a game — same rationale as <see cref="OnQuitToMenu"/>:
+    /// unsaved progress would be lost. Cancel is a no-op.
+    /// </summary>
+    private void OnQuitToDesktop() => ConfirmQuit("Quit to desktop without saving?", () => GetTree().Quit());
+
     private void QuitToMenu()
     {
         GetTree().Paused = false; // the menu scene must run un-paused
         GetTree().ChangeSceneToFile(MainMenu.MenuScenePath);
+    }
+
+    /// <summary>
+    /// Shows a modal "Quit without saving?" confirmation over the paused game; <paramref name="onConfirm"/> runs only
+    /// if the player confirms, Cancel just frees the dialog (a no-op). Tracked in <see cref="_quitConfirm"/> so Esc
+    /// can't dismiss the pause menu out from under it, and given <c>ProcessMode = Always</c> so it works while the tree
+    /// is paused. Reuses Godot's <see cref="ConfirmationDialog"/> (a <c>Window</c>, so it can't share the
+    /// <see cref="_overlay"/> <c>Control</c> slot) — same pattern as the in-game land-claim prompt in
+    /// <see cref="GameController"/>.
+    /// </summary>
+    private void ConfirmQuit(string prompt, System.Action onConfirm)
+    {
+        var dialog = new ConfirmationDialog
+        {
+            Title = "Quit without saving?",
+            DialogText = prompt,
+            OkButtonText = "Quit",
+            CancelButtonText = "Cancel",
+            Theme = ColonyTheme.Get(),
+        };
+        dialog.ProcessMode = ProcessModeEnum.Always; // the game (and pause menu) stay paused behind it
+        dialog.Confirmed += () => { dialog.QueueFree(); _quitConfirm = null; onConfirm(); };
+        dialog.Canceled += () => { dialog.QueueFree(); _quitConfirm = null; };
+        _quitConfirm = dialog; // park Esc while the prompt is up
+        Ui.AddChild(dialog);
+        dialog.PopupCentered();
     }
 }

@@ -116,4 +116,73 @@ public class PauseMenuTests
         AssertThat(menu).IsInstanceOf<MainMenu>();
         menu.Free();
     }
+
+    [TestCase]
+    public async Task AboutButton_OpensTheAboutOverlay_BackClosesIt()
+    {
+        ISceneRunner runner = ISceneRunner.Load(GameScene);
+        await runner.SimulateFrames(2);
+        var pause = runner.Scene().GetNode<PauseMenu>("UI/PauseMenu");
+        pause.Open();
+        await runner.SimulateFrames(1);
+
+        pause.GetNode<Button>("Panel/VBox/AboutButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        var about = pause.GetParent().GetChildren().OfType<AboutPanel>().FirstOrDefault();
+        AssertThat(about).IsNotNull();
+
+        about!.GetNode<Button>("Panel/VBox/BackButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+        AssertThat(pause.GetParent().GetChildren().OfType<AboutPanel>().Any()).IsFalse();
+
+        pause.Resume(); // leave the shared tree unpaused for the next test
+    }
+
+    [TestCase]
+    public async Task QuitToDesktop_ShowsAConfirmation_AndCancelKeepsTheGame()
+    {
+        ISceneRunner runner = ISceneRunner.Load(GameScene);
+        await runner.SimulateFrames(2);
+        var pause = runner.Scene().GetNode<PauseMenu>("UI/PauseMenu");
+        pause.Open();
+        await runner.SimulateFrames(1);
+
+        // Pressing Quit to Desktop must NOT exit immediately — it raises a confirmation dialog first.
+        pause.GetNode<Button>("Panel/VBox/QuitToDesktopButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        var confirm = pause.GetParent().GetChildren().OfType<ConfirmationDialog>().FirstOrDefault();
+        AssertThat(confirm).IsNotNull();
+
+        // Cancel is a no-op: the dialog goes away and the game is still paused with the pause menu up.
+        confirm!.EmitSignal(AcceptDialog.SignalName.Canceled);
+        await runner.SimulateFrames(2);
+        AssertThat(pause.GetParent().GetChildren().OfType<ConfirmationDialog>().Any()).IsFalse();
+        AssertThat(pause.Visible).IsTrue();
+        AssertThat(pause.GetTree().Paused).IsTrue();
+
+        pause.Resume(); // leave the shared tree unpaused for the next test
+    }
+
+    [TestCase]
+    public async Task QuitToMenu_ShowsAConfirmation_AndCancelKeepsTheGame()
+    {
+        ISceneRunner runner = ISceneRunner.Load(GameScene);
+        await runner.SimulateFrames(2);
+        var pause = runner.Scene().GetNode<PauseMenu>("UI/PauseMenu");
+        pause.Open();
+        await runner.SimulateFrames(1);
+
+        pause.GetNode<Button>("Panel/VBox/QuitToMenuButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        var confirm = pause.GetParent().GetChildren().OfType<ConfirmationDialog>().FirstOrDefault();
+        AssertThat(confirm).IsNotNull();
+
+        confirm!.EmitSignal(AcceptDialog.SignalName.Canceled);
+        await runner.SimulateFrames(2);
+        AssertThat(pause.GetParent().GetChildren().OfType<ConfirmationDialog>().Any()).IsFalse();
+        AssertThat(pause.Visible).IsTrue();         // still on the pause menu
+        AssertThat(pause.GetTree().Paused).IsTrue(); // game still paused (we did not change scene)
+
+        pause.Resume(); // leave the shared tree unpaused for the next test
+    }
 }
