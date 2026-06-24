@@ -7,25 +7,26 @@
 | **Code** | `game/presentation/MainMenu.cs`, `game/scenes/MainMenu.tscn` |
 | **Tests** | `game/presentation/tests/MainMenuTests.cs` (L3) |
 | **FreeCol reference** | `freecol/src/net/sf/freecol/client/gui/panel/MainPanel.java` (opening-menu layout); `freecol/data/base/resources/images/ui/` (art); `AboutPanel.java` (About) |
-| **Related systems** | [save-load-ui.md](save-load-ui.md) (Load Game dialog), [settings.md](settings.md) (Settings overlay), [about.md](about.md) (About overlay), [pause-menu.md](pause-menu.md) (Quit to Main Menu target), [colonies.md](colonies.md) (shared theme) |
+| **Related systems** | [save-load-ui.md](save-load-ui.md) (Load Game dialog), [settings.md](settings.md) (Settings overlay), [help.md](help.md) (Help overlay), [about.md](about.md) (About overlay), [pause-menu.md](pause-menu.md) (Quit to Main Menu target), [colonies.md](colonies.md) (shared theme) |
 
 ## 1. How it works (plain English)
 
 *Audience: anyone — no jargon.*
 
-When you launch Crown & Colony you now arrive at a **title screen** instead of dropping straight into a running game. It shows the game's name over an antique map of the New World, framed in the same carved-wood-and-parchment style as the colony window, with five choices.
+When you launch Crown & Colony you now arrive at a **title screen** instead of dropping straight into a running game. It shows the game's name over an antique map of the New World, framed in the same carved-wood-and-parchment style as the colony window, with six choices.
 
 **The rules, in plain words:**
 - **New Game** starts a fresh game (the same game you used to get on launch).
 - **Load Game** opens the save-slot dialog and boots the save you pick (see [save-load-ui.md](save-load-ui.md)).
 - **Settings** opens the options screen (see [settings.md](settings.md)).
+- **Help** opens the in-game help / guide screen (see [help.md](help.md)).
 - **About** opens the version / license screen (see [about.md](about.md)).
 - **Quit** closes the game immediately (there's no game in progress to lose, so it doesn't ask).
 
 **Worked example:**
-> You double-click the game. The map-backed menu appears with the title "Crown & Colony". You click **New Game**; the title screen is replaced by the map and your starting unit, turn 1 — exactly the game that used to appear immediately on launch. **Load Game** lists your saved games; **Settings** opens the options screen; **About** shows the version and licence.
+> You double-click the game. The map-backed menu appears with the title "Crown & Colony". You click **New Game**; the title screen is replaced by the map and your starting unit, turn 1 — exactly the game that used to appear immediately on launch. **Load Game** lists your saved games; **Settings** opens the options screen; **Help** opens the guide to the game and its controls; **About** shows the version and licence.
 
-**What the player sees and does:** one screen, five working buttons — New Game, Load Game, Settings, About, Quit.
+**What the player sees and does:** one screen, six working buttons — New Game, Load Game, Settings, Help, About, Quit.
 
 ## 2. Detailed rules
 
@@ -37,6 +38,7 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 | Click **New Game** | The scene changes to `scenes/main.tscn`, which builds a fresh game (the prior boot behaviour) |
 | Click **Load Game** | Opens the save-slot dialog (see [save-load-ui.md](save-load-ui.md)); choosing a save sets `GameController.PendingLoadPath` and boots the game scene from it |
 | Click **Settings** | Opens the `SettingsScreen` overlay (see [settings.md](settings.md)); its Back closes it |
+| Click **Help** | Opens the `HelpPanel` overlay (see [help.md](help.md)); its Back closes it |
 | Click **About** | Opens the `AboutPanel` overlay (see [about.md](about.md)); its Back closes it |
 | Click **Quit** | `SceneTree.Quit()` — the application exits immediately (no confirmation: nothing in progress) |
 
@@ -51,7 +53,7 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 **Scene composition** (`MainMenu.tscn`): a full-rect `Control` →
 - `Background` (`TextureRect`, stretch *keep-aspect-covered*) — backdrop texture set in code.
 - `Vignette` (`ColorRect`, `Color(0.03,0.05,0.09,0.42)`) — darkens the map so the panel reads.
-- `Panel` (`PanelContainer`, centre-anchored, 440×490) → `VBox` of Title, Subtitle, separator, spacer, and the five `Button`s (New Game, Load Game, Settings, **About**, Quit). The `Spacer` absorbs the extra row, so adding About needed no panel resize.
+- `Panel` (`PanelContainer`, centre-anchored, 440×550) → `VBox` of Title, Subtitle, separator, spacer, and the six `Button`s (New Game, Load Game, Settings, **Help**, **About**, Quit). The panel/border grew to −275/+275 (from −245/+245) to fit the sixth row.
 - `Border` (`NinePatchRect`, same rect as `Panel`, `draw_center=false`, 23px margins) — the carved-wood frame overlaid on the panel edge. Same trick as the colony screen (a sibling at the identical rect; see `ColonyPanel`).
 
 **Look reuse:** `MainMenu._Ready()` assigns `ColonyTheme.Get()` (cascades wood buttons + parchment popups + the `ColonyTitle` label variation), overrides the panel's `panel` stylebox with FreeCol's tiled brown parchment (`ColonyArt.PanelParchment()`, inset 26px — mirrors `ColonyPanel.BuildPanelBackground`), sets the `Border` texture from `ColonyArt.ColonyBorder()`, and loads the backdrop. Each art load is null-guarded so the screen degrades gracefully (and stays opaque in CI) if an asset is absent.
@@ -68,8 +70,8 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 |---|---|---|---|
 | L1 Unit | n/a (no game logic) | — | — |
 | L2 Scenario | n/a (no game logic) | — | — |
-| L3 Interaction | Yes (has UI) | `MainMenuTests` — title + buttons present; enabled/disabled states; theme/parchment/border art applied; New Game wired to a valid game scene; **About opens the `AboutPanel` overlay** | ✅ |
-| L4 Visual | Yes (has a screen) | `main-menu` golden (`MenuGoldenTests`) | ✅ |
+| L3 Interaction | Yes (has UI) | `MainMenuTests` — title + buttons present; enabled/disabled states; theme/parchment/border art applied; New Game wired to a valid game scene; **About opens the `AboutPanel` overlay**; **Help opens the `HelpPanel` overlay** | ✅ |
+| L4 Visual | Yes (has a screen) | `main-menu` golden (`MenuGoldenTests`) — ⏳ needs CI-Linux regen (the Help button shifts the layout; see [help.md](help.md)) | ⏳ CI |
 | L5 Soak | Covered by global suite | — | — |
 
 - **FreeCol cross-check:** layout/style compared against `MainPanel.java` (parchment background, centred title, stacked buttons, wood styling). We omit Multiplayer/Map Editor by design; About is now offered (FreeCol `AboutPanel`).
@@ -92,3 +94,4 @@ When you launch Crown & Colony you now arrive at a **title screen** instead of d
 | 2026-06-17 | Slice D — bundled UI font (Cardo) cascades here via `ColonyTheme`; added the `main-menu` L4 golden | 0106d9c |
 | 2026-06-17 | Slice F — Load Game wired to the save-slot dialog (button enabled); `main-menu` golden regenerated | 4b71ede |
 | 2026-06-24 | Added an **About** button (opens the `AboutPanel` overlay, see [about.md](about.md)); Quit stays immediate (no game in progress). +1 L3; `main-menu` golden regenerated | menus (`86d3f0w2x`) |
+| 2026-06-24 | Added a **Help** button (opens the `HelpPanel` overlay, see [help.md](help.md)) between Settings and About; panel/border grew to −275/+275 for the sixth row. +1 L3 (`HelpButton_OpensTheHelpScreenAsAnOverlay`); `main-menu` golden needs CI-Linux regen (the Help button shifts the layout) | help (`86d3e98db`) |

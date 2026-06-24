@@ -353,4 +353,17 @@ public class MainMenuTests
 
         AssertThat(menu.GetChildren().OfType<AboutPanel>().Any()).IsTrue();
     }
+
+    [TestCase]
+    public async Task HelpButton_OpensTheHelpScreenAsAnOverlay()
+    {
+        ISceneRunner runner = ISceneRunner.Load(MenuScene);
+        await runner.SimulateFrames(2);
+        var menu = runner.Scene();
+
+        menu.GetNode<Button>("Panel/VBox/HelpButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(menu.GetChildren().OfType<HelpPanel>().Any()).IsTrue();
+    }
 }

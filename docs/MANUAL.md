@@ -6,8 +6,10 @@ and how a game ends. It assumes no prior knowledge of the original *Colonization
 have played it, everything here will feel familiar; if you have not, read on and you will be
 running a thriving New-World empire in no time.
 
-> This is the static, written guide. An in-game interactive tutorial is planned separately;
-> the game's **About** screen also links to this document.
+> This is the full static, written guide. A concise version of it is also available **in-game**:
+> the **Help** button on the title screen and the in-game pause menu opens a Help screen covering the
+> goal, the core gameplay loops and a controls reference. A step-by-step interactive tutorial is
+> planned separately; the game's **About** screen also links to this document.
 
 ---
 
@@ -36,11 +38,13 @@ victory conditions exist; see [Section 12](#12-victory-and-defeat).)
 
 ### The main menu
 
-When you launch the game you arrive at the **title screen** with four choices:
+When you launch the game you arrive at the **title screen** with these choices:
 
 - **New Game** — start a fresh game (opens the setup options described below).
 - **Load Game** — open the save-slot dialog and resume a saved game.
 - **Settings** — open the options screen (video, audio).
+- **Help** — open the in-game guide (the goal, the core loops and a controls reference).
+- **About** — show the version and licence.
 - **Quit** — close the game.
 
 ### The New Game setup
@@ -385,27 +389,30 @@ Crown & Colony is played mostly with the **mouse** — click a unit to select it
 move it or give it an order, and click a colony to open its management screen. The keyboard
 provides shortcuts for the most common actions.
 
-The following keys are active in the game view:
+The following keys are active in the game view (you never have to memorise them — press **F1**
+in-game to pop up an on-screen legend at any time):
 
 | Key | Action |
 |---|---|
 | **Left-click** | Select a unit / move it / open a colony / pick a tile (e.g. a *go-to* destination) |
-| **F5** | Quick-save |
-| **F9** | Quick-load |
-| **N** | New game |
+| **Right-click** | Open the tile menu (pick a stacked unit, centre here, go to here) |
+| **Right / middle drag**, **mouse wheel**, **arrow keys** | Pan the view / zoom / slide the camera |
+| **Enter** | End the turn |
+| **Space** | Skip the selected unit for the rest of this turn |
+| **W** | Wait / select the next unit that still needs orders this turn |
+| **G** | Go to — then click a destination tile for the selected unit to travel to over future turns |
 | **B** | Build (found) a colony with the selected unit |
+| **D** | Disband the selected unit (asks you to confirm first) |
 | **E** | Open the Europe screen |
 | **L** | Open the *Find settlement* panel (locate one of your colonies) |
 | **F** | Open the Founding Fathers panel |
-| **G** | Go to — then click a destination tile for the selected unit to travel to over future turns |
-| **W** | Wait / select the next unit that still needs orders this turn |
 | **C** | Open the Colopedia (the in-game reference of units, goods and buildings) |
-
-> **More controls are on the way.** A companion update adds further shortcuts, including
-> **D** to disband the selected unit, **Enter** to end the turn, **Space** to skip the current
-> unit, **Ctrl+S** / **Ctrl+O** for save / open, **Ctrl+C** to centre the camera, and the
-> **arrow keys** to pan the map. These will behave as described once that update ships; the
-> table above lists the keys available today.
+| **Ctrl+C** | Centre the camera on the selected unit |
+| **N** | New game (new map) |
+| **Ctrl+S** / **Ctrl+O** | Save / Load (named save slots) |
+| **F5** / **F9** | Quick-save / Quick-load |
+| **F1** | Toggle the on-screen key legend |
+| **Esc** | Open the pause menu |
 
 ---
 

@@ -20,6 +20,7 @@ public partial class PauseMenu : Control
 {
     private const string SettingsScenePath = "res://scenes/SettingsScreen.tscn";
     private const string AboutScenePath = "res://scenes/AboutPanel.tscn";
+    private const string HelpScenePath = "res://scenes/HelpPanel.tscn";
 
     private Control? _overlay;
     private ConfirmationDialog? _quitConfirm;
@@ -41,6 +42,7 @@ public partial class PauseMenu : Control
         GetNode<Button>("Panel/VBox/SaveButton").Pressed += OnSave;
         GetNode<Button>("Panel/VBox/LoadButton").Pressed += OnLoad;
         GetNode<Button>("Panel/VBox/SettingsButton").Pressed += OnSettings;
+        GetNode<Button>("Panel/VBox/HelpButton").Pressed += OnHelp;
         GetNode<Button>("Panel/VBox/AboutButton").Pressed += OnAbout;
         GetNode<Button>("Panel/VBox/QuitToMenuButton").Pressed += OnQuitToMenu;
         GetNode<Button>("Panel/VBox/QuitToDesktopButton").Pressed += OnQuitToDesktop;
@@ -103,6 +105,9 @@ public partial class PauseMenu : Control
     }
 
     private void OnAbout() => TrackOverlay(GD.Load<PackedScene>(AboutScenePath).Instantiate<AboutPanel>());
+
+    /// <summary>Opens the in-game help / tutorial screen over the paused game; its Back button closes it (the game stays paused).</summary>
+    private void OnHelp() => TrackOverlay(GD.Load<PackedScene>(HelpScenePath).Instantiate<HelpPanel>());
 
     private void OnSave()
     {

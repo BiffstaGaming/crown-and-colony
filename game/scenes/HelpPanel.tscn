@@ -1,8 +1,8 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://presentation/MainMenu.cs" id="1"]
+[ext_resource type="Script" path="res://presentation/HelpPanel.cs" id="1"]
 
-[node name="MainMenu" type="Control"]
+[node name="HelpPanel" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -29,7 +29,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.03, 0.05, 0.09, 0.42)
+color = Color(0.03, 0.05, 0.09, 0.55)
 mouse_filter = 2
 
 [node name="Panel" type="PanelContainer" parent="."]
@@ -39,58 +39,37 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -220.0
-offset_top = -275.0
-offset_right = 220.0
-offset_bottom = 275.0
+offset_left = -320.0
+offset_top = -280.0
+offset_right = 320.0
+offset_bottom = 280.0
 grow_horizontal = 2
 grow_vertical = 2
 
 [node name="VBox" type="VBoxContainer" parent="Panel"]
 layout_mode = 2
-theme_override_constants/separation = 14
+theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="Panel/VBox"]
 layout_mode = 2
 theme_type_variation = &"ColonyTitle"
 horizontal_alignment = 1
-text = "Crown & Colony"
-
-[node name="Subtitle" type="Label" parent="Panel/VBox"]
-layout_mode = 2
-horizontal_alignment = 1
-text = "A faithful Colonization remake"
-
-[node name="Sep" type="HSeparator" parent="Panel/VBox"]
-layout_mode = 2
-
-[node name="Spacer" type="Control" parent="Panel/VBox"]
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="NewGameButton" type="Button" parent="Panel/VBox"]
-layout_mode = 2
-text = "New Game"
-
-[node name="LoadGameButton" type="Button" parent="Panel/VBox"]
-layout_mode = 2
-text = "Load Game"
-
-[node name="SettingsButton" type="Button" parent="Panel/VBox"]
-layout_mode = 2
-text = "Settings"
-
-[node name="HelpButton" type="Button" parent="Panel/VBox"]
-layout_mode = 2
 text = "Help"
 
-[node name="AboutButton" type="Button" parent="Panel/VBox"]
+[node name="Sep1" type="HSeparator" parent="Panel/VBox"]
 layout_mode = 2
-text = "About"
 
-[node name="QuitButton" type="Button" parent="Panel/VBox"]
+[node name="Body" type="RichTextLabel" parent="Panel/VBox"]
+custom_minimum_size = Vector2(600, 440)
 layout_mode = 2
-text = "Quit"
+size_flags_vertical = 3
+bbcode_enabled = true
+scroll_active = true
+text = "Help"
+
+[node name="BackButton" type="Button" parent="Panel/VBox"]
+layout_mode = 2
+text = "Back"
 
 [node name="Border" type="NinePatchRect" parent="."]
 layout_mode = 1
@@ -99,10 +78,10 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -220.0
-offset_top = -275.0
-offset_right = 220.0
-offset_bottom = 275.0
+offset_left = -320.0
+offset_top = -280.0
+offset_right = 320.0
+offset_bottom = 280.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2

@@ -28,6 +28,9 @@ public partial class MainMenu : Control
     /// <summary>The About / version / license screen, opened from the About button.</summary>
     private const string AboutScenePath = "res://scenes/AboutPanel.tscn";
 
+    /// <summary>The in-game help / tutorial screen, opened from the Help button.</summary>
+    private const string HelpScenePath = "res://scenes/HelpPanel.tscn";
+
     /// <summary>FreeCol's antique New-World map (GPL v2 — see <c>assets/freecol/PROVENANCE.md</c>), the menu backdrop.</summary>
     private const string BackdropPath = "res://assets/freecol/ui/map.jpg";
 
@@ -51,6 +54,7 @@ public partial class MainMenu : Control
         GetNode<Button>("Panel/VBox/NewGameButton").Pressed += OnNewGame;
         GetNode<Button>("Panel/VBox/LoadGameButton").Pressed += OnLoadGame;
         GetNode<Button>("Panel/VBox/SettingsButton").Pressed += OnSettings;
+        GetNode<Button>("Panel/VBox/HelpButton").Pressed += OnHelp;
         GetNode<Button>("Panel/VBox/AboutButton").Pressed += OnAbout;
         GetNode<Button>("Panel/VBox/QuitButton").Pressed += OnQuit;
     }
@@ -98,6 +102,14 @@ public partial class MainMenu : Control
         var settings = GD.Load<PackedScene>(SettingsScenePath).Instantiate<SettingsScreen>();
         settings.Closed += settings.QueueFree;
         AddChild(settings);
+    }
+
+    /// <summary>Opens the in-game help / tutorial screen as an overlay; removes it again when the player presses Back.</summary>
+    private void OnHelp()
+    {
+        var help = GD.Load<PackedScene>(HelpScenePath).Instantiate<HelpPanel>();
+        help.Closed += help.QueueFree;
+        AddChild(help);
     }
 
     /// <summary>Opens the About / version / license screen as an overlay; removes it again when the player presses Back.</summary>

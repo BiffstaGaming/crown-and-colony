@@ -139,6 +139,27 @@ public class PauseMenuTests
     }
 
     [TestCase]
+    public async Task HelpButton_OpensTheHelpOverlay_BackClosesIt()
+    {
+        ISceneRunner runner = ISceneRunner.Load(GameScene);
+        await runner.SimulateFrames(2);
+        var pause = runner.Scene().GetNode<PauseMenu>("UI/PauseMenu");
+        pause.Open();
+        await runner.SimulateFrames(1);
+
+        pause.GetNode<Button>("Panel/VBox/HelpButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        var help = pause.GetParent().GetChildren().OfType<HelpPanel>().FirstOrDefault();
+        AssertThat(help).IsNotNull();
+
+        help!.GetNode<Button>("Panel/VBox/BackButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+        AssertThat(pause.GetParent().GetChildren().OfType<HelpPanel>().Any()).IsFalse();
+
+        pause.Resume(); // leave the shared tree unpaused for the next test
+    }
+
+    [TestCase]
     public async Task QuitToDesktop_ShowsAConfirmation_AndCancelKeepsTheGame()
     {
         ISceneRunner runner = ISceneRunner.Load(GameScene);
