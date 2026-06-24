@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-23 — P7 fully decomposed: 20 new release-readiness tasks created (FreeCol-client parity)
+
+**Requested:** "Create all of the ClickUp tasks to bring 100% FreeCol to this project for P7."
+**Did:** Ran a 5-agent workflow surveying FreeCol's CLIENT/UX/release surface (reports · input-HUD · settings-audio-saveload · release-distribution) vs our `presentation/`, verified every gap against the live tree, synthesized + deduped, and **created 20 P7 tasks** (excluding the 4 already tracked). Closed P5/P6 + the FP foundation epics as Shipped; left P7 open (In Development) with its full decomposition.
+**The 20 (by priority):**
+- **High (4):** autosave (`86d3f0vb8`), quit-confirm (`86d3f0vf5`), Disband action+D key (`86d3f0vgd`), hotkey completeness — Enter/Ctrl+S/Ctrl+O + keys legend (`86d3f0vjg`).
+- **Normal (11):** save-slot UX (`86d3f0vkg`), keyboard pan + Ctrl+C centre (`86d3f0vqf`), right-click tile menu (`86d3f0vrz`), skip-unit + Space (`86d3f0vuy`), UI font-scaling (`86d3f0vw7`), version constant (`86d3f0vy8`), About screen (`86d3f0w2x`), branded icon+splash (`86d3f0w4w`), Linux/macOS export presets (`86d3f0w6e`), release CI (`86d3f0w8q`), native-affairs report (`86d3f0wav`).
+- **Low (5):** foreign-affairs strength (`86d3f0wcg`), message-log filtering (`86d3f0wdv`), player manual (`86d3f0wf4`), colourblind palette (`86d3f0wgv`), keybinding remap (`86d3f0wjj`).
+**Status:** Board only — no code change. P7 epic (`86d3b3r7e`, In Development) now has 28 tasks total: 5 shipped + 3 previously-tracked-open + these 20.
+**Decisions:** Excluded the 4 already-tracked P7 tasks (Windows export, tutorial/help, trademark, message-log persistence). Dependency notes captured in task bodies (About→version constant; Linux/macOS export→Windows preset; release CI→export+version; keybinding remap→after the input tasks).
+**Scheduled next:** Chris's steer — start the P7 high-priority batch (autosave/quit-confirm/disband/hotkeys = a clean disjoint wave), or the export/release scaffolding, or hold for playtest.
+**Needs you:** Priority confirmation; the trademark search + export build remain your real-world/machine actions.
+
 ## 2026-06-23 — 🎉 PATH-TO-100% COMPLETE — coding WAVE 5 shipped (E2+B3+D2+E4); all 19 tasks done
 
 **Requested:** Finish the path-to-100% tasks via parallel agents (the usage limit had paused the first attempt at this wave; re-ran on reset).
