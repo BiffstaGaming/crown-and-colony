@@ -142,6 +142,8 @@ public partial class GameController : Node2D
     private Button _plowButton = null!;
     private Button _clearForestButton = null!;
     private Button _sailToEuropeButton = null!;
+    private Button _skipButton = null!;
+    private Button _disbandButton = null!;
     private MiniMap _miniMap = null!;
     private PanelContainer _colonyPanel = null!;
     private PanelContainer _europePanel = null!;
@@ -171,6 +173,17 @@ public partial class GameController : Node2D
     private Position? _inspectedTile;
     private string? _notice;
     private bool _gotoMode;
+
+    /// <summary>
+    /// Unit ids the player has <b>skipped</b> for this turn (Space — 86d3f0vuy). A skipped unit is passed over by the
+    /// W-cycle (<see cref="SelectNextUnitToMove"/>) until the set clears at turn rollover (in <see cref="OnEndTurnPressed"/>).
+    /// Session-only / controller-side and <b>never persisted</b> (ADR-009) — it's a transient input convenience, not game
+    /// state, so the W-cycle oracle <see cref="Game.NextUnitToMove"/> stays pure and the save format is unchanged.
+    /// </summary>
+    private readonly HashSet<int> _skippedThisTurn = [];
+
+    /// <summary>The toggleable F1 keys legend overlay (built from the authoritative <see cref="KeyBindings"/> table).</summary>
+    private Label? _keysLegend;
     private bool _victoryShown;
     private bool _highScoreRecorded;
     private string _gameId = "";
@@ -215,6 +228,12 @@ public partial class GameController : Node2D
         _sailToEuropeButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/SailToEuropeButton");
         _sailToEuropeButton.Pressed += () => ApplyUnitOrder(
             u => _game.CheckSailToEurope(u).Allowed, _game.SailToEurope, "Setting sail for Europe.");
+        // Skip (Space) + Disband (D) order buttons — Skip flags the unit skipped-this-turn and cycles on; Disband
+        // prompts for confirmation then removes the unit. Both share the keyboard paths (SkipSelectedUnit / DisbandSelectedUnit).
+        _skipButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/SkipButton");
+        _skipButton.Pressed += SkipSelectedUnit;
+        _disbandButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/DisbandButton");
+        _disbandButton.Pressed += DisbandSelectedUnit;
         _miniMap = GetNode<MiniMap>("UI/MiniMap");
         _miniMap.TileSelected += CenterCameraOnTile;
         GetNode<Button>("UI/MiniMap/ZoomInButton").Pressed += _miniMap.ZoomIn;
@@ -348,6 +367,7 @@ public partial class GameController : Node2D
         _selectedUnit = null;
         _inspectedTile = null;
         _notice = null;
+        _skippedThisTurn.Clear(); // a fresh/loaded game starts with no skipped units (session-only set; 86d3f0vuy)
         _victoryShown = false; // re-arm the one-shot victory screen for the fresh game (new or loaded)
         _highScoreRecorded = false; // re-arm the one-shot end-of-game high-score record
         _gameId = System.Guid.NewGuid().ToString(); // per-session game id for high-score de-duplication (not persisted in the save)
@@ -435,6 +455,8 @@ public partial class GameController : Node2D
     private void OnEndTurnPressed()
     {
         _game.EndTurn();
+        // A fresh turn: every unit may need orders again, so the session-only skip set (Space) clears at rollover (86d3f0vuy).
+        _skippedThisTurn.Clear();
         // Surface what the human suffered or received during the AI phase (no return value to read, unlike a
         // player-initiated attack): raids on units (1c-2/1c-3a′), native pillages of colonies, captures of colonies
         // (1c-3f), then custom-house auto-sales. Notices are in deterministic order; instead of cramming them into
@@ -576,6 +598,63 @@ public partial class GameController : Node2D
         return char.ToUpperInvariant(shortName[0]) + shortName[1..];
     }
 
+    /// <summary>
+    /// The single authoritative table of in-game keyboard shortcuts (`86d3f0vjg`). Both the <see cref="_UnhandledInput"/>
+    /// dispatch <b>and</b> the F1 keys legend are generated from this one list, so a key and its on-screen description
+    /// can never drift apart. Each row pairs a <see cref="KeyChord"/> (keycode + required Ctrl modifier) with the action
+    /// it fires and a short human label. Presentation-only (ADR-006): every action forwards to a command/oracle method.
+    /// Mirrors FreeCol's accelerator-driven menu actions (e.g. DisbandUnitAction=D, EndTurn=ENTER, Save=Ctrl+S,
+    /// Open=Ctrl+O, SkipUnitAction=SPACE, CenterAction=Ctrl+C).
+    /// </summary>
+    private IReadOnlyList<KeyBinding> KeyBindings => _keyBindings ??= BuildKeyBindings();
+
+    private IReadOnlyList<KeyBinding>? _keyBindings;
+
+    /// <summary>A keycode plus whether Ctrl must be held — the match key for a <see cref="KeyBinding"/>.</summary>
+    private readonly record struct KeyChord(Key Code, bool Ctrl)
+    {
+        /// <summary>Whether a key event matches this chord exactly (keycode + Ctrl state; Alt/Shift/Meta must be clear).</summary>
+        public bool Matches(InputEventKey e) =>
+            e.Keycode == Code && e.CtrlPressed == Ctrl && !e.AltPressed && !e.ShiftPressed && !e.MetaPressed;
+
+        /// <summary>The display string for the chord (e.g. "Ctrl+S", "Enter", "Space").</summary>
+        public override string ToString()
+        {
+            string name = Code switch
+            {
+                Key.Enter or Key.KpEnter => "Enter",
+                Key.Space => "Space",
+                _ => Code.ToString(),
+            };
+            return Ctrl ? $"Ctrl+{name}" : name;
+        }
+    }
+
+    /// <summary>One row of the authoritative key table: the chord(s) that trigger it, the action, and a legend label.</summary>
+    private sealed record KeyBinding(KeyChord[] Chords, System.Action Action, string Label);
+
+    /// <summary>Builds the authoritative key table (single source for dispatch + legend). Lambdas capture <c>this</c>.</summary>
+    private KeyBinding[] BuildKeyBindings() =>
+    [
+        new([new(Key.Enter, false), new(Key.KpEnter, false)], OnEndTurnPressed, "End turn"),
+        new([new(Key.Space, false)], SkipSelectedUnit, "Skip unit (this turn)"),
+        new([new(Key.W, false)], SelectNextUnitToMove, "Next unit needing orders"),
+        new([new(Key.G, false)], EnterGotoMode, "Go to (set destination)"),
+        new([new(Key.B, false)], FoundColony, "Build colony"),
+        new([new(Key.D, false)], DisbandSelectedUnit, "Disband unit"),
+        new([new(Key.E, false)], OpenEuropePanel, "Europe"),
+        new([new(Key.L, false)], OpenFindSettlementPanel, "Find settlement"),
+        new([new(Key.F, false)], OpenFoundingFatherPanel, "Founding fathers"),
+        new([new(Key.C, false)], OpenColopediaPanel, "Colopedia"),
+        new([new(Key.C, true)], CenterOnSelectedUnit, "Centre on unit"),
+        new([new(Key.N, false)], NewGame, "New map"),
+        new([new(Key.S, true)], OpenSaveDialog, "Save game"),
+        new([new(Key.O, true)], OpenLoadDialog, "Load game"),
+        new([new(Key.F5, false)], QuickSave, "Quick save"),
+        new([new(Key.F9, false)], QuickLoad, "Quick load"),
+        new([new(Key.F1, false)], ToggleKeysLegend, "Toggle this legend"),
+    ];
+
     public override void _UnhandledInput(InputEvent @event)
     {
         switch (@event)
@@ -583,44 +662,41 @@ public partial class GameController : Node2D
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true }:
                 HandleTileClick(MapView.TileAt(_mapView.GetLocalMousePosition()));
                 break;
-            case InputEventKey { Keycode: Key.F5, Pressed: true, Echo: false }:
-                QuickSave();
+            case InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false }:
+                // Right-button RELEASE without a drag: open the tile context menu. The press/drag is the camera pan
+                // (CameraController), which consumes the release when it actually dragged — so a real pan never reaches
+                // here and panning is never broken; only a drag-free right-click falls through to open the menu (86d3f0vrz).
+                HandleRightClick();
                 break;
-            case InputEventKey { Keycode: Key.F9, Pressed: true, Echo: false }:
-                QuickLoad();
-                break;
-            case InputEventKey { Keycode: Key.N, Pressed: true, Echo: false }:
-                NewGame();
-                break;
-            case InputEventKey { Keycode: Key.B, Pressed: true, Echo: false }:
-                FoundColony();
-                break;
-            case InputEventKey { Keycode: Key.E, Pressed: true, Echo: false }:
-                OpenEuropePanel();
-                break;
-            case InputEventKey { Keycode: Key.L, Pressed: true, Echo: false }:
-                OpenFindSettlementPanel();
-                break;
-            case InputEventKey { Keycode: Key.F, Pressed: true, Echo: false }:
-                OpenFoundingFatherPanel();
-                break;
-            case InputEventKey { Keycode: Key.G, Pressed: true, Echo: false }:
-                EnterGotoMode();
-                break;
-            case InputEventKey { Keycode: Key.W, Pressed: true, Echo: false }:
-                SelectNextUnitToMove();
-                break;
-            case InputEventKey { Keycode: Key.C, Pressed: true, Echo: false }:
-                OpenColopediaPanel();
+            case InputEventKey { Pressed: true, Echo: false } key when !IsTextInputFocused():
+                // Dispatch through the authoritative key table — a key fires its bound action unless a modal/text field
+                // owns focus (so typing into a save-slot/search field never triggers a hotkey). 86d3f0vjg.
+                foreach (KeyBinding binding in KeyBindings)
+                {
+                    if (System.Array.Exists(binding.Chords, c => c.Matches(key)))
+                    {
+                        binding.Action();
+                        GetViewport().SetInputAsHandled();
+                        break;
+                    }
+                }
                 break;
         }
     }
 
+    /// <summary>
+    /// Whether a text-entry control currently owns keyboard focus (a <see cref="LineEdit"/>/<see cref="TextEdit"/>),
+    /// so the hotkey dispatch can stand down while the player is typing into a field (e.g. a search box). Guards every
+    /// new key against firing mid-type, as the brief requires.
+    /// </summary>
+    private bool IsTextInputFocused() => GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit;
+
     /// <summary>Selects the next of the human's units still needing orders and centres on it (FreeCol's "wait/next unit"
-    /// cycle, key W) — reads the shipped <see cref="Game.NextUnitToMove"/> oracle; no-op when none remain (ADR-006).</summary>
+    /// cycle, key W) — reads the shipped <see cref="Game.NextUnitToMove"/> oracle, passing the session-only skip set so a
+    /// unit skipped this turn (Space) is not re-offered until next turn (86d3f0vuy); no-op when none remain (ADR-006).</summary>
     private void SelectNextUnitToMove()
     {
-        if (_game.NextUnitToMove(_game.HumanPlayer) is { } next)
+        if (_game.NextUnitToMove(_game.HumanPlayer, _skippedThisTurn) is { } next)
         {
             _selectedUnit = next;
             CenterCameraOnTile(next.Position);
@@ -631,6 +707,156 @@ public partial class GameController : Node2D
             _notice = "No units need orders.";
             RefreshView();
         }
+    }
+
+    /// <summary>
+    /// Skips the selected unit for the rest of this turn (Space, FreeCol's <c>SkipUnitAction</c> — 86d3f0vuy): flags its
+    /// id in the session-only <see cref="_skippedThisTurn"/> set (never persisted, ADR-009) so the W-cycle passes it over,
+    /// then advances to the next unit needing orders. No-op with no selection. Presentation-only (ADR-006): it touches no
+    /// game rules — the unit keeps its movement and orders, it's merely passed over by the cycle until turn rollover.
+    /// </summary>
+    private void SkipSelectedUnit()
+    {
+        if (_selectedUnit is { } unit)
+        {
+            _skippedThisTurn.Add(unit.Id);
+        }
+        SelectNextUnitToMove();
+    }
+
+    /// <summary>
+    /// Disbands the selected unit after a confirmation prompt (D / the Orders "Disband" button — 86d3f0vgd, FreeCol's
+    /// <c>DisbandUnitAction</c>): gated on the <see cref="Game.CheckDisband"/> oracle, then forwards to
+    /// <see cref="Game.Disband"/> on confirm, clears the selection and refreshes (ADR-006). No-op with no selection or
+    /// when the oracle forbids it (e.g. a carrier still holding passengers); the reason is surfaced in the status bar.
+    /// </summary>
+    private void DisbandSelectedUnit()
+    {
+        if (_selectedUnit is not { } unit)
+        {
+            return;
+        }
+        MoveCheck check = _game.CheckDisband(unit);
+        if (!check.Allowed)
+        {
+            _notice = check.Reason;
+            RefreshView();
+            return;
+        }
+        var dialog = new ConfirmationDialog
+        {
+            Title = "Disband unit",
+            DialogText = $"Disband the {unit.Type.ShortName}? It is removed from the game for good.",
+            OkButtonText = "Disband",
+            CancelButtonText = "Keep",
+        };
+        dialog.Confirmed += () =>
+        {
+            dialog.QueueFree();
+            // Re-check on confirm: the world can't change behind a modal here, but the oracle is the single gate (ADR-006).
+            if (_game.CheckDisband(unit).Allowed)
+            {
+                _game.Disband(unit);
+                _selectedUnit = null;
+                _notice = "Unit disbanded.";
+            }
+            RefreshView();
+        };
+        dialog.Canceled += () => dialog.QueueFree();
+        AddChild(dialog);
+        dialog.PopupCentered();
+    }
+
+    /// <summary>Centres the camera on the selected unit (Ctrl+C, FreeCol's <c>CenterAction</c> — 86d3f0vqf); no-op with no selection.</summary>
+    private void CenterOnSelectedUnit()
+    {
+        if (_selectedUnit is { } unit && unit.IsOnMap)
+        {
+            CenterCameraOnTile(unit.Position);
+        }
+    }
+
+    /// <summary>Opens the save/load dialog in save mode via the pause-menu path (Ctrl+S, FreeCol's Save — 86d3f0vjg).</summary>
+    private void OpenSaveDialog() => GetNode<PauseMenu>("UI/PauseMenu").OpenSave();
+
+    /// <summary>Opens the save/load dialog in load mode via the pause-menu path (Ctrl+O, FreeCol's Open — 86d3f0vjg).</summary>
+    private void OpenLoadDialog() => GetNode<PauseMenu>("UI/PauseMenu").OpenLoad();
+
+    /// <summary>Toggles the F1 keys legend overlay — the on-screen list generated from the authoritative key table (86d3f0vjg).</summary>
+    private void ToggleKeysLegend()
+    {
+        _keysLegend ??= BuildKeysLegend();
+        _keysLegend.Visible = !_keysLegend.Visible;
+    }
+
+    /// <summary>Builds the F1 keys-legend label from the single authoritative <see cref="KeyBindings"/> table (so it can't drift from the switch).</summary>
+    private Label BuildKeysLegend()
+    {
+        var label = new Label
+        {
+            Name = "KeysLegend",
+            Visible = false,
+            Text = "Keys\n" + string.Join("\n", KeyBindings.Select(b =>
+                $"  {string.Join(" / ", b.Chords.Select(c => c.ToString()))}  —  {b.Label}")),
+        };
+        label.SetAnchorsPreset(Control.LayoutPreset.CenterRight);
+        label.OffsetLeft = -280f;
+        label.OffsetTop = 60f;
+        GetNode<CanvasLayer>("UI").AddChild(label);
+        return label;
+    }
+
+    /// <summary>
+    /// Opens the right-click tile context menu (86d3f0vrz): a small <see cref="PopupMenu"/> at the mouse offering one
+    /// "Activate" entry per own unit standing on the tile (fixing stack-select, which otherwise picks only the first),
+    /// "Centre here", and "Go to here" (arms <see cref="SetSelectedDestination"/>). Fired on right-button release without
+    /// a drag, so the right-drag camera pan is unaffected. Presentation-only (ADR-006).
+    /// </summary>
+    private void HandleRightClick()
+    {
+        Position tile = MapView.TileAt(_mapView.GetLocalMousePosition());
+        if (!_game.Map.InBounds(tile))
+        {
+            return;
+        }
+        _inspectedTile = tile;
+
+        var menu = new PopupMenu();
+        // One "Activate" entry per own on-map unit on the tile — selecting any of a stack (HandleTileClick picks the first).
+        var unitsHere = _game.PlayerUnits.Where(u => u.IsOnMap && u.Position == tile).OrderBy(u => u.Id).ToList();
+        foreach (Unit u in unitsHere)
+        {
+            menu.AddItem($"Activate {u.Type.ShortName} (#{u.Id})", u.Id);
+        }
+        if (unitsHere.Count > 0)
+        {
+            menu.AddSeparator();
+        }
+        const int CentreId = -1;
+        const int GotoId = -2;
+        menu.AddItem("Centre here", CentreId);
+        menu.AddItem("Go to here", GotoId);
+
+        menu.IdPressed += id =>
+        {
+            switch ((int)id)
+            {
+                case CentreId:
+                    CenterCameraOnTile(tile);
+                    break;
+                case GotoId:
+                    SetSelectedDestination(tile); // arms/sets the selected unit's standing destination (no-op with no selection)
+                    break;
+                default:
+                    _selectedUnit = _game.PlayerUnits.FirstOrDefault(u => u.Id == (int)id && u.IsOnMap);
+                    RefreshView();
+                    break;
+            }
+        };
+        menu.PopupHide += menu.QueueFree;
+        GetNode<CanvasLayer>("UI").AddChild(menu);
+        menu.Position = (Vector2I)GetViewport().GetMousePosition();
+        menu.Popup();
     }
 
     /// <summary>
@@ -1229,7 +1455,7 @@ public partial class GameController : Node2D
                     : "no units";
         string status =
             $"Turn {_game.Turn} ({_game.CalendarLabel})   |   {subject}   |   seed {_currentSeed}" +
-            "   |   B build colony, N new map, F5 save, F9 load";
+            "   |   Enter end turn, Space skip, F1 keys";
         if (_notice is not null)
         {
             status += $"   |   ⚠ {_notice}";
@@ -1257,6 +1483,9 @@ public partial class GameController : Node2D
             // discoverable surface for the existing CheckSailToEurope/SailToEurope command (ADR-006 oracle).
             _sailToEuropeButton.Visible = sel.Type.IsNaval;
             _sailToEuropeButton.Disabled = !_game.CheckSailToEurope(sel).Allowed;
+            // Skip is always available for a selected unit (a session convenience); Disband gates on its oracle (ADR-006).
+            _skipButton.Disabled = false;
+            _disbandButton.Disabled = !_game.CheckDisband(sel).Allowed;
             _selectedUnitPanel.Show();
         }
         else

@@ -112,6 +112,16 @@ layout_mode = 2
 tooltip_text = "Move a ship onto the high seas (the east/west map edge), then sail it to Europe."
 text = "Sail to Europe"
 
+[node name="SkipButton" type="Button" parent="UI/SelectedUnitPanel/VBox/Orders"]
+layout_mode = 2
+tooltip_text = "Skip this unit for the rest of the turn (Space). The next unit needing orders is selected."
+text = "Skip"
+
+[node name="DisbandButton" type="Button" parent="UI/SelectedUnitPanel/VBox/Orders"]
+layout_mode = 2
+tooltip_text = "Disband this unit (D) — it is removed from the game for good. You'll be asked to confirm."
+text = "Disband"
+
 [node name="TileInfoPanel" type="PanelContainer" parent="UI"]
 visible = false
 mouse_filter = 2

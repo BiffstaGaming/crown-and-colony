@@ -331,6 +331,28 @@ public class GotoTests
         Assert.True(game.HasUnitsToMove(human));
     }
 
+    [Fact]
+    public void NextUnitToMove_SkipSet_PassesOverSkippedUnits_ButStillOffersTheRest()
+    {
+        // The presentation layer's Space-skip set (86d3f0vuy): supplying a unit id excludes it this cycle, so the
+        // next-lowest unaffected unit is offered instead — and an empty/null set behaves exactly as before.
+        var game = Game.New(Classic, seed: 99);
+        Player human = game.HumanPlayer;
+        var onMap = game.PlayerUnits.Where(u => u.IsOnMap).OrderBy(u => u.Id).ToList();
+        Assert.True(onMap.Count >= 2, "this test needs at least two on-map units");
+
+        Assert.Equal(onMap[0].Id, game.NextUnitToMove(human, new HashSet<int>())!.Id); // empty set = unchanged
+        Assert.Equal(onMap[0].Id, game.NextUnitToMove(human, null)!.Id);                // null = unchanged
+
+        // Skip the lowest id → the next one is offered.
+        var skip = new HashSet<int> { onMap[0].Id };
+        Assert.Equal(onMap[1].Id, game.NextUnitToMove(human, skip)!.Id);
+
+        // Skip every unit → none offered.
+        var all = onMap.Select(u => u.Id).ToHashSet();
+        Assert.Null(game.NextUnitToMove(human, all));
+    }
+
     // ── Road/river-aware goto pathing (86d3dqr62) ────────────────────────────────────────────────────────
 
     /// <summary>

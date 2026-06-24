@@ -78,6 +78,27 @@ public partial class PauseMenu : Control
 
     private void OnSettings() => TrackOverlay(GD.Load<PackedScene>(SettingsScenePath).Instantiate<SettingsScreen>());
 
+    /// <summary>
+    /// Opens the save dialog directly over a paused game — the <b>Ctrl+S hotkey path</b> (86d3f0vjg). Pauses the tree
+    /// (so the game freezes behind the dialog, exactly as the Save menu item does) without showing the full pause menu;
+    /// choosing a slot saves and the dialog closes, then <see cref="Resume"/> unpauses. Mirrors FreeCol's Save action.
+    /// </summary>
+    public void OpenSave()
+    {
+        GetTree().Paused = true;
+        OnSave();
+    }
+
+    /// <summary>
+    /// Opens the load dialog directly over a paused game — the <b>Ctrl+O hotkey path</b> (86d3f0vjg). Pauses the tree
+    /// without showing the full pause menu; loading a slot resumes the live game. Mirrors FreeCol's Open action.
+    /// </summary>
+    public void OpenLoad()
+    {
+        GetTree().Paused = true;
+        OnLoad();
+    }
+
     private void OnSave()
     {
         var dialog = OpenDialog();
@@ -87,6 +108,10 @@ public partial class PauseMenu : Control
             InfoPopup popup = InfoPopup.Show(Ui, "Game saved", "Your game has been saved.");
             popup.ProcessMode = ProcessModeEnum.Always; // the game is still paused behind the popup
         });
+        // The save dialog leaves the game paused behind it (mirrors the menu path); its Closed handler frees it. When
+        // it was opened by the Ctrl+S hotkey (the pause menu itself is hidden), unpause once the dialog closes so play
+        // resumes — the menu's own flow keeps the menu visible, so this only matters for the hotkey entry.
+        ResumeAfter(dialog);
     }
 
     private void OnLoad()
@@ -98,7 +123,14 @@ public partial class PauseMenu : Control
             Resume(); // unpause + hide the pause menu; the loaded game is now live
             InfoPopup.Show(Ui, "Game loaded", "Your saved game has been loaded.");
         });
+        ResumeAfter(dialog);
     }
+
+    // If the save/load dialog is dismissed (Back, or after a save) while the pause menu itself is hidden — i.e. it was
+    // summoned by the Ctrl+S/Ctrl+O hotkey rather than the menu — unpause the game so play resumes. When the menu is
+    // visible (the normal Esc → Save flow) the game must stay paused, so this is a no-op in that case.
+    private void ResumeAfter(SaveLoadDialog dialog) =>
+        dialog.Connect("Closed", Callable.From(() => { if (!Visible) { GetTree().Paused = false; } }));
 
     private SaveLoadDialog OpenDialog()
     {

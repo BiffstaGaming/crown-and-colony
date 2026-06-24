@@ -257,13 +257,20 @@ public sealed partial class Game
     /// Skips units with no moves left, those resting (fortifying/fortified/sentry), those building a tile
     /// improvement (busy), those on a goto (they auto-advance), and any not on the map (sailing / in Europe).
     /// </summary>
-    public Unit? NextUnitToMove(Player player) =>
+    /// <param name="player">The player whose units to cycle.</param>
+    /// <param name="skip">
+    /// Optional set of unit ids to pass over this cycle — the presentation layer's <b>session-only</b> "skip this turn"
+    /// set (Space key, 86d3f0vuy). Never persisted (ADR-009); supplying it keeps the "needs orders" predicate
+    /// authoritative here while letting the UI temporarily exclude units the player skipped. Null/empty = no exclusions.
+    /// </param>
+    public Unit? NextUnitToMove(Player player, IReadOnlySet<int>? skip = null) =>
         _units
             .Where(u => u.OwnerId == player.PlayerId && !u.IsNative && u.IsOnMap
                 && u.MovementLeft > 0
                 && u.Orders is not (UnitOrders.Fortifying or UnitOrders.Fortified or UnitOrders.Sentry)
                 && !u.IsImproving
-                && !u.IsGoingTo)
+                && !u.IsGoingTo
+                && (skip is null || !skip.Contains(u.Id)))
             .OrderBy(u => u.Id)
             .FirstOrDefault();
 

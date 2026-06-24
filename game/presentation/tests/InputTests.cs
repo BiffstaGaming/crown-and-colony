@@ -44,8 +44,13 @@ public class InputTests
     {
         // Release the left mouse button in case a press is still flagged held on the global Input.
         Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
-        // Release every key these cases drive (W/G/N/B/F5/F9), so no key stays flagged pressed across cases.
-        foreach (Key key in new[] { Key.W, Key.G, Key.N, Key.B, Key.F5, Key.F9 })
+        // Release every key these cases drive (W/G/N/B/D/Space/Enter/F1/F5/F9 + arrows + Ctrl), so no key stays flagged
+        // pressed across cases — including the continuous-poll arrow pan keys CameraController reads in _Process.
+        foreach (Key key in new[]
+        {
+            Key.W, Key.G, Key.N, Key.B, Key.D, Key.Space, Key.Enter, Key.F1, Key.F5, Key.F9,
+            Key.Left, Key.Right, Key.Up, Key.Down, Key.Ctrl,
+        })
         {
             Input.ParseInputEvent(new InputEventKey { Keycode = key, Pressed = false });
         }
@@ -907,6 +912,192 @@ public class InputTests
         AssertThat(settlement.HasBeenVisited).IsTrue();
         // The panel rebuilt to reflect the visit (the same rebuild re-gates Speak away).
         AssertThat(panel.GetNode<Label>("VBox/NativeInfo").Text.ToLower()).Contains("spoken");
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task SelectedUnitPanel_DisbandButton_PromptsAndRemovesTheUnitOnConfirm()
+    {
+        // 86d3f0vgd: the Orders "Disband" button is gated on CheckDisband and removes the unit (via a ConfirmationDialog).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Unit unit = TrimHumanRosterToOne(game); // a single unit so disbanding it leaves the human with none
+        int unitId = unit.Id;
+
+        await ClickTile(runner, controller, unit.Position); // select → panel + Disband button show
+        var disband = controller.GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/DisbandButton");
+        AssertThat(disband.Disabled).IsFalse(); // a plain land unit can be disbanded
+
+        disband.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // A confirmation dialog is up; confirming it removes the unit.
+        var dialog = controller.GetChildren().OfType<ConfirmationDialog>().First();
+        dialog.EmitSignal(ConfirmationDialog.SignalName.Confirmed);
+        await runner.SimulateFrames(2);
+
+        AssertThat(game.Units.Any(u => u.Id == unitId)).IsFalse();                       // gone for good
+        AssertThat(controller.GetNode<PanelContainer>("UI/SelectedUnitPanel").Visible).IsFalse(); // selection cleared
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task PressingD_PromptsDisband_AndCancellingKeepsTheUnit()
+    {
+        // 86d3f0vgd: the D key opens the same confirmation; Cancel leaves the unit untouched.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Unit unit = TrimHumanRosterToOne(game);
+        int unitId = unit.Id;
+
+        await ClickTile(runner, controller, unit.Position); // select
+        runner.SimulateKeyPressed(Key.D);
+        await runner.SimulateFrames(1);
+
+        var dialog = controller.GetChildren().OfType<ConfirmationDialog>().First();
+        dialog.EmitSignal(ConfirmationDialog.SignalName.Canceled);
+        await runner.SimulateFrames(2);
+
+        AssertThat(game.Units.Any(u => u.Id == unitId)).IsTrue(); // still here — Cancel kept it
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task PressingEnter_EndsTheTurn()
+    {
+        // 86d3f0vjg: Enter is the EndTurnButton path (advances the turn).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        int before = game.Turn;
+
+        runner.SimulateKeyPressed(Key.Enter);
+        await runner.SimulateFrames(2);
+
+        AssertThat(GameOf(controller).Turn).IsEqual(before + 1);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task PressingSpace_SkipsTheUnit_SoTheWCycleDoesNotReOfferIt_UntilNextTurn()
+    {
+        // 86d3f0vuy: Space flags the active unit skipped-this-turn; the W-cycle passes it over until turn rollover.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        Unit first = game.NextUnitToMove(game.HumanPlayer)!;
+        // Select the lowest-id unit, then skip it.
+        await ClickTile(runner, controller, first.Position);
+        runner.SimulateKeyPressed(Key.Space);
+        await runner.SimulateFrames(1);
+
+        // The skip set now holds the skipped unit; W no longer re-offers it (a different unit, or none).
+        var skipped = (System.Collections.Generic.HashSet<int>)controller.GetType()
+            .GetField("_skippedThisTurn", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(controller)!;
+        AssertThat(skipped.Contains(first.Id)).IsTrue();
+        Unit? nextAfterSkip = game.NextUnitToMove(game.HumanPlayer, skipped);
+        AssertThat(nextAfterSkip == null || nextAfterSkip.Id != first.Id).IsTrue();
+
+        // Turn rollover clears the skip set so the unit is offered again.
+        controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+        AssertThat(skipped.Count).IsEqual(0);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task CtrlC_CentresTheCameraOnTheSelectedUnit()
+    {
+        // 86d3f0vqf: Ctrl+C recentres on the selected unit (reuses CenterCameraOnTile).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Unit unit = game.PlayerUnits.First(u => u.IsOnMap);
+
+        await ClickTile(runner, controller, unit.Position); // select it
+        var camera = controller.GetNode<Camera2D>("Camera");
+        camera.Position = Vector2.Zero; // move the camera away so the centring is observable
+
+        runner.SimulateKeyPressed(Key.C, control: true);
+        await runner.SimulateFrames(1);
+
+        AssertThat(camera.Position).IsEqual(MapView.TileCentre(unit.Position));
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task F1_TogglesTheKeysLegend()
+    {
+        // 86d3f0vjg: F1 toggles the keys legend, built from the single authoritative key table.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+
+        runner.SimulateKeyPressed(Key.F1);
+        await runner.SimulateFrames(1);
+        var legend = controller.GetNode<CanvasLayer>("UI").GetNodeOrNull<Label>("KeysLegend");
+        AssertThat(legend).IsNotNull();
+        AssertThat(legend!.Visible).IsTrue();
+        AssertThat(legend.Text).Contains("End turn"); // a row generated from the authoritative table
+        AssertThat(legend.Text).Contains("Disband");
+
+        runner.SimulateKeyPressed(Key.F1);
+        await runner.SimulateFrames(1);
+        AssertThat(legend.Visible).IsFalse(); // toggled back off
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task RightClickTileMenu_ActivatesAUnitInAStack()
+    {
+        // 86d3f0vrz: right-click opens a menu listing each own unit on the tile; choosing one selects it (fixes the
+        // stack-select bug where a left-click only picks the first). Drives the menu via the controller's handler.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Two human units on one tile (a stack).
+        TrimHumanRosterToOne(game);
+        Position pos = game.PlayerUnits.First(u => u.IsOnMap).Position;
+        Unit second = game.SpawnUnit(game.Ruleset.Unit("model.unit.freeColonist"), pos);
+        controller.GetType().GetField("_selectedUnit", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(controller, null);
+
+        // Centre on the tile and invoke the right-click handler (the screen-space drag/release path is camera-owned).
+        controller.GetNode<Camera2D>("Camera").Position = MapView.TileCentre(pos);
+        await runner.SimulateFrames(1);
+        controller.GetType().GetMethod("HandleRightClick", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(controller, null);
+        await runner.SimulateFrames(1);
+
+        var menu = controller.GetNode<CanvasLayer>("UI").GetChildren().OfType<PopupMenu>().First();
+        // Entries: one per unit on the tile (two), a separator, "Centre here", "Go to here".
+        int activateCount = 0;
+        for (int i = 0; i < menu.ItemCount; i++)
+        {
+            if (menu.GetItemText(i).StartsWith("Activate"))
+            {
+                activateCount++;
+            }
+        }
+        AssertThat(activateCount).IsEqual(2);
+
+        // Fire the second unit's id → it becomes the selection.
+        menu.EmitSignal(PopupMenu.SignalName.IdPressed, second.Id);
+        await runner.SimulateFrames(1);
+        Unit? selected = (Unit?)controller.GetType()
+            .GetField("_selectedUnit", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(controller);
+        AssertThat(selected).IsNotNull();
+        AssertThat(selected!.Id).IsEqual(second.Id);
     }
 
     private static void SetGame(GameController controller, Game game) =>
