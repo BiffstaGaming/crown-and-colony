@@ -160,7 +160,7 @@ public class TradeRouteTests
         Assert.False(restored.Stops[0].IsEurope);          // the colony stop
         Assert.True(restored.Stops[1].IsEurope);           // the Europe stop round-trips via the sentinel ColonyId (0)
         Assert.Equal([Sugar], restored.Stops[1].LoadGoodsIds);
-        Assert.Equal(59, SaveGame.CurrentVersion);         // Europe stop adds no save field of its own (existing TradeRouteStop shape); 58 comes from other slices
+        Assert.Equal(60, SaveGame.CurrentVersion);         // Europe stop adds no save field of its own (existing TradeRouteStop shape); 58 comes from other slices
     }
 
     [Fact]
@@ -187,7 +187,7 @@ public class TradeRouteTests
         Assert.DoesNotContain("\"TradeRouteId\"", json);
         Assert.DoesNotContain("\"TradeRouteStop\"", json);
         Assert.DoesNotContain("NextTradeRouteId", json); // omit-when-default (counter still 1) → byte-identical to v44
-        Assert.Equal(59, SaveGame.CurrentVersion);
+        Assert.Equal(60, SaveGame.CurrentVersion);
     }
 
     [Fact]

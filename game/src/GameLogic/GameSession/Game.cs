@@ -4586,6 +4586,7 @@ public sealed partial class Game
             RecruitLowerCap = saved.RecruitLowerCap,
             MonarchDispleasure = saved.MonarchDispleasure,
             SupportSeaGranted = saved.SupportSeaGranted,
+            LastTaxRaiseTurn = saved.LastTaxRaiseTurn,
             DeclaredIndependenceTurn = saved.DeclaredIndependenceTurn,
             InterventionBells = saved.InterventionBells,
         };

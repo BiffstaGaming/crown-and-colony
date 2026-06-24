@@ -343,6 +343,96 @@ public class MonarchTests
     public void RespondToMonarch_ThrowsWhenNothingPending() =>
         Assert.Throws<InvalidOperationException>(() => FoundedGame().RespondToMonarch(true));
 
+    // ── Inter-raise tax grace period (the runaway-tax fix, 86d3f674b) ────────────────────────────────────
+    //
+    // FreeCol has no cooldown between tax raises — its monarch can demand a raise turn after turn, which the FreeCol
+    // team itself acknowledged makes its King "more aggressive with tax increases than Col1 monarchs were" (forum
+    // threads fba2e12b / 74d6d78a). We gate the two RAISE_TAX actions out of the chooser for TaxRaiseGraceTurns after a
+    // demand, restoring Col1's gradual climb. The per-turn probability and the increment formula are unchanged.
+
+    /// <summary>The medium inter-raise grace is (6 − dx)·3 = 9 turns (dx = 3 at the default meddling 2).</summary>
+    [Fact]
+    public void TaxRaiseGrace_IsNineTurnsAtMedium()
+    {
+        Game game = FoundedGame();
+        Assert.Equal(9, game.TaxRaiseGraceTurns); // (6 − (1 + 2))·3
+    }
+
+    /// <summary>A higher meddling shortens the inter-raise grace (it scales off the same (6 − dx) term as the initial grace).</summary>
+    [Fact]
+    public void TaxRaiseGrace_FollowsRulesetMeddling()
+    {
+        // meddling 4 → dx = 5 → grace = (6 − 5)·3 = 3 turns (vs 9 at the default meddling 2).
+        Game game = FoundedGame(RulesetWithMonarch(("model.option.monarchMeddling", "4")));
+        Assert.Equal(3, game.TaxRaiseGraceTurns);
+    }
+
+    /// <summary>Before the King has ever raised tax there is no cooldown — the raise actions are offered as soon as the initial grace elapses.</summary>
+    [Fact]
+    public void NoCooldown_BeforeTheFirstRaise()
+    {
+        Game game = FoundedGame();
+        Assert.False(game.TaxRaiseOnCooldown(50));
+        var choices = game.GetMonarchActionChoices(50).Select(c => c.Action).ToList();
+        Assert.Contains(MonarchAction.RaiseTaxAct, choices);
+        Assert.Contains(MonarchAction.RaiseTaxWar, choices);
+    }
+
+    /// <summary>Making a tax demand stamps the last-raise turn, putting tax raises on cooldown for the grace period.</summary>
+    [Fact]
+    public void MakingATaxDemand_StartsTheCooldown_RegardlessOfTheAnswer()
+    {
+        (Game game, var colony) = FoundedColony();
+        colony.AddGoods("model.goods.furs", 100);
+
+        // Dispatch a raise → the demand is made and the cooldown stamp is set to the current turn (turn 1 here, but the
+        // stamp value is what matters; the chooser checks against a supplied turn well past the 30-turn initial grace).
+        game.DispatchMonarchAction(MonarchAction.RaiseTaxAct, new ScriptedRandom(2));
+        Assert.Equal(game.Turn, game.HumanPlayer.LastTaxRaiseTurn);
+
+        // Re-stamp to a turn past the initial grace so the chooser is awake, then probe the cooldown window around it.
+        int raisedAt = 50;
+        game.HumanPlayer.LastTaxRaiseTurn = raisedAt;
+
+        // Within the grace window the raise actions are withheld from the chooser (a tea-party / decline does not matter).
+        Assert.True(game.TaxRaiseOnCooldown(raisedAt + game.TaxRaiseGraceTurns - 1));
+        var duringCooldown = game.GetMonarchActionChoices(raisedAt + game.TaxRaiseGraceTurns - 1).Select(c => c.Action).ToList();
+        Assert.DoesNotContain(MonarchAction.RaiseTaxAct, duringCooldown);
+        Assert.DoesNotContain(MonarchAction.RaiseTaxWar, duringCooldown);
+
+        // Once the grace has fully elapsed the King may demand again.
+        Assert.False(game.TaxRaiseOnCooldown(raisedAt + game.TaxRaiseGraceTurns));
+        var afterCooldown = game.GetMonarchActionChoices(raisedAt + game.TaxRaiseGraceTurns).Select(c => c.Action).ToList();
+        Assert.Contains(MonarchAction.RaiseTaxAct, afterCooldown);
+    }
+
+    /// <summary>The cooldown gates only the two RAISE_TAX actions — the rest of the King's repertoire is unaffected.</summary>
+    [Fact]
+    public void Cooldown_WithholdsOnlyTheRaiseActions_NotTheRestOfTheChooser()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.LastTaxRaiseTurn = 50; // simulate a recent raise just before the probe turn → on cooldown
+        var choices = game.GetMonarchActionChoices(51).Select(c => c.Action).ToList();
+
+        Assert.DoesNotContain(MonarchAction.RaiseTaxAct, choices);
+        Assert.DoesNotContain(MonarchAction.RaiseTaxWar, choices);
+        Assert.Contains(MonarchAction.AddToRef, choices);   // the rest of the repertoire is still offered
+        Assert.Contains(MonarchAction.NoAction, choices);
+    }
+
+    /// <summary>The last-raise turn survives save/load so the cooldown cannot be reset by reloading (ADR-009 determinism, save v60).</summary>
+    [Fact]
+    public void LastTaxRaiseTurn_PersistsAcrossSaveLoad()
+    {
+        Game game = FoundedGame();
+        game.HumanPlayer.LastTaxRaiseTurn = 137;
+
+        Game loaded = CrownAndColony.GameLogic.Persistence.SaveGame
+            .FromJson(CrownAndColony.GameLogic.Persistence.SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(137, loaded.HumanPlayer.LastTaxRaiseTurn);
+    }
+
     // ── Item 3: Boston Tea Party + boycott/arrears + pay-to-lift ─────────────────────────────────────────
 
     [Fact]
@@ -1180,9 +1270,12 @@ public class MonarchTests
     public void NoPendingDemand_OmitsTheToken_AndStaysByteStable()
     {
         // A game with no open demand (the common case) writes no PendingMonarchDemand token → byte-identical to v45.
+        // The v60 inter-raise grace stamp (LastTaxRaiseTurn) is likewise omit-when-null: a game the King has not yet
+        // taxed writes neither token, so a fresh game stays byte-identical to v59 bar the version number.
         string json = CrownAndColony.GameLogic.Persistence.SaveGame.From(FoundedGame()).ToJson();
         Assert.DoesNotContain("\"PendingMonarchDemand\"", json);
-        Assert.Equal(59, CrownAndColony.GameLogic.Persistence.SaveGame.CurrentVersion);
+        Assert.DoesNotContain("\"LastTaxRaiseTurn\"", json);
+        Assert.Equal(60, CrownAndColony.GameLogic.Persistence.SaveGame.CurrentVersion);
     }
 
     [Fact]

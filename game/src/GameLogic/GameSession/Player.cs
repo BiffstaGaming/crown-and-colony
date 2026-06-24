@@ -128,6 +128,16 @@ public sealed class Player
     /// </summary>
     public bool SupportSeaGranted { get; internal set; }
 
+    /// <summary>
+    /// The turn the King last raised this player's tax (a successful RAISE_TAX demand became a real rate rise), or null
+    /// if he never has. Used to enforce the inter-raise tax grace period: the chooser will not offer another tax raise
+    /// until the cooldown has elapsed (see <see cref="Game.TaxRaiseGraceTurns"/>). FreeCol has no such cooldown — its
+    /// monarch can demand a raise turn after turn, which the FreeCol team itself acknowledges makes its King "more
+    /// aggressive with tax increases than Col1 monarchs were" — so this restores the original game's gradual climb.
+    /// Persisted v60 (omit-when-null). See [monarchy].
+    /// </summary>
+    public int? LastTaxRaiseTurn { get; internal set; }
+
     /// <summary>The turn this player declared independence (FreeCol <c>Player.getIndependenceTurn</c>), or null if it never did. Persisted v41 (omit-when-null). See [independence].</summary>
     public int? DeclaredIndependenceTurn { get; internal set; }
 
@@ -251,6 +261,7 @@ public sealed record RestoredPlayer(
     IReadOnlyDictionary<string, int>? Arrears = null,
     bool MonarchDispleasure = false,
     bool SupportSeaGranted = false,
+    int? LastTaxRaiseTurn = null,
     int? DeclaredIndependenceTurn = null,
     int InterventionBells = 0,
     IReadOnlyList<TradeRoute>? TradeRoutes = null,

@@ -33,6 +33,27 @@ public sealed partial class Game
     private const int ForceTaxExtra = 3;             // ServerPlayer.csRaiseTax FORCE_TAX surcharge
     private const int TeaPartyBellDuration = 25;     // colonyGoodsParty modifier duration (turns) → +50% bells decaying −2%/turn
 
+    /// <summary>
+    /// The inter-raise tax grace period — the number of turns after a tax raise during which the King will not demand
+    /// another (the cooldown the chooser checks via <see cref="TaxRaiseOnCooldown"/>). Scaled off the meddling-driven
+    /// <c>dx = 1 + Meddling</c> as <c>(6 − dx) · 3</c> = <b>9 turns at medium</b> (dx = 3); a more-meddlesome King
+    /// (higher meddling → higher dx) has a shorter cooldown, a lazier one a longer one, mirroring the <c>(6 − dx)</c>
+    /// scaling of the initial grace period. FreeCol has <em>no</em> inter-raise cooldown — its monarch can raise tax
+    /// turn after turn, which the FreeCol team itself calls "more aggressive with tax increases than Col1 monarchs
+    /// were"; this restores the original game's gradual, manageable climb (FreeCol forum thread fba2e12b/74d6d78a;
+    /// ClickUp 86d3f674b). The grace is a minimum of 1 turn even at maximum meddling (dx ≥ 5).
+    /// </summary>
+    internal int TaxRaiseGraceTurns => Math.Max(1, (6 - (1 + MonarchOpts.Meddling)) * 3);
+
+    /// <summary>
+    /// Whether a tax raise is on cooldown for <paramref name="turn"/> — true while fewer than
+    /// <see cref="TaxRaiseGraceTurns"/> turns have passed since the King last raised the human's tax
+    /// (<see cref="Player.LastTaxRaiseTurn"/>). Always false before the first raise (the King may raise freely once the
+    /// initial grace period has elapsed). Pure and RNG-free; the chooser uses it to withhold the two RAISE_TAX actions.
+    /// </summary>
+    internal bool TaxRaiseOnCooldown(int turn) =>
+        _human.LastTaxRaiseTurn is { } last && turn - last < TaxRaiseGraceTurns;
+
     // Classic mercenaryUnit land force (specification.xml): veteran soldiers, armed or mounted. (The naval man-o-war
     // mercenary and ability-driven type selection are a faithful-subset simplification.)
     private const string MercenaryUnitTypeId = "model.unit.veteranSoldier";
@@ -174,8 +195,15 @@ public sealed partial class Game
         }
 
         Add(MonarchAction.NoAction, Math.Max(200 - turn, 100));
-        Add(MonarchAction.RaiseTaxAct, 5 + dx);
-        Add(MonarchAction.RaiseTaxWar, 5 + dx);
+        // Inter-raise tax grace: the King will not demand another raise until the cooldown since his last one elapses.
+        // FreeCol has no such cooldown (its monarch can demand a raise turn after turn — the FreeCol team's own
+        // acknowledged "more aggressive than Col1" over-taxing); gating the two raise actions here restores Col1's
+        // gradual climb without touching the per-turn probability or the increment formula. See [monarchy] / 86d3f674b.
+        if (!TaxRaiseOnCooldown(turn))
+        {
+            Add(MonarchAction.RaiseTaxAct, 5 + dx);
+            Add(MonarchAction.RaiseTaxWar, 5 + dx);
+        }
         Add(MonarchAction.LowerTaxWar, 5 - dx);
         Add(MonarchAction.LowerTaxOther, 5 - dx);
         // WAIVE_TAX is deliberately NOT added — FreeCol omits it from getActionChoices (the dice never picks it; it is
@@ -229,6 +257,10 @@ public sealed partial class Game
                     _pendingMonarchDemand = new PendingMonarchDemand(
                         action, TaxRaise: RaiseTaxAmount(rng),
                         GoodsId: goods.GoodsId, ColonyId: goods.ColonyId, GoodsAmount: goods.Amount);
+                    // Start the inter-raise grace clock when the demand is *made* (not when answered): the King will not
+                    // demand another raise for TaxRaiseGraceTurns whatever the human does — accept, force-tax, or tea party
+                    // — capping the demand cadence the player actually experiences (the runaway-tax fix, 86d3f674b).
+                    _human.LastTaxRaiseTurn = Turn;
                 }
                 break;
             case MonarchAction.LowerTaxWar:

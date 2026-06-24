@@ -20,7 +20,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 59;
+    public const int CurrentVersion = 60;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -219,6 +219,13 @@ public sealed record SaveGame
     /// saves (or any with no log) load with an empty log exactly as before persistence. Determinism (ADR-009): the log
     /// is pure UI scratch with no feedback into game evolution, so a reloaded game continues on the identical random
     /// sequence and the headless soak (which never builds the controller, so never fills this field) stays byte-identical.
+    /// v60 added the turn the King last raised a player's tax (<see cref="SavedPlayer.LastTaxRaiseTurn"/>, 86d3f674b),
+    /// which enforces the inter-raise tax <b>grace period</b> (<see cref="Game.TaxRaiseGraceTurns"/>) deterministically
+    /// across save/load — without it a reload mid-cooldown would let the King raise again immediately (a save-scum hole).
+    /// Additive + <b>omitted when null</b> (the King has not yet raised tax — every fresh game and the whole early game),
+    /// so a game with no tax raise yet serialises byte-identically to v59 and pre-v60 saves load with no cooldown active.
+    /// Determinism (ADR-009): the cooldown only gates which actions the chooser offers (it draws nothing itself), and the
+    /// stamp is persisted, so a reloaded game offers the identical action set and the soak stays twin-deterministic.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -823,6 +830,7 @@ public sealed record SaveGame
         p.Explored?.Select(i => new Position(i % MapWidth, i / MapWidth)),
         p.RngState is { } s && p.RngIncrement is { } inc ? new RandomState(s, inc) : null,
         p.Stances, p.Tensions, p.UnitPrices, p.Arrears, p.MonarchDispleasure ?? false, p.SupportSeaGranted ?? false,
+        p.LastTaxRaiseTurn,
         p.DeclaredIndependenceTurn, p.InterventionBells ?? 0,
         p.TradeRoutes?.Select(r => new TradeRoute(r.Id, r.Name,
             r.Stops.Select(stop => new TradeRouteStop(stop.ColonyId, stop.Load ?? [])).ToList())).ToList(),
@@ -882,7 +890,8 @@ public sealed record SaveGame
             p.Market.SaveCounters() is { Count: > 0 } accounts
                 ? accounts.ToDictionary(kv => kv.Key, kv => new SavedTradeAccount(
                     kv.Value.Sales, kv.Value.IncomeBeforeTaxes, kv.Value.IncomeAfterTaxes))
-                : null);
+                : null,
+            p.LastTaxRaiseTurn); // v60; omit-when-null → byte-identical to v59 until the King first raises tax
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -1139,6 +1148,7 @@ public sealed record SavedUnit(
 /// <param name="NextTradeRouteId">The player's monotonic next-trade-route id counter (v45 additive; null/omitted when still 1 — the default — so a game that never created a route stays byte-identical to v44). Persisted (FreeCol persists <c>Game.nextId</c>) so ids are never reused after a route is deleted and the game is reloaded; pre-v45 saves fall back to <c>max(route id) + 1</c>.</param>
 /// <param name="PeaceTurns">The turn this player's peace took force with each other player, by their id (v53 additive, FreeCol <c>EuropeanAIPlayer.peaceHolds</c>' <c>peaceTurn</c>; null/omitted when it has no recorded peace — the common case and every player in a no-contact game, so a default game stays byte-identical to v52). Feeds the decaying peace-hold (<c>(PEACE_PROBABILITY/100)^(turn − peaceTurn)</c>); pre-v53 saves load with no stamps (the gate is inert without Franklin anyway).</param>
 /// <param name="TradeAccounts">This player's cumulative per-good trade accounting for the Trade report (v56 additive; FreeCol <c>MarketData</c>'s <c>sales</c>/<c>incomeBeforeTaxes</c>/<c>incomeAfterTaxes</c>), as goods-id → net <see cref="SavedTradeAccount"/>. Null/omitted when the player has traded nothing (every counter still 0 — the common pre-trade case and a fresh game), so a never-traded market stays byte-identical to v55; only goods that have actually been traded are written. Pre-v56 saves load with all counters 0.</param>
+/// <param name="LastTaxRaiseTurn">The turn the King last raised this player's tax (v60 additive; null/omitted when he never has, so a game with no tax raise yet stays byte-identical to v59). Enforces the inter-raise tax grace period (<see cref="Game.TaxRaiseGraceTurns"/>) deterministically across save/load. Pre-v60 saves load with null (no cooldown active).</param>
 public sealed record SavedPlayer(
     int PlayerId, string? NationId, bool IsHuman, int PlayerType,
     int Gold = 0, int Tax = 0,
@@ -1161,7 +1171,8 @@ public sealed record SavedPlayer(
     IReadOnlyList<SavedTradeRoute>? TradeRoutes = null,
     int? NextTradeRouteId = null,
     IReadOnlyDictionary<int, int>? PeaceTurns = null,
-    IReadOnlyDictionary<string, SavedTradeAccount>? TradeAccounts = null);
+    IReadOnlyDictionary<string, SavedTradeAccount>? TradeAccounts = null,
+    int? LastTaxRaiseTurn = null);
 
 /// <summary>
 /// One good's cumulative trade accounting inside a <see cref="SavedPlayer"/> (v56; FreeCol <c>MarketData</c>'s
