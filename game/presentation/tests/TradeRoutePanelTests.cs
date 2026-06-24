@@ -64,12 +64,63 @@ public class TradeRoutePanelTests
         AssertThat(game.HumanPlayer.TradeRoutes.Count).IsEqual(0);
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task CreateRoute_WithEuropeAsTheToStop_BuildsAColonyToEuropeRoute()
+    {
+        (ISceneRunner runner, GameController controller, Game game) = await OpenTradeRoutes(CoastalPort());
+        AssertThat(game.HumanPlayer.TradeRoutes.Count).IsEqual(0);
+
+        // Pick Europe as the "To" stop (it's the item after the single colony → index 1) and load sugar at the From colony.
+        OptionButton to = FindOption(controller, "ToColony")!;
+        AssertThat(to).IsNotNull();
+        int europeIndex = to.ItemCount - 1; // Europe is appended last
+        AssertThat(to.GetItemText(europeIndex)).IsEqual("Europe");
+        to.Select(europeIndex);
+        to.EmitSignal(OptionButton.SignalName.ItemSelected, (long)europeIndex);
+        await runner.SimulateFrames(1);
+
+        Button create = FindButton(controller, "CreateRoute")!;
+        AssertThat(create).IsNotNull();
+        create.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.HumanPlayer.TradeRoutes.Count).IsEqual(1);
+        TradeRoute route = game.HumanPlayer.TradeRoutes[0];
+        AssertThat(route.Stops.Count).IsEqual(2);
+        AssertThat(route.Stops[1].IsEurope).IsTrue(); // the second stop is Europe (sentinel ColonyId 0)
+
+        // Assign the galleon to the route through the per-route dropdown.
+        int routeId = route.Id;
+        Unit galleon = game.Units.First(u => u.Type.IsCarrier);
+        OptionButton assign = FindOption(controller, $"Assign_{routeId}")!;
+        AssertThat(assign).IsNotNull();
+        assign.EmitSignal(OptionButton.SignalName.ItemSelected, 1L); // the first (only) carrier
+        await runner.SimulateFrames(1);
+        AssertThat(galleon.TradeRouteId == routeId).IsTrue();
+
+        // The route reads back as "… → Europe" in the panel's route label.
+        Label routeLabel = Panel(controller).FindChildren("*", recursive: true, owned: false)
+            .OfType<Label>().First(l => l.Text.Contains("→"));
+        AssertThat(routeLabel.Text).Contains("→ Europe");
+    }
+
     private static void PreCreateRoute(Game g)
     {
         Colony a = g.Colonies[0];
         Colony b = g.Colonies[1];
         g.CreateTradeRoute(g.HumanPlayer, "R", [new TradeRouteStop(a.Id, []), new TradeRouteStop(b.Id, [])]);
     }
+
+    /// <summary>A 3×1 coastal strip — port colony Alpha at (0,0), ocean, high seas — with a human galleon beside the port.</summary>
+    private static SaveGame CoastalPort() => new()
+    {
+        Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+        MapWidth = 3, MapHeight = 1,
+        Terrain = ["model.tile.plains", "model.tile.ocean", "model.tile.highSeas"],
+        Units = [new SavedUnit(1, "model.unit.galleon", 1, 0, 18)],
+        Explored = [0, 1, 2],
+        Colonies = [new SavedColony(1, "Alpha", 0, 0, 1)],
+    };
 
     /// <summary>A 3-tile plains strip with two human colonies (Alpha, Beta) and a human wagon train.</summary>
     private static SaveGame TwoColonies() => new()

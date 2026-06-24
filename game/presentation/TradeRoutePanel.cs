@@ -11,7 +11,8 @@ namespace CrownAndColony.Presentation;
 
 /// <summary>
 /// The trade-route management screen (<c>86d3c9rrd</c>): lists the human player's trade routes, creates a new route
-/// (pick two own colonies + a good to load at the first stop), assigns a carrier to a route, and deletes one. Like
+/// (a <em>from</em> colony, a <em>to</em> stop that may be another colony <b>or Europe</b>, and a good to load at each
+/// stop), assigns a carrier to a route, and deletes one. Like
 /// the other panels it only renders state and forwards clicks to the Game oracles (ADR-006) — every rule
 /// (validation, the per-turn haul, save) lives in GameLogic (<see cref="Game.CreateTradeRoute"/> /
 /// <see cref="Game.AssignTradeRoute"/> / <see cref="Game.RemoveTradeRoute"/>); the per-turn hauling is automatic
@@ -89,18 +90,21 @@ public partial class TradeRoutePanel : PanelContainer
             dynamic.AddChild(row);
         }
 
-        // — Create a route — (needs at least two own colonies to move anything)
+        // — Create a route — (needs at least one own colony: the From stop; the To stop can be Europe, always available)
         dynamic.AddChild(SectionLabel("New route"));
-        if (colonies.Count < 2)
+        if (colonies.Count < 1)
         {
             dynamic.AddChild(new Label
             {
-                Text = "Found at least two colonies to make a route.",
+                Text = "Found at least one colony to make a route (you can trade it with Europe).",
                 HorizontalAlignment = HorizontalAlignment.Center,
             });
             return;
         }
 
+        // The "To" stop may be a colony OR Europe. Europe rides at the end of the dropdown (index == colonies.Count),
+        // so a docked ship sells the colony's surplus there (and buys the "load at second stop" good back). FROM is always
+        // a colony (you load a colony's goods to haul out); the engine accepts a Europe stop anywhere (TradeRouteStop.Europe).
         var fromOpt = new OptionButton { Name = "FromColony" };
         var toOpt = new OptionButton { Name = "ToColony" };
         foreach (Colony c in colonies)
@@ -108,45 +112,68 @@ public partial class TradeRoutePanel : PanelContainer
             fromOpt.AddItem(c.Name);
             toOpt.AddItem(c.Name);
         }
+        int europeItemIndex = colonies.Count; // Europe is the item after the last colony in the To dropdown
+        toOpt.AddItem("Europe");
         fromOpt.Selected = 0;
         toOpt.Selected = 1; // default the two ends to different colonies
 
-        var loadOpt = new OptionButton { Name = "LoadGoods" };
-        loadOpt.AddItem("Load nothing");
+        // Goods to load at each stop (Load nothing = deliver/sell everything the carrier holds). The first selector
+        // loads at the FROM colony (haul a colony's surplus out); the second loads at the TO stop — at a colony that's
+        // a pick-up, at Europe that's a BUY (e.g. tools/muskets back home).
         var goods = _game.Ruleset.GoodsTypes.Where(g => _game.Market.IsTradeable(g.Id)).ToList();
-        foreach (GoodsType g in goods)
-        {
-            loadOpt.AddItem(g.ShortName);
-        }
-        loadOpt.Selected = 0;
+        var loadOpt = BuildGoodsOption("LoadGoods", goods);
+        var loadToOpt = BuildGoodsOption("LoadGoodsTo", goods);
 
         dynamic.AddChild(LabeledRow("From", fromOpt));
         dynamic.AddChild(LabeledRow("To", toOpt));
         dynamic.AddChild(LabeledRow("Load at first stop", loadOpt));
+        dynamic.AddChild(LabeledRow("Load at second stop", loadToOpt));
         dynamic.AddChild(ActionButton("CreateRoute", "Create route", () =>
         {
             int fromIdx = fromOpt.Selected;
             int toIdx = toOpt.Selected;
-            if (fromIdx < 0 || toIdx < 0 || fromIdx == toIdx)
+            bool toEurope = toIdx == europeItemIndex;
+            if (fromIdx < 0 || toIdx < 0 || (!toEurope && fromIdx == toIdx))
             {
-                return; // need two distinct colonies
+                return; // need two distinct ends (a colony vs Europe is always distinct)
             }
-            List<string> loadIds = loadOpt.Selected > 0
-                ? [goods[loadOpt.Selected - 1].Id]
-                : [];
+            List<string> loadIds = loadOpt.Selected > 0 ? [goods[loadOpt.Selected - 1].Id] : [];
+            List<string> loadToIds = loadToOpt.Selected > 0 ? [goods[loadToOpt.Selected - 1].Id] : [];
+            TradeRouteStop secondStop = toEurope
+                ? TradeRouteStop.Europe(loadToIds)
+                : new TradeRouteStop(colonies[toIdx].Id, loadToIds);
             List<TradeRouteStop> stops =
             [
                 new(colonies[fromIdx].Id, loadIds),
-                new(colonies[toIdx].Id, []),
+                secondStop,
             ];
             _game.CreateTradeRoute(_game.HumanPlayer, $"Route {_game.HumanPlayer.TradeRoutes.Count + 1}", stops);
             Changed();
         }));
     }
 
+    /// <summary>Builds a "Load nothing" + one-item-per-tradeable-good dropdown (index 0 = load nothing, index i = <paramref name="goods"/>[i-1]).</summary>
+    private static OptionButton BuildGoodsOption(string name, List<GoodsType> goods)
+    {
+        var opt = new OptionButton { Name = name };
+        opt.AddItem("Load nothing");
+        foreach (GoodsType g in goods)
+        {
+            opt.AddItem(g.ShortName);
+        }
+        opt.Selected = 0;
+        return opt;
+    }
+
+    /// <summary>
+    /// Renders a route's stops as "A → B → …". A <b>Europe</b> stop (<see cref="TradeRouteStop.IsEurope"/>) shows as
+    /// "Europe"; a colony stop shows the colony's name (or "?" if its colony has since vanished).
+    /// </summary>
     private string DescribeStops(TradeRoute route) =>
         string.Join(" → ", route.Stops.Select(s =>
-            _game.Colonies.FirstOrDefault(c => c.Id == s.ColonyId)?.Name ?? "?"));
+            s.IsEurope
+                ? "Europe"
+                : _game.Colonies.FirstOrDefault(c => c.Id == s.ColonyId)?.Name ?? "?"));
 
     private static HBoxContainer LabeledRow(string label, Control control)
     {
