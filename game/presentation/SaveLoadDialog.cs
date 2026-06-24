@@ -5,10 +5,14 @@ using Godot;
 namespace CrownAndColony.Presentation;
 
 /// <summary>
-/// A reusable save/load slot dialog overlay — five named slots (<c>user://saves/slotN.json</c>), each shown as
-/// "empty" or "Turn N". In <see cref="Mode.Load"/> empty slots are disabled. Choosing a slot invokes the host's
-/// callback (which performs the actual save or load, plus any feedback) and then closes the dialog via
-/// <see cref="Closed"/>. Presentation-only (ADR-006); shares the parchment/wood look via <see cref="ColonyTheme"/>.
+/// A reusable save/load slot dialog overlay — five named manual slots (<c>user://saves/slotN.json</c>) plus the
+/// read-only <b>autosave</b> entry (<c>user://saves/autosave.json</c>). Each slot is shown as "empty" or
+/// "Turn N — &lt;saved date/time&gt;" (the timestamp read from the file's modification time, so no save-header change is
+/// needed). In <see cref="Mode.Load"/> empty slots are disabled. Choosing a slot invokes the host's callback (which
+/// performs the actual save or load, plus any feedback) and then closes the dialog via <see cref="Closed"/>. Filled
+/// slots offer a per-slot <b>delete</b> (with confirmation), and saving over a non-empty manual slot prompts an
+/// <b>overwrite confirmation</b>. The <b>autosave</b> entry is loadable but never a save target, so manual saves can
+/// never overwrite it. Presentation-only (ADR-006); shares the parchment/wood look via <see cref="ColonyTheme"/>.
 /// </summary>
 public partial class SaveLoadDialog : Control
 {
@@ -40,7 +44,7 @@ public partial class SaveLoadDialog : Control
         Hide();
     }
 
-    /// <summary>The full path of save slot <paramref name="index"/> (1-based).</summary>
+    /// <summary>The full path of manual save slot <paramref name="index"/> (1-based).</summary>
     public static string SlotPath(int index) => $"{GameController.SavesDir}/slot{index}.json";
 
     /// <summary>Opens the dialog. <paramref name="onChoose"/> receives the chosen slot's path; the dialog then closes.</summary>
@@ -62,34 +66,128 @@ public partial class SaveLoadDialog : Control
         }
         for (int i = 1; i <= SlotCount; i++)
         {
-            string path = SlotPath(i);
-            bool filled = FileAccess.FileExists(path);
-            var button = new Button
-            {
-                Text = SlotLabel(i, path, filled),
-                Disabled = _mode == Mode.Load && !filled, // an empty slot can't be loaded
-            };
-            button.Pressed += () => Choose(path);
-            list.AddChild(button);
+            list.AddChild(BuildSlotRow(SlotPath(i), $"Slot {i}", deletable: true, choosableWhenFilled: true));
+        }
+        // The autosave is a read-only entry: loadable, never a manual-save target (so a manual Save can't overwrite it),
+        // and not deletable from here (the game owns it). It only appears once it exists. (86d3f0vb8)
+        if (FileAccess.FileExists(GameController.AutosavePath))
+        {
+            list.AddChild(BuildSlotRow(GameController.AutosavePath, "Autosave",
+                deletable: false, choosableWhenFilled: _mode == Mode.Load));
         }
     }
 
-    private static string SlotLabel(int slot, string path, bool filled)
+    // Builds one slot row: a main button (load/save) that expands, plus an optional delete button shown only for a
+    // filled, deletable slot. The row is an HBoxContainer named "SlotRow"; the main button is its first child.
+    private HBoxContainer BuildSlotRow(string path, string name, bool deletable, bool choosableWhenFilled)
+    {
+        bool filled = FileAccess.FileExists(path);
+        var row = new HBoxContainer { Name = "SlotRow" };
+
+        var main = new Button
+        {
+            Name = "SlotButton",
+            Text = SlotLabel(name, path, filled),
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            // An empty slot can't be loaded; the autosave entry can't be a save target.
+            Disabled = (_mode == Mode.Load && !filled) || (_mode == Mode.Save && !choosableWhenFilled),
+        };
+        main.Pressed += () => OnSlotPressed(path, filled);
+        row.AddChild(main);
+
+        if (filled && deletable)
+        {
+            var del = new Button { Name = "DeleteButton", Text = "Delete" };
+            del.Pressed += () => ConfirmDelete(path, name);
+            row.AddChild(del);
+        }
+        return row;
+    }
+
+    // Save over a non-empty manual slot → confirm first (cancellable, no-op on cancel). Load, or save into an empty
+    // slot, proceeds immediately. (86d3f0vkg)
+    private void OnSlotPressed(string path, bool filled)
+    {
+        if (_mode == Mode.Save && filled)
+        {
+            ConfirmOverwrite(path);
+        }
+        else
+        {
+            Choose(path);
+        }
+    }
+
+    private static string SlotLabel(string name, string path, bool filled)
     {
         if (!filled)
         {
-            return $"Slot {slot} — empty";
+            return $"{name} — empty";
         }
+        string when = SavedWhen(path);
         try
         {
             using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);
             SaveGame save = SaveGame.FromJson(file.GetAsText());
-            return $"Slot {slot} — Turn {save.Turn}";
+            return $"{name} — Turn {save.Turn}{when}";
         }
         catch (System.Text.Json.JsonException)
         {
-            return $"Slot {slot} — (unreadable)";
+            return $"{name} — (unreadable){when}";
         }
+    }
+
+    // The "saved date/time" suffix, read from the file's modification time so no save-header/format change is needed
+    // (86d3f0vkg). Empty when the engine reports no timestamp (0) — e.g. some virtual filesystems in CI.
+    private static string SavedWhen(string path)
+    {
+        ulong unix = FileAccess.GetModifiedTime(path);
+        if (unix == 0)
+        {
+            return string.Empty;
+        }
+        DateTime local = DateTimeOffset.FromUnixTimeSeconds((long)unix).LocalDateTime;
+        return $"  ({local:yyyy-MM-dd HH:mm})";
+    }
+
+    // A confirmation before replacing a non-empty manual slot; Cancel is a no-op (the dialog stays open on the slots).
+    private void ConfirmOverwrite(string path) => Confirm(
+        "Overwrite save?",
+        "This slot already has a saved game. Overwrite it?",
+        "Overwrite",
+        () => Choose(path));
+
+    // A confirmation before deleting a slot's file; on confirm, remove the file and rebuild the list in place.
+    private void ConfirmDelete(string path, string name) => Confirm(
+        "Delete save?",
+        $"Permanently delete {name}?",
+        "Delete",
+        () =>
+        {
+            if (FileAccess.FileExists(path))
+            {
+                DirAccess.RemoveAbsolute(path);
+            }
+            BuildSlots(); // refresh: the row becomes "empty" and loses its Delete button
+        });
+
+    // Shared modal yes/no confirmation (Godot ConfirmationDialog). Always-process so it works while the tree is paused
+    // behind the save dialog; frees itself on either choice. Cancel is a pure no-op.
+    private void Confirm(string title, string text, string okText, Action onConfirm)
+    {
+        var dialog = new ConfirmationDialog
+        {
+            Title = title,
+            DialogText = text,
+            OkButtonText = okText,
+            CancelButtonText = "Cancel",
+            Theme = ColonyTheme.Get(),
+        };
+        dialog.ProcessMode = ProcessModeEnum.Always;
+        dialog.Confirmed += () => { dialog.QueueFree(); onConfirm(); };
+        dialog.Canceled += () => dialog.QueueFree();
+        AddChild(dialog);
+        dialog.PopupCentered();
     }
 
     private void Choose(string path)

@@ -216,6 +216,31 @@ text = "Colourblind palette"
 [node name="ColorblindCheck" type="CheckButton" parent="Panel/VBox/ColorblindRow"]
 layout_mode = 2
 
+[node name="Sep4" type="HSeparator" parent="Panel/VBox"]
+layout_mode = 2
+
+[node name="GameHeader" type="Label" parent="Panel/VBox"]
+layout_mode = 2
+theme_type_variation = &"SectionHeader"
+text = "Game"
+
+[node name="AutosaveRow" type="HBoxContainer" parent="Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Label" type="Label" parent="Panel/VBox/AutosaveRow"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Autosave every N turns (0 = off)"
+
+[node name="AutosaveSpin" type="SpinBox" parent="Panel/VBox/AutosaveRow"]
+layout_mode = 2
+min_value = 0.0
+max_value = 100.0
+step = 1.0
+value = 1.0
+
 [node name="Spacer" type="Control" parent="Panel/VBox"]
 layout_mode = 2
 size_flags_vertical = 3

@@ -29,6 +29,7 @@ public partial class SettingsScreen : Control
     private HSlider _uiScale = null!;
     private Label _uiScaleValue = null!;
     private CheckButton _colorblind = null!;
+    private SpinBox _autosave = null!;
     private bool _populating;
 
     /// <summary>Builds the look, resolves the settings service, populates the controls, and wires them.</summary>
@@ -62,6 +63,9 @@ public partial class SettingsScreen : Control
         _uiScale.MaxValue = SettingsModel.MaxUiScale;
         _uiScaleValue = GetNode<Label>("Panel/VBox/UiScaleRow/UiScaleValue");
         _colorblind = GetNode<CheckButton>("Panel/VBox/ColorblindRow/ColorblindCheck");
+        _autosave = GetNode<SpinBox>("Panel/VBox/AutosaveRow/AutosaveSpin");
+        _autosave.MinValue = 0;
+        _autosave.MaxValue = SettingsModel.MaxAutosavePeriod;
 
         Populate(_service.Settings);
 
@@ -72,6 +76,7 @@ public partial class SettingsScreen : Control
         _sfx.ValueChanged += v => OnVolume(s => s.SfxVolume = (float)v, v, _sfxValue);
         _uiScale.ValueChanged += OnUiScale;
         _colorblind.Toggled += OnColorblind;
+        _autosave.ValueChanged += OnAutosavePeriod;
         GetNode<Button>("Panel/VBox/BackButton").Pressed += OnBack;
     }
 
@@ -89,6 +94,7 @@ public partial class SettingsScreen : Control
         _uiScale.Value = s.UiScale;
         _uiScaleValue.Text = Percent(s.UiScale);
         _colorblind.ButtonPressed = s.ColorblindMode;
+        _autosave.Value = s.AutosavePeriod;
         _populating = false;
     }
 
@@ -138,6 +144,17 @@ public partial class SettingsScreen : Control
         }
         _service.UpdateAndApply(s => s.ColorblindMode = on); // swaps the map palette via AccessibilityPalette
         QueueRedraw();
+    }
+
+    // The autosave period (turns; 0 = off). No engine effect to apply — it is read at turn end by the GameController —
+    // so we just store it on the live model (UpdateAndApply also clamps it); Back persists it like every other setting.
+    private void OnAutosavePeriod(double value)
+    {
+        if (_populating)
+        {
+            return;
+        }
+        _service.UpdateAndApply(s => s.AutosavePeriod = (int)value);
     }
 
     /// <summary>Persists the settings and asks the host to dismiss the screen (via the <see cref="Closed"/> signal).</summary>

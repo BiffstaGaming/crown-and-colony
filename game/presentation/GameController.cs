@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using CrownAndColony.GameLogic.App;
 using CrownAndColony.GameLogic.Audio;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Combat;
@@ -25,6 +26,13 @@ public partial class GameController : Node2D
 
     /// <summary>Directory holding the named save slots (created on first save). The save/load dialog reads it.</summary>
     public const string SavesDir = "user://saves";
+
+    /// <summary>
+    /// The autosave file (under <see cref="SavesDir"/>). Written automatically at the end of a player turn when the
+    /// <see cref="SettingsModel.AutosavePeriod"/> option is non-zero and the turn is a multiple of it. A <b>distinct</b>
+    /// slot the manual save dialog never overwrites, and which the load dialog lists as its own entry. (86d3f0vb8)
+    /// </summary>
+    public static string AutosavePath => $"{SavesDir}/autosave.json";
 
     /// <summary>
     /// Set by the main menu's Load Game before it switches to this scene: the save to load on boot instead of starting
@@ -498,6 +506,25 @@ public partial class GameController : Node2D
         else
         {
             _demandPanel.Hide();
+        }
+
+        MaybeAutosave();
+    }
+
+    /// <summary>
+    /// Writes the autosave at the end of a player turn when the <see cref="SettingsModel.AutosavePeriod"/> option is on
+    /// (non-zero) and the just-finished turn is a multiple of it — e.g. period 1 saves every turn, period 5 saves at
+    /// turns 5, 10, 15… It reuses the existing <see cref="SaveTo"/> path (no new save format) but targets the dedicated
+    /// <see cref="AutosavePath"/>, which the manual save slots never touch. Resolves the live setting from the
+    /// <c>/root/Settings</c> autoload; if it is absent (e.g. a bare test scene), autosaving is simply skipped.
+    /// FreeCol's <c>ClientOptions.AUTOSAVE_PERIOD</c>. (86d3f0vb8)
+    /// </summary>
+    private void MaybeAutosave()
+    {
+        int period = GetNodeOrNull<SettingsService>("/root/Settings")?.Settings.AutosavePeriod ?? 0;
+        if (period > 0 && _game.Turn % period == 0)
+        {
+            SaveTo(AutosavePath);
         }
     }
 

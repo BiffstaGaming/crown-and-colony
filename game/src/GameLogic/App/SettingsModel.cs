@@ -34,12 +34,16 @@ public sealed class SettingsModel
     private const string KeySfx = "sfx_volume";
     private const string KeyUiScale = "ui_scale";
     private const string KeyColorblind = "colorblind_mode";
+    private const string KeyAutosavePeriod = "autosave_period";
 
     /// <summary>Smallest allowed <see cref="UiScale"/> (75% — text/UI noticeably tighter but still legible).</summary>
     public const float MinUiScale = 0.75f;
 
     /// <summary>Largest allowed <see cref="UiScale"/> (200% — double-size UI for low-vision accessibility).</summary>
     public const float MaxUiScale = 2.0f;
+
+    /// <summary>Largest allowed <see cref="AutosavePeriod"/> (every 100 turns — a sane upper bound for the slider).</summary>
+    public const int MaxAutosavePeriod = 100;
 
     /// <summary>Window presentation mode. Default: <see cref="WindowMode.Windowed"/>.</summary>
     public WindowMode WindowMode { get; set; } = WindowMode.Windowed;
@@ -71,13 +75,21 @@ public sealed class SettingsModel
     /// </summary>
     public bool ColorblindMode { get; set; }
 
-    /// <summary>Forces every field into its valid range (volumes clamped to <c>[0,1]</c>, UI scale to its range, unknown enum reset to default).</summary>
+    /// <summary>
+    /// How often the game autosaves, in player turns: <c>N</c> means "write the autosave at the end of every
+    /// <c>N</c>th turn". <c>0</c> disables autosaving entirely. Clamped to <c>[0, <see cref="MaxAutosavePeriod"/>]</c>.
+    /// FreeCol's <c>ClientOptions.AUTOSAVE_PERIOD</c>. Default: 1 (autosave every turn).
+    /// </summary>
+    public int AutosavePeriod { get; set; } = 1;
+
+    /// <summary>Forces every field into its valid range (volumes clamped to <c>[0,1]</c>, UI scale to its range, autosave period to its range, unknown enum reset to default).</summary>
     public void Clamp()
     {
         MasterVolume = ClampUnit(MasterVolume);
         MusicVolume = ClampUnit(MusicVolume);
         SfxVolume = ClampUnit(SfxVolume);
         UiScale = float.IsNaN(UiScale) ? 1.0f : Math.Clamp(UiScale, MinUiScale, MaxUiScale);
+        AutosavePeriod = Math.Clamp(AutosavePeriod, 0, MaxAutosavePeriod);
         if (!Enum.IsDefined(typeof(WindowMode), WindowMode))
         {
             WindowMode = WindowMode.Windowed;
@@ -96,6 +108,7 @@ public sealed class SettingsModel
         [KeySfx] = SfxVolume.ToString("R", CultureInfo.InvariantCulture),
         [KeyUiScale] = UiScale.ToString("R", CultureInfo.InvariantCulture),
         [KeyColorblind] = ColorblindMode ? "true" : "false",
+        [KeyAutosavePeriod] = AutosavePeriod.ToString(CultureInfo.InvariantCulture),
     };
 
     /// <summary>
@@ -120,6 +133,11 @@ public sealed class SettingsModel
         if (data.TryGetValue(KeyColorblind, out string? cb))
         {
             m.ColorblindMode = cb.Equals("true", StringComparison.OrdinalIgnoreCase);
+        }
+        if (data.TryGetValue(KeyAutosavePeriod, out string? ap)
+            && int.TryParse(ap, NumberStyles.Integer, CultureInfo.InvariantCulture, out int period))
+        {
+            m.AutosavePeriod = period; // Clamp() below forces it into range
         }
         m.Clamp();
         return m;
