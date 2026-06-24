@@ -32,6 +32,14 @@ public sealed class SettingsModel
     private const string KeyMaster = "master_volume";
     private const string KeyMusic = "music_volume";
     private const string KeySfx = "sfx_volume";
+    private const string KeyUiScale = "ui_scale";
+    private const string KeyColorblind = "colorblind_mode";
+
+    /// <summary>Smallest allowed <see cref="UiScale"/> (75% — text/UI noticeably tighter but still legible).</summary>
+    public const float MinUiScale = 0.75f;
+
+    /// <summary>Largest allowed <see cref="UiScale"/> (200% — double-size UI for low-vision accessibility).</summary>
+    public const float MaxUiScale = 2.0f;
 
     /// <summary>Window presentation mode. Default: <see cref="WindowMode.Windowed"/>.</summary>
     public WindowMode WindowMode { get; set; } = WindowMode.Windowed;
@@ -48,12 +56,28 @@ public sealed class SettingsModel
     /// <summary>Sound-effects bus volume, linear <c>[0,1]</c>. Default: 0.8.</summary>
     public float SfxVolume { get; set; } = 0.8f;
 
-    /// <summary>Forces every field into its valid range (volumes clamped to <c>[0,1]</c>, unknown enum reset to default).</summary>
+    /// <summary>
+    /// UI scale factor applied to the whole interface (text + controls) via the engine's content-scale.
+    /// <c>1.0</c> = the design size; clamped to <c>[<see cref="MinUiScale"/>, <see cref="MaxUiScale"/>]</c>.
+    /// An accessibility option for small/large displays and low vision (FreeCol <c>DISPLAY_SCALING</c> /
+    /// <c>MAIN_FONT_SIZE</c>). Default: 1.0.
+    /// </summary>
+    public float UiScale { get; set; } = 1.0f;
+
+    /// <summary>
+    /// When on, player/nation map colours are drawn from a colourblind-friendly high-contrast palette
+    /// (the Okabe–Ito colour-universal set) instead of the default ruleset hues. An accessibility option;
+    /// no FreeCol equivalent. Default: off.
+    /// </summary>
+    public bool ColorblindMode { get; set; }
+
+    /// <summary>Forces every field into its valid range (volumes clamped to <c>[0,1]</c>, UI scale to its range, unknown enum reset to default).</summary>
     public void Clamp()
     {
         MasterVolume = ClampUnit(MasterVolume);
         MusicVolume = ClampUnit(MusicVolume);
         SfxVolume = ClampUnit(SfxVolume);
+        UiScale = float.IsNaN(UiScale) ? 1.0f : Math.Clamp(UiScale, MinUiScale, MaxUiScale);
         if (!Enum.IsDefined(typeof(WindowMode), WindowMode))
         {
             WindowMode = WindowMode.Windowed;
@@ -70,6 +94,8 @@ public sealed class SettingsModel
         [KeyMaster] = MasterVolume.ToString("R", CultureInfo.InvariantCulture),
         [KeyMusic] = MusicVolume.ToString("R", CultureInfo.InvariantCulture),
         [KeySfx] = SfxVolume.ToString("R", CultureInfo.InvariantCulture),
+        [KeyUiScale] = UiScale.ToString("R", CultureInfo.InvariantCulture),
+        [KeyColorblind] = ColorblindMode ? "true" : "false",
     };
 
     /// <summary>
@@ -90,11 +116,19 @@ public sealed class SettingsModel
         m.MasterVolume = ParseUnit(data, KeyMaster, m.MasterVolume);
         m.MusicVolume = ParseUnit(data, KeyMusic, m.MusicVolume);
         m.SfxVolume = ParseUnit(data, KeySfx, m.SfxVolume);
+        m.UiScale = ParseFloat(data, KeyUiScale, m.UiScale);
+        if (data.TryGetValue(KeyColorblind, out string? cb))
+        {
+            m.ColorblindMode = cb.Equals("true", StringComparison.OrdinalIgnoreCase);
+        }
         m.Clamp();
         return m;
     }
 
     private static float ParseUnit(IReadOnlyDictionary<string, string> data, string key, float fallback) =>
+        ParseFloat(data, key, fallback);
+
+    private static float ParseFloat(IReadOnlyDictionary<string, string> data, string key, float fallback) =>
         data.TryGetValue(key, out string? raw)
             && float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out float v)
             ? v

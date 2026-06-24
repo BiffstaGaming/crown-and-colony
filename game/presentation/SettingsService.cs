@@ -36,7 +36,10 @@ public partial class SettingsService : Node
         Apply();
     }
 
-    /// <summary>Pushes the current settings to the engine: window mode, vsync, and the Master/Music/SFX bus volumes.</summary>
+    /// <summary>
+    /// Pushes the current settings to the engine: window mode, vsync, the Master/Music/SFX bus volumes, the UI scale
+    /// (root content-scale factor — resizes the whole interface live), and the colourblind palette flag.
+    /// </summary>
     public void Apply()
     {
         DisplayServer.WindowSetMode(Settings.WindowMode == WindowMode.Fullscreen
@@ -48,6 +51,19 @@ public partial class SettingsService : Node
         SetBusVolume("Master", Settings.MasterVolume);
         SetBusVolume("Music", Settings.MusicVolume);
         SetBusVolume("SFX", Settings.SfxVolume);
+        ApplyUiScale(Settings.UiScale);
+        AccessibilityPalette.ColorblindMode = Settings.ColorblindMode;
+    }
+
+    // The root viewport's content-scale factor scales every Control under it (text + widgets) in one step, so a single
+    // setting resizes the whole UI live and on boot without rebuilding the theme. Guarded for headless/CI where there
+    // is no SceneTree window. See docs/systems/settings.md §3.
+    private void ApplyUiScale(float scale)
+    {
+        if (GetTree()?.Root is { } root)
+        {
+            root.ContentScaleFactor = scale;
+        }
     }
 
     /// <summary>Writes the current settings to <c>user://settings.cfg</c>.</summary>

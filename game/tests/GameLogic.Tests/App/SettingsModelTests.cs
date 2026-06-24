@@ -16,6 +16,8 @@ public class SettingsModelTests
         Assert.Equal(1.0f, m.MasterVolume);
         Assert.Equal(0.8f, m.MusicVolume);
         Assert.Equal(0.8f, m.SfxVolume);
+        Assert.Equal(1.0f, m.UiScale);     // accessibility: no scaling by default
+        Assert.False(m.ColorblindMode);    // accessibility: default ruleset palette
     }
 
     [Fact]
@@ -30,6 +32,20 @@ public class SettingsModelTests
         Assert.Equal(0.0f, m.SfxVolume);
     }
 
+    [Theory]
+    [InlineData(0.1f, SettingsModel.MinUiScale)]    // below range → floor
+    [InlineData(5.0f, SettingsModel.MaxUiScale)]    // above range → ceiling
+    [InlineData(float.NaN, 1.0f)]                   // NaN → default
+    [InlineData(1.25f, 1.25f)]                      // in range → unchanged
+    public void Clamp_ForcesUiScaleIntoRange(float input, float expected)
+    {
+        var m = new SettingsModel { UiScale = input };
+
+        m.Clamp();
+
+        Assert.Equal(expected, m.UiScale);
+    }
+
     [Fact]
     public void Dictionary_RoundTrip_PreservesEveryField()
     {
@@ -40,6 +56,8 @@ public class SettingsModelTests
             MasterVolume = 0.5f,
             MusicVolume = 0.25f,
             SfxVolume = 0.1f,
+            UiScale = 1.5f,
+            ColorblindMode = true,
         };
 
         SettingsModel restored = SettingsModel.FromDictionary(original.ToDictionary());
@@ -49,6 +67,8 @@ public class SettingsModelTests
         Assert.Equal(original.MasterVolume, restored.MasterVolume);
         Assert.Equal(original.MusicVolume, restored.MusicVolume);
         Assert.Equal(original.SfxVolume, restored.SfxVolume);
+        Assert.Equal(original.UiScale, restored.UiScale);
+        Assert.Equal(original.ColorblindMode, restored.ColorblindMode);
     }
 
     [Fact]
@@ -61,6 +81,8 @@ public class SettingsModelTests
         Assert.Equal(1.0f, m.MasterVolume);
         Assert.Equal(0.8f, m.MusicVolume);
         Assert.Equal(0.8f, m.SfxVolume);
+        Assert.Equal(1.0f, m.UiScale);
+        Assert.False(m.ColorblindMode);
     }
 
     [Fact]
@@ -73,6 +95,8 @@ public class SettingsModelTests
             ["master_volume"] = "lots",    // unparseable → default (1.0)
             ["music_volume"] = "9.0",      // out of range → clamped to 1.0
             ["sfx_volume"] = "-3",         // out of range → clamped to 0.0
+            ["ui_scale"] = "huge",         // unparseable → default (1.0)
+            ["colorblind_mode"] = "maybe", // not "true" → false
         });
 
         Assert.Equal(WindowMode.Windowed, m.WindowMode);
@@ -80,5 +104,18 @@ public class SettingsModelTests
         Assert.Equal(1.0f, m.MasterVolume);
         Assert.Equal(1.0f, m.MusicVolume);
         Assert.Equal(0.0f, m.SfxVolume);
+        Assert.Equal(1.0f, m.UiScale);
+        Assert.False(m.ColorblindMode);
+    }
+
+    [Fact]
+    public void FromDictionary_UiScaleOutOfRange_IsClamped()
+    {
+        SettingsModel m = SettingsModel.FromDictionary(new Dictionary<string, string>
+        {
+            ["ui_scale"] = "10.0", // above range → clamped to the ceiling
+        });
+
+        Assert.Equal(SettingsModel.MaxUiScale, m.UiScale);
     }
 }

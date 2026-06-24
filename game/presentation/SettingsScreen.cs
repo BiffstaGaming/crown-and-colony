@@ -26,6 +26,9 @@ public partial class SettingsScreen : Control
     private Label _masterValue = null!;
     private Label _musicValue = null!;
     private Label _sfxValue = null!;
+    private HSlider _uiScale = null!;
+    private Label _uiScaleValue = null!;
+    private CheckButton _colorblind = null!;
     private bool _populating;
 
     /// <summary>Builds the look, resolves the settings service, populates the controls, and wires them.</summary>
@@ -54,6 +57,11 @@ public partial class SettingsScreen : Control
         _masterValue = GetNode<Label>("Panel/VBox/MasterRow/MasterValue");
         _musicValue = GetNode<Label>("Panel/VBox/MusicRow/MusicValue");
         _sfxValue = GetNode<Label>("Panel/VBox/SfxRow/SfxValue");
+        _uiScale = GetNode<HSlider>("Panel/VBox/UiScaleRow/UiScaleSlider");
+        _uiScale.MinValue = SettingsModel.MinUiScale;
+        _uiScale.MaxValue = SettingsModel.MaxUiScale;
+        _uiScaleValue = GetNode<Label>("Panel/VBox/UiScaleRow/UiScaleValue");
+        _colorblind = GetNode<CheckButton>("Panel/VBox/ColorblindRow/ColorblindCheck");
 
         Populate(_service.Settings);
 
@@ -62,6 +70,8 @@ public partial class SettingsScreen : Control
         _master.ValueChanged += v => OnVolume(s => s.MasterVolume = (float)v, v, _masterValue);
         _music.ValueChanged += v => OnVolume(s => s.MusicVolume = (float)v, v, _musicValue);
         _sfx.ValueChanged += v => OnVolume(s => s.SfxVolume = (float)v, v, _sfxValue);
+        _uiScale.ValueChanged += OnUiScale;
+        _colorblind.Toggled += OnColorblind;
         GetNode<Button>("Panel/VBox/BackButton").Pressed += OnBack;
     }
 
@@ -76,6 +86,9 @@ public partial class SettingsScreen : Control
         _masterValue.Text = Percent(s.MasterVolume);
         _musicValue.Text = Percent(s.MusicVolume);
         _sfxValue.Text = Percent(s.SfxVolume);
+        _uiScale.Value = s.UiScale;
+        _uiScaleValue.Text = Percent(s.UiScale);
+        _colorblind.ButtonPressed = s.ColorblindMode;
         _populating = false;
     }
 
@@ -105,6 +118,26 @@ public partial class SettingsScreen : Control
             return;
         }
         _service.UpdateAndApply(set);
+    }
+
+    private void OnUiScale(double value)
+    {
+        _uiScaleValue.Text = Percent((float)value);
+        if (_populating)
+        {
+            return;
+        }
+        _service.UpdateAndApply(s => s.UiScale = (float)value); // applies the root content-scale live
+    }
+
+    private void OnColorblind(bool on)
+    {
+        if (_populating)
+        {
+            return;
+        }
+        _service.UpdateAndApply(s => s.ColorblindMode = on); // swaps the map palette via AccessibilityPalette
+        QueueRedraw();
     }
 
     /// <summary>Persists the settings and asks the host to dismiss the screen (via the <see cref="Closed"/> signal).</summary>

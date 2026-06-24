@@ -1535,15 +1535,15 @@ public partial class GameController : Node2D
     {
         if (unit.IsNative)
         {
-            return NativeUnitColor;
+            return AccessibilityPalette.Native(NativeUnitColor);
         }
         string? nationId = _game.Players.FirstOrDefault(p => p.PlayerId == unit.OwnerId)?.NationId;
         EuropeanNation? nation = nationId is null
             ? null
             : _game.Ruleset.EuropeanNations.FirstOrDefault(n => n.Id == nationId);
         return nation?.Color is { } hex
-            ? Color.FromString(NormalizeHex(hex), FallbackRivalColor)
-            : FallbackRivalColor;
+            ? AccessibilityPalette.RivalNation(nation.ShortName, Color.FromString(NormalizeHex(hex), FallbackRivalColor))
+            : AccessibilityPalette.RivalFallback(FallbackRivalColor);
     }
 
     /// <summary>Normalises a ruleset colour to Godot's canonical <c>#rrggbb</c> form (e.g. <c>0xff9d3c</c> → <c>#ff9d3c</c>); a parse miss still falls back via <see cref="Color.FromString"/>'s default.</summary>

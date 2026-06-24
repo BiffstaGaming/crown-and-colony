@@ -54,11 +54,20 @@ public partial class MiniMap : Control
 
     private static readonly Color FallbackTerrain = new(0.5f, 0.5f, 0.5f);
     private static readonly Color Border = new(0.75f, 0.66f, 0.45f); // parchment-ish frame
-    private static readonly Color OwnColonyDot = Colors.White;
-    private static readonly Color RivalColonyDot = new(0.95f, 0.45f, 0.20f);
-    private static readonly Color NativeDot = new(0.85f, 0.65f, 0.25f);
-    private static readonly Color OwnUnitDot = new(0.85f, 0.90f, 1.0f);
-    private static readonly Color RivalUnitDot = new(0.90f, 0.30f, 0.30f);
+
+    // Default entity-dot colours; the colourblind toggle swaps these via AccessibilityPalette (read on each redraw,
+    // so toggling the setting re-colours the minimap the next time it draws).
+    private static readonly Color DefaultOwnColonyDot = Colors.White;
+    private static readonly Color DefaultRivalColonyDot = new(0.95f, 0.45f, 0.20f);
+    private static readonly Color DefaultNativeDot = new(0.85f, 0.65f, 0.25f);
+    private static readonly Color DefaultOwnUnitDot = new(0.85f, 0.90f, 1.0f);
+    private static readonly Color DefaultRivalUnitDot = new(0.90f, 0.30f, 0.30f);
+
+    private static Color OwnColonyDot => AccessibilityPalette.Own(DefaultOwnColonyDot);
+    private static Color RivalColonyDot => AccessibilityPalette.Rival(DefaultRivalColonyDot);
+    private static Color NativeDot => AccessibilityPalette.Native(DefaultNativeDot);
+    private static Color OwnUnitDot => AccessibilityPalette.Own(DefaultOwnUnitDot);
+    private static Color RivalUnitDot => AccessibilityPalette.Rival(DefaultRivalUnitDot);
 
     private int _zoom = 2; // default ~4 px/tile
     private Game? _game;
