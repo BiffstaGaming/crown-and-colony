@@ -1296,6 +1296,28 @@ public class IndependenceTests
     }
 
     [Fact]
+    public void ColonialStrength_TotalsAPlayersLandAndNavalAttackPower()
+    {
+        // The Foreign-Affairs oracle (86d3f0wcg) reports a rival colonial power's combined land + naval attack power
+        // (FreeCol NationSummary.getMilitaryStrength/getNavalStrength). It must agree with the land/naval power
+        // yardsticks and grow as the power is armed.
+        (Game game, Player power, Colony colony) = AiRebellionReady();
+        (double landBefore, double navalBefore) = game.ColonialStrength(power);
+
+        // Arm a land unit (an armed king's regular carries land offence) and float a man-o-war on the coastal water.
+        Unit regular = game.SpawnUnit(game.Ruleset.Unit(KingsRegular), colony.Position, power.PlayerId);
+        regular.RoleId = InfantryRole;
+        Position water = colony.Position.Neighbours().First(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater);
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.manOWar"), water, power.PlayerId);
+
+        (double land, double naval) = game.ColonialStrength(power);
+        Assert.Equal(game.LandPowerOf(power), land, precision: 6);
+        Assert.Equal(game.NavalPowerOf(power), naval, precision: 6);
+        Assert.True(land > landBefore);   // the armed regular lifted land strength
+        Assert.True(naval > navalBefore); // the man-o-war lifted naval strength
+    }
+
+    [Fact]
     public void ShouldAiDeclareIndependence_IsFalse_UntilTheAiOutStrengthsTheRef()
     {
         (Game game, Player power, Colony colony) = AiRebellionReady();

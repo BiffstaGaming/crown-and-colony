@@ -4,7 +4,9 @@ using System.Reflection;
 using System.Threading.Tasks;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
+using CrownAndColony.GameLogic.World;
 using CrownAndColony.Presentation;
 using GdUnit4;
 using Godot;
@@ -117,6 +119,66 @@ public class ColonyReportPanelTests
         AssertThat(title.Text).IsEqual("Religion");
         AssertThat(dynamic.GetNodeOrNull("ReligionImmigration")).IsNotNull(); // the immigration bar always renders
     }
+
+    [TestCase]
+    public async Task ForeignTab_ShowsEachRivalsMilitaryAndNavalStrength()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Foreign").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Foreign affairs");
+        // A fresh game has landed rival powers; each Foreign_{id} row carries the unconditional military + naval
+        // strength figures (FreeCol NationSummary.getMilitaryStrength/getNavalStrength via Game.ColonialStrength).
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        Game game = GetGame(controller);
+        Player rival = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        var row = dynamic.GetNodeOrNull<Label>($"Foreign_{rival.PlayerId}");
+        AssertThat(row).IsNotNull();
+        AssertThat(row!.Text).Contains("military");
+        AssertThat(row.Text).Contains("naval");
+    }
+
+    [TestCase]
+    public async Task NativesTab_GroupsDiscoveredSettlementsByNation_WithMostHatedColumn()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // Mark every native settlement's tile explored via the public save layer (the scene-test assembly can't reach
+        // GameLogic's internal fog), so the grouped advisor has at least one discovered nation to render (a fresh
+        // game's opening reveal may not uncover one).
+        Game game = GetGame(controller);
+        SaveGame save = SaveGame.From(game);
+        var explored = game.NativeSettlements.Select(s => s.Position.Y * save.MapWidth + s.Position.X).ToList();
+        var players = save.Players!.Select(p => p.IsHuman ? p with { Explored = explored } : p).ToList();
+        game = (save with { Players = players }).Restore(game.Ruleset);
+        SetGame(controller, game);
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Natives").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Native nations");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        NativeSettlement settlement = game.NativeSettlements.First(s => game.IsExplored(s.Position));
+        // The owning nation's grouped header renders, and the settlement's row carries the most-hated column.
+        var nationHeader = dynamic.GetNodeOrNull<Label>($"NativeNation_{Strip(settlement.NationTypeId)}");
+        AssertThat(nationHeader).IsNotNull();
+        AssertThat(nationHeader!.Text).Contains("tension"); // tribe-wide tension band + stance
+        var row = dynamic.GetNodeOrNull<Label>($"Native_{settlement.Position.X}_{settlement.Position.Y}");
+        AssertThat(row).IsNotNull();
+        AssertThat(row!.Text).Contains("most hated");
+    }
+
+    private static string Strip(string id) => id[(id.LastIndexOf('.') + 1)..];
 
     [TestCase]
     public async Task TradeTab_ListsTradeableGoodsWithPricesAndVolume()

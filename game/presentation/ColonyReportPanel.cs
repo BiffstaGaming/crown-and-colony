@@ -38,8 +38,17 @@ namespace CrownAndColony.Presentation;
 /// <item><b>Military</b> (`86d3e4buh` — FreeCol's ReportMilitaryPanel): the human's land/naval unit counts and combined
 /// land attack power (<see cref="Game.HumanMilitaryStrength"/>) shown beside the Royal Expeditionary Force the King
 /// would send (<see cref="Game.ExpeditionaryForceStrength"/>) — the strength comparison ahead of independence.</item>
-/// <item><b>Foreign</b> / <b>Natives</b> / <b>Religion</b> (`86d3c9x3c`): rival-power and discovered-settlement
-/// summaries, plus (Religion) the crosses-to-immigration bar and the per-colony church/cathedral cross producers.</item>
+/// <item><b>Foreign</b> (`86d3c9x3c` / `86d3f0wcg` — FreeCol's ReportForeignAffairPanel): one row per rival colonial
+/// power with its stance, colony/unit counts, gold, and — shown unconditionally, like FreeCol's
+/// <see cref="NationSummary"/> — its combined land + naval attack strength (<see cref="Game.ColonialStrength"/>); SoL%,
+/// tax and father count stay hidden (FreeCol's de-Witt gating, which we omit).</item>
+/// <item><b>Natives</b> (`86d3c9x3c` / `86d3f0wav` — FreeCol's ReportIndianPanel): the discovered settlements grouped
+/// under their owning native NATION, each nation a header (name + settlement count + the tribe-wide tension band/stance
+/// toward the human) over its settlement rows; each settlement shows its alarm, the colonial nation it
+/// <b>most hates</b> (<see cref="Natives.NativeSettlement.MostHated"/>) or "—", its teachable skill, mission and
+/// wanted goods.</item>
+/// <item><b>Religion</b> (`86d3c9x3c`): the crosses-to-immigration bar and the per-colony church/cathedral cross
+/// producers.</item>
 /// <item><b>Trade</b> (`86d3e4buh` — FreeCol's ReportTradePanel): every tradeable good's current sell (bid) / buy (ask)
 /// price, plus its cumulative <b>net units sold</b> and <b>income before & after tax</b> (B4's market trade counters —
 /// <see cref="Trade.Market.SalesOf"/> / <see cref="Trade.Market.IncomeBeforeTaxesOf"/> /
@@ -574,17 +583,21 @@ public partial class ColonyReportPanel : PanelContainer
             return;
         }
 
-        // FreeCol's NationSummary shows a rival's stance, #colonies, #units and gold to everyone; SoL%, father
-        // count and tax% stay hidden without the De Witt ability (which we omit faithfully).
+        // FreeCol's NationSummary shows a rival's stance, #colonies, #units, military + naval strength and gold to
+        // everyone unconditionally; SoL%, father count and tax% stay hidden without the De Witt ability (which we omit
+        // faithfully). Strength is the combined land / naval attack power (Game.ColonialStrength → FreeCol
+        // NationSummary.getMilitaryStrength/getNavalStrength), rounded to a whole figure for the row.
         foreach (Player p in powers)
         {
             Stance stance = _game.StanceBetween((int)human, p.PlayerId);
             int colonies = _game.Colonies.Count(c => c.OwnerId == p.PlayerId);
             int units = _game.Units.Count(u => u.OwnerId == p.PlayerId);
+            (double landPower, double navalPower) = _game.ColonialStrength(p);
             dynamic.AddChild(new Label
             {
                 Name = $"Foreign_{p.PlayerId}",
-                Text = $"{Strip(p.NationId)} — {stance}, {colonies} colonies, {units} units, {p.Gold} gold",
+                Text = $"{Strip(p.NationId)} — {stance}, {colonies} colonies, {units} units  ·  " +
+                       $"military {landPower:0.#}, naval {navalPower:0.#}  ·  {p.Gold} gold",
             });
         }
     }
@@ -593,32 +606,78 @@ public partial class ColonyReportPanel : PanelContainer
 
     private void BuildNatives(VBoxContainer dynamic)
     {
-        var settlements = _game.NativeSettlements
+        // FreeCol's ReportIndianPanel (the Native Affairs Advisor) groups the discovered settlements under their owning
+        // native NATION: a per-nation header (nation name + settlement count + the tribe-wide tension/stance toward the
+        // human) over one row per settlement, each showing the colonial nation it most hates (FreeCol getMostHated).
+        // We read settlements + Game.NativeSettlements (ADR-006) and resolve MostHated (NativeSettlement.MostHated, an
+        // int? player id Game recomputes every turn) to that rival's nation via Game.Players.
+        List<NativeSettlement> discovered = _game.NativeSettlements
             .Where(s => _game.IsExplored(s.Position))
-            .OrderBy(s => s.NationTypeId, System.StringComparer.Ordinal)
-            .ThenBy(s => s.Position.Y).ThenBy(s => s.Position.X)
             .ToList();
-        if (settlements.Count == 0)
+        if (discovered.Count == 0)
         {
             dynamic.AddChild(new Label { Text = "No native settlements discovered yet.", HorizontalAlignment = HorizontalAlignment.Center });
             return;
         }
 
-        foreach (NativeSettlement s in settlements)
+        foreach (IGrouping<string, NativeSettlement> nation in discovered
+            .GroupBy(s => s.NationTypeId)
+            .OrderBy(g => g.Key, System.StringComparer.Ordinal))
         {
-            string capital = s.IsCapital ? "★" : "";
-            string skill = s.LearnableSkill is { } sk ? Strip(sk) : "none";
-            string mission = s.HasMission ? "  ·  mission" : "";
-            string wanted = s.WantedGoods.Count > 0
-                ? "  ·  wants " + string.Join(", ", s.WantedGoods.Select(Strip))
-                : "";
+            // Tribe-wide tension toward the human (channel 0): the worst (most alarmed) band across the nation's
+            // discovered settlements — our per-settlement-alarm model has no nation-level tension scalar, so the
+            // advisor reports the angriest known settlement's band (and a stance derived from it; natives don't carry a
+            // colonial stance in this model). Settlement "known/total" is approximated by the discovered count (FreeCol
+            // reads NationSummary.getNumberOfSettlements; we have no such summary, so total == discovered here).
+            List<NativeSettlement> nationSettlements = nation
+                .OrderByDescending(s => s.IsCapital) // FreeCol lists the capital first
+                .ThenBy(s => s.Position.Y).ThenBy(s => s.Position.X)
+                .ToList();
+            AlarmLevel tribeAlarm = nationSettlements.Max(s => s.AlarmLevel);
             dynamic.AddChild(new Label
             {
-                Name = $"Native_{s.Position.X}_{s.Position.Y}",
-                Text = $"{Strip(s.NationTypeId)}{capital} ({s.Position.X},{s.Position.Y}) — alarm {s.AlarmLevel}, teaches {skill}{mission}{wanted}",
+                Name = $"NativeNation_{Strip(nation.Key)}",
+                Text = $"{Display(Strip(nation.Key))} — {nationSettlements.Count} settlement(s)  ·  " +
+                       $"tension {tribeAlarm} ({TribeStance(tribeAlarm)})",
             });
+
+            foreach (NativeSettlement s in nationSettlements)
+            {
+                string capital = s.IsCapital ? "★" : "";
+                string skill = s.LearnableSkill is { } sk ? Strip(sk) : "none";
+                string mission = s.HasMission ? "  ·  mission" : "";
+                string wanted = s.WantedGoods.Count > 0
+                    ? "  ·  wants " + string.Join(", ", s.WantedGoods.Select(Strip))
+                    : "";
+                dynamic.AddChild(new Label
+                {
+                    Name = $"Native_{s.Position.X}_{s.Position.Y}",
+                    Text = $"    {Strip(s.NationTypeId)}{capital} ({s.Position.X},{s.Position.Y}) — alarm {s.AlarmLevel}, " +
+                           $"most hated {MostHatedNation(s)}, teaches {skill}{mission}{wanted}",
+                });
+            }
+            dynamic.AddChild(new HSeparator());
         }
     }
+
+    /// <summary>The colonial nation a settlement most hates (FreeCol <c>getMostHated</c>), resolved to a readable nation name, or "—" when none.</summary>
+    private string MostHatedNation(NativeSettlement settlement)
+    {
+        if (settlement.MostHated is not { } hatedId)
+        {
+            return "—";
+        }
+        Player? hated = _game.Players.FirstOrDefault(p => p.PlayerId == hatedId);
+        return hated?.NationId is { } nationId ? Strip(nationId) : "—";
+    }
+
+    /// <summary>A presentation-derived tribe stance from its worst alarm band (our natives carry no colonial stance): hateful → at war, displeased/angry → uneasy, else at peace.</summary>
+    private static string TribeStance(AlarmLevel alarm) => alarm switch
+    {
+        AlarmLevel.Hateful => "at war",
+        AlarmLevel.Angry or AlarmLevel.Displeased => "uneasy",
+        _ => "at peace",
+    };
 
     // ── Religion tab (FreeCol ReportReligiousPanel: the immigration bar + per-church cross producers) ─────
 

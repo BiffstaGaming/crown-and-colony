@@ -750,6 +750,27 @@ public sealed partial class Game
         _units.Where(u => u.OwnerId == player.PlayerId && !u.IsNative && !u.Type.IsNaval).Sum(OffenceBase);
 
     /// <summary>
+    /// The combined attack power of a player's <b>naval</b> units (the sea counterpart of <see cref="LandPowerOf"/>;
+    /// FreeCol <c>Player.calculateStrength(true)</c>). Counts every owned ship regardless of location, summing each
+    /// hull's <see cref="OffenceBase"/>.
+    /// </summary>
+    internal double NavalPowerOf(Player player) =>
+        _units.Where(u => u.OwnerId == player.PlayerId && !u.IsNative && u.Type.IsNaval).Sum(OffenceBase);
+
+    /// <summary>
+    /// A colonial player's military strength for the Foreign-Affairs report (a read-only oracle, ADR-006): its combined
+    /// land attack power (<see cref="LandPowerOf"/>) and naval attack power (<see cref="NavalPowerOf"/>), mirroring
+    /// FreeCol's <c>NationSummary.getMilitaryStrength</c> / <c>getNavalStrength</c> (<c>Player.calculateStrength</c>).
+    /// FreeCol surfaces these two figures for every rival unconditionally — unlike the De-Witt-gated SoL/tax/father
+    /// columns — so the presentation can show a rival's force without revealing its internal politics. RNG-free; never
+    /// mutates.
+    /// </summary>
+    /// <param name="player">The colonial player whose forces to total (typically a foreign power).</param>
+    /// <returns>The player's combined land attack power and naval attack power.</returns>
+    public (double LandPower, double NavalPower) ColonialStrength(Player player) =>
+        (LandPowerOf(player), NavalPowerOf(player));
+
+    /// <summary>
     /// The human's military strength for the Military report (a read-only oracle, ADR-006): the combined land attack
     /// power of every owned land unit (<see cref="LandPowerOf"/>, the War-of-Independence yardstick), plus a count of
     /// the player's land and naval units. The presentation surfaces these next to the King's
