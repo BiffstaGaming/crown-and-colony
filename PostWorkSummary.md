@@ -19,6 +19,15 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-25 — Fix: Europe ships spawning far from colonies ✅
+
+**Requested (Chris, playtesting):** new ships from Europe appear WAY too far from existing colonies.
+**Did:** root-caused (confirmed) it was the **spawn site**, not the arrival path — `BuyUnit` parked a bought ship at `EuropeEntryTile()` (the first high-seas tile in row-major order = top-left / `(0,0)`), and `AdvanceSailing` just preserves `Position` on arrival. New `EuropeEntryTileFor(player)` spawns a Europe-acquired naval unit on the high-seas tile **nearest the player's territory** (anchor: first colony by id → else first on-map unit → else the default), Chebyshev-nearest with a stable tie-break (RNG-free, ADR-009). Applied to `BuyUnit` **and** `SpawnInEurope` (the King's naval-support man-o-war had the same bug, worse — `(0,0)`). Returning ships keep their real departure tile (arrival path untouched).
+**Status:** Pushed `…b8fa976`. **CI run 28131882287 = GREEN both jobs.** Build + 2212 L1/L2 + 5 soak (the 1 full-suite "fail" was the known `TurnProcessing` perf-gate load flake — passes isolated 1/1). **No save bump** (derived at purchase; `Position` already persists). L2 test: a bought caravel lands adjacent to the colony, not the corner.
+**Decisions:** Derive the entry (no new persisted field). Mirrors FreeCol `Unit.getFullEntryLocation`→`Player.getEntryTile`.
+**Follow-up:** the `TurnProcessing` perf-gate test flakes under full-suite parallel load (passes isolated/in the soak filter) — has cost integration time repeatedly; worth hardening (bump budget headroom or exclude Soak from the parallel L1/L2 pass).
+**Needs you:** Keep playtesting. Queued: drag-drop, P1/P2 (train/missionary/first-contact), L3-coverage, golden-pipeline.
+
 ## 2026-06-25 — 6 playtest issues: 5 fixed + CI-green, 1 deferred ✅
 
 **Requested (Chris, playtesting):** tax too fast; Expert Lumberjack looks like a free colonist / "no bonus"; want full production visibility; show colonists in buildings not a count; drag-drop in colony; diamond tile-clicks wonky.
