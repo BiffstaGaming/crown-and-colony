@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-25 — Cargo-transport UI gaps closed (playtest found B3 shipped engine-only) ✅
+
+**Requested (Chris, playtesting):** "how do I load cargo onto a ship from a colony?" → found you CAN'T, and trade routes can't target Europe in the UI — despite B3 being marked Shipped. **Own it:** B3 (`86d3e4bcp`) shipped the Europe-stop ENGINE + a unit test + CI-green, but never wired the panel UI — a player-unreachable "done", exactly the front-door gap Phase B was meant to close. CI-green ≠ playable.
+**Did (2 disjoint UI streams over existing engine, L3 verified locally THEN CI-green):**
+- **Europe trade-route stop in the panel** (`a0944dd`, task `86d3f5yhr`): the "To" dropdown offers Europe (+ load-at-Europe goods), `DescribeStops` shows "Europe", 1-colony empires can build a colony→Europe sell run. New L3 test builds the route **through the panel**.
+- **Manual colony↔carrier cargo UI** (`8a89f07`, task `86d3f5y8r`): a Cargo section in the colony screen — docked carriers + hold occupancy + Load picker / Unload buttons → `GameController.LoadColonyCargo/UnloadColonyCargo` over the existing `LoadFromColony/UnloadToColony`, guard failures shown in the status bar. New L3 test (load/unload/refusals).
+**Status:** Pushed `…73893fe`. **CI run 28126336277 = GREEN both jobs** (verified, not inferred). Local build + 2194 L1/L2 + 5 soak + **full L3 178/178**. UI-only, no save change.
+**Decisions:** disjoint streams (TradeRoutePanel vs ColonyPanel); each agent ran its L3 panel test locally proving the PLAYER flow (not just the engine) — the lesson from B3.
+**Scheduled next:** **Playability sweep** — audit every "done" player-facing feature for actual UI reachability + a scene test that exercises the player flow (negotiation table, treasure-galleon cash-in, trade/report tabs, custom-house option, etc.), to find any other engine-done-UI-missing gaps before Chris does. File tasks for what's found.
+**Needs you:** Nothing blocking — sweep underway.
+
 ## 2026-06-24 — P7 WAVE 3 shipped + 🏁 P7 code/UX COMPLETE (CI green, verified)
 
 **Requested:** Work through the P7 items via parallel streams.
