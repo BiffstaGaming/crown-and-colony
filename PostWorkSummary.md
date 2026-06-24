@@ -19,6 +19,18 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-24 — P7 WAVE 2 integrated + CI L3/L4 repaired — 🟢 CI fully green (first time since wave 4)
+
+**Requested:** Work through the P7 items via parallel streams.
+**Did (P7 wave 2 — 3 disjoint streams):** autosave + save-slot UX (`056929b`), release scaffolding — 3 export presets + release.yml + original icon (`57bce94`), in-game help/tutorial panel (`cc9693b`). No save-format bump.
+**Caught + fixed a real process gap:** discovered **CI's "L3: Godot interaction tests" job had been RED since wave 4** while I'd been reporting "CI-green" from the local build+L1/L2+soak gate (which is genuinely green but does NOT cover the L3/L4 Godot job). The worktree agents couldn't run L3 in their sandboxes either, so scene tests went unverified until CI ran them. Saved as a standing rule ([[verify-ci-l3-not-just-local]]).
+  - **4 functional L3 bugs fixed** (`26549cb`): root cause = **GdUnit4 5.0.0 delivers every simulated input twice in one frame** (disproved my EndTurnButton-focus theory; confirmed by decompiling its SceneRunner) → broke non-idempotent Enter/F1. Fix = a same-frame keycode dedup (`IsDuplicateKeyDown`, harmless in real use). Plus test-only fixes for the right-click cursor + DeclarationPanel's C3 land-claim tile selection.
+  - **L4 goldens fixed** (`d5fb9f6`): the committed goldens must be **CI-Linux renders**, not Windows-dev renders (raster diff > tolerance). Adopted CI run 28088688704's actual renders for colony-seed424242 / info-popup / main-menu / pause-menu; dropped the baseline-less help-panel golden (functional coverage remains; follow-up `86d3f1y8j`).
+**Status:** Pushed `…d5fb9f6`. **CI run 28088688704 = GREEN on BOTH jobs** (L1+L2 + L3/L4). Local: build + 2178 L1/L2 + 5 soak + full L3 166/166 functional. Save v58 (no bump).
+**Shipped:** autosave, save-slot, icon, tutorial. **In Review:** the 3 export/release tasks (config + workflow + CI green; the actual tagged-release binary verification is your machine action). **Follow-ups:** help-panel golden (`86d3f1y8j`).
+**Scheduled next:** **P7 wave 3 — message-log filtering + persistence, keybinding-remap screen** (the contention-heavy remainder). Then only the trademark search (your action) remains.
+**Needs you:** Run a `vX.Y.Z` tag (or the manual release workflow) on a templates-equipped machine to verify the export binaries; the trademark search before any public release.
+
 ## 2026-06-23 — P7 coding WAVE 1 shipped (5 disjoint streams, 13 tasks) ✅
 
 **Requested:** Work through the P7 items via parallel streams to reduce testing.
