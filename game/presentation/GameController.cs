@@ -637,60 +637,41 @@ public partial class GameController : Node2D
     }
 
     /// <summary>
-    /// The single authoritative table of in-game keyboard shortcuts (`86d3f0vjg`). Both the <see cref="_UnhandledInput"/>
-    /// dispatch <b>and</b> the F1 keys legend are generated from this one list, so a key and its on-screen description
-    /// can never drift apart. Each row pairs a <see cref="KeyChord"/> (keycode + required Ctrl modifier) with the action
-    /// it fires and a short human label. Presentation-only (ADR-006): every action forwards to a command/oracle method.
-    /// Mirrors FreeCol's accelerator-driven menu actions (e.g. DisbandUnitAction=D, EndTurn=ENTER, Save=Ctrl+S,
-    /// Open=Ctrl+O, SkipUnitAction=SPACE, CenterAction=Ctrl+C).
+    /// The single authoritative table of in-game keyboard shortcuts (`86d3f0vjg`; named-action migration `86d3f0wjj`).
+    /// Both the <see cref="_UnhandledInput"/> dispatch <b>and</b> the F1 keys legend are generated from this one list,
+    /// so a key and its on-screen description can never drift apart. Each row pairs a named <c>InputMap</c> action id
+    /// (defined in <c>project.godot</c> <c>[input]</c>, defaults matching the historical keys; rebindable via the
+    /// settings key-bindings screen) with the action it fires and a short human label. Presentation-only (ADR-006):
+    /// every action forwards to a command/oracle method. Mirrors FreeCol's accelerator-driven menu actions (e.g.
+    /// DisbandUnitAction=D, EndTurn=ENTER, Save=Ctrl+S, Open=Ctrl+O, SkipUnitAction=SPACE, CenterAction=Ctrl+C).
     /// </summary>
     private IReadOnlyList<KeyBinding> KeyBindings => _keyBindings ??= BuildKeyBindings();
 
     private IReadOnlyList<KeyBinding>? _keyBindings;
 
-    /// <summary>A keycode plus whether Ctrl must be held — the match key for a <see cref="KeyBinding"/>.</summary>
-    private readonly record struct KeyChord(Key Code, bool Ctrl)
-    {
-        /// <summary>Whether a key event matches this chord exactly (keycode + Ctrl state; Alt/Shift/Meta must be clear).</summary>
-        public bool Matches(InputEventKey e) =>
-            e.Keycode == Code && e.CtrlPressed == Ctrl && !e.AltPressed && !e.ShiftPressed && !e.MetaPressed;
+    /// <summary>One row of the authoritative key table: the named <c>InputMap</c> action id that triggers it, the method it fires, and a legend label.</summary>
+    private sealed record KeyBinding(string ActionId, System.Action Action, string Label);
 
-        /// <summary>The display string for the chord (e.g. "Ctrl+S", "Enter", "Space").</summary>
-        public override string ToString()
-        {
-            string name = Code switch
-            {
-                Key.Enter or Key.KpEnter => "Enter",
-                Key.Space => "Space",
-                _ => Code.ToString(),
-            };
-            return Ctrl ? $"Ctrl+{name}" : name;
-        }
-    }
-
-    /// <summary>One row of the authoritative key table: the chord(s) that trigger it, the action, and a legend label.</summary>
-    private sealed record KeyBinding(KeyChord[] Chords, System.Action Action, string Label);
-
-    /// <summary>Builds the authoritative key table (single source for dispatch + legend). Lambdas capture <c>this</c>.</summary>
+    /// <summary>Builds the authoritative key table (single source for dispatch + legend). Action ids match the <c>project.godot</c> <c>[input]</c> actions; lambdas/method groups capture <c>this</c>.</summary>
     private KeyBinding[] BuildKeyBindings() =>
     [
-        new([new(Key.Enter, false), new(Key.KpEnter, false)], OnEndTurnPressed, "End turn"),
-        new([new(Key.Space, false)], SkipSelectedUnit, "Skip unit (this turn)"),
-        new([new(Key.W, false)], SelectNextUnitToMove, "Next unit needing orders"),
-        new([new(Key.G, false)], EnterGotoMode, "Go to (set destination)"),
-        new([new(Key.B, false)], FoundColony, "Build colony"),
-        new([new(Key.D, false)], DisbandSelectedUnit, "Disband unit"),
-        new([new(Key.E, false)], OpenEuropePanel, "Europe"),
-        new([new(Key.L, false)], OpenFindSettlementPanel, "Find settlement"),
-        new([new(Key.F, false)], OpenFoundingFatherPanel, "Founding fathers"),
-        new([new(Key.C, false)], OpenColopediaPanel, "Colopedia"),
-        new([new(Key.C, true)], CenterOnSelectedUnit, "Centre on unit"),
-        new([new(Key.N, false)], NewGame, "New map"),
-        new([new(Key.S, true)], OpenSaveDialog, "Save game"),
-        new([new(Key.O, true)], OpenLoadDialog, "Load game"),
-        new([new(Key.F5, false)], QuickSave, "Quick save"),
-        new([new(Key.F9, false)], QuickLoad, "Quick load"),
-        new([new(Key.F1, false)], ToggleKeysLegend, "Toggle this legend"),
+        new("end_turn", OnEndTurnPressed, "End turn"),
+        new("skip_unit", SkipSelectedUnit, "Skip unit (this turn)"),
+        new("next_unit", SelectNextUnitToMove, "Next unit needing orders"),
+        new("goto_mode", EnterGotoMode, "Go to (set destination)"),
+        new("build_colony", FoundColony, "Build colony"),
+        new("disband_unit", DisbandSelectedUnit, "Disband unit"),
+        new("open_europe", OpenEuropePanel, "Europe"),
+        new("find_settlement", OpenFindSettlementPanel, "Find settlement"),
+        new("founding_fathers", OpenFoundingFatherPanel, "Founding fathers"),
+        new("colopedia", OpenColopediaPanel, "Colopedia"),
+        new("center_unit", CenterOnSelectedUnit, "Centre on unit"),
+        new("new_map", NewGame, "New map"),
+        new("save_game", OpenSaveDialog, "Save game"),
+        new("load_game", OpenLoadDialog, "Load game"),
+        new("quick_save", QuickSave, "Quick save"),
+        new("quick_load", QuickLoad, "Quick load"),
+        new("toggle_legend", ToggleKeysLegend, "Toggle this legend"),
     ];
 
     public override void _UnhandledInput(InputEvent @event)
@@ -711,11 +692,14 @@ public partial class GameController : Node2D
                 {
                     break; // a single press already dispatched this frame — never fire its action twice (see IsDuplicateKeyDown)
                 }
-                // Dispatch through the authoritative key table — a key fires its bound action unless a modal/text field
-                // owns focus (so typing into a save-slot/search field never triggers a hotkey). 86d3f0vjg.
+                // Dispatch through the authoritative key table by named InputMap action (rebindable; defined in
+                // project.godot [input]). A key fires its bound action unless a modal/text field owns focus (so typing
+                // into a save-slot/search field never triggers a hotkey). 86d3f0vjg / 86d3f0wjj.
                 foreach (KeyBinding binding in KeyBindings)
                 {
-                    if (System.Array.Exists(binding.Chords, c => c.Matches(key)))
+                    // exactMatch:true so a plain-key action does not fire while Ctrl is held (and vice-versa) —
+                    // preserves the old KeyChord.Matches modifier discipline (e.g. C vs Ctrl+C).
+                    if (@event.IsActionPressed(binding.ActionId, exactMatch: true))
                     {
                         binding.Action();
                         GetViewport().SetInputAsHandled();
@@ -734,7 +718,7 @@ public partial class GameController : Node2D
     private bool IsTextInputFocused() => GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit;
 
     /// <summary>The (keycode + Ctrl) of the last non-echo key-down dispatched, and the process-frame it fired on — for same-frame de-duplication.</summary>
-    private KeyChord _lastKeyDown;
+    private (Key Code, bool Ctrl) _lastKeyDown;
     private bool _hasLastKeyDown;
     private ulong _lastKeyDownFrame = ulong.MaxValue;
 
@@ -746,11 +730,12 @@ public partial class GameController : Node2D
     /// a turn-advancing key (Enter) would advance twice and a toggle (F1) would flip back to its start. Collapsing an
     /// identical same-frame key-down to one keeps real single-press behaviour intact (genuine key repeats arrive as
     /// <c>Echo</c> events, already filtered, and a deliberate second press lands on a later frame). The frame stamp uses
-    /// <see cref="Engine.GetProcessFrames"/>, which the runner advances between simulated presses.
+    /// <see cref="Engine.GetProcessFrames"/>, which the runner advances between simulated presses. Keyed on the raw
+    /// keycode + Ctrl (not the rebindable action id) so the guard is independent of any remap.
     /// </summary>
     private bool IsDuplicateKeyDown(InputEventKey key)
     {
-        var chord = new KeyChord(key.Keycode, key.CtrlPressed);
+        var chord = (key.Keycode, key.CtrlPressed);
         ulong frame = Engine.GetProcessFrames();
         bool duplicate = _hasLastKeyDown && _lastKeyDownFrame == frame && _lastKeyDown == chord;
         _lastKeyDown = chord;
@@ -850,28 +835,58 @@ public partial class GameController : Node2D
     /// <summary>Opens the save/load dialog in load mode via the pause-menu path (Ctrl+O, FreeCol's Open — 86d3f0vjg).</summary>
     private void OpenLoadDialog() => GetNode<PauseMenu>("UI/PauseMenu").OpenLoad();
 
-    /// <summary>Toggles the F1 keys legend overlay — the on-screen list generated from the authoritative key table (86d3f0vjg).</summary>
+    /// <summary>
+    /// Toggles the F1 keys legend overlay — the on-screen list generated from the authoritative key table (86d3f0vjg).
+    /// The legend text is rebuilt each time it is shown so it reflects the <b>current</b> (possibly rebound) keys; it can
+    /// never drift from what the dispatch actually fires because both read the same <c>InputMap</c> actions (86d3f0wjj).
+    /// </summary>
     private void ToggleKeysLegend()
     {
-        _keysLegend ??= BuildKeysLegend();
+        _keysLegend ??= CreateKeysLegendLabel();
+        if (!_keysLegend.Visible)
+        {
+            _keysLegend.Text = BuildKeysLegendText(); // refresh from the live InputMap so a rebind shows immediately
+        }
         _keysLegend.Visible = !_keysLegend.Visible;
     }
 
-    /// <summary>Builds the F1 keys-legend label from the single authoritative <see cref="KeyBindings"/> table (so it can't drift from the switch).</summary>
-    private Label BuildKeysLegend()
+    /// <summary>Creates (once) the F1 keys-legend label node, anchored on the right of the screen; the text is filled by <see cref="BuildKeysLegendText"/>.</summary>
+    private Label CreateKeysLegendLabel()
     {
-        var label = new Label
-        {
-            Name = "KeysLegend",
-            Visible = false,
-            Text = "Keys\n" + string.Join("\n", KeyBindings.Select(b =>
-                $"  {string.Join(" / ", b.Chords.Select(c => c.ToString()))}  —  {b.Label}")),
-        };
+        var label = new Label { Name = "KeysLegend", Visible = false, Text = BuildKeysLegendText() };
         label.SetAnchorsPreset(Control.LayoutPreset.CenterRight);
         label.OffsetLeft = -280f;
         label.OffsetTop = 60f;
         GetNode<CanvasLayer>("UI").AddChild(label);
         return label;
+    }
+
+    /// <summary>
+    /// Builds the F1 keys-legend text from the single authoritative <see cref="KeyBindings"/> table, reading each
+    /// action's <b>current</b> key combination(s) live from the global <c>InputMap</c> (via <see cref="KeyChordsFor"/>)
+    /// — so the legend always shows the keys the dispatch will actually honour, rebinds included.
+    /// </summary>
+    private string BuildKeysLegendText() =>
+        "Keys\n" + string.Join("\n", KeyBindings.Select(b =>
+            $"  {string.Join(" / ", KeyChordsFor(b.ActionId).Select(KeyBindingsService.Describe))}  —  {b.Label}"));
+
+    /// <summary>
+    /// The current key combination(s) bound to an <c>InputMap</c> action, as engine-free <see cref="KeyBindingsModel.KeyChord"/>s
+    /// (only <see cref="InputEventKey"/> events; joypad/mouse events are ignored). Reads the live map so it reflects any rebind.
+    /// </summary>
+    private static IEnumerable<KeyBindingsModel.KeyChord> KeyChordsFor(string actionId)
+    {
+        if (!InputMap.HasAction(actionId))
+        {
+            yield break;
+        }
+        foreach (InputEvent e in InputMap.ActionGetEvents(actionId))
+        {
+            if (e is InputEventKey k)
+            {
+                yield return new KeyBindingsModel.KeyChord((long)k.Keycode, k.CtrlPressed);
+            }
+        }
     }
 
     /// <summary>

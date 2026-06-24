@@ -17,6 +17,9 @@ public partial class SettingsScreen : Control
 
     private const string BackdropPath = "res://assets/freecol/ui/map.jpg";
 
+    /// <summary>The key-rebinding screen, opened from the Key Bindings button as a child overlay.</summary>
+    private const string KeyBindingsScenePath = "res://scenes/KeyBindingsScreen.tscn";
+
     private SettingsService _service = null!;
     private OptionButton _windowMode = null!;
     private CheckButton _vsync = null!;
@@ -77,7 +80,17 @@ public partial class SettingsScreen : Control
         _uiScale.ValueChanged += OnUiScale;
         _colorblind.Toggled += OnColorblind;
         _autosave.ValueChanged += OnAutosavePeriod;
+        GetNode<Button>("Panel/VBox/KeyBindingsButton").Pressed += OnKeyBindings;
         GetNode<Button>("Panel/VBox/BackButton").Pressed += OnBack;
+    }
+
+    /// <summary>Opens the key-rebinding screen as a child overlay; removes it again when the player presses Back (which persists any rebinds).</summary>
+    private void OnKeyBindings()
+    {
+        var screen = GD.Load<PackedScene>(KeyBindingsScenePath).Instantiate<KeyBindingsScreen>();
+        screen.ProcessMode = ProcessModeEnum.Always; // works even if shown over a paused game (the pause-menu path)
+        screen.Closed += screen.QueueFree;
+        AddChild(screen);
     }
 
     private void Populate(SettingsModel s)

@@ -20,12 +20,13 @@ public partial class SettingsService : Node
     /// <summary>The live settings. Mutate through <see cref="UpdateAndApply"/> so changes reach the engine.</summary>
     public SettingsModel Settings { get; private set; } = new();
 
-    /// <summary>On startup: ensure the Music/SFX buses exist, load saved settings, and apply them to the engine.</summary>
+    /// <summary>On startup: ensure the Music/SFX buses exist, load saved settings, apply them to the engine, and apply any saved key-binding overrides to the global <c>InputMap</c> (so a rebound key works before the game scene runs).</summary>
     public override void _Ready()
     {
         EnsureAudioBuses();
         Settings = Load();
         Apply();
+        KeyBindingsService.LoadAndApply(); // saved hotkey overrides → InputMap (settings.cfg [keybindings]; no save bump)
     }
 
     /// <summary>Applies <paramref name="mutate"/> to the live settings, clamps them, and re-applies to the engine (does not persist — call <see cref="Save"/> for that).</summary>

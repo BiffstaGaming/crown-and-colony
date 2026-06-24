@@ -61,6 +61,69 @@ public class SettingsScreenTests
     }
 
     [TestCase]
+    public async Task SettingsScreen_HasAKeyBindingsButton()
+    {
+        ISceneRunner runner = ISceneRunner.Load(SettingsScene);
+        await runner.SimulateFrames(2);
+        var scene = runner.Scene();
+
+        var button = scene.GetNode<Button>("Panel/VBox/KeyBindingsButton");
+        AssertThat(button.Text).IsEqual("Key Bindings…");
+    }
+
+    [TestCase]
+    public async Task KeyBindingsScreen_ListsActions_AndShowsTheirCurrentKeys()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/KeyBindingsScreen.tscn");
+        await runner.SimulateFrames(2);
+        var scene = runner.Scene();
+
+        AssertThat(scene.GetNode<Label>("Panel/VBox/Title").Text).IsEqual("Key Bindings");
+        // One row per rebindable action; the End-Turn row shows its default key (Enter).
+        var endTurnValue = scene.GetNode<Label>("Panel/VBox/Scroll/Rows/Row_end_turn/Value");
+        AssertThat(endTurnValue.Text).IsEqual("Enter");
+        var centerValue = scene.GetNode<Label>("Panel/VBox/Scroll/Rows/Row_center_unit/Value");
+        AssertThat(centerValue.Text).IsEqual("Ctrl+C");
+    }
+
+    [TestCase]
+    public async Task KeyBindingsScreen_CaptureAndBack_PersistsTheOverride_AndReloads()
+    {
+        // 86d3f0wjj: clicking Rebind then pressing a key records the override; Back persists it to settings.cfg's
+        // [keybindings] section, and a fresh load reads it back. Rebind quick_save (F5 → F6) so this doesn't disturb the
+        // turn-advancing keys other suites rely on; restore the InputMap default in the finally.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/KeyBindingsScreen.tscn");
+        await runner.SimulateFrames(2);
+        var screen = (KeyBindingsScreen)runner.Scene();
+        try
+        {
+            // Enter listening mode for quick_save, then press F6.
+            screen.GetNode<Button>("Panel/VBox/Scroll/Rows/Row_quick_save/Rebind").EmitSignal(BaseButton.SignalName.Pressed);
+            await runner.SimulateFrames(1);
+            runner.SimulateKeyPressed(Key.F6);
+            await runner.SimulateFrames(1);
+
+            // The row's value updated to the captured key.
+            AssertThat(screen.GetNode<Label>("Panel/VBox/Scroll/Rows/Row_quick_save/Value").Text).IsEqual("F6");
+
+            // Back persists; a fresh load from disk reads the override back.
+            screen.GetNode<Button>("Panel/VBox/Buttons/BackButton").EmitSignal(BaseButton.SignalName.Pressed);
+            await runner.SimulateFrames(1);
+
+            KeyBindingsModel reloaded = KeyBindingsService.Load();
+            AssertThat(reloaded.HasOverride("quick_save")).IsTrue();
+            AssertThat(reloaded.ChordFor("quick_save")).IsEqual(new KeyBindingsModel.KeyChord((long)Key.F6, false));
+        }
+        finally
+        {
+            // Restore: reset the override on disk + in the InputMap so other suites see the F5 default.
+            var restore = KeyBindingsService.Load();
+            KeyBindingsService.Rebind(restore, "quick_save", KeyBindingsModel.DefaultFor("quick_save"));
+            KeyBindingsService.Save(restore);
+        }
+    }
+
+    [TestCase]
     public async Task Service_SaveThenLoad_RoundTripsThroughDisk()
     {
         ISceneRunner runner = ISceneRunner.Load(SettingsScene);

@@ -1105,6 +1105,43 @@ public class InputTests
         AssertThat(selected!.Id).IsEqual(second.Id);
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task RebindingEndTurnToAnotherKey_MakesTheNewKeyEndTheTurn_AndTheLegendUpdates()
+    {
+        // 86d3f0wjj: hotkeys are now named InputMap actions; a rebind applied to the InputMap is honoured by the
+        // dispatch and reflected in the F1 legend. Rebind end_turn from Enter to T, then restore the default so the
+        // process-global InputMap is left as the other cases expect (Enter ends the turn).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+
+        var model = new GameLogic.App.KeyBindingsModel();
+        var tKey = new GameLogic.App.KeyBindingsModel.KeyChord((long)Key.T, false);
+        try
+        {
+            KeyBindingsService.Rebind(model, "end_turn", tKey); // Enter → T, live on the InputMap
+            await runner.SimulateFrames(1);
+
+            int before = GameOf(controller).Turn;
+            runner.SimulateKeyPressed(Key.T); // the new End-Turn key
+            await runner.SimulateFrames(2);
+            AssertThat(GameOf(controller).Turn).IsEqual(before + 1); // the rebind took — T now ends the turn
+
+            // The F1 legend, rebuilt on show, names the new key.
+            runner.SimulateKeyPressed(Key.F1);
+            await runner.SimulateFrames(1);
+            var legend = controller.GetNode<CanvasLayer>("UI").GetNodeOrNull<Label>("KeysLegend");
+            AssertThat(legend).IsNotNull();
+            AssertThat(legend!.Text).Contains("T  —  End turn"); // the legend reflects the rebind
+        }
+        finally
+        {
+            KeyBindingsService.Rebind(model, "end_turn", GameLogic.App.KeyBindingsModel.DefaultFor("end_turn")); // restore Enter
+            await runner.SimulateFrames(1);
+        }
+    }
+
     private static void SetGame(GameController controller, Game game) =>
         controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(controller, game);
 

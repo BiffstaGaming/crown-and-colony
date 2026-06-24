@@ -241,6 +241,10 @@ max_value = 100.0
 step = 1.0
 value = 1.0
 
+[node name="KeyBindingsButton" type="Button" parent="Panel/VBox"]
+layout_mode = 2
+text = "Key Bindings…"
+
 [node name="Spacer" type="Control" parent="Panel/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
