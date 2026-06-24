@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using CrownAndColony.GameLogic.Combat;
 using CrownAndColony.GameLogic.GameSession;
@@ -11,11 +12,18 @@ namespace CrownAndColony.Presentation;
 /// <summary>
 /// The on-map native-settlement interaction panel (slice 1c — native UI): opened by clicking a
 /// discovered native settlement, it offers the peaceful actions over the already-shipped logic —
-/// speak with the chief (<see cref="Game.CheckVisit"/>/<see cref="Game.Visit(Unit, NativeSettlement)"/>)
-/// and learn the settlement's skill (<see cref="Game.CheckLearnSkill"/>/<see cref="Game.LearnSkill"/>) —
-/// plus the option to attack it (<see cref="Game.CheckAttackSettlement"/>/<see cref="Game.AttackSettlement(Unit, World.Position)"/>),
+/// speak with the chief (<see cref="Game.CheckVisit"/>/<see cref="Game.Visit(Unit, NativeSettlement)"/>),
+/// learn the settlement's skill (<see cref="Game.CheckLearnSkill"/>/<see cref="Game.LearnSkill"/>) and
+/// <b>two-way trade</b> when the acting unit is a carrier — <b>sell</b> cargo
+/// (<see cref="Game.CheckSellToNatives"/>/<see cref="Game.SellToNatives(Unit, NativeSettlement, string, int)"/>,
+/// <see cref="Game.NativeSalePrice"/>) and <b>buy</b> from the settlement's store
+/// (<see cref="Game.CheckBuyFromNatives"/>/<see cref="Game.BuyFromNatives(Unit, NativeSettlement, string, int)"/>,
+/// <see cref="Game.NativeBuyPrice"/>/<see cref="Game.GoodsToSell"/>), surfacing the haggle offer/counter
+/// (<see cref="Game.TryHaggleSell"/>/<see cref="Game.TryHaggleBuy"/>) — plus the option to attack it
+/// (<see cref="Game.CheckAttackSettlement"/>/<see cref="Game.AttackSettlement(Unit, World.Position)"/>),
 /// each shown only when the acting unit is allowed it. Presentation only (ADR-006): every action and every
-/// gate is a Game oracle; the panel renders state and forwards clicks.
+/// gate is a Game oracle; the panel renders state and forwards clicks. Guard failures are shown in the panel
+/// (and forwarded to the status bar) — never thrown.
 /// </summary>
 public partial class NativeSettlementPanel : PanelContainer
 {
@@ -24,6 +32,17 @@ public partial class NativeSettlementPanel : PanelContainer
     private int _actingUnitId; // 0 = no acting unit (unit ids start at 1)
     private Action<string> _onAction = _ => { };
     private string _outcome = "";
+
+    /// <summary>The in-panel screen currently shown: the action menu, or one of the trade sub-flows.</summary>
+    private enum Screen { Actions, TradePick, TradeHaggle }
+
+    private Screen _screen = Screen.Actions;
+    private bool _buying; // true = the trade sub-flow is a Buy (from the settlement), false = a Sell (the ship's cargo)
+    private string? _tradeGoodsId; // the good chosen in the TradePick screen
+    private int _tradeAmount; // the amount chosen
+    private int _haggleRound; // prior haggle rounds this trade session (0 = the opening offer)
+    private int _haggleCounter; // the natives' last counter-price (the standing offer the player can accept)
+    private bool _haggleDone; // the natives lost patience this session — no deal possible
 
     /// <summary>
     /// Opens the panel for a settlement, acting with the unit of id <paramref name="actingUnitId"/> (0 = none).
@@ -37,6 +56,8 @@ public partial class NativeSettlementPanel : PanelContainer
         _actingUnitId = actingUnitId;
         _onAction = onAction;
         _outcome = "";
+        _screen = Screen.Actions;
+        _tradeGoodsId = null;
         Rebuild();
         Show();
     }
@@ -77,16 +98,34 @@ public partial class NativeSettlementPanel : PanelContainer
             (_settlement.HasBeenVisited ? "You have spoken with this chief.\n" : "") +
             _outcome;
 
-        BuildActions();
+        switch (_screen)
+        {
+            case Screen.TradePick:
+                BuildTradePick();
+                break;
+            case Screen.TradeHaggle:
+                BuildTradeHaggle();
+                break;
+            default:
+                BuildActions();
+                break;
+        }
     }
 
-    private void BuildActions()
+    /// <summary>Detaches and frees the dynamic-area children (signal-safe), returning the cleared container.</summary>
+    private VBoxContainer ClearDynamic()
     {
         var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
             dynamic.RemoveChild(child); child.QueueFree(); // detach now (signal-safe), free deferred — avoids freed-while-emitting when a child button's handler drives the rebuild
         }
+        return dynamic;
+    }
+
+    private void BuildActions()
+    {
+        VBoxContainer dynamic = ClearDynamic();
 
         Unit? unit = ActingUnit;
         if (unit is null)
@@ -123,6 +162,22 @@ public partial class NativeSettlementPanel : PanelContainer
                 Changed();
             }));
         }
+        // Two-way trade: a carrier on the map at/adjacent to the settlement may sell its cargo and/or buy from the store.
+        // The Sell button shows when the ship is carrying any goods; Buy when it has free hold space and the settlement
+        // offers goods. Both open an in-panel sub-flow (pick a good + amount, then haggle). Each is gated by its oracle.
+        if (unit.Type.IsCarrier)
+        {
+            if (CanSell(unit))
+            {
+                any = true;
+                dynamic.AddChild(ActionButton("Sell", "Sell goods", () => OpenTrade(buying: false)));
+            }
+            if (CanBuy(unit))
+            {
+                any = true;
+                dynamic.AddChild(ActionButton("Buy", "Buy goods", () => OpenTrade(buying: true)));
+            }
+        }
         if (_game.CheckAttackSettlement(unit, _settlement.Position).Allowed)
         {
             any = true;
@@ -139,6 +194,187 @@ public partial class NativeSettlementPanel : PanelContainer
         {
             dynamic.AddChild(Hint("There is nothing to do here right now."));
         }
+    }
+
+    /// <summary>Whether the acting ship has any cargo it could sell here (it carries goods and the settlement is not too hostile).</summary>
+    private bool CanSell(Unit ship) =>
+        ship.Cargo.Any(kv => kv.Value > 0)
+        && SellableGoods(ship).Any(g => _game.CheckSellToNatives(ship, _settlement, g.GoodsId, g.Amount).Allowed);
+
+    /// <summary>Whether the acting ship could buy here (it has free hold space and the settlement offers a good it can afford).</summary>
+    private bool CanBuy(Unit ship) =>
+        _game.CargoSlotsFree(ship) > 0
+        && BuyableGoods().Any(g => _game.CheckBuyFromNatives(ship, _settlement, g.GoodsId, g.Amount).Allowed);
+
+    /// <summary>The goods the acting ship is carrying, as (id, amount) pairs the player can offer to sell (most-carried first).</summary>
+    private IReadOnlyList<(string GoodsId, int Amount)> SellableGoods(Unit ship) =>
+        ship.Cargo.Where(kv => kv.Value > 0)
+            .OrderByDescending(kv => kv.Value)
+            .ThenBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => (kv.Key, kv.Value))
+            .ToList();
+
+    /// <summary>The goods the settlement currently offers for sale (FreeCol getSellGoods, via <see cref="Game.GoodsToSell"/>).</summary>
+    private IReadOnlyList<(string GoodsId, int Amount)> BuyableGoods() => _game.GoodsToSell(_settlement);
+
+    /// <summary>Opens the buy/sell sub-flow: clears any prior pick and shows the goods list for the chosen direction.</summary>
+    private void OpenTrade(bool buying)
+    {
+        _buying = buying;
+        _tradeGoodsId = null;
+        _outcome = "";
+        _screen = Screen.TradePick;
+        Rebuild();
+    }
+
+    /// <summary>Returns to the action menu, clearing the trade sub-flow state.</summary>
+    private void CloseTrade()
+    {
+        _screen = Screen.Actions;
+        _tradeGoodsId = null;
+        Rebuild();
+    }
+
+    /// <summary>
+    /// The goods-picker screen for the active direction: one row per offerable good, listing its quantity and the
+    /// settlement's price for the whole lot (sale price for a sell, asking price for a buy). Picking a good opens the
+    /// haggle screen at the opening (round-0) offer.
+    /// </summary>
+    private void BuildTradePick()
+    {
+        VBoxContainer dynamic = ClearDynamic();
+        Unit? ship = ActingUnit;
+        if (ship is null || !ship.Type.IsCarrier)
+        {
+            CloseTrade();
+            return;
+        }
+
+        IReadOnlyList<(string GoodsId, int Amount)> goods = _buying ? BuyableGoods() : SellableGoods(ship);
+        dynamic.AddChild(Hint(_buying ? "Buy from their store:" : "Sell from your hold:"));
+        bool any = false;
+        foreach ((string goodsId, int amount) in goods)
+        {
+            MoveCheck check = _buying
+                ? _game.CheckBuyFromNatives(ship, _settlement, goodsId, amount)
+                : _game.CheckSellToNatives(ship, _settlement, goodsId, amount);
+            if (!check.Allowed)
+            {
+                continue; // skip goods this ship can't trade right now (e.g. can't afford a buy)
+            }
+            any = true;
+            string verb = _buying ? "for" : "→";
+            dynamic.AddChild(ActionButton($"Trade_{Short(goodsId)}", $"{amount} {Short(goodsId)}  {verb} {check.Cost} gold", () =>
+            {
+                _tradeGoodsId = goodsId;
+                _tradeAmount = amount;
+                _haggleRound = 0;
+                _haggleCounter = check.Cost; // the natives' opening fair/asking price
+                _haggleDone = false;
+                _screen = Screen.TradeHaggle;
+                Rebuild();
+            }));
+        }
+        if (!any)
+        {
+            dynamic.AddChild(Hint(_buying ? "They have nothing to sell you right now." : "Nothing here they will buy."));
+        }
+        dynamic.AddChild(ActionButton("TradeBack", "Back", CloseTrade));
+    }
+
+    /// <summary>
+    /// The haggle screen for the picked good: shows the natives' current offer, a button to accept it (which commits
+    /// the trade via the sell/buy oracle), a button to push for a better price (one haggle round — the natives accept,
+    /// counter, or lose patience), and a Back button. When the natives have walked off (<see cref="_haggleDone"/>) only
+    /// Back remains.
+    /// </summary>
+    private void BuildTradeHaggle()
+    {
+        VBoxContainer dynamic = ClearDynamic();
+        Unit? ship = ActingUnit;
+        if (ship is null || _tradeGoodsId is not { } goodsId)
+        {
+            CloseTrade();
+            return;
+        }
+
+        string lot = $"{_tradeAmount} {Short(goodsId)}";
+        if (_haggleDone)
+        {
+            dynamic.AddChild(Hint($"The chief is done bargaining over {lot}."));
+            dynamic.AddChild(ActionButton("TradeBack", "Back", CloseTrade));
+            return;
+        }
+
+        dynamic.AddChild(Hint(_buying
+            ? $"They ask {_haggleCounter} gold for {lot}."
+            : $"They offer {_haggleCounter} gold for your {lot}."));
+
+        // Accept the standing price → commit the trade through the oracle (guarded; never throws).
+        dynamic.AddChild(ActionButton("Accept", _buying ? $"Pay {_haggleCounter} gold" : $"Accept {_haggleCounter} gold", () =>
+            CommitTrade(ship, goodsId)));
+
+        // Push for a better price: a lower bid when buying, a higher ask when selling (the side that favours the player).
+        // The natives accept (deal at the player's price), counter (a new standing price), or lose patience (Done).
+        dynamic.AddChild(ActionButton("Haggle", _buying ? "Haggle (offer less)" : "Haggle (ask more)", () =>
+        {
+            int offer = _buying ? HaggleDownOffer(_haggleCounter) : HaggleUpOffer(_haggleCounter);
+            Game.NativeHaggleResult result = _buying
+                ? _game.TryHaggleBuy(_settlement, goodsId, _tradeAmount, offer, _haggleRound)
+                : _game.TryHaggleSell(_settlement, goodsId, _tradeAmount, offer, _haggleRound);
+            if (result.Accepted)
+            {
+                CommitTrade(ship, goodsId); // they took the player's offer
+                return;
+            }
+            _haggleRound++;
+            _haggleCounter = result.CounterPrice; // their new standing price
+            _haggleDone = result.Done;
+            _outcome = result.Done ? "The chief lost patience and broke off the deal." : "The chief countered your offer.";
+            Rebuild();
+        }));
+
+        dynamic.AddChild(ActionButton("TradeBack", "Back", CloseTrade));
+    }
+
+    /// <summary>The player's haggle ask when selling — 10% above the standing offer (the inverse of the natives' haggleDown).</summary>
+    private static int HaggleUpOffer(int price) => price * 11 / 10 + 1;
+
+    /// <summary>The player's haggle bid when buying — 10% below the standing ask (the inverse of the natives' haggleUp).</summary>
+    private static int HaggleDownOffer(int price) => price * 9 / 10;
+
+    /// <summary>
+    /// Commits the trade through the sell/buy oracle: re-checks the gate (the world cannot change behind this modal,
+    /// but the oracle is the single authority — ADR-006), executes the trade, and surfaces the outcome (or the guard
+    /// failure) in the panel before returning to the action menu. Never throws — a refused trade only sets the outcome.
+    /// The haggle loop is advisory (it surfaces the offer/counter); the engine charges its standard native price
+    /// (<see cref="Game.NativeSalePrice"/>/<see cref="Game.NativeBuyPrice"/>, the oracle's <c>Cost</c>), which is the
+    /// gold actually returned — so the panel reports that, not the player's haggled figure.
+    /// </summary>
+    private void CommitTrade(Unit ship, string goodsId)
+    {
+        MoveCheck check = _buying
+            ? _game.CheckBuyFromNatives(ship, _settlement, goodsId, _tradeAmount)
+            : _game.CheckSellToNatives(ship, _settlement, goodsId, _tradeAmount);
+        if (!check.Allowed)
+        {
+            _outcome = check.Reason ?? "The trade was refused.";
+            CloseTrade();
+            return;
+        }
+        if (_buying)
+        {
+            int paid = _game.BuyFromNatives(ship, _settlement, goodsId, _tradeAmount);
+            _outcome = $"Bought {_tradeAmount} {Short(goodsId)} for {paid} gold.";
+        }
+        else
+        {
+            int got = _game.SellToNatives(ship, _settlement, goodsId, _tradeAmount);
+            _outcome = $"Sold {_tradeAmount} {Short(goodsId)} for {got} gold.";
+        }
+        _screen = Screen.Actions;
+        _tradeGoodsId = null;
+        Changed(); // surfaces the outcome to the status bar + re-syncs selection (the trade ended the ship's turn)
     }
 
     private static Label Hint(string text) =>
