@@ -150,6 +150,7 @@ public partial class GameController : Node2D
     private Button _plowButton = null!;
     private Button _clearForestButton = null!;
     private Button _sailToEuropeButton = null!;
+    private Button _cashInTreasureButton = null!;
     private Button _skipButton = null!;
     private Button _disbandButton = null!;
     private MiniMap _miniMap = null!;
@@ -236,6 +237,10 @@ public partial class GameController : Node2D
         _sailToEuropeButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/SailToEuropeButton");
         _sailToEuropeButton.Pressed += () => ApplyUnitOrder(
             u => _game.CheckSailToEurope(u).Allowed, _game.SailToEurope, "Setting sail for Europe.");
+        // Treasure-train order: cash in the carried gold (at an owned colony — King's cut — or aboard a galleon
+        // docked in Europe — fee-free), gated on CheckCashInTreasureTrain (ADR-006); shows the value then confirms.
+        _cashInTreasureButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/CashInTreasureButton");
+        _cashInTreasureButton.Pressed += CashInSelectedTreasureTrain;
         // Skip (Space) + Disband (D) order buttons — Skip flags the unit skipped-this-turn and cycles on; Disband
         // prompts for confirmation then removes the unit. Both share the keyboard paths (SkipSelectedUnit / DisbandSelectedUnit).
         _skipButton = GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/SkipButton");
@@ -812,6 +817,61 @@ public partial class GameController : Node2D
                 _game.Disband(unit);
                 _selectedUnit = null;
                 _notice = "Unit disbanded.";
+            }
+            RefreshView();
+        };
+        dialog.Canceled += () => dialog.QueueFree();
+        AddChild(dialog);
+        dialog.PopupCentered();
+    }
+
+    /// <summary>
+    /// Cashes in the selected treasure train (86d3f62q1): the discoverable UI surface for the existing
+    /// <see cref="Game.CashInTreasureTrain"/> command. Gated on <see cref="Game.CheckCashInTreasureTrain"/> (ADR-006);
+    /// a guard failure (not at an owned colony / not aboard a galleon docked in Europe) is shown in the status bar,
+    /// never thrown. On success it raises a confirmation that surfaces the net <see cref="Game.CashInValue(Unit)"/> —
+    /// noting whether the King's transport cut applies (at a colony) or it is fee-free (carried home to Europe) — then
+    /// banks the gold and consumes the train (which clears the selection, since the train leaves the game).
+    /// </summary>
+    private void CashInSelectedTreasureTrain()
+    {
+        if (_selectedUnit is not { } train)
+        {
+            return;
+        }
+        MoveCheck check = _game.CheckCashInTreasureTrain(train);
+        if (!check.Allowed)
+        {
+            _notice = check.Reason; // e.g. "Bring the treasure train to one of your colonies …" — show, don't throw
+            RefreshView();
+            return;
+        }
+
+        // The net the player would bank, and where the cut comes from (fee-free in Europe vs the King's transport cut
+        // at a colony). The value is the oracle's preview (CheckCashInTreasureTrain.Cost == CashInValue) — surfaced so
+        // the player sees the King's cut before committing.
+        int value = _game.CashInValue(train);
+        bool feeFree = _game.TreasureCashInIsFeeFree(train);
+        string where = feeFree
+            ? "Carried home yourself — the King takes no transport fee."
+            : "The King ships it across for his transport cut.";
+        var dialog = new ConfirmationDialog
+        {
+            Title = "Cash in treasure",
+            DialogText = $"Cash in the {train.Type.ShortName} carrying {train.TreasureAmount} gold?\n{where}\nYou will bank {value} gold.",
+            OkButtonText = $"Cash in ({value}g)",
+            CancelButtonText = "Keep",
+        };
+        dialog.Confirmed += () =>
+        {
+            dialog.QueueFree();
+            // Re-check on confirm: the world can't change behind a modal here, but the oracle is the single gate (ADR-006).
+            if (_game.CheckCashInTreasureTrain(train).Allowed)
+            {
+                int banked = _game.CashInValue(train);
+                _game.CashInTreasureTrain(train);
+                _selectedUnit = null; // the train left the game — clear the (now dangling) selection
+                _notice = $"Treasure cashed in: {banked} gold banked.";
             }
             RefreshView();
         };
@@ -1706,6 +1766,11 @@ public partial class GameController : Node2D
             // discoverable surface for the existing CheckSailToEurope/SailToEurope command (ADR-006 oracle).
             _sailToEuropeButton.Visible = sel.Type.IsNaval;
             _sailToEuropeButton.Disabled = !_game.CheckSailToEurope(sel).Allowed;
+            // Cash-in treasure: shown only for treasure-carrying units (the discoverable surface for the existing
+            // CheckCashInTreasureTrain/CashInTreasureTrain command), enabled when the train can be cashed in where it
+            // stands — at an owned colony or aboard a galleon docked in Europe (ADR-006 oracle).
+            _cashInTreasureButton.Visible = sel.Type.CarryTreasure;
+            _cashInTreasureButton.Disabled = !_game.CheckCashInTreasureTrain(sel).Allowed;
             // Skip is always available for a selected unit (a session convenience); Disband gates on its oracle (ADR-006).
             _skipButton.Disabled = false;
             _disbandButton.Disabled = !_game.CheckDisband(sel).Allowed;

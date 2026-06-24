@@ -1334,6 +1334,14 @@ public sealed partial class Game
         CheckCashInTreasureTrain(train).Allowed && PlayerById(train.OwnerId) is { } owner ? CashInValue(owner, train) : 0;
 
     /// <summary>
+    /// Whether cashing in <paramref name="train"/> where it stands is fee-free — i.e. it reached Europe (docked itself or
+    /// aboard a galleon docked there) so the King takes no transport cut, versus banking it at a colony where his cut
+    /// applies. A read-only oracle (ADR-006) the UI uses to phrase the cash-in confirmation; mirrors the fee branch in
+    /// <see cref="CashInValue(Player, Unit)"/>.
+    /// </summary>
+    public bool TreasureCashInIsFeeFree(Unit train) => TreasureIsInEurope(train);
+
+    /// <summary>
     /// Whether <paramref name="train"/> may be cashed in where it stands: it must be a treasure-carrying unit with
     /// gold aboard, standing at a colony its owner holds (FreeCol requires a port connected to Europe — we have no
     /// connectivity graph, so any owned colony qualifies), docked in Europe, <b>or loaded as cargo on a ship docked in

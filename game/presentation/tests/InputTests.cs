@@ -966,6 +966,108 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task SelectedUnitPanel_CashInTreasureButton_AtAnOwnedColony_BanksGoldAndConsumesTheTrain()
+    {
+        // 86d3f62q1: the Orders "Cash in treasure" button is shown only for treasure trains, gated on
+        // CheckCashInTreasureTrain, surfaces the net value in a confirmation, and on confirm banks the gold and the
+        // train leaves the game. At a colony the King's transport cut applies (medium 60%); tax is zeroed (via the save
+        // layer — the presentation project can't set TaxRate / TreasureAmount directly) to isolate the cut.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+
+        // Found a colony with the human's founder; then stage (via the save layer) a human treasure train carrying
+        // 1000 gold standing on that colony, with the human's tax zeroed.
+        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        SaveGame save = SaveGame.From(game);
+        int trainId = game.Units.Max(u => u.Id) + 1;
+        var train = new SavedUnit(trainId, "model.unit.treasureTrain", colony.Position.X, colony.Position.Y, 3,
+            OwnerId: humanId, TreasureAmount: 1000);
+        List<SavedPlayer> players = save.Players!
+            .Select(p => p.PlayerId == humanId ? p with { Tax = 0 } : p).ToList();
+        Game injected = (save with { Units = save.Units.Append(train).ToList(), Players = players }).Restore(game.Ruleset);
+        SetGame(controller, injected);
+        int goldBefore = injected.HumanPlayer.Gold;
+
+        await ClickTile(runner, controller, colony.Position); // select the train (sits on the colony tile)
+        var cashIn = controller.GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/CashInTreasureButton");
+        AssertThat(cashIn.Visible).IsTrue();   // shown for a treasure train
+        AssertThat(cashIn.Disabled).IsFalse(); // at an owned colony → cashable
+
+        cashIn.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // The confirmation surfaces the value (1000 − 60% King's cut, no tax → 400) before committing.
+        var dialog = controller.GetChildren().OfType<ConfirmationDialog>().First();
+        AssertThat(dialog.DialogText).Contains("400"); // net banked, shown to the player
+        dialog.EmitSignal(ConfirmationDialog.SignalName.Confirmed);
+        await runner.SimulateFrames(2);
+
+        AssertThat(injected.HumanPlayer.Gold).IsEqual(goldBefore + 400);             // banked the net
+        AssertThat(injected.Units.Any(u => u.Id == trainId)).IsFalse();              // the train is consumed
+        AssertThat(controller.GetNode<PanelContainer>("UI/SelectedUnitPanel").Visible).IsFalse(); // selection cleared
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task SelectedUnitPanel_CashInTreasureButton_AboardAGalleonInEurope_BanksFeeFree()
+    {
+        // 86d3f62q1: a treasure train carried home aboard a galleon docked in Europe cashes in fee-free (no King's
+        // cut). Staged via the save layer (the presentation project can't set CarrierId / locations / tax directly): a
+        // galleon and a treasure train both docked in Europe, the train aboard the galleon, tax zeroed. The button
+        // enables and banks the full amount. The aboard train has no map tile, so the button is driven directly.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+
+        SaveGame save = SaveGame.From(game);
+        int galleonId = game.Units.Max(u => u.Id) + 1;
+        int trainId = galleonId + 1;
+        var staged = new List<SavedUnit>
+        {
+            // Both docked in Europe (Location 2 = InEurope); the train rides the galleon (CarrierId = galleonId).
+            new(galleonId, "model.unit.galleon", 0, 0, 18, Location: 2, OwnerId: humanId),
+            new(trainId, "model.unit.treasureTrain", 0, 0, 3, Location: 2, CarrierId: galleonId,
+                OwnerId: humanId, TreasureAmount: 1000),
+        };
+        List<SavedPlayer> players = save.Players!
+            .Select(p => p.PlayerId == humanId ? p with { Tax = 0 } : p).ToList(); // fee-free in Europe + no tax → full amount
+        Game injected = (save with { Units = save.Units.Concat(staged).ToList(), Players = players }).Restore(game.Ruleset);
+        SetGame(controller, injected);
+
+        Unit train = injected.Units.First(u => u.Id == trainId);
+        AssertThat(train.IsAboard).IsTrue();
+        AssertThat(injected.CheckCashInTreasureTrain(train).Allowed).IsTrue(); // sanity: cashable in Europe
+        int goldBefore = injected.HumanPlayer.Gold;
+
+        // Select the aboard train directly (it has no map tile to click), then drive the order button.
+        controller.GetType().GetField("_selectedUnit", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(controller, train);
+        controller.GetType().GetMethod("RefreshView", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(controller, null);
+        await runner.SimulateFrames(1);
+        var cashIn = controller.GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/CashInTreasureButton");
+        AssertThat(cashIn.Visible).IsTrue();
+        AssertThat(cashIn.Disabled).IsFalse(); // aboard a galleon docked in Europe → cashable
+
+        cashIn.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        var dialog = controller.GetChildren().OfType<ConfirmationDialog>().First();
+        AssertThat(dialog.DialogText).Contains("1000"); // fee-free → full amount shown
+        dialog.EmitSignal(ConfirmationDialog.SignalName.Confirmed);
+        await runner.SimulateFrames(2);
+
+        AssertThat(injected.HumanPlayer.Gold).IsEqual(goldBefore + 1000);    // banked the full amount (no fee, no tax)
+        AssertThat(injected.Units.Any(u => u.Id == trainId)).IsFalse();      // the train is consumed
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task PressingEnter_EndsTheTurn()
     {
         // 86d3f0vjg: Enter is the EndTurnButton path (advances the turn).

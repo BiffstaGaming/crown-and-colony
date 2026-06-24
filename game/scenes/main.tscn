@@ -112,6 +112,11 @@ layout_mode = 2
 tooltip_text = "Move a ship onto the high seas (the east/west map edge), then sail it to Europe."
 text = "Sail to Europe"
 
+[node name="CashInTreasureButton" type="Button" parent="UI/SelectedUnitPanel/VBox/Orders"]
+layout_mode = 2
+tooltip_text = "Cash in this treasure train at one of your colonies (King's transport cut applies) or aboard a galleon docked in Europe (fee-free). You'll be shown the value and asked to confirm."
+text = "Cash in treasure"
+
 [node name="SkipButton" type="Button" parent="UI/SelectedUnitPanel/VBox/Orders"]
 layout_mode = 2
 tooltip_text = "Skip this unit for the rest of the turn (Space). The next unit needing orders is selected."
