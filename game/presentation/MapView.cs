@@ -129,7 +129,20 @@ public partial class MapView : Node2D
     public static Vector2 TileCentre(Position p) =>
         new((p.X - p.Y) * (TileW / 2f), (p.X + p.Y) * (TileH / 2f));
 
-    /// <summary>Converts a point in this node's local space to a map position (may be off-map).</summary>
+    /// <summary>
+    /// Converts a point in this node's local space to a map position (may be off-map).
+    /// </summary>
+    /// <remarks>
+    /// This is the exact inverse of <see cref="TileCentre"/> and is a true point-in-diamond
+    /// pick — not a rectangular bounding box. The forward projection rotates the square logic
+    /// grid 45°: <c>local = ((x − y)·64, (x + y)·32)</c>. Inverting it gives fractional grid
+    /// coordinates <c>x = (u + v)/2</c>, <c>y = (v − u)/2</c> where <c>u = localX/64</c>,
+    /// <c>v = localY/32</c>; rounding each to the nearest integer selects the tile whose diamond
+    /// contains the point. Independent rounding in this rotated basis is provably equivalent to a
+    /// point-in-diamond test: the region rounding to tile <c>(X,Y)</c> is exactly
+    /// <c>|x−X| ≤ ½ ∧ |y−Y| ≤ ½</c>, which maps to the drawn diamond with corners at local offsets
+    /// <c>(±64, 0)</c> and <c>(0, ±32)</c> — so any click inside a tile's diamond resolves to that tile.
+    /// </remarks>
     public static Position TileAt(Vector2 local)
     {
         float gx = local.X / (TileW / 2f);
@@ -138,6 +151,23 @@ public partial class MapView : Node2D
             Mathf.RoundToInt((gx + gy) / 2f),
             Mathf.RoundToInt((gy - gx) / 2f));
     }
+
+    /// <summary>
+    /// Converts a viewport-space point (an input event's <c>Position</c>) to the map tile under it.
+    /// </summary>
+    /// <remarks>
+    /// Picking must convert the <em>event's own</em> coordinate, not the live cursor: handlers run
+    /// from the buffered input queue, so <c>GetLocalMousePosition()</c> (which polls the current OS
+    /// cursor) can read a position the cursor drifted to after the button went down — while the camera
+    /// pans, the wheel zooms, or input is buffered — making clicks land on the wrong tile or miss. The
+    /// event's <c>Position</c> is the screen point the click was generated at; mapping it through
+    /// <see cref="CanvasItem.GetGlobalTransformWithCanvas"/> (which folds in the <see cref="Camera2D"/>
+    /// zoom/pan) yields the correct node-local point for <see cref="TileAt(Vector2)"/>, so picking is
+    /// accurate at any zoom or pan.
+    /// </remarks>
+    /// <param name="viewportPosition">The event position in viewport (screen) space.</param>
+    public Position TileAtScreen(Vector2 viewportPosition) =>
+        TileAt(GetGlobalTransformWithCanvas().AffineInverse() * viewportPosition);
 
     public override void _Draw()
     {

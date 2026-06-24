@@ -683,14 +683,16 @@ public partial class GameController : Node2D
     {
         switch (@event)
         {
-            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true }:
-                HandleTileClick(MapView.TileAt(_mapView.GetLocalMousePosition()));
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } leftClick:
+                // Pick from the event's own position (zoom/pan-correct via the MapView canvas transform), not the live
+                // cursor — the buffered cursor can drift between press and dispatch, landing the click on the wrong tile.
+                HandleTileClick(_mapView.TileAtScreen(leftClick.Position));
                 break;
-            case InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false }:
+            case InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false } rightClick:
                 // Right-button RELEASE without a drag: open the tile context menu. The press/drag is the camera pan
                 // (CameraController), which consumes the release when it actually dragged — so a real pan never reaches
                 // here and panning is never broken; only a drag-free right-click falls through to open the menu (86d3f0vrz).
-                HandleRightClick();
+                HandleRightClick(rightClick.Position);
                 break;
             case InputEventKey { Pressed: true, Echo: false } key when !IsTextInputFocused():
                 if (IsDuplicateKeyDown(key))
@@ -955,9 +957,18 @@ public partial class GameController : Node2D
     /// "Centre here", and "Go to here" (arms <see cref="SetSelectedDestination"/>). Fired on right-button release without
     /// a drag, so the right-drag camera pan is unaffected. Presentation-only (ADR-006).
     /// </summary>
-    private void HandleRightClick()
+    /// <param name="viewportPosition">
+    /// The triggering event's position in viewport (screen) space — picked via the MapView canvas transform so the menu
+    /// targets the tile the click landed on, not where the cursor has since drifted. When <c>null</c> (only the L3 test
+    /// drives it directly) the current cursor position is used instead.
+    /// </param>
+    private void HandleRightClick(Vector2? viewportPosition = null)
     {
-        Position tile = MapView.TileAt(_mapView.GetLocalMousePosition());
+        // From the dispatch we have the event's own position (accurate); when driven directly with no position (the L3
+        // stack test) fall back to the live cursor via the node helper — the same path the left-click used before.
+        Position tile = viewportPosition is { } pos
+            ? _mapView.TileAtScreen(pos)
+            : MapView.TileAt(_mapView.GetLocalMousePosition());
         if (!_game.Map.InBounds(tile))
         {
             return;
