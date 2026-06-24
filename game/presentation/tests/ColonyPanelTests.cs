@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 using GdUnit4;
@@ -470,6 +471,121 @@ public class ColonyPanelTests
         var toggle = controller.GetNode<PanelContainer>("UI/ColonyPanel")
             .FindChild("Export_ore", recursive: true, owned: false) as CheckBox;
         AssertThat(toggle).IsNull();
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ExpertOnATile_RendersItsExpertSprite_NotTheFreeColonist()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Retype the founder's auto-assigned tile worker into an expert lumberjack via the save layer (the worker-type
+        // overlay is internal to GameLogic), then reload — the colony screen must draw THAT type's sprite (86d3f674f).
+        Position worked = founded.TileWorkers.Keys.First();
+        string good = founded.TileWorkers[worked];
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with { Workers = new[] { new SavedWorker(worked.X, worked.Y, good, "model.unit.expertLumberJack") } }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(colony.WorkerTypeAt(worked)).IsEqual("model.unit.expertLumberJack");
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+        var tilesView = controller.GetNode<PanelContainer>("UI/ColonyPanel")
+            .FindChild("TilesView", recursive: true, owned: false) as Control;
+        AssertThat(tilesView).IsNotNull();
+
+        // The expert-lumberjack sprite is rendered on a worked tile (not the free-colonist sprite).
+        Texture2D? expert = UnitMarker.ResolveTexture("expertLumberJack", UnitSpriteCatalog.DefaultRole)
+            ?? ColonyArt.UnitIcon("expertLumberJack");
+        Texture2D? free = UnitMarker.ResolveTexture("freeColonist", UnitSpriteCatalog.DefaultRole)
+            ?? ColonyArt.UnitIcon("freeColonist");
+        AssertThat(expert).IsNotNull();
+        var tileTextures = tilesView!.FindChildren("*", recursive: true, owned: false)
+            .OfType<TextureRect>().Select(t => t.Texture).ToList();
+        AssertThat(tileTextures.Contains(expert!)).IsTrue();   // the expert's own art is drawn
+        AssertThat(tileTextures.Contains(free!)).IsFalse();    // and NOT the hardcoded free-colonist sprite
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task BuildingCell_RendersItsWorkerUnits_IncludingAnExpertSprite()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Staff the carpenter's house with a master carpenter via the save layer (set the building worker count + its
+        // non-free occupant type), then reload — the building cell must draw that expert's per-slot portrait (86d3f6754).
+        const string Carp = "model.building.carpenterHouse";
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with
+            {
+                Population = 2, // a tile founder + the building worker
+                BuildingWorkers = new Dictionary<string, int> { [Carp] = 1 },
+                BuildingWorkerTypes = new Dictionary<string, IReadOnlyList<string>> { [Carp] = new[] { "model.unit.masterCarpenter" } },
+            }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(colony.BuildingOccupants(Carp).Contains("model.unit.masterCarpenter")).IsTrue();
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+        PanelContainer panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+
+        // A clickable per-slot worker portrait exists for the building, drawing the master-carpenter sprite.
+        var portrait = panel.FindChild($"Worker_carpenterHouse_0", recursive: true, owned: false) as Button;
+        AssertThat(portrait).IsNotNull();
+        Texture2D? master = UnitMarker.ResolveTexture("masterCarpenter", UnitSpriteCatalog.DefaultRole)
+            ?? ColonyArt.UnitIcon("masterCarpenter");
+        AssertThat(master).IsNotNull();
+        bool drawsExpert = portrait!.FindChildren("*", recursive: true, owned: false)
+            .OfType<TextureRect>().Any(t => t.Texture == master);
+        AssertThat(drawsExpert).IsTrue();
+
+        // Clicking the portrait removes the building worker (the FreeCol click-to-remove gesture).
+        portrait.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(colony.BuildingWorkers.GetValueOrDefault(Carp)).IsEqual(0);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ProductionOverview_RendersPerGoodRows_FromTheSummaryOracle()
+    {
+        (_, GameController controller, Game game, Colony colony) = await OpenPanel();
+        PanelContainer panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+
+        var overview = panel.FindChild("ProductionOverview", recursive: true, owned: false) as Control;
+        AssertThat(overview).IsNotNull();
+
+        // Every good the oracle reports as touched gets a named Production_{good} row in the overview.
+        var summary = game.ColonyProductionSummary(colony);
+        foreach (var kv in summary)
+        {
+            if (kv.Value.Produced == 0 && kv.Value.Consumed == 0)
+            {
+                continue;
+            }
+            string shortName = kv.Key[(kv.Key.LastIndexOf('.') + 1)..];
+            var row = overview!.FindChild($"Production_{shortName}", recursive: true, owned: false) as Control;
+            AssertThat(row).IsNotNull();
+        }
+
+        // Food is always shown (the colonists eat it) and bells (the town hall makes them) — the two staples.
+        AssertThat(overview!.FindChild("Production_food", recursive: true, owned: false)).IsNotNull();
+        AssertThat(overview.FindChild("Production_bells", recursive: true, owned: false)).IsNotNull();
     }
 
     private static string LabelText(PanelContainer panel, string name) =>

@@ -20,6 +20,7 @@ public class ExpertTileYieldTests
     private const string Grain = "model.goods.grain";
     private const string Fish = "model.goods.fish";
     private const string Furs = "model.goods.furs";
+    private const string Lumber = "model.goods.lumber";
     private const string Free = "model.unit.freeColonist";
 
     private static int Yield(Game game, string workerType, Position tile, string goods) =>
@@ -52,6 +53,47 @@ public class ExpertTileYieldTests
         int free = Yield(game, Free, tile, Furs);
         Assert.True(free > 0);
         Assert.Equal(free * 2, Yield(game, "model.unit.expertFurTrapper", tile, Furs)); // multiplicative ×2
+    }
+
+    [Fact]
+    public void ExpertLumberJack_DoublesLumber()
+    {
+        // The colony-screen bug report (86d3f674f): an expert lumberjack must get FreeCol's 2× lumber bonus.
+        // Its spec modifier is index-30 multiplicative ×2 on model.goods.lumber (specification.xml expertLumberJack).
+        Game game = Game.New(Classic, Seed);
+        Position tile = TileProducing(game, Lumber);
+        int free = Yield(game, Free, tile, Lumber);
+        Assert.True(free > 0);
+        Assert.Equal(free * 2, Yield(game, "model.unit.expertLumberJack", tile, Lumber)); // multiplicative ×2
+    }
+
+    [Fact]
+    public void AnExpertLumberJack_ProducesDoubleLumberPerTurn_ViaTheWorkerTypeOverlay()
+    {
+        // End-to-end through a real colony turn: the production calc must read the worker-type overlay (WorkerTypeAt)
+        // and double the lumber a free colonist would make on the same tile — not produce as a free colonist. This is
+        // the "no bonus" half of the bug report, asserted against the live RunColonyTurn (not just the TileYield helper).
+        int LumberGainedInOneTurn(string workerType)
+        {
+            Game game = Game.New(Classic, Seed);
+            Colony colony = game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
+            // Put a colonist on a lumber-producing neighbour tile (release the auto-assigned founder onto it).
+            Position lumberTile = colony.Position.Neighbours()
+                .First(n => game.Map.InBounds(n) && game.TileWorkOptions(n).Any(o => o.GoodsId == Lumber));
+            // Free the founder first (a fresh colony is pop 1, fully assigned), then assign it to make lumber.
+            Position founder = colony.TileWorkers.Keys.First();
+            game.UnassignWork(colony, founder);
+            game.AssignWork(colony, lumberTile, Lumber);
+            colony.SetWorker(lumberTile, Lumber, workerType); // retype the lumber worker
+            int before = colony.StoreOf(Lumber);
+            game.EndTurn();
+            return colony.StoreOf(Lumber) - before;
+        }
+
+        int free = LumberGainedInOneTurn(Free);
+        int expert = LumberGainedInOneTurn("model.unit.expertLumberJack");
+        Assert.True(free > 0);
+        Assert.Equal(free * 2, expert); // the live colony turn doubles lumber for the expert (worker-type overlay folded)
     }
 
     [Theory]

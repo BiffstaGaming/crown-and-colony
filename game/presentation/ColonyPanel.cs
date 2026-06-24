@@ -208,6 +208,9 @@ public partial class ColonyPanel : PanelContainer
         card.AddChild(SectionLabel("Warehouse"));
         card.AddChild(WarehouseBar());
 
+        card.AddChild(SectionLabel("Production"));
+        card.AddChild(ProductionOverview());
+
         // The custom-house export section only renders when the colony actually has a custom house (the engine's
         // auto-sell likewise no-ops without one) — so a fresh colony's screen and its visual golden are unchanged.
         if (_game.ColonyHasCustomHouse(_colony))
@@ -377,7 +380,10 @@ public partial class ColonyPanel : PanelContainer
                 }
                 if (_colony.TileWorkers.TryGetValue(tile, out string? good))
                 {
-                    TextureRect colonist = IconRect(ColonyArt.UnitIcon("freeColonist"), 56, 56);
+                    // Draw the worker's ACTUAL type (86d3f674f) — an expert lumberjack looks like one, not a free
+                    // colonist. WorkerTypeAt returns the tile's overlay type (free colonist when absent); the role is
+                    // always the labourer default for a colony worker, so the sprite resolves to units/<type>.png.
+                    TextureRect colonist = IconRect(WorkerSprite(_colony.WorkerTypeAt(tile)), 56, 56);
                     if (_heldFrom == tile)
                     {
                         colonist.Modulate = new Color(1f, 0.9f, 0.3f); // picked up — highlight the held colonist
@@ -617,7 +623,7 @@ public partial class ColonyPanel : PanelContainer
 
         box.AddChild(IconRect(ColonyArt.BuildingImage(building.ShortName), 124, 70));
         // Display name wraps to (at most) two reserved lines so long names like "Tobacconist House" don't spill the
-        // cell, and every cell stays the same height.
+        // cell, and every cell stays the same height. The slot count stays in the name (workers/workplaces).
         var label = new Label
         {
             Text = $"{Display(building.ShortName)} ({workers}/{building.Workplaces})",
@@ -627,6 +633,38 @@ public partial class ColonyPanel : PanelContainer
         };
         label.AddThemeFontSizeOverride("font_size", 13);
         box.AddChild(label);
+
+        // Per-slot worker PORTRAITS (86d3f6754), FreeCol's in-building worker images: one sprite per occupant drawn
+        // with its REAL unit type (an expert in a building is visible as that expert, not a bare count). Each occupied
+        // slot is a click-to-remove button (the FreeCol gesture — click a worker to take it out); empty workplaces show
+        // a faint placeholder so the slot count reads at a glance.
+        IReadOnlyList<string> occupants = _colony.BuildingOccupants(buildingId);
+        var slots = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        slots.AddThemeConstantOverride("separation", 2);
+        for (int i = 0; i < building.Workplaces; i++)
+        {
+            if (i < occupants.Count)
+            {
+                string occupantType = occupants[i];
+                var portrait = new Button
+                {
+                    Name = $"Worker_{building.ShortName}_{i}",
+                    Flat = true,
+                    TooltipText = $"{Display(Short(occupantType))} — click to remove",
+                    CustomMinimumSize = new Vector2(34, 34),
+                };
+                portrait.AddChild(IconRect(WorkerSprite(occupantType), 32, 32));
+                portrait.Pressed += () => { _game.UnassignBuildingWork(_colony, buildingId); Changed(); };
+                slots.AddChild(portrait);
+            }
+            else
+            {
+                var empty = IconRect(null, 32, 32);
+                empty.Modulate = new Color(1, 1, 1, 0.25f); // faint empty-slot marker
+                slots.AddChild(empty);
+            }
+        }
+        box.AddChild(slots);
 
         var controls = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
         if (_game.CheckAssignBuildingWork(_colony, buildingId).Allowed)
@@ -712,6 +750,72 @@ public partial class ColonyPanel : PanelContainer
             bar.AddChild(cell);
         }
         return bar;
+    }
+
+    // ── Production overview: per-good produced / consumed / net this turn (86d3f674t) ──────────────────────────
+
+    /// <summary>
+    /// FreeCol's colony-panel production summary: a per-good table of what the colony <b>produces</b>, <b>consumes</b>,
+    /// and the <b>net</b> each turn — food, raw and manufactured goods, plus the non-warehoused bells / crosses /
+    /// hammers — reading the tested <see cref="Game.ColonyProductionSummary"/> oracle (ADR-006: the panel renders, the
+    /// engine computes). One row per good touched, in stable id order: its icon + name, a green <c>+produced</c>, a red
+    /// <c>−consumed</c> (shown only when non-zero), and the net (red when negative). Unlike the top production bar
+    /// (net only, tiles + centre), this shows the full breakdown including building inputs/outputs.
+    /// </summary>
+    private Control ProductionOverview()
+    {
+        var box = new VBoxContainer { Name = "ProductionOverview", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        box.AddThemeConstantOverride("separation", 2);
+
+        var rows = _game.ColonyProductionSummary(_colony)
+            .Where(kv => kv.Value.Produced != 0 || kv.Value.Consumed != 0)
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .ToList();
+        if (rows.Count == 0)
+        {
+            box.AddChild(new Label { Text = "(nothing produced or consumed)", HorizontalAlignment = HorizontalAlignment.Center });
+            return box;
+        }
+
+        // Header (matches the per-row columns below).
+        var header = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        header.AddThemeConstantOverride("separation", 8);
+        header.AddChild(new Control { CustomMinimumSize = new Vector2(28, 0) }); // icon column spacer
+        header.AddChild(HeaderCell("Good", 140, HorizontalAlignment.Left));
+        header.AddChild(HeaderCell("Produced", 90, HorizontalAlignment.Right));
+        header.AddChild(HeaderCell("Consumed", 90, HorizontalAlignment.Right));
+        header.AddChild(HeaderCell("Net", 70, HorizontalAlignment.Right));
+        box.AddChild(header);
+
+        foreach ((string good, ColonyGoodFlow flow) in rows)
+        {
+            var row = new HBoxContainer { Name = $"Production_{Short(good)}", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            row.AddThemeConstantOverride("separation", 8);
+            row.AddChild(IconRect(ColonyArt.GoodsIcon(Short(good)), 28, 28));
+            row.AddChild(ColumnLabel(Display(Short(good)), 140, HorizontalAlignment.Left));
+            row.AddChild(ColumnLabel(flow.Produced > 0 ? $"+{flow.Produced}" : "", 90, HorizontalAlignment.Right));
+            row.AddChild(ColumnLabel(flow.Consumed > 0 ? $"−{flow.Consumed}" : "", 90, HorizontalAlignment.Right, Negative));
+            row.AddChild(ColumnLabel((flow.Net > 0 ? "+" : "") + flow.Net, 70, HorizontalAlignment.Right, flow.Net < 0 ? Negative : null));
+            box.AddChild(row);
+        }
+        return box;
+    }
+
+    private static Label HeaderCell(string text, int width, HorizontalAlignment align)
+    {
+        var label = ColumnLabel(text, width, align);
+        label.AddThemeFontSizeOverride("font_size", 12);
+        return label;
+    }
+
+    private static Label ColumnLabel(string text, int width, HorizontalAlignment align, Color? color = null)
+    {
+        var label = new Label { Text = text, HorizontalAlignment = align, CustomMinimumSize = new Vector2(width, 0) };
+        if (color is { } c)
+        {
+            label.AddThemeColorOverride("font_color", c);
+        }
+        return label;
     }
 
     // ── Cargo: load/unload goods between the warehouse and a docked carrier's holds (86d3f5y8r) ────────────────
@@ -866,6 +970,20 @@ public partial class ColonyPanel : PanelContainer
     }
 
     // ── Small UI helpers ────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The colonist sprite for a worker of unit-type id <paramref name="typeId"/> (a tile or building occupant) — its
+    /// real type's art, so an expert (lumberjack, ore miner, …) is drawn as that expert rather than a free colonist
+    /// (86d3f674f/86d3f6754). A colony worker carries no equipped role, so the labourer-default sprite at
+    /// <c>units/&lt;type&gt;.png</c> is correct; uses <see cref="UnitMarker.ResolveTexture"/> with the default role for the
+    /// same FreeCol candidate-path search the map uses (falling back to <see cref="ColonyArt.UnitIcon"/>, the identical
+    /// bare-type path, so a type with no role-folder art still resolves).
+    /// </summary>
+    private static Texture2D? WorkerSprite(string typeId)
+    {
+        string shortName = Short(typeId);
+        return UnitMarker.ResolveTexture(shortName, UnitSpriteCatalog.DefaultRole) ?? ColonyArt.UnitIcon(shortName);
+    }
 
     private static TextureRect IconRect(Texture2D? texture, int width, int height) => new()
     {
