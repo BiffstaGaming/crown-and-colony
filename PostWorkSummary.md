@@ -19,6 +19,18 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-24 — P7 WAVE 3 shipped + 🏁 P7 code/UX COMPLETE (CI green, verified)
+
+**Requested:** Work through the P7 items via parallel streams.
+**Did (P7 wave 3 — 2 streams, L3 verified locally before push):**
+- **Message log** (`10e9463`, **save v58→v59**): per-category tagging + filter bar (hidden set in settings.cfg, omit-when-empty) + cross-save persistence (additive omit-when-empty `MessageLog`; default byte-identical).
+- **Keybinding remap** (`8c7752a`): all hotkeys → named `InputMap` actions + a rebind screen (from Settings, overrides in settings.cfg); preserved the same-frame dedup, text-focus guard, and the F1 legend (now regenerated from the live map). No save change.
+**Status:** Pushed `…3cbb60c`. **CI run 28090337359 = GREEN both jobs.** Local: build + 2194 L1/L2 + 5 soak + full L3 175/175 functional. Integration: `GameController` auto-merged (X log-tagging vs Y input-refactor, different regions); settings-screen golden re-adopted from CI's Linux render (Y's new button shifted it). **Ran the full L3 locally before pushing this time** (the discipline from the wave-4 miss).
+**🏁 P7 status:** all 23 P7 **code/UX tasks done + CI green** across 3 waves (the original 5 + 13 + 4 + 3 — autosave, save-slot, fog, CREDITS, README, perf-gate, save-compat, About, Help/tutorial, version/AppInfo, quit-confirm, disband+D, hotkeys+legend, skip, arrow-pan, right-click menu, font-scale, colourblind, reports fidelity, message-log filter+persist, keybinding remap, branded icon, export presets, release CI).
+**Remaining (genuinely yours / non-code):** trademark search (`86d3e98df`); the tagged-release **export-binary verification** (`86d3dzdtp`/`86d3f0w6e`/`86d3f0w8q` — config + CI workflow done & green, binaries need export templates on your machine); help-panel L4 golden follow-up (`86d3f1y8j`).
+**Scheduled next:** Your steer — playtest P7, run a release tag, or proceed to the Australia variant (P8, now fully unblocked).
+**Needs you:** Trademark + the release-tag verification when you want a distributable.
+
 ## 2026-06-24 — P7 WAVE 2 integrated + CI L3/L4 repaired — 🟢 CI fully green (first time since wave 4)
 
 **Requested:** Work through the P7 items via parallel streams.
