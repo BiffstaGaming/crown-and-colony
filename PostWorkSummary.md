@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-23 — P7 coding WAVE 1 shipped (5 disjoint streams, 13 tasks) ✅
+
+**Requested:** Work through the P7 items via parallel streams to reduce testing.
+**Did:** 5 disjoint parallel worktree streams (grouped cohesive work to dodge the GameController/SettingsModel/menus contention), integrated CI-green:
+- **A — input/HUD** (`0f5abd4`): Disband+D, End-Turn=Enter, Ctrl+S/Ctrl+O save/load, Skip+Space, arrow-pan+Ctrl+C centre, right-click tile menu — all from one authoritative key table + an F1 legend. New `docs/systems/hud-input.md`. Additive `NextUnitToMove(skip)` param only.
+- **B — accessibility** (`d3f66a1`): UI scale (75–200% via ContentScaleFactor) + colourblind mode (free Okabe–Ito palette), persisted to settings.cfg.
+- **C — reports** (`a8b4833`): nation-grouped Native-Affairs advisor (+ most-hated) + Foreign-Affairs military/naval strength (new pure-read `Game.ColonialStrength`).
+- **D — menus** (`2231f45`): `AppInfo.Version` 0.1.0 (both csprojs), quit-without-saving confirmation, About panel (from both menus).
+- **E — manual** (`ca45a16`): player-facing `docs/MANUAL.md`, keybindings verified against code.
+**Status:** Integrated, pushed `ca45a16…2231f45`. Build clean + **2173 L1/L2 + 5 soak green**. No save bump (v58). Conflicts resolved: `PauseMenu.cs` (A's OpenSave/OpenLoad + D's OnAbout — kept both), `presentation.md` (all rows), `main.tscn` auto-merged.
+**Decisions:** Grouped the 5 input tasks into ONE agent (they all edit `_UnhandledInput`); reduce-testing = each agent batches its sub-tasks + tests once, I run full suite + soak once per wave.
+**Scheduled next:** **P7 Wave 2 — save/load UX (autosave + save-slot), release scaffolding (export presets all-3 + release CI + branded icon), tutorial/help** (3 disjoint streams). Then Wave 3: message-log filter+persistence + keybinding remap. Trademark + the actual Windows build verification stay your real-world/machine actions.
+**Needs you:** Nothing blocking. **13 of ~21 actionable P7 tasks shipped.**
+
 ## 2026-06-23 — P7 fully decomposed: 20 new release-readiness tasks created (FreeCol-client parity)
 
 **Requested:** "Create all of the ClickUp tasks to bring 100% FreeCol to this project for P7."
