@@ -49,6 +49,14 @@ ruleset is designed to make a content change rather than a code change.
 - **Game shell** — main menu, in-game and pause menus, settings, save/load, scoring, and
   multiple game modes — plus sound, music, and combat animation.
 
+## Playing the game
+
+New to Crown & Colony? The **[Player's Manual](docs/MANUAL.md)** is a from-scratch, player-facing
+guide: the goal of the game, the New Game setup, the core loops (exploring, founding and running
+colonies, the Europe economy, immigration, natives, combat), the controls and keybindings,
+save/load, and the road to independence and victory. (The README itself is developer/build-facing;
+the manual is for someone playing a packaged build.)
+
 ## Architecture
 
 - **Engine-independent game logic in pure C#** (`GameLogic`) — fully unit-testable and
