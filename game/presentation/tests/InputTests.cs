@@ -1072,8 +1072,13 @@ public class InputTests
         controller.GetType().GetField("_selectedUnit", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(controller, null);
 
-        // Centre on the tile and invoke the right-click handler (the screen-space drag/release path is camera-owned).
+        // Centre on the tile and park the cursor at screen-centre, then invoke the right-click handler (the screen-space
+        // drag/release path is camera-owned). HandleRightClick reads _mapView.GetLocalMousePosition(); with the camera on
+        // the tile, the cursor must sit at screen-centre to project onto it (the [BeforeTest] reset warps it to the origin,
+        // which would project off-map and the handler would early-out without a menu). Mirrors ClickTile's centring.
         controller.GetNode<Camera2D>("Camera").Position = MapView.TileCentre(pos);
+        runner.SetMousePos(controller.GetViewport().GetVisibleRect().Size / 2f);
+        Input.FlushBufferedEvents(); // land the warp before HandleRightClick reads the cursor
         await runner.SimulateFrames(1);
         controller.GetType().GetMethod("HandleRightClick", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(controller, null);

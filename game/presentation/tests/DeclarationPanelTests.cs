@@ -105,11 +105,16 @@ public class DeclarationPanelTests
         // Found the human's starting unit as a colony on a coastal, *settle-able* land tile beside water that isn't
         // adjacent to another colony (the scene's map terrain differs from the L1 helper's, so pre-filter on the same
         // terms CheckFoundColony gates on — settle-able terrain + colony spacing — to skip mountains/forbidden tiles).
+        // Also require an UNCLAIMED tile (RequiredLandClaim.Required == false): founding on native-owned land throws
+        // LandClaimRequiredException (the C3 forced-claim gate, Game.FoundColony) unless an explicit claim choice is
+        // passed, so excluding native-owned sites keeps the no-argument FoundColony below safe regardless of which tile
+        // the scene's generated map offers first.
         Position coastal = game.Map.AllPositions().First(p =>
             game.Map.TerrainAt(p).CanSettle
             && !game.Map.TerrainAt(p).IsWater
             && game.ColonyAt(p) is null
             && game.NativeSettlementAt(p) is null
+            && !game.RequiredLandClaim(p).Required
             && p.Neighbours().All(n => !game.Map.InBounds(n) || game.ColonyAt(n) is null)
             && p.Neighbours().Any(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater));
         Unit colonist = game.SpawnUnit(game.Ruleset.Unit(Game.StartingUnitTypeId), coastal);

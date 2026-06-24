@@ -62,6 +62,8 @@ For orders and game control there's a shortcut for everything, and you never hav
 
 **Save/Load hotkeys:** `Ctrl+S`/`Ctrl+O` call `PauseMenu.OpenSave()`/`OpenLoad()`, which pause the tree and open the existing `SaveLoadDialog` overlay (the same path the pause menu's Save/Load buttons use), then unpause when the dialog closes if the pause menu itself is hidden (i.e. the hotkey entry, not the Esc-menu flow).
 
+**Same-frame key de-duplication:** the key branch ignores a key-down that exactly repeats (same keycode + Ctrl) one already dispatched on the current `Engine.GetProcessFrames()` (`GameController.IsDuplicateKeyDown`). A real, single physical press produces exactly one `_UnhandledInput` call, so this is a no-op in a live game; it exists because the L3 GdUnit `SceneRunner` delivers each simulated press *twice* in the same frame (it both pumps the global `Input` pipeline and calls `_unhandled_input` directly). Without the guard a turn-advancing key (Enter) would advance twice and a toggle (F1) would flip straight back to its start. Genuine OS key repeats arrive as `Echo` events (already filtered out by the `Echo: false` pattern), and a deliberate second press lands on a later frame, so neither is affected.
+
 **Integration points:** `_UnhandledInput` ordering — `CameraController` (a child node) receives `_unhandled_input` before the `GameController` root, so its right-release `SetInputAsHandled()` (after a real drag) suppresses the menu. Arrow-key pan is a continuous poll in `CameraController._Process` (reads `Input.IsKeyPressed`), not event-driven, so it doesn't compete with the key-dispatch table.
 
 **Persistence:** none. Skip set, legend visibility, camera position — all session-only.
@@ -72,7 +74,7 @@ For orders and game control there's a shortcut for everything, and you never hav
 |---|---|---|---|
 | L1 Unit | Always | `GotoTests.NextUnitToMove_SkipSet_PassesOverSkippedUnits_ButStillOffersTheRest` (skip-param oracle) | ✅ |
 | L2 Scenario | n/a | input is presentation; the underlying commands (Disband/EndTurn/goto) are covered in their own systems | — |
-| L3 Interaction | Yes (UI) | `InputTests`: `SelectedUnitPanel_DisbandButton_*`, `PressingD_*`, `PressingEnter_EndsTheTurn`, `PressingSpace_SkipsTheUnit_*`, `CtrlC_CentresTheCameraOnTheSelectedUnit`, `F1_TogglesTheKeysLegend`, `RightClickTileMenu_ActivatesAUnitInAStack` | ⏳ CI |
+| L3 Interaction | Yes (UI) | `InputTests`: `SelectedUnitPanel_DisbandButton_*`, `PressingD_*`, `PressingEnter_EndsTheTurn`, `PressingSpace_SkipsTheUnit_*`, `CtrlC_CentresTheCameraOnTheSelectedUnit`, `F1_TogglesTheKeysLegend`, `RightClickTileMenu_ActivatesAUnitInAStack` | ✅ local (full L3 functional suite green; only L4 goldens mismatch on the Windows renderer) |
 | L4 Visual | No (no new screen) | — | — |
 | L5 Soak | Covered by global suite | — | — |
 
@@ -88,4 +90,5 @@ For orders and game control there's a shortcut for everything, and you never hav
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-24 | Key dispatch de-duplicates an identical same-frame key-down (`IsDuplicateKeyDown`), so the L3 runner's double event delivery can't fire a hotkey twice (fixes `PressingEnter` double-advance + `F1` double-toggle). No effect on real single presses. | _local_ |
 | 2026-06-24 | Initial doc: keyboard/mouse HUD input — authoritative key table, F1 legend, Space skip-unit, D disband+confirm, arrow/right-drag pan, Ctrl+C centre, right-click tile menu | _local_ |

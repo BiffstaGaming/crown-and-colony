@@ -669,6 +669,10 @@ public partial class GameController : Node2D
                 HandleRightClick();
                 break;
             case InputEventKey { Pressed: true, Echo: false } key when !IsTextInputFocused():
+                if (IsDuplicateKeyDown(key))
+                {
+                    break; // a single press already dispatched this frame — never fire its action twice (see IsDuplicateKeyDown)
+                }
                 // Dispatch through the authoritative key table — a key fires its bound action unless a modal/text field
                 // owns focus (so typing into a save-slot/search field never triggers a hotkey). 86d3f0vjg.
                 foreach (KeyBinding binding in KeyBindings)
@@ -690,6 +694,32 @@ public partial class GameController : Node2D
     /// new key against firing mid-type, as the brief requires.
     /// </summary>
     private bool IsTextInputFocused() => GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit;
+
+    /// <summary>The (keycode + Ctrl) of the last non-echo key-down dispatched, and the process-frame it fired on — for same-frame de-duplication.</summary>
+    private KeyChord _lastKeyDown;
+    private bool _hasLastKeyDown;
+    private ulong _lastKeyDownFrame = ulong.MaxValue;
+
+    /// <summary>
+    /// Whether <paramref name="key"/> is the same key-down we already dispatched on this process frame, so its bound
+    /// action must not fire a second time. A single physical press produces exactly one <c>_UnhandledInput</c> call in a
+    /// live game, but the L3 GdUnit <c>SceneRunner</c> delivers each simulated press <em>twice</em> in the same frame —
+    /// once by pumping the global <see cref="Input"/> pipeline and again by calling <c>_unhandled_input</c> directly — so
+    /// a turn-advancing key (Enter) would advance twice and a toggle (F1) would flip back to its start. Collapsing an
+    /// identical same-frame key-down to one keeps real single-press behaviour intact (genuine key repeats arrive as
+    /// <c>Echo</c> events, already filtered, and a deliberate second press lands on a later frame). The frame stamp uses
+    /// <see cref="Engine.GetProcessFrames"/>, which the runner advances between simulated presses.
+    /// </summary>
+    private bool IsDuplicateKeyDown(InputEventKey key)
+    {
+        var chord = new KeyChord(key.Keycode, key.CtrlPressed);
+        ulong frame = Engine.GetProcessFrames();
+        bool duplicate = _hasLastKeyDown && _lastKeyDownFrame == frame && _lastKeyDown == chord;
+        _lastKeyDown = chord;
+        _hasLastKeyDown = true;
+        _lastKeyDownFrame = frame;
+        return duplicate;
+    }
 
     /// <summary>Selects the next of the human's units still needing orders and centres on it (FreeCol's "wait/next unit"
     /// cycle, key W) — reads the shipped <see cref="Game.NextUnitToMove"/> oracle, passing the session-only skip set so a
