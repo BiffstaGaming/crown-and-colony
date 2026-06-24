@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using CrownAndColony.GameLogic.App;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
@@ -210,6 +211,49 @@ public class SaveLoadTests
         await runner.SimulateFrames(1);
         AssertThat(controller.GetNode<Label>("UI/StatusLabel").Text).Contains("Turn 1");
     }
+
+    [TestCase]
+    public async Task MessageLog_SurvivesSaveLoad_RoundTrip()
+    {
+        // Task 86d3e959t (save v59): the in-session message log is now persisted. Seed the controller's log with two
+        // turns of categorized notices (the seam OnEndTurnPressed fills), save, then load — the loaded controller must
+        // re-build the same per-turn log instead of starting empty (the pre-v59 behaviour).
+        ISceneRunner runner = ISceneRunner.Load(GameScene);
+        var controller = (GameController)runner.Scene();
+        await runner.SimulateFrames(2);
+        controller.StartNewGame(424242);
+
+        var log = MessageLogOf(controller);
+        log.Clear();
+        log.Add(new MessageLogPanel.Entry(1, new System.Collections.Generic.List<MessageLogPanel.LogMessage>
+        {
+            new(MessageCategory.Combat, "A privateer sank your Caravel at (4,5)!"),
+            new(MessageCategory.Economy, "Your custom house in Jamestown sold 100 sugar for 250 gold."),
+        }));
+        log.Add(new MessageLogPanel.Entry(2, new System.Collections.Generic.List<MessageLogPanel.LogMessage>
+        {
+            new(MessageCategory.Monarch, "The Crown lowered your tax rate to 18%."),
+        }));
+
+        string path = SaveLoadDialog.SlotPath(3);
+        controller.SaveTo(path);
+        controller.LoadFrom(path);
+        await runner.SimulateFrames(1);
+
+        var restored = MessageLogOf(controller);
+        AssertThat(restored.Count).IsEqual(2);                 // two turns re-grouped
+        AssertThat(restored[0].Turn).IsEqual(1);
+        AssertThat(restored[0].Messages.Count).IsEqual(2);     // both turn-1 notices kept, in order
+        AssertThat(restored[0].Messages[0].Category).IsEqual(MessageCategory.Combat);
+        AssertThat(restored[0].Messages[1].Category).IsEqual(MessageCategory.Economy);
+        AssertThat(restored[1].Turn).IsEqual(2);
+        AssertThat(restored[1].Messages[0].Text).Contains("tax rate");
+    }
+
+    private static System.Collections.Generic.List<MessageLogPanel.Entry> MessageLogOf(GameController controller) =>
+        (System.Collections.Generic.List<MessageLogPanel.Entry>)controller.GetType()
+            .GetField("_messageLog", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(controller)!;
 
     [TestCase]
     public async Task EndingATurn_WritesTheAutosave()

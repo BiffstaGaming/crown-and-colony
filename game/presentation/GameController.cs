@@ -163,7 +163,7 @@ public partial class GameController : Node2D
     private PreCombatPanel _preCombatPanel = null!;
     private TurnMessagePanel _turnMessagePanel = null!;
     private MessageLogPanel _messageLogPanel = null!;
-    private readonly List<MessageLogPanel.Entry> _messageLog = []; // in-session history of per-turn notices (ADR-009 / no save bump — never serialized)
+    private readonly List<MessageLogPanel.Entry> _messageLog = []; // history of per-turn notices; persisted across save/load from save v59 (round-tripped through SaveGame.MessageLog)
     private PanelContainer _tradeRoutePanel = null!;
     private PanelContainer _colonyReportPanel = null!;
     private PanelContainer _findSettlementPanel = null!;
@@ -375,6 +375,7 @@ public partial class GameController : Node2D
         _selectedUnit = null;
         _inspectedTile = null;
         _notice = null;
+        _messageLog.Clear(); // a fresh/loaded game starts with no logged notices; a load re-fills it after this (RestoreMessageLog)
         _skippedThisTurn.Clear(); // a fresh/loaded game starts with no skipped units (session-only set; 86d3f0vuy)
         _victoryShown = false; // re-arm the one-shot victory screen for the fresh game (new or loaded)
         _highScoreRecorded = false; // re-arm the one-shot end-of-game high-score record
@@ -470,26 +471,33 @@ public partial class GameController : Node2D
         // (1c-3f), then custom-house auto-sales. Notices are in deterministic order; instead of cramming them into
         // the one-line status bar, each is formatted to a player-facing row and shown together in the dismissible
         // TurnMessagePanel (FreeCol's ReportTurnPanel). Formatting (and the rules) stay here / in GameLogic (ADR-006).
-        var messages = _game.CombatNotices.Select(FormatCombatNotice)
-            .Concat(_game.ColonyRaidNotices.Select(FormatColonyRaidNotice))
-            .Concat(_game.ColonyLossNotices.Select(FormatColonyLossNotice))
-            .Concat(_game.WarehouseOverflowNotices.Select(FormatWarehouseOverflowNotice)) // warehouse spilling over capacity
-            .Concat(_game.ColonyFamineNotices.Select(FormatColonyFamineNotice))           // a colony lost a colonist to famine
-            .Concat(_game.ColonyStarvedNotices.Select(FormatColonyStarvedNotice))         // a colony starved out of existence
-            .Concat(_game.MonarchDecreeNotices.Select(FormatMonarchDecreeNotice))         // immediate King's decrees (war/peace/tax/support/REF)
-            .Concat(_game.CustomHouseSaleNotices.Select(FormatCustomHouseSaleNotice))
+        // Each notice is tagged with a MessageCategory so the message log can group/filter by kind (combat / natives /
+        // economy / monarch / colony). Combat raids and AI captures of a colony are combat; native pillages are a
+        // native event; warehouse overflow and custom-house sales are economic; famine/starvation are colony events;
+        // the King's decrees are monarch events. (FreeCol's per-type ModelMessage "show this kind" toggles.)
+        var entries = _game.CombatNotices.Select(n => Logged(MessageCategory.Combat, FormatCombatNotice(n)))
+            .Concat(_game.ColonyRaidNotices.Select(n => Logged(MessageCategory.Natives, FormatColonyRaidNotice(n))))
+            .Concat(_game.ColonyLossNotices.Select(n => Logged(MessageCategory.Combat, FormatColonyLossNotice(n))))
+            .Concat(_game.WarehouseOverflowNotices.Select(n => Logged(MessageCategory.Economy, FormatWarehouseOverflowNotice(n)))) // warehouse spilling over capacity
+            .Concat(_game.ColonyFamineNotices.Select(n => Logged(MessageCategory.Colony, FormatColonyFamineNotice(n))))           // a colony lost a colonist to famine
+            .Concat(_game.ColonyStarvedNotices.Select(n => Logged(MessageCategory.Colony, FormatColonyStarvedNotice(n))))         // a colony starved out of existence
+            .Concat(_game.MonarchDecreeNotices.Select(n => Logged(MessageCategory.Monarch, FormatMonarchDecreeNotice(n))))         // immediate King's decrees (war/peace/tax/support/REF)
+            .Concat(_game.CustomHouseSaleNotices.Select(n => Logged(MessageCategory.Economy, FormatCustomHouseSaleNotice(n))))
             .ToList();
         if (_game.IsHumanDefeated)
         {
             // The AI phase took the human's last colony/unit — surface the defeat after the loss notice that caused it.
-            messages.Add("💀 You have been defeated — your last colony and units are gone.");
+            entries.Add(Logged(MessageCategory.Combat, "💀 You have been defeated — your last colony and units are gone."));
         }
-        // Keep an in-session record so the player can re-open the log later (session-only; never saved — no save bump).
-        if (messages.Count > 0)
+        // Keep a record so the player can re-open the log later. Persisted across save/load from save v59 (the controller
+        // round-trips _messageLog through SaveGame.MessageLog — see SaveTo / LoadFrom).
+        if (entries.Count > 0)
         {
-            _messageLog.Add(new MessageLogPanel.Entry(_game.Turn, messages));
+            _messageLog.Add(new MessageLogPanel.Entry(_game.Turn, entries));
         }
-        _turnMessagePanel.Open(messages); // no-op (stays hidden) when there were no events this turn
+        // The dismissible turn-message panel shows every event this turn (unfiltered — it is the "what just happened"
+        // popup, not the filterable history); pass the plain text. No-op (stays hidden) when there were no events.
+        _turnMessagePanel.Open(entries.Select(e => e.Text)); // no-op (stays hidden) when there were no events this turn
         RefreshView();
 
         // A native brave demanded tribute of one of the human's colonies during the AI phase → prompt for a decision
@@ -527,6 +535,9 @@ public partial class GameController : Node2D
             SaveTo(AutosavePath);
         }
     }
+
+    /// <summary>Pairs a formatted notice string with its <see cref="MessageCategory"/> for the filterable message log.</summary>
+    private static MessageLogPanel.LogMessage Logged(MessageCategory category, string text) => new(category, text);
 
     /// <summary>Turns an AI attack on the human into a status-bar message, from the human defender's point of view.</summary>
     private string FormatCombatNotice(CombatNotice notice)
@@ -1295,13 +1306,37 @@ public partial class GameController : Node2D
         ((ColonyReportPanel)_colonyReportPanel).Open(_game);
 
     /// <summary>
-    /// Opens the in-session message log — the accumulated per-turn notices that the dismissible
-    /// <see cref="TurnMessagePanel"/> showed and then forgot. Session-only (the <see cref="_messageLog"/> history is
-    /// never serialized, so the save format is unchanged — ADR-009); a reloaded game's log starts empty. Public so
-    /// scene tests can drive it directly.
+    /// Opens the message log — the accumulated per-turn notices that the dismissible <see cref="TurnMessagePanel"/>
+    /// showed and then forgot. The log is persisted across save/load (save v59, round-tripped through
+    /// <see cref="SaveGame.MessageLog"/>), so a reloaded game keeps its history. The panel groups by turn and filters by
+    /// <see cref="MessageCategory"/>; the hidden-category set is the live <see cref="SettingsModel.HiddenMessageCategories"/>
+    /// client option, and toggling a category box persists the choice to <c>settings.cfg</c>. Public so scene tests can
+    /// drive it directly.
     /// </summary>
-    public void OpenMessageLogPanel() =>
-        _messageLogPanel.Open(_messageLog);
+    public void OpenMessageLogPanel()
+    {
+        SettingsService? settings = GetNodeOrNull<SettingsService>("/root/Settings");
+        // No Settings autoload (a bare test scene) → an ephemeral hide-set with a no-op persist; the filter still works
+        // within the open panel, it just is not written anywhere.
+        ISet<MessageCategory> hidden = settings?.Settings.HiddenMessageCategories ?? new HashSet<MessageCategory>();
+        _messageLogPanel.Open(_messageLog, hidden, (category, nowHidden) =>
+        {
+            // The hidden set was already mutated in-place by the panel; mirror that into the live settings model (it is
+            // the same instance when Settings exists) and persist. The category/nowHidden args make the intent explicit.
+            settings?.UpdateAndApply(s =>
+            {
+                if (nowHidden)
+                {
+                    s.HiddenMessageCategories.Add(category);
+                }
+                else
+                {
+                    s.HiddenMessageCategories.Remove(category);
+                }
+            });
+            settings?.Save();
+        });
+    }
 
     /// <summary>Opens the Find Settlement dialog (pick a colony to recenter the camera on it). Public so scene tests can drive it.</summary>
     public void OpenFindSettlementPanel() =>
@@ -1423,7 +1458,7 @@ public partial class GameController : Node2D
     private void QuickSave()
     {
         using var file = FileAccess.Open(QuickSavePath, FileAccess.ModeFlags.Write);
-        file.StoreString(SaveGame.From(_game, _variant.Id).ToJson());
+        file.StoreString(BuildSave().ToJson());
         _notice = "Game saved.";
         RefreshView();
     }
@@ -1441,6 +1476,7 @@ public partial class GameController : Node2D
         // Reload under the save's own variant + difficulty level so its ruleset/balance matches (ADR-018, 86d3c9y08).
         _variant = GameVariants.Resolve(save.Variant);
         StartGame(save.Restore(_variant.LoadRuleset(save.DifficultyLevelOrDefault)));
+        RestoreMessageLog(save);
         _notice = "Game loaded.";
         RefreshView();
     }
@@ -1450,7 +1486,7 @@ public partial class GameController : Node2D
     {
         DirAccess.MakeDirRecursiveAbsolute(SavesDir);
         using var file = FileAccess.Open(path, FileAccess.ModeFlags.Write);
-        file.StoreString(SaveGame.From(_game, _variant.Id).ToJson());
+        file.StoreString(BuildSave().ToJson());
     }
 
     /// <summary>Loads a game from <paramref name="path"/> under the save's own variant ruleset (ADR-018). Used by the save/load dialog and the boot-time pending load.</summary>
@@ -1460,6 +1496,54 @@ public partial class GameController : Node2D
         SaveGame save = SaveGame.FromJson(file.GetAsText());
         _variant = GameVariants.Resolve(save.Variant);
         StartGame(save.Restore(_variant.LoadRuleset(save.DifficultyLevelOrDefault)));
+        RestoreMessageLog(save);
+    }
+
+    /// <summary>
+    /// Builds the <see cref="SaveGame"/> snapshot for the current game, attaching the presentation-owned in-session
+    /// <see cref="_messageLog"/> as <see cref="SaveGame.MessageLog"/> (save v59). The strings are formatted here
+    /// (ADR-006), so the controller — not <see cref="SaveGame.From"/> — supplies them, via a <c>with</c>; an empty log
+    /// leaves the field null so a no-notice game serialises byte-identically to v58.
+    /// </summary>
+    private SaveGame BuildSave() => SaveGame.From(_game, _variant.Id) with
+    {
+        MessageLog = _messageLog.Count > 0
+            ? _messageLog
+                .SelectMany(entry => entry.Messages.Select(m => new SavedLogMessage(entry.Turn, (int)m.Category, m.Text)))
+                .ToList()
+            : null,
+    };
+
+    /// <summary>
+    /// Re-fills the in-session <see cref="_messageLog"/> from a just-loaded <paramref name="save"/> (save v59),
+    /// re-grouping the flat per-message rows back into one <see cref="MessageLogPanel.Entry"/> per turn (preserving
+    /// turn order and within-turn order). A pre-v59 / omitted log leaves the log empty (already cleared by
+    /// <see cref="StartGame"/>) — exactly the prior behaviour, where the log was never persisted.
+    /// </summary>
+    private void RestoreMessageLog(SaveGame save)
+    {
+        if (save.MessageLog is not { } rows || rows.Count == 0)
+        {
+            return; // pre-v59 / empty → the log stays cleared
+        }
+        // Group consecutive rows by turn, preserving order — the save writes them turn-grouped and in-order, so a simple
+        // run-length grouping reproduces the original per-turn entries exactly.
+        var current = new List<MessageLogPanel.LogMessage>();
+        int currentTurn = rows[0].Turn;
+        foreach (SavedLogMessage row in rows)
+        {
+            if (row.Turn != currentTurn && current.Count > 0)
+            {
+                _messageLog.Add(new MessageLogPanel.Entry(currentTurn, current));
+                current = new List<MessageLogPanel.LogMessage>();
+            }
+            currentTurn = row.Turn;
+            current.Add(new MessageLogPanel.LogMessage((MessageCategory)row.Category, row.Text));
+        }
+        if (current.Count > 0)
+        {
+            _messageLog.Add(new MessageLogPanel.Entry(currentTurn, current));
+        }
     }
 
     private void RefreshView()

@@ -20,7 +20,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 58;
+    public const int CurrentVersion = 59;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -207,6 +207,18 @@ public sealed record SaveGame
     /// (ADR-009): the log is pure UI/score scratch with no feedback into game evolution, so a reloaded game continues on
     /// the identical random sequence and the soak twin-run stays byte-identical (it never records the score-bearing
     /// events the human earns by exploring/razing).
+    /// v59 added the in-session <b>message log</b> (<see cref="MessageLog"/> — the per-turn player notices the
+    /// dismissible turn-message panel showed and then forgot: combat raids, native pillages, custom-house sales,
+    /// monarch decrees, famines, …, FreeCol persisting <c>ModelMessage</c>s on the Player, 86d3e959t). Each entry keeps
+    /// its turn, its <see cref="App.MessageCategory"/> (for the log's category filter) and the already-formatted
+    /// player-facing text. Before v59 the log lived only in the controller and was lost on save/load; persisting it lets
+    /// the re-openable message log survive a reload. Because the formatting is presentation-side (ADR-006), the
+    /// <em>controller</em> populates this field via a <c>with</c> after <see cref="From"/> and reads it back on load —
+    /// <see cref="From"/> itself never touches it (it has no formatted strings). Additive + <b>omitted when the log is
+    /// empty</b> (null), so a fresh game (which has logged no notices yet) serialises byte-identically to v58 and pre-v59
+    /// saves (or any with no log) load with an empty log exactly as before persistence. Determinism (ADR-009): the log
+    /// is pure UI scratch with no feedback into game evolution, so a reloaded game continues on the identical random
+    /// sequence and the headless soak (which never builds the controller, so never fills this field) stays byte-identical.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -356,6 +368,20 @@ public sealed record SaveGame
     /// reloaded game continues on the identical random sequence whether or not the log was persisted.
     /// </summary>
     public IReadOnlyList<SavedHistoryEvent>? History { get; init; }
+
+    /// <summary>
+    /// The in-session message log — the per-turn player notices the dismissible turn-message panel surfaced after each
+    /// End Turn and then forgot (combat raids, native pillages, custom-house sales, monarch decrees, famines, …),
+    /// kept so the player can re-open the log at any time (FreeCol persists <c>ModelMessage</c>s on the Player; v59).
+    /// Each entry carries its turn, its <see cref="App.MessageCategory"/> (for the log's category filter) and the
+    /// already-formatted player-facing text. <b>Presentation-owned (ADR-006):</b> the strings are formatted by the
+    /// controller, so the controller sets this field via a <c>with</c> after <see cref="From"/> and reads it back on
+    /// load; <see cref="From"/> never populates it. Additive + <b>omitted when the log is empty</b> (null), so a fresh
+    /// game (no notices logged yet) serialises byte-identically to v58; pre-v59 saves (or any with no log) load with an
+    /// empty log exactly as before persistence. Determinism (ADR-009): pure UI scratch — no feedback into game
+    /// evolution, so a reloaded game continues on the identical random sequence.
+    /// </summary>
+    public IReadOnlyList<SavedLogMessage>? MessageLog { get; init; }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -986,6 +1012,17 @@ public sealed record SavedForce(IReadOnlyList<ForceEntry> Land, IReadOnlyList<Fo
 /// <param name="Description">The player-facing one-line description (carries no ids — safe to round-trip verbatim).</param>
 /// <param name="Score">The score the event contributed (region discovery positive; −5/−50 destruction penalties; 0 otherwise). Omitted when 0 so a score-less event (the common case) stays compact.</param>
 public sealed record SavedHistoryEvent(int Kind, int Turn, string Description, int Score = 0);
+
+/// <summary>
+/// One per-turn player notice in the in-session message log inside a <see cref="SaveGame"/> (v59). The whole log is
+/// additive + <b>omitted when empty</b> (see <see cref="SaveGame.MessageLog"/>), so a fresh game stays byte-identical
+/// to v58; pre-v59 saves load with an empty log. The text is the already-formatted, player-facing string the
+/// controller produced (ADR-006) — it carries no ids, so it round-trips verbatim.
+/// </summary>
+/// <param name="Turn">The game turn the notice was surfaced on.</param>
+/// <param name="Category">The <see cref="App.MessageCategory"/> enum ordinal (for the log's category filter).</param>
+/// <param name="Text">The already-formatted player-facing notice text.</param>
+public sealed record SavedLogMessage(int Turn, int Category, string Text);
 
 /// <summary>A colonist's tile assignment inside a <see cref="SavedColony"/>.</summary>
 /// <param name="X">Worked tile column.</param>

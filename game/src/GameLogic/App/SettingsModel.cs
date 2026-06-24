@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 namespace CrownAndColony.GameLogic.App;
 
@@ -35,6 +36,7 @@ public sealed class SettingsModel
     private const string KeyUiScale = "ui_scale";
     private const string KeyColorblind = "colorblind_mode";
     private const string KeyAutosavePeriod = "autosave_period";
+    private const string KeyHiddenMessageCategories = "hidden_message_categories";
 
     /// <summary>Smallest allowed <see cref="UiScale"/> (75% — text/UI noticeably tighter but still legible).</summary>
     public const float MinUiScale = 0.75f;
@@ -82,6 +84,14 @@ public sealed class SettingsModel
     /// </summary>
     public int AutosavePeriod { get; set; } = 1;
 
+    /// <summary>
+    /// The message-log categories the player has chosen to <b>hide</b> — events of these kinds are filtered out of the
+    /// re-openable message log. Empty by default (every category shown). A client preference (FreeCol's per-type
+    /// <c>guiShow…</c> "show this kind of message" toggles, inverted to a hide-set so the common "show all" state
+    /// persists as nothing). Persisted in <c>settings.cfg</c> as a comma-separated list of category names.
+    /// </summary>
+    public ISet<MessageCategory> HiddenMessageCategories { get; set; } = new HashSet<MessageCategory>();
+
     /// <summary>Forces every field into its valid range (volumes clamped to <c>[0,1]</c>, UI scale to its range, autosave period to its range, unknown enum reset to default).</summary>
     public void Clamp()
     {
@@ -94,22 +104,37 @@ public sealed class SettingsModel
         {
             WindowMode = WindowMode.Windowed;
         }
+        // Drop any unknown/duplicate category token that slipped in (a hand-edited or stale config) so the hide-set
+        // never carries a value outside the enum.
+        HiddenMessageCategories = new HashSet<MessageCategory>(
+            HiddenMessageCategories.Where(c => Enum.IsDefined(typeof(MessageCategory), c)));
     }
 
     private static float ClampUnit(float v) => float.IsNaN(v) ? 0f : Math.Clamp(v, 0f, 1f);
 
     /// <summary>Serializes to a flat string→string map for persistence (the inverse of <see cref="FromDictionary"/>).</summary>
-    public IReadOnlyDictionary<string, string> ToDictionary() => new Dictionary<string, string>
+    public IReadOnlyDictionary<string, string> ToDictionary()
     {
-        [KeyWindowMode] = WindowMode.ToString(),
-        [KeyVSync] = VSync ? "true" : "false",
-        [KeyMaster] = MasterVolume.ToString("R", CultureInfo.InvariantCulture),
-        [KeyMusic] = MusicVolume.ToString("R", CultureInfo.InvariantCulture),
-        [KeySfx] = SfxVolume.ToString("R", CultureInfo.InvariantCulture),
-        [KeyUiScale] = UiScale.ToString("R", CultureInfo.InvariantCulture),
-        [KeyColorblind] = ColorblindMode ? "true" : "false",
-        [KeyAutosavePeriod] = AutosavePeriod.ToString(CultureInfo.InvariantCulture),
-    };
+        var map = new Dictionary<string, string>
+        {
+            [KeyWindowMode] = WindowMode.ToString(),
+            [KeyVSync] = VSync ? "true" : "false",
+            [KeyMaster] = MasterVolume.ToString("R", CultureInfo.InvariantCulture),
+            [KeyMusic] = MusicVolume.ToString("R", CultureInfo.InvariantCulture),
+            [KeySfx] = SfxVolume.ToString("R", CultureInfo.InvariantCulture),
+            [KeyUiScale] = UiScale.ToString("R", CultureInfo.InvariantCulture),
+            [KeyColorblind] = ColorblindMode ? "true" : "false",
+            [KeyAutosavePeriod] = AutosavePeriod.ToString(CultureInfo.InvariantCulture),
+        };
+        // Hidden message categories: omitted entirely when none are hidden (the default), so a player who never
+        // touched the filter keeps a settings file with no extra key — written sorted by ordinal for a stable layout.
+        if (HiddenMessageCategories.Count > 0)
+        {
+            map[KeyHiddenMessageCategories] = string.Join(
+                ',', HiddenMessageCategories.OrderBy(c => (int)c).Select(c => c.ToString()));
+        }
+        return map;
+    }
 
     /// <summary>
     /// Builds a model from a persisted map. Missing or unparseable entries fall back to that field's default, and the
@@ -138,6 +163,17 @@ public sealed class SettingsModel
             && int.TryParse(ap, NumberStyles.Integer, CultureInfo.InvariantCulture, out int period))
         {
             m.AutosavePeriod = period; // Clamp() below forces it into range
+        }
+        if (data.TryGetValue(KeyHiddenMessageCategories, out string? hidden))
+        {
+            // Parse the comma-separated category names; unknown/blank tokens are dropped (Clamp() also re-filters).
+            foreach (string token in hidden.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (Enum.TryParse(token, ignoreCase: true, out MessageCategory cat))
+                {
+                    m.HiddenMessageCategories.Add(cat);
+                }
+            }
         }
         m.Clamp();
         return m;

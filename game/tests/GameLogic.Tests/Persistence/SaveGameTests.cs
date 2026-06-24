@@ -576,6 +576,44 @@ public class SaveGameTests
         Assert.Equal(before + 1, loaded.Turn);
     }
 
+    // ── Message log (save v59): the in-session notice log round-trips ─────────────────────────────────────
+
+    [Fact]
+    public void MessageLog_IsOmittedFromAFromGame_SoAFreshGameStaysByteIdenticalToV58()
+    {
+        // The message log is presentation-owned (ADR-006): SaveGame.From never writes it (it has no formatted strings),
+        // so a From() snapshot leaves MessageLog null and emits no token — a fresh game stays byte-identical to v58.
+        var game = Game.New(Classic, seed: 99);
+        SaveGame save = SaveGame.From(game);
+
+        Assert.Null(save.MessageLog);
+        Assert.DoesNotContain("\"MessageLog\"", save.ToJson());
+    }
+
+    [Fact]
+    public void MessageLog_RoundTripsThroughJson_PreservingTurnCategoryAndText()
+    {
+        // The controller attaches a MessageLog via `with` before serialising; that field must survive a JSON round-trip
+        // with each row's turn, category ordinal and text intact (the controller re-groups them back into per-turn
+        // entries on load).
+        var game = Game.New(Classic, seed: 99);
+        SaveGame save = SaveGame.From(game) with
+        {
+            MessageLog = new List<SavedLogMessage>
+            {
+                new(3, 0, "A privateer sank your Caravel at (4,5)!"), // category 0 = Combat
+                new(7, 4, "The Crown lowered your tax rate to 18%."), // category 4 = Monarch
+            },
+        };
+
+        Assert.Contains("\"MessageLog\"", save.ToJson()); // present once the controller supplied it
+
+        SaveGame round = SaveGame.FromJson(save.ToJson());
+        Assert.Equal(2, round.MessageLog!.Count);
+        Assert.Equal(new SavedLogMessage(3, 0, "A privateer sank your Caravel at (4,5)!"), round.MessageLog[0]);
+        Assert.Equal(new SavedLogMessage(7, 4, "The Crown lowered your tax rate to 18%."), round.MessageLog[1]);
+    }
+
     /// <summary>Absolute path to a committed save fixture (copied next to the test assembly by the csproj).</summary>
     private static string FixturePath(string name) =>
         Path.Combine(AppContext.BaseDirectory, "Persistence", "fixtures", name);

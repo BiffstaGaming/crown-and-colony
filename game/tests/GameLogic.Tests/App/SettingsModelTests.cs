@@ -89,6 +89,49 @@ public class SettingsModelTests
     }
 
     [Fact]
+    public void Defaults_HideNoMessageCategories()
+    {
+        var m = new SettingsModel();
+        Assert.Empty(m.HiddenMessageCategories); // every category shown by default (FreeCol shows all message types)
+    }
+
+    [Fact]
+    public void HiddenMessageCategories_RoundTrip_PreservesTheSet()
+    {
+        var original = new SettingsModel();
+        original.HiddenMessageCategories.Add(MessageCategory.Combat);
+        original.HiddenMessageCategories.Add(MessageCategory.Economy);
+
+        SettingsModel restored = SettingsModel.FromDictionary(original.ToDictionary());
+
+        Assert.Equal(
+            new HashSet<MessageCategory> { MessageCategory.Combat, MessageCategory.Economy },
+            new HashSet<MessageCategory>(restored.HiddenMessageCategories));
+    }
+
+    [Fact]
+    public void HiddenMessageCategories_OmittedFromTheDictionary_WhenEmpty()
+    {
+        // Omit-when-empty: the common "show everything" state writes no key, so a player who never touched the filter
+        // keeps a settings.cfg with no extra line.
+        var m = new SettingsModel();
+        Assert.DoesNotContain("hidden_message_categories", m.ToDictionary().Keys);
+    }
+
+    [Fact]
+    public void HiddenMessageCategories_UnknownToken_IsDropped()
+    {
+        SettingsModel m = SettingsModel.FromDictionary(new Dictionary<string, string>
+        {
+            ["hidden_message_categories"] = "Combat,Hologram,Monarch", // Hologram is not a category → dropped
+        });
+
+        Assert.Equal(
+            new HashSet<MessageCategory> { MessageCategory.Combat, MessageCategory.Monarch },
+            new HashSet<MessageCategory>(m.HiddenMessageCategories));
+    }
+
+    [Fact]
     public void FromDictionary_MissingKeys_FallBackToDefaults()
     {
         SettingsModel m = SettingsModel.FromDictionary(new Dictionary<string, string>());
