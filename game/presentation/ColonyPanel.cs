@@ -27,6 +27,9 @@ public partial class ColonyPanel : PanelContainer
     private Action<Unit, Colony, string, int> _loadCargo = (_, _, _, _) => { };
     private Action<Unit, Colony, string, int> _unloadCargo = (_, _, _, _) => { };
 
+    /// <summary>The colony-screen command that sets a good's custom-house export setting (wired by <see cref="GameController.OpenColonyPanel"/>; engine guards + status reporting live there). Args: colony, goodsId, exported, retainLevel. Default no-op keeps a bare test scene safe.</summary>
+    private Action<Colony, string, bool, int> _setExport = (_, _, _, _) => { };
+
     /// <summary>Goods are moved on/off a carrier one hold-slot (100 units) at a time, clamped to what's actually available — FreeCol's per-stack load lot.</summary>
     private const int CargoLot = 100;
 
@@ -50,13 +53,16 @@ public partial class ColonyPanel : PanelContainer
     /// <summary>
     /// Opens the panel for a colony. <paramref name="onChange"/> runs after every action; <paramref name="loadCargo"/> /
     /// <paramref name="unloadCargo"/> are the host's load/unload-goods commands (carrier, goodsId, amount) for the cargo
-    /// section — they own the engine guards + status reporting (ADR-006), so the panel only chooses the carrier, good and
-    /// lot and forwards the click. The overload without them keeps existing callers/tests working with no-op commands.
+    /// section, and <paramref name="setExport"/> is the host's set-custom-house-export command (colony, goodsId, exported,
+    /// retainLevel) for the export section — they own the engine guards + status reporting (ADR-006), so the panel only
+    /// chooses the carrier/good/lot or the toggle/level and forwards the click. The overload without them keeps existing
+    /// callers/tests working with no-op commands.
     /// </summary>
-    public void Open(Game game, Colony colony, Action onChange, Action<Unit, Colony, string, int> loadCargo, Action<Unit, Colony, string, int> unloadCargo)
+    public void Open(Game game, Colony colony, Action onChange, Action<Unit, Colony, string, int> loadCargo, Action<Unit, Colony, string, int> unloadCargo, Action<Colony, string, bool, int> setExport)
     {
         _loadCargo = loadCargo;
         _unloadCargo = unloadCargo;
+        _setExport = setExport;
         Open(game, colony, onChange);
     }
 
@@ -201,6 +207,14 @@ public partial class ColonyPanel : PanelContainer
         }
         card.AddChild(SectionLabel("Warehouse"));
         card.AddChild(WarehouseBar());
+
+        // The custom-house export section only renders when the colony actually has a custom house (the engine's
+        // auto-sell likewise no-ops without one) — so a fresh colony's screen and its visual golden are unchanged.
+        if (_game.ColonyHasCustomHouse(_colony))
+        {
+            card.AddChild(SectionLabel("Custom house — exports"));
+            card.AddChild(CustomHouseArea());
+        }
 
         root.AddChild(card);
     }
@@ -777,6 +791,76 @@ public partial class ColonyPanel : PanelContainer
                 row.AddChild(unload);
                 box.AddChild(row);
             }
+        }
+        return box;
+    }
+
+    // ── Custom house: per-good export toggle + retain level (86d3f62q8) ────────────────────────────────────────
+
+    /// <summary>
+    /// The colony's storable, tradeable goods (those that have a European market) in stable id order — the goods a
+    /// custom house can auto-export. Mirrors the engine's eligibility gate in <see cref="Game.SetColonyExport"/>
+    /// (storable + tradeable; food is included — FreeCol's custom house can export food, it just defaults off), so a
+    /// good the panel offers is one the engine will accept.
+    /// </summary>
+    private IEnumerable<GoodsType> ExportableGoods() => _game.Ruleset.GoodsTypes
+        .Where(g => g.IsStorable && g.IsTradeable)
+        .OrderBy(g => g.Id, StringComparer.Ordinal);
+
+    /// <summary>
+    /// FreeCol's custom-house export controls: one row per exportable good with an <b>Exported</b> on/off
+    /// <see cref="CheckBox"/> and a <b>retain-level</b> <see cref="SpinBox"/> (the warehouse amount to keep before the
+    /// surplus auto-sells each turn). Both forward to the host's <see cref="_setExport"/> command, which owns the engine
+    /// guards + status reporting (ADR-006); the panel only reads <see cref="Colony.ExportOf"/> for the current setting and
+    /// forwards the change. Toggling a good on (or off) sets it with the current level; changing the level keeps the
+    /// current on/off flag. The engine then auto-sells each exported good over its retain level on End Turn — only goods
+    /// flagged here sell (the default per-good mode), which is why this UI is what makes a custom house actually trade.
+    /// </summary>
+    private Control CustomHouseArea()
+    {
+        var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        box.AddThemeConstantOverride("separation", 4);
+        box.AddChild(new Label
+        {
+            Text = "Tick a good to auto-sell its surplus over the retain level each turn.",
+            HorizontalAlignment = HorizontalAlignment.Center,
+        });
+
+        foreach (GoodsType good in ExportableGoods())
+        {
+            string goodsId = good.Id;
+            Colony.ExportSetting setting = _colony.ExportOf(goodsId);
+
+            var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            row.AddThemeConstantOverride("separation", 8);
+            row.AddChild(IconRect(ColonyArt.GoodsIcon(good.ShortName), 28, 28));
+
+            var toggle = new CheckBox
+            {
+                Name = $"Export_{good.ShortName}",
+                Text = Display(good.ShortName),
+                ButtonPressed = setting.Exported,
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            };
+            // Set with the level shown in the (about-to-be-rebuilt) row's spinner so a toggle never resets the level.
+            toggle.Toggled += on => _setExport(_colony, goodsId, on, setting.ExportLevel);
+            row.AddChild(toggle);
+
+            row.AddChild(new Label { Text = "keep" });
+            var level = new SpinBox
+            {
+                Name = $"Retain_{good.ShortName}",
+                MinValue = 0,
+                MaxValue = _game.ColonyWarehouseCapacity(_colony),
+                Step = CargoLot, // one hold-lot per click; the player can still type any value
+                Value = setting.ExportLevel,
+                CustomMinimumSize = new Vector2(96, 0),
+            };
+            // Keep the current on/off flag when only the retain level changes.
+            level.ValueChanged += value => _setExport(_colony, goodsId, setting.Exported, (int)value);
+            row.AddChild(level);
+
+            box.AddChild(row);
         }
         return box;
     }

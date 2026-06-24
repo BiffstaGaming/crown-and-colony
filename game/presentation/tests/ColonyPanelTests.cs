@@ -399,6 +399,79 @@ public class ColonyPanelTests
         AssertThat(colony.StoreOf("model.goods.ore")).IsEqual(250);   // warehouse untouched
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task CustomHouseExportSection_TogglesAGood_SetsRetain_AndEndTurnAutoSells()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Give the colony a custom house + 250 ore in store, via the save layer (Colony.AddBuilding/AddGoods are
+        // internal to GameLogic), then reload into the controller — exactly the seeding the cargo/arm tests use.
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with
+            {
+                Stores = new Dictionary<string, int> { ["model.goods.ore"] = 250 },
+                Buildings = c.Buildings!.Append("model.building.customHouse").ToList(),
+            }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(game.ColonyHasCustomHouse(colony)).IsTrue();
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+        PanelContainer panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+
+        // Set the retain level to 50 first (so the auto-sell ships the surplus 250 − 50 = 200), then flag ore Exported.
+        var retain = panel.FindChild("Retain_ore", recursive: true, owned: false) as SpinBox;
+        AssertThat(retain).IsNotNull();
+        retain!.EmitSignal(Range.SignalName.ValueChanged, 50.0);
+        await runner.SimulateFrames(1);
+        AssertThat(colony.ExportOf("model.goods.ore").ExportLevel).IsEqual(50);
+
+        var toggle = panel.FindChild("Export_ore", recursive: true, owned: false) as CheckBox;
+        AssertThat(toggle).IsNotNull();
+        toggle!.EmitSignal(BaseButton.SignalName.Toggled, true);
+        await runner.SimulateFrames(1);
+
+        // The panel wired the toggle straight through to the engine: ore is now flagged for custom-house export.
+        AssertThat(colony.ExportOf("model.goods.ore").Exported).IsTrue();
+        AssertThat(colony.ExportOf("model.goods.ore").ExportLevel).IsEqual(50);
+
+        // End Turn: the custom house auto-sells the surplus over the retain level (250 → 50) for gold.
+        int goldBefore = game.Gold;
+        game.EndTurn();
+        AssertThat(colony.StoreOf("model.goods.ore")).IsEqual(50); // sold down to the retain level
+        AssertThat(game.Gold > goldBefore).IsTrue();               // the sale credited the treasury
+
+        // Un-ticking the good turns the export back off (and, at the default level, forgets the entry).
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+        panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+        var toggleOff = panel.FindChild("Export_ore", recursive: true, owned: false) as CheckBox;
+        toggleOff!.EmitSignal(BaseButton.SignalName.Toggled, false);
+        await runner.SimulateFrames(1);
+        AssertThat(colony.ExportOf("model.goods.ore").Exported).IsFalse();
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task CustomHouseExportSection_IsHidden_WithoutACustomHouse()
+    {
+        (_, GameController controller, Game game, Colony colony) = await OpenPanel();
+        AssertThat(game.ColonyHasCustomHouse(colony)).IsFalse(); // a fresh colony has no custom house
+
+        // No export controls render for a colony that can't auto-sell — the section is gated on the custom house.
+        var toggle = controller.GetNode<PanelContainer>("UI/ColonyPanel")
+            .FindChild("Export_ore", recursive: true, owned: false) as CheckBox;
+        AssertThat(toggle).IsNull();
+    }
+
     private static string LabelText(PanelContainer panel, string name) =>
         ((Label)panel.FindChild(name, recursive: true, owned: false)).Text;
 

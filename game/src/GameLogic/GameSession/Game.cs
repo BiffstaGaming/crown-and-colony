@@ -456,6 +456,15 @@ public sealed partial class Game
     private bool ColonyHasExportAbility(Colony colony) =>
         colony.Buildings.Any(b => Ruleset.Building(b).GrantsExport);
 
+    /// <summary>
+    /// Whether <paramref name="colony"/> has a custom house — i.e. a building that grants the auto-export ability
+    /// (today only <c>model.building.customHouse</c>). The colony screen gates its per-good export controls on this:
+    /// the export section only renders when the colony can actually auto-sell (the engine's <see cref="AutoSellExports"/>
+    /// likewise no-ops without it). Public read-only oracle for the presentation (ADR-006); mirrors the private
+    /// <see cref="ColonyHasExportAbility"/> the colony turn uses.
+    /// </summary>
+    public bool ColonyHasCustomHouse(Colony colony) => ColonyHasExportAbility(colony);
+
     /// <summary>The colonies owned by <paramref name="player"/> (the human owns all colonies until foreign powers found their own).</summary>
     private IEnumerable<Colony> ColoniesOf(Player player) => _colonies.Where(c => c.OwnerId == player.PlayerId);
 
@@ -11907,6 +11916,14 @@ public sealed partial class Game
     /// </summary>
     internal int WarehouseCapacity(Colony colony) =>
         colony.Buildings.Sum(b => Ruleset.Building(b).WarehouseStorage);
+
+    /// <summary>
+    /// A colony's per-good warehouse capacity (the sum of its buildings' <c>warehouseStorage</c>; depot 100,
+    /// warehouse 200, expansion 300). Public read-only oracle for the presentation (ADR-006) — the colony screen's
+    /// custom-house retain-level control caps its slider at this, since retaining more than the warehouse can hold is
+    /// meaningless. Mirrors the internal <see cref="WarehouseCapacity"/> the colony turn uses.
+    /// </summary>
+    public int ColonyWarehouseCapacity(Colony colony) => WarehouseCapacity(colony);
 
     /// <summary>
     /// Discards each storable good held above the colony's warehouse capacity (FreeCol's warehouse waste).

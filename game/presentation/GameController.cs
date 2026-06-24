@@ -1306,7 +1306,7 @@ public partial class GameController : Node2D
 
     /// <summary>Opens the interactive colony screen. Public so scene tests can drive it directly.</summary>
     public void OpenColonyPanel(Colony colony) =>
-        ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView, LoadColonyCargo, UnloadColonyCargo);
+        ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView, LoadColonyCargo, UnloadColonyCargo, SetColonyExport);
 
     /// <summary>
     /// Thin colony-screen command (86d3f5y8r): loads <paramref name="amount"/> of <paramref name="goodsId"/> from
@@ -1346,6 +1346,31 @@ public partial class GameController : Node2D
         catch (InvalidMoveException ex)
         {
             _notice = ex.Message;
+        }
+        RefreshView();
+    }
+
+    /// <summary>
+    /// Thin colony-screen command (86d3f62q8): sets a colony's custom-house per-good export setting (whether the good's
+    /// surplus auto-sells each turn, and the warehouse amount to retain) via the <see cref="Game.SetColonyExport"/> oracle,
+    /// then refreshes. The engine validates the good is storable + tradeable and throws <see cref="InvalidMoveException"/>
+    /// otherwise; the reason is surfaced in the status bar instead of bubbling to the UI (ADR-006 — the rules live in
+    /// <see cref="Game"/>; this only forwards the command and reflects the outcome). The custom house then auto-sells the
+    /// exported goods over their retain level each colony turn (no caller action beyond End Turn).
+    /// </summary>
+    public void SetColonyExport(Colony colony, string goodsId, bool exported, int retainLevel)
+    {
+        try
+        {
+            _game.SetColonyExport(colony, goodsId, exported, retainLevel);
+            string good = goodsId[(goodsId.LastIndexOf('.') + 1)..];
+            _notice = exported
+                ? $"{colony.Name}'s custom house will export {good} above {retainLevel}."
+                : $"{colony.Name}'s custom house will keep all its {good}.";
+        }
+        catch (InvalidMoveException ex)
+        {
+            _notice = ex.Message; // e.g. "… cannot be exported through the custom house." — show, don't throw to the UI
         }
         RefreshView();
     }
