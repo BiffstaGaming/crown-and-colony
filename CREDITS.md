@@ -22,10 +22,11 @@ Adopted under ADR-006 (audio), ADR-013 (placeholder-asset policy) and ADR-014
 
 This project contains **no code, art, audio, or data from the original 1994 or 2008
 *Sid Meier's Colonization* games**. Every asset below comes from **FreeCol** (the
-GPL-v2 clean-room Java reimplementation, https://github.com/FreeCol/freecol) or from
-an independently, freely-licensed source (the Cardo font). A scan of the asset
-directories (`game/assets/`, `game/data/maps/`, `game/data/rules/`) confirms only the
-FreeCol-sourced and OFL-font files catalogued here are present.
+GPL-v2 clean-room Java reimplementation, https://github.com/FreeCol/freecol), from
+an independently, freely-licensed source (the Cardo font), or is **original work
+authored for this project** (the app icon). A scan of the asset directories
+(`game/assets/`, `game/data/maps/`, `game/data/rules/`) confirms only the
+FreeCol-sourced, OFL-font, and project-original files catalogued here are present.
 
 ## License summary
 
@@ -54,6 +55,28 @@ period-appropriate serif.
   David J. Perry (hospes02@scholarsfonts.net).
 - **License:** SIL Open Font License 1.1 (`game/assets/fonts/Cardo-OFL.txt`).
 - **Attribution:** "Cardo font © David J. Perry, used under the SIL Open Font License 1.1."
+
+---
+
+## Application icon — original project work
+
+### Crown & Colony icon (`game/icon.svg`)
+
+The app/window icon and boot-splash brand mark — a heraldic gold **crown** above a
+colonial **sailing ship** on a navy field. Used as the Godot `config/icon`, the
+Windows/macOS export-preset icon, and the editor icon.
+
+- **Source:** **original work**, authored from scratch for this project as a hand-written
+  SVG (no third-party art, clip-art, AI-generated asset, or original-game material). It
+  replaced the earlier placeholder crown-only `icon.svg`.
+- **© / author:** The Crown & Colony contributors.
+- **License:** the project's own **GPL v2** (an original asset, so it carries the project
+  licence; equivalently dedicatable to CC0 — no attribution is *required* for our own work).
+- **Attribution:** none required (project-original). Recorded here for provenance.
+
+> Note on platform icon formats: Godot generates Windows `.ico` and macOS `.icns`
+> automatically from this SVG at export time (no `.ico`/`.icns` file is committed, and no
+> extra tooling is needed) — the export presets reference `res://icon.svg` directly.
 
 ---
 
