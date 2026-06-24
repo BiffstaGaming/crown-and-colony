@@ -521,7 +521,14 @@ public sealed partial class Game
     /// <summary>Creates a unit on a player's Europe dock in the given role (mercenary/support delivery, mirrors <see cref="BuyUnit(string)"/>).</summary>
     private void SpawnInEurope(string unitTypeId, string? roleId, int ownerId)
     {
-        var unit = new Unit(_nextUnitId++, Ruleset.Unit(unitTypeId), new Position(0, 0))
+        UnitType type = Ruleset.Unit(unitTypeId);
+        // A naval delivery (a man-o-war from the King's military support) is given the high-seas entry tile
+        // nearest the owner's territory, so on its crossing it arrives beside the owner's colonies rather than
+        // at (0,0); a land unit waits on the dock. Mirrors BuyUnit's EuropeEntryTileFor placement.
+        Position position = type.IsNaval && PlayerById(ownerId) is { } owner
+            ? EuropeEntryTileFor(owner)
+            : new Position(0, 0);
+        var unit = new Unit(_nextUnitId++, type, position)
         {
             Location = UnitLocation.InEurope,
             OwnerId = ownerId,

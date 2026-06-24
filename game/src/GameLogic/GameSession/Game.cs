@@ -6120,11 +6120,40 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// A high-seas tile a ship bought in Europe enters the New World at (the map's
-    /// entry edge). Falls back to (0,0) on maps with no high seas (test fixtures).
+    /// The map's default high-seas entry tile — the first high-seas tile in row-major order (top-left).
+    /// Used only as the last-resort fallback by <see cref="EuropeEntryTileFor"/> (a player with no colony
+    /// and no on-map unit to anchor near). Falls back to (0,0) on maps with no high seas (test fixtures).
     /// </summary>
     private Position EuropeEntryTile() =>
         Map.AllPositions().FirstOrDefault(p => Map.TerrainAt(p).Id == HighSeasId, new Position(0, 0));
+
+    /// <summary>
+    /// The high-seas tile a ship bought, built-for, or delivered to <paramref name="player"/> in Europe should
+    /// enter the New World at — the one nearest the player's territory, so a freshly-bought ship arrives beside
+    /// the player's colonies rather than at the map's top-left default (FreeCol <c>Player.getEntryTile</c> /
+    /// <c>Unit.getFullEntryLocation</c>: a unit with no recorded entry location uses its owner's entry tile near
+    /// its start/colonies). The anchor is the player's first colony (lowest id) if it has one, otherwise its
+    /// first on-map unit (e.g. the starting caravel/colonists), and the high-seas tile nearest that anchor is
+    /// chosen by Chebyshev distance with a stable row/column tie-break. With no colony and no on-map unit to
+    /// anchor near (or on a map with no high seas) it falls back to <see cref="EuropeEntryTile"/>. Deterministic
+    /// and RNG-free (ADR-009); the fog is not consulted, so the entry tile is valid even where the player has
+    /// not yet explored the sea by its colony.
+    /// </summary>
+    private Position EuropeEntryTileFor(Player player)
+    {
+        Position? anchor =
+            ColoniesOf(player).OrderBy(c => c.Id).Select(c => (Position?)c.Position).FirstOrDefault()
+            ?? _units.Where(u => u.IsOnMap && IsOwnedBy(u, player))
+                .OrderBy(u => u.Id).Select(u => (Position?)u.Position).FirstOrDefault();
+        if (anchor is not { } origin)
+        {
+            return EuropeEntryTile(); // no colony and no on-map unit to anchor near → the map default
+        }
+        return Map.AllPositions()
+            .Where(p => Map.TerrainAt(p).Id == HighSeasId)
+            .OrderBy(p => Chebyshev(p, origin)).ThenBy(p => p.Y).ThenBy(p => p.X)
+            .FirstOrDefault(EuropeEntryTile()); // no high seas at all (test fixtures) → the map default
+    }
 
     /// <summary>
     /// The water tile nearest <paramref name="origin"/> (Chebyshev), or null when the map has no water (test fixtures).
@@ -6172,8 +6201,10 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Buys a unit in Europe for gold; it appears docked there. A ship enters at the
-    /// high-seas tile so it can sail to the New World; a land unit waits on the dock to board one.
+    /// Buys a unit in Europe for gold; it appears docked there. A ship is given the high-seas entry tile
+    /// nearest the player's territory (<see cref="EuropeEntryTileFor"/>) so that, when it sails to the New
+    /// World, it arrives beside the player's colonies rather than at the map's top-left default; a land unit
+    /// waits on the dock to board one.
     /// </summary>
     /// <returns>The purchased unit, in Europe.</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBuyUnit(string)"/>.</exception>
@@ -6195,7 +6226,7 @@ public sealed partial class Game
         {
             player.UnitPriceMap[unitTypeId] = check.Cost + Ruleset.Difficulty.ArtilleryPriceIncrease;
         }
-        var unit = new Unit(_nextUnitId++, type, type.IsNaval ? EuropeEntryTile() : new Position(0, 0))
+        var unit = new Unit(_nextUnitId++, type, type.IsNaval ? EuropeEntryTileFor(player) : new Position(0, 0))
         {
             Location = UnitLocation.InEurope,
             OwnerId = player.PlayerId, // the bought unit belongs to its buyer (the human is 0; a foreign power its own id)

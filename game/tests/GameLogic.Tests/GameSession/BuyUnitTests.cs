@@ -73,6 +73,50 @@ public class BuyUnitTests
         Assert.Equal(new Position(1, 0), ship.Position);
     }
 
+    /// <summary>
+    /// Regression (86d3f6…, "Ships arriving from Europe spawn far from colonies"): a ship bought in Europe must be
+    /// given the high-seas entry tile nearest the player's colony, not the map's top-left default, so that when it
+    /// sails to the New World it arrives <em>beside the colony</em> rather than at the far corner of the map.
+    /// </summary>
+    [Fact]
+    public void BoughtShip_EntersBesideTheColony_NotAtTheTopLeftDefault()
+    {
+        // A 4×2 map. The default Europe entry tile (first high-seas in row-major order) is (0,0), far from a
+        // colony placed at (2,1); the high-seas tile nearest that colony is (3,1).
+        //   y=0:  highSeas(0,0)  ocean(1,0)  ocean(2,0)  ocean(3,0)
+        //   y=1:  ocean(0,1)     ocean(1,1)  plains(2,1) highSeas(3,1)
+        var save = new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 4, MapHeight = 2,
+            Terrain =
+            [
+                "model.tile.highSeas", "model.tile.ocean", "model.tile.ocean", "model.tile.ocean",
+                "model.tile.ocean", "model.tile.ocean", "model.tile.plains", "model.tile.highSeas",
+            ],
+            Units = [], Explored = [], Gold = 2000,
+            Colonies = [new SavedColony(1, "Port", 2, 1, 1)],
+        }.Restore(Classic);
+
+        Unit ship = save.BuyUnit(Caravel);
+
+        // The bought ship is parked at the high-seas tile beside the colony, NOT the top-left default (0,0).
+        Assert.Equal(new Position(3, 1), ship.Position);
+        Assert.NotEqual(new Position(0, 0), ship.Position);
+
+        save.SailToNewWorld(ship);
+        for (int i = 0; i < Game.SailTurns; i++)
+        {
+            save.EndTurn();
+        }
+
+        // It re-enters at that same nearby tile — adjacent to the colony, not at the far corner.
+        Assert.True(ship.IsOnMap);
+        Assert.Equal(new Position(3, 1), ship.Position);
+        Assert.NotEqual(new Position(0, 0), ship.Position);
+        Assert.True(ship.Position.IsAdjacentTo(new Position(2, 1)), "the arriving ship should be beside its colony");
+    }
+
     [Fact]
     public void BoughtLandUnit_WaitsOnTheDock()
     {
