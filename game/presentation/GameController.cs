@@ -1306,7 +1306,49 @@ public partial class GameController : Node2D
 
     /// <summary>Opens the interactive colony screen. Public so scene tests can drive it directly.</summary>
     public void OpenColonyPanel(Colony colony) =>
-        ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView);
+        ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView, LoadColonyCargo, UnloadColonyCargo);
+
+    /// <summary>
+    /// Thin colony-screen command (86d3f5y8r): loads <paramref name="amount"/> of <paramref name="goodsId"/> from
+    /// <paramref name="colony"/>'s warehouse into <paramref name="carrier"/>'s holds via the <see cref="Game.LoadFromColony"/>
+    /// oracle, then refreshes. The engine guards the move (not a carrier / not adjacent / colony lacks the goods / hold full)
+    /// and throws <see cref="InvalidMoveException"/>; the reason is surfaced in the status bar instead of bubbling to the UI
+    /// (ADR-006 — the rules live in <see cref="Game"/>; this only forwards the command and reflects the outcome).
+    /// </summary>
+    public void LoadColonyCargo(Unit carrier, Colony colony, string goodsId, int amount)
+    {
+        try
+        {
+            _game.LoadFromColony(carrier, colony, goodsId, amount);
+            _notice = $"Loaded {amount} {goodsId[(goodsId.LastIndexOf('.') + 1)..]} onto the {carrier.Type.ShortName}.";
+        }
+        catch (InvalidMoveException ex)
+        {
+            _notice = ex.Message; // e.g. "The carrier has no room for that cargo." — show, don't throw to the UI
+        }
+        RefreshView();
+    }
+
+    /// <summary>
+    /// Thin colony-screen command (86d3f5y8r): unloads <paramref name="amount"/> of <paramref name="goodsId"/> from
+    /// <paramref name="carrier"/>'s holds back into <paramref name="colony"/>'s warehouse via the
+    /// <see cref="Game.UnloadToColony"/> oracle, then refreshes. The engine guards the move (not a carrier / not adjacent /
+    /// not carrying the goods) and throws <see cref="InvalidMoveException"/>; the reason is surfaced in the status bar
+    /// instead of bubbling to the UI (ADR-006 — the unload half of <see cref="LoadColonyCargo"/>).
+    /// </summary>
+    public void UnloadColonyCargo(Unit carrier, Colony colony, string goodsId, int amount)
+    {
+        try
+        {
+            _game.UnloadToColony(carrier, colony, goodsId, amount);
+            _notice = $"Unloaded {amount} {goodsId[(goodsId.LastIndexOf('.') + 1)..]} into {colony.Name}.";
+        }
+        catch (InvalidMoveException ex)
+        {
+            _notice = ex.Message;
+        }
+        RefreshView();
+    }
 
     /// <summary>Opens the Europe screen (dock, recruits, ships in port). Public so scene tests can drive it.</summary>
     public void OpenEuropePanel() =>

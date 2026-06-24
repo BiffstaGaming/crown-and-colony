@@ -332,6 +332,73 @@ public class ColonyPanelTests
         AssertThat(badgeShowsBoosted).IsTrue();
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task CargoSection_LoadsAndUnloadsGoods_AndSafelyRefusesAFullHoldOrEmptyWarehouse()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Stock the colony with 250 ore and stand a player-owned wagon train (a 2-hold land carrier — no coastal
+        // water tile needed for a deterministic test) on the colony tile, via the save layer (Colony.AddGoods +
+        // Unit.OwnerId are internal to GameLogic), then reload into the controller. A wagon train exercises the same
+        // IsCarrier load/unload path a ship does.
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with { Stores = new Dictionary<string, int> { ["model.goods.ore"] = 250 } } : c).ToList();
+        int wagonId = game.Units.Max(u => u.Id) + 1;
+        var wagon = new SavedUnit(wagonId, "model.unit.wagonTrain", founded.Position.X, founded.Position.Y, 0, OwnerId: 0);
+        game = (save with { Colonies = colonies, Units = save.Units.Append(wagon).ToList() }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        Unit carrier = game.Units.First(u => u.Id == wagonId);
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        // Load a lot (100) of ore via the colony screen's per-carrier picker (item 0 is the "Load goods…" placeholder;
+        // ore is the only stored good, so item 1).
+        var loadPicker = controller.GetNode<PanelContainer>("UI/ColonyPanel")
+            .FindChild($"Load_{wagonId}", recursive: true, owned: false) as OptionButton;
+        AssertThat(loadPicker).IsNotNull();
+        loadPicker!.EmitSignal(OptionButton.SignalName.ItemSelected, 1L);
+        await runner.SimulateFrames(1);
+        AssertThat(carrier.CargoOf("model.goods.ore")).IsEqual(100);  // a lot is now aboard
+        AssertThat(colony.StoreOf("model.goods.ore")).IsEqual(150);   // and gone from the warehouse
+
+        // Unload it back via the cargo row's Unload button → it returns to the warehouse.
+        var unload = FindButton(controller, $"Unload_{wagonId}_ore");
+        AssertThat(unload).IsNotNull();
+        unload!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(carrier.CargoOf("model.goods.ore")).IsEqual(0);    // hold emptied
+        AssertThat(colony.StoreOf("model.goods.ore")).IsEqual(250);   // warehouse whole again
+
+        // Fill the wagon's 2 holds (200 ore) directly through the thin command, then attempt a third lot: the engine's
+        // hold-full guard refuses it and the command swallows the InvalidMoveException (no throw to the UI).
+        controller.LoadColonyCargo(carrier, colony, "model.goods.ore", 100);
+        controller.LoadColonyCargo(carrier, colony, "model.goods.ore", 100);
+        await runner.SimulateFrames(1);
+        AssertThat(carrier.CargoOf("model.goods.ore")).IsEqual(200);  // both holds full
+        AssertThat(colony.StoreOf("model.goods.ore")).IsEqual(50);
+        controller.LoadColonyCargo(carrier, colony, "model.goods.ore", 100); // would need a third hold — refused, not thrown
+        await runner.SimulateFrames(1);
+        AssertThat(carrier.CargoOf("model.goods.ore")).IsEqual(200);  // unchanged — the guard held
+        AssertThat(colony.StoreOf("model.goods.ore")).IsEqual(50);
+
+        // Out-of-stock: unload everything, then try to load more ore than the warehouse holds — also safely refused.
+        controller.UnloadColonyCargo(carrier, colony, "model.goods.ore", 200);
+        await runner.SimulateFrames(1);
+        AssertThat(colony.StoreOf("model.goods.ore")).IsEqual(250);
+        controller.LoadColonyCargo(carrier, colony, "model.goods.ore", 999); // more than is stored — refused, not thrown
+        await runner.SimulateFrames(1);
+        AssertThat(carrier.CargoOf("model.goods.ore")).IsEqual(0);    // nothing loaded
+        AssertThat(colony.StoreOf("model.goods.ore")).IsEqual(250);   // warehouse untouched
+    }
+
     private static string LabelText(PanelContainer panel, string name) =>
         ((Label)panel.FindChild(name, recursive: true, owned: false)).Text;
 

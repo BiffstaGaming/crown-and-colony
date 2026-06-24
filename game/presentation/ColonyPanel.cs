@@ -23,6 +23,13 @@ public partial class ColonyPanel : PanelContainer
     private Colony _colony = null!;
     private Action _onChange = () => { };
 
+    /// <summary>The colony-screen commands that move goods between the warehouse and a docked carrier's holds (wired by <see cref="GameController.OpenColonyPanel"/>; guards + status reporting live there). Args: carrier, colony, goodsId, amount. Default no-ops keep a bare test scene safe.</summary>
+    private Action<Unit, Colony, string, int> _loadCargo = (_, _, _, _) => { };
+    private Action<Unit, Colony, string, int> _unloadCargo = (_, _, _, _) => { };
+
+    /// <summary>Goods are moved on/off a carrier one hold-slot (100 units) at a time, clamped to what's actually available — FreeCol's per-stack load lot.</summary>
+    private const int CargoLot = 100;
+
     private static readonly Color Negative = new(0.9f, 0.3f, 0.25f);
 
     /// <summary>The roles a colonist standing in a colony can be armed into from the colony's stores.</summary>
@@ -38,6 +45,19 @@ public partial class ColonyPanel : PanelContainer
             border.Visible = Visible;
             VisibilityChanged += () => border.Visible = Visible;
         }
+    }
+
+    /// <summary>
+    /// Opens the panel for a colony. <paramref name="onChange"/> runs after every action; <paramref name="loadCargo"/> /
+    /// <paramref name="unloadCargo"/> are the host's load/unload-goods commands (carrier, goodsId, amount) for the cargo
+    /// section — they own the engine guards + status reporting (ADR-006), so the panel only chooses the carrier, good and
+    /// lot and forwards the click. The overload without them keeps existing callers/tests working with no-op commands.
+    /// </summary>
+    public void Open(Game game, Colony colony, Action onChange, Action<Unit, Colony, string, int> loadCargo, Action<Unit, Colony, string, int> unloadCargo)
+    {
+        _loadCargo = loadCargo;
+        _unloadCargo = unloadCargo;
+        Open(game, colony, onChange);
     }
 
     /// <summary>Opens the panel for a colony. <paramref name="onChange"/> runs after every action.</summary>
@@ -98,6 +118,14 @@ public partial class ColonyPanel : PanelContainer
         _onChange();
         Rebuild();
     }
+
+    /// <summary>
+    /// Rebuilds the panel only, deferred (signal-safe) — for actions whose command has <b>already</b> refreshed the host
+    /// HUD and set the status notice (the cargo load/unload commands, 86d3f5y8r). Calling <see cref="Changed"/> here would
+    /// run the host refresh a second time and clear the just-set notice before the player sees it; this re-renders the
+    /// panel's own hold occupancy + cargo rows without disturbing the status bar.
+    /// </summary>
+    private void RebuildDeferred() => Callable.From(Rebuild).CallDeferred();
 
     private void Act(int unitId, Action<Unit> action)
     {
@@ -164,6 +192,13 @@ public partial class ColonyPanel : PanelContainer
 
         card.AddChild(SectionLabel("Outside the colony"));
         card.AddChild(OutsideArea());
+        // The cargo section only renders when a carrier (ship/wagon) is at or beside the colony, so a fresh colony's
+        // screen (and its visual golden) is unchanged. Goods load/unload between the warehouse and the holds (86d3f5y8r).
+        if (DockedCarriers() is { Count: > 0 } carriers)
+        {
+            card.AddChild(SectionLabel("Cargo"));
+            card.AddChild(CargoArea(carriers));
+        }
         card.AddChild(SectionLabel("Warehouse"));
         card.AddChild(WarehouseBar());
 
@@ -663,6 +698,87 @@ public partial class ColonyPanel : PanelContainer
             bar.AddChild(cell);
         }
         return bar;
+    }
+
+    // ── Cargo: load/unload goods between the warehouse and a docked carrier's holds (86d3f5y8r) ────────────────
+
+    /// <summary>
+    /// The player's carriers (a ship <em>or</em> a wagon train — <see cref="UnitType.IsCarrier"/>) standing on or next to
+    /// the colony, ordered by id. These are the units that can take cargo on/off the warehouse here; the same
+    /// at-or-adjacent reach the <see cref="Game.LoadFromColony"/>/<see cref="Game.UnloadToColony"/> oracles enforce, so a
+    /// carrier the panel offers is one the engine will accept. An empty list hides the whole cargo section.
+    /// </summary>
+    private List<Unit> DockedCarriers() => _game.PlayerUnits
+        .Where(u => u.IsOnMap && u.Type.IsCarrier
+                    && (u.Position == _colony.Position || u.Position.IsAdjacentTo(_colony.Position)))
+        .OrderBy(u => u.Id)
+        .ToList();
+
+    /// <summary>
+    /// For each docked/adjacent carrier: a row showing its type and <b>hold occupancy</b> ("hold 2/4"), a <em>Load goods…</em>
+    /// picker drawing from the warehouse (each good with stock, loaded a <see cref="CargoLot"/> at a time, clamped to stock),
+    /// and one <em>Unload</em> button per goods stack already aboard (unloading a lot, clamped to what's carried). Each control
+    /// forwards to the host's load/unload command, which owns the engine guards + status reporting (ADR-006). The picker amount
+    /// is pre-clamped to hold/stock so the common case never trips a guard, but the engine remains the gate (a hold-full / out-of-stock
+    /// attempt is refused there and surfaced in the status bar, never thrown to the UI).
+    /// </summary>
+    private Control CargoArea(IReadOnlyList<Unit> carriers)
+    {
+        var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        box.AddThemeConstantOverride("separation", 6);
+        foreach (Unit carrier in carriers)
+        {
+            int uid = carrier.Id;
+            var header = new HBoxContainer();
+            header.AddChild(IconRect(ColonyArt.UnitIcon(carrier.Type.ShortName), 36, 36));
+            header.AddChild(new Label
+            {
+                Name = $"CargoHold_{uid}",
+                Text = $"{Display(carrier.Type.ShortName)} — hold {_game.CargoSlotsUsed(carrier)}/{_game.CargoCapacity(carrier)}",
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            });
+            box.AddChild(header);
+
+            // Load: pick a warehouse good (with stock) to load a lot onto this carrier.
+            var stored = _colony.Stores.Where(kv => kv.Value > 0).OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList();
+            var loadable = new List<string>();
+            var loadPicker = new OptionButton { Name = $"Load_{uid}" };
+            loadPicker.AddItem("Load goods…");
+            foreach ((string good, int amount) in stored)
+            {
+                loadable.Add(good);
+                loadPicker.AddItem($"{Display(Short(good))} ({amount})");
+            }
+            loadPicker.Disabled = loadable.Count == 0 || _game.CargoSlotsFree(carrier) <= 0; // nothing to load / no room
+            loadPicker.ItemSelected += index =>
+            {
+                if (index > 0)
+                {
+                    string good = loadable[(int)index - 1];
+                    _loadCargo(carrier, _colony, good, Math.Min(CargoLot, _colony.StoreOf(good))); // a lot, clamped to stock
+                    RebuildDeferred(); // the command already refreshed the HUD + set the status notice
+                }
+            };
+            box.AddChild(loadPicker);
+
+            // Unload: one button per goods stack aboard, returning a lot to the warehouse.
+            foreach ((string good, int amount) in carrier.Cargo.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                string g = good;
+                var row = new HBoxContainer();
+                row.AddChild(IconRect(ColonyArt.GoodsIcon(Short(good)), 28, 28));
+                row.AddChild(new Label { Text = $"{Display(Short(good))} {amount}", SizeFlagsHorizontal = SizeFlags.ExpandFill });
+                var unload = new Button { Name = $"Unload_{uid}_{Short(good)}", Text = "Unload" };
+                unload.Pressed += () =>
+                {
+                    _unloadCargo(carrier, _colony, g, Math.Min(CargoLot, carrier.CargoOf(g))); // a lot, clamped to what's carried
+                    RebuildDeferred(); // the command already refreshed the HUD + set the status notice
+                };
+                row.AddChild(unload);
+                box.AddChild(row);
+            }
+        }
+        return box;
     }
 
     // ── Small UI helpers ────────────────────────────────────────────────────────────────────────────────────
