@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-25 — 6 playtest issues: 5 fixed + CI-green, 1 deferred ✅
+
+**Requested (Chris, playtesting):** tax too fast; Expert Lumberjack looks like a free colonist / "no bonus"; want full production visibility; show colonists in buildings not a count; drag-drop in colony; diamond tile-clicks wonky.
+**Fixed (3 streams, root-caused not guessed, L3-verified locally + CI-green):**
+- **Tax** (`c6c0cb5`, **save v59→v60**): our raise mechanics were FreeCol-**exact**, but FreeCol itself has no inter-raise cooldown → tax clusters to the 65% cap (FreeCol concedes it overshoots Col1). Added a Col1-faithful grace (9 turns @ medium) FreeCol lacks; ~12–18 raises/300t (was 25–31). Cadence L2 test, 4 seeds.
+- **Tile-click** (`74f672c`): the diamond math was already correct (proven by 100k-sample brute-force) — the bug was the handlers reading the **live cursor** instead of the click event's position. Fixed via `MapView.TileAtScreen(event.Position)`; +MapPicking L3 (round-trip/edge/zoom). Also killed the old right-click flake.
+- **Colony screen** (`1217adf`): the expert **+bonus was already applied** (verified — the "no bonus" was perception: panel drew a free-colonist sprite + no breakdown). Now workers render their **real type** (tiles + per-slot building portraits), buildings show **actual units** not a count, and a new **production overview** (`Game.ColonyProductionSummary`) shows produced/consumed/net per good.
+**Status:** Pushed `…51c8dfd`. **CI run 28130780344 = GREEN both jobs.** Local build + 2211 L1/L2 + 5 soak + full L3 191/191 functional. Save **v59→v60** (tax cooldown).
+**Deferred / honest loose ends:**
+- **Drag-drop in colony** (`86d3f6757`) — held to build on the reworked panel.
+- **colony-panel L4 golden** — assertion deferred to a render-smoke (`86d3f69e9`): the panel legitimately changed AND CI's visual-diffs artifact didn't capture the new render for adoption. Filed a **golden-pipeline fix** task (CI-render capture + re-enable colony-panel & help-panel goldens) — the L4 pipeline is the current weak spot.
+**Scheduled next (awaiting steer):** drag-drop; the earlier P1/P2 (train-specialist, missionary, first-contact); the L3 player-flow coverage pass (`86d3f62r5`); the golden-pipeline fix (`86d3f69e9`).
+**Needs you:** Priority among those; playtest the reworked colony screen + the tax cadence.
+
 ## 2026-06-25 — Playability sweep + P0 economic-loop UI fixes ✅ (the "engine done ≠ playable" reckoning)
 
 **Context:** after the cargo/Europe gaps, ran a **7-cluster playability sweep** (read-only workflow) auditing every "done" player-facing feature for real UI reachability + an L3 test that drives the player flow. **Verdict: ~1 in 8 "done" features was a UI dead-end** — "Shipped" had meant "engine works", not "playable".
