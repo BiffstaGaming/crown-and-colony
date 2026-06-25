@@ -23,6 +23,8 @@ public class ProductionChainTests
     public void ArtisanHouse_RefinesRawIntoFinishedGoods(string building, string raw, string refined)
     {
         var game = Game.New(Classic, seed: 424242);
+        game.Units[0].RoleId = RoleType.DefaultRoleId; // found a clean colony — the starting pioneer's banked tools would skew the refining baseline
+        game.Units[0].RoleCount = 0;
         game.FoundColony(game.Units[0]);
         Colony colony = game.Colonies[0];
         foreach (var tile in colony.TileWorkers.Keys.ToList())

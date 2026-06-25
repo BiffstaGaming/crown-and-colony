@@ -55,6 +55,8 @@ public class NativePillageTests
     {
         Game game = Game.New(Classic, seed);
         Unit founder = game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony);
+        founder.RoleId = RoleType.DefaultRoleId; // found a clean colony — the starting soldier/pioneer's banked muskets/tools aren't part of these pillage scenarios
+        founder.RoleCount = 0;
         Colony colony = game.FoundColony(founder); // human-owned; undefended (the founder became its population)
         if (tobacco > 0)
         {

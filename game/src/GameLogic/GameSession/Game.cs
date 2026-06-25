@@ -2627,6 +2627,25 @@ public sealed partial class Game
     }
 
     /// <summary>
+    /// Returns an equipped unit's role goods to <paramref name="colony"/>'s store as it joins/founds the colony as a
+    /// worker: a soldier's muskets, a dragoon's muskets+horses, a scout's horses, a pioneer's tools go into the
+    /// warehouse rather than being destroyed (FreeCol <c>joinColony</c> → <c>colony.equipForRole(unit, defaultRole, 0)</c>,
+    /// which unequips and banks the equipment). A no-op for a unit already in the default (unequipped) role. Mirrors the
+    /// "Disarm" refund in <see cref="EquipRole"/>: the delta to the default role is the (negative) equipment refund.
+    /// </summary>
+    private void ReturnRoleEquipmentToColony(Unit unit, Colony colony)
+    {
+        if (unit.HasDefaultRole || unit.RoleCount <= 0)
+        {
+            return;
+        }
+        foreach ((string goodsId, int amount) in RoleGoodsDelta(unit, Ruleset.Role(RoleType.DefaultRoleId)))
+        {
+            colony.AddGoods(Ruleset.StorageIdOf(goodsId), -amount); // amount is the negative refund → adds the equipment back
+        }
+    }
+
+    /// <summary>
     /// Whether <paramref name="unit"/> can clear its learned speciality back to a free colonist now (FreeCol
     /// <c>InGameController.clearSpeciality</c>): an on-map colonial specialist that has a <c>clearSkill</c> unit-change
     /// (every expert/master/preacher/etc. — not a free colonist, servant, criminal or non-person). FreeCol forbids
@@ -5246,6 +5265,7 @@ public sealed partial class Game
 
         _colonies.Add(colony);
         colony.SolModifierBonus = SolModifierFor(PlayerById(colony.OwnerId) ?? _human); // inherit the owner's standing SoL bonus (Bolívar)
+        ReturnRoleEquipmentToColony(unit, colony); // a soldier/dragoon/scout/pioneer founds unequipped — its muskets/horses/tools stock the new colony, not lost
         _units.Remove(unit);
         colony.AddIdleColonist(unit.Type.Id); // the founding colonist keeps its identity (an expert founds as an expert)
         // The colony keeps its surroundings explored — for its owner (the human, or a foreign founder; FP-4).
@@ -5290,6 +5310,7 @@ public sealed partial class Game
         }
         colony.Population++;
         colony.AddIdleColonist(unit.Type.Id); // the joining colonist keeps its identity
+        ReturnRoleEquipmentToColony(unit, colony); // an armed/equipped joiner drops its muskets/horses/tools into the colony store, not lost
         _units.Remove(unit);
         // An arriving expert claims its specialty slot FIRST (bumping a free colonist off that good) before the
         // generic auto-assign — otherwise the still-idle expert would be seated on a food tile and never reach its

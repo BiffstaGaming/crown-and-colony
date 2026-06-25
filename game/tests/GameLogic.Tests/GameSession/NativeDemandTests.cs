@@ -34,11 +34,20 @@ public class NativeDemandTests
         && g.ColonyAt(p) is null && g.NativeSettlementAt(p) is null
         && !g.Units.Any(u => u.IsOnMap && u.Position == p);
 
+    /// <summary>Founds a colony with an UNEQUIPPED founder so the warehouse starts empty — the starting pioneer/soldier's banked tools/muskets (correct per FreeCol, covered by ColonyFoundingEquipmentTests) aren't under test in these native scenarios.</summary>
+    private static Colony FoundCleanColony(Game game)
+    {
+        Unit f = game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony);
+        f.RoleId = RoleType.DefaultRoleId;
+        f.RoleCount = 0;
+        return game.FoundColony(f);
+    }
+
     /// <summary>A fresh game with a human-founded colony (for direct <c>SelectDemand</c> ladder tests).</summary>
     private static (Game game, Colony colony) Stage(ulong seed = 7)
     {
         Game game = Game.New(Classic, seed);
-        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        Colony colony = FoundCleanColony(game);
         return (game, colony);
     }
 
@@ -225,7 +234,7 @@ public class NativeDemandTests
     private static (Game game, Colony colony, Unit brave) StageDemand(ulong seed = 7, int tobacco = 100)
     {
         Game game = Game.New(Classic, seed);
-        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        Colony colony = FoundCleanColony(game);
         if (tobacco > 0)
         {
             colony.AddGoods(Tobacco, tobacco);
@@ -381,7 +390,7 @@ public class NativeDemandTests
     private static (Game game, Colony colony, Unit brave) StageCalmTwin(ulong seed)
     {
         Game game = Game.New(Classic, seed);
-        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        Colony colony = FoundCleanColony(game);
         colony.AddGoods(Tobacco, 100);
         game.SpawnUnit(Classic.Unit(Artillery), colony.Position);
         string nation = game.NativeSettlements.First().NationTypeId;
