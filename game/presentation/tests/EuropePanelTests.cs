@@ -532,6 +532,123 @@ public class EuropePanelTests
         AssertThat(shipA.CargoOf(Sugar)).IsEqual(0);   // not the default first ship
     }
 
+    // ── Drop-target-as-sizing-parent structural + geometry guards (BLOCKER fix) ─────────────────────────────────────
+    // Real mouse clicks on key Europe buttons were dead because the zones' EuropeDropTarget was a LATER SIBLING overlaying
+    // the body (MouseFilter.Pass forwards a click to the PARENT, not down to a sibling beneath). The fix makes the drop
+    // target the PARENT of the body, so each button is a DESCENDANT of the Pass target → real clicks reach it. L3 cannot
+    // reproduce a real click (EmitSignal bypasses hit-testing; headless Godot does NO GUI mouse-picking), so these guards
+    // instead encode the invariant structurally (the zone's drop target is an ANCESTOR of the button, not an overlay)
+    // and check the layout doesn't collapse (the card/zone renders at a sane height under SimulateFrames).
+
+    [TestCase(Timeout = 60000)]
+    public async Task KeyButtons_AreDescendantsOfTheirZoneDropTarget_NotOverlaidSiblings()
+    {
+        // A rich fixture so every key button renders: a galleon carrying a treasure train (its CashIn passenger row + the
+        // ship card), an empty caravel (a boarding target — so a dock colonist's Board button renders), a colonist on the
+        // dock (its Board button), a treasure train on the dock (its CashIn chip).
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units =
+            [
+                new SavedUnit(1, Galleon, 0, 0, 12, (int)UnitLocation.InEurope, 0,
+                    new Dictionary<string, int> { [Sugar] = 100 }),
+                // A treasure train aboard the galleon → its CashIn button renders inside the ship card's passenger row.
+                new SavedUnit(2, TreasureTrain, 0, 0, 0, (int)UnitLocation.InEurope, CarrierId: 1, TreasureAmount: 1000),
+                new SavedUnit(3, Colonist, 0, 0, 3, (int)UnitLocation.InEurope),
+                // An empty caravel in port so the dock colonist has somewhere to board (Board_3_5 renders).
+                new SavedUnit(5, Caravel, 0, 0, 12, (int)UnitLocation.InEurope),
+                // A treasure train on the dock → its CashIn chip renders in the docks zone.
+                new SavedUnit(4, TreasureTrain, 0, 0, 0, (int)UnitLocation.InEurope, TreasureAmount: 500),
+            ],
+            Explored = [], Tax = 0, Gold = 5000,
+        });
+        await runner.SimulateFrames(2);
+
+        // Each key button must have the named EuropeDropTarget as an ANCESTOR (so it is a descendant rendered on top of
+        // the Pass drop target, reachable by real clicks) — NOT a later sibling that overlays it.
+        AssertAncestorDropTarget(controller, "Select_1", "ShipDrop_1");           // ship picker (inside the ship card)
+        AssertAncestorDropTarget(controller, "CashIn_2", "ShipDrop_1");           // treasure aboard → ship card passenger row
+        AssertAncestorDropTarget(controller, "Unload_2", "ShipDrop_1");           // put-on-dock (passenger row)
+        AssertAncestorDropTarget(controller, "Sail_", "SailDrop");                // a sail button (inside the sail zone)
+        AssertAncestorDropTarget(controller, "Board_3_", "DocksDrop");            // dock colonist's board button
+        AssertAncestorDropTarget(controller, "CashIn_4", "DocksDrop");            // dock treasure train's cash-in chip
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task SellButton_IsDescendantOfTheGoodsMarketDropTarget()
+    {
+        // The Sell button lives in the goods-market zone (whose drop is GoodsMarketDrop — the CLEAN case that already
+        // made the drop the parent). Guard it too so a future regression to the overlay structure is caught here.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units =
+            [
+                new SavedUnit(1, Caravel, 0, 0, 12, (int)UnitLocation.InEurope, 0,
+                    new Dictionary<string, int> { [Sugar] = 100 }),
+            ],
+            Explored = [],
+        });
+        await runner.SimulateFrames(2);
+        AssertAncestorDropTarget(controller, "Sell_1_sugar", "GoodsMarketDrop");
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ShipCardAndSailZone_RenderAtSaneHeight_NotCollapsed()
+    {
+        // Geometry guard (headless-valid — layout DOES compute under SimulateFrames): the drop-target-as-parent must
+        // adopt its content's min size, so a ship card and the sail zone render tall, not collapsed to a few pixels.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units =
+            [
+                new SavedUnit(1, Galleon, 0, 0, 12, (int)UnitLocation.InEurope, 0,
+                    new Dictionary<string, int> { [Sugar] = 100 }),
+            ],
+            Explored = [], Gold = 5000,
+        });
+        await runner.SimulateFrames(4); // let the deferred rebuild + layout settle
+
+        var shipDrop = FindControl<EuropeDropTarget>(controller, "ShipDrop_1")!;
+        AssertThat(shipDrop).IsNotNull();
+        AssertThat(shipDrop!.Size.Y > 100).IsTrue(); // a ship card (sprite + hold slots) is well over 100px tall
+
+        var sailDrop = FindControl<EuropeDropTarget>(controller, "SailDrop")!;
+        AssertThat(sailDrop).IsNotNull();
+        AssertThat(sailDrop!.Size.Y > 40).IsTrue(); // the sail panel (label + a sail row) is not collapsed
+    }
+
+    /// <summary>
+    /// Asserts the button whose name starts with <paramref name="buttonPrefix"/> has the <see cref="EuropeDropTarget"/>
+    /// whose name starts with <paramref name="dropPrefix"/> somewhere in its <see cref="Node.GetParent"/> chain — i.e.
+    /// the button is a DESCENDANT of the drop target (clickable, on top of the Pass target), not a later sibling overlaid
+    /// by it. Encodes the drop-target-as-sizing-parent invariant.
+    /// </summary>
+    private static void AssertAncestorDropTarget(GameController controller, string buttonPrefix, string dropPrefix)
+    {
+        Button? button = FindButton(controller, buttonPrefix);
+        AssertThat(button).OverrideFailureMessage($"button '{buttonPrefix}' not found").IsNotNull();
+        Node? node = button;
+        bool found = false;
+        while (node is not null)
+        {
+            if (node is EuropeDropTarget t && t.Name.ToString().StartsWith(dropPrefix))
+            {
+                found = true;
+                break;
+            }
+            node = node.GetParent();
+        }
+        AssertThat(found)
+            .OverrideFailureMessage($"button '{buttonPrefix}' must be a DESCENDANT of drop target '{dropPrefix}' (so real clicks reach it), but the drop target is not in its parent chain — the overlay-sibling structure has regressed")
+            .IsTrue();
+    }
+
     private static async Task<(ISceneRunner, GameController, Game)> OpenEurope(SaveGame state)
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

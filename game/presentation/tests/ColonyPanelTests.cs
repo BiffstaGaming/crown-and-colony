@@ -730,6 +730,70 @@ public class ColonyPanelTests
         AssertThat(colony.IdleColonists).IsEqual(1);
     }
 
+    // ── Building-cell drop-target-as-sizing-parent structural + geometry guards (BLOCKER fix) ───────────────────────
+    // A building cell's drop target (a plain Control) returned only its own (0,0) min size, collapsing the cell to ~12px
+    // and squashing the Staff/Unstaff/Worker buttons out of clickable range. The fix makes EuropeDropTarget size like a
+    // single-child container (SetContent + _GetMinimumSize). These guards encode the invariant: the cell renders tall,
+    // and the buttons are DESCENDANTS of the cell's drop target (so real clicks reach them).
+
+    [TestCase(Timeout = 60000)]
+    public async Task BuildingCell_RendersAtSaneHeight_NotCollapsed()
+    {
+        (ISceneRunner runner, GameController controller, _, _) = await OpenPanel();
+        await runner.SimulateFrames(4); // let the deferred rebuild + layout settle
+
+        // The carpenter's-house cell (image + label + slot row + controls) must be well over 100px tall — a collapsed
+        // cell (the bug) would be only ~12px and the +/− buttons would be unclickable.
+        var drop = FindControl<EuropeDropTarget>(controller, "BuildingDrop_carpenterHouse")!;
+        AssertThat(drop).IsNotNull();
+        AssertThat(drop!.Size.Y > 100).IsTrue();
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task BuildingButtons_AreDescendantsOfTheCellDropTarget_NotOverlaidSiblings()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+
+        // Free the founder so the carpenter's house offers a Staff (+) button, then re-settle the layout.
+        FindButton(controller, "Release_")!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+        AssertThat(colony.IdleColonists).IsEqual(1);
+
+        // The Staff (+) button is a descendant of its cell's drop target (guard it while the idle colonist still exists).
+        AssertAncestorDropTarget(controller, "Staff_carpenterHouse", "BuildingDrop_carpenterHouse");
+
+        // Staff the carpenter's house so a Worker portrait + an Unstaff (−) button render too, then guard both.
+        FindButton(controller, "Staff_carpenterHouse")!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+        AssertAncestorDropTarget(controller, "Unstaff_carpenterHouse", "BuildingDrop_carpenterHouse");
+        AssertAncestorDropTarget(controller, "Worker_carpenterHouse_0", "BuildingDrop_carpenterHouse");
+    }
+
+    /// <summary>
+    /// Asserts the button whose name starts with <paramref name="buttonPrefix"/> has the <see cref="EuropeDropTarget"/>
+    /// whose name starts with <paramref name="dropPrefix"/> in its <see cref="Node.GetParent"/> chain — i.e. the button
+    /// is a DESCENDANT of the drop target (clickable, on top of the Pass target), not a later sibling overlaid by it.
+    /// </summary>
+    private static void AssertAncestorDropTarget(GameController controller, string buttonPrefix, string dropPrefix)
+    {
+        Button? button = FindButton(controller, buttonPrefix);
+        AssertThat(button).OverrideFailureMessage($"button '{buttonPrefix}' not found").IsNotNull();
+        Node? node = button;
+        bool found = false;
+        while (node is not null)
+        {
+            if (node is EuropeDropTarget t && t.Name.ToString().StartsWith(dropPrefix))
+            {
+                found = true;
+                break;
+            }
+            node = node.GetParent();
+        }
+        AssertThat(found)
+            .OverrideFailureMessage($"button '{buttonPrefix}' must be a DESCENDANT of drop target '{dropPrefix}' (so real clicks reach it), but the drop target is not in its parent chain — the overlay-sibling structure has regressed")
+            .IsTrue();
+    }
+
     private static string LabelText(PanelContainer panel, string name) =>
         ((Label)panel.FindChild(name, recursive: true, owned: false)).Text;
 

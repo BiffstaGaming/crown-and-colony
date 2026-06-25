@@ -728,10 +728,15 @@ public partial class ColonyPanel : PanelContainer
                     }
                 });
         cell.AddChild(drop);
-        var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        // The box and its decorations are mouse-Ignore so a drag-hover over the cell's image/label/empty-slot area falls
+        // through to the drop target; the worker portraits and +/− buttons (descendants) keep their own clicks.
+        var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore };
         box.AddThemeConstantOverride("separation", 2);
-        box.SetAnchorsPreset(Control.LayoutPreset.FullRect); // the plain Control drop target doesn't lay out its child — fill it
-        drop.AddChild(box);
+        // SetContent makes the drop target size like a single-child container around the box (anchors it FullRect AND
+        // adopts its combined minimum size via EuropeDropTarget._GetMinimumSize) — without this a plain Control drop
+        // target returns only its own (0,0) min size, collapsing the cell to ~12px and squashing the +/− buttons out
+        // of clickable range. The box's buttons are descendants of the Pass drop target, so real clicks reach them.
+        drop.SetContent(box);
 
         box.AddChild(IconRect(ColonyArt.BuildingImage(building.ShortName), 124, 70));
         // Display name wraps to (at most) two reserved lines so long names like "Tobacconist House" don't spill the
@@ -742,6 +747,7 @@ public partial class ColonyPanel : PanelContainer
             HorizontalAlignment = HorizontalAlignment.Center,
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
             CustomMinimumSize = new Vector2(124, 36),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         label.AddThemeFontSizeOverride("font_size", 13);
         box.AddChild(label);
@@ -751,7 +757,7 @@ public partial class ColonyPanel : PanelContainer
         // slot is a click-to-remove button (the FreeCol gesture — click a worker to take it out); empty workplaces show
         // a faint placeholder so the slot count reads at a glance.
         IReadOnlyList<string> occupants = _colony.BuildingOccupants(buildingId);
-        var slots = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        var slots = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
         slots.AddThemeConstantOverride("separation", 2);
         for (int i = 0; i < building.Workplaces; i++)
         {
@@ -778,7 +784,7 @@ public partial class ColonyPanel : PanelContainer
         }
         box.AddChild(slots);
 
-        var controls = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        var controls = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
         if (_game.CheckAssignBuildingWork(_colony, buildingId).Allowed)
         {
             var add = new Button { Name = $"Staff_{building.ShortName}", Text = "+" };

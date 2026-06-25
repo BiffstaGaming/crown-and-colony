@@ -622,7 +622,9 @@ public partial class EuropePanel : PanelContainer
 
             // The whole card is a drop target: a colonist dropped here boards (drop #1), goods dropped here buy (drop
             // #3). Both accept/drop handlers re-check their Game oracle (ADR-006). A faint border frames each ship; the
-            // drop target overlays the frame (DropZone) so it covers the card without collapsing the layout.
+            // drop target is the PARENT of the frame (DropZone) so the card's buttons are descendants (real clicks reach
+            // them) while a drag-hover over the card's decorations falls through to the drop target. The frame and its
+            // box are mouse-Ignore (decoration) so the hover reaches the drop target across the whole card.
             var cardDrop = new EuropeDropTarget { Name = $"ShipDrop_{ship.Id}" }
                 .Configure(
                     data => BoardAllowed(data, ship) || BuyAllowed(data, ship),
@@ -631,9 +633,9 @@ public partial class EuropePanel : PanelContainer
                         if (BoardAllowed(data, ship)) { OnBoardDrop(data, ship); }
                         else if (BuyAllowed(data, ship)) { OnBuyDrop(data, ship); }
                     });
-            var frame = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Pass };
+            var frame = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
             frame.AddThemeStyleboxOverride("panel", CardStyle(selected));
-            var cardBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            var cardBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
             cardBox.AddThemeConstantOverride("separation", 4);
             frame.AddChild(cardBox);
 
@@ -644,7 +646,10 @@ public partial class EuropePanel : PanelContainer
             // The card title row: the ship SPRITE + name + status as a drag source (drag the card onto the sail zone to
             // sail it — drop #2) and a Select button (the ship picker — its goods Buy/Sell target the selected ship). A
             // repairing ship can't be the trade ship and can't sail, so it offers neither.
-            var titleInner = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Pass };
+            // The title's sprite + name are decoration (mouse-Ignore): when the ship can sail they live inside the
+            // ShipDrag drag source (which handles the drag), and a hover over them must fall through to it / the card
+            // drop target — the Select button (a sibling in titleRow) keeps its own click.
+            var titleInner = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
             titleInner.AddThemeConstantOverride("separation", 6);
             titleInner.AddChild(IconRect(UnitSprite(ship.Type.ShortName), 48, 40));
             titleInner.AddChild(new Label
@@ -653,10 +658,12 @@ public partial class EuropePanel : PanelContainer
                 Text = $"{(selected ? "▶ " : "")}{Display(ship.Type.ShortName)} — {status}",
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,
                 VerticalAlignment = VerticalAlignment.Center,
-                MouseFilter = Control.MouseFilterEnum.Pass,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
             });
 
-            var titleRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            // The title row is a decoration container (mouse-Ignore) so a hover over its gaps falls through to the card
+            // drop target; the ShipDrag source and Select button (descendants) keep their own hover/click.
+            var titleRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
             titleRow.AddThemeConstantOverride("separation", 6);
             if (!ship.IsUnderRepair)
             {
@@ -678,13 +685,16 @@ public partial class EuropePanel : PanelContainer
             foreach (Unit passenger in _game.Passengers(ship))
             {
                 Unit p = passenger;
-                var prow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                // The passenger row is a decoration container (mouse-Ignore) so a hover over its gaps reaches the card
+                // drop target; the Passenger drag source and the CashIn / Put-on-dock buttons (descendants) keep theirs.
+                var prow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
                 prow.AddThemeConstantOverride("separation", 4);
                 // The passenger portrait chip is a drag source — drag it onto the docks zone to put it ashore (drop #5).
-                var pChip = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Pass };
+                // Its inner sprite + label are decoration (mouse-Ignore) so the hover reaches the wrapping drag source.
+                var pChip = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
                 pChip.AddThemeConstantOverride("separation", 4);
                 pChip.AddChild(IconRect(UnitSprite(p.Type.ShortName), 28, 28));
-                pChip.AddChild(new Label { Text = $"{Display(p.Type.ShortName)} (aboard)", SizeFlagsHorizontal = SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center, MouseFilter = MouseFilterEnum.Pass });
+                pChip.AddChild(new Label { Text = $"{Display(p.Type.ShortName)} (aboard)", SizeFlagsHorizontal = SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore });
                 pChip.SetAnchorsPreset(LayoutPreset.FullRect);
                 prow.AddChild(new EuropeDragSource { Name = $"Passenger_{passenger.Id}", SizeFlagsHorizontal = SizeFlags.ExpandFill }
                     .Configure(() => ColonistPayload(p.Id), () => $"{Display(p.Type.ShortName)} → dock")
@@ -743,16 +753,19 @@ public partial class EuropePanel : PanelContainer
         for (int i = 0; i < capacity; i++)
         {
             bool filled = i < fills.Count;
-            var slot = new PanelContainer { CustomMinimumSize = new Vector2(60, 56), MouseFilter = Control.MouseFilterEnum.Pass };
+            // The slot box is decoration (mouse-Ignore) so a drag-hover over it falls through to the card drop target
+            // (so a buy/board drop lands anywhere on the card); a goods lead-slot is re-wrapped below in a drag source
+            // (which itself receives the hover to start a sell drag).
+            var slot = new PanelContainer { CustomMinimumSize = new Vector2(60, 56), MouseFilter = Control.MouseFilterEnum.Ignore };
             slot.AddThemeStyleboxOverride("panel", SlotStyle(filled));
 
             if (filled && fills[i] is { GoodsShort: { } gs } gf)
             {
                 // A goods stack: the goods icon with the amount overlaid beneath it.
-                var content = new VBoxContainer { MouseFilter = MouseFilterEnum.Pass };
+                var content = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
                 content.AddThemeConstantOverride("separation", 0);
                 content.AddChild(Centered(IconRect(ColonyArt.GoodsIcon(gs), 34, 34)));
-                content.AddChild(new Label { Text = $"{gf.Amount}", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Pass });
+                content.AddChild(new Label { Text = $"{gf.Amount}", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore });
                 slot.AddChild(content);
             }
             else if (filled && fills[i] is { UnitShort: { } us })
@@ -761,7 +774,7 @@ public partial class EuropePanel : PanelContainer
             }
             else
             {
-                slot.AddChild(new Control { MouseFilter = MouseFilterEnum.Pass }); // empty slot — a faint box
+                slot.AddChild(new Control { MouseFilter = MouseFilterEnum.Ignore }); // empty slot — a faint box
             }
 
             // A goods stack's lead slot is a drag source — drag it onto the goods market to sell the whole stack. The
@@ -810,10 +823,12 @@ public partial class EuropePanel : PanelContainer
     {
         var drop = new EuropeDropTarget { Name = "SailDrop" }
             .Configure(SailAllowed, OnSailDrop);
-        // A distinct cool-bordered panel so the drop target reads as a "departure gate"; the drop overlays it (DropZone).
-        var frame = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Pass };
+        // A distinct cool-bordered panel so the drop target reads as a "departure gate"; the drop is its PARENT
+        // (DropZone) so a hover over the panel reaches the drop while the per-ship Sail buttons (descendants) keep their
+        // clicks. The frame, its box and the arrow/label are decoration (mouse-Ignore) so the hover reaches the drop.
+        var frame = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
         frame.AddThemeStyleboxOverride("panel", SailZoneStyle());
-        var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
         box.AddThemeConstantOverride("separation", 6);
         frame.AddChild(box);
 
@@ -821,6 +836,7 @@ public partial class EuropePanel : PanelContainer
         {
             Text = "⛵  ➜  Drag a loaded ship here to depart for the New World",
             HorizontalAlignment = HorizontalAlignment.Center,
+            MouseFilter = MouseFilterEnum.Ignore,
         });
 
         var ready = ships.Where(s => !s.IsUnderRepair).ToList();
@@ -830,16 +846,20 @@ public partial class EuropePanel : PanelContainer
             {
                 Text = ships.Count == 0 ? "(no ships in port)" : "(all ships in port are under repair)",
                 HorizontalAlignment = HorizontalAlignment.Center,
+                MouseFilter = MouseFilterEnum.Ignore,
             });
             return DropZone(drop, frame);
         }
         foreach (Unit ship in ready)
         {
             Unit sh = ship;
-            var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            // The row + its sprite/label are decoration (mouse-Ignore) so a drag-hover over them reaches the sail drop
+            // target; the Sail button (a descendant) keeps its own click regardless of its parent's filter.
+            var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
             row.AddThemeConstantOverride("separation", 6);
             row.AddChild(IconRect(UnitSprite(ship.Type.ShortName), 32, 26));
-            row.AddChild(Grow(new Label { Text = $"{Display(ship.Type.ShortName)} — {_game.Passengers(ship).Count()} aboard", VerticalAlignment = VerticalAlignment.Center }));
+            var sailLabel = new Label { Text = $"{Display(ship.Type.ShortName)} — {_game.Passengers(ship).Count()} aboard", VerticalAlignment = VerticalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore };
+            row.AddChild(Grow(sailLabel));
             row.AddChild(ActionButton($"Sail_{ship.Id}", "Sail to New World", () =>
             {
                 _game.SailToNewWorld(sh);
@@ -868,12 +888,14 @@ public partial class EuropePanel : PanelContainer
         if (onDock.Count == 0 && treasureOnDock.Count == 0)
         {
             var emptyBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            emptyBox.AddChild(new Label { Text = "(none — drag an aboard colonist here to put it ashore)", HorizontalAlignment = HorizontalAlignment.Center });
+            emptyBox.AddChild(new Label { Text = "(none — drag an aboard colonist here to put it ashore)", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore });
             return DropZone(drop, emptyBox);
         }
 
-        // A wrapping flow of portrait chips — the docks read as a quay of waiting people, not a stacked text list.
-        var flow = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        // A wrapping flow of portrait chips — the docks read as a quay of waiting people, not a stacked text list. The
+        // flow + chips + their decoration boxes are mouse-Ignore so a drag-hover falls through to the docks drop target;
+        // the chips' DockColonist drag sources and Board/CashIn buttons (descendants) keep their own hover/clicks.
+        var flow = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
         flow.AddThemeConstantOverride("h_separation", 8);
         flow.AddThemeConstantOverride("v_separation", 8);
 
@@ -881,16 +903,17 @@ public partial class EuropePanel : PanelContainer
         {
             Unit pe = person;
             // A bordered chip: the colonist portrait + name + per-ship Board buttons, the portrait+name a drag source.
-            var chip = new PanelContainer { MouseFilter = MouseFilterEnum.Pass };
+            var chip = new PanelContainer { MouseFilter = MouseFilterEnum.Ignore };
             chip.AddThemeStyleboxOverride("panel", SlotStyle(filled: true));
-            var chipBox = new VBoxContainer { MouseFilter = MouseFilterEnum.Pass };
+            var chipBox = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
             chipBox.AddThemeConstantOverride("separation", 2);
             chip.AddChild(chipBox);
 
-            var portraitBox = new VBoxContainer { MouseFilter = MouseFilterEnum.Pass };
+            // The portrait + name are decoration inside the drag source (mouse-Ignore) so the hover reaches that source.
+            var portraitBox = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
             portraitBox.AddThemeConstantOverride("separation", 0);
             portraitBox.AddChild(Centered(UnitPortrait(person.Type.ShortName, 44)));
-            portraitBox.AddChild(new Label { Text = Display(person.Type.ShortName), HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart, MouseFilter = MouseFilterEnum.Pass });
+            portraitBox.AddChild(new Label { Text = Display(person.Type.ShortName), HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart, MouseFilter = MouseFilterEnum.Ignore });
             portraitBox.SetAnchorsPreset(LayoutPreset.FullRect);
             // The portrait chip is a drag source — drag it onto a ship card to board (drop #1). A fixed min size keeps the
             // bare drag-source Control (it doesn't adopt its child's min size) from collapsing inside the chip.
@@ -915,13 +938,13 @@ public partial class EuropePanel : PanelContainer
         foreach (Unit train in treasureOnDock)
         {
             Unit tr = train;
-            var chip = new PanelContainer { MouseFilter = MouseFilterEnum.Pass };
+            var chip = new PanelContainer { MouseFilter = MouseFilterEnum.Ignore };
             chip.AddThemeStyleboxOverride("panel", SlotStyle(filled: true));
-            var chipBox = new VBoxContainer { MouseFilter = MouseFilterEnum.Pass };
+            var chipBox = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
             chipBox.AddThemeConstantOverride("separation", 2);
             chip.AddChild(chipBox);
             chipBox.AddChild(Centered(UnitPortrait(train.Type.ShortName, 44)));
-            chipBox.AddChild(new Label { Text = $"{Display(train.Type.ShortName)} ({train.TreasureAmount}g)", HorizontalAlignment = HorizontalAlignment.Center });
+            chipBox.AddChild(new Label { Text = $"{Display(train.Type.ShortName)} ({train.TreasureAmount}g)", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore });
             if (_game.CheckCashInTreasureTrain(train).Allowed)
             {
                 Button cashIn = CashInButton(tr);
@@ -1016,10 +1039,10 @@ public partial class EuropePanel : PanelContainer
         MouseFilter = Control.MouseFilterEnum.Ignore,
     };
 
-    /// <summary>Centres a single control horizontally inside an <see cref="HBoxContainer"/> so a fixed-size icon sits in the middle of its (wider) slot/card.</summary>
+    /// <summary>Centres a single control horizontally inside an <see cref="HBoxContainer"/> so a fixed-size icon sits in the middle of its (wider) slot/card. Mouse-Ignore (pure layout around a decoration icon) so a drag-hover over it falls through to the wrapping drag source / drop target.</summary>
     private static Control Centered(Control child)
     {
-        var box = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Pass };
+        var box = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore };
         box.AddChild(child);
         return box;
     }
@@ -1048,24 +1071,19 @@ public partial class EuropePanel : PanelContainer
     }
 
     /// <summary>
-    /// Lays out a drop zone whose body needs a real container to drive its height: returns a wrapper that sizes the
-    /// <paramref name="body"/> normally and overlays the <paramref name="drop"/> target across the whole area (FullRect,
-    /// mouse-Pass) so a drag over the zone hits the target while clicks still reach the body's buttons. A bare
-    /// <see cref="EuropeDropTarget"/> is a plain <see cref="Control"/> (it doesn't adopt its child's minimum size), so
-    /// putting it directly in a layout container would collapse it; this wrapper avoids that without touching
-    /// <c>EuropeDragDrop.cs</c>.
+    /// Lays out a drop zone by making the <paramref name="drop"/> target the <b>PARENT</b> of its <paramref name="body"/>
+    /// (the zone's card/panel): the body fills the target (<see cref="EuropeDropTarget.SetContent"/> anchors it FullRect
+    /// and adopts its min size), so the body's interactive buttons are the target's DESCENDANTS — rendered on top of the
+    /// <c>MouseFilter.Pass</c> target and therefore reached by real mouse clicks — while a drag-hover over the card's
+    /// non-button area still reaches the target. (The earlier overlay-sibling structure left those buttons dead to real
+    /// clicks because a Pass overlay forwards the click to the PARENT, not down to the sibling beneath it.)
     /// </summary>
     private static Control DropZone(EuropeDropTarget drop, Control body)
     {
-        // A MarginContainer drives the body's size; the drop target overlays it (added last, FullRect) so it covers the
-        // same rect and receives the drag/drop while the body's buttons keep their clicks (MouseFilter.Pass).
-        var wrapper = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        body.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        wrapper.AddChild(body);
         drop.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        drop.SetAnchorsPreset(LayoutPreset.FullRect);
-        wrapper.AddChild(drop);
-        return wrapper;
+        body.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        drop.SetContent(body); // body becomes the drop's content child (FullRect, min-size adopted) → its buttons are descendants
+        return drop;
     }
 
     /// <summary>The bordered-card skin — a slightly raised parchment-brown fill with a warm border; <paramref name="highlight"/> brightens the border (a selected ship card).</summary>

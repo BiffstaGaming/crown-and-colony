@@ -121,6 +121,19 @@ public partial class EuropeDragSource : Control
 /// (which re-checks the oracle, forwards the single Game command, and refreshes the panel). Rule-free transport; a
 /// refused drop is a graceful no-op, never a throw.
 /// </summary>
+/// <remarks>
+/// <para><b>It is a sizing PARENT, not an overlay.</b> The target is meant to <em>wrap</em> the zone's content (its
+/// card/cell) as that content's parent, so the content's interactive buttons are this control's DESCENDANTS — rendered
+/// ON TOP of the <see cref="MouseFilterEnum.Pass"/> target — and therefore receive real mouse clicks, while a drag-hover
+/// over the surrounding (non-button) area still reaches this target. (A later-added sibling overlay with
+/// <c>MouseFilter.Pass</c> would forward a click to the parent, NOT down to the button beneath it — leaving the button
+/// dead to real clicks. That is the bug this design avoids.)</para>
+/// <para>A bare <see cref="Control"/> does NOT aggregate its children's minimum sizes the way a
+/// <see cref="Container"/> does (<see cref="Control._GetMinimumSize"/> returns only its own
+/// <see cref="Control.CustomMinimumSize"/>), so a content child placed inside one would let the parent collapse to
+/// nothing. <see cref="SetContent"/> + the <see cref="_GetMinimumSize"/> override below make this target behave like a
+/// single-child container: it adopts its content's combined minimum size and fills that content to its own rect.</para>
+/// </remarks>
 public partial class EuropeDropTarget : Control
 {
     private Func<Variant, bool> _canDrop = _ => false;
@@ -133,6 +146,44 @@ public partial class EuropeDropTarget : Control
         _onDrop = onDrop;
         MouseFilter = MouseFilterEnum.Pass; // children (buttons) still get their clicks; this still receives drops
         return this;
+    }
+
+    /// <summary>
+    /// Adds <paramref name="content"/> as this target's single content child, anchored <see cref="LayoutPreset.FullRect"/>
+    /// so it fills the target, and re-asks for this target's minimum size whenever the content's minimum changes (so a
+    /// content card/cell never collapses the target — the bug this fixes). Use this instead of a bare
+    /// <see cref="Node.AddChild(Node, bool, Node.InternalMode)"/> so the target sizes like a single-child container.
+    /// Returns <c>this</c> for fluent wiring.
+    /// </summary>
+    public EuropeDropTarget SetContent(Control content)
+    {
+        AddChild(content);
+        content.SetAnchorsPreset(LayoutPreset.FullRect); // the content fills the drop target's whole rect
+        // A Container re-queries its min size when a child's changes; a plain Control does not — wire it explicitly so a
+        // late-laid-out card (icons/labels measured after the first frame) still drives this target's height.
+        content.MinimumSizeChanged += UpdateMinimumSize;
+        UpdateMinimumSize();
+        return this;
+    }
+
+    /// <summary>
+    /// This target's minimum size: the per-axis maximum of its visible <see cref="Control"/> children's combined minimum
+    /// sizes (so it sizes like a single-child container around its content), or <see cref="Control.CustomMinimumSize"/>
+    /// when it has none. Overriding this is what stops a content card/cell placed inside the (otherwise plain-Control)
+    /// drop target from collapsing to nothing.
+    /// </summary>
+    public override Vector2 _GetMinimumSize()
+    {
+        var min = Vector2.Zero;
+        foreach (Node child in GetChildren())
+        {
+            if (child is Control { Visible: true } control)
+            {
+                Vector2 childMin = control.GetCombinedMinimumSize();
+                min = new Vector2(Mathf.Max(min.X, childMin.X), Mathf.Max(min.Y, childMin.Y));
+            }
+        }
+        return min;
     }
 
     /// <summary>Whether this target accepts <paramref name="data"/> here — delegates to the configured predicate (which gates on a <see cref="Game"/> oracle).</summary>
