@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-25 — Europe screen: zoned harbour rebuild (Phase 1) + adversarial-review fixes ✅
+
+**Requested (Chris):** "split the Europe screen more like the original Colonization." Chose full zoned layout + drag-drop; built in two phases (this = Phase 1, click-based; Phase 2 drag-drop queued `86d3fc4cw`).
+**Did:** Rebuilt `EuropePanel` from a flat text-list into **6 spatial zones** (header + immigration bar · recruit/train/purchase · goods market w/ live bid·ask + boycott · ships-in-port cards with drawn cargo-hold slots · sail-to-New-World · docks). Closed the **train/buy P1 gap** (`86d3f62qn`): specialists → `TrainUnit` (flat), ships/artillery → `BuyUnit` (escalating); exposed `CheckTrain`/`TrainUnit`/`EuropeUnitPrice`. `main.tscn` re-anchored near-fullscreen + scroll. Then ran an **adversarial review fleet** (6 dims × 3-skeptic verify, 39 agents) → 9 confirmed findings → fixed all: **tax-aware sell value** (new non-mutating `Market.SaleValue` + `Game.CheckSellShipCargo` oracle — the sell label overstated proceeds under tax, an ADR-006 leak the zero-tax fixture had hidden), greyed Buy `GatedButton`, boycott display, `GoodsSlotsFor` oracle, + 2 test-rigor gaps.
+**Status:** Shipped. Commits `9129525` (Phase 1) + `fca3847` (review fixes). **CI run 28154012416 = GREEN both jobs.** Local: full L3 196/196, L1/L2 2223, soak 5/5. No save bump.
+**Changed:** `EuropePanel.cs` (large rewrite), `Game.cs` (+5 oracles), `Market.cs` (`SaleValue`), `main.tscn`, `EuropePanelTests`/`EuropePurchaseTests`/`MarketTests`/`SailingTests`, `europe.md`/`market.md`/`presentation.md`/`game-logic.md`, `UiPanelGoldenTests` (europe golden → render-smoke).
+**Decisions:** Goods market trades the first non-repairing in-port ship (ship-picker → Phase 2). Europe L4 golden deferred to a render-smoke (golden-pipeline `86d3f69e9`).
+**Scheduled next:** **Phase 2 — Europe drag-and-drop** (`86d3fc4cw`): drag colonist→ship, ship→sail-zone, goods↔hold, + ship picker. Godot 4.6 `_GetDragData`/`_CanDropData`/`_DropData`; L3 via direct callback invocation.
+**Follow-ups:** colony drag-drop (`86d3f6757`), P2 first-contact notice (`86d3f62qw`), L3 player-flow coverage (`86d3f62r5`), golden-pipeline fix (`86d3f69e9`), perf-gate flake hardening.
+**Needs you:** Playtest the new Europe screen. Phase 2 drag-drop building next.
+
+---
+
 ## 2026-06-25 — Treasure cash-in loop made whole: Europe UI fix + Col1 fee model ✅
 
 **Requested (Chris, playtesting):** (1) transporting a treasure train to Europe + unloading to the dock gives ZERO money; (2) Col1's at-colony flow — the King offers to ship it for a fee = your tax %.
