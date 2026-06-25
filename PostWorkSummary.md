@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-25 — Europe screen matches the mockup (spatial harbour) + colony drag-drop + dead-click blocker fix ✅
+
+**Requested (Chris):** (1) the Europe screen doesn't match the mockup — make it the spatial harbour; (2) add drag-and-drop inside the colony screen too; (use FreeCol/online assets as needed — turned out all assets already exist, GPL-v2).
+**Did (3 commits, each integrated + CI-green; all assets already in-repo, no online sourcing):**
+- **Europe spatial harbour** (`3188e06`, task `86d3fepqt`): rebuilt `EuropePanel` from a text list into the mockup layout — two-column bordered cards (recruit **portrait cards** + Train/Purchase **icon grids** replacing the long text lists; goods-market rows with **goods icons** + bid/ask), ship **cards** with the ship sprite + **hold-slot boxes** (goods icons inside), a bordered **sail drop-zone**, dock **portrait chips**. All real FreeCol art (`ColonyArt.GoodsIcon`/`UnitIcon`). **I render-verified it matches the mockup.**
+- **Colony drag-and-drop** (`ec03d4d`, task `86d3f6757`): a new **Idle colonists** portrait row you drag onto tiles/buildings to assign (reuses the drag classes + a `ColonyDrag` payload; land-claim prompt preserved; click still works). +4 L3.
+- **Dead-click blocker fix** (`c0f0246`, task `86d3ff2wt`): an adversarial review (4 dims × 3-skeptic) caught **4 blockers neither L3 nor my render saw** — `EmitSignal` bypasses hit-testing and headless Godot does no GUI mouse-picking. The `DropZone` overlaid the drop target as a **top-z sibling**; `MouseFilter.Pass` forwards clicks **up to the parent, not down** to the button beneath → `Sail_`/`Board_`/`Select_`/`Unload_`/`CashIn_` dead; the colony drop target (plain `Control`) collapsed building cells to ~12px. Fix: `EuropeDropTarget._GetMinimumSize`/`SetContent` make it a **sizing parent**; `DropZone` makes the drop the **parent** of its buttons (descendants → clickable); decorations `MouseFilter.Ignore`. **+5 L3 guards that catch this class headless** (geometry: cell/card height >100px; structural: drop target is an *ancestor* of each button).
+**Status:** Shipped. Commits `3188e06` + `ec03d4d` + `c0f0246`. **CI runs 28166908768 / 28166259060 / 28168840787 = GREEN both jobs.** Local: full L3 **213/213**, L1/L2 2223+5 soak. No save bump (all presentation-only).
+**Decisions:** Drop target as a sizing PARENT of its buttons (the proven `GoodsMarketZone`/pre-relayout pattern), not an overlay — clicks reach descendants, drops land on the card's non-button areas. The headless-no-mouse-picking limit is now covered by structural-ancestor + geometry L3 guards.
+**Scheduled next:** await Chris's playtest of the new Europe screen + colony drag-drop. (Adversarial review is now standard for big UI changes — it caught what green tests + a screenshot couldn't.)
+**Follow-ups:** drag-preview orphan-node cleanup (`86d3fd0gp`); P2 first-contact notice (`86d3f62qw`); golden-pipeline fix (`86d3f69e9`); perf-gate flake.
+**Needs you:** Playtest the Europe harbour + colony drag-drop. Confirm the legibility (`86d3fd0g6`, In Review) reads well.
+
+---
+
 ## 2026-06-25 — Europe drag-drop (Phase 2) + in-game screen legibility + scout how-to ✅
 
 **Requested (Chris):** (1) finish the Europe redesign with drag-and-drop; (2) "that's not readable" (colony screen — contrast + text size/boldness); (3) how to put an indentured servant on a horse → scout.
