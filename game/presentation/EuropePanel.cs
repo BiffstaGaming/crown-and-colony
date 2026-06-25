@@ -9,13 +9,18 @@ using Godot;
 namespace CrownAndColony.Presentation;
 
 /// <summary>
-/// The Europe screen, laid out as a zoned harbour (FreeCol/Colonization style) rather than a flat text list: a header
-/// (treasury + immigration clock + next-recruit price), a recruit/train/purchase zone, a goods-market zone, a
-/// ships-in-port zone (each ship a card with its hold slots drawn out), a sail-to-the-New-World zone, and an
-/// on-the-docks zone (waiting colonists + carried-home treasure trains). Like the colony screen it only renders state
-/// and forwards button clicks to the <see cref="Game"/> oracles (ADR-006); all rules live in GameLogic. Phase 1 is
-/// click/button interactions only — drag-and-drop comes later. Built programmatically per open/refresh; the rebuild is
-/// deferred (see <see cref="Changed"/>) so a control is never freed mid-signal.
+/// The Europe screen, laid out as a <b>spatial harbour</b> (FreeCol/Colonization style) rather than a flat text list:
+/// a header (treasury + immigration clock + next-recruit price), a two-column row of bordered cards (left a
+/// recruit/train/purchase card — recruit portrait cards plus compact icon GRIDS for trainable specialists and
+/// purchasable ships; right a goods-market card whose rows each carry the good's ICON), a ships-in-port zone (each ship
+/// a CARD with its sprite and its hold drawn as a row of slot boxes that show goods icons / passenger portraits), a
+/// bordered sail-to-the-New-World drop panel, and an on-the-docks row of colonist PORTRAIT chips (plus carried-home
+/// treasure trains). Every unit/good is shown by its real FreeCol sprite (<see cref="ColonyArt.UnitIcon"/> /
+/// <see cref="ColonyArt.GoodsIcon"/> / <see cref="UnitMarker.ResolveTexture"/>), not a text row. Like the colony screen
+/// it only renders state and forwards button clicks to the <see cref="Game"/> oracles (ADR-006); all rules live in
+/// GameLogic. The Phase 2 drag-and-drop layer (board / sail / buy / sell / disembark + the ship picker) is wired
+/// additively over the buttons. Built programmatically per open/refresh; the rebuild is deferred (see
+/// <see cref="Changed"/>) so a control is never freed mid-signal.
 /// </summary>
 public partial class EuropePanel : PanelContainer
 {
@@ -35,6 +40,9 @@ public partial class EuropePanel : PanelContainer
 
     private static readonly Color Negative = new(0.9f, 0.3f, 0.25f);
     private static readonly Color Muted = new(0.62f, 0.55f, 0.42f);
+
+    /// <summary>The labourer/default sprite role used for a colonist portrait (no equipment), shared with the colony screen's worker portraits.</summary>
+    private const string PortraitRole = "default";
 
     /// <summary>Opens the panel. <paramref name="onChange"/> runs after every action.</summary>
     public void Open(Game game, Action onChange)
@@ -294,7 +302,7 @@ public partial class EuropePanel : PanelContainer
 
     private void Rebuild()
     {
-        GetNode<Label>("VBox/EuropeTitle").Text = "Europe";
+        GetNode<Label>("VBox/EuropeTitle").Text = "Europe — the harbour";
         GetNode<Label>("VBox/EuropeInfo").Text =
             $"Treasury: {_game.Gold} gold   |   Next recruit: {_game.RecruitPrice} gold";
 
@@ -317,11 +325,12 @@ public partial class EuropePanel : PanelContainer
 
         card.AddChild(ImmigrationZone());
 
-        // The two market/recruitment columns sit side by side on a wide screen, stacking only on a narrow one.
-        var topRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
+        // The two market/recruitment cards sit side by side on a wide screen (the existing topRow), top-aligned so
+        // the differing card heights don't stretch each other; the Scroll handles windows narrower than they fit.
+        var topRow = new HBoxContainer { Name = "TopRow", SizeFlagsHorizontal = SizeFlags.ShrinkCenter, Alignment = BoxContainer.AlignmentMode.Begin };
         topRow.AddThemeConstantOverride("separation", 16);
-        topRow.AddChild(RecruitTrainPurchaseZone());
-        topRow.AddChild(GoodsMarketZone(ships));
+        topRow.AddChild(Card("Recruit & train", RecruitTrainPurchaseZone(), 400));
+        topRow.AddChild(Card("Goods market", GoodsMarketZone(ships), 440));
         card.AddChild(topRow);
 
         card.AddChild(SectionLabel("Ships in port"));
@@ -368,74 +377,110 @@ public partial class EuropePanel : PanelContainer
     // ── Zone 2: recruit / train / purchase ──────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The people-and-units column: the three recruitment-dock slots (each with its current price), a <b>Train</b> list of
-    /// priced specialists (<see cref="Game.UnitTypesTrainedInEurope"/> → <see cref="Game.TrainUnit(string)"/>, flat price),
-    /// and a <b>Purchase</b> list of ships/artillery (<see cref="Game.UnitTypesPurchasedInEurope"/> →
-    /// <see cref="Game.BuyUnit(string)"/>, artillery escalating). Every action button is disabled (greyed) when its
-    /// matching Check oracle refuses — chiefly when the player can't afford it (ADR-006: the panel only reads the gate).
+    /// The people-and-units card body: the three recruitment-dock slots as small <b>portrait cards</b> (the colonist's
+    /// sprite + name + cost + a <c>Recruit_{slot}</c> button), then <b>Train a specialist</b> and <b>Purchase</b> as
+    /// compact icon <b>grids</b> — each entry a small button drawn with the unit/ship <b>sprite</b> + its price and the
+    /// full name in the tooltip (<see cref="Game.UnitTypesTrainedInEurope"/> → <see cref="Game.TrainUnit(string)"/> at a
+    /// flat price; <see cref="Game.UnitTypesPurchasedInEurope"/> → <see cref="Game.BuyUnit(string)"/>, artillery
+    /// escalating). Every action button is disabled (greyed) when its matching Check oracle refuses — chiefly when the
+    /// player can't afford it (ADR-006: the panel only reads the gate). Replaces the old long vertical text lists.
     /// </summary>
     private Control RecruitTrainPurchaseZone()
     {
-        var col = new VBoxContainer { CustomMinimumSize = new Vector2(380, 0), SizeFlagsHorizontal = SizeFlags.Fill };
-        col.AddThemeConstantOverride("separation", 6);
+        var col = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.Fill };
+        col.AddThemeConstantOverride("separation", 8);
 
-        col.AddChild(SectionLabel("Recruitment dock"));
+        // — Recruitment dock: three colonist portrait cards side by side —
+        col.AddChild(MutedLabelLeft("Recruitment dock"));
         int price = _game.RecruitPrice;
         IReadOnlyList<string> dock = _game.RecruitDock;
+        var recruitRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.Fill };
+        recruitRow.AddThemeConstantOverride("separation", 8);
         for (int slot = 0; slot < dock.Count; slot++)
         {
             int s = slot;
-            var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            row.AddChild(Grow(new Label { Text = Short(dock[slot]) }));
-            row.AddChild(GatedButton($"Recruit_{slot}", $"Recruit ({price})", _game.CheckRecruit(slot).Allowed, () =>
+            string typeShort = Short(dock[slot]);
+            var slotCard = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            slotCard.AddThemeConstantOverride("separation", 2);
+            var framed = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            framed.AddThemeStyleboxOverride("panel", SlotStyle(filled: true));
+            framed.AddChild(slotCard);
+
+            slotCard.AddChild(Centered(UnitPortrait(typeShort, 44)));
+            slotCard.AddChild(new Label { Text = Display(typeShort), HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart });
+            var recruit = GatedButton($"Recruit_{slot}", $"Recruit ({price})", _game.CheckRecruit(slot).Allowed, () =>
             {
                 if (_game.CheckRecruit(s).Allowed) { _game.Recruit(s); }
                 Changed();
-            }));
-            col.AddChild(row);
+            });
+            recruit.SizeFlagsHorizontal = SizeFlags.Fill;
+            recruit.TooltipText = $"Recruit {Display(typeShort)} for {price} gold";
+            slotCard.AddChild(recruit);
+            recruitRow.AddChild(framed);
         }
+        col.AddChild(recruitRow);
 
-        // — Train specialists (flat price) —
+        // — Train specialists (flat price) — a compact 3-wide icon grid of sprite buttons —
         IReadOnlyList<UnitType> trainable = _game.UnitTypesTrainedInEurope();
         if (trainable.Count > 0)
         {
-            col.AddChild(SectionLabel("Train a specialist"));
-            foreach (UnitType type in trainable)
-            {
-                string id = type.Id;
-                int p = _game.EuropeUnitPrice(id);
-                var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                row.AddChild(Grow(new Label { Text = type.ShortName }));
-                row.AddChild(GatedButton($"Train_{type.ShortName}", $"Train ({p})", _game.CheckTrain(id).Allowed, () =>
-                {
-                    if (_game.CheckTrain(id).Allowed) { _game.TrainUnit(id); }
-                    Changed();
-                }));
-                col.AddChild(row);
-            }
+            col.AddChild(MutedLabelLeft("Train a specialist"));
+            col.AddChild(UnitButtonGrid(trainable, train: true));
         }
 
-        // — Purchase ships / artillery (artillery escalates) —
+        // — Purchase ships / artillery (artillery escalates) — a compact icon grid of sprite buttons —
         IReadOnlyList<UnitType> purchasable = _game.UnitTypesPurchasedInEurope();
         if (purchasable.Count > 0)
         {
-            col.AddChild(SectionLabel("Purchase"));
-            foreach (UnitType type in purchasable)
-            {
-                string id = type.Id;
-                int p = _game.EuropeUnitPrice(id);
-                var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                row.AddChild(Grow(new Label { Text = type.ShortName }));
-                row.AddChild(GatedButton($"Purchase_{type.ShortName}", $"Buy ({p})", _game.CheckBuyUnit(id).Allowed, () =>
-                {
-                    if (_game.CheckBuyUnit(id).Allowed) { _game.BuyUnit(id); }
-                    Changed();
-                }));
-                col.AddChild(row);
-            }
+            col.AddChild(MutedLabelLeft("Purchase"));
+            col.AddChild(UnitButtonGrid(purchasable, train: false));
         }
 
         return col;
+    }
+
+    /// <summary>
+    /// A compact icon grid of unit/ship buttons (3 columns): each button shows the type's <b>sprite</b> stacked over its
+    /// price, with the full name in the tooltip — the spatial replacement for the old vertical text list. When
+    /// <paramref name="train"/> is true the buttons are named <c>Train_{short}</c> and route to
+    /// <see cref="Game.TrainUnit(string)"/> (gated on <see cref="Game.CheckTrain(string)"/>); otherwise they are
+    /// <c>Purchase_{short}</c> routing to <see cref="Game.BuyUnit(string)"/> (gated on <see cref="Game.CheckBuyUnit"/>).
+    /// Each is a <see cref="GatedButton"/> so an unaffordable action greys rather than vanishes (ADR-006).
+    /// </summary>
+    private Control UnitButtonGrid(IReadOnlyList<UnitType> types, bool train)
+    {
+        var grid = new GridContainer { Columns = 3, SizeFlagsHorizontal = SizeFlags.Fill };
+        grid.AddThemeConstantOverride("h_separation", 6);
+        grid.AddThemeConstantOverride("v_separation", 6);
+        foreach (UnitType type in types)
+        {
+            string id = type.Id;
+            string shortName = type.ShortName;
+            int p = _game.EuropeUnitPrice(id);
+            bool allowed = train ? _game.CheckTrain(id).Allowed : _game.CheckBuyUnit(id).Allowed;
+            var button = new Button
+            {
+                Name = train ? $"Train_{shortName}" : $"Purchase_{shortName}",
+                Disabled = !allowed,
+                TooltipText = $"{(train ? "Train" : "Buy")} {Display(shortName)} — {p} gold",
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+                CustomMinimumSize = new Vector2(112, 86),
+            };
+            var content = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
+            content.AddThemeConstantOverride("separation", 0);
+            content.SetAnchorsPreset(LayoutPreset.FullRect);
+            content.AddChild(Centered(IconRect(UnitSprite(shortName), 40, 40)));
+            content.AddChild(new Label { Text = $"{p}", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore });
+            button.AddChild(content);
+            button.Pressed += () =>
+            {
+                if (train) { if (_game.CheckTrain(id).Allowed) { _game.TrainUnit(id); } }
+                else { if (_game.CheckBuyUnit(id).Allowed) { _game.BuyUnit(id); } }
+                Changed();
+            };
+            grid.AddChild(button);
+        }
+        return grid;
     }
 
     // ── Zone 3: the goods market ────────────────────────────────────────────────────────────────────────────────
@@ -454,10 +499,9 @@ public partial class EuropePanel : PanelContainer
         // of which ship is the trade ship.
         var drop = new EuropeDropTarget { Name = "GoodsMarketDrop", SizeFlagsHorizontal = SizeFlags.Fill }
             .Configure(SellPayloadAllowed, OnSellDrop);
-        var col = new VBoxContainer { CustomMinimumSize = new Vector2(420, 0), SizeFlagsHorizontal = SizeFlags.Fill };
+        var col = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.Fill };
         col.AddThemeConstantOverride("separation", 4);
         drop.AddChild(col);
-        col.AddChild(SectionLabel("Goods market"));
 
         // Trade is per-ship (the goods must go into a hold). The player picks which in-port ship via the ship picker
         // (click a ship card to select it); the market defaults to the first non-repairing ship when none is selected.
@@ -466,41 +510,58 @@ public partial class EuropePanel : PanelContainer
         {
             Text = tradeShip is null
                 ? "(no ship in port — prices only)"
-                : $"Trading via {tradeShip.Type.ShortName} (hold {_game.CargoSlotsFree(tradeShip)} free) — click a ship card to choose",
+                : $"Trading via {Display(tradeShip.Type.ShortName)} (hold {_game.CargoSlotsFree(tradeShip)} free) — Select a ship card to choose",
             HorizontalAlignment = HorizontalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
         });
 
-        var grid = new GridContainer { Columns = 4, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        grid.AddThemeConstantOverride("h_separation", 12);
-        grid.AddThemeConstantOverride("v_separation", 4);
+        // One row per tradeable good: [icon | name | bid/ask | Buy | Sell]. The icon+name pair is the buy drag source.
         foreach (GoodsType good in _game.Ruleset.GoodsTypes.Where(g => _game.Market.IsTradeable(g.Id)))
         {
             string id = good.Id;
+            string shortName = good.ShortName;
             bool boycott = !_game.Market.CanTrade(id);
 
-            var name = new Label { Text = good.ShortName, SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Pass };
+            var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            row.AddThemeConstantOverride("separation", 6);
+
+            // The good's icon + name form the buy drag source (drop #3): dragging it onto a ship card buys a 100-lot
+            // into that ship. The payload carries no fromShipId (it comes from the market); a boycotted good is not
+            // draggable (returns no payload).
+            var labelBox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Pass };
+            labelBox.AddThemeConstantOverride("separation", 4);
+            labelBox.AddChild(IconRect(ColonyArt.GoodsIcon(shortName), 26, 26));
+            var name = new Label { Text = Display(shortName), SizeFlagsHorizontal = SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center, MouseFilter = MouseFilterEnum.Pass };
             if (boycott)
             {
                 name.AddThemeColorOverride("font_color", Negative);
                 name.TooltipText = $"Boycotted — pay {_game.Market.Arrears(id)} gold in back taxes to trade again.";
             }
-            // Dragging the goods name onto a ship card buys a 100-lot into that ship (drop #3). The payload carries no
-            // fromShipId (it comes from the market); a boycotted good is not draggable (returns no payload).
-            grid.AddChild(new EuropeDragSource { Name = $"MarketGood_{good.ShortName}", SizeFlagsHorizontal = SizeFlags.ExpandFill }
+            labelBox.AddChild(name);
+            labelBox.SetAnchorsPreset(LayoutPreset.FullRect);
+            row.AddChild(new EuropeDragSource { Name = $"MarketGood_{shortName}", SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 28), SizeFlagsVertical = SizeFlags.Fill }
                 .Configure(
                     () => boycott ? default : BuyPayload(id, GoodsLot),
-                    () => $"Buy {GoodsLot} {good.ShortName}")
-                .WithChild(name));
+                    () => $"Buy {GoodsLot} {Display(shortName)}")
+                .WithChild(labelBox));
 
-            grid.AddChild(new Label { Text = boycott ? "boycott" : $"buy {_game.Market.AskPrice(id)}", HorizontalAlignment = HorizontalAlignment.Right });
+            // The bid/ask price (or the boycott/arrears state — no misleading sell price for a boycotted good, finding #4).
+            if (boycott)
+            {
+                int arrears = _game.Market.Arrears(id);
+                row.AddChild(MutedLabel(arrears > 0 ? $"boycotted (arrears {arrears})" : "boycotted"));
+            }
+            else
+            {
+                row.AddChild(new Label { Text = $"{_game.Market.BidPrice(id)}/{_game.Market.AskPrice(id)}", HorizontalAlignment = HorizontalAlignment.Right, CustomMinimumSize = new Vector2(56, 0) });
+            }
 
-            // Buy a 100-lot into the trade ship's hold. Show the button greyed (GatedButton) when the engine refuses —
-            // unaffordable, no room, boycotted, no ship — rather than vanishing it, matching the recruit/train zone
-            // (findings #5/#7). The label carries the chunked BuyCost; the tooltip carries the refusal reason.
+            // Buy a 100-lot into the trade ship's hold. A GatedButton greyed (with the refusal reason in its tooltip)
+            // when the engine refuses — unaffordable, no room, boycotted — rather than vanishing (findings #5/#7).
             if (tradeShip is { } buyShip && !boycott)
             {
                 MoveCheck buyCheck = _game.CheckBuyEuropeGoods(buyShip, id, GoodsLot);
-                Button buy = GatedButton($"BuyGood_{good.ShortName}", $"Buy ({_game.Market.BuyCost(id, GoodsLot)})", buyCheck.Allowed, () =>
+                Button buy = GatedButton($"BuyGood_{shortName}", $"Buy ({_game.Market.BuyCost(id, GoodsLot)})", buyCheck.Allowed, () =>
                 {
                     if (_game.CheckBuyEuropeGoods(buyShip, id, GoodsLot).Allowed)
                     {
@@ -508,29 +569,17 @@ public partial class EuropePanel : PanelContainer
                     }
                     Changed();
                 });
-                if (!buyCheck.Allowed && buyCheck.Reason is { } why) { buy.TooltipText = why; }
-                grid.AddChild(buy);
-            }
-            else if (boycott)
-            {
-                // Boycotted: do not advertise a sell price (the old "sell {bid}" was both wrong — you can't sell — and a
-                // dead ternary whose arms were identical, finding #4). Show the boycott/arrears state instead.
-                int arrears = _game.Market.Arrears(id);
-                grid.AddChild(MutedLabel(arrears > 0 ? $"boycotted (arrears {arrears})" : "boycotted"));
-            }
-            else
-            {
-                grid.AddChild(new Control()); // no ship in port — nothing to buy into; keep the 4-column grid aligned
+                buy.TooltipText = !buyCheck.Allowed && buyCheck.Reason is { } why ? why : $"Buy {GoodsLot} {Display(shortName)}";
+                row.AddChild(buy);
             }
 
-            // Sell the lot this ship is carrying of this good (one button per stack actually aboard). The label and gate
-            // both come from CheckSellShipCargo, whose cost is the AFTER-TAX proceeds (findings #1/#8) — the price slides
-            // as the sale floods the market and the King withholds tax per chunk — never the raw pre-tax bid × amount.
+            // Sell the lot this ship is carrying of this good. The label and gate both come from CheckSellShipCargo,
+            // whose cost is the AFTER-TAX proceeds (findings #1/#8) — never the raw pre-tax bid × amount.
             int aboard = tradeShip?.CargoOf(id) ?? 0;
             if (tradeShip is { } sellShip && aboard > 0 && !boycott && _game.CheckSellShipCargo(sellShip, id, aboard).Allowed)
             {
                 int proceeds = _game.CheckSellShipCargo(sellShip, id, aboard).Cost;
-                grid.AddChild(ActionButton($"Sell_{sellShip.Id}_{good.ShortName}", $"Sell {aboard} ({proceeds})", () =>
+                row.AddChild(ActionButton($"Sell_{sellShip.Id}_{shortName}", $"Sell {aboard} ({proceeds})", () =>
                 {
                     if (_game.CheckSellShipCargo(sellShip, id, aboard).Allowed)
                     {
@@ -539,22 +588,21 @@ public partial class EuropePanel : PanelContainer
                     Changed();
                 }));
             }
-            else
-            {
-                grid.AddChild(new Control()); // keep the 4-column grid aligned
-            }
+            col.AddChild(row);
         }
-        col.AddChild(grid);
         return drop;
     }
 
     // ── Zone 4: ships in port (each a card with its hold slots drawn out) ───────────────────────────────────────
 
     /// <summary>
-    /// Each ship in port as a card: its name and hold occupancy, the hold's slots <b>drawn out</b> (one box per
-    /// <see cref="Game.CargoCapacity"/> slot — filled slots labelled with the good/passenger they hold, empty slots
-    /// blank), and per-passenger actions (put on the dock; cash in a carried-home treasure train fee-free). A ship under
-    /// repair shows its repair countdown instead of sail/trade controls (its sail button lives in the Sail zone).
+    /// Each ship in port as a bordered <b>card</b>: its <b>sprite</b> (<see cref="ColonyArt.UnitIcon"/>) beside its name
+    /// and hold occupancy, the hold's slots <b>drawn out</b> as a row of boxes (one per <see cref="Game.CargoCapacity"/>
+    /// slot — a filled slot shows the goods icon + amount or a passenger portrait, an empty slot a faint empty box), and
+    /// per-passenger actions (put on the dock; cash in a carried-home treasure train fee-free). A ship under repair shows
+    /// its repair countdown instead of sail/trade controls (its sail button lives in the Sail zone). The whole card is the
+    /// <c>ShipDrop_{id}</c> drop target, its title the <c>ShipDrag_{id}</c> source, and it carries the <c>Select_{id}</c>
+    /// picker.
     /// </summary>
     private Control ShipsInPortZone(IReadOnlyList<Unit> ships)
     {
@@ -573,8 +621,9 @@ public partial class EuropePanel : PanelContainer
             bool selected = _selectedShipId == ship.Id;
 
             // The whole card is a drop target: a colonist dropped here boards (drop #1), goods dropped here buy (drop
-            // #3). Both accept/drop handlers re-check their Game oracle (ADR-006).
-            var cardDrop = new EuropeDropTarget { Name = $"ShipDrop_{ship.Id}", SizeFlagsHorizontal = SizeFlags.ExpandFill }
+            // #3). Both accept/drop handlers re-check their Game oracle (ADR-006). A faint border frames each ship; the
+            // drop target overlays the frame (DropZone) so it covers the card without collapsing the layout.
+            var cardDrop = new EuropeDropTarget { Name = $"ShipDrop_{ship.Id}" }
                 .Configure(
                     data => BoardAllowed(data, ship) || BuyAllowed(data, ship),
                     data =>
@@ -582,36 +631,44 @@ public partial class EuropePanel : PanelContainer
                         if (BoardAllowed(data, ship)) { OnBoardDrop(data, ship); }
                         else if (BuyAllowed(data, ship)) { OnBuyDrop(data, ship); }
                     });
+            var frame = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Pass };
+            frame.AddThemeStyleboxOverride("panel", CardStyle(selected));
             var cardBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             cardBox.AddThemeConstantOverride("separation", 4);
-            cardDrop.AddChild(cardBox);
+            frame.AddChild(cardBox);
 
             string status = ship.IsUnderRepair
-                ? $" — under repair ({ship.RepairTurnsRemaining} turn{(ship.RepairTurnsRemaining == 1 ? "" : "s")})"
-                : $" — hold {_game.CargoSlotsUsed(ship)}/{capacity}";
+                ? $"under repair ({ship.RepairTurnsRemaining} turn{(ship.RepairTurnsRemaining == 1 ? "" : "s")})"
+                : $"hold {_game.CargoSlotsUsed(ship)}/{capacity}";
 
-            // The card title row: a Select button (the ship picker — its goods Buy/Sell target the selected ship) and
-            // the title as a drag source (drag the card onto the sail zone to sail it — drop #2). A repairing ship can't
-            // be the trade ship and can't sail, so it offers neither.
-            var titleRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            titleRow.AddThemeConstantOverride("separation", 6);
-            var title = new Label
+            // The card title row: the ship SPRITE + name + status as a drag source (drag the card onto the sail zone to
+            // sail it — drop #2) and a Select button (the ship picker — its goods Buy/Sell target the selected ship). A
+            // repairing ship can't be the trade ship and can't sail, so it offers neither.
+            var titleInner = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Pass };
+            titleInner.AddThemeConstantOverride("separation", 6);
+            titleInner.AddChild(IconRect(UnitSprite(ship.Type.ShortName), 48, 40));
+            titleInner.AddChild(new Label
             {
                 Name = $"Ship_{ship.Id}",
-                Text = $"{(selected ? "▶ " : "")}{ship.Type.ShortName}{status}",
+                Text = $"{(selected ? "▶ " : "")}{Display(ship.Type.ShortName)} — {status}",
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,
+                VerticalAlignment = VerticalAlignment.Center,
                 MouseFilter = Control.MouseFilterEnum.Pass,
-            };
+            });
+
+            var titleRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            titleRow.AddThemeConstantOverride("separation", 6);
             if (!ship.IsUnderRepair)
             {
+                titleInner.SetAnchorsPreset(LayoutPreset.FullRect); // fill the drag-source Control so the row reads at full width
                 titleRow.AddChild(new EuropeDragSource { Name = $"ShipDrag_{ship.Id}", SizeFlagsHorizontal = SizeFlags.ExpandFill }
-                    .Configure(() => ShipPayload(ship.Id), () => $"Sail {ship.Type.ShortName}")
-                    .WithChild(title));
+                    .Configure(() => ShipPayload(ship.Id), () => $"Sail {Display(ship.Type.ShortName)}")
+                    .WithChild(titleInner));
                 titleRow.AddChild(ActionButton($"Select_{ship.Id}", selected ? "Selected" : "Select", () => SelectTradeShip(ship.Id)));
             }
             else
             {
-                titleRow.AddChild(title);
+                titleRow.AddChild(titleInner);
             }
             cardBox.AddChild(titleRow);
 
@@ -622,10 +679,16 @@ public partial class EuropePanel : PanelContainer
             {
                 Unit p = passenger;
                 var prow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                // The passenger label is a drag source — drag it onto the docks zone to put it ashore (drop #5).
+                prow.AddThemeConstantOverride("separation", 4);
+                // The passenger portrait chip is a drag source — drag it onto the docks zone to put it ashore (drop #5).
+                var pChip = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Pass };
+                pChip.AddThemeConstantOverride("separation", 4);
+                pChip.AddChild(IconRect(UnitSprite(p.Type.ShortName), 28, 28));
+                pChip.AddChild(new Label { Text = $"{Display(p.Type.ShortName)} (aboard)", SizeFlagsHorizontal = SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center, MouseFilter = MouseFilterEnum.Pass });
+                pChip.SetAnchorsPreset(LayoutPreset.FullRect);
                 prow.AddChild(new EuropeDragSource { Name = $"Passenger_{passenger.Id}", SizeFlagsHorizontal = SizeFlags.ExpandFill }
-                    .Configure(() => ColonistPayload(p.Id), () => $"{p.Type.ShortName} → dock")
-                    .WithChild(new Label { Text = $"    {passenger.Type.ShortName} (aboard)", SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Pass }));
+                    .Configure(() => ColonistPayload(p.Id), () => $"{Display(p.Type.ShortName)} → dock")
+                    .WithChild(pChip));
                 if (passenger.Type.CarryTreasure && _game.CheckCashInTreasureTrain(passenger).Allowed)
                 {
                     prow.AddChild(CashInButton(p));
@@ -637,60 +700,80 @@ public partial class EuropePanel : PanelContainer
                 }));
                 cardBox.AddChild(prow);
             }
-            box.AddChild(cardDrop);
+            box.AddChild(DropZone(cardDrop, frame)); // the frame drives the card height; cardDrop overlays it for the drag/drop
         }
         return box;
     }
 
+    /// <summary>A drawn-out hold slot's content: a goods stack (its icon + amount; the lead slot carries the drag-sell payload), a passenger portrait, or empty.</summary>
+    private readonly record struct HoldFill(string? GoodsShort, int Amount, string? UnitShort, string? SellGoodsId);
+
     /// <summary>
     /// A ship's cargo hold drawn as a row of <paramref name="capacity"/> slot boxes — each goods stack fills
-    /// ceil(amount/100) slots (labelled "good ×N"), each passenger fills its carry-slots (labelled with the unit), and the
-    /// remaining slots are drawn empty. This replaces the old "hold 1/2" text with the at-a-glance slot view the original
-    /// game shows. Pure presentation (ADR-006); the slot accounting mirrors <see cref="Game.CargoSlotsUsed"/>.
+    /// ceil(amount/100) slots (a filled slot shows the <b>goods icon + amount</b>, its lead slot draggable to sell),
+    /// each passenger fills its carry-slots (shown as a unit <b>portrait</b>), and the remaining slots are drawn as faint
+    /// empty boxes. This is the at-a-glance slot view the original game shows. Pure presentation (ADR-006); the slot
+    /// accounting mirrors <see cref="Game.CargoSlotsUsed"/> via <see cref="Game.GoodsSlotsFor"/>.
     /// </summary>
     private Control HoldSlots(Unit ship, int capacity)
     {
         var slots = new HBoxContainer { Name = $"Hold_{ship.Id}" };
         slots.AddThemeConstantOverride("separation", 4);
 
-        // Each fill records the label AND, for the FIRST slot of a goods stack, the (goodsId, amount) to drag-sell —
+        // Each fill records what to draw AND, for the FIRST slot of a goods stack, the (goodsId, amount) to drag-sell —
         // so dragging that lead slot onto the market sells the whole stack (drop #4). Passenger slots and the trailing
         // slots of a multi-slot goods stack carry no sell payload.
-        var fills = new List<(string Label, string? GoodsId, int Amount)>();
+        var fills = new List<HoldFill>();
         foreach ((string goodsId, int amount) in ship.Cargo.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
             int used = _game.GoodsSlotsFor(amount); // the engine's per-stack slot rule (ADR-006), not a reimplemented literal
             for (int i = 0; i < used; i++)
             {
-                fills.Add(i == 0 ? ($"{Short(goodsId)} {amount}", goodsId, amount) : (Short(goodsId), null, 0));
+                fills.Add(new HoldFill(Short(goodsId), amount, null, i == 0 ? goodsId : null));
             }
         }
         foreach (Unit passenger in _game.Passengers(ship))
         {
             for (int i = 0; i < passenger.Type.CarrySlots; i++)
             {
-                fills.Add((passenger.Type.ShortName, null, 0));
+                fills.Add(new HoldFill(null, 0, passenger.Type.ShortName, null));
             }
         }
 
         for (int i = 0; i < capacity; i++)
         {
             bool filled = i < fills.Count;
-            var slot = new PanelContainer { CustomMinimumSize = new Vector2(78, 40), MouseFilter = Control.MouseFilterEnum.Pass };
+            var slot = new PanelContainer { CustomMinimumSize = new Vector2(60, 56), MouseFilter = Control.MouseFilterEnum.Pass };
             slot.AddThemeStyleboxOverride("panel", SlotStyle(filled));
-            slot.AddChild(new Label
-            {
-                Text = filled ? fills[i].Label : "",
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                AutowrapMode = TextServer.AutowrapMode.WordSmart,
-            });
 
-            // A goods stack's lead slot is a drag source — drag it onto the goods market to sell the whole stack.
-            if (filled && fills[i] is { GoodsId: { } gid, Amount: var amt })
+            if (filled && fills[i] is { GoodsShort: { } gs } gf)
             {
-                slots.AddChild(new EuropeDragSource { Name = $"Cargo_{ship.Id}_{Short(gid)}" }
-                    .Configure(() => SellPayload(gid, amt, ship.Id), () => $"Sell {amt} {Short(gid)}")
+                // A goods stack: the goods icon with the amount overlaid beneath it.
+                var content = new VBoxContainer { MouseFilter = MouseFilterEnum.Pass };
+                content.AddThemeConstantOverride("separation", 0);
+                content.AddChild(Centered(IconRect(ColonyArt.GoodsIcon(gs), 34, 34)));
+                content.AddChild(new Label { Text = $"{gf.Amount}", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Pass });
+                slot.AddChild(content);
+            }
+            else if (filled && fills[i] is { UnitShort: { } us })
+            {
+                slot.AddChild(Centered(IconRect(UnitSprite(us), 40, 40)));
+            }
+            else
+            {
+                slot.AddChild(new Control { MouseFilter = MouseFilterEnum.Pass }); // empty slot — a faint box
+            }
+
+            // A goods stack's lead slot is a drag source — drag it onto the goods market to sell the whole stack. The
+            // source carries the slot's min size (a bare drag-source Control doesn't adopt its child's min) and the slot
+            // fills it (FullRect) so the box renders at full size.
+            if (filled && fills[i] is { SellGoodsId: { } gid })
+            {
+                int amt = fills[i].Amount;
+                slot.TooltipText = $"{Display(Short(gid))} {amt} — drag to the market to sell";
+                slot.SetAnchorsPreset(LayoutPreset.FullRect);
+                slots.AddChild(new EuropeDragSource { Name = $"Cargo_{ship.Id}_{Short(gid)}", CustomMinimumSize = new Vector2(60, 56) }
+                    .Configure(() => SellPayload(gid, amt, ship.Id), () => $"Sell {amt} {Display(Short(gid))}")
                     .WithChild(slot));
             }
             else
@@ -717,18 +800,29 @@ public partial class EuropePanel : PanelContainer
     // ── Zone 5: sail to the New World ───────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// A Sail button for every ship in port that is ready to sail (not under repair) — pressing it sends the ship home
-    /// to the New World (<see cref="Game.SailToNewWorld"/>), arriving beside the player's territory after the crossing.
-    /// A repairing ship is listed but cannot sail until it is whole. The whole zone is also a <b>drop target</b> (Phase 2,
-    /// drop #2): dragging a ship card here sails it (gated + performed via <see cref="SailAllowed"/>/<see cref="OnSailDrop"/>).
+    /// A visually distinct <b>bordered drop panel</b> with an arrow/label inviting the player to drag a loaded ship in to
+    /// depart, plus a <c>Sail_{id}</c> button per ready ship as a fallback — pressing it sends the ship home to the New
+    /// World (<see cref="Game.SailToNewWorld"/>), arriving beside the player's territory after the crossing. A repairing
+    /// ship is listed but cannot sail until it is whole. The whole zone is the Phase-2 drop target (drop #2): dragging a
+    /// ship card here sails it (gated + performed via <see cref="SailAllowed"/>/<see cref="OnSailDrop"/>).
     /// </summary>
     private Control SailZone(IReadOnlyList<Unit> ships)
     {
-        var drop = new EuropeDropTarget { Name = "SailDrop", SizeFlagsHorizontal = SizeFlags.ExpandFill }
+        var drop = new EuropeDropTarget { Name = "SailDrop" }
             .Configure(SailAllowed, OnSailDrop);
+        // A distinct cool-bordered panel so the drop target reads as a "departure gate"; the drop overlays it (DropZone).
+        var frame = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Pass };
+        frame.AddThemeStyleboxOverride("panel", SailZoneStyle());
         var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         box.AddThemeConstantOverride("separation", 6);
-        drop.AddChild(box);
+        frame.AddChild(box);
+
+        box.AddChild(new Label
+        {
+            Text = "⛵  ➜  Drag a loaded ship here to depart for the New World",
+            HorizontalAlignment = HorizontalAlignment.Center,
+        });
+
         var ready = ships.Where(s => !s.IsUnderRepair).ToList();
         if (ready.Count == 0)
         {
@@ -737,13 +831,15 @@ public partial class EuropePanel : PanelContainer
                 Text = ships.Count == 0 ? "(no ships in port)" : "(all ships in port are under repair)",
                 HorizontalAlignment = HorizontalAlignment.Center,
             });
-            return drop;
+            return DropZone(drop, frame);
         }
         foreach (Unit ship in ready)
         {
             Unit sh = ship;
             var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            row.AddChild(Grow(new Label { Text = $"{ship.Type.ShortName} — {_game.Passengers(ship).Count()} aboard" }));
+            row.AddThemeConstantOverride("separation", 6);
+            row.AddChild(IconRect(UnitSprite(ship.Type.ShortName), 32, 26));
+            row.AddChild(Grow(new Label { Text = $"{Display(ship.Type.ShortName)} — {_game.Passengers(ship).Count()} aboard", VerticalAlignment = VerticalAlignment.Center }));
             row.AddChild(ActionButton($"Sail_{ship.Id}", "Sail to New World", () =>
             {
                 _game.SailToNewWorld(sh);
@@ -751,64 +847,90 @@ public partial class EuropePanel : PanelContainer
             }));
             box.AddChild(row);
         }
-        return drop;
+        return DropZone(drop, frame);
     }
 
     // ── Zone 6: on the docks (waiting colonists + carried-home treasure) ────────────────────────────────────────
 
     /// <summary>
-    /// The dock: colonists waiting to sail (each with a Board button per ship that has room — <see cref="Game.Board"/>),
-    /// and treasure trains carried home and put on the dock (each cashed in fee-free — <see cref="CashInButton"/>). These
-    /// are the off-map persons/trains in Europe not aboard a ship. The whole zone is also a <b>drop target</b> (Phase 2,
-    /// drop #5): dragging an aboard passenger here puts it ashore (<see cref="DisembarkAllowed"/>/<see cref="OnDisembarkDrop"/>);
-    /// each waiting colonist label is itself a drag source (drop #1: drag it onto a ship card to board).
+    /// The dock as a horizontal, wrapping <b>row of colonist portrait chips</b> — each chip the colonist's
+    /// <b>portrait</b> + short label wrapped in a <c>DockColonist_{id}</c> drag source (drag onto a ship card to board,
+    /// drop #1), with a small <c>Board_{person}_{ship}</c> button per ship that has room (<see cref="Game.Board"/>).
+    /// Treasure trains carried home and put on the dock each get a chip with the fee-free <see cref="CashInButton"/>.
+    /// The whole zone is the Phase-2 drop target (drop #5): dragging an aboard passenger here puts it ashore
+    /// (<see cref="DisembarkAllowed"/>/<see cref="OnDisembarkDrop"/>).
     /// </summary>
     private Control DocksZone(IReadOnlyList<Unit> onDock, IReadOnlyList<Unit> ships, IReadOnlyList<Unit> treasureOnDock)
     {
-        var drop = new EuropeDropTarget { Name = "DocksDrop", SizeFlagsHorizontal = SizeFlags.ExpandFill }
+        var drop = new EuropeDropTarget { Name = "DocksDrop" }
             .Configure(DisembarkAllowed, OnDisembarkDrop);
-        var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        box.AddThemeConstantOverride("separation", 6);
-        drop.AddChild(box);
 
         if (onDock.Count == 0 && treasureOnDock.Count == 0)
         {
-            box.AddChild(new Label { Text = "(none — drag an aboard colonist here to put it ashore)", HorizontalAlignment = HorizontalAlignment.Center });
-            return drop;
+            var emptyBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            emptyBox.AddChild(new Label { Text = "(none — drag an aboard colonist here to put it ashore)", HorizontalAlignment = HorizontalAlignment.Center });
+            return DropZone(drop, emptyBox);
         }
+
+        // A wrapping flow of portrait chips — the docks read as a quay of waiting people, not a stacked text list.
+        var flow = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        flow.AddThemeConstantOverride("h_separation", 8);
+        flow.AddThemeConstantOverride("v_separation", 8);
 
         foreach (Unit person in onDock)
         {
             Unit pe = person;
-            var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            // The colonist label is a drag source — drag it onto a ship card to board (drop #1).
-            row.AddChild(new EuropeDragSource { Name = $"DockColonist_{person.Id}", SizeFlagsHorizontal = SizeFlags.ExpandFill }
-                .Configure(() => ColonistPayload(pe.Id), () => $"{pe.Type.ShortName} → ship")
-                .WithChild(new Label { Text = person.Type.ShortName, SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Pass }));
+            // A bordered chip: the colonist portrait + name + per-ship Board buttons, the portrait+name a drag source.
+            var chip = new PanelContainer { MouseFilter = MouseFilterEnum.Pass };
+            chip.AddThemeStyleboxOverride("panel", SlotStyle(filled: true));
+            var chipBox = new VBoxContainer { MouseFilter = MouseFilterEnum.Pass };
+            chipBox.AddThemeConstantOverride("separation", 2);
+            chip.AddChild(chipBox);
+
+            var portraitBox = new VBoxContainer { MouseFilter = MouseFilterEnum.Pass };
+            portraitBox.AddThemeConstantOverride("separation", 0);
+            portraitBox.AddChild(Centered(UnitPortrait(person.Type.ShortName, 44)));
+            portraitBox.AddChild(new Label { Text = Display(person.Type.ShortName), HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart, MouseFilter = MouseFilterEnum.Pass });
+            portraitBox.SetAnchorsPreset(LayoutPreset.FullRect);
+            // The portrait chip is a drag source — drag it onto a ship card to board (drop #1). A fixed min size keeps the
+            // bare drag-source Control (it doesn't adopt its child's min size) from collapsing inside the chip.
+            chipBox.AddChild(new EuropeDragSource { Name = $"DockColonist_{person.Id}", MouseFilter = MouseFilterEnum.Pass, CustomMinimumSize = new Vector2(96, 72), SizeFlagsHorizontal = SizeFlags.ExpandFill }
+                .Configure(() => ColonistPayload(pe.Id), () => $"{Display(pe.Type.ShortName)} → ship")
+                .WithChild(portraitBox));
+
             foreach (Unit ship in ships.Where(s => _game.CheckBoard(person, s).Allowed))
             {
                 Unit sh = ship;
-                row.AddChild(ActionButton($"Board_{person.Id}_{ship.Id}", $"Board {ship.Type.ShortName}", () =>
+                var board = ActionButton($"Board_{person.Id}_{ship.Id}", $"Board {Display(ship.Type.ShortName)}", () =>
                 {
                     if (_game.CheckBoard(pe, sh).Allowed) { _game.Board(pe, sh); }
                     Changed();
-                }));
+                });
+                board.SizeFlagsHorizontal = SizeFlags.Fill;
+                chipBox.AddChild(board);
             }
-            box.AddChild(row);
+            flow.AddChild(chip);
         }
 
         foreach (Unit train in treasureOnDock)
         {
             Unit tr = train;
-            var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            row.AddChild(Grow(new Label { Text = $"{train.Type.ShortName} — {train.TreasureAmount} gold" }));
+            var chip = new PanelContainer { MouseFilter = MouseFilterEnum.Pass };
+            chip.AddThemeStyleboxOverride("panel", SlotStyle(filled: true));
+            var chipBox = new VBoxContainer { MouseFilter = MouseFilterEnum.Pass };
+            chipBox.AddThemeConstantOverride("separation", 2);
+            chip.AddChild(chipBox);
+            chipBox.AddChild(Centered(UnitPortrait(train.Type.ShortName, 44)));
+            chipBox.AddChild(new Label { Text = $"{Display(train.Type.ShortName)} ({train.TreasureAmount}g)", HorizontalAlignment = HorizontalAlignment.Center });
             if (_game.CheckCashInTreasureTrain(train).Allowed)
             {
-                row.AddChild(CashInButton(tr));
+                Button cashIn = CashInButton(tr);
+                cashIn.SizeFlagsHorizontal = SizeFlags.Fill;
+                chipBox.AddChild(cashIn);
             }
-            box.AddChild(row);
+            flow.AddChild(chip);
         }
-        return drop;
+        return DropZone(drop, flow);
     }
 
     /// <summary>
@@ -843,11 +965,136 @@ public partial class EuropePanel : PanelContainer
         return label;
     }
 
+    /// <summary>A small muted left-aligned sub-heading used inside the two top cards (e.g. "Train a specialist").</summary>
+    private static Label MutedLabelLeft(string text)
+    {
+        var label = new Label { Text = text };
+        label.AddThemeColorOverride("font_color", Muted);
+        return label;
+    }
+
     private static Label SectionLabel(string text) => new()
     {
         Text = $"— {text} —",
         HorizontalAlignment = HorizontalAlignment.Center,
     };
+
+    /// <summary>Title-cases a short id for display (<c>freeColonist</c> → "Free Colonist", <c>expertOreMiner</c> → "Expert Ore Miner") — splits on camelCase humps, capitalises the first letter.</summary>
+    private static string Display(string shortName)
+    {
+        if (string.IsNullOrEmpty(shortName))
+        {
+            return shortName;
+        }
+        var sb = new System.Text.StringBuilder(shortName.Length + 4);
+        sb.Append(char.ToUpperInvariant(shortName[0]));
+        for (int i = 1; i < shortName.Length; i++)
+        {
+            char c = shortName[i];
+            if (char.IsUpper(c) && !char.IsUpper(shortName[i - 1]))
+            {
+                sb.Append(' ');
+            }
+            sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Resolves a unit/ship sprite by type short name — the colony screen's portrait lookup (<see cref="UnitMarker.ResolveTexture"/> default role, falling back to <see cref="ColonyArt.UnitIcon"/>), so an expert/ship shows its own art.</summary>
+    private static Texture2D? UnitSprite(string typeShortName) =>
+        UnitMarker.ResolveTexture(typeShortName, PortraitRole) ?? ColonyArt.UnitIcon(typeShortName);
+
+    /// <summary>A square unit portrait drawn at <paramref name="size"/>×<paramref name="size"/> via <see cref="UnitSprite"/> — used for the recruit/dock colonist chips.</summary>
+    private static TextureRect UnitPortrait(string typeShortName, int size) => IconRect(UnitSprite(typeShortName), size, size);
+
+    /// <summary>A non-stretching sprite/icon of fixed size (aspect-kept, mouse-transparent) — the colony screen's <c>IconRect</c> pattern reused so the Europe screen draws real FreeCol art rather than text.</summary>
+    private static TextureRect IconRect(Texture2D? texture, int width, int height) => new()
+    {
+        Texture = texture,
+        StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+        CustomMinimumSize = new Vector2(width, height),
+        MouseFilter = Control.MouseFilterEnum.Ignore,
+    };
+
+    /// <summary>Centres a single control horizontally inside an <see cref="HBoxContainer"/> so a fixed-size icon sits in the middle of its (wider) slot/card.</summary>
+    private static Control Centered(Control child)
+    {
+        var box = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Pass };
+        box.AddChild(child);
+        return box;
+    }
+
+    /// <summary>
+    /// Wraps a zone body in a bordered, titled <b>card</b> (a parchment-toned panel with a centred title above the body),
+    /// fixed to <paramref name="minWidth"/> so the two top cards line up. Top-aligned (<see cref="SizeFlags.ShrinkBegin"/>
+    /// vertical) so a shorter card doesn't get stretched to match a taller neighbour.
+    /// </summary>
+    private static Control Card(string title, Control body, int minWidth)
+    {
+        var frame = new PanelContainer
+        {
+            CustomMinimumSize = new Vector2(minWidth, 0),
+            SizeFlagsHorizontal = SizeFlags.Fill,
+            SizeFlagsVertical = SizeFlags.ShrinkBegin,
+        };
+        frame.AddThemeStyleboxOverride("panel", CardStyle(highlight: false));
+        var col = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        col.AddThemeConstantOverride("separation", 6);
+        frame.AddChild(col);
+        col.AddChild(new Label { Text = title, HorizontalAlignment = HorizontalAlignment.Center });
+        body.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        col.AddChild(body);
+        return frame;
+    }
+
+    /// <summary>
+    /// Lays out a drop zone whose body needs a real container to drive its height: returns a wrapper that sizes the
+    /// <paramref name="body"/> normally and overlays the <paramref name="drop"/> target across the whole area (FullRect,
+    /// mouse-Pass) so a drag over the zone hits the target while clicks still reach the body's buttons. A bare
+    /// <see cref="EuropeDropTarget"/> is a plain <see cref="Control"/> (it doesn't adopt its child's minimum size), so
+    /// putting it directly in a layout container would collapse it; this wrapper avoids that without touching
+    /// <c>EuropeDragDrop.cs</c>.
+    /// </summary>
+    private static Control DropZone(EuropeDropTarget drop, Control body)
+    {
+        // A MarginContainer drives the body's size; the drop target overlays it (added last, FullRect) so it covers the
+        // same rect and receives the drag/drop while the body's buttons keep their clicks (MouseFilter.Pass).
+        var wrapper = new MarginContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        body.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        wrapper.AddChild(body);
+        drop.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        drop.SetAnchorsPreset(LayoutPreset.FullRect);
+        wrapper.AddChild(drop);
+        return wrapper;
+    }
+
+    /// <summary>The bordered-card skin — a slightly raised parchment-brown fill with a warm border; <paramref name="highlight"/> brightens the border (a selected ship card).</summary>
+    private static StyleBox CardStyle(bool highlight)
+    {
+        var s = new StyleBoxFlat
+        {
+            BgColor = new Color(0.24f, 0.17f, 0.09f, 0.55f),
+            BorderColor = highlight ? new Color(0.95f, 0.80f, 0.35f) : new Color(0.45f, 0.36f, 0.22f),
+        };
+        s.SetBorderWidthAll(highlight ? 3 : 1);
+        s.SetCornerRadiusAll(4);
+        s.SetContentMarginAll(8);
+        return s;
+    }
+
+    /// <summary>The "Sail to the New World" drop-panel skin — a distinct cooler blue-tinged border so the departure gate stands apart from the cargo/recruit cards.</summary>
+    private static StyleBox SailZoneStyle()
+    {
+        var s = new StyleBoxFlat
+        {
+            BgColor = new Color(0.12f, 0.16f, 0.22f, 0.55f),
+            BorderColor = new Color(0.45f, 0.62f, 0.82f),
+        };
+        s.SetBorderWidthAll(2);
+        s.SetCornerRadiusAll(4);
+        s.SetContentMarginAll(8);
+        return s;
+    }
 
     private static Button ActionButton(string name, string text, Action onPressed)
     {

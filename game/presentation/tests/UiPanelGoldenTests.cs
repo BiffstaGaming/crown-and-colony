@@ -64,9 +64,10 @@ public class UiPanelGoldenTests
         controller.StartNewGame(GoldenSeed); // the deterministic map drawn (dimmed) behind the centred dialog
         await runner.SimulateFrames(2);
 
-        // Inject a fixed Europe state so every dynamic section renders deterministically: a treasury, a caravel in
-        // port, and a colonist waiting on the dock. Mirrors the L3 EuropePanel fixture (built through the public save
-        // layer), so the golden never depends on having played turns to reach Europe.
+        // Inject a fixed Europe state so every dynamic section of the spatial harbour layout renders deterministically:
+        // a treasury, two ships in port (one carrying a goods stack, one with two stacks — so the hold-slot boxes show
+        // goods icons + amounts) and two colonists on the dock (the portrait chips). Mirrors the L3 EuropePanel fixture
+        // (built through the public save layer), so the golden never depends on having played turns to reach Europe.
         Game game = new SaveGame
         {
             Turn = 1,
@@ -77,11 +78,17 @@ public class UiPanelGoldenTests
             Terrain = ["model.tile.plains", "model.tile.ocean"],
             Units =
             [
-                new SavedUnit(1, "model.unit.caravel", 1, 0, 12, (int)UnitLocation.InEurope),
+                // A caravel carrying a goods stack (so a hold slot shows the goods icon + amount); a galleon with two
+                // goods stacks; two colonists on the dock (portrait chips); so the cards/holds/icons are all visible.
+                new SavedUnit(1, "model.unit.caravel", 1, 0, 12, (int)UnitLocation.InEurope, 0,
+                    new System.Collections.Generic.Dictionary<string, int> { ["model.goods.sugar"] = 100 }),
+                new SavedUnit(3, "model.unit.galleon", 1, 0, 12, (int)UnitLocation.InEurope, 0,
+                    new System.Collections.Generic.Dictionary<string, int> { ["model.goods.tobacco"] = 100, ["model.goods.ore"] = 50 }),
                 new SavedUnit(2, "model.unit.freeColonist", 0, 0, 3, (int)UnitLocation.InEurope),
+                new SavedUnit(4, "model.unit.expertOreMiner", 0, 0, 3, (int)UnitLocation.InEurope),
             ],
             Explored = [],
-            Gold = 1000,
+            Gold = 5000,
         }.Restore(GameLogic.Specification.Ruleset.LoadClassic());
         SetGame(controller, game);
 
