@@ -26,6 +26,63 @@ public class NativeSettlementPanelTests
 {
     private const ulong Seed = 424242;
     private const string Sugar = "model.goods.sugar";
+    private const string MissionaryRole = "model.role.missionary";
+    private const string FreeColonist = "model.unit.freeColonist";
+
+    [TestCase(Timeout = 60000)]
+    public async Task EstablishMissionButton_ShownForAMissionary_FoundsTheMission_OwnedByTheHuman()
+    {
+        (ISceneRunner runner, GameController controller, Game game, NativeSettlement settlement, Unit missionary) =
+            await OpenMissionPanel(missionary: true);
+
+        // A missionary beside a Content settlement: the Establish button is offered, no rival mission stands yet.
+        AssertThat(settlement.HasMission).IsFalse();
+        AssertThat(FindButton(controller, "Establish")).IsNotNull();
+        AssertThat(FindButton(controller, "Denounce")).IsNull();
+
+        await Press(runner, controller, "Establish");
+
+        // The mission installed: the settlement now records the human as its mission owner and the missionary is consumed.
+        AssertThat(settlement.HasMission).IsTrue();
+        AssertThat(settlement.MissionOwnerId!.Value).IsEqual(game.HumanPlayer.PlayerId);
+        AssertThat(game.Units.Any(u => u.Id == missionary.Id && u.IsOnMap)).IsFalse();
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task EstablishMissionButton_NotShown_ForANonMissionaryUnit()
+    {
+        (_, GameController controller, _, NativeSettlement settlement, _) =
+            await OpenMissionPanel(missionary: false);
+
+        // An ordinary (default-role) colonist is no missionary: neither the Establish nor the Denounce button appears.
+        AssertThat(settlement.HasMission).IsFalse();
+        AssertThat(FindButton(controller, "Establish")).IsNull();
+        AssertThat(FindButton(controller, "Denounce")).IsNull();
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task DenounceMissionButton_ShownOverARivalMission_OustsTheRival_InstallingTheHumansMission()
+    {
+        // A rival colonial power already holds the mission; the human's missionary may denounce (not re-establish) it.
+        // With the rival's immigration left at 0 the denounce roll (r × rivalImm ÷ (humanImm+1)) is 0 < 0.5 → always wins.
+        (ISceneRunner runner, GameController controller, Game game, NativeSettlement settlement, Unit missionary) =
+            await OpenMissionPanel(missionary: true, rivalMissionOwnerId: RivalColonialId);
+
+        AssertThat(settlement.HasMission).IsTrue();
+        AssertThat(settlement.MissionOwnerId!.Value).IsNotEqual(game.HumanPlayer.PlayerId);
+        AssertThat(FindButton(controller, "Denounce")).IsNotNull();
+        AssertThat(FindButton(controller, "Establish")).IsNull();
+
+        await Press(runner, controller, "Denounce");
+
+        // The rival was ousted and the human's mission installed in its place; the challenger is consumed.
+        AssertThat(settlement.HasMission).IsTrue();
+        AssertThat(settlement.MissionOwnerId!.Value).IsEqual(game.HumanPlayer.PlayerId);
+        AssertThat(game.Units.Any(u => u.Id == missionary.Id && u.IsOnMap)).IsFalse();
+    }
+
+    /// <summary>The first non-human colonial player id (the rival whose mission the human denounces).</summary>
+    private const int RivalColonialId = -1; // resolved against the live game in OpenMissionPanel
 
     [TestCase(Timeout = 60000)]
     public async Task SellButton_SellsCargoToTheSettlement_ForGold_DrainingTheHold_GrowingTheStore()
@@ -128,6 +185,74 @@ public class NativeSettlementPanelTests
         AssertThat(panel.Visible).IsTrue();
         return (runner, controller, injected, settlement, ship);
     }
+
+    /// <summary>
+    /// Starts the main scene, then stages (through the save layer) a human <see cref="FreeColonist"/> — in the
+    /// <see cref="MissionaryRole"/> when <paramref name="missionary"/>, else the default role — on a free land tile
+    /// adjacent to a discovered native settlement set <b>Content</b> (so a mission installs rather than gets the
+    /// missionary killed). When <paramref name="rivalMissionOwnerId"/> names a non-human colonial player, that player's
+    /// mission is pre-installed at the settlement (and their immigration left at 0, so the human's denounce roll wins).
+    /// Opens the native-settlement panel acting with that colonist. Mirrors <c>OpenTradePanel</c>.
+    /// </summary>
+    private static async Task<(ISceneRunner, GameController, Game, NativeSettlement, Unit)> OpenMissionPanel(
+        bool missionary, int rivalMissionOwnerId = 0)
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+
+        // A settlement with a free adjacent land tile a missionary can stand on.
+        NativeSettlement seed = game.NativeSettlements.First(s =>
+            s.Position.Neighbours().Any(n => FreeLand(game, n)));
+        Position land = seed.Position.Neighbours().First(n => FreeLand(game, n));
+
+        // Resolve the rival owner: the sentinel RivalColonialId → the first non-human colonial player in the live game.
+        int? rivalOwner = rivalMissionOwnerId == RivalColonialId
+            ? game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).PlayerId
+            : (rivalMissionOwnerId != 0 ? rivalMissionOwnerId : (int?)null);
+
+        // Stage the missionary through the save layer; pre-install a rival mission and zero the rival's immigration if asked.
+        SaveGame save = SaveGame.From(game);
+        int unitId = game.Units.Max(u => u.Id) + 1;
+        int colonistMove = game.Ruleset.Unit(FreeColonist).Movement
+            + (missionary ? 3 : 0); // the missionary role grants +3 movement; either way movement is left for the action
+        var staged = new SavedUnit(unitId, FreeColonist, land.X, land.Y, colonistMove,
+            Role: missionary ? MissionaryRole : null, OwnerId: humanId);
+        List<SavedNativeSettlement> settlements = save.NativeSettlements!
+            .Select(s => s.Id == seed.Id && rivalOwner is { } owner
+                ? s with { MissionOwnerId = owner, MissionIsExpert = false }
+                : s)
+            .ToList();
+        IReadOnlyList<SavedPlayer> players = rivalOwner is { } rid
+            ? save.Players!.Select(p => p.PlayerId == rid ? p with { Immigration = 0 } : p).ToList()
+            : save.Players!;
+        Game injected = (save with
+        {
+            Units = save.Units.Concat([staged]).ToList(),
+            NativeSettlements = settlements,
+            Players = players,
+        }).Restore(game.Ruleset);
+        SetGame(controller, injected);
+
+        NativeSettlement settlement = injected.NativeSettlements.First(s => s.Id == seed.Id);
+        injected.ChangeNativeAlarm(settlement, 300); // Content — a mission installs (Angry/Hateful would kill the missionary)
+        Unit colonist = injected.Units.First(u => u.Id == unitId);
+
+        controller.OpenNativeSettlementPanel(settlement, colonist);
+        await runner.SimulateFrames(1);
+        var panel = controller.GetNode<PanelContainer>("UI/NativeSettlementPanel");
+        AssertThat(panel.Visible).IsTrue();
+        return (runner, controller, injected, settlement, colonist);
+    }
+
+    /// <summary>A land tile a land unit may stand on — in bounds, not water, and clear of settlements/colonies/units.</summary>
+    private static bool FreeLand(Game game, Position n) =>
+        game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+        && game.NativeSettlementAt(n) is null && game.ColonyAt(n) is null
+        && !game.Units.Any(u => u.IsOnMap && u.Position == n);
 
     /// <summary>A water tile that is free for a ship — in bounds, water, and clear of settlements/colonies/units.</summary>
     private static bool FreeWater(Game game, Position n) =>

@@ -19,7 +19,12 @@ namespace CrownAndColony.Presentation;
 /// <see cref="Game.NativeSalePrice"/>) and <b>buy</b> from the settlement's store
 /// (<see cref="Game.CheckBuyFromNatives"/>/<see cref="Game.BuyFromNatives(Unit, NativeSettlement, string, int)"/>,
 /// <see cref="Game.NativeBuyPrice"/>/<see cref="Game.GoodsToSell"/>), surfacing the haggle offer/counter
-/// (<see cref="Game.TryHaggleSell"/>/<see cref="Game.TryHaggleBuy"/>) — plus the option to attack it
+/// (<see cref="Game.TryHaggleSell"/>/<see cref="Game.TryHaggleBuy"/>) — plus, when the acting unit is a
+/// <b>missionary</b>, <b>establish a mission</b>
+/// (<see cref="Game.CheckEstablishMission"/>/<see cref="Game.EstablishMission(Unit, NativeSettlement)"/>) or, over a
+/// rival European mission, <b>denounce</b> it
+/// (<see cref="Game.CheckDenounceMission"/>/<see cref="Game.DenounceMission(Unit, NativeSettlement)"/>) — and the
+/// option to attack it
 /// (<see cref="Game.CheckAttackSettlement"/>/<see cref="Game.AttackSettlement(Unit, World.Position)"/>),
 /// each shown only when the acting unit is allowed it. Presentation only (ADR-006): every action and every
 /// gate is a Game oracle; the panel renders state and forwards clicks. Guard failures are shown in the panel
@@ -31,6 +36,11 @@ public partial class NativeSettlementPanel : PanelContainer
     private NativeSettlement _settlement = null!;
     private int _actingUnitId; // 0 = no acting unit (unit ids start at 1)
     private Action<string> _onAction = _ => { };
+    // The two mission commands (thin GameController wrappers, guarded against InvalidMoveException) — the panel forwards
+    // the establish/denounce click to these and surfaces their one-line outcome, exactly as the trade actions do over the
+    // Game oracles (ADR-006). Defaulted to no-ops so a panel opened without them (a bare test) still rebuilds safely.
+    private Func<Unit, NativeSettlement, string> _establishMission = (_, _) => "";
+    private Func<Unit, NativeSettlement, string> _denounceMission = (_, _) => "";
     private string _outcome = "";
 
     /// <summary>The in-panel screen currently shown: the action menu, or one of the trade sub-flows.</summary>
@@ -46,14 +56,21 @@ public partial class NativeSettlementPanel : PanelContainer
 
     /// <summary>
     /// Opens the panel for a settlement, acting with the unit of id <paramref name="actingUnitId"/> (0 = none).
+    /// <paramref name="establishMission"/> / <paramref name="denounceMission"/> are the guarded mission commands (thin
+    /// <see cref="GameController"/> wrappers over <see cref="Game.EstablishMission(Unit, NativeSettlement)"/> /
+    /// <see cref="Game.DenounceMission(Unit, NativeSettlement)"/>); each returns the one-line outcome the panel shows.
     /// <paramref name="onAction"/> runs after every action with its one-line outcome — the controller uses it to
     /// surface a status notice and to re-sync the map selection (an action may spend, upgrade, or destroy the unit).
     /// </summary>
-    public void Open(Game game, NativeSettlement settlement, int actingUnitId, Action<string> onAction)
+    public void Open(Game game, NativeSettlement settlement, int actingUnitId,
+        Func<Unit, NativeSettlement, string> establishMission, Func<Unit, NativeSettlement, string> denounceMission,
+        Action<string> onAction)
     {
         _game = game;
         _settlement = settlement;
         _actingUnitId = actingUnitId;
+        _establishMission = establishMission;
+        _denounceMission = denounceMission;
         _onAction = onAction;
         _outcome = "";
         _screen = Screen.Actions;
@@ -159,6 +176,29 @@ public partial class NativeSettlementPanel : PanelContainer
             {
                 Unit expert = _game.LearnSkill(unit, _settlement);
                 _outcome = $"Your colonist trained as a {Short(expert.Type.Id)}.";
+                Changed();
+            }));
+        }
+        // Missionary actions (`86d3f62qr`): a unit in the missionary role at/adjacent to the settlement may found a mission.
+        // With a *rival* European mission already standing here, founding routes through a denounce (a roll) — so we show
+        // a single, honest button: "Denounce mission" when a denounceable rival mission is present, "Establish mission"
+        // otherwise. Each forwards to its guarded GameController command and surfaces the engine's outcome (established /
+        // missionary killed by a hostile tribe / rival ousted / denunciation failed) via the result text + onAction.
+        if (_game.CheckDenounceMission(unit, _settlement).Allowed)
+        {
+            any = true;
+            dynamic.AddChild(ActionButton("Denounce", "Denounce mission", () =>
+            {
+                _outcome = _denounceMission(unit, _settlement);
+                Changed();
+            }));
+        }
+        else if (_game.CheckEstablishMission(unit, _settlement).Allowed)
+        {
+            any = true;
+            dynamic.AddChild(ActionButton("Establish", "Establish mission", () =>
+            {
+                _outcome = _establishMission(unit, _settlement);
                 Changed();
             }));
         }

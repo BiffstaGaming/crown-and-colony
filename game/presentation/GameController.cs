@@ -1611,11 +1611,61 @@ public partial class GameController : Node2D
         RefreshView();
     }
 
+    /// <summary>
+    /// Thin native-mission command (`86d3f62qr`): the human's missionary <paramref name="unit"/> establishes a mission at
+    /// <paramref name="settlement"/> via the <see cref="Game.EstablishMission(Unit, NativeSettlement)"/> oracle, returning a
+    /// one-line outcome the <see cref="NativeSettlementPanel"/> surfaces (and forwards to the status bar). The engine routes
+    /// install-vs-denounce, the −100 goodwill, the line-of-sight reveal and the missionary's consumption; if the tribe is
+    /// Angry/Hateful it kills the missionary instead (the oracle returns <c>false</c>) — both are faithful, neither throws to
+    /// the UI. A disallowed attempt (no movement, not adjacent, not a missionary) throws
+    /// <see cref="InvalidMoveException"/>, caught here and shown as a notice (ADR-006 — the rules live in <see cref="Game"/>;
+    /// this only forwards the command and reports the result). RNG (only the rival-denounce branch draws) is the engine's
+    /// injected stream — never <c>new Random()</c> (ADR-009).
+    /// </summary>
+    public string EstablishMission(Unit unit, NativeSettlement settlement)
+    {
+        try
+        {
+            bool installed = _game.EstablishMission(unit, settlement);
+            return installed
+                ? "Your missionary established a mission. The tribe softens toward you."
+                : "The tribe killed your missionary before he could preach.";
+        }
+        catch (InvalidMoveException ex)
+        {
+            return ex.Message; // e.g. "Move next to the settlement to establish a mission." — show, don't throw to the UI
+        }
+    }
+
+    /// <summary>
+    /// Thin native-mission command (`86d3f62qr`): the human's missionary <paramref name="unit"/> denounces the <b>rival</b>
+    /// mission standing at <paramref name="settlement"/> via the <see cref="Game.DenounceMission(Unit, NativeSettlement)"/>
+    /// oracle (an immigration-weighted roll on the human's own RNG stream — ADR-009, the engine's injected stream, never
+    /// <c>new Random()</c>), returning a one-line outcome. On a winning roll the rival is expelled and the human's mission
+    /// installed (unless an Angry/Hateful tribe kills the challenger first); a losing roll consumes the missionary for
+    /// nothing. The oracle never throws on those outcomes; a disallowed attempt (no rival mission, own mission, not a
+    /// denouncer) throws <see cref="InvalidMoveException"/>, caught here and shown as a notice (ADR-006).
+    /// </summary>
+    public string DenounceMission(Unit unit, NativeSettlement settlement)
+    {
+        try
+        {
+            bool installed = _game.DenounceMission(unit, settlement);
+            return installed
+                ? "You denounced the rival mission and took it over."
+                : "Your denunciation failed; your missionary was cast out.";
+        }
+        catch (InvalidMoveException ex)
+        {
+            return ex.Message;
+        }
+    }
+
     /// <summary>Opens the native-settlement interaction panel, acting with <paramref name="actingUnit"/> (may be null — the panel then prompts to select one).</summary>
     public void OpenNativeSettlementPanel(NativeSettlement settlement, Unit? actingUnit)
     {
         int actingId = actingUnit?.Id ?? 0;
-        ((NativeSettlementPanel)_nativePanel).Open(_game, settlement, actingId, outcome =>
+        ((NativeSettlementPanel)_nativePanel).Open(_game, settlement, actingId, EstablishMission, DenounceMission, outcome =>
         {
             // A panel action may have spent / upgraded (Learn keeps the id) / destroyed the acting unit — re-resolve
             // the map selection to the live unit of that id (or clear it if it's gone) so the ring and later clicks
