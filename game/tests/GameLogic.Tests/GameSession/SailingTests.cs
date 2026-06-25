@@ -160,6 +160,61 @@ public class SailingTests
         Assert.Throws<InvalidMoveException>(() => game.SellShipCargo(atSea, Sugar, 1));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(25)]
+    [InlineData(50)]
+    public void CheckSellShipCargo_CostIsTheAfterTaxProceeds_MatchingSell(int taxPercent)
+    {
+        // The Europe sell button labels itself from CheckSellShipCargo().Cost, which must be the AFTER-TAX gold the sale
+        // actually banks (findings #1/#8) — never the raw pre-tax bid × amount. A 300-sugar sale slides the bid down
+        // mid-sale, so the quote also has to track the chunked price move, at every tax rate. The quote (non-mutating)
+        // must equal what SellShipCargo credits, and crediting must leave the treasury exactly that much richer.
+        Game game = GameOn(["model.tile.highSeas"], 1, 1, [new SavedUnit(1, Caravel, 0, 0, 12)]);
+        Unit ship = game.Units[0];
+        ship.Location = UnitLocation.InEurope;
+        ship.AddCargo(Sugar, 300);
+        game.HumanPlayer.TaxRate = taxPercent;
+
+        MoveCheck check = game.CheckSellShipCargo(ship, Sugar, 300);
+        Assert.True(check.Allowed);
+        // The quote did not move the market — selling now still credits exactly the quoted amount.
+        int amountBefore = game.Market.AmountInMarket(Sugar);
+        Assert.Equal(amountBefore, game.Market.AmountInMarket(Sugar));
+
+        int goldBefore = game.Gold;
+        int credited = game.SellShipCargo(ship, Sugar, 300);
+        Assert.Equal(check.Cost, credited);              // the button's label was the truth
+        Assert.Equal(goldBefore + credited, game.Gold);  // and that is what banked
+    }
+
+    [Fact]
+    public void CheckSellShipCargo_Refuses_Boycott_NotCarried_AndShipNotInEurope()
+    {
+        Game game = GameOn(["model.tile.highSeas"], 1, 1, [new SavedUnit(1, Caravel, 0, 0, 12)]);
+        Unit ship = game.Units[0];
+        ship.Location = UnitLocation.InEurope;
+        ship.AddCargo(Sugar, 100);
+
+        // Carrying nothing of that good → refused (and a refused check's cost is 0, so no false sell value leaks).
+        MoveCheck notCarried = game.CheckSellShipCargo(ship, Tools, 100);
+        Assert.False(notCarried.Allowed);
+        Assert.Equal(0, notCarried.Cost);
+
+        // Asking for more than is aboard → refused.
+        Assert.False(game.CheckSellShipCargo(ship, Sugar, 101).Allowed);
+
+        // Boycotted good → refused even though it is aboard and in Europe.
+        game.Market.SetArrears(Sugar, 500);
+        Assert.False(game.CheckSellShipCargo(ship, Sugar, 100).Allowed);
+        game.Market.SetArrears(Sugar, 0); // lift it…
+        Assert.True(game.CheckSellShipCargo(ship, Sugar, 100).Allowed); // …and it is sellable again
+
+        // Ship not in Europe → refused (the goods are only sold once it docks).
+        ship.Location = UnitLocation.SailingToEurope;
+        Assert.False(game.CheckSellShipCargo(ship, Sugar, 100).Allowed);
+    }
+
     [Fact]
     public void BuyEuropeGoods_DebitsGoldAtTheAskPrice_AndDrainsTheMarket()
     {

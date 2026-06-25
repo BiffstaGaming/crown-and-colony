@@ -115,14 +115,44 @@ public sealed class Market
     /// seller still receives the full chunk revenue — only the market's price-moving inventory is scaled.
     /// </param>
     /// <returns>The pre-tax and post-tax gold for the whole sale.</returns>
-    public SaleResult Sell(string goodsId, int amount, int taxPercent, double volumeFactor = 1.0)
+    public SaleResult Sell(string goodsId, int amount, int taxPercent, double volumeFactor = 1.0) =>
+        ChunkedSell(DatumOf(goodsId), amount, taxPercent, volumeFactor);
+
+    /// <summary>
+    /// What <see cref="Sell"/> would credit (after <paramref name="taxPercent"/>) for <paramref name="amount"/> right
+    /// now, <b>without</b> moving the market — the SELL analog of <see cref="BuyCost"/>, for the Europe sell-value
+    /// display/affordability quote. The price slides down as a large sale floods the market, so a flat bid × amount
+    /// over-quotes a big sell; this runs the same per-chunk after-tax math <see cref="Sell"/> does, on a throwaway copy,
+    /// so the quote matches the real credit byte-for-byte (FreeCol parity) yet leaves the live market untouched.
+    /// </summary>
+    /// <param name="goodsId">The good being quoted.</param>
+    /// <param name="amount">How much would be sold.</param>
+    /// <param name="taxPercent">The tax withheld from the revenue (the seller's current rate).</param>
+    /// <param name="volumeFactor">The market absorption factor (see <see cref="Sell"/>); defaults to 1.0.</param>
+    /// <returns>The after-tax gold the sale would credit.</returns>
+    public int SaleValue(string goodsId, int amount, int taxPercent, double volumeFactor = 1.0)
+    {
+        Datum d = DatumOf(goodsId);
+        var preview = new Datum
+        {
+            Goods = d.Goods,
+            NewWorldCapped = d.NewWorldCapped,
+            AmountInMarket = d.AmountInMarket,
+            Bid = d.Bid,
+            Ask = d.Ask,
+        };
+        return ChunkedSell(preview, amount, taxPercent, volumeFactor).GoldAfterTax; // mutates the throwaway copy only
+    }
+
+    /// <summary>
+    /// The chunked sell loop shared by <see cref="Sell"/> (on the live datum) and <see cref="SaleValue"/> (on a copy).
+    /// The trade-accounting increments land on whichever datum is passed: on the live one for a real <see cref="Sell"/>,
+    /// and on the throwaway copy for a <see cref="SaleValue"/> quote — where they are discarded with the copy, so a price
+    /// quote never moves the running totals (mirrors <see cref="ChunkedBuy"/>).
+    /// </summary>
+    private static SaleResult ChunkedSell(Datum d, int amount, int taxPercent, double volumeFactor)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(amount);
-        if (!_data.TryGetValue(goodsId, out Datum? d))
-        {
-            throw new ArgumentException($"'{goodsId}' is not tradeable.", nameof(goodsId));
-        }
-
         int beforeTax = 0, afterTax = 0;
         int remaining = amount;
         while (remaining > 0)

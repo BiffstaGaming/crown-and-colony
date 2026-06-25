@@ -167,14 +167,41 @@ public class EuropePanelTests
         int goldBefore = game.Gold;
         int inEuropeBefore = game.UnitsInEurope.Count();
 
+        // Discriminate the route (finding #6): the OLD assertions passed under BuyUnit too — a specialist is
+        // IsPurchasable (Price > 0), and BuyUnit debits the same flat price for a non-artillery type, so neither the
+        // gold delta nor the no-escalation check could tell TrainUnit from BuyUnit. The genuine difference is the
+        // train/purchase ZONE split (skill > 0 → train, skill ≤ 0 → purchase): the specialist appears ONLY as a
+        // Train_ button and NEVER as a Purchase_ one, and the purchase-only artillery never appears as a Train_ button.
         Button train = FindButton(controller, "Train_expertFarmer")!;
         AssertThat(train).IsNotNull();
+        AssertThat(FindButton(controller, "Purchase_expertFarmer")).IsNull(); // a specialist is NOT in the purchase zone
+        AssertThat(FindButton(controller, "Train_artillery")).IsNull();       // purchase-only artillery is NOT in the train zone
+
         train.EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(game.UnitsInEurope.Count()).IsEqual(inEuropeBefore + 1);        // a specialist docked
         AssertThat(game.Gold).IsEqual(goldBefore - price);                        // flat specialist price debited
         AssertThat(game.EuropeUnitPrice(ExpertFarmer)).IsEqual(price);            // specialists never escalate
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task TrainButton_IsDisabled_WhenTheTreasuryCannotAffordTheSpecialist()
+    {
+        // The affordability gate in the FALSE direction (finding #9): with too little gold the should-be-disabled
+        // GatedButton must render greyed (Disabled), not vanish — the player still sees the action and its price.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units = [], Explored = [], Gold = 10, // far below any specialist's price
+        });
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.CheckTrain(ExpertFarmer).Allowed).IsFalse(); // the engine refuses (can't afford)
+        Button train = FindButton(controller, "Train_expertFarmer")!;
+        AssertThat(train).IsNotNull();      // still present (greyed, not removed)
+        AssertThat(train.Disabled).IsTrue(); // and disabled — the gate is read in the false direction
     }
 
     [TestCase(Timeout = 60000)]

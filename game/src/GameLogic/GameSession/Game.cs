@@ -6054,9 +6054,43 @@ public sealed partial class Game
         return dot >= 0 && dot + 1 < goodsId.Length ? goodsId[(dot + 1)..] : goodsId;
     }
 
+    /// <summary>
+    /// Whether the player can sell <paramref name="amount"/> of a good from the docked <paramref name="ship"/>'s hold in
+    /// Europe. The quoted cost is the <b>after-tax</b> proceeds (<see cref="Market.SaleValue"/>): the price slides down as
+    /// the sale floods the market and the King withholds the player's tax per chunk, so the cost is what actually reaches
+    /// the treasury — the SELL mirror of <see cref="CheckBuyEuropeGoods(Unit, string, int)"/> (and the cost-carries-the-value pattern of
+    /// <see cref="CheckCashInTreasureTrain"/>). Used by the Europe screen to label and gate the Sell button (ADR-006).
+    /// </summary>
+    public MoveCheck CheckSellShipCargo(Unit ship, string goodsId, int amount) =>
+        CheckSellShipCargo(_human, ship, goodsId, amount);
+
+    /// <summary>Whether <paramref name="player"/> can sell <paramref name="amount"/> of a good from the docked <paramref name="ship"/>.</summary>
+    internal MoveCheck CheckSellShipCargo(Player player, Unit ship, string goodsId, int amount)
+    {
+        if (ship.Location != UnitLocation.InEurope)
+        {
+            return MoveCheck.No("Goods are sold once the ship reaches Europe.");
+        }
+        if (!player.Market.IsTradeable(goodsId))
+        {
+            return MoveCheck.No($"{goodsId} cannot be sold in Europe.");
+        }
+        if (!player.Market.CanTrade(goodsId))
+        {
+            return MoveCheck.No($"{goodsId} is under boycott — pay the back taxes to lift it.");
+        }
+        if (ship.CargoOf(goodsId) < amount)
+        {
+            return MoveCheck.No($"The ship is not carrying {amount} {goodsId}.");
+        }
+        // The cost carries the after-tax proceeds (CheckCashInTreasureTrain pattern) so the UI can label the Sell button
+        // with what actually banks, never moving the market to find out (Market.SaleValue is non-mutating).
+        return MoveCheck.Yes(player.Market.SaleValue(goodsId, amount, player.TaxRate, MarketVolumeFactor(player)));
+    }
+
     /// <summary>Sells goods from a docked ship's hold to the European market, crediting the treasury after tax.</summary>
     /// <returns>The gold credited after tax.</returns>
-    /// <exception cref="InvalidMoveException">The ship isn't in Europe, the good is untradeable, or the hold lacks it.</exception>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckSellShipCargo(Unit, string, int)"/>.</exception>
     public int SellShipCargo(Unit ship, string goodsId, int amount) =>
         SellShipCargo(_human, ship, goodsId, amount);
 
@@ -6064,21 +6098,10 @@ public sealed partial class Game
     internal int SellShipCargo(Player player, Unit ship, string goodsId, int amount)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
-        if (ship.Location != UnitLocation.InEurope)
+        MoveCheck check = CheckSellShipCargo(player, ship, goodsId, amount);
+        if (!check.Allowed)
         {
-            throw new InvalidMoveException("Goods are sold once the ship reaches Europe.");
-        }
-        if (!player.Market.IsTradeable(goodsId))
-        {
-            throw new InvalidMoveException($"{goodsId} cannot be sold in Europe.");
-        }
-        if (!player.Market.CanTrade(goodsId))
-        {
-            throw new InvalidMoveException($"{goodsId} is under boycott — pay the back taxes to lift it.");
-        }
-        if (ship.CargoOf(goodsId) < amount)
-        {
-            throw new InvalidMoveException($"The ship is not carrying {amount} {goodsId}.");
+            throw new InvalidMoveException(check.Reason!);
         }
         ship.AddCargo(goodsId, -amount);
         SaleResult sale = player.Market.Sell(goodsId, amount, player.TaxRate, MarketVolumeFactor(player));
@@ -6320,6 +6343,14 @@ public sealed partial class Game
 
     /// <summary>Hold slots a goods amount occupies (each goods type packs in 100s, rounded up).</summary>
     private static int SlotsFor(int amount) => (amount + CargoSlotSize - 1) / CargoSlotSize;
+
+    /// <summary>
+    /// Hold slots a goods stack of <paramref name="amount"/> units occupies — each goods type packs into 100s, rounded
+    /// up (FreeCol <c>GoodsContainer.CARGO_SIZE</c>). The public oracle behind the Europe screen's hold-slot view so the
+    /// presentation reads the engine's per-stack slot rule rather than reimplementing the <c>(amount + 99) / 100</c>
+    /// literal (ADR-006).
+    /// </summary>
+    public int GoodsSlotsFor(int amount) => SlotsFor(amount);
 
     /// <summary>Extra slots needed to add <paramref name="amount"/> more of a goods type already partly aboard.</summary>
     private static int ExtraGoodsSlots(Unit ship, string goodsId, int amount) =>

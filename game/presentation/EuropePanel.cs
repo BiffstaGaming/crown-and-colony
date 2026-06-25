@@ -277,30 +277,48 @@ public partial class EuropePanel : PanelContainer
 
             grid.AddChild(new Label { Text = boycott ? "boycott" : $"buy {_game.Market.AskPrice(id)}", HorizontalAlignment = HorizontalAlignment.Right });
 
-            // Buy a 100-lot into the trade ship's hold (gated on affordability + room + not boycotted).
-            if (tradeShip is { } buyShip && !boycott && _game.CheckBuyEuropeGoods(buyShip, id, GoodsLot).Allowed)
+            // Buy a 100-lot into the trade ship's hold. Show the button greyed (GatedButton) when the engine refuses —
+            // unaffordable, no room, boycotted, no ship — rather than vanishing it, matching the recruit/train zone
+            // (findings #5/#7). The label carries the chunked BuyCost; the tooltip carries the refusal reason.
+            if (tradeShip is { } buyShip && !boycott)
             {
-                grid.AddChild(ActionButton($"BuyGood_{good.ShortName}", $"Buy ({_game.Market.BuyCost(id, GoodsLot)})", () =>
+                MoveCheck buyCheck = _game.CheckBuyEuropeGoods(buyShip, id, GoodsLot);
+                Button buy = GatedButton($"BuyGood_{good.ShortName}", $"Buy ({_game.Market.BuyCost(id, GoodsLot)})", buyCheck.Allowed, () =>
                 {
                     if (_game.CheckBuyEuropeGoods(buyShip, id, GoodsLot).Allowed)
                     {
                         _game.BuyEuropeGoods(buyShip, id, GoodsLot);
                     }
                     Changed();
-                }));
+                });
+                if (!buyCheck.Allowed && buyCheck.Reason is { } why) { buy.TooltipText = why; }
+                grid.AddChild(buy);
+            }
+            else if (boycott)
+            {
+                // Boycotted: do not advertise a sell price (the old "sell {bid}" was both wrong — you can't sell — and a
+                // dead ternary whose arms were identical, finding #4). Show the boycott/arrears state instead.
+                int arrears = _game.Market.Arrears(id);
+                grid.AddChild(MutedLabel(arrears > 0 ? $"boycotted (arrears {arrears})" : "boycotted"));
             }
             else
             {
-                grid.AddChild(MutedLabel(boycott ? $"sell {_game.Market.BidPrice(id)}" : $"sell {_game.Market.BidPrice(id)}"));
+                grid.AddChild(new Control()); // no ship in port — nothing to buy into; keep the 4-column grid aligned
             }
 
-            // Sell the lot this ship is carrying of this good (one button per stack actually aboard).
+            // Sell the lot this ship is carrying of this good (one button per stack actually aboard). The label and gate
+            // both come from CheckSellShipCargo, whose cost is the AFTER-TAX proceeds (findings #1/#8) — the price slides
+            // as the sale floods the market and the King withholds tax per chunk — never the raw pre-tax bid × amount.
             int aboard = tradeShip?.CargoOf(id) ?? 0;
-            if (tradeShip is { } sellShip && aboard > 0 && !boycott)
+            if (tradeShip is { } sellShip && aboard > 0 && !boycott && _game.CheckSellShipCargo(sellShip, id, aboard).Allowed)
             {
-                grid.AddChild(ActionButton($"Sell_{sellShip.Id}_{good.ShortName}", $"Sell {aboard} ({_game.Market.BidPrice(id) * aboard})", () =>
+                int proceeds = _game.CheckSellShipCargo(sellShip, id, aboard).Cost;
+                grid.AddChild(ActionButton($"Sell_{sellShip.Id}_{good.ShortName}", $"Sell {aboard} ({proceeds})", () =>
                 {
-                    _game.SellShipCargo(sellShip, id, aboard);
+                    if (_game.CheckSellShipCargo(sellShip, id, aboard).Allowed)
+                    {
+                        _game.SellShipCargo(sellShip, id, aboard);
+                    }
                     Changed();
                 }));
             }
@@ -381,7 +399,7 @@ public partial class EuropePanel : PanelContainer
         var fills = new List<string>();
         foreach ((string goodsId, int amount) in ship.Cargo.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
-            int used = (amount + 99) / 100; // 100 units per slot, rounded up — FreeCol GoodsContainer.CARGO_SIZE
+            int used = _game.GoodsSlotsFor(amount); // the engine's per-stack slot rule (ADR-006), not a reimplemented literal
             for (int i = 0; i < used; i++)
             {
                 fills.Add(i == 0 ? $"{Short(goodsId)} {amount}" : Short(goodsId));

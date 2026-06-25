@@ -324,6 +324,46 @@ public class MarketTests
         Assert.Equal(0, market.IncomeAfterTaxesOf(Furs));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(25)]
+    [InlineData(50)]
+    public void SaleValue_EqualsSellsAfterTaxGold_AcrossTaxRates(int taxPercent)
+    {
+        // SaleValue is the SELL analog of BuyCost: a non-mutating quote that must equal what Sell actually credits after
+        // tax, even when the sale is large enough to slide the bid down across chunks. Furs starts amount 300 / bid 5, so
+        // selling 800 (eight 100-chunks) floods the market and drops the bid mid-sale — exactly where a flat bid × amount
+        // would diverge. The quote must track the real per-chunk after-tax credit at every tax rate (findings #1/#8).
+        var quote = new Market(Classic);
+        var live = new Market(Classic);
+
+        int quoted = quote.SaleValue(Furs, 800, taxPercent);
+        int credited = live.Sell(Furs, 800, taxPercent).GoldAfterTax;
+
+        Assert.Equal(credited, quoted);
+    }
+
+    [Fact]
+    public void SaleValue_LeavesTheMarketAndCountersUntouched()
+    {
+        // A preview moves nothing: neither the bid/inventory nor the running trade accounting (mirrors BuyCost).
+        var market = new Market(Classic);
+        int bidBefore = market.BidPrice(Furs);
+        int amountBefore = market.AmountInMarket(Furs);
+
+        int quoted = market.SaleValue(Furs, 800, taxPercent: 25);
+
+        Assert.Equal(bidBefore, market.BidPrice(Furs));
+        Assert.Equal(amountBefore, market.AmountInMarket(Furs));
+        Assert.Equal(0, market.SalesOf(Furs));
+        Assert.Equal(0, market.IncomeBeforeTaxesOf(Furs));
+        Assert.Equal(0, market.IncomeAfterTaxesOf(Furs));
+
+        // …and the preview matched the real credit, with the live market now actually moving.
+        Assert.Equal(quoted, market.Sell(Furs, 800, taxPercent: 25).GoldAfterTax);
+        Assert.NotEqual(amountBefore, market.AmountInMarket(Furs));
+    }
+
     [Fact]
     public void SellThenBuy_NetsTheCounters()
     {
