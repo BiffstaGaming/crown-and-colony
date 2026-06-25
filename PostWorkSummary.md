@@ -19,6 +19,19 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-26 — Readability (system-wide) + names + click-colony-to-move + save backward-compat (3-stream batch) ✅
+
+**Requested (Chris playtest):** (1) black text on dark-brown is unreadable "for the entire system" + show specialist names in the boxes + goods names in the market; (2) clicking a colony auto-opens/"goes into it" — want a better way to get a unit (esp. treasure) onto it; (3) "not lose my save game on every code change — possible?"
+**Did (3 parallel streams, each integrated + CI-green):**
+- **System-wide readability + names** (`480dcc7`, task `86d3fjtrc`): the harbour-backdrop polish had made content cards genuinely dark while every `Label` stayed near-black `Ink` → unreadable. Reworked the Europe card palette to **light parchment** (cards/slots/in-transit/sail-zone — matching the colony screen), audited all panels (also fixed the dark drag-preview + darkened `Muted`/boycott colors). Added **specialist names** to the train/purchase grid cells (cell grew to fit sprite+name+price) and ensured **goods names** read in the market. **I render-verified** (light cards, all text readable, names shown, backdrop around the edges).
+- **Click colony to move a unit** (`6585622`, task `86d3fjtta`): clicking your own colony with a unit selected now **moves it onto the tile** (treasure train lands there → cashable) instead of go-to-only; `MoveUnit` never auto-joined (the "goes into it" was just the panel opening), so a unit stands on the tile and Joins only via the explicit button. +2 L3.
+- **Save backward-compat** (`e13f663`, task `86d3fjtun`): **confirmed it already holds** — `SaveGame.Restore` never rejects on version; additive defaults mean new code always loads old saves (your forward-update case). Locked with 5 L2 tests (hand-written v40 fixture + down-version loads v45/v50/v55 + round-trip). The one inherent limit: an *older* build can't load a *newer* save.
+**Status:** Shipped. Commits `480dcc7` + `6585622` + `e13f663`. **CI runs 28201183281 / 28200784354 / 28200671061 = GREEN both jobs.** Local: full L3 215/215, L1/L2 2233, soak 5. No save bump.
+**Decisions:** Readability wins over backdrop coverage → light cards, backdrop in margins. Click-colony: move-if-selected-unit-can-reach, else open panel. Save: no `CurrentVersion` bump (backward-compat already worked).
+**Scheduled next:** **tile-diamond yield fix** (`86d3fjupj`, expert lumberjack should show 8 not 4) + **missionary establish-mission UI** (`86d3f62qr`) — both agents IN FLIGHT.
+**Follow-ups:** drag-preview orphan-node cleanup (`86d3fd0gp`); golden-pipeline fix (`86d3f69e9`); first-contact notice (`86d3f62qw`).
+**Needs you:** Playtest the Europe screen (should read cleanly now) + the click-colony move. tile-yield + missionary land shortly.
+
 ## 2026-06-26 — Europe screen polish: readable boxes, no black slots, single-click sail, in-transit lanes, harbour backdrop ✅
 
 **Requested (Chris playtest, + attached the real Col1 Europe screen):** keep the two-column cards but fix readability — boxes don't fit their content, the black empty hold-slots are offputting, select-then-drag is confusing; **add** in-transit visibility (a ship crossing should show) and a harbour backdrop.
