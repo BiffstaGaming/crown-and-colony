@@ -1014,6 +1014,68 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task ClickOwnColony_WithASelectedAdjacentUnit_MovesItOntoTheColonyTile_WithoutJoiningOrOpeningThePanel()
+    {
+        // 86d3fzmove: clicking the player's own colony with a selected adjacent unit MOVES the unit onto the colony
+        // tile (the playtest fix — no more being forced to use go-to). The unit then STANDS on the tile (it is still
+        // on the map and the colony's population is unchanged — MoveUnit does not auto-join the work force), and the
+        // colony panel does NOT open on the move. This is what lets a treasure train be walked onto a colony and
+        // cashed in from there.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Found a colony with one founder, then spawn a fresh land unit on a free tile ADJACENT to that colony so it
+        // is a legal one-tile move target. The spawned unit is the only other on-map human unit, so it is unambiguous.
+        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u); // clear any remaining starting units so the spawned mover is the only on-map human unit
+        }
+        Position adj = colony.Position.Neighbours().First(n => Free(game, n));
+        Unit mover = game.SpawnUnit(game.Ruleset.Unit("model.unit.freeColonist"), adj);
+        int populationBefore = colony.Population;
+        AssertThat(game.CheckMove(mover, colony.Position).Allowed).IsTrue(); // sanity: the colony tile is a legal move
+
+        // Select the mover (click its tile), then click the colony tile: the unit walks onto the colony.
+        await ClickTile(runner, controller, adj);
+        await ClickTile(runner, controller, colony.Position);
+
+        AssertThat(mover.Position).IsEqual(colony.Position); // moved onto the colony tile
+        AssertThat(mover.IsOnMap).IsTrue();                  // still on the map — it did NOT vanish into the work force
+        AssertThat(colony.Population).IsEqual(populationBefore); // not auto-joined — population unchanged
+        AssertThat(controller.GetNode<PanelContainer>("UI/ColonyPanel").Visible).IsFalse(); // the move did not open the panel
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ClickOwnColony_WithNoMovableSelection_OpensTheColonyPanel()
+    {
+        // 86d3fzmove: the other half of the routing — with no movable selected unit (nothing selected here), clicking
+        // the player's own colony opens the colony panel as before. (Once a unit has been walked onto the colony you
+        // click again to manage it; this asserts the empty-handed click still reaches the panel.)
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Found a colony, then clear every on-map human unit so no unit sits on the colony tile and nothing is selected.
+        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+        controller.GetType().GetField("_selectedUnit", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(controller, null);
+
+        await ClickTile(runner, controller, colony.Position);
+
+        AssertThat(controller.GetNode<PanelContainer>("UI/ColonyPanel").Visible).IsTrue(); // empty-handed click opens the panel
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task SelectedUnitPanel_CashInTreasureButton_AboardAGalleonInEurope_BanksFeeFree()
     {
         // 86d3f62q1: a treasure train carried home aboard a galleon docked in Europe cashes in fee-free (no King's

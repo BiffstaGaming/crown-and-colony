@@ -1135,7 +1135,21 @@ public partial class GameController : Node2D
         }
         else if (_game.ColonyAt(tile) is { } colony && colony.OwnerId == _game.HumanPlayer.PlayerId)
         {
-            OpenColonyPanel(colony); // only the human's own colonies are the player's to manage
+            // The player's own colony tile. If a selected unit can legally move onto it (adjacent/reachable),
+            // clicking the colony MOVES the unit there — so you can send a unit (e.g. a treasure train) onto the
+            // colony by clicking it, instead of being forced to use go-to (Chris playtest 86d3fy…). The unit then
+            // STANDS on the colony tile (MoveUnit does not auto-join the work force; a colonist Joins only via the
+            // explicit Join button, and a treasure train can be cashed in from there). With no movable selection
+            // (nothing selected, or the unit can't reach here — not adjacent, or it is already on this tile), the
+            // click opens the colony panel as before; click again once the unit has arrived to manage it.
+            if (_selectedUnit is { } mover && _game.CheckMove(mover, tile).Allowed)
+            {
+                _game.MoveUnit(mover, tile);
+            }
+            else
+            {
+                OpenColonyPanel(colony); // only the human's own colonies are the player's to manage
+            }
         }
         else if (_game.NativeSettlementAt(tile) is { } settlement && _game.IsExplored(tile))
         {
