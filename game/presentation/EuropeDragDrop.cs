@@ -59,11 +59,16 @@ internal static class EuropeDrag
     public static Control Preview(string text)
     {
         var label = new Label { Text = text };
-        // A faint backing so the preview reads over any zone; mouse-transparent so it never eats the drop event.
+        // Explicit dark ink on the light backing so the preview text reads regardless of which theme (if any) cascades to
+        // this transient, briefly-parented control — matching the readable light cards rather than the old dark box that
+        // left near-black theme text unreadable (Chris's playtest).
+        label.AddThemeColorOverride("font_color", new Color(0.17f, 0.11f, 0.06f));
+        // A light parchment backing so the preview reads over any zone (cards + harbour backdrop); mouse-transparent so it
+        // never eats the drop event.
         var box = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
-        var style = new StyleBoxFlat { BgColor = new Color(0.20f, 0.14f, 0.08f, 0.92f) };
+        var style = new StyleBoxFlat { BgColor = new Color(0.91f, 0.85f, 0.69f, 0.96f) };
         style.SetBorderWidthAll(1);
-        style.BorderColor = new Color(0.55f, 0.44f, 0.28f);
+        style.BorderColor = new Color(0.48f, 0.31f, 0.19f);
         style.SetCornerRadiusAll(3);
         style.SetContentMarginAll(4);
         box.AddThemeStyleboxOverride("panel", style);

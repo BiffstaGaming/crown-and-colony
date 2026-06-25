@@ -38,8 +38,19 @@ public partial class EuropePanel : PanelContainer
     /// <summary>Goods are bought into a ship's hold one slot (100 units) at a time, at the market ask — FreeCol's per-stack lot.</summary>
     private const int GoodsLot = 100;
 
-    private static readonly Color Negative = new(0.9f, 0.3f, 0.25f);
-    private static readonly Color Muted = new(0.62f, 0.55f, 0.42f);
+    private static readonly Color Negative = new(0.7f, 0.18f, 0.12f); // a deep barn-red that reads on the light parchment cards
+    // A muted sub-heading colour that stays legible on the LIGHT parchment cards — a warm dark brown, not the old pale
+    // grey-beige (which only read on the former dark cards and washed out on parchment, Chris's playtest).
+    private static readonly Color Muted = new(0.42f, 0.32f, 0.18f);
+
+    // ── Light-parchment card palette (matches ColonyTheme's BuildingCell/ParchmentDark so the dark Ink theme text reads) ──
+    // The content cards used to be genuinely dark brown (text near-black Ink on dark brown = unreadable, Chris's playtest).
+    // They are now a LIGHT parchment fill with a wood/parchment edge, exactly like the colony screen's BuildingCell, so the
+    // default dark theme text reads; the harbour backdrop stays visible in the panel margins + the gaps between cards.
+    private static readonly Color CardParchment = Color.FromString("#E8D9B0", Colors.Beige);     // card body fill
+    private static readonly Color CardParchmentDark = Color.FromString("#D9C290", Colors.Beige); // filled slot / recruit-chip fill
+    private static readonly Color CardEdge = Color.FromString("#C2A86A", Colors.Beige);          // card/slot border
+    private static readonly Color CardEdgeWood = Color.FromString("#7A4F30", Colors.Brown);      // a stronger wood border for definition
 
     /// <summary>The labourer/default sprite role used for a colonist portrait (no equipment), shared with the colony screen's worker portraits.</summary>
     private const string PortraitRole = "default";
@@ -311,25 +322,22 @@ public partial class EuropePanel : PanelContainer
     }
 
     /// <summary>
-    /// An <b>opaque</b> parchment backing for the content cards that sit over the harbour backdrop, so their text and
-    /// icons stay readable on top of the sky/sea scene (the backdrop only shows around/behind the cards). Prefers the
-    /// tiled brown parchment; falls back to a warm opaque solid fill when the asset is absent (CI). Built once, shared by
-    /// the content card and the section cards.
+    /// An <b>opaque LIGHT parchment</b> backing for the content cards that sit over the harbour backdrop, so the dark
+    /// theme <c>Ink</c> text and the icons stay readable on top of the sky/sea scene (the backdrop only shows around the
+    /// card — the panel margins + the gaps between zone cards — readability wins over backdrop coverage, Chris's playtest).
+    /// A flat parchment fill with a wood edge (matching the colony screen's <c>BuildingCell</c>/<c>ParchmentDark</c>),
+    /// <b>not</b> the old dark brown-paper texture/fill that left near-black text unreadable. Built once, shared by the
+    /// content card and the section cards.
     /// </summary>
     private static StyleBox CardBackingStyle()
     {
-        if (ColonyArt.PanelParchment() is { } parchment)
+        var flat = new StyleBoxFlat
         {
-            var skin = new StyleBoxTexture
-            {
-                Texture = parchment,
-                AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Tile,
-                AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Tile,
-            };
-            skin.SetContentMarginAll(14); // StyleBoxTexture has no corner radius; the tiled parchment fills the rect
-            return skin;
-        }
-        var flat = new StyleBoxFlat { BgColor = new Color(0.20f, 0.14f, 0.08f) };
+            BgColor = CardParchment,
+            BorderColor = CardEdgeWood,
+            AntiAliasing = true,
+        };
+        flat.SetBorderWidthAll(2);
         flat.SetContentMarginAll(14);
         flat.SetCornerRadiusAll(6);
         return flat;
@@ -490,7 +498,8 @@ public partial class EuropePanel : PanelContainer
 
     /// <summary>
     /// A compact icon grid of unit/ship buttons (3 columns): each button shows the type's <b>sprite</b> stacked over its
-    /// price, with the full name in the tooltip — the spatial replacement for the old vertical text list. When
+    /// <b>name</b> (word-wrapped) and its price (the full name also in the tooltip) — the spatial replacement for the old
+    /// vertical text list, with the name on the cell rather than tooltip-only (Chris's playtest). When
     /// <paramref name="train"/> is true the buttons are named <c>Train_{short}</c> and route to
     /// <see cref="Game.TrainUnit(string)"/> (gated on <see cref="Game.CheckTrain(string)"/>); otherwise they are
     /// <c>Purchase_{short}</c> routing to <see cref="Game.BuyUnit(string)"/> (gated on <see cref="Game.CheckBuyUnit"/>).
@@ -507,21 +516,32 @@ public partial class EuropePanel : PanelContainer
             string shortName = type.ShortName;
             int p = _game.EuropeUnitPrice(id);
             bool allowed = train ? _game.CheckTrain(id).Allowed : _game.CheckBuyUnit(id).Allowed;
-            // Sized to its content with padding so neither the 44px sprite nor the price (in the 17px-bold in-game theme)
-            // clips — the cell shows ONLY the sprite + price, the full name lives in the tooltip (Chris's playtest: don't
-            // cram unit names into grid cells). The content VBox fills the button (FullRect) and centres vertically.
+            // Sized to its content with padding so the 44px sprite, the wrapped unit NAME and the price (in the 17px-bold
+            // in-game theme) all fit without clipping — the cell now shows sprite + name + price (Chris's playtest: show
+            // the names, don't hide them in the tooltip). The name wraps onto a second line if needed; the cell is taller
+            // to accommodate it. The content VBox fills the button (FullRect) and centres vertically.
             var button = new Button
             {
                 Name = train ? $"Train_{shortName}" : $"Purchase_{shortName}",
                 Disabled = !allowed,
                 TooltipText = $"{(train ? "Train" : "Buy")} {Display(shortName)} — {p} gold",
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,
-                CustomMinimumSize = new Vector2(118, 96),
+                CustomMinimumSize = new Vector2(124, 148), // room for the 44px sprite + a two-line wrapped name + the price
             };
-            var content = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore, Alignment = BoxContainer.AlignmentMode.Center };
+            var content = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore, Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             content.AddThemeConstantOverride("separation", 2);
             content.SetAnchorsPreset(LayoutPreset.FullRect);
             content.AddChild(Centered(IconRect(UnitSprite(shortName), 44, 44)));
+            // The unit name under the sprite — word-wrapped (a long name like "Veteran Soldier" flows onto two lines)
+            // and centred, in the readable dark Ink on the light card. The button's tooltip still carries the full name.
+            content.AddChild(new Label
+            {
+                Text = Display(shortName),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+                MouseFilter = MouseFilterEnum.Ignore,
+            });
             content.AddChild(new Label { Text = $"{p}g", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore });
             button.AddChild(content);
             button.Pressed += () =>
@@ -583,7 +603,9 @@ public partial class EuropePanel : PanelContainer
             var labelBox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Pass };
             labelBox.AddThemeConstantOverride("separation", 6);
             labelBox.AddChild(IconRect(ColonyArt.GoodsIcon(shortName), 28, 28));
-            var name = new Label { Text = Display(shortName), SizeFlagsHorizontal = SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center, ClipText = true, MouseFilter = MouseFilterEnum.Pass };
+            // A min width so the good's NAME stays visible (and readable) even on a row that carries both a Buy and a Sell
+            // button — without it the ExpandFill name collapses to nothing when the buttons claim the row's width (playtest).
+            var name = new Label { Text = Display(shortName), SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(92, 0), VerticalAlignment = VerticalAlignment.Center, ClipText = true, MouseFilter = MouseFilterEnum.Pass };
             if (boycott)
             {
                 name.AddThemeColorOverride("font_color", Negative);
@@ -855,17 +877,20 @@ public partial class EuropePanel : PanelContainer
     }
 
     /// <summary>
-    /// A cargo-slot / chip skin. A <paramref name="filled"/> slot is a solid parchment-brown box (it holds a goods icon
-    /// or a passenger portrait). An EMPTY slot is a faint parchment-toned outline — a barely-there transparent fill with
-    /// a soft warm border — rather than the old near-black box that read as an ugly dark hole on the parchment backing
-    /// (Chris's playtest). It still marks the slot's place without drawing attention to itself.
+    /// A cargo-slot / chip skin. A <paramref name="filled"/> slot is now a <b>light parchment</b> box with a parchment
+    /// edge (matching <see cref="CardParchmentDark"/> / the colony screen's <c>BuildingCell</c>) so the goods-amount label
+    /// and the dock-chip / recruit-chip names — drawn in the dark theme <c>Ink</c> — read on it, instead of the old dark
+    /// parchment-brown box that left that text unreadable (Chris's playtest). An EMPTY slot stays the existing faint
+    /// parchment-toned outline (a barely-there transparent fill + a soft warm border) so it marks its place without
+    /// drawing attention to itself.
     /// </summary>
     private static StyleBox SlotStyle(bool filled)
     {
         var s = new StyleBoxFlat
         {
-            BgColor = filled ? new Color(0.30f, 0.22f, 0.12f) : new Color(0.45f, 0.36f, 0.22f, 0.12f),
-            BorderColor = filled ? new Color(0.45f, 0.36f, 0.22f) : new Color(0.45f, 0.36f, 0.22f, 0.45f),
+            BgColor = filled ? CardParchmentDark : new Color(0.45f, 0.36f, 0.22f, 0.12f),
+            BorderColor = filled ? CardEdge : new Color(0.45f, 0.36f, 0.22f, 0.45f),
+            AntiAliasing = true,
         };
         s.SetBorderWidthAll(1);
         s.SetCornerRadiusAll(3);
@@ -1201,27 +1226,40 @@ public partial class EuropePanel : PanelContainer
         return drop;
     }
 
-    /// <summary>The bordered-card skin — a slightly raised parchment-brown fill with a warm border; <paramref name="highlight"/> brightens the border (a selected ship card).</summary>
+    /// <summary>
+    /// The bordered-card skin for the titled top-row / in-transit cards and the ship cards — now a <b>light parchment</b>
+    /// fill with a wood edge (matching <see cref="CardParchment"/> / the colony screen's <c>BuildingCell</c>) so the card's
+    /// body text (drawn in the dark theme <c>Ink</c>) reads, instead of the old translucent dark-brown fill that left it
+    /// unreadable (Chris's playtest). <paramref name="highlight"/> swaps the wood edge for a thick gold border (a selected
+    /// ship card). The card is opaque so the harbour backdrop shows only around it, not muddying the text behind it.
+    /// </summary>
     private static StyleBox CardStyle(bool highlight)
     {
         var s = new StyleBoxFlat
         {
-            BgColor = new Color(0.24f, 0.17f, 0.09f, 0.55f),
-            BorderColor = highlight ? new Color(0.95f, 0.80f, 0.35f) : new Color(0.45f, 0.36f, 0.22f),
+            BgColor = CardParchment,
+            BorderColor = highlight ? new Color(0.95f, 0.80f, 0.35f) : CardEdgeWood,
+            AntiAliasing = true,
         };
-        s.SetBorderWidthAll(highlight ? 3 : 1);
+        s.SetBorderWidthAll(highlight ? 3 : 2);
         s.SetCornerRadiusAll(4);
         s.SetContentMarginAll(8);
         return s;
     }
 
-    /// <summary>The "Sail to the New World" drop-panel skin — a distinct cooler blue-tinged border so the departure gate stands apart from the cargo/recruit cards.</summary>
+    /// <summary>
+    /// The "Sail to the New World" drop-panel skin — a <b>light cool-tinted parchment</b> fill (so its dark theme
+    /// <c>Ink</c> label + sail rows read, like the other cards) with a distinct <b>blue</b> border so the departure gate
+    /// still stands apart from the warm cargo/recruit cards. Previously a translucent dark-blue fill that left the dark
+    /// label unreadable (Chris's playtest).
+    /// </summary>
     private static StyleBox SailZoneStyle()
     {
         var s = new StyleBoxFlat
         {
-            BgColor = new Color(0.12f, 0.16f, 0.22f, 0.55f),
-            BorderColor = new Color(0.45f, 0.62f, 0.82f),
+            BgColor = Color.FromString("#D7E0EA", Colors.Beige), // a pale slate-blue parchment — cool but light enough for dark Ink
+            BorderColor = new Color(0.30f, 0.46f, 0.68f),
+            AntiAliasing = true,
         };
         s.SetBorderWidthAll(2);
         s.SetCornerRadiusAll(4);
