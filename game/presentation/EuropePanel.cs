@@ -76,9 +76,9 @@ public partial class EuropePanel : PanelContainer
     private Unit? UnitById(int id) => _game.Units.FirstOrDefault(u => u.Id == id);
 
     /// <summary>
-    /// Selects the ship the goods market trades through (ship picker). The press is a no-op for an ineligible ship
-    /// (gone / repairing). UI-only — it just records the id and rebuilds (no save change). Public so the L3 ship-picker
-    /// test can drive the selection deterministically.
+    /// Selects the ship the goods market trades through (ship picker — driven by a single click on the ship card). The
+    /// call is a no-op for an ineligible ship (gone / repairing). UI-only — it just records the id and rebuilds (no save
+    /// change). Public so the L3 ship-picker test can drive the selection deterministically.
     /// </summary>
     public void SelectTradeShip(int shipId)
     {
@@ -273,8 +273,10 @@ public partial class EuropePanel : PanelContainer
 
     /// <summary>
     /// Gives the panel an opaque background so the (dimmed) map behind the UI layer never shows through. Prefers
-    /// FreeCol's tiled brown parchment skin; falls back to a warm solid fill if the asset is absent (so it is opaque in
-    /// CI even before the parchment is imported). Built once and shared with the colony screen.
+    /// FreeCol's <c>colonydocks</c> harbour scene (sky + sea, stretched to fill) so Europe reads as a place; falls back to
+    /// the tiled brown parchment skin, then a warm solid fill, if the asset is absent (so it is opaque in CI even before
+    /// the image is imported). The content cards carry their own opaque parchment backing on top, so their text stays
+    /// readable over the scene. Built once and shared across opens.
     /// </summary>
     private void EnsureOpaqueBackground()
     {
@@ -284,6 +286,14 @@ public partial class EuropePanel : PanelContainer
 
     private static StyleBox BuildPanelBackground()
     {
+        if (ColonyArt.HarbourBackdrop() is { } harbour)
+        {
+            // The harbour scene fills the whole panel (stretched, not tiled — it is one picture, not a repeating texture);
+            // the content cards' own opaque parchment backing keeps text readable on top of it.
+            var scene = new StyleBoxTexture { Texture = harbour };
+            scene.SetContentMarginAll(20);
+            return scene;
+        }
         if (ColonyArt.PanelParchment() is { } parchment)
         {
             var skin = new StyleBoxTexture
@@ -297,6 +307,31 @@ public partial class EuropePanel : PanelContainer
         }
         var flat = new StyleBoxFlat { BgColor = new Color(0.18f, 0.12f, 0.07f) };
         flat.SetContentMarginAll(20);
+        return flat;
+    }
+
+    /// <summary>
+    /// An <b>opaque</b> parchment backing for the content cards that sit over the harbour backdrop, so their text and
+    /// icons stay readable on top of the sky/sea scene (the backdrop only shows around/behind the cards). Prefers the
+    /// tiled brown parchment; falls back to a warm opaque solid fill when the asset is absent (CI). Built once, shared by
+    /// the content card and the section cards.
+    /// </summary>
+    private static StyleBox CardBackingStyle()
+    {
+        if (ColonyArt.PanelParchment() is { } parchment)
+        {
+            var skin = new StyleBoxTexture
+            {
+                Texture = parchment,
+                AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Tile,
+                AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Tile,
+            };
+            skin.SetContentMarginAll(14); // StyleBoxTexture has no corner radius; the tiled parchment fills the rect
+            return skin;
+        }
+        var flat = new StyleBoxFlat { BgColor = new Color(0.20f, 0.14f, 0.08f) };
+        flat.SetContentMarginAll(14);
+        flat.SetCornerRadiusAll(6);
         return flat;
     }
 
@@ -314,8 +349,13 @@ public partial class EuropePanel : PanelContainer
 
         // A centred content card (ShrinkCenter) so on wide windows the zones sit centred with balanced margins rather
         // than spraying across the width; the Scroll's horizontal-auto mode (main.tscn) handles windows narrower than it.
-        var card = new VBoxContainer { Name = "ContentCard", SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
+        // It carries an OPAQUE parchment backing so the harbour backdrop (drawn behind the whole panel) shows around the
+        // card while the card's own text/icons stay fully readable on the parchment on top.
+        var backing = new PanelContainer { Name = "ContentBacking", SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
+        backing.AddThemeStyleboxOverride("panel", CardBackingStyle());
+        var card = new VBoxContainer { Name = "ContentCard", SizeFlagsHorizontal = SizeFlags.ExpandFill };
         card.AddThemeConstantOverride("separation", 12);
+        backing.AddChild(card);
 
         var ships = _game.UnitsInEurope.Where(u => u.Type.IsCarrier && !u.IsAboard).ToList();
         var onDock = _game.UnitsInEurope.Where(u => u.Type.IsPerson && !u.IsAboard).ToList();
@@ -336,13 +376,18 @@ public partial class EuropePanel : PanelContainer
         card.AddChild(SectionLabel("Ships in port"));
         card.AddChild(ShipsInPortZone(ships));
 
+        // The two in-transit lanes — ships crossing the high seas, so the player can see what's coming and going rather
+        // than the ships simply vanishing until they dock. Each is read from a Game oracle (ADR-006).
+        card.AddChild(SectionLabel("In transit"));
+        card.AddChild(InTransitZone());
+
         card.AddChild(SectionLabel("Sail to the New World"));
         card.AddChild(SailZone(ships));
 
         card.AddChild(SectionLabel("On the docks"));
         card.AddChild(DocksZone(onDock, ships, treasureOnDock));
 
-        root.AddChild(card);
+        root.AddChild(backing);
     }
 
     // ── Zone 1: the immigration clock (a progress bar) ──────────────────────────────────────────────────────────
@@ -400,20 +445,24 @@ public partial class EuropePanel : PanelContainer
         {
             int s = slot;
             string typeShort = Short(dock[slot]);
-            var slotCard = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            slotCard.AddThemeConstantOverride("separation", 2);
+            // Each recruit slot is a portrait card sized wide enough that the wrapped colonist name and the Recruit button
+            // fit without clipping in the 17px-bold theme (Chris's playtest). The full name shows on the card AND in the
+            // button tooltip; the button itself is the compact price (the action is obvious from the card).
+            var slotCard = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(116, 0) };
+            slotCard.AddThemeConstantOverride("separation", 4);
             var framed = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
             framed.AddThemeStyleboxOverride("panel", SlotStyle(filled: true));
             framed.AddChild(slotCard);
 
             slotCard.AddChild(Centered(UnitPortrait(typeShort, 44)));
             slotCard.AddChild(new Label { Text = Display(typeShort), HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart });
-            var recruit = GatedButton($"Recruit_{slot}", $"Recruit ({price})", _game.CheckRecruit(slot).Allowed, () =>
+            var recruit = GatedButton($"Recruit_{slot}", $"Recruit · {price}g", _game.CheckRecruit(slot).Allowed, () =>
             {
                 if (_game.CheckRecruit(s).Allowed) { _game.Recruit(s); }
                 Changed();
             });
             recruit.SizeFlagsHorizontal = SizeFlags.Fill;
+            recruit.ClipText = true; // never let the price label spill past the card edge
             recruit.TooltipText = $"Recruit {Display(typeShort)} for {price} gold";
             slotCard.AddChild(recruit);
             recruitRow.AddChild(framed);
@@ -458,19 +507,22 @@ public partial class EuropePanel : PanelContainer
             string shortName = type.ShortName;
             int p = _game.EuropeUnitPrice(id);
             bool allowed = train ? _game.CheckTrain(id).Allowed : _game.CheckBuyUnit(id).Allowed;
+            // Sized to its content with padding so neither the 44px sprite nor the price (in the 17px-bold in-game theme)
+            // clips — the cell shows ONLY the sprite + price, the full name lives in the tooltip (Chris's playtest: don't
+            // cram unit names into grid cells). The content VBox fills the button (FullRect) and centres vertically.
             var button = new Button
             {
                 Name = train ? $"Train_{shortName}" : $"Purchase_{shortName}",
                 Disabled = !allowed,
                 TooltipText = $"{(train ? "Train" : "Buy")} {Display(shortName)} — {p} gold",
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,
-                CustomMinimumSize = new Vector2(112, 86),
+                CustomMinimumSize = new Vector2(118, 96),
             };
-            var content = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
-            content.AddThemeConstantOverride("separation", 0);
+            var content = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore, Alignment = BoxContainer.AlignmentMode.Center };
+            content.AddThemeConstantOverride("separation", 2);
             content.SetAnchorsPreset(LayoutPreset.FullRect);
-            content.AddChild(Centered(IconRect(UnitSprite(shortName), 40, 40)));
-            content.AddChild(new Label { Text = $"{p}", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore });
+            content.AddChild(Centered(IconRect(UnitSprite(shortName), 44, 44)));
+            content.AddChild(new Label { Text = $"{p}g", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore });
             button.AddChild(content);
             button.Pressed += () =>
             {
@@ -529,9 +581,9 @@ public partial class EuropePanel : PanelContainer
             // into that ship. The payload carries no fromShipId (it comes from the market); a boycotted good is not
             // draggable (returns no payload).
             var labelBox = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Pass };
-            labelBox.AddThemeConstantOverride("separation", 4);
-            labelBox.AddChild(IconRect(ColonyArt.GoodsIcon(shortName), 26, 26));
-            var name = new Label { Text = Display(shortName), SizeFlagsHorizontal = SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center, MouseFilter = MouseFilterEnum.Pass };
+            labelBox.AddThemeConstantOverride("separation", 6);
+            labelBox.AddChild(IconRect(ColonyArt.GoodsIcon(shortName), 28, 28));
+            var name = new Label { Text = Display(shortName), SizeFlagsHorizontal = SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center, ClipText = true, MouseFilter = MouseFilterEnum.Pass };
             if (boycott)
             {
                 name.AddThemeColorOverride("font_color", Negative);
@@ -539,7 +591,8 @@ public partial class EuropePanel : PanelContainer
             }
             labelBox.AddChild(name);
             labelBox.SetAnchorsPreset(LayoutPreset.FullRect);
-            row.AddChild(new EuropeDragSource { Name = $"MarketGood_{shortName}", SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 28), SizeFlagsVertical = SizeFlags.Fill }
+            // A taller min row so the 17px-bold name + 28px icon sit with breathing room rather than clipping (playtest).
+            row.AddChild(new EuropeDragSource { Name = $"MarketGood_{shortName}", SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 34), SizeFlagsVertical = SizeFlags.Fill }
                 .Configure(
                     () => boycott ? default : BuyPayload(id, GoodsLot),
                     () => $"Buy {GoodsLot} {Display(shortName)}")
@@ -553,7 +606,7 @@ public partial class EuropePanel : PanelContainer
             }
             else
             {
-                row.AddChild(new Label { Text = $"{_game.Market.BidPrice(id)}/{_game.Market.AskPrice(id)}", HorizontalAlignment = HorizontalAlignment.Right, CustomMinimumSize = new Vector2(56, 0) });
+                row.AddChild(new Label { Text = $"{_game.Market.BidPrice(id)}/{_game.Market.AskPrice(id)}", HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, CustomMinimumSize = new Vector2(64, 0) });
             }
 
             // Buy a 100-lot into the trade ship's hold. A GatedButton greyed (with the refusal reason in its tooltip)
@@ -601,8 +654,8 @@ public partial class EuropePanel : PanelContainer
     /// slot — a filled slot shows the goods icon + amount or a passenger portrait, an empty slot a faint empty box), and
     /// per-passenger actions (put on the dock; cash in a carried-home treasure train fee-free). A ship under repair shows
     /// its repair countdown instead of sail/trade controls (its sail button lives in the Sail zone). The whole card is the
-    /// <c>ShipDrop_{id}</c> drop target, its title the <c>ShipDrag_{id}</c> source, and it carries the <c>Select_{id}</c>
-    /// picker.
+    /// <c>ShipDrop_{id}</c> drop target; its title is the <c>ShipDrag_{id}</c> source, which both <b>selects the trade
+    /// ship on a single click</b> and <b>sails on a drag</b> to the Sail zone (the old <c>Select_{id}</c> button is gone).
     /// </summary>
     private Control ShipsInPortZone(IReadOnlyList<Unit> ships)
     {
@@ -643,35 +696,39 @@ public partial class EuropePanel : PanelContainer
                 ? $"under repair ({ship.RepairTurnsRemaining} turn{(ship.RepairTurnsRemaining == 1 ? "" : "s")})"
                 : $"hold {_game.CargoSlotsUsed(ship)}/{capacity}";
 
-            // The card title row: the ship SPRITE + name + status as a drag source (drag the card onto the sail zone to
-            // sail it — drop #2) and a Select button (the ship picker — its goods Buy/Sell target the selected ship). A
-            // repairing ship can't be the trade ship and can't sail, so it offers neither.
-            // The title's sprite + name are decoration (mouse-Ignore): when the ship can sail they live inside the
-            // ShipDrag drag source (which handles the drag), and a hover over them must fall through to it / the card
-            // drop target — the Select button (a sibling in titleRow) keeps its own click.
+            // The card title row: the ship SPRITE + name + status. A single CLICK on the card selects it as the trade
+            // ship (the goods market's Buy/Sell then target it); a DRAG of the card onto the sail zone sails it (drop #2)
+            // — both on the one ShipDrag source (no separate Select button; Chris's playtest). A repairing ship can't be
+            // the trade ship and can't sail, so its title is plain (no drag, no select).
+            // The title's sprite + name are decoration (mouse-Ignore) so the click/drag/hover reach the ShipDrag source.
+            int selectId = ship.Id;
             var titleInner = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
             titleInner.AddThemeConstantOverride("separation", 6);
             titleInner.AddChild(IconRect(UnitSprite(ship.Type.ShortName), 48, 40));
             titleInner.AddChild(new Label
             {
                 Name = $"Ship_{ship.Id}",
-                Text = $"{(selected ? "▶ " : "")}{Display(ship.Type.ShortName)} — {status}",
+                Text = $"{(selected ? "▶ " : "")}{Display(ship.Type.ShortName)} — {status}{(ship.IsUnderRepair ? "" : selected ? "  (trading)" : "  (click to trade)")}",
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,
                 VerticalAlignment = VerticalAlignment.Center,
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             });
 
             // The title row is a decoration container (mouse-Ignore) so a hover over its gaps falls through to the card
-            // drop target; the ShipDrag source and Select button (descendants) keep their own hover/click.
+            // drop target; the ShipDrag source (a descendant) keeps its own hover/click/drag.
             var titleRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
             titleRow.AddThemeConstantOverride("separation", 6);
             if (!ship.IsUnderRepair)
             {
                 titleInner.SetAnchorsPreset(LayoutPreset.FullRect); // fill the drag-source Control so the row reads at full width
-                titleRow.AddChild(new EuropeDragSource { Name = $"ShipDrag_{ship.Id}", SizeFlagsHorizontal = SizeFlags.ExpandFill }
+                // A bare drag-source Control does NOT adopt its child's min size (only Containers do), so give it the
+                // title's height explicitly — otherwise the row collapses to nothing now that the old Select button (which
+                // used to lend the row its height) is gone.
+                var titleSource = new EuropeDragSource { Name = $"ShipDrag_{ship.Id}", SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 40), TooltipText = "Click to trade through this ship; drag onto the Sail zone to depart" }
                     .Configure(() => ShipPayload(ship.Id), () => $"Sail {Display(ship.Type.ShortName)}")
-                    .WithChild(titleInner));
-                titleRow.AddChild(ActionButton($"Select_{ship.Id}", selected ? "Selected" : "Select", () => SelectTradeShip(ship.Id)));
+                    .OnClick(() => SelectTradeShip(selectId))
+                    .WithChild(titleInner);
+                titleRow.AddChild(titleSource);
             }
             else
             {
@@ -797,17 +854,75 @@ public partial class EuropePanel : PanelContainer
         return slots;
     }
 
+    /// <summary>
+    /// A cargo-slot / chip skin. A <paramref name="filled"/> slot is a solid parchment-brown box (it holds a goods icon
+    /// or a passenger portrait). An EMPTY slot is a faint parchment-toned outline — a barely-there transparent fill with
+    /// a soft warm border — rather than the old near-black box that read as an ugly dark hole on the parchment backing
+    /// (Chris's playtest). It still marks the slot's place without drawing attention to itself.
+    /// </summary>
     private static StyleBox SlotStyle(bool filled)
     {
         var s = new StyleBoxFlat
         {
-            BgColor = filled ? new Color(0.30f, 0.22f, 0.12f) : new Color(0.12f, 0.09f, 0.05f),
-            BorderColor = new Color(0.45f, 0.36f, 0.22f),
+            BgColor = filled ? new Color(0.30f, 0.22f, 0.12f) : new Color(0.45f, 0.36f, 0.22f, 0.12f),
+            BorderColor = filled ? new Color(0.45f, 0.36f, 0.22f) : new Color(0.45f, 0.36f, 0.22f, 0.45f),
         };
         s.SetBorderWidthAll(1);
         s.SetCornerRadiusAll(3);
         s.SetContentMarginAll(3);
         return s;
+    }
+
+    // ── Zone 4b: in-transit lanes (ships crossing the high seas) ────────────────────────────────────────────────
+
+    /// <summary>
+    /// The two in-transit lanes side by side: <b>Expected soon</b> (the human's ships
+    /// <see cref="Game.ShipsSailingToEurope"/> — crossing towards Europe) and <b>Bound for the New World</b>
+    /// (<see cref="Game.ShipsSailingToNewWorld"/> — crossing back). Each ship is its sprite + an "arrives in N turn(s)"
+    /// line from <see cref="Unit.SailTurnsRemaining"/>. Pure read-only presentation (ADR-006) — no buttons; a ship in
+    /// transit can't be acted on, it just shows where it is so the harbour reads as a living crossing.
+    /// </summary>
+    private Control InTransitZone()
+    {
+        var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ShrinkCenter, Alignment = BoxContainer.AlignmentMode.Begin };
+        row.AddThemeConstantOverride("separation", 16);
+        row.AddChild(Card("Expected soon", TransitLane(_game.ShipsSailingToEurope, arriving: true), 300));
+        row.AddChild(Card("Bound for the New World", TransitLane(_game.ShipsSailingToNewWorld, arriving: false), 300));
+        return row;
+    }
+
+    /// <summary>
+    /// One in-transit lane body: a column of ship chips (sprite + name + "arrives in N turn(s)"), or a muted "(none at
+    /// sea)" when the lane is empty. <paramref name="arriving"/> only tunes the wording; both read the same
+    /// <see cref="Unit.SailTurnsRemaining"/>.
+    /// </summary>
+    private Control TransitLane(IReadOnlyList<Unit> shipsAtSea, bool arriving)
+    {
+        var col = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.Fill };
+        col.AddThemeConstantOverride("separation", 6);
+        if (shipsAtSea.Count == 0)
+        {
+            col.AddChild(new Label { Text = "(none at sea)", HorizontalAlignment = HorizontalAlignment.Center });
+            return col;
+        }
+        foreach (Unit ship in shipsAtSea)
+        {
+            int turns = ship.SailTurnsRemaining;
+            var chip = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            chip.AddThemeConstantOverride("separation", 8);
+            chip.AddChild(IconRect(UnitSprite(ship.Type.ShortName), 40, 32));
+            var text = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
+            text.AddThemeConstantOverride("separation", 0);
+            text.AddChild(new Label { Text = Display(ship.Type.ShortName), AutowrapMode = TextServer.AutowrapMode.WordSmart });
+            text.AddChild(new Label
+            {
+                Text = $"arrives in {turns} turn{(turns == 1 ? "" : "s")}",
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            });
+            chip.AddChild(text);
+            col.AddChild(chip);
+        }
+        return col;
     }
 
     // ── Zone 5: sail to the New World ───────────────────────────────────────────────────────────────────────────
@@ -917,7 +1032,7 @@ public partial class EuropePanel : PanelContainer
             portraitBox.SetAnchorsPreset(LayoutPreset.FullRect);
             // The portrait chip is a drag source — drag it onto a ship card to board (drop #1). A fixed min size keeps the
             // bare drag-source Control (it doesn't adopt its child's min size) from collapsing inside the chip.
-            chipBox.AddChild(new EuropeDragSource { Name = $"DockColonist_{person.Id}", MouseFilter = MouseFilterEnum.Pass, CustomMinimumSize = new Vector2(96, 72), SizeFlagsHorizontal = SizeFlags.ExpandFill }
+            chipBox.AddChild(new EuropeDragSource { Name = $"DockColonist_{person.Id}", MouseFilter = MouseFilterEnum.Pass, CustomMinimumSize = new Vector2(104, 78), SizeFlagsHorizontal = SizeFlags.ExpandFill }
                 .Configure(() => ColonistPayload(pe.Id), () => $"{Display(pe.Type.ShortName)} → ship")
                 .WithChild(portraitBox));
 

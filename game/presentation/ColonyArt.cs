@@ -76,6 +76,15 @@ public static class ColonyArt
     /// <summary>The colony window's brown parchment skin (FreeCol <c>bg_paper_brown</c>), tiled as the panel fill; null if the asset is absent (the panel then falls back to a solid fill).</summary>
     public static Texture2D? PanelParchment() => Load("ui/bg_paper_brown.png");
 
+    /// <summary>
+    /// The Europe harbour backdrop — FreeCol's <c>colonydocks</c> sky-and-sea scene, drawn (stretched to fill) behind the
+    /// Europe screen's content cards so the harbour reads as a place rather than a flat parchment. Null if the asset is
+    /// absent, in which case the Europe panel falls back to its tiled parchment fill (so it stays opaque in CI before the
+    /// image is imported). Mirrors <see cref="PanelParchment"/>; the cards keep their own opaque backing on top so text
+    /// stays readable over the scene (like Colonization's panels over the docks view).
+    /// </summary>
+    public static Texture2D? HarbourBackdrop() => Load("ui/colonydocks.png");
+
     /// <summary>The colony window's carved-wood frame — FreeCol's <c>carvedwoodenborder</c> edge/corner pieces composited into one 194×194 nine-patch (23px margins); null if absent.</summary>
     public static Texture2D? ColonyBorder() => Load("ui/colony_border.png");
 

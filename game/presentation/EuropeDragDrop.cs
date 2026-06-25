@@ -82,6 +82,7 @@ public partial class EuropeDragSource : Control
 {
     private Func<Variant> _payload = () => default;
     private Func<string> _previewText = () => "";
+    private Action? _onClick;
 
     /// <summary>
     /// Configures the source: <paramref name="payload"/> builds the drag payload (return <c>default</c> for "nothing
@@ -92,6 +93,18 @@ public partial class EuropeDragSource : Control
         _payload = payload;
         _previewText = previewText;
         MouseFilter = MouseFilterEnum.Pass; // children (buttons) still get their clicks; this still starts a drag
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a single-CLICK action to this source (alongside its drag): a left-button release that did not turn into a
+    /// drag fires <paramref name="onClick"/>. Used so a ship card both <b>selects on a single click</b> and <b>sails on a
+    /// drag</b> from the same control (Chris's playtest — no separate Select button). Returns <c>this</c> for fluent
+    /// wiring. The wrapped child's decoration must be <see cref="MouseFilterEnum.Ignore"/> so the input reaches here.
+    /// </summary>
+    public EuropeDragSource OnClick(Action onClick)
+    {
+        _onClick = onClick;
         return this;
     }
 
@@ -112,6 +125,21 @@ public partial class EuropeDragSource : Control
         }
         SetDragPreview(EuropeDrag.Preview(_previewText()));
         return payload;
+    }
+
+    /// <summary>
+    /// Fires the configured <see cref="OnClick"/> action on a left-button release that wasn't consumed by a drag (Godot
+    /// dispatches a drag through <see cref="_GetDragData"/> on press-and-move and suppresses the release click, so a plain
+    /// click here means "no drag happened"). No-op when no click action is configured.
+    /// </summary>
+    public override void _GuiInput(InputEvent @event)
+    {
+        if (_onClick is { } onClick
+            && @event is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
+        {
+            onClick();
+            AcceptEvent();
+        }
     }
 }
 

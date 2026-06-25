@@ -86,6 +86,10 @@ public class UiPanelGoldenTests
                     new System.Collections.Generic.Dictionary<string, int> { ["model.goods.tobacco"] = 100, ["model.goods.ore"] = 50 }),
                 new SavedUnit(2, "model.unit.freeColonist", 0, 0, 3, (int)UnitLocation.InEurope),
                 new SavedUnit(4, "model.unit.expertOreMiner", 0, 0, 3, (int)UnitLocation.InEurope),
+                // Two in-transit ships so the harbour's in-transit lanes render: one crossing towards Europe ("expected
+                // soon"), one bound for the New World — exercising the ShipsSailing* oracles in the layout.
+                new SavedUnit(5, "model.unit.caravel", 0, 0, 12, (int)UnitLocation.SailingToEurope, 2),
+                new SavedUnit(6, "model.unit.galleon", 0, 0, 12, (int)UnitLocation.SailingToNewWorld, 1),
             ],
             Explored = [],
             Gold = 5000,

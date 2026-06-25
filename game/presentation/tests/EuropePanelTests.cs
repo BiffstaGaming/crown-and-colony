@@ -501,7 +501,9 @@ public class EuropePanelTests
     public async Task ShipPicker_BuyLandsInTheSelectedShipNotTheFirst()
     {
         // Two ships in port (A=1, B=2). The market defaults to the first (A); selecting B then buying via the market
-        // Buy button must load B's hold, not A's.
+        // Buy button must load B's hold, not A's. The Select_ button is gone — selection is a single click on the ship
+        // card (its ShipDrag source); the panel exposes SelectTradeShip for the test to drive that selection
+        // deterministically (headless Godot can't synthesise a real click).
         (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
         {
             Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
@@ -516,10 +518,10 @@ public class EuropePanelTests
         Unit shipA = game.Units.First(u => u.Id == 1);
         Unit shipB = game.Units.First(u => u.Id == 2);
 
-        // Select ship B via its Select button.
-        Button selectB = FindButton(controller, "Select_2")!;
-        AssertThat(selectB).IsNotNull();
-        selectB.EmitSignal(BaseButton.SignalName.Pressed);
+        // Select ship B by the single-click select path (what a click on its card's ShipDrag source calls).
+        EuropePanel panel = controller.GetNode<EuropePanel>("UI/EuropePanel");
+        AssertThat(FindControl<EuropeDragSource>(controller, "ShipDrag_2")).IsNotNull(); // the card is the clickable selector
+        panel.SelectTradeShip(2);
         await runner.SimulateFrames(1);
 
         // Now buy a sugar lot through the market — it must land in B (the selected ship), not A.
@@ -567,8 +569,9 @@ public class EuropePanelTests
         await runner.SimulateFrames(2);
 
         // Each key button must have the named EuropeDropTarget as an ANCESTOR (so it is a descendant rendered on top of
-        // the Pass drop target, reachable by real clicks) — NOT a later sibling that overlays it.
-        AssertAncestorDropTarget(controller, "Select_1", "ShipDrop_1");           // ship picker (inside the ship card)
+        // the Pass drop target, reachable by real clicks) — NOT a later sibling that overlays it. (The old Select_ button
+        // is gone — selection is now a single click on the ship card's ShipDrag source — so the ship-card guard moves to
+        // the CashIn/Unload passenger-row buttons that still live inside the card.)
         AssertAncestorDropTarget(controller, "CashIn_2", "ShipDrop_1");           // treasure aboard → ship card passenger row
         AssertAncestorDropTarget(controller, "Unload_2", "ShipDrop_1");           // put-on-dock (passenger row)
         AssertAncestorDropTarget(controller, "Sail_", "SailDrop");                // a sail button (inside the sail zone)

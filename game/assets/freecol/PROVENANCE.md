@@ -56,6 +56,14 @@ FreeCol `data/base/resources/images/ui/map.jpg` (GPL v2, ADR-014). Note: we do
 **not** adopt FreeCol's `freecol2.png` wordmark — the title is rendered as our own
 "Crown & Colony" text in the shared parchment/wood theme.
 
+**Europe harbour backdrop** (`ui/colonydocks.png`, 486×275) — the sky-and-sea
+dockside scene drawn (stretched to fill) behind the Europe screen
+(`presentation/EuropePanel.cs` → `ColonyArt.HarbourBackdrop`), with the content
+cards on an opaque parchment backing on top so the text stays readable. Copied
+**unmodified** from FreeCol `data/base/resources/images/ui/colonydocks.png`
+(GPL v2, ADR-013/014). FreeCol also ships `colonydocks-sky.png` and `*.size2`
+hi-res variants — not adopted (only the base scene is used).
+
 Per ADR-013, any of these may be replaced individually later; keep this file
 and the Asset Register current when that happens. FreeCol also ships 4×
 high-resolution variants (`*.size9.png`) — adopt when zoom quality calls for it.

@@ -5582,6 +5582,23 @@ public sealed partial class Game
     /// <summary>The human player's units currently docked in Europe (resolved by owner — FP-2).</summary>
     public IEnumerable<Unit> UnitsInEurope => _units.Where(u => u.Location == UnitLocation.InEurope && IsHumanOwned(u));
 
+    /// <summary>
+    /// The human player's ships currently crossing the high seas <b>towards Europe</b> (in transit, not yet docked) —
+    /// the "expected soon" arrivals. Read-only oracle (ADR-006) for the Europe screen's in-transit lane; each ship's
+    /// remaining crossing length is <see cref="Unit.SailTurnsRemaining"/>. Resolved by owner (FP-2).
+    /// </summary>
+    public IReadOnlyList<Unit> ShipsSailingToEurope =>
+        _units.Where(u => u.Location == UnitLocation.SailingToEurope && IsHumanOwned(u)).ToList();
+
+    /// <summary>
+    /// The human player's ships currently crossing the high seas <b>towards the New World</b> (in transit, not yet
+    /// arrived) — the "bound for the New World" departures. Read-only oracle (ADR-006) for the Europe screen's
+    /// in-transit lane; each ship's remaining crossing length is <see cref="Unit.SailTurnsRemaining"/>. Resolved by
+    /// owner (FP-2).
+    /// </summary>
+    public IReadOnlyList<Unit> ShipsSailingToNewWorld =>
+        _units.Where(u => u.Location == UnitLocation.SailingToNewWorld && IsHumanOwned(u)).ToList();
+
     /// <summary>Whether a naval unit may set sail for Europe from where it is.</summary>
     public MoveCheck CheckSailToEurope(Unit unit)
     {

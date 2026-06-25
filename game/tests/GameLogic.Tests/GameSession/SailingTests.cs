@@ -259,6 +259,35 @@ public class SailingTests
     }
 
     [Fact]
+    public void ShipsSailingOracles_ReportTheHumansInTransitShips_WithRemainingTurns()
+    {
+        // The Europe screen's in-transit lanes read two oracles: ships crossing TO Europe ("expected soon") and ships
+        // crossing back TO the New World ("bound for"). A ship at the high-seas edge sails one way; a docked ship sails
+        // the other; each then sits in transit reporting SailTurnsRemaining.
+        Game game = GameOn(["model.tile.ocean", "model.tile.highSeas"], 2, 1,
+            [new SavedUnit(1, Caravel, 1, 0, 12), new SavedUnit(2, Caravel, 0, 0, 12, (int)UnitLocation.InEurope)]);
+        Unit outbound = game.Units[0]; // at the high seas → will sail to Europe
+        Unit homebound = game.Units[1]; // docked in Europe → will sail to the New World
+
+        // Nothing in transit yet.
+        Assert.Empty(game.ShipsSailingToEurope);
+        Assert.Empty(game.ShipsSailingToNewWorld);
+
+        game.SailToEurope(outbound);
+        game.SailToNewWorld(homebound);
+
+        Assert.Equal(new[] { outbound }, game.ShipsSailingToEurope);       // "expected soon"
+        Assert.Equal(new[] { homebound }, game.ShipsSailingToNewWorld);    // "bound for the New World"
+        Assert.Equal(3, game.ShipsSailingToEurope[0].SailTurnsRemaining);  // a fresh crossing is the full length
+        Assert.Equal(3, game.ShipsSailingToNewWorld[0].SailTurnsRemaining);
+
+        // After they arrive, the lanes empty again.
+        for (int i = 0; i < 3; i++) game.EndTurn();
+        Assert.Empty(game.ShipsSailingToEurope);
+        Assert.Empty(game.ShipsSailingToNewWorld);
+    }
+
+    [Fact]
     public void OffMapUnits_CannotBeMoved()
     {
         Game game = GameOn(["model.tile.highSeas", "model.tile.ocean"], 2, 1,
