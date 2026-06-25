@@ -22,6 +22,14 @@ public partial class EuropePanel : PanelContainer
     private Game _game = null!;
     private Action _onChange = () => { };
 
+    /// <summary>
+    /// The ship the goods market trades through, chosen by the player (ship picker, Phase 2). Persisted across the
+    /// deferred <see cref="Changed"/> rebuild within the open session (UI-only state — no save change); cleared when
+    /// that ship is no longer a tradeable ship in port (sailed, sold, under repair). Null ⇒ fall back to the first
+    /// non-repairing ship in port, matching Phase 1's default.
+    /// </summary>
+    private int? _selectedShipId;
+
     /// <summary>Goods are bought into a ship's hold one slot (100 units) at a time, at the market ask — FreeCol's per-stack lot.</summary>
     private const int GoodsLot = 100;
 
@@ -53,6 +61,203 @@ public partial class EuropePanel : PanelContainer
     }
 
     private static string Short(string id) => id[(id.LastIndexOf('.') + 1)..];
+
+    // ── Ship picker + drag-drop helpers (Phase 2) ───────────────────────────────────────────────────────────────
+
+    /// <summary>Resolves a unit by id from the live game, or null if it has left (sailed/sold/consumed since the payload was built).</summary>
+    private Unit? UnitById(int id) => _game.Units.FirstOrDefault(u => u.Id == id);
+
+    /// <summary>
+    /// Selects the ship the goods market trades through (ship picker). The press is a no-op for an ineligible ship
+    /// (gone / repairing). UI-only — it just records the id and rebuilds (no save change). Public so the L3 ship-picker
+    /// test can drive the selection deterministically.
+    /// </summary>
+    public void SelectTradeShip(int shipId)
+    {
+        if (UnitById(shipId) is { Type.IsCarrier: true, IsUnderRepair: false } ship && ship.Location == UnitLocation.InEurope)
+        {
+            _selectedShipId = shipId;
+        }
+        Changed();
+    }
+
+    /// <summary>
+    /// The ship the goods market trades through: the player-selected one if it is still a tradeable ship in port,
+    /// otherwise the first non-repairing in-port ship (Phase 1's default). Returns null when none can trade. A stale
+    /// selection (the ship sailed/sold/started repairing) is cleared so it can't strand the market on a gone ship.
+    /// </summary>
+    private Unit? TradeShip(IReadOnlyList<Unit> ships)
+    {
+        if (_selectedShipId is { } id
+            && ships.FirstOrDefault(s => s.Id == id && !s.IsUnderRepair) is { } selected)
+        {
+            return selected;
+        }
+        _selectedShipId = null; // selection no longer valid — fall back to the default
+        return ships.FirstOrDefault(s => !s.IsUnderRepair);
+    }
+
+    /// <summary>
+    /// Whether a docked ship can sail to the New World right now — the inline re-check the Sail drop target uses (there
+    /// is no <c>CheckSailToNewWorld</c> oracle; this mirrors <see cref="Game.SailToNewWorld"/>'s guards: in Europe, not
+    /// aboard, not under repair). ADR-006: this reads engine state only, encodes no NEW rule.
+    /// </summary>
+    private bool CanSailToNewWorld(Unit ship) =>
+        ship.Location == UnitLocation.InEurope && !ship.IsAboard && !ship.IsUnderRepair;
+
+    /// <summary>
+    /// Whether an aboard passenger can be put on the dock now — the inline re-check the docks drop target uses (no
+    /// <c>CheckDisembarkToDock</c> oracle exists; mirrors <see cref="Game.DisembarkToDock"/>'s guards: aboard a ship
+    /// that is itself in Europe). ADR-006: reads engine state only.
+    /// </summary>
+    private bool CanDisembarkToDock(Unit unit) =>
+        unit.IsAboard && UnitById(unit.CarrierId!.Value) is { Location: UnitLocation.InEurope };
+
+    // ── Drag payload builders ───────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Builds a colonist/passenger drag payload (drop #1 Board / #5 Disembark).</summary>
+    private static Variant ColonistPayload(int unitId) => new Godot.Collections.Dictionary
+    {
+        [EuropeDrag.Kind] = EuropeDrag.KindColonist,
+        [EuropeDrag.UnitId] = unitId,
+    };
+
+    /// <summary>Builds a ship-card drag payload (drop #2 Sail).</summary>
+    private static Variant ShipPayload(int shipId) => new Godot.Collections.Dictionary
+    {
+        [EuropeDrag.Kind] = EuropeDrag.KindShip,
+        [EuropeDrag.ShipId] = shipId,
+    };
+
+    /// <summary>Builds a market-goods drag payload (drop #3 Buy) — no <c>fromShipId</c> (it comes from the market).</summary>
+    private static Variant BuyPayload(string goodsId, int amount) => new Godot.Collections.Dictionary
+    {
+        [EuropeDrag.Kind] = EuropeDrag.KindGoods,
+        [EuropeDrag.GoodsId] = goodsId,
+        [EuropeDrag.Amount] = amount,
+    };
+
+    /// <summary>Builds a hold-cargo drag payload (drop #4 Sell) — carries <c>fromShipId</c> so the market knows which ship to sell from.</summary>
+    private static Variant SellPayload(string goodsId, int amount, int fromShipId) => new Godot.Collections.Dictionary
+    {
+        [EuropeDrag.Kind] = EuropeDrag.KindGoods,
+        [EuropeDrag.GoodsId] = goodsId,
+        [EuropeDrag.Amount] = amount,
+        [EuropeDrag.FromShipId] = fromShipId,
+    };
+
+    // ── Drop accept/perform handlers (each re-checks a Game oracle; refusal is a graceful no-op, ADR-006) ─────────
+
+    /// <summary>Accept-test for a colonist dropped on a ship card (drop #1): the payload is a colonist and <see cref="Game.CheckBoard"/> allows it.</summary>
+    private bool BoardAllowed(Variant data, Unit ship) =>
+        EuropeDrag.KindOf(data) == EuropeDrag.KindColonist
+        && data.AsGodotDictionary() is { } d
+        && UnitById(d[EuropeDrag.UnitId].AsInt32()) is { } person
+        && _game.CheckBoard(person, ship).Allowed;
+
+    /// <summary>Performs a colonist-onto-ship drop (drop #1) — re-checks <see cref="Game.CheckBoard"/>, forwards <see cref="Game.Board"/>, refreshes.</summary>
+    private void OnBoardDrop(Variant data, Unit ship)
+    {
+        if (data.AsGodotDictionary() is { } d
+            && UnitById(d[EuropeDrag.UnitId].AsInt32()) is { } person
+            && _game.CheckBoard(person, ship).Allowed)
+        {
+            _game.Board(person, ship);
+        }
+        Changed();
+    }
+
+    /// <summary>Accept-test for a ship dropped on the sail zone (drop #2): the payload is a ship and it can sail now (<see cref="CanSailToNewWorld"/>).</summary>
+    private bool SailAllowed(Variant data) =>
+        EuropeDrag.KindOf(data) == EuropeDrag.KindShip
+        && data.AsGodotDictionary() is { } d
+        && UnitById(d[EuropeDrag.ShipId].AsInt32()) is { } ship
+        && CanSailToNewWorld(ship);
+
+    /// <summary>Performs a ship-onto-sail-zone drop (drop #2) — re-checks <see cref="CanSailToNewWorld"/>, forwards <see cref="Game.SailToNewWorld"/>, refreshes.</summary>
+    private void OnSailDrop(Variant data)
+    {
+        if (data.AsGodotDictionary() is { } d
+            && UnitById(d[EuropeDrag.ShipId].AsInt32()) is { } ship
+            && CanSailToNewWorld(ship))
+        {
+            _game.SailToNewWorld(ship);
+        }
+        Changed();
+    }
+
+    /// <summary>
+    /// Accept-test for goods dropped on a ship card (drop #3 Buy): a market payload (no <c>fromShipId</c>) that
+    /// <see cref="Game.CheckBuyEuropeGoods"/> allows for this ship. A hold→ship move (a payload WITH a <c>fromShipId</c>)
+    /// is rejected here — the market is the sell target, not another ship.
+    /// </summary>
+    private bool BuyAllowed(Variant data, Unit ship) =>
+        EuropeDrag.KindOf(data) == EuropeDrag.KindGoods
+        && data.AsGodotDictionary() is { } d
+        && !d.ContainsKey(EuropeDrag.FromShipId)
+        && _game.CheckBuyEuropeGoods(ship, d[EuropeDrag.GoodsId].AsString(), d[EuropeDrag.Amount].AsInt32()).Allowed;
+
+    /// <summary>Performs a goods-onto-ship drop (drop #3 Buy) — re-checks <see cref="Game.CheckBuyEuropeGoods"/>, forwards <see cref="Game.BuyEuropeGoods"/>, refreshes.</summary>
+    private void OnBuyDrop(Variant data, Unit ship)
+    {
+        if (data.AsGodotDictionary() is { } d && !d.ContainsKey(EuropeDrag.FromShipId))
+        {
+            string goodsId = d[EuropeDrag.GoodsId].AsString();
+            int amount = d[EuropeDrag.Amount].AsInt32();
+            if (_game.CheckBuyEuropeGoods(ship, goodsId, amount).Allowed)
+            {
+                _game.BuyEuropeGoods(ship, goodsId, amount);
+            }
+        }
+        Changed();
+    }
+
+    /// <summary>
+    /// Accept-test for hold cargo dropped on the market (drop #4 Sell): a goods payload WITH a <c>fromShipId</c> that
+    /// <see cref="Game.CheckSellShipCargo"/> allows. A market-row payload (no <c>fromShipId</c>) is rejected — you don't
+    /// "sell" the market to itself.
+    /// </summary>
+    private bool SellPayloadAllowed(Variant data) =>
+        EuropeDrag.KindOf(data) == EuropeDrag.KindGoods
+        && data.AsGodotDictionary() is { } d
+        && d.ContainsKey(EuropeDrag.FromShipId)
+        && UnitById(d[EuropeDrag.FromShipId].AsInt32()) is { } ship
+        && _game.CheckSellShipCargo(ship, d[EuropeDrag.GoodsId].AsString(), d[EuropeDrag.Amount].AsInt32()).Allowed;
+
+    /// <summary>Performs a cargo-onto-market drop (drop #4 Sell) — re-checks <see cref="Game.CheckSellShipCargo"/>, forwards <see cref="Game.SellShipCargo"/>, refreshes.</summary>
+    private void OnSellDrop(Variant data)
+    {
+        if (data.AsGodotDictionary() is { } d && d.ContainsKey(EuropeDrag.FromShipId)
+            && UnitById(d[EuropeDrag.FromShipId].AsInt32()) is { } ship)
+        {
+            string goodsId = d[EuropeDrag.GoodsId].AsString();
+            int amount = d[EuropeDrag.Amount].AsInt32();
+            if (_game.CheckSellShipCargo(ship, goodsId, amount).Allowed)
+            {
+                _game.SellShipCargo(ship, goodsId, amount);
+            }
+        }
+        Changed();
+    }
+
+    /// <summary>Accept-test for a passenger dropped on the docks zone (drop #5 Disembark): a colonist payload that <see cref="CanDisembarkToDock"/> allows.</summary>
+    private bool DisembarkAllowed(Variant data) =>
+        EuropeDrag.KindOf(data) == EuropeDrag.KindColonist
+        && data.AsGodotDictionary() is { } d
+        && UnitById(d[EuropeDrag.UnitId].AsInt32()) is { } unit
+        && CanDisembarkToDock(unit);
+
+    /// <summary>Performs a passenger-onto-docks drop (drop #5 Disembark) — re-checks <see cref="CanDisembarkToDock"/>, forwards <see cref="Game.DisembarkToDock"/>, refreshes.</summary>
+    private void OnDisembarkDrop(Variant data)
+    {
+        if (data.AsGodotDictionary() is { } d
+            && UnitById(d[EuropeDrag.UnitId].AsInt32()) is { } unit
+            && CanDisembarkToDock(unit))
+        {
+            _game.DisembarkToDock(unit);
+        }
+        Changed();
+    }
 
     // ── Opaque background (shared with ColonyPanel's parchment skin) ────────────────────────────────────────────
 
@@ -244,18 +449,24 @@ public partial class EuropePanel : PanelContainer
     /// </summary>
     private Control GoodsMarketZone(IReadOnlyList<Unit> ships)
     {
+        // The whole market is a drop target so cargo dragged onto it sells (drop #4). The accept/drop both read
+        // CheckSellShipCargo (ADR-006) and resolve the source ship from the payload — so a sell drop works regardless
+        // of which ship is the trade ship.
+        var drop = new EuropeDropTarget { Name = "GoodsMarketDrop", SizeFlagsHorizontal = SizeFlags.Fill }
+            .Configure(SellPayloadAllowed, OnSellDrop);
         var col = new VBoxContainer { CustomMinimumSize = new Vector2(420, 0), SizeFlagsHorizontal = SizeFlags.Fill };
         col.AddThemeConstantOverride("separation", 4);
+        drop.AddChild(col);
         col.AddChild(SectionLabel("Goods market"));
 
-        // Trade is per-ship (the goods must go into a hold). Pick the first tradeable ship in port; a repairing ship
-        // can't trade. Phase 2 will let the player choose which ship; Phase 1 uses the first available one.
-        Unit? tradeShip = ships.FirstOrDefault(s => !s.IsUnderRepair);
+        // Trade is per-ship (the goods must go into a hold). The player picks which in-port ship via the ship picker
+        // (click a ship card to select it); the market defaults to the first non-repairing ship when none is selected.
+        Unit? tradeShip = TradeShip(ships);
         col.AddChild(new Label
         {
             Text = tradeShip is null
                 ? "(no ship in port — prices only)"
-                : $"Trading via {tradeShip.Type.ShortName} (hold {_game.CargoSlotsFree(tradeShip)} free)",
+                : $"Trading via {tradeShip.Type.ShortName} (hold {_game.CargoSlotsFree(tradeShip)} free) — click a ship card to choose",
             HorizontalAlignment = HorizontalAlignment.Center,
         });
 
@@ -267,13 +478,19 @@ public partial class EuropePanel : PanelContainer
             string id = good.Id;
             bool boycott = !_game.Market.CanTrade(id);
 
-            var name = new Label { Text = good.ShortName, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            var name = new Label { Text = good.ShortName, SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Pass };
             if (boycott)
             {
                 name.AddThemeColorOverride("font_color", Negative);
                 name.TooltipText = $"Boycotted — pay {_game.Market.Arrears(id)} gold in back taxes to trade again.";
             }
-            grid.AddChild(name);
+            // Dragging the goods name onto a ship card buys a 100-lot into that ship (drop #3). The payload carries no
+            // fromShipId (it comes from the market); a boycotted good is not draggable (returns no payload).
+            grid.AddChild(new EuropeDragSource { Name = $"MarketGood_{good.ShortName}", SizeFlagsHorizontal = SizeFlags.ExpandFill }
+                .Configure(
+                    () => boycott ? default : BuyPayload(id, GoodsLot),
+                    () => $"Buy {GoodsLot} {good.ShortName}")
+                .WithChild(name));
 
             grid.AddChild(new Label { Text = boycott ? "boycott" : $"buy {_game.Market.AskPrice(id)}", HorizontalAlignment = HorizontalAlignment.Right });
 
@@ -328,7 +545,7 @@ public partial class EuropePanel : PanelContainer
             }
         }
         col.AddChild(grid);
-        return col;
+        return drop;
     }
 
     // ── Zone 4: ships in port (each a card with its hold slots drawn out) ───────────────────────────────────────
@@ -349,27 +566,66 @@ public partial class EuropePanel : PanelContainer
             return box;
         }
 
-        foreach (Unit ship in ships)
+        foreach (Unit shipUnit in ships)
         {
+            Unit ship = shipUnit;
             int capacity = _game.CargoCapacity(ship);
+            bool selected = _selectedShipId == ship.Id;
+
+            // The whole card is a drop target: a colonist dropped here boards (drop #1), goods dropped here buy (drop
+            // #3). Both accept/drop handlers re-check their Game oracle (ADR-006).
+            var cardDrop = new EuropeDropTarget { Name = $"ShipDrop_{ship.Id}", SizeFlagsHorizontal = SizeFlags.ExpandFill }
+                .Configure(
+                    data => BoardAllowed(data, ship) || BuyAllowed(data, ship),
+                    data =>
+                    {
+                        if (BoardAllowed(data, ship)) { OnBoardDrop(data, ship); }
+                        else if (BuyAllowed(data, ship)) { OnBuyDrop(data, ship); }
+                    });
+            var cardBox = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            cardBox.AddThemeConstantOverride("separation", 4);
+            cardDrop.AddChild(cardBox);
+
             string status = ship.IsUnderRepair
                 ? $" — under repair ({ship.RepairTurnsRemaining} turn{(ship.RepairTurnsRemaining == 1 ? "" : "s")})"
                 : $" — hold {_game.CargoSlotsUsed(ship)}/{capacity}";
-            box.AddChild(new Label
+
+            // The card title row: a Select button (the ship picker — its goods Buy/Sell target the selected ship) and
+            // the title as a drag source (drag the card onto the sail zone to sail it — drop #2). A repairing ship can't
+            // be the trade ship and can't sail, so it offers neither.
+            var titleRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            titleRow.AddThemeConstantOverride("separation", 6);
+            var title = new Label
             {
                 Name = $"Ship_{ship.Id}",
-                Text = $"{ship.Type.ShortName}{status}",
+                Text = $"{(selected ? "▶ " : "")}{ship.Type.ShortName}{status}",
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            });
+                MouseFilter = Control.MouseFilterEnum.Pass,
+            };
+            if (!ship.IsUnderRepair)
+            {
+                titleRow.AddChild(new EuropeDragSource { Name = $"ShipDrag_{ship.Id}", SizeFlagsHorizontal = SizeFlags.ExpandFill }
+                    .Configure(() => ShipPayload(ship.Id), () => $"Sail {ship.Type.ShortName}")
+                    .WithChild(title));
+                titleRow.AddChild(ActionButton($"Select_{ship.Id}", selected ? "Selected" : "Select", () => SelectTradeShip(ship.Id)));
+            }
+            else
+            {
+                titleRow.AddChild(title);
+            }
+            cardBox.AddChild(titleRow);
 
-            box.AddChild(HoldSlots(ship, capacity));
+            cardBox.AddChild(HoldSlots(ship, capacity));
 
             // Passenger actions (put on the dock; cash in a carried-home treasure train straight from the hold).
             foreach (Unit passenger in _game.Passengers(ship))
             {
                 Unit p = passenger;
                 var prow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-                prow.AddChild(Grow(new Label { Text = $"    {passenger.Type.ShortName} (aboard)" }));
+                // The passenger label is a drag source — drag it onto the docks zone to put it ashore (drop #5).
+                prow.AddChild(new EuropeDragSource { Name = $"Passenger_{passenger.Id}", SizeFlagsHorizontal = SizeFlags.ExpandFill }
+                    .Configure(() => ColonistPayload(p.Id), () => $"{p.Type.ShortName} → dock")
+                    .WithChild(new Label { Text = $"    {passenger.Type.ShortName} (aboard)", SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Pass }));
                 if (passenger.Type.CarryTreasure && _game.CheckCashInTreasureTrain(passenger).Allowed)
                 {
                     prow.AddChild(CashInButton(p));
@@ -379,8 +635,9 @@ public partial class EuropePanel : PanelContainer
                     _game.DisembarkToDock(p);
                     Changed();
                 }));
-                box.AddChild(prow);
+                cardBox.AddChild(prow);
             }
+            box.AddChild(cardDrop);
         }
         return box;
     }
@@ -396,36 +653,50 @@ public partial class EuropePanel : PanelContainer
         var slots = new HBoxContainer { Name = $"Hold_{ship.Id}" };
         slots.AddThemeConstantOverride("separation", 4);
 
-        var fills = new List<string>();
+        // Each fill records the label AND, for the FIRST slot of a goods stack, the (goodsId, amount) to drag-sell —
+        // so dragging that lead slot onto the market sells the whole stack (drop #4). Passenger slots and the trailing
+        // slots of a multi-slot goods stack carry no sell payload.
+        var fills = new List<(string Label, string? GoodsId, int Amount)>();
         foreach ((string goodsId, int amount) in ship.Cargo.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
             int used = _game.GoodsSlotsFor(amount); // the engine's per-stack slot rule (ADR-006), not a reimplemented literal
             for (int i = 0; i < used; i++)
             {
-                fills.Add(i == 0 ? $"{Short(goodsId)} {amount}" : Short(goodsId));
+                fills.Add(i == 0 ? ($"{Short(goodsId)} {amount}", goodsId, amount) : (Short(goodsId), null, 0));
             }
         }
         foreach (Unit passenger in _game.Passengers(ship))
         {
             for (int i = 0; i < passenger.Type.CarrySlots; i++)
             {
-                fills.Add(passenger.Type.ShortName);
+                fills.Add((passenger.Type.ShortName, null, 0));
             }
         }
 
         for (int i = 0; i < capacity; i++)
         {
             bool filled = i < fills.Count;
-            var slot = new PanelContainer { CustomMinimumSize = new Vector2(78, 40) };
+            var slot = new PanelContainer { CustomMinimumSize = new Vector2(78, 40), MouseFilter = Control.MouseFilterEnum.Pass };
             slot.AddThemeStyleboxOverride("panel", SlotStyle(filled));
             slot.AddChild(new Label
             {
-                Text = filled ? fills[i] : "",
+                Text = filled ? fills[i].Label : "",
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 AutowrapMode = TextServer.AutowrapMode.WordSmart,
             });
-            slots.AddChild(slot);
+
+            // A goods stack's lead slot is a drag source — drag it onto the goods market to sell the whole stack.
+            if (filled && fills[i] is { GoodsId: { } gid, Amount: var amt })
+            {
+                slots.AddChild(new EuropeDragSource { Name = $"Cargo_{ship.Id}_{Short(gid)}" }
+                    .Configure(() => SellPayload(gid, amt, ship.Id), () => $"Sell {amt} {Short(gid)}")
+                    .WithChild(slot));
+            }
+            else
+            {
+                slots.AddChild(slot);
+            }
         }
         return slots;
     }
@@ -448,12 +719,16 @@ public partial class EuropePanel : PanelContainer
     /// <summary>
     /// A Sail button for every ship in port that is ready to sail (not under repair) — pressing it sends the ship home
     /// to the New World (<see cref="Game.SailToNewWorld"/>), arriving beside the player's territory after the crossing.
-    /// A repairing ship is listed but cannot sail until it is whole. Phase 2 turns this into a drop target.
+    /// A repairing ship is listed but cannot sail until it is whole. The whole zone is also a <b>drop target</b> (Phase 2,
+    /// drop #2): dragging a ship card here sails it (gated + performed via <see cref="SailAllowed"/>/<see cref="OnSailDrop"/>).
     /// </summary>
     private Control SailZone(IReadOnlyList<Unit> ships)
     {
+        var drop = new EuropeDropTarget { Name = "SailDrop", SizeFlagsHorizontal = SizeFlags.ExpandFill }
+            .Configure(SailAllowed, OnSailDrop);
         var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         box.AddThemeConstantOverride("separation", 6);
+        drop.AddChild(box);
         var ready = ships.Where(s => !s.IsUnderRepair).ToList();
         if (ready.Count == 0)
         {
@@ -462,7 +737,7 @@ public partial class EuropePanel : PanelContainer
                 Text = ships.Count == 0 ? "(no ships in port)" : "(all ships in port are under repair)",
                 HorizontalAlignment = HorizontalAlignment.Center,
             });
-            return box;
+            return drop;
         }
         foreach (Unit ship in ready)
         {
@@ -476,7 +751,7 @@ public partial class EuropePanel : PanelContainer
             }));
             box.AddChild(row);
         }
-        return box;
+        return drop;
     }
 
     // ── Zone 6: on the docks (waiting colonists + carried-home treasure) ────────────────────────────────────────
@@ -484,24 +759,32 @@ public partial class EuropePanel : PanelContainer
     /// <summary>
     /// The dock: colonists waiting to sail (each with a Board button per ship that has room — <see cref="Game.Board"/>),
     /// and treasure trains carried home and put on the dock (each cashed in fee-free — <see cref="CashInButton"/>). These
-    /// are the off-map persons/trains in Europe not aboard a ship.
+    /// are the off-map persons/trains in Europe not aboard a ship. The whole zone is also a <b>drop target</b> (Phase 2,
+    /// drop #5): dragging an aboard passenger here puts it ashore (<see cref="DisembarkAllowed"/>/<see cref="OnDisembarkDrop"/>);
+    /// each waiting colonist label is itself a drag source (drop #1: drag it onto a ship card to board).
     /// </summary>
     private Control DocksZone(IReadOnlyList<Unit> onDock, IReadOnlyList<Unit> ships, IReadOnlyList<Unit> treasureOnDock)
     {
+        var drop = new EuropeDropTarget { Name = "DocksDrop", SizeFlagsHorizontal = SizeFlags.ExpandFill }
+            .Configure(DisembarkAllowed, OnDisembarkDrop);
         var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         box.AddThemeConstantOverride("separation", 6);
+        drop.AddChild(box);
 
         if (onDock.Count == 0 && treasureOnDock.Count == 0)
         {
-            box.AddChild(new Label { Text = "(none)", HorizontalAlignment = HorizontalAlignment.Center });
-            return box;
+            box.AddChild(new Label { Text = "(none — drag an aboard colonist here to put it ashore)", HorizontalAlignment = HorizontalAlignment.Center });
+            return drop;
         }
 
         foreach (Unit person in onDock)
         {
             Unit pe = person;
             var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            row.AddChild(Grow(new Label { Text = person.Type.ShortName }));
+            // The colonist label is a drag source — drag it onto a ship card to board (drop #1).
+            row.AddChild(new EuropeDragSource { Name = $"DockColonist_{person.Id}", SizeFlagsHorizontal = SizeFlags.ExpandFill }
+                .Configure(() => ColonistPayload(pe.Id), () => $"{pe.Type.ShortName} → ship")
+                .WithChild(new Label { Text = person.Type.ShortName, SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Pass }));
             foreach (Unit ship in ships.Where(s => _game.CheckBoard(person, s).Allowed))
             {
                 Unit sh = ship;
@@ -525,7 +808,7 @@ public partial class EuropePanel : PanelContainer
             }
             box.AddChild(row);
         }
-        return box;
+        return drop;
     }
 
     /// <summary>

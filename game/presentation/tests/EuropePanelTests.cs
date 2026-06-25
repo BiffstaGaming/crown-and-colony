@@ -286,6 +286,252 @@ public class EuropePanelTests
         AssertThat(game.Passengers(galleon).Any()).IsFalse();             // and the galleon's hold is freed
     }
 
+    // ── Phase 2: drag-and-drop + ship picker ────────────────────────────────────────────────────────────────────
+    // L3 drives the drag CALLBACKS directly (Godot can't synthesise a real mouse-drag headlessly, GdUnit issue): get a
+    // source's payload via source._GetDragData(pos), assert the target's target._CanDropData(pos, data), call
+    // target._DropData(pos, data), then assert the ENGINE state changed. A position of Vector2.Zero is fine — the
+    // EuropePanel sources/targets ignore the position (whole-control hit).
+
+    [TestCase(Timeout = 60000)]
+    public async Task DragColonistOntoShip_Boards()
+    {
+        // A caravel and a colonist, both on the Europe dock — drag the colonist's chip onto the ship card (drop #1).
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 2, MapHeight = 1, Terrain = ["model.tile.plains", "model.tile.ocean"],
+            Units =
+            [
+                new SavedUnit(1, Caravel, 1, 0, 12, (int)UnitLocation.InEurope),
+                new SavedUnit(2, Colonist, 0, 0, 3, (int)UnitLocation.InEurope),
+            ],
+            Explored = [],
+        });
+        Unit colonist = game.Units.First(u => u.Id == 2);
+
+        EuropeDragSource source = FindControl<EuropeDragSource>(controller, "DockColonist_2")!;
+        EuropeDropTarget target = FindControl<EuropeDropTarget>(controller, "ShipDrop_1")!;
+        AssertThat(source).IsNotNull();
+        AssertThat(target).IsNotNull();
+
+        Variant data = source._GetDragData(Vector2.Zero);
+        AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue(); // the engine allows boarding
+        target._DropData(Vector2.Zero, data);
+        await runner.SimulateFrames(1);
+
+        AssertThat(colonist.IsAboard).IsTrue();
+        AssertThat(colonist.CarrierId!.Value).IsEqual(1);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task DragColonistOntoFullShip_IsRefused()
+    {
+        // The illegal direction: a colonist already filling the caravel's 2 slots, plus a second colonist on the dock —
+        // dropping it on the full ship must be refused by _CanDropData (no board, no throw).
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units =
+            [
+                // A caravel carrying two goods stacks fills both its hold slots (caravel Space = 2) — no room to board.
+                new SavedUnit(1, Caravel, 0, 0, 0, (int)UnitLocation.InEurope, 0,
+                    new Dictionary<string, int> { [Sugar] = 100, ["model.goods.tobacco"] = 100 }),
+                new SavedUnit(2, Colonist, 0, 0, 3, (int)UnitLocation.InEurope),
+            ],
+            Explored = [],
+        });
+        Unit colonist = game.Units.First(u => u.Id == 2);
+        AssertThat(game.CargoSlotsFree(game.Units.First(u => u.Id == 1))).IsEqual(0); // ship is full
+
+        EuropeDragSource source = FindControl<EuropeDragSource>(controller, "DockColonist_2")!;
+        EuropeDropTarget target = FindControl<EuropeDropTarget>(controller, "ShipDrop_1")!;
+        Variant data = source._GetDragData(Vector2.Zero);
+        AssertThat(target._CanDropData(Vector2.Zero, data)).IsFalse(); // full ship — refused
+
+        target._DropData(Vector2.Zero, data); // even forced, the re-check no-ops
+        await runner.SimulateFrames(1);
+        AssertThat(colonist.IsAboard).IsFalse();
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task DragShipOntoSailZone_Sails()
+    {
+        // Drag a caravel card onto the sail zone (drop #2) → it sails to the New World.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 2, MapHeight = 1, Terrain = ["model.tile.plains", "model.tile.ocean"],
+            Units = [new SavedUnit(1, Caravel, 1, 0, 12, (int)UnitLocation.InEurope)],
+            Explored = [],
+        });
+        Unit ship = game.Units.First(u => u.Id == 1);
+
+        EuropeDragSource source = FindControl<EuropeDragSource>(controller, "ShipDrag_1")!;
+        EuropeDropTarget target = FindControl<EuropeDropTarget>(controller, "SailDrop")!;
+        AssertThat(source).IsNotNull();
+        AssertThat(target).IsNotNull();
+
+        Variant data = source._GetDragData(Vector2.Zero);
+        AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue();
+        target._DropData(Vector2.Zero, data);
+        await runner.SimulateFrames(1);
+
+        AssertThat(ship.Location).IsEqual(UnitLocation.SailingToNewWorld);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task DragGoodsOntoShip_Buys()
+    {
+        // Drag a market goods row onto a ship card (drop #3) → a 100-lot is bought into that ship's hold.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units = [new SavedUnit(1, Caravel, 0, 0, 12, (int)UnitLocation.InEurope)],
+            Explored = [], Gold = 1000,
+        });
+        Unit ship = game.Units.First(u => u.Id == 1);
+        int goldBefore = game.Gold;
+
+        EuropeDragSource source = FindControl<EuropeDragSource>(controller, "MarketGood_sugar")!;
+        EuropeDropTarget target = FindControl<EuropeDropTarget>(controller, "ShipDrop_1")!;
+        AssertThat(source).IsNotNull();
+        AssertThat(target).IsNotNull();
+
+        Variant data = source._GetDragData(Vector2.Zero);
+        AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue();
+        target._DropData(Vector2.Zero, data);
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.Gold < goldBefore).IsTrue();
+        AssertThat(ship.CargoOf(Sugar)).IsEqual(100);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task DragCargoOntoMarket_Sells()
+    {
+        // Drag a hold cargo stack onto the goods market (drop #4) → the stack is sold, the treasury credited.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units =
+            [
+                new SavedUnit(1, Caravel, 0, 0, 12, (int)UnitLocation.InEurope, 0,
+                    new Dictionary<string, int> { [Sugar] = 100 }),
+            ],
+            Explored = [],
+        });
+        Unit ship = game.Units.First(u => u.Id == 1);
+
+        EuropeDragSource source = FindControl<EuropeDragSource>(controller, "Cargo_1_sugar")!;
+        EuropeDropTarget target = FindControl<EuropeDropTarget>(controller, "GoodsMarketDrop")!;
+        AssertThat(source).IsNotNull();
+        AssertThat(target).IsNotNull();
+
+        Variant data = source._GetDragData(Vector2.Zero);
+        AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue();
+        target._DropData(Vector2.Zero, data);
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.Gold).IsEqual(200);          // 100 sugar × bid 2, no tax
+        AssertThat(ship.CargoOf(Sugar)).IsEqual(0);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task DragGoodsOntoShip_IsRefused_WhenTheTreasuryCannotAfford()
+    {
+        // The illegal buy direction: with no gold, dropping a market goods row on a ship must be refused by
+        // _CanDropData (CheckBuyEuropeGoods fails on cost) — no buy, no throw.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units = [new SavedUnit(1, Caravel, 0, 0, 12, (int)UnitLocation.InEurope)],
+            Explored = [], Gold = 0, // can't afford a single lot
+        });
+        Unit ship = game.Units.First(u => u.Id == 1);
+        AssertThat(game.CheckBuyEuropeGoods(ship, Sugar, 100).Allowed).IsFalse();
+
+        EuropeDragSource source = FindControl<EuropeDragSource>(controller, "MarketGood_sugar")!;
+        EuropeDropTarget target = FindControl<EuropeDropTarget>(controller, "ShipDrop_1")!;
+        AssertThat(source).IsNotNull();
+
+        Variant data = source._GetDragData(Vector2.Zero);
+        AssertThat(target._CanDropData(Vector2.Zero, data)).IsFalse(); // unaffordable — refused
+        target._DropData(Vector2.Zero, data);                          // forced drop no-ops
+        await runner.SimulateFrames(1);
+        AssertThat(ship.CargoOf(Sugar)).IsEqual(0);                    // nothing bought
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task DragPassengerOntoDocks_Disembarks()
+    {
+        // Drag an aboard passenger onto the docks zone (drop #5) → it is put ashore on the dock.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units =
+            [
+                new SavedUnit(1, Caravel, 0, 0, 12, (int)UnitLocation.InEurope),
+                new SavedUnit(2, Colonist, 0, 0, 3, (int)UnitLocation.InEurope, CarrierId: 1),
+            ],
+            Explored = [],
+        });
+        Unit colonist = game.Units.First(u => u.Id == 2);
+        AssertThat(colonist.IsAboard).IsTrue();
+
+        EuropeDragSource source = FindControl<EuropeDragSource>(controller, "Passenger_2")!;
+        EuropeDropTarget target = FindControl<EuropeDropTarget>(controller, "DocksDrop")!;
+        AssertThat(source).IsNotNull();
+        AssertThat(target).IsNotNull();
+
+        Variant data = source._GetDragData(Vector2.Zero);
+        AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue();
+        target._DropData(Vector2.Zero, data);
+        await runner.SimulateFrames(1);
+
+        AssertThat(colonist.IsAboard).IsFalse();
+        AssertThat(colonist.Location).IsEqual(UnitLocation.InEurope);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ShipPicker_BuyLandsInTheSelectedShipNotTheFirst()
+    {
+        // Two ships in port (A=1, B=2). The market defaults to the first (A); selecting B then buying via the market
+        // Buy button must load B's hold, not A's.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units =
+            [
+                new SavedUnit(1, Caravel, 0, 0, 12, (int)UnitLocation.InEurope),
+                new SavedUnit(2, Galleon, 0, 0, 12, (int)UnitLocation.InEurope),
+            ],
+            Explored = [], Gold = 5000,
+        });
+        Unit shipA = game.Units.First(u => u.Id == 1);
+        Unit shipB = game.Units.First(u => u.Id == 2);
+
+        // Select ship B via its Select button.
+        Button selectB = FindButton(controller, "Select_2")!;
+        AssertThat(selectB).IsNotNull();
+        selectB.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // Now buy a sugar lot through the market — it must land in B (the selected ship), not A.
+        Button buy = FindButton(controller, "BuyGood_sugar")!;
+        AssertThat(buy).IsNotNull();
+        buy.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(shipB.CargoOf(Sugar)).IsEqual(100); // landed in the SELECTED ship
+        AssertThat(shipA.CargoOf(Sugar)).IsEqual(0);   // not the default first ship
+    }
+
     private static async Task<(ISceneRunner, GameController, Game)> OpenEurope(SaveGame state)
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
@@ -306,4 +552,11 @@ public class EuropePanelTests
             .FindChildren("*", recursive: true, owned: false)
             .OfType<Button>()
             .FirstOrDefault(b => b.Name.ToString().StartsWith(namePrefix));
+
+    /// <summary>Finds the first drag-source / drop-target control of type <typeparamref name="T"/> whose name starts with <paramref name="namePrefix"/> (Phase 2 drag-drop).</summary>
+    private static T? FindControl<T>(GameController controller, string namePrefix) where T : Node =>
+        controller.GetNode<PanelContainer>("UI/EuropePanel")
+            .FindChildren("*", recursive: true, owned: false)
+            .OfType<T>()
+            .FirstOrDefault(c => c.Name.ToString().StartsWith(namePrefix));
 }
