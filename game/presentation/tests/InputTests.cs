@@ -968,10 +968,11 @@ public class InputTests
     [TestCase(Timeout = 60000)]
     public async Task SelectedUnitPanel_CashInTreasureButton_AtAnOwnedColony_BanksGoldAndConsumesTheTrain()
     {
-        // 86d3f62q1: the Orders "Cash in treasure" button is shown only for treasure trains, gated on
-        // CheckCashInTreasureTrain, surfaces the net value in a confirmation, and on confirm banks the gold and the
-        // train leaves the game. At a colony the King's transport cut applies (medium 60%); tax is zeroed (via the save
-        // layer — the presentation project can't set TaxRate / TreasureAmount directly) to isolate the cut.
+        // 86d3f62q1 / 86d3fb5mj: the Orders "Cash in treasure" button is shown only for treasure trains, gated on
+        // CheckCashInTreasureTrain, surfaces the King's OFFER in a confirmation, and on confirm banks the net and the
+        // train leaves the game. In the Col1 model the King's at-colony cut = the current tax rate; we stage tax = 25
+        // (via the save layer — the presentation project can't set TaxRate / TreasureAmount directly) so the cut is a
+        // real 250g and the net 750g, exercising the King's-offer wording.
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
         var controller = (GameController)runner.Scene();
         controller.StartNewGame(Seed);
@@ -980,14 +981,14 @@ public class InputTests
         int humanId = game.HumanPlayer.PlayerId;
 
         // Found a colony with the human's founder; then stage (via the save layer) a human treasure train carrying
-        // 1000 gold standing on that colony, with the human's tax zeroed.
+        // 1000 gold standing on that colony, with the human's tax at 25% (the King's cut in the Col1 model).
         Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
         SaveGame save = SaveGame.From(game);
         int trainId = game.Units.Max(u => u.Id) + 1;
         var train = new SavedUnit(trainId, "model.unit.treasureTrain", colony.Position.X, colony.Position.Y, 3,
             OwnerId: humanId, TreasureAmount: 1000);
         List<SavedPlayer> players = save.Players!
-            .Select(p => p.PlayerId == humanId ? p with { Tax = 0 } : p).ToList();
+            .Select(p => p.PlayerId == humanId ? p with { Tax = 25 } : p).ToList();
         Game injected = (save with { Units = save.Units.Append(train).ToList(), Players = players }).Restore(game.Ruleset);
         SetGame(controller, injected);
         int goldBefore = injected.HumanPlayer.Gold;
@@ -1000,13 +1001,14 @@ public class InputTests
         cashIn.EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
-        // The confirmation surfaces the value (1000 − 60% King's cut, no tax → 400) before committing.
+        // The confirmation frames the King's offer (take 25% / 250g; you keep 750g) before committing.
         var dialog = controller.GetChildren().OfType<ConfirmationDialog>().First();
-        AssertThat(dialog.DialogText).Contains("400"); // net banked, shown to the player
+        AssertThat(dialog.DialogText).Contains("25%"); // the King's cut = tax rate
+        AssertThat(dialog.DialogText).Contains("750"); // net banked, shown to the player
         dialog.EmitSignal(ConfirmationDialog.SignalName.Confirmed);
         await runner.SimulateFrames(2);
 
-        AssertThat(injected.HumanPlayer.Gold).IsEqual(goldBefore + 400);             // banked the net
+        AssertThat(injected.HumanPlayer.Gold).IsEqual(goldBefore + 750);             // banked the net
         AssertThat(injected.Units.Any(u => u.Id == trainId)).IsFalse();              // the train is consumed
         AssertThat(controller.GetNode<PanelContainer>("UI/SelectedUnitPanel").Visible).IsFalse(); // selection cleared
     }

@@ -101,7 +101,7 @@ public static class DifficultyLevels
 /// <param name="RecruitPriceIncrease">Base recruit-price rise per paid recruit (spec <c>model.option.recruitPriceIncrease</c>; veryEasy 20 else 30). See [europe].</param>
 /// <param name="RecruitLowerCapIncrease">Recruit-price-floor rise per paid recruit (spec <c>model.option.lowerCapIncrease</c>; medium 0). See [europe].</param>
 /// <param name="ArtilleryPriceIncrease">Added to the artillery purchase price after each artillery bought (spec <c>model.option.priceIncrease.artillery</c>; medium 100). See [europe].</param>
-/// <param name="TreasureTransportFee">The King's cut (percent) to ship a treasure train to Europe (spec <c>model.option.treasureTransportFee</c>; medium 60). See [treasure-train].</param>
+/// <param name="TreasureTransportFee">FreeCol's flat King's cut (percent) to ship a treasure train to Europe (spec <c>model.option.treasureTransportFee</c>; medium 60). <b>Parsed but unused for the cut</b>: we use the Col1 model where the King's at-colony cut equals the current tax rate, not this flat 60% (see [treasure-train], 86d3fb5mj). Retained so the spec parses unchanged. See [treasure-train].</param>
 /// <param name="ShipTradePenalty">
 /// The percentage penalty applied to a <b>ship-borne</b> trader's price when selling to a native settlement (spec
 /// <c>model.option.shipTradePenalty</c>, a negative <c>percentage</c> modifier; veryEasy→veryHard = −20/−25/−30/−35/−40,

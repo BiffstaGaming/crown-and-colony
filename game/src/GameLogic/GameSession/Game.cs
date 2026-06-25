@@ -1295,39 +1295,49 @@ public sealed partial class Game
         }
     }
 
-    // ===== Treasure-train cash-in (86d3c9rzu) =================================================================
-    // Escort a treasure train to a colony (or Europe) to bank its gold (FreeCol Unit.canCashInTreasureTrain /
-    // getTransportFee + the cash-in handler): at a colony the King ships it across for a transport cut, then the
-    // monarch's tax applies; carry it to Europe yourself (a galleon) to skip the King's fee.
+    // ===== Treasure-train cash-in (86d3c9rzu; Col1 fee model 86d3fb5mj) ======================================
+    // Escort a treasure train to a colony (or Europe) to bank its gold. We follow the ORIGINAL Colonization (1994)
+    // economics here, a deliberate Col1-ward divergence from FreeCol's flat 60% transport fee (like the tax-cadence
+    // fix):
+    //   • Carry it home yourself on a galleon to Europe → keep the FULL amount (fee-free AND tax-free).
+    //   • Let the King ship it from one of your colonies → he takes a cut equal to your CURRENT tax rate
+    //     (25% tax → King keeps 25%, you net 75%). There is no separate 60% cut and no extra tax on top.
+    // The King's at-colony cut is framed in the UI as his OFFER to carry the treasure across.
+    // (FreeCol's model is Unit.canCashInTreasureTrain / getTransportFee + the cash-in handler — flat-fee then tax.)
 
-    /// <summary>The father modifier id scaling the transport fee — Hernán Cortés's −100% ships treasure for free.</summary>
+    /// <summary>The father modifier id scaling the King's at-colony transport cut — Hernán Cortés's −100% ships treasure for free.</summary>
     private const string TreasureTransportFeeModifierId = "model.modifier.treasureTransportFee";
 
-    /// <summary>The King's fee to ship <paramref name="train"/>'s treasure to Europe: the difficulty's
-    /// <see cref="Specification.DifficultyOptions.TreasureTransportFee"/>% of the amount (medium 60), less Hernán
-    /// Cortés's <c>treasureTransportFee</c> modifier (−100% → free).</summary>
+    /// <summary>
+    /// The King's cut (gold) to ship <paramref name="train"/>'s treasure home from a colony, in the Col1 model: the
+    /// owner's <b>current tax rate</b> applied to the carried amount (25% tax → 25% cut), folded with Hernán Cortés's
+    /// <c>treasureTransportFee</c> modifier (−100% → the cut is waived, so Cortés keeps the full amount even via the
+    /// King). Integer-truncated. This is the King's-transport fee only — a train carried home yourself (see
+    /// <see cref="TreasureIsInEurope"/>) pays nothing, so callers gate on the location before charging it.
+    /// </summary>
     private int TransportFee(Player owner, Unit train) =>
-        ApplyGoodsModifiers(owner, TreasureTransportFeeModifierId, Ruleset.Difficulty.TreasureTransportFee * train.TreasureAmount / 100);
+        ApplyGoodsModifiers(owner, TreasureTransportFeeModifierId, owner.TaxRate * train.TreasureAmount / 100);
 
     /// <summary>
     /// Whether <paramref name="train"/> is in Europe — either docked there itself <em>or</em> loaded as cargo on a ship
     /// that is docked there (FreeCol <c>Unit.isInEurope</c> follows the carrier). A train that reached Europe — under its
-    /// own (test) location or carried home on a galleon — pays no King's transport fee.
+    /// own (test) location or carried home on a galleon — pays no King's transport cut and no tax (you carried it yourself).
     /// </summary>
     private bool TreasureIsInEurope(Unit train) =>
         train.Location == UnitLocation.InEurope
         || (train.IsAboard && UnitById(train.CarrierId!.Value) is { Location: UnitLocation.InEurope });
 
     /// <summary>
-    /// The gold <paramref name="owner"/> nets cashing in <paramref name="train"/>: the carried amount less the King's
-    /// <see cref="TransportFee"/> (0 if the train reached Europe — <see cref="TreasureIsInEurope"/>, i.e. you carried it
-    /// yourself), then the monarch's tax on the remainder. Integer-truncated, like the rest of the economy.
+    /// The gold <paramref name="owner"/> nets cashing in <paramref name="train"/>, in the Col1 fee model: the FULL
+    /// carried amount if the train reached Europe (<see cref="TreasureIsInEurope"/> — you carried it yourself, so no
+    /// King's cut and no tax), otherwise (at a colony, the King transports it) the carried amount less the King's
+    /// <see cref="TransportFee"/> (his cut = your tax rate %, waived under Cortés). Integer-truncated, like the rest of
+    /// the economy.
     /// </summary>
-    private int CashInValue(Player owner, Unit train)
-    {
-        int fee = TreasureIsInEurope(train) ? 0 : TransportFee(owner, train);
-        return (train.TreasureAmount - fee) * (100 - owner.TaxRate) / 100;
-    }
+    private int CashInValue(Player owner, Unit train) =>
+        TreasureIsInEurope(train)
+            ? train.TreasureAmount                         // carried home yourself → keep it all (no fee, no tax)
+            : train.TreasureAmount - TransportFee(owner, train); // King transports → his cut = tax% (Cortés waives it)
 
     /// <summary>The gold the human would net by cashing in <paramref name="train"/> where it stands (0 if it can't here).</summary>
     public int CashInValue(Unit train) =>
@@ -1335,11 +1345,23 @@ public sealed partial class Game
 
     /// <summary>
     /// Whether cashing in <paramref name="train"/> where it stands is fee-free — i.e. it reached Europe (docked itself or
-    /// aboard a galleon docked there) so the King takes no transport cut, versus banking it at a colony where his cut
-    /// applies. A read-only oracle (ADR-006) the UI uses to phrase the cash-in confirmation; mirrors the fee branch in
-    /// <see cref="CashInValue(Player, Unit)"/>.
+    /// aboard a galleon docked there) so you carried it home yourself and keep the full amount (no King's cut, no tax),
+    /// versus banking it at a colony where the King offers to ship it for a cut. A read-only oracle (ADR-006) the UI uses
+    /// to phrase the cash-in confirmation; mirrors the Europe branch in <see cref="CashInValue(Player, Unit)"/>.
     /// </summary>
     public bool TreasureCashInIsFeeFree(Unit train) => TreasureIsInEurope(train);
+
+    /// <summary>
+    /// The King's cut (gold) the human would forgo by letting the King ship <paramref name="train"/> home from a colony —
+    /// his transport offer, equal to the carried amount × the current tax rate %, waived to 0 under Hernán Cortés. 0 when
+    /// the train is fee-free (already in Europe — <see cref="TreasureCashInIsFeeFree"/>) or the cash-in is not allowed
+    /// here. A read-only oracle (ADR-006) the UI uses to phrase the King's-offer confirmation; the cut plus the net
+    /// (<see cref="CashInValue(Unit)"/>) equal the carried amount.
+    /// </summary>
+    public int TreasureKingsCut(Unit train) =>
+        !TreasureCashInIsFeeFree(train) && CheckCashInTreasureTrain(train).Allowed && PlayerById(train.OwnerId) is { } owner
+            ? TransportFee(owner, train)
+            : 0;
 
     /// <summary>
     /// Whether <paramref name="train"/> may be cashed in where it stands: it must be a treasure-carrying unit with
@@ -1370,8 +1392,9 @@ public sealed partial class Game
 
     /// <summary>
     /// Cashes in <paramref name="train"/>: banks the net gold (<see cref="CashInValue(Unit)"/>) to its owner and the
-    /// train leaves the game (FreeCol disposes it on cash-in). At a colony the King takes his transport cut; in Europe
-    /// there is no fee. The monarch's tax applies to the remainder either way.
+    /// train leaves the game (FreeCol disposes it on cash-in). In the Col1 fee model, a train carried home yourself to
+    /// Europe banks the full amount (no King's cut, no tax); at a colony the King offers to ship it for a cut equal to
+    /// the current tax rate (waived under Hernán Cortés), and you bank the remainder.
     /// </summary>
     /// <exception cref="InvalidMoveException">Not cashable here; see <see cref="CheckCashInTreasureTrain"/>.</exception>
     public void CashInTreasureTrain(Unit train)

@@ -126,50 +126,71 @@ public class TreasureTrainTests
     }
 
     [Fact]
-    public void CashIn_AtAColony_BanksTheAmountLessTheKingsCut()
+    public void CashIn_AtAColony_WithNoTax_BanksTheFullAmount()
     {
+        // Col1 model (86d3fb5mj): the King's at-colony cut equals the tax rate. At 0% tax he takes nothing, so the
+        // full amount is banked even via the King.
         (Game game, Unit train, _) = TrainAtColony(1000);
         int goldBefore = game.HumanPlayer.Gold;
         int id = train.Id;
 
-        Assert.Equal(400, game.CashInValue(train));   // 1000 − 60% transport fee, no tax → 400
+        Assert.Equal(1000, game.CashInValue(train));   // 0% tax → King's cut 0 → full 1000
+        Assert.Equal(0, game.TreasureKingsCut(train));
         game.CashInTreasureTrain(train);
 
-        Assert.Equal(goldBefore + 400, game.HumanPlayer.Gold);
+        Assert.Equal(goldBefore + 1000, game.HumanPlayer.Gold);
         Assert.DoesNotContain(game.Units, u => u.Id == id); // the train is spent
     }
 
-    [Fact]
-    public void CashIn_TaxesTheRemainderAfterTheKingsCut()
+    [Theory]
+    [InlineData(0, 1000)]   // 1000 × (100−0)/100
+    [InlineData(25, 750)]   // 1000 × (100−25)/100
+    [InlineData(50, 500)]   // 1000 × (100−50)/100
+    [InlineData(75, 250)]   // 1000 × (100−75)/100
+    public void CashIn_AtAColony_KingsCutEqualsTheTaxRate(int taxRate, int expectedNet)
     {
+        // Col1 net formula (86d3fb5mj): a 1000-treasure train at a colony with tax T nets 1000 × (100−T)/100; the
+        // King's cut is the complement (T% of the amount). No separate 60% fee, no extra tax on top.
         (Game game, Unit train, _) = TrainAtColony(1000);
-        game.HumanPlayer.TaxRate = 25; // (1000 − 600) × (100 − 25)/100 = 300
+        game.HumanPlayer.TaxRate = taxRate;
         int goldBefore = game.HumanPlayer.Gold;
 
-        game.CashInTreasureTrain(train);
+        Assert.Equal(expectedNet, game.CashInValue(train));
+        Assert.Equal(1000 - expectedNet, game.TreasureKingsCut(train)); // cut + net == amount
 
-        Assert.Equal(goldBefore + 300, game.HumanPlayer.Gold);
+        game.CashInTreasureTrain(train);
+        Assert.Equal(goldBefore + expectedNet, game.HumanPlayer.Gold);
     }
 
     [Fact]
-    public void CashIn_WithHernanCortes_PaysNoKingsCut()
+    public void CashIn_AtAColony_WithHernanCortes_WaivesTheKingsCut()
     {
+        // Cortés's treasureTransportFee −100% folds into the at-colony cut → free transport, full amount even at high tax.
         (Game game, Unit train, _) = TrainAtColony(1000);
-        game.HumanPlayer.CongressList.Add(Cortes); // treasureTransportFee −100% → free transport
+        game.HumanPlayer.TaxRate = 25;
+        game.HumanPlayer.CongressList.Add(Cortes); // treasureTransportFee −100% → King's cut waived
         int goldBefore = game.HumanPlayer.Gold;
 
+        Assert.Equal(0, game.TreasureKingsCut(train));     // cut waived despite 25% tax
+        Assert.Equal(1000, game.CashInValue(train));       // full amount
         game.CashInTreasureTrain(train);
 
-        Assert.Equal(goldBefore + 1000, game.HumanPlayer.Gold); // full amount (no fee, no tax)
+        Assert.Equal(goldBefore + 1000, game.HumanPlayer.Gold); // full amount (no cut, no tax)
     }
 
     [Fact]
-    public void CashIn_InEurope_PaysNoKingsCut()
+    public void CashIn_InEurope_KeepsTheFullAmount_FeeFreeAndTaxFree()
     {
+        // Col1 model (86d3fb5mj): treasure you carry home yourself is BOTH fee-free and tax-free — even at a high tax
+        // rate the full amount is banked (the tax only applies when the King ships it from a colony).
         (Game game, Unit train, _) = TrainAtColony(1000);
-        train.Location = UnitLocation.InEurope; // carried home yourself → the King takes no fee
+        game.HumanPlayer.TaxRate = 75;          // a high tax that would gut an at-colony cash-in
+        train.Location = UnitLocation.InEurope; // carried home yourself → no King's cut and no tax
         int goldBefore = game.HumanPlayer.Gold;
 
+        Assert.True(game.TreasureCashInIsFeeFree(train));
+        Assert.Equal(0, game.TreasureKingsCut(train));
+        Assert.Equal(1000, game.CashInValue(train)); // full amount, untaxed
         game.CashInTreasureTrain(train);
 
         Assert.Equal(goldBefore + 1000, game.HumanPlayer.Gold);
@@ -216,9 +237,10 @@ public class TreasureTrainTests
     public void CheckCashIn_PreviewsTheNetGold()
     {
         (Game game, Unit train, _) = TrainAtColony(1000);
+        game.HumanPlayer.TaxRate = 25;
         MoveCheck check = game.CheckCashInTreasureTrain(train);
         Assert.True(check.Allowed);
-        Assert.Equal(400, check.Cost); // the net the player would bank (preview)
+        Assert.Equal(750, check.Cost); // the net the player would bank (1000 × (100−25)/100), preview
     }
 
     // ---- Load onto a galleon + sail home fee-free (86d3e4bcp, GAP A) ----

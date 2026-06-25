@@ -831,9 +831,11 @@ public partial class GameController : Node2D
     /// Cashes in the selected treasure train (86d3f62q1): the discoverable UI surface for the existing
     /// <see cref="Game.CashInTreasureTrain"/> command. Gated on <see cref="Game.CheckCashInTreasureTrain"/> (ADR-006);
     /// a guard failure (not at an owned colony / not aboard a galleon docked in Europe) is shown in the status bar,
-    /// never thrown. On success it raises a confirmation that surfaces the net <see cref="Game.CashInValue(Unit)"/> —
-    /// noting whether the King's transport cut applies (at a colony) or it is fee-free (carried home to Europe) — then
-    /// banks the gold and consumes the train (which clears the selection, since the train leaves the game).
+    /// never thrown. On success it raises a confirmation that surfaces the net <see cref="Game.CashInValue(Unit)"/>: at a
+    /// colony it is framed as the King's OFFER to ship the treasure home for a cut equal to the tax rate
+    /// (<see cref="Game.TreasureKingsCut(Unit)"/>), reminding the player that carrying it home themselves keeps it all;
+    /// in Europe (carried home yourself) it confirms the full fee-free amount. It then banks the gold and consumes the
+    /// train (which clears the selection, since the train leaves the game).
     /// </summary>
     private void CashInSelectedTreasureTrain()
     {
@@ -849,18 +851,23 @@ public partial class GameController : Node2D
             return;
         }
 
-        // The net the player would bank, and where the cut comes from (fee-free in Europe vs the King's transport cut
-        // at a colony). The value is the oracle's preview (CheckCashInTreasureTrain.Cost == CashInValue) — surfaced so
-        // the player sees the King's cut before committing.
+        // The net the player would bank (CheckCashInTreasureTrain.Cost == CashInValue), framed by where it is cashed in.
+        // In Europe you carried it home yourself → keep the full amount, no fee, no tax. At a colony the King OFFERS to
+        // ship it across for a cut equal to your current tax rate — surface that offer (rate, gold cut, net, and the
+        // full amount you'd keep by sailing it home) so the player weighs it before committing.
+        int amount = train.TreasureAmount;
         int value = _game.CashInValue(train);
         bool feeFree = _game.TreasureCashInIsFeeFree(train);
-        string where = feeFree
-            ? "Carried home yourself — the King takes no transport fee."
-            : "The King ships it across for his transport cut.";
+        string prompt = feeFree
+            ? $"Cash in the {train.Type.ShortName} carrying {amount} gold?\n"
+              + $"Carried home yourself — the King takes no cut and no tax. You keep all {value} gold."
+            : $"The King will carry your {train.Type.ShortName}'s {amount} gold to Europe and take "
+              + $"{_game.TaxRate}% ({_game.TreasureKingsCut(train)}g); you keep {value}g.\n"
+              + $"(Carry it home on a galleon yourself to keep all {amount}g.)";
         var dialog = new ConfirmationDialog
         {
             Title = "Cash in treasure",
-            DialogText = $"Cash in the {train.Type.ShortName} carrying {train.TreasureAmount} gold?\n{where}\nYou will bank {value} gold.",
+            DialogText = prompt,
             OkButtonText = $"Cash in ({value}g)",
             CancelButtonText = "Keep",
         };

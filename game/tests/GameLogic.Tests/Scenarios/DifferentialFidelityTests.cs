@@ -454,30 +454,31 @@ public class DifferentialFidelityTests
         Verify(inv);
     }
 
-    // ───────────────────────────── Invariant 10: treasure transport fee ─────────────────────────────
+    // ─────────────────── Documented divergence: treasure transport fee → Col1 model (86d3fb5mj) ───────────────────
+    // This is a DELIBERATE Col1-ward divergence from FreeCol (Chris's decision), parallel to the tax-cadence fix.
+    // FreeCol charges a flat TREASURE_TRANSPORT_FEE (classic-medium 60%) for the King's transport, then tax. The
+    // original Colonization (1994) instead made the King's at-colony cut equal to the CURRENT TAX RATE (and treasure
+    // you carry home yourself fee-free AND tax-free). We follow Col1. So there is NO FreeCol-parity invariant to pin
+    // here — the test below pins our Col1 net formula and explicitly records the divergence so the absence of a
+    // 60%-fee fidelity check is intentional, not an oversight.
 
-    [Fact]
-    public void Fidelity_TreasureTransportFee_MatchesFreeColPercentOfAmount()
+    [Theory]
+    [InlineData(0, 1000)]   // 0% tax → King's cut 0 → full amount
+    [InlineData(25, 750)]   // 25% tax → 25% cut → net 750
+    [InlineData(60, 400)]   // 60% tax → 60% cut → net 400 (coincidentally FreeCol's flat-fee figure, but here it tracks tax)
+    public void Divergence_TreasureKingsCut_IsTaxRateNotFreeColsFlatFee(int taxRate, int expectedNet)
     {
-        // FreeCol Unit.getTransportFee: TREASURE_TRANSPORT_FEE% · treasure amount (classic-medium 60%). Cashing a
-        // 1000-gold train in at a colony, with tax zeroed to isolate the King's cut, banks amount − fee = 400.
-        // We read the engine's CashInValue (which subtracts the fee then applies tax) at 0 tax, so the gap from
-        // the raw amount IS the transport fee.
-        var inv = new FidelityInvariant<int>(
-            Name: "treasure cash-in value at 0 tax = amount − 60% transport fee (1000 → 400)",
-            // Unit.java:3797 getTransportFee: TREASURE_TRANSPORT_FEE * amount / 100; classic-medium treasureTransportFee=60.
-            FreeColRef: "freecol Unit.java:3797 (getTransportFee) + classic-medium treasureTransportFee=60",
-            Observe: () =>
-            {
-                Game game = Game.New(Classic, seed: 0xC0FFEEUL);
-                Colony colony = game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
-                game.HumanPlayer.TaxRate = 0; // isolate the King's transport cut from the monarch tax
-                Unit train = game.SpawnUnit(Classic.Unit("model.unit.treasureTrain"), colony.Position);
-                train.SetTreasureAmount(1000);
-                return game.CashInValue(train); // 1000 − 60% fee, no tax
-            },
-            Expected: 400);
-        Verify(inv);
+        // Col1 model (86d3fb5mj): at-colony net = amount × (100 − taxRate)/100; the King's cut = taxRate%. We assert OUR
+        // value, NOT FreeCol's 60%-then-tax (which at 0 tax would bank 400, not the full 1000). Documented in
+        // docs/systems/treasure-train.md + monarchy.md as a deliberate Col1 divergence.
+        Game game = Game.New(Classic, seed: 0xC0FFEEUL);
+        Colony colony = game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        game.HumanPlayer.TaxRate = taxRate;
+        Unit train = game.SpawnUnit(Classic.Unit("model.unit.treasureTrain"), colony.Position);
+        train.SetTreasureAmount(1000);
+
+        Assert.Equal(expectedNet, game.CashInValue(train));      // Col1 net = amount × (100 − tax)/100
+        Assert.Equal(1000 - expectedNet, game.TreasureKingsCut(train)); // King's cut = tax% of the amount
     }
 
     // ───────────────────────────── Invariant 11: monarch tax ceiling ─────────────────────────────
