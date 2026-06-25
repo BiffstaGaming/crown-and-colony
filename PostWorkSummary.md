@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-25 — Europe drag-drop (Phase 2) + in-game screen legibility + scout how-to ✅
+
+**Requested (Chris):** (1) finish the Europe redesign with drag-and-drop; (2) "that's not readable" (colony screen — contrast + text size/boldness); (3) how to put an indentured servant on a horse → scout.
+**Did:**
+- **Phase 2 drag-drop** (`839d85b`, task `86d3fc4cw`): the project's first Godot 4.6 drag-and-drop (`EuropeDragSource`/`EuropeDropTarget`) over the zoned Europe screen — drag dock colonist→ship (Board), ship→sail-zone (Sail), market good→ship (Buy), hold cargo→market (Sell), passenger→docks (Disembark); + a ship picker for the market. Click buttons kept as fallback. +8 L3. Adversarial review fleet (6 dims × 3-skeptic, 30 agents) → **only 1 benign test-only nit** (drag-preview orphan node, tracked `86d3fd0gp`); inline Sail/Disembark guards confirmed state-only/ADR-006-clean.
+- **In-game legibility** (`522e804`, task `86d3fd0g6`): split `ColonyTheme.Get()` (menus/dialogs — unchanged, goldens stay valid) from new `GetInGame()` (ColonyPanel + EuropePanel): body 15→17px + `FontVariation` embolden 0.4 (Cardo ships Regular-only), headers 17→20 / 28→30. **Self-verified by rendering the colony PNG** (no clipping). Caught + re-scoped after a first global attempt legitimately broke 5 menu goldens.
+- **Scout how-to** (no code — already built): explained **Arm Scout** in the colony screen (needs 50 horses in the colony + the colonist standing on the colony tile, not working inside).
+**Status:** Shipped. Commits `839d85b` + `522e804`. **CI runs 28155926736 (+ 28154012416) = GREEN both jobs.** Local: full L3 204/204, L1/L2 2223, soak 5/5. No save bump.
+**Decisions:** Drag-drop L3 drives the callbacks directly (Godot headless can't synth a real mouse-drag). Legibility scoped to in-game screens only (menus keep their pixel goldens).
+**Scheduled next:** await Chris's playtest of the Europe drag-drop + the colony/Europe legibility (can dial size/weight/contrast further, or extend the in-game theme to the dialogs).
+**Follow-ups:** drag-preview orphan-node cleanup (`86d3fd0gp`); colony drag-drop (`86d3f6757`); P2 first-contact notice (`86d3f62qw`); golden-pipeline fix (`86d3f69e9`); perf-gate flake hardening.
+**Needs you:** Playtest the Europe drag-and-drop + confirm the colony/Europe text reads well now (task `86d3fd0g6` is In Review).
+
+---
+
 ## 2026-06-25 — Europe screen: zoned harbour rebuild (Phase 1) + adversarial-review fixes ✅
 
 **Requested (Chris):** "split the Europe screen more like the original Colonization." Chose full zoned layout + drag-drop; built in two phases (this = Phase 1, click-based; Phase 2 drag-drop queued `86d3fc4cw`).
