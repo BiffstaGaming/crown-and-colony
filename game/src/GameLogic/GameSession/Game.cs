@@ -6201,6 +6201,14 @@ public sealed partial class Game
     private static int EuropeUnitPrice(Player player, UnitType type) =>
         player.UnitPriceOverrides.GetValueOrDefault(type.Id, type.Price);
 
+    /// <summary>
+    /// The human's current Europe price for a unit type id — what the player would pay to train (specialist) or buy
+    /// (ship/artillery) it right now. This is the escalated override for an escalating type (artillery, after a prior
+    /// purchase) or the ruleset base price otherwise. A price oracle for the Europe screen so it can label each
+    /// trainable/purchasable type without itself knowing the escalation rule (ADR-006).
+    /// </summary>
+    public int EuropeUnitPrice(string unitTypeId) => EuropeUnitPrice(_human, Ruleset.Unit(unitTypeId));
+
     /// <summary>The unit types <b>trained</b> in this player's Europe (priced specialists, skill &gt; 0), in ruleset order (FreeCol <c>getUnitTypesTrainedInEurope</c>).</summary>
     public IReadOnlyList<UnitType> UnitTypesTrainedInEurope() => [.. Ruleset.UnitTypes.Where(t => t.IsTrainedInEurope)];
 
@@ -6258,6 +6266,19 @@ public sealed partial class Game
         return unit;
     }
 
+    /// <summary>Whether the human can train the specialist <paramref name="unitTypeId"/> in Europe right now (flat price, gated on <see cref="UnitType.IsTrainedInEurope"/>).</summary>
+    public MoveCheck CheckTrain(string unitTypeId) => CheckTrain(_human, unitTypeId);
+
+    /// <summary>
+    /// Trains a specialist (a priced, skill &gt; 0 unit — expert farmer, master carpenter…) in the human's Europe for a
+    /// <b>flat</b> price; it docks there as a person, ready to board a ship. Unlike <see cref="BuyUnit(string)"/>'s
+    /// artillery there is no per-purchase price escalation. The Europe screen routes specialists here and ships/artillery
+    /// to <see cref="BuyUnit(string)"/> (86d3f6…), so the on-screen action matches the engine's train/purchase split.
+    /// </summary>
+    /// <returns>The trained specialist, docked in Europe.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckTrain(string)"/>.</exception>
+    public Unit TrainUnit(string unitTypeId) => TrainUnit(_human, unitTypeId);
+
     /// <summary>Whether <paramref name="player"/> can train the specialist <paramref name="unitTypeId"/> in Europe right now.</summary>
     internal MoveCheck CheckTrain(Player player, string unitTypeId)
     {
@@ -6282,7 +6303,7 @@ public sealed partial class Game
     /// <paramref name="player"/> (a foreign power its own id), never the human.
     /// </summary>
     /// <returns>The trained specialist, docked in Europe.</returns>
-    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckTrain"/>.</exception>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckTrain(Player, string)"/>.</exception>
     internal Unit TrainUnit(Player player, string unitTypeId)
     {
         MoveCheck check = CheckTrain(player, unitTypeId);
@@ -7776,7 +7797,7 @@ public sealed partial class Game
     /// <item><b>Buy artillery</b> — else, buy artillery (defence) when affordable.</item>
     /// </list>
     /// Every choice is by gold/ordinal id — <b>no RNG draw</b>, so human stream 0 is byte-identical (ADR-009); all spend
-    /// is the power's own gold via the owner-scoped <see cref="TrainUnit"/>/<see cref="BuyUnit(Player, string)"/> seams.
+    /// is the power's own gold via the owner-scoped <see cref="TrainUnit(Player, string)"/>/<see cref="BuyUnit(Player, string)"/> seams.
     /// </summary>
     private void RunForeignPowerEuropeSpend(Player power)
     {

@@ -1,5 +1,7 @@
 # Visual tests: in-game panel goldens (colony, Europe)
 
+> **Status (2026-06-25): both panel goldens are currently render-without-crash *smokes*, not PNG diffs.** Both screens were reworked after the goldens were captured (the colony screen's production overview + worker portraits; the Europe screen's flat-list → **zoned harbour** rebuild, `86d3f6…`), so the committed PNGs are stale — *and* the CI golden-capture pipeline is broken (`86d3f69e9`), so the screens weren't re-rendered for re-adoption. `UiPanelGoldenTests` therefore asserts only that each panel renders (viewport width > 0); the panels' behaviour is covered by the L3 `ColonyPanelTests`/`EuropePanelTests`. The PNG diffs below return once the Linux-CI pipeline is restored and the goldens regenerated. The rest of this doc describes the intended golden assertions.
+
 | | |
 |---|---|
 | **Golden files** | `colony-panel-seed424242.png`, `europe-panel.png` (in `game/tests/visual/goldens/`) |

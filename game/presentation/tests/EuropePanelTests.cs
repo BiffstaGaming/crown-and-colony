@@ -26,6 +26,8 @@ public class EuropePanelTests
     private const string Colonist = "model.unit.freeColonist";
     private const string TreasureTrain = "model.unit.treasureTrain";
     private const string Sugar = "model.goods.sugar";
+    private const string ExpertFarmer = "model.unit.expertFarmer";
+    private const string Artillery = "model.unit.artillery";
 
     [TestCase(Timeout = 60000)]
     public async Task RecruitButton_BuysAColonistIntoEurope()
@@ -128,9 +130,9 @@ public class EuropePanelTests
     }
 
     [TestCase(Timeout = 60000)]
-    public async Task BuyDropdown_BuysGoodsIntoTheHold()
+    public async Task MarketBuyButton_BuysGoodsIntoTheHold()
     {
-        // A caravel in Europe and a treasury.
+        // A caravel in Europe and a treasury — the goods-market zone trades through the in-port ship.
         (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
         {
             Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
@@ -141,10 +143,9 @@ public class EuropePanelTests
         Unit ship = game.Units[0];
         int goldBefore = game.Gold;
 
-        var buy = controller.GetNode<PanelContainer>("UI/EuropePanel")
-            .FindChild("Buy_1", recursive: true, owned: false) as OptionButton;
+        Button buy = FindButton(controller, "BuyGood_sugar")!; // first tradeable good's market Buy button (×100)
         AssertThat(buy).IsNotNull();
-        buy!.EmitSignal(OptionButton.SignalName.ItemSelected, 1L); // the first tradeable good, ×100
+        buy.EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(game.Gold < goldBefore).IsTrue();          // gold was spent
@@ -152,25 +153,53 @@ public class EuropePanelTests
     }
 
     [TestCase(Timeout = 60000)]
-    public async Task BuyUnitDropdown_PurchasesAUnitIntoEurope()
+    public async Task TrainButton_RoutesToTrainUnit_AtTheFlatSpecialistPrice()
     {
+        // The train/purchase split (86d3f6…): a specialist routes to TrainUnit (flat price), NOT BuyUnit. An expert
+        // farmer's classic price is 1100; training it must debit exactly that with no escalation.
         (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
         {
             Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
             MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
             Units = [], Explored = [], Gold = 5000,
         });
+        int price = game.EuropeUnitPrice(ExpertFarmer);
         int goldBefore = game.Gold;
         int inEuropeBefore = game.UnitsInEurope.Count();
 
-        var buy = controller.GetNode<PanelContainer>("UI/EuropePanel")
-            .FindChild("BuyUnit", recursive: true, owned: false) as OptionButton;
-        AssertThat(buy).IsNotNull();
-        buy!.EmitSignal(OptionButton.SignalName.ItemSelected, 1L); // the first purchasable unit type
+        Button train = FindButton(controller, "Train_expertFarmer")!;
+        AssertThat(train).IsNotNull();
+        train.EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
-        AssertThat(game.Gold < goldBefore).IsTrue();
+        AssertThat(game.UnitsInEurope.Count()).IsEqual(inEuropeBefore + 1);        // a specialist docked
+        AssertThat(game.Gold).IsEqual(goldBefore - price);                        // flat specialist price debited
+        AssertThat(game.EuropeUnitPrice(ExpertFarmer)).IsEqual(price);            // specialists never escalate
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task PurchaseButton_RoutesToBuyUnit_AndArtilleryEscalates()
+    {
+        // Artillery routes to BuyUnit (the escalating path): buying it once docks a unit and ratchets the player's
+        // artillery price +100 for the next purchase.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units = [], Explored = [], Gold = 5000,
+        });
+        int price = game.EuropeUnitPrice(Artillery);
+        int goldBefore = game.Gold;
+        int inEuropeBefore = game.UnitsInEurope.Count();
+
+        Button buy = FindButton(controller, "Purchase_artillery")!;
+        AssertThat(buy).IsNotNull();
+        buy.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
         AssertThat(game.UnitsInEurope.Count()).IsEqual(inEuropeBefore + 1);
+        AssertThat(game.Gold).IsEqual(goldBefore - price);
+        AssertThat(game.EuropeUnitPrice(Artillery)).IsEqual(price + 100); // escalates +100 for the next buy
     }
 
     [TestCase(Timeout = 60000)]

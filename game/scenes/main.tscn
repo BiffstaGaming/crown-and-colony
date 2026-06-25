@@ -202,15 +202,13 @@ grow_vertical = 2
 
 [node name="EuropePanel" type="PanelContainer" parent="UI"]
 visible = false
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -260.0
-offset_top = -210.0
-offset_right = 260.0
-offset_bottom = 210.0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -16.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("6")
@@ -225,9 +223,16 @@ horizontal_alignment = 1
 
 [node name="EuropeInfo" type="Label" parent="UI/EuropePanel/VBox"]
 layout_mode = 2
+horizontal_alignment = 1
 
-[node name="Dynamic" type="VBoxContainer" parent="UI/EuropePanel/VBox"]
+[node name="Scroll" type="ScrollContainer" parent="UI/EuropePanel/VBox"]
 layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 3
+
+[node name="Dynamic" type="VBoxContainer" parent="UI/EuropePanel/VBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="CloseButton" type="Button" parent="UI/EuropePanel/VBox"]

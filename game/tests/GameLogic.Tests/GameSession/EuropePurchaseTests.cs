@@ -2,6 +2,7 @@ using System.Linq;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.Units;
 using Xunit;
 
 namespace CrownAndColony.GameLogic.Tests.GameSession;
@@ -92,6 +93,57 @@ public class EuropePurchaseTests
             Assert.DoesNotContain(Artillery, other.UnitPriceOverrides.Keys); // untouched
         }
         Assert.Equal(600, game.HumanPlayer.UnitPriceOverrides[Artillery]);
+    }
+
+    // ---- The public Train path (the UI's flat-price route — 86d3f6…) ----
+
+    [Fact]
+    public void TrainUnit_DebitsTheFlatSpecialistPrice_AndDocksAPerson_NoEscalation()
+    {
+        // The Europe screen routes specialists through the public TrainUnit(string) overload. Training an expert farmer
+        // debits its flat price and docks it in Europe; a second train debits the same price again (specialists, unlike
+        // artillery, never escalate).
+        Game game = Game.New(Classic, Seed);
+        game.HumanPlayer.Gold = 10_000;
+        int price = game.EuropeUnitPrice(ExpertFarmer);
+        int goldBefore = game.Gold;
+
+        Assert.True(game.CheckTrain(ExpertFarmer).Allowed);
+        Unit trained = game.TrainUnit(ExpertFarmer);
+
+        Assert.Equal(ExpertFarmer, trained.Type.Id);
+        Assert.Equal(UnitLocation.InEurope, trained.Location);
+        Assert.Contains(trained, game.UnitsInEurope);
+        Assert.Equal(goldBefore - price, game.Gold);
+        Assert.Equal(price, game.EuropeUnitPrice(ExpertFarmer)); // flat — no ratchet
+        Assert.DoesNotContain(ExpertFarmer, game.HumanPlayer.UnitPriceOverrides.Keys);
+
+        game.TrainUnit(ExpertFarmer); // train a second
+        Assert.Equal(goldBefore - price * 2, game.Gold); // same flat price again
+    }
+
+    [Fact]
+    public void CheckTrain_RefusesAShipOrArtillery_AndTooLittleGold()
+    {
+        Game game = Game.New(Classic, Seed);
+        game.HumanPlayer.Gold = 10;
+
+        Assert.False(game.CheckTrain(Artillery).Allowed);    // artillery is purchased, not trained
+        Assert.False(game.CheckTrain(Galleon).Allowed);      // a ship is purchased, not trained
+        Assert.False(game.CheckTrain(ExpertFarmer).Allowed); // can't afford it
+        Assert.Throws<InvalidMoveException>(() => game.TrainUnit(ExpertFarmer));
+    }
+
+    [Fact]
+    public void EuropeUnitPrice_StringOverload_ReportsBasePrice_AndArtilleryEscalation()
+    {
+        Game game = Game.New(Classic, Seed);
+        game.HumanPlayer.Gold = 10_000;
+
+        Assert.Equal(Classic.Unit(ExpertFarmer).Price, game.EuropeUnitPrice(ExpertFarmer)); // base for a specialist
+        Assert.Equal(Classic.Unit(Artillery).Price, game.EuropeUnitPrice(Artillery));       // base before any buy
+        game.BuyUnit(Artillery);
+        Assert.Equal(Classic.Unit(Artillery).Price + 100, game.EuropeUnitPrice(Artillery)); // reflects the escalation
     }
 
     // ---- Persistence (v29) ----
