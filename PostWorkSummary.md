@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-26 — Colony tile-yield shows the expert's real number + Missionary establish-mission UI ✅
+
+**Requested (Chris playtest):** (1) Expert Lumberjack tile shows "4" but production shows "8" — diamond wrong; (2) "Jesuit Missionary should be able to join native tribes" (→ establish a mission).
+**Did (2 parallel streams, integrated + CI-green):**
+- **Tile-diamond yield fix** (`e739b89`, task `86d3fjupj`): `ColonyPanel.cs:416` drew the badge from the base/free-colonist `TileYield` (missing the expert 2×); now uses a new `Game.TileWorkerNetYield(colony, tile, good)` oracle (worker-type-aware + SoL bonus, floored) — byte-identical to what `ColonyProductionSummary`/`RunColonyTurn` bank, so the **diamond == the production overview** (expert lumberjack → 8). +1 L3 asserting diamond == overview.
+- **Missionary establish/denounce UI** (`9f3db7d`, task `86d3f62qr`): the engine was complete but `NativeSettlementPanel` had no mission action. Added **Establish mission** (and **Denounce** a rival's, when present) for a missionary at a settlement, via 2 thin `GameController` commands over the existing public `Game.EstablishMission`/`DenounceMission` (RNG through the engine stream, ADR-009). +3 L3 (establish founds the mission + consumes the missionary; non-missionary shows nothing; denounce ousts a rival). **Clarified for Chris:** missionaries don't *join* the tribe — they plant a mission that warms relations + sends Indian Converts to your colonies.
+**Status:** Shipped. Commits `e739b89` + `9f3db7d`. **CI run 28201881988 = GREEN both jobs.** Local: full L3 219/219, L1/L2 2233, soak 5. No save bump (both presentation + one read oracle).
+**Decisions:** One honest mission button (Establish, or Denounce when a rival mission stands there — the engine routes establish→denounce itself). Tile badge uses the production-engine yield so the two can't drift.
+**Scheduled next:** await Chris's next playtest. Backlog: drag-preview orphan-node cleanup (`86d3fd0gp`), golden-pipeline fix (`86d3f69e9`), first-contact notice (`86d3f62qw`), train-a-specialist UI (`86d3f62qn`).
+**Needs you:** Playtest — the colony tile numbers now match production; a Jesuit beside a native settlement can Establish mission.
+
 ## 2026-06-26 — Readability (system-wide) + names + click-colony-to-move + save backward-compat (3-stream batch) ✅
 
 **Requested (Chris playtest):** (1) black text on dark-brown is unreadable "for the entire system" + show specialist names in the boxes + goods names in the market; (2) clicking a colony auto-opens/"goes into it" — want a better way to get a unit (esp. treasure) onto it; (3) "not lose my save game on every code change — possible?"
