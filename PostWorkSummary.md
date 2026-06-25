@@ -19,6 +19,16 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-25 — Treasure cash-in loop made whole: Europe UI fix + Col1 fee model ✅
+
+**Requested (Chris, playtesting):** (1) transporting a treasure train to Europe + unloading to the dock gives ZERO money; (2) Col1's at-colony flow — the King offers to ship it for a fee = your tax %.
+**Did (2 fixes, each L3-verified locally + CI-green):**
+- **Europe cash-in UI** (`88d3d61`, task `86d3fb5k8`): root cause was reachability — the engine cash-in was correct (value preserved), but `EuropePanel` had **no treasure section**, so a docked train rendered nowhere and couldn't be cashed in. Added cash-in entries (on the Europe dock AND aboard a galleon docked there) over the existing command. L3 11/11. No engine/save change.
+- **Col1 fee model** (`2b23e0d`, task `86d3fb5mj`, **Chris's decision**): replaced FreeCol's flat 60% transport cut with **Col1's**: carry it home yourself on a galleon → **keep the full amount, tax-free**; let the King ship it from a colony → his cut = **your current tax rate** (`amount × (100−tax)/100`); Hernán Cortés waives the King's cut. Framed as the King's offer in the confirmation. L2 theory test (tax 0/25/50/75 → 1000/750/500/250); converted the flat-60% fidelity invariant into a documented Col1-divergence test (like the tax-cadence fix). New `Game.TreasureKingsCut` oracle.
+**Status:** Pushed `88d3d61` + `2b23e0d`. **CI runs 28150563413 + 28151142935 = GREEN both jobs.** Local: full L3 194/194, 2212 L1/L2, 5 soak. No save bump (fee computed). The full treasure loop is now playable end-to-end (drive to colony → King ships for tax%, or galleon it home → keep it all; cash-in reachable from map + Europe screen).
+**Decisions:** Col1 fee per Chris (deliberate divergence from FreeCol 60%, documented). `DifficultyOptions.TreasureTransportFee` (60) now parsed-but-unused for the cut.
+**Needs you:** Keep playtesting. Queued: colony drag-drop, P1/P2 UI gaps, L3-coverage pass, golden-pipeline fix.
+
 ## 2026-06-25 — Fix: Europe ships spawning far from colonies ✅
 
 **Requested (Chris, playtesting):** new ships from Europe appear WAY too far from existing colonies.
