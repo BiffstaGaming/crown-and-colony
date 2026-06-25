@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-26 — Bug: a founder/joiner's equipment now stocks the colony warehouse (not destroyed) ✅
+
+**Requested (Chris playtest):** "If I create a colony with a soldier, the muskets/guns do not go into the warehouse?"
+**Did:** Confirmed the bug — `Game.FoundColony`/`JoinColony` kept the colonist's *type* but ignored its *role/equipment*, so a soldier's 50 muskets (dragoon's muskets+horses, scout's horses, pioneer's tools) were silently destroyed. FreeCol `joinColony` → `colony.equipForRole(unit, defaultRole, 0)` banks the gear. Fix: new `Game.ReturnRoleEquipmentToColony(unit, colony)` (reuses the `RoleGoodsDelta` the *Disarm* button uses), called in both — the founder/joiner settles as a plain worker and its gear stocks the warehouse. **Shook out** that the human's starting roster is a pioneer + a soldier (both equipped), so founding the first colony now correctly banks tools/muskets — which broke 9 native/production tests that assumed the old goods-loss; updated them to found a *clean* (unequipped) colony.
+**Status:** Shipped. Commit `b923c0f` (main `67a2dfc`). **CI run 28198423258 = GREEN both jobs.** Local: full L3 213/213, L1/L2 2227, soak 5/5. **No save bump** (role + colony goods already persist).
+**Changed:** `Game.cs` (`ReturnRoleEquipmentToColony` + the two call sites), `ColonyFoundingEquipmentTests.cs` (NEW, +4 L2: soldier→muskets, dragoon→muskets+horses, free→none, join→muskets), `NativeDemandTests`/`NativePillageTests`/`ProductionChainTests` (found a clean colony), `colonies.md` (both layers + changelog).
+**Decisions:** FreeCol-faithful (equipForRole→default banks the gear). Tests found an unequipped colony rather than asserting the new goods, preserving their native/production baseline.
+**Scheduled next:** integrate the **Europe polish** stream (readable boxes, no black slots, single-click sail, in-transit lanes, harbour backdrop — task `86d3fjc3n`, agent in flight) when it lands.
+**Follow-ups:** Europe legibility confirm (`86d3fd0g6`); drag-preview orphan-node cleanup (`86d3fd0gp`); golden-pipeline fix (`86d3f69e9`).
+**Needs you:** Nothing on this — keep playtesting. Europe polish lands next.
+
 ## 2026-06-25 — Europe screen matches the mockup (spatial harbour) + colony drag-drop + dead-click blocker fix ✅
 
 **Requested (Chris):** (1) the Europe screen doesn't match the mockup — make it the spatial harbour; (2) add drag-and-drop inside the colony screen too; (use FreeCol/online assets as needed — turned out all assets already exist, GPL-v2).
