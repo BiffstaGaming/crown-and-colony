@@ -19,6 +19,16 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-26 — Feature-parity matrix: Col1 vs FreeCol vs Crown & Colony (1015 features) ✅
+
+**Requested (Chris):** investigate Col1 + FreeCol documentation, compare to what WE have, give a Yes/No/Partial table per game per function (and put it in the Wiki). "DO NOT miss anything."
+**Did:** Ran a 22-domain research **workflow** (22 parallel researchers + a completeness critic; FreeCol verified against the GPL `freecol/` clone, our column against the codebase + docs; functionality in our own words — no copyrighted text). First run hit a transient server rate-limit (all 23 agents at once → empty); re-ran throttled (5 domains/batch) → **1015 features** enumerated. Result: **Crown & Colony = 828 Yes / 109 Partial / 78 No.**
+**Status:** Delivered. **Full matrix committed to the repo** at `docs/reference/feature-parity.md` (commit `a03b02c`, 1136 lines, all 1015 rows + notes). **Wiki (ClickUp Game Design Reference doc `2kz0t3mf-756`):** two pages — "Feature Parity — Status & Not-Implemented" (`2kz0t3mf-3876`) + "Feature Parity — Partial Features" (`2kz0t3mf-3896`).
+**Findings:** Strong coverage of the core loop (map/terrain, units, colonies, buildings, goods, SoL, Europe market, natives, founding fathers). Biggest **No** clusters: rival-AI economy (foreign powers don't run a real colonial economy), several **reports/UI** (foreign-affairs, REF intelligence, cargo/labour-detail, rename/abandon colony, dump goods), **game-setup tunables** (custom difficulty, map-gen dials, configurable AI count/nations), **audio** (no shipped tracks), and a few independence niceties (Tory expulsion, retire, continue-after-win). Many **Partials are quick wins** — engine done, UI missing (clear-speciality, rename/abandon colony, pay-off-boycott, assign-a-teacher, select-recruit screen, trade-route panel warnings, de Witt's foreign trade).
+**Decisions:** Full table → repo (version-controlled, complete); Wiki → status + all 78 No + all 109 Partial (split across 2 pages); Yes rows live in the repo full matrix. Built via Workflow (Ultracode).
+**Scheduled next:** await Chris's steer — the parity gaps are now a ready backlog source (esp. the engine-done/UI-missing Partials).
+**Needs you:** Review the matrix; tell me which gaps to prioritise into tasks.
+
 ## 2026-06-26 — Colony tile-yield shows the expert's real number + Missionary establish-mission UI ✅
 
 **Requested (Chris playtest):** (1) Expert Lumberjack tile shows "4" but production shows "8" — diamond wrong; (2) "Jesuit Missionary should be able to join native tribes" (→ establish a mission).
