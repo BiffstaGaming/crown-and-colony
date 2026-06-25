@@ -1,0 +1,64 @@
+{
+  "Version": 40,
+  "Variant": "classic",
+  "Turn": 8,
+  "RandomStateValue": 1234567890123456789,
+  "RandomIncrement": 1442695040888963407,
+  "MapWidth": 6,
+  "MapHeight": 4,
+  "Terrain": [
+    "model.tile.ocean", "model.tile.ocean", "model.tile.ocean", "model.tile.ocean", "model.tile.ocean", "model.tile.ocean",
+    "model.tile.ocean", "model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.ocean",
+    "model.tile.ocean", "model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.ocean",
+    "model.tile.ocean", "model.tile.ocean", "model.tile.ocean", "model.tile.ocean", "model.tile.ocean", "model.tile.ocean"
+  ],
+  "Units": [
+    {
+      "Id": 1,
+      "TypeId": "model.unit.freeColonist",
+      "X": 2,
+      "Y": 1,
+      "MovementLeft": 1
+    },
+    {
+      "Id": 2,
+      "TypeId": "model.unit.caravel",
+      "X": 0,
+      "Y": 0,
+      "MovementLeft": 4
+    }
+  ],
+  "Colonies": [
+    {
+      "Id": 1,
+      "Name": "Plymouth",
+      "X": 3,
+      "Y": 2,
+      "Population": 2,
+      "Stores": {
+        "model.goods.food": 28,
+        "model.goods.lumber": 6
+      },
+      "Buildings": [
+        "model.building.townHall",
+        "model.building.carpenterHouse"
+      ],
+      "CurrentBuild": "model.building.docks"
+    }
+  ],
+  "Explored": [6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 0, 1],
+  "Gold": 420,
+  "Tax": 5,
+  "Liberty": 15,
+  "Immigration": 18,
+  "ImmigrationRequired": 15,
+  "BaseRecruitPrice": 200,
+  "RecruitLowerCap": 80,
+  "RecruitDock": [
+    "model.unit.freeColonist",
+    "model.unit.expertOreMiner"
+  ],
+  "MarketState": {
+    "model.goods.tobacco": 3
+  }
+}
