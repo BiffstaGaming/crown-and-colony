@@ -57,6 +57,9 @@ public partial class EuropePanel : PanelContainer
 
         var ships = _game.UnitsInEurope.Where(u => u.Type.IsCarrier && !u.IsAboard).ToList();
         var onDock = _game.UnitsInEurope.Where(u => u.Type.IsPerson && !u.IsAboard).ToList();
+        // Treasure trains carried home and put on the dock: neither carriers nor persons, so they fall through both
+        // sections above — they need their own cash-in entry or the "carry it home yourself" play dead-ends.
+        var treasureOnDock = _game.UnitsInEurope.Where(u => u.Type.CarryTreasure && !u.IsAboard).ToList();
 
         // — Recruitment dock —
         dynamic.AddChild(SectionLabel("Recruitment dock"));
@@ -112,6 +115,12 @@ public partial class EuropePanel : PanelContainer
                 var prow = new HBoxContainer();
                 prow.AddChild(Grow(new Label { Text = $"    • {passenger.Type.ShortName} (aboard)" }));
                 Unit p = passenger;
+                // A treasure train carried home aboard a galleon docked in Europe can be banked straight from the hold
+                // (fee-free — the King takes no transport cut). Otherwise a passenger is just put on the dock.
+                if (passenger.Type.CarryTreasure && _game.CheckCashInTreasureTrain(passenger).Allowed)
+                {
+                    prow.AddChild(CashInButton(p));
+                }
                 prow.AddChild(ActionButton($"Unload_{passenger.Id}", "Put on dock", () =>
                 {
                     _game.DisembarkToDock(p);
@@ -184,6 +193,22 @@ public partial class EuropePanel : PanelContainer
             dynamic.AddChild(row);
         }
 
+        // — Treasure trains on the dock (carried home — cash in fee-free) —
+        if (treasureOnDock.Count > 0)
+        {
+            dynamic.AddChild(SectionLabel("Treasure"));
+            foreach (Unit train in treasureOnDock)
+            {
+                var row = new HBoxContainer();
+                row.AddChild(Grow(new Label { Text = $"{train.Type.ShortName} — {train.TreasureAmount} gold" }));
+                if (_game.CheckCashInTreasureTrain(train).Allowed)
+                {
+                    row.AddChild(CashInButton(train));
+                }
+                dynamic.AddChild(row);
+            }
+        }
+
         // — Buy / train units in Europe —
         dynamic.AddChild(SectionLabel("Buy / train"));
         var buyUnit = new OptionButton { Name = "BuyUnit" };
@@ -203,6 +228,23 @@ public partial class EuropePanel : PanelContainer
         };
         dynamic.AddChild(buyUnit);
     }
+
+    /// <summary>
+    /// A "Cash in treasure (Ng)" button for a treasure <paramref name="train"/> in Europe (docked itself, or aboard a
+    /// galleon docked there) — N is the fee-free net (<see cref="Game.CashInValue(Unit)"/>). Pressing it forwards to the
+    /// existing cash-in command (<see cref="Game.CashInTreasureTrain"/>), which banks the gold and consumes the train,
+    /// then refreshes the panel. Gated on <see cref="Game.CheckCashInTreasureTrain"/> at build time (ADR-006); the press
+    /// re-checks so a stale button is a no-op rather than a throw.
+    /// </summary>
+    private Button CashInButton(Unit train) =>
+        ActionButton($"CashIn_{train.Id}", $"Cash in treasure ({_game.CashInValue(train)}g)", () =>
+        {
+            if (_game.CheckCashInTreasureTrain(train).Allowed)
+            {
+                _game.CashInTreasureTrain(train);
+            }
+            Changed();
+        });
 
     private static Label Grow(Label label)
     {

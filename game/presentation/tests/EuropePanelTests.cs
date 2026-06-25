@@ -22,7 +22,9 @@ namespace CrownAndColony.Presentation.Tests;
 public class EuropePanelTests
 {
     private const string Caravel = "model.unit.caravel";
+    private const string Galleon = "model.unit.galleon";
     private const string Colonist = "model.unit.freeColonist";
+    private const string TreasureTrain = "model.unit.treasureTrain";
     private const string Sugar = "model.goods.sugar";
 
     [TestCase(Timeout = 60000)]
@@ -169,6 +171,63 @@ public class EuropePanelTests
 
         AssertThat(game.Gold < goldBefore).IsTrue();
         AssertThat(game.UnitsInEurope.Count()).IsEqual(inEuropeBefore + 1);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task CashInButton_OnDockTreasureTrain_BanksTheFeeFreeValue_AndConsumesTheTrain()
+    {
+        // A treasure train carried home and put on the Europe dock (Location InEurope, not aboard): the bug was that
+        // such a train fell through every EuropePanel section, so the fee-free cash-in dead-ended. Tax 0 isolates the
+        // (waived) King's transport cut, so the full 1000 should bank.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units = [new SavedUnit(2, TreasureTrain, 0, 0, 0, (int)UnitLocation.InEurope, TreasureAmount: 1000)],
+            Explored = [], Tax = 0,
+        });
+        Unit train = game.Units.First(u => u.Id == 2);
+        int goldBefore = game.Gold;
+
+        Button cashIn = FindButton(controller, "CashIn_2")!;
+        AssertThat(cashIn).IsNotNull();
+        cashIn.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.Gold).IsEqual(goldBefore + 1000);                  // fee-free net banked
+        AssertThat(game.Units.Any(u => u.Id == 2)).IsFalse();              // the train left the game
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task CashInButton_TreasureTrainAboardGalleonInEurope_BanksAndFreesTheHold()
+    {
+        // A treasure train still aboard a galleon docked in Europe (the "carry it home yourself" play) — it can be
+        // banked straight from the hold, fee-free, without first putting it on the dock.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units =
+            [
+                new SavedUnit(1, Galleon, 0, 0, 0, (int)UnitLocation.InEurope),
+                // Aboard the galleon (CarrierId set) and so following its Europe location — the classic carried-home play.
+                new SavedUnit(2, TreasureTrain, 0, 0, 0, (int)UnitLocation.InEurope, CarrierId: 1, TreasureAmount: 1000),
+            ],
+            Explored = [], Tax = 0,
+        });
+        Unit galleon = game.Units.First(u => u.Id == 1);
+        Unit train = game.Units.First(u => u.Id == 2);
+        AssertThat(train.IsAboard).IsTrue();
+        int goldBefore = game.Gold;
+
+        Button cashIn = FindButton(controller, "CashIn_2")!;
+        AssertThat(cashIn).IsNotNull();
+        cashIn.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.Gold).IsEqual(goldBefore + 1000);                  // fee-free net banked
+        AssertThat(game.Units.Any(u => u.Id == 2)).IsFalse();              // the train left the game
+        AssertThat(game.Passengers(galleon).Any()).IsFalse();             // and the galleon's hold is freed
     }
 
     private static async Task<(ISceneRunner, GameController, Game)> OpenEurope(SaveGame state)
