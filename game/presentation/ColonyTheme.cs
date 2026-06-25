@@ -32,24 +32,40 @@ public static class ColonyTheme
     private const string UiFontPath = "res://assets/fonts/Cardo-Regular.ttf";
 
     private static Theme? _cached;
+    private static Theme? _cachedInGame;
 
-    /// <summary>The shared colony theme, built once and cached.</summary>
-    public static Theme Get() => _cached ??= Build();
+    /// <summary>
+    /// The shared parchment/wood theme for menus and dialogs (main menu, settings, pause, about, save/load, …) — the
+    /// baseline sizing the menu goldens are captured against. Built once and cached.
+    /// </summary>
+    public static Theme Get() => _cached ??= Build(bodySize: 15, embolden: 0f, sectionSize: 17, titleSize: 28);
 
-    private static Theme Build()
+    /// <summary>
+    /// The legibility variant for the dense in-game info screens (<see cref="ColonyPanel"/> + <see cref="EuropePanel"/>):
+    /// a larger body size and a synthetically-bolded face (Cardo ships Regular-only) for bolder, higher-contrast text on
+    /// the parchment. Menus/dialogs keep <see cref="Get"/> so their goldens are unaffected. Built once and cached.
+    /// </summary>
+    public static Theme GetInGame() => _cachedInGame ??= Build(bodySize: 17, embolden: 0.4f, sectionSize: 20, titleSize: 30);
+
+    private static Theme Build(int bodySize, float embolden, int sectionSize, int titleSize)
     {
-        var theme = new Theme { DefaultFontSize = 15 };
+        var theme = new Theme { DefaultFontSize = bodySize };
         if (ResourceLoader.Exists(UiFontPath))
         {
-            theme.DefaultFont = GD.Load<FontFile>(UiFontPath); // cascades to every control; null-guarded for CI before import
+            FontFile baseFont = GD.Load<FontFile>(UiFontPath); // cascades to every control; null-guarded for CI before import
+            // Cardo ships Regular-only, so a FontVariation adds synthetic weight (VariationEmbolden) for bolder,
+            // higher-contrast strokes on the parchment without a separate bold .ttf — the in-game readability ask.
+            theme.DefaultFont = embolden > 0f
+                ? new FontVariation { BaseFont = baseFont, VariationEmbolden = embolden }
+                : baseFont;
         }
         StyleButtons(theme);
         StyleOptionButtonAndPopup(theme);
         StyleBuildingCell(theme);
         StyleLabels(theme);
         StyleSeparators(theme);
-        StyleHeaderVariation(theme, "SectionHeader", 17);
-        StyleHeaderVariation(theme, "ColonyTitle", 28);
+        StyleHeaderVariation(theme, "SectionHeader", sectionSize);
+        StyleHeaderVariation(theme, "ColonyTitle", titleSize);
         return theme;
     }
 

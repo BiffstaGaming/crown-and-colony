@@ -74,7 +74,7 @@ public partial class ColonyPanel : PanelContainer
         _onChange = onChange;
         _heldFrom = null;
         EnsureOpaqueBackground();
-        Theme = ColonyTheme.Get(); // cohesive parchment/wood styling cascades to every child
+        Theme = ColonyTheme.GetInGame(); // cohesive parchment/wood styling (larger, bolder in-game body text) cascades to every child
         Rebuild();
         Show();
     }

@@ -42,7 +42,7 @@ public partial class EuropePanel : PanelContainer
         _game = game;
         _onChange = onChange;
         EnsureOpaqueBackground();
-        Theme = ColonyTheme.Get(); // share the colony screen's cohesive parchment/wood styling
+        Theme = ColonyTheme.GetInGame(); // share the colony screen's cohesive parchment/wood styling (larger, bolder in-game body text)
         Rebuild();
         Show();
     }
