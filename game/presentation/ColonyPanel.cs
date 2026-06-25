@@ -413,7 +413,11 @@ public partial class ColonyPanel : PanelContainer
                         colonist.Modulate = new Color(1f, 0.9f, 0.3f); // picked up — highlight the held colonist
                     }
                     Place(view, colonist, topLeft + new Vector2(52, 8));
-                    Place(view, Badge($"{Display(Short(good))} {EffectiveYield(_game.TileYield(tile, good))}"), topLeft + new Vector2(44, 0));
+                    // Show the yield for the tile's ACTUAL worker type (86d3f674x): an expert lumberjack's ×2 lumber, not
+                    // the free-colonist base. TileWorkerNetYield folds the worker type AND the Sons-of-Liberty bonus exactly
+                    // as the production overview banks it (ADR-006), so the diamond badge == the overview. No EffectiveYield
+                    // wrapper here — it already includes ProductionBonus and floors at 0 (wrapping would double-count the SoL bonus).
+                    Place(view, Badge($"{Display(Short(good))} {_game.TileWorkerNetYield(_colony, tile, good)}"), topLeft + new Vector2(44, 0));
                     Position worked = tile;
                     var release = new Button { Name = $"Release_{tile.X}_{tile.Y}", Text = "✕", CustomMinimumSize = new Vector2(24, 20) };
                     release.Pressed += () => { _game.UnassignWork(_colony, worked); _heldFrom = null; Changed(); };

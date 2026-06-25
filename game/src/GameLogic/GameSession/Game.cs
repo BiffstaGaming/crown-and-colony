@@ -10689,6 +10689,20 @@ public sealed partial class Game
     public int TileYield(Position tile, string goodsId) => TileYield(_human, tile, goodsId);
 
     /// <summary>
+    /// The <b>net</b> yield the colony screen's per-tile diamond badge shows for a worked tile: the goods produced by
+    /// the tile's <em>actual</em> worker type (folding the worker's index-30 production modifier — an expert lumberjack's
+    /// ×2 lumber, an expert farmer's +2 grain) plus the Sons-of-Liberty <see cref="Colony.ProductionBonus"/>, floored at
+    /// 0. This is exactly the figure <see cref="ColonyProductionSummary"/> / <see cref="RunColonyTurn"/> bank for that
+    /// tile (ADR-006: one tested figure), so the diamond badge matches the production overview. Uses the colony's owning
+    /// player's Founding-Father modifiers (falling back to the human for an unresolvable owner), as the colony turn does.
+    /// </summary>
+    public int TileWorkerNetYield(Colony colony, Position tile, string goodsId)
+    {
+        Player owner = PlayerById(colony.OwnerId) ?? _human;
+        return Math.Max(0, TileYield(owner, colony.WorkerTypeAt(tile), tile, goodsId) + colony.ProductionBonus);
+    }
+
+    /// <summary>
     /// A colony's per-turn <b>net production by stored good</b> under its present assignments: each tile worker's
     /// yield (folding the human's Founding-Father goods modifiers) + the colony-centre tile's unattended output,
     /// less the food the colonists eat (<see cref="Colony.Population"/> × <see cref="Specification.ColonyConstants.FoodPerColonist"/>).

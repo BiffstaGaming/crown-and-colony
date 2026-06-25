@@ -334,6 +334,97 @@ public class ColonyPanelTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task TileBadge_ShowsTheExpertsBoostedYield_NotTheFreeColonistBase()
+    {
+        // The colony-screen display bug (86d3f674x): an expert's TILE diamond showed the free-colonist base (e.g. an
+        // expert lumberjack on a forest showed 4 lumber) while the production overview correctly showed the boosted
+        // output (8). The badge must now show the yield for the tile's ACTUAL worker type — exactly what
+        // Game.TileWorkerNetYield / ColonyProductionSummary bank. Map-independent: we locate any producible neighbour
+        // whose matching field expert genuinely boosts the good (preferring the lumberjack/lumber case from the report).
+        const string Free = Colony.FreeColonistTypeId;
+
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Find a (neighbour tile, good, field expert) triple where the expert out-produces a free colonist on that tile.
+        // Prefer the lumberjack so we reproduce the exact report; otherwise any boosting field expert (farmer, ore miner…).
+        // Restrict to goods the colony CENTRE does not also produce (unattended), so the production overview's per-good
+        // total equals this one tile's figure — i.e. the diamond can be compared to the overview directly.
+        Position founderTile = founded.TileWorkers.Keys.First();
+        var centreGoods = game.Map.TerrainAt(founded.Position).Productions
+            .Where(p => p.Unattended).SelectMany(p => p.Outputs)
+            .Select(o => game.Ruleset.StorageIdOf(o.GoodsId)).ToHashSet();
+        var candidates =
+            from n in founded.Position.Neighbours()
+            where game.Map.InBounds(n)
+            from o in game.TileWorkOptions(n)
+            where !centreGoods.Contains(game.Ruleset.StorageIdOf(o.GoodsId)) // only the worked tile produces this good
+            from u in game.Ruleset.UnitTypes
+            where u.ExpertProduction == o.GoodsId
+                && game.TileWorkerNetYield(founded, n, o.GoodsId) > 0 // tile actually yields the good
+            let expert = ExpertYieldOn(game, founded, n, o.GoodsId, u.Id)
+            let basic = game.TileWorkerNetYield(founded, n, o.GoodsId)
+            where expert > basic // the expert genuinely boosts it (the bug: the badge ignored this boost)
+            orderby u.Id == "model.unit.expertLumberJack" ? 0 : 1, n.X, n.Y
+            select (Tile: n, Good: o.GoodsId, Expert: u.Id, Free: basic, Expert2: expert);
+        var pick = candidates.First();
+
+        // Seat the chosen worker on the tile as a FREE colonist first → the badge shows the base yield.
+        game.UnassignWork(founded, founderTile);
+        game.AssignWork(founded, pick.Tile, pick.Good);
+        AssertThat(pick.Free > 0).IsTrue();
+        controller.OpenColonyPanel(founded);
+        await runner.SimulateFrames(1);
+        AssertThat(BadgeShowsYield(controller, pick.Free)).IsTrue(); // free colonist → base figure
+
+        // Retype that tile worker into the field expert via the save layer (the worker-type overlay is internal to
+        // GameLogic), then reload — its index-30 production modifier boosts the good (e.g. lumberjack ×2 lumber).
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with { Workers = new[] { new SavedWorker(pick.Tile.X, pick.Tile.Y, pick.Good, pick.Expert) } }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(colony.WorkerTypeAt(pick.Tile)).IsEqual(pick.Expert);
+
+        // The expert's net yield is the boosted figure — and it must equal what the production overview banks for the good.
+        int expertYield = game.TileWorkerNetYield(colony, pick.Tile, pick.Good);
+        AssertThat(expertYield).IsEqual(pick.Expert2);
+        AssertThat(expertYield > pick.Free).IsTrue();                                                       // boosted vs free
+        AssertThat(game.ColonyProductionSummary(colony)[game.Ruleset.StorageIdOf(pick.Good)].Produced)
+            .IsEqual(expertYield);                                                                          // diamond == overview
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+        AssertThat(BadgeShowsYield(controller, expertYield)).IsTrue(); // the diamond now shows the boosted yield
+        AssertThat(BadgeShowsYield(controller, pick.Free)).IsFalse();  // and NOT the under-reported free-colonist base
+
+        AssertThat(Free).IsEqual("model.unit.freeColonist"); // (anchor: the un-typed worker the badge regressed to)
+    }
+
+    /// <summary>The net tile yield for a hypothetical <paramref name="workerType"/> on <paramref name="tile"/> (via a throwaway retype), used only to pre-select a boosting expert for the badge test.</summary>
+    private static int ExpertYieldOn(Game game, Colony colony, Position tile, string good, string workerType)
+    {
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == colony.Id
+            ? c with { Workers = new[] { new SavedWorker(tile.X, tile.Y, good, workerType) } } : c).ToList();
+        Game probe = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        Colony probed = probe.Colonies.First(c => c.Id == colony.Id);
+        return probe.TileWorkerNetYield(probed, tile, good);
+    }
+
+    /// <summary>Whether any worked-tile diamond badge (a <see cref="Label"/> in TilesView) ends with the given yield number.</summary>
+    private static bool BadgeShowsYield(GameController controller, int yield) =>
+        (controller.GetNode<PanelContainer>("UI/ColonyPanel").FindChild("TilesView", recursive: true, owned: false) as Control)!
+            .FindChildren("*", recursive: true, owned: false)
+            .OfType<Label>().Any(l => l.Text.EndsWith($" {yield}"));
+
+    [TestCase(Timeout = 60000)]
     public async Task CargoSection_LoadsAndUnloadsGoods_AndSafelyRefusesAFullHoldOrEmptyWarehouse()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
