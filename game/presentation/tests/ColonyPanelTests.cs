@@ -588,6 +588,148 @@ public class ColonyPanelTests
         AssertThat(overview.FindChild("Production_bells", recursive: true, owned: false)).IsNotNull();
     }
 
+    // ── Phase 2: drag-and-drop worker assignment ───────────────────────────────────────────────────────────────
+    // L3 drives the drag CALLBACKS directly (Godot can't synthesise a real mouse-drag headlessly — same limitation the
+    // EuropePanel drag tests work around): get an idle chip's payload via source._GetDragData(pos), assert the target's
+    // target._CanDropData(pos, data), call target._DropData(pos, data), then assert the ENGINE state changed. A position
+    // of Vector2.Zero is fine — the colony sources/targets ignore the position (whole-control hit). The existing
+    // click-to-assign tests above stay green (the drag is additive).
+
+    [TestCase(Timeout = 60000)]
+    public async Task DragIdleColonistOntoFreeTile_AssignsTheWorker()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+
+        // Free the founder so there's an idle colonist (and an idle chip appears).
+        FindButton(controller, "Release_")!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(colony.IdleColonists).IsEqual(1);
+
+        // A free, producible neighbour the colony can actually work (excludes sea tiles — a fresh colony has no docks).
+        Position tile = colony.Position.Neighbours().First(n =>
+            !colony.TileWorkers.ContainsKey(n) && game.ColonyCanWorkTile(colony, n) && game.TileWorkOptions(n).Count > 0);
+
+        EuropeDragSource source = FindControl<EuropeDragSource>(controller, "IdleColonist_0")!;
+        EuropeDropTarget target = FindControl<EuropeDropTarget>(controller, $"TileDrop_{tile.X}_{tile.Y}")!;
+        AssertThat(source).IsNotNull();
+        AssertThat(target).IsNotNull();
+
+        Variant data = source._GetDragData(Vector2.Zero);
+        AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue(); // a free, workable tile accepts the worker
+        target._DropData(Vector2.Zero, data);
+        await runner.SimulateFrames(1);
+
+        AssertThat(colony.TileWorkers.ContainsKey(tile)).IsTrue(); // the colony now works that tile
+        AssertThat(colony.IdleColonists).IsEqual(0);               // the idle colonist took the job
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task DragIdleColonistOntoAlreadyWorkedTile_IsRefused()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Grow to population 2 with only the founder's tile worker assigned (the save layer keeps the second colonist
+        // idle — JoinColony would auto-seat it), so there is BOTH an idle chip AND an already-worked tile to refuse.
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!
+            .Select(c => c.Id == founded.Id ? c with { Population = 2 } : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(colony.IdleColonists).IsEqual(1);
+        Position worked = colony.TileWorkers.Keys.First(); // the founder's auto-assigned (already worked) tile
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        EuropeDragSource source = FindControl<EuropeDragSource>(controller, "IdleColonist_0")!;
+        EuropeDropTarget target = FindControl<EuropeDropTarget>(controller, $"TileDrop_{worked.X}_{worked.Y}")!;
+        AssertThat(source).IsNotNull();
+        AssertThat(target).IsNotNull();
+
+        Variant data = source._GetDragData(Vector2.Zero);
+        AssertThat(target._CanDropData(Vector2.Zero, data)).IsFalse(); // an already-worked tile is refused
+
+        target._DropData(Vector2.Zero, data); // even forced, the re-check no-ops
+        await runner.SimulateFrames(1);
+        AssertThat(colony.IdleColonists).IsEqual(1); // unchanged — no second worker seated on the worked tile
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task DragIdleColonistOntoBuilding_StaffsIt()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+
+        // Free the founder so there's an idle colonist (and an idle chip appears).
+        FindButton(controller, "Release_")!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(colony.IdleColonists).IsEqual(1);
+        AssertThat(colony.BuildingWorkers.GetValueOrDefault(Carpenter)).IsEqual(0);
+
+        EuropeDragSource source = FindControl<EuropeDragSource>(controller, "IdleColonist_0")!;
+        EuropeDropTarget target = FindControl<EuropeDropTarget>(controller, "BuildingDrop_carpenterHouse")!;
+        AssertThat(source).IsNotNull();
+        AssertThat(target).IsNotNull();
+
+        Variant data = source._GetDragData(Vector2.Zero);
+        AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue(); // a building with a free workplace accepts the worker
+        target._DropData(Vector2.Zero, data);
+        await runner.SimulateFrames(1);
+
+        AssertThat(colony.BuildingWorkers[Carpenter]).IsEqual(1); // staffed via the drop
+        AssertThat(colony.BuildingOccupants(Carpenter).Count).IsEqual(1);
+        AssertThat(colony.IdleColonists).IsEqual(0);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task DragIdleColonistOntoFullBuilding_IsRefused()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Fully staff the carpenter's house to its every workplace and add a spare idle colonist, via the save layer,
+        // then reload — a chip exists but the full building must refuse the drop.
+        int workplaces = game.Ruleset.Building(Carpenter).Workplaces;
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with
+            {
+                Population = 1 + workplaces + 1, // the founder's tile worker + a full building + one idle
+                BuildingWorkers = new Dictionary<string, int> { [Carpenter] = workplaces },
+            }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(colony.IdleColonists).IsEqual(1);
+        AssertThat(game.CheckAssignBuildingWork(colony, Carpenter).Allowed).IsFalse(); // already full
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        EuropeDragSource source = FindControl<EuropeDragSource>(controller, "IdleColonist_0")!;
+        EuropeDropTarget target = FindControl<EuropeDropTarget>(controller, "BuildingDrop_carpenterHouse")!;
+        AssertThat(source).IsNotNull();
+        AssertThat(target).IsNotNull();
+
+        Variant data = source._GetDragData(Vector2.Zero);
+        AssertThat(target._CanDropData(Vector2.Zero, data)).IsFalse(); // full building — refused
+
+        target._DropData(Vector2.Zero, data); // forced drop no-ops
+        await runner.SimulateFrames(1);
+        AssertThat(colony.BuildingWorkers[Carpenter]).IsEqual(workplaces); // unchanged — the guard held
+        AssertThat(colony.IdleColonists).IsEqual(1);
+    }
+
     private static string LabelText(PanelContainer panel, string name) =>
         ((Label)panel.FindChild(name, recursive: true, owned: false)).Text;
 
@@ -627,4 +769,11 @@ public class ColonyPanelTests
             .FindChildren("*", recursive: true, owned: false)
             .OfType<Button>()
             .FirstOrDefault(b => b.Name.ToString().StartsWith(namePrefix));
+
+    /// <summary>Finds the first drag-source / drop-target control of type <typeparamref name="T"/> whose name starts with <paramref name="namePrefix"/> (Phase 2 drag-drop).</summary>
+    private static T? FindControl<T>(GameController controller, string namePrefix) where T : Node =>
+        controller.GetNode<PanelContainer>("UI/ColonyPanel")
+            .FindChildren("*", recursive: true, owned: false)
+            .OfType<T>()
+            .FirstOrDefault(c => c.Name.ToString().StartsWith(namePrefix));
 }

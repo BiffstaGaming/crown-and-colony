@@ -196,6 +196,9 @@ public partial class ColonyPanel : PanelContainer
         middle.AddChild(BuildingsColumn()); // the 4-wide buildings grid
         card.AddChild(middle);
 
+        card.AddChild(SectionLabel("Idle colonists"));
+        card.AddChild(IdleColonistsRow());
+
         card.AddChild(SectionLabel("Outside the colony"));
         card.AddChild(OutsideArea());
         // The cargo section only renders when a carrier (ship/wagon) is at or beside the colony, so a fresh colony's
@@ -361,7 +364,9 @@ public partial class ColonyPanel : PanelContainer
 
                 // A transparent whole-tile hit button drives click-to-move. Added before the small ✕/picker controls
                 // so those (placed after → higher z) still receive their own clicks; clicks anywhere else on the tile
-                // fall through to this.
+                // fall through to this. It is wrapped in a rule-free EuropeDropTarget so an idle-colonist chip can be
+                // DROPPED here to assign the worker (Phase 2, additive — the click still works); the target gates on
+                // CheckAssignWork and routes a native-owned tile through the same land-claim modal the click uses.
                 Position clicked = tile;
                 var hit = new Button
                 {
@@ -369,9 +374,28 @@ public partial class ColonyPanel : PanelContainer
                     Flat = true,
                     Modulate = new Color(1, 1, 1, 0),
                     CustomMinimumSize = new Vector2(TileW, TileH),
+                    MouseFilter = Control.MouseFilterEnum.Pass, // let the wrapping drop target see the drop
                 };
+                hit.SetAnchorsPreset(Control.LayoutPreset.FullRect); // fill the drop target so clicks hit the whole tile
                 hit.Pressed += () => OnTileClicked(clicked);
-                Place(view, hit, topLeft);
+                Position dropTile = tile;
+                var hitTarget = new EuropeDropTarget
+                {
+                    Name = $"TileDrop_{tile.X}_{tile.Y}",
+                    CustomMinimumSize = new Vector2(TileW, TileH),
+                }.Configure(
+                    canDrop: data => ColonyDrag.IsWorker(data) && CanDropWorkerOnTile(dropTile),
+                    onDrop: data =>
+                    {
+                        if (ColonyDrag.IsWorker(data) && BestTileGood(dropTile) is { } good
+                            && _game.CheckAssignWork(_colony, dropTile, good).Allowed)
+                        {
+                            _heldFrom = null;
+                            AssignWorkWithClaim(dropTile, good); // routes native-owned land through the claim modal; refreshes
+                        }
+                    });
+                hitTarget.AddChild(hit);
+                Place(view, hitTarget, topLeft);
 
                 if (dx == 0 && dy == 0)
                 {
@@ -510,6 +534,77 @@ public partial class ColonyPanel : PanelContainer
         return shortName.Length == 0 ? shortName : char.ToUpperInvariant(shortName[0]) + shortName[1..];
     }
 
+    // ── Idle colonists: the drag SOURCE row ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The colony's idle colonists rendered as a row of draggable portrait <b>chips</b> — the drag-and-drop SOURCE
+    /// (Phase 2). Each chip is the colonist's real-type sprite wrapped in a rule-free <see cref="EuropeDragSource"/>
+    /// (<c>IdleColonist_{index}</c>) carrying a <see cref="ColonyDrag.Worker"/> payload; the player drags one onto a
+    /// tile (<see cref="IsometricTiles"/>) or a building cell (<see cref="BuildingCell"/>) to assign it. Idle colonists
+    /// inside a colony are a count plus a non-free-type overlay (<see cref="Colony.IdleWorkerTypes"/>), NOT individual
+    /// map units, so the chip index is the payload's identity; the engine's assign-work commands auto-pick an idle
+    /// colonist (ADR-006). The whole drag is additive — the per-tile Work… picker and the building + button still work.
+    /// </summary>
+    private Control IdleColonistsRow()
+    {
+        var row = new HBoxContainer { Name = "IdleColonists", Alignment = BoxContainer.AlignmentMode.Center };
+        row.AddThemeConstantOverride("separation", 4);
+
+        IReadOnlyList<string> idle = IdleColonistTypes();
+        if (idle.Count == 0)
+        {
+            row.AddChild(new Label { Text = "(no idle colonists — drag one off a tile or building to free it)" });
+            return row;
+        }
+        for (int i = 0; i < idle.Count; i++)
+        {
+            string type = idle[i];
+            int index = i;
+            var chip = IconRect(WorkerSprite(type), 40, 40);
+            chip.MouseFilter = Control.MouseFilterEnum.Pass; // let the wrapping source start the drag
+            chip.TooltipText = $"{Display(Short(type))} — drag onto a tile or building to assign";
+            row.AddChild(new EuropeDragSource { Name = $"IdleColonist_{index}", CustomMinimumSize = new Vector2(40, 40) }
+                .Configure(() => ColonyDrag.Worker(index), () => $"{Display(Short(type))} → work")
+                .WithChild(chip));
+        }
+        return row;
+    }
+
+    /// <summary>
+    /// The unit-type ids of the colony's idle colonists, one per idle colonist — the non-free
+    /// <see cref="Colony.IdleWorkerTypes"/> first, padded with free colonists to <see cref="Colony.IdleColonists"/>
+    /// (the same free-implicit/specialist-explicit model the colony uses). Drives the draggable idle-colonist chips.
+    /// </summary>
+    private IReadOnlyList<string> IdleColonistTypes()
+    {
+        var types = new List<string>(_colony.IdleColonists);
+        types.AddRange(_colony.IdleWorkerTypes);
+        while (types.Count < _colony.IdleColonists)
+        {
+            types.Add(Colony.FreeColonistTypeId);
+        }
+        // Never offer more chips than the colony actually has idle (defensive — the overlay can't exceed the count).
+        return types.Count > _colony.IdleColonists ? types.GetRange(0, _colony.IdleColonists) : types;
+    }
+
+    /// <summary>
+    /// The tile's best-yield good for a worker dropped on it — the first option from <see cref="Game.TileWorkOptions"/>
+    /// (sorted yield-descending), the same default the click-to-assign flow uses, or null when the tile produces
+    /// nothing the colony can work. The per-tile Work… picker remains for choosing a different good.
+    /// </summary>
+    private string? BestTileGood(Position tile) =>
+        _game.TileWorkOptions(tile) is { Count: > 0 } options ? options[0].GoodsId : null;
+
+    /// <summary>
+    /// Whether an idle colonist could be dropped onto <paramref name="tile"/> to work it — true when some producible
+    /// good there passes <see cref="Game.CheckAssignWork(Colony, Position, string)"/> (idle colonist, not already worked,
+    /// workable terrain, positive yield). The drop gate for <see cref="IsometricTiles"/>'s tile targets (ADR-006: a
+    /// rules query, never local rule logic). Native-owned land still passes here — the forced claim is resolved at drop
+    /// time through the shared <see cref="AssignWorkWithClaim"/> modal.
+    /// </summary>
+    private bool CanDropWorkerOnTile(Position tile) =>
+        BestTileGood(tile) is { } good && _game.CheckAssignWork(_colony, tile, good).Allowed;
+
     private Control ConstructionPanel()
     {
         var box = new VBoxContainer();
@@ -617,9 +712,26 @@ public partial class ColonyPanel : PanelContainer
         BuildingType building = _game.Ruleset.Building(buildingId);
         int workers = _colony.BuildingWorkers.GetValueOrDefault(buildingId);
         var cell = new PanelContainer { ThemeTypeVariation = "BuildingCell", CustomMinimumSize = new Vector2(142, 0) };
+        // The cell content sits inside a rule-free EuropeDropTarget so an idle-colonist chip can be DROPPED onto the
+        // building to staff it (Phase 2, additive — the + button still works). The target gates on
+        // CheckAssignBuildingWork (full / no-idle → refused) and forwards AssignBuildingWork on drop (ADR-006).
+        string dropBuilding = buildingId;
+        var drop = new EuropeDropTarget { Name = $"BuildingDrop_{building.ShortName}", SizeFlagsHorizontal = SizeFlags.ExpandFill }
+            .Configure(
+                canDrop: data => ColonyDrag.IsWorker(data) && _game.CheckAssignBuildingWork(_colony, dropBuilding).Allowed,
+                onDrop: data =>
+                {
+                    if (ColonyDrag.IsWorker(data) && _game.CheckAssignBuildingWork(_colony, dropBuilding).Allowed)
+                    {
+                        _game.AssignBuildingWork(_colony, dropBuilding);
+                        Changed();
+                    }
+                });
+        cell.AddChild(drop);
         var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         box.AddThemeConstantOverride("separation", 2);
-        cell.AddChild(box);
+        box.SetAnchorsPreset(Control.LayoutPreset.FullRect); // the plain Control drop target doesn't lay out its child — fill it
+        drop.AddChild(box);
 
         box.AddChild(IconRect(ColonyArt.BuildingImage(building.ShortName), 124, 70));
         // Display name wraps to (at most) two reserved lines so long names like "Tobacconist House" don't spill the
