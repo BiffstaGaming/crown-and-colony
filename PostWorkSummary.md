@@ -19,6 +19,17 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-26 — Europe screen polish: readable boxes, no black slots, single-click sail, in-transit lanes, harbour backdrop ✅
+
+**Requested (Chris playtest, + attached the real Col1 Europe screen):** keep the two-column cards but fix readability — boxes don't fit their content, the black empty hold-slots are offputting, select-then-drag is confusing; **add** in-transit visibility (a ship crossing should show) and a harbour backdrop.
+**Did (1 commit `c15433e`, all assets in-repo GPL-v2):** (1) **box sizing** — train/purchase as tidy sprite+price grid cells (full name in tooltip), recruit cards + goods-market rows sized to content, no clipping; (2) **empty hold-slots** → faint parchment outlines (not black); (3) **single-click select + drag** — removed the separate `Select_` button; a single click on a ship card selects it for the market, the Sail button (or drag) sails; (4) **in-transit lanes** — new "Expected soon" (`Game.ShipsSailingToEurope`) + "Bound for the New World" (`Game.ShipsSailingToNewWorld`) cards, each ship's sprite + "arrives in N turn(s)" (2 read-only oracles over already-persisted state); (5) **harbour backdrop** — imported FreeCol `ui/colonydocks.png` (`ColonyArt.HarbourBackdrop`, GPL-v2, PROVENANCE recorded) behind opaque parchment cards. **I render-verified** (backdrop + readable boxes + faint slots + both lanes).
+**Status:** Shipped. Commit `c15433e` (main `8977ef6`). **CI run 28199125539 = GREEN both jobs.** Local: full L3 213/213, L1/L2 2228, soak 5/5. No save bump. Drop-target-as-parent + the click-interception/geometry guards kept green.
+**Changed:** `Game.cs` (+2 `ShipsSailing*` oracles), `EuropePanel.cs`/`EuropeDragDrop.cs`/`ColonyArt.cs`, `EuropePanelTests`/`UiPanelGoldenTests`/`SailingTests`, `assets/freecol/ui/colonydocks.png`(+`.import`)+`PROVENANCE.md`, `europe.md`/`presentation.md`.
+**Decisions:** Kept the two-column cards (Chris's choice), not a full Col1 restructure; harbour image as a backdrop with parchment cards on top.
+**Scheduled next:** await Chris's playtest of the polished Europe screen.
+**Follow-ups:** drag-preview orphan-node cleanup (`86d3fd0gp`); golden-pipeline fix (`86d3f69e9`); P2 first-contact notice (`86d3f62qw`).
+**Needs you:** Playtest the Europe screen — confirm the boxes read well + the backdrop/lanes feel right.
+
 ## 2026-06-26 — Bug: a founder/joiner's equipment now stocks the colony warehouse (not destroyed) ✅
 
 **Requested (Chris playtest):** "If I create a colony with a soldier, the muskets/guns do not go into the warehouse?"
