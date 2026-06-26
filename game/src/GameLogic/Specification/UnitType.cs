@@ -113,6 +113,14 @@ public sealed record UnitProductionModifier(string GoodsId, ModifierType Type, d
 /// colonial regular teaches <c>veteranSoldier</c>. Use <see cref="SkillTaughtOrSelf"/> for the resolved value
 /// (FreeCol <c>UnitType.getSkillTaught</c>, keying education's target type).
 /// </param>
+/// <param name="ScoreValue">
+/// This unit type's end-game score contribution (spec <c>score-value</c>; <b>inherited</b> down the <c>extends</c>
+/// chain, as FreeCol reads <c>xr.getAttribute(SCORE_VALUE_TAG, parent.scoreValue)</c>). Each of a player's units —
+/// map/Europe units and the colonists working inside its colonies — adds its type's value to the final score
+/// (FreeCol <c>UnitType.getScoreValue</c>, summed by <c>ServerPlayer.updateScore</c>): a petty criminal 1, a free
+/// colonist 3, an expert 4–6, a man-o-war 8. 0 for a type the spec gives no <c>score-value</c> (braves and other
+/// native units), so they never count toward a colonial score.
+/// </param>
 public sealed record UnitType(
     string Id,
     int Movement,
@@ -146,7 +154,8 @@ public sealed record UnitType(
     IReadOnlyList<UnitProductionModifier>? ProductionModifiers = null,
     int MaximumExperience = 0,
     int ExploreLostCityRumourBonus = 0,
-    string? SkillTaught = null)
+    string? SkillTaught = null,
+    int ScoreValue = 0)
 {
     private static readonly IReadOnlyList<GoodsOutput> NoCost = [];
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();

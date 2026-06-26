@@ -85,6 +85,22 @@ public class BuildAbilityGateTests
         Assert.True(coast.CheckEnqueueBuild(port, Docks).Allowed);
     }
 
+    [Fact]
+    public void Docks_AreRefusedBesideOnlyAnInlandLake()
+    {
+        // FreeCol Tile.isCoastland / Settlement.isConnectedPort: a colony beside ONLY an inland lake (enclosed water
+        // with no high-seas route) is NOT a port — it cannot build docks. An ocean-adjacent colony still can.
+        Game lake = LakeColony(out Colony lakeside);
+        MoveCheck refused = lake.CheckSetBuild(lakeside, Docks);
+        Assert.False(refused.Allowed);
+        Assert.Contains("coastal", refused.Reason);
+        Assert.DoesNotContain(lake.Buildables(lakeside), b => b.Id == Docks);
+        Assert.False(lake.CheckEnqueueBuild(lakeside, Docks).Allowed);
+
+        Game coast = CoastalColony(out Colony port);
+        Assert.True(coast.CheckSetBuild(port, Docks).Allowed);
+    }
+
     // ---- Founding-father gate (custom house) ----
 
     [Fact]
@@ -135,6 +151,25 @@ public class BuildAbilityGateTests
             Units = [],
             Explored = [0, 1],
             Colonies = [new SavedColony(1, "Port", 0, 0, 1)],
+        }.Restore(Classic);
+        colony = game.Colonies[0];
+        return game;
+    }
+
+    /// <summary>A plains colony at (0,0) with only an inland-lake tile beside it — water, but no sea route (not a port).</summary>
+    private static Game LakeColony(out Colony colony)
+    {
+        var game = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 2,
+            MapHeight = 1,
+            Terrain = ["model.tile.plains", "model.tile.lake"],
+            Units = [],
+            Explored = [0, 1],
+            Colonies = [new SavedColony(1, "Lakeside", 0, 0, 1)],
         }.Restore(Classic);
         colony = game.Colonies[0];
         return game;

@@ -424,6 +424,16 @@ public sealed class Ruleset
             ? u
             : throw new KeyNotFoundException($"Unknown unit type '{id}'.");
 
+    /// <summary>
+    /// The end-game <see cref="UnitType.ScoreValue"/> of the unit type with id <paramref name="id"/>, or 0 when the id
+    /// is unknown (FreeCol <c>UnitType.getScoreValue</c>'s 0-default for a type the spec gives no <c>score-value</c>).
+    /// The tolerant counterpart to <see cref="Unit"/> for the score engine, which sums type-ids of colony workers
+    /// (colony population) and must not throw on a type absent from the score table.
+    /// </summary>
+    /// <param name="id">A unit-type id (e.g. <c>model.unit.elderStatesman</c>).</param>
+    public int UnitScoreValue(string id) =>
+        _unitById.TryGetValue(id, out var u) ? u.ScoreValue : 0;
+
     /// <summary>All goods types, in specification order.</summary>
     public IReadOnlyList<GoodsType> GoodsTypes { get; }
 
@@ -2077,7 +2087,11 @@ public sealed class Ruleset
                     .Last(),
                 // The skill this unit teaches in a school, when overridden (own attribute, NOT inherited — defaults to
                 // the type itself; classic only the colonial regular sets it, to veteranSoldier).
-                SkillTaught: (string?)el.Attribute("skill-taught"));
+                SkillTaught: (string?)el.Attribute("skill-taught"),
+                // End-game score contribution (score-value): inherited down the extends chain, as FreeCol reads
+                // getAttribute(SCORE_VALUE_TAG, parent.scoreValue). Default 0 = a type the spec scores not at all
+                // (braves/native units), so they never add to a colonial player's score (UnitType.getScoreValue).
+                ScoreValue: ResolveIntAttribute(el, "score-value", elements) ?? 0);
         }
 
         if (units.Count == 0)

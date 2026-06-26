@@ -187,6 +187,39 @@ public class RulesetTests
         Assert.Equal(unit.HasAbility("model.ability.expertScout"), unit.ExpertScout);
     }
 
+    [Theory]
+    // score-value parses off each unit-type and inherits down the extends chain (FreeCol UnitType.getScoreValue):
+    // criminal 1, indentured 2, free colonist 3, experts 4–6, ships 3–8. A type the spec gives no score-value scores 0.
+    [InlineData("model.unit.pettyCriminal", 1)]
+    [InlineData("model.unit.indenturedServant", 2)]
+    [InlineData("model.unit.freeColonist", 3)]
+    [InlineData("model.unit.indianConvert", 3)]
+    [InlineData("model.unit.expertFarmer", 4)]
+    [InlineData("model.unit.masterDistiller", 5)]
+    [InlineData("model.unit.veteranSoldier", 5)]
+    [InlineData("model.unit.elderStatesman", 6)]
+    [InlineData("model.unit.firebrandPreacher", 6)]
+    [InlineData("model.unit.caravel", 3)]
+    [InlineData("model.unit.galleon", 5)]
+    [InlineData("model.unit.frigate", 6)]
+    [InlineData("model.unit.manOWar", 8)]
+    [InlineData("model.unit.artillery", 2)]
+    [InlineData("model.unit.wagonTrain", 1)]
+    public void UnitScoreValue_ParsesFromSpec(string id, int expected)
+    {
+        Assert.Equal(expected, Classic.Unit(id).ScoreValue);
+        Assert.Equal(expected, Classic.UnitScoreValue(id)); // the tolerant lookup the score engine uses agrees
+    }
+
+    [Fact]
+    public void UnitScoreValue_IsZero_ForNativeUnitsAndUnknownIds()
+    {
+        // The brave has no <score-value> in the spec → 0 (so a native unit never counts toward a colonial score).
+        Assert.Equal(0, Classic.Unit("model.unit.brave").ScoreValue);
+        // An unknown id is tolerated by the score-engine lookup (returns 0 rather than throwing).
+        Assert.Equal(0, Classic.UnitScoreValue("model.unit.doesNotExist"));
+    }
+
     [Fact]
     public void BuildingTypes_ParseWithProductionsAndCosts()
     {

@@ -46,6 +46,13 @@ public sealed partial class Game
     /// <summary>The terrain a ship sets sail to Europe from (the map's outer edge).</summary>
     private const string HighSeasId = "model.tile.highSeas";
 
+    /// <summary>
+    /// Inland-lake terrain: enclosed water with no route to the open sea (FreeCol <c>makeLakes</c> retypes
+    /// sea-unreachable water to this). A colony beside <em>only</em> a lake is not a port — it is excluded from the
+    /// coastal naval-building gate (FreeCol <c>Tile.isCoastland</c> requires high-seas connectivity; lakes do not count).
+    /// </summary>
+    private const string LakeId = "model.tile.lake";
+
     /// <summary>The warehouse goods id for religious crosses (immigration points).</summary>
     private const string CrossesId = "model.goods.crosses";
 
@@ -439,9 +446,17 @@ public sealed partial class Game
     private bool AbilityForUnit(Unit unit, string abilityId) =>
         unit.OwnerNationId is null && PlayerById(unit.OwnerId) is { } owner && HasAbilityFor(owner, abilityId);
 
-    /// <summary>True when at least one in-bounds neighbour of the colony's tile is water (it has a port / is coastal).</summary>
+    /// <summary>
+    /// True when the colony is a connected port — adjacent to <b>open-sea</b> water (FreeCol
+    /// <c>Settlement.isConnectedPort</c> / <c>Tile.isCoastland</c>: <c>isLand() &amp;&amp; getHighSeasCount() &gt; 0</c>).
+    /// An adjacent ocean or high-seas tile is sea-connected; an inland lake (<see cref="LakeId"/>) is enclosed water
+    /// with no route to Europe, so a colony beside <em>only</em> a lake is land-locked from the sea and is <b>not</b>
+    /// coastal. Drives the docks/drydock/shipyard build gate (<c>hasPort</c>) — naval buildings need a real port,
+    /// excluding lake-side colonies exactly as FreeCol does.
+    /// </summary>
     private bool IsColonyCoastal(Colony colony) =>
-        colony.Position.Neighbours().Any(n => Map.InBounds(n) && Map.TerrainAt(n).IsWater);
+        colony.Position.Neighbours().Any(n =>
+            Map.InBounds(n) && Map.TerrainAt(n).IsWater && Map.TerrainAt(n).Id != LakeId);
 
     /// <summary>
     /// True when the colony satisfies a build-gating ability: <c>hasPort</c> resolves to its coastal status, every
@@ -592,60 +607,19 @@ public sealed partial class Game
     private const int ScoreIndependenceBonusThird = 25;
 
     /// <summary>
-    /// Per-unit-type score values from the classic FreeCol ruleset (the <c>score-value</c> attribute on each
-    /// <c>unit-type</c> in <c>freecol/data/rules/classic/specification.xml</c>, lines 1814–2213). FreeCol reads these off
-    /// the parsed <see cref="Specification.UnitType"/> (<c>UnitType.getScoreValue</c>); our <see cref="Specification.UnitType"/>
-    /// does not yet carry that attribute, so this scoring section holds the table directly — keeping the formula faithful and
-    /// self-contained without touching the spec parser. A unit type absent from the table scores 0 (FreeCol's default for a
-    /// type with no <c>score-value</c>). Update this table if the unit ruleset's score values change.
+    /// The score value of one unit, read straight off its parsed type (FreeCol <c>UnitType.getScoreValue</c>): the
+    /// <c>score-value</c> attribute the spec sets per <c>unit-type</c> (criminal 1 .. man-o-war 8), inherited down the
+    /// <c>extends</c> chain at parse time. 0 for a type the spec gives no <c>score-value</c> (braves/native units), so
+    /// they never count toward a colonial score. Data-driven — a variant ruleset's score table needs no code change.
     /// </summary>
-    private static readonly IReadOnlyDictionary<string, int> UnitScoreValues = new Dictionary<string, int>
-    {
-        // People (specification.xml lines 1814–2003)
-        ["model.unit.freeColonist"] = 3,
-        ["model.unit.expertFarmer"] = 4,
-        ["model.unit.expertFisherman"] = 4,
-        ["model.unit.expertFurTrapper"] = 4,
-        ["model.unit.expertSilverMiner"] = 4,
-        ["model.unit.expertLumberJack"] = 4,
-        ["model.unit.expertOreMiner"] = 4,
-        ["model.unit.masterSugarPlanter"] = 5,
-        ["model.unit.masterCottonPlanter"] = 5,
-        ["model.unit.masterTobaccoPlanter"] = 5,
-        ["model.unit.firebrandPreacher"] = 6,
-        ["model.unit.elderStatesman"] = 6,
-        ["model.unit.masterCarpenter"] = 4,
-        ["model.unit.masterDistiller"] = 5,
-        ["model.unit.masterWeaver"] = 5,
-        ["model.unit.masterTobacconist"] = 5,
-        ["model.unit.masterFurTrader"] = 5,
-        ["model.unit.masterBlacksmith"] = 5,
-        ["model.unit.masterGunsmith"] = 5,
-        ["model.unit.seasonedScout"] = 4,
-        ["model.unit.hardyPioneer"] = 4,
-        ["model.unit.veteranSoldier"] = 5,
-        ["model.unit.jesuitMissionary"] = 5,
-        ["model.unit.indenturedServant"] = 2,
-        ["model.unit.pettyCriminal"] = 1,
-        ["model.unit.indianConvert"] = 3,
-        // Ships and land vehicles (specification.xml lines 2102–2213)
-        ["model.unit.caravel"] = 3,
-        ["model.unit.frigate"] = 6,
-        ["model.unit.galleon"] = 5,
-        ["model.unit.manOWar"] = 8,
-        ["model.unit.merchantman"] = 4,
-        ["model.unit.privateer"] = 4,
-        ["model.unit.artillery"] = 2,
-        ["model.unit.damagedArtillery"] = 1,
-        ["model.unit.treasureTrain"] = 1,
-        ["model.unit.wagonTrain"] = 1,
-    };
+    private static int UnitScoreValue(Unit unit) => unit.Type.ScoreValue;
 
-    /// <summary>The classic-ruleset score value of one unit (FreeCol <c>UnitType.getScoreValue</c>); 0 for a type with no score value.</summary>
-    private static int UnitScoreValue(Unit unit) => UnitScoreValues.GetValueOrDefault(unit.Type.Id, 0);
-
-    /// <summary>The classic-ruleset score value of a unit <b>type</b> id (FreeCol <c>UnitType.getScoreValue</c>); 0 for a type with no score value. Used for colony-worker colonists, which are colony population rather than map units.</summary>
-    private static int UnitScoreValue(string unitTypeId) => UnitScoreValues.GetValueOrDefault(unitTypeId, 0);
+    /// <summary>
+    /// The score value of a unit <b>type</b> id (FreeCol <c>UnitType.getScoreValue</c>), read off the parsed type via
+    /// <see cref="Ruleset.UnitScoreValue"/>; 0 for an unknown id. Used for colony-worker colonists, which are colony
+    /// population (type-ids) rather than entries in the unit list.
+    /// </summary>
+    private int UnitScoreValue(string unitTypeId) => Ruleset.UnitScoreValue(unitTypeId);
 
     /// <summary>
     /// The Σ score value of every colonist working inside <paramref name="player"/>'s colonies (FreeCol's
