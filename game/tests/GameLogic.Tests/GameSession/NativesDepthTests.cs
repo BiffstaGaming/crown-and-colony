@@ -319,4 +319,40 @@ public class NativesDepthTests
         }
         Assert.Empty(game.ColonyGiftNotices); // nothing to spare → no gift
     }
+
+    [Fact]
+    public void Gift_NeverGivesFood_EvenWhenFoodIsTheOnlySurplus_SoTheHumanStreamStaysStable()
+    {
+        // A native gift is drawn on the NATION's stream. Food must be excluded from gifts: food landing in a human
+        // colony could reach FoodForGrowth and birth a colonist, adding a tile worker and thus an extra stream-0
+        // experience roll per later turn — a native-stream gift would then perturb the human's stream 0 (ADR-009).
+        // So even a settlement whose ONLY surplus is food must never gift (matching the ProduceNativeGoods food filter).
+        Game game = Game.New(Classic, seed: 7);
+        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.Type.CanFoundColony));
+        NativeSettlement home = game.NativeSettlements.First();
+        string nation = home.NationTypeId;
+        Position adj = colony.Position.Neighbours().First(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.NativeSettlementAt(n) is null && game.ColonyAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+        Unit brave = game.SpawnUnit(Classic.Unit("model.unit.brave"), adj, nation);
+
+        // Stock the home store with food ONLY, well above the gift threshold — the sole giftable surplus candidate.
+        for (int turn = 0; turn < 40; turn++)
+        {
+            foreach (NativeSettlement s in game.NativeSettlements)
+            {
+                game.ChangeNativeAlarm(s, -s.Alarm); // keep everyone Happy (so a gift could otherwise fire)
+                foreach (var kv in s.GeneralStock.Where(kv => kv.Key != "model.goods.food").ToList())
+                {
+                    s.AddGoods(kv.Key, -kv.Value); // strip every non-food good (incl. the farmed production seed) each turn
+                }
+            }
+            home.AddGoods("model.goods.food", 200); // a large food surplus, every turn
+            brave.Position = adj;
+            game.EndTurn();
+        }
+
+        Assert.Empty(game.ColonyGiftNotices); // food is never gifted, so no gift fires though the store overflows with it
+    }
 }

@@ -245,8 +245,9 @@ public sealed record SaveGame
     /// (Voluntary <b>retirement</b> needed no new field — a retired player rides the existing
     /// <see cref="GameSession.PlayerType"/> ordinal.) All three are additive + <b>omitted when default</b>
     /// (false / null / 0 — every game that has not won-and-continued and is not mid-REF-war), so a default game serialises
-    /// byte-identically to v61 and pre-v62 saves load with no kept-playing override and no pending REF waves (a war
-    /// reloaded from a pre-v62 save has its whole REF land at once on the next REF turn, exactly as it did before).
+    /// byte-identically to v61 and pre-v62 saves load with no kept-playing override and no pending-wave timer (a war
+    /// reloaded from a pre-v62 save resumes under the v62 rules — its REF comes ashore in staggered waves from the next
+    /// REF turn, with the wave timer starting at 0 — and never breaks on morale, since the peak loads as 0).
     /// Determinism (ADR-009): the kept-playing flag and the wave/morale state draw no RNG (the cadence is a fixed
     /// interval, morale a pure count of losses), so a reloaded game continues on the identical random sequence and the
     /// soak — which never wins or reaches the war in its window — stays byte-identical and twin-deterministic.
@@ -327,7 +328,7 @@ public sealed record SaveGame
     /// <summary>Whether the winner chose to keep playing past victory, disabling the victory conditions (v62; FreeCol <c>continuePlaying</c>). Null/omitted when false — every game that has not won-and-continued — so a default game stays byte-identical to v61; pre-v62 saves load with the win still enabled.</summary>
     public bool? VictoryConditionsDisabled { get; init; }
 
-    /// <summary>Turns until the King's next REF reinforcement wave comes ashore (v62; null/omitted when 0 — no wave pending). Pre-v62 saves load with no pending wave (the whole REF lands at once, as before this version).</summary>
+    /// <summary>Turns until the King's next REF reinforcement wave comes ashore (v62; null/omitted when 0 — no wave pending). Pre-v62 saves load with the timer at 0, so the REF resumes coming ashore in staggered waves from the next REF turn (the v62 rules), not all at once.</summary>
     public int? RefWaveCountdown { get; init; }
 
     /// <summary>The high-water mark of the King's morale — the full land army he committed at the declaration, the denominator of the morale-break test (v62; null/omitted when 0, i.e. no REF at war). The <em>current</em> morale is derived live from the survivors, so only this peak persists. Pre-v62 saves load with peak 0 (a reloaded war never breaks on morale, only on the raw unit thresholds, exactly as before this version).</summary>
@@ -847,8 +848,9 @@ public sealed record SaveGame
         {
             game.SetVictoryConditionsDisabled(true); // re-disables the victory conditions exactly as ContinuePlaying did
         }
-        // The REF reinforcement + morale state (v62; pre-v62 / omitted → no wave timer, peak 0 — a reloaded war lands
-        // its whole REF at once on the next REF turn and never breaks on morale, exactly as before this version).
+        // The REF reinforcement + morale state (v62; pre-v62 / omitted → wave timer 0, peak 0 — a reloaded war resumes
+        // under the v62 rules: the REF comes ashore in staggered waves from the next REF turn, and with peak 0 it never
+        // breaks on morale, only on the raw unit thresholds).
         if (RefWaveCountdown is not null || RefMoralePeak is not null)
         {
             game.SetRefReinforcementState(RefWaveCountdown ?? 0, RefMoralePeak ?? 0);

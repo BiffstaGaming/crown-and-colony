@@ -539,10 +539,14 @@ public partial class Game
         }
 
         // The goods the settlement holds a genuine surplus of (above the keep-back threshold), tradeable + non-military,
-        // in stable id order so the random pick is deterministic for a seed.
+        // in stable id order so the random pick is deterministic for a seed. Food is EXCLUDED (matching
+        // ProduceNativeGoods): gifting food into a human colony could push it to FoodForGrowth and birth a colonist,
+        // adding a tile worker and thus an extra stream-0 experience roll per later turn — so a native-stream gift
+        // would perturb the human's stream 0 (ADR-009). Keep gifts to non-food goods so the human stream stays stable.
         List<string> giftable = home.GeneralStock
             .Where(kv => kv.Value > NativeGiftThreshold
-                && Ruleset.Goods(kv.Key).IsTradeable && !Ruleset.Goods(kv.Key).IsMilitary)
+                && Ruleset.Goods(kv.Key).IsTradeable && !Ruleset.Goods(kv.Key).IsMilitary
+                && !Ruleset.Goods(kv.Key).IsFood)
             .Select(kv => kv.Key)
             .OrderBy(k => k, System.StringComparer.Ordinal)
             .ToList();
