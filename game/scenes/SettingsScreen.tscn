@@ -122,6 +122,19 @@ layout_mode = 2
 horizontal_alignment = 2
 text = "100%"
 
+[node name="MuteRow" type="HBoxContainer" parent="Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Label" type="Label" parent="Panel/VBox/MuteRow"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Mute all"
+
+[node name="MuteCheck" type="CheckButton" parent="Panel/VBox/MuteRow"]
+layout_mode = 2
+
 [node name="MusicRow" type="HBoxContainer" parent="Panel/VBox"]
 layout_mode = 2
 theme_override_constants/separation = 12

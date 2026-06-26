@@ -23,6 +23,7 @@ public partial class SettingsScreen : Control
     private SettingsService _service = null!;
     private OptionButton _windowMode = null!;
     private CheckButton _vsync = null!;
+    private CheckButton _mute = null!;
     private HSlider _master = null!;
     private HSlider _music = null!;
     private HSlider _sfx = null!;
@@ -55,6 +56,7 @@ public partial class SettingsScreen : Control
         _windowMode.AddItem("Windowed", (int)WindowMode.Windowed);
         _windowMode.AddItem("Fullscreen", (int)WindowMode.Fullscreen);
         _vsync = GetNode<CheckButton>("Panel/VBox/VSyncRow/VSyncCheck");
+        _mute = GetNode<CheckButton>("Panel/VBox/MuteRow/MuteCheck");
         _master = GetNode<HSlider>("Panel/VBox/MasterRow/MasterSlider");
         _music = GetNode<HSlider>("Panel/VBox/MusicRow/MusicSlider");
         _sfx = GetNode<HSlider>("Panel/VBox/SfxRow/SfxSlider");
@@ -74,6 +76,7 @@ public partial class SettingsScreen : Control
 
         _windowMode.ItemSelected += OnWindowMode;
         _vsync.Toggled += OnVSync;
+        _mute.Toggled += OnMute;
         _master.ValueChanged += v => OnVolume(s => s.MasterVolume = (float)v, v, _masterValue);
         _music.ValueChanged += v => OnVolume(s => s.MusicVolume = (float)v, v, _musicValue);
         _sfx.ValueChanged += v => OnVolume(s => s.SfxVolume = (float)v, v, _sfxValue);
@@ -98,6 +101,7 @@ public partial class SettingsScreen : Control
         _populating = true; // suppress the change handlers while we set control values programmatically
         _windowMode.Selected = (int)s.WindowMode;
         _vsync.ButtonPressed = s.VSync;
+        _mute.ButtonPressed = _service.MasterMute; // mute is presentation state on the service, not the model
         _master.Value = s.MasterVolume;
         _music.Value = s.MusicVolume;
         _sfx.Value = s.SfxVolume;
@@ -127,6 +131,17 @@ public partial class SettingsScreen : Control
             return;
         }
         _service.UpdateAndApply(s => s.VSync = on);
+    }
+
+    // The master mute is presentation state on the service (not the engine-free SettingsModel): it silences the Master
+    // bus live without disturbing the saved volume sliders. Back persists it like every other setting.
+    private void OnMute(bool on)
+    {
+        if (_populating)
+        {
+            return;
+        }
+        _service.SetMasterMute(on);
     }
 
     private void OnVolume(System.Action<SettingsModel> set, double value, Label valueLabel)

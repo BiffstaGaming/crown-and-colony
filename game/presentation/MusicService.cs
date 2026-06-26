@@ -27,6 +27,10 @@ public partial class MusicService : Node
     private readonly List<string> _playlist = new();
     private int _playlistPos;
 
+    // The context the background playlist is currently playing — so SetContext can skip a redundant restart (which would
+    // re-shuffle and cut the current track) when the mood has not actually changed (e.g. menu → in-game, same playlist).
+    private MusicContext _context = MusicContext.Background;
+
     // True while a one-shot anthem is playing; when it finishes we fall back to the background playlist.
     private bool _anthemPlaying;
 
@@ -53,6 +57,7 @@ public partial class MusicService : Node
     public void PlayBackground(MusicContext context = MusicContext.Background)
     {
         _anthemPlaying = false;
+        _context = context;
         BuildShuffledPlaylist(context);
         if (_playlist.Count == 0)
         {
@@ -60,6 +65,21 @@ public partial class MusicService : Node
         }
         _playlistPos = 0;
         PlayCurrentPlaylistTrack();
+    }
+
+    /// <summary>
+    /// Switches the background music to match a game state — the menu vs an in-game vs a tenser context. Restarts the
+    /// playlist (re-shuffled) only when the context actually changes, so moving from the menu into a game that shares the
+    /// same <see cref="MusicContext.Background"/> playlist does <em>not</em> interrupt the current track (faithful to
+    /// FreeCol's single shared background bed). Call this from <c>GameController</c> as the game state changes.
+    /// </summary>
+    public void SetContext(MusicContext context)
+    {
+        if (context == _context && _player.Playing)
+        {
+            return; // same mood, music already running → leave the current track alone
+        }
+        PlayBackground(context);
     }
 
     /// <summary>

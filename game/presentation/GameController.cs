@@ -396,6 +396,10 @@ public partial class GameController : Node2D
             ?? _game.Colonies.FirstOrDefault(c => c.OwnerId == _game.HumanPlayer.PlayerId)?.Position
             ?? new Position(_game.Map.Width / 2, _game.Map.Height / 2);
         GetNode<Camera2D>("Camera").Position = MapView.TileCentre(focus);
+        // Switch the background music to the in-game context as the game starts. Both the menu and gameplay currently
+        // share FreeCol's single Background playlist, so this keeps the music seamless (SetContext only restarts the
+        // playlist when the mood actually changes) — the seam is here for a future war/tension context (86d3fq1wy).
+        SetMusicContext(MusicContext.Background);
         // Cue the human player's national anthem once over the running background music (FreeCol plays it at game start).
         PlayAnthem(_game.HumanPlayer.NationId);
         RefreshView();
@@ -470,7 +474,15 @@ public partial class GameController : Node2D
 
     private void OnEndTurnPressed()
     {
+        // Snapshot the human's total buildings before the turn resolves so we can detect a just-completed construction
+        // (the engine surfaces no build-complete notice — we observe the state change, presentation-only, ADR-006).
+        int buildingsBefore = HumanBuildingCount();
         _game.EndTurn();
+        // A colony finished a building this turn → play the build-complete cue (FreeCol's buildingComplete event).
+        if (HumanBuildingCount() > buildingsBefore)
+        {
+            PlaySound(SoundEvent.BuildingComplete);
+        }
         // A fresh turn: every unit may need orders again, so the session-only skip set (Space) clears at rollover (86d3f0vuy).
         _skippedThisTurn.Clear();
         // Surface what the human suffered or received during the AI phase (no return value to read, unlike a
@@ -504,6 +516,12 @@ public partial class GameController : Node2D
         }
         // The dismissible turn-message panel shows every event this turn (unfiltered — it is the "what just happened"
         // popup, not the filterable history); pass the plain text. No-op (stays hidden) when there were no events.
+        // An attention cue accompanies the popup so the player notices something happened during the AI phase (the
+        // build-complete cue above is more specific, so don't double up when that was the only thing this turn).
+        if (entries.Count > 0)
+        {
+            PlaySound(SoundEvent.Alert);
+        }
         _turnMessagePanel.Open(entries.Select(e => e.Text)); // no-op (stays hidden) when there were no events this turn
         RefreshView();
 
@@ -801,7 +819,7 @@ public partial class GameController : Node2D
         MoveCheck check = _game.CheckDisband(unit);
         if (!check.Allowed)
         {
-            _notice = check.Reason;
+            NoticeBlocked(check.Reason); // can't disband → status + deny buzz
             RefreshView();
             return;
         }
@@ -848,7 +866,7 @@ public partial class GameController : Node2D
         MoveCheck check = _game.CheckCashInTreasureTrain(train);
         if (!check.Allowed)
         {
-            _notice = check.Reason; // e.g. "Bring the treasure train to one of your colonies …" — show, don't throw
+            NoticeBlocked(check.Reason); // e.g. "Bring the treasure train to one of your colonies …" — status + deny buzz
             RefreshView();
             return;
         }
@@ -883,6 +901,11 @@ public partial class GameController : Node2D
                 _game.CashInTreasureTrain(train);
                 _selectedUnit = null; // the train left the game — clear the (now dangling) selection
                 _notice = $"Treasure cashed in: {banked} gold banked.";
+                PlaySound(SoundEvent.CargoSold); // treasure banked → the cash/sell cue
+            }
+            else
+            {
+                PlaySound(SoundEvent.IllegalMove); // the gate closed behind the modal → deny buzz
             }
             RefreshView();
         };
@@ -1041,7 +1064,7 @@ public partial class GameController : Node2D
         }
         else
         {
-            _notice = check.Reason;
+            NoticeBlocked(check.Reason); // can't set that destination → status + deny buzz
         }
         RefreshView();
         return check.Allowed;
@@ -1184,7 +1207,7 @@ public partial class GameController : Node2D
                 }
                 else
                 {
-                    _notice = check.Reason;
+                    NoticeBlocked(check.Reason); // blocked move → status + deny buzz
                 }
             }
         }
@@ -1202,7 +1225,7 @@ public partial class GameController : Node2D
         MoveCheck check = _game.CheckAttack(_selectedUnit!, tile);
         if (!check.Allowed)
         {
-            _notice = check.Reason;
+            NoticeBlocked(check.Reason); // blocked attack → status + deny buzz
             return;
         }
         Game.CombatOdds? odds = _game.CombatOddsAgainst(_selectedUnit!, tile);
@@ -1283,7 +1306,7 @@ public partial class GameController : Node2D
         MoveCheck check = _game.CheckAttackColony(_selectedUnit!, tile);
         if (!check.Allowed)
         {
-            _notice = check.Reason;
+            NoticeBlocked(check.Reason); // blocked colony assault → status + deny buzz
             return;
         }
         string colonyName = _game.ColonyAt(tile)!.Name;
@@ -1307,6 +1330,31 @@ public partial class GameController : Node2D
     /// </summary>
     private void PlaySound(SoundEvent evt) => GetNodeOrNull<SoundService>("/root/Sound")?.Play(evt);
 
+    // Surfaces a blocked-action reason in the status bar AND plays the illegal-move buzz — the single helper used at the
+    // player-initiated "this is not allowed" paths (a failed move/attack/found/disband/goto check), so the deny cue and
+    // the message stay in lock-step. Presentation-only over the engine's MoveCheck gate (ADR-006).
+    private void NoticeBlocked(string? reason)
+    {
+        _notice = reason;
+        PlaySound(SoundEvent.IllegalMove);
+    }
+
+    // The total number of buildings across all the human player's colonies — snapshotted around EndTurn to detect a
+    // just-finished construction (one build completes per colony per turn; a net increase means at least one finished).
+    // Reads-only over already-resolved state (ADR-006); the build-complete cue is purely cosmetic.
+    private int HumanBuildingCount()
+    {
+        int total = 0;
+        foreach (Colony colony in _game.Colonies)
+        {
+            if (colony.OwnerId == _game.HumanPlayer.PlayerId)
+            {
+                total += colony.Buildings.Count;
+            }
+        }
+        return total;
+    }
+
     /// <summary>
     /// Plays the human player's national anthem once via the <c>Music</c> autoload (<c>/root/Music</c>), then the
     /// background playlist resumes. Resolved lazily by node path (no-op if the autoload is absent, e.g. headless scene
@@ -1315,6 +1363,14 @@ public partial class GameController : Node2D
     /// </summary>
     private void PlayAnthem(string? nationId) =>
         GetNodeOrNull<MusicService>("/root/Music")?.PlayAnthem(nationId);
+
+    /// <summary>
+    /// Switches the background music to match <paramref name="context"/> (menu vs in-game vs a future war/tension cue)
+    /// via the <c>Music</c> autoload. Resolved lazily by node path (no-op if the autoload is absent, e.g. headless scene
+    /// tests). The service only restarts the playlist when the mood actually changes, so a same-context call is harmless.
+    /// </summary>
+    private void SetMusicContext(MusicContext context) =>
+        GetNodeOrNull<MusicService>("/root/Music")?.SetContext(context);
 
     private void FoundColony()
     {
@@ -1328,7 +1384,7 @@ public partial class GameController : Node2D
         MoveCheck check = _game.CheckFoundColony(_selectedUnit);
         if (!check.Allowed)
         {
-            _notice = check.Reason;
+            NoticeBlocked(check.Reason); // can't found here → status + deny buzz
             RefreshView();
             return;
         }
@@ -1479,10 +1535,12 @@ public partial class GameController : Node2D
         {
             _game.LoadFromColony(carrier, colony, goodsId, amount);
             _notice = $"Loaded {amount} {goodsId[(goodsId.LastIndexOf('.') + 1)..]} onto the {carrier.Type.ShortName}.";
+            PlaySound(SoundEvent.CargoMoved); // cargo loaded into a hold
         }
         catch (InvalidMoveException ex)
         {
             _notice = ex.Message; // e.g. "The carrier has no room for that cargo." — show, don't throw to the UI
+            PlaySound(SoundEvent.IllegalMove); // blocked load → the deny buzz
         }
         RefreshView();
     }
@@ -1500,10 +1558,12 @@ public partial class GameController : Node2D
         {
             _game.UnloadToColony(carrier, colony, goodsId, amount);
             _notice = $"Unloaded {amount} {goodsId[(goodsId.LastIndexOf('.') + 1)..]} into {colony.Name}.";
+            PlaySound(SoundEvent.CargoMoved); // cargo unloaded from a hold (shares FreeCol's load/unload clip)
         }
         catch (InvalidMoveException ex)
         {
             _notice = ex.Message;
+            PlaySound(SoundEvent.IllegalMove); // blocked unload → the deny buzz
         }
         RefreshView();
     }
