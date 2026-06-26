@@ -175,6 +175,17 @@ public sealed partial class Game
     /// </summary>
     public string DifficultyLevelId { get; private init; }
 
+    /// <summary>
+    /// How this game treats national advantages (FreeCol <c>model.option.nationalAdvantages</c>, New-Game dial
+    /// 86d3fq0za). <see cref="Specification.NationalAdvantages.None"/> suppresses every nation-type advantage — the
+    /// advantage modifiers folded by <see cref="NationTypeModifiers"/> and the nation-specific starting-unit upgrades —
+    /// so a chosen nation plays with the neutral default roster and no bonuses. Defaults to
+    /// <see cref="Specification.NationalAdvantages.Selectable"/> (advantages on), so a default game is byte-identical
+    /// (ADR-009). Session-only — not persisted (a reloaded game re-derives the default, matching the other New-Game
+    /// configuration seams).
+    /// </summary>
+    public NationalAdvantages NationalAdvantages { get; private init; } = NationalAdvantages.Selectable;
+
     /// <summary>The game world.</summary>
     public GameMap Map { get; }
 
@@ -4219,6 +4230,29 @@ public sealed partial class Game
     /// retyping is a pure RNG-free post-process, so even an enabled game keeps the same stream-0 draw sequence (only the
     /// terrain output gains great-river tiles). Applies only to the random map path.
     /// </param>
+    /// <param name="foreignPowerCount">
+    /// The number of rival European powers to land (the New-Game rival-count dial, FreeCol's <c>NationOptions</c> roster
+    /// size; 86d3fq1df). <b>Null = the classic default of 3</b> (byte-identical, ADR-009); a chosen value is clamped to
+    /// <c>0..selectableRivals</c> (the selectable non-REF nations other than the human's own), so it can never ask for
+    /// negative powers or more nations than the ruleset offers.
+    /// </param>
+    /// <param name="mapOptions">
+    /// The tunable map-generation counts and climate bands — mountain/river/forest/bonus density and a temperature /
+    /// humidity bias (FreeCol's <c>model.option.mountainNumber</c>/<c>riverNumber</c>/<c>forestNumber</c>/<c>bonusNumber</c>
+    /// + <c>temperature</c>/<c>humidity</c>; 86d3fq18b/86d3fq13u). <b>Null = <see cref="MapGenerationOptions.Classic"/></b>
+    /// (the historical values), so an unpicked new game is byte-identical (ADR-009).
+    /// </param>
+    /// <param name="rumourNumber">
+    /// Land tiles per Lost City Rumour (the New-Game rumour-count dial, FreeCol's <c>model.option.rumourNumber</c>;
+    /// 86d3fq1b8; <b>higher = fewer</b>). Defaults to <see cref="LostCityRumourGenerator.DefaultRumourNumber"/> (classic
+    /// 35), so an unpicked new game is byte-identical (ADR-009).
+    /// </param>
+    /// <param name="nationalAdvantages">
+    /// Whether national advantages are in play (the New-Game dial, FreeCol's <c>model.option.nationalAdvantages</c>;
+    /// 86d3fq0za). <see cref="NationalAdvantages.None"/> suppresses every nation-type advantage (the modifier bonuses and
+    /// the nation-specific starting-unit upgrades); <see cref="NationalAdvantages.Selectable"/> (the default) /
+    /// <see cref="NationalAdvantages.Fixed"/> keep them, so an unpicked new game is byte-identical (ADR-009).
+    /// </param>
     public static Game New(
         Ruleset ruleset, ulong seed, int mapWidth = 36, int mapHeight = 24,
         int startingGold = 0, int startingTax = 0,
@@ -4228,8 +4262,17 @@ public sealed partial class Game
         string? humanNationId = null,
         LandStyle landStyle = LandStyle.Continent,
         MapImportResult? importOverride = null,
-        bool greatRivers = false)
+        bool greatRivers = false,
+        int? foreignPowerCount = null,
+        MapGenerationOptions? mapOptions = null,
+        int rumourNumber = LostCityRumourGenerator.DefaultRumourNumber,
+        NationalAdvantages nationalAdvantages = NationalAdvantages.Selectable)
     {
+        // The number of rival European powers (FreeCol's NationOptions roster size; 86d3fq1df). Null = the classic
+        // default (ForeignPowerCount = 3); clamped to a sane range so a New-Game dial can't ask for negative powers or
+        // more than the ruleset has selectable non-REF nations (minus the human's own slot). The map-gen options
+        // (86d3fq18b/86d3fq13u) default to the classic values, so an omitting caller is byte-identical (ADR-009).
+        mapOptions ??= MapGenerationOptions.Classic;
         // A picked nation must be a real, selectable, non-REF European power; anything else (null, an unknown id, a
         // native/REF id) falls back to the nation-less classic human — so the default new game stays byte-identical.
         string? humanNation = humanNationId is { } nid
@@ -4246,8 +4289,8 @@ public sealed partial class Game
         MapImportResult? imported = importOverride ?? FixedMap.TryImport(mapSource, ruleset);
         IReadOnlyList<NativeSettlement> importedSettlements = imported?.Settlements ?? [];
         GameMap map = imported is null
-            ? MapGenerator.Generate(ruleset, mapWidth, mapHeight, random, landMassFraction, landStyle, greatRivers)
-            : MapGenerator.DecorateFixedMap(imported.Map, ruleset, random);
+            ? MapGenerator.Generate(ruleset, mapWidth, mapHeight, random, landMassFraction, landStyle, greatRivers, mapOptions)
+            : MapGenerator.DecorateFixedMap(imported.Map, ruleset, random, mapOptions);
 
         // A scenario map that declared a [regions] layer keeps it: the decorate pass re-derives regions from terrain
         // (RegionGenerator.Assign), so we re-install the imported region table + per-tile ids over that result. This is
@@ -4268,7 +4311,13 @@ public sealed partial class Game
             Gold = startingGold,
             TaxRate = startingTax,
         };
-        var game = new Game(ruleset, map, random, turn: 1, human) { DifficultyLevelId = difficultyLevelId };
+        var game = new Game(ruleset, map, random, turn: 1, human)
+        {
+            DifficultyLevelId = difficultyLevelId,
+            // The national-advantages mode (86d3fq0za) decides whether nation advantages apply at all (None = off).
+            // Session-only — not persisted (a reloaded game re-derives Selectable, like the other New-Game seams).
+            NationalAdvantages = nationalAdvantages,
+        };
 
         // Give every placed finite (min/max-ranged) bonus resource a rolled starting quantity (FreeCol
         // `new Resource(game, tile, type)` ⇒ RandomRange(min, max)). Rolled on the dedicated, reserved
@@ -4367,7 +4416,7 @@ public sealed partial class Game
             }
         }
 
-        game.SpawnRivalsAndNatives(ruleset, start, humanNation); // foreign powers (landed) + native nations as players (FP-3b/FP-4); the human's own nation is excluded from the rival roster
+        game.SpawnRivalsAndNatives(ruleset, start, humanNation, foreignPowerCount); // foreign powers (landed) + native nations as players (FP-3b/FP-4); the human's own nation is excluded from the rival roster. foreignPowerCount (null = classic 3) is the New-Game rival-count dial (86d3fq1df)
 
         // Each non-human player draws from its own independent PCG stream (ADR-009); created here from the
         // same seed so the human's stream 0 is untouched (foreign units already placed, drawing nothing). A
@@ -4389,7 +4438,7 @@ public sealed partial class Game
         var lcrExcluded = new HashSet<Position>(start.Neighbours().Append(start));
         lcrExcluded.UnionWith(game._nativeSettlements.Select(s => s.Position));
         lcrExcluded.UnionWith(game._units.Where(u => u.IsOnMap).Select(u => u.Position));
-        foreach (Position p in LostCityRumourGenerator.Place(map, lcrExcluded, lcrRandom))
+        foreach (Position p in LostCityRumourGenerator.Place(map, lcrExcluded, lcrRandom, rumourNumber))
         {
             map.AddRumour(p);
         }
@@ -4465,17 +4514,26 @@ public sealed partial class Game
     /// AI pool). Placement draws no RNG (the human's stream 0 stays byte-stable); player ids are allocated densely in a
     /// stable order (human 0, then natives, then powers).
     /// </summary>
-    private void SpawnRivalsAndNatives(Ruleset ruleset, Position humanStart, string? humanNationId = null)
+    private void SpawnRivalsAndNatives(
+        Ruleset ruleset, Position humanStart, string? humanNationId = null, int? foreignPowerCount = null)
     {
         foreach (string nationType in _nativeSettlements.Select(s => s.NationTypeId).Distinct().OrderBy(n => n))
         {
             _players.Add(new Player(_players.Count, nationType, isHuman: false, PlayerType.Native, new Market(ruleset)));
         }
 
+        // The rival roster is the selectable non-REF European nations other than the human's own, taken up to the
+        // requested count (New-Game dial 86d3fq1df). Null = the classic ForeignPowerCount (3); a chosen count is clamped
+        // to 0..availableRivals, so the dial can never ask for negative powers or more nations than the ruleset offers
+        // (the picker offers the same upper bound). At the classic 3 this is byte-identical to the historical roster.
+        var availableRivals = ruleset.EuropeanNations
+            .Where(n => n.Selectable && !n.IsRef && n.Id != humanNationId)
+            .ToList();
+        int wanted = Math.Clamp(foreignPowerCount ?? ForeignPowerCount, 0, availableRivals.Count);
+
         var taken = new HashSet<Position>(); // tiles claimed by foreign landings (keeps powers off each other's units)
         var anchors = new List<Position>();  // each placed power's landing anchor (keeps powers spread along the coast)
-        foreach (EuropeanNation nation in ruleset.EuropeanNations
-                     .Where(n => n.Selectable && !n.IsRef && n.Id != humanNationId).Take(ForeignPowerCount))
+        foreach (EuropeanNation nation in availableRivals.Take(wanted))
         {
             var power = new Player(_players.Count, nation.Id, isHuman: false, PlayerType.Colonial, new Market(ruleset));
             _players.Add(power);
@@ -4562,10 +4620,13 @@ public sealed partial class Game
     /// </summary>
     private IEnumerable<(string TypeId, string? RoleId)> HumanStartingRosterFor(Ruleset ruleset)
     {
-        if (HumanPlayer.NationId is not { } nationId
+        if (NationalAdvantages == NationalAdvantages.None
+            || HumanPlayer.NationId is not { } nationId
             || ruleset.EuropeanNations.FirstOrDefault(n => n.Id == nationId) is not { } nation)
         {
-            return HumanStartingRoster; // nation-less classic human → today's exact roster (byte-identical default)
+            // Nation-less classic human, OR national advantages turned off (86d3fq0za) → the neutral default roster (no
+            // nation-specific starting-unit upgrade). The nation-less default is byte-identical (ADR-009).
+            return HumanStartingRoster;
         }
 
         // Naval-last ordering (stable: land slots keep their spec order, then the ship), so the ship still finds a
@@ -4612,7 +4673,10 @@ public sealed partial class Game
 
         // Same expert-aware resolution as the human (FreeCol: all players read the spec-level expertStartingUnits) —
         // on the default medium level the flag is off, so this is exactly RegularStartingUnits (byte-identical default).
-        foreach (EuropeanStartingUnit start in nation.NationType.StartingUnitsFor(ruleset.Difficulty.ExpertStartingUnits))
+        // With national advantages OFF (86d3fq0za) the expert upgrade is suppressed too (the regular roster only), so a
+        // rival lands the plain colonist/soldier/ship for its nation rather than an expert-upgraded slot.
+        bool expertUnits = NationalAdvantages != NationalAdvantages.None && ruleset.Difficulty.ExpertStartingUnits;
+        foreach (EuropeanStartingUnit start in nation.NationType.StartingUnitsFor(expertUnits))
         {
             if (!ruleset.UnitTypes.Any(u => u.Id == start.UnitTypeId))
             {
@@ -10877,7 +10941,11 @@ public sealed partial class Game
     /// default), so a default game folds none.
     /// </summary>
     private IEnumerable<FatherModifier> NationTypeModifiers(Player player, string targetId) =>
-        player.NationId is { } nationId && Ruleset.EuropeanNations.FirstOrDefault(n => n.Id == nationId) is { } nation
+        // With national advantages turned OFF (the New-Game dial, 86d3fq0za) no nation-type advantage applies, so the
+        // seam folds nothing for every player — a chosen nation plays with the neutral default. On (the classic default)
+        // a player's nation type contributes its matching advantage modifiers.
+        NationalAdvantages != NationalAdvantages.None
+        && player.NationId is { } nationId && Ruleset.EuropeanNations.FirstOrDefault(n => n.Id == nationId) is { } nation
             ? nation.NationType.Modifiers.Where(m => m.TargetId == targetId)
             : [];
 

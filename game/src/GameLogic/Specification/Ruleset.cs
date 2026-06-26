@@ -142,8 +142,10 @@ public sealed class Ruleset
     /// <summary>
     /// The turn→year/season calendar parsed from the spec <c>gameOptions.years</c> group (classic 1492/1600/2).
     /// <see cref="GameSession.Game.CurrentYear"/>/<see cref="GameSession.Game.CurrentSeason"/> read it for the current turn.
+    /// May be overridden at New Game by <see cref="WithStartingYear"/> (the start-year dial, FreeCol
+    /// <c>model.option.startingYear</c>).
     /// </summary>
-    public Calendar Calendar { get; }
+    public Calendar Calendar { get; private set; }
 
     /// <summary>
     /// The unattached, top-level combat <c>&lt;modifier&gt;</c> percentages parsed from the spec's
@@ -401,6 +403,30 @@ public sealed class Ruleset
     public Ruleset WithAmphibiousMoves(bool amphibiousMoves)
     {
         GameOptions = GameOptions with { AmphibiousMoves = amphibiousMoves };
+        return this;
+    }
+
+    /// <summary>
+    /// Returns this ruleset with the <b>starting year</b> of the calendar overridden to the player's New-Game pick —
+    /// FreeCol's <c>model.option.startingYear</c>, chosen at game setup (86d3fq1fd). Like <see cref="WithFogOfWar"/> this
+    /// is a <b>configuration</b> seam, not a rules change: it only shifts which year turn 1 maps to (and therefore the
+    /// calendar label the HUD shows) — the turn/season <em>logic</em> in <see cref="Specification.Calendar"/> is
+    /// unchanged. The season-split year and seasons-per-year are kept from the parsed spec (a player only picks the
+    /// <em>start</em> year); a chosen start year on or after the season-split year is clamped down to one year before it,
+    /// so the calendar always has at least one one-turn-per-year era and never starts mid-season (faithful to FreeCol,
+    /// which keeps <c>startingYear &lt; seasonYear</c>). Each loaded ruleset is a fresh parse (never cached/shared —
+    /// <see cref="LoadEmbedded"/>), so mutating the just-loaded instance is safe; the method returns <c>this</c> for a
+    /// fluent call right after load. Passing the parsed default (classic <b>1492</b>) leaves the ruleset byte-identical,
+    /// so a default new game is unchanged (ADR-009). Not persisted in the save — a reloaded game re-derives the year from
+    /// its variant's spec default (a saved override would bump the save format, matching the other New-Game seams).
+    /// </summary>
+    /// <param name="startingYear">The in-game year of turn 1 (classic <b>1492</b>).</param>
+    public Ruleset WithStartingYear(int startingYear)
+    {
+        // Keep startingYear strictly below the season-split year so the one-turn-per-year early era is never empty
+        // (FreeCol keeps the two ordered). The seasons-per-year and the split year itself are unchanged.
+        int seasonYear = Math.Max(startingYear + 1, Calendar.SeasonYear);
+        Calendar = Calendar with { StartingYear = startingYear, SeasonYear = seasonYear };
         return this;
     }
 

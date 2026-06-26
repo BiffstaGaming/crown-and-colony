@@ -58,6 +58,94 @@ public partial class NewGameDialog : Control
         (MapSource.America, "America (fixed)"),
     };
 
+    /// <summary>The offered rival-power counts (FreeCol's <c>NationOptions</c> roster size; 86d3fq1df), in dropdown order. Index 3 (= 3 rivals) is the classic default, pre-selected so an untouched Start is byte-identical.</summary>
+    private static readonly int[] RivalCountChoices = { 0, 1, 2, 3, 4, 5, 6, 7 };
+
+    /// <summary>The default rival-count dropdown index (3 rivals — the classic four powers minus the human's slot).</summary>
+    private const int RivalCountDefaultIndex = 3;
+
+    /// <summary>The offered start years (FreeCol <c>model.option.startingYear</c>; 86d3fq1fd), in dropdown order. Index 0 (1492) is the classic default, pre-selected so an untouched Start is byte-identical.</summary>
+    private static readonly int[] StartYearChoices = { 1492, 1500, 1550, 1600, 1650, 1700 };
+
+    /// <summary>The offered temperature bands (FreeCol <c>model.option.temperature</c>; 86d3fq13u): a label + a degrees bias on the latitude climate. Index 2 (Temperate, bias 0) is the byte-identical default.</summary>
+    private static readonly (string Label, int Bias)[] TemperatureChoices =
+    {
+        ("Cold", -15), ("Cool", -8), ("Temperate", 0), ("Warm", 8), ("Hot", 15),
+    };
+
+    /// <summary>The offered humidity bands (FreeCol <c>model.option.humidity</c>; 86d3fq13u): a label + a 0–100 bias on the smoothed humidity. Index 2 (Normal, bias 0) is the byte-identical default.</summary>
+    private static readonly (string Label, int Bias)[] HumidityChoices =
+    {
+        ("Very dry", -40), ("Dry", -20), ("Normal", 0), ("Wet", 20), ("Very wet", 40),
+    };
+
+    /// <summary>The default index of the no-bias climate band (Temperate / Normal) in <see cref="TemperatureChoices"/>/<see cref="HumidityChoices"/>.</summary>
+    private const int ClimateDefaultIndex = 2;
+
+    /// <summary>The offered river densities (FreeCol <c>model.option.riverNumber</c>; 86d3fq18b): a label + the riverNumber value. Index 1 (Normal = classic 15) is the byte-identical default.</summary>
+    private static readonly (string Label, int Value)[] RiverNumberChoices =
+    {
+        ("Few", 5), ("Normal", 15), ("Many", 30),
+    };
+
+    /// <summary>The offered mountain densities (FreeCol <c>model.option.mountainNumber</c>; 86d3fq18b): a label + the mountainNumber value (higher = fewer). Index 1 (Normal = classic 10) is the byte-identical default.</summary>
+    private static readonly (string Label, int Value)[] MountainNumberChoices =
+    {
+        ("Few", 20), ("Normal", 10), ("Many", 5),
+    };
+
+    /// <summary>The offered forest densities (FreeCol <c>model.option.forestNumber</c>; 86d3fq18b): a label + the forest chance. Index 1 (Normal = classic 0.45) is the byte-identical default.</summary>
+    private static readonly (string Label, double Value)[] ForestNumberChoices =
+    {
+        ("Sparse", 0.25), ("Normal", 0.45), ("Dense", 0.65),
+    };
+
+    /// <summary>The offered bonus-resource densities (FreeCol <c>model.option.bonusNumber</c>; 86d3fq18b): a label + the land bonus chance. Index 1 (Normal = classic 0.10) is the byte-identical default.</summary>
+    private static readonly (string Label, double Value)[] BonusNumberChoices =
+    {
+        ("Few", 0.05), ("Normal", 0.10), ("Many", 0.20),
+    };
+
+    /// <summary>The default index of the "Normal" (classic) entry in each map-gen-count dropdown.</summary>
+    private const int MapCountDefaultIndex = 1;
+
+    /// <summary>The offered lost-city-rumour densities (FreeCol <c>model.option.rumourNumber</c>; 86d3fq1b8): a label + the rumourNumber value (higher = fewer). Index 1 (Normal = classic 35) is the byte-identical default.</summary>
+    private static readonly (string Label, int Value)[] RumourNumberChoices =
+    {
+        ("Few", 70), ("Normal", 35), ("Many", 18),
+    };
+
+    /// <summary>The default index of the "Normal" (classic 35) rumour-count entry.</summary>
+    private const int RumourNumberDefaultIndex = 1;
+
+    /// <summary>The offered national-advantages modes (FreeCol <c>model.option.nationalAdvantages</c>; 86d3fq0za), in dropdown order. Index 0 (Selectable) is the byte-identical default.</summary>
+    private static readonly (string Label, NationalAdvantages Mode)[] AdvantagesChoices =
+    {
+        ("Selectable (default)", NationalAdvantages.Selectable),
+        ("Fixed", NationalAdvantages.Fixed),
+        ("None (off)", NationalAdvantages.None),
+    };
+
+    // ---- Forwarding statics (companions to the existing GameController.Pending* set; consumed by the new-game start
+    // path, 86d3fq1df / 86d3fq1fd / 86d3fq13u / 86d3fq18b / 86d3fq1b8 / 86d3fq0za). Static so they survive the scene
+    // change like the other Pending* picks. Null = no pick → the shipped default (byte-identical). Declared here on the
+    // dialog (the collecting surface); the new-game host reads + clears them when it builds Game.New. ----
+
+    /// <summary>The chosen rival-power count (null = the classic 3); threaded into <see cref="GameLogic.GameSession.Game.New"/>'s <c>foreignPowerCount</c>.</summary>
+    public static int? PendingRivalCount { get; set; }
+
+    /// <summary>The chosen start year (null = the classic 1492); applied via <see cref="Ruleset.WithStartingYear"/> on the loaded ruleset.</summary>
+    public static int? PendingStartYear { get; set; }
+
+    /// <summary>The chosen tunable map-gen counts + climate bands (null = <see cref="MapGenerationOptions.Classic"/>); threaded into <see cref="GameLogic.GameSession.Game.New"/>'s <c>mapOptions</c>.</summary>
+    public static MapGenerationOptions? PendingMapOptions { get; set; }
+
+    /// <summary>The chosen lost-city-rumour number (null = the classic 35); threaded into <see cref="GameLogic.GameSession.Game.New"/>'s <c>rumourNumber</c>.</summary>
+    public static int? PendingRumourNumber { get; set; }
+
+    /// <summary>The chosen national-advantages mode (null = <see cref="NationalAdvantages.Selectable"/>); threaded into <see cref="GameLogic.GameSession.Game.New"/>'s <c>nationalAdvantages</c>.</summary>
+    public static NationalAdvantages? PendingNationalAdvantages { get; set; }
+
     private OptionButton _variantOption = null!;
     private OptionButton _mapOption = null!;
     private OptionButton _sizeOption = null!;
@@ -65,6 +153,16 @@ public partial class NewGameDialog : Control
     private OptionButton _landStyleOption = null!;
     private OptionButton _difficultyOption = null!;
     private OptionButton _nationOption = null!;
+    private OptionButton _rivalCountOption = null!;
+    private OptionButton _startYearOption = null!;
+    private OptionButton _temperatureOption = null!;
+    private OptionButton _humidityOption = null!;
+    private OptionButton _riverNumberOption = null!;
+    private OptionButton _mountainNumberOption = null!;
+    private OptionButton _forestNumberOption = null!;
+    private OptionButton _bonusNumberOption = null!;
+    private OptionButton _rumourNumberOption = null!;
+    private OptionButton _advantagesOption = null!;
     // The alternative-victory-condition toggles (FreeCol's gameOptions.victoryConditions group): defeat the REF,
     // defeat all other Europeans, defeat all other humans. Initialised to the ruleset's parsed spec defaults so an
     // untouched Start is byte-identical (REF on, Europeans on, Humans off).
@@ -114,9 +212,17 @@ public partial class NewGameDialog : Control
         panel.AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin());
         centre.AddChild(panel);
 
-        var vbox = new VBoxContainer { Name = "VBox" };
+        // The full set of setup dials is taller than a small window, so the options scroll inside a bounded viewport
+        // (the panel keeps its parchment frame; the Start/Back buttons sit inside the scroll so they're always reachable
+        // by scrolling). A generous max height keeps every row visible on a normal screen without clipping.
+        var scroll = new ScrollContainer { Name = "Scroll", CustomMinimumSize = new Vector2(0, 0) };
+        scroll.SetCustomMinimumSize(new Vector2(360, 560));
+        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+        panel.AddChild(scroll);
+
+        var vbox = new VBoxContainer { Name = "VBox", SizeFlagsHorizontal = SizeFlags.ExpandFill };
         vbox.AddThemeConstantOverride("separation", 12);
-        panel.AddChild(vbox);
+        scroll.AddChild(vbox);
 
         vbox.AddChild(new Label
         {
@@ -191,6 +297,44 @@ public partial class NewGameDialog : Control
         }
         _nationOption.Selected = 0; // No nation — the classic nation-less human (byte-identical default)
         vbox.AddChild(LabeledRow("Nation", _nationOption));
+
+        // Rival European powers (FreeCol's NationOptions roster size; 86d3fq1df). 3 (the classic four minus the human's
+        // slot) is the byte-identical default.
+        _rivalCountOption = new OptionButton { Name = "RivalCountOption" };
+        foreach (int n in RivalCountChoices)
+        {
+            _rivalCountOption.AddItem(n.ToString());
+        }
+        _rivalCountOption.Selected = RivalCountDefaultIndex;
+        vbox.AddChild(LabeledRow("Rival powers", _rivalCountOption));
+
+        // Starting year (FreeCol model.option.startingYear; 86d3fq1fd). 1492 is the historical, byte-identical default.
+        _startYearOption = new OptionButton { Name = "StartYearOption" };
+        foreach (int y in StartYearChoices)
+        {
+            _startYearOption.AddItem(y.ToString());
+        }
+        _startYearOption.Selected = 0; // 1492 — the classic default
+        vbox.AddChild(LabeledRow("Starting year", _startYearOption));
+
+        // Climate bands (FreeCol model.option.temperature / humidity; 86d3fq13u). Temperate / Normal (bias 0) is the
+        // byte-identical default; the size/land dials disable on a fixed map, but climate only shapes the random map too.
+        _temperatureOption = AddChoiceRow(vbox, "Temperature", "TemperatureOption", TemperatureChoices.Select(c => c.Label), ClimateDefaultIndex);
+        _humidityOption = AddChoiceRow(vbox, "Humidity", "HumidityOption", HumidityChoices.Select(c => c.Label), ClimateDefaultIndex);
+
+        // Map-generator counts (FreeCol model.option.riverNumber / mountainNumber / forestNumber / bonusNumber;
+        // 86d3fq18b). Each "Normal" entry is the classic value, so an untouched Start is byte-identical.
+        _riverNumberOption = AddChoiceRow(vbox, "Rivers", "RiverNumberOption", RiverNumberChoices.Select(c => c.Label), MapCountDefaultIndex);
+        _mountainNumberOption = AddChoiceRow(vbox, "Mountains", "MountainNumberOption", MountainNumberChoices.Select(c => c.Label), MapCountDefaultIndex);
+        _forestNumberOption = AddChoiceRow(vbox, "Forests", "ForestNumberOption", ForestNumberChoices.Select(c => c.Label), MapCountDefaultIndex);
+        _bonusNumberOption = AddChoiceRow(vbox, "Bonus resources", "BonusNumberOption", BonusNumberChoices.Select(c => c.Label), MapCountDefaultIndex);
+
+        // Lost-city rumours (FreeCol model.option.rumourNumber; 86d3fq1b8). "Normal" = the classic 35, byte-identical.
+        _rumourNumberOption = AddChoiceRow(vbox, "Lost-city rumours", "RumourNumberOption", RumourNumberChoices.Select(c => c.Label), RumourNumberDefaultIndex);
+
+        // National advantages (FreeCol model.option.nationalAdvantages; 86d3fq0za). Selectable (index 0) keeps each
+        // nation's advantage — the byte-identical default; None turns every advantage off.
+        _advantagesOption = AddChoiceRow(vbox, "National advantages", "AdvantagesOption", AdvantagesChoices.Select(c => c.Label), 0);
 
         // Game-options section: the base game options FreeCol shows at setup that our engine already honours, grouped as
         // FreeCol's GameOptionsDialog groups them. Each toggle starts at the ruleset's parsed spec default (read from the
@@ -267,6 +411,22 @@ public partial class NewGameDialog : Control
         // The custom-house boycott-smuggling toggle rides its own static into Game.New, applied to the loaded ruleset (a
         // config override of whether a custom house smuggles — ADR-006). Left at the spec default (on) it is a no-op.
         GameController.PendingCustomIgnoreBoycott = _customIgnoreBoycottCheck.ButtonPressed;
+
+        // The new setup dials (86d3fq1df / 86d3fq1fd / 86d3fq13u / 86d3fq18b / 86d3fq1b8 / 86d3fq0za) ride their own
+        // statics into the new-game host, which threads them into Game.New. Each is the GameLogic value the chosen
+        // dropdown index maps to; left at its default index every one is the byte-identical shipped value (ADR-009).
+        PendingRivalCount = RivalCountChoices[_rivalCountOption.Selected];
+        PendingStartYear = StartYearChoices[_startYearOption.Selected];
+        PendingMapOptions = new MapGenerationOptions(
+            MountainNumber: MountainNumberChoices[_mountainNumberOption.Selected].Value,
+            RiverNumber: RiverNumberChoices[_riverNumberOption.Selected].Value,
+            ForestChance: ForestNumberChoices[_forestNumberOption.Selected].Value,
+            LandBonusChance: BonusNumberChoices[_bonusNumberOption.Selected].Value,
+            TemperatureBias: TemperatureChoices[_temperatureOption.Selected].Bias,
+            HumidityBias: HumidityChoices[_humidityOption.Selected].Bias);
+        PendingRumourNumber = RumourNumberChoices[_rumourNumberOption.Selected].Value;
+        PendingNationalAdvantages = AdvantagesChoices[_advantagesOption.Selected].Mode;
+
         _onStart?.Invoke(size, land, difficulty, source);
         EmitSignal(SignalName.Closed);
     }
@@ -351,5 +511,18 @@ public partial class NewGameDialog : Control
         row.AddChild(new Label { Text = label, SizeFlagsHorizontal = SizeFlags.ExpandFill });
         row.AddChild(control);
         return row;
+    }
+
+    /// <summary>Builds a labelled <see cref="OptionButton"/> row from string item labels, selects <paramref name="defaultIndex"/>, adds the row to <paramref name="parent"/>, and returns the option button (so the caller keeps a field reference for read-back at Start).</summary>
+    private static OptionButton AddChoiceRow(BoxContainer parent, string label, string name, IEnumerable<string> items, int defaultIndex)
+    {
+        var option = new OptionButton { Name = name };
+        foreach (string item in items)
+        {
+            option.AddItem(item);
+        }
+        option.Selected = defaultIndex;
+        parent.AddChild(LabeledRow(label, option));
+        return option;
     }
 }

@@ -15,16 +15,6 @@ namespace CrownAndColony.GameLogic.World;
 /// </summary>
 public static class MapGenerator
 {
-    /// <summary>Fraction of matching land tiles that come up forested.</summary>
-    private const double ForestChance = 0.45;
-
-    /// <summary>
-    /// Chance a <b>land</b> tile hosts a bonus resource — FreeCol <c>BONUS_NUMBER</c> (`model.option.bonusNumber`,
-    /// classic default 10%). (Hardcoded from the spec for now, like <see cref="MountainNumber"/>; reading the
-    /// map-generator option is a follow-up.)
-    /// </summary>
-    private const double LandBonusChance = 0.10;
-
     /// <summary>A water tile only hosts a resource when it borders <b>more than</b> this many land tiles (FreeCol <c>perhapsAddBonus</c>: <c>&gt; 1</c>).</summary>
     private const int WaterResourceMinLandNeighbours = 1;
 
@@ -32,21 +22,10 @@ public static class MapGenerator
     private const int WaterResourceOddsBase = 10;
 
     /// <summary>
-    /// "One elevation tile per this many land tiles" — FreeCol's <c>model.option.mountainNumber</c> (classic
-    /// default 10; higher = fewer mountains). The mountain-range pass aims for half of this budget, the random
-    /// hill/mountain sprinkle the other half (FreeCol <c>randomHillsRatio = 0.5</c>).
+    /// FreeCol's split: half the elevation budget (<see cref="MapGenerationOptions.MountainNumber"/>) goes to walked
+    /// ranges, half to a random sprinkle (FreeCol <c>randomHillsRatio = 0.5</c>).
     /// </summary>
-    private const int MountainNumber = 10;
-
-    /// <summary>FreeCol's split: half the elevation budget goes to walked ranges, half to a random sprinkle.</summary>
     private const double RandomHillsRatio = 0.5;
-
-    /// <summary>
-    /// River budget as a percentage of the river-allowed land tiles — FreeCol <c>model.option.riverNumber</c> (classic
-    /// default 15). The river pass stops once it has laid this fraction of the allowed-tile count as river tiles.
-    /// (Hardcoded from the spec for now, like <see cref="MountainNumber"/>; reading the map-generator option is a follow-up.)
-    /// </summary>
-    private const int RiverNumber = 15;
 
     /// <summary>Hard cap on a single river's length in tiles, so a river can't wander the whole map on a pathological seed (FreeCol bounds rivers implicitly via its section logic; we cap explicitly for the faithful subset).</summary>
     private const int MaxRiverLength = 16;
@@ -62,24 +41,31 @@ public static class MapGenerator
 
     /// <summary>
     /// Generates a width × height map. Same ruleset + same RNG state (+ same <paramref name="landMassFraction"/>,
-    /// <paramref name="landStyle"/> and <paramref name="greatRivers"/>) → identical map. <paramref name="landMassFraction"/>
-    /// is the share of tiles grown into land (FreeCol's <c>model.option.landMass</c>); <paramref name="landStyle"/> is the
-    /// shape that land takes (FreeCol's <c>model.option.landGeneratorType</c>); <paramref name="greatRivers"/> toggles
-    /// navigable great-river terrain (FreeCol's <c>mapGeneratorOptions.enableGreatRivers</c>, which ships <b>off</b>).
-    /// All three default to the shipped values (<see cref="DefaultLandMassFraction"/> + <see cref="LandStyle.Continent"/>
-    /// + great rivers OFF), so a call that omits them is byte-identical to the historical generator (the default new game
-    /// and its goldens are unchanged): only the land stage (<see cref="GrowContinent"/> vs <see cref="GrowSeparateMasses"/>)
-    /// differs by style, and great rivers are an RNG-free post-process applied only when enabled — it draws no RNG itself,
-    /// so the default (off) game is byte-identical; enabling it retypes some river tiles to water, which changes the
-    /// terrain-dependent bonus-resource placement on those tiles, but the result stays deterministic per seed;
-    /// everything else (climate, mountains, high seas, rivers, resources, regions) is shared.
+    /// <paramref name="landStyle"/>, <paramref name="greatRivers"/> and <paramref name="options"/>) → identical map.
+    /// <paramref name="landMassFraction"/> is the share of tiles grown into land (FreeCol's <c>model.option.landMass</c>);
+    /// <paramref name="landStyle"/> is the shape that land takes (FreeCol's <c>model.option.landGeneratorType</c>);
+    /// <paramref name="greatRivers"/> toggles navigable great-river terrain (FreeCol's
+    /// <c>mapGeneratorOptions.enableGreatRivers</c>, which ships <b>off</b>); <paramref name="options"/> carries the
+    /// tunable map-gen counts and climate bands (FreeCol's <c>model.option.mountainNumber</c>/<c>riverNumber</c>/
+    /// <c>forestNumber</c>/<c>bonusNumber</c> + <c>temperature</c>/<c>humidity</c>, see <see cref="MapGenerationOptions"/>).
+    /// All four default to the shipped values (<see cref="DefaultLandMassFraction"/> + <see cref="LandStyle.Continent"/>
+    /// + great rivers OFF + <see cref="MapGenerationOptions.Classic"/>), so a call that omits them is byte-identical to
+    /// the historical generator (the default new game and its goldens are unchanged): only the land stage
+    /// (<see cref="GrowContinent"/> vs <see cref="GrowSeparateMasses"/>) differs by style, the climate bias (0/0 at
+    /// default) and the counts re-pick terrain/elevation/rivers/bonuses without changing the draw sequence at defaults,
+    /// and great rivers are an RNG-free post-process applied only when enabled — it draws no RNG itself, so the default
+    /// (off) game is byte-identical; enabling it retypes some river tiles to water, which changes the terrain-dependent
+    /// bonus-resource placement on those tiles, but the result stays deterministic per seed; everything else (high seas,
+    /// regions) is shared.
     /// </summary>
     public static GameMap Generate(
         Ruleset ruleset, int width, int height, IGameRandom random,
         double landMassFraction = DefaultLandMassFraction,
         LandStyle landStyle = LandStyle.Continent,
-        bool greatRivers = false)
+        bool greatRivers = false,
+        MapGenerationOptions? options = null)
     {
+        options ??= MapGenerationOptions.Classic;
         TerrainType ocean = ruleset.Terrain("model.tile.ocean");
         TerrainType highSeas = ruleset.Terrain("model.tile.highSeas");
 
@@ -95,6 +81,11 @@ public static class MapGenerator
         for (int y = 0; y < height; y++)
         {
             int temperature = TemperatureAtLatitude(y, height, random);
+            // Climate bias (FreeCol's temperature/humidity map-gen bands): an RNG-free offset applied AFTER the
+            // latitude draw, so a default-bias (0) map draws the identical sequence and clamps to the identical value
+            // — byte-identical (ADR-009); a warmer/colder map just shifts the climate envelope the terrain is picked
+            // from. Clamped to the spec's −20..40 temperature envelope.
+            temperature = Math.Clamp(temperature + options.TemperatureBias, -20, 40);
             for (int x = 0; x < width; x++)
             {
                 TerrainType type;
@@ -111,7 +102,10 @@ public static class MapGenerator
                     // grown as ranges by MakeMountains (FreeCol TerrainGenerator.createMountains), which overwrites
                     // land tiles after the climate pass.
                     int altitude = RollLowlandAltitude(random);
-                    type = PickLandTerrain(ruleset, humidity[x, y], temperature, altitude, random);
+                    // Humidity bias mirrors the temperature one: an RNG-free offset on the already-drawn smoothed noise,
+                    // clamped to 0..100, so a default-bias map is byte-identical and a wetter/drier map just shifts.
+                    int humid = Math.Clamp(humidity[x, y] + options.HumidityBias, 0, 100);
+                    type = PickLandTerrain(ruleset, humid, temperature, altitude, random, options.ForestChance);
                 }
                 terrain[y * width + x] = type;
             }
@@ -120,8 +114,9 @@ public static class MapGenerator
         // Mountain & hill RANGES (FreeCol TerrainGenerator.createMountains): pick seed land tiles, walk a chain in a
         // direction laying mountain tiles with a hill/mountain fringe, then sprinkle a few random hills/mountains —
         // so elevation looks like ridgelines, not altitude noise. Overwrites land tiles in place. Draws RNG, so it
-        // reorders the stream-0 draw sequence (a deliberate map-gen change for this item, 86d3c9w71).
-        MakeMountains(ruleset, terrain, land, width, height, random);
+        // reorders the stream-0 draw sequence (a deliberate map-gen change for this item, 86d3c9w71). The elevation
+        // density is the options' MountainNumber (classic 10).
+        MakeMountains(ruleset, terrain, land, width, height, random, options.MountainNumber);
 
         // High-seas band: recompute which near-edge ocean tiles are the open route to Europe from their
         // distance to land (FreeCol Map.resetHighSeas), replacing the old fixed-outermost-columns rule. Pure and
@@ -131,7 +126,7 @@ public static class MapGenerator
 
         // Rivers, bonus resources and the region/lake layer are laid on the finished terrain by the shared tail
         // (BuildDecoratedMap) — the same pass a fixed scenario map reuses on its pre-loaded terrain (DecorateFixedMap).
-        return BuildDecoratedMap(ruleset, terrain, width, height, random, greatRivers);
+        return BuildDecoratedMap(ruleset, terrain, width, height, random, greatRivers, options);
     }
 
     /// <summary>
@@ -143,14 +138,15 @@ public static class MapGenerator
     /// </summary>
     private static GameMap BuildDecoratedMap(
         Ruleset ruleset, TerrainType[] terrain, int width, int height, IGameRandom random,
-        bool greatRivers = false)
+        bool greatRivers = false, MapGenerationOptions? options = null)
     {
+        options ??= MapGenerationOptions.Classic;
         // Rivers (FreeCol TerrainGenerator.createRivers + River.flowFromSource): springs on high inland ground walk
         // downhill to the sea, laying a river improvement on each lowland tile. Runs after the terrain (mountains +
         // high-seas) is settled and before bonuses (so the river-mouth fish bonus can fire). Draws RNG, so it
         // reorders the stream-0 draw sequence (a deliberate map-gen change for this item, 86d3b3qdx). When great rivers
         // are enabled, MakeRivers also retypes the spine of long rivers to navigable great-river water (RNG-free).
-        var improvements = MakeRivers(ruleset, terrain, width, height, random, greatRivers);
+        var improvements = MakeRivers(ruleset, terrain, width, height, random, greatRivers, options.RiverNumber);
 
         // Bonus resources, picked from each tile's final terrain table by weight — placed only AFTER the terrain is
         // complete (FreeCol adds bonuses last, "otherwise we risk creating resources on fields where they do not
@@ -169,7 +165,7 @@ public static class MapGenerator
                 if (!type.IsWater)
                 {
                     // Land: a flat bonus-number chance (FreeCol perhapsAddBonus land branch).
-                    if (random.NextDouble() < LandBonusChance)
+                    if (random.NextDouble() < options.LandBonusChance)
                     {
                         resources[new Position(x, y)] = PickWeightedResource(type.Resources, random);
                     }
@@ -223,7 +219,9 @@ public static class MapGenerator
     /// <param name="terrainMap">A terrain-only map (e.g. from <see cref="FixedMap.LoadAmerica"/>).</param>
     /// <param name="ruleset">The ruleset (terrain tables, lake type).</param>
     /// <param name="random">The map RNG stream that rivers and bonuses draw from.</param>
-    public static GameMap DecorateFixedMap(GameMap terrainMap, Ruleset ruleset, IGameRandom random)
+    /// <param name="options">The tunable river/bonus counts (climate/elevation dials don't apply — the terrain is loaded, not climate-grown). Defaults to <see cref="MapGenerationOptions.Classic"/>, so an omitted call is byte-identical.</param>
+    public static GameMap DecorateFixedMap(
+        GameMap terrainMap, Ruleset ruleset, IGameRandom random, MapGenerationOptions? options = null)
     {
         int width = terrainMap.Width;
         int height = terrainMap.Height;
@@ -232,7 +230,7 @@ public static class MapGenerator
         {
             terrain[(p.Y * width) + p.X] = terrainMap.TerrainAt(p);
         }
-        return BuildDecoratedMap(ruleset, terrain, width, height, random);
+        return BuildDecoratedMap(ruleset, terrain, width, height, random, options: options);
     }
 
     /// <summary>
@@ -576,7 +574,8 @@ public static class MapGenerator
     /// in place; never touches water. Draws RNG (Fisher–Yates shuffle + walks), so it reorders stream-0 draws.
     /// </summary>
     private static void MakeMountains(
-        Ruleset ruleset, TerrainType[] terrain, bool[,] land, int width, int height, IGameRandom random)
+        Ruleset ruleset, TerrainType[] terrain, bool[,] land, int width, int height, IGameRandom random,
+        int mountainNumber)
     {
         TerrainType mountains = ruleset.Terrain("model.tile.mountains");
         TerrainType hills = ruleset.Terrain("model.tile.hills");
@@ -610,7 +609,7 @@ public static class MapGenerator
         ];
 
         // ---- Pass 1: walked mountain ranges ----
-        int rangeBudget = (int)Math.Round((1.0 - RandomHillsRatio) * landCount / MountainNumber);
+        int rangeBudget = (int)Math.Round((1.0 - RandomHillsRatio) * landCount / mountainNumber);
         int maxLength = Math.Max(1, Math.Max(width, height) / 10);
 
         var shuffled = Shuffle(landTiles, random);
@@ -667,7 +666,7 @@ public static class MapGenerator
         }
 
         // ---- Pass 2: random hill/mountain sprinkle (FreeCol's "here and there") ----
-        int sprinkleBudget = (int)(landCount * RandomHillsRatio) / MountainNumber;
+        int sprinkleBudget = (int)(landCount * RandomHillsRatio) / mountainNumber;
         var sprinkleOrder = Shuffle(landTiles, random);
         int sprinkled = 0;
         foreach (Position p in sprinkleOrder)
@@ -710,7 +709,8 @@ public static class MapGenerator
     /// is exact — see <see cref="Improvements.ImprovementMovement"/> / <see cref="Improvements.ImprovementProduction"/>.</para>
     /// </summary>
     private static Dictionary<Position, IReadOnlyList<TileImprovementType>> MakeRivers(
-        Ruleset ruleset, TerrainType[] terrain, int width, int height, IGameRandom random, bool greatRivers = false)
+        Ruleset ruleset, TerrainType[] terrain, int width, int height, IGameRandom random, bool greatRivers = false,
+        int riverNumber = 15)
     {
         // Each river tile carries a single-improvement list (the river); pioneers later add roads/plows to the
         // same tiles, which is why the map's improvement layer is multi-valued per tile.
@@ -745,7 +745,7 @@ public static class MapGenerator
         {
             return rivers;
         }
-        int budget = allowed.Count * RiverNumber / 100;
+        int budget = allowed.Count * riverNumber / 100;
         if (budget <= 0)
         {
             return rivers; // too little land for even one river tile
@@ -983,7 +983,7 @@ public static class MapGenerator
     /// variants share envelopes, so forest-vs-clear is its own roll.
     /// </summary>
     private static TerrainType PickLandTerrain(
-        Ruleset ruleset, int humidity, int temperature, int altitude, IGameRandom random)
+        Ruleset ruleset, int humidity, int temperature, int altitude, IGameRandom random, double forestChance)
     {
         var landTypes = ruleset.TerrainTypes
             .Where(t => !t.IsWater && t.Gen is not null)
@@ -999,7 +999,7 @@ public static class MapGenerator
             return landTypes.MinBy(t => EnvelopeDistance(t.Gen!, humidity, temperature, altitude))!;
         }
 
-        bool wantForest = random.NextDouble() < ForestChance;
+        bool wantForest = random.NextDouble() < forestChance;
         var pool = candidates.Where(t => t.IsForest == wantForest).ToList();
         if (pool.Count == 0)
         {

@@ -10,7 +10,7 @@ namespace CrownAndColony.GameLogic.World;
 /// <para>Simplifications vs. FreeCol (documented in docs/systems/lost-city-rumours.md): FreeCol estimates the
 /// land count from the map's <c>landMass</c> option (classic 25%); our generator has no such option and grows
 /// continents to ~45% land, so we use that fraction (<see cref="LandMassPercent"/>) for the count — faithful to
-/// FreeCol's <em>intent</em> (a rumour every <see cref="RumourNumber"/> land tiles) and to what the player sees,
+/// FreeCol's <em>intent</em> (a rumour every <see cref="DefaultRumourNumber"/> land tiles, a New-Game dial) and to what the player sees,
 /// not to the 25% constant. We also skip FreeCol's <c>SLOSH</c> edge-inset sampler: our maps already keep a
 /// watery margin, so uniform sampling over land tiles yields the same inset effect.</para>
 ///
@@ -19,8 +19,8 @@ namespace CrownAndColony.GameLogic.World;
 /// </summary>
 public static class LostCityRumourGenerator
 {
-    /// <summary>Land tiles per rumour (FreeCol <c>model.option.rumourNumber</c>, classic default).</summary>
-    private const int RumourNumber = 35;
+    /// <summary>Land tiles per rumour (FreeCol <c>model.option.rumourNumber</c>, classic default) — the value used when a caller omits the New-Game dial.</summary>
+    public const int DefaultRumourNumber = 35;
 
     /// <summary>Land-fraction estimate for the count, matching our generator's ~45%-land continents (FreeCol estimates 25%).</summary>
     private const int LandMassPercent = 45;
@@ -30,11 +30,19 @@ public static class LostCityRumourGenerator
     /// the player's landing area). Returns the chosen positions; the caller folds them into the map
     /// (<see cref="GameMap.AddRumour"/>). Count ≈ <c>width·height·landMass% / rumourNumber</c>, capped by the
     /// eligible-tile count (fewer on a small/over-constrained map — faithful to FreeCol's attempt cap).
+    /// <paramref name="rumourNumber"/> is FreeCol's <c>model.option.rumourNumber</c> (land tiles per rumour; classic
+    /// <see cref="DefaultRumourNumber"/> = 35, <b>higher = fewer</b> rumours) — a New-Game dial (86d3fq1b8); it defaults
+    /// to the classic value so an omitting caller is byte-identical. A value &lt;= 0 is treated as the default (no
+    /// division-by-zero), so the dial can never disable the pass entirely.
     /// </summary>
     public static IReadOnlyCollection<Position> Place(
-        GameMap map, IReadOnlySet<Position> excluded, IGameRandom random)
+        GameMap map, IReadOnlySet<Position> excluded, IGameRandom random, int rumourNumber = DefaultRumourNumber)
     {
-        int target = map.Width * map.Height * LandMassPercent / 100 / RumourNumber;
+        if (rumourNumber <= 0)
+        {
+            rumourNumber = DefaultRumourNumber;
+        }
+        int target = map.Width * map.Height * LandMassPercent / 100 / rumourNumber;
         if (target <= 0)
         {
             return [];

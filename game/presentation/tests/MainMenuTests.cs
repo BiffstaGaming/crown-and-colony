@@ -292,6 +292,106 @@ public class MainMenuTests
     }
 
     [TestCase]
+    public async Task NewGameDialog_ShowsTheNewSetupDials()
+    {
+        // Every new New-Game dial control is built and reachable (no clipping/missing control), with the expected
+        // default selection (the byte-identical shipped value). 86d3fq1df / 86d3fq1fd / 86d3fq13u / 86d3fq18b /
+        // 86d3fq1b8 / 86d3fq0za.
+        ISceneRunner runner = ISceneRunner.Load(MenuScene);
+        await runner.SimulateFrames(2);
+        var menu = (Control)runner.Scene();
+
+        var dialog = new NewGameDialog();
+        menu.AddChild(dialog);
+        await runner.SimulateFrames(1); // _Ready builds the controls
+
+        foreach (string name in new[]
+                 {
+                     "RivalCountOption", "StartYearOption", "TemperatureOption", "HumidityOption",
+                     "RiverNumberOption", "MountainNumberOption", "ForestNumberOption", "BonusNumberOption",
+                     "RumourNumberOption", "AdvantagesOption",
+                 })
+        {
+            var option = dialog.FindChild(name, recursive: true, owned: false) as OptionButton;
+            AssertThat(option).OverrideFailureMessage($"missing dial: {name}").IsNotNull();
+            AssertThat(option!.ItemCount).IsGreater(0);
+        }
+
+        // The rival-count dropdown defaults to the classic 3; national advantages defaults to Selectable (index 0).
+        var rivals = dialog.FindChild("RivalCountOption", recursive: true, owned: false) as OptionButton;
+        var advantages = dialog.FindChild("AdvantagesOption", recursive: true, owned: false) as OptionButton;
+        AssertThat(rivals!.GetItemText(rivals.Selected)).IsEqual("3");
+        AssertThat(advantages!.Selected).IsEqual(0);
+    }
+
+    [TestCase]
+    public async Task NewGameDialog_ForwardsTheNewSetupDials_ThroughTheirPendingStatics()
+    {
+        ISceneRunner runner = ISceneRunner.Load(MenuScene);
+        await runner.SimulateFrames(2);
+        var menu = (Control)runner.Scene();
+
+        var dialog = new NewGameDialog();
+        menu.AddChild(dialog);
+        await runner.SimulateFrames(1);
+
+        // Clean slate (statics survive between tests).
+        NewGameDialog.PendingRivalCount = null;
+        NewGameDialog.PendingStartYear = null;
+        NewGameDialog.PendingMapOptions = null;
+        NewGameDialog.PendingRumourNumber = null;
+        NewGameDialog.PendingNationalAdvantages = null;
+        dialog.Open((_, _, _, _) => { });
+
+        // Pick a non-default in each dial: 5 rivals, start 1600, warm/wet climate, many rivers/mountains, dense forest,
+        // many bonuses, many rumours, advantages OFF.
+        Select(dialog, "RivalCountOption", 5);          // RivalCountChoices[5] == 5
+        Select(dialog, "StartYearOption", 3);           // StartYearChoices[3] == 1600
+        Select(dialog, "TemperatureOption", 4);         // Hot (+15)
+        Select(dialog, "HumidityOption", 4);            // Very wet (+40)
+        Select(dialog, "RiverNumberOption", 2);         // Many (30)
+        Select(dialog, "MountainNumberOption", 2);      // Many (5)
+        Select(dialog, "ForestNumberOption", 2);        // Dense (0.65)
+        Select(dialog, "BonusNumberOption", 2);         // Many (0.20)
+        Select(dialog, "RumourNumberOption", 2);        // Many (18)
+        Select(dialog, "AdvantagesOption", 2);          // None
+
+        var start = dialog.FindChild("StartButton", recursive: true, owned: false) as Button;
+        start!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // Extract nullable values to plain locals (AssertThat on nullables resolves to the object overload).
+        int rivals = NewGameDialog.PendingRivalCount ?? -1;
+        int year = NewGameDialog.PendingStartYear ?? -1;
+        int rumours = NewGameDialog.PendingRumourNumber ?? -1;
+        AssertThat(rivals).IsEqual(5);
+        AssertThat(year).IsEqual(1600);
+        AssertThat(rumours).IsEqual(18);
+        AssertThat(NewGameDialog.PendingNationalAdvantages).IsEqual(NationalAdvantages.None);
+        AssertThat(NewGameDialog.PendingMapOptions).IsNotNull();
+        int mountainNumber = NewGameDialog.PendingMapOptions!.MountainNumber;
+        int riverNumber = NewGameDialog.PendingMapOptions.RiverNumber;
+        int tempBias = NewGameDialog.PendingMapOptions.TemperatureBias;
+        AssertThat(mountainNumber).IsEqual(5);
+        AssertThat(riverNumber).IsEqual(30);
+        AssertThat(tempBias).IsEqual(15);
+
+        // Tidy the statics for the next test.
+        NewGameDialog.PendingRivalCount = null;
+        NewGameDialog.PendingStartYear = null;
+        NewGameDialog.PendingMapOptions = null;
+        NewGameDialog.PendingRumourNumber = null;
+        NewGameDialog.PendingNationalAdvantages = null;
+    }
+
+    private static void Select(NewGameDialog dialog, string name, int index)
+    {
+        var option = dialog.FindChild(name, recursive: true, owned: false) as OptionButton;
+        AssertThat(option).OverrideFailureMessage($"missing dial: {name}").IsNotNull();
+        option!.Select(index);
+    }
+
+    [TestCase]
     public async Task NewGameDialog_SelectingAmerica_ForwardsAmerica_AndDisablesWorldSize()
     {
         ISceneRunner runner = ISceneRunner.Load(MenuScene);

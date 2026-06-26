@@ -37,7 +37,7 @@ Each player takes its turn in ring order (`RunPlayerTurn`); then the **world ste
 | All units | movement restored to full |
 | Turn counter | +1 |
 
-**Calendar (turn → year/season).** Derived from the turn counter — no per-turn state, nothing saved. The ruleset's `gameOptions.years` (classic `startingYear`=1492, `seasonYear`=1600, `seasons`=2) drive the mapping:
+**Calendar (turn → year/season).** Derived from the turn counter — no per-turn state, nothing saved. The ruleset's `gameOptions.years` (classic `startingYear`=1492, `seasonYear`=1600, `seasons`=2) drive the mapping. The **starting year** is a New-Game dial (`86d3fq1fd`, FreeCol `model.option.startingYear`): `Ruleset.WithStartingYear(year)` shifts which year turn 1 maps to (so a game can begin in, say, 1600 instead of 1492), keeping the season-split year above the start (a start on/after the split pushes the split up, so the one-turn-per-year era is never empty). The default (1492) leaves the calendar byte-identical; the override is session-only (not persisted — a reload re-derives the spec default). The table below shows the default 1492 calendar:
 
 | Turn | Year | Season | Label |
 |---|---|---|---|
@@ -79,6 +79,7 @@ Before `seasonYear` one turn is one year and there is no season (`CurrentSeason`
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-06-27 | **Configurable starting year — New-Game option** (`86d3fq1fd`, FreeCol `model.option.startingYear`): `Calendar.StartingYear` is now overridable via the new `Ruleset.WithStartingYear(year)` (mirrors the `WithFogOfWar` config seam) — `Calendar` became `{ get; private set; }` so a freshly-parsed (never-shared) ruleset can be re-yeared at load. The season-split year is clamped to stay above the start (`seasonYear = max(start+1, seasonYear)`), keeping FreeCol's `startingYear < seasonYear` invariant so turn 1 is never mid-season. Default (1492) is byte-identical; **session-only, no save change** (a reload re-derives the spec default). The `NewGameDialog` gains a **Starting year** dropdown. +4 L1 (`NewGameSetupOptionsTests`: chosen year shows on the calendar / season-year stays above the start / default == classic). | Wave (`86d3fq1fd`) |
 | 2026-06-13 | Turn counter + movement reset + End Turn UI | Phase 1 skeleton |
 | 2026-06-13 | Turn pipeline grew: colony economy (Phase 3), then liberty/fathers, immigration, and high-seas sailing steps (Phase 4) | Phases 3–4 |
 | 2026-06-14 | Native settlement alarm decay step added (Phase 5 slice 3) | Phase 5 slice 3 |
