@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CrownAndColony.GameLogic.Specification;
 using Godot;
 
@@ -12,6 +13,26 @@ public partial class UnitMarker : Node2D
     private bool _selected;
     private Color _ownerColor; // default (0,0,0,0) = transparent → no ring (the human's own units)
     private Texture2D? _texture;
+
+    /// <summary>
+    /// Per-unit-id memory of the tile-pixel a marker was last placed at, surviving the free-all-then-rebuild of the
+    /// unit layer each refresh. This is how a marker detects that <em>its</em> unit moved (the rebuilt markers carry no
+    /// other identity), so the cosmetic slide can run from the old tile-pixel to the new one (`86d3fq26m`). Static
+    /// because the marker instances themselves don't persist across a refresh. Presentation-only scratch — never touches
+    /// <c>Game</c> state or the RNG.
+    /// </summary>
+    private static readonly Dictionary<int, Vector2> LastTileCentre = [];
+
+    private int? _unitId;
+    private Vector2 _pendingSlideFrom;
+    private bool _hasPendingSlide;
+
+    /// <summary>
+    /// Clears the per-unit slide memory. Called when the whole map is rebuilt for a different game (a new game / a load),
+    /// so a marker at a reused position can't be mistaken for the same unit having moved there; GdUnit scene tests also
+    /// call it for isolation. No effect on game state.
+    /// </summary>
+    public static void ResetMoveMemory() => LastTileCentre.Clear();
 
     /// <summary>Whether the selection ring is shown.</summary>
     public bool Selected
@@ -48,11 +69,49 @@ public partial class UnitMarker : Node2D
     /// </summary>
     /// <param name="typeShortName">The unit type's short name (e.g. <c>freeColonist</c>, <c>caravel</c>, <c>brave</c>).</param>
     /// <param name="roleShortName">The unit's role short name (e.g. <c>soldier</c>, <c>mountedBrave</c>, or <c>default</c> for unarmed).</param>
-    public void SetUnit(string typeShortName, string roleShortName)
+    /// <param name="unitId">
+    /// The unit's stable id, threaded so this marker can detect that <em>its</em> unit changed tile since the last
+    /// refresh and play the cosmetic move-slide (`86d3fq26m`). Optional (defaults to <c>null</c>): when omitted the
+    /// marker still renders correctly at its final position, just without the slide — so callers that don't have the id
+    /// are unaffected. The slide itself is gated by <see cref="UnitMoveAnimation.Enabled"/> (forced off under test).
+    /// </param>
+    public void SetUnit(string typeShortName, string roleShortName, int? unitId = null)
     {
         _texture = ResolveTexture(typeShortName, roleShortName);
+        _unitId = unitId;
+        // Compare this marker's final tile-pixel (set by the host before SetUnit) against where this unit's marker last
+        // sat: a change means the unit moved, so queue a slide from the old pixel. The marker isn't in the scene tree
+        // yet (the host AddChilds it after SetUnit), so defer the actual spawn to _EnterTree.
+        if (unitId is { } id && LastTileCentre.TryGetValue(id, out Vector2 previous) && previous != Position)
+        {
+            _pendingSlideFrom = previous;
+            _hasPendingSlide = true;
+        }
+        if (unitId is { } recordId)
+        {
+            LastTileCentre[recordId] = Position; // remember where this unit's marker is now, for the next refresh
+        }
         QueueRedraw();
     }
+
+    /// <summary>
+    /// Fires any queued move-slide once the marker is in the scene tree (so the transient slide node has the unit layer
+    /// as a parent and shares its isometric coordinate space). The marker itself is already at the destination tile;
+    /// the slide is decoration that frees itself — final state is identical whether or not it ran (ADR-006). A no-op
+    /// when nothing was queued or animations are off/headless.
+    /// </summary>
+    public override void _Ready()
+    {
+        if (_hasPendingSlide)
+        {
+            _hasPendingSlide = false;
+            // Slide a copy of this marker's own sprite from the old tile to here; the real marker stays put at the end.
+            UnitMoveAnimation.Play(GetParent(), TileOf(_pendingSlideFrom), TileOf(Position), _texture);
+        }
+    }
+
+    /// <summary>Inverse of <see cref="MapView.TileCentre"/> for a known on-grid pixel — recovers the tile a cached/marker pixel represents so the slide can be expressed in tiles.</summary>
+    private static GameLogic.World.Position TileOf(Vector2 pixel) => MapView.TileAt(pixel);
 
     /// <summary>
     /// Resolves the FreeCol sprite for a unit by type + role short names, using the same candidate-path search as

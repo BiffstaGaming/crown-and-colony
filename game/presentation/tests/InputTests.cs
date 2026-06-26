@@ -35,10 +35,24 @@ public class InputTests
     /// keys these cases press, warp the cursor to the origin, then flush the buffer — so every case starts clean.
     /// </summary>
     [BeforeTest]
-    public void ResetGlobalInputStateBeforeEachTest() => ResetGlobalInputState();
+    public void ResetGlobalInputStateBeforeEachTest()
+    {
+        ResetGlobalInputState();
+        // Move-slide animations are forced OFF for every case by default so marker placement is deterministic and
+        // wall-clock-free (the L3 runner uses an x11 display, not headless, so a slide would otherwise spawn a transient
+        // that takes real time). The one case that exercises the slide turns it back on locally. Reset the per-unit slide
+        // memory too, so a marker reused at a position from a prior case can't be read as "this unit moved here".
+        UnitMoveAnimation.Enabled = false;
+        UnitMarker.ResetMoveMemory();
+    }
 
     [AfterTest]
-    public void ResetGlobalInputStateAfterEachTest() => ResetGlobalInputState();
+    public void ResetGlobalInputStateAfterEachTest()
+    {
+        ResetGlobalInputState();
+        UnitMoveAnimation.Enabled = true; // restore the production default for anything outside this suite
+        UnitMarker.ResetMoveMemory();
+    }
 
     private static void ResetGlobalInputState()
     {
@@ -81,6 +95,86 @@ public class InputTests
         Position target = start.Neighbours().First(n => game.CheckMove(unit, n).Allowed);
         await ClickTile(runner, controller, target);
         AssertThat(unit.Position).IsEqual(target);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task AfterAMove_TheUnitsMarkerSitsAtTheNewTilesPixelCentre_WithAnimationsInstant()
+    {
+        // 86d3fq26m: with the move-slide forced instant (BeforeTest sets UnitMoveAnimation.Enabled = false), a resolved
+        // move must leave the unit's marker at the destination tile's pixel centre IMMEDIATELY — the cosmetic slide
+        // never changes the final state, so a move looks identical whether or not the animation ran.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+
+        Game game = GameOf(controller);
+        Unit unit = TrimHumanRosterToOne(game);
+        Position start = unit.Position;
+
+        await ClickTile(runner, controller, start); // select
+        Position target = start.Neighbours().First(n => game.CheckMove(unit, n).Allowed);
+        await ClickTile(runner, controller, target); // move
+
+        AssertThat(unit.Position).IsEqual(target); // the engine move resolved
+        // Exactly one human marker, sitting on the destination's pixel centre (no in-flight slide left it short).
+        var markers = controller.GetNode<Node2D>("MapView/UnitLayer").GetChildren()
+            .OfType<UnitMarker>().Where(m => m.OwnerColor.A == 0f).ToList();
+        AssertThat(markers.Count).IsEqual(1);
+        AssertThat(markers[0].Position).IsEqual(MapView.TileCentre(target));
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task MovingAUnitsMarker_SpawnsAMoveSlide_ThatLeavesTheMarkerAtTheDestination()
+    {
+        // 86d3fq26m: drives the slide machinery directly (the integrator wires SyncUnitMarkers to pass the unit id;
+        // until then the slide is dormant). A marker placed at tile A for unit #1, then re-placed at the adjacent tile B
+        // for the SAME id, must (a) spawn exactly one UnitMoveAnimation under the unit layer — the visible step — and
+        // (b) still leave the real marker at B's pixel centre, so the final state is unchanged by the decoration.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+
+        var layer = controller.GetNode<Node2D>("MapView/UnitLayer");
+        var mapView = controller.GetNode<Node2D>("MapView"); // the slide parents to the unit layer's parent (the durable MapView)
+        foreach (Node child in layer.GetChildren())
+        {
+            child.QueueFree(); // a clean layer so the only nodes below are the ones this case adds
+        }
+        await runner.SimulateFrames(1);
+        UnitMarker.ResetMoveMemory();
+        UnitMoveAnimation.Enabled = true; // this is the one case that exercises the real slide
+
+        var a = new Position(4, 4);
+        var b = new Position(5, 4); // an adjacent tile
+
+        // First placement at A: establishes the unit's last-known marker pixel (no slide on first appearance).
+        var first = new UnitMarker { Position = MapView.TileCentre(a) };
+        first.SetUnit("freeColonist", "default", unitId: 1);
+        layer.AddChild(first);
+        await runner.SimulateFrames(1);
+        AssertThat(mapView.GetChildren().OfType<UnitMoveAnimation>().Count()).IsEqual(0); // first appearance never slides
+
+        // The wholesale rebuild: free the old marker, add a fresh one for the SAME unit at B (what SyncUnitMarkers does).
+        first.QueueFree();
+        await runner.SimulateFrames(1);
+        var moved = new UnitMarker { Position = MapView.TileCentre(b) };
+        moved.SetUnit("freeColonist", "default", unitId: 1);
+        layer.AddChild(moved);
+        await runner.SimulateFrames(1);
+
+        // A move-slide spawned (the visible step, on the durable MapView), and the real marker is already at the dest pixel.
+        AssertThat(mapView.GetChildren().OfType<UnitMoveAnimation>().Count()).IsEqual(1);
+        AssertThat(moved.Position).IsEqual(MapView.TileCentre(b));
+
+        // Let the short slide run out (frames with a real per-frame delta so the tween advances in process time); it
+        // frees itself and the marker remains exactly at B (final state unchanged).
+        await runner.SimulateFrames(40, 20); // 40 × 20ms = 800ms > the slide's sub-0.5s duration
+        AssertThat(mapView.GetChildren().OfType<UnitMoveAnimation>().Count()).IsEqual(0); // the transient cleaned itself up
+        AssertThat(moved.Position).IsEqual(MapView.TileCentre(b));
+
+        UnitMoveAnimation.Enabled = false; // restore the suite default for the remaining cases
     }
 
     [TestCase(Timeout = 60000)]
@@ -432,6 +526,47 @@ public class InputTests
         Unit after = game.Units.First(u => u.Id == artId);
         AssertThat(after.MovementLeft).IsGreater(0);
         AssertThat(game.Units.Count(u => u.IsNative)).IsEqual(bravesBefore);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ConfirmingAnAttack_PlaysACombatAnimation_WithoutBlockingTurnFlow()
+    {
+        // 86d3fpxj2: confirming an attack fires the non-blocking procedural CombatAnimation (a transient lunge node
+        // parented to the unit layer) AND the turn proceeds immediately — the attacker has spent its turn (0 movement,
+        // or it's gone) the same frame, i.e. nothing awaits the animation. The transient frees itself shortly after.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // An artillery (offence 7, no role needed) adjacent to a brave next to the human's start — the attack-L3 setup.
+        string nation = game.Units.First(u => u.IsNative).OwnerNationId!;
+        Position human = game.PlayerUnits.First(u => u.IsOnMap).Position;
+        Position bravePos = human.Neighbours().First(n => Free(game, n));
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.brave"), bravePos, nation);
+        Position artPos = bravePos.Neighbours().First(n => n != human && Free(game, n));
+        Unit artillery = game.SpawnUnit(game.Ruleset.Unit("model.unit.artillery"), artPos);
+        int artId = artillery.Id;
+
+        await ClickTile(runner, controller, artPos);    // select the artillery
+        await ClickTile(runner, controller, bravePos);  // open the pre-combat odds dialog
+        controller.GetNode<Button>("UI/PreCombatPanel/VBox/Buttons/AttackButton")
+            .EmitSignal(BaseButton.SignalName.Pressed); // confirm
+        await runner.SimulateFrames(1);
+
+        // The animation is playing (a CombatAnimation node sits on the durable MapView — it parents there, not the unit
+        // layer, so the post-attack RefreshView's unit-layer wipe can't reap it mid-lunge) and the turn already advanced
+        // for the attacker — it spent its turn or was destroyed (a blocking animation would have stalled here).
+        var mapView = controller.GetNode<Node2D>("MapView");
+        AssertThat(mapView.GetChildren().OfType<CombatAnimation>().Count()).IsGreater(0);
+        Unit? attacker = game.Units.FirstOrDefault(u => u.Id == artId);
+        AssertThat(attacker == null || attacker.MovementLeft == 0).IsTrue();
+
+        // It cleans itself up: after the short (non-blocking) lunge plays out, no CombatAnimation remains. Frames carry a
+        // real per-frame delta so the 0.36s tween advances in process time.
+        await runner.SimulateFrames(40, 20); // 40 × 20ms = 800ms > CombatAnimation.DurationSeconds (0.36s)
+        AssertThat(mapView.GetChildren().OfType<CombatAnimation>().Count()).IsEqual(0);
     }
 
     [TestCase(Timeout = 60000)]

@@ -36,13 +36,18 @@ public partial class CombatAnimation : Node2D
     /// Spawns and runs a one-shot attack animation for a resolved combat. Non-blocking: returns the node immediately;
     /// the animation plays itself out and frees the node when done.
     /// </summary>
-    /// <param name="parent">The node to attach to — the map's unit layer, sharing its isometric coordinate space.</param>
+    /// <param name="unitLayer">
+    /// The map's unit layer (the caller's <c>_unitLayer</c>), used to locate the isometric coordinate space. The
+    /// animation is actually parented to that layer's <em>parent</em> (the <see cref="MapView"/>, the same coordinate
+    /// space) so a unit-layer refresh — which frees every child of the layer each <c>SyncUnitMarkers</c> — can't reap
+    /// this transient mid-lunge; only the never-wiped <see cref="MapView"/> is touched.
+    /// </param>
     /// <param name="attacker">The attacker's tile (where the lunge starts).</param>
     /// <param name="defender">The defender's tile (the lunge aims here).</param>
     /// <param name="kind">The visual flavour, from <see cref="CombatAnimationMap.KindFor"/>.</param>
     /// <param name="texture">The attacker's sprite to lunge, or <c>null</c> to use the coloured-disc stand-in.</param>
-    /// <returns>The spawned node (already added to <paramref name="parent"/>).</returns>
-    public static CombatAnimation Play(Node parent, Position attacker, Position defender,
+    /// <returns>The spawned node (already added to the map layer).</returns>
+    public static CombatAnimation Play(Node unitLayer, Position attacker, Position defender,
         CombatAnimationKind kind, Texture2D? texture)
     {
         var anim = new CombatAnimation
@@ -55,7 +60,8 @@ public partial class CombatAnimation : Node2D
         float dir = kind == CombatAnimationKind.AttackerRepelled ? -0.5f : 1f;
         anim._lungeTarget = anim._home + (toward * (LungeFraction * dir));
         anim._texture = texture;
-        parent.AddChild(anim);
+        // Attach to the durable map layer (the unit layer's parent), not the unit layer itself — see the param note.
+        (unitLayer.GetParent() ?? unitLayer).AddChild(anim);
         return anim;
     }
 
@@ -105,8 +111,11 @@ public partial class CombatAnimation : Node2D
         tween.Chain().TweenCallback(Callable.From(QueueFree));
     }
 
-    /// <summary>A small opaque disc texture for units that have no sprite (matches the on-map red-disc fallback).</summary>
-    private static Texture2D DiscTexture()
+    /// <summary>
+    /// A small opaque disc texture for units that have no sprite (matches the on-map red-disc fallback). Shared with the
+    /// sibling <see cref="UnitMoveAnimation"/> so an art-less unit slides the same stand-in it lunges with.
+    /// </summary>
+    internal static Texture2D DiscTexture()
     {
         const int d = (int)(MapView.TileH * 0.60f);
         var img = Image.CreateEmpty(d, d, false, Image.Format.Rgba8);
