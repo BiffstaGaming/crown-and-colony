@@ -19,6 +19,15 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-26 — Filed the parity gaps as 169 individual ClickUp tasks ✅
+
+**Requested (Chris):** "Create the gaps as individual clickup tasks."
+**Did:** Ran a **workflow** (23 task-creator agents, one per domain, throttled 4/batch) — each read its section of the committed `docs/reference/feature-parity.md`, filtered to actionable gaps (Us = No/Partial AND Col1 or FreeCol has it; skipped no-op/deliberate-omission rows), and created one ClickUp Backlog task per gap via the clickup MCP. **169 tasks created, 0 failed** (verified on the board, no dupes). All prefixed **`[Parity]`**; priority **high** for Col1-fidelity gaps, **low** for FreeCol-only extensions; description carries the note + Col1/FreeCol/Us status + domain + matrix source.
+**Status:** Done. Marked 2 already-closed-today Shipped (`[Parity] Ship picker`, `[Parity] Tile production-bonus on yield badges`).
+**Per-domain spread (created):** Map 11 · Movement 5 · Colonists 7 · Military 6 · Naval 3 · Special 4 · ColonyFound 4 · Buildings 8 · Goods 2 · SoL 2 · EuropeMkt 5 · TradeLogistics 11 · EuropeRecruit 3 · Fathers 7 · NativesTrade 12 · NativesMissions 5 · Diplomacy 6 · Monarch 7 · Independence 9 · UI 12 · Setup 10 · Victory 5 · Critic 25.
+**Scheduled next:** await Chris's prioritisation (triage the `[Parity]` Backlog; the high-priority engine-done/UI-missing items are the cheapest wins).
+**Needs you:** Triage the `[Parity]` Backlog — pick the first batch to pull into development.
+
 ## 2026-06-26 — Feature-parity matrix: Col1 vs FreeCol vs Crown & Colony (1015 features) ✅
 
 **Requested (Chris):** investigate Col1 + FreeCol documentation, compare to what WE have, give a Yes/No/Partial table per game per function (and put it in the Wiki). "DO NOT miss anything."
