@@ -154,6 +154,7 @@ public partial class GameController : Node2D
     private Button _skipButton = null!;
     private Button _disbandButton = null!;
     private MiniMap _miniMap = null!;
+    private MapControlsOverlay _mapControls = null!;
     private PanelContainer _colonyPanel = null!;
     private PanelContainer _europePanel = null!;
     private PanelContainer _nativePanel = null!;
@@ -180,6 +181,9 @@ public partial class GameController : Node2D
     private Label _gameOverMessage = null!;
     private Unit? _selectedUnit;
     private Position? _inspectedTile;
+
+    /// <summary>The tile the cursor is hovering (86d3fq1nk). While set, the HUD tile-info panel shows that tile's terrain + a colonist-yield preview; null falls back to the clicked <see cref="_inspectedTile"/>.</summary>
+    private Position? _hoveredTile;
     private string? _notice;
     private bool _gotoMode;
 
@@ -201,6 +205,7 @@ public partial class GameController : Node2D
     public override void _Ready()
     {
         _mapView = GetNode<MapView>("MapView");
+        _mapView.HoveredTileChanged += OnHoveredTileChanged; // tile-yield-on-hover preview (86d3fq1nk)
         _riverLayer = GetNode<RiverOverlay>("MapView/RiverLayer");
         _improvementLayer = GetNode<ImprovementOverlay>("MapView/ImprovementLayer");
         _unitLayer = GetNode<Node2D>("MapView/UnitLayer");
@@ -251,6 +256,12 @@ public partial class GameController : Node2D
         _miniMap.TileSelected += CenterCameraOnTile;
         GetNode<Button>("UI/MiniMap/ZoomInButton").Pressed += _miniMap.ZoomIn;
         GetNode<Button>("UI/MiniMap/ZoomOutButton").Pressed += _miniMap.ZoomOut;
+        // On-screen map-controls cluster (zoom +/− + recentre) — built in code, added to the HUD CanvasLayer (86d3fq0ch).
+        // The zoom buttons drive the camera's discrete zoom; recentre snaps the camera back to the player's current focus.
+        _mapControls = new MapControlsOverlay { Name = "MapControls" };
+        GetNode<CanvasLayer>("UI").AddChild(_mapControls);
+        _mapControls.Build(GetNode<CameraController>("Camera"));
+        _mapControls.RecentreRequested += RecentreCamera;
         _colonyPanel = GetNode<PanelContainer>("UI/ColonyPanel");
         _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
@@ -381,6 +392,7 @@ public partial class GameController : Node2D
         _game = game;
         _selectedUnit = null;
         _inspectedTile = null;
+        _hoveredTile = null; // a fresh/loaded game starts with no hovered tile (cleared so the tile-info panel is empty)
         _notice = null;
         _messageLog.Clear(); // a fresh/loaded game starts with no logged notices; a load re-fills it after this (RestoreMessageLog)
         _skippedThisTurn.Clear(); // a fresh/loaded game starts with no skipped units (session-only set; 86d3f0vuy)
@@ -395,7 +407,18 @@ public partial class GameController : Node2D
         Position focus = _game.PlayerUnits.FirstOrDefault(u => u.IsOnMap)?.Position
             ?? _game.Colonies.FirstOrDefault(c => c.OwnerId == _game.HumanPlayer.PlayerId)?.Position
             ?? new Position(_game.Map.Width / 2, _game.Map.Height / 2);
-        GetNode<Camera2D>("Camera").Position = MapView.TileCentre(focus);
+        // Hand the camera the map's pixel extent (the diamond centres of the four corner tiles) so pan/edge-scroll/zoom
+        // clamp the camera centre inside the map (86d3fq22p) — a view constraint, not a rule (ADR-006). The isometric
+        // projection's min/max screen X/Y fall on the corner tiles, so SetMapBounds derives the rectangle from them.
+        var camera = GetNode<CameraController>("Camera");
+        Vector2 c0 = MapView.TileCentre(new Position(0, 0));
+        Vector2 c1 = MapView.TileCentre(new Position(_game.Map.Width - 1, 0));
+        Vector2 c2 = MapView.TileCentre(new Position(0, _game.Map.Height - 1));
+        Vector2 c3 = MapView.TileCentre(new Position(_game.Map.Width - 1, _game.Map.Height - 1));
+        camera.SetMapBounds(
+            new Vector2(Mathf.Min(Mathf.Min(c0.X, c1.X), Mathf.Min(c2.X, c3.X)), Mathf.Min(Mathf.Min(c0.Y, c1.Y), Mathf.Min(c2.Y, c3.Y))),
+            new Vector2(Mathf.Max(Mathf.Max(c0.X, c1.X), Mathf.Max(c2.X, c3.X)), Mathf.Max(Mathf.Max(c0.Y, c1.Y), Mathf.Max(c2.Y, c3.Y))));
+        camera.Position = MapView.TileCentre(focus);
         // Switch the background music to the in-game context as the game starts. Both the menu and gameplay currently
         // share FreeCol's single Background playlist, so this keeps the music seamless (SetContext only restarts the
         // playlist when the mood actually changes) — the seam is here for a future war/tension context (86d3fq1wy).
@@ -405,9 +428,24 @@ public partial class GameController : Node2D
         RefreshView();
     }
 
-    /// <summary>Recenters the main camera on a map tile — the minimap's click-to-recenter target (ADR-006).</summary>
+    /// <summary>Recenters the main camera on a map tile — the minimap's click-to-recenter target (ADR-006). Clamped to the map bounds.</summary>
     private void CenterCameraOnTile(Position tile) =>
-        GetNode<Camera2D>("Camera").Position = MapView.TileCentre(tile);
+        GetNode<CameraController>("Camera").CenterOn(MapView.TileCentre(tile));
+
+    /// <summary>
+    /// Snaps the camera back to the player's current focus — the selected unit, else the next unit needing orders, else
+    /// the first own colony, else the map centre. The on-screen map-controls "recentre" affordance (86d3fq0ch); a view
+    /// action only (ADR-006).
+    /// </summary>
+    private void RecentreCamera()
+    {
+        Position focus = _selectedUnit is { IsOnMap: true } sel ? sel.Position
+            : _game.NextUnitToMove(_game.HumanPlayer)?.Position
+            ?? _game.PlayerUnits.FirstOrDefault(u => u.IsOnMap)?.Position
+            ?? _game.Colonies.FirstOrDefault(c => c.OwnerId == _game.HumanPlayer.PlayerId)?.Position
+            ?? new Position(_game.Map.Width / 2, _game.Map.Height / 2);
+        CenterCameraOnTile(focus);
+    }
 
     /// <summary>Applies a standing order to the selected unit when its <paramref name="allowed"/> check passes, then refreshes (ADR-006).</summary>
     private void ApplyUnitOrder(System.Func<Unit, bool> allowed, System.Action<Unit> apply, string notice)
@@ -470,6 +508,67 @@ public partial class GameController : Node2D
             line += $"\n{unit.Type.ShortName}";
         }
         return line;
+    }
+
+    /// <summary>
+    /// Records the tile the cursor is hovering and refreshes the HUD so the tile-info panel shows that tile's yield
+    /// preview (86d3fq1nk). Off-map → clears the hover (the panel falls back to the clicked tile). A view-only callback
+    /// from <see cref="MapView.HoveredTileChanged"/>; the yields come from the public oracle (ADR-006).
+    /// </summary>
+    private void OnHoveredTileChanged(Position? tile)
+    {
+        if (_game is null)
+        {
+            return; // hover events can arrive before the first game is built; ignore until there is one
+        }
+        _hoveredTile = tile;
+        // Only the tile-info readout depends on the hover, so refresh just that — a full RefreshView each mouse-tile
+        // crossing would be wasteful. RefreshTileInfo is also called by the main RefreshView.
+        RefreshTileInfo();
+    }
+
+    /// <summary>
+    /// The HUD readout for a hovered tile (86d3fq1nk): the standard terrain/resource/occupant lines (<see cref="DescribeTile"/>)
+    /// plus a colonist-yield <b>preview</b> line — the goods a colonist could produce there with each yield
+    /// ("Yield: grain 5, cotton 3"), read from the public <see cref="Game.TileWorkOptions"/> oracle. Fog-gated via
+    /// <see cref="DescribeTile"/> (unexplored → "Unexplored", no yields); a water/barren tile shows no yield line. Reads only (ADR-006).
+    /// </summary>
+    private string DescribeTileYield(Position tile)
+    {
+        string line = DescribeTile(tile);
+        if (!_game.IsExplored(tile))
+        {
+            return line; // "Unexplored" — reveal no production for a tile the player hasn't seen
+        }
+        var options = _game.TileWorkOptions(tile);
+        if (options.Count > 0)
+        {
+            line += "\nYield: " + string.Join(", ", options.Select(o => $"{o.GoodsId[(o.GoodsId.LastIndexOf('.') + 1)..]} {o.Yield}"));
+        }
+        return line;
+    }
+
+    /// <summary>
+    /// Updates the HUD tile-info readout: the hovered tile's yield preview when the cursor is over the map (86d3fq1nk),
+    /// else the last clicked ("inspected") tile's terrain/occupant readout, else hidden. Shared by the hover callback and
+    /// the main <see cref="RefreshView"/> so both keep the panel consistent.
+    /// </summary>
+    private void RefreshTileInfo()
+    {
+        if (_hoveredTile is { } hovered)
+        {
+            _tileInfoLabel.Text = DescribeTileYield(hovered);
+            _tileInfoPanel.Show();
+        }
+        else if (_inspectedTile is { } inspected)
+        {
+            _tileInfoLabel.Text = DescribeTile(inspected);
+            _tileInfoPanel.Show();
+        }
+        else
+        {
+            _tileInfoPanel.Hide();
+        }
     }
 
     private void OnEndTurnPressed()
@@ -1989,17 +2088,10 @@ public partial class GameController : Node2D
             _selectedUnitPanel.Hide();
         }
 
-        // Tile-info readout (terrain / resource / occupant), shown only once the player has clicked a tile — empty
-        // until then so the camera-centred visual goldens (which never click) are unaffected (ADR-006).
-        if (_inspectedTile is { } inspected)
-        {
-            _tileInfoLabel.Text = DescribeTile(inspected);
-            _tileInfoPanel.Show();
-        }
-        else
-        {
-            _tileInfoPanel.Hide();
-        }
+        // Tile-info readout: the hovered tile's yield preview while the cursor is over the map (86d3fq1nk), else the
+        // last-clicked tile's terrain/occupant readout, else hidden — empty until the player hovers/clicks a tile so the
+        // camera-centred visual goldens (which never move the mouse) are unaffected (ADR-006).
+        RefreshTileInfo();
 
         // The Declare-Independence HUD action appears only once the human may actually declare (FreeCol surfaces the
         // declareIndependence menu item the same way) — gated purely on the CheckDeclareIndependence oracle (ADR-006):

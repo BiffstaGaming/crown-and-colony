@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
@@ -25,6 +26,16 @@ public partial class MapView : Node2D
     private GameMap? _map;
     private IReadOnlySet<Position>? _explored;
     private IReadOnlySet<Position>? _visible;
+
+    /// <summary>The in-bounds map tile the cursor last hovered (so <see cref="HoveredTileChanged"/> only fires on a real change); null when off the map.</summary>
+    private Position? _hoveredTile;
+
+    /// <summary>
+    /// Raised when the cursor moves to a different in-bounds tile (or off the map → <c>null</c>). The host
+    /// (<see cref="GameController"/>) reads the public tile-yield oracle for the new tile and shows the production
+    /// preview — so the rules stay in GameLogic and this stays a pure pointer-to-tile mapping (ADR-006).
+    /// </summary>
+    public event Action<Position?>? HoveredTileChanged;
 
     // Forested/elevated terrain renders as a base tile + an overlay drawn on top.
     // Base mapping mirrors the classic ruleset's climate pairs (forest variants
@@ -168,6 +179,30 @@ public partial class MapView : Node2D
     /// <param name="viewportPosition">The event position in viewport (screen) space.</param>
     public Position TileAtScreen(Vector2 viewportPosition) =>
         TileAt(GetGlobalTransformWithCanvas().AffineInverse() * viewportPosition);
+
+    /// <summary>
+    /// Polls the cursor each frame and raises <see cref="HoveredTileChanged"/> when it crosses into a different
+    /// in-bounds tile (or leaves the map). Polling (rather than consuming motion events) keeps hover tracking working
+    /// while the camera drag-pan consumes those events, and is cheap (one transform + a bounds check per frame). The
+    /// hovered tile is reported via the same event-position transform the click picker uses, so it is zoom/pan-correct.
+    /// </summary>
+    public override void _Process(double delta)
+    {
+        if (_map is null)
+        {
+            return;
+        }
+        Position tile = TileAt(GetLocalMousePosition());
+        Position? current = _map.InBounds(tile) ? tile : null;
+        if (current != _hoveredTile)
+        {
+            _hoveredTile = current;
+            HoveredTileChanged?.Invoke(current);
+        }
+    }
+
+    /// <summary>Reports the tile the cursor is currently over (for the host's hover preview / tests); null when off the map.</summary>
+    public Position? HoveredTile => _hoveredTile;
 
     public override void _Draw()
     {
