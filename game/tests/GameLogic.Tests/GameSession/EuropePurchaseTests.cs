@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
@@ -40,12 +40,12 @@ public class EuropePurchaseTests
         var trained = game.UnitTypesTrainedInEurope().Select(t => t.Id).ToHashSet();
         var purchased = game.UnitTypesPurchasedInEurope().Select(t => t.Id).ToHashSet();
 
-        Assert.Contains(ExpertFarmer, trained);     // priced + skill > 0 → trained
-        Assert.Contains(Artillery, purchased);      // priced + skill 0 → purchased
+        Assert.Contains(ExpertFarmer, trained);     // priced + skill > 0 â†’ trained
+        Assert.Contains(Artillery, purchased);      // priced + skill 0 â†’ purchased
         Assert.Contains(Galleon, purchased);
         Assert.DoesNotContain(Artillery, trained);
         Assert.DoesNotContain(ExpertFarmer, purchased);
-        Assert.DoesNotContain(FreeColonist, trained); // price 0 (recruited, not bought) → in neither list
+        Assert.DoesNotContain(FreeColonist, trained); // price 0 (recruited, not bought) â†’ in neither list
         Assert.DoesNotContain(FreeColonist, purchased);
         Assert.Empty(trained.Intersect(purchased));   // disjoint
     }
@@ -95,7 +95,7 @@ public class EuropePurchaseTests
         Assert.Equal(600, game.HumanPlayer.UnitPriceOverrides[Artillery]);
     }
 
-    // ---- The public Train path (the UI's flat-price route — 86d3f6…) ----
+    // ---- The public Train path (the UI's flat-price route â€” 86d3f6â€¦) ----
 
     [Fact]
     public void TrainUnit_DebitsTheFlatSpecialistPrice_AndDocksAPerson_NoEscalation()
@@ -115,7 +115,7 @@ public class EuropePurchaseTests
         Assert.Equal(UnitLocation.InEurope, trained.Location);
         Assert.Contains(trained, game.UnitsInEurope);
         Assert.Equal(goldBefore - price, game.Gold);
-        Assert.Equal(price, game.EuropeUnitPrice(ExpertFarmer)); // flat — no ratchet
+        Assert.Equal(price, game.EuropeUnitPrice(ExpertFarmer)); // flat â€” no ratchet
         Assert.DoesNotContain(ExpertFarmer, game.HumanPlayer.UnitPriceOverrides.Keys);
 
         game.TrainUnit(ExpertFarmer); // train a second
@@ -157,7 +157,7 @@ public class EuropePurchaseTests
 
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
-        Assert.Equal(62, SaveGame.CurrentVersion);
+        Assert.Equal(63, SaveGame.CurrentVersion);
         Assert.Equal(600, restored.HumanPlayer.UnitPriceOverrides[Artillery]);
     }
 

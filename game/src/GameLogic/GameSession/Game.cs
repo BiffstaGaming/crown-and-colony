@@ -139,6 +139,7 @@ public sealed partial class Game
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
     private FountainResult _lastFountainResult; // transient: how the most recent FoY burst was handled — picks the player-facing message in ExploreRumour
+    private int _citiesOfCibolaRemaining = CibolaCityCount; // persisted (v63): the finite "Seven Cities of Gold" left to discover; once 0 a Cibola roll degrades to ordinary ruins (FreeCol NameCache.getNextCityOfCibola)
     private readonly Player _human;
     private readonly Pcg32Random _random;
     private int _nextUnitId = 1;
@@ -4237,6 +4238,13 @@ public sealed partial class Game
     /// through the real install path without shipping it as a <see cref="MapSource"/>. Null in normal play, so the
     /// production America/Random paths are unchanged.
     /// </param>
+    /// <param name="greatRivers">
+    /// Whether to generate navigable <b>great-river</b> terrain — the spine of long rivers retyped to
+    /// <c>model.tile.greatRiver</c> water (FreeCol's <c>mapGeneratorOptions.enableGreatRivers</c>, which ships
+    /// <b>off</b>). <b>Default false</b>, so an unpicked new game is byte-identical to before (ADR-009); when on, the
+    /// retyping is a pure RNG-free post-process, so even an enabled game keeps the same stream-0 draw sequence (only the
+    /// terrain output gains great-river tiles). Applies only to the random map path.
+    /// </param>
     public static Game New(
         Ruleset ruleset, ulong seed, int mapWidth = 36, int mapHeight = 24,
         int startingGold = 0, int startingTax = 0,
@@ -4245,7 +4253,8 @@ public sealed partial class Game
         MapSource mapSource = MapSource.Random,
         string? humanNationId = null,
         LandStyle landStyle = LandStyle.Continent,
-        MapImportResult? importOverride = null)
+        MapImportResult? importOverride = null,
+        bool greatRivers = false)
     {
         // A picked nation must be a real, selectable, non-REF European power; anything else (null, an unknown id, a
         // native/REF id) falls back to the nation-less classic human — so the default new game stays byte-identical.
@@ -4263,7 +4272,7 @@ public sealed partial class Game
         MapImportResult? imported = importOverride ?? FixedMap.TryImport(mapSource, ruleset);
         IReadOnlyList<NativeSettlement> importedSettlements = imported?.Settlements ?? [];
         GameMap map = imported is null
-            ? MapGenerator.Generate(ruleset, mapWidth, mapHeight, random, landMassFraction, landStyle)
+            ? MapGenerator.Generate(ruleset, mapWidth, mapHeight, random, landMassFraction, landStyle, greatRivers)
             : MapGenerator.DecorateFixedMap(imported.Map, ruleset, random);
 
         // A scenario map that declared a [regions] layer keeps it: the decorate pass re-derives regions from terrain
@@ -5871,12 +5880,62 @@ public sealed partial class Game
         colony.SetExport(goodsId, exported, exportLevel ?? colony.ExportOf(goodsId).ExportLevel);
     }
 
-    /// <summary>Base turns a naval unit spends crossing the high seas each way (FreeCol TURNS_TO_SAIL).</summary>
+    /// <summary>Base turns a naval unit spends crossing the high seas each way from a high-seas <em>edge</em> tile (FreeCol TURNS_TO_SAIL); a tile deeper in the high-seas band sails longer — see <see cref="SailTurnsFor"/>.</summary>
     public const int SailTurns = 3;
 
-    /// <summary>The crossing length for a ship's owner: <see cref="SailTurns"/> shortened by the owner's Congress <c>sailHighSeas</c> modifier (Ferdinand Magellan −1), floored at 1.</summary>
-    private int SailTurnsFor(Player? owner) =>
-        owner is null ? SailTurns : Math.Max(1, ApplyGoodsModifiers(owner, SailHighSeasId, SailTurns));
+    /// <summary>
+    /// How many extra turns a deep high-seas embarkation tile adds to the crossing, beyond the base — capped so even a
+    /// far-from-edge launch never sails absurdly long (a faithful-subset bound on FreeCol's distance-driven crossing).
+    /// </summary>
+    private const int MaxSailEdgeBonus = 3;
+
+    /// <summary>
+    /// The crossing length for a ship leaving <paramref name="embark"/>: the <see cref="SailTurns"/> base <b>plus how far
+    /// the open-ocean route to Europe lies from the embarkation point</b> (FreeCol varies the crossing by the sailing
+    /// unit's distance to the high-seas edge — its <c>Tile.highSeasCount</c>, the hop count from the
+    /// directly-high-seas-connected edge water), then shortened by the owner's Congress <c>sailHighSeas</c> modifier
+    /// (Ferdinand Magellan −1) and floored at 1. A ship setting sail from a high-seas tile right at the map edge (the
+    /// open-ocean exit) sails the base 3 turns; one launched from a high-seas tile tucked deeper in the band (a port far
+    /// from the open ocean) sails longer. The extra is the <see cref="HighSeasEdgeDistance"/> of the gateway high-seas
+    /// tile, capped at <see cref="MaxSailEdgeBonus"/>. Deterministic (pure geometry, no RNG).
+    /// </summary>
+    /// <param name="owner">The ship's owner (its Congress folds the Magellan modifier); null skips the fold.</param>
+    /// <param name="embark">The tile the ship sets sail from / re-enters at (its on-map <see cref="Unit.Position"/>).</param>
+    private int SailTurnsFor(Player? owner, Position embark)
+    {
+        int edgeBonus = Math.Min(MaxSailEdgeBonus, HighSeasEdgeDistance(embark));
+        int baseTurns = SailTurns + edgeBonus;
+        return owner is null ? baseTurns : Math.Max(1, ApplyGoodsModifiers(owner, SailHighSeasId, baseTurns));
+    }
+
+    /// <summary>
+    /// How far the open-ocean route to Europe lies from <paramref name="embark"/> — the crossing-length driver. The
+    /// high-seas band hugs the east/west map edges (FreeCol <c>Map.resetHighSeas</c>), and the open-ocean exit is the
+    /// outermost high-seas column, so this is the <b>nearest high-seas tile's</b> column gap to the nearer vertical edge
+    /// (<c>min(x, width − 1 − x)</c>) — FreeCol's <c>Tile.highSeasCount</c> analogue. A ship launched from (or re-entering
+    /// at) a tile whose nearest high seas sits at the very edge gets 0 (the base crossing); a high-seas tile buried deep
+    /// in the band measures its own distance and sails longer. If the map has no high seas at all (test fixtures), the
+    /// distance is 0. Pure geometry (no RNG); used only to vary the Atlantic crossing length.
+    /// </summary>
+    /// <param name="embark">The embarkation / re-entry tile.</param>
+    private int HighSeasEdgeDistance(Position embark)
+    {
+        int EdgeGap(Position p) => Math.Min(p.X, Map.Width - 1 - p.X);
+
+        // A ship leaving a high-seas tile measures that tile directly (the SailToEurope gate guarantees this case).
+        if (Map.TerrainAt(embark).Id == HighSeasId)
+        {
+            return EdgeGap(embark);
+        }
+        // Otherwise (a coastal re-entry tile on the SailToNewWorld leg) measure the nearest high-seas tile — the gateway
+        // the ship reaches the open ocean through. The band hugs the edges, so a coastal port's gateway is at the edge.
+        Position? nearest = Map.AllPositions()
+            .Where(p => Map.TerrainAt(p).Id == HighSeasId)
+            .Cast<Position?>()
+            .OrderBy(p => Chebyshev(embark, p!.Value))
+            .FirstOrDefault();
+        return nearest is { } hs ? EdgeGap(hs) : 0; // no high seas on the map (fixtures) → no extra
+    }
 
     /// <summary>The human player's units currently docked in Europe (resolved by owner — FP-2).</summary>
     public IEnumerable<Unit> UnitsInEurope => _units.Where(u => u.Location == UnitLocation.InEurope && IsHumanOwned(u));
@@ -5933,7 +5992,8 @@ public sealed partial class Game
             throw new InvalidMoveException(check.Reason!);
         }
         unit.Location = UnitLocation.SailingToEurope;
-        unit.SailTurnsRemaining = SailTurnsFor(PlayerById(unit.OwnerId)); // Magellan shortens the crossing
+        // The crossing length varies with how far this high-seas tile sits from the open-ocean edge (Magellan still shortens it).
+        unit.SailTurnsRemaining = SailTurnsFor(PlayerById(unit.OwnerId), unit.Position);
         SyncPassengers(unit);
     }
 
@@ -5954,7 +6014,9 @@ public sealed partial class Game
             throw new InvalidMoveException($"The ship is under repair for {unit.RepairTurnsRemaining} more turn(s).");
         }
         unit.Location = UnitLocation.SailingToNewWorld;
-        unit.SailTurnsRemaining = SailTurnsFor(PlayerById(unit.OwnerId)); // Magellan shortens the crossing
+        // The return crossing is symmetric: its length varies with the departure tile (the ship re-enters there) and
+        // Magellan still shortens it. unit.Position is the high-seas tile the ship left from (set on its outbound leg).
+        unit.SailTurnsRemaining = SailTurnsFor(PlayerById(unit.OwnerId), unit.Position);
         SyncPassengers(unit);
     }
 
@@ -6895,6 +6957,25 @@ public sealed partial class Game
     private const int RumourSmallRuinsThreshold = 500;
 
     /// <summary>
+    /// The finite number of named cities in the "Seven Cities of Gold" — FreeCol ships seven Cibola city names
+    /// (<c>nameCache.lostCityRumour.cityName.0..6</c>, consumed one per CIBOLA outcome by
+    /// <c>NameCache.getNextCityOfCibola</c>). Once all seven are found, a further CIBOLA roll degrades to an ordinary
+    /// RUINS find (the classic "you've found them all" fall-through).
+    /// </summary>
+    public const int CibolaCityCount = 7;
+
+    /// <summary>
+    /// How many of the Seven Cities of Gold are still undiscovered this game (starts at <see cref="CibolaCityCount"/>).
+    /// While positive, a CIBOLA rumour spawns the big treasure train and decrements this; at zero a CIBOLA roll
+    /// degrades to an ordinary ruins find. Persisted in the save (v63, omit-when-default — a game where none are found
+    /// stays byte-identical and serialises nothing).
+    /// </summary>
+    internal int CitiesOfCibolaRemaining => _citiesOfCibolaRemaining;
+
+    /// <summary>Restores the undiscovered-cities counter from a save (v63). No-op-equivalent for a default game (the field already starts full).</summary>
+    internal void SetCitiesOfCibolaRemaining(int remaining) => _citiesOfCibolaRemaining = remaining;
+
+    /// <summary>
     /// Investigates a Lost City Rumour if <paramref name="unit"/> just stepped onto one: a colonial (non-native)
     /// <b>land</b> unit on a tile that holds a rumour. Draws from the owner's RNG stream (<see cref="RandomFor"/>)
     /// — the human's stream 0, an AI power's own stream — so one player exploring never shifts another's economy
@@ -7038,16 +7119,26 @@ public sealed partial class Game
                 }
                 break;
             case LostCityRumourType.Cibola:
-                // FreeCol: a city of gold → rand(0, dx·600) + dx·300 as a treasure train (medium dx=8 → 2400–7199).
-                int cibolaTreasure = random.Next(RumourDifficultyDx * 600) + (RumourDifficultyDx * 300);
-                SpawnTreasureTrain(target, unit.OwnerId, cibolaTreasure);
-                // Record the find for the History report (FreeCol CITY_OF_GOLD) when the human discovers it — score 0,
-                // its value rides the treasure (→ gold summand once cashed in). The history log is the human's only.
-                if (unit.OwnerId == _human.PlayerId)
+                // The finite "Seven Cities of Gold": FreeCol draws the next named city (NameCache.getNextCityOfCibola)
+                // and, if one remains, spawns the big treasure train (rand(0, dx·600) + dx·300 → medium dx=8 → 2400–7199)
+                // and consumes that name; once all seven are found the city name is null and the outcome FALLS THROUGH to
+                // an ordinary RUINS find (ServerUnit.csExploreLostCityRumour CIBOLA → "Fall through, found all the cities").
+                if (_citiesOfCibolaRemaining > 0)
                 {
-                    RecordHistory(HistoryEventKind.CityOfGold, $"Found one of the Seven Cities of Gold — {cibolaTreasure} gold in treasure.");
+                    int cibolaTreasure = random.Next(RumourDifficultyDx * 600) + (RumourDifficultyDx * 300);
+                    _citiesOfCibolaRemaining--; // one of the Seven is now found — the count is per-game and persisted
+                    SpawnTreasureTrain(target, unit.OwnerId, cibolaTreasure);
+                    // Record the find for the History report (FreeCol CITY_OF_GOLD) when the human discovers it — score 0,
+                    // its value rides the treasure (→ gold summand once cashed in). The history log is the human's only.
+                    if (unit.OwnerId == _human.PlayerId)
+                    {
+                        RecordHistory(HistoryEventKind.CityOfGold, $"Found one of the Seven Cities of Gold — {cibolaTreasure} gold in treasure.");
+                    }
+                    break;
                 }
-                break;
+                // All seven are found: degrade to a RUINS find, drawing the ruins amount exactly as the RUINS case does
+                // (FreeCol's fall-through to the shared `case RUINS:` body). A small find pays gold; a larger one is a train.
+                goto case LostCityRumourType.Ruins;
             case LostCityRumourType.BurialGround:
                 ApplyBurialGround(target, unit.OwnerId); // the owning nation turns hateful toward the desecrator
                 break;

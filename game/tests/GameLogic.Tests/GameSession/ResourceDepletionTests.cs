@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
@@ -11,8 +11,8 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 /// <summary>
 /// Finite bonus-resource depletion (task 86d3fpxam): a working colonist expends a finite resource by the amount it
 /// boosted its tile's output that turn; once the deposit's quantity is used up it is removed and the tile falls back
-/// to its bare yield. Cross-checked against FreeCol <c>ServerColonyTile.expendResource</c> → <c>Resource.useQuantity</c>
-/// (the reduction is the resource's bonus contribution, capped at the remaining quantity; quantity 0 → resource removed).
+/// to its bare yield. Cross-checked against FreeCol <c>ServerColonyTile.expendResource</c> â†’ <c>Resource.useQuantity</c>
+/// (the reduction is the resource's bonus contribution, capped at the remaining quantity; quantity 0 â†’ resource removed).
 /// </summary>
 public class ResourceDepletionTests
 {
@@ -22,8 +22,8 @@ public class ResourceDepletionTests
     private const string OreResource = "model.resource.ore"; // hills resource: +2 ore, finite (min 200, max 4000)
 
     /// <summary>
-    /// A 3×3 hills map with a pop-2 colony at the centre and an <paramref name="oreQuantity"/>-deep ore deposit on the
-    /// (0,1) ring tile. Hills produce 4 ore attended; the ore resource adds +2 → 6 ore/turn while it lasts.
+    /// A 3Ã—3 hills map with a pop-2 colony at the centre and an <paramref name="oreQuantity"/>-deep ore deposit on the
+    /// (0,1) ring tile. Hills produce 4 ore attended; the ore resource adds +2 â†’ 6 ore/turn while it lasts.
     /// </summary>
     private static Game HillsColonyWithOreDeposit(int oreQuantity)
     {
@@ -65,7 +65,7 @@ public class ResourceDepletionTests
     [Fact]
     public void NotWorkingAFiniteResource_LeavesItUntouched()
     {
-        // No worker assigned to the deposit tile → its quantity does not move across a turn.
+        // No worker assigned to the deposit tile â†’ its quantity does not move across a turn.
         Game game = HillsColonyWithOreDeposit(oreQuantity: 50);
         game.EndTurn();
         Assert.Equal(50, game.Map.ResourceQuantityAt(OreTile));
@@ -74,7 +74,7 @@ public class ResourceDepletionTests
     [Fact]
     public void Exhaustion_RemovesTheResource_AndYieldDropsToBase()
     {
-        // A deposit with only 2 left: one turn's +2 mining drains it to 0 → the deposit is removed and the tile
+        // A deposit with only 2 left: one turn's +2 mining drains it to 0 â†’ the deposit is removed and the tile
         // reverts to its bare 4-ore hills yield.
         Game game = HillsColonyWithOreDeposit(oreQuantity: 2);
         Colony colony = game.Colonies[0];
@@ -90,7 +90,7 @@ public class ResourceDepletionTests
     [Fact]
     public void ResourceDrainsToExhaustionOverSeveralTurns()
     {
-        // 5 deep, mined at 2/turn: 5 → 3 → 1 → exhausted on the third turn (1 - 2 ≤ 0).
+        // 5 deep, mined at 2/turn: 5 â†’ 3 â†’ 1 â†’ exhausted on the third turn (1 - 2 â‰¤ 0).
         Game game = HillsColonyWithOreDeposit(oreQuantity: 5);
         Colony colony = game.Colonies[0];
         game.AssignWork(colony, OreTile, Ore);
@@ -117,5 +117,5 @@ public class ResourceDepletionTests
     }
 
     [Fact]
-    public void SaveVersion_IsUnchanged() => Assert.Equal(62, SaveGame.CurrentVersion);
+    public void SaveVersion_IsUnchanged() => Assert.Equal(63, SaveGame.CurrentVersion);
 }

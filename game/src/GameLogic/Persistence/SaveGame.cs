@@ -20,7 +20,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 62;
+    public const int CurrentVersion = 63;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -251,6 +251,15 @@ public sealed record SaveGame
     /// Determinism (ADR-009): the kept-playing flag and the wave/morale state draw no RNG (the cadence is a fixed
     /// interval, morale a pure count of losses), so a reloaded game continues on the identical random sequence and the
     /// soak — which never wins or reaches the war in its window — stays byte-identical and twin-deterministic.
+    /// v63 added the <b>Seven Cities of Gold</b> counter (<see cref="CitiesOfCibolaRemaining"/> — how many named
+    /// Cibola cities are still undiscovered, FreeCol's finite <c>NameCache</c> Cibola list, 86d3fpxrc). Once all seven
+    /// are found, a CIBOLA lost-city rumour degrades to an ordinary ruins find instead of always spawning a big
+    /// treasure train. Additive + <b>omitted when default</b> (the field equals <see cref="Game.CibolaCityCount"/> = 7,
+    /// i.e. none found — every fresh game and the whole early game), so a game where no Cibola has been discovered
+    /// serialises byte-identically to v62 and pre-v63 saves load with the full count of seven (the classic count).
+    /// Determinism (ADR-009): the counter only gates which Cibola outcome resolves (the treasure draw it skips when
+    /// exhausted matches FreeCol's null-name fall-through), so the human's stream 0 stays consistent across reload and
+    /// the soak — which never explores a rumour — stays byte-identical and twin-deterministic.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -333,6 +342,9 @@ public sealed record SaveGame
 
     /// <summary>The high-water mark of the King's morale — the full land army he committed at the declaration, the denominator of the morale-break test (v62; null/omitted when 0, i.e. no REF at war). The <em>current</em> morale is derived live from the survivors, so only this peak persists. Pre-v62 saves load with peak 0 (a reloaded war never breaks on morale, only on the raw unit thresholds, exactly as before this version).</summary>
     public int? RefMoralePeak { get; init; }
+
+    /// <summary>How many of the Seven Cities of Gold are still undiscovered (v63; null/omitted when the full count of <see cref="Game.CibolaCityCount"/> = 7 remains — every game where no Cibola has been found, so a default game stays byte-identical to v62). At 0 a Cibola rumour degrades to ordinary ruins. Pre-v63 saves load with the full count of seven (the classic count).</summary>
+    public int? CitiesOfCibolaRemaining { get; init; }
 
     /// <summary>The spec id of the difficulty level this game plays under (v46; null/omitted for the default <c>model.difficulty.medium</c>, so a default game stays byte-identical to v45). On load the ruleset is re-loaded under this level so the balance matches; pre-v46 saves load the default level.</summary>
     public string? DifficultyLevel { get; init; }
@@ -586,6 +598,11 @@ public sealed record SaveGame
             // mid-REF-war stays byte-identical to v61. The current morale is derived live, so it is not persisted.
             RefWaveCountdown = game.RefWaveCountdown != 0 ? game.RefWaveCountdown : null,
             RefMoralePeak = game.RefMoralePeak != 0 ? game.RefMoralePeak : null,
+            // The Seven Cities of Gold counter (v63); omitted when the full count remains (none found), so a game where
+            // no Cibola has been discovered stays byte-identical to v62. Only a game that has found at least one writes it.
+            CitiesOfCibolaRemaining = game.CitiesOfCibolaRemaining != Game.CibolaCityCount
+                ? game.CitiesOfCibolaRemaining
+                : null,
             // Player-scoped state: authoritative in (and written only to) Players[]. The legacy flat
             // top-level fields are no longer written as of FP-7 — they remain readable for ≤v19 / pre-FP-7
             // v20 saves (the fold path), but the v20 load path was always Players[]-only, so the format
@@ -867,6 +884,10 @@ public sealed record SaveGame
         {
             game.RestoreHistory(history.Select(h =>
                 new HistoryEvent((HistoryEventKind)h.Kind, h.Turn, h.Description, h.Score)));
+        }
+        if (CitiesOfCibolaRemaining is { } cibolaLeft) // v63; pre-v63 / omitted → the full count of seven remains (the classic count)
+        {
+            game.SetCitiesOfCibolaRemaining(cibolaLeft);
         }
         return game;
     }

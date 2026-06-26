@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
@@ -11,7 +11,7 @@ namespace CrownAndColony.GameLogic.Tests.Colonies;
 
 /// <summary>
 /// Schoolhouse teaching (<c>86d3c9p7f</c> slice 2): an expert in a school raises the colony's least-skilled colonist
-/// one rung per training cycle (petty criminal → indentured servant → free colonist → the teacher's expertise) over
+/// one rung per training cycle (petty criminal â†’ indentured servant â†’ free colonist â†’ the teacher's expertise) over
 /// the spec turns (4/6/8, reduced by the Sons-of-Liberty bonus, floor 1). Deterministic (no RNG); save v32.
 /// </summary>
 public class SchoolTeachingTests
@@ -62,7 +62,7 @@ public class SchoolTeachingTests
         colony.AssignBuildingWorker(building, type);
     }
 
-    // ── Colony mutators ──────────────────────────────────────────────────────────────────────────────────────────
+    // â”€â”€ Colony mutators â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public void SchoolTrainingTurns_AccrueResetAndRestore()
@@ -83,9 +83,9 @@ public class SchoolTeachingTests
     public void UpgradeIdleWorker_PromotesAnImplicitFreeColonist_AndBack()
     {
         var colony = new Colony(1, "Test", new Position(0, 0), 1); // one implicit free idle colonist
-        colony.UpgradeIdleWorker(Free, ExpertOreMiner);          // free → expert: adds an overlay entry
+        colony.UpgradeIdleWorker(Free, ExpertOreMiner);          // free â†’ expert: adds an overlay entry
         Assert.Contains(ExpertOreMiner, colony.IdleWorkerTypes);
-        colony.UpgradeIdleWorker(ExpertOreMiner, Free);          // expert → free: removes it
+        colony.UpgradeIdleWorker(ExpertOreMiner, Free);          // expert â†’ free: removes it
         Assert.Empty(colony.IdleWorkerTypes);
     }
 
@@ -98,7 +98,7 @@ public class SchoolTeachingTests
         Assert.Equal(0, colony.SchoolTrainingTurnsAt(Schoolhouse)); // swept (building absent)
     }
 
-    // ── The teaching ladder ──────────────────────────────────────────────────────────────────────────────────────
+    // â”€â”€ The teaching ladder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public void Teacher_RaisesACriminal_OneRungPerFourTurns_UpToTheExpertise()
@@ -112,13 +112,13 @@ public class SchoolTeachingTests
         Teach(3);
         Assert.Contains(Petty, colony.IdleWorkerTypes); // not yet (3 < 4)
         Teach(1);
-        Assert.Contains(Indentured, colony.IdleWorkerTypes); // criminal → servant at turn 4
+        Assert.Contains(Indentured, colony.IdleWorkerTypes); // criminal â†’ servant at turn 4
         Assert.Equal(0, colony.SchoolTrainingTurnsAt(Schoolhouse)); // counter reset on graduation
         Teach(4);
-        Assert.DoesNotContain(Indentured, colony.IdleWorkerTypes); // servant → free (free is implicit)
+        Assert.DoesNotContain(Indentured, colony.IdleWorkerTypes); // servant â†’ free (free is implicit)
         Assert.Empty(colony.IdleWorkerTypes);
         Teach(4);
-        Assert.Contains(ExpertOreMiner, colony.IdleWorkerTypes); // free → the teacher's expertise
+        Assert.Contains(ExpertOreMiner, colony.IdleWorkerTypes); // free â†’ the teacher's expertise
     }
 
     [Fact]
@@ -127,7 +127,7 @@ public class SchoolTeachingTests
         (Game game, Colony colony) = School(Schoolhouse, ExpertOreMiner);
         AddIdleStudent(colony, ExpertOreMiner); // the only other colonist is already an expert
         for (int i = 0; i < 6; i++) game.RunSchoolTeaching(colony);
-        Assert.Equal(0, colony.SchoolTrainingTurnsAt(Schoolhouse)); // no eligible student → counter never advances
+        Assert.Equal(0, colony.SchoolTrainingTurnsAt(Schoolhouse)); // no eligible student â†’ counter never advances
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public class SchoolTeachingTests
         AddIdleStudent(colony, Petty);        // the least-skilled
         AddIdleStudent(colony, Indentured);
         for (int i = 0; i < 4; i++) game.RunSchoolTeaching(colony);
-        Assert.DoesNotContain(Petty, colony.IdleWorkerTypes);   // the criminal was taught first → servant
+        Assert.DoesNotContain(Petty, colony.IdleWorkerTypes);   // the criminal was taught first â†’ servant
         Assert.Equal(2, colony.IdleWorkerTypes.Count(t => t == Indentured)); // original servant + the promoted criminal
         Assert.Contains(Indentured, colony.IdleWorkerTypes);
     }
@@ -154,7 +154,7 @@ public class SchoolTeachingTests
 
         (Game uni, Colony uniColony) = School(University, ElderStatesman);
         AddIdleStudent(uniColony, Free);
-        for (int i = 0; i < 8; i++) uni.RunSchoolTeaching(uniColony); // free → elder statesman takes 8 turns
+        for (int i = 0; i < 8; i++) uni.RunSchoolTeaching(uniColony); // free â†’ elder statesman takes 8 turns
         Assert.Contains(ElderStatesman, uniColony.IdleWorkerTypes);
     }
 
@@ -169,7 +169,7 @@ public class SchoolTeachingTests
 
         for (int i = 0; i < 8; i++) game.RunSchoolTeaching(colony);
 
-        Assert.Equal(0, colony.SchoolTrainingTurnsAt(University));         // no eligible student outside the school → no training
+        Assert.Equal(0, colony.SchoolTrainingTurnsAt(University));         // no eligible student outside the school â†’ no training
         Assert.Contains(Free, colony.BuildingOccupants(University));       // the in-school free colonist was not upgraded
     }
 
@@ -189,14 +189,14 @@ public class SchoolTeachingTests
     public void TieBreak_PrefersTheEquallyLeastSkilledStudentWorkingTheTeachersExpertGood()
     {
         // Two free colonists (equal skill 0): one mining the teacher's good (ore), one farming grain. The expert ore
-        // miner teaches the ore worker first — FreeCol findStudent's trade tie-break — even though the grain worker
+        // miner teaches the ore worker first â€” FreeCol findStudent's trade tie-break â€” even though the grain worker
         // comes EARLIER in the stable enumeration order (so the old order-only rule would have picked grain).
         (Game game, Colony colony) = School(Schoolhouse, ExpertOreMiner); // ExpertProduction = model.goods.ore
         colony.Population += 2;
         var tiles = colony.Position.Neighbours().Where(n => game.Map.InBounds(n))
             .OrderBy(p => p.Y).ThenBy(p => p.X).Take(2).ToList();
-        Position grainTile = tiles[0]; // row-major first → would win the tie under the old stable-order rule
-        Position oreTile = tiles[1];   // later, but works the teacher's good → wins via the trade tie-break
+        Position grainTile = tiles[0]; // row-major first â†’ would win the tie under the old stable-order rule
+        Position oreTile = tiles[1];   // later, but works the teacher's good â†’ wins via the trade tie-break
         colony.SetWorker(grainTile, Grain, Free);
         colony.SetWorker(oreTile, Ore, Free);
 
@@ -211,18 +211,18 @@ public class SchoolTeachingTests
     {
         (Game game, Colony colony) = School(Schoolhouse, ExpertOreMiner);
         AddIdleStudent(colony, Free);
-        colony.Liberty = Colony.LibertyPerRebel * colony.Population; // SoL 100 → ProductionBonus +2
+        colony.Liberty = Colony.LibertyPerRebel * colony.Population; // SoL 100 â†’ ProductionBonus +2
         Assert.Equal(2, colony.ProductionBonus);
-        for (int i = 0; i < 2; i++) game.RunSchoolTeaching(colony); // needed = max(1, 4 − 2) = 2
+        for (int i = 0; i < 2; i++) game.RunSchoolTeaching(colony); // needed = max(1, 4 âˆ’ 2) = 2
         Assert.Contains(ExpertOreMiner, colony.IdleWorkerTypes);
     }
 
-    // ── Parallel teaching: one student per teacher (86d3fpyc0) ───────────────────────────────────────────────────
+    // â”€â”€ Parallel teaching: one student per teacher (86d3fpyc0) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public void ACollege_WithTwoTeachers_GraduatesTwoStudentsInParallel()
     {
-        // A college has 2 teacher workplaces. Two expert teachers each raise their own student in the same turns —
+        // A college has 2 teacher workplaces. Two expert teachers each raise their own student in the same turns â€”
         // FreeCol teaches one student PER teacher, not one per building.
         (Game game, Colony colony) = School(College, ExpertOreMiner);
         AddTeacher(colony, College, ExpertFarmer); // a 2nd teacher fills the college's 2nd slot
@@ -245,7 +245,7 @@ public class SchoolTeachingTests
         (Game game, Colony colony) = School(University, ExpertOreMiner);
         AddTeacher(colony, University, ExpertFarmer);
         AddTeacher(colony, University, MasterDistiller);
-        AddIdleStudent(colony, Petty); // three petty criminals — each teacher raises one to indentured servant
+        AddIdleStudent(colony, Petty); // three petty criminals â€” each teacher raises one to indentured servant
         AddIdleStudent(colony, Petty);
         AddIdleStudent(colony, Petty);
 
@@ -272,7 +272,7 @@ public class SchoolTeachingTests
         int slot0 = colony.SchoolTrainingTurnsAt(College, 0);
         int slot1 = colony.SchoolTrainingTurnsAt(College, 1);
         Assert.Equal(3, slot0 + slot1);                 // exactly one teacher accrued 3 turns
-        Assert.True(slot0 == 0 || slot1 == 0);          // the other never claimed the same student → stayed at 0
+        Assert.True(slot0 == 0 || slot1 == 0);          // the other never claimed the same student â†’ stayed at 0
     }
 
     [Fact]
@@ -290,7 +290,7 @@ public class SchoolTeachingTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
         Colony r = restored.Colonies.Single(c => c.Id == colony.Id);
 
-        Assert.Equal(62, SaveGame.CurrentVersion);
+        Assert.Equal(63, SaveGame.CurrentVersion);
         Assert.Equal(2, r.SchoolTrainingTurnsAt(College, 0)); // both per-teacher counters survive the round-trip
         Assert.Equal(2, r.SchoolTrainingTurnsAt(College, 1));
         restored.RunSchoolTeaching(r);
@@ -298,19 +298,19 @@ public class SchoolTeachingTests
         Assert.Equal(2, r.IdleWorkerTypes.Count(t => t == ExpertOreMiner || t == ExpertFarmer)); // both graduate at turn 4
     }
 
-    // ── Assign a teacher: the placement gate (86d3fpxd6) ─────────────────────────────────────────────────────────
+    // â”€â”€ Assign a teacher: the placement gate (86d3fpxd6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public void AssignTeacher_SeatsAnEligibleExpertIntoTheSchool()
     {
         (Game game, Colony colony) = School(Schoolhouse, ExpertOreMiner);
-        colony.UnassignBuildingWorker(Schoolhouse); // empty the school → the founding ore miner is now idle
+        colony.UnassignBuildingWorker(Schoolhouse); // empty the school â†’ the founding ore miner is now idle
         Assert.Contains(ExpertOreMiner, colony.IdleWorkerTypes);
 
         Assert.True(game.CheckAssignTeacher(colony, Schoolhouse, ExpertOreMiner).Allowed);
         game.AssignTeacher(colony, Schoolhouse, ExpertOreMiner);
         Assert.Contains(ExpertOreMiner, colony.BuildingOccupants(Schoolhouse)); // the named expert is now teaching there
-        Assert.DoesNotContain(ExpertOreMiner, colony.IdleWorkerTypes);          // …and left the idle pool
+        Assert.DoesNotContain(ExpertOreMiner, colony.IdleWorkerTypes);          // â€¦and left the idle pool
     }
 
     [Fact]
@@ -331,7 +331,7 @@ public class SchoolTeachingTests
         (Game game, Colony colony) = School(Schoolhouse, ExpertOreMiner);
         colony.UnassignBuildingWorker(Schoolhouse);
         colony.Population++;
-        colony.AddIdleColonist(ElderStatesman); // skill 3 — too advanced for a schoolhouse (cap 1)
+        colony.AddIdleColonist(ElderStatesman); // skill 3 â€” too advanced for a schoolhouse (cap 1)
 
         Assert.False(game.CheckAssignTeacher(colony, Schoolhouse, ElderStatesman).Allowed);
         // A university (cap 4) accepts the same elder statesman.
@@ -357,15 +357,15 @@ public class SchoolTeachingTests
     {
         (Game game, Colony colony) = School(College, ExpertOreMiner); // college cap 2; one teacher already seated
         colony.Population += 3;
-        colony.AddIdleColonist(ExpertFarmer);   // eligible (skill 1 ≤ 2)
-        colony.AddIdleColonist(MasterDistiller); // eligible (skill 2 ≤ 2)
+        colony.AddIdleColonist(ExpertFarmer);   // eligible (skill 1 â‰¤ 2)
+        colony.AddIdleColonist(MasterDistiller); // eligible (skill 2 â‰¤ 2)
         colony.AddIdleColonist(ElderStatesman);  // NOT eligible (skill 3 > 2)
 
         var assignable = game.AssignableTeachers(colony, College);
         Assert.Equal(new[] { ExpertFarmer, MasterDistiller }, assignable); // ordinal-ordered, over-skilled excluded
     }
 
-    // ── Determinism / save ───────────────────────────────────────────────────────────────────────────────────────
+    // â”€â”€ Determinism / save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public void AColonyWithNoSchool_IsAPureNoOp()
@@ -374,7 +374,7 @@ public class SchoolTeachingTests
         Colony colony = game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
         string before = SaveGame.From(game).ToJson();
         game.RunSchoolTeaching(colony);
-        Assert.Equal(before, SaveGame.From(game).ToJson()); // no school → no state change, no draw
+        Assert.Equal(before, SaveGame.From(game).ToJson()); // no school â†’ no state change, no draw
     }
 
     [Fact]
@@ -389,7 +389,7 @@ public class SchoolTeachingTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
         Colony r = restored.Colonies.Single(c => c.Id == colony.Id);
 
-        Assert.Equal(62, SaveGame.CurrentVersion);
+        Assert.Equal(63, SaveGame.CurrentVersion);
         Assert.Equal(2, r.SchoolTrainingTurnsAt(Schoolhouse)); // mid-training progress survives
         restored.RunSchoolTeaching(r);
         restored.RunSchoolTeaching(r);
@@ -401,7 +401,7 @@ public class SchoolTeachingTests
     {
         Game game = Game.New(Classic, Seed);
         game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
-        Assert.DoesNotContain("SchoolTrainingSlots", SaveGame.From(game).ToJson()); // additive: omitted → byte-identical to v60
+        Assert.DoesNotContain("SchoolTrainingSlots", SaveGame.From(game).ToJson()); // additive: omitted â†’ byte-identical to v60
     }
 
     [Fact]
@@ -427,8 +427,8 @@ public class SchoolTeachingTests
 
         Game restored = SaveGame.FromJson(legacy.ToJson()).Restore(Classic);
         Colony r = restored.Colonies.Single(c => c.Id == colony.Id);
-        Assert.Equal(3, r.SchoolTrainingTurnsAt(Schoolhouse, 0)); // legacy single counter → slot 0
-        restored.RunSchoolTeaching(r); // one more turn (3 → 4) graduates the criminal
+        Assert.Equal(3, r.SchoolTrainingTurnsAt(Schoolhouse, 0)); // legacy single counter â†’ slot 0
+        restored.RunSchoolTeaching(r); // one more turn (3 â†’ 4) graduates the criminal
         Assert.Contains(Indentured, r.IdleWorkerTypes);
     }
 }

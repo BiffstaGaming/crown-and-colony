@@ -54,6 +54,65 @@ public class SailingTests
         Assert.Equal(UnitLocation.InEurope, ship.Location);        // arrives on the 3rd
     }
 
+    // ---- Variable Atlantic crossing time (86d3fpxk7, FreeCol Tile.highSeasCount-driven crossing) ----
+    // The crossing length is the base SailTurns PLUS the embarkation high-seas tile's distance to the open-ocean map
+    // edge (capped). A ship leaving the very edge sails the base; one launched from a high-seas tile tucked deeper in
+    // the band (a port far from the open ocean) sails longer.
+
+    [Fact]
+    public void SailToEurope_FromADeepHighSeasTile_SailsLongerThanFromTheEdge()
+    {
+        // A width-7 strip: high seas at the west edge (x=0) and a second high-seas tile tucked 3 columns in (x=3).
+        // Leaving the edge is the base 3 turns; leaving the deep tile adds its edge-distance (3, capped at MaxSailEdgeBonus).
+        string[] terrain =
+            ["model.tile.highSeas", "model.tile.ocean", "model.tile.ocean", "model.tile.highSeas",
+             "model.tile.ocean", "model.tile.ocean", "model.tile.ocean"];
+        Game edge = GameOn(terrain, 7, 1, [new SavedUnit(1, Caravel, 0, 0, 12)]);   // at x=0, distance 0
+        Game deep = GameOn(terrain, 7, 1, [new SavedUnit(1, Caravel, 3, 0, 12)]);   // at x=3, distance 3
+
+        edge.SailToEurope(edge.Units[0]);
+        deep.SailToEurope(deep.Units[0]);
+
+        Assert.Equal(Game.SailTurns, edge.Units[0].SailTurnsRemaining);         // edge launch → the base 3
+        Assert.True(deep.Units[0].SailTurnsRemaining > edge.Units[0].SailTurnsRemaining,
+            $"a deep-water port ({deep.Units[0].SailTurnsRemaining}) should sail longer than an edge one ({edge.Units[0].SailTurnsRemaining})");
+        Assert.Equal(Game.SailTurns + 3, deep.Units[0].SailTurnsRemaining);     // base + edge-distance 3
+    }
+
+    [Fact]
+    public void TheCrossingBonus_IsCappedSoEvenAFarPortDoesNotSailAbsurdlyLong()
+    {
+        // A width-13 strip with a high-seas tile 6 columns in: the raw edge-distance is 6, but the bonus is capped, so
+        // the crossing never exceeds SailTurns + the cap (3) = 6, not SailTurns + 6.
+        var cells = new List<string>();
+        for (int x = 0; x < 13; x++) cells.Add(x == 0 || x == 6 ? "model.tile.highSeas" : "model.tile.ocean");
+        Game game = GameOn(cells.ToArray(), 13, 1, [new SavedUnit(1, Caravel, 6, 0, 12)]);
+
+        game.SailToEurope(game.Units[0]);
+
+        Assert.Equal(Game.SailTurns + 3, game.Units[0].SailTurnsRemaining); // capped at SailTurns + MaxSailEdgeBonus(3)
+    }
+
+    [Fact]
+    public void Magellan_StillShortensADeepCrossing()
+    {
+        // The variable crossing and the Magellan modifier compose: a deep launch (base + 3 = 6) with Magellan loses one (5).
+        string[] terrain =
+            ["model.tile.highSeas", "model.tile.ocean", "model.tile.ocean", "model.tile.highSeas",
+             "model.tile.ocean", "model.tile.ocean", "model.tile.ocean"];
+        SaveGame seed = SaveGame.From(GameOn(terrain, 7, 1, [new SavedUnit(1, Caravel, 3, 0, 12)]));
+        Game game = (seed with
+        {
+            Players = seed.Players!.Select(p => p.IsHuman
+                ? p with { Congress = new[] { "model.foundingFather.ferdinandMagellan" } }
+                : p).ToList(),
+        }).Restore(Classic);
+
+        game.SailToEurope(game.Units[0]);
+
+        Assert.Equal(Game.SailTurns + 3 - 1, game.Units[0].SailTurnsRemaining); // deep (base+3) shortened by Magellan (−1)
+    }
+
     [Fact]
     public void CheckSailToEurope_OnlyShipsOnTheHighSeas()
     {

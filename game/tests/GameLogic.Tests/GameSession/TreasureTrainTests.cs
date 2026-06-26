@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
@@ -13,7 +13,7 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 /// <summary>
 /// Treasure trains (<c>86d3c9ryj</c>, FreeCol <c>model.unit.treasureTrain</c> / <c>csDestroySettlement</c>): a
 /// movable, capturable, non-combat land unit that carries plundered gold. Sacking a native settlement spawns one
-/// (instead of crediting gold — see <c>CombatTests</c>); it is captured if beaten/undefended, and its carried
+/// (instead of crediting gold â€” see <c>CombatTests</c>); it is captured if beaten/undefended, and its carried
 /// amount persists in saves (v27). Cashing it in is the next slice (<c>86d3c9rzu</c>).
 /// </summary>
 public class TreasureTrainTests
@@ -78,7 +78,7 @@ public class TreasureTrainTests
         Unit attacker = game.SpawnUnit(Classic.Unit(Artillery), adj);                // human, captureUnits = true
         int id = train.Id;
 
-        game.Attack(attacker, trainTile, new ForceWin()); // artillery (7) vs defence 0 → win → capture (canBeCaptured)
+        game.Attack(attacker, trainTile, new ForceWin()); // artillery (7) vs defence 0 â†’ win â†’ capture (canBeCaptured)
 
         Unit captured = game.Units.Single(u => u.Id == id);
         Assert.False(captured.IsNative);          // changed side to the human captor
@@ -98,7 +98,7 @@ public class TreasureTrainTests
 
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
-        Assert.Equal(62, SaveGame.CurrentVersion);
+        Assert.Equal(63, SaveGame.CurrentVersion);
         Assert.Equal(1234, restored.Units.Single(u => u.Id == id).TreasureAmount);
     }
 
@@ -134,7 +134,7 @@ public class TreasureTrainTests
         int goldBefore = game.HumanPlayer.Gold;
         int id = train.Id;
 
-        Assert.Equal(1000, game.CashInValue(train));   // 0% tax → King's cut 0 → full 1000
+        Assert.Equal(1000, game.CashInValue(train));   // 0% tax â†’ King's cut 0 â†’ full 1000
         Assert.Equal(0, game.TreasureKingsCut(train));
         game.CashInTreasureTrain(train);
 
@@ -143,13 +143,13 @@ public class TreasureTrainTests
     }
 
     [Theory]
-    [InlineData(0, 1000)]   // 1000 × (100−0)/100
-    [InlineData(25, 750)]   // 1000 × (100−25)/100
-    [InlineData(50, 500)]   // 1000 × (100−50)/100
-    [InlineData(75, 250)]   // 1000 × (100−75)/100
+    [InlineData(0, 1000)]   // 1000 Ã— (100âˆ’0)/100
+    [InlineData(25, 750)]   // 1000 Ã— (100âˆ’25)/100
+    [InlineData(50, 500)]   // 1000 Ã— (100âˆ’50)/100
+    [InlineData(75, 250)]   // 1000 Ã— (100âˆ’75)/100
     public void CashIn_AtAColony_KingsCutEqualsTheTaxRate(int taxRate, int expectedNet)
     {
-        // Col1 net formula (86d3fb5mj): a 1000-treasure train at a colony with tax T nets 1000 × (100−T)/100; the
+        // Col1 net formula (86d3fb5mj): a 1000-treasure train at a colony with tax T nets 1000 Ã— (100âˆ’T)/100; the
         // King's cut is the complement (T% of the amount). No separate 60% fee, no extra tax on top.
         (Game game, Unit train, _) = TrainAtColony(1000);
         game.HumanPlayer.TaxRate = taxRate;
@@ -165,10 +165,10 @@ public class TreasureTrainTests
     [Fact]
     public void CashIn_AtAColony_WithHernanCortes_WaivesTheKingsCut()
     {
-        // Cortés's treasureTransportFee −100% folds into the at-colony cut → free transport, full amount even at high tax.
+        // CortÃ©s's treasureTransportFee âˆ’100% folds into the at-colony cut â†’ free transport, full amount even at high tax.
         (Game game, Unit train, _) = TrainAtColony(1000);
         game.HumanPlayer.TaxRate = 25;
-        game.HumanPlayer.CongressList.Add(Cortes); // treasureTransportFee −100% → King's cut waived
+        game.HumanPlayer.CongressList.Add(Cortes); // treasureTransportFee âˆ’100% â†’ King's cut waived
         int goldBefore = game.HumanPlayer.Gold;
 
         Assert.Equal(0, game.TreasureKingsCut(train));     // cut waived despite 25% tax
@@ -181,11 +181,11 @@ public class TreasureTrainTests
     [Fact]
     public void CashIn_InEurope_KeepsTheFullAmount_FeeFreeAndTaxFree()
     {
-        // Col1 model (86d3fb5mj): treasure you carry home yourself is BOTH fee-free and tax-free — even at a high tax
+        // Col1 model (86d3fb5mj): treasure you carry home yourself is BOTH fee-free and tax-free â€” even at a high tax
         // rate the full amount is banked (the tax only applies when the King ships it from a colony).
         (Game game, Unit train, _) = TrainAtColony(1000);
         game.HumanPlayer.TaxRate = 75;          // a high tax that would gut an at-colony cash-in
-        train.Location = UnitLocation.InEurope; // carried home yourself → no King's cut and no tax
+        train.Location = UnitLocation.InEurope; // carried home yourself â†’ no King's cut and no tax
         int goldBefore = game.HumanPlayer.Gold;
 
         Assert.True(game.TreasureCashInIsFeeFree(train));
@@ -218,7 +218,7 @@ public class TreasureTrainTests
         game.CashInTreasureTrain(train);
         int goldAfter = game.HumanPlayer.Gold;
 
-        Assert.False(game.CheckCashInTreasureTrain(train).Allowed);    // spent — its treasure is 0
+        Assert.False(game.CheckCashInTreasureTrain(train).Allowed);    // spent â€” its treasure is 0
         Assert.Throws<InvalidMoveException>(() => game.CashInTreasureTrain(train));
         Assert.Equal(goldAfter, game.HumanPlayer.Gold);               // no double credit
     }
@@ -240,14 +240,14 @@ public class TreasureTrainTests
         game.HumanPlayer.TaxRate = 25;
         MoveCheck check = game.CheckCashInTreasureTrain(train);
         Assert.True(check.Allowed);
-        Assert.Equal(750, check.Cost); // the net the player would bank (1000 × (100−25)/100), preview
+        Assert.Equal(750, check.Cost); // the net the player would bank (1000 Ã— (100âˆ’25)/100), preview
     }
 
     // ---- Load onto a galleon + sail home fee-free (86d3e4bcp, GAP A) ----
 
-    private const string Galleon = "model.unit.galleon"; // space 6 — the only carrier that fits a treasure train (spaceTaken 6)
+    private const string Galleon = "model.unit.galleon"; // space 6 â€” the only carrier that fits a treasure train (spaceTaken 6)
 
-    /// <summary>A 3×1 coastal strip (plains port colony at (0,0), ocean at (1,0), high seas at (2,0)) with a human galleon on the ocean beside the colony and a treasure train standing in the colony.</summary>
+    /// <summary>A 3Ã—1 coastal strip (plains port colony at (0,0), ocean at (1,0), high seas at (2,0)) with a human galleon on the ocean beside the colony and a treasure train standing in the colony.</summary>
     private static (Game game, Unit train, Unit galleon) TrainAndGalleonAtColony(int amount)
     {
         var save = new SaveGame
@@ -278,7 +278,7 @@ public class TreasureTrainTests
         game.Board(train, galleon); // loaded as cargo, but the galleon is still in the New World
 
         Assert.True(train.IsAboard);
-        Assert.False(game.CheckCashInTreasureTrain(train).Allowed); // not yet home → no cash-in here
+        Assert.False(game.CheckCashInTreasureTrain(train).Allowed); // not yet home â†’ no cash-in here
     }
 
     [Fact]
@@ -299,7 +299,7 @@ public class TreasureTrainTests
         Assert.Equal(UnitLocation.InEurope, galleon.Location);
         Assert.Equal(UnitLocation.InEurope, train.Location);   // the aboard train arrived with the ship
         Assert.True(game.CheckCashInTreasureTrain(train).Allowed);
-        Assert.Equal(1000, game.CashInValue(train));           // fee-free — you carried it yourself (no King's cut)
+        Assert.Equal(1000, game.CashInValue(train));           // fee-free â€” you carried it yourself (no King's cut)
 
         game.CashInTreasureTrain(train);
 

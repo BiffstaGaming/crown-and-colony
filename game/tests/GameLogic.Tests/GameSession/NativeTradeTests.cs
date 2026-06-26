@@ -1,4 +1,4 @@
-using CrownAndColony.GameLogic.GameSession;
+﻿using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
@@ -10,9 +10,9 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 
 /// <summary>
 /// Native trade (Phase 5 slice 4): a ship sells cargo to a coastal settlement for gold.
-/// Pricing follows FreeCol getPriceToSell (base 12 + trade-bonus, ×150/125/110% for the
+/// Pricing follows FreeCol getPriceToSell (base 12 + trade-bonus, Ã—150/125/110% for the
 /// settlement's 1st/2nd/3rd wanted good, ~10% markup), then the classic ship-trade penalty
-/// (model.option.shipTradePenalty, −30% at medium — a ship is paid less than an overland trader).
+/// (model.option.shipTradePenalty, âˆ’30% at medium â€” a ship is paid less than an overland trader).
 /// </summary>
 public class NativeTradeTests
 {
@@ -66,15 +66,15 @@ public class NativeTradeTests
     [Fact]
     public void SalePrice_AppliesTradeBonusAndWantedPremium()
     {
-        // Camp trade-bonus = 1 → full = 13. Price = (amount + 11·(13·mult/100)·amount/10) × (100 − 30)/100
-        // — the ×70/100 tail is the medium ship-trade penalty (a ship is paid 30% less).
+        // Camp trade-bonus = 1 â†’ full = 13. Price = (amount + 11Â·(13Â·mult/100)Â·amount/10) Ã— (100 âˆ’ 30)/100
+        // â€” the Ã—70/100 tail is the medium ship-trade penalty (a ship is paid 30% less).
         (Game game, NativeSettlement settlement, _) = SetupCoastalTrade(
             ["model.goods.sugar", "model.goods.tobacco", "model.goods.cotton"]);
 
-        Assert.Equal(1533, game.NativeSalePrice(settlement, "model.goods.sugar", 100));   // wanted #1 (×150%) → 2190×0.70
-        Assert.Equal(1302, game.NativeSalePrice(settlement, "model.goods.tobacco", 100)); // wanted #2 (×125%) → 1860×0.70
-        Assert.Equal(1148, game.NativeSalePrice(settlement, "model.goods.cotton", 100));  // wanted #3 (×110%) → 1640×0.70
-        Assert.Equal(1071, game.NativeSalePrice(settlement, "model.goods.ore", 100));     // not wanted (×100%) → 1530×0.70
+        Assert.Equal(1533, game.NativeSalePrice(settlement, "model.goods.sugar", 100));   // wanted #1 (Ã—150%) â†’ 2190Ã—0.70
+        Assert.Equal(1302, game.NativeSalePrice(settlement, "model.goods.tobacco", 100)); // wanted #2 (Ã—125%) â†’ 1860Ã—0.70
+        Assert.Equal(1148, game.NativeSalePrice(settlement, "model.goods.cotton", 100));  // wanted #3 (Ã—110%) â†’ 1640Ã—0.70
+        Assert.Equal(1071, game.NativeSalePrice(settlement, "model.goods.ore", 100));     // not wanted (Ã—100%) â†’ 1530Ã—0.70
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public class NativeTradeTests
         Assert.Equal(-30, Classic.Difficulty.ShipTradePenalty); // parsed from the spec's medium level, not hardcoded
 
         // A ship-borne trader (native trade is ship-only) is paid the penalty% less than the raw getPriceToSell.
-        const int unpenalized = 2190; // base 13 × 150% wanted, 100 units, +11/10 markup
+        const int unpenalized = 2190; // base 13 Ã— 150% wanted, 100 units, +11/10 markup
         Assert.Equal(unpenalized * (100 + Classic.Difficulty.ShipTradePenalty) / 100, // 1533
             game.NativeSalePrice(settlement, "model.goods.sugar", 100));
     }
@@ -93,7 +93,7 @@ public class NativeTradeTests
     public void SalePrice_EmptyWantedGoods_UsesBasePrice()
     {
         (Game game, NativeSettlement settlement, _) = SetupCoastalTrade([]); // wants nothing in particular
-        Assert.Equal(1071, game.NativeSalePrice(settlement, "model.goods.sugar", 100)); // ×100% (camp, full = 13) → 1530×0.70
+        Assert.Equal(1071, game.NativeSalePrice(settlement, "model.goods.sugar", 100)); // Ã—100% (camp, full = 13) â†’ 1530Ã—0.70
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public class NativeTradeTests
         var camp = new NativeSettlement(1, "model.nationType.apache", "model.settlement.camp", false, pos, 5, null);
         var incaCapital = new NativeSettlement(2, "model.nationType.inca", "model.settlement.inca.capital", true, pos, 5, null);
 
-        // Inca city capital trade-bonus (4) > camp (1) → it pays more for the same good.
+        // Inca city capital trade-bonus (4) > camp (1) â†’ it pays more for the same good.
         Assert.True(
             game.NativeSalePrice(incaCapital, "model.goods.ore", 100) >
             game.NativeSalePrice(camp, "model.goods.ore", 100));
@@ -169,7 +169,7 @@ public class NativeTradeTests
         game.ChangeNativeAlarm(settlement, 300); // Content
         int before = settlement.Alarm;
 
-        game.SellToNatives(ship, settlement, "model.goods.sugar", 1); // tiny price → reduction floors to 1
+        game.SellToNatives(ship, settlement, "model.goods.sugar", 1); // tiny price â†’ reduction floors to 1
         Assert.Equal(before - 1, settlement.Alarm);
     }
 
@@ -209,7 +209,7 @@ public class NativeTradeTests
     {
         (Game game, NativeSettlement settlement, _) = SetupBuy(sugarStock: 80);
         settlement.AddGoods("model.goods.ore", 50);
-        settlement.AddGoods("model.goods.cotton", 10); // below the 20-unit trade minimum → not offered
+        settlement.AddGoods("model.goods.cotton", 10); // below the 20-unit trade minimum â†’ not offered
 
         var offered = game.GoodsToSell(settlement);
         Assert.DoesNotContain(offered, g => g.GoodsId == "model.goods.cotton");
@@ -222,7 +222,7 @@ public class NativeTradeTests
     {
         (Game game, NativeSettlement full, _) = SetupBuy(sugarStock: 80);
         (Game _, NativeSettlement scarce, _) = SetupBuy(sugarStock: 80);
-        scarce.AddGoods("model.goods.sugar", -60); // only 20 left → emptier store charges more per unit
+        scarce.AddGoods("model.goods.sugar", -60); // only 20 left â†’ emptier store charges more per unit
 
         Assert.True(
             game.NativeBuyPrice(scarce, "model.goods.sugar", 20) / 20 >
@@ -244,7 +244,7 @@ public class NativeTradeTests
         Assert.Equal(price, paid);
         Assert.Equal(goldBefore - paid, game.Gold);
         Assert.Equal(40, ship.CargoOf("model.goods.sugar"));
-        Assert.Equal(40, settlement.GeneralStockOf("model.goods.sugar")); // 80 → 40
+        Assert.Equal(40, settlement.GeneralStockOf("model.goods.sugar")); // 80 â†’ 40
         Assert.True(settlement.Alarm < alarmBefore, "buying builds a little goodwill");
         Assert.Equal(0, ship.MovementLeft);
     }
@@ -258,7 +258,7 @@ public class NativeTradeTests
         Assert.False(game.CheckBuyFromNatives(ship, settlement, "model.goods.ore", 10).Allowed);    // none in store
 
         // Hostile settlement refuses entirely.
-        game.ChangeNativeAlarm(settlement, 500); // → Angry
+        game.ChangeNativeAlarm(settlement, 500); // â†’ Angry
         Assert.False(game.CheckBuyFromNatives(ship, settlement, "model.goods.sugar", 20).Allowed);
     }
 
@@ -279,7 +279,7 @@ public class NativeTradeTests
     public void WantedGoods_RecomputeIsDeterministic_AndDrawsNoRng()
     {
         // Two same-seed games' generated settlements derive identical wanted goods (the recompute is RNG-free),
-        // and stream 0 is untouched — the default-game determinism guard.
+        // and stream 0 is untouched â€” the default-game determinism guard.
         Game a = Game.New(Classic, Seed);
         Game b = Game.New(Classic, Seed);
         Assert.Equal(
@@ -304,7 +304,7 @@ public class NativeTradeTests
         // Asking far above the fair price is not accepted; the natives counter at their (lower) price.
         var high = game.TryHaggleSell(settlement, "model.goods.sugar", 100, offerPrice: fair * 2, round: 0);
         Assert.False(high.Accepted);
-        Assert.Equal(fair, high.CounterPrice); // round 0 → fair price unchanged
+        Assert.Equal(fair, high.CounterPrice); // round 0 â†’ fair price unchanged
     }
 
     [Fact]
@@ -340,7 +340,7 @@ public class NativeTradeTests
         Assert.Equal(stream0Before, StreamZeroState(game)); // the human's economy stream 0 is untouched (ADR-009)
     }
 
-    /// <summary>The human's main RNG stream (0) state, read from a save — used to prove haggling never touches it.</summary>
+    /// <summary>The human's main RNG stream (0) state, read from a save â€” used to prove haggling never touches it.</summary>
     private static ulong StreamZeroState(Game game) => SaveGame.From(game).RandomStateValue;
 
     // ---- Persistence ----
@@ -355,7 +355,7 @@ public class NativeTradeTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
         Assert.Equal(wanted, restored.NativeSettlements.First(s => s.Id == first.Id).WantedGoods);
-        Assert.Equal(62, SaveGame.CurrentVersion);
+        Assert.Equal(63, SaveGame.CurrentVersion);
     }
 
     [Fact]

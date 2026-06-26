@@ -61,19 +61,22 @@ public static class MapGenerator
     private const int MaxDistanceToEdge = 10;
 
     /// <summary>
-    /// Generates a width × height map. Same ruleset + same RNG state (+ same <paramref name="landMassFraction"/> and
-    /// <paramref name="landStyle"/>) → identical map. <paramref name="landMassFraction"/> is the share of tiles grown
-    /// into land (FreeCol's <c>model.option.landMass</c>); <paramref name="landStyle"/> is the shape that land takes
-    /// (FreeCol's <c>model.option.landGeneratorType</c>). Both default to the shipped values
-    /// (<see cref="DefaultLandMassFraction"/> + <see cref="LandStyle.Continent"/>), so a call that omits them is
-    /// byte-identical to the historical generator (the default new game and its goldens are unchanged): only the land
-    /// stage (<see cref="GrowContinent"/> vs <see cref="GrowSeparateMasses"/>) differs by style; everything downstream
-    /// (climate, mountains, high seas, rivers, resources, regions) is shared.
+    /// Generates a width × height map. Same ruleset + same RNG state (+ same <paramref name="landMassFraction"/>,
+    /// <paramref name="landStyle"/> and <paramref name="greatRivers"/>) → identical map. <paramref name="landMassFraction"/>
+    /// is the share of tiles grown into land (FreeCol's <c>model.option.landMass</c>); <paramref name="landStyle"/> is the
+    /// shape that land takes (FreeCol's <c>model.option.landGeneratorType</c>); <paramref name="greatRivers"/> toggles
+    /// navigable great-river terrain (FreeCol's <c>mapGeneratorOptions.enableGreatRivers</c>, which ships <b>off</b>).
+    /// All three default to the shipped values (<see cref="DefaultLandMassFraction"/> + <see cref="LandStyle.Continent"/>
+    /// + great rivers OFF), so a call that omits them is byte-identical to the historical generator (the default new game
+    /// and its goldens are unchanged): only the land stage (<see cref="GrowContinent"/> vs <see cref="GrowSeparateMasses"/>)
+    /// differs by style, and great rivers are a pure RNG-free post-process (no draw shift) applied only when enabled;
+    /// everything else (climate, mountains, high seas, rivers, resources, regions) is shared.
     /// </summary>
     public static GameMap Generate(
         Ruleset ruleset, int width, int height, IGameRandom random,
         double landMassFraction = DefaultLandMassFraction,
-        LandStyle landStyle = LandStyle.Continent)
+        LandStyle landStyle = LandStyle.Continent,
+        bool greatRivers = false)
     {
         TerrainType ocean = ruleset.Terrain("model.tile.ocean");
         TerrainType highSeas = ruleset.Terrain("model.tile.highSeas");
@@ -126,7 +129,7 @@ public static class MapGenerator
 
         // Rivers, bonus resources and the region/lake layer are laid on the finished terrain by the shared tail
         // (BuildDecoratedMap) — the same pass a fixed scenario map reuses on its pre-loaded terrain (DecorateFixedMap).
-        return BuildDecoratedMap(ruleset, terrain, width, height, random);
+        return BuildDecoratedMap(ruleset, terrain, width, height, random, greatRivers);
     }
 
     /// <summary>
@@ -137,13 +140,15 @@ public static class MapGenerator
     /// rivers and bonuses (from <paramref name="random"/>, the map stream); the region/lake pass is RNG-free.
     /// </summary>
     private static GameMap BuildDecoratedMap(
-        Ruleset ruleset, TerrainType[] terrain, int width, int height, IGameRandom random)
+        Ruleset ruleset, TerrainType[] terrain, int width, int height, IGameRandom random,
+        bool greatRivers = false)
     {
         // Rivers (FreeCol TerrainGenerator.createRivers + River.flowFromSource): springs on high inland ground walk
         // downhill to the sea, laying a river improvement on each lowland tile. Runs after the terrain (mountains +
         // high-seas) is settled and before bonuses (so the river-mouth fish bonus can fire). Draws RNG, so it
-        // reorders the stream-0 draw sequence (a deliberate map-gen change for this item, 86d3b3qdx).
-        var improvements = MakeRivers(ruleset, terrain, width, height, random);
+        // reorders the stream-0 draw sequence (a deliberate map-gen change for this item, 86d3b3qdx). When great rivers
+        // are enabled, MakeRivers also retypes the spine of long rivers to navigable great-river water (RNG-free).
+        var improvements = MakeRivers(ruleset, terrain, width, height, random, greatRivers);
 
         // Bonus resources, picked from each tile's final terrain table by weight — placed only AFTER the terrain is
         // complete (FreeCol adds bonuses last, "otherwise we risk creating resources on fields where they do not
@@ -193,9 +198,12 @@ public static class MapGenerator
         // (no second Assign). Lake renders as ocean in the main map view (MapView BaseFor), so the main map golden
         // is unaffected; save stores terrain ids, so an enclosed tile just serialises "model.tile.lake" (no bump).
         TerrainType lake = ruleset.Terrain("model.tile.lake");
+        TerrainType greatRiver = ruleset.Terrain("model.tile.greatRiver");
         for (int i = 0; i < regionIds.Length; i++)
         {
-            if (regions[regionIds[i]].Type == RegionType.Lake)
+            // A great-river spine is enclosed water (no sea route), so RegionGenerator tags it Lake — but it is already
+            // its own navigable great-river terrain, so do NOT overwrite it with lake (keep the river channel distinct).
+            if (regions[regionIds[i]].Type == RegionType.Lake && terrain[i] != greatRiver)
             {
                 terrain[i] = lake;
             }
@@ -700,7 +708,7 @@ public static class MapGenerator
     /// is exact — see <see cref="Improvements.ImprovementMovement"/> / <see cref="Improvements.ImprovementProduction"/>.</para>
     /// </summary>
     private static Dictionary<Position, IReadOnlyList<TileImprovementType>> MakeRivers(
-        Ruleset ruleset, TerrainType[] terrain, int width, int height, IGameRandom random)
+        Ruleset ruleset, TerrainType[] terrain, int width, int height, IGameRandom random, bool greatRivers = false)
     {
         // Each river tile carries a single-improvement list (the river); pioneers later add roads/plows to the
         // same tiles, which is why the map's improvement layer is multi-valued per tile.
@@ -764,6 +772,9 @@ public static class MapGenerator
             (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1),
         ];
 
+        // Each river's ordered tile path (source → mouth), kept so a long enough river can have its downstream spine
+        // promoted to a navigable great-river afterwards (the great-river pass below).
+        var riverPaths = new List<List<Position>>();
         var springs = Shuffle(allowed.Where(IsSpring).ToList(), random);
         foreach (Position spring in springs)
         {
@@ -776,12 +787,15 @@ public static class MapGenerator
                 continue; // already part of a river
             }
 
+            var path = new List<Position>();
             int dir = random.Next(directions.Length);
             int cx = spring.X, cy = spring.Y;
             for (int step = 0; step < MaxRiverLength; step++)
             {
                 // Lay the river on the current (allowed) tile.
-                rivers[new Position(cx, cy)] = [riverType];
+                var here = new Position(cx, cy);
+                rivers[here] = [riverType];
+                path.Add(here);
                 if (rivers.Count >= budget)
                 {
                     break;
@@ -816,9 +830,61 @@ public static class MapGenerator
                 cx = nx;
                 cy = ny;
             }
+            riverPaths.Add(path);
+        }
+
+        // Great rivers (FreeCol River.drawToMap + TerrainType greatRiver): where a river grows large enough — in FreeCol
+        // a section reaching FJORD_RIVER size — the land tile is retyped to the navigable model.tile.greatRiver water
+        // terrain instead of carrying a river improvement ("changing the type resets the improvements"). Our subset
+        // rivers have no per-section size, so a river's accrued LENGTH is the proxy: once a river runs at least
+        // GreatRiverMinLength tiles, its downstream spine (the lower reach, where a real river is widest) becomes a great
+        // river. Gated on the greatRivers option (FreeCol's enableGreatRivers, OFF by default) so the default map stays
+        // byte-identical; when on it is a pure, RNG-FREE post-process of the already-walked paths — it draws no
+        // randomness, so the stream-0 draw sequence (and the soak's twin-determinism) is untouched even when enabled.
+        if (greatRivers)
+        {
+            PromoteGreatRivers(ruleset, terrain, width, riverPaths, rivers);
         }
 
         return rivers;
+    }
+
+    /// <summary>
+    /// Minimum river length (in tiles) before its downstream spine is promoted to great-river terrain — the
+    /// length proxy for FreeCol's FJORD-size threshold (a real river only widens into a navigable channel once it has
+    /// gathered enough flow). Below this a river stays an ordinary river improvement on every tile.
+    /// </summary>
+    private const int GreatRiverMinLength = 6;
+
+    /// <summary>How many of a great river's downstream (mouth-ward) tiles are retyped to navigable great-river water — its widest lower reach; the upstream remainder stays an ordinary river.</summary>
+    private const int GreatRiverSpineLength = 3;
+
+    /// <summary>
+    /// Retypes the downstream spine of each sufficiently-long river to the navigable <c>model.tile.greatRiver</c> water
+    /// terrain (FreeCol <c>River.drawToMap</c> promotes a fjord-size section to great-river), removing the river
+    /// improvement on those tiles (FreeCol: "changing the type resets the improvements"). A river shorter than
+    /// <see cref="GreatRiverMinLength"/> is untouched. Pure and RNG-free — operates only on the already-laid paths.
+    /// </summary>
+    private static void PromoteGreatRivers(
+        Ruleset ruleset, TerrainType[] terrain, int width,
+        IReadOnlyList<List<Position>> riverPaths,
+        Dictionary<Position, IReadOnlyList<TileImprovementType>> rivers)
+    {
+        TerrainType greatRiver = ruleset.Terrain("model.tile.greatRiver");
+        foreach (List<Position> path in riverPaths)
+        {
+            if (path.Count < GreatRiverMinLength)
+            {
+                continue; // too short to widen into a navigable channel
+            }
+            // The lower reach (last GreatRiverSpineLength tiles, nearest the mouth) becomes great-river water.
+            for (int i = Math.Max(0, path.Count - GreatRiverSpineLength); i < path.Count; i++)
+            {
+                Position p = path[i];
+                terrain[p.Y * width + p.X] = greatRiver; // becomes navigable water
+                rivers.Remove(p);                        // retyping resets the tile's river improvement
+            }
+        }
     }
 
     /// <summary>
