@@ -12,7 +12,9 @@ namespace CrownAndColony.GameLogic.GameSession;
 /// <param name="ColonyLiberty">Σ of the liberty (bells) banked across the player's colonies.</param>
 /// <param name="FoundingFatherPoints">5 points per elected Founding Father (FreeCol <c>SCORE_FOUNDING_FATHER</c>).</param>
 /// <param name="GoldPoints">⌊0.001·gold⌋ — one point per 1000 gold (FreeCol <c>SCORE_GOLD</c>).</param>
-/// <param name="HistoryPoints">Σ of the human's scored history events — region-discovery points (positive) minus the
+/// <param name="HistoryPoints">Σ of the human's scored history events — region-discovery points (positive), the
+/// <b>early-declaration bonus</b> on the declare-independence event (FreeCol <c>csDeclareIndependence</c> stores
+/// <c>max(0, independenceTurn − turn)</c>; the earlier the break-away, the larger the bonus), minus the
 /// settlement/nation-destruction penalties (−5 / −50); 0 for a non-human (the history log is the human's).</param>
 /// <param name="IndependenceBonusPercent">The percentage bonus applied to the subtotal for a nation that has won
 /// independence — 100/50/25 for the first/second/third such power, else 0 (FreeCol's INDEPENDENCE history switch).</param>

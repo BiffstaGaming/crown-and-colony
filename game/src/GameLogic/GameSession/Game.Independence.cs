@@ -153,11 +153,75 @@ public sealed partial class Game
         player.RecruitDockList.Clear(); // Europe is closed to a rebel
         player.Market.Reinitialise();   // the new nation trades on a clean market — colonial boycotts/drift cleared (FreeCol reinitialiseMarket)
 
+        ExpelTories(player);                    // the loyalists who won't fight the King desert (Col1 addition; FreeCol omits it)
         MusterContinentalArmy(player);
         CreateRefPlayer(player);
         ShiftNativeStanceOnDeclaration(player); // the natives who hated the Crown most side with the rebel
         OfferWarMercenaries(player);            // the King dangles a Hessian force for hire (a pending offer, never auto-applied)
-        RecordHistory(HistoryEventKind.DeclaredIndependence, "Declared independence from the Crown.");
+
+        // FreeCol's csDeclareIndependence records the DECLARE_INDEPENDENCE history event with an early-declaration
+        // bonus score of max(0, independenceTurn − turn): the further ahead of the historical independence turn the
+        // nation breaks away, the larger the bonus, folded into the player score via HistoryEventScore (86d3f674b/0dc).
+        int earlyBonus = Math.Max(0, Ruleset.IndependenceTurn - Turn);
+        RecordHistory(HistoryEventKind.DeclaredIndependence, "Declared independence from the Crown.", earlyBonus);
+    }
+
+    /// <summary>The per-turn UI scratch list of loyalist (Tory) desertions on the most recent declaration.</summary>
+    private readonly List<Colonies.ToryExpulsionNotice> _toryExpulsionNotices = [];
+
+    /// <summary>
+    /// Loyalist (Tory) colonists who abandoned each colony on the human's <see cref="DeclareIndependence">declaration of
+    /// independence</see> — the royalists who would not bear arms against their King deserted the new nation. <b>Col1
+    /// reconstruction</b> (FreeCol does not model this); see <see cref="ExpelTories"/> for the exact fraction. Transient
+    /// UI scratch: refreshed each declaration (a one-off player action) and never saved — the colony's reduced
+    /// <see cref="Colony.Population"/> is what persists. Only the declaring nation's colonies appear; a colony that
+    /// loses no loyalists (e.g. a fervent 100%-SoL colony) is absent. The presentation reads it once after declaring.
+    /// </summary>
+    public IReadOnlyList<Colonies.ToryExpulsionNotice> ToryExpulsionNotices => _toryExpulsionNotices;
+
+    /// <summary>
+    /// The share of a colony's loyalists who desert per missing percentage-point of Sons-of-Liberty support
+    /// (<c>1/100</c>): a colony at SoL <c>s</c> loses <c>floor(toryCount · (100 − s) / 100)</c> of its loyalists. So a
+    /// 100%-SoL colony loses none; a 0%-SoL colony loses every loyalist it can (down to the one-colonist floor). The
+    /// linear <c>(100 − SoL)/100</c> scaling reconstructs Col1's "the less loyal the colony, the more royalists flee"
+    /// behaviour from the original game's design; the precise per-tenth tables of Col1 are not recoverable, so this is a
+    /// faithful-spirit linear approximation documented as such (independence.md §Tory expulsion).
+    /// </summary>
+    private const int ToryDesertionPerSolPoint = 100; // divisor: lost = toryCount · (100 − SoL) / 100
+
+    /// <summary>
+    /// Removes the loyalist (Tory) colonists who desert each of the declaring nation's colonies on the Declaration of
+    /// Independence — a <b>Col1-faithful reconstruction</b> our model adds (FreeCol's <c>csDeclareIndependence</c> has
+    /// no such step). Each colony loses <c>floor(toryCount · (100 − SoL%) / 100)</c> of its non-rebel population — the
+    /// lower its Sons-of-Liberty support, the more royalists flee — capped so at least one colonist always remains (a
+    /// colony is never emptied by the exodus). A fully-committed 100%-SoL colony loses no-one. Each affected colony's
+    /// worker assignments are re-trimmed to its new size (<see cref="TrimAssignments"/>), and a
+    /// <see cref="Colonies.ToryExpulsionNotice"/> records the loss for the human's presentation.
+    /// <para><b>ADR-009.</b> Wholly RNG-free — the loss is a deterministic fraction of the colony's current Tory count —
+    /// so it draws no stream (least of all the human's stream 0). A 100%-SoL roster (the only state a default game ever
+    /// declares from in tests/soak) loses nothing, leaving such a declaration's outcome unchanged.</para>
+    /// </summary>
+    /// <param name="player">The nation declaring independence; only its colonies are affected.</param>
+    private void ExpelTories(Player player)
+    {
+        _toryExpulsionNotices.Clear();
+        foreach (Colony colony in ColoniesOf(player).OrderBy(c => c.Id))
+        {
+            // Lower SoL → a larger share of the loyalists desert. Floored, and capped so the colony keeps ≥ 1 colonist.
+            int lost = colony.ToryCount * (100 - colony.SonsOfLiberty) / ToryDesertionPerSolPoint;
+            lost = Math.Min(lost, colony.Population - 1);
+            if (lost <= 0)
+            {
+                continue; // a fervent (high-SoL) or single-colonist colony keeps everyone
+            }
+            colony.Population -= lost;
+            TrimAssignments(colony); // the colony now seats fewer workers — drop the over-cap assignments
+            if (player.PlayerId == _human.PlayerId)
+            {
+                _toryExpulsionNotices.Add(new Colonies.ToryExpulsionNotice(
+                    colony.Name, colony.Position, lost, colony.Population));
+            }
+        }
     }
 
     /// <summary>

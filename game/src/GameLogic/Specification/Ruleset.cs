@@ -250,6 +250,17 @@ public sealed class Ruleset
     public int LastColonialYear => GameOptions.LastColonialYear;
 
     /// <summary>
+    /// The turn number by which independence would be declared in history (the spec
+    /// <c>model.option.independenceTurn</c> integer game option in the <c>gameOptions.years</c> group; classic
+    /// <b>468</b>, the turn at Spring 1780). Drives the <b>early-declaration score bonus</b> (FreeCol
+    /// <c>InGameController.csDeclareIndependence</c> stores <c>max(0, independenceTurn − turn)</c> on the
+    /// <c>DECLARE_INDEPENDENCE</c> history event): the further ahead of this turn a nation breaks away, the larger the
+    /// bonus. A spec without the option falls back to 468, so the default classic game is unchanged. Surfaced from the
+    /// parsed <see cref="GameOptions"/> bundle (<see cref="Specification.GameOptions.IndependenceTurn"/>).
+    /// </summary>
+    public int IndependenceTurn => GameOptions.IndependenceTurn;
+
+    /// <summary>
     /// The spec <c>&lt;event&gt;</c> elements (FreeCol <c>Specification.getEvents</c>): special game occurrences —
     /// declaring independence, the Spanish succession — each gated by its own <see cref="SpecEvent.Limits"/>. The
     /// limit-evaluation engine (<c>Game.CheckSpecEvent</c>) reads these to decide when an event may fire. Empty when

@@ -624,6 +624,22 @@ public class MonarchTests
         Assert.DoesNotContain(MonarchAction.SupportLand, game.GetMonarchActionChoices(50).Select(c => c.Action));
     }
 
+    [Fact]
+    public void SupportLand_IsOffered_AtLowMeddling_MatchingFreeColsDxGate()
+    {
+        // FreeCol's getActionChoices gates SUPPORT_LAND on `dx < 3` (the meddling-derived dx), NOT on monarchSupport —
+        // and only in the `else` branch where the player is too poor for MONARCH_MERCENARIES (gold < 200). With
+        // meddling 1 (dx == 2 < 3), an at-war, near-broke human with a colony IS offered SUPPORT_LAND. This is the
+        // mirror of the medium case above: our offer condition reproduces FreeCol's `dx < 3` exactly (86d3fq0bj).
+        Game game = FoundedGame(RulesetWithMonarch(("model.option.monarchMeddling", "1"))); // dx = 2
+        game.HumanPlayer.Gold = 100; // below MONARCH_MINIMUM_PRICE (200) → the poor-player support branch
+        int rival = game.Players.First(p => p.PlayerId != game.HumanPlayer.PlayerId && p.PlayerType == PlayerType.Colonial).PlayerId;
+        game.SetStance(game.HumanPlayer.PlayerId, rival, Stance.War); // SUPPORT_LAND needs the human at war
+
+        Assert.True(game.MonarchActionIsValid(MonarchAction.SupportLand));
+        Assert.Contains(MonarchAction.SupportLand, game.GetMonarchActionChoices(50).Select(c => c.Action));
+    }
+
     // ── King's-decree notices: immediate (no-choice) monarch actions surface a player-facing notice ────────
 
     [Fact]
