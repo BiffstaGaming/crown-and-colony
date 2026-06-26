@@ -44,6 +44,26 @@ public partial class ColonyPanel : PanelContainer
 
     private static readonly Color Negative = new(0.9f, 0.3f, 0.25f);
 
+    /// <summary>Warehouse high-water-mark warning tint (amber) — a good at/near capacity that will spill on End Turn.</summary>
+    private static readonly Color WarehouseHigh = new(0.85f, 0.55f, 0.15f);
+
+    /// <summary>Warehouse low-water-mark warning tint (muted red) — a good that is nearly exhausted.</summary>
+    private static readonly Color WarehouseLow = new(0.78f, 0.32f, 0.28f);
+
+    /// <summary>
+    /// Warehouse low water-mark: a stored good at or below this absolute floor is flagged "running low" (a fixed
+    /// presentation default; a configurable per-good threshold is a later enhancement). Mirrors FreeCol's low-stock
+    /// warning intent. Presentation-only (ADR-006) — no engine rule keys off this.
+    /// </summary>
+    private const int WarehouseLowMark = 10;
+
+    /// <summary>
+    /// Warehouse high water-mark margin: a stored good within this many units of the colony's per-good capacity (i.e.
+    /// <c>amount >= capacity - margin</c>) is flagged "about to overflow", since the surplus over capacity is discarded
+    /// on End Turn (<see cref="Game.WarehouseOverflowNotices"/>). A fixed presentation default (ADR-006).
+    /// </summary>
+    private const int WarehouseHighMargin = 10;
+
     /// <summary>
     /// The roles a colonist standing in a colony can be armed into from the colony's stores. The first four are
     /// goods-gated (muskets/horses/tools); <c>missionary</c> is instead church-gated — the engine's
@@ -1045,6 +1065,43 @@ public partial class ColonyPanel : PanelContainer
         return box;
     }
 
+    /// <summary>
+    /// The warehouse stock level a good is at, for the low/high water-mark warnings — pure presentation over the
+    /// existing read-only state (ADR-006: no engine rule). <see cref="High"/> = at/within <see cref="WarehouseHighMargin"/>
+    /// of capacity (its surplus over capacity is discarded on End Turn); <see cref="Low"/> = at/below
+    /// <see cref="WarehouseLowMark"/> (about to run out); <see cref="Normal"/> = neither.
+    /// </summary>
+    private enum WarehouseLevel { Normal, Low, High }
+
+    /// <summary>
+    /// Classifies a stored good against the warehouse low/high water-marks (presentation thresholds only, ADR-006).
+    /// Only storable, non-food goods can overflow (the engine's <see cref="Game.WarehouseOverflowNotices"/> path —
+    /// food is consumed/grown, bells/crosses/hammers are not warehoused), so the High warning is gated to those; the
+    /// Low warning applies to any stored good. High is checked first so a good at a tiny capacity still reads as full.
+    /// </summary>
+    private WarehouseLevel ClassifyWarehouse(string goodsId, int amount)
+    {
+        GoodsType goods = _game.Ruleset.Goods(goodsId);
+        int capacity = _game.ColonyWarehouseCapacity(_colony);
+        if (goods.IsStorable && !goods.IsFood && capacity > 0 && amount >= capacity - WarehouseHighMargin)
+        {
+            return WarehouseLevel.High;
+        }
+        if (amount <= WarehouseLowMark)
+        {
+            return WarehouseLevel.Low;
+        }
+        return WarehouseLevel.Normal;
+    }
+
+    /// <summary>
+    /// FreeCol's warehouse goods bar with low/high water-mark warnings (86d3fpyze): one cell per stored good (icon +
+    /// amount). A good <b>at/near capacity</b> (its surplus will be discarded on End Turn) is tinted amber with a ▲
+    /// marker and a "will overflow" tooltip; a good <b>running low</b> is tinted red with a ▼ marker and a "running low"
+    /// tooltip; a normal good shows neither. Pure presentation over <see cref="Colony.Stores"/> +
+    /// <see cref="Game.ColonyWarehouseCapacity"/> (ADR-006) — no engine rule keys off these marks. The amount label is
+    /// named <c>Warehouse_{good}</c> so the warning state is testable.
+    /// </summary>
     private Control WarehouseBar()
     {
         var bar = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -1054,11 +1111,40 @@ public partial class ColonyPanel : PanelContainer
             bar.AddChild(new Label { Text = "(empty)" });
             return bar;
         }
+        int capacity = _game.ColonyWarehouseCapacity(_colony);
         foreach ((string good, int amount) in stored)
         {
-            var cell = new VBoxContainer();
-            cell.AddChild(IconRect(ColonyArt.GoodsIcon(Short(good)), 28, 28));
-            cell.AddChild(new Label { Text = amount.ToString(), HorizontalAlignment = HorizontalAlignment.Center });
+            WarehouseLevel level = ClassifyWarehouse(good, amount);
+
+            var cell = new VBoxContainer { Name = $"Warehouse_{Short(good)}" };
+            string name = Display(Short(good));
+            // The marker sits above the icon so a flagged good reads at a glance without disturbing the icon/amount row.
+            string marker = level switch { WarehouseLevel.High => "▲", WarehouseLevel.Low => "▼", _ => " " };
+            var markerLabel = new Label { Name = "Marker", Text = marker, HorizontalAlignment = HorizontalAlignment.Center };
+            var icon = IconRect(ColonyArt.GoodsIcon(Short(good)), 28, 28);
+            var amountLabel = new Label { Name = "Amount", Text = amount.ToString(), HorizontalAlignment = HorizontalAlignment.Center };
+
+            string tooltip;
+            switch (level)
+            {
+                case WarehouseLevel.High:
+                    markerLabel.AddThemeColorOverride("font_color", WarehouseHigh);
+                    amountLabel.AddThemeColorOverride("font_color", WarehouseHigh);
+                    tooltip = $"{name} is at {amount}/{capacity} — at or near warehouse capacity; the surplus will overflow and be discarded on End Turn.";
+                    break;
+                case WarehouseLevel.Low:
+                    markerLabel.AddThemeColorOverride("font_color", WarehouseLow);
+                    amountLabel.AddThemeColorOverride("font_color", WarehouseLow);
+                    tooltip = $"{name} is running low ({amount}) — about to run out.";
+                    break;
+                default:
+                    tooltip = $"{name}: {amount}/{capacity}";
+                    break;
+            }
+            cell.TooltipText = tooltip;
+            cell.AddChild(markerLabel);
+            cell.AddChild(icon);
+            cell.AddChild(amountLabel);
             bar.AddChild(cell);
         }
         return bar;

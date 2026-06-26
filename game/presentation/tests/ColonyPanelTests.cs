@@ -1204,6 +1204,63 @@ public class ColonyPanelTests
         AssertThat(field!.Size.Y > 0).IsTrue();
     }
 
+    // ── Warehouse low/high water-mark warnings (86d3fpyze) ──────────────────────────────────────────────────────────
+    // The warehouse goods bar flags a good at/near capacity (will overflow on End Turn) with a ▲ marker + tooltip, and a
+    // good running low with a ▼ marker + tooltip; a normal good shows neither. Pure presentation over Colony.Stores +
+    // Game.ColonyWarehouseCapacity (ADR-006) — no engine rule keys off these marks.
+
+    [TestCase(Timeout = 60000)]
+    public async Task WarehouseBar_FlagsOverflowingAndLowGoods_LeavesNormalUnmarked()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+
+        // A fresh colony has just a depot — per-good capacity 100. Seed three goods via the save layer (Colony.Stores is
+        // internal to GameLogic): ore AT capacity (overflow), cigars far below the low mark (running low), and tools in a
+        // comfortable middle band (normal). All three are storable, non-food goods, so the high warning is in scope.
+        int capacity = game.ColonyWarehouseCapacity(colony);
+        AssertThat(capacity).IsEqual(100); // guard the test's premise — the seeded amounts below assume a 100-cap depot
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == colony.Id
+            ? c with
+            {
+                Stores = new Dictionary<string, int>
+                {
+                    ["model.goods.ore"] = 100,    // at capacity → ▲ overflow
+                    ["model.goods.cigars"] = 5,   // ≤ low mark → ▼ running low
+                    ["model.goods.tools"] = 50,   // mid-band → unmarked
+                },
+            }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony seeded = game.Colonies.First(c => c.Id == colony.Id);
+
+        controller.OpenColonyPanel(seeded);
+        await runner.SimulateFrames(2);
+        var panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+
+        // Overflowing good: ▲ marker + an "overflow" tooltip on its cell.
+        var oreCell = panel.FindChild("Warehouse_ore", recursive: true, owned: false) as VBoxContainer;
+        AssertThat(oreCell).OverrideFailureMessage("warehouse cell for ore not found").IsNotNull();
+        AssertThat(MarkerOf(oreCell!)).IsEqual("▲");
+        AssertThat(oreCell!.TooltipText.Contains("overflow")).IsTrue();
+
+        // Low good: ▼ marker + a "running low" tooltip.
+        var cigarsCell = panel.FindChild("Warehouse_cigars", recursive: true, owned: false) as VBoxContainer;
+        AssertThat(cigarsCell).OverrideFailureMessage("warehouse cell for cigars not found").IsNotNull();
+        AssertThat(MarkerOf(cigarsCell!)).IsEqual("▼");
+        AssertThat(cigarsCell!.TooltipText.Contains("running low")).IsTrue();
+
+        // Normal good: no warning marker (blank) and no warning words in the tooltip.
+        var toolsCell = panel.FindChild("Warehouse_tools", recursive: true, owned: false) as VBoxContainer;
+        AssertThat(toolsCell).OverrideFailureMessage("warehouse cell for tools not found").IsNotNull();
+        AssertThat(MarkerOf(toolsCell!).Trim()).IsEqual("");
+        AssertThat(toolsCell!.TooltipText.Contains("overflow") || toolsCell.TooltipText.Contains("running low")).IsFalse();
+    }
+
+    private static string MarkerOf(VBoxContainer cell) =>
+        ((Label)cell.FindChild("Marker", recursive: true, owned: false)).Text;
+
     /// <summary>
     /// Asserts the button whose name starts with <paramref name="buttonPrefix"/> has the <see cref="EuropeDropTarget"/>
     /// whose name starts with <paramref name="dropPrefix"/> in its <see cref="Node.GetParent"/> chain — i.e. the button
