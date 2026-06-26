@@ -190,16 +190,18 @@ public partial class PauseMenu : Control
     }
 
     /// <summary>
-    /// Confirms before leaving the in-progress game for the title screen — quitting to the menu discards any unsaved
-    /// progress, so we ask first (Cancel is a no-op; the game stays paused with the pause menu still up).
+    /// Confirms before leaving the in-progress game for the title screen. If the game has <b>unsaved changes</b>
+    /// (<see cref="GameController.HasUnsavedChanges"/>, 86d3fq1v8) it offers the three-way <b>Save / Quit anyway /
+    /// Cancel</b> prompt (so progress isn't lost by accident); a clean game gets the plain "quit without saving?" confirm.
+    /// Cancel is always a no-op (the game stays paused with the pause menu still up).
     /// </summary>
-    private void OnQuitToMenu() => ConfirmQuit("Quit to the main menu without saving?", QuitToMenu);
+    private void OnQuitToMenu() => ConfirmQuitUnsaved("Quit to the main menu", QuitToMenu);
 
     /// <summary>
-    /// Confirms before closing the application from within a game — same rationale as <see cref="OnQuitToMenu"/>:
-    /// unsaved progress would be lost. Cancel is a no-op.
+    /// Confirms before closing the application from within a game — same unsaved-aware flow as <see cref="OnQuitToMenu"/>:
+    /// Save / Quit anyway / Cancel when there are unsaved changes, a plain confirm otherwise. Cancel is a no-op.
     /// </summary>
-    private void OnQuitToDesktop() => ConfirmQuit("Quit to desktop without saving?", () => GetTree().Quit());
+    private void OnQuitToDesktop() => ConfirmQuitUnsaved("Quit to desktop", () => GetTree().Quit());
 
     private void QuitToMenu()
     {
@@ -231,5 +233,61 @@ public partial class PauseMenu : Control
         _quitConfirm = dialog; // park Esc while the prompt is up
         Ui.AddChild(dialog);
         dialog.PopupCentered();
+    }
+
+    /// <summary>
+    /// The <b>unsaved-changes-aware</b> quit confirmation (86d3fq1v8). When the host game has unsaved changes
+    /// (<see cref="GameController.HasUnsavedChanges"/>) it raises a three-way prompt — <b>Save</b> (the extra button) /
+    /// <b>Quit anyway</b> (the OK action) / <b>Cancel</b> — so a player can't lose progress by reflex: <b>Save</b> opens
+    /// the save dialog and, once the game is saved, runs <paramref name="onQuit"/>; <b>Quit anyway</b> runs it straight
+    /// away; <b>Cancel</b> is a no-op. A <b>clean</b> game (nothing to lose) falls back to the plain
+    /// <see cref="ConfirmQuit"/> "quit without saving?" confirm. Tracked in <see cref="_quitConfirm"/> (a
+    /// <see cref="ConfirmationDialog"/> is a <c>Window</c>) so Esc is parked while it is up; <c>ProcessMode = Always</c>
+    /// so it works while the tree is paused.
+    /// </summary>
+    /// <param name="action">The quit action's short label (e.g. "Quit to the main menu"), used in the prompt text.</param>
+    /// <param name="onQuit">What to do once the player commits to quitting (change scene / quit the app).</param>
+    private void ConfirmQuitUnsaved(string action, System.Action onQuit)
+    {
+        if (!Game.HasUnsavedChanges)
+        {
+            ConfirmQuit($"{action} without saving?", onQuit); // nothing unsaved → the plain confirm
+            return;
+        }
+        var dialog = new ConfirmationDialog
+        {
+            Title = "Unsaved changes",
+            DialogText = $"You have unsaved changes. {action} anyway?",
+            OkButtonText = "Quit anyway",
+            CancelButtonText = "Cancel",
+            Theme = ColonyTheme.Get(),
+        };
+        dialog.ProcessMode = ProcessModeEnum.Always; // the game (and pause menu) stay paused behind it
+        // Add a third "Save" button; AddButton returns it so we can wire its press (right:false → the left/Cancel side).
+        // Pressing it closes this prompt and opens the save dialog, then quits once the game is saved.
+        Button save = dialog.AddButton("Save", right: false, action: "save");
+        save.Name = "QuitSaveButton"; // named so the L3 test can find it among the dialog's internal buttons
+        save.Pressed += () => { dialog.QueueFree(); _quitConfirm = null; SaveThenQuit(onQuit); };
+        dialog.Confirmed += () => { dialog.QueueFree(); _quitConfirm = null; onQuit(); }; // "Quit anyway"
+        dialog.Canceled += () => { dialog.QueueFree(); _quitConfirm = null; };            // no-op
+        _quitConfirm = dialog; // park Esc while the prompt is up
+        Ui.AddChild(dialog);
+        dialog.PopupCentered();
+    }
+
+    /// <summary>
+    /// Opens the save dialog and, once the player saves to a slot, runs <paramref name="onSaved"/> (the deferred quit).
+    /// Mirrors <see cref="OnSave"/> but chains the quit onto a successful save instead of only confirming. Back-out of
+    /// the save dialog (no slot chosen) cancels the quit too — the player stays in the game, which is the safe default.
+    /// </summary>
+    private void SaveThenQuit(System.Action onSaved)
+    {
+        var dialog = OpenDialog();
+        dialog.Open(SaveLoadDialog.Mode.Save, path =>
+        {
+            Game.SaveTo(path);
+            onSaved(); // saved → proceed with the quit (change scene / quit the app)
+        });
+        ResumeAfter(dialog);
     }
 }

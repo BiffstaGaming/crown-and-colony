@@ -208,6 +208,96 @@ public class PauseMenuTests
     }
 
     [TestCase]
+    public async Task QuitToMenu_CleanGame_ShowsThePlainConfirm_NoSaveButton()
+    {
+        // 86d3fq1v8: a clean game (no unsaved changes) gets the plain two-button "quit without saving?" confirm.
+        ISceneRunner runner = ISceneRunner.Load(GameScene);
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        AssertThat(controller.HasUnsavedChanges).IsFalse(); // a fresh game starts clean (StartGame → MarkClean)
+        var pause = controller.GetNode<PauseMenu>("UI/PauseMenu");
+        pause.Open();
+        await runner.SimulateFrames(1);
+
+        pause.GetNode<Button>("Panel/VBox/QuitToMenuButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        var confirm = pause.GetParent().GetChildren().OfType<ConfirmationDialog>().FirstOrDefault();
+        AssertThat(confirm).IsNotNull();
+        AssertThat(confirm!.Title).IsEqual("Quit without saving?"); // the plain confirm, not the unsaved-aware prompt
+
+        confirm.EmitSignal(AcceptDialog.SignalName.Canceled);
+        await runner.SimulateFrames(2);
+        pause.Resume(); // leave the shared tree unpaused for the next test
+    }
+
+    [TestCase]
+    public async Task QuitToMenu_DirtyGame_ShowsTheUnsavedPrompt_WithASaveButton()
+    {
+        // 86d3fq1v8: an unsaved game raises the "Unsaved changes" prompt with a Save button (Save / Quit anyway / Cancel).
+        ISceneRunner runner = ISceneRunner.Load(GameScene);
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        controller.MarkDirty(); // simulate a state-mutating command this session
+        AssertThat(controller.HasUnsavedChanges).IsTrue();
+        var pause = controller.GetNode<PauseMenu>("UI/PauseMenu");
+        pause.Open();
+        await runner.SimulateFrames(1);
+
+        pause.GetNode<Button>("Panel/VBox/QuitToMenuButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        var confirm = pause.GetParent().GetChildren().OfType<ConfirmationDialog>().FirstOrDefault();
+        AssertThat(confirm).IsNotNull();
+        AssertThat(confirm!.Title).IsEqual("Unsaved changes"); // the unsaved-aware prompt
+        AssertThat(confirm.OkButtonText).IsEqual("Quit anyway");
+        // The extra Save button is present on the dialog (added via AcceptDialog.AddButton, lives in its internal HBox).
+        var save = confirm.FindChild("QuitSaveButton", recursive: true, owned: false) as Button;
+        AssertThat(save).IsNotNull();
+        AssertThat(save!.Text).IsEqual("Save");
+
+        // Cancel keeps the (still dirty) game paused with the pause menu up.
+        confirm.EmitSignal(AcceptDialog.SignalName.Canceled);
+        await runner.SimulateFrames(2);
+        AssertThat(pause.GetParent().GetChildren().OfType<ConfirmationDialog>().Any()).IsFalse();
+        AssertThat(pause.Visible).IsTrue();
+        AssertThat(pause.GetTree().Paused).IsTrue();
+        AssertThat(controller.HasUnsavedChanges).IsTrue(); // Cancel changed nothing
+
+        pause.Resume(); // leave the shared tree unpaused for the next test
+    }
+
+    [TestCase]
+    public async Task QuitToDesktop_DirtyGame_SaveButton_OpensTheSaveDialog()
+    {
+        // 86d3fq1v8: pressing Save on the unsaved prompt opens the save-slot dialog (the save-then-quit path's first step).
+        ISceneRunner runner = ISceneRunner.Load(GameScene);
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        controller.MarkDirty();
+        var pause = controller.GetNode<PauseMenu>("UI/PauseMenu");
+        pause.Open();
+        await runner.SimulateFrames(1);
+
+        pause.GetNode<Button>("Panel/VBox/QuitToDesktopButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        var confirm = pause.GetParent().GetChildren().OfType<ConfirmationDialog>().FirstOrDefault();
+        AssertThat(confirm).IsNotNull();
+
+        var save = (Button)confirm!.FindChild("QuitSaveButton", recursive: true, owned: false);
+        save.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+
+        // The save dialog opened (the desktop quit did NOT fire — we never confirmed) and the prompt is gone.
+        AssertThat(pause.GetParent().GetChildren().OfType<SaveLoadDialog>().Any()).IsTrue();
+        AssertThat(pause.GetParent().GetChildren().OfType<ConfirmationDialog>().Any()).IsFalse();
+
+        // Close the save dialog without saving (Back) and resume, to leave the shared tree clean for the next test.
+        var dialog = pause.GetParent().GetChildren().OfType<SaveLoadDialog>().First();
+        dialog.EmitSignal("Closed");
+        await runner.SimulateFrames(2);
+        pause.Resume();
+    }
+
+    [TestCase]
     public async Task RetireButton_Appears_ConfirmsAndEndsTheGame()
     {
         // 86d3fq125: the pause menu offers a Retire item (built in code). It confirms first; confirming forwards to the

@@ -132,6 +132,62 @@ public class SettingsModelTests
     }
 
     [Fact]
+    public void Defaults_SilenceNoMessageCategories()
+    {
+        var m = new SettingsModel();
+        Assert.Empty(m.SilencedMessageCategories); // every category pops up by default (popup-vs-silent, 86d3fq1tc)
+    }
+
+    [Fact]
+    public void SilencedMessageCategories_RoundTrip_PreservesTheSet()
+    {
+        var original = new SettingsModel();
+        original.SilencedMessageCategories.Add(MessageCategory.Diplomacy);
+        original.SilencedMessageCategories.Add(MessageCategory.Natives);
+
+        SettingsModel restored = SettingsModel.FromDictionary(original.ToDictionary());
+
+        Assert.Equal(
+            new HashSet<MessageCategory> { MessageCategory.Diplomacy, MessageCategory.Natives },
+            new HashSet<MessageCategory>(restored.SilencedMessageCategories));
+    }
+
+    [Fact]
+    public void SilencedMessageCategories_OmittedFromTheDictionary_WhenEmpty()
+    {
+        // Omit-when-empty: the common "everything pops up" state writes no key.
+        var m = new SettingsModel();
+        Assert.DoesNotContain("silenced_message_categories", m.ToDictionary().Keys);
+    }
+
+    [Fact]
+    public void SilencedMessageCategories_UnknownToken_IsDropped()
+    {
+        SettingsModel m = SettingsModel.FromDictionary(new Dictionary<string, string>
+        {
+            ["silenced_message_categories"] = "Diplomacy,Wormhole,Colony", // Wormhole is not a category → dropped
+        });
+
+        Assert.Equal(
+            new HashSet<MessageCategory> { MessageCategory.Diplomacy, MessageCategory.Colony },
+            new HashSet<MessageCategory>(m.SilencedMessageCategories));
+    }
+
+    [Fact]
+    public void HiddenAndSilenced_AreIndependentSets()
+    {
+        // The two sets compose to FreeCol's popup / log-only / ignore triad — hiding one category must not silence another.
+        var original = new SettingsModel();
+        original.HiddenMessageCategories.Add(MessageCategory.Combat);     // ignore
+        original.SilencedMessageCategories.Add(MessageCategory.Economy);  // log only
+
+        SettingsModel restored = SettingsModel.FromDictionary(original.ToDictionary());
+
+        Assert.Equal(new HashSet<MessageCategory> { MessageCategory.Combat }, new HashSet<MessageCategory>(restored.HiddenMessageCategories));
+        Assert.Equal(new HashSet<MessageCategory> { MessageCategory.Economy }, new HashSet<MessageCategory>(restored.SilencedMessageCategories));
+    }
+
+    [Fact]
     public void FromDictionary_MissingKeys_FallBackToDefaults()
     {
         SettingsModel m = SettingsModel.FromDictionary(new Dictionary<string, string>());

@@ -124,6 +124,47 @@ public class SettingsScreenTests
     }
 
     [TestCase]
+    public async Task MessagePopupToggles_AreShown_OneCheckPerCategory()
+    {
+        // 86d3fq1tc: the settings screen carries a per-category "pop up" toggle row (built in code, no scene edit).
+        ISceneRunner runner = ISceneRunner.Load(SettingsScene);
+        await runner.SimulateFrames(2);
+        var scene = runner.Scene();
+
+        AssertThat(scene.GetNodeOrNull<Label>("Panel/VBox/MessagesHeader")).IsNotNull();
+        // One (label+check) cell per MessageCategory, in the compact grid; spot-check the Diplomacy and Combat cells.
+        AssertThat(scene.GetNodeOrNull<CheckButton>("Panel/VBox/MessagePopupGrid/MessagePopupRow_Diplomacy/PopupCheck")).IsNotNull();
+        AssertThat(scene.GetNodeOrNull<CheckButton>("Panel/VBox/MessagePopupGrid/MessagePopupRow_Combat/PopupCheck")).IsNotNull();
+    }
+
+    [TestCase]
+    public async Task UntickingAMessagePopupToggle_SilencesThatCategory_OnTheLiveSettings()
+    {
+        // Un-ticking a category's "pop up" box adds it to SilencedMessageCategories (logged-only); re-ticking removes it.
+        ISceneRunner runner = ISceneRunner.Load(SettingsScene);
+        await runner.SimulateFrames(2);
+        var scene = runner.Scene();
+        var service = scene.GetNodeOrNull<SettingsService>("/root/Settings");
+        AssertThat(service).IsNotNull();
+        service!.Settings.SilencedMessageCategories.Clear(); // start clean (the autoload is shared across the suite)
+
+        var box = scene.GetNode<CheckButton>("Panel/VBox/MessagePopupGrid/MessagePopupRow_Economy/PopupCheck");
+        AssertThat(box.ButtonPressed).IsTrue(); // ticked = pops up (the default)
+
+        box.ButtonPressed = false;
+        box.EmitSignal(BaseButton.SignalName.Toggled, false);
+        await runner.SimulateFrames(1);
+        AssertThat(service.Settings.SilencedMessageCategories.Contains(MessageCategory.Economy)).IsTrue(); // now silenced
+
+        box.ButtonPressed = true;
+        box.EmitSignal(BaseButton.SignalName.Toggled, true);
+        await runner.SimulateFrames(1);
+        AssertThat(service.Settings.SilencedMessageCategories.Contains(MessageCategory.Economy)).IsFalse(); // pops up again
+
+        service.Settings.SilencedMessageCategories.Clear(); // leave it clean for other suites
+    }
+
+    [TestCase]
     public async Task Service_SaveThenLoad_RoundTripsThroughDisk()
     {
         ISceneRunner runner = ISceneRunner.Load(SettingsScene);

@@ -37,6 +37,7 @@ public sealed class SettingsModel
     private const string KeyColorblind = "colorblind_mode";
     private const string KeyAutosavePeriod = "autosave_period";
     private const string KeyHiddenMessageCategories = "hidden_message_categories";
+    private const string KeySilencedMessageCategories = "silenced_message_categories";
 
     /// <summary>Smallest allowed <see cref="UiScale"/> (75% — text/UI noticeably tighter but still legible).</summary>
     public const float MinUiScale = 0.75f;
@@ -92,6 +93,17 @@ public sealed class SettingsModel
     /// </summary>
     public ISet<MessageCategory> HiddenMessageCategories { get; set; } = new HashSet<MessageCategory>();
 
+    /// <summary>
+    /// The message-log categories the player has chosen to <b>silence</b> — events of these kinds are still <em>logged</em>
+    /// (they appear in the re-openable message log, unlike <see cref="HiddenMessageCategories"/>) but they no longer
+    /// <b>pop up</b> the dismissible end-of-turn message panel. The popup-vs-silent half of FreeCol's per-type message
+    /// display options (its "messages" client-option category lets each message type be <c>popup</c>, <c>log</c> only, or
+    /// <c>ignore</c>d): our two sets compose to the same three states — silenced = "log only", hidden = "ignore", neither =
+    /// "popup". Empty by default (every category pops up). Persisted in <c>settings.cfg</c> as a comma-separated list of
+    /// category names.
+    /// </summary>
+    public ISet<MessageCategory> SilencedMessageCategories { get; set; } = new HashSet<MessageCategory>();
+
     /// <summary>Forces every field into its valid range (volumes clamped to <c>[0,1]</c>, UI scale to its range, autosave period to its range, unknown enum reset to default).</summary>
     public void Clamp()
     {
@@ -104,10 +116,12 @@ public sealed class SettingsModel
         {
             WindowMode = WindowMode.Windowed;
         }
-        // Drop any unknown/duplicate category token that slipped in (a hand-edited or stale config) so the hide-set
-        // never carries a value outside the enum.
+        // Drop any unknown/duplicate category token that slipped in (a hand-edited or stale config) so the hide/silence
+        // sets never carry a value outside the enum.
         HiddenMessageCategories = new HashSet<MessageCategory>(
             HiddenMessageCategories.Where(c => Enum.IsDefined(typeof(MessageCategory), c)));
+        SilencedMessageCategories = new HashSet<MessageCategory>(
+            SilencedMessageCategories.Where(c => Enum.IsDefined(typeof(MessageCategory), c)));
     }
 
     private static float ClampUnit(float v) => float.IsNaN(v) ? 0f : Math.Clamp(v, 0f, 1f);
@@ -132,6 +146,13 @@ public sealed class SettingsModel
         {
             map[KeyHiddenMessageCategories] = string.Join(
                 ',', HiddenMessageCategories.OrderBy(c => (int)c).Select(c => c.ToString()));
+        }
+        // Silenced (popup-suppressed) categories: same omit-when-empty + ordinal-sorted layout as the hidden set, so a
+        // player who never touched the popup toggles keeps a settings file with no extra key.
+        if (SilencedMessageCategories.Count > 0)
+        {
+            map[KeySilencedMessageCategories] = string.Join(
+                ',', SilencedMessageCategories.OrderBy(c => (int)c).Select(c => c.ToString()));
         }
         return map;
     }
@@ -164,19 +185,27 @@ public sealed class SettingsModel
         {
             m.AutosavePeriod = period; // Clamp() below forces it into range
         }
-        if (data.TryGetValue(KeyHiddenMessageCategories, out string? hidden))
-        {
-            // Parse the comma-separated category names; unknown/blank tokens are dropped (Clamp() also re-filters).
-            foreach (string token in hidden.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                if (Enum.TryParse(token, ignoreCase: true, out MessageCategory cat))
-                {
-                    m.HiddenMessageCategories.Add(cat);
-                }
-            }
-        }
+        ParseCategorySet(data, KeyHiddenMessageCategories, m.HiddenMessageCategories);
+        ParseCategorySet(data, KeySilencedMessageCategories, m.SilencedMessageCategories);
         m.Clamp();
         return m;
+    }
+
+    // Parses a comma-separated list of MessageCategory names from data[key] into target; unknown/blank tokens are dropped
+    // (Clamp() also re-filters). A missing key leaves target untouched (its default empty set).
+    private static void ParseCategorySet(IReadOnlyDictionary<string, string> data, string key, ISet<MessageCategory> target)
+    {
+        if (!data.TryGetValue(key, out string? raw))
+        {
+            return;
+        }
+        foreach (string token in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (Enum.TryParse(token, ignoreCase: true, out MessageCategory cat))
+            {
+                target.Add(cat);
+            }
+        }
     }
 
     private static float ParseUnit(IReadOnlyDictionary<string, string> data, string key, float fallback) =>

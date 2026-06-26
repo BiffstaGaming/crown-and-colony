@@ -83,8 +83,86 @@ public partial class SettingsScreen : Control
         _uiScale.ValueChanged += OnUiScale;
         _colorblind.Toggled += OnColorblind;
         _autosave.ValueChanged += OnAutosavePeriod;
+        BuildMessagePopupToggles(); // the per-category popup-vs-silent message preference (86d3fq1tc), built in code (no scene edit)
         GetNode<Button>("Panel/VBox/KeyBindingsButton").Pressed += OnKeyBindings;
         GetNode<Button>("Panel/VBox/BackButton").Pressed += OnBack;
+    }
+
+    // Display order + label for each message category's popup toggle (matches the MessageLogPanel filter order).
+    private static readonly (MessageCategory Category, string Label)[] PopupCategories =
+    {
+        (MessageCategory.Combat, "Combat"),
+        (MessageCategory.Diplomacy, "Diplomacy"),
+        (MessageCategory.Economy, "Economy"),
+        (MessageCategory.Natives, "Natives"),
+        (MessageCategory.Monarch, "Monarch"),
+        (MessageCategory.Colony, "Colony"),
+    };
+
+    /// <summary>
+    /// Builds the <b>Messages</b> section in code (no scene edit, like the pause menu's Retire item): a section header and
+    /// one <see cref="CheckButton"/> per <see cref="MessageCategory"/>, laid out in a compact two-column
+    /// <see cref="GridContainer"/> (so the six toggles add only ~three rows of height) and inserted just above the Key
+    /// Bindings button. Each box is ticked when that category <b>pops up</b> the end-of-turn message panel (the default)
+    /// and un-ticked when it is <b>silenced</b> (logged only — it still appears in the re-openable message log, it just
+    /// doesn't pop). Toggling a box mutates the live <see cref="SettingsModel.SilencedMessageCategories"/> client option
+    /// through the service (Back persists it like every other setting). Presentation-only (ADR-006): a client preference,
+    /// no game rule. Each category's <c>CheckButton</c> sits in a wrapper named <c>MessagePopupRow_{category}</c> so the
+    /// L3 test can find it by a stable path.
+    /// </summary>
+    private void BuildMessagePopupToggles()
+    {
+        var vbox = GetNode<VBoxContainer>("Panel/VBox");
+        int insertAt = GetNode<Button>("Panel/VBox/KeyBindingsButton").GetIndex();
+
+        var header = new Label { Name = "MessagesHeader", Text = "Message pop-ups (off = log only)" };
+        header.ThemeTypeVariation = "SectionHeader";
+        vbox.AddChild(header);
+        vbox.MoveChild(header, insertAt);
+
+        // A 2-column grid of (label+check) cells → two categories per visual row, six categories in three rows.
+        var grid = new GridContainer { Name = "MessagePopupGrid", Columns = 2 };
+        grid.AddThemeConstantOverride("h_separation", 12);
+        grid.AddThemeConstantOverride("v_separation", 6);
+        foreach ((MessageCategory category, string label) in PopupCategories)
+        {
+            // Wrap each label+check pair so the test path MessagePopupRow_{category}/PopupCheck stays stable.
+            var cell = new HBoxContainer { Name = $"MessagePopupRow_{category}" };
+            cell.AddThemeConstantOverride("separation", 8);
+            cell.AddChild(new Label { Text = label, CustomMinimumSize = new Vector2(110, 0) });
+            var check = new CheckButton
+            {
+                Name = "PopupCheck",
+                ButtonPressed = !_service.Settings.SilencedMessageCategories.Contains(category), // ticked = pops up
+            };
+            MessageCategory captured = category;
+            check.Toggled += pressed => OnMessagePopupToggled(captured, pressed);
+            cell.AddChild(check);
+            grid.AddChild(cell);
+        }
+        vbox.AddChild(grid);
+        vbox.MoveChild(grid, insertAt + 1); // directly under the header, above Key Bindings
+    }
+
+    // A category's popup box toggled: ticked = pop up (remove from the silenced set), un-ticked = silence (log only). The
+    // service clamps + (on Back) persists; no engine effect to apply, so a plain set-mutate via UpdateAndApply suffices.
+    private void OnMessagePopupToggled(MessageCategory category, bool popUp)
+    {
+        if (_populating)
+        {
+            return;
+        }
+        _service.UpdateAndApply(s =>
+        {
+            if (popUp)
+            {
+                s.SilencedMessageCategories.Remove(category);
+            }
+            else
+            {
+                s.SilencedMessageCategories.Add(category);
+            }
+        });
     }
 
     /// <summary>Opens the key-rebinding screen as a child overlay; removes it again when the player presses Back (which persists any rebinds).</summary>

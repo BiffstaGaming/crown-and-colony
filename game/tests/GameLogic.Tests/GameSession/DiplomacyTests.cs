@@ -122,6 +122,40 @@ public class DiplomacyTests
     }
 
     [Fact]
+    public void Contact_WithTheHuman_EmitsAFirstContactNotice_ForTheMetPower()
+    {
+        // 86d3f62qw: first contact no longer flips Uncontacted→Peace silently — the engine emits a player-facing notice.
+        var game = Game.New(Classic, seed: 7);
+        game.EndTurn(); // a foreign power founds its colony
+        int fid = ForeignPowerId(game);
+        Colony rivalColony = game.Colonies.First(c => c.OwnerId == fid);
+        string rivalNation = game.Players.First(p => p.PlayerId == fid).NationId!;
+
+        game.HumanPlayer.ExploredSet.Add(rivalColony.Position); // the human scouts the rival's colony tile
+        game.EndTurn();
+
+        Assert.Single(game.FirstContactNotices);
+        Assert.Equal(rivalNation, game.FirstContactNotices[0].RivalNationId);
+        Assert.Empty(game.StanceChangeNotices); // a first contact is not a turn-driven stance shift
+    }
+
+    [Fact]
+    public void FirstContactNotice_IsTransient_ClearedOnTheNextEndTurn()
+    {
+        var game = Game.New(Classic, seed: 7);
+        game.EndTurn();
+        int fid = ForeignPowerId(game);
+        Colony rivalColony = game.Colonies.First(c => c.OwnerId == fid);
+
+        game.HumanPlayer.ExploredSet.Add(rivalColony.Position);
+        game.EndTurn();
+        Assert.Single(game.FirstContactNotices); // the meeting turn
+
+        game.EndTurn();
+        Assert.Empty(game.FirstContactNotices); // the next turn re-met no one → the transient feed cleared
+    }
+
+    [Fact]
     public void Contact_DoesNotDowngradeAnExistingWar()
     {
         var game = Game.New(Classic, seed: 7);
@@ -296,6 +330,44 @@ public class DiplomacyTests
 
         Assert.Equal(Stance.CeaseFire, game.StanceBetween(0, fid));
         Assert.Equal(Stance.CeaseFire, game.StanceBetween(fid, 0)); // symmetric
+    }
+
+    [Fact]
+    public void TurnDrivenStanceShift_WithTheHuman_EmitsAStanceChangeNotice()
+    {
+        // 86d3f62qw: a turn-driven (tension-derived) stance flip involving the human now produces a player-facing notice
+        // with the old and new stance — the war→cease-fire de-escalation, surfaced.
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        string rivalNation = game.Players.First(p => p.PlayerId == fid).NationId!;
+        DisbandHumanUnits(game); // keep the power's strength ratio high so it never sues for peace (pure tension→stance)
+        game.SetStance(0, fid, Stance.War);
+        game.ChangeTension(0, fid, 595); // one turn's decay (→586) drops it to ≤590 → cease-fire
+
+        game.EndTurn();
+
+        Assert.Single(game.StanceChangeNotices);
+        StanceChangeNotice notice = game.StanceChangeNotices[0];
+        Assert.Equal(rivalNation, notice.RivalNationId);
+        Assert.Equal(Stance.War, notice.Previous);
+        Assert.Equal(Stance.CeaseFire, notice.Current);
+    }
+
+    [Fact]
+    public void StanceChangeNotice_IsTransient_ClearedWhenNoShiftHappens()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        DisbandHumanUnits(game);
+        game.SetStance(0, fid, Stance.War);
+        game.ChangeTension(0, fid, 595);
+
+        game.EndTurn();
+        Assert.Single(game.StanceChangeNotices); // war → cease-fire this turn
+
+        game.EndTurn();
+        // The cease-fire holds (tension is now mid-band), so no further shift → the transient feed cleared.
+        Assert.Empty(game.StanceChangeNotices);
     }
 
     [Fact]

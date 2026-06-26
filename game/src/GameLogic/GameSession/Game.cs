@@ -142,6 +142,8 @@ public sealed partial class Game
     private readonly List<ColonyFamineNotice> _colonyFamineNotices = []; // transient: human colonies that lost a colonist (but survived) to famine this turn (not saved; empty in classic)
     private readonly List<WarehouseOverflowNotice> _warehouseOverflowNotices = []; // transient: human-colony storable goods wasted over warehouse capacity this turn (not saved)
     private readonly List<MonarchDecreeNotice> _monarchDecreeNotices = []; // transient: immediate (no-choice) monarch actions taken this turn (not saved; empty before the grace period)
+    private readonly List<FirstContactNotice> _firstContactNotices = []; // transient: the human's first contacts with rival colonial powers this turn (not saved)
+    private readonly List<StanceChangeNotice> _stanceChangeNotices = []; // transient: turn-driven (tension-derived) stance shifts involving the human this turn (not saved)
     private readonly List<TemporaryModifier> _temporaryModifiers = []; // transient: duration-bounded modifiers currently in force; empty in classic (nothing registers one), so never saved and the default game is byte-identical (86d3drpgz)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
@@ -910,6 +912,27 @@ public sealed partial class Game
     /// before the monarch grace period.
     /// </summary>
     public IReadOnlyList<MonarchDecreeNotice> MonarchDecreeNotices => _monarchDecreeNotices;
+
+    /// <summary>
+    /// The human's <b>first contacts</b> with rival colonial powers during the most recent <see cref="EndTurn"/> — each
+    /// turn the human's explored fog first covered that power's unit or colony, flipping the pair
+    /// <see cref="Stance.Uncontacted"/> → <see cref="Stance.Peace"/> (FreeCol <c>makeContact</c>). Transient per-turn UI
+    /// scratch (cleared each <c>EndTurn</c>, never saved); the presentation reads it after the turn resolves to announce
+    /// the new acquaintance. Empty when the human met no one this turn. Only human-involving contacts are recorded
+    /// (foreign-foreign meetings stay silent). RNG-free / deterministic (ADR-009).
+    /// </summary>
+    public IReadOnlyList<FirstContactNotice> FirstContactNotices => _firstContactNotices;
+
+    /// <summary>
+    /// Turn-driven (tension-derived) <b>stance shifts</b> involving the human during the most recent <see cref="EndTurn"/>
+    /// — when <see cref="UpdateColonialStances"/> re-derived a met pair's <see cref="Stance"/> from its cooled tension and
+    /// found it changed (war → cease-fire → peace as tension falls, or a peace a rival breaks). Transient per-turn UI
+    /// scratch (cleared each <c>EndTurn</c>, never saved); the presentation reads it after the turn resolves to tell the
+    /// human the relationship moved. Empty when no automatic shift involving the human happened. Player-initiated stance
+    /// changes (treaties, declared wars) are NOT recorded here — those have their own diplomacy-screen feedback. RNG-free
+    /// / deterministic (ADR-009).
+    /// </summary>
+    public IReadOnlyList<StanceChangeNotice> StanceChangeNotices => _stanceChangeNotices;
 
     /// <summary>
     /// The duration-bounded modifiers currently registered (FreeCol's temporary <c>Modifier</c>s — those carrying a
@@ -7823,6 +7846,8 @@ public sealed partial class Game
         _colonyFamineNotices.Clear(); // and any human colonies that lost a colonist (but survived) to famine this turn
         _warehouseOverflowNotices.Clear(); // and any human-colony goods wasted over warehouse capacity this turn
         _monarchDecreeNotices.Clear(); // and any immediate (no-choice) King's decrees this turn (empty before the monarch grace period)
+        _firstContactNotices.Clear(); // and the human's first contacts with rival colonial powers this turn (FP-6a; DetectColonialContacts re-fills it)
+        _stanceChangeNotices.Clear(); // and any turn-driven (tension-derived) stance shifts involving the human this turn (FP-6b; UpdateColonialStances re-fills it)
         _rumourNotices.Clear(); // and any rumour outcomes the human explored this turn (normally drained by the UI mid-turn; cleared here belt-and-braces)
         ClearPendingHumanProposals(); // and this round's AI alliance/cease-fire offers to the human (86d3drn4f; drained by the negotiation UI, cleared here belt-and-braces so the seam holds only the current round)
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
@@ -13076,6 +13101,17 @@ public sealed partial class Game
                 if (Sees(a, b) || Sees(b, a))
                 {
                     SetStance(a.PlayerId, b.PlayerId, Stance.Peace); // symmetric; tension stays 0
+                    // Surface the human's first contact (FP-6a, FreeCol makeContact / FIRST_CONTACT message). Only a pair
+                    // that includes the human produces a player-facing notice — two foreign powers meeting stay silent.
+                    // The rival is whichever side is not the human. RNG-free; the presentation resolves the nation name.
+                    if (a.PlayerId == _human.PlayerId || b.PlayerId == _human.PlayerId)
+                    {
+                        Player rival = a.PlayerId == _human.PlayerId ? b : a;
+                        if (rival.NationId is { Length: > 0 } rivalNation)
+                        {
+                            _firstContactNotices.Add(new FirstContactNotice(rivalNation));
+                        }
+                    }
                 }
             }
         }
@@ -13127,6 +13163,18 @@ public sealed partial class Game
                 if (next != current)
                 {
                     SetStance(a.PlayerId, b.PlayerId, next); // symmetric
+                    // Surface a turn-driven stance shift that involves the human (FP-6b — war→cease-fire→peace as tension
+                    // cools, or a peace the rival breaks). Player-initiated changes go through SetStance from the
+                    // diplomacy screen, never here, so this records only the automatic, tension-derived drift. RNG-free;
+                    // the presentation resolves the nation name and phrasing.
+                    if (a.PlayerId == _human.PlayerId || b.PlayerId == _human.PlayerId)
+                    {
+                        Player rival = a.PlayerId == _human.PlayerId ? b : a;
+                        if (rival.NationId is { Length: > 0 } rivalNation)
+                        {
+                            _stanceChangeNotices.Add(new StanceChangeNotice(rivalNation, current, next));
+                        }
+                    }
                 }
             }
         }

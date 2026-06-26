@@ -188,6 +188,16 @@ public partial class GameController : Node2D
     private bool _gotoMode;
 
     /// <summary>
+    /// Whether the game has <b>unsaved changes</b> since the last save / load / new game (86d3fq1v8). Set by
+    /// <see cref="MarkDirty"/> on any state-mutating command and on End Turn; cleared by <see cref="StartGame"/> (a fresh
+    /// or loaded game starts clean) and after a successful save (<see cref="MarkClean"/>). The pause menu reads
+    /// <see cref="HasUnsavedChanges"/> so quitting a dirty game prompts "save before quitting?" instead of a bare confirm.
+    /// A presentation-only convenience (ADR-006) — not game state, never persisted; it tracks the UI's save bookkeeping,
+    /// not the rules.
+    /// </summary>
+    private bool _dirty;
+
+    /// <summary>
     /// Unit ids the player has <b>skipped</b> for this turn (Space — 86d3f0vuy). A skipped unit is passed over by the
     /// W-cycle (<see cref="SelectNextUnitToMove"/>) until the set clears at turn rollover (in <see cref="OnEndTurnPressed"/>).
     /// Session-only / controller-side and <b>never persisted</b> (ADR-009) — it's a transient input convenience, not game
@@ -414,6 +424,7 @@ public partial class GameController : Node2D
         _hoveredTile = null; // a fresh/loaded game starts with no hovered tile (cleared so the tile-info panel is empty)
         _notice = null;
         _messageLog.Clear(); // a fresh/loaded game starts with no logged notices; a load re-fills it after this (RestoreMessageLog)
+        MarkClean(); // a fresh or just-loaded game matches what's on disk — no unsaved changes yet (86d3fq1v8)
         _skippedThisTurn.Clear(); // a fresh/loaded game starts with no skipped units (session-only set; 86d3f0vuy)
         _victoryShown = false; // re-arm the one-shot victory screen for the fresh game (new or loaded)
         _highScoreRecorded = false; // re-arm the one-shot end-of-game high-score record
@@ -472,6 +483,7 @@ public partial class GameController : Node2D
         if (_selectedUnit is { } u && allowed(u))
         {
             apply(u);
+            MarkDirty(); // a unit order changed game state → unsaved changes (86d3fq1v8)
             _notice = notice;
             RefreshView();
         }
@@ -595,6 +607,7 @@ public partial class GameController : Node2D
         // Snapshot the human's total buildings before the turn resolves so we can detect a just-completed construction
         // (the engine surfaces no build-complete notice — we observe the state change, presentation-only, ADR-006).
         int buildingsBefore = HumanBuildingCount();
+        MarkDirty(); // a turn resolved → unsaved changes (86d3fq1v8); cleared by the autosave below or a manual save
         _game.EndTurn();
         // A colony finished a building this turn → play the build-complete cue (FreeCol's buildingComplete event).
         if (HumanBuildingCount() > buildingsBefore)
@@ -619,6 +632,8 @@ public partial class GameController : Node2D
             .Concat(_game.ColonyFamineNotices.Select(n => Logged(MessageCategory.Colony, FormatColonyFamineNotice(n))))           // a colony lost a colonist to famine
             .Concat(_game.ColonyStarvedNotices.Select(n => Logged(MessageCategory.Colony, FormatColonyStarvedNotice(n))))         // a colony starved out of existence
             .Concat(_game.MonarchDecreeNotices.Select(n => Logged(MessageCategory.Monarch, FormatMonarchDecreeNotice(n))))         // immediate King's decrees (war/peace/tax/support/REF)
+            .Concat(_game.FirstContactNotices.Select(n => Logged(MessageCategory.Diplomacy, FormatFirstContactNotice(n))))         // the human met a new colonial power (FP-6a)
+            .Concat(_game.StanceChangeNotices.Select(n => Logged(MessageCategory.Diplomacy, FormatStanceChangeNotice(n))))         // a turn-driven stance shift with a rival (FP-6b)
             .Concat(_game.CustomHouseSaleNotices.Select(n => Logged(MessageCategory.Economy, FormatCustomHouseSaleNotice(n))))
             .ToList();
         if (_game.IsHumanDefeated)
@@ -627,20 +642,28 @@ public partial class GameController : Node2D
             entries.Add(Logged(MessageCategory.Combat, "💀 You have been defeated — your last colony and units are gone."));
         }
         // Keep a record so the player can re-open the log later. Persisted across save/load from save v59 (the controller
-        // round-trips _messageLog through SaveGame.MessageLog — see SaveTo / LoadFrom).
+        // round-trips _messageLog through SaveGame.MessageLog — see SaveTo / LoadFrom). The FULL set is logged regardless
+        // of the per-category popup preference — silencing only suppresses the popup, never the log.
         if (entries.Count > 0)
         {
             _messageLog.Add(new MessageLogPanel.Entry(_game.Turn, entries));
         }
-        // The dismissible turn-message panel shows every event this turn (unfiltered — it is the "what just happened"
-        // popup, not the filterable history); pass the plain text. No-op (stays hidden) when there were no events.
-        // An attention cue accompanies the popup so the player notices something happened during the AI phase (the
-        // build-complete cue above is more specific, so don't double up when that was the only thing this turn).
-        if (entries.Count > 0)
+        // The dismissible turn-message panel shows what just happened this turn — but only the categories the player has
+        // NOT silenced (the popup-vs-log-silently preference, 86d3fq1tc): a silenced category still lands in the log
+        // above, it just doesn't pop the panel. So filter the popup rows by the live SilencedMessageCategories client
+        // option (every category pops up by default). The attention cue and the panel both key off the popup rows, so a
+        // turn whose every event is silenced neither chimes nor pops (the build-complete cue above is more specific, so
+        // don't double up when that was the only thing this turn).
+        var silenced = GetNodeOrNull<SettingsService>("/root/Settings")?.Settings.SilencedMessageCategories;
+        List<string> popupRows = entries
+            .Where(e => silenced is null || !silenced.Contains(e.Category))
+            .Select(e => e.Text)
+            .ToList();
+        if (popupRows.Count > 0)
         {
             PlaySound(SoundEvent.Alert);
         }
-        _turnMessagePanel.Open(entries.Select(e => e.Text)); // no-op (stays hidden) when there were no events this turn
+        _turnMessagePanel.Open(popupRows); // no-op (stays hidden) when no un-silenced events this turn
         RefreshView();
 
         // A native brave demanded tribute of one of the human's colonies during the AI phase → prompt for a decision
@@ -770,6 +793,28 @@ public partial class GameController : Node2D
             default:
                 return "👑 The Crown issued a decree.";
         }
+    }
+
+    /// <summary>Turns a first-contact notice into a turn-message row — the human's explored fog just met a new colonial power (FP-6a; FreeCol's first-contact message).</summary>
+    private static string FormatFirstContactNotice(FirstContactNotice notice) =>
+        $"🤝 You have made contact with the {NationLabel(notice.RivalNationId)}. You are at peace.";
+
+    /// <summary>
+    /// Turns a turn-driven stance shift into a turn-message row (FP-6b) — a war cooling to a cease-fire or peace, or a
+    /// rival breaking the peace. The phrasing keys off the <em>new</em> stance (and, for a de-escalation, the old one):
+    /// reaching <see cref="Stance.War"/> from peace is the rival breaking it; otherwise it is the relationship thawing.
+    /// </summary>
+    private static string FormatStanceChangeNotice(StanceChangeNotice notice)
+    {
+        string nation = NationLabel(notice.RivalNationId);
+        return notice.Current switch
+        {
+            Stance.War => $"⚔ The {nation} have broken the peace — you are now at war!",
+            Stance.CeaseFire => $"🕊 Your war with the {nation} has cooled to a cease-fire.",
+            Stance.Peace => $"🕊 You are now at peace with the {nation}.",
+            Stance.Alliance => $"🤝 You are now allied with the {nation}.",
+            _ => $"Your relations with the {nation} have changed.",
+        };
     }
 
     /// <summary>The display label for a nation id (e.g. <c>model.nation.dutch</c> → "Dutch").</summary>
@@ -955,6 +1000,7 @@ public partial class GameController : Node2D
             if (_game.CheckDisband(unit).Allowed)
             {
                 _game.Disband(unit);
+                MarkDirty(); // 86d3fq1v8
                 _selectedUnit = null;
                 _notice = "Unit disbanded.";
             }
@@ -1178,6 +1224,7 @@ public partial class GameController : Node2D
         if (check.Allowed)
         {
             _game.SetDestination(goer, tile);
+            MarkDirty(); // 86d3fq1v8
             _notice = $"Destination set to ({tile.X},{tile.Y}).";
         }
         else
@@ -1233,6 +1280,7 @@ public partial class GameController : Node2D
             if (ship is not null)
             {
                 _game.Board(boarder, ship);
+                MarkDirty(); // 86d3fq1v8
                 _notice = $"{boarder.Type.ShortName} boarded the {ship.Type.ShortName}.";
                 _selectedUnit = ship;
                 RefreshView();
@@ -1262,6 +1310,7 @@ public partial class GameController : Node2D
             if (passenger is not null)
             {
                 _game.Disembark(passenger, tile);
+                MarkDirty(); // 86d3fq1v8
                 _notice = $"{passenger.Type.ShortName} went ashore at ({tile.X},{tile.Y}).";
                 _selectedUnit = passenger;
                 RefreshView();
@@ -1288,6 +1337,7 @@ public partial class GameController : Node2D
             if (_selectedUnit is { } mover && _game.CheckMove(mover, tile).Allowed)
             {
                 _game.MoveUnit(mover, tile);
+                MarkDirty(); // 86d3fq1v8
             }
             else
             {
@@ -1322,6 +1372,7 @@ public partial class GameController : Node2D
                 if (check.Allowed)
                 {
                     _game.MoveUnit(_selectedUnit, tile);
+                    MarkDirty(); // 86d3fq1v8
                 }
                 else
                 {
@@ -1365,6 +1416,7 @@ public partial class GameController : Node2D
         Position from = attacker.Position;
         string roleShortName = attacker.RoleId[(attacker.RoleId.LastIndexOf('.') + 1)..];
         CombatResult result = _game.Attack(attacker, tile);
+        MarkDirty(); // 86d3fq1v8
         _selectedUnit = null; // the attack ends the unit's turn (and may demote/destroy it)
         _notice = result switch
         {
@@ -1410,6 +1462,7 @@ public partial class GameController : Node2D
         string roleShortName = marine.RoleId[(marine.RoleId.LastIndexOf('.') + 1)..];
         Position from = marine.Position; // the ship's water tile — the lunge animates from there
         CombatResult result = _game.AttackAmphibious(marine, tile);
+        MarkDirty(); // 86d3fq1v8
         _selectedUnit = null; // the assault ends the marine's turn (and may demote/destroy it on a loss)
         _notice = result is CombatResult.GreatWin or CombatResult.Win
             ? $"Your {who} stormed ashore and won the battle."
@@ -1434,6 +1487,7 @@ public partial class GameController : Node2D
         string who = assaulter.Type.ShortName;
         string roleShortName = assaulter.RoleId[(assaulter.RoleId.LastIndexOf('.') + 1)..];
         CombatResult result = _game.AttackColony(assaulter, tile);
+        MarkDirty(); // 86d3fq1v8
         _selectedUnit = null; // the assault ends the unit's turn (and may demote/destroy it on a loss)
         _notice = result is CombatResult.GreatWin or CombatResult.Win
             ? $"You captured {colonyName}!"
@@ -1530,6 +1584,7 @@ public partial class GameController : Node2D
             return;
         }
         Colony colony = _game.FoundColony(_selectedUnit, choice);
+        MarkDirty(); // 86d3fq1v8
         _selectedUnit = null;
         _notice = $"{colony.Name} founded!";
         PlaySound(SoundEvent.ColonyFounded);
@@ -1587,6 +1642,7 @@ public partial class GameController : Node2D
         try
         {
             _game.RenameColony(colony, name);
+            MarkDirty(); // 86d3fq1v8
             _notice = $"Colony renamed to {colony.Name}.";
         }
         catch (System.ArgumentException ex)
@@ -1609,6 +1665,7 @@ public partial class GameController : Node2D
         try
         {
             _game.AbandonColony(colony);
+            MarkDirty(); // 86d3fq1v8
             _colonyPanel.Hide(); // the colony is gone — there is nothing left to manage
             _notice = "Colony abandoned.";
         }
@@ -1631,6 +1688,7 @@ public partial class GameController : Node2D
         try
         {
             _game.PayArrears(goodsId);
+            MarkDirty(); // 86d3fq1v8
             _notice = $"Boycott lifted on {goodsId[(goodsId.LastIndexOf('.') + 1)..]}.";
         }
         catch (InvalidMoveException ex)
@@ -1652,6 +1710,7 @@ public partial class GameController : Node2D
         try
         {
             _game.LoadFromColony(carrier, colony, goodsId, amount);
+            MarkDirty(); // 86d3fq1v8
             _notice = $"Loaded {amount} {goodsId[(goodsId.LastIndexOf('.') + 1)..]} onto the {carrier.Type.ShortName}.";
             PlaySound(SoundEvent.CargoMoved); // cargo loaded into a hold
         }
@@ -1675,6 +1734,7 @@ public partial class GameController : Node2D
         try
         {
             _game.UnloadToColony(carrier, colony, goodsId, amount);
+            MarkDirty(); // 86d3fq1v8
             _notice = $"Unloaded {amount} {goodsId[(goodsId.LastIndexOf('.') + 1)..]} into {colony.Name}.";
             PlaySound(SoundEvent.CargoMoved); // cargo unloaded from a hold (shares FreeCol's load/unload clip)
         }
@@ -1699,6 +1759,7 @@ public partial class GameController : Node2D
         try
         {
             _game.SetColonyExport(colony, goodsId, exported, retainLevel);
+            MarkDirty(); // 86d3fq1v8
             string good = goodsId[(goodsId.LastIndexOf('.') + 1)..];
             _notice = exported
                 ? $"{colony.Name}'s custom house will export {good} above {retainLevel}."
@@ -1927,6 +1988,7 @@ public partial class GameController : Node2D
     {
         using var file = FileAccess.Open(QuickSavePath, FileAccess.ModeFlags.Write);
         file.StoreString(BuildSave().ToJson());
+        MarkClean(); // quicksave also clears unsaved changes (86d3fq1v8)
         _notice = "Game saved.";
         RefreshView();
     }
@@ -1955,6 +2017,7 @@ public partial class GameController : Node2D
         DirAccess.MakeDirRecursiveAbsolute(SavesDir);
         using var file = FileAccess.Open(path, FileAccess.ModeFlags.Write);
         file.StoreString(BuildSave().ToJson());
+        MarkClean(); // the game now matches disk — no unsaved changes (86d3fq1v8); a manual save or autosave both clear it
     }
 
     /// <summary>Loads a game from <paramref name="path"/> under the save's own variant ruleset (ADR-018). Used by the save/load dialog and the boot-time pending load.</summary>
@@ -2284,6 +2347,23 @@ public partial class GameController : Node2D
 
     /// <summary>Whether the human may retire right now (FreeCol gates the Retire menu action on a live, in-play player). The pause menu reads this to enable/disable its Retire button. Pure read (ADR-006).</summary>
     public bool CanRetire => _game.CheckRetire(_game.HumanPlayer).Allowed;
+
+    /// <summary>
+    /// Whether the game has <b>unsaved changes</b> since the last save / load / new game (86d3fq1v8). The pause menu reads
+    /// this to choose between a plain "quit without saving?" confirm (clean) and the unsaved-aware "save before quitting?"
+    /// prompt (dirty). Presentation-only bookkeeping (ADR-006); not game state.
+    /// </summary>
+    public bool HasUnsavedChanges => _dirty;
+
+    /// <summary>
+    /// Flags the game as having unsaved changes (86d3fq1v8). Called by the state-mutating command handlers and by End
+    /// Turn, so a quit afterwards prompts to save. Idempotent; cheap.
+    /// </summary>
+    public void MarkDirty() => _dirty = true;
+
+    // Clears the unsaved-changes flag — the game now matches what's on disk. Called after a successful save and from
+    // StartGame (a fresh or just-loaded game starts clean).
+    private void MarkClean() => _dirty = false;
 
     /// <summary>
     /// The <b>mid-game Retire</b> entry point (the pause menu's Retire item, FreeCol's <c>RetireAction</c>): records the
