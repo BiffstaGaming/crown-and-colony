@@ -89,6 +89,10 @@ public class InputTests
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
         var controller = (GameController)runner.Scene();
         controller.StartNewGame(Seed);
+        // ResetGlobalInputState warps the cursor to the top-left corner (an edge); on CI that warp emits a motion event
+        // that would edge-scroll this exact-centre camera assertion ~14px on the next simulated frame. Suppress edge-scroll
+        // (the camera's documented test escape hatch, 86d3fq22p) so a parked test cursor can't drift the camera.
+        controller.GetNode<CameraController>("Camera").EdgeScrollEnabled = false;
         await runner.SimulateFrames(2);
         Game game = GameOf(controller);
 
@@ -1184,6 +1188,9 @@ public class InputTests
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
         var controller = (GameController)runner.Scene();
         controller.StartNewGame(Seed);
+        // Suppress edge-scroll (86d3fq22p test escape hatch): the input-reset warps the cursor to the top-left corner,
+        // which on CI would edge-scroll this exact-centre camera assertion off by ~14px on the next simulated frame.
+        controller.GetNode<CameraController>("Camera").EdgeScrollEnabled = false;
         await runner.SimulateFrames(2);
         Game game = GameOf(controller);
         Unit unit = game.PlayerUnits.First(u => u.IsOnMap);
