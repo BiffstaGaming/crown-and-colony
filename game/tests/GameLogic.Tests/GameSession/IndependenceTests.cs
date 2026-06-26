@@ -1280,6 +1280,66 @@ public class IndependenceTests
     }
 
     [Fact]
+    public void ExpeditionaryForceComposition_BreaksTheRefDownByTypeAndRole_WithoutMaterialisingIt()
+    {
+        // The REF intelligence-report oracle (86d3fq0d8) projects the King's force to per-block counts, land first then
+        // naval, and — like ExpeditionaryForceStrength — must not store a lazily-built base force (ADR-009).
+        (Game game, _) = RebellionReady();
+        IReadOnlyList<Game.RefForceBlock> blocks = game.ExpeditionaryForceComposition();
+
+        // The medium base REF: King's Regular (infantry) + King's Regular (cavalry) + Artillery on land, Man-o-War naval.
+        Assert.Equal(31, blocks.Single(b => !b.IsNaval && b.UnitTypeId == KingsRegular && b.RoleId == InfantryRole).Count);
+        Assert.Equal(15, blocks.Single(b => !b.IsNaval && b.UnitTypeId == KingsRegular && b.RoleId == "model.role.cavalry").Count);
+        Assert.Equal(14, blocks.Single(b => !b.IsNaval && b.UnitTypeId == "model.unit.artillery").Count);
+        Assert.Equal(8, blocks.Single(b => b.IsNaval && b.UnitTypeId == "model.unit.manOWar").Count);
+        // Land blocks come before naval blocks (force order), and the totals match the count oracle.
+        Assert.Equal(31 + 15 + 14, blocks.Where(b => !b.IsNaval).Sum(b => b.Count));
+        Assert.Equal(8, blocks.Where(b => b.IsNaval).Sum(b => b.Count));
+        Assert.Null(game.RefForceOrNull); // the read did not materialise/store the base force
+    }
+
+    [Fact]
+    public void NationRanking_RanksColonialPowersByScoreDescending()
+    {
+        // The score / nation report oracle (86d3fq0fb): every colonial-or-independent power, ordered by final score
+        // (PlayerScore) descending. Gifting the human gold lifts its score (⌊0.001·gold⌋) so it sorts to the top.
+        (Game game, _, _) = AiRebellionReady();
+        game.HumanPlayer.Gold += 1_000_000; // a colossal treasury → the human's score dominates
+
+        IReadOnlyList<Game.NationStanding> ranking = game.NationRanking();
+        Assert.NotEmpty(ranking);
+        // Sorted by score descending (stable id tiebreak).
+        for (int i = 1; i < ranking.Count; i++)
+        {
+            Assert.True(ranking[i - 1].Score >= ranking[i].Score);
+        }
+        // The human, now the richest, ranks first, and each standing's score matches the score oracle.
+        Assert.True(ranking[0].Player.IsHuman);
+        foreach (Game.NationStanding s in ranking)
+        {
+            Assert.Equal(game.PlayerScore(s.Player), s.Score);
+        }
+    }
+
+    [Fact]
+    public void TensionLevelBetween_BandsTheRawTensionThroughFreeColsLevels()
+    {
+        // The Foreign-Affairs attitude oracle (86d3fq0e6): the raw TensionBetween scalar banded by FreeCol's
+        // Tension.Level thresholds (Happy ≤ 100, Content ≤ 600, Displeased ≤ 700, Angry ≤ 800, else Hateful).
+        (Game game, Player power, _) = AiRebellionReady();
+        int human = game.HumanPlayer.PlayerId;
+
+        // A fresh pair starts at zero tension → Happy.
+        Assert.Equal(AlarmLevel.Happy, game.TensionLevelBetween(human, power.PlayerId));
+
+        // Raising tension across the thresholds bumps the band; the oracle agrees with the raw scalar's band.
+        game.ChangeTension(human, power.PlayerId, 650);  // into the Displeased band (601–700)
+        Assert.Equal(AlarmLevel.Displeased, game.TensionLevelBetween(human, power.PlayerId));
+        game.ChangeTension(human, power.PlayerId, 400);  // 1050 → past Hateful (801+)
+        Assert.Equal(AlarmLevel.Hateful, game.TensionLevelBetween(human, power.PlayerId));
+    }
+
+    [Fact]
     public void HumanMilitaryStrength_CountsTheHumansLandUnits_AndReportsTheGateYardstickPower()
     {
         (Game game, Colony colony) = RebellionReady();

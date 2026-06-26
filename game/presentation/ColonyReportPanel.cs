@@ -70,7 +70,7 @@ namespace CrownAndColony.Presentation;
 /// </summary>
 public partial class ColonyReportPanel : PanelContainer
 {
-    private enum Tab { Colonies, Units, Education, Production, Labour, Requirements, Military, Foreign, Natives, Religion, Trade, Exploration, Congress, History }
+    private enum Tab { Colonies, Units, Education, Production, Labour, Requirements, Military, Naval, Cargo, Ref, Foreign, Natives, Religion, Trade, Score, Exploration, Congress, History }
 
     private Game _game = null!;
     private Tab _tab = Tab.Colonies;
@@ -87,10 +87,14 @@ public partial class ColonyReportPanel : PanelContainer
         [Tab.Labour] = "Labour",
         [Tab.Requirements] = "Requirements",
         [Tab.Military] = "Military",
+        [Tab.Naval] = "Naval",
+        [Tab.Cargo] = "Cargo",
+        [Tab.Ref] = "Expeditionary Force",
         [Tab.Foreign] = "Foreign affairs",
         [Tab.Natives] = "Native nations",
         [Tab.Religion] = "Religion",
         [Tab.Trade] = "Trade",
+        [Tab.Score] = "Score",
         [Tab.Exploration] = "Exploration",
         [Tab.Congress] = "Continental Congress",
         [Tab.History] = "History",
@@ -128,10 +132,14 @@ public partial class ColonyReportPanel : PanelContainer
         tabs.AddChild(TabButton("Labour", Tab.Labour));
         tabs.AddChild(TabButton("Requirements", Tab.Requirements));
         tabs.AddChild(TabButton("Military", Tab.Military));
+        tabs.AddChild(TabButton("Naval", Tab.Naval));
+        tabs.AddChild(TabButton("Cargo", Tab.Cargo));
+        tabs.AddChild(TabButton("REF", Tab.Ref));
         tabs.AddChild(TabButton("Foreign", Tab.Foreign));
         tabs.AddChild(TabButton("Natives", Tab.Natives));
         tabs.AddChild(TabButton("Religion", Tab.Religion));
         tabs.AddChild(TabButton("Trade", Tab.Trade));
+        tabs.AddChild(TabButton("Score", Tab.Score));
         tabs.AddChild(TabButton("Exploration", Tab.Exploration));
         tabs.AddChild(TabButton("Congress", Tab.Congress));
         tabs.AddChild(TabButton("History", Tab.History));
@@ -147,10 +155,14 @@ public partial class ColonyReportPanel : PanelContainer
             case Tab.Labour: BuildLabour(dynamic); break;
             case Tab.Requirements: BuildRequirements(dynamic); break;
             case Tab.Military: BuildMilitary(dynamic); break;
+            case Tab.Naval: BuildNaval(dynamic); break;
+            case Tab.Cargo: BuildCargo(dynamic); break;
+            case Tab.Ref: BuildRef(dynamic); break;
             case Tab.Foreign: BuildForeign(dynamic); break;
             case Tab.Natives: BuildNatives(dynamic); break;
             case Tab.Religion: BuildReligion(dynamic); break;
             case Tab.Trade: BuildTrade(dynamic); break;
+            case Tab.Score: BuildScore(dynamic); break;
             case Tab.Exploration: BuildExploration(dynamic); break;
             case Tab.Congress: BuildCongress(dynamic); break;
             case Tab.History: BuildHistory(dynamic); break;
@@ -586,17 +598,20 @@ public partial class ColonyReportPanel : PanelContainer
         // FreeCol's NationSummary shows a rival's stance, #colonies, #units, military + naval strength and gold to
         // everyone unconditionally; SoL%, father count and tax% stay hidden without the De Witt ability (which we omit
         // faithfully). Strength is the combined land / naval attack power (Game.ColonialStrength → FreeCol
-        // NationSummary.getMilitaryStrength/getNavalStrength), rounded to a whole figure for the row.
+        // NationSummary.getMilitaryStrength/getNavalStrength), rounded to a whole figure for the row. The
+        // tension/attitude band is the human's tension toward the rival, banded by the Game.TensionLevelBetween oracle
+        // (FreeCol Tension.getLevel) — the report's attitude column.
         foreach (Player p in powers)
         {
             Stance stance = _game.StanceBetween((int)human, p.PlayerId);
+            AlarmLevel attitude = _game.TensionLevelBetween((int)human, p.PlayerId);
             int colonies = _game.Colonies.Count(c => c.OwnerId == p.PlayerId);
             int units = _game.Units.Count(u => u.OwnerId == p.PlayerId);
             (double landPower, double navalPower) = _game.ColonialStrength(p);
             dynamic.AddChild(new Label
             {
                 Name = $"Foreign_{p.PlayerId}",
-                Text = $"{Strip(p.NationId)} — {stance}, {colonies} colonies, {units} units  ·  " +
+                Text = $"{Strip(p.NationId)} — {stance}, attitude {attitude}, {colonies} colonies, {units} units  ·  " +
                        $"military {landPower:0.#}, naval {navalPower:0.#}  ·  {p.Gold} gold",
             });
         }
@@ -929,6 +944,153 @@ public partial class ColonyReportPanel : PanelContainer
             Name = "MilitaryRef",
             Text = $"    Land units: {refLand}  ·  Naval units: {refNaval}",
         });
+    }
+
+    // ── Naval tab (FreeCol ReportNavalPanel: the standalone fleet breakdown) ──────────────────────────────
+
+    private void BuildNaval(VBoxContainer dynamic)
+    {
+        // FreeCol's ReportNavalPanel lists the player's ships on their own (the Military tab folds naval into a count).
+        // We list every naval unit with its type/role, location and hold contents (CargoSummary), and a fleet total.
+        // Reads only (ADR-006): Game.PlayerUnits filtered to naval types.
+        List<Unit> ships = _game.PlayerUnits.Where(u => u.Type.IsNaval).OrderBy(u => u.Id).ToList();
+        dynamic.AddChild(new Label { Name = "NavalHeader", Text = $"Your fleet — {ships.Count} ship(s)" });
+        dynamic.AddChild(new HSeparator());
+        if (ships.Count == 0)
+        {
+            dynamic.AddChild(new Label
+            {
+                Name = "NavalEmpty",
+                Text = "You have no ships.",
+                HorizontalAlignment = HorizontalAlignment.Center,
+            });
+            return;
+        }
+        foreach (Unit u in ships)
+        {
+            dynamic.AddChild(new Label
+            {
+                Name = $"Ship_{u.Id}",
+                Text = $"{TypeAndRole(u)}  ·  {Where(u)}{CargoSummary(u)}",
+            });
+        }
+    }
+
+    // ── Cargo tab (FreeCol ReportCargoPanel: where goods/units are loaded across the carriers) ────────────
+
+    private void BuildCargo(VBoxContainer dynamic)
+    {
+        // FreeCol's ReportCargoPanel shows each carrier (ships + treasure wagons) and what it is hauling. We list every
+        // carrier with its location and hold contents (CargoSummary), and call out the empty ones (FreeCol greys them).
+        // Reads only (ADR-006): Game.PlayerUnits filtered to carriers / treasure-carriers.
+        List<Unit> carriers = _game.PlayerUnits
+            .Where(u => u.Type.IsCarrier || u.Type.CarryTreasure)
+            .OrderBy(u => u.Id)
+            .ToList();
+        dynamic.AddChild(new Label { Name = "CargoHeader", Text = $"Your carriers — {carriers.Count}" });
+        dynamic.AddChild(new HSeparator());
+        if (carriers.Count == 0)
+        {
+            dynamic.AddChild(new Label
+            {
+                Name = "CargoEmpty",
+                Text = "You have no carriers.",
+                HorizontalAlignment = HorizontalAlignment.Center,
+            });
+            return;
+        }
+        foreach (Unit u in carriers)
+        {
+            string cargo = CargoSummary(u);
+            dynamic.AddChild(new Label
+            {
+                Name = $"Cargo_{u.Id}",
+                Text = $"{TypeAndRole(u)}  ·  {Where(u)}{(cargo.Length > 0 ? cargo : "  [empty]")}",
+            });
+        }
+    }
+
+    // ── Expeditionary Force tab (FreeCol's REF intelligence: the King's army, by type, as it massess) ─────
+
+    private void BuildRef(VBoxContainer dynamic)
+    {
+        // The REF intelligence report: the King's army growing against the player (via ADD_TO_REF), broken down by unit
+        // type/role rather than the bare land/naval totals the Military tab shows. Reads only (ADR-006): the
+        // Game.ExpeditionaryForceComposition oracle projects the REF Force's blocks; the panel just formats them.
+        IReadOnlyList<Game.RefForceBlock> blocks = _game.ExpeditionaryForceComposition();
+        int land = blocks.Where(b => !b.IsNaval).Sum(b => b.Count);
+        int naval = blocks.Where(b => b.IsNaval).Sum(b => b.Count);
+        dynamic.AddChild(new Label
+        {
+            Name = "RefHeader",
+            Text = $"The Royal Expeditionary Force currently massing: {land} land · {naval} naval",
+        });
+        dynamic.AddChild(new Label
+        {
+            Text = "This is the army the King will land if you declare independence. It grows as your rebel sentiment rises.",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        });
+        dynamic.AddChild(new HSeparator());
+
+        dynamic.AddChild(new Label { Name = "RefLandTitle", Text = "— Land —" });
+        BuildRefBlocks(dynamic, blocks.Where(b => !b.IsNaval));
+        dynamic.AddChild(new HSeparator());
+        dynamic.AddChild(new Label { Name = "RefNavalTitle", Text = "— Naval —" });
+        BuildRefBlocks(dynamic, blocks.Where(b => b.IsNaval));
+    }
+
+    /// <summary>Renders one section of REF blocks ("N × Type (role)"), or an em-dash placeholder when the section is empty.</summary>
+    private void BuildRefBlocks(VBoxContainer dynamic, IEnumerable<Game.RefForceBlock> blocks)
+    {
+        var list = blocks.ToList();
+        if (list.Count == 0)
+        {
+            dynamic.AddChild(new Label { Text = "    —" });
+            return;
+        }
+        foreach (Game.RefForceBlock b in list)
+        {
+            string type = Display(_game.Ruleset.Unit(b.UnitTypeId).ShortName);
+            string role = b.RoleId is { } rid && !rid.EndsWith(".default")
+                ? $" ({Display(_game.Ruleset.Role(rid).ShortName)})"
+                : "";
+            dynamic.AddChild(new Label
+            {
+                Name = $"Ref_{Strip(b.UnitTypeId)}_{(b.RoleId is { } r ? Strip(r) : "none")}",
+                Text = $"    {b.Count} × {type}{role}",
+            });
+        }
+    }
+
+    // ── Score tab (the in-game score / nation ranking — FreeCol's score reports) ──────────────────────────
+
+    private void BuildScore(VBoxContainer dynamic)
+    {
+        // The score / nation report: the human's itemised score (Game.ScoreBreakdown — units, liberty, fathers, gold,
+        // history, independence bonus) over the colonial-power ranking by final score (Game.NationRanking). Reads only
+        // (ADR-006): the engine computes every figure; the panel formats the lines.
+        ScoreComponents sc = _game.ScoreBreakdown(_game.HumanPlayer);
+        dynamic.AddChild(new Label { Name = "ScoreTotal", Text = $"Your score: {sc.Total} ({ScoreLevels.ForScore(sc.Total)})" });
+        dynamic.AddChild(new Label { Text = $"    Units: {sc.UnitValues}  ·  Liberty: {sc.ColonyLiberty}  ·  Founding Fathers: {sc.FoundingFatherPoints}" });
+        dynamic.AddChild(new Label { Text = $"    Gold: {sc.GoldPoints}  ·  History: {sc.HistoryPoints}" });
+        if (sc.IndependenceBonusPercent > 0)
+        {
+            dynamic.AddChild(new Label { Text = $"    Independence bonus: +{sc.IndependenceBonus} ({sc.IndependenceBonusPercent}%)" });
+        }
+        dynamic.AddChild(new HSeparator());
+
+        dynamic.AddChild(new Label { Name = "ScoreRankingHeader", Text = "Nation ranking — score · colonies · units" });
+        IReadOnlyList<Game.NationStanding> ranking = _game.NationRanking();
+        int rank = 1;
+        foreach (Game.NationStanding s in ranking)
+        {
+            string you = s.Player.IsHuman ? "  (you)" : "";
+            dynamic.AddChild(new Label
+            {
+                Name = $"Standing_{s.Player.PlayerId}",
+                Text = $"{rank++}. {Strip(s.Player.NationId)}{you} — {s.Score} pts · {s.ColonyCount} colonies · {s.UnitCount} units",
+            });
+        }
     }
 
     // ── Continental Congress tab (faithful subset: the founding-father election state) ───────────────────

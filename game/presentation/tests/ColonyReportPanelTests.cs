@@ -6,6 +6,7 @@ using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
+using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 using CrownAndColony.Presentation;
 using GdUnit4;
@@ -134,7 +135,8 @@ public class ColonyReportPanelTests
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Foreign affairs");
         // A fresh game has landed rival powers; each Foreign_{id} row carries the unconditional military + naval
-        // strength figures (FreeCol NationSummary.getMilitaryStrength/getNavalStrength via Game.ColonialStrength).
+        // strength figures (FreeCol NationSummary.getMilitaryStrength/getNavalStrength via Game.ColonialStrength) and
+        // the tension/attitude band (Game.TensionLevelBetween → FreeCol Tension.getLevel).
         var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
         Game game = GetGame(controller);
         Player rival = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
@@ -142,6 +144,98 @@ public class ColonyReportPanelTests
         AssertThat(row).IsNotNull();
         AssertThat(row!.Text).Contains("military");
         AssertThat(row.Text).Contains("naval");
+        AssertThat(row.Text).Contains("attitude"); // the tension/attitude band column
+    }
+
+    [TestCase]
+    public async Task NavalTab_ListsTheHumansFleet()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Naval").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Naval");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        // The fleet header always renders; the start units include a carrier (caravel), so a Ship_ row renders too.
+        var header = dynamic.GetNodeOrNull<Label>("NavalHeader");
+        AssertThat(header).IsNotNull();
+        AssertThat(header!.Text).Contains("fleet");
+        Game game = GetGame(controller);
+        Unit ship = game.PlayerUnits.First(u => u.Type.IsNaval);
+        AssertThat(dynamic.GetNodeOrNull<Label>($"Ship_{ship.Id}")).IsNotNull();
+    }
+
+    [TestCase]
+    public async Task CargoTab_ListsTheHumansCarriers()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Cargo").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Cargo");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        AssertThat(dynamic.GetNodeOrNull("CargoHeader")).IsNotNull();
+        // The start units include a carrier → a Cargo_ row renders (it begins empty: "[empty]").
+        Game game = GetGame(controller);
+        Unit carrier = game.PlayerUnits.First(u => u.Type.IsCarrier || u.Type.CarryTreasure);
+        var row = dynamic.GetNodeOrNull<Label>($"Cargo_{carrier.Id}");
+        AssertThat(row).IsNotNull();
+    }
+
+    [TestCase]
+    public async Task RefTab_BreaksDownTheExpeditionaryForceByType()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Ref").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Expeditionary Force");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        // The header (with the land/naval totals) and a land breakdown row both render: the base REF has King's Regulars.
+        var header = dynamic.GetNodeOrNull<Label>("RefHeader");
+        AssertThat(header).IsNotNull();
+        AssertThat(header!.Text).Contains("Royal Expeditionary Force");
+        AssertThat(dynamic.GetNodeOrNull("RefLandTitle")).IsNotNull();
+        // A "N × King's Regular (infantry)" row is named Ref_kingsRegular_infantry in the classic ruleset's base REF.
+        AssertThat(dynamic.GetNodeOrNull<Label>("Ref_kingsRegular_infantry")).IsNotNull();
+    }
+
+    [TestCase]
+    public async Task ScoreTab_ShowsTheScoreBreakdownAndNationRanking()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Score").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Score");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var total = dynamic.GetNodeOrNull<Label>("ScoreTotal");
+        AssertThat(total).IsNotNull();
+        AssertThat(total!.Text).Contains("Your score");
+        AssertThat(dynamic.GetNodeOrNull("ScoreRankingHeader")).IsNotNull();
+        // The human is one of the ranked colonial powers → a Standing_{id} row renders.
+        Game game = GetGame(controller);
+        AssertThat(dynamic.GetNodeOrNull<Label>($"Standing_{game.HumanPlayer.PlayerId}")).IsNotNull();
     }
 
     [TestCase]
