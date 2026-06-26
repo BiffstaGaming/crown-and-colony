@@ -125,6 +125,17 @@ public static class ColonyArt
     /// <summary>A unit sprite (e.g. a colonist on a worked tile), or null if that type has no art.</summary>
     public static Texture2D? UnitIcon(string shortName) => Load($"units/{shortName}.png");
 
+    /// <summary>
+    /// A Founding Father's portrait — FreeCol's <c>foundingFathers/&lt;name&gt;.jpg</c> head-and-shoulders painting
+    /// (200×237), drawn beside the father's name/effect text in the Continental Congress dialog and the Colopedia
+    /// Fathers tab. The file is named for the father's <see cref="GameLogic.Specification.FoundingFather.ShortName"/>
+    /// (e.g. <c>hernanCortes</c>), so this is a direct lookup like <see cref="GoodsIcon"/>/<see cref="UnitIcon"/>;
+    /// the four fathers FreeCol stored under a shorter file name (Brewster/Cortés/Magellan/Brébeuf) were copied to
+    /// their ShortName so no per-id mapping is needed. Null if that father has no portrait, so callers degrade to
+    /// text-only. Cached by Godot's resource loader.
+    /// </summary>
+    public static Texture2D? FatherPortrait(string fatherShortName) => Load($"fathers/{fatherShortName}.jpg");
+
     private static Texture2D? Load(string relativePath)
     {
         string path = $"res://assets/freecol/{relativePath}";

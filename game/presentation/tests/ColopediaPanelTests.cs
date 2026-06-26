@@ -75,11 +75,15 @@ public class ColopediaPanelTests
         AssertThat(title.Text).Contains("Buildings");
         AssertThat(dynamic.GetNodeOrNull<Label>("Buildings_townHall")).IsNotNull();
 
-        // Founding Fathers: Adam Smith is always offered.
+        // Founding Fathers: Adam Smith is always offered. His row carries both his portrait (FreeCol ships one for
+        // every classic father) and the fact-bearing label, so the entry shows a face beside the name/effect text.
         controller.GetNode<Button>("UI/ColopediaPanel/VBox/Scroll/Dynamic/Tabs/Cat_Fathers").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
         AssertThat(title.Text).Contains("Founding Fathers");
-        AssertThat(dynamic.GetNodeOrNull<Label>("Fathers_adamSmith")).IsNotNull();
+        var smithRow = dynamic.GetNodeOrNull<HBoxContainer>("Fathers_adamSmith");
+        AssertThat(smithRow).IsNotNull();
+        AssertThat(smithRow!.GetNodeOrNull<TextureRect>("Portrait_adamSmith")).IsNotNull();
+        AssertThat(smithRow.GetNodeOrNull<Label>("FatherLabel")!.Text).Contains("Adam Smith");
 
         // Nations: the Dutch are always a colonial power.
         controller.GetNode<Button>("UI/ColopediaPanel/VBox/Scroll/Dynamic/Tabs/Cat_Nations").EmitSignal(BaseButton.SignalName.Pressed);

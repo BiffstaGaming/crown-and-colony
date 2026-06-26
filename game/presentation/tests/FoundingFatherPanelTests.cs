@@ -34,7 +34,12 @@ public class FoundingFatherPanelTests
         var panel = controller.GetNode<PanelContainer>("UI/FoundingFatherPanel");
         AssertThat(panel.Visible).IsTrue();
 
-        var choose = controller.GetNode<Button>($"UI/FoundingFatherPanel/VBox/Dynamic/Choose_{shortName}");
+        // Each offered father renders as a row (Offer_{shortName}) holding the candidate's portrait (every classic
+        // father has FreeCol art) beside the choose button — the portrait is additive, the button still drives the choice.
+        var offerRow = controller.GetNode<HBoxContainer>($"UI/FoundingFatherPanel/VBox/Dynamic/Offer_{shortName}");
+        AssertThat(offerRow.GetNodeOrNull<TextureRect>($"Portrait_{shortName}")).IsNotNull();
+
+        var choose = offerRow.GetNode<Button>($"Choose_{shortName}");
         choose.EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 

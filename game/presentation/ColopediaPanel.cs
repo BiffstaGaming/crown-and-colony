@@ -260,13 +260,55 @@ public partial class ColopediaPanel : PanelContainer
     {
         foreach (FoundingFather f in _game.Ruleset.FoundingFathers)
         {
-            dynamic.AddChild(new Label
+            // One row per father: their FreeCol portrait (if any) left of the existing name/category/effect label,
+            // so the entry shows a face beside the text. The row keeps the Fathers_{shortName} node name the L3 test
+            // looks up; the text lives on a child FatherLabel so the portrait is purely additive (degrades to label-only).
+            var row = new HBoxContainer { Name = $"Fathers_{f.ShortName}" };
+            if (FatherPortrait(f.ShortName) is { } control)
             {
-                Name = $"Fathers_{f.ShortName}",
+                row.AddChild(control);
+            }
+            row.AddChild(new Label
+            {
+                Name = "FatherLabel",
                 Text = $"{Title(f.ShortName)} — {f.Type}  ·  {FatherEffect(f)}",
+                SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
             });
+            dynamic.AddChild(row);
         }
     }
+
+    /// <summary>
+    /// A <see cref="TextureRect"/> showing a father's FreeCol portrait at a fixed thumbnail size (keeping the source
+    /// 200×237 aspect), or null when that father has no portrait so the row renders label-only. Named
+    /// <c>Portrait_&lt;shortName&gt;</c> so the L3 test can assert a portrait control is present beside the text.
+    /// </summary>
+    private static TextureRect? FatherPortrait(string shortName)
+    {
+        if (ColonyArt.FatherPortrait(shortName) is not { } tex)
+        {
+            return null;
+        }
+        return new TextureRect
+        {
+            Name = $"Portrait_{shortName}",
+            Texture = tex,
+            // The source art is 200×237; without IgnoreSize a TextureRect grows to that natural size (CustomMinimumSize
+            // is only a floor). IgnoreSize makes it take exactly the min size we set, and KeepAspectCentered keeps the
+            // face un-stretched inside that thumbnail box, so each row stays a compact face beside its text.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            CustomMinimumSize = new Vector2(PortraitWidth, PortraitHeight),
+            SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter,
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+        };
+    }
+
+    /// <summary>Portrait thumbnail width in the Fathers tab (the source art is 200×237, scaled to keep that aspect).</summary>
+    private const int PortraitWidth = 48;
+
+    /// <summary>Portrait thumbnail height in the Fathers tab (48 × 237/200 ≈ 57, rounded to keep the source aspect).</summary>
+    private const int PortraitHeight = 57;
 
     /// <summary>A short, plain summary of what electing this father does (free units/buildings, lifts boycotts, reveals colonies, or a modifier/ability count).</summary>
     private string FatherEffect(FoundingFather f)

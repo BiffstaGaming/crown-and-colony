@@ -52,11 +52,21 @@ public partial class FoundingFatherPanel : PanelContainer
             FoundingFather father = _game.Ruleset.Father(id);
             bool isCurrent = _game.CurrentFather == id;
             string fatherId = id;
+
+            // One row per offered father: their portrait (if FreeCol ships one) left of the choose button, so the
+            // congress reads like a row of candidates rather than a list of names. Degrades to button-only with no art.
+            var row = new HBoxContainer { Name = $"Offer_{father.ShortName}" };
+            if (FatherPortrait(father.ShortName) is { } control)
+            {
+                row.AddChild(control);
+            }
+
             var choose = new Button
             {
                 Name = $"Choose_{father.ShortName}",
                 Text = isCurrent ? $"{father.ShortName}  ({father.Type})  — recruiting" : $"{father.ShortName}  ({father.Type})",
                 Disabled = isCurrent,
+                SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
             };
             choose.Pressed += () =>
             {
@@ -64,7 +74,40 @@ public partial class FoundingFatherPanel : PanelContainer
                 _onChange();
                 Rebuild();
             };
-            dynamic.AddChild(choose);
+            row.AddChild(choose);
+            dynamic.AddChild(row);
         }
     }
+
+    /// <summary>
+    /// A <see cref="TextureRect"/> showing a father's portrait at a fixed thumbnail size (keeping the source 200×237
+    /// aspect), or null when that father has no FreeCol portrait so the caller renders text-only. Named
+    /// <c>Portrait_&lt;shortName&gt;</c> so the L3 test can assert a portrait control is present beside the text.
+    /// </summary>
+    private static TextureRect? FatherPortrait(string shortName)
+    {
+        if (ColonyArt.FatherPortrait(shortName) is not { } tex)
+        {
+            return null;
+        }
+        return new TextureRect
+        {
+            Name = $"Portrait_{shortName}",
+            Texture = tex,
+            // The source art is 200×237; without IgnoreSize a TextureRect grows to that natural size (CustomMinimumSize
+            // is only a floor). IgnoreSize makes it take exactly the min size we set, and KeepAspectCentered keeps the
+            // face un-stretched inside that thumbnail box. Fixed (not Expand) so it stays a thumbnail beside the button.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            CustomMinimumSize = new Vector2(PortraitWidth, PortraitHeight),
+            SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter,
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+        };
+    }
+
+    /// <summary>Portrait thumbnail width in the congress dialog (the source art is 200×237, scaled to keep that aspect).</summary>
+    private const int PortraitWidth = 56;
+
+    /// <summary>Portrait thumbnail height in the congress dialog (56 × 237/200 ≈ 66, rounded to keep the source aspect).</summary>
+    private const int PortraitHeight = 66;
 }

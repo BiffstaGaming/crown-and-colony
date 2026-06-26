@@ -64,6 +64,20 @@ cards on an opaque parchment backing on top so the text stays readable. Copied
 (GPL v2, ADR-013/014). FreeCol also ships `colonydocks-sky.png` and `*.size2`
 hi-res variants — not adopted (only the base scene is used).
 
+**Founding-father portraits** (`fathers/<shortName>.jpg`, 200×237) — the
+head-and-shoulders painting shown beside each father in the Continental Congress
+dialog (`presentation/FoundingFatherPanel.cs`) and the Colopedia Fathers tab
+(`presentation/ColopediaPanel.cs`), loaded by `ColonyArt.FatherPortrait`. All 25
+classic fathers are covered. Copied **unmodified** from FreeCol
+`data/default/resources/images/foundingFathers/*.jpg` (GPL v2, ADR-013/014); the
+base `.jpg` (not the `.size6` hi-res variant) is adopted. Files are named for the
+father's ruleset short name so the loader is a direct lookup; four fathers FreeCol
+stored under a shorter file name were copied to their short name to match (the
+mapping is FreeCol's own `image.flavor.model.foundingFather.*` keys in
+`data/default/resources.properties`): `jeanDeBrebeuf.jpg` → `fatherJeanDeBrebeuf.jpg`,
+`magellan.jpg` → `ferdinandMagellan.jpg`, `cortes.jpg` → `hernanCortes.jpg`,
+`brewster.jpg` → `williamBrewster.jpg`. The `.size6` hi-res variants are not adopted.
+
 Per ADR-013, any of these may be replaced individually later; keep this file
 and the Asset Register current when that happens. FreeCol also ships 4×
 high-resolution variants (`*.size9.png`) — adopt when zoom quality calls for it.

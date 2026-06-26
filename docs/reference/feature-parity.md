@@ -671,7 +671,7 @@ Totals - Crown and Colony: 869 Yes / 84 Partial / 62 No across 1015 features.
 | Continental Congress / Founding-Father choice UI screen | Yes | Yes | Yes | Us: FoundingFatherPanel reachable via 'Founding fathers' menu item -> OpenFoundingFatherPanel; shows offers (one per category), current target, liberty-to-elect; clicking an offer calls ChooseFather. Read-only mirror also in ColonyReportPanel. |
 | Father election notification / news event on joining Congress | Yes | Yes | Partial | Col1/FreeCol show a celebratory announcement when a father joins. Us: election happens in the turn step and the panel reflects the new Congress, but no dedicated election announcement/news pop-up was found (state change only). |
 | Colopedia / in-game reference describing each father's effect | Yes | Yes | Partial | Col1 manual + FreeCol Colopedia document each father. Us: a ColopediaPanel exists and references founding fathers, but the panel shows raw ids/types — no per-father descriptive effect text or portraits surfaced in the choice dialog. |
-| Father portraits / artwork in the Congress UI | Yes | Yes | No | Col1 & FreeCol show portrait art per father. Us: FoundingFatherPanel lists short-name + category text only; no portrait assets wired. |
+| Father portraits / artwork in the Congress UI | Yes | Yes | Yes | Col1 & FreeCol show portrait art per father. Us: all 25 classic fathers' FreeCol portraits (GPL v2, `game/assets/freecol/fathers/<shortName>.jpg`) are wired via `ColonyArt.FatherPortrait`; the FoundingFatherPanel (Congress dialog) and the ColopediaPanel Fathers tab each show the portrait as a thumbnail beside the existing name/category/effect text. Degrades to text-only if a father has no art. |
 
 ## Natives Relations And Trade
 
