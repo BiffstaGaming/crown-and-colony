@@ -1428,14 +1428,6 @@ public sealed partial class Game
     /// <summary>The expert-scout unit type (FreeCol <c>model.ability.expertScout</c>) a chief may train a scout into — the scout role's expert unit.</summary>
     private const string SeasonedScoutUnitTypeId = "model.unit.seasonedScout";
 
-    /// <summary>
-    /// Unit types that can be taught a skill at a native settlement (FreeCol: the free
-    /// colonist and indentured servant only — experts and petty criminals cannot). A
-    /// documented simplification pending FreeCol <c>unit-change-types</c> (NATIVES) data.
-    /// </summary>
-    private static readonly string[] SkillLearnerTypeIds =
-        ["model.unit.freeColonist", "model.unit.indenturedServant"];
-
     /// <summary>Player id of the human — channel 0 of a settlement's per-player alarm map (the migrated single scalar).</summary>
     private const int HumanAlarmChannel = 0;
 
@@ -1910,7 +1902,11 @@ public sealed partial class Game
         {
             return MoveCheck.No("This settlement has already taught its skill.");
         }
-        if (!SkillLearnerTypeIds.Contains(unit.Type.Id))
+        // Eligibility is data-driven from the spec's model.unitChange.natives change-type (FreeCol
+        // learnFromIndianSettlement's getUnitChange(NATIVES, skill) gate): a unit may learn only a skill its type has a
+        // natives from→to row for. Classic: the free colonist and indentured servant learn any taught profession; a petty
+        // criminal, expert or non-person has no row and is turned away.
+        if (!Ruleset.CanLearnSkillFromNatives(unit.Type.Id, settlement.LearnableSkill!))
         {
             return MoveCheck.No($"A {unit.Type.ShortName} cannot learn a new skill here.");
         }
@@ -2614,7 +2610,12 @@ public sealed partial class Game
     /// <summary>
     /// Equips a colonist into a role, consuming the required-goods difference from the colony store
     /// (and refunding goods the change drops). Arming a free colonist into the soldier role spends
-    /// 50 muskets; into the dragoon role, 50 muskets and 50 horses.
+    /// 50 muskets; into the dragoon role, 50 muskets and 50 horses. A multi-count role (the pioneer,
+    /// <c>maximum-count="5"</c>) is equipped at the <b>highest count the colony's stock affords</b> — a
+    /// pioneer takes up to 5 tool-units (100 tools) when the colony holds them, falling back through
+    /// 4/3/2/1 when it does not. Mirrors FreeCol's <c>QuickActionMenu</c> equip loop
+    /// (<c>for (count = maximum-count; count &gt; 0; count--)</c> → first affordable count) feeding
+    /// <c>Settlement.equipForRole(unit, role, count)</c>.
     /// </summary>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckEquipRole"/>.</exception>
     public void EquipRole(Unit unit, Colony colony, string targetRoleId)
@@ -2625,23 +2626,50 @@ public sealed partial class Game
             throw new InvalidMoveException(check.Reason!);
         }
         RoleType target = Ruleset.Role(targetRoleId);
-        foreach ((string goodsId, int amount) in RoleGoodsDelta(unit, target))
+        int count = MaxAffordableRoleCount(unit, colony, target);
+        foreach ((string goodsId, int amount) in RoleGoodsDelta(unit, target, count))
         {
             colony.AddGoods(Ruleset.StorageIdOf(goodsId), -amount); // consume positive deltas, refund negative
         }
-        ChangeRole(unit, targetRoleId, targetRoleId == RoleType.DefaultRoleId ? 0 : 1);
+        ChangeRole(unit, targetRoleId, count);
     }
 
     /// <summary>
-    /// The per-good change in equipment to move from a unit's current role to <paramref name="target"/>
-    /// (at a single equipment count): positive = consumed from the store, negative = refunded.
+    /// The highest equipment count (1..<see cref="RoleType.MaximumCount"/>) of <paramref name="target"/> that
+    /// <paramref name="colony"/>'s store can fully arm <paramref name="unit"/> at — FreeCol steps down from the role's
+    /// maximum until the warehouse can pay the required-goods difference (<c>QuickActionMenu</c> equip loop). The default
+    /// (unarmed) role is always count 0; a single-count role resolves to 1 (validated affordable by
+    /// <see cref="CheckEquipRole"/>). For the pioneer this banks up to 5 tool-units when the colony holds 100 tools.
     /// </summary>
-    private IEnumerable<(string GoodsId, int Amount)> RoleGoodsDelta(Unit unit, RoleType target)
+    private int MaxAffordableRoleCount(Unit unit, Colony colony, RoleType target)
+    {
+        if (target.Id == RoleType.DefaultRoleId)
+        {
+            return 0;
+        }
+        for (int count = Math.Max(1, target.MaximumCount); count > 1; count--)
+        {
+            if (RoleGoodsDelta(unit, target, count)
+                .All(d => d.Amount <= 0 || colony.StoreOf(Ruleset.StorageIdOf(d.GoodsId)) >= d.Amount))
+            {
+                return count;
+            }
+        }
+        return 1; // CheckEquipRole already guaranteed count 1 is affordable
+    }
+
+    /// <summary>
+    /// The per-good change in equipment to move from a unit's current role to <paramref name="target"/> at
+    /// <paramref name="targetCount"/> equipment multiples: positive = consumed from the store, negative = refunded.
+    /// The target side scales by <paramref name="targetCount"/> (FreeCol <c>Role.getRequiredGoods(count)</c>); the
+    /// current side refunds the unit's present <see cref="Unit.RoleCount"/> multiples it carries.
+    /// </summary>
+    private IEnumerable<(string GoodsId, int Amount)> RoleGoodsDelta(Unit unit, RoleType target, int targetCount = 1)
     {
         var delta = new Dictionary<string, int>();
         foreach (RoleRequiredGoods g in target.RequiredGoods)
         {
-            delta[g.GoodsId] = delta.GetValueOrDefault(g.GoodsId) + g.Amount;
+            delta[g.GoodsId] = delta.GetValueOrDefault(g.GoodsId) + (g.Amount * Math.Max(1, targetCount));
         }
         foreach (RoleRequiredGoods g in Ruleset.Role(unit.RoleId).RequiredGoods)
         {

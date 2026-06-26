@@ -173,6 +173,21 @@ public class NativeInteractionTests
         Assert.False(g2.CheckLearnSkill(colonist, s2).Allowed);
     }
 
+    [Theory] // skill-learner eligibility is read from the spec's model.unitChange.natives data (86d3fpxaw), not a hardcoded pair
+    [InlineData("model.unit.freeColonist", true)]      // a learner type (has a natives change row)
+    [InlineData("model.unit.indenturedServant", true)] // also a learner type
+    [InlineData("model.unit.pettyCriminal", false)]    // no natives row → cannot learn directly
+    [InlineData("model.unit.expertFarmer", false)]     // already an expert → no natives row
+    public void LearnSkill_EligibilityIsDataDriven_FromTheSpec(string colonistType, bool eligible)
+    {
+        (Game game, NativeSettlement settlement, Unit unit) =
+            Setup(s => !s.IsCapital && s.LearnableSkill is not null, colonistType);
+
+        // The spec's natives change-type agrees with the in-game gate (both keyed on the settlement's taught skill).
+        Assert.Equal(eligible, Classic.CanLearnSkillFromNatives(colonistType, settlement.LearnableSkill!));
+        Assert.Equal(eligible, game.CheckLearnSkill(unit, settlement).Allowed);
+    }
+
     // ---- Edge cases (from adversarial review) ----
 
     [Fact]

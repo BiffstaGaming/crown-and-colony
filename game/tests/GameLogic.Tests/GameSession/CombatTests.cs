@@ -359,6 +359,68 @@ public class CombatTests
         Assert.Equal("model.unit.damagedArtillery", game.Units.First(u => u.Id == id).Type.Id);
     }
 
+    // ---- Veteran soldier capture/demotion ladder (86d3fpxje) ----
+
+    /// <summary>A foreign colonial power's veteran-soldier captor on a free tile beside a human <paramref name="preyType"/>/<paramref name="preyRole"/>,
+    /// at war so combat resolves. Returns the captor unit (armed in the soldier role → captureUnits) and the human prey,
+    /// ready for <c>game.Attack(captor, prey.Position, …)</c>.</summary>
+    private static (Game game, Player captorPlayer, Unit captor, Unit prey) StageColonialDuel(
+        string preyType, string? preyRole = null)
+    {
+        Game game = Game.New(Classic, Seed);
+        Player captorPlayer = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        Unit prey = game.SpawnUnit(Classic.Unit(preyType), game.PlayerUnits.First(u => u.IsOnMap).Position);
+        if (preyRole is not null)
+        {
+            prey.RoleId = preyRole;
+            prey.RoleCount = 1;
+        }
+        bool Free(Position n) =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.NativeSettlementAt(n) is null && game.ColonyAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n);
+        Position spot = prey.Position.Neighbours().First(Free);
+        Unit captor = game.SpawnUnit(Classic.Unit("model.unit.veteranSoldier"), spot);
+        captor.OwnerId = captorPlayer.PlayerId; // reassign from the human (SpawnUnit defaults to the human)
+        captor.RoleId = Soldier;                // soldier role → captureUnits ability
+        captor.RoleCount = 1;
+        game.SetStance(captorPlayer.PlayerId, game.HumanPlayer.PlayerId, Stance.War);
+        return (game, captorPlayer, captor, prey);
+    }
+
+    [Fact]
+    public void VeteranSoldier_DefeatedWhileArmed_SurvivesAsAVeteran_Disarmed()
+    {
+        // An ARMED veteran soldier loses → branch #2 disarms it; it lacks demoteOnAllEquipmentLost, so it keeps its
+        // veteran type (FreeCol losingEquipmentDemotesUnit=false). The veteran survives the defeat as a veteran.
+        const string Vet = "model.unit.veteranSoldier";
+        (Game game, _, Unit captor, Unit prey) = StageColonialDuel(Vet, Soldier);
+        int id = prey.Id;
+
+        game.Attack(captor, prey.Position, new FixedRandom(0.0)); // great win for the foreign captor → prey loses
+
+        Unit survivor = game.Units.First(u => u.Id == id);
+        Assert.Equal(Vet, survivor.Type.Id);                       // still a veteran soldier (no type demotion)
+        Assert.Equal(RoleType.DefaultRoleId, survivor.RoleId);     // but disarmed
+        Assert.Equal(game.HumanPlayer.PlayerId, survivor.OwnerId); // and still the human's (disarmed, not captured)
+    }
+
+    [Fact]
+    public void VeteranSoldier_DefeatedWhileUnarmed_IsCapturedAndDemotedToFreeColonist()
+    {
+        // An UNARMED veteran (default role → canBeCaptured) loses to a captor with captureUnits → CAPTURE_UNIT, applying
+        // the model.unitChange.capture ladder: veteran soldier → free colonist on the captor's side (FreeCol csCaptureUnit).
+        (Game game, Player captorPlayer, Unit captor, Unit prey) = StageColonialDuel("model.unit.veteranSoldier");
+        int id = prey.Id;
+
+        game.Attack(captor, prey.Position, new FixedRandom(0.0)); // great win for the captor → prey captured
+
+        Unit captive = game.Units.First(u => u.Id == id);
+        Assert.Equal(FreeColonist, captive.Type.Id);            // veteran → free colonist on capture (the ladder)
+        Assert.Equal(captorPlayer.PlayerId, captive.OwnerId);   // now the captor's
+        Assert.Equal(RoleType.DefaultRoleId, captive.RoleId);   // and disarmed
+    }
+
     // ---- Promotion / founding fathers ----
 
     [Fact]

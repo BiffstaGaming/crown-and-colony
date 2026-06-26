@@ -22,6 +22,7 @@ public class ExpertTileYieldTests
     private const string Furs = "model.goods.furs";
     private const string Lumber = "model.goods.lumber";
     private const string Free = "model.unit.freeColonist";
+    private const string IndianConvert = "model.unit.indianConvert";
 
     private static int Yield(Game game, string workerType, Position tile, string goods) =>
         game.TileYield(game.HumanPlayer, workerType, tile, goods);
@@ -106,6 +107,39 @@ public class ExpertTileYieldTests
         Position furs = TileProducing(game, Furs);
         Assert.Equal(Yield(game, Free, grain, Grain), Yield(game, workerType, grain, Grain));
         Assert.Equal(Yield(game, Free, furs, Furs), Yield(game, workerType, furs, Furs));
+    }
+
+    // ---- Indian Convert food/raw-goods bonus (86d3fpx3h) ----
+
+    [Theory] // the convert's index-30 +1 on each raw good it can work (FreeCol indianConvert modifiers)
+    [InlineData(Grain)]
+    [InlineData(Fish)]
+    [InlineData(Furs)]
+    public void IndianConvert_AddsOneRawGood_OverAFreeColonist(string good)
+    {
+        Game game = Game.New(Classic, Seed);
+        Position tile = TileProducing(game, good);
+        Assert.Equal(Yield(game, Free, tile, good) + 1, Yield(game, IndianConvert, tile, good)); // additive +1
+    }
+
+    [Fact]
+    public void IndianConvert_ProducesOneMoreFoodPerTurn_ThanAFreeColonist_ViaTheLiveColonyTurn()
+    {
+        // End-to-end through a real colony turn: a convert working a grain tile banks one more food than a free
+        // colonist on the same tile (its +1 grain folds via the worker-type overlay, like an expert's bonus).
+        int FoodGainedInOneTurn(string workerType)
+        {
+            Game game = Game.New(Classic, Seed);
+            Colony colony = game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
+            Position tile = colony.TileWorkers.Keys.First(); // the founding colonist's auto-assigned grain tile
+            colony.SetWorker(tile, colony.TileWorkers[tile], workerType);
+            colony.AddGoods("model.goods.food", 50 - colony.Food); // below the 200 growth bar, above starvation
+            int before = colony.Food;
+            game.EndTurn();
+            return colony.Food - before;
+        }
+
+        Assert.Equal(FoodGainedInOneTurn(Free) + 1, FoodGainedInOneTurn(IndianConvert));
     }
 
     [Fact]

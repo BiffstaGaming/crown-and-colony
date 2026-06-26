@@ -26,6 +26,7 @@ public sealed class Ruleset
     private readonly Dictionary<string, Dictionary<string, UnitChange>> _unitChangeByType;
     private readonly Dictionary<string, Dictionary<string, int>> _experienceUpgradeByFrom; // from-type → (expert-to-type → probability)
     private readonly Dictionary<string, Dictionary<string, int>> _educationByFrom; // from-type → (to-type → base turns of training)
+    private readonly Dictionary<string, HashSet<string>> _nativeLearningByFrom; // from-type → set of skill-to types it may learn from natives
     private readonly Dictionary<string, string> _expertForProducing; // goods id → the unit type that is its expert
     private readonly Dictionary<string, EuropeanNation> _europeanNationById;
     private readonly Dictionary<string, SpecEvent> _eventById; // spec <event> elements, keyed by id
@@ -45,6 +46,7 @@ public sealed class Ruleset
         Dictionary<string, Dictionary<string, UnitChange>> unitChangeByType,
         Dictionary<string, Dictionary<string, int>> experienceUpgradeByFrom,
         Dictionary<string, Dictionary<string, int>> educationByFrom,
+        Dictionary<string, HashSet<string>> nativeLearningByFrom,
         Dictionary<string, EuropeanNation> europeanNationById,
         Dictionary<string, SpecEvent> eventById,
         Calendar calendar,
@@ -94,6 +96,7 @@ public sealed class Ruleset
         _unitChangeByType = unitChangeByType;
         _experienceUpgradeByFrom = experienceUpgradeByFrom;
         _educationByFrom = educationByFrom;
+        _nativeLearningByFrom = nativeLearningByFrom;
         _europeanNationById = europeanNationById;
         _eventById = eventById;
         // Reverse the expert→good mapping into good→expert (FreeCol Specification.getExpertForProducing): the unit type
@@ -579,6 +582,24 @@ public sealed class Ruleset
     public string? ExpertForProducing(string goodsId) => _expertForProducing.GetValueOrDefault(goodsId);
 
     /// <summary>
+    /// Whether a unit of <paramref name="fromUnitId"/> may learn <em>any</em> skill from a native settlement — it has at
+    /// least one <c>model.unitChange.natives</c> change row (FreeCol: the free colonist and indentured servant; a petty
+    /// criminal, expert or non-person has none). Data-driven eligibility replacing the old hardcoded learner pair.
+    /// </summary>
+    public bool CanLearnSkillFromNatives(string fromUnitId) =>
+        _nativeLearningByFrom.TryGetValue(fromUnitId, out var skills) && skills.Count > 0;
+
+    /// <summary>
+    /// Whether a unit of <paramref name="fromUnitId"/> may learn the specific skill <paramref name="skillUnitId"/> from a
+    /// native settlement — it has the matching <c>model.unitChange.natives</c> from→to row (FreeCol
+    /// <c>learnFromIndianSettlement</c>'s <c>getUnitChange(NATIVES, skill) != null</c> gate). In the classic ruleset every
+    /// learner type can learn every taught profession, so this matches <see cref="CanLearnSkillFromNatives(string)"/> for
+    /// any real settlement skill; the per-skill form lets a variant ruleset restrict who learns what.
+    /// </summary>
+    public bool CanLearnSkillFromNatives(string fromUnitId, string skillUnitId) =>
+        _nativeLearningByFrom.TryGetValue(fromUnitId, out var skills) && skills.Contains(skillUnitId);
+
+    /// <summary>
     /// The unit type a student of <paramref name="studentTypeId"/> becomes after ONE schooling cycle under a teacher of
     /// <paramref name="teacherTypeId"/> (FreeCol <c>UnitType.getTeachingType</c>), or null if the teacher cannot raise
     /// that student. The teacher imparts its <see cref="UnitType.SkillTaughtOrSelf"/>: a student already at/above that
@@ -909,6 +930,8 @@ public sealed class Ruleset
             ParseExperienceUpgrades(root.Element("unit-change-types"));
         Dictionary<string, Dictionary<string, int>> educationTurns =
             ParseEducationTurns(root.Element("unit-change-types"));
+        Dictionary<string, HashSet<string>> nativeLearning =
+            ParseNativeLearning(root.Element("unit-change-types"));
 
         Dictionary<string, EuropeanNationType> europeanNationTypes =
             ParseEuropeanNationTypes(root.Element("european-nation-types"));
@@ -973,7 +996,7 @@ public sealed class Ruleset
 
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
-            roles, disasters, unitChanges, experienceUpgrades, educationTurns, europeanNations, events, calendar, fatherAgeYears,
+            roles, disasters, unitChanges, experienceUpgrades, educationTurns, nativeLearning, europeanNations, events, calendar, fatherAgeYears,
             difficulty, gameOptions, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage,
             interventionBells, interventionTurns, interventionForce,
             victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, combatModifiers, colonyConstants, movementConstants);
@@ -1764,6 +1787,30 @@ public sealed class Ruleset
                 byFrom[from] = toMap = [];
             }
             toMap[RequiredAttribute(change, "to")] = (int?)change.Attribute("turns") ?? 0;
+        }
+        return byFrom;
+    }
+
+    /// <summary>
+    /// Parses the <c>model.unitChange.natives</c> change-type into a [from-unit id] → set of learnable <c>to</c> skill
+    /// types map — the eligibility data for learning a skill at a native settlement (FreeCol
+    /// <c>Unit.getUnitChange(UnitChangeType.NATIVES, skill)</c>). Classic: free colonist and indentured servant each map
+    /// to every expert profession; petty criminals and experts have no row (cannot learn directly). Keeps every from→to
+    /// row so the per-skill gate (can this type learn <em>this</em> settlement's skill) is exact.
+    /// </summary>
+    private static Dictionary<string, HashSet<string>> ParseNativeLearning(XElement? section)
+    {
+        var byFrom = new Dictionary<string, HashSet<string>>();
+        XElement? natives = section?.Elements("unit-change-type")
+            .FirstOrDefault(t => (string?)t.Attribute("id") == UnitChangeTypeIds.Natives);
+        foreach (XElement change in natives?.Elements("unit-type-change") ?? [])
+        {
+            string from = RequiredAttribute(change, "from");
+            if (!byFrom.TryGetValue(from, out HashSet<string>? toSet))
+            {
+                byFrom[from] = toSet = [];
+            }
+            toSet.Add(RequiredAttribute(change, "to"));
         }
         return byFrom;
     }

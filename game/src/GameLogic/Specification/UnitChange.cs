@@ -26,6 +26,9 @@ public static class UnitChangeTypeIds
     /// <summary>A skill learned by exploring a Lost City Rumour (free colonist / indentured servant / petty criminal → seasoned scout).</summary>
     public const string LostCity = "model.unitChange.lostCity";
 
+    /// <summary>A skill taught by a native settlement (free colonist / indentured servant → the settlement's expert profession). The eligibility data behind learning from natives.</summary>
+    public const string Natives = "model.unitChange.natives";
+
     /// <summary>An on-the-job upgrade from accumulated work experience (free colonist → the matching expert for the good it works).</summary>
     public const string Experience = "model.unitChange.experience";
 
