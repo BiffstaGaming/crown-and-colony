@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-27 — Parity backlog Wave 6: low-priority cluster — setup-dials + map-QoL + audio (3 parallel streams) ✅
+
+**Requested (Chris):** after the high-priority backlog cleared, "Low-priority / FreeCol-only" cluster.
+**Did (3 disjoint background-worktree streams + an integrator host-bridge; integrated + CI-green):**
+- **Setup dials** (`5123d20` + bridge `415d724`, `NewGameDialog` + `Game.New` + `MapGenerator` + new `MapGenerationOptions`/`NationalAdvantages`): **rival count, starting year, climate bands, map-gen counts (rivers/mountains/forests/bonus), lost-city-rumour count, national-advantages** dials — all default-to-classic byte-identical, threaded into `Game.New`. **I hand-wired the host bridge** (`GameController.NewGame` reads/clears the 5 statics → `Game.New` + `Ruleset.WithStartingYear`) since the sub-agent couldn't touch `GameController` (parallel stream). Closes 6 dials. (custom-difficulty + extra-nations scoped down → stay Partial.) +24 L1/L2.
+- **Map QoL** (`51d85ff`, `CameraController` + `MapView` + new `MapControlsOverlay`): **edge-scroll + keyboard pan**, **discrete cursor-anchored zoom**, **zoom/recentre overlay**, **tile-yield hover**. Closes `86d3fq22p`/`86d3fq1qe`/`86d3fq0ch`/`86d3fq1nk`. (goto-preview scoped out — no public route oracle.) +7 L3.
+- **Audio wiring** (`dfd0797`, `SoundService`/`MusicService`/`SettingsService`/`SettingsScreen` + `GameController` hooks, **over the existing 22 GPL audio files**): **event SFX**, **global UI-click + illegal-move buzz**, **looping background music**, **master mute + Music/SFX volume**, **per-nation anthem**. Closes `86d3fq12n`/`86d3fq16y`/`86d3fq0y8`/`86d3fq1b1`/`86d3fq0z4`. (war/tension music-context scoped out — needs a `MusicContext` enum in read-only GameLogic.) +13 L3.
+- **Adversarial review** (4 dims × verify): **0 confirmed serious** — the host bridge, audio headless-safety, and determinism all verified clean; fixed the one real no-drift item (6 parity rows still calling the bridge "pending"); filed a bridge-test follow-up (`86d3fy56v`).
+- **Integration debugging** (the thorny part): two **deliberate golden regenerations** (SettingsScreen for the new Mute control; pause-menu for the new map-controls overlay — both verified passing on CI Linux), and an **edge-scroll CI fix** — the input-reset warps the cursor to the top-left corner, which on CI's xvfb emits a motion event that drove the new edge-scroll, drifting two exact-centre camera assertions ~14px; suppressed via the camera's `EdgeScrollEnabled` test toggle.
+**Status:** **Shipped.** main `9c2dd92`. Local: L1/L2 **2438** (+ the documented 2ms `TurnProcessing` perf flake under load — green on CI), full L3 **266**, soak twin-determinism green. **CI run 28265348552 = GREEN both jobs** (after the golden regens + edge-scroll fix; rebased once over a nightly QA-REPORT auto-commit). **No save bump** (setup options + audio settings + map nav all session-only / settings.cfg). Parity Totals **884/74/57 → 896/67/52**.
+**Decisions:** audio wired over the in-repo GPL assets (no sourcing); map-controls overlay built in code (no `main.tscn`); the bridge is the integrator's job since `GameController` was a parallel stream's; goldens regenerated deliberately for the two intended new controls.
+**Scheduled next:** **Awaiting your steer.** The remaining backlog is the **rival-AI epic** + the bigger low-priority items (in-game tutorial, opening cinematic, localisation) + the 2 deferred (Man-o-War-buildable, burial-ground formal-war).
+**Follow-ups:** bridge L3 test (`86d3fy56v`); scoped-out custom-difficulty (`86d3fq0x7`)/extra-nations (`86d3fq0y7`)/goto-preview (`86d3fq1pe`)/war-music-context (`86d3fq1wy`); plus the standing list (HUD dead-click, dump-goods UI, etc.).
+**Needs you (steer):** 83 `[Parity]` tasks shipped this session (896/1015 at Yes). What next — the **rival-AI epic** (a sequential multi-session effort; I'd ADR + phase it first), the remaining **low-priority** items (tutorial / cinematic / localisation), or pause to playtest?
+
 ## 2026-06-27 — Parity backlog Wave 5: remaining-gaps tail — native-AI + scoring/coastal + river-size (3 parallel streams) ✅
 
 **Requested (Chris):** after waves 1–4, "Wave 5 — remaining gaps tail" (mop up the genuine high-value leftovers).
