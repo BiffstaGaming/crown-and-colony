@@ -1,4 +1,4 @@
-﻿using CrownAndColony.GameLogic.Colonies;
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Combat;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
@@ -12,8 +12,8 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 
 /// <summary>
 /// The native AI (slice 1b): braves wander when calm and raid the human when their home settlement is alarmed
-/// enough (Displeased+). The decisive invariant is byte-stability (ADR-009): every native choice â€” wander,
-/// pathing, combat â€” draws only from the nation's own RNG stream, never the human's stream 0, so the human's
+/// enough (Displeased+). The decisive invariant is byte-stability (ADR-009): every native choice — wander,
+/// pathing, combat — draws only from the nation's own RNG stream, never the human's stream 0, so the human's
 /// seeded game is unaffected by however much the natives do. Combat uses the native stream via the internal
 /// <c>Attack</c> overload; outcome odds themselves are covered in <see cref="CombatTests"/>.
 /// </summary>
@@ -50,7 +50,7 @@ public class NativeAiTests
         Position adj = colony.Position.Neighbours().First(n => Free(game, n));
         Unit brave = game.SpawnUnit(Classic.Unit("model.unit.brave"), adj, nation);
 
-        // Give the home settlement a genuine surplus of RUM (manufactured â†’ never refilled by production, so the
+        // Give the home settlement a genuine surplus of RUM (manufactured → never refilled by production, so the
         // store-deduction assertion is clean) and strip its seeded farmed stock so the gift can only be rum.
         foreach (var kv in home.GeneralStock.ToList())
         {
@@ -85,7 +85,7 @@ public class NativeAiTests
     public void SameSeed_WithProvokedNatives_PlayOutByteIdentically()
     {
         // Determinism: two same-seed games, both with their natives enraged into raiding, must be byte-identical
-        // after many turns â€” every native draw is from a deterministic per-nation stream.
+        // after many turns — every native draw is from a deterministic per-nation stream.
         Game a = Game.New(Classic, seed: 12345);
         Game b = Game.New(Classic, seed: 12345);
         EnrageAllNatives(a);
@@ -115,9 +115,9 @@ public class NativeAiTests
             raiding.EndTurn();
         }
 
-        // The natives genuinely diverged (seek-and-destroy pathing vs. idle wandering moves braves differently)â€¦
+        // The natives genuinely diverged (seek-and-destroy pathing vs. idle wandering moves braves differently)…
         Assert.NotEqual(SaveGame.From(calm).ToJson(), SaveGame.From(raiding).ToJson());
-        // â€¦yet the human's stream 0 and its own player state are untouched â€” no native path drew from stream 0.
+        // …yet the human's stream 0 and its own player state are untouched — no native path drew from stream 0.
         Assert.Equal(calm.RandomState, raiding.RandomState);
         Assert.Equal(calm.HumanPlayer.Gold, raiding.HumanPlayer.Gold);
         Assert.Equal(calm.HumanPlayer.Immigration, raiding.HumanPlayer.Immigration);
@@ -131,7 +131,7 @@ public class NativeAiTests
         Unit brave = game.NativeUnits.First(b => b.Position.Neighbours().Any(n => Free(game, n)));
         foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == brave.OwnerNationId))
         {
-            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // its nation is now Hateful â†’ it raids
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // its nation is now Hateful → it raids
         }
         Position spot = brave.Position.Neighbours().First(n => Free(game, n));
         game.SpawnUnit(Classic.Unit(FreeColonist), spot); // a human colonist (OwnerId 0) right beside the brave
@@ -145,7 +145,7 @@ public class NativeAiTests
     [Fact]
     public void CalmNatives_RecordNoRaidNotices()
     {
-        // Happy/Content natives only wander â€” they never attack, so no raid notice is produced.
+        // Happy/Content natives only wander — they never attack, so no raid notice is produced.
         Game game = Game.New(Classic, seed: 7);
         for (int turn = 0; turn < 10; turn++)
         {
@@ -178,9 +178,9 @@ public class NativeAiTests
     [Fact]
     public void EnragedBraves_WithNoHumanUnitToHunt_AttackNothing()
     {
-        // Braves attack the HUMAN only (NearestHumanUnit is the sole target contract â€” the engine's AreEnemies
+        // Braves attack the HUMAN only (NearestHumanUnit is the sole target contract — the engine's AreEnemies
         // would also admit foreign powers and rival tribes). Remove the human from the map (found a colony with
-        // its only unit) so no on-map human unit exists: enraged braves then attack nothing at all â€” no raid
+        // its only unit) so no on-map human unit exists: enraged braves then attack nothing at all — no raid
         // notice ever, and no brave is ever lost in combat (they never fight foreign powers or each other).
         Game game = Game.New(Classic, seed: 31);
         Unit settler = game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony);
@@ -197,8 +197,8 @@ public class NativeAiTests
         {
             EnrageAllNatives(game); // keep every tribe at maximum alarm the whole run
             game.EndTurn();
-            Assert.Empty(game.CombatNotices);                            // no human on the map â†’ never a raid
-            Assert.Equal(nativeCountStart, game.NativeUnits.Count());    // braves attack nobody â†’ none die in combat
+            Assert.Empty(game.CombatNotices);                            // no human on the map → never a raid
+            Assert.Equal(nativeCountStart, game.NativeUnits.Count());    // braves attack nobody → none die in combat
         }
     }
 
@@ -225,7 +225,7 @@ public class NativeAiTests
         Assert.Equal(SaveGame.From(live).ToJson(), SaveGame.From(reloaded).ToJson());
     }
 
-    // â”€â”€ Displeasure attack weighting (86d3c9vzp): a brave goes for the soft target, not just the nearest â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Displeasure attack weighting (86d3c9vzp): a brave goes for the soft target, not just the nearest ──────────
 
     private const string VeteranSoldier = "model.unit.veteranSoldier";
     private const string SoldierRole = "model.role.soldier";
@@ -237,17 +237,17 @@ public class NativeAiTests
         Unit brave = game.NativeUnits.First(b => b.Position.Neighbours().Count(n => Free(game, n)) >= 2);
         foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == brave.OwnerNationId))
         {
-            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // its nation is Hateful â†’ it raids
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // its nation is Hateful → it raids
         }
 
         // Two human targets adjacent to the brave (both Chebyshev distance 1): a defenceless colonist and an armed
-        // veteran soldier. The valueâˆ’distance heuristic should pick the colonist (a far easier kill at equal range).
+        // veteran soldier. The value−distance heuristic should pick the colonist (a far easier kill at equal range).
         var spots = brave.Position.Neighbours().Where(n => Free(game, n)).Take(2).ToList();
         Position softTile = spots[0];
         Position hardTile = spots[1];
         game.SpawnUnit(Classic.Unit(FreeColonist), softTile);
         Unit soldier = game.SpawnUnit(Classic.Unit(VeteranSoldier), hardTile);
-        soldier.RoleId = SoldierRole;   // armed â†’ higher defence â†’ lower raid score
+        soldier.RoleId = SoldierRole;   // armed → higher defence → lower raid score
         soldier.RoleCount = 1;
 
         game.EndTurn();
@@ -256,13 +256,13 @@ public class NativeAiTests
         Assert.DoesNotContain(game.CombatNotices, n => n.Position == hardTile); // the dug-in soldier was passed over
     }
 
-    // â”€â”€ Equip braves from settlement stock (86d3c9vzp, equip facet â€” FreeCol NativeAIPlayer.equipBraves) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Equip braves from settlement stock (86d3c9vzp, equip facet — FreeCol NativeAIPlayer.equipBraves) ───────────
 
     private const string Muskets = "model.goods.muskets";
     private const string Horses = "model.goods.horses";
     private const string DefaultRole = "model.role.default";
 
-    /// <summary>The home settlement (nearest same-nation) a brave equips from â€” the same rule RunNativeTurn uses.</summary>
+    /// <summary>The home settlement (nearest same-nation) a brave equips from — the same rule RunNativeTurn uses.</summary>
     private static NativeSettlement HomeOf(Game game, Unit brave) =>
         game.NativeSettlements.Where(s => s.NationTypeId == brave.OwnerNationId)
             .OrderBy(s => System.Math.Max(System.Math.Abs(s.Position.X - brave.Position.X),
@@ -273,7 +273,7 @@ public class NativeAiTests
     /// <summary>
     /// Empties every settlement's generator-seeded military stock (save v54), so a test that needs a <b>controlled</b>
     /// starting stock can deposit exactly the muskets/horses it intends to exercise. (The generator now seeds each camp
-    /// with arms â€” 86d3e49gq â€” which would otherwise pre-arm these unit tests' braves.)
+    /// with arms — 86d3e49gq — which would otherwise pre-arm these unit tests' braves.)
     /// </summary>
     private static void ClearAllStock(Game game)
     {
@@ -296,38 +296,38 @@ public class NativeAiTests
         Assert.Contains(game.NativeSettlements, s => s.StockOf(Horses) >= 25); // the better/larger camps also stock horses
 
         Unit brave = game.NativeUnits.First();
-        EnrageNationOf(game, brave); // its nation is now Hateful â†’ its camps secure themselves
+        EnrageNationOf(game, brave); // its nation is now Hateful → its camps secure themselves
         game.EndTurn();
 
-        Assert.NotEqual(DefaultRole, brave.RoleId); // armed itself from the seeded stock alone â€” no test deposit needed
+        Assert.NotEqual(DefaultRole, brave.RoleId); // armed itself from the seeded stock alone — no test deposit needed
     }
 
     [Fact]
     public void AThreatenedSettlement_WithMuskets_ArmsItsBrave_FromItsOwnStock()
     {
         Game game = Game.New(Classic, seed: 7);
-        ClearAllStock(game); // start from a controlled empty stock (the generator now seeds arms â€” 86d3e49gq)
+        ClearAllStock(game); // start from a controlled empty stock (the generator now seeds arms — 86d3e49gq)
         Unit brave = game.NativeUnits.First();
         Assert.Equal(DefaultRole, brave.RoleId); // braves start unarmed
 
         NativeSettlement home = HomeOf(game, brave);
         foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == brave.OwnerNationId))
         {
-            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // the nation is Hateful â†’ its camps secure themselves
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // the nation is Hateful → its camps secure themselves
         }
         home.AddStock(Muskets, 25); // exactly one armed-brave's worth in the camp store
 
         game.EndTurn();
 
         Assert.Equal("model.role.armedBrave", brave.RoleId); // the brave armed itself from the stock
-        Assert.Equal(0, home.StockOf(Muskets));              // â€¦drawn down from the settlement
+        Assert.Equal(0, home.StockOf(Muskets));              // …drawn down from the settlement
     }
 
     [Fact]
     public void AThreatenedSettlement_WithoutMuskets_LeavesItsBraveUnarmed()
     {
         Game game = Game.New(Classic, seed: 7);
-        ClearAllStock(game); // the premise is an unstocked camp â€” empty the generator-seeded arms (86d3e49gq)
+        ClearAllStock(game); // the premise is an unstocked camp — empty the generator-seeded arms (86d3e49gq)
         Unit brave = game.NativeUnits.First();
         foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == brave.OwnerNationId))
         {
@@ -336,7 +336,7 @@ public class NativeAiTests
 
         game.EndTurn();
 
-        Assert.Equal(DefaultRole, brave.RoleId); // no stock â†’ nothing to equip from â†’ still the default role
+        Assert.Equal(DefaultRole, brave.RoleId); // no stock → nothing to equip from → still the default role
     }
 
     [Fact]
@@ -349,7 +349,7 @@ public class NativeAiTests
 
         game.EndTurn();
 
-        Assert.Equal(DefaultRole, brave.RoleId); // a calm camp does not secure itself â†’ no equip
+        Assert.Equal(DefaultRole, brave.RoleId); // a calm camp does not secure itself → no equip
     }
 
     [Fact]
@@ -357,20 +357,20 @@ public class NativeAiTests
     {
         // The decisive ADR-009 guard for the equip path: a game whose natives arm themselves (both muskets AND horses
         // available, so the choice draws from the native stream) keeps the human's stream 0 byte-identical to a game
-        // whose natives can't equip â€” only the natives' own state diverges.
+        // whose natives can't equip — only the natives' own state diverges.
         Game equips = Game.New(Classic, seed: 999);
         Game bare = Game.New(Classic, seed: 999);
         foreach (Game g in new[] { equips, bare })
         {
-            ClearAllStock(g); // start both from empty so "bare" genuinely can't equip (the generator seeds arms â€” 86d3e49gq)
+            ClearAllStock(g); // start both from empty so "bare" genuinely can't equip (the generator seeds arms — 86d3e49gq)
             foreach (NativeSettlement s in g.NativeSettlements)
             {
-                g.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // both enraged so the native paths run identicallyâ€¦
+                g.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // both enraged so the native paths run identically…
             }
         }
         foreach (NativeSettlement s in equips.NativeSettlements)
         {
-            s.AddStock(Muskets, 50); // â€¦but only this game's camps can arm (and mount) their braves
+            s.AddStock(Muskets, 50); // …but only this game's camps can arm (and mount) their braves
             s.AddStock(Horses, 50);
         }
 
@@ -380,9 +380,9 @@ public class NativeAiTests
             bare.EndTurn();
         }
 
-        // At least one brave actually armed itself (the path ran), proving the test exercises the equipâ€¦
+        // At least one brave actually armed itself (the path ran), proving the test exercises the equip…
         Assert.Contains(equips.NativeUnits, b => b.RoleId != DefaultRole);
-        // â€¦yet the equipping nation drew only on its own stream â€” the human's stream 0 and own state are untouched.
+        // …yet the equipping nation drew only on its own stream — the human's stream 0 and own state are untouched.
         Assert.Equal(bare.RandomState, equips.RandomState);
         Assert.Equal(bare.HumanPlayer.Gold, equips.HumanPlayer.Gold);
         Assert.Equal(bare.HumanPlayer.Immigration, equips.HumanPlayer.Immigration);
@@ -391,7 +391,7 @@ public class NativeAiTests
         Assert.NotEqual(SaveGame.From(bare).ToJson(), SaveGame.From(equips).ToJson());
     }
 
-    // â”€â”€ Native dragoon promotion + strength-ordered securing (86d3c9vzp, FreeCol equipBraves) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Native dragoon promotion + strength-ordered securing (86d3c9vzp, FreeCol equipBraves) ──────────────────────
 
     private const string ArmedBrave = "model.role.armedBrave";
     private const string NativeDragoon = "model.role.nativeDragoon";
@@ -411,7 +411,7 @@ public class NativeAiTests
         // FreeCol favours the strongest affordable military role: an unarmed brave with both halves in stock becomes a
         // native dragoon outright (not a coin-flip between armed and mounted).
         Game game = Game.New(Classic, seed: 7);
-        ClearAllStock(game); // controlled stock: deposit exactly both halves (the generator now seeds arms â€” 86d3e49gq)
+        ClearAllStock(game); // controlled stock: deposit exactly both halves (the generator now seeds arms — 86d3e49gq)
         Unit brave = game.NativeUnits.First();
         Assert.Equal(DefaultRole, brave.RoleId);
         NativeSettlement home = HomeOf(game, brave);
@@ -422,7 +422,7 @@ public class NativeAiTests
         game.EndTurn();
 
         Assert.Equal(NativeDragoon, brave.RoleId);   // armed + mounted in one step
-        Assert.Equal(0, home.StockOf(Muskets));      // both halves drawn from the campâ€¦
+        Assert.Equal(0, home.StockOf(Muskets));      // both halves drawn from the camp…
         Assert.Equal(0, home.StockOf(Horses));
     }
 
@@ -430,21 +430,21 @@ public class NativeAiTests
     public void AThreatenedCamp_PromotesAnAlreadyArmedBraveToDragoon_ChargingOnlyTheMissingHorses()
     {
         // The headline new facet: a partially-equipped (armed) brave is promoted to full dragoon by adding only the
-        // half it lacks â€” the camp is charged the horses, NOT a fresh set of muskets (FreeCol getGoodsDifference).
+        // half it lacks — the camp is charged the horses, NOT a fresh set of muskets (FreeCol getGoodsDifference).
         Game game = Game.New(Classic, seed: 7);
-        ClearAllStock(game); // controlled stock: only the missing half (the generator now seeds arms â€” 86d3e49gq)
+        ClearAllStock(game); // controlled stock: only the missing half (the generator now seeds arms — 86d3e49gq)
         Unit brave = game.NativeUnits.First();
         brave.RoleId = ArmedBrave; // already armed (has its muskets)
         brave.RoleCount = 1;
         NativeSettlement home = HomeOf(game, brave);
         EnrageNationOf(game, brave);
-        home.AddStock(Horses, 25); // only the missing half is in stock â€” no muskets at all
+        home.AddStock(Horses, 25); // only the missing half is in stock — no muskets at all
 
         game.EndTurn();
 
         Assert.Equal(NativeDragoon, brave.RoleId); // promoted using just the horses
-        Assert.Equal(0, home.StockOf(Horses));     // the missing half was consumedâ€¦
-        Assert.Equal(0, home.StockOf(Muskets));    // â€¦and no muskets were charged (it kept the ones it had)
+        Assert.Equal(0, home.StockOf(Horses));     // the missing half was consumed…
+        Assert.Equal(0, home.StockOf(Muskets));    // …and no muskets were charged (it kept the ones it had)
     }
 
     [Fact]
@@ -455,12 +455,12 @@ public class NativeAiTests
         // dragoon, consuming the lone 25 horses; a weaker unarmed brave at the same camp is then left with nothing it
         // can equip from (no muskets, horses gone) and stays unarmed.
         Game game = Game.New(Classic, seed: 7);
-        ClearAllStock(game); // scarce-stock premise: deposit just the lone good (the generator now seeds arms â€” 86d3e49gq)
+        ClearAllStock(game); // scarce-stock premise: deposit just the lone good (the generator now seeds arms — 86d3e49gq)
         NativeSettlement home = game.NativeSettlements.First(s => s.Position.Neighbours().Count(n => Free(game, n)) >= 2);
         string nation = home.NationTypeId;
         var spots = home.Position.Neighbours().Where(n => Free(game, n)).Take(2).ToList();
         Unit strong = game.SpawnUnit(Classic.Unit("model.unit.brave"), spots[0], nation);
-        strong.RoleId = ArmedBrave; // already armed â†’ stronger than an unarmed brave
+        strong.RoleId = ArmedBrave; // already armed → stronger than an unarmed brave
         strong.RoleCount = 1;
         Unit weak = game.SpawnUnit(Classic.Unit("model.unit.brave"), spots[1], nation); // unarmed
         Assert.True(HomeOf(game, strong) == home && HomeOf(game, weak) == home); // both home this camp
@@ -469,8 +469,8 @@ public class NativeAiTests
 
         game.EndTurn();
 
-        Assert.Equal(NativeDragoon, strong.RoleId); // the strongest brave was secured firstâ€¦
-        Assert.Equal(DefaultRole, weak.RoleId);     // â€¦leaving nothing for the weaker one
+        Assert.Equal(NativeDragoon, strong.RoleId); // the strongest brave was secured first…
+        Assert.Equal(DefaultRole, weak.RoleId);     // …leaving nothing for the weaker one
         Assert.Equal(0, home.StockOf(Horses));      // the lone stock went to the strong brave
     }
 
@@ -478,20 +478,20 @@ public class NativeAiTests
     public void NativeDragoonPromotion_IsRngFree_HumanStream0ByteStable()
     {
         // ADR-009 for the deepened equip path: a game whose camps promote braves to dragoon keeps the human's stream 0
-        // byte-identical to a game whose camps can't equip â€” the strongest-affordable choice is deterministic (no draw).
+        // byte-identical to a game whose camps can't equip — the strongest-affordable choice is deterministic (no draw).
         Game equips = Game.New(Classic, seed: 2024);
         Game bare = Game.New(Classic, seed: 2024);
         foreach (Game g in new[] { equips, bare })
         {
-            ClearAllStock(g); // start both from empty so "bare" genuinely can't equip (the generator seeds arms â€” 86d3e49gq)
+            ClearAllStock(g); // start both from empty so "bare" genuinely can't equip (the generator seeds arms — 86d3e49gq)
             foreach (NativeSettlement s in g.NativeSettlements)
             {
-                g.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // both enraged so the native paths run identicallyâ€¦
+                g.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // both enraged so the native paths run identically…
             }
         }
         foreach (NativeSettlement s in equips.NativeSettlements)
         {
-            s.AddStock(Muskets, 75); // â€¦but only this game's camps can arm AND mount (â†’ dragoons)
+            s.AddStock(Muskets, 75); // …but only this game's camps can arm AND mount (→ dragoons)
             s.AddStock(Horses, 75);
         }
 
@@ -502,12 +502,12 @@ public class NativeAiTests
         }
 
         Assert.Contains(equips.NativeUnits, b => b.RoleId == NativeDragoon); // at least one dragoon was made (path ran)
-        Assert.Equal(bare.RandomState, equips.RandomState);                  // â€¦yet stream 0 is untouched (RNG-free equip)
+        Assert.Equal(bare.RandomState, equips.RandomState);                  // …yet stream 0 is untouched (RNG-free equip)
         Assert.Equal(bare.HumanPlayer.Gold, equips.HumanPlayer.Gold);
         Assert.NotEqual(SaveGame.From(bare).ToJson(), SaveGame.From(equips).ToJson()); // the native streams genuinely diverged
     }
 
-    // â”€â”€ Arms/horse redistribution between camps (86d3c9vzp, FreeCol secureSettlements arms-spreading) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Arms/horse redistribution between camps (86d3c9vzp, FreeCol secureSettlements arms-spreading) ───────────────
 
     /// <summary>The native player for a nation type id.</summary>
     private static Player NationPlayer(Game game, string nationId) =>
@@ -526,20 +526,20 @@ public class NativeAiTests
     public void ACalmStockedCamp_ShipsArmsToAThreatenedBareCamp()
     {
         // A calm, well-stocked camp sends one half-unit (25) of its surplus muskets to a threatened same-nation camp
-        // that has none â€” the tribe's arms reach the front line (FreeCol secureSettlements arms-spreading).
+        // that has none — the tribe's arms reach the front line (FreeCol secureSettlements arms-spreading).
         Game game = Game.New(Classic, seed: 7);
-        ClearAllStock(game); // controlled stock: only the donor is stocked (the generator now seeds arms â€” 86d3e49gq)
+        ClearAllStock(game); // controlled stock: only the donor is stocked (the generator now seeds arms — 86d3e49gq)
         (string nation, var camps) = NationWithTwoCamps(game);
         NativeSettlement donor = camps[0];
         NativeSettlement recipient = camps[1];
-        donor.AddStock(Muskets, 60);                     // surplus (â‰¥ 2 half-units after keeping one for itself)
+        donor.AddStock(Muskets, 60);                     // surplus (≥ 2 half-units after keeping one for itself)
         game.ChangeNativeAlarm(recipient, NativeSettlement.MaxAlarm); // the recipient is threatened (Hateful)
-        Assert.True(donor.AlarmLevel < AlarmLevel.Displeased);        // â€¦the donor stays calm (peaceful = 0)
+        Assert.True(donor.AlarmLevel < AlarmLevel.Displeased);        // …the donor stays calm (peaceful = 0)
 
         game.RedistributeArmsToThreatenedSettlements(NationPlayer(game, nation));
 
         Assert.Equal(35, donor.StockOf(Muskets));     // shipped one half-unit (25) away
-        Assert.Equal(25, recipient.StockOf(Muskets)); // â€¦which the bare front-line camp received
+        Assert.Equal(25, recipient.StockOf(Muskets)); // …which the bare front-line camp received
     }
 
     [Fact]
@@ -548,7 +548,7 @@ public class NativeAiTests
         // End-to-end through EndTurn: a bare threatened camp receives muskets from a calm stocked camp and arms one of
         // its own braves the SAME turn (redistribution runs before equipBraves), drawing the delivered stock down to 0.
         Game game = Game.New(Classic, seed: 7);
-        ClearAllStock(game); // controlled: the recipient must start bare so the delivery is what arms it (generator seeds arms â€” 86d3e49gq)
+        ClearAllStock(game); // controlled: the recipient must start bare so the delivery is what arms it (generator seeds arms — 86d3e49gq)
         (string nation, var camps) = NationWithTwoCamps(game);
         NativeSettlement recipient = camps[0];                    // its game-spawned brave will arm from the delivery
         NativeSettlement donor = camps.First(s => s.Id != recipient.Id);
@@ -568,9 +568,9 @@ public class NativeAiTests
     [Fact]
     public void RedistributeArms_DoesNothing_WhenNoCampIsThreatened()
     {
-        // No threatened recipient â†’ a calm tribe keeps its weapons in store (no movement).
+        // No threatened recipient → a calm tribe keeps its weapons in store (no movement).
         Game game = Game.New(Classic, seed: 7);
-        ClearAllStock(game); // controlled stock counts (the generator now seeds arms â€” 86d3e49gq)
+        ClearAllStock(game); // controlled stock counts (the generator now seeds arms — 86d3e49gq)
         (string nation, var camps) = NationWithTwoCamps(game);
         camps[0].AddStock(Muskets, 100);
 
@@ -586,12 +586,12 @@ public class NativeAiTests
         // A donor must be CALM: a threatened, stocked camp keeps its arms for its own braves (it isn't a donor), so a
         // second threatened bare camp gets nothing from it.
         Game game = Game.New(Classic, seed: 7);
-        ClearAllStock(game); // controlled stock counts (the generator now seeds arms â€” 86d3e49gq)
+        ClearAllStock(game); // controlled stock counts (the generator now seeds arms — 86d3e49gq)
         (string nation, var camps) = NationWithTwoCamps(game);
         camps[0].AddStock(Muskets, 100);
         foreach (NativeSettlement s in camps)
         {
-            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // ALL threatened â†’ no calm donor exists
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // ALL threatened → no calm donor exists
         }
 
         game.RedistributeArmsToThreatenedSettlements(NationPlayer(game, nation));
@@ -605,7 +605,7 @@ public class NativeAiTests
     {
         // Horses spread the same way as muskets, and the whole transfer draws no randomness (ADR-009).
         Game game = Game.New(Classic, seed: 7);
-        ClearAllStock(game); // controlled stock counts (the generator now seeds arms â€” 86d3e49gq)
+        ClearAllStock(game); // controlled stock counts (the generator now seeds arms — 86d3e49gq)
         (string nation, var camps) = NationWithTwoCamps(game);
         NativeSettlement donor = camps[0];
         NativeSettlement recipient = camps[1];
@@ -617,23 +617,23 @@ public class NativeAiTests
 
         Assert.Equal(25, recipient.StockOf(Horses));   // a half-unit of horses delivered
         Assert.Equal(25, donor.StockOf(Horses));
-        Assert.Equal(before, game.RandomState);        // RNG-free â†’ human stream 0 untouched
+        Assert.Equal(before, game.RandomState);        // RNG-free → human stream 0 untouched
     }
 
     [Fact]
     public void RedistributeArms_DrawsOnlyOnNonHumanStreams_HumanStream0ByteStable()
     {
         // The decisive ADR-009 guard: a game whose tribes spread arms (and then arm braves) keeps the human's stream 0
-        // byte-identical to a game whose tribes hold no stock â€” only the native state diverges.
+        // byte-identical to a game whose tribes hold no stock — only the native state diverges.
         Game spreads = Game.New(Classic, seed: 4242);
         Game bare = Game.New(Classic, seed: 4242);
-        ClearAllStock(spreads); // start both from empty so "bare" genuinely holds no stock (the generator seeds arms â€” 86d3e49gq)
+        ClearAllStock(spreads); // start both from empty so "bare" genuinely holds no stock (the generator seeds arms — 86d3e49gq)
         ClearAllStock(bare);
         foreach (NativeSettlement s in spreads.NativeSettlements)
         {
             s.AddStock(Muskets, 60); // every spreading camp is stocked
         }
-        // Enrage all but the per-nation lowest-id camp in BOTH games (so the native-turn paths run identically â€” the
+        // Enrage all but the per-nation lowest-id camp in BOTH games (so the native-turn paths run identically — the
         // lowest-id camp stays a calm donor), but only the spreading game actually has stock to move/equip.
         foreach (Game g in new[] { spreads, bare })
         {
@@ -657,7 +657,7 @@ public class NativeAiTests
         Assert.NotEqual(SaveGame.From(bare).ToJson(), SaveGame.From(spreads).ToJson()); // native state genuinely diverged
     }
 
-    // â”€â”€ AI scout-chief + per-player first contact (86d3c9vta slice, save v44) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── AI scout-chief + per-player first contact (86d3c9vta slice, save v44) ──────────────────────────────────────
 
     private static NativeSettlement SettlementWithFreeNeighbour(Game game) =>
         game.NativeSettlements.First(s => s.Position.Neighbours().Any(n => Free(game, n)));
@@ -688,7 +688,7 @@ public class NativeAiTests
         {
             game.Disband(u); // clear the power's starting units so only what we stage acts
         }
-        // Colonies up to MaxAiColonies â†’ the power is at its cap, so its remaining colonist explores/visits not founds.
+        // Colonies up to MaxAiColonies → the power is at its cap, so its remaining colonist explores/visits not founds.
         var taken = new System.Collections.Generic.List<Position>();
         for (int i = 0; i < Game.MaxAiColonies; i++)
         {
@@ -735,6 +735,6 @@ public class NativeAiTests
     public void ANoForeignVisitGame_OmitsTheVisitedByPowersField()
     {
         string json = SaveGame.From(Game.New(Classic, seed: 7)).ToJson();
-        Assert.DoesNotContain("VisitedByPowers", json); // additive: omitted â†’ byte-identical to v43 but for the version
+        Assert.DoesNotContain("VisitedByPowers", json); // additive: omitted → byte-identical to v43 but for the version
     }
 }

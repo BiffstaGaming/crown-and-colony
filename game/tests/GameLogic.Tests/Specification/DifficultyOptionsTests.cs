@@ -1,4 +1,4 @@
-﻿using System.Xml.Linq;
+using System.Xml.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
@@ -64,7 +64,7 @@ public class DifficultyOptionsTests
     [Fact]
     public void ParseDifficulty_FallsBackPerOption_WhenAnOptionIsMissingFromTheLevel()
     {
-        // The level exists but omits foundingFatherFactor â†’ that option falls back to the medium default (40).
+        // The level exists but omits foundingFatherFactor → that option falls back to the medium default (40).
         XElement root = XElement.Parse(
             "<freecol-specification><optionGroup id='model.difficulty.medium'>" +
             "  <integerOption id='model.option.unitsThatUseNoBells' value='2' />" +
@@ -74,7 +74,7 @@ public class DifficultyOptionsTests
         Assert.Equal(2, d.UnitsThatUseNoBells);
     }
 
-    // â”€â”€ Real classic spec + behaviour preservation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Real classic spec + behaviour preservation ───────────────────────────────────────────────────────────────
 
     [Fact]
     public void ClassicRuleset_ParsesTheMediumDifficultyValues()
@@ -102,11 +102,11 @@ public class DifficultyOptionsTests
         // Guards the duplication: the hardcoded ClassicMedium fallback must equal the spec's medium level, so a
         // per-option fallback can never silently diverge from the data as more options are routed through.
         DifficultyOptions parsed = Ruleset.LoadClassic().Difficulty;
-        // The monarch's war-support force is a list (record equality is reference-based) â€” compare its contentsâ€¦
+        // The monarch's war-support force is a list (record equality is reference-based) — compare its contents…
         Assert.Equal(
             DifficultyOptions.ClassicMedium.Monarch.WarSupportForce.Select(b => (b.UnitTypeId, b.RoleId, b.Number)),
             parsed.Monarch.WarSupportForce.Select(b => (b.UnitTypeId, b.RoleId, b.Number)));
-        // â€¦then equate the whole record by normalising that one list member to the same instance.
+        // …then equate the whole record by normalising that one list member to the same instance.
         Assert.Equal(
             DifficultyOptions.ClassicMedium,
             parsed with { Monarch = parsed.Monarch with { WarSupportForce = DifficultyOptions.ClassicMedium.Monarch.WarSupportForce } });
@@ -115,12 +115,12 @@ public class DifficultyOptionsTests
     [Fact]
     public void FoundingFatherCost_IsUnchanged_RoutingThroughDifficulty()
     {
-        // The first father costs `factor` (40) â€” same as before the const was routed through Ruleset.Difficulty.
+        // The first father costs `factor` (40) — same as before the const was routed through Ruleset.Difficulty.
         Game game = Game.New(Ruleset.LoadClassic(), 0xC0FFEEUL);
         Assert.Equal(40, game.TotalFoundingFatherCost());
     }
 
-    // â”€â”€ Government limits (slice 2) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Government limits (slice 2) ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void ParseDifficulty_ReadsGovernmentLimits_ByTheirOwnIds()
@@ -145,16 +145,16 @@ public class DifficultyOptionsTests
     [Fact]
     public void GovernmentLimits_DriveTheColonyProductionBonus()
     {
-        // 6 tories, SoL 0. At medium (bad limit 6) that is not "bad government" (6 is not > 6) â†’ bonus 0.
+        // 6 tories, SoL 0. At medium (bad limit 6) that is not "bad government" (6 is not > 6) → bonus 0.
         var colony = new Colony(1, "Gov", new Position(0, 0), population: 6);
         Assert.Equal(0, colony.ProductionBonus);
 
-        // A harder level tightens the bad limit to 5 â†’ 6 tories now trip "bad government" â†’ âˆ’1. Proves the routing.
+        // A harder level tightens the bad limit to 5 → 6 tories now trip "bad government" → −1. Proves the routing.
         colony.Government = new GovernmentLimits(VeryGood: 100, Good: 50, Bad: 5, VeryBad: 9);
         Assert.Equal(-1, colony.ProductionBonus);
     }
 
-    // â”€â”€ Natives group (slice 3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Natives group (slice 3) ──────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void ParseDifficulty_ReadsTheNativesGroupOptions_ByTheirOwnIds()
@@ -168,8 +168,8 @@ public class DifficultyOptionsTests
             "</optionGroup></freecol-specification>");
         DifficultyOptions d = Ruleset.ParseDifficulty(root);
         Assert.Equal(70, d.LandPriceFactor);
-        Assert.Equal(3, d.NativeDemands);  // raw â€” the +1 demand-dx and (5âˆ’x)Â·50 relief transforms live in Game
-        Assert.Equal(1, d.RumourDifficulty); // raw â€” the 10âˆ’x reward-dx transform lives in Game
+        Assert.Equal(3, d.NativeDemands);  // raw — the +1 demand-dx and (5−x)·50 relief transforms live in Game
+        Assert.Equal(1, d.RumourDifficulty); // raw — the 10−x reward-dx transform lives in Game
     }
 
     [Fact]
@@ -181,7 +181,7 @@ public class DifficultyOptionsTests
         Assert.Equal(2, d.RumourDifficulty);
     }
 
-    // â”€â”€ Percentage + remaining immigration options (slice 4) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Percentage + remaining immigration options (slice 4) ─────────────────────────────────────────────────────
 
     [Fact]
     public void ParseDifficulty_ReadsPercentageAndImmigrationOptions_ByTheirOwnIds()
@@ -196,7 +196,7 @@ public class DifficultyOptionsTests
             "  <integerOption id='model.option.priceIncrease.artillery' value='150' />" +
             "</optionGroup></freecol-specification>");
         DifficultyOptions d = Ruleset.ParseDifficulty(root);
-        Assert.Equal(30, d.RumourBadPercent);          // percentageOption â€” read via PctOption, not the integer path
+        Assert.Equal(30, d.RumourBadPercent);          // percentageOption — read via PctOption, not the integer path
         Assert.Equal(40, d.RumourGoodPercent);
         Assert.Equal(3, d.CrossesIncrement);
         Assert.Equal(20, d.RecruitPriceIncrease);
@@ -216,7 +216,7 @@ public class DifficultyOptionsTests
         Assert.Equal(100, d.ArtilleryPriceIncrease);
     }
 
-    // â”€â”€ Treasure-transport fee (slice 5) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Treasure-transport fee (slice 5) ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void ParseDifficulty_ReadsTheTreasureTransportFee_ByItsOwnId()
@@ -234,7 +234,7 @@ public class DifficultyOptionsTests
         Assert.Equal(60, Ruleset.LoadClassic().Difficulty.TreasureTransportFee);
     }
 
-    // â”€â”€ Foreign-power AI tuning (86d3drn56: colony cap, Europe spend floor, seek/travel ladder) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Foreign-power AI tuning (86d3drn56: colony cap, Europe spend floor, seek/travel ladder) ──────────────────────
     // A faithful-subset: FreeCol hardcodes all three (no model.difficulty.* option), so they are level-invariant. The
     // tests pin the classic-medium values so a future change to the AI constants stays a deliberate, visible edit.
 
@@ -271,7 +271,7 @@ public class DifficultyOptionsTests
     public void AiTuning_IsLevelInvariant_AcrossEveryClassicLevel(string levelId)
     {
         // No FreeCol option scales these, so every level reads the same classic-medium values (data-overridable, but the
-        // shipped spec never overrides them) â€” proving the faithful-subset claim, not just the default.
+        // shipped spec never overrides them) — proving the faithful-subset claim, not just the default.
         AiTuning ai = Ruleset.LoadClassic(levelId).Difficulty.Ai;
         Assert.Equal(3, ai.MaxColonies);
         Assert.Equal(1500, ai.EuropeSpendFloor);
@@ -285,9 +285,9 @@ public class DifficultyOptionsTests
         Assert.Equal(Ruleset.LoadClassic().Difficulty.Ai.MaxColonies, Game.MaxAiColonies);
     }
 
-    // â”€â”€ Native-tension tuning (86d3drpgg: tension deltas / decay / gift range routed to data) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Native-tension tuning (86d3drpgg: tension deltas / decay / gift range routed to data) ─────────────────────────
     // A faithful-subset like AiTuning: FreeCol keeps all of these as engine consts (Tension.java / IndianSettlement.java /
-    // ServerPlayer), no model.difficulty.* option â€” so they are level-invariant. The tests pin the classic-medium values
+    // ServerPlayer), no model.difficulty.* option — so they are level-invariant. The tests pin the classic-medium values
     // so a future drift stays a deliberate, visible edit, and prove the runtime routes through them (byte-identical).
 
     [Fact]
@@ -330,7 +330,7 @@ public class DifficultyOptionsTests
     public void NativeTension_IsLevelInvariant_AcrossEveryClassicLevel(string levelId)
     {
         // No FreeCol option scales these, so every level reads the same classic-medium values (data-overridable, but the
-        // shipped spec never overrides them) â€” proving the faithful-subset claim, not just the default.
+        // shipped spec never overrides them) — proving the faithful-subset claim, not just the default.
         Assert.Equal(NativeTensionOptions.ClassicMedium, Ruleset.LoadClassic(levelId).Difficulty.NativeTension);
     }
 
@@ -338,7 +338,7 @@ public class DifficultyOptionsTests
     public void NativeTension_PinsMatchTheNativeSettlementSourceConstants()
     {
         // The record defaults reference the FreeCol-source-of-truth consts on NativeSettlement (the drift-guarded home),
-        // so routing is value-preserving â€” this proves the two never diverge.
+        // so routing is value-preserving — this proves the two never diverge.
         NativeTensionOptions t = NativeTensionOptions.ClassicMedium;
         Assert.Equal(NativeSettlement.TensionAddMinor, t.AddMinor);
         Assert.Equal(NativeSettlement.TensionAddNormal, t.AddNormal);
@@ -350,7 +350,7 @@ public class DifficultyOptionsTests
         Assert.Equal(NativeSettlement.SurrenderedAlarm, t.Surrendered);
     }
 
-    // â”€â”€ Player-selectable + persisted difficulty level (86d3c9y08) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Player-selectable + persisted difficulty level (86d3c9y08) ───────────────────────────────────────────────────
 
     [Fact]
     public void DifficultyLevels_OffersTheFiveClassicLevels_MediumDefault()
@@ -415,7 +415,7 @@ public class DifficultyOptionsTests
     [Fact]
     public void DefaultDifficulty_OmitsTheLevelToken_AndStaysCurrent()
     {
-        // A default (medium) game writes no DifficultyLevel token â†’ byte-identical to a v45 default, and the version is current.
+        // A default (medium) game writes no DifficultyLevel token → byte-identical to a v45 default, and the version is current.
         string json = SaveGame.From(Game.New(Ruleset.LoadClassic(), seed: 5)).ToJson();
         Assert.DoesNotContain("\"DifficultyLevel\"", json);
         Assert.Equal(63, SaveGame.CurrentVersion);

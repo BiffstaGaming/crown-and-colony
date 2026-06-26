@@ -69,7 +69,9 @@ public static class MapGenerator
     /// All three default to the shipped values (<see cref="DefaultLandMassFraction"/> + <see cref="LandStyle.Continent"/>
     /// + great rivers OFF), so a call that omits them is byte-identical to the historical generator (the default new game
     /// and its goldens are unchanged): only the land stage (<see cref="GrowContinent"/> vs <see cref="GrowSeparateMasses"/>)
-    /// differs by style, and great rivers are a pure RNG-free post-process (no draw shift) applied only when enabled;
+    /// differs by style, and great rivers are an RNG-free post-process applied only when enabled — it draws no RNG itself,
+    /// so the default (off) game is byte-identical; enabling it retypes some river tiles to water, which changes the
+    /// terrain-dependent bonus-resource placement on those tiles, but the result stays deterministic per seed;
     /// everything else (climate, mountains, high seas, rivers, resources, regions) is shared.
     /// </summary>
     public static GameMap Generate(

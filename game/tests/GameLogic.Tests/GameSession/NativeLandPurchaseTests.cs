@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
@@ -10,7 +10,7 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 
 /// <summary>
 /// Native land purchase (<c>86d3c9tha</c>, FreeCol <c>Player.getLandPrice</c> / <c>ServerPlayer.csClaimLand</c>):
-/// a native-owned tile is bought (gold to the tribe â€” we keep no native treasury, so it just leaves the buyer) or
+/// a native-owned tile is bought (gold to the tribe — we keep no native treasury, so it just leaves the buyer) or
 /// taken (+200 alarm); Peter Minuit makes it free + peaceful. A claimed tile becomes a saved override (v26) that
 /// the native-ownership re-derivation honours so it never reverts to the natives.
 /// </summary>
@@ -26,7 +26,7 @@ public class NativeLandPurchaseTests
     private const string FoodId = "model.goods.food"; // the primary-food aggregate (getPrimaryFoodType)
 
     // Land is valued from the UNMODIFIED tile potential (no founding-father boosts) of every good EXCEPT the
-    // primary-food aggregate (FreeCol gt != getPrimaryFoodType) â€” grain and fish ARE counted. Mirror that here.
+    // primary-food aggregate (FreeCol gt != getPrimaryFoodType) — grain and fish ARE counted. Mirror that here.
     private static int PricedSum(Game game, Position tile) =>
         Classic.GoodsTypes.Where(g => g.Id != FoodId).Sum(g => game.TileYieldPotential(tile, g.Id));
 
@@ -74,7 +74,7 @@ public class NativeLandPurchaseTests
     [Fact]
     public void LandPrice_IgnoresFoundingFatherYieldModifiers()
     {
-        // Henry Hudson (+100% furs) must NOT inflate the land price â€” FreeCol values land from the unmodified
+        // Henry Hudson (+100% furs) must NOT inflate the land price — FreeCol values land from the unmodified
         // tile potential (getPotentialProduction with a null owner), not the acting player's father-boosted yield.
         Game game = Game.New(Classic, Seed);
         Position furTile = game.Map.AllPositions()
@@ -85,7 +85,7 @@ public class NativeLandPurchaseTests
 
         game.HumanPlayer.CongressList.Add("model.foundingFather.henryHudson");
 
-        Assert.Equal(before, game.LandPrice(furTile)); // unchanged â€” founding fathers do not value land
+        Assert.Equal(before, game.LandPrice(furTile)); // unchanged — founding fathers do not value land
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public class NativeLandPurchaseTests
         (Game game, Position tile, _) = Staged();
         Assert.True(game.LandPrice(tile) > 0); // priced before Minuit
         game.HumanPlayer.CongressList.Add(Minuit);
-        Assert.Equal(0, game.LandPrice(tile)); // Minuit's landPaymentModifier âˆ’100% â†’ free
+        Assert.Equal(0, game.LandPrice(tile)); // Minuit's landPaymentModifier −100% → free
     }
 
     // ---- Pay ----
@@ -141,7 +141,7 @@ public class NativeLandPurchaseTests
         game.HumanPlayer.CongressList.Add(Minuit);
         game.HumanPlayer.Gold = 5;
 
-        game.ClaimLandByPaying(tile); // price 0 â†’ no gold needed
+        game.ClaimLandByPaying(tile); // price 0 → no gold needed
 
         Assert.Equal(5, game.HumanPlayer.Gold);
         Assert.True(game.Map.IsClaimedFromNatives(tile));

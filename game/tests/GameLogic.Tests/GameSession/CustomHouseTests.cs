@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
@@ -10,7 +10,7 @@ using Xunit;
 namespace CrownAndColony.GameLogic.Tests.GameSession;
 
 /// <summary>
-/// Custom house â€” building/export settings + the auto-export mode (<c>86d3c9ru3</c>): the custom house grants the
+/// Custom house — building/export settings + the auto-export mode (<c>86d3c9ru3</c>): the custom house grants the
 /// colony the export ability (<c>model.ability.export</c>), each colony holds per-good export settings (exported +
 /// retain level, default 50), and the game carries an <see cref="AutoExportMode"/> (default <c>PerGood</c>).
 /// Persisted in save v28. The per-turn auto-sell is the next slice (<c>86d3c9rx2</c>).
@@ -43,12 +43,12 @@ public class CustomHouseTests
         Game game = Game.New(Classic, Seed);
         Colony colony = FoundColony(game);
 
-        Assert.Equal(new Colony.ExportSetting(false, 50), colony.ExportOf(Sugar)); // absent â†’ default
+        Assert.Equal(new Colony.ExportSetting(false, 50), colony.ExportOf(Sugar)); // absent → default
         game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 80);
         Assert.Equal(new Colony.ExportSetting(true, 80), colony.ExportOf(Sugar));
         Assert.Contains(Sugar, colony.Exports.Keys);
 
-        game.SetColonyExport(colony, Sugar, exported: false, exportLevel: 50); // back to default â†’ removed
+        game.SetColonyExport(colony, Sugar, exported: false, exportLevel: 50); // back to default → removed
         Assert.DoesNotContain(Sugar, colony.Exports.Keys);
     }
 
@@ -59,7 +59,7 @@ public class CustomHouseTests
         Colony colony = FoundColony(game);
         game.SetColonyExport(colony, "model.goods.food", exported: true); // FreeCol's custom house CAN export food (opt-in)
         Assert.True(colony.ExportOf("model.goods.food").Exported);
-        Assert.Throws<InvalidMoveException>(() => game.SetColonyExport(colony, "model.goods.hammers", true)); // no market â†’ not tradeable
+        Assert.Throws<InvalidMoveException>(() => game.SetColonyExport(colony, "model.goods.hammers", true)); // no market → not tradeable
     }
 
     // ---- Mode ----
@@ -137,7 +137,7 @@ public class CustomHouseTests
         game.EndTurn();
 
         Assert.Equal(50, colony.StoreOf(Sugar));          // surplus over the level is shipped to Europe
-        Assert.True(game.HumanPlayer.Gold > goldBefore);  // â€¦for gold (a spill would credit nothing)
+        Assert.True(game.HumanPlayer.Gold > goldBefore);  // …for gold (a spill would credit nothing)
     }
 
     [Fact]
@@ -159,7 +159,7 @@ public class CustomHouseTests
     {
         (Game game, Colony colony) = CustomHouseColony();
         game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 100);
-        colony.AddGoods(Sugar, 30);                    // below the retain level â†’ no surplus
+        colony.AddGoods(Sugar, 30);                    // below the retain level → no surplus
         int goldBefore = game.HumanPlayer.Gold;
 
         game.EndTurn();
@@ -173,8 +173,8 @@ public class CustomHouseTests
     {
         (Game game, Colony colony) = CustomHouseColony();
         game.SetAutoExportMode(AutoExportMode.ExportAllOverLevel); // no per-good flag needed
-        colony.AddGoods(Sugar, 90);                                // non-food â†’ eligible
-        colony.AddGoods(Food, 150 - colony.Food);                 // food â†’ protected, and below the 200 growth bar
+        colony.AddGoods(Sugar, 90);                                // non-food → eligible
+        colony.AddGoods(Food, 150 - colony.Food);                 // food → protected, and below the 200 growth bar
         int goldBefore = game.HumanPlayer.Gold;
 
         game.EndTurn();
@@ -202,7 +202,7 @@ public class CustomHouseTests
     public void AutoSell_FoodExport_DoesNotBlockGrowth()
     {
         // The customs sale runs AFTER eat/grow (FreeCol order), so a colony at the growth threshold still births its
-        // colonist even with food flagged for export â€” the sale only ships whatever food is left after the birth.
+        // colonist even with food flagged for export — the sale only ships whatever food is left after the birth.
         // (With the sale before growth, the food would be sold down to 50 first and the colony would never grow.)
         (Game game, Colony colony) = CustomHouseColony();
         game.SetColonyExport(colony, Food, exported: true, exportLevel: 50);
@@ -216,7 +216,7 @@ public class CustomHouseTests
 
     // ---- Sale notice (86d3c9t7z): transient per-turn feedback for the HUD ----
     //
-    // The custom house sells silently to Europe â€” the player gets no feedback without these notices. Each sale from
+    // The custom house sells silently to Europe — the player gets no feedback without these notices. Each sale from
     // a human colony records a CustomHouseSaleNotice (colony id/name + goods + amount + after-tax gold); the list is
     // transient (cleared at the start of every EndTurn, never saved).
 
@@ -234,8 +234,8 @@ public class CustomHouseTests
         Assert.Equal(colony.Id, notice.ColonyId);
         Assert.Equal(colony.Name, notice.ColonyName);
         Assert.Equal(Sugar, notice.GoodsId);
-        // At least the 40 surplus we added (90 âˆ’ 50) ships; the colony may also auto-produce sugar this turn
-        // (map-dependent on the start tile), which ships on top â€” so assert the floor, not an exact map-pinned figure.
+        // At least the 40 surplus we added (90 − 50) ships; the colony may also auto-produce sugar this turn
+        // (map-dependent on the start tile), which ships on top — so assert the floor, not an exact map-pinned figure.
         Assert.True(notice.Amount >= 40, $"expected the >=40 surplus to ship; was {notice.Amount}");
         Assert.True(notice.Gold > 0);
         Assert.Equal(notice.Gold, game.HumanPlayer.Gold - goldBefore); // matches the gold actually credited
@@ -246,7 +246,7 @@ public class CustomHouseTests
     {
         (Game game, Colony colony) = CustomHouseColony();
         game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 100);
-        colony.AddGoods(Sugar, 30);                       // below the retain level â†’ nothing ships
+        colony.AddGoods(Sugar, 30);                       // below the retain level → nothing ships
 
         game.EndTurn();
 
@@ -263,7 +263,7 @@ public class CustomHouseTests
 
         game.EndTurn();
 
-        Assert.Empty(game.CustomHouseSaleNotices);       // no building â†’ no sale â†’ no notice
+        Assert.Empty(game.CustomHouseSaleNotices);       // no building → no sale → no notice
     }
 
     [Fact]
@@ -284,10 +284,10 @@ public class CustomHouseTests
     // ---- Boycott smuggling (86d3e4bac): the custom house always sells boycotted goods in classic ----
     //
     // FreeCol's customIgnoreBoycott (classic default true) makes the custom house a smuggler: a boycotted good still
-    // sells, with tax and price movement, no extra penalty. Critically this also fixes a latent EndTurn crash â€” the
+    // sells, with tax and price movement, no extra penalty. Critically this also fixes a latent EndTurn crash — the
     // auto-sell used to call the throwing manual-sale path on every eligible good, so a boycotted custom-house good
-    // would throw InvalidMoveException during EndTurn. The fix routes the boycott decision through the option: on â†’
-    // smuggle (sell); off â†’ skip safely (never enter the sell path, never throw).
+    // would throw InvalidMoveException during EndTurn. The fix routes the boycott decision through the option: on →
+    // smuggle (sell); off → skip safely (never enter the sell path, never throw).
 
     [Fact]
     public void GameOption_CustomIgnoreBoycott_ParsesClassicTrue_AndSeamCanOverride()
@@ -301,7 +301,7 @@ public class CustomHouseTests
     [Fact]
     public void AutoSell_BoycottedGood_Smuggles_WhenCustomIgnoreBoycottOn_AndEndTurnNeverThrows()
     {
-        // Classic default (on): a boycotted, exported good still sells through the custom house â€” and EndTurn
+        // Classic default (on): a boycotted, exported good still sells through the custom house — and EndTurn
         // completes (the latent crash is gone).
         (Game game, Colony colony) = CustomHouseColony();
         game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 50);
@@ -313,14 +313,14 @@ public class CustomHouseTests
         game.EndTurn();                                              // must NOT throw despite the boycott
 
         Assert.Equal(50, colony.StoreOf(Sugar));                     // smuggled down to the retain level
-        Assert.True(game.HumanPlayer.Gold > goldBefore);             // â€¦for gold (tax still applied, price still moved)
+        Assert.True(game.HumanPlayer.Gold > goldBefore);             // …for gold (tax still applied, price still moved)
         Assert.Equal(5000, game.HumanPlayer.Market.Arrears(Sugar));  // smuggling does not lift the boycott
     }
 
     [Fact]
     public void AutoSell_BoycottedGood_SkipsSafely_WhenCustomIgnoreBoycottOff_AndEndTurnNeverThrows()
     {
-        // Option off: the custom house refuses a boycotted good â€” it is skipped (never sold), and EndTurn still
+        // Option off: the custom house refuses a boycotted good — it is skipped (never sold), and EndTurn still
         // completes cleanly (no InvalidMoveException leaks out of the auto-sell).
         Game game = Game.New(Ruleset.LoadClassic().WithCustomIgnoreBoycott(false), Seed);
         Colony colony = FoundColony(game);
@@ -333,14 +333,14 @@ public class CustomHouseTests
         game.EndTurn();                                              // must NOT throw
 
         Assert.True(colony.StoreOf(Sugar) >= 90);                    // the boycotted good was left alone (not sold)
-        Assert.Equal(goldBefore, game.HumanPlayer.Gold);             // no sale â†’ no gold
-        Assert.Empty(game.CustomHouseSaleNotices);                   // nothing shipped â†’ no notice
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);             // no sale → no gold
+        Assert.Empty(game.CustomHouseSaleNotices);                   // nothing shipped → no notice
     }
 
     [Fact]
     public void AutoSell_OptionOff_StillSellsNonBoycottedGoods()
     {
-        // Option off must only block the *boycotted* good â€” other flagged goods still sell normally.
+        // Option off must only block the *boycotted* good — other flagged goods still sell normally.
         Game game = Game.New(Ruleset.LoadClassic().WithCustomIgnoreBoycott(false), Seed);
         Colony colony = FoundColony(game);
         colony.AddBuilding(CustomHouse);

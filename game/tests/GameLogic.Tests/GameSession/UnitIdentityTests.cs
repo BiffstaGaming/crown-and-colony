@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Randomness;
@@ -47,7 +47,7 @@ public class UnitIdentityTests
     [Fact]
     public void ANationLessHumanColonist_HasNoNationalityOrEthnicity()
     {
-        // The classic human is nation-less, so a colonist it raises carries neither (both stay null â†’ omitted in save).
+        // The classic human is nation-less, so a colonist it raises carries neither (both stay null → omitted in save).
         Game game = Game.New(Classic, Seed);
         Unit colonist = game.SpawnUnit(Classic.Unit(FreeColonist), OpenLand(game));
         Assert.Null(colonist.Nationality);
@@ -88,7 +88,7 @@ public class UnitIdentityTests
     [Fact]
     public void AShip_IsNotAPerson_AndCarriesNoNationalityOrEthnicity()
     {
-        // FreeCol gates nationality/ethnicity on isPerson() â€” a ship/wagon never gets one even with a Dutch owner.
+        // FreeCol gates nationality/ethnicity on isPerson() — a ship/wagon never gets one even with a Dutch owner.
         Game game = Game.New(Classic, Seed, humanNationId: Dutch);
         Unit ship = game.SpawnUnit(Classic.Unit(Caravel), OpenWater(game));
         Assert.False(ship.Type.IsPerson);
@@ -99,7 +99,7 @@ public class UnitIdentityTests
     [Fact]
     public void APromotedUnit_KeepsItsOrigin()
     {
-        // A type swap (promotion, like capture) is the same individual â€” it keeps its nationality/ethnicity (FreeCol
+        // A type swap (promotion, like capture) is the same individual — it keeps its nationality/ethnicity (FreeCol
         // changeOwner/promotion never re-stamp the origin). A Dutch veteran soldier great-wins and promotes.
         Game game = Game.New(Classic, Seed, humanNationId: Dutch);
         bool Free(Position n) =>
@@ -118,7 +118,7 @@ public class UnitIdentityTests
 
         Unit after = game.Units.First(u => u.Id == id);
         Assert.NotEqual(VeteranSoldier, after.Type.Id); // it really promoted (a type swap happened)
-        Assert.Equal(Dutch, after.Nationality);         // â€¦and kept its origin across the swap
+        Assert.Equal(Dutch, after.Nationality);         // …and kept its origin across the swap
         Assert.Equal(Dutch, after.Ethnicity);
     }
 
@@ -180,7 +180,7 @@ public class UnitIdentityTests
     public void ADivergedOrigin_PersistsAnExplicitToken_AndRoundTrips()
     {
         // A unit whose origin differs from its current owner (here a Dutch-origin colonist re-owned to a brave's nation)
-        // is the one case that writes an explicit nationality/ethnicity token â€” and it round-trips verbatim.
+        // is the one case that writes an explicit nationality/ethnicity token — and it round-trips verbatim.
         Game game = Game.New(Classic, Seed, humanNationId: Dutch);
         Unit colonist = game.SpawnUnit(Classic.Unit(FreeColonist), OpenLand(game));
         string nation = game.NativeSettlements.First().NationTypeId;
@@ -189,7 +189,7 @@ public class UnitIdentityTests
         int id = colonist.Id;
 
         string json = SaveGame.From(game).ToJson();
-        Assert.Contains("\"Nationality\": \"" + Dutch + "\"", json); // diverged origin â†’ explicit token
+        Assert.Contains("\"Nationality\": \"" + Dutch + "\"", json); // diverged origin → explicit token
         Assert.Contains("\"Ethnicity\": \"" + Dutch + "\"", json);
         Game restored = SaveGame.FromJson(json).Restore(Classic);
 
@@ -203,7 +203,7 @@ public class UnitIdentityTests
     public void ADefaultGame_SerializesWithNoNationalityOrEthnicityTokens()
     {
         // Every fresh unit's origin equals its owner (a nation-less human's colonists carry none; a brave's nation
-        // already rides OwnerNationId), so no nationality/ethnicity token is written â†’ byte-identical to v51.
+        // already rides OwnerNationId), so no nationality/ethnicity token is written → byte-identical to v51.
         string json = SaveGame.From(Game.New(Classic, Seed)).ToJson();
         Assert.DoesNotContain("\"Nationality\"", json);
         Assert.DoesNotContain("\"Ethnicity\"", json);

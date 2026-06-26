@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
@@ -13,10 +13,10 @@ using Xunit;
 namespace CrownAndColony.GameLogic.Tests.GameSession;
 
 /// <summary>
-/// Missionaries (<c>86d3c9t6e</c>): slice 1 â€” establish a mission (FreeCol <c>InGameController.establishMission</c>):
+/// Missionaries (<c>86d3c9t6e</c>): slice 1 — establish a mission (FreeCol <c>InGameController.establishMission</c>):
 /// a missionary-role unit installs a mission if the tribe is Displeased or calmer, or is killed if Angry/Hateful.
-/// Slice 2 â€” per-turn convert accrual (FreeCol <c>ServerIndianSettlement.csStartTurn</c>): a mission gains
-/// <c>(skill+6)+2%Â·alarm</c> progress and, at threshold 100, converts a brave into an Indian Convert at the owner's
+/// Slice 2 — per-turn convert accrual (FreeCol <c>ServerIndianSettlement.csStartTurn</c>): a mission gains
+/// <c>(skill+6)+2%·alarm</c> progress and, at threshold 100, converts a brave into an Indian Convert at the owner's
 /// nearest colony within 10. All RNG-free; mission state persists (save v34).
 /// </summary>
 public class NativeMissionTests
@@ -41,7 +41,7 @@ public class NativeMissionTests
         return (game, settlement, missionary);
     }
 
-    // â”€â”€ CheckEstablishMission gate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── CheckEstablishMission gate ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void CheckEstablishMission_AllowsAMissionaryOnAnAdjacentTile()
@@ -76,12 +76,12 @@ public class NativeMissionTests
         Assert.False(game.CheckEstablishMission(missionary, distant).Allowed);
     }
 
-    // â”€â”€ EstablishMission outcome by alarm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── EstablishMission outcome by alarm ────────────────────────────────────────────────────────────────────────
 
     [Theory]
     [InlineData(0)]    // Happy
     [InlineData(600)]  // Content
-    [InlineData(700)]  // Displeased (â‰¤700 establishes)
+    [InlineData(700)]  // Displeased (≤700 establishes)
     public void EstablishMission_InstallsTheMission_WhenDispleasedOrCalmer(int alarm)
     {
         (Game game, NativeSettlement settlement, Unit missionary) = MissionaryAtSettlement();
@@ -108,12 +108,12 @@ public class NativeMissionTests
         (Game game, NativeSettlement settlement, Unit missionary) = MissionaryAtSettlement();
         game.ChangeNativeAlarm(settlement, 300); // Content
         game.EstablishMission(missionary, settlement);
-        Assert.Equal(200, settlement.Alarm); // âˆ’100 goodwill (FreeCol ALARM_NEW_MISSIONARY), clamped at 0
+        Assert.Equal(200, settlement.Alarm); // −100 goodwill (FreeCol ALARM_NEW_MISSIONARY), clamped at 0
     }
 
     [Theory]
-    [InlineData(701)]   // first Angry value â€” the tight establish/destroy boundary (â‰¤700 installs, >700 destroys)
-    [InlineData(750)]   // Angry (701â€“800)
+    [InlineData(701)]   // first Angry value — the tight establish/destroy boundary (≤700 installs, >700 destroys)
+    [InlineData(750)]   // Angry (701–800)
     [InlineData(1000)]  // Hateful (>800)
     public void EstablishMission_KillsTheMissionary_WhenAngryOrHateful(int alarm)
     {
@@ -133,7 +133,7 @@ public class NativeMissionTests
         Assert.Throws<InvalidMoveException>(() => game.EstablishMission(missionary, settlement));
     }
 
-    // â”€â”€ Determinism + save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Determinism + save ───────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void EstablishMission_DrawsNoRandomness()
@@ -163,15 +163,15 @@ public class NativeMissionTests
     {
         Game game = Game.New(Classic, Seed);
         string json = SaveGame.From(game).ToJson();
-        Assert.DoesNotContain("MissionOwnerId", json);  // additive: omitted â†’ byte-identical to v32
+        Assert.DoesNotContain("MissionOwnerId", json);  // additive: omitted → byte-identical to v32
         Assert.DoesNotContain("MissionIsExpert", json);
         Assert.DoesNotContain("ConvertProgress", json); // v34, also omitted-when-0
     }
 
-    // â”€â”€ Convert accrual + spawn (slice 2) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Convert accrual + spawn (slice 2) ────────────────────────────────────────────────────────────────────────
 
     /// <summary>A mission installed, then a human colony founded on a land tile beside the settlement (within 10). The
-    /// tile sits inside the settlement's native claim radius, so founding forces a claim â€” resolved by stealing it
+    /// tile sits inside the settlement's native claim radius, so founding forces a claim — resolved by stealing it
     /// (86d3e4bj7; free, so the colony lands exactly where intended; the convert tests set alarm/size explicitly).</summary>
     private static (Game Game, NativeSettlement Settlement, Colony Colony) MissionWithNearbyColony()
     {
@@ -195,7 +195,7 @@ public class NativeMissionTests
         game.ChangeNativeAlarm(settlement, alarm); // set after establish (establish eased it to 0)
 
         game.ProcessMissions();
-        Assert.Equal(expected, settlement.ConvertProgress); // below threshold â†’ banked, no convert
+        Assert.Equal(expected, settlement.ConvertProgress); // below threshold → banked, no convert
     }
 
     [Fact]
@@ -216,7 +216,7 @@ public class NativeMissionTests
     public void ProcessMissions_DoesNotConvert_WhenTheSettlementIsTooSmall()
     {
         (Game game, NativeSettlement settlement, Colony _) = MissionWithNearbyColony();
-        settlement.Size = 2;             // FreeCol won't convert a settlement of size â‰¤ 2
+        settlement.Size = 2;             // FreeCol won't convert a settlement of size ≤ 2
         settlement.ConvertProgress = 95;
 
         game.ProcessMissions();
@@ -263,7 +263,7 @@ public class NativeMissionTests
         Assert.Equal(47, r.ConvertProgress);
     }
 
-    // â”€â”€ Father Jean de BrÃ©beuf: every missionary converts as an expert jesuit (86d3c7xx9) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Father Jean de Brébeuf: every missionary converts as an expert jesuit (86d3c7xx9) ────────────────────────
 
     private const string Brebeuf = "model.foundingFather.fatherJeanDeBrebeuf";
 
@@ -291,24 +291,24 @@ public class NativeMissionTests
     public void ProcessMissions_WithBrebeuf_AccruesAnOrdinaryMissionAtTheExpertRate()
     {
         (Game game, NativeSettlement settlement, Unit missionary) = MissionaryAtSettlement(FreeColonist);
-        game.EstablishMission(missionary, settlement); // still an ordinary missionary â€” never a jesuit
+        game.EstablishMission(missionary, settlement); // still an ordinary missionary — never a jesuit
         Assert.False(settlement.MissionIsExpert);
-        game.HumanPlayer.CongressList.Add(Brebeuf);    // elect Father Jean de BrÃ©beuf
+        game.HumanPlayer.CongressList.Add(Brebeuf);    // elect Father Jean de Brébeuf
 
         game.ProcessMissions();
-        Assert.Equal(9, settlement.ConvertProgress); // (3 jesuit skill + 6) â€” BrÃ©beuf makes the ordinary mission expert
+        Assert.Equal(9, settlement.ConvertProgress); // (3 jesuit skill + 6) — Brébeuf makes the ordinary mission expert
     }
 
-    // â”€â”€ Juan de SepÃºlveda: capture-convert on a won settlement assault (86d3c7y0u) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Juan de Sepúlveda: capture-convert on a won settlement assault (86d3c7y0u) ───────────────────────────────
     //
-    // FreeCol wires model.modifier.nativeConvertBonus to Unit.getConvertProbability â€” the chance, on WINNING an
+    // FreeCol wires model.modifier.nativeConvertBonus to Unit.getConvertProbability — the chance, on WINNING an
     // assault on a native settlement you hold a mission in, that a brave is captured as a convert (SimpleCombatModel
     // CAPTURE_CONVERT). It is NOT a missionary-accrual modifier. Base chance 30% (model.option.nativeConvertProbability,
-    // classic-medium); Juan de SepÃºlveda's +20% raises it to 36%, the Spanish conquest nation type's +200% to 90%.
+    // classic-medium); Juan de Sepúlveda's +20% raises it to 36%, the Spanish conquest nation type's +200% to 90%.
 
     private const string DeSepulveda = "model.foundingFather.juanDeSepulveda";
     private const string NativeConvertBonus = "model.modifier.nativeConvertBonus";
-    private const string ColonialRegular = "model.unit.colonialRegular"; // top of the promotion chain â†’ ApplyWinnerPromotion draws nothing
+    private const string ColonialRegular = "model.unit.colonialRegular"; // top of the promotion chain → ApplyWinnerPromotion draws nothing
 
     /// <summary>Returns scripted doubles in order (for the combat roll then the capture-convert roll); ints take the low end.</summary>
     private sealed class SequenceRandom(params double[] doubles) : IGameRandom
@@ -328,7 +328,7 @@ public class NativeMissionTests
         public RandomState SaveState() => new(0, 0);
     }
 
-    /// <summary>A strong human soldier on a free land tile beside the settlement (a colonial regular â†’ no promotion RNG draw).</summary>
+    /// <summary>A strong human soldier on a free land tile beside the settlement (a colonial regular → no promotion RNG draw).</summary>
     private static Unit SpawnSoldierBeside(Game game, NativeSettlement settlement)
     {
         Position adj = settlement.Position.Neighbours().First(n => game.Map.InBounds(n)
@@ -367,16 +367,16 @@ public class NativeMissionTests
         (Game game, NativeSettlement settlement, Unit _) = MissionaryAtSettlement(); // a missionary stands by but never establishes
         Unit soldier = SpawnSoldierBeside(game, settlement);
 
-        game.AttackSettlement(soldier, settlement.Position, new FixedRandom(0.0)); // wins; no mission â†’ the convert roll is never reached
+        game.AttackSettlement(soldier, settlement.Position, new FixedRandom(0.0)); // wins; no mission → the convert roll is never reached
         Assert.DoesNotContain(game.Units, u => u.Type.Id == IndianConvertTypeId);
     }
 
     [Fact]
     public void DeSepulveda_RaisesTheCaptureConvertChance()
     {
-        // The combat roll (0.0) always wins; the convert roll 0.33 sits between the 30% base and the 36% de SepÃºlveda chance.
-        Assert.False(CapturesConvertAt(0.33, withSepulveda: false)); // 0.33 â‰¥ base 0.30 â†’ no convert
-        Assert.True(CapturesConvertAt(0.33, withSepulveda: true));   // 0.33 < 0.36 (base Ã—1.2) â†’ convert captured
+        // The combat roll (0.0) always wins; the convert roll 0.33 sits between the 30% base and the 36% de Sepúlveda chance.
+        Assert.False(CapturesConvertAt(0.33, withSepulveda: false)); // 0.33 ≥ base 0.30 → no convert
+        Assert.True(CapturesConvertAt(0.33, withSepulveda: true));   // 0.33 < 0.36 (base ×1.2) → convert captured
     }
 
     private static bool CapturesConvertAt(double convertRoll, bool withSepulveda)
@@ -392,7 +392,7 @@ public class NativeMissionTests
         return game.Units.Any(u => u.Type.Id == IndianConvertTypeId && u.OwnerId == game.HumanPlayer.PlayerId);
     }
 
-    // â”€â”€ Burn-missions: the high-roll mirror of capture-convert (86d3c9t7z, FreeCol BURN_MISSIONS) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Burn-missions: the high-roll mirror of capture-convert (86d3c9t7z, FreeCol BURN_MISSIONS) ────────────────
     //
     // Off the SAME post-win roll as capture-convert: a low roll converts a brave, a high roll (top burnProbability=2%)
     // makes the natives burn the attacker's missions across the whole assaulted nation (ServerPlayer.csBurnMissions).
@@ -414,7 +414,7 @@ public class NativeMissionTests
         Assert.True(other.HasMission);
 
         Unit soldier = SpawnSoldierBeside(game, target);
-        // win (0.0), then a roll in the top 6% â†’ burn (â‰¥ 0.94), not a convert (â‰¥ 0.30 base).
+        // win (0.0), then a roll in the top 6% → burn (≥ 0.94), not a convert (≥ 0.30 base).
         game.AttackSettlement(soldier, target.Position, new SequenceRandom(0.0, 0.99));
 
         Assert.False(other.HasMission); // the natives burned the attacker's mission in the nation's other settlement
@@ -435,7 +435,7 @@ public class NativeMissionTests
         other.MissionOwnerId = game.HumanPlayer.PlayerId;
 
         Unit soldier = SpawnSoldierBeside(game, target);
-        // win, then a mid roll (â‰¥ 0.30 base â†’ no convert, < 0.94 â†’ no burn).
+        // win, then a mid roll (≥ 0.30 base → no convert, < 0.94 → no burn).
         game.AttackSettlement(soldier, target.Position, new SequenceRandom(0.0, 0.75));
 
         Assert.True(other.HasMission); // a mid roll neither converts nor burns
@@ -443,10 +443,10 @@ public class NativeMissionTests
 
     private const string IndianConvertTypeId = "model.unit.indianConvert";
 
-    // â”€â”€ Denounce rival missions (86d3c9t7z, FreeCol InGameController.denounceMission) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Denounce rival missions (86d3c9t7z, FreeCol InGameController.denounceMission) ─────────────────────────────
     //
     // A missionary entering a settlement that already holds a RIVAL player's mission denounces it: the roll is
-    // r Ã— rivalImmigration Ã· (myImmigration + 1), +0.2 if the resident is a jesuit, âˆ’0.2 if our challenger is.
+    // r × rivalImmigration ÷ (myImmigration + 1), +0.2 if the resident is a jesuit, −0.2 if our challenger is.
     // Below 0.5 the rival is ousted and our mission installed (via the shared establish-install tail, so an
     // Angry/Hateful tribe still kills our missionary); otherwise our missionary is consumed for nothing.
 
@@ -465,7 +465,7 @@ public class NativeMissionTests
     public void DenounceMission_OnALowRoll_OustsTheRival_AndInstallsOurs()
     {
         (Game game, NativeSettlement settlement, Unit missionary, Player rival) = RivalMissionAtSettlement();
-        game.HumanPlayer.Immigration = rival.Immigration = 10; // ratio 10/11 â‰ˆ 0.91; roll 0.0 Ã— 0.91 = 0 < 0.5 â†’ success
+        game.HumanPlayer.Immigration = rival.Immigration = 10; // ratio 10/11 ≈ 0.91; roll 0.0 × 0.91 = 0 < 0.5 → success
 
         Assert.True(game.DenounceMission(missionary, settlement, new FixedRandom(0.0)));
         Assert.Equal(game.HumanPlayer.PlayerId, settlement.MissionOwnerId); // ours now
@@ -476,7 +476,7 @@ public class NativeMissionTests
     public void DenounceMission_OnAHighRoll_Fails_RivalStands_ChallengerConsumed()
     {
         (Game game, NativeSettlement settlement, Unit missionary, Player rival) = RivalMissionAtSettlement();
-        game.HumanPlayer.Immigration = rival.Immigration = 10; // roll 0.99 Ã— 10/11 â‰ˆ 0.90 â‰¥ 0.5 â†’ failure
+        game.HumanPlayer.Immigration = rival.Immigration = 10; // roll 0.99 × 10/11 ≈ 0.90 ≥ 0.5 → failure
 
         Assert.False(game.DenounceMission(missionary, settlement, new FixedRandom(0.99)));
         Assert.Equal(rival.PlayerId, settlement.MissionOwnerId); // the rival mission stands
@@ -486,7 +486,7 @@ public class NativeMissionTests
     [Fact]
     public void DenounceMission_AnExpertResident_IsHarderToOust()
     {
-        // base = 0.45 Ã— (10/11) â‰ˆ 0.409 < 0.5 would succeed; +0.2 for the jesuit resident â†’ â‰ˆ 0.609 â‰¥ 0.5 â†’ fails.
+        // base = 0.45 × (10/11) ≈ 0.409 < 0.5 would succeed; +0.2 for the jesuit resident → ≈ 0.609 ≥ 0.5 → fails.
         (Game game, NativeSettlement settlement, Unit missionary, Player rival) =
             RivalMissionAtSettlement(rivalIsExpert: true);
         game.HumanPlayer.Immigration = rival.Immigration = 10;
@@ -498,7 +498,7 @@ public class NativeMissionTests
     [Fact]
     public void DenounceMission_AnExpertChallenger_DenouncesMoreReadily()
     {
-        // base = 0.62 Ã— (10/11) â‰ˆ 0.564 â‰¥ 0.5 would fail; âˆ’0.2 for our jesuit challenger â†’ â‰ˆ 0.364 < 0.5 â†’ succeeds.
+        // base = 0.62 × (10/11) ≈ 0.564 ≥ 0.5 would fail; −0.2 for our jesuit challenger → ≈ 0.364 < 0.5 → succeeds.
         (Game game, NativeSettlement settlement, Unit jesuit, Player rival) = RivalMissionAtSettlement(Jesuit);
         game.HumanPlayer.Immigration = rival.Immigration = 10;
 
@@ -510,10 +510,10 @@ public class NativeMissionTests
     [Fact]
     public void DenounceMission_ScalesWithTheImmigrationRatio()
     {
-        // Our immigration far exceeds the rival's â†’ the roll is divided down well below 0.5, so even a high draw wins.
+        // Our immigration far exceeds the rival's → the roll is divided down well below 0.5, so even a high draw wins.
         (Game game, NativeSettlement settlement, Unit missionary, Player rival) = RivalMissionAtSettlement();
         rival.Immigration = 1;
-        game.HumanPlayer.Immigration = 100; // 0.99 Ã— 1/101 â‰ˆ 0.0098 < 0.5 â†’ success despite a near-1 draw
+        game.HumanPlayer.Immigration = 100; // 0.99 × 1/101 ≈ 0.0098 < 0.5 → success despite a near-1 draw
 
         Assert.True(game.DenounceMission(missionary, settlement, new FixedRandom(0.99)));
         Assert.Equal(game.HumanPlayer.PlayerId, settlement.MissionOwnerId);
@@ -541,14 +541,14 @@ public class NativeMissionTests
         game.HumanPlayer.Immigration = rival.Immigration = 10;
         var before = game.RandomState;
 
-        game.EstablishMission(missionary, settlement); // routes to denounce â†’ draws stream 0
+        game.EstablishMission(missionary, settlement); // routes to denounce → draws stream 0
         Assert.NotEqual(before, game.RandomState);      // the rival branch is NOT RNG-free
     }
 
     [Fact]
     public void EstablishMission_OverOwnMission_IsAPlainRngFreeReinstall()
     {
-        // Re-establishing over our OWN mission is not a denounce â€” it stays the RNG-free install path.
+        // Re-establishing over our OWN mission is not a denounce — it stays the RNG-free install path.
         (Game game, NativeSettlement settlement, Unit first) = MissionaryAtSettlement();
         game.EstablishMission(first, settlement); // our mission
 
@@ -558,7 +558,7 @@ public class NativeMissionTests
                 && !game.Units.Any(u => u.IsOnMap && u.Position == n)));
         again.RoleId = MissionaryRole;
         var before = game.RandomState;
-        game.EstablishMission(again, settlement); // re-establish over our own â†’ plain install, no roll
+        game.EstablishMission(again, settlement); // re-establish over our own → plain install, no roll
 
         Assert.Equal(game.HumanPlayer.PlayerId, settlement.MissionOwnerId);
         Assert.Equal(before, game.RandomState); // our-own re-establish draws no RNG
@@ -569,15 +569,15 @@ public class NativeMissionTests
     {
         (Game game, NativeSettlement settlement, Unit missionary, Player rival) = RivalMissionAtSettlement();
 
-        // No mission present â†’ nothing to denounce.
+        // No mission present → nothing to denounce.
         settlement.MissionOwnerId = null;
         Assert.False(game.CheckDenounceMission(missionary, settlement).Allowed);
 
-        // Our own mission â†’ cannot denounce ourselves.
+        // Our own mission → cannot denounce ourselves.
         settlement.MissionOwnerId = game.HumanPlayer.PlayerId;
         Assert.False(game.CheckDenounceMission(missionary, settlement).Allowed);
 
-        // A rival mission but the unit is not a missionary (no denounceHeresy ability) â†’ rejected.
+        // A rival mission but the unit is not a missionary (no denounceHeresy ability) → rejected.
         settlement.MissionOwnerId = rival.PlayerId;
         missionary.RoleId = "model.role.default";
         Assert.False(game.CheckDenounceMission(missionary, settlement).Allowed);

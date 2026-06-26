@@ -1,4 +1,4 @@
-﻿using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
@@ -124,7 +124,7 @@ public class MapGeneratorTests
         Assert.Contains(highSeas, p => p.X < map.Width / 2);  // a west exit to Europe
         Assert.Contains(highSeas, p => p.X >= map.Width / 2); // an east exit to Europe
 
-        // Every high-seas tile is water and sits within the near-edge band (â‰¤ 10 columns from an edge).
+        // Every high-seas tile is water and sits within the near-edge band (≤ 10 columns from an edge).
         Assert.All(highSeas, p =>
         {
             Assert.True(map.TerrainAt(p).IsWater, $"{p} high seas should be water");
@@ -132,7 +132,7 @@ public class MapGeneratorTests
         });
 
         // The band rule is genuine (not just the per-side fallback): at least one high-seas tile has no land
-        // within Chebyshev distance 4 â€” open sea, exactly the resetHighSeas condition.
+        // within Chebyshev distance 4 — open sea, exactly the resetHighSeas condition.
         Assert.Contains(highSeas, p => !map.AllPositions().Any(q =>
             !map.TerrainAt(q).IsWater && System.Math.Max(System.Math.Abs(q.X - p.X), System.Math.Abs(q.Y - p.Y)) <= 4));
     }
@@ -163,11 +163,11 @@ public class MapGeneratorTests
             .Where(t => !t.IsWater)
             .ToList();
 
-        // A real continent: a meaningful share of the mapâ€¦
+        // A real continent: a meaningful share of the map…
         double landFraction = landTypes.Count / (double)(map.Width * map.Height);
         Assert.InRange(landFraction, 0.20, 0.60);
 
-        // â€¦with climate-driven variety, not a monoculture.
+        // …with climate-driven variety, not a monoculture.
         Assert.True(landTypes.Select(t => t.Id).Distinct().Count() >= 5,
             $"only {landTypes.Select(t => t.Id).Distinct().Count()} land types generated");
 
@@ -178,8 +178,8 @@ public class MapGeneratorTests
     [Fact]
     public void PolarLand_IsColdTerrain()
     {
-        // Land near the poles (top/bottom three rows) must be cold-climate types â€”
-        // the climate envelopes at âˆ’20â€¦âˆ’10 Â°C only admit these.
+        // Land near the poles (top/bottom three rows) must be cold-climate types —
+        // the climate envelopes at −20…−10 °C only admit these.
         string[] polarTypes =
         [
             "model.tile.arctic", "model.tile.tundra", "model.tile.borealForest",
@@ -229,7 +229,7 @@ public class MapGeneratorTests
     public void WaterResources_OnlyBorderLand_AndLandDensityMatchesTheBonusNumber()
     {
         // FreeCol perhapsAddBonus (86d3c9wbp): land bonuses at ~bonusNumber% (10); water resources only where a tile
-        // borders MORE THAN ONE land tile (open ocean stays bare), at 1/(10âˆ’adjacentLand) odds. A larger map gives a
+        // borders MORE THAN ONE land tile (open ocean stays bare), at 1/(10−adjacentLand) odds. A larger map gives a
         // meaningful sample.
         GameMap map = MapGenerator.Generate(Classic, 56, 38, new Pcg32Random(42), 0.45);
 
@@ -252,7 +252,7 @@ public class MapGeneratorTests
     [Fact]
     public void DefaultLandMass_IsByteIdenticalToOmittingTheParameter()
     {
-        // The shipped default (omit the param) must equal passing DefaultLandMassFraction explicitly â€” the contract
+        // The shipped default (omit the param) must equal passing DefaultLandMassFraction explicitly — the contract
         // that keeps the default new game (and its visual goldens / soak baseline) byte-identical (ADR-009).
         GameMap omitted = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(9));
         GameMap explicitDefault = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(9), MapGenerator.DefaultLandMassFraction);
@@ -332,7 +332,7 @@ public class MapGeneratorTests
     [Fact]
     public void HigherLandMass_GrowsMoreLand()
     {
-        // Same seed + size, only the land fraction differs: more requested land â†’ more land tiles.
+        // Same seed + size, only the land fraction differs: more requested land → more land tiles.
         GameMap sparse = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(7), 0.30);
         GameMap dense = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(7), 0.50);
 
@@ -353,15 +353,15 @@ public class MapGeneratorTests
 
             Assert.Equal(w, a.Width);
             Assert.Equal(h, a.Height);
-            // Same seed + size + land mass â†’ identical map (ADR-009), independent of the default size.
+            // Same seed + size + land mass → identical map (ADR-009), independent of the default size.
             Assert.Equal(
                 a.AllPositions().Select(p => a.TerrainAt(p).Id),
                 b.AllPositions().Select(p => b.TerrainAt(p).Id));
 
-            // The watery-margin invariant is size-relative, not hard-wired to 36Ã—24.
+            // The watery-margin invariant is size-relative, not hard-wired to 36×24.
             Assert.All(
                 a.AllPositions().Where(p => p.X < 4 || p.Y < 2 || p.X >= a.Width - 4 || p.Y >= a.Height - 2),
-                p => Assert.True(a.TerrainAt(p).IsWater, $"{p} should be water on a {w}Ã—{h} map"));
+                p => Assert.True(a.TerrainAt(p).IsWater, $"{p} should be water on a {w}×{h} map"));
             // High seas is now a land-proximity band hugging both edges (FreeCol resetHighSeas), not fixed columns:
             // both sides have an exit and every high-seas tile sits within the near-edge band and is water.
             var highSeas = a.AllPositions().Where(p => a.TerrainAt(p).Id == "model.tile.highSeas").ToList();
@@ -370,7 +370,7 @@ public class MapGeneratorTests
             Assert.All(highSeas, p =>
             {
                 Assert.True(a.TerrainAt(p).IsWater);
-                Assert.True(p.X < 10 || p.X >= a.Width - 10, $"{p} high seas should hug an edge on a {w}Ã—{h} map");
+                Assert.True(p.X < 10 || p.X >= a.Width - 10, $"{p} high seas should hug an edge on a {w}×{h} map");
             });
         }
     }
@@ -394,7 +394,7 @@ public class MapGeneratorTests
         int connected = elevation.Count(HasElevationNeighbour);
         // Ranges, not noise: the clear majority of elevation tiles sit beside another elevation tile.
         Assert.True(connected >= elevation.Count * 0.7,
-            $"only {connected}/{elevation.Count} elevation tiles have an elevation neighbour â€” looks like scatter, not ranges");
+            $"only {connected}/{elevation.Count} elevation tiles have an elevation neighbour — looks like scatter, not ranges");
 
         // And at least one genuine chain of three mountains in a line exists (a ridgeline, not just a 2x2 clump).
         bool HasMountain(Position p) => map.InBounds(p) && map.TerrainAt(p).Id == "model.tile.mountains";
@@ -478,7 +478,7 @@ public class MapGeneratorTests
     [Fact]
     public void DefaultLandStyle_IsByteIdenticalToOmittingTheParameter()
     {
-        // The shipped default style (omit the param) must equal passing Continent explicitly â€” the contract that keeps
+        // The shipped default style (omit the param) must equal passing Continent explicitly — the contract that keeps
         // the default new game (and its visual goldens / soak baseline) byte-identical (ADR-009).
         GameMap omitted = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(9));
         GameMap continent = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(9), MapGenerator.DefaultLandMassFraction, LandStyle.Continent);
@@ -516,7 +516,7 @@ public class MapGeneratorTests
         GameMap a = MapGenerator.Generate(Classic, 56, 38, new Pcg32Random(17), 0.45, style);
         GameMap b = MapGenerator.Generate(Classic, 56, 38, new Pcg32Random(17), 0.45, style);
 
-        // Same seed + size + land + style â†’ identical map, every machine (ADR-009).
+        // Same seed + size + land + style → identical map, every machine (ADR-009).
         Assert.Equal(
             a.AllPositions().Select(p => a.TerrainAt(p).Id),
             b.AllPositions().Select(p => b.TerrainAt(p).Id));
@@ -531,7 +531,7 @@ public class MapGeneratorTests
 /// <summary>
 /// Per-resource starting quantity (<c>86d3c9wbp</c> facet): the spec min/max range parsed onto <see cref="ResourceType"/>,
 /// the deterministic roll, the <see cref="GameMap"/> quantity layer, and its save round-trip (v46, omit-when-default).
-/// The gen-time placement is deferred (rolling at game start would break a default game's byte-stability â€” most maps
+/// The gen-time placement is deferred (rolling at game start would break a default game's byte-stability — most maps
 /// already place finite resources), so the roller is exercised directly here.
 /// </summary>
 public class ResourceQuantityTests
@@ -553,7 +553,7 @@ public class ResourceQuantityTests
     [Fact]
     public void ALimitlessResource_HasNoRange()
     {
-        // lumber/furs/grain carry no minimum/maximum-value in the classic spec â†’ limitless.
+        // lumber/furs/grain carry no minimum/maximum-value in the classic spec → limitless.
         ResourceType type = Classic.Resource("model.resource.lumber");
         Assert.False(type.HasQuantityRange);
         Assert.Equal(0, type.MinValue);
@@ -569,7 +569,7 @@ public class ResourceQuantityTests
         {
             int q = minerals.RollQuantity(new Pcg32Random(seed));
             Assert.InRange(q, minerals.MinValue, minerals.MaxValue);
-            Assert.Equal(q, minerals.RollQuantity(new Pcg32Random(seed))); // same seed â†’ same roll (ADR-009)
+            Assert.Equal(q, minerals.RollQuantity(new Pcg32Random(seed))); // same seed → same roll (ADR-009)
         }
     }
 
@@ -603,7 +603,7 @@ public class ResourceQuantityTests
     public void GameNew_RollsResourceQuantities_AtGameStart()
     {
         // 86d3c9wbp: the roll is wired into Game.New, so a fresh default game already carries finite quantities
-        // (the classic map places minerals/ore/silver) â€” no explicit roller call needed.
+        // (the classic map places minerals/ore/silver) — no explicit roller call needed.
         Game game = Game.New(Classic, seed: 42);
         Assert.NotEmpty(game.Map.ResourceQuantities);
         foreach ((Position p, int q) in game.Map.ResourceQuantities)
@@ -635,7 +635,7 @@ public class ResourceQuantityTests
         Game game = Game.New(Classic, seed: 5);
         foreach (Position p in game.Map.ResourceQuantities.Keys.ToList())
         {
-            game.Map.SetResourceQuantity(p, null); // clear every quantity â†’ empty layer
+            game.Map.SetResourceQuantity(p, null); // clear every quantity → empty layer
         }
         string json = SaveGame.From(game).ToJson();
         Assert.DoesNotContain("\"ResourceQuantities\"", json);
@@ -675,7 +675,7 @@ public class RiverTests
     [Fact]
     public void DefaultMap_PlacesSomeRivers()
     {
-        // The classic 36Ã—24 default map has enough lowland for the river budget to place at least one river tile.
+        // The classic 36×24 default map has enough lowland for the river budget to place at least one river tile.
         Game game = Game.New(Classic, seed: 42);
         Assert.NotEmpty(game.Map.AllImprovements());
         Assert.Contains(game.Map.AllImprovements(), i => i.Improvement.Id == TileImprovementType.RiverId);
@@ -686,7 +686,7 @@ public class RiverTests
     {
         var a = Game.New(Classic, seed: 7).Map.AllImprovements().Select(i => i.Position).OrderBy(p => (p.Y, p.X)).ToList();
         var b = Game.New(Classic, seed: 7).Map.AllImprovements().Select(i => i.Position).OrderBy(p => (p.Y, p.X)).ToList();
-        Assert.Equal(a, b); // same seed â†’ identical river layer (ADR-009)
+        Assert.Equal(a, b); // same seed → identical river layer (ADR-009)
     }
 
     [Fact]
@@ -710,7 +710,7 @@ public class RiverTests
             Assert.NotEqual("model.tile.arctic", t.Id);
             Assert.Equal(TileImprovementType.RiverId, imp.Id);
         }
-        // The river pass respects FreeCol's soft maximum: river tiles â‰¤ allowed Â· riverNumber% (15%), with a little
+        // The river pass respects FreeCol's soft maximum: river tiles ≤ allowed · riverNumber% (15%), with a little
         // slack because the budget is checked before the final tile of a walk is laid.
         int riverTiles = game.Map.AllImprovements().Count();
         Assert.True(riverTiles <= allowed * 15 / 100 + 1,
@@ -757,7 +757,7 @@ public class RiverTests
         var from = new Position(1, 1);
         var to = new Position(2, 1);
         int plainsCost = Classic.Terrain("model.tile.plains").MoveCost;
-        Assert.Equal(plainsCost, MoveCostBetween(rivers: [from], from, to)); // only the origin â†’ no follow bonus
+        Assert.Equal(plainsCost, MoveCostBetween(rivers: [from], from, to)); // only the origin → no follow bonus
     }
 
     [Fact]
@@ -797,8 +797,8 @@ public class RiverTests
         Assert.Empty(loaded.Map.AllImprovements());
     }
 
-    // Builds a 3Ã—3 all-plains game with the given river tiles (restored through the save path so the river layer is
-    // resolved from the ruleset, like a real load) and returns the cost CheckMove charges a colonist to step fromâ†’to.
+    // Builds a 3×3 all-plains game with the given river tiles (restored through the save path so the river layer is
+    // resolved from the ruleset, like a real load) and returns the cost CheckMove charges a colonist to step from→to.
     private static int MoveCostBetween(Position[] rivers, Position from, Position to)
     {
         int width = 3, height = 3;

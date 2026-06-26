@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
@@ -14,8 +14,8 @@ namespace CrownAndColony.GameLogic.Tests.Colonies;
 /// <summary>
 /// On-the-job experience upgrades (<c>86d3c9pgj</c>, FreeCol <c>model.unitChange.experience</c>): a free colonist
 /// working a tile accrues that turn's production as experience (capped at the type's <c>maximum-experience</c>, 200 for
-/// a free colonist) and rolls a per-turn chance â€” <c>experience / (100Â·maxExp/probability)</c>, peaking at the spec
-/// 4% â€” to upgrade in place to the tile good's matching expert. Saved additively in v31 (omitted when 0).
+/// a free colonist) and rolls a per-turn chance — <c>experience / (100·maxExp/probability)</c>, peaking at the spec
+/// 4% — to upgrade in place to the tile good's matching expert. Saved additively in v31 (omitted when 0).
 /// </summary>
 public class ExperienceUpgradeTests
 {
@@ -46,7 +46,7 @@ public class ExperienceUpgradeTests
         return (game, colony, tile, colony.TileWorkers[tile]);
     }
 
-    // â”€â”€ Ruleset data (step 0: maximum-experience parsed; the from-collapse bug fixed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Ruleset data (step 0: maximum-experience parsed; the from-collapse bug fixed) ───────────────────────────
 
     [Fact]
     public void FreeColonist_HasMaximumExperience200() => Assert.Equal(200, Classic.Unit(Free).MaximumExperience);
@@ -58,7 +58,7 @@ public class ExperienceUpgradeTests
     public void NonUpgradingTypes_HaveNoMaximumExperience(string type) =>
         Assert.Equal(0, Classic.Unit(type).MaximumExperience);
 
-    [Theory] // every experience row survives â€” they all share from=freeColonist (the from-key collapse is fixed)
+    [Theory] // every experience row survives — they all share from=freeColonist (the from-key collapse is fixed)
     [InlineData(ExpertFarmer)]
     [InlineData("model.unit.expertFisherman")]
     [InlineData("model.unit.masterCottonPlanter")]
@@ -84,14 +84,14 @@ public class ExperienceUpgradeTests
     public void ExpertForProducing_IsNull_ForAGoodWithNoExpert() =>
         Assert.Null(Classic.ExpertForProducing("model.goods.food")); // grain/fish have experts; "food" (storage) does not
 
-    // â”€â”€ Accrual â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Accrual ────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void FreeColonistFarmer_AccruesProductionAsExperience_ClampedAtTheCap()
     {
         (Game game, Colony colony, Position tile, string good) = FreeColonistOnGrain();
         Assert.Equal(Grain, good);
-        var rng = new CountingRandom(4999); // a draw this high never upgrades (xp â‰¤ 200)
+        var rng = new CountingRandom(4999); // a draw this high never upgrades (xp ≤ 200)
 
         game.AccrueAndRollExperience(colony, tile, good, 3, rng);
         Assert.Equal(3, colony.TileWorkerExperienceAt(tile));
@@ -104,7 +104,7 @@ public class ExperienceUpgradeTests
         Assert.Equal(200, colony.TileWorkerExperienceAt(tile)); // stays clamped
     }
 
-    // â”€â”€ Eligibility (a non-free / wrong / already-expert worker draws no RNG and never upgrades) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Eligibility (a non-free / wrong / already-expert worker draws no RNG and never upgrades) ──────────────────
 
     [Theory]
     [InlineData(Indentured)]
@@ -133,14 +133,14 @@ public class ExperienceUpgradeTests
         Assert.Equal(0, colony.TileWorkerExperienceAt(tile));
     }
 
-    // â”€â”€ Upgrade roll (maxValue = 100Â·200/4 = 5000; upgrade iff draw < experience) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Upgrade roll (maxValue = 100·200/4 = 5000; upgrade iff draw < experience) ─────────────────────────────────
 
     [Fact]
     public void Upgrades_WhenTheDrawIsBelowExperience()
     {
         (Game game, Colony colony, Position tile, string good) = FreeColonistOnGrain();
         colony.AddTileWorkerExperience(tile, 199, 200);
-        var rng = new CountingRandom(199); // accrue +1 â†’ xp 200; 199 < 200 â†’ upgrade
+        var rng = new CountingRandom(199); // accrue +1 → xp 200; 199 < 200 → upgrade
 
         game.AccrueAndRollExperience(colony, tile, good, 1, rng);
 
@@ -171,7 +171,7 @@ public class ExperienceUpgradeTests
         int idleBefore = colony.IdleColonists;
         colony.AddTileWorkerExperience(tile, 200, 200);
 
-        game.AccrueAndRollExperience(colony, tile, good, 0, new CountingRandom(0)); // 0 < 200 â†’ upgrade
+        game.AccrueAndRollExperience(colony, tile, good, 0, new CountingRandom(0)); // 0 < 200 → upgrade
 
         Assert.Equal(ExpertFarmer, colony.WorkerTypeAt(tile));
         Assert.Equal(populationBefore, colony.Population);
@@ -179,7 +179,7 @@ public class ExperienceUpgradeTests
         Assert.True(colony.TileWorkers.ContainsKey(tile)); // still working the same tile
     }
 
-    // â”€â”€ Experience is per-(tile, occupant): cleared whenever the worker leaves or changes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Experience is per-(tile, occupant): cleared whenever the worker leaves or changes ─────────────────────────
 
     [Fact]
     public void Experience_IsCleared_OnReassignAndRemoval()
@@ -191,11 +191,11 @@ public class ExperienceUpgradeTests
         Assert.Equal(0, colony.TileWorkerExperienceAt(tile));
 
         colony.AddTileWorkerExperience(tile, 50, 200);
-        colony.RemoveWorker(tile); // the worker leaves â€” experience goes with it
+        colony.RemoveWorker(tile); // the worker leaves — experience goes with it
         Assert.Equal(0, colony.TileWorkerExperienceAt(tile));
     }
 
-    // â”€â”€ Persistence (v31, additive) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Persistence (v31, additive) ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Experience_RoundTripsThroughSave_V31()
@@ -215,10 +215,10 @@ public class ExperienceUpgradeTests
     {
         Game game = Game.New(Classic, Seed);
         game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony)); // fresh: no accrued experience
-        Assert.DoesNotContain("Experience", SaveGame.From(game).ToJson()); // additive: omitted â†’ byte-identical to v30
+        Assert.DoesNotContain("Experience", SaveGame.From(game).ToJson()); // additive: omitted → byte-identical to v30
     }
 
-    // â”€â”€ End-to-end: the colony turn accrues + the run is twin-deterministic and survives a save/load â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── End-to-end: the colony turn accrues + the run is twin-deterministic and survives a save/load ──────────────
 
     [Fact]
     public void TheColonyTurn_AccruesExperience_ForAFreeColonistFarmer()
@@ -251,7 +251,7 @@ public class ExperienceUpgradeTests
         Game a = Run();
         Game b = Run();
         for (int i = 0; i < 30; i++) { a.EndTurn(); b.EndTurn(); }
-        Assert.Equal(Composition(a), Composition(b)); // same seed â†’ identical worker composition + experience
+        Assert.Equal(Composition(a), Composition(b)); // same seed → identical worker composition + experience
 
         Game restored = SaveGame.FromJson(SaveGame.From(a).ToJson()).Restore(Classic);
         Assert.Equal(Composition(a), Composition(restored));
