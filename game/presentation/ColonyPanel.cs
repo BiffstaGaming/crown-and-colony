@@ -30,14 +30,29 @@ public partial class ColonyPanel : PanelContainer
     /// <summary>The colony-screen command that sets a good's custom-house export setting (wired by <see cref="GameController.OpenColonyPanel"/>; engine guards + status reporting live there). Args: colony, goodsId, exported, retainLevel. Default no-op keeps a bare test scene safe.</summary>
     private Action<Colony, string, bool, int> _setExport = (_, _, _, _) => { };
 
+    /// <summary>The colony-screen command that renames the colony (wired by <see cref="GameController.OpenColonyPanel"/>; engine guard against a blank name + status reporting live there). Args: colony, name. Default no-op keeps a bare test scene safe.</summary>
+    private Action<Colony, string> _renameColony = (_, _) => { };
+
+    /// <summary>The colony-screen command that abandons the colony (wired by <see cref="GameController.OpenColonyPanel"/>; engine guard + panel-close + status reporting live there). Args: colony. Default no-op keeps a bare test scene safe.</summary>
+    private Action<Colony> _abandonColony = _ => { };
+
+    /// <summary>The colony-screen command that pays off a good's boycott back-tax (wired by <see cref="GameController.OpenColonyPanel"/>; engine guard against an unaffordable/unboycotted good + status reporting live there). Args: goodsId. Default no-op keeps a bare test scene safe.</summary>
+    private Action<string> _payBoycott = _ => { };
+
     /// <summary>Goods are moved on/off a carrier one hold-slot (100 units) at a time, clamped to what's actually available — FreeCol's per-stack load lot.</summary>
     private const int CargoLot = 100;
 
     private static readonly Color Negative = new(0.9f, 0.3f, 0.25f);
 
-    /// <summary>The roles a colonist standing in a colony can be armed into from the colony's stores.</summary>
+    /// <summary>
+    /// The roles a colonist standing in a colony can be armed into from the colony's stores. The first four are
+    /// goods-gated (muskets/horses/tools); <c>missionary</c> is instead church-gated — the engine's
+    /// <see cref="Game.CheckEquipRole"/> only allows it when the colony has a church or cathedral (the
+    /// <c>dressMissionary</c> ability), so the *Arm missionary* button appears only there, exactly like the others
+    /// appear only when the stores hold the gear. (86d3fpy7n)
+    /// </summary>
     private static readonly string[] ArmRoles =
-        ["model.role.soldier", "model.role.dragoon", "model.role.scout", "model.role.pioneer"];
+        ["model.role.soldier", "model.role.dragoon", "model.role.scout", "model.role.pioneer", "model.role.missionary"];
 
     /// <summary>Wires the carved-wood frame (a sibling <c>NinePatchRect</c>) to follow the panel's visibility — it overlays the parchment edge, drawn on top with its centre cut out so the content shows through.</summary>
     public override void _Ready()
@@ -53,10 +68,25 @@ public partial class ColonyPanel : PanelContainer
     /// <summary>
     /// Opens the panel for a colony. <paramref name="onChange"/> runs after every action; <paramref name="loadCargo"/> /
     /// <paramref name="unloadCargo"/> are the host's load/unload-goods commands (carrier, goodsId, amount) for the cargo
-    /// section, and <paramref name="setExport"/> is the host's set-custom-house-export command (colony, goodsId, exported,
-    /// retainLevel) for the export section — they own the engine guards + status reporting (ADR-006), so the panel only
-    /// chooses the carrier/good/lot or the toggle/level and forwards the click. The overload without them keeps existing
-    /// callers/tests working with no-op commands.
+    /// section, <paramref name="setExport"/> is the host's set-custom-house-export command (colony, goodsId, exported,
+    /// retainLevel) for the export section, <paramref name="renameColony"/> is the host's rename command (colony, name),
+    /// <paramref name="abandonColony"/> is the host's abandon command (colony — it also closes this panel), and
+    /// <paramref name="payBoycott"/> is the host's pay-off-boycott command (goodsId) — they own the engine guards +
+    /// status reporting (ADR-006), so the panel only chooses the target and forwards the click. The overloads without
+    /// them keep existing callers/tests working with no-op commands.
+    /// </summary>
+    public void Open(Game game, Colony colony, Action onChange, Action<Unit, Colony, string, int> loadCargo, Action<Unit, Colony, string, int> unloadCargo, Action<Colony, string, bool, int> setExport, Action<Colony, string> renameColony, Action<Colony> abandonColony, Action<string> payBoycott)
+    {
+        _renameColony = renameColony;
+        _abandonColony = abandonColony;
+        _payBoycott = payBoycott;
+        Open(game, colony, onChange, loadCargo, unloadCargo, setExport);
+    }
+
+    /// <summary>
+    /// Opens the panel for a colony with the cargo/export commands only (the historical six-arg overload). Kept so
+    /// existing callers/tests that do not wire the rename/abandon/pay-boycott commands still work (those buttons then
+    /// forward to no-ops). <paramref name="onChange"/> runs after every action; see the full overload for the args.
     /// </summary>
     public void Open(Game game, Colony colony, Action onChange, Action<Unit, Colony, string, int> loadCargo, Action<Unit, Colony, string, int> unloadCargo, Action<Colony, string, bool, int> setExport)
     {
@@ -190,6 +220,10 @@ public partial class ColonyPanel : PanelContainer
 
         card.AddChild(ProductionBar());
 
+        // Colony management: rename the colony, and abandon it (give it up). The abandon button is gated on the engine's
+        // CheckAbandonColony oracle so it is greyed (with the reason) when the colony can't be abandoned (ADR-006).
+        card.AddChild(ManagementRow());
+
         var middle = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
         middle.AddThemeConstantOverride("separation", 16);
         middle.AddChild(LeftColumn());      // fixed-width band (tiles + construction)
@@ -214,6 +248,14 @@ public partial class ColonyPanel : PanelContainer
         card.AddChild(SectionLabel("Production"));
         card.AddChild(ProductionOverview());
 
+        // The boycott section only renders when the player actually has a boycotted good (some good with arrears > 0) —
+        // so an unboycotted game's colony screen (and its visual golden) is unchanged. Pays back-tax to lift a boycott.
+        if (BoycottedGoods() is { Count: > 0 } boycotted)
+        {
+            card.AddChild(SectionLabel("Boycotts"));
+            card.AddChild(BoycottArea(boycotted));
+        }
+
         // The custom-house export section only renders when the colony actually has a custom house (the engine's
         // auto-sell likewise no-ops without one) — so a fresh colony's screen and its visual golden are unchanged.
         if (_game.ColonyHasCustomHouse(_colony))
@@ -223,6 +265,126 @@ public partial class ColonyPanel : PanelContainer
         }
 
         root.AddChild(card);
+    }
+
+    // ── Colony management: rename + abandon (86d3fq0aw/86d3fq0bg) ─────────────────────────────────────────────
+
+    /// <summary>
+    /// The colony-management band: a <b>rename</b> text field (<see cref="LineEdit"/> seeded with the current name + a
+    /// <em>Rename</em> button, which also fires on Enter) and an <b>Abandon colony</b> button. Rename forwards the typed
+    /// text to the host's rename command (which owns the blank-name guard + status reporting); the confirm button is
+    /// disabled while the field is blank (an input affordance, not a rule). Abandon is gated on the engine's
+    /// <see cref="Game.CheckAbandonColony"/> oracle (ADR-006): it is greyed — with the refusal reason in its tooltip —
+    /// when the colony has population &gt; 1 or a fortification, and on click forwards to the host's abandon command
+    /// (which removes the colony and closes this panel). Both buttons contain zero rule logic.
+    /// </summary>
+    private Control ManagementRow()
+    {
+        var row = new HBoxContainer { Name = "ManagementRow", Alignment = BoxContainer.AlignmentMode.Center };
+        row.AddThemeConstantOverride("separation", 8);
+
+        var nameField = new LineEdit
+        {
+            Name = "RenameField",
+            Text = _colony.Name,
+            PlaceholderText = "Colony name",
+            CustomMinimumSize = new Vector2(180, 0),
+        };
+        row.AddChild(nameField);
+
+        var rename = new Button { Name = "RenameButton", Text = "Rename" };
+        // Forward the typed text to the host's rename command (the engine rejects a blank name and surfaces the reason);
+        // the panel rebuilds afterward so the title + field reflect the new name. Disabled while the field is blank.
+        void DoRename()
+        {
+            _renameColony(_colony, nameField.Text); // the host command refreshes the HUD + sets the status notice
+            RebuildDeferred();                       // re-render the panel (title + field) without clearing that notice
+        }
+        rename.Pressed += DoRename;
+        nameField.TextSubmitted += _ => DoRename(); // Enter in the field renames too
+        rename.Disabled = string.IsNullOrWhiteSpace(nameField.Text);
+        nameField.TextChanged += text => rename.Disabled = string.IsNullOrWhiteSpace(text); // an input affordance, not a rule
+        row.AddChild(rename);
+
+        // Abandon: gated on CheckAbandonColony — greyed (with the reason) when it can't be given up (ADR-006).
+        MoveCheck canAbandon = _game.CheckAbandonColony(_colony);
+        var abandon = new Button
+        {
+            Name = "AbandonColony",
+            Text = "Abandon colony",
+            Disabled = !canAbandon.Allowed,
+            TooltipText = canAbandon.Allowed ? "Give up this colony — its last colonist walks out." : canAbandon.Reason,
+        };
+        abandon.Pressed += () =>
+        {
+            if (_game.CheckAbandonColony(_colony).Allowed) // re-check on click — the oracle is the single gate
+            {
+                _abandonColony(_colony); // removes the colony and closes the panel (host command)
+            }
+        };
+        row.AddChild(abandon);
+        return row;
+    }
+
+    // ── Boycotts: pay back-tax to lift a boycott (86d3fpyu0) ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// The goods currently under boycott (the human market has back-tax owed — <see cref="Trade.Market.Arrears"/> &gt; 0),
+    /// in stable id order. A boycott is empire-wide (a tea party boycotts a good everywhere), so this reads the shared
+    /// human market, not the colony; the colony screen simply surfaces the lift-boycott action here. An empty list hides
+    /// the whole Boycotts section.
+    /// </summary>
+    private List<GoodsType> BoycottedGoods() => _game.Ruleset.GoodsTypes
+        .Where(g => _game.Market.Arrears(g.Id) > 0)
+        .OrderBy(g => g.Id, StringComparer.Ordinal)
+        .ToList();
+
+    /// <summary>
+    /// One row per boycotted good: its icon + name, the back-tax owed, and a <em>Pay (N)</em> button gated on the
+    /// engine's <see cref="Game.CheckPayArrears"/> oracle — enabled (with the cost) when the player can afford it, greyed
+    /// (with the reason) when they cannot (ADR-006). On click it forwards to the host's pay-off-boycott command, which
+    /// owns the gold deduction + status reporting; the panel rebuilds, dropping the lifted good from the list.
+    /// </summary>
+    private Control BoycottArea(IReadOnlyList<GoodsType> boycotted)
+    {
+        var box = new VBoxContainer { Name = "BoycottArea", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        box.AddThemeConstantOverride("separation", 4);
+        box.AddChild(new Label
+        {
+            Text = "Pay the back-tax to lift a boycott and trade the good again.",
+            HorizontalAlignment = HorizontalAlignment.Center,
+        });
+        foreach (GoodsType good in boycotted)
+        {
+            string goodsId = good.Id;
+            MoveCheck check = _game.CheckPayArrears(goodsId);
+            int arrears = _game.Market.Arrears(goodsId);
+
+            var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            row.AddThemeConstantOverride("separation", 8);
+            row.AddChild(IconRect(ColonyArt.GoodsIcon(good.ShortName), 28, 28));
+            row.AddChild(new Label { Text = Display(good.ShortName), SizeFlagsHorizontal = SizeFlags.ExpandFill });
+            row.AddChild(new Label { Text = $"arrears {arrears}", HorizontalAlignment = HorizontalAlignment.Right, CustomMinimumSize = new Vector2(120, 0) });
+
+            var pay = new Button
+            {
+                Name = $"PayBoycott_{good.ShortName}",
+                Text = $"Pay ({arrears})",
+                Disabled = !check.Allowed,
+                TooltipText = check.Allowed ? $"Pay {arrears} gold to lift the boycott on {Display(good.ShortName)}." : check.Reason,
+            };
+            pay.Pressed += () =>
+            {
+                if (_game.CheckPayArrears(goodsId).Allowed) // re-check on click — the oracle is the single gate
+                {
+                    _payBoycott(goodsId); // the host command refreshes the HUD + sets the status notice
+                    RebuildDeferred();     // re-render the panel (drop the lifted good) without clearing that notice
+                }
+            };
+            row.AddChild(pay);
+            box.AddChild(row);
+        }
+        return box;
     }
 
     // ── Top: the colony's net production, FreeCol's production row ───────────────────────────────────────────
@@ -837,6 +999,14 @@ public partial class ColonyPanel : PanelContainer
             if (!unit.HasDefaultRole && _game.CheckEquipRole(unit, _colony, RoleType.DefaultRoleId).Allowed)
             {
                 buttons.Add(MakeButton($"Disarm_{uid}", "Disarm", () => Act(uid, u => _game.EquipRole(u, _colony, RoleType.DefaultRoleId))));
+            }
+            // Clear speciality: revert an expert (expert farmer, master carpenter, …) standing at the colony back to a
+            // plain free colonist (FreeCol clearSpeciality). Gated on the engine's CheckClearSkill oracle (ADR-006) — it
+            // appears only for a unit that actually has a clearSkill change, and FreeCol's no-active-teacher rule is
+            // already covered (teachers are in-colony building workers, never on-map units). (86d3fpxge)
+            if (_game.CheckClearSkill(unit).Allowed)
+            {
+                buttons.Add(MakeButton($"ClearSkill_{uid}", "Clear speciality", () => Act(uid, u => _game.ClearSkill(u))));
             }
             if (buttons.Count == 0)
             {

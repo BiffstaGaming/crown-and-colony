@@ -860,6 +860,282 @@ public class ColonyPanelTests
         AssertAncestorDropTarget(controller, "Worker_carpenterHouse_0", "BuildingDrop_carpenterHouse");
     }
 
+    // ── Five colony-screen commands: rename / abandon / clear speciality / pay boycott / arm missionary ──────────────
+    // Each command's engine already exists (RenameColony / CheckAbandonColony+AbandonColony / CheckClearSkill+ClearSkill /
+    // CheckPayArrears+PayArrears / CheckEquipRole+EquipRole). The panel only adds the buttons (gated on the Check* oracle)
+    // and forwards the click to the existing command (ADR-006). These L3s assert the button appears when the oracle allows
+    // and is hidden/disabled when it doesn't, and that clicking produces the engine effect.
+
+    [TestCase(Timeout = 60000)]
+    public async Task RenameField_RenamesTheColony_AndUpdatesTheTitle()
+    {
+        (ISceneRunner runner, GameController controller, _, Colony colony) = await OpenPanel();
+        PanelContainer panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+
+        var field = panel.FindChild("RenameField", recursive: true, owned: false) as LineEdit;
+        var rename = FindButton(controller, "RenameButton");
+        AssertThat(field).IsNotNull();
+        AssertThat(rename).IsNotNull();
+
+        field!.Text = "New Amsterdam";
+        rename!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2); // the rebuild is deferred
+
+        AssertThat(colony.Name).IsEqual("New Amsterdam");
+        AssertThat(LabelText(controller.GetNode<PanelContainer>("UI/ColonyPanel"), "ColonyTitle")).IsEqual("New Amsterdam"); // the title (top of the panel) reflects the rename
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task RenameButton_IsDisabled_WhenTheFieldIsBlank()
+    {
+        (ISceneRunner runner, GameController controller, _, _) = await OpenPanel();
+        PanelContainer panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+
+        var field = panel.FindChild("RenameField", recursive: true, owned: false) as LineEdit;
+        var rename = FindButton(controller, "RenameButton");
+        AssertThat(rename!.Disabled).IsFalse(); // seeded with the current (non-blank) name
+
+        field!.EmitSignal(LineEdit.SignalName.TextChanged, "   "); // blank-after-trim
+        await runner.SimulateFrames(1);
+        AssertThat(rename.Disabled).IsTrue(); // can't submit a blank name (an input affordance; the engine also rejects it)
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task AbandonButton_GivesUpAPopulationOneColony_AndClosesThePanel()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+        AssertThat(game.CheckAbandonColony(colony).Allowed).IsTrue(); // a fresh pop-1, unfortified colony can be abandoned
+        Position site = colony.Position;
+        PanelContainer panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+
+        var abandon = FindButton(controller, "AbandonColony");
+        AssertThat(abandon).IsNotNull();
+        AssertThat(abandon!.Disabled).IsFalse();
+        abandon.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.Colonies.Any(c => c.Id == colony.Id)).IsFalse(); // the colony is gone
+        AssertThat(game.Units.Any(u => u.IsOnMap && u.Position == site)).IsTrue(); // its last colonist walked out onto the tile
+        AssertThat(panel.Visible).IsFalse(); // and the (now empty) colony panel closed
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task AbandonButton_IsDisabled_ForAMultiColonistColony()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+
+        // Grow to population 2 — FreeCol forbids abandoning anything but the last colonist.
+        game.JoinColony(game.SpawnUnit(game.Ruleset.Unit("model.unit.freeColonist"), FreeNeighbour(game, colony)), colony);
+        AssertThat(colony.Population).IsEqual(2);
+        AssertThat(game.CheckAbandonColony(colony).Allowed).IsFalse();
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        var abandon = FindButton(controller, "AbandonColony");
+        AssertThat(abandon).IsNotNull();
+        AssertThat(abandon!.Disabled).IsTrue(); // greyed — the reason rides in its tooltip
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ClearSkillButton_RevertsAnExpertStandingAtTheColony_ToAFreeColonist()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Stand an EXPERT FARMER on the colony tile via the save layer (Unit.OwnerId is internal to GameLogic), then
+        // reload — the per-unit row must offer a Clear speciality button (CheckClearSkill allows it for an on-map expert).
+        SaveGame save = SaveGame.From(game);
+        int uid = game.Units.Max(u => u.Id) + 1;
+        var expert = new SavedUnit(uid, "model.unit.expertFarmer", founded.Position.X, founded.Position.Y, 0, OwnerId: 0);
+        game = (save with { Units = save.Units.Append(expert).ToList() }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(game.CheckClearSkill(game.Units.First(u => u.Id == uid)).Allowed).IsTrue();
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        var clear = FindButton(controller, $"ClearSkill_{uid}");
+        AssertThat(clear).IsNotNull();
+        clear!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.Units.First(u => u.Id == uid).Type.Id).IsEqual("model.unit.freeColonist"); // reverted to a free colonist
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ClearSkillButton_IsHidden_ForAPlainFreeColonist()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // A plain free colonist standing at the colony has no speciality to clear → no button.
+        SaveGame save = SaveGame.From(game);
+        int uid = game.Units.Max(u => u.Id) + 1;
+        var plain = new SavedUnit(uid, "model.unit.freeColonist", founded.Position.X, founded.Position.Y, 0, OwnerId: 0);
+        game = (save with { Units = save.Units.Append(plain).ToList() }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(game.CheckClearSkill(game.Units.First(u => u.Id == uid)).Allowed).IsFalse();
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+        AssertThat(FindButton(controller, $"ClearSkill_{uid}")).IsNull(); // hidden — the oracle refused
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task PayBoycottButton_PaysTheArrears_AndLiftsTheBoycott()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Boycott cigars (arrears 200) and stock the treasury via the save layer (Market.SetArrears + Player.Gold are
+        // internal to GameLogic), then reload — the colony screen's Boycotts section must offer a Pay button.
+        const string Cigars = "model.goods.cigars";
+        SaveGame save = SaveGame.From(game);
+        var human = save.Players!.Select(p => p.IsHuman
+            ? p with { Gold = 1000, Arrears = new Dictionary<string, int> { [Cigars] = 200 } } : p).ToList();
+        game = (save with { Players = human }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(game.Market.Arrears(Cigars)).IsEqual(200);
+        AssertThat(game.CheckPayArrears(Cigars).Allowed).IsTrue();
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        var pay = FindButton(controller, "PayBoycott_cigars");
+        AssertThat(pay).IsNotNull();
+        AssertThat(pay!.Disabled).IsFalse();
+        int goldBefore = game.Gold;
+        pay.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2); // the rebuild is deferred
+
+        AssertThat(game.Market.Arrears(Cigars)).IsEqual(0); // boycott lifted
+        AssertThat(game.Gold).IsEqual(goldBefore - 200);    // back-tax paid
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task BoycottSection_IsHidden_WithNoBoycott()
+    {
+        (_, GameController controller, Game game, _) = await OpenPanel();
+        AssertThat(game.Ruleset.GoodsTypes.All(g => game.Market.Arrears(g.Id) == 0)).IsTrue(); // a fresh game has no boycott
+        AssertThat(FindButton(controller, "PayBoycott_")).IsNull(); // no Boycotts section renders
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ArmMissionaryButton_AppearsWithAChurch_AndReRolesTheColonist()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Give the colony a church (grants dressMissionary) and stand a free colonist on the colony tile, via the save
+        // layer (Colony.AddBuilding + Unit.OwnerId are internal to GameLogic), then reload — the per-unit row must offer
+        // Arm missionary (CheckEquipRole gates it on the church).
+        const string Church = "model.building.church";
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with { Buildings = c.Buildings!.Append(Church).ToList() } : c).ToList();
+        int uid = game.Units.Max(u => u.Id) + 1;
+        var colonist = new SavedUnit(uid, "model.unit.freeColonist", founded.Position.X, founded.Position.Y, 0, OwnerId: 0);
+        game = (save with { Colonies = colonies, Units = save.Units.Append(colonist).ToList() }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(game.CheckEquipRole(game.Units.First(u => u.Id == uid), colony, "model.role.missionary").Allowed).IsTrue();
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        var arm = FindButton(controller, $"Equip_{uid}_missionary");
+        AssertThat(arm).IsNotNull();
+        arm!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.Units.First(u => u.Id == uid).RoleId).IsEqual("model.role.missionary"); // dressed as a missionary
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ArmMissionaryButton_IsHidden_WithoutAChurch()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // A free colonist at a church-less colony cannot be dressed as a missionary → no Arm missionary button.
+        SaveGame save = SaveGame.From(game);
+        int uid = game.Units.Max(u => u.Id) + 1;
+        var colonist = new SavedUnit(uid, "model.unit.freeColonist", founded.Position.X, founded.Position.Y, 0, OwnerId: 0);
+        game = (save with { Units = save.Units.Append(colonist).ToList() }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(game.CheckEquipRole(game.Units.First(u => u.Id == uid), colony, "model.role.missionary").Allowed).IsFalse();
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+        AssertThat(FindButton(controller, $"Equip_{uid}_missionary")).IsNull(); // hidden — the church gate refused
+    }
+
+    // ── Structural geometry guards for the five new command buttons (render >0 height, in the visible card) ──────────
+    // EmitSignal in an L3 does NOT prove a control is clickable in the real layout (headless Godot does no GUI mouse-
+    // picking), so these guards assert each new button actually renders at a sane size in the colony card — the sibling
+    // of the existing BuildingCell_RendersAtSaneHeight guard for the new controls.
+
+    [TestCase(Timeout = 60000)]
+    public async Task NewCommandButtons_RenderAtSaneHeight_NotCollapsed()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+
+        // Seed a state that lights up ALL five buttons at once: a church + a boycott + an expert + a colonist on the tile.
+        const string Cigars = "model.goods.cigars";
+        const string Church = "model.building.church";
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == colony.Id
+            ? c with { Buildings = c.Buildings!.Append(Church).ToList() } : c).ToList();
+        var players = save.Players!.Select(p => p.IsHuman
+            ? p with { Gold = 1000, Arrears = new Dictionary<string, int> { [Cigars] = 200 } } : p).ToList();
+        int expertId = game.Units.Max(u => u.Id) + 1;
+        var expert = new SavedUnit(expertId, "model.unit.expertFarmer", colony.Position.X, colony.Position.Y, 0, OwnerId: 0);
+        game = (save with { Colonies = colonies, Players = players, Units = save.Units.Append(expert).ToList() }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony seeded = game.Colonies.First(c => c.Id == colony.Id);
+
+        controller.OpenColonyPanel(seeded);
+        await runner.SimulateFrames(4); // let the deferred rebuild + layout settle
+
+        // Every new command button must render with a real (>0) height — a collapsed/clipped button would be unclickable.
+        foreach (string prefix in new[] { "RenameButton", "AbandonColony", $"ClearSkill_{expertId}", "PayBoycott_cigars", $"Equip_{expertId}_missionary" })
+        {
+            Button? button = FindButton(controller, prefix);
+            AssertThat(button).OverrideFailureMessage($"button '{prefix}' not found").IsNotNull();
+            AssertThat(button!.Size.Y > 0).OverrideFailureMessage($"button '{prefix}' collapsed to 0 height").IsTrue();
+            AssertThat(button.Visible).IsTrue();
+        }
+
+        // The rename field renders too (the text-entry affordance).
+        var field = controller.GetNode<PanelContainer>("UI/ColonyPanel").FindChild("RenameField", recursive: true, owned: false) as LineEdit;
+        AssertThat(field).IsNotNull();
+        AssertThat(field!.Size.Y > 0).IsTrue();
+    }
+
     /// <summary>
     /// Asserts the button whose name starts with <paramref name="buttonPrefix"/> has the <see cref="EuropeDropTarget"/>
     /// whose name starts with <paramref name="dropPrefix"/> in its <see cref="Node.GetParent"/> chain — i.e. the button

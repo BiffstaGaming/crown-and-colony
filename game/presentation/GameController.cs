@@ -1398,7 +1398,71 @@ public partial class GameController : Node2D
 
     /// <summary>Opens the interactive colony screen. Public so scene tests can drive it directly.</summary>
     public void OpenColonyPanel(Colony colony) =>
-        ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView, LoadColonyCargo, UnloadColonyCargo, SetColonyExport);
+        ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView, LoadColonyCargo, UnloadColonyCargo, SetColonyExport, RenameColony, AbandonColony, PayBoycott);
+
+    /// <summary>
+    /// Thin colony-screen command (86d3fq0aw/86d3fpy6k): renames <paramref name="colony"/> via the
+    /// <see cref="Game.RenameColony"/> oracle, then refreshes. The engine forbids a blank name and throws
+    /// <see cref="System.ArgumentException"/>; the reason is surfaced in the status bar instead of bubbling to the UI
+    /// (ADR-006 — the rule lives in <see cref="Game"/>; this only forwards the command and reflects the outcome).
+    /// </summary>
+    public void RenameColony(Colony colony, string name)
+    {
+        try
+        {
+            _game.RenameColony(colony, name);
+            _notice = $"Colony renamed to {colony.Name}.";
+        }
+        catch (System.ArgumentException ex)
+        {
+            _notice = ex.Message; // e.g. "A colony name cannot be blank." — show, don't throw to the UI
+        }
+        RefreshView();
+    }
+
+    /// <summary>
+    /// Thin colony-screen command (86d3fq0bg/86d3fpy8f): abandons <paramref name="colony"/> via the
+    /// <see cref="Game.AbandonColony"/> oracle (gated by <see cref="Game.CheckAbandonColony"/>), then <b>closes the
+    /// colony panel</b> (the colony no longer exists) and refreshes. A disallowed attempt (population &gt; 1, or a
+    /// fortified colony) throws <see cref="InvalidMoveException"/>; the reason is surfaced in the status bar instead of
+    /// bubbling to the UI (ADR-006 — the rules live in <see cref="Game"/>; this only forwards the command and reflects
+    /// the outcome). The departed colonist walks out onto the colony's old tile as its real type.
+    /// </summary>
+    public void AbandonColony(Colony colony)
+    {
+        try
+        {
+            _game.AbandonColony(colony);
+            _colonyPanel.Hide(); // the colony is gone — there is nothing left to manage
+            _notice = "Colony abandoned.";
+        }
+        catch (InvalidMoveException ex)
+        {
+            _notice = ex.Message; // e.g. "Send the other colonists out before abandoning the colony." — show, don't throw
+        }
+        RefreshView();
+    }
+
+    /// <summary>
+    /// Thin colony-screen command (86d3fpyu0): pays off the boycott back-tax on <paramref name="goodsId"/> via the
+    /// <see cref="Game.PayArrears"/> oracle (gated by <see cref="Game.CheckPayArrears"/>), lifting the boycott, then
+    /// refreshes. A disallowed attempt (the good is not boycotted, or the player cannot afford the arrears) throws
+    /// <see cref="InvalidMoveException"/>; the reason is surfaced in the status bar instead of bubbling to the UI
+    /// (ADR-006 — the rules live in <see cref="Game"/>; this only forwards the command and reflects the outcome).
+    /// </summary>
+    public void PayBoycott(string goodsId)
+    {
+        try
+        {
+            _game.PayArrears(goodsId);
+            _notice = $"Boycott lifted on {goodsId[(goodsId.LastIndexOf('.') + 1)..]}.";
+        }
+        catch (InvalidMoveException ex)
+        {
+            _notice = ex.Message; // e.g. "Lifting the boycott costs N gold." — show, don't throw to the UI
+        }
+        RefreshView();
+    }
 
     /// <summary>
     /// Thin colony-screen command (86d3f5y8r): loads <paramref name="amount"/> of <paramref name="goodsId"/> from
