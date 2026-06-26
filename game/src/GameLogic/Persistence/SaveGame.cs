@@ -20,7 +20,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 63;
+    public const int CurrentVersion = 64;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -260,6 +260,17 @@ public sealed record SaveGame
     /// Determinism (ADR-009): the counter only gates which Cibola outcome resolves (the treasure draw it skips when
     /// exhausted matches FreeCol's null-name fall-through), so the human's stream 0 stays consistent across reload and
     /// the soak — which never explores a rumour — stays byte-identical and twin-deterministic.
+    /// v64 made the river <b>magnitude</b> generation state the map generator assigns (the per-tile river size, small =
+    /// 1 / large = 2): a river section widens to large at and downstream of a tributary confluence (FreeCol
+    /// <c>River.grow</c>/<c>RiverSection.grow</c>, 86d3fpxbx), and the renderer draws size from this stored magnitude
+    /// rather than re-deriving it from connectivity. The magnitude already rode in the <see cref="Improvements"/> token
+    /// (per-tile <see cref="SavedImprovement.Magnitude"/>, v47), so v64 adds <b>no field</b> — it is the first version
+    /// whose generator emits large magnitudes, so a v64 river save round-trips large sections exactly. Omitted-when-
+    /// default still holds (a riverless map writes no <see cref="Improvements"/> token, byte-identical to v63); a
+    /// pre-v64 save loads with whatever magnitudes it stored (an all-small pre-this-feature map, or none), so old saves
+    /// open unchanged. Determinism (ADR-009): the magnitude growth is a pure, RNG-free post-process of the already-
+    /// walked river paths + recorded confluences — it draws no randomness, so the default map's stream-0 sequence is
+    /// untouched and the soak stays byte-identical and twin-deterministic.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 

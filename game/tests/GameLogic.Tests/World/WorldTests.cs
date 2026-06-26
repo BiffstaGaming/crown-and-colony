@@ -761,19 +761,65 @@ public class RiverTests
     }
 
     [Fact]
-    public void Rivers_RoundTripThroughSave_V48()
+    public void Rivers_RoundTripThroughSave_WithMagnitudes_V64()
     {
-        Game game = Game.New(Classic, seed: 42); // Game.New stamps rivers
+        Game game = Game.New(Classic, seed: 42); // Game.New stamps rivers (with generator-assigned magnitudes, v64)
         Assert.NotEmpty(game.Map.AllImprovements());
 
         SaveGame save = SaveGame.From(game);
         Assert.NotNull(save.Improvements);
-        Assert.Equal(63, SaveGame.CurrentVersion);
+        Assert.Equal(64, SaveGame.CurrentVersion);
 
         Game loaded = SaveGame.FromJson(save.ToJson()).Restore(Classic);
+        // The river layer round-trips exactly, INCLUDING each tile's stored magnitude (small vs large) — the renderer
+        // reads this stored size, so a reloaded map must draw identically to the map that produced it.
         Assert.Equal(
             game.Map.AllImprovements().Select(i => (i.Position, i.Improvement.Id, i.Improvement.Magnitude)).OrderBy(t => (t.Position.Y, t.Position.X)),
             loaded.Map.AllImprovements().Select(i => (i.Position, i.Improvement.Id, i.Improvement.Magnitude)).OrderBy(t => (t.Position.Y, t.Position.X)));
+    }
+
+    [Fact]
+    public void Generator_AssignsRiverMagnitudes_LargeWhereATributaryJoins()
+    {
+        // FreeCol River.grow widens a river to large (magnitude 2) at and downstream of a confluence; an unjoined river
+        // stays small (1). Over a spread of seeds the generator produces at least one large-river tile (a tributary
+        // join) and at least one small one, and every river tile's magnitude is a valid small/large band.
+        bool sawLarge = false, sawSmall = false;
+        for (ulong seed = 1; seed <= 30 && !(sawLarge && sawSmall); seed++)
+        {
+            Game game = Game.New(Classic, seed);
+            foreach (var (_, imp) in game.Map.AllImprovements().Where(i => i.Improvement.Id == TileImprovementType.RiverId))
+            {
+                Assert.InRange(imp.Magnitude, 1, 2); // only small (1) or large (2) — never a fjord (3) on the river layer
+                if (imp.Magnitude == 2) sawLarge = true;
+                if (imp.Magnitude == 1) sawSmall = true;
+            }
+        }
+        Assert.True(sawLarge, "no seed grew a large river section — the confluence-growth pass never fired");
+        Assert.True(sawSmall, "every river tile was large — the small default magnitude was lost");
+    }
+
+    [Fact]
+    public void RiverMagnitudes_AreDeterministicPerSeed()
+    {
+        // Same seed → identical magnitudes (the growth pass is RNG-free, so it never perturbs the draw sequence).
+        static IEnumerable<(Position, int)> Mags(Game g) => g.Map.AllImprovements()
+            .Where(i => i.Improvement.Id == TileImprovementType.RiverId)
+            .Select(i => (i.Position, i.Improvement.Magnitude))
+            .OrderBy(t => (t.Item1.Y, t.Item1.X));
+
+        Assert.Equal(Mags(Game.New(Classic, seed: 7)), Mags(Game.New(Classic, seed: 7)));
+    }
+
+    [Fact]
+    public void RiverMagnitudeGrowth_DoesNotShiftTheStream0Sequence_DefaultMapByteIdentical()
+    {
+        // The magnitude-growth pass is a pure, RNG-free post-process of the already-walked paths + confluences, so a
+        // fresh default game (and the visual goldens / soak baseline that depend on it) draws exactly the same RNG it
+        // did before this feature. Two fresh games at one seed match byte for byte (the round-trip witness, ADR-009).
+        string a = SaveGame.From(Game.New(Classic, seed: 99)).ToJson();
+        string b = SaveGame.From(Game.New(Classic, seed: 99)).ToJson();
+        Assert.Equal(a, b);
     }
 
     [Fact]

@@ -775,8 +775,13 @@ public static class MapGenerator
         ];
 
         // Each river's ordered tile path (source → mouth), kept so a long enough river can have its downstream spine
-        // promoted to a navigable great-river afterwards (the great-river pass below).
+        // promoted to a navigable great-river afterwards (the great-river pass below) and so confluences can grow the
+        // downstream magnitude (the small-vs-large pass below).
         var riverPaths = new List<List<Position>>();
+        // Confluence join tiles: the tile on an already-laid river where a later tributary merged in. FreeCol grows
+        // the joined river's magnitude from the confluence to the mouth (River.grow → RiverSection.grow), so each join
+        // marks where the receiving river widens. Collected during the walk, replayed RNG-free by GrowRiverMagnitudes.
+        var confluences = new List<Position>();
         var springs = Shuffle(allowed.Where(IsSpring).ToList(), random);
         foreach (Position spring in springs)
         {
@@ -794,7 +799,8 @@ public static class MapGenerator
             int cx = spring.X, cy = spring.Y;
             for (int step = 0; step < MaxRiverLength; step++)
             {
-                // Lay the river on the current (allowed) tile.
+                // Lay the river on the current (allowed) tile at the default (small) magnitude; the small-vs-large
+                // growth pass below re-stamps the downstream spine of any river a tributary joins.
                 var here = new Position(cx, cy);
                 rivers[here] = [riverType];
                 path.Add(here);
@@ -821,9 +827,11 @@ public static class MapGenerator
                 {
                     break; // reached the sea (the river mouth) — done
                 }
-                if (rivers.ContainsKey(new Position(nx, ny)))
+                var next = new Position(nx, ny);
+                if (rivers.ContainsKey(next))
                 {
-                    break; // merged into an existing river
+                    confluences.Add(next); // merged into an existing river — the join tile widens downstream
+                    break;
                 }
                 if (!RiverAllowed(nx, ny))
                 {
@@ -834,6 +842,13 @@ public static class MapGenerator
             }
             riverPaths.Add(path);
         }
+
+        // Small-vs-large magnitude (FreeCol River.grow / RiverSection.grow, capped at TileImprovement.LARGE_RIVER):
+        // a river starts small (magnitude 1) and a section widens to large (magnitude 2) once a tributary joins it.
+        // RNG-free post-process of the already-walked paths + recorded confluences, so the stream-0 draw sequence (and
+        // the soak's twin-determinism) is untouched. Runs before the great-river retype so a promoted spine is removed
+        // from the river layer either way.
+        GrowRiverMagnitudes(riverType, riverPaths, confluences, rivers);
 
         // Great rivers (FreeCol River.drawToMap + TerrainType greatRiver): where a river grows large enough — in FreeCol
         // a section reaching FJORD_RIVER size — the land tile is retyped to the navigable model.tile.greatRiver water
@@ -849,6 +864,63 @@ public static class MapGenerator
         }
 
         return rivers;
+    }
+
+    /// <summary>The large-river magnitude (FreeCol <c>TileImprovement.LARGE_RIVER</c>): a section a tributary has joined widens to this and no further (magnitude is capped at large; a third join would be a fjord, handled by the great-river pass).</summary>
+    private const int LargeRiverMagnitude = 2;
+
+    /// <summary>
+    /// Grows the per-tile river magnitude (small → large) at and downstream of every confluence — the small-vs-large
+    /// content FreeCol produces in <c>River.grow</c>/<c>RiverSection.grow</c>. When a tributary joins a river, that
+    /// river's section at the join tile and every section between it and the mouth widen by one (capped at
+    /// <see cref="LargeRiverMagnitude"/>); upstream sections and tributary-less rivers stay small. Each join tile is
+    /// located in its owning river's source→mouth path; the join index and all later indices are re-stamped at the
+    /// large magnitude. Pure and RNG-free — operates only on the already-laid paths and recorded confluences, so it
+    /// draws no randomness and leaves the stream-0 sequence (and the soak's twin-determinism) untouched.
+    /// </summary>
+    /// <param name="riverType">The river improvement rule data to re-stamp at the large magnitude.</param>
+    /// <param name="riverPaths">Each river's ordered tiles (source → mouth).</param>
+    /// <param name="confluences">Join tiles where a tributary merged into an already-laid river.</param>
+    /// <param name="rivers">The per-tile river improvement layer to re-stamp in place.</param>
+    private static void GrowRiverMagnitudes(
+        TileImprovementType riverType,
+        IReadOnlyList<List<Position>> riverPaths,
+        IReadOnlyList<Position> confluences,
+        Dictionary<Position, IReadOnlyList<TileImprovementType>> rivers)
+    {
+        if (confluences.Count == 0)
+        {
+            return; // no tributary joined anything — every river stays small (the default-game-common case)
+        }
+
+        // The downstream spine that each confluence widens to large: the join tile and every tile after it (toward the
+        // mouth) on the joined river's path. A set dedupes overlapping joins (two tributaries into the same trunk).
+        var large = new HashSet<Position>();
+        foreach (Position join in confluences)
+        {
+            foreach (List<Position> path in riverPaths)
+            {
+                int idx = path.IndexOf(join);
+                if (idx < 0)
+                {
+                    continue; // this join is not on this river's path
+                }
+                for (int i = idx; i < path.Count; i++)
+                {
+                    large.Add(path[i]);
+                }
+                break; // a tile belongs to exactly one river path
+            }
+        }
+
+        TileImprovementType largeRiver = riverType with { Magnitude = LargeRiverMagnitude };
+        foreach (Position p in large)
+        {
+            if (rivers.ContainsKey(p)) // a tile retyped away (great-river spine) before this pass would be absent
+            {
+                rivers[p] = [largeRiver];
+            }
+        }
     }
 
     /// <summary>

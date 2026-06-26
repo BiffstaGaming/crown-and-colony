@@ -180,7 +180,7 @@ public class NativeLandPurchaseTests
 
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
-        Assert.Equal(63, SaveGame.CurrentVersion);
+        Assert.Equal(64, SaveGame.CurrentVersion);
         Assert.True(restored.Map.IsClaimedFromNatives(tile));  // the override round-trips
         Assert.False(restored.Map.IsNativeOwned(tile));        // and the re-derivation on load honours it (not re-claimed)
         Assert.Equal(

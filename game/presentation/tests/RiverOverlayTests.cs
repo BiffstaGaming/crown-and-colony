@@ -50,6 +50,31 @@ public class RiverOverlayTests
         AssertThat(await RiverDrawnAt(runner, controller, hidden)).IsFalse();
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task RiverOverlay_DrawsALargeRiver_ThickerThanASmallRiver_FromStoredMagnitude()
+    {
+        // The renderer reads the stored magnitude (86d3fpxbx): a magnitude-2 (large) river draws a wider course than a
+        // magnitude-1 (small) one on the SAME explored tile. Count the river-blue pixels around the tile centre for
+        // each magnitude — large must paint strictly more water than small.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        controller.GetWindow().Size = CaptureSize;
+        controller.GetNode<CanvasLayer>("UI").Visible = false;
+        Game game = GameOf(controller);
+
+        Position tile = game.Map.AllPositions()
+            .First(p => game.IsExplored(p) && !game.Map.TerrainAt(p).IsWater);
+
+        SetRiver(game.Map, tile, magnitude: 1);
+        int smallPixels = await RiverWaterPixelCount(runner, controller, tile);
+        SetRiver(game.Map, tile, magnitude: 2);
+        int largePixels = await RiverWaterPixelCount(runner, controller, tile);
+
+        AssertThat(smallPixels).IsGreater(0);              // a small river still draws
+        AssertThat(largePixels).IsGreater(smallPixels);    // a large river paints a strictly thicker course
+    }
+
     /// <summary>
     /// Centres the camera on <paramref name="tile"/>, refreshes the view, and reports whether the river overlay drew
     /// any water-blue pixel in a small window around the tile's screen centre.
@@ -81,15 +106,47 @@ public class RiverOverlayTests
         return false;
     }
 
+    /// <summary>
+    /// Centres the camera on <paramref name="tile"/>, refreshes the view, and counts the river-water pixels the overlay
+    /// drew in a window around the tile's screen centre — a proxy for the course thickness (large vs small).
+    /// </summary>
+    private static async Task<int> RiverWaterPixelCount(ISceneRunner runner, GameController controller, Position tile)
+    {
+        controller.GetNode<Camera2D>("Camera").Position = MapView.TileCentre(tile);
+        Refresh(controller);
+        await runner.SimulateFrames(3);
+
+        Image img = controller.GetViewport().GetTexture().GetImage();
+        var centre = new Vector2I(img.GetWidth() / 2, img.GetHeight() / 2);
+        const int window = 24;
+        int count = 0;
+        for (int dy = -window; dy <= window; dy++)
+        {
+            for (int dx = -window; dx <= window; dx++)
+            {
+                int x = centre.X + dx, y = centre.Y + dy;
+                if (x < 0 || y < 0 || x >= img.GetWidth() || y >= img.GetHeight())
+                {
+                    continue;
+                }
+                if (IsRiverWater(img.GetPixel(x, y)))
+                {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
     /// <summary>True when a pixel matches the river water colour within a small tolerance (anti-aliasing/blend slack).</summary>
     private static bool IsRiverWater(Color c) =>
         Mathf.Abs(c.R - RiverWater.R) < 0.10f
         && Mathf.Abs(c.G - RiverWater.G) < 0.10f
         && Mathf.Abs(c.B - RiverWater.B) < 0.10f;
 
-    private static void SetRiver(GameMap map, Position p) =>
+    private static void SetRiver(GameMap map, Position p, int magnitude = 1) =>
         typeof(GameMap).GetMethod("SetImprovement", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(map, [p, TileImprovementType.ClassicRiver()]);
+            .Invoke(map, [p, TileImprovementType.ClassicRiver(magnitude)]);
 
     private static void Refresh(GameController controller) =>
         typeof(GameController).GetMethod("RefreshView", BindingFlags.NonPublic | BindingFlags.Instance)!

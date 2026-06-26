@@ -264,7 +264,7 @@ public class UnitOrdersTests
 
         Assert.True(restored.Units.First(u => u.Id == id).IsFortified);
         Assert.Equal(json, SaveGame.From(restored).ToJson()); // acid test: byte-identical round-trip
-        Assert.Equal(63, SaveGame.CurrentVersion);
+        Assert.Equal(64, SaveGame.CurrentVersion);
     }
 
     [Fact]
