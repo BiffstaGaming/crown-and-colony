@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-27 — Parity backlog Wave 5: remaining-gaps tail — native-AI + scoring/coastal + river-size (3 parallel streams) ✅
+
+**Requested (Chris):** after waves 1–4, "Wave 5 — remaining gaps tail" (mop up the genuine high-value leftovers).
+**Did (3 disjoint background-worktree streams; integrated + CI-green):**
+- **Native-AI engine** (`c10273d`, `Game.Natives.cs` + `Game.cs` native region): **per-turn military production/refill** (muskets every camp, horses for capitals/large camps, capped, on the nation's RNG stream — reuses the existing v54 `_militaryStock`, no save bump) so a tribe re-arms after spending its stock; **braves raid rival European units** (per-rival alarm ≥ Displeased, nation stream, no human notice, solo-game-null). Closes `86d3fpzna`/`86d3fpzu3` and **fully closes arm-braves `86d3fpzzj`** (its only gap was seeded-not-produced). +7 L1/L2.
+- **Scoring + coastal** (`2c07f96`, `Game.cs` score/coastal + `UnitType` + `Ruleset`): **score-per-colonist-type** now parsed onto `UnitType.ScoreValue` (inherited via `extends`; retired a hardcoded dict — classic totals byte-identical); **coastal build gate excludes inland lakes** (requires a non-lake/open-sea neighbour, FreeCol `isCoastland`). Closes `86d3fpxka`/`86d3fpy78`. +12 L1/L2.
+- **Map/river** (`2c52705`, `MapGenerator` + `RiverOverlay` + `SaveGame`, **save v63→v64**): **river magnitude stored as gen-state** — assigned at gen-time confluences (RNG-free) and rendered from the stored value (no new field — magnitude already rode `SavedImprovement` since v47; default map byte-identical, L4 goldens unchanged). Closes `86d3fpxbx`. +3 L1/L2, +1 L3.
+- **Adversarial review** (4 dims × verify, ran fully): **0 confirmed serious findings** — native-AI determinism (human stream 0 byte-stable through production + rival raids), map/river save-compat, and scoring/coastal all verified clean; only nits (test-name overclaims, documented FreeCol simplifications like FJORD-compounding + the lake-tag-vs-BFS coastal approximation). Independently confirmed no BOM/mojibake recurrence.
+**Status:** **Shipped.** 4 commits `2c07f96`+`2c52705`+`c10273d`+`f4f1948` (main `f4f1948`, rebased over a nightly QA-REPORT auto-commit). Local: L1/L2 **2414**, full L3 **250**, soak **5/5**. **CI run 28260260091 = GREEN both jobs** (first attempt). **Save v63→v64** (Map/river, sole bumper). Parity Totals **878/78/59 → 884/74/57**.
+**Decisions:** Native rival-raids use the existing per-player alarm channels (wave-3) — rivals who anger a tribe now lose warriors; rival-colony pillage/demand stay human-only (documented). Coastal lake-exclusion keys off the existing `model.tile.lake` tag (the map already retypes sea-unreachable water to lake) rather than a new high-seas BFS.
+**Scheduled next:** **The parallel-able high-priority `[Parity]` backlog is fully cleared (68 tasks closed this session).** Awaiting steer — see Needs-you.
+**Follow-ups (deferred with reasons):** Man-o-War "player-buildable" (`86d3fpy69` — entangled with REF-naval-invasion wiring; not Col1-faithful to build the King's ship); burial-ground formal-war (`86d3fpxtm` — needs a native-vs-colonial war-stance model we don't have); plus the standing follow-ups (HUD dead-click `86d3fr6bc`, dump-goods UI `86d3fq0bq`, auto-colony-defence `86d3fpx1j`, History-report persistence).
+**Needs you (steer):** The remaining backlog is now (1) the **rival-AI colonial-economy epic** (`86d3fq1c9`) — a sequential effort, the single biggest gap; and (2) the **low-priority / FreeCol-only** cluster (audio, tutorial, cinematic, map zoom, setup dials, localisation). Start the epic, pick from the low-priority set, or pause for a playtest?
+
 ## 2026-06-26 — Parity backlog Wave 4: units + father-portraits + map/sail + warehouse (4 parallel streams) ✅
 
 **Requested (Chris):** "Continue with wave 3… and 4."
