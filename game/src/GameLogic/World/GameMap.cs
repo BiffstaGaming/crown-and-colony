@@ -89,6 +89,13 @@ public sealed class GameMap
     /// <summary>Places a bonus resource on a tile (gen-time placement is via the ctor; this serves scenario setup/tests).</summary>
     internal void SetResource(Position p, string resourceId) => _resources[p] = resourceId;
 
+    /// <summary>Removes the bonus resource on a tile (and any stored quantity) — the tile reverts to its bare yield (FreeCol <c>Tile.removeResource</c> when a finite deposit is exhausted).</summary>
+    internal void RemoveResource(Position p)
+    {
+        _resources.Remove(p);
+        _resourceQuantities.Remove(p);
+    }
+
     /// <summary>The finite remaining quantity of the resource on a tile (FreeCol <c>Resource.quantity</c>), or null when the tile has no resource or a limitless one (no min/max range).</summary>
     public int? ResourceQuantityAt(Position p) => _resourceQuantities.TryGetValue(p, out int q) ? q : null;
 

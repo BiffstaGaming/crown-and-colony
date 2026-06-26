@@ -4892,17 +4892,40 @@ public sealed partial class Game
             throw new InvalidMoveException(check.Reason!);
         }
 
+        // FreeCol pathfinding treats an unexplored tile as impassable to a planned route (BaseCostDecider: a
+        // not-yet-explored target is ILLEGAL_MOVE), so the only way to enter the unknown is a manual single step —
+        // and that step ends the unit's turn. We capture, before the move resolves the fog, whether the target was
+        // already explored FOR THIS UNIT'S OWNER; a land unit stepping onto a tile that was still black for it then
+        // spends all remaining movement (the classic "the wilderness uses up your turn" rule). Ships are exempt
+        // (sea exploration does not stop a ship) and a target already explored costs only the normal terrain move.
+        bool steppedIntoUnknown = !unit.Type.IsNaval && !WasExploredForOwner(unit, target);
+
         unit.Position = target;
         unit.MovementLeft -= check.Cost;
         unit.Orders = UnitOrders.Active; // moving wakes a fortified/sentry unit (FreeCol clears the state on a move)
         unit.Destination = null;         // a manual move cancels any standing goto (FreeCol setDestination(null))
         RevealForOwner(unit); // the mover lifts its own owner's fog (mirrors SpawnUnit)
+        if (steppedIntoUnknown && unit.MovementLeft > 0)
+        {
+            unit.MovementLeft = 0; // entering unexplored ground ends the turn (FreeCol unexplored-tile move spends all moves)
+        }
         if (unit.Type.IsCarrier)
         {
             SyncPassengers(unit); // any colonists aboard move with the ship
         }
         TryExploreRumour(unit, target); // a land unit stepping onto a Lost City Rumour investigates it (may consume/transform the unit)
     }
+
+    /// <summary>
+    /// Whether <paramref name="tile"/> had already been explored, for <paramref name="unit"/>'s owning colonial player,
+    /// at the moment of the call (FreeCol <c>Player.hasExplored</c>). A native-owned unit lifts no fog and is treated as
+    /// "already explored" everywhere (natives never trigger the unexplored-ends-turn rule). Read this <em>before</em>
+    /// <see cref="RevealForOwner"/> resolves the move, or the destination will already have been lit.
+    /// </summary>
+    private bool WasExploredForOwner(Unit unit, Position tile) =>
+        unit.OwnerNationId is not null
+        || PlayerById(unit.OwnerId) is not { } owner
+        || owner.Explored.Contains(tile);
 
     /// <summary>
     /// Whether <paramref name="unit"/> may be ordered to fortify (dig in for a +50% defence bonus). A land
@@ -5084,7 +5107,8 @@ public sealed partial class Game
     /// <summary>
     /// Completes a pioneer's tile improvement (FreeCol <c>ServerUnit.csImproveTile</c>): lays a road/plow on the
     /// tile (or, for clear-forest, changes the terrain to its cleared base type and delivers the one-off lumber to
-    /// the owning colony), consumes the role's expended tools (reverting the pioneer to a plain colonist when its
+    /// the owning colony — tripled by that colony's lumber mill — and rolls the chance the cleared ground exposes a
+    /// hidden bonus resource), consumes the role's expended tools (reverting the pioneer to a plain colonist when its
     /// tools run out), and clears the work order.
     /// </summary>
     private void CompleteImprovement(Unit unit)
@@ -5100,8 +5124,17 @@ public sealed partial class Game
             if (change.ProductionGoodsId is { } goodsId && change.ProductionAmount > 0
                 && OwningColonyOf(unit.OwnerId, pos) is { } colony)
             {
-                colony.AddGoods(Ruleset.StorageIdOf(goodsId), change.ProductionAmount);
+                // The owning colony's lumber mill (model.modifier.tileTypeChangeProduction ×3 scoped to lumber)
+                // multiplies the one-off delivery before it lands (FreeCol Settlement.apply(amount, …,
+                // TILE_TYPE_CHANGE_PRODUCTION, deliver.getType())); a colony without one applies the ×1 identity.
+                int delivered = (int)(change.ProductionAmount * LumberTileTypeChangeFactor(colony, goodsId));
+                colony.AddGoods(Ruleset.StorageIdOf(goodsId), delivered);
             }
+
+            // The cleared ground may reveal a hidden bonus resource (FreeCol csImproveTile expose-resource roll):
+            // a chance per the improvement's expose-resource-percent, only when the (now-cleared) tile carries no
+            // resource, picking weighted-random from the new terrain type's resource table and rolling its quantity.
+            TryExposeResource(unit, pos, improvement);
         }
         else
         {
@@ -5123,6 +5156,69 @@ public sealed partial class Game
         unit.WorkImprovementId = null;
         unit.WorkTurnsLeft = 0;
     }
+
+    /// <summary>
+    /// The multiplier a colony applies to a one-off tile-type-change goods delivery — its highest
+    /// <see cref="BuildingType.LumberTileTypeChangeFactor"/> over the goods's matching buildings (a lumber mill ×3 for
+    /// lumber; ×1 otherwise). FreeCol applies the settlement's <c>TILE_TYPE_CHANGE_PRODUCTION</c> modifier scoped to the
+    /// delivered goods; only the lumber-scoped modifier (lumber mill) exists in the classic spec, so this returns 3 for
+    /// a lumber-mill colony delivering lumber and 1 everywhere else.
+    /// </summary>
+    private double LumberTileTypeChangeFactor(Colony colony, string goodsId) =>
+        goodsId != "model.goods.lumber"
+            ? 1.0
+            : colony.Buildings
+                .Select(b => Ruleset.Building(b).LumberTileTypeChangeFactor)
+                .DefaultIfEmpty(1.0)
+                .Max();
+
+    /// <summary>
+    /// Rolls FreeCol's clear-forest resource-exposure (FreeCol <c>ServerUnit.csImproveTile</c>): with probability
+    /// <see cref="TileImprovementType.ExposeResourcePercent"/>% — only when the improvement carries one (clear-forest =
+    /// 5%) and the freshly-cleared tile holds no resource — a hidden bonus resource appears, picked weighted-random from
+    /// the cleared terrain type's resource table and (for a finite type) given a rolled starting quantity. All draws go
+    /// through the mover's owning player's seeded stream (ADR-009) in FreeCol's exact order: the percent gate, then the
+    /// weighted type pick, then the quantity. No RNG is drawn unless the percent gate is reached, so a no-expose
+    /// improvement (any road/plow, or a forest type with no exposable resources) stays byte-stable.
+    /// </summary>
+    private void TryExposeResource(Unit unit, Position pos, TileImprovementType improvement)
+    {
+        if (improvement.ExposeResourcePercent <= 0 || Map.ResourceAt(pos) is not null)
+        {
+            return;
+        }
+        IReadOnlyList<ResourceChance> table = Map.TerrainAt(pos).Resources;
+        if (table.Count == 0 || PlayerById(unit.OwnerId) is not { } owner)
+        {
+            return; // native-owned pioneers (no colonial player) and resource-less terrain expose nothing
+        }
+        IGameRandom random = RandomFor(owner);
+        if (random.Next(100) >= improvement.ExposeResourcePercent)
+        {
+            return; // the roll failed — no resource exposed
+        }
+        string resourceId = PickWeightedResource(table, random);
+        Map.SetResource(pos, resourceId);
+        Map.SetResourceQuantity(pos, NullIfLimitless(Ruleset.Resource(resourceId).RollQuantity(random)));
+    }
+
+    /// <summary>The weighted resource pick (FreeCol <c>RandomChoice.getWeightedRandom</c>) shared with map generation.</summary>
+    private static string PickWeightedResource(IReadOnlyList<ResourceChance> table, IGameRandom random)
+    {
+        int roll = random.Next(table.Sum(r => r.Probability));
+        foreach (ResourceChance entry in table)
+        {
+            roll -= entry.Probability;
+            if (roll < 0)
+            {
+                return entry.ResourceId;
+            }
+        }
+        return table[^1].ResourceId;
+    }
+
+    /// <summary>A rolled quantity of 0 means a limitless resource (no finite range) — store no quantity for it.</summary>
+    private static int? NullIfLimitless(int quantity) => quantity > 0 ? quantity : null;
 
     /// <summary>
     /// The colony of <paramref name="ownerId"/> that works the tile at <paramref name="tile"/> (its centre or one of
@@ -10885,6 +10981,64 @@ public sealed partial class Game
     }
 
     /// <summary>
+    /// Expends a finite bonus resource by the amount it boosted this turn's production of <paramref name="goodsId"/> on
+    /// <paramref name="tile"/> by a worker of <paramref name="workerTypeId"/>, and removes the deposit when its quantity
+    /// is exhausted — leaving the tile at its bare yield (FreeCol <c>ServerColonyTile.expendResource</c> →
+    /// <c>Resource.useQuantity</c>). The reduction is the resource's own bonus contribution
+    /// (<see cref="ResourceBonusDelta"/>) capped at the remaining quantity; a limitless resource (no stored quantity)
+    /// never depletes. A no-op for a tile with no resource or one that does not boost this good.
+    /// </summary>
+    private void DepleteWorkedResource(Position tile, string workerTypeId, string goodsId)
+    {
+        if (Map.ResourceQuantityAt(tile) is not { } quantity || Map.ResourceAt(tile) is not { } resourceId)
+        {
+            return; // no resource, or a limitless one (no finite quantity to deplete)
+        }
+        int bonus = ResourceBonusDelta(resourceId, workerTypeId, goodsId, TileYieldPotential(tile, goodsId));
+        if (bonus <= 0)
+        {
+            return; // this resource adds nothing to this good — nothing to expend
+        }
+        int remaining = quantity - bonus;
+        if (remaining > 0)
+        {
+            Map.SetResourceQuantity(tile, remaining);
+        }
+        else
+        {
+            // Exhausted: drop the deposit and its quantity so the tile reverts to its bare base yield.
+            Map.RemoveResource(tile);
+        }
+    }
+
+    /// <summary>
+    /// The amount a bonus resource adds to one worker's production of <paramref name="goodsId"/> — the resource's
+    /// unscoped + worker-scoped modifiers applied to <paramref name="boostedPotential"/> (already inclusive of the
+    /// resource), minus that same potential with the resource's contribution backed out. For the classic finite
+    /// resources (minerals/ore/silver — all flat additives) this is simply the additive value; the general form also
+    /// handles a multiplicative deposit. Mirrors FreeCol <c>Resource.applyBonus</c>'s <c>applyModifiers(potential) −
+    /// potential</c> bonus term.
+    /// </summary>
+    private int ResourceBonusDelta(string resourceId, string workerTypeId, string goodsId, int boostedPotential)
+    {
+        ResourceModifier[] modifiers = Ruleset.Resource(resourceId).Modifiers
+            .Where(m => m.GoodsId == goodsId && (m.IsUnscoped || m.ScopeUnitTypes.Contains(workerTypeId)))
+            .OrderBy(m => m.Index)
+            .ToArray();
+        if (modifiers.Length == 0)
+        {
+            return 0;
+        }
+        // Back the resource out to the bare potential, then re-apply it: the gap is the resource's contribution.
+        double bare = boostedPotential;
+        for (int i = modifiers.Length - 1; i >= 0; i--)
+        {
+            bare = modifiers[i].Type == ModifierType.Multiplicative ? bare / modifiers[i].Value : bare - modifiers[i].Value;
+        }
+        return boostedPotential - (int)bare;
+    }
+
+    /// <summary>
     /// Folds a worker type's index-30 <see cref="UnitType.ProductionModifiers"/> for <paramref name="goodsId"/> into a
     /// running production value (ascending index, floored at 0). A free colonist — or a specialist working a good it
     /// isn't expert at — leaves the value unchanged. Indentured/petty penalties bite only on the manufactured goods
@@ -11922,8 +12076,9 @@ public sealed partial class Game
         foreach ((Position tile, string goodsId) in colony.TileWorkers.OrderBy(w => w.Key.Y).ThenBy(w => w.Key.X))
         {
             string storageId = Ruleset.StorageIdOf(goodsId);
+            string workerType = colony.WorkerTypeAt(tile);
             // The working colonist's type folds its expert bonus into the yield (free colonist → no change).
-            int produced = Math.Max(0, TileYield(owner, colony.WorkerTypeAt(tile), tile, goodsId) + colony.ProductionBonus);
+            int produced = Math.Max(0, TileYield(owner, workerType, tile, goodsId) + colony.ProductionBonus);
             colony.AddGoods(storageId, produced);
             if (storageId == Colony.FoodId)
             {
@@ -11931,6 +12086,9 @@ public sealed partial class Game
             }
             // On-the-job experience: a free colonist accrues this turn's output and may upgrade to the good's expert.
             AccrueAndRollExperience(colony, tile, goodsId, produced, rng);
+            // A finite bonus resource on the worked tile is expended by the bonus it contributed this turn; once its
+            // quantity is used up the deposit is removed and the tile falls back to its bare yield (FreeCol depletion).
+            DepleteWorkedResource(tile, workerType, goodsId);
         }
 
         // 1c. Buildings produce: unattended entries always run (town hall bell);

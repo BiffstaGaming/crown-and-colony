@@ -821,7 +821,13 @@ public sealed class Ruleset
                 // declared on the schoolhouse and inherited down the extends chain) — only an expert within the window
                 // teaches. The teach ability itself (BuildingType.Teaches) is now read off the Abilities map above.
                 MaximumSkill: ResolveIntAttribute(el, "maximum-skill", buildingElements) ?? 0,
-                MinimumSkill: ResolveIntAttribute(el, "minimum-skill", buildingElements) ?? 0);
+                MinimumSkill: ResolveIntAttribute(el, "minimum-skill", buildingElements) ?? 0,
+                // Lumber tile-type-change factor: a multiplicative boost (lumber mill ×3, default 1) the colony applies
+                // to the one-off lumber a cleared forest delivers — the model.modifier.tileTypeChangeProduction modifier
+                // scoped to model.goods.lumber, folded multiplicatively up the extends chain. FreeCol
+                // ServerUnit.csImproveTile → Settlement.apply(amount, …, TILE_TYPE_CHANGE_PRODUCTION, lumber).
+                LumberTileTypeChangeFactor: ResolveScopedMultiplicativeFactorUpChain(
+                    el, "model.modifier.tileTypeChangeProduction", "model.goods.lumber", buildingElements));
         }
 
         var fathers = new Dictionary<string, FoundingFather>();
@@ -2158,6 +2164,31 @@ public sealed class Ruleset
             }
         }
         return (int)Math.Round(additive * multiplicative);
+    }
+
+    /// <summary>
+    /// Resolves the <b>multiplicative factor</b> of a scoped modifier across the whole <c>extends</c> chain — every
+    /// matching <c>multiplicative</c> value (those whose <c>id</c> is <paramref name="modifierId"/> and which carry a
+    /// <c>&lt;scope type="<paramref name="scopeTypeId"/>"/&gt;</c> child) multiplied onto a base of 1.0. Used for the
+    /// lumber mill's <c>model.modifier.tileTypeChangeProduction</c> ×3 scoped to <c>model.goods.lumber</c> — a factor
+    /// (3.0), not a roundable scalar, so this stays double and does not flatten through <see cref="Math.Round(double)"/>.
+    /// 1.0 when the modifier is absent (FreeCol modifier semantics: an empty multiplicative fold is the identity).
+    /// </summary>
+    private static double ResolveScopedMultiplicativeFactorUpChain(
+        XElement el, string modifierId, string scopeTypeId, Dictionary<string, XElement> elements)
+    {
+        double factor = 1.0;
+        for (XElement? current = el; current is not null; current = ParentOf(current, elements))
+        {
+            foreach (XElement m in current.Elements("modifier")
+                         .Where(m => (string?)m.Attribute("id") == modifierId
+                             && (string?)m.Attribute("type") == "multiplicative"
+                             && m.Elements("scope").Any(s => (string?)s.Attribute("type") == scopeTypeId)))
+            {
+                factor *= (double?)m.Attribute("value") ?? 1.0;
+            }
+        }
+        return factor;
     }
 
     /// <summary>

@@ -97,6 +97,13 @@ namespace CrownAndColony.GameLogic.Specification;
 /// trio set 1, inherited down the <c>extends</c> chain — so only an expert teaches, never a free colonist/servant/
 /// criminal; default 0 = no floor). FreeCol <c>Building.getNoAddReason</c> MINIMUM_SKILL.
 /// </param>
+/// <param name="LumberTileTypeChangeFactor">
+/// Multiplier this building applies to the one-off lumber a pioneer's forest-clear delivers (spec
+/// <c>model.modifier.tileTypeChangeProduction</c> scoped to <c>model.goods.lumber</c>; the <b>lumber mill</b> sets a
+/// multiplicative ×3, default 1 = no boost). A colony with a lumber mill triples the lumber a cleared forest yields it
+/// (FreeCol <c>ServerUnit.csImproveTile</c> → <c>Settlement.apply(amount, …, TILE_TYPE_CHANGE_PRODUCTION, lumber)</c>).
+/// Resolved multiplicatively up the <c>extends</c> chain.
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -117,7 +124,8 @@ public sealed record BuildingType(
     double CompetenceFactor = 1.0,
     int Upkeep = 0,
     int MaximumSkill = 0,
-    int MinimumSkill = 0)
+    int MinimumSkill = 0,
+    double LumberTileTypeChangeFactor = 1.0)
 {
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
     private static readonly IReadOnlySet<string> NoUnits = new HashSet<string>();
