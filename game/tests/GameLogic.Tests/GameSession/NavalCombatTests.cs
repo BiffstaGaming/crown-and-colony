@@ -443,6 +443,43 @@ public class NavalCombatTests
     }
 
     [Fact]
+    public void PrivateerAttackingTheHuman_SetsTheAttackedByPrivateersFlag_AndUnlocksSupportSea()
+    {
+        // FreeCol csCombat: any piracy attack sets the defender player's attackedByPrivateers flag, which is the gate
+        // on the King's one-shot SUPPORT_SEA decree (Monarch.actionIsValid). Before the raid the flag is clear and the
+        // King would never offer naval support; a foreign privateer striking the human's ship raises it and SUPPORT_SEA
+        // becomes a valid monarch action.
+        Game game = Game.New(Classic, Seed);
+        Position a = game.Map.AllPositions().First(p => Water(game, p) && p.Neighbours().Any(n => Water(game, n)));
+        Position b = a.Neighbours().First(n => Water(game, n));
+        Unit humanShip = game.SpawnUnit(Classic.Unit(Caravel), a);     // human (OwnerId 0)
+        int foreignId = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).PlayerId;
+        Unit privateer = game.SpawnUnit(Classic.Unit(Privateer), b);
+        privateer.OwnerId = foreignId;
+
+        Assert.False(game.AttackedByPrivateers);                         // clear at the start…
+        Assert.False(game.MonarchActionIsValid(MonarchAction.SupportSea)); // …so the King won't offer naval support yet
+
+        game.Attack(privateer, humanShip.Position, new FixedRandom(0.5)); // the privateer raids the human's ship
+
+        Assert.True(game.AttackedByPrivateers);                          // the deniable raid still trips the flag…
+        Assert.True(game.MonarchActionIsValid(MonarchAction.SupportSea)); // …and SUPPORT_SEA is now offerable
+    }
+
+    [Fact]
+    public void APrivateerRaidingARival_DoesNotSetTheHumansFlag()
+    {
+        // The flag is the HUMAN-DEFENDER flag: a human privateer raiding a rival's ship (the rival is the defender)
+        // must not raise the human's own attackedByPrivateers — only being attacked by a privateer does.
+        (Game game, Unit privateer, Unit rival, _) = TwoShips(Privateer, Caravel);
+
+        game.Attack(privateer, rival.Position, new FixedRandom(0.5));
+
+        Assert.False(game.AttackedByPrivateers);
+        Assert.False(game.MonarchActionIsValid(MonarchAction.SupportSea));
+    }
+
+    [Fact]
     public void ForeignPrivateerRaid_HidesItsNationInTheNotice()
     {
         Game game = Game.New(Classic, Seed);

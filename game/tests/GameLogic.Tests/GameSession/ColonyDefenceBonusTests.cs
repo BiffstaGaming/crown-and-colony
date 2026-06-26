@@ -194,11 +194,20 @@ public class ColonyDefenceBonusTests
         return (game, target, gun);
     }
 
-    /// <summary>A human colony stocked with tobacco and a brave beside it; optionally fortified.</summary>
+    /// <summary>A human colony stocked with tobacco and a brave beside it; optionally fortified. Starting ships are parked away from the port so a won pillage's option-0 pick is the tobacco stack (not "sink a ship in port").</summary>
     private static (Game game, Colony colony, Unit brave) StagePillage(bool stockade)
     {
         Game game = Game.New(Classic, Seed);
         Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        var port = colony.Position.Neighbours().ToHashSet();
+        Position far = game.Map.AllPositions()
+            .First(p => game.Map.TerrainAt(p).IsWater && !port.Contains(p)
+                && !colony.Position.IsAdjacentTo(p) && p != colony.Position
+                && !game.Units.Any(u => u.IsOnMap && u.Position == p));
+        foreach (Unit ship in game.PlayerUnits.Where(u => u.IsOnMap && u.Type.IsNaval && port.Contains(u.Position)).ToList())
+        {
+            ship.Position = far; // clear the port so the pillage loots goods, not a docked ship
+        }
         colony.AddGoods(Tobacco, 100);
         if (stockade)
         {

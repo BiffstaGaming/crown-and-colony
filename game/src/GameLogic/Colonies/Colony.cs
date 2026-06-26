@@ -304,6 +304,27 @@ public sealed class Colony
         }
     }
 
+    /// <summary>
+    /// Removes a building outright (a base building with no predecessor, destroyed by a raid — FreeCol
+    /// <c>ServerColony.destroyBuilding</c>), ejecting every worker in it back to the idle pool first so no colonist
+    /// is stranded. A no-op when the colony has no such building. Used by the native-pillage building-burn; an
+    /// upgraded building is downgraded via <see cref="ReplaceBuilding"/> instead, never removed.
+    /// </summary>
+    internal void RemoveBuilding(string buildingId)
+    {
+        if (!_buildings.Contains(buildingId))
+        {
+            return;
+        }
+        while (_buildingWorkers.GetValueOrDefault(buildingId) > 0)
+        {
+            UnassignBuildingWorker(buildingId); // workers spill into the idle pool (FreeCol ejectUnits)
+        }
+        _buildings.Remove(buildingId);
+        _buildingWorkers.Remove(buildingId);
+        _buildingWorkerTypes.Remove(buildingId);
+    }
+
     /// <summary>Assigns a free colonist to a tile (the type-blind path: tests/incidental callers). Use the typed overload from the real assignment flows.</summary>
     internal void SetWorker(Position tile, string goodsId) => SetWorker(tile, goodsId, FreeColonistTypeId);
 

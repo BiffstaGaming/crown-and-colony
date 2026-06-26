@@ -429,6 +429,67 @@ public class CombatTests
         Assert.Equal(RoleType.DefaultRoleId, game.EffectiveCombatRole(defender, defending: true));
     }
 
+    /// <summary>A Revere colony with muskets, an unarmed colonist defending it, and a native brave on an adjacent tile.</summary>
+    private static (Game game, Colony colony, Unit defender, Unit brave) RevereDefenceSetup(int muskets = 100)
+    {
+        Game baseGame = Game.New(Classic, Seed);
+        baseGame.FoundColony(baseGame.PlayerUnits.First());
+        Game game = Elect(baseGame, Revere);
+        Colony colony = game.Colonies.First();
+        colony.AddGoods("model.goods.muskets", muskets);
+        Unit defender = game.SpawnUnit(Classic.Unit(FreeColonist), colony.Position); // the colony's only (unarmed) defender
+
+        bool Free(Position n) =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.NativeSettlementAt(n) is null && game.ColonyAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n);
+        Position adj = colony.Position.Neighbours().First(Free);
+        string nation = game.NativeSettlements.First().NationTypeId;
+        Unit brave = game.SpawnUnit(Classic.Unit("model.unit.brave"), adj, nation);
+        return (game, colony, defender, brave);
+    }
+
+    [Fact]
+    public void Revere_ConsumesColonyMuskets_WhenTheAutoArmedDefenderLoses()
+    {
+        // FreeCol stores the auto-equipment in the settlement and removes it via csLoseAutoEquip when the auto-armed
+        // defender is beaten. The colonist defends as a soldier (Revere), loses to the brave, and the colony's muskets
+        // are spent (one soldier role = 50 muskets).
+        (Game game, Colony colony, Unit defender, Unit brave) = RevereDefenceSetup(muskets: 100);
+        Assert.Equal(Soldier, game.EffectiveCombatRole(defender, defending: true)); // auto-armed
+
+        game.Attack(brave, colony.Position, new FixedRandom(0.0)); // brave wins → the auto-armed defender loses
+
+        Assert.Equal(50, colony.StoreOf("model.goods.muskets")); // 100 − 50 (the soldier role's required muskets) spent
+    }
+
+    [Fact]
+    public void Revere_KeepsColonyMuskets_WhenTheAutoArmedDefenderWins()
+    {
+        // A winning auto-armed defender keeps the colony's muskets — FreeCol only removes the auto-equipment on a LOSS.
+        (Game game, Colony colony, Unit defender, Unit brave) = RevereDefenceSetup(muskets: 100);
+        Assert.Equal(Soldier, game.EffectiveCombatRole(defender, defending: true));
+
+        game.Attack(brave, colony.Position, new FixedRandom(0.99)); // brave loses → the colonist repels it
+
+        Assert.Equal(100, colony.StoreOf("model.goods.muskets")); // muskets untouched on a successful defence
+    }
+
+    [Fact]
+    public void NormallyArmedDefender_DoesNotDoubleConsumeColonyMuskets()
+    {
+        // A defender that is ALREADY a soldier (its muskets are on the unit, not auto-equipment) must not also draw
+        // muskets from the colony when it loses — only the Paul-Revere last-colonist auto-equip spends colony stock.
+        (Game game, Colony colony, Unit defender, Unit brave) = RevereDefenceSetup(muskets: 100);
+        defender.RoleId = Soldier; // a real soldier, not an auto-armed colonist
+        defender.RoleCount = 1;
+        Assert.Equal(Soldier, game.EffectiveCombatRole(defender, defending: true)); // its own role, not auto-equip
+
+        game.Attack(brave, colony.Position, new FixedRandom(0.0)); // the brave wins → the soldier loses (disarmed)
+
+        Assert.Equal(100, colony.StoreOf("model.goods.muskets")); // colony muskets untouched (no auto-equip was used)
+    }
+
     // ---- Equipping ----
 
     [Fact]

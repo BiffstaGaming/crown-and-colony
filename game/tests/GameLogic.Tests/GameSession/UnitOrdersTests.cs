@@ -152,6 +152,55 @@ public class UnitOrdersTests
         Assert.Equal(UnitOrders.Active, unit.Orders);
     }
 
+    /// <summary>Whether a tile is open land with nothing on it (for placing/moving test units).</summary>
+    private static bool OpenLand(Game g, Position p) =>
+        g.Map.InBounds(p) && !g.Map.TerrainAt(p).IsWater
+        && g.NativeSettlementAt(p) is null && g.ColonyAt(p) is null
+        && !g.Units.Any(u => u.IsOnMap && u.Position == p);
+
+    [Fact]
+    public void Sentry_AutoWakes_WhenAnEnemyMovesAdjacent()
+    {
+        // FreeCol csActivateSentries: a sentried unit returns to ACTIVE the instant a hostile unit moves next to it —
+        // so a sentry actually guards. Place a human colonist on sentry, then walk a native brave onto an adjacent tile.
+        Game game = Game.New(Classic, Seed);
+        // A spot with two free adjacent tiles: one for the brave's start, one for it to step onto next to the sentry.
+        Position spot = game.Map.AllPositions().First(p => OpenLand(game, p)
+            && p.Neighbours().Count(n => OpenLand(game, n)) >= 2);
+        Unit sentry = game.SpawnUnit(Classic.Unit(FreeColonist), spot); // human-owned
+        game.Sentry(sentry);
+        Assert.Equal(UnitOrders.Sentry, sentry.Orders);
+
+        // Stand the brave two tiles away (not yet adjacent), then step it adjacent to the sentry.
+        Position adjToSentry = spot.Neighbours().First(n => OpenLand(game, n));
+        Position braveStart = adjToSentry.Neighbours().First(n => OpenLand(game, n) && !n.IsAdjacentTo(spot) && n != spot);
+        string nation = game.NativeSettlements.First().NationTypeId;
+        Unit brave = game.SpawnUnit(Classic.Unit("model.unit.brave"), braveStart, nation);
+
+        Assert.Equal(UnitOrders.Sentry, sentry.Orders);     // still asleep — the brave is not adjacent yet
+        game.MoveUnit(brave, adjToSentry);                   // the brave steps next to the sentry
+        Assert.Equal(UnitOrders.Active, sentry.Orders);     // …which wakes the sentry (it guards)
+    }
+
+    [Fact]
+    public void Sentry_DoesNotWake_WhenAFriendlyUnitMovesAdjacent()
+    {
+        // The auto-wake fires only for enemies — a player's own units don't wake each other's sentries.
+        Game game = Game.New(Classic, Seed);
+        Position spot = game.Map.AllPositions().First(p => OpenLand(game, p)
+            && p.Neighbours().Count(n => OpenLand(game, n)) >= 2);
+        Unit sentry = game.SpawnUnit(Classic.Unit(FreeColonist), spot);
+        game.Sentry(sentry);
+
+        Position adjToSentry = spot.Neighbours().First(n => OpenLand(game, n));
+        Position friendStart = adjToSentry.Neighbours().First(n => OpenLand(game, n) && !n.IsAdjacentTo(spot) && n != spot);
+        Unit friend = game.SpawnUnit(Classic.Unit(FreeColonist), friendStart); // human-owned, same player as the sentry
+
+        game.MoveUnit(friend, adjToSentry); // a friendly step next to the sentry
+
+        Assert.Equal(UnitOrders.Sentry, sentry.Orders); // stays asleep — only an enemy wakes it
+    }
+
     [Fact]
     public void ClearOrders_DropsAFortifiedUnitBackToActive()
     {

@@ -2403,18 +2403,28 @@ public sealed partial class Game
     /// <summary>
     /// The role a unit fights in. A defender may be automatically equipped for the fight (FreeCol
     /// <c>getAutomaticRole</c>): an unarmed unit in a colony whose owner has the automatic-equipment
-    /// ability (Paul Revere → soldier) and whose colony stocks the equipment. (5b applies the resulting
-    /// defence bonus only; it does not permanently consume the goods — that persistence is a later slice.)
+    /// ability (Paul Revere → soldier) and whose colony stocks the equipment. The granted role's defence
+    /// bonus applies for the fight; the equipment itself stays banked in the colony's store and is only
+    /// <em>spent</em> when the auto-armed defender is beaten (FreeCol's auto-equipment "is stored in the
+    /// settlement" and is removed by <c>csLoseAutoEquip</c> on a defence loss) — see
+    /// <see cref="ConsumeAutoEquipment"/>, called from the attack resolution.
     /// </summary>
-    internal string EffectiveCombatRole(Unit unit, bool defending)
+    internal string EffectiveCombatRole(Unit unit, bool defending) =>
+        AutomaticDefenceRole(unit, defending) ?? unit.RoleId;
+
+    /// <summary>
+    /// The auto-equipment role <paramref name="unit"/> would defend in (FreeCol <c>Unit.getAutomaticRole</c>), or
+    /// null when none applies: only an unarmed defender, inside a friendly colony, whose owner has the
+    /// automatic-equipment ability (Paul Revere) and whose colony currently stocks the role's required goods.
+    /// The single source of truth shared by <see cref="EffectiveCombatRole"/> (which folds it into the role used
+    /// for the defence power) and the post-combat <see cref="ConsumeAutoEquipment"/> (which spends the goods if
+    /// the defender lost). Returns null — never the unit's own role — so a caller can test "was this auto-armed?".
+    /// </summary>
+    private string? AutomaticDefenceRole(Unit unit, bool defending)
     {
-        if (!defending || !unit.HasDefaultRole)
+        if (!defending || !unit.HasDefaultRole || ColonyAt(unit.Position) is not { } colony)
         {
-            return unit.RoleId;
-        }
-        if (ColonyAt(unit.Position) is not { } colony)
-        {
-            return unit.RoleId; // auto-equip only inside a friendly colony
+            return null; // auto-equip only arms an unarmed defender inside a friendly colony
         }
         foreach (string roleId in AutoEquipRoleScopes(unit))
         {
@@ -2424,7 +2434,27 @@ public sealed partial class Game
                 return roleId;
             }
         }
-        return unit.RoleId;
+        return null;
+    }
+
+    /// <summary>
+    /// Spends a beaten auto-armed defender's equipment from its colony (FreeCol <c>csLoseAutoEquip</c>): the
+    /// muskets Paul Revere lent the last colonist are drawn from the colony's store when — and only when — that
+    /// auto-armed colonist <b>loses</b> the defence. <paramref name="autoRole"/> is the role captured <em>before</em>
+    /// the fight resolved (the stock may have been the deciding factor); a no-op when null (the defender was not
+    /// auto-armed) or the colony is gone. RNG-free; consumes exactly the role's required goods, no refund (the
+    /// equipment is lost with the failed defence, never recovered or captured into a store).
+    /// </summary>
+    private void ConsumeAutoEquipment(Unit defender, string? autoRole)
+    {
+        if (autoRole is null || ColonyAt(defender.Position) is not { } colony)
+        {
+            return;
+        }
+        foreach (RoleRequiredGoods g in Ruleset.Role(autoRole).RequiredGoods)
+        {
+            colony.AddGoods(Ruleset.StorageIdOf(g.GoodsId), -g.Amount);
+        }
     }
 
     /// <summary>
@@ -2818,6 +2848,14 @@ public sealed partial class Game
             SetStance(attacker.OwnerId, defender.OwnerId, Stance.War);
             ChangeTension(attacker.OwnerId, defender.OwnerId, TensionWar);
         }
+        else if (attacker.Type.Piracy && IsHumanOwned(defender))
+        {
+            // A privateer attacking the human's shipping deniably (no war, no tension above) nevertheless sets the
+            // human's attackedByPrivateers flag — FreeCol csCombat sets it on the defender player on any piracy
+            // attack. This is what unlocks the King's one-shot SUPPORT_SEA decree (Game.Monarch MonarchActionIsValid);
+            // it is the only place the flag is raised, so a frigate sortie against a rival isn't blamed on privateers.
+            AttackedByPrivateers = true;
+        }
 
         // Naval combat (ship vs ship): the defender may evade; a land unit can't stand on water, so a naval
         // defender means ship-vs-ship resolution below. The two final combat powers (terrain/fortify/settlement/
@@ -2825,6 +2863,11 @@ public sealed partial class Game
         // figures the pre-combat odds preview shows (see CombatOddsAgainst).
         bool naval = defender.Type.IsNaval;
         (double attackPower, double defencePower) = CombatPowers(attacker, defender, target);
+        // Whether the defender fights in Paul-Revere auto-equipment (muskets banked in the colony, not on the unit) —
+        // captured before resolution because the muskets are only SPENT if this defender then loses (FreeCol's
+        // csLoseAutoEquip removes the goods from the settlement on a defence loss; a winning auto-armed colonist
+        // keeps the colony's muskets). Null for any normally-equipped or non-colony defender.
+        string? defenderAutoRole = AutomaticDefenceRole(defender, defending: true);
 
         // Attacking ends the attacker's turn now — before any promotion/demotion that swaps the unit
         // object (UpgradeUnitType copies MovementLeft, so the swapped unit inherits the spent turn).
@@ -2843,6 +2886,10 @@ public sealed partial class Game
         Unit winner = attackerWon ? attacker : defender;
         Unit loser = attackerWon ? defender : attacker;
 
+        if (attackerWon)
+        {
+            ConsumeAutoEquipment(defender, defenderAutoRole); // the beaten auto-armed colonist's muskets are spent from the colony store
+        }
         ResolveLoserOutcome(winner, loser, great);
         ApplyWinnerPromotion(winner, great, random);
 
@@ -3416,6 +3463,59 @@ public sealed partial class Game
     private IEnumerable<KeyValuePair<string, int>> PillageableGoods(Colony colony) =>
         colony.Stores.Where(kv => kv.Value > 0 && Ruleset.Goods(kv.Key).IsStorable).OrderBy(kv => kv.Key, StringComparer.Ordinal);
 
+    /// <summary>
+    /// A colony's burnable buildings, in construction order — the buildings a native raid can torch (FreeCol
+    /// <c>Colony.getBurnableBuildings</c> = <c>Building.canBeDamaged</c>). A building is burnable unless it is an
+    /// <em>automatic</em> build (FreeCol <c>BuildingType.isAutomaticBuild</c>: needs no goods to build AND has no
+    /// predecessor) — so the free base houses (town hall, carpenter's house, the base manufactory houses, the
+    /// chapel) are spared, while anything that had to be built or upgraded (incl. the stockade-line defences) can
+    /// burn. Stable order so a seeded pick is deterministic (ADR-009).
+    /// </summary>
+    private IReadOnlyList<string> BurnableBuildings(Colony colony) =>
+        colony.Buildings.Where(IsBurnable).ToList();
+
+    /// <summary>Whether a building type can be damaged by a raid (FreeCol <c>Building.canBeDamaged</c> / <c>!BuildingType.isAutomaticBuild</c>): it either cost goods to build or upgrades from an earlier building.</summary>
+    private bool IsBurnable(string buildingId)
+    {
+        BuildingType type = Ruleset.Building(buildingId);
+        return type.BuildCost.Count > 0 || type.UpgradesFrom is not null;
+    }
+
+    /// <summary>
+    /// The naval units moored in a colony's port — the ships a native raid can sink (FreeCol
+    /// <c>colony.getTile().getNavalUnits()</c>). A ship can't occupy the colony's own land tile in our model, so
+    /// "in port" is a ship on a water tile adjacent to the colony (the same adaptation as <see cref="ResolveCaughtShips"/>),
+    /// in stable unit-id order for a deterministic seeded pick.
+    /// </summary>
+    private IReadOnlyList<Unit> DockedShips(Colony colony)
+    {
+        HashSet<Position> port = colony.Position.Neighbours()
+            .Where(n => Map.InBounds(n) && Map.TerrainAt(n).IsWater)
+            .ToHashSet();
+        return _units
+            .Where(u => u.OwnerId == colony.OwnerId && u.OwnerNationId is null && u.Type.IsNaval && u.IsOnMap && port.Contains(u.Position))
+            .OrderBy(u => u.Id)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Burns a building in a raid (FreeCol <c>ServerPlayer.csDamageBuilding</c>): a building that upgrades from an
+    /// earlier one is <b>downgraded</b> to its predecessor (staffing preserved — <see cref="Colony.ReplaceBuilding"/>);
+    /// a base building (no predecessor, but costing goods) is <b>razed</b> outright (<see cref="Colony.RemoveBuilding"/>,
+    /// ejecting its workers to idle). RNG-free; the caller has already picked which building.
+    /// </summary>
+    private void BurnBuilding(Colony colony, string buildingId)
+    {
+        if (Ruleset.Building(buildingId).UpgradesFrom is { } predecessor)
+        {
+            colony.ReplaceBuilding(buildingId, predecessor); // downgrade one tier, keeping the workers
+        }
+        else
+        {
+            colony.RemoveBuilding(buildingId); // a base building with no predecessor is destroyed
+        }
+    }
+
     /// <summary>Whether <paramref name="brave"/> may pillage the human colony on <paramref name="target"/> now (FreeCol <c>Colony.canBePillaged</c> + native attacker).</summary>
     public MoveCheck CheckPillageColony(Unit brave, Position target)
     {
@@ -3451,9 +3551,16 @@ public sealed partial class Game
         {
             return MoveCheck.No("The colony is defended — its garrison must be beaten first."); // canBePillaged: unprotected only
         }
-        if (!PillageableGoods(colony).Any())
+        // canBePillaged: the colony must have SOMETHING a raid can take — a burnable building, a ship in port,
+        // a lootable goods stack, or gold to plunder (FreeCol Colony.canBePillaged). A bare new colony with only
+        // its free base buildings, no goods, no ships and a broke owner is nothing to raid.
+        bool somethingToTake = BurnableBuildings(colony).Count > 0
+            || DockedShips(colony).Count > 0
+            || PillageableGoods(colony).Any()
+            || HumanPlayer.Gold > 0;
+        if (!somethingToTake)
         {
-            return MoveCheck.No("The colony has nothing worth pillaging."); // canBePillaged: something to take (we model goods loot only)
+            return MoveCheck.No("The colony has nothing worth pillaging.");
         }
         return MoveCheck.Yes(0);
     }
@@ -3461,23 +3568,24 @@ public sealed partial class Game
     /// <summary>
     /// A native brave pillages the undefended human colony on <paramref name="target"/> (FreeCol
     /// <c>csPillageColony</c> / the <c>PILLAGE_COLONY</c> combat effect — a native win over a colony's unarmed
-    /// last-resort defender). The defender is a transient unarmed colonist (defence 1, the abstracted population);
-    /// on a brave **win** the brave carries off <c>min(amount/2, 50)</c> of one randomly-chosen lootable goods
-    /// stack (the colony keeps its buildings, people and ownership — natives never capture a colony), recording a
-    /// <see cref="ColonyRaidNotice"/>; on a **loss** the brave is slain (dispose-on-combat-loss). The whole path
-    /// draws from <paramref name="random"/> (the nation's own stream when driven by the AI) — combat band, then
-    /// the goods-stack pick — never the human's stream 0 (ADR-009).
+    /// last-resort defender). The defender is a transient unarmed colonist (defence 1, the abstracted population).
+    /// On a brave **win** the raid inflicts <em>one</em> randomly-chosen destructive outcome, picked uniformly over
+    /// FreeCol's full option set in FreeCol's order — a building to <b>burn</b>, a ship in port to <b>sink</b>, a
+    /// goods stack to <b>loot</b> (<c>min(amount/2, 50)</c>), then a <b>gold</b> option when the owner can be
+    /// plundered — recording a <see cref="ColonyRaidNotice"/>; the colony keeps its people and ownership (natives
+    /// never capture a colony). On a **loss** the brave is slain (dispose-on-combat-loss). The whole path draws
+    /// from <paramref name="random"/> (the nation's own stream when driven by the AI) — the combat band, then the
+    /// single pillage-option pick (plus the gold range if that option is chosen) — never the human's stream 0 (ADR-009).
     /// </summary>
     /// <remarks>
-    /// Faithful subset: the goods loot is destroyed (the brave does not carry it off — no native
-    /// goods-hauling/settlement-restock model; FreeCol's brave does <c>attacker.add(goods)</c>). We model the
-    /// **goods-stack** and **gold** pillage options (gold = FreeCol <c>max(1, colony.getPlunder/5)</c>, capped at the
-    /// owner's purse, via <see cref="ColonyPlunderAmount"/>); FreeCol's other uniform choices — a building to burn or
-    /// a ship on the colony tile to sink/damage — are deferred (no building-destruction model). We also pillage on **any**
-    /// native win, where FreeCol gates pillage on a non-great win and lets a **great** win kill a colonist or
-    /// destroy the colony — so our great win is *gentler* than FreeCol's (a tribe never destroys a colony here);
-    /// the colonist-kill/destroy path and the attacker's tension easing are deferred (no population-on-combat
-    /// decrement; no nation-level native-tension store).
+    /// Faithful subset: a looted goods stack is destroyed (the brave does not carry it off — no native
+    /// goods-hauling/settlement-restock model; FreeCol's brave does <c>attacker.add(goods)</c>). A burned building
+    /// downgrades to its predecessor, or is razed if it is a base building (FreeCol <c>csDamageBuilding</c>); a sunk
+    /// ship sinks if it has nowhere to repair, else is damaged and limps off (FreeCol <c>csSinkShipAttack</c> /
+    /// <c>csDamageShipAttack</c>). We still pillage on **any** native win, where FreeCol gates pillage on a non-great
+    /// win and lets a **great** win kill a colonist or destroy the colony — so our great win is *gentler* than
+    /// FreeCol's (a tribe never destroys a colony here); the colonist-kill/destroy path and the attacker's tension
+    /// easing are deferred (no population-on-combat decrement; no nation-level native-tension store).
     /// </remarks>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckPillageColony"/>.</exception>
     internal void PillageColony(Unit brave, Position target, IGameRandom random)
@@ -3500,35 +3608,79 @@ public sealed partial class Game
         CombatResult result = CombatModel.Resolve(CombatModel.WinProbability(attackPower, defencePower), random);
         if (result is CombatResult.GreatWin or CombatResult.Win)
         {
-            // FreeCol's "Pillage choice": one option, uniformly, over {burnable buildings, ships, lootable goods
-            // stacks, + gold if the owner can be plundered}. We model the goods stacks + the gold option (buildings
-            // and ships are deferred); gold is the LAST option (matching FreeCol's order), added only when the owner
-            // has gold to take, so a pick of index < goodsCount is a goods stack (the existing pillage tests' index 0).
-            var loot = PillageableGoods(colony).ToList();
-            bool canPlunderGold = HumanPlayer.Gold > 0; // the colony is human-owned (CheckPillageColony gated)
-            int pick = random.Next(loot.Count + (canPlunderGold ? 1 : 0));
-            if (pick < loot.Count)
-            {
-                (string goodsId, int amount) = loot[pick];
-                int take = Math.Min(amount / 2, PillageGoodsCap);
-                if (take > 0) // a 1-unit stack yields 0 (amount/2 == 0): the raid won but carried nothing off — no notice
-                {
-                    colony.AddGoods(goodsId, -take);
-                    _colonyRaidNotices.Add(new ColonyRaidNotice(brave.OwnerNationId!, colony.Name, goodsId, take, target));
-                }
-            }
-            else
-            {
-                // Steal gold: FreeCol max(1, colony.getPlunder/5), capped at the owner's purse (no negative balance).
-                // ColonyPlunderAmount draws from the nation's stream (the same `random`) — never the human's stream 0.
-                int plunder = Math.Min(Math.Max(1, ColonyPlunderAmount(colony, HumanPlayer, random) / 5), HumanPlayer.Gold);
-                HumanPlayer.Gold -= plunder;
-                _colonyRaidNotices.Add(new ColonyRaidNotice(brave.OwnerNationId!, colony.Name, null, plunder, target));
-            }
+            ApplyPillageOutcome(brave, colony, target, random);
         }
         else
         {
             ResolveLoserOutcome(defender, brave, result is CombatResult.GreatLoss); // the brave is dispose-on-combat-loss → slain
+        }
+    }
+
+    /// <summary>
+    /// Picks and applies the single destructive outcome of a won native pillage (FreeCol <c>csPillageColony</c>'s
+    /// "Pillage choice"): one option, uniformly, over the burnable buildings, then the ships in port, then the
+    /// lootable goods stacks, then a single extra gold option when the owner can be plundered — exactly FreeCol's
+    /// index order, so the chosen pillage matches what FreeCol would do under the same draw. One draw from
+    /// <paramref name="random"/> selects the option; the gold branch draws the plunder range from the same stream.
+    /// </summary>
+    private void ApplyPillageOutcome(Unit brave, Colony colony, Position target, IGameRandom random)
+    {
+        IReadOnlyList<string> buildings = BurnableBuildings(colony);
+        IReadOnlyList<Unit> ships = DockedShips(colony);
+        var loot = PillageableGoods(colony).ToList();
+        bool canPlunderGold = HumanPlayer.Gold > 0; // the colony is human-owned (CheckPillageColony gated)
+
+        int pick = random.Next(buildings.Count + ships.Count + loot.Count + (canPlunderGold ? 1 : 0));
+        string nation = brave.OwnerNationId!;
+        if (pick < buildings.Count)
+        {
+            string buildingId = buildings[pick];
+            BurnBuilding(colony, buildingId);
+            _colonyRaidNotices.Add(new ColonyRaidNotice(nation, colony.Name, null, 0, target, PillageKind.Building, buildingId));
+            return;
+        }
+        pick -= buildings.Count;
+        if (pick < ships.Count)
+        {
+            SinkOrDamagePillagedShip(ships[pick]);
+            _colonyRaidNotices.Add(new ColonyRaidNotice(nation, colony.Name, null, 0, target, PillageKind.Ship));
+            return;
+        }
+        pick -= ships.Count;
+        if (pick < loot.Count)
+        {
+            (string goodsId, int amount) = loot[pick];
+            int take = Math.Min(amount / 2, PillageGoodsCap);
+            if (take > 0) // a 1-unit stack yields 0 (amount/2 == 0): the raid won but carried nothing off — no notice
+            {
+                colony.AddGoods(goodsId, -take);
+                _colonyRaidNotices.Add(new ColonyRaidNotice(nation, colony.Name, goodsId, take, target));
+            }
+            return;
+        }
+
+        // Steal gold: FreeCol max(1, colony.getPlunder/5), capped at the owner's purse (no negative balance).
+        // ColonyPlunderAmount draws from the nation's stream (the same `random`) — never the human's stream 0.
+        int plunder = Math.Min(Math.Max(1, ColonyPlunderAmount(colony, HumanPlayer, random) / 5), HumanPlayer.Gold);
+        HumanPlayer.Gold -= plunder;
+        _colonyRaidNotices.Add(new ColonyRaidNotice(nation, colony.Name, null, plunder, target, PillageKind.Gold));
+    }
+
+    /// <summary>
+    /// Sinks a ship caught in a pillaged port, or — if it has somewhere to repair — damages it instead (FreeCol
+    /// <c>csSinkShipAttack</c> vs <c>csDamageShipAttack</c>, chosen on <c>getRepairLocation()</c>). Reuses the shared
+    /// naval damage/sink path (a damaged ship limps to its drydock berth or Europe; a ship with nowhere to repair
+    /// goes down). RNG-free.
+    /// </summary>
+    private void SinkOrDamagePillagedShip(Unit ship)
+    {
+        if (RepairBerthFor(ship) is not null || CanRepairAtEurope(ship))
+        {
+            DamageShip(ship); // limps to its repair location
+        }
+        else
+        {
+            SinkShip(ship);   // nowhere to repair → goes down
         }
     }
 
@@ -4913,7 +5065,29 @@ public sealed partial class Game
         {
             SyncPassengers(unit); // any colonists aboard move with the ship
         }
+        ActivateSentries(unit); // an enemy stepping adjacent wakes any sentried unit guarding the spot (FreeCol csActivateSentries)
         TryExploreRumour(unit, target); // a land unit stepping onto a Lost City Rumour investigates it (may consume/transform the unit)
+    }
+
+    /// <summary>
+    /// Wakes any sentried <em>enemy</em> unit standing next to <paramref name="mover"/>'s new tile (FreeCol
+    /// <c>ServerUnit.csActivateSentries</c>): a sentry guards the ground, so the instant a hostile unit moves
+    /// adjacent it returns to <see cref="UnitOrders.Active"/> — no longer skipped when cycling, so the player is
+    /// prompted to react rather than the sentry sleeping through the threat. Only enemies of the sentry trigger it
+    /// (FreeCol activates non-owned units on a contacting move; an enemy is the case that matters for guarding, and
+    /// it keeps a player's own or allied units from waking each other's sentries). RNG-free, side-effect-light
+    /// (only an order flip), so it never perturbs any seeded stream (ADR-009).
+    /// </summary>
+    private void ActivateSentries(Unit mover)
+    {
+        foreach (Position n in mover.Position.Neighbours())
+        {
+            foreach (Unit sentry in _units.Where(u => u.IsOnMap && u.Position == n
+                && u.Orders == UnitOrders.Sentry && AreEnemies(mover, u)))
+            {
+                sentry.Orders = UnitOrders.Active;
+            }
+        }
     }
 
     /// <summary>

@@ -45,12 +45,40 @@ public class NativePillageTests
         public RandomState SaveState() => new(0, 0);
     }
 
+    /// <summary>Forces a brave win and a chosen pillage-option index (FreeCol order: buildings, then ships, then goods, then gold).</summary>
+    private sealed class OptionRandom(int option) : IGameRandom
+    {
+        public int Next(int maxExclusive) => option;            // pick the option at this index in the pillage choice
+        public int Next(int minInclusive, int maxExclusive) => minInclusive;
+        public double NextDouble() => 0.0;                      // force a brave win
+        public RandomState SaveState() => new(0, 0);
+    }
+
     private static bool FreeLand(Game g, Position p) =>
         g.Map.InBounds(p) && !g.Map.TerrainAt(p).IsWater
         && g.ColonyAt(p) is null && g.NativeSettlementAt(p) is null
         && !g.Units.Any(u => u.IsOnMap && u.Position == p);
 
-    /// <summary>The human founds an (undefended) colony stocked with goods; a brave of a real native nation stands beside it.</summary>
+    /// <summary>
+    /// Moves every human ship out of <paramref name="colony"/>'s port (the adjacent water tiles) to a far water tile,
+    /// so the pillage option set is just the colony's goods/gold — the human start parks ships near the coast, which
+    /// would otherwise be a valid (and index-0) "sink a ship in port" pillage option. Ship-sink is exercised by its
+    /// own dedicated test.
+    /// </summary>
+    private static void ClearPort(Game game, Colony colony)
+    {
+        var port = colony.Position.Neighbours().ToHashSet();
+        Position far = game.Map.AllPositions()
+            .First(p => game.Map.TerrainAt(p).IsWater && !port.Contains(p)
+                && !colony.Position.IsAdjacentTo(p) && p != colony.Position
+                && !game.Units.Any(u => u.IsOnMap && u.Position == p));
+        foreach (Unit ship in game.PlayerUnits.Where(u => u.IsOnMap && u.Type.IsNaval && port.Contains(u.Position)).ToList())
+        {
+            ship.Position = far;
+        }
+    }
+
+    /// <summary>The human founds an (undefended) colony stocked with goods; a brave of a real native nation stands beside it. Docked ships are cleared from the port so the loot options are goods/gold only.</summary>
     private static (Game game, Colony colony, Unit brave) Stage(ulong seed, int tobacco = 100)
     {
         Game game = Game.New(Classic, seed);
@@ -58,6 +86,7 @@ public class NativePillageTests
         founder.RoleId = RoleType.DefaultRoleId; // found a clean colony — the starting soldier/pioneer's banked muskets/tools aren't part of these pillage scenarios
         founder.RoleCount = 0;
         Colony colony = game.FoundColony(founder); // human-owned; undefended (the founder became its population)
+        ClearPort(game, colony);                    // park starting ships away so a raid can't pick "sink a ship in port"
         if (tobacco > 0)
         {
             colony.AddGoods(Tobacco, tobacco);
@@ -144,10 +173,16 @@ public class NativePillageTests
     public void CheckPillageColony_RefusesAColonyWithNothingToLoot()
     {
         (Game game, Colony colony, Unit brave) = Stage(seed: 7, tobacco: 0); // empty warehouse
+        game.HumanPlayer.Gold = 0; // …and a broke owner (else the gold option alone makes it pillageable — canBePlundered)
 
         Assert.All(colony.Stores.Values, amount => Assert.Equal(0, amount)); // sanity: nothing lootable
+        Assert.Empty(BurnableBuildings(game, colony));                       // …no burnable building (only free base buildings)
         Assert.False(game.CheckPillageColony(brave, colony.Position).Allowed);
     }
+
+    /// <summary>The colony's burnable buildings, mirroring the game's predicate (a building that cost goods or upgrades from another).</summary>
+    private static System.Collections.Generic.List<string> BurnableBuildings(Game game, Colony colony) =>
+        colony.Buildings.Where(b => Classic.Building(b).BuildCost.Count > 0 || Classic.Building(b).UpgradesFrom is not null).ToList();
 
     [Fact]
     public void NonStorableGoods_LikeBankedHammers_AreNeverLooted()
@@ -156,6 +191,7 @@ public class NativePillageTests
         // for construction but are never a pillage target. A colony with ONLY hammers can't be pillaged at all,
         // and when it also holds storable goods the loot only ever comes from those — hammers stay untouched.
         (Game game, Colony colony, Unit brave) = Stage(seed: 7, tobacco: 0);
+        game.HumanPlayer.Gold = 0; // isolate the goods gate (no gold option, no docked ships after ClearPort)
         colony.AddGoods(Hammers, 80);
         Assert.False(game.CheckPillageColony(brave, colony.Position).Allowed); // hammers alone → nothing lootable
 
@@ -232,5 +268,65 @@ public class NativePillageTests
         Assert.Equal(calm.RandomState, raiding.RandomState);                            // …yet stream 0 is untouched
         Assert.Equal(calm.HumanPlayer.Immigration, raiding.HumanPlayer.Immigration);    // pillage touches neither immigration…
         Assert.Equal(calm.HumanPlayer.RecruitDock, raiding.HumanPlayer.RecruitDock);    // …nor the recruit dock (only gold/goods)
+    }
+
+    [Fact]
+    public void Pillage_CanBurnABuilding_DowngradingAnUpgradedOne()
+    {
+        // FreeCol csPillageColony's first option block is the burnable buildings (csDamageBuilding). A warehouse
+        // (upgrades from the depot) is burnable; burning it DOWNGRADES it back to a depot rather than razing it.
+        // With no goods stocked and a broke owner, the building is the only option — index 0 (OptionRandom 0).
+        (Game game, Colony colony, Unit brave) = Stage(seed: 7, tobacco: 0);
+        game.HumanPlayer.Gold = 0;
+        colony.ReplaceBuilding("model.building.depot", "model.building.warehouse"); // upgrade the free depot to a (burnable) warehouse
+
+        game.PillageColony(brave, colony.Position, new OptionRandom(0));
+
+        Assert.DoesNotContain("model.building.warehouse", colony.Buildings); // burned…
+        Assert.Contains("model.building.depot", colony.Buildings);           // …downgraded back to the depot
+        ColonyRaidNotice notice = Assert.Single(game.ColonyRaidNotices);
+        Assert.Equal(PillageKind.Building, notice.Kind);
+        Assert.Equal("model.building.warehouse", notice.BuildingId);
+    }
+
+    [Fact]
+    public void Pillage_CanRazeABaseBuilding_ThatHasNoPredecessor()
+    {
+        // A base building that COST goods to build but has no predecessor (the stockade) is razed outright, not
+        // downgraded (FreeCol csDamageBuilding: destroy when upgradesFrom == null). It's the only burnable building
+        // here (free base houses are spared), so it is the index-0 option.
+        (Game game, Colony colony, Unit brave) = Stage(seed: 7, tobacco: 0);
+        game.HumanPlayer.Gold = 0;
+        colony.AddBuilding("model.building.stockade"); // costs hammers, no upgrades-from → razed on a burn
+        // (a stockade also blocks pillage via canBePillaged in FreeCol, but our CheckPillageColony gates on a garrison;
+        //  this unit-level test drives PillageColony directly to exercise the raze path.)
+
+        game.PillageColony(brave, colony.Position, new OptionRandom(0));
+
+        Assert.DoesNotContain("model.building.stockade", colony.Buildings); // razed
+        ColonyRaidNotice notice = Assert.Single(game.ColonyRaidNotices);
+        Assert.Equal(PillageKind.Building, notice.Kind);
+        Assert.Equal("model.building.stockade", notice.BuildingId);
+    }
+
+    [Fact]
+    public void Pillage_CanSinkAShipInPort()
+    {
+        // FreeCol csPillageColony's second option block is the ships in the colony's port (csSinkShipAttack). A human
+        // ship with nowhere to repair (no drydock colony, but a colonial player always has Europe → it is DAMAGED and
+        // limps off) sits on a port tile. With no burnable buildings and no goods, the ship is the first option.
+        (Game game, Colony colony, Unit brave) = Stage(seed: 7, tobacco: 0);
+        game.HumanPlayer.Gold = 0;
+        Position water = colony.Position.Neighbours()
+            .First(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater);
+        Unit ship = game.SpawnUnit(Classic.Unit("model.unit.caravel"), water); // human-owned naval unit in port
+        int shipId = ship.Id;
+
+        game.PillageColony(brave, colony.Position, new OptionRandom(0));
+
+        Unit afterShip = game.Units.First(u => u.Id == shipId);
+        Assert.True(afterShip.IsUnderRepair);                  // damaged → limps off to repair (the colonial owner has Europe)
+        ColonyRaidNotice notice = Assert.Single(game.ColonyRaidNotices);
+        Assert.Equal(PillageKind.Ship, notice.Kind);
     }
 }
