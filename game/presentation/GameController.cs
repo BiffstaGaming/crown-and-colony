@@ -336,6 +336,13 @@ public partial class GameController : Node2D
         bool? fogOfWar = PendingFogOfWar;
         // The chosen custom-house boycott-smuggling toggle (null = no pick → the spec default, classic on, byte-identical).
         bool? customIgnoreBoycott = PendingCustomIgnoreBoycott;
+        // The setup dials (86d3fq1df/86d3fq1fd/86d3fq13u/86d3fq18b/86d3fq1b8/86d3fq0za) ride NewGameDialog statics; null →
+        // the classic default for each, so an unset dial is byte-identical (ADR-009).
+        int? rivalCount = NewGameDialog.PendingRivalCount;
+        int? startYear = NewGameDialog.PendingStartYear;
+        MapGenerationOptions? mapOptions = NewGameDialog.PendingMapOptions;
+        int? rumourNumber = NewGameDialog.PendingRumourNumber;
+        NationalAdvantages? nationalAdvantages = NewGameDialog.PendingNationalAdvantages;
         // The chosen variant becomes the active ruleset source (null = no pick → the default Classic variant). Set BEFORE
         // StartNewGame so the new game loads the picked variant's ruleset (ADR-018); the save then records its id.
         _variant = PendingVariant ?? GameVariants.Default;
@@ -349,10 +356,15 @@ public partial class GameController : Node2D
         PendingFogOfWar = null;
         PendingCustomIgnoreBoycott = null;
         PendingVariant = null;
+        NewGameDialog.PendingRivalCount = null;
+        NewGameDialog.PendingStartYear = null;
+        NewGameDialog.PendingMapOptions = null;
+        NewGameDialog.PendingRumourNumber = null;
+        NewGameDialog.PendingNationalAdvantages = null;
 
         // Picking the seed may be non-deterministic (player convenience);
         // the game itself is fully determined by the chosen seed.
-        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi(), size, land, difficulty, mapSource, nation, landStyle, victory, fogOfWar, customIgnoreBoycott);
+        StartNewGame(Seed != 0 ? Seed : ((ulong)GD.Randi() << 32) | GD.Randi(), size, land, difficulty, mapSource, nation, landStyle, victory, fogOfWar, customIgnoreBoycott, rivalCount, startYear, mapOptions, rumourNumber, nationalAdvantages);
     }
 
     /// <summary>Starts a new game from an explicit seed at the shipped-default world size / difficulty / map / nation-less human (tests, visual goldens — ADR-009).</summary>
@@ -360,7 +372,7 @@ public partial class GameController : Node2D
         StartNewGame(seed, WorldSizeOptions.DefaultSize, WorldSizeOptions.DefaultLandMass, DifficultyLevels.Default, MapSource.Random);
 
     /// <summary>Starts a new game from an explicit seed, world size / land amount, difficulty level, map source, (optional) human nation, (optional) landmass style, (optional) victory-condition overrides, (optional) fog-of-war override and (optional) custom-house boycott-smuggling override (forwarded from the new-game options). The active <c>_variant</c>'s ruleset is loaded under the chosen level so its balance matches, the level is recorded for the save, a fixed <paramref name="mapSource"/> ignores the size/land/style args (its grid sets the dimensions), <paramref name="humanNationId"/> (null = no pick) seeds the human's national advantage + colony names, <paramref name="landStyle"/> (default <see cref="LandStyle.Continent"/>) shapes the random map's land, <paramref name="victory"/> (null = the ruleset's parsed spec defaults) flips which alternative victory conditions <see cref="Game.Winner"/> evaluates, <paramref name="fogOfWar"/> (null = the spec default, classic on) flips whether explored-but-unseen tiles are re-hidden, and <paramref name="customIgnoreBoycott"/> (null = the spec default, classic on) flips whether a custom house smuggles boycotted goods — all three session-only, not persisted (86d3drn64, 86d3dzdw3, 86d3e4bu0). The chosen <em>variant</em> is set by the caller (<see cref="NewGame"/>) before this runs and is recorded in the save.</summary>
-    public void StartNewGame(ulong seed, WorldSize size, LandMass landMass, DifficultyLevel difficulty, MapSource mapSource, string? humanNationId = null, LandStyle landStyle = LandStyle.Continent, (bool DefeatRef, bool DefeatEuropeans, bool DefeatHumans)? victory = null, bool? fogOfWar = null, bool? customIgnoreBoycott = null)
+    public void StartNewGame(ulong seed, WorldSize size, LandMass landMass, DifficultyLevel difficulty, MapSource mapSource, string? humanNationId = null, LandStyle landStyle = LandStyle.Continent, (bool DefeatRef, bool DefeatEuropeans, bool DefeatHumans)? victory = null, bool? fogOfWar = null, bool? customIgnoreBoycott = null, int? rivalCount = null, int? startYear = null, MapGenerationOptions? mapOptions = null, int? rumourNumber = null, NationalAdvantages? nationalAdvantages = null)
     {
         _currentSeed = seed;
         // Load the active variant's ruleset under the chosen difficulty; if the player picked victory conditions / fog
@@ -381,10 +393,17 @@ public partial class GameController : Node2D
         {
             ruleset = ruleset.WithCustomIgnoreBoycott(smuggle);
         }
+        if (startYear is { } sy)
+        {
+            ruleset = ruleset.WithStartingYear(sy); // the start-year dial (86d3fq1fd); session-only override, no save bump
+        }
         StartGame(Game.New(
             ruleset, _currentSeed, size.Width, size.Height,
             landMassFraction: landMass.Fraction, difficultyLevelId: difficulty.Id, mapSource: mapSource,
-            humanNationId: humanNationId, landStyle: landStyle));
+            humanNationId: humanNationId, landStyle: landStyle,
+            foreignPowerCount: rivalCount, mapOptions: mapOptions,
+            rumourNumber: rumourNumber ?? LostCityRumourGenerator.DefaultRumourNumber,
+            nationalAdvantages: nationalAdvantages ?? NationalAdvantages.Selectable));
     }
 
     private void StartGame(Game game)
