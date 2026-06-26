@@ -19,8 +19,15 @@ namespace CrownAndColony.Presentation;
 /// <item><b>Nations</b> — every European nation with its advantage type and whether it is playable.</item>
 /// <item><b>Resources</b> — every bonus resource with the yield bonus it grants.</item>
 /// <item><b>Concepts</b> — free-text help topics (FreeCol's <c>ConceptDetailPanel</c>): a left list of topic titles
-/// over a right detail pane, the seed of an in-game help/tutorial surface.</item>
+/// over a right detail pane, the in-game help surface (curated content from <see cref="ColopediaConcepts"/>).</item>
 /// </list>
+/// <para>
+/// <b>Cross-links (<c>86d3fq0jx</c>):</b> entries reference each other — a building links to the goods it produces, a
+/// good to what it is refined from / into, and a help topic to the entities it mentions. Clicking a cross-link
+/// navigates to that entity's category, selects it (Concepts) and scrolls it into view with a brief highlight, all
+/// within this panel (FreeCol's in-text help anchors / report→colopedia links). The broader
+/// <i>report → colopedia</i> deep-link (from <c>ColonyReportPanel</c>) is a separate cross-stream follow-up.
+/// </para>
 /// <para>
 /// Pure presentation (ADR-006): reads <see cref="Game.Ruleset"/> and <see cref="Game.Market"/> only, never mutates.
 /// Built programmatically into the fixed <c>VBox/Scroll/Dynamic</c> shell, with the category tab row above it.
@@ -35,7 +42,14 @@ public partial class ColopediaPanel : PanelContainer
     private Category _category = Category.Goods;
 
     /// <summary>The Concepts topic currently shown in the detail pane (the first topic by default).</summary>
-    private string _concept = ConceptTopics[0].Title;
+    private string _concept = ColopediaConcepts.Topics[0].Title;
+
+    /// <summary>
+    /// The row a just-followed cross-link wants brought into view: the entity's node name (e.g. <c>Goods_bells</c>)
+    /// within <c>Dynamic</c>, or null when nothing is pending. Set by <see cref="Navigate"/> and consumed once at the
+    /// end of the next <see cref="Rebuild"/> — the row is scrolled visible and briefly highlighted, then this clears.
+    /// </summary>
+    private string? _focusNode;
 
     private static readonly Dictionary<Category, string> Titles = new()
     {
@@ -49,46 +63,12 @@ public partial class ColopediaPanel : PanelContainer
         [Category.Concepts] = "Colopedia — Concepts",
     };
 
-    /// <summary>
-    /// A free-text help topic in the Concepts tab: a short title and a couple of explanatory sentences.
-    /// FreeCol pulls these from ruleset help-strings; we have none yet, so this is a small curated stub set
-    /// (the seed of an in-game help/tutorial surface — presentation-only, no rules).
-    /// </summary>
-    private readonly record struct ConceptTopic(string Title, string Text);
-
-    private static readonly ConceptTopic[] ConceptTopics =
-    {
-        new("Founding a colony",
-            "Move a colonist onto a buildable land tile and give the Build Colony order to found a new settlement. "
-            + "A colony grows by gathering food, works the surrounding tiles, and is where you produce goods and train colonists."),
-        new("Working tiles & production",
-            "Each colonist in a colony works either a surrounding tile (for food or a raw good) or a building (to refine "
-            + "goods or ring liberty bells). Terrain, bonus resources and the worker's expertise decide how much that tile or building yields each turn."),
-        new("Trade & Europe",
-            "Sail a ship loaded with goods across the high seas to your home port in Europe to sell them for gold, and buy goods or "
-            + "recruit colonists to bring back. The Crown taxes your sales, and prices drift as the market is flooded or runs short."),
-        new("Sons of Liberty & bells",
-            "Statesmen working the town hall produce liberty bells, which raise a colony's Sons of Liberty membership. "
-            + "High membership grants a production bonus; a discontented colony (too many Tories) suffers a penalty instead."),
-        new("Founding Fathers",
-            "Liberty bells also accrue toward your Continental Congress: spend enough and a Founding Father joins, granting a lasting "
-            + "bonus. Each round you are offered one candidate per category (trade, exploration, military, political, religious) to recruit."),
-        new("Combat basics",
-            "A unit's strength comes from its base power, its role and equipment, plus bonuses from terrain, fortification and ambush. "
-            + "The defender's modifiers matter as much as the attacker's, so fortified troops on good ground are hard to dislodge."),
-        new("Native relations",
-            "Indian settlements start wary and grow alarmed as your colonies and troops encroach on their land or you attack them. "
-            + "Trade, gifts and missionaries calm them; raids and land-grabs provoke retaliation. Keep an eye on each tribe's mood."),
-        new("Declaring Independence",
-            "Once enough of your colonists support the rebellion, you may declare independence from the Crown. The King then sends his "
-            + "Royal Expeditionary Force to crush you — survive the war of independence to win the game."),
-    };
-
     /// <summary>Opens the Colopedia on the Goods category over the current ruleset / market.</summary>
     public void Open(Game game)
     {
         _game = game;
         _category = Category.Goods;
+        _focusNode = null;
         Rebuild();
         Show();
     }
@@ -99,9 +79,9 @@ public partial class ColopediaPanel : PanelContainer
         var dynamic = GetNode<VBoxContainer>("VBox/Scroll/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
-            // Detach immediately (no stale-vs-fresh tab-row collision) but QUEUE the free: a category/topic button's
-            // Pressed handler calls Rebuild(), so a synchronous Free() would free that button mid-signal ("object freed
-            // while a signal is being emitted"). RemoveChild + QueueFree is the Godot-safe idiom.
+            // Detach immediately (no stale-vs-fresh tab-row collision) but QUEUE the free: a category/topic/cross-link
+            // button's Pressed handler calls Rebuild(), so a synchronous Free() would free that button mid-signal
+            // ("object freed while a signal is being emitted"). RemoveChild + QueueFree is the Godot-safe idiom.
             dynamic.RemoveChild(child);
             child.QueueFree();
         }
@@ -130,6 +110,14 @@ public partial class ColopediaPanel : PanelContainer
             case Category.Resources: BuildResources(dynamic); break;
             case Category.Concepts: BuildConcepts(dynamic); break;
         }
+
+        // A just-followed cross-link asked for a row to be revealed: scroll it into view and flash a highlight, then
+        // clear the request. Deferred so the freshly-added children have a layout (size/position) to scroll to.
+        if (_focusNode is { } focus)
+        {
+            _focusNode = null;
+            CallDeferred(nameof(RevealRow), focus);
+        }
     }
 
     private Button CategoryButton(string label, Category category)
@@ -139,22 +127,115 @@ public partial class ColopediaPanel : PanelContainer
         return b;
     }
 
+    // ── Cross-link navigation (86d3fq0jx) ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Follows a cross-link to another Colopedia entry: switches to the target <paramref name="category"/>, selects the
+    /// concept (when the target is a help topic), and remembers the target row so the next <see cref="Rebuild"/> scrolls
+    /// it into view and highlights it. Pure navigation within this panel — reads nothing, mutates no game state.
+    /// </summary>
+    /// <param name="category">The category the linked entity lives in.</param>
+    /// <param name="anchor">The entity's ruleset <c>ShortName</c>, or a concept <b>title</b> for the Concepts category.</param>
+    private void Navigate(Category category, string anchor)
+    {
+        _category = category;
+        if (category == Category.Concepts)
+        {
+            // The concept list keys on title; only switch if the topic exists, else stay on whatever was shown.
+            if (ColopediaConcepts.Topics.Any(t => t.Title == anchor))
+            {
+                _concept = anchor;
+            }
+            _focusNode = $"ConceptsRow/ConceptList/Concept_{Slug(anchor)}";
+        }
+        else
+        {
+            _focusNode = $"{category}_{anchor}";
+        }
+        Rebuild();
+    }
+
+    /// <summary>Maps a concept cross-link category (presentation data) to this panel's own <see cref="Category"/>.</summary>
+    private static Category ToCategory(ColopediaConcepts.LinkCategory c) => c switch
+    {
+        ColopediaConcepts.LinkCategory.Goods => Category.Goods,
+        ColopediaConcepts.LinkCategory.Terrain => Category.Terrain,
+        ColopediaConcepts.LinkCategory.Units => Category.Units,
+        ColopediaConcepts.LinkCategory.Buildings => Category.Buildings,
+        ColopediaConcepts.LinkCategory.Fathers => Category.Fathers,
+        ColopediaConcepts.LinkCategory.Nations => Category.Nations,
+        ColopediaConcepts.LinkCategory.Resources => Category.Resources,
+        _ => Category.Concepts,
+    };
+
+    /// <summary>
+    /// A small underlined link button that navigates to <paramref name="category"/> / <paramref name="anchor"/> when
+    /// pressed (FreeCol's in-text help anchor). Named <c>Link_{Category}_{slug}</c> so the L3 test can find and click a
+    /// known cross-link. Flat styling keeps it reading as a hyperlink inside a row, not a chunky button.
+    /// </summary>
+    private Button LinkButton(string label, Category category, string anchor)
+    {
+        var b = new Button
+        {
+            Name = $"Link_{category}_{Slug(anchor)}",
+            Text = label,
+            Flat = true,
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+            SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin,
+            MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+            TooltipText = $"Open the Colopedia entry for {label}",
+        };
+        b.Pressed += () => Navigate(category, anchor);
+        return b;
+    }
+
+    /// <summary>
+    /// Scrolls the named row of <c>Dynamic</c> into view in the surrounding <c>Scroll</c> container and briefly tints it,
+    /// so a freshly-followed cross-link lands on the right entry. No-op if the row is gone (defensive). Deferred from
+    /// <see cref="Rebuild"/> so the row already has a layout rect to scroll to.
+    /// </summary>
+    private void RevealRow(string nodeName)
+    {
+        var dynamic = GetNodeOrNull<VBoxContainer>("VBox/Scroll/Dynamic");
+        if (dynamic?.GetNodeOrNull<Control>(nodeName) is not { } row)
+        {
+            return;
+        }
+        GetNode<ScrollContainer>("VBox/Scroll").EnsureControlVisible(row);
+        // A one-shot highlight: tint the row toward the accent, then ease back to normal so the eye catches the target.
+        row.Modulate = new Color(1f, 1f, 0.55f);
+        CreateTween().TweenProperty(row, "modulate", Colors.White, 0.8);
+    }
+
     // ── Goods ────────────────────────────────────────────────────────────────────────────────────────────
 
     private void BuildGoods(VBoxContainer dynamic)
     {
         // FreeCol's Colopedia lists every goods type in ruleset order. One named row per good (Goods_{shortName})
-        // so the L3 test can find a known good. Each row carries the good's facts; tradeable goods also show price.
+        // so the L3 test (and a cross-link) can find a known good. Each row carries the good's facts; tradeable goods
+        // also show price, and cross-links the good to what it is refined FROM and (if any) refined INTO.
         foreach (GoodsType g in _game.Ruleset.GoodsTypes)
         {
             string price = g.IsTradeable
                 ? $"sell {_game.Market.BidPrice(g.Id)} / buy {_game.Market.AskPrice(g.Id)} gold"
                 : "not traded in Europe";
-            dynamic.AddChild(new Label
+
+            var row = new HBoxContainer { Name = $"Goods_{g.ShortName}" };
+            row.AddChild(new Label { Text = $"{Title(g.ShortName)} — {GoodsKind(g)}  ·  {price}" });
+
+            // Refined good → a link to its raw input (its "made from"); raw good → links to whatever is refined from it.
+            if (g.MadeFrom is { } rawId)
             {
-                Name = $"Goods_{g.ShortName}",
-                Text = $"{Title(g.ShortName)} — {GoodsKind(g)}  ·  {price}",
-            });
+                GoodsType raw = _game.Ruleset.Goods(rawId);
+                row.AddChild(new Label { Text = "  ← from " });
+                row.AddChild(LinkButton(Title(raw.ShortName), Category.Goods, raw.ShortName));
+            }
+            foreach (GoodsType refined in _game.Ruleset.GoodsTypes.Where(o => o.MadeFrom == g.Id))
+            {
+                row.AddChild(new Label { Text = "  → makes " });
+                row.AddChild(LinkButton(Title(refined.ShortName), Category.Goods, refined.ShortName));
+            }
+            dynamic.AddChild(row);
         }
     }
 
@@ -182,20 +263,34 @@ public partial class ColopediaPanel : PanelContainer
     {
         foreach (TerrainType t in _game.Ruleset.TerrainTypes)
         {
-            // The goods a colonist can be worked for here (the attended production outputs), or a dash for barren/water.
-            IEnumerable<string> produces = t.Productions
+            // The goods a colonist can be worked for here (the attended production outputs), or empty for barren/water.
+            List<GoodsType> produces = t.Productions
                 .Where(p => !p.Unattended)
                 .SelectMany(p => p.Outputs)
-                .Select(o => Title(_game.Ruleset.Goods(o.GoodsId).ShortName))
-                .Distinct();
-            string works = produces.Any() ? string.Join(", ", produces) : "—";
+                .Select(o => _game.Ruleset.Goods(o.GoodsId))
+                .DistinctBy(g => g.Id)
+                .ToList();
             string kind = t.IsWater ? "water" : t.IsForest ? "forest" : t.IsElevation ? "elevation" : "open land";
             string settle = t.CanSettle ? "" : ", no colony";
-            dynamic.AddChild(new Label
+
+            var row = new HBoxContainer { Name = $"Terrain_{t.ShortName}" };
+            row.AddChild(new Label
             {
-                Name = $"Terrain_{t.ShortName}",
-                Text = $"{Title(t.ShortName)} — {kind}, move {t.MoveCost}, defence {Pct(t.DefenceBonus)}{settle}  ·  works: {works}",
+                Text = $"{Title(t.ShortName)} — {kind}, move {t.MoveCost}, defence {Pct(t.DefenceBonus)}{settle}  ·  works:",
             });
+            if (produces.Count == 0)
+            {
+                row.AddChild(new Label { Text = " —" });
+            }
+            else
+            {
+                // Each worked-for good is a cross-link into the Goods category.
+                foreach (GoodsType g in produces)
+                {
+                    row.AddChild(LinkButton(Title(g.ShortName), Category.Goods, g.ShortName));
+                }
+            }
+            dynamic.AddChild(row);
         }
     }
 
@@ -246,11 +341,30 @@ public partial class ColopediaPanel : PanelContainer
             string cost = b.BuildCost.Count > 0
                 ? string.Join(", ", b.BuildCost.Select(c => $"{c.Amount} {_game.Ruleset.Goods(c.GoodsId).ShortName}"))
                 : "free (starting building)";
-            dynamic.AddChild(new Label
+
+            // The distinct goods this building's attended production yields (lumber mill → hammers, weaver's → cloth…).
+            List<GoodsType> makes = b.Productions
+                .Where(p => !p.Unattended)
+                .SelectMany(p => p.Outputs)
+                .Select(o => _game.Ruleset.Goods(o.GoodsId))
+                .DistinctBy(g => g.Id)
+                .ToList();
+
+            var row = new HBoxContainer { Name = $"Buildings_{b.ShortName}" };
+            row.AddChild(new Label
             {
-                Name = $"Buildings_{b.ShortName}",
                 Text = $"{Title(b.ShortName)} — needs pop {b.RequiredPopulation}, {b.Workplaces} workplaces  ·  cost: {cost}",
             });
+            if (makes.Count > 0)
+            {
+                row.AddChild(new Label { Text = "  ·  makes" });
+                // Each produced good cross-links into the Goods category — the building→goods link FreeCol surfaces.
+                foreach (GoodsType g in makes)
+                {
+                    row.AddChild(LinkButton(Title(g.ShortName), Category.Goods, g.ShortName));
+                }
+            }
+            dynamic.AddChild(row);
         }
     }
 
@@ -274,6 +388,17 @@ public partial class ColopediaPanel : PanelContainer
                 Text = $"{Title(f.ShortName)} — {f.Type}  ·  {FatherEffect(f)}",
                 SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
             });
+            // A father granting a free unit/building cross-links to that entity's entry.
+            foreach (string unitId in f.FreeUnits)
+            {
+                UnitType u = _game.Ruleset.Unit(unitId);
+                row.AddChild(LinkButton(Title(u.ShortName), Category.Units, u.ShortName));
+            }
+            foreach (string buildingId in f.FreeBuildings)
+            {
+                BuildingType b = _game.Ruleset.Building(buildingId);
+                row.AddChild(LinkButton(Title(b.ShortName), Category.Buildings, b.ShortName));
+            }
             dynamic.AddChild(row);
         }
     }
@@ -363,16 +488,27 @@ public partial class ColopediaPanel : PanelContainer
     {
         foreach (ResourceType r in _game.Ruleset.ResourceTypes)
         {
-            // The unscoped yield bonuses (those any colonist gets), summarised as "+N good" / "×N good".
-            IEnumerable<string> bonuses = r.Modifiers
+            // The unscoped yield bonuses (those any colonist gets) — each cross-links the boosted good into Goods.
+            List<(string Label, GoodsType Goods)> bonuses = r.Modifiers
                 .Where(m => m.IsUnscoped)
-                .Select(m => $"{ModifierLabel(m.Type, m.Value)} {Title(_game.Ruleset.Goods(m.GoodsId).ShortName)}");
-            string effect = bonuses.Any() ? string.Join(", ", bonuses) : "an expert-only bonus";
-            dynamic.AddChild(new Label
+                .Select(m => ($"{ModifierLabel(m.Type, m.Value)} {Title(_game.Ruleset.Goods(m.GoodsId).ShortName)}",
+                              _game.Ruleset.Goods(m.GoodsId)))
+                .ToList();
+
+            var row = new HBoxContainer { Name = $"Resources_{r.ShortName}" };
+            row.AddChild(new Label { Text = $"{Title(r.ShortName)} — boosts" });
+            if (bonuses.Count == 0)
             {
-                Name = $"Resources_{r.ShortName}",
-                Text = $"{Title(r.ShortName)} — boosts {effect}",
-            });
+                row.AddChild(new Label { Text = " an expert-only bonus" });
+            }
+            else
+            {
+                foreach ((string label, GoodsType g) in bonuses)
+                {
+                    row.AddChild(LinkButton(label, Category.Goods, g.ShortName));
+                }
+            }
+            dynamic.AddChild(row);
         }
     }
 
@@ -380,16 +516,17 @@ public partial class ColopediaPanel : PanelContainer
 
     /// <summary>
     /// FreeCol's <c>ConceptDetailPanel</c>: a master-detail help view — a left column of topic-title buttons
-    /// (<c>Concept_{slug}</c>, a space-free slug of the title, the active one disabled) over a right detail pane that shows the selected topic's
-    /// title (<c>ConceptTitle</c>) and its explanatory text (<c>ConceptText</c>, word-wrapped). Pure presentation —
-    /// the topics are a small curated stub set (no ruleset help-strings yet), no game state read.
+    /// (<c>Concept_{slug}</c>, a space-free slug of the title, the active one disabled) over a right detail pane that
+    /// shows the selected topic's title (<c>ConceptTitle</c>), its explanatory text (<c>ConceptText</c>, word-wrapped)
+    /// and a row of cross-link buttons (<c>ConceptLinks</c>) to the entries it mentions. Pure presentation — the topics
+    /// are the curated <see cref="ColopediaConcepts"/> set (no ruleset help-strings yet), no game state read.
     /// </summary>
     private void BuildConcepts(VBoxContainer dynamic)
     {
         // If a previous tab/build left the selected topic unset (defensive), fall back to the first topic.
-        if (!ConceptTopics.Any(t => t.Title == _concept))
+        if (!ColopediaConcepts.Topics.Any(t => t.Title == _concept))
         {
-            _concept = ConceptTopics[0].Title;
+            _concept = ColopediaConcepts.Topics[0].Title;
         }
 
         var row = new HBoxContainer { Name = "ConceptsRow" };
@@ -397,7 +534,7 @@ public partial class ColopediaPanel : PanelContainer
         // Left: one named button per help topic; pressing it shows that topic in the detail pane.
         // The node name is a space-free slug of the title (Godot node-path lookups dislike spaces); Text keeps the title.
         var list = new VBoxContainer { Name = "ConceptList" };
-        foreach (ConceptTopic topic in ConceptTopics)
+        foreach (ColopediaConcepts.ColopediaConceptTopic topic in ColopediaConcepts.Topics)
         {
             var b = new Button
             {
@@ -406,14 +543,14 @@ public partial class ColopediaPanel : PanelContainer
                 Disabled = topic.Title == _concept,
             };
             string title = topic.Title;
-            b.Pressed += () => { _concept = title; Rebuild(); };
+            b.Pressed += () => { _concept = title; _focusNode = null; Rebuild(); };
             list.AddChild(b);
         }
         row.AddChild(list);
         row.AddChild(new VSeparator());
 
-        // Right: the detail pane — the selected topic's title and its word-wrapped text.
-        ConceptTopic selected = ConceptTopics.First(t => t.Title == _concept);
+        // Right: the detail pane — the selected topic's title, its word-wrapped text, and its cross-link buttons.
+        ColopediaConcepts.ColopediaConceptTopic selected = ColopediaConcepts.Topics.First(t => t.Title == _concept);
         var detail = new VBoxContainer { Name = "ConceptDetail", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         detail.AddChild(new Label { Name = "ConceptTitle", Text = selected.Title });
         detail.AddChild(new Label
@@ -423,6 +560,17 @@ public partial class ColopediaPanel : PanelContainer
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
             CustomMinimumSize = new Vector2(360, 0),
         });
+        if (selected.Links.Count > 0)
+        {
+            // "See also:" cross-links — each jumps to the referenced entry (a good/building/unit or another topic).
+            var links = new HBoxContainer { Name = "ConceptLinks" };
+            links.AddChild(new Label { Text = "See also:", SizeFlagsVertical = Control.SizeFlags.ShrinkCenter });
+            foreach (ColopediaConcepts.ConceptLink link in selected.Links)
+            {
+                links.AddChild(LinkButton(link.Label, ToCategory(link.Category), link.Anchor));
+            }
+            detail.AddChild(links);
+        }
         row.AddChild(detail);
 
         dynamic.AddChild(row);
