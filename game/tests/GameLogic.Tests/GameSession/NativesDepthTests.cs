@@ -173,6 +173,110 @@ public class NativesDepthTests
     /// <summary>The apache nation's RNG stream — the same one RunNativeTurn draws from (never the human's stream 0).</summary>
     private static IGameRandom ApacheStream(Game game, Player apache) => apache.Rng!;
 
+    // ===== 2b. Per-turn military-goods production / refill (86d3fpzna / arm-braves 86d3fpzzj) =====
+
+    private const string Muskets = "model.goods.muskets";
+    private const string Horses = "model.goods.horses";
+
+    [Fact]
+    public void MilitaryProduction_GrowsMuskets_FromZero_Capped()
+    {
+        // A settlement that has spent all its muskets re-accumulates them per turn (FreeCol IndianSettlement musket
+        // manufacture), capped — production never runs away.
+        Game game = Game.New(Classic, Seed);
+        var camp = new NativeSettlement(8101, "model.nationType.apache", "model.settlement.camp", false, new Position(0, 0), 5, null);
+        Assert.Equal(0, camp.StockOf(Muskets));
+        Player apache = game.Players.First(p => p.PlayerType == PlayerType.Native && p.NationId == "model.nationType.apache");
+
+        for (int t = 0; t < 3; t++)
+        {
+            game.ProduceNativeMilitaryGoods(camp, ApacheStream(game, apache));
+        }
+        int afterThree = camp.StockOf(Muskets);
+        Assert.True(afterThree > 0, "a bare camp manufactures muskets over a few turns");
+
+        for (int t = 0; t < 100; t++)
+        {
+            game.ProduceNativeMilitaryGoods(camp, ApacheStream(game, apache));
+        }
+        Assert.True(camp.StockOf(Muskets) <= 100, "production never pushes muskets above the ceiling"); // NativeMilitaryStoreCeilingMax
+        Assert.True(camp.StockOf(Muskets) > afterThree, "production keeps topping up until the ceiling");
+    }
+
+    [Fact]
+    public void MilitaryProduction_BreedsHorses_OnlyForCapitalsOrLargerCamps()
+    {
+        // Horses are bred only by capitals / village-or-larger camps (mirrors the generator seed's capability — a small
+        // frontier camp arms but never mounts), matching FreeCol's food-gated horse breeding.
+        Game game = Game.New(Classic, Seed);
+        Player apache = game.Players.First(p => p.PlayerType == PlayerType.Native && p.NationId == "model.nationType.apache");
+        var smallCamp = new NativeSettlement(8102, "model.nationType.apache", "model.settlement.camp", false, new Position(0, 0), 3, null);
+        var bigCamp = new NativeSettlement(8103, "model.nationType.apache", "model.settlement.city", true, new Position(0, 1), 8, null);
+
+        for (int t = 0; t < 10; t++)
+        {
+            game.ProduceNativeMilitaryGoods(smallCamp, ApacheStream(game, apache));
+            game.ProduceNativeMilitaryGoods(bigCamp, ApacheStream(game, apache));
+        }
+
+        Assert.Equal(0, smallCamp.StockOf(Horses)); // a small camp never breeds horses…
+        Assert.True(bigCamp.StockOf(Horses) > 0, "a capital / large camp breeds horses");
+        Assert.True(smallCamp.StockOf(Muskets) > 0, "…but every camp manufactures muskets");
+    }
+
+    [Fact]
+    public void MilitaryProduction_LetsADisarmedTribeReArmABrave_AfterSpendingItsStock()
+    {
+        // The headline: a tribe that armed a brave and drew its stock to 0 RE-ACCUMULATES muskets over the next turns
+        // (production), so it can arm ANOTHER brave later — closing the arm-braves deviation (86d3fpzzj: produced, not
+        // just seeded). Drive a single threatened camp end-to-end: arm a first brave (drains the seed), then spawn a
+        // second unarmed brave and run turns — production refills the camp and the second brave eventually arms too.
+        Game game = Game.New(Classic, seed: 7);
+        NativeSettlement home = game.NativeSettlements.First(s => s.Position.Neighbours().Any(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.NativeSettlementAt(n) is null && game.ColonyAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n)));
+        string nation = home.NationTypeId;
+        // Spend the camp's whole stock so it must PRODUCE to re-arm (no seed left to lean on).
+        home.AddStock(Muskets, -home.StockOf(Muskets));
+        home.AddStock(Horses, -home.StockOf(Horses));
+        Position spot = home.Position.Neighbours().First(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.NativeSettlementAt(n) is null && game.ColonyAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+        Unit brave = game.SpawnUnit(Classic.Unit("model.unit.brave"), spot, nation);
+        Assert.Equal("model.role.default", brave.RoleId);
+
+        bool armed = false;
+        for (int turn = 0; turn < 40 && !armed; turn++)
+        {
+            foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == nation))
+            {
+                game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // keep the camp threatened so it secures its braves
+            }
+            brave.Position = spot; // park it home (it would otherwise wander off)
+            game.EndTurn();
+            armed = brave.RoleId != "model.role.default";
+        }
+
+        Assert.True(armed, "a disarmed tribe re-accumulates muskets from production and arms a brave again");
+    }
+
+    [Fact]
+    public void MilitaryProduction_DrawsOnlyOnTheNativeStream_LeavingStream0Untouched()
+    {
+        // ADR-009: a game whose camps manufacture arms every turn keeps the human's stream 0 byte-identical to a fresh
+        // same-seed game — the military-production variance draws only on the nation's stream.
+        Game a = Game.New(Classic, seed: 909);
+        Game b = Game.New(Classic, seed: 909);
+        for (int t = 0; t < 12; t++)
+        {
+            a.EndTurn();
+            b.EndTurn();
+        }
+        Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson()); // fully byte-identical (production included)
+    }
+
     // ===== 3. Nation-level (tribe-wide) tension, distinct from per-settlement =====
 
     [Fact]

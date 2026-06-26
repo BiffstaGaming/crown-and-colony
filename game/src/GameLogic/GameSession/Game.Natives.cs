@@ -349,6 +349,88 @@ public partial class Game
             .OrderBy(s => s.Id))
         {
             ProduceNativeGoods(settlement, rng);
+            ProduceNativeMilitaryGoods(settlement, rng);
+        }
+    }
+
+    // ============================================================================================================
+    // Per-turn military-goods production / refill (86d3fpzna / 86d3fpzzj) — FreeCol IndianSettlement military goods.
+    //
+    // FreeCol's ServerIndianSettlement.csNewTurn produces military goods each turn too: MUSKETS are manufactured
+    // from tools (a refined good, getTotalProductionOf = getUnitCount() when the settlement is short of muskets) and
+    // HORSES are bred (<= MAX_HORSES_PER_TURN = 2/turn), both capped at the warehouse and driven by getWantedGoodsAmount
+    // for military goods (= enough to fully arm the settlement's currently-unarmed braves). We do NOT simulate the
+    // natives' tiles/armoury, so this is ABSTRACTED the same way ProduceNativeGoods abstracts raw goods: each turn a
+    // settlement slowly accumulates muskets (every camp) and horses (capitals / village-or-larger camps — mirroring
+    // the generator seed's capability so a small camp never breeds horses it could never seed), up to a per-settlement
+    // ceiling sized by population, by a small Size-scaled increment with a little nation-stream variance. So a tribe
+    // that armed its braves and spent its stock REPLENISHES over the following turns and can re-arm later (closing the
+    // arm-braves deviation 86d3fpzzj: stock is now PRODUCED, not just seeded). Drawn only on the NATION's own stream,
+    // never the human's stream 0 (ADR-009) — the seeded variance keeps soak twin-determinism intact.
+    // ============================================================================================================
+
+    /// <summary>Base units of a military good a settlement manufactures/breeds per resident per turn (the abstracted FreeCol musket-manufacture / horse-breeding rate; under-produced deliberately so arming a brave is a real investment, not free every turn).</summary>
+    private const int NativeMilitaryProductionPerResident = 1;
+
+    /// <summary>
+    /// The most muskets/horses production lets a settlement accumulate per resident — so a bigger camp keeps enough on
+    /// hand to re-arm several braves, a small one only one or two. Capped overall at <see cref="NativeMilitaryStoreCeilingMax"/>.
+    /// </summary>
+    private const int NativeMilitaryStorePerResident = BraveEquipGoods / 2; // ~half an armed-brave's worth per resident
+
+    /// <summary>The absolute ceiling production lets a single military good's stock reach — a few braves' worth (FreeCol caps military goods at the wanted amount + warehouse; we cap at a fixed few half-units so a tribe never hoards an army's arsenal from production alone). Player/redistribution can still exceed it; production simply stops contributing above it.</summary>
+    private const int NativeMilitaryStoreCeilingMax = 4 * BraveEquipGoods; // up to four braves' worth (100)
+
+    /// <summary>
+    /// Refills <paramref name="settlement"/>'s muskets (every camp) and, for a capital or a settlement of size ≥
+    /// <see cref="MountedProductionSizeThreshold"/>, its horses, by one turn of abstracted native arms manufacture
+    /// (FreeCol <c>ServerIndianSettlement.csNewTurn</c> military-goods production): each military good gathers
+    /// <see cref="NativeMilitaryProductionPerResident"/> units per resident plus 0–1 per resident of
+    /// <paramref name="rng"/> variance (the nation's stream), scaled down as the good's stock fills toward this
+    /// settlement's ceiling (population-sized, capped at <see cref="NativeMilitaryStoreCeilingMax"/>) — a stock already
+    /// at/above the ceiling produces nothing. So a camp that armed braves and drew its stock to 0 recovers over the next
+    /// turns and can re-arm; a camp brimming with arms accumulates no more from production. RNG-free for the human
+    /// (stream 0 untouched): only the nation's stream is drawn (ADR-009). Capitals/larger camps refill horses too,
+    /// mirroring the generator's seed capability so production never gives a small camp horses it was never seeded with.
+    /// </summary>
+    /// <param name="settlement">The settlement manufacturing arms this turn.</param>
+    /// <param name="rng">The owning nation's RNG stream (never the human's stream 0).</param>
+    internal void ProduceNativeMilitaryGoods(NativeSettlement settlement, IGameRandom rng)
+    {
+        int ceiling = Math.Min(NativeMilitaryStoreCeilingMax, Math.Max(BraveEquipGoods, NativeMilitaryStorePerResident * settlement.Size));
+        // Muskets first (every camp can arm), then horses (only the better/larger camps mount), in a stable order so the
+        // per-good variance draws are deterministic for a seed (the same good order the generator seed uses).
+        RefillMilitaryGood(settlement, MusketsId, ceiling, rng);
+        if (settlement.IsCapital || settlement.Size >= MountedProductionSizeThreshold)
+        {
+            RefillMilitaryGood(settlement, HorsesId, ceiling, rng);
+        }
+    }
+
+    /// <summary>Capital / size threshold at/above which a settlement also manufactures horses (mirrors the generator's <c>MountedStockSizeThreshold</c> so production matches the seed's capability — small camps arm but never breed horses).</summary>
+    private const int MountedProductionSizeThreshold = 7;
+
+    /// <summary>
+    /// Adds one turn of production of a single military good to <paramref name="settlement"/>: the Size-scaled base
+    /// gather plus a little nation-stream variance, scaled down by the headroom left below <paramref name="ceiling"/>
+    /// (the stock-fill curve — a fuller arsenal grows slower), and never pushing the good above the ceiling. A no-op
+    /// when the good is already at/above the ceiling, so a well-armed camp produces nothing (and draws no variance for
+    /// that good — only an under-stocked good ever touches the stream, keeping byte-stability tight).
+    /// </summary>
+    private void RefillMilitaryGood(NativeSettlement settlement, string goodsId, int ceiling, IGameRandom rng)
+    {
+        int current = settlement.StockOf(goodsId);
+        if (current >= ceiling)
+        {
+            return; // already holds a full arsenal from production — manufacture no more (FreeCol wanted-amount/warehouse cap)
+        }
+        int headroom = ceiling - current;
+        int baseGather = NativeMilitaryProductionPerResident * settlement.Size * headroom / ceiling; // stock-fill curve
+        int variance = rng.Next(0, settlement.Size + 1); // 0..Size on the nation's stream
+        int produced = Math.Min(headroom, Math.Max(1, baseGather + variance));
+        if (produced > 0)
+        {
+            settlement.AddStock(goodsId, produced);
         }
     }
 

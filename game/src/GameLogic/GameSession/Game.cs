@@ -9494,6 +9494,20 @@ public sealed partial class Game
                     MoveUnit(brave, step); // hemmed-in hostile braves simply wait (no fallback wander)
                 }
             }
+            else if (home is not null && PickRivalRaidTarget(player, brave, home) is { } rivalTile)
+            {
+                // Not raiding the human (calm toward the human, or no human target) but the home camp is alarmed at a
+                // rival European power (incl. a rival AI) — FreeCol braves raid ANY sufficiently-disliked European, not
+                // just one foe. Seek-and-destroy that rival's nearest field unit on the nation's own stream (86d3fpzu3).
+                if (brave.Position.IsAdjacentTo(rivalTile) && CheckAttack(brave, rivalTile).Allowed)
+                {
+                    RaidForeignUnit(player, brave, rivalTile);
+                }
+                else if (StepToward(player, brave, rivalTile) is { } rivalStep)
+                {
+                    MoveUnit(brave, rivalStep); // close on the rival; a hemmed-in brave waits
+                }
+            }
             else if (!hostile && TryBringGiftFromStore(player, brave))
             {
                 // a friendly tribe left a store-backed gift at an adjacent human colony — the brave's turn is spent (86d3fpzx1)
@@ -9578,7 +9592,7 @@ public sealed partial class Game
     /// raids/wanders this turn). A no-op when the nation holds no stock or no settlement is alarmed, so a default game
     /// stays byte-stable (ADR-009).
     /// </summary>
-    private void EquipBravesAtThreatenedSettlements(Player nation)
+    internal void EquipBravesAtThreatenedSettlements(Player nation)
     {
         foreach (NativeSettlement settlement in _nativeSettlements
             .Where(s => s.NationTypeId == nation.NationId && AlarmLevelOf(s) >= RaidAlarmThreshold)
@@ -10269,6 +10283,73 @@ public sealed partial class Game
         CombatResult result = Attack(brave, target, RandomFor(player)); // INTERNAL overload → the nation's stream
         _combatNotices.Add(new CombatNotice(player.NationId!, defenderTypeId, result, target));
     }
+
+    /// <summary>
+    /// The tile of a <b>rival European</b> field unit an alarmed <paramref name="brave"/> raids (FreeCol
+    /// <c>NativeAIPlayer.secureIndianSettlement</c> — a settlement dispatches braves at <em>any</em> European whose
+    /// tension at that camp is above CONTENT, i.e. Displeased+, not just the human): among the colonial powers <b>other
+    /// than the human</b> whose alarm at <paramref name="home"/> is ≥ <see cref="RaidAlarmThreshold"/>, the best-scored
+    /// land unit-tile by the same <see cref="ScoreUnitTarget"/> value−distance heuristic the human raid uses, searched
+    /// over the 8/12/16 Chebyshev range ladder, then any-distance nearest as a fallback. The human is excluded here —
+    /// the human is handled by the earlier <see cref="PickRaidTarget"/> branch on its own (channel-0) alarm, so this is
+    /// strictly the <em>rival-power</em> extension (and a no-op in a solo game, where no rival colonial power exists, so
+    /// the human's stream 0 stays byte-stable). Pure (no RNG); only ever called on the native's own turn.
+    /// </summary>
+    private Position? PickRivalRaidTarget(Player nation, Unit brave, NativeSettlement home)
+    {
+        // The colonial powers (NOT the human) this camp is alarmed enough at to raid. Empty in a solo game.
+        var rivals = _players
+            .Where(p => p.PlayerType == PlayerType.Colonial && p.PlayerId != HumanAlarmChannel
+                        && AlarmLevelOf(home, p.PlayerId) >= RaidAlarmThreshold)
+            .Select(p => p.PlayerId)
+            .ToHashSet();
+        if (rivals.Count == 0)
+        {
+            return null; // no disliked rival power → nothing to raid (solo game falls out here, RNG untouched)
+        }
+
+        foreach (int range in SeekRangeLadder)
+        {
+            Position? best = null;
+            int bestScore = int.MinValue;
+            foreach (Position tile in _units
+                         .Where(u => u.IsOnMap && !u.IsNative && rivals.Contains(u.OwnerId) && !u.Type.IsNaval
+                                     && Chebyshev(u.Position, brave.Position) <= range)
+                         .OrderBy(u => u.Id).Select(u => u.Position).Distinct())
+            {
+                int score = ScoreUnitTarget(brave, tile);
+                if (score != int.MinValue && score > bestScore)
+                {
+                    bestScore = score;
+                    best = tile;
+                }
+            }
+            if (best is { } found)
+            {
+                return found;
+            }
+        }
+        // Out of seek range → close on the rivals' nearest land unit at any distance (mirrors PickRaidTarget's fallback).
+        return _units
+            .Where(u => u.IsOnMap && !u.IsNative && rivals.Contains(u.OwnerId) && u.Type.IsNaval == brave.Type.IsNaval)
+            .OrderBy(u => Chebyshev(u.Position, brave.Position))
+            .ThenBy(u => u.Position.Y).ThenBy(u => u.Position.X)
+            .Select(u => (Position?)u.Position)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Resolves a brave's raid on the <b>rival European</b> unit at <paramref name="target"/> through the nation's OWN
+    /// RNG stream (never stream 0), like <see cref="RaidHumanUnit"/> but against a non-human colonial power. No
+    /// <see cref="CombatNotice"/> is recorded — those are the <em>human</em>'s victim log (combat the human suffered),
+    /// and this fight is between a native nation and a rival AI, which the human is not party to (the foreign-power AI's
+    /// <see cref="AttackHumanUnit"/> likewise records a notice only for human victims). The defender is non-native (a
+    /// colonial rival, filtered upstream), so the native-alarm path in
+    /// <see cref="Attack(Unit, Position, Randomness.IGameRandom)"/> is skipped — a raid never raises the raider's own
+    /// nation's alarm. Drawing only on the nation's stream keeps the human's stream 0 byte-stable (ADR-009).
+    /// </summary>
+    private void RaidForeignUnit(Player nation, Unit brave, Position target) =>
+        Attack(brave, target, RandomFor(nation)); // INTERNAL overload → the nation's stream; no human-facing notice
 
     /// <summary>
     /// Grants any free buildings the player's elected fathers confer (FreeCol <c>model.event.freeBuilding</c> /
