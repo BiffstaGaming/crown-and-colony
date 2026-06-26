@@ -34,12 +34,15 @@ public class EmigrationChoicePanelTests
 
         var panel = controller.GetNode<PanelContainer>("UI/EmigrationChoicePanel");
         AssertThat(panel.Visible).IsTrue();
+        // The normal (non-FoY) Brewster prompt, not the Fountain-of-Youth one.
+        AssertThat(controller.GetNode<Label>("UI/EmigrationChoicePanel/VBox/EmigrationTitle").Text).Contains("emigrant");
 
-        // One button per recruit slot; the first is named Choose_0.
+        // One button per recruit slot; the first is named Choose_0 and carries the recruit's display name (not blank).
         var firstChoice = controller.GetNodeOrNull<Button>("UI/EmigrationChoicePanel/VBox/Dynamic/Choose_0");
         AssertThat(firstChoice).IsNotNull();
+        AssertThat(firstChoice!.Text).IsNotEmpty();
 
-        firstChoice!.EmitSignal(BaseButton.SignalName.Pressed);
+        firstChoice.EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(panel.Visible).IsFalse();                 // one emigrant due → resolved → modal hidden
