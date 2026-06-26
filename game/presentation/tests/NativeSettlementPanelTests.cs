@@ -28,6 +28,7 @@ public class NativeSettlementPanelTests
     private const string Sugar = "model.goods.sugar";
     private const string MissionaryRole = "model.role.missionary";
     private const string FreeColonist = "model.unit.freeColonist";
+    private const string Artillery = "model.unit.artillery"; // innate offence 7 — "armed" without a role (for demand-tribute)
 
     [TestCase(Timeout = 60000)]
     public async Task EstablishMissionButton_ShownForAMissionary_FoundsTheMission_OwnedByTheHuman()
@@ -83,6 +84,107 @@ public class NativeSettlementPanelTests
 
     /// <summary>The first non-human colonial player id (the rival whose mission the human denounces).</summary>
     private const int RivalColonialId = -1; // resolved against the live game in OpenMissionPanel
+
+    // ---- Demand tribute (86d3fq01a) -------------------------------------------------------------------------
+
+    [TestCase(Timeout = 60000)]
+    public async Task DemandTributeButton_ShownForAnArmedUnit_ShakesDownTheChief_ForGold()
+    {
+        // An artillery (innate offence) beside a Content settlement: the Demand-tribute button is offered and pays out.
+        (ISceneRunner runner, GameController controller, Game game, NativeSettlement settlement, Unit gun) =
+            await OpenArmedPanel();
+
+        AssertThat(FindButton(controller, "DemandTribute")).IsNotNull();
+        int goldBefore = game.Gold;
+
+        await Press(runner, controller, "DemandTribute");
+
+        // A Content tribe pays tribute (gold rose) and the demand ended the unit's turn (FreeCol demandTribute).
+        AssertThat(game.Gold).IsGreater(goldBefore);
+        AssertThat(gun.MovementLeft).IsEqual(0);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task DemandTributeButton_NotShown_ForAnUnarmedColonist()
+    {
+        // A plain free colonist has no offensive strength, so the Demand-tribute action is not offered.
+        (_, GameController controller, _, _, _) = await OpenMissionPanel(missionary: false);
+        AssertThat(FindButton(controller, "DemandTribute")).IsNull();
+    }
+
+    // ---- Incite (86d3fq00w / 86d3fq0bt) ---------------------------------------------------------------------
+
+    [TestCase(Timeout = 60000)]
+    public async Task InciteButton_ShownForAFundedMissionary_OpensTheRivalPicker_AndTurnsTheTribeOnTheRival()
+    {
+        // A funded missionary beside a Content settlement: the Incite button opens a rival-picker; picking the rival
+        // pays the chief, charges the gold, and spikes the tribe's alarm toward that rival to war level.
+        (ISceneRunner runner, GameController controller, Game game, NativeSettlement settlement, Unit missionary) =
+            await OpenMissionPanel(missionary: true, humanGold: 100000);
+        int rivalId = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).PlayerId;
+        int goldBefore = game.Gold;
+        int rivalAlarmBefore = settlement.AlarmFor(rivalId);
+
+        AssertThat(FindButton(controller, "Incite")).IsNotNull();
+        await Press(runner, controller, "Incite");                 // open the rival-picker
+        await Press(runner, controller, $"Incite_{rivalId}");      // pay the chief to war on the rival
+
+        AssertThat(game.Gold).IsLess(goldBefore);                                          // bribe paid
+        AssertThat(settlement.AlarmFor(rivalId)).IsEqual(rivalAlarmBefore + Game.InciteWarAlarm); // tribe turns on the rival
+        AssertThat(missionary.MovementLeft).IsEqual(0);                                     // the audience ended the turn
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task InciteButton_NotShown_ForAPennilessMissionary()
+    {
+        // With no gold the missionary cannot afford any bribe, so the Incite action is not offered (the oracle gates it).
+        (_, GameController controller, _, _, _) = await OpenMissionPanel(missionary: true, humanGold: 0);
+        AssertThat(FindButton(controller, "Incite")).IsNull();
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task InciteButton_NotShown_ForANonMissionary()
+    {
+        // A funded but unrobed colonist has no inciteNatives ability, so the Incite action is not offered.
+        (_, GameController controller, _, _, _) = await OpenMissionPanel(missionary: false, humanGold: 100000);
+        AssertThat(FindButton(controller, "Incite")).IsNull();
+    }
+
+    /// <summary>
+    /// Stages (through the save layer) a human <see cref="Artillery"/> on a free land tile adjacent to a discovered
+    /// settlement set <b>Content</b> (so it pays tribute), and opens the native-settlement panel acting with it. Mirrors
+    /// <c>OpenMissionPanel</c> but for an armed unit (the demand-tribute path).
+    /// </summary>
+    private static async Task<(ISceneRunner, GameController, Game, NativeSettlement, Unit)> OpenArmedPanel()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+
+        NativeSettlement seed = game.NativeSettlements.First(s =>
+            s.Position.Neighbours().Any(n => FreeLand(game, n)));
+        Position land = seed.Position.Neighbours().First(n => FreeLand(game, n));
+
+        SaveGame save = SaveGame.From(game);
+        int unitId = game.Units.Max(u => u.Id) + 1;
+        int gunMove = game.Ruleset.Unit(Artillery).Movement;
+        var staged = new SavedUnit(unitId, Artillery, land.X, land.Y, gunMove, OwnerId: humanId);
+        Game injected = (save with { Units = save.Units.Concat([staged]).ToList() }).Restore(game.Ruleset);
+        SetGame(controller, injected);
+
+        NativeSettlement settlement = injected.NativeSettlements.First(s => s.Id == seed.Id);
+        injected.ChangeNativeAlarm(settlement, 300); // Content — a calm tribe pays tribute
+        Unit gun = injected.Units.First(u => u.Id == unitId);
+
+        controller.OpenNativeSettlementPanel(settlement, gun);
+        await runner.SimulateFrames(1);
+        var panel = controller.GetNode<PanelContainer>("UI/NativeSettlementPanel");
+        AssertThat(panel.Visible).IsTrue();
+        return (runner, controller, injected, settlement, gun);
+    }
 
     [TestCase(Timeout = 60000)]
     public async Task SellButton_SellsCargoToTheSettlement_ForGold_DrainingTheHold_GrowingTheStore()
@@ -195,7 +297,7 @@ public class NativeSettlementPanelTests
     /// Opens the native-settlement panel acting with that colonist. Mirrors <c>OpenTradePanel</c>.
     /// </summary>
     private static async Task<(ISceneRunner, GameController, Game, NativeSettlement, Unit)> OpenMissionPanel(
-        bool missionary, int rivalMissionOwnerId = 0)
+        bool missionary, int rivalMissionOwnerId = 0, int humanGold = 0)
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
         var controller = (GameController)runner.Scene();
@@ -226,9 +328,22 @@ public class NativeSettlementPanelTests
                 ? s with { MissionOwnerId = owner, MissionIsExpert = false }
                 : s)
             .ToList();
-        IReadOnlyList<SavedPlayer> players = rivalOwner is { } rid
-            ? save.Players!.Select(p => p.PlayerId == rid ? p with { Immigration = 0 } : p).ToList()
-            : save.Players!;
+        // Zero the rival's immigration if a rival mission is staged (so the denounce roll wins), and give the human the
+        // requested gold (the incite path needs a purse to pay the chief's bribe).
+        IReadOnlyList<SavedPlayer> players = save.Players!
+            .Select(p =>
+            {
+                if (rivalOwner is { } rid && p.PlayerId == rid)
+                {
+                    p = p with { Immigration = 0 };
+                }
+                if (p.PlayerId == humanId && humanGold > 0)
+                {
+                    p = p with { Gold = humanGold };
+                }
+                return p;
+            })
+            .ToList();
         Game injected = (save with
         {
             Units = save.Units.Concat([staged]).ToList(),

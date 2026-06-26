@@ -43,8 +43,8 @@ public partial class NativeSettlementPanel : PanelContainer
     private Func<Unit, NativeSettlement, string> _denounceMission = (_, _) => "";
     private string _outcome = "";
 
-    /// <summary>The in-panel screen currently shown: the action menu, or one of the trade sub-flows.</summary>
-    private enum Screen { Actions, TradePick, TradeHaggle }
+    /// <summary>The in-panel screen currently shown: the action menu, one of the trade sub-flows, or the incite rival-picker.</summary>
+    private enum Screen { Actions, TradePick, TradeHaggle, IncitePick }
 
     private Screen _screen = Screen.Actions;
     private bool _buying; // true = the trade sub-flow is a Buy (from the settlement), false = a Sell (the ship's cargo)
@@ -122,6 +122,9 @@ public partial class NativeSettlementPanel : PanelContainer
                 break;
             case Screen.TradeHaggle:
                 BuildTradeHaggle();
+                break;
+            case Screen.IncitePick:
+                BuildIncitePick();
                 break;
             default:
                 BuildActions();
@@ -217,6 +220,34 @@ public partial class NativeSettlementPanel : PanelContainer
                 any = true;
                 dynamic.AddChild(ActionButton("Buy", "Buy goods", () => OpenTrade(buying: true)));
             }
+        }
+        // Demand tribute (86d3fq01a, FreeCol scout SCOUT_SETTLEMENT_TRIBUTE → demandTribute): an armed unit beside the
+        // settlement can shake the chief down for gold instead of attacking. Forwards straight to the Game oracle
+        // (ADR-006); the calm tribe pays, an angry one refuses, and either way it's an insult that raises alarm.
+        if (_game.CheckDemandTribute(unit, _settlement.Position).Allowed)
+        {
+            any = true;
+            dynamic.AddChild(ActionButton("DemandTribute", "Demand tribute", () =>
+            {
+                Game.TributeResult result = _game.DemandTribute(unit, _settlement.Position);
+                _outcome = result.Paid
+                    ? $"The chief paid {result.Gold} gold in tribute."
+                    : "The chief refused your demand for tribute.";
+                Changed();
+            }));
+        }
+        // Incite (86d3fq00w/86d3fq0bt, FreeCol missionary MISSIONARY_INCITE_INDIANS → incite): a missionary can pay the
+        // chief to turn the tribe against a chosen European rival. We open an in-panel rival-picker (one button per live
+        // rival, showing the bribe) — but only when at least one rival exists and one can be afforded right now.
+        if (IncitableRivals(unit).Any())
+        {
+            any = true;
+            dynamic.AddChild(ActionButton("Incite", "Incite against a rival", () =>
+            {
+                _outcome = "";
+                _screen = Screen.IncitePick;
+                Rebuild();
+            }));
         }
         if (_game.CheckAttackSettlement(unit, _settlement.Position).Allowed)
         {
@@ -416,6 +447,79 @@ public partial class NativeSettlementPanel : PanelContainer
         _tradeGoodsId = null;
         Changed(); // surfaces the outcome to the status bar + re-syncs selection (the trade ended the ship's turn)
     }
+
+    /// <summary>The live European rivals this <paramref name="unit"/> could incite the tribe against and afford to (a missionary only; the price is re-checked per rival via the oracle, so an unaffordable rival is omitted).</summary>
+    private IReadOnlyList<Player> IncitableRivals(Unit unit) =>
+        _game.IncitableRivals(unit)
+            .Where(p => _game.CheckInciteNatives(unit, _settlement, p.PlayerId).Allowed)
+            .ToList();
+
+    /// <summary>
+    /// The incite rival-picker (86d3fq00w): one button per affordable rival showing the chief's bribe; pressing it
+    /// forwards to the <see cref="Game.InciteNatives(Unit, NativeSettlement, int)"/> oracle (re-checked first; never
+    /// throws), turning the tribe against that rival. A Back button returns to the action menu. The list re-gates on
+    /// rebuild (a unit may have moved/spent), and closes if no rival remains.
+    /// </summary>
+    private void BuildIncitePick()
+    {
+        VBoxContainer dynamic = ClearDynamic();
+        Unit? unit = ActingUnit;
+        if (unit is null)
+        {
+            CloseIncite();
+            return;
+        }
+
+        IReadOnlyList<Player> rivals = IncitableRivals(unit);
+        if (rivals.Count == 0)
+        {
+            dynamic.AddChild(Hint("There is no rival you can afford to incite them against."));
+            dynamic.AddChild(ActionButton("InciteBack", "Back", CloseIncite));
+            return;
+        }
+
+        dynamic.AddChild(Hint("Pay the chief to make war on:"));
+        foreach (Player rival in rivals)
+        {
+            MoveCheck check = _game.CheckInciteNatives(unit, _settlement, rival.PlayerId);
+            if (!check.Allowed)
+            {
+                continue; // re-gate: a rival that just became unaffordable is skipped
+            }
+            int rivalId = rival.PlayerId;
+            string label = RivalName(rival);
+            dynamic.AddChild(ActionButton($"Incite_{rivalId}", $"{label}  ({check.Cost} gold)", () =>
+            {
+                MoveCheck recheck = _game.CheckInciteNatives(unit, _settlement, rivalId);
+                if (!recheck.Allowed)
+                {
+                    _outcome = recheck.Reason ?? "You cannot incite them against that power.";
+                    CloseIncite();
+                    return;
+                }
+                Game.InciteNativesResult result = _game.InciteNatives(unit, _settlement, rivalId);
+                _outcome = $"The chief takes {result.Cost} gold — the tribe will war on the {RivalNameById(rivalId)}.";
+                _screen = Screen.Actions;
+                Changed();
+            }));
+        }
+        dynamic.AddChild(ActionButton("InciteBack", "Back", CloseIncite));
+    }
+
+    /// <summary>Returns to the action menu from the incite picker.</summary>
+    private void CloseIncite()
+    {
+        _screen = Screen.Actions;
+        Rebuild();
+    }
+
+    /// <summary>A readable nation name for a rival power (its nation id's leaf, title-cased), or "rival" when unknown.</summary>
+    private static string RivalName(Player rival) =>
+        rival.NationId is { Length: > 0 } id ? Title(id) : "rival";
+
+    /// <summary>The readable name of the rival with this id (used after the incite, when only the id is in scope).</summary>
+    private string RivalNameById(int rivalId) =>
+        _game.Players.FirstOrDefault(p => p.PlayerId == rivalId) is { } p ? RivalName(p) : "rival";
 
     private static Label Hint(string text) =>
         new() { Text = text, HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart };
