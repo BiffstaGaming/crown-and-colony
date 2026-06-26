@@ -424,6 +424,7 @@ public partial class GameController : Node2D
         _hoveredTile = null; // a fresh/loaded game starts with no hovered tile (cleared so the tile-info panel is empty)
         _notice = null;
         _messageLog.Clear(); // a fresh/loaded game starts with no logged notices; a load re-fills it after this (RestoreMessageLog)
+        UnitMarker.ResetMoveMemory(); // drop per-unit last-tile cache on a game swap so a reused tile/id can't spuriously slide (86d3fq26m)
         MarkClean(); // a fresh or just-loaded game matches what's on disk — no unsaved changes yet (86d3fq1v8)
         _skippedThisTurn.Clear(); // a fresh/loaded game starts with no skipped units (session-only set; 86d3f0vuy)
         _victoryShown = false; // re-arm the one-shot victory screen for the fresh game (new or loaded)
@@ -2485,7 +2486,7 @@ public partial class GameController : Node2D
             // Role short name (e.g. "soldier"/"pioneer", or "default" for unarmed) so the marker can pick the
             // role-specific FreeCol sprite — a colonist-soldier looks different from a plain colonist.
             string roleShortName = unit.RoleId[(unit.RoleId.LastIndexOf('.') + 1)..];
-            marker.SetUnit(unit.Type.ShortName, roleShortName);
+            marker.SetUnit(unit.Type.ShortName, roleShortName, unit.Id); // pass identity so the marker can detect a move and slide (86d3fq26m)
             _unitLayer.AddChild(marker);
         }
     }
