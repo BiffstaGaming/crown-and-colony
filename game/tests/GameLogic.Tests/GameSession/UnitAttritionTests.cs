@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
@@ -14,7 +14,7 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 /// a unit standing on a settlement-less map tile accrues +1 attrition each world turn; once it exceeds its type's
 /// maximum attrition the unit wastes away and its owner is notified; sheltering in a settlement (or sailing/Europe)
 /// resets it to 0. In the classic ruleset only the Indian Convert (<c>maximum-attrition="8"</c>) is subject to
-/// attrition — every other unit type is immune, so the default game never loses a unit this way and the save field
+/// attrition â€” every other unit type is immune, so the default game never loses a unit this way and the save field
 /// omits when 0 (byte-identical to v49).
 /// </summary>
 public class UnitAttritionTests
@@ -121,7 +121,7 @@ public class UnitAttritionTests
         game.EndTurn();
         Assert.Equal(1, convert.Attrition);
 
-        convert.Location = UnitLocation.SailingToEurope; // off the map → not "in the open"
+        convert.Location = UnitLocation.SailingToEurope; // off the map â†’ not "in the open"
         game.EndTurn();
 
         Assert.Equal(0, convert.Attrition);
@@ -132,7 +132,7 @@ public class UnitAttritionTests
     [Fact]
     public void AUnitWithInfiniteMaxAttrition_NeverAccrues()
     {
-        // A free colonist has no maximum-attrition (FreeCol INFINITY) → it is not subject to attrition at all.
+        // A free colonist has no maximum-attrition (FreeCol INFINITY) â†’ it is not subject to attrition at all.
         Game game = Game.New(Classic, Seed);
         Unit colonist = game.SpawnUnit(Classic.Unit(FreeColonist), OpenWilderness(game));
 
@@ -176,14 +176,14 @@ public class UnitAttritionTests
 
         Assert.Equal(3, restored.Units.First(u => u.Id == id).Attrition);
         Assert.Equal(json, SaveGame.From(restored).ToJson()); // acid test: byte-identical round-trip
-        Assert.Equal(64, SaveGame.CurrentVersion);
+        Assert.Equal(65, SaveGame.CurrentVersion);
     }
 
     [Fact]
     public void AZeroAttritionGame_SerializesWithoutAnyAttritionToken()
     {
         // The field is omitted for a unit that has accrued no attrition (the default), so the game stays
-        // byte-identical to v49 — every classic starting unit is attrition-free.
+        // byte-identical to v49 â€” every classic starting unit is attrition-free.
         string json = SaveGame.From(Game.New(Classic, Seed)).ToJson();
         Assert.DoesNotContain("\"Attrition\"", json);
     }

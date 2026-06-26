@@ -1,4 +1,4 @@
-using CrownAndColony.GameLogic.GameSession;
+﻿using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
@@ -10,7 +10,7 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 /// <summary>
 /// Native settlement placement and persistence on a generated game. Pinned
 /// invariants (every nation present, on land, spaced apart, clear of the player)
-/// rather than exact tiles — exact placement is covered by the determinism test.
+/// rather than exact tiles â€” exact placement is covered by the determinism test.
 /// </summary>
 public class NativeSettlementTests
 {
@@ -55,7 +55,7 @@ public class NativeSettlementTests
         Game game = Game.New(Classic, Seed);
         var settlements = game.NativeSettlements;
 
-        // The player's landing tile (the pioneer stands on the chosen start) — settlements keep clear of it.
+        // The player's landing tile (the pioneer stands on the chosen start) â€” settlements keep clear of it.
         Position start = game.PlayerUnits.First(u => !u.Type.IsNaval && u.Type.CanFoundColony).Position;
 
         for (int i = 0; i < settlements.Count; i++)
@@ -159,8 +159,8 @@ public class NativeSettlementTests
     [Fact]
     public void SaveVersion_IsCurrent()
     {
-        Assert.Equal(64, SaveGame.CurrentVersion);
-        Assert.Equal(64, SaveGame.From(Game.New(Classic, Seed)).Version);
+        Assert.Equal(65, SaveGame.CurrentVersion);
+        Assert.Equal(65, SaveGame.From(Game.New(Classic, Seed)).Version);
     }
 
     private static int Chebyshev(Position a, Position b) =>

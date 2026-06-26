@@ -61,22 +61,29 @@ namespace CrownAndColony.Presentation;
 /// the liberty (bells) progress (<see cref="Game.Liberty"/> / <see cref="Game.TotalFoundingFatherCost"/>), and one
 /// row per offered father (<see cref="Game.OfferedFathers"/>) with its category, marking the in-progress pick.
 /// Read-only — election lives in <see cref="FoundingFatherPanel"/>.</item>
-/// <item><b>History</b> (`86d3c9x53` — FreeCol's ReportHistoryPanel facet): the human's notable past events
-/// (<see cref="Game.History"/>) in turn order — colonies founded, wars entered, Founding Fathers elected. The
-/// event log is in-memory only this wave (not persisted), so a reloaded game's history starts empty.</item>
+/// <item><b>History</b> (`86d3c9x53` / `86d3fq0h4` — FreeCol's ReportHistoryPanel facet): the human's notable past events
+/// (<see cref="Game.History"/>) in turn order — colonies founded, wars entered, Founding Fathers elected, regions
+/// discovered, settlements razed. The event log is <b>persisted</b> (save v58), so a reloaded game's history survives.</item>
+/// <item><b>Demographics</b> (`86d3fq27v` — Sid Meier's Colonization's end-game demographics screen; FreeCol's
+/// score/history trend reporting): the human nation's year-by-year series (<see cref="Game.Demographics"/>) — population,
+/// gold and score over time — as a code-drawn line graph (<see cref="DemographicGraph"/>). The series is recorded at each
+/// year-rollover and <b>persisted</b> (save v65), so the trend survives a save/load round-trip.</item>
 /// </list>
 /// Pure presentation (ADR-006) — reads <see cref="Game"/> oracles only, never mutates. Built programmatically into
 /// the fixed <c>VBox/Dynamic</c> shell.
 /// </summary>
 public partial class ColonyReportPanel : PanelContainer
 {
-    private enum Tab { Colonies, Units, Education, Production, Labour, Requirements, Military, Naval, Cargo, Ref, Foreign, Natives, Religion, Trade, Score, Exploration, Congress, History }
+    private enum Tab { Colonies, Units, Education, Production, Labour, Requirements, Military, Naval, Cargo, Ref, Foreign, Natives, Religion, Trade, Score, Exploration, Congress, History, Demographics }
 
     private Game _game = null!;
     private Tab _tab = Tab.Colonies;
 
     /// <summary>The good the Production tab is currently breaking down (its ruleset id); null = "(nothing selected)".</summary>
     private string? _productionGood;
+
+    /// <summary>The unit type the Labour tab is currently drilling into (its ruleset id); null = no drill-down (the flat list).</summary>
+    private string? _labourDetailType;
 
     private static readonly System.Collections.Generic.Dictionary<Tab, string> Titles = new()
     {
@@ -98,6 +105,7 @@ public partial class ColonyReportPanel : PanelContainer
         [Tab.Exploration] = "Exploration",
         [Tab.Congress] = "Continental Congress",
         [Tab.History] = "History",
+        [Tab.Demographics] = "Demographics",
     };
 
     /// <summary>Opens the reports screen on the Colonies tab over the current game state.</summary>
@@ -143,6 +151,7 @@ public partial class ColonyReportPanel : PanelContainer
         tabs.AddChild(TabButton("Exploration", Tab.Exploration));
         tabs.AddChild(TabButton("Congress", Tab.Congress));
         tabs.AddChild(TabButton("History", Tab.History));
+        tabs.AddChild(TabButton("Demographics", Tab.Demographics));
         dynamic.AddChild(tabs);
         dynamic.AddChild(new HSeparator());
 
@@ -166,6 +175,7 @@ public partial class ColonyReportPanel : PanelContainer
             case Tab.Exploration: BuildExploration(dynamic); break;
             case Tab.Congress: BuildCongress(dynamic); break;
             case Tab.History: BuildHistory(dynamic); break;
+            case Tab.Demographics: BuildDemographics(dynamic); break;
         }
     }
 
@@ -560,10 +570,60 @@ public partial class ColonyReportPanel : PanelContainer
         if (rows.Count == 0)
         {
             dynamic.AddChild(new Label { Text = "You have no colonists.", HorizontalAlignment = HorizontalAlignment.Center });
+            _labourDetailType = null; // nothing to drill into
             return;
         }
 
-        // Grouped by unit type (FreeCol's per-type tally), each group a named header then its colonists.
+        // The unit types present in the roster, in stable order — the drill-down selector's items (FreeCol's
+        // ReportLabourPanel lets you click a type to open its ReportLabourDetailPanel).
+        List<string> types = rows
+            .Select(r => r.Type)
+            .Distinct()
+            .OrderBy(t => t, System.StringComparer.Ordinal)
+            .ToList();
+        if (_labourDetailType is { } sel && !types.Contains(sel))
+        {
+            _labourDetailType = null; // a previously drilled-into type the human no longer has any of
+        }
+
+        // Drill-down selector: "(all colonists)" leaves the flat list; picking a type shows the per-location breakdown.
+        var selector = new OptionButton { Name = "LabourDetailSelector" };
+        selector.AddItem("(all colonists)", -1);
+        for (int i = 0; i < types.Count; i++)
+        {
+            selector.AddItem(Display(Strip(types[i])), i);
+            if (types[i] == _labourDetailType)
+            {
+                selector.Select(selector.ItemCount - 1);
+            }
+        }
+        selector.ItemSelected += index =>
+        {
+            int id = (int)selector.GetItemId((int)index);
+            _labourDetailType = id >= 0 ? types[id] : null;
+            Rebuild();
+        };
+        dynamic.AddChild(selector);
+        dynamic.AddChild(new HSeparator());
+
+        // Drill-down view (FreeCol ReportLabourDetailPanel): for the chosen type, where those colonists are, by location.
+        if (_labourDetailType is { } detailType)
+        {
+            var detail = _game.LabourDetail(detailType);
+            int total = detail.Sum(l => l.Count);
+            dynamic.AddChild(new Label
+            {
+                Name = $"LabourDetail_{Strip(detailType)}",
+                Text = $"— {Display(Strip(detailType))}: {total} total —",
+            });
+            foreach (Game.LabourLocation loc in detail)
+            {
+                dynamic.AddChild(new Label { Text = $"    {loc.Location}: {loc.Count}" });
+            }
+            return;
+        }
+
+        // Flat list: grouped by unit type (FreeCol's per-type tally), each group a named header then its colonists.
         foreach (IGrouping<string, (string Type, string Location, string Job)> group in rows
             .GroupBy(r => r.Type)
             .OrderBy(g => g.Key, System.StringComparer.Ordinal))
@@ -1160,6 +1220,137 @@ public partial class ColonyReportPanel : PanelContainer
                 Name = $"History_{i++}",
                 Text = $"Turn {e.Turn}: {e.Description}",
             });
+        }
+    }
+
+    // ── Demographics tab (the year-by-year trend graph; Col1's end-game demographics screen) ─────────────────
+
+    private void BuildDemographics(VBoxContainer dynamic)
+    {
+        // The human nation's year-by-year series (population / gold / score), recorded at each year-rollover and persisted
+        // from save v65, so the graph survives a save/load round-trip. Read-only over Game.Demographics (ADR-006). The
+        // graph itself is drawn in code by DemographicGraph._Draw — deterministic, asset-free.
+        dynamic.AddChild(new Label
+        {
+            Name = "DemographicsNote",
+            Text = "Your nation over time (one point per year):",
+        });
+
+        var series = _game.Demographics;
+        if (series.Count == 0)
+        {
+            dynamic.AddChild(new Label
+            {
+                Name = "DemographicsEmpty",
+                Text = "No years have passed yet — end a turn to start the record.",
+                HorizontalAlignment = HorizontalAlignment.Center,
+            });
+            return;
+        }
+
+        // A legend of the three plotted series, in the graph's colours.
+        dynamic.AddChild(new Label
+        {
+            Name = "DemographicsLegend",
+            Text = "Population (green)   ·   Gold (gold)   ·   Score (cyan)",
+        });
+
+        DemographicSnapshot latest = series[^1];
+        dynamic.AddChild(new Label
+        {
+            Name = "DemographicsLatest",
+            Text = $"{latest.Year}: population {latest.Population}, gold {latest.Gold}, score {latest.Score}",
+        });
+
+        var graph = new DemographicGraph
+        {
+            Name = "DemographicGraph",
+            CustomMinimumSize = new Vector2(560, 240),
+        };
+        graph.SetSeries(series);
+        dynamic.AddChild(graph);
+    }
+
+    /// <summary>
+    /// A small, asset-free line graph of the human nation's <see cref="DemographicSnapshot"/> series — population, gold
+    /// and score over the years — drawn entirely in code (<see cref="_Draw"/>). Each metric is normalised to its own
+    /// range so all three fit the same box (their absolute scales differ wildly), plotted as a connected polyline in its
+    /// legend colour over a framed plot area with axis labels. Pure presentation (ADR-006): it reads only the snapshots
+    /// handed to it and draws deterministically — no randomness, no model mutation.
+    /// </summary>
+    public partial class DemographicGraph : Control
+    {
+        private IReadOnlyList<DemographicSnapshot> _series = [];
+
+        private static readonly Color PopulationColor = new("4caf50"); // green
+        private static readonly Color GoldColor = new("ffd54f");       // gold
+        private static readonly Color ScoreColor = new("4dd0e1");      // cyan
+        private static readonly Color FrameColor = new("aaaaaa");
+
+        /// <summary>Sets the series to plot and requests a redraw.</summary>
+        public void SetSeries(IReadOnlyList<DemographicSnapshot> series)
+        {
+            _series = series;
+            QueueRedraw();
+        }
+
+        public override void _Draw()
+        {
+            const float pad = 28f;
+            Vector2 size = Size;
+            var origin = new Vector2(pad, pad);
+            float plotW = Mathf.Max(1f, size.X - pad * 2);
+            float plotH = Mathf.Max(1f, size.Y - pad * 2);
+
+            // Plot frame.
+            DrawRect(new Rect2(origin, new Vector2(plotW, plotH)), FrameColor, filled: false, width: 1f);
+
+            if (_series.Count == 0)
+            {
+                return;
+            }
+
+            // X spans the recorded years; a single point is drawn as a dot in the middle (no line to draw).
+            DrawMetric(_series.Select(d => (float)d.Population).ToList(), origin, plotW, plotH, PopulationColor);
+            DrawMetric(_series.Select(d => (float)d.Gold).ToList(), origin, plotW, plotH, GoldColor);
+            DrawMetric(_series.Select(d => (float)d.Score).ToList(), origin, plotW, plotH, ScoreColor);
+
+            // Year axis labels (first and last), small and unobtrusive.
+            Font font = ThemeDB.FallbackFont;
+            DrawString(font, new Vector2(origin.X, origin.Y + plotH + 18f), _series[0].Year.ToString(), HorizontalAlignment.Left, -1, 12);
+            if (_series.Count > 1)
+            {
+                DrawString(font, new Vector2(origin.X + plotW - 36f, origin.Y + plotH + 18f), _series[^1].Year.ToString(), HorizontalAlignment.Left, -1, 12);
+            }
+        }
+
+        // Plots one metric as a polyline, normalised to its own [min,max] over the plot box (each series fills the height,
+        // so the SHAPE of each trend is legible despite the metrics' very different absolute scales).
+        private void DrawMetric(List<float> values, Vector2 origin, float plotW, float plotH, Color color)
+        {
+            float min = values.Min();
+            float max = values.Max();
+            float range = max - min;
+            int n = values.Count;
+
+            Vector2 Point(int i)
+            {
+                float x = n == 1 ? origin.X + plotW / 2 : origin.X + plotW * i / (n - 1);
+                // Flat series (range 0) sit on the mid-line; otherwise normalise into the box (y grows downward).
+                float t = range > 0 ? (values[i] - min) / range : 0.5f;
+                float y = origin.Y + plotH * (1f - t);
+                return new Vector2(x, y);
+            }
+
+            if (n == 1)
+            {
+                DrawCircle(Point(0), 3f, color);
+                return;
+            }
+            for (int i = 1; i < n; i++)
+            {
+                DrawLine(Point(i - 1), Point(i), color, 2f);
+            }
         }
     }
 

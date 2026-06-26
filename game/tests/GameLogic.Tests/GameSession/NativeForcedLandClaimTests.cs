@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
@@ -14,11 +14,11 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 /// <summary>
 /// Forced buy-or-steal-or-abandon land-claim trigger (<c>86d3e4bj7</c>, FreeCol <c>ServerPlayer.csClaimLand</c> invoked
 /// from <c>InGameController.claimLand</c> before <c>BuildColonyMission</c> builds): founding a colony on, or working,
-/// a native-OWNED tile is no longer free — it forces a claim first. The human must surface a
+/// a native-OWNED tile is no longer free â€” it forces a claim first. The human must surface a
 /// <see cref="LandClaimChoice"/> (else <see cref="LandClaimRequiredException"/>); the AI resolves it deterministically
-/// (pay if affordable, else steal — RNG-free). Stealing raises the acting player's <b>own</b> per-player alarm
+/// (pay if affordable, else steal â€” RNG-free). Stealing raises the acting player's <b>own</b> per-player alarm
 /// (C1 multi-channel), reusing the voluntary <c>ClaimLandByPaying</c>/<c>ClaimLandByStealing</c> paths. Resolved
-/// synchronously — no pending-claim state, so no save bump.
+/// synchronously â€” no pending-claim state, so no save bump.
 /// </summary>
 public class NativeForcedLandClaimTests
 {
@@ -51,7 +51,7 @@ public class NativeForcedLandClaimTests
             && !game.Map.IsNativeOwned(p));
         foreach (Position n in tile.Neighbours().Where(game.Map.InBounds))
         {
-            game.Map.ClearNativeOwner(n); // only the centre forces a claim — keeps the founding-cost assertions exact
+            game.Map.ClearNativeOwner(n); // only the centre forces a claim â€” keeps the founding-cost assertions exact
         }
         game.Map.SetNativeOwner(tile, nation);
 
@@ -83,7 +83,7 @@ public class NativeForcedLandClaimTests
         Game game = Game.New(Classic, seed: 7);
         (Unit founder, Position tile, string nation) = StageFounderOnNativeLand(game);
 
-        // The no-choice overload throws for the human — the UI must surface buy/steal/abandon (no colony is founded).
+        // The no-choice overload throws for the human â€” the UI must surface buy/steal/abandon (no colony is founded).
         LandClaimRequiredException ex = Assert.Throws<LandClaimRequiredException>(() => game.FoundColony(founder));
         Assert.Equal(game.LandPrice(tile), ex.BuyPrice);
         Assert.Equal(nation, ex.OwningNation);
@@ -94,7 +94,7 @@ public class NativeForcedLandClaimTests
     [Fact]
     public void FoundColony_OnFreeLand_NeedsNoChoice_AndIsUnchanged()
     {
-        // A non-native tile forces nothing — the parameterless overload founds exactly as before (byte-stable path).
+        // A non-native tile forces nothing â€” the parameterless overload founds exactly as before (byte-stable path).
         Game game = Game.New(Classic, seed: 7);
         Unit founder = game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony);
         Assert.False(game.RequiredLandClaim(founder.Position).Required);
@@ -117,7 +117,7 @@ public class NativeForcedLandClaimTests
 
         Assert.Equal(100_000 - price, game.HumanPlayer.Gold); // paid exactly the price
         Assert.Equal(tile, colony.Position);
-        Assert.False(game.Map.IsNativeOwned(tile));           // bought → no longer native
+        Assert.False(game.Map.IsNativeOwned(tile));           // bought â†’ no longer native
         Assert.True(game.Map.IsClaimedFromNatives(tile));
         Assert.All(game.NativeSettlements.Where(s => s.NationTypeId == nation),
             s => Assert.Equal(alarmBefore[s.Id], s.AlarmFor(0))); // a peaceful purchase angers no one
@@ -206,10 +206,10 @@ public class NativeForcedLandClaimTests
         (_, Position tile, _) = StageFounderOnNativeLand(game);
         int price = game.LandPrice(tile);
 
-        game.HumanPlayer.Gold = price;     // exactly enough → buy
+        game.HumanPlayer.Gold = price;     // exactly enough â†’ buy
         Assert.Equal(LandClaimChoice.Buy, game.AiResolveLandClaim(game.HumanPlayer, tile));
 
-        game.HumanPlayer.Gold = price - 1; // one short → steal
+        game.HumanPlayer.Gold = price - 1; // one short â†’ steal
         Assert.Equal(LandClaimChoice.Steal, game.AiResolveLandClaim(game.HumanPlayer, tile));
     }
 
@@ -219,14 +219,14 @@ public class NativeForcedLandClaimTests
         Game game = Game.New(Classic, seed: 7);
         Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
         (Unit founder, Position tile, string nation) = StageFounderOnNativeLand(game, ownerId: power.PlayerId);
-        power.Gold = 0; // broke → the AI steals (FreeCol BuildColonyMission: checkGold false → STEAL_LAND)
+        power.Gold = 0; // broke â†’ the AI steals (FreeCol BuildColonyMission: checkGold false â†’ STEAL_LAND)
         var humanBefore = NationAlarm(game, nation, channel: 0);
         var powerBefore = NationAlarm(game, nation, power.PlayerId);
 
-        Colony colony = game.FoundColony(founder); // no explicit choice → AI auto-resolves (deterministic, RNG-free)
+        Colony colony = game.FoundColony(founder); // no explicit choice â†’ AI auto-resolves (deterministic, RNG-free)
 
         Assert.Equal(power.PlayerId, colony.OwnerId);
-        Assert.Equal(0, power.Gold);                // stole — paid nothing
+        Assert.Equal(0, power.Gold);                // stole â€” paid nothing
         Assert.False(game.Map.IsNativeOwned(tile));
         // the steal landed on the POWER's channel; the human's channel 0 is untouched (ADR-009 per-player isolation)
         Assert.All(game.NativeSettlements.Where(s => s.NationTypeId == nation), s =>
@@ -242,11 +242,11 @@ public class NativeForcedLandClaimTests
         Game game = Game.New(Classic, seed: 7);
         Player power = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
         (Unit founder, Position tile, string nation) = StageFounderOnNativeLand(game, ownerId: power.PlayerId);
-        power.Gold = 100_000; // flush → the AI buys
+        power.Gold = 100_000; // flush â†’ the AI buys
         int price = game.LandPrice(tile);
         var powerBefore = NationAlarm(game, nation, power.PlayerId);
 
-        game.FoundColony(founder); // AI auto-resolves → Buy
+        game.FoundColony(founder); // AI auto-resolves â†’ Buy
 
         Assert.Equal(100_000 - price, power.Gold);  // paid the price
         Assert.False(game.Map.IsNativeOwned(tile));
@@ -262,7 +262,7 @@ public class NativeForcedLandClaimTests
     {
         // Two identical games (same seed, same staged native founding tile): one founds by BUYING the land, the other
         // by STEALING it. The buy leaves the tribe peaceful; the steal raises the human's alarm by exactly the
-        // land-taken delta on every settlement of the robbed nation — so the two end states differ precisely in tension.
+        // land-taken delta on every settlement of the robbed nation â€” so the two end states differ precisely in tension.
         Game buyGame = Game.New(Classic, seed: 7);
         Game stealGame = Game.New(Classic, seed: 7);
         (Unit buyFounder, _, string nation) = StageFounderOnNativeLand(buyGame);
@@ -280,8 +280,8 @@ public class NativeForcedLandClaimTests
         // Both founded a colony; the buyer spent gold, the thief did not.
         Assert.Single(buyGame.Colonies);
         Assert.Single(stealGame.Colonies);
-        Assert.True(buyGame.HumanPlayer.Gold < 100_000);          // bought → paid
-        Assert.Equal(100_000, stealGame.HumanPlayer.Gold);        // stole → free
+        Assert.True(buyGame.HumanPlayer.Gold < 100_000);          // bought â†’ paid
+        Assert.Equal(100_000, stealGame.HumanPlayer.Gold);        // stole â†’ free
 
         // The tension diverges: the buyer angered no one, the thief raised +200 on every settlement of the nation.
         Assert.All(buyGame.NativeSettlements.Where(s => s.NationTypeId == nation),
@@ -307,7 +307,7 @@ public class NativeForcedLandClaimTests
         string json = SaveGame.From(game).ToJson();
         Game restored = SaveGame.FromJson(json).Restore(Classic);
 
-        Assert.Equal(64, SaveGame.CurrentVersion);                                 // forced land-claim adds no save field of its own (no pending-claim state); 56 comes from other slices
+        Assert.Equal(65, SaveGame.CurrentVersion);                                 // forced land-claim adds no save field of its own (no pending-claim state); 56 comes from other slices
         Assert.Equal(json, SaveGame.From(restored).ToJson());                      // byte-identical round-trip
         Assert.Equal(game.Colonies.Count, restored.Colonies.Count);
     }

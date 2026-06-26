@@ -525,6 +525,133 @@ public class ColonyReportPanelTests
         AssertThat(dynamic.GetNodeOrNull("Labour_freeColonist")).IsNotNull();
     }
 
+    [TestCase]
+    public async Task LabourTab_DrillDown_ShowsThePerLocationBreakdownForAType()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // Found a colony; its lone resident is a free colonist, and the remaining start units include free colonists on
+        // the map → the freeColonist type has colonists in both a colony and "the field".
+        Game game = GetGame(controller);
+        game.FoundColony(game.Units[0]);
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Labour")
+            .EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // Drive the drill-down selector to the free-colonist type.
+        var selector = controller.GetNode<OptionButton>("UI/ColonyReportPanel/VBox/Dynamic/LabourDetailSelector");
+        int item = -1;
+        for (int i = 0; i < selector.ItemCount; i++)
+        {
+            if (selector.GetItemText(i) == "Free Colonist")
+            {
+                item = i;
+            }
+        }
+        AssertThat(item).IsGreaterEqual(0);
+        selector.Select(item);
+        selector.EmitSignal(OptionButton.SignalName.ItemSelected, item);
+        await runner.SimulateFrames(1);
+
+        // The drill-down detail header renders for the chosen type, with a per-location breakdown beneath it.
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var header = dynamic.GetNodeOrNull<Label>("LabourDetail_freeColonist");
+        AssertThat(header).IsNotNull();
+        AssertThat(header!.Text).Contains("total");
+        AssertThat(header.Text).Contains("Free Colonist");
+    }
+
+    [TestCase]
+    public async Task HistoryTab_PopulatedAfterFoundingAColony_ListsTheEvent()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        Game game = GetGame(controller);
+        game.FoundColony(game.Units[0]); // records a ColonyFounded history event
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_History")
+            .EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("History");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        // At least one History_<i> row exists (the founded-colony event) — i.e. the log is NOT the empty placeholder.
+        AssertThat(dynamic.GetNodeOrNull("HistoryEmpty")).IsNull();
+        AssertThat(dynamic.GetNodeOrNull("History_0")).IsNotNull();
+    }
+
+    [TestCase]
+    public async Task DemographicsTab_RendersAGraph_WithDrawnPixels()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // Seed a couple of years so the series has points to plot.
+        Game game = GetGame(controller);
+        game.FoundColony(game.Units.First(u => !u.Type.IsNaval));
+        game.EndTurn();
+        game.EndTurn();
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Demographics")
+            .EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(3);
+
+        AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Demographics");
+        var graph = controller.GetNode<Control>("UI/ColonyReportPanel/VBox/Dynamic/DemographicGraph");
+        AssertThat(graph).IsNotNull();
+        AssertThat(graph.Size.X).IsGreater(0f); // the graph laid out with a real size
+
+        // RENDER-VERIFY: capture the graph to a temp PNG, read it back, and confirm it drew non-background pixels (the
+        // frame + the coloured polylines). Then DELETE the temp PNG — we never commit pngs.
+        Image img = controller.GetViewport().GetTexture().GetImage();
+        string tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"demographics_{System.Guid.NewGuid():N}.png");
+        AssertThat(img.SavePng(tmp)).IsEqual(Error.Ok);
+        try
+        {
+            using var loaded = Image.LoadFromFile(tmp);
+            AssertThat(loaded).IsNotNull();
+            // The graph occupies a region of the viewport; scan it for any of the three legend colours (green/gold/cyan).
+            Rect2 rect = graph.GetGlobalRect();
+            bool drew = false;
+            int x0 = Mathf.Max(0, (int)rect.Position.X), y0 = Mathf.Max(0, (int)rect.Position.Y);
+            int x1 = Mathf.Min(loaded.GetWidth(), (int)rect.End.X), y1 = Mathf.Min(loaded.GetHeight(), (int)rect.End.Y);
+            for (int y = y0; y < y1 && !drew; y++)
+            {
+                for (int x = x0; x < x1 && !drew; x++)
+                {
+                    Color c = loaded.GetPixel(x, y);
+                    bool green = c.G > 0.4f && c.R < 0.6f && c.B < 0.4f;
+                    bool gold = c.R > 0.7f && c.G > 0.6f && c.B < 0.5f;
+                    bool cyan = c.G > 0.6f && c.B > 0.6f && c.R < 0.6f;
+                    if (green || gold || cyan)
+                    {
+                        drew = true;
+                    }
+                }
+            }
+            AssertThat(drew).IsTrue();
+        }
+        finally
+        {
+            if (System.IO.File.Exists(tmp))
+            {
+                System.IO.File.Delete(tmp); // do NOT leave (or commit) the temp png
+            }
+        }
+    }
+
     private static Game GetGame(GameController controller) =>
         (Game)controller
             .GetType()

@@ -1,4 +1,7 @@
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Natives;
+using CrownAndColony.GameLogic.Units;
+using CrownAndColony.GameLogic.World;
 
 namespace CrownAndColony.GameLogic.GameSession;
 
@@ -102,5 +105,82 @@ public sealed partial class Game
             : tension <= 700 ? AlarmLevel.Displeased
             : tension <= 800 ? AlarmLevel.Angry
             : AlarmLevel.Hateful;
+    }
+
+    // ── Labour-detail drill-down (FreeCol ReportLabourDetailPanel / CompactLabourReport) ────────────────────
+
+    /// <summary>
+    /// One location's count of colonists of a given unit type in the labour-detail drill-down (a row in FreeCol's
+    /// <c>ReportLabourDetailPanel</c>, whose model is <c>Map&lt;UnitType, Map&lt;Location, Integer&gt;&gt;</c>): the place
+    /// (a colony name, or "in the field" for on-map person units) and how many of that type are there. A pure value
+    /// projection for display.
+    /// </summary>
+    /// <param name="Location">The place the colonists are — a human colony's name, or the field marker for on-map units.</param>
+    /// <param name="Count">How many colonists of the drilled-into unit type are at this location.</param>
+    public readonly record struct LabourLocation(string Location, int Count);
+
+    /// <summary>The location marker the labour-detail oracle uses for the human's on-map person units (not in any colony).</summary>
+    public const string LabourFieldLocation = "In the field";
+
+    /// <summary>
+    /// The labour-detail drill-down for one unit type (a read-only oracle, ADR-006; FreeCol's
+    /// <c>ReportLabourDetailPanel</c> data for a chosen <c>UnitType</c>): <b>where the human's colonists of
+    /// <paramref name="unitTypeId"/> are</b>, location by location, each with its head-count. Tallies the same colonists
+    /// the flat Labour report does — colony residents from the worker overlays (tile workers, building occupants, idle
+    /// pool) plus the on-map person units (under <see cref="LabourFieldLocation"/>) — but bucketed by location for the one
+    /// chosen type rather than listed flat. Colonies are returned in id order, the field marker last; a location with no
+    /// colonists of that type is omitted. Pure and RNG-free; never mutates, never persisted.
+    /// </summary>
+    /// <param name="unitTypeId">The ruleset unit-type id to drill into (e.g. <c>model.unit.expertFarmer</c>).</param>
+    /// <returns>The per-location counts (colonies in id order, then the field), empty when the human has none of that type.</returns>
+    public IReadOnlyList<LabourLocation> LabourDetail(string unitTypeId)
+    {
+        var result = new List<LabourLocation>();
+
+        foreach (Colony c in _colonies.Where(c => c.OwnerId == _human.PlayerId).OrderBy(c => c.Id))
+        {
+            int count = 0;
+            foreach (Position tile in c.TileWorkers.Keys)
+            {
+                if (c.WorkerTypeAt(tile) == unitTypeId)
+                {
+                    count++;
+                }
+            }
+            foreach (string buildingId in c.Buildings)
+            {
+                foreach (string occupant in c.BuildingOccupants(buildingId))
+                {
+                    if (occupant == unitTypeId)
+                    {
+                        count++;
+                    }
+                }
+            }
+            foreach (string idle in c.IdleWorkerTypes)
+            {
+                if (idle == unitTypeId)
+                {
+                    count++;
+                }
+            }
+            // Free-colonist idle remainder (the idle pool beyond the named non-free types is all free colonists).
+            if (unitTypeId == Colony.FreeColonistTypeId)
+            {
+                count += c.IdleColonists - c.IdleWorkerTypes.Count;
+            }
+            if (count > 0)
+            {
+                result.Add(new LabourLocation(c.Name, count));
+            }
+        }
+
+        int field = PlayerUnits.Count(u => u.Type.IsPerson && u.Type.Id == unitTypeId);
+        if (field > 0)
+        {
+            result.Add(new LabourLocation(LabourFieldLocation, field));
+        }
+
+        return result;
     }
 }

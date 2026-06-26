@@ -11,7 +11,8 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 /// <summary>
 /// The human player's notable-event history (`86d3c9x53` — the History report's source): founding a colony, entering
 /// war with a rival, and electing a Founding Father each append a turn-stamped, player-facing <see cref="HistoryEvent"/>
-/// to <see cref="Game.History"/>. In-memory only this wave (a persisted log is a follow-up). Read-only for the report.
+/// to <see cref="Game.History"/>. <b>Persisted</b> from save v58 (round-trip + omit-when-empty covered below), so a
+/// reloaded game keeps its history. Read-only for the report.
 /// </summary>
 public class HistoryTests
 {

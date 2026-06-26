@@ -1,4 +1,4 @@
-using CrownAndColony.GameLogic.GameSession;
+﻿using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
@@ -19,7 +19,7 @@ public class RegionDiscoveryTests
 {
     private static readonly Ruleset Classic = Ruleset.LoadClassic();
 
-    // ── Region model: discoverability rules (FreeCol ServerRegion) ───────────────────────────────────────
+    // â”€â”€ Region model: discoverability rules (FreeCol ServerRegion) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public void DynamicLandAndMountain_AreDiscoverable_FixedKeyedAndDiscoveredAreNot()
@@ -45,14 +45,14 @@ public class RegionDiscoveryTests
         Assert.False(discovered.IsDiscoverable); // a discovered region cannot be discovered again
     }
 
-    // ── GameMap.DiscoverableRegionOf: an ocean-quadrant tile resolves up to its discoverable Pacific parent ──
+    // â”€â”€ GameMap.DiscoverableRegionOf: an ocean-quadrant tile resolves up to its discoverable Pacific parent â”€â”€
 
     [Fact]
     public void DiscoverableRegionOf_ResolvesOceanQuadrantToPacificParent()
     {
         TerrainType ocean = Classic.Terrain("model.tile.ocean");
         TerrainType land = Classic.Terrain("model.tile.plains");
-        // 2×2: region 0 = north-Pacific leaf quadrant (parent = Pacific id 2), region 1 = dynamic land, 2 = Pacific.
+        // 2Ã—2: region 0 = north-Pacific leaf quadrant (parent = Pacific id 2), region 1 = dynamic land, 2 = Pacific.
         Region[] table =
         [
             new(0, RegionType.Ocean, 0, "model.region.northPacific", ParentId: 2),
@@ -61,12 +61,12 @@ public class RegionDiscoveryTests
         ];
         var map = new GameMap(2, 2, [ocean, land, ocean, land], regionIds: [0, 1, 0, 1], regions: table);
 
-        // The ocean tile's own region (the leaf quadrant) is not discoverable → resolves up to the Pacific (id 2).
+        // The ocean tile's own region (the leaf quadrant) is not discoverable â†’ resolves up to the Pacific (id 2).
         Region? fromOcean = map.DiscoverableRegionOf(new Position(0, 0));
         Assert.NotNull(fromOcean);
         Assert.Equal(2, fromOcean!.Id);
 
-        // The land tile's own region IS discoverable → returned directly.
+        // The land tile's own region IS discoverable â†’ returned directly.
         Assert.Equal(1, map.DiscoverableRegionOf(new Position(1, 0))!.Id);
     }
 
@@ -76,17 +76,17 @@ public class RegionDiscoveryTests
         TerrainType land = Classic.Terrain("model.tile.plains");
         Region[] table = [new(0, RegionType.Land, 500, DiscoveredBy: 0, Name: "Land 1", DiscoveredInTurn: 1)];
         var map = new GameMap(1, 1, [land], regionIds: [0], regions: table);
-        Assert.Null(map.DiscoverableRegionOf(new Position(0, 0))); // discovered → no longer a discovery candidate
+        Assert.Null(map.DiscoverableRegionOf(new Position(0, 0))); // discovered â†’ no longer a discovery candidate
     }
 
-    // ── End to end: a fresh game discovers regions on its starting fog reveal ─────────────────────────────
+    // â”€â”€ End to end: a fresh game discovers regions on its starting fog reveal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public void NewGame_DiscoversRegions_OnTheStartingReveal()
     {
         Game game = Game.New(Classic, seed: 7);
 
-        // The starting fog reveals discover every discoverable region the colonial players can see — the human AND the
+        // The starting fog reveals discover every discoverable region the colonial players can see â€” the human AND the
         // foreign powers (FreeCol gates discovery on owner.isEuropean(), not just the human).
         var discovered = game.Map.Regions.Where(r => r.IsDiscovered).ToList();
         Assert.NotEmpty(discovered);
@@ -125,7 +125,7 @@ public class RegionDiscoveryTests
             Assert.Equal(game.Turn, e.Turn);
         }
 
-        // The human's history log scores only the regions the HUMAN discovered (player 0) — a foreign power's
+        // The human's history log scores only the regions the HUMAN discovered (player 0) â€” a foreign power's
         // discoveries claim the region but raise no entry in the human's history (history is human-only, like every
         // other RecordHistory call). The summed event scores match the human's discovered regions' score values.
         int humanDiscoveryScore = game.Map.Regions.Where(r => r.DiscoveredBy == 0).Sum(r => r.ScoreValue);
@@ -160,7 +160,7 @@ public class RegionDiscoveryTests
         Game game = Game.New(Classic, seed: 7);
 
         // Dynamic land regions the HUMAN discovered are named "Land 1", "Land 2", ... (the nation-less default human
-        // has no nation prefix) — a deterministic, gap-free sequence per (player, type). A foreign power's carry its
+        // has no nation prefix) â€” a deterministic, gap-free sequence per (player, type). A foreign power's carry its
         // nation prefix ("Dutch Land 1", ...) and number independently, so scope to the human (player 0).
         var humanLandNames = game.Map.Regions
             .Where(r => r.DiscoveredBy == 0 && r.Key is null && r.Type == RegionType.Land)
@@ -176,7 +176,7 @@ public class RegionDiscoveryTests
             r => Assert.Matches(@"^\w+ Land \d+$", r.Name!));
     }
 
-    // ── Determinism: a fresh default game is byte-identical (discovery is RNG-free) ───────────────────────
+    // â”€â”€ Determinism: a fresh default game is byte-identical (discovery is RNG-free) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public void Discovery_IsRngFree_DefaultGameByteIdentical()
@@ -191,7 +191,7 @@ public class RegionDiscoveryTests
             b.Map.Regions.Select(r => (r.Id, r.DiscoveredBy, r.Name, r.DiscoveredInTurn)));
     }
 
-    // ── Persistence (v51): discovery state round-trips; an undiscovered region stays byte-identical ───────
+    // â”€â”€ Persistence (v51): discovery state round-trips; an undiscovered region stays byte-identical â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public void DiscoveryState_RoundTripsThroughSave()
@@ -227,7 +227,7 @@ public class RegionDiscoveryTests
     }
 
     [Fact]
-    public void SaveVersion_IsCurrent() => Assert.Equal(64, SaveGame.CurrentVersion);
+    public void SaveVersion_IsCurrent() => Assert.Equal(65, SaveGame.CurrentVersion);
 
     /// <summary>Classic-ruleset unit score values used to predict the unit summand (mirrors the scoring engine table).</summary>
     private static int UnitScore(string typeId) => typeId switch

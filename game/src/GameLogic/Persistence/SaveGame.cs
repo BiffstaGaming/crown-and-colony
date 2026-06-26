@@ -20,7 +20,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 64;
+    public const int CurrentVersion = 65;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -271,6 +271,15 @@ public sealed record SaveGame
     /// open unchanged. Determinism (ADR-009): the magnitude growth is a pure, RNG-free post-process of the already-
     /// walked river paths + recorded confluences — it draws no randomness, so the default map's stream-0 sequence is
     /// untouched and the soak stays byte-identical and twin-deterministic.
+    /// v65 added the human nation's <b>year-by-year demographic series</b> (<see cref="Demographics"/> — the
+    /// population / gold / score recorded at each year-rollover, driving the end-game demographics graph; 86d3fq27v) as
+    /// a new top-level field. Additive + <b>omitted when the series is empty</b> (null), so a brand-new game whose first
+    /// year has not yet rolled over serialises byte-identically to v64; pre-v65 saves (or any with no snapshots) load
+    /// with an empty series exactly as before, and the series accrues again as play continues. Determinism (ADR-009):
+    /// the series is pure UI scratch — recorded by reading existing population/gold/score totals and never fed back into
+    /// game evolution — so a reloaded game continues on the identical random sequence whether or not it was persisted,
+    /// and the soak stays byte-identical and twin-deterministic. (The history log — v58, <see cref="History"/> — is
+    /// unchanged at v65; it already round-trips, so the History report has been save-stable since v58.)
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -432,6 +441,17 @@ public sealed record SaveGame
     /// reloaded game continues on the identical random sequence whether or not the log was persisted.
     /// </summary>
     public IReadOnlyList<SavedHistoryEvent>? History { get; init; }
+
+    /// <summary>
+    /// The human nation's year-by-year demographic series — for each completed year, the colonial population, treasury
+    /// gold and player score recorded at the year-rollover (v65; the end-game demographics graph's source). Persisting it
+    /// makes the trend graph survive a save/load round-trip. Additive + <b>omitted when the series is empty</b> (null), so
+    /// a brand-new game whose first year has not yet rolled over serialises byte-identically to v64; pre-v65 saves (or any
+    /// with no snapshots) load with an empty series exactly as before, then the series accrues again as play continues.
+    /// Determinism (ADR-009): the series is pure UI scratch with no feedback into game evolution, so a reloaded game
+    /// continues on the identical random sequence whether or not it was persisted.
+    /// </summary>
+    public IReadOnlyList<SavedDemographicSnapshot>? Demographics { get; init; }
 
     /// <summary>
     /// The in-session message log — the per-turn player notices the dismissible turn-message panel surfaced after each
@@ -624,6 +644,13 @@ public sealed record SaveGame
             History = game.History.Count > 0
                 ? game.History
                     .Select(h => new SavedHistoryEvent((int)h.Kind, h.Turn, h.Description, h.Score))
+                    .ToList()
+                : null,
+            // The human's year-by-year demographic series (v65); omitted when empty so a game whose first year has not yet
+            // rolled over stays byte-identical to v64. Each snapshot keeps its year/population/gold/score so the trend graph round-trips.
+            Demographics = game.Demographics.Count > 0
+                ? game.Demographics
+                    .Select(d => new SavedDemographicSnapshot(d.Year, d.Population, d.Gold, d.Score))
                     .ToList()
                 : null,
             NativeSettlements = game.NativeSettlements.Count > 0
@@ -896,6 +923,11 @@ public sealed record SaveGame
             game.RestoreHistory(history.Select(h =>
                 new HistoryEvent((HistoryEventKind)h.Kind, h.Turn, h.Description, h.Score)));
         }
+        if (Demographics is { } demographics) // v65; pre-v65 / omitted → the series stays empty (it accrues again as play continues)
+        {
+            game.RestoreDemographics(demographics.Select(d =>
+                new DemographicSnapshot(d.Year, d.Population, d.Gold, d.Score)));
+        }
         if (CitiesOfCibolaRemaining is { } cibolaLeft) // v63; pre-v63 / omitted → the full count of seven remains (the classic count)
         {
             game.SetCitiesOfCibolaRemaining(cibolaLeft);
@@ -1118,6 +1150,18 @@ public sealed record SavedForce(IReadOnlyList<ForceEntry> Land, IReadOnlyList<Fo
 /// <param name="Description">The player-facing one-line description (carries no ids — safe to round-trip verbatim).</param>
 /// <param name="Score">The score the event contributed (region discovery positive; −5/−50 destruction penalties; 0 otherwise). Omitted when 0 so a score-less event (the common case) stays compact.</param>
 public sealed record SavedHistoryEvent(int Kind, int Turn, string Description, int Score = 0);
+
+/// <summary>
+/// One year's <see cref="GameSession.DemographicSnapshot"/> in the human nation's demographic series inside a
+/// <see cref="SaveGame"/> (v65). The whole series is additive + <b>omitted when empty</b> (see
+/// <see cref="SaveGame.Demographics"/>), so a game whose first year has not yet rolled over stays byte-identical to v64;
+/// pre-v65 saves load with an empty series exactly as before persistence.
+/// </summary>
+/// <param name="Year">The calendar year the snapshot was taken.</param>
+/// <param name="Population">The human's total colonial population that year.</param>
+/// <param name="Gold">The human's treasury gold that year.</param>
+/// <param name="Score">The human's player score that year.</param>
+public sealed record SavedDemographicSnapshot(int Year, int Population, int Gold, int Score);
 
 /// <summary>
 /// One per-turn player notice in the in-session message log inside a <see cref="SaveGame"/> (v59). The whole log is

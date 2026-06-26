@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
@@ -11,7 +11,7 @@ using Xunit;
 namespace CrownAndColony.GameLogic.Tests.GameSession;
 
 /// <summary>
-/// The pioneer tile-improvement build action (<c>86d3dqr62</c>) — a tooled pioneer spends turns building a
+/// The pioneer tile-improvement build action (<c>86d3dqr62</c>) â€” a tooled pioneer spends turns building a
 /// road / plow / clear-forest, consuming tools, with the FreeCol effects (road movement, plow yield, forest
 /// cleared to its base type + lumber to the owning colony). Cross-checked against FreeCol
 /// <c>ServerUnit.csImproveTile</c> and the classic spec improvement types.
@@ -29,7 +29,7 @@ public class PioneerBuildTests
     private const string Lumber = "model.goods.lumber";
 
     /// <summary>
-    /// A 3×3 map of one terrain type with a pioneer (a free colonist equipped with tools, unless
+    /// A 3Ã—3 map of one terrain type with a pioneer (a free colonist equipped with tools, unless
     /// <paramref name="unitTypeId"/> overrides) standing on the centre tile, and an optional human colony.
     /// </summary>
     private static Game GameWithPioneer(
@@ -81,7 +81,7 @@ public class PioneerBuildTests
     [Fact]
     public void CheckBuild_DeniedWithoutTools()
     {
-        // A pioneer that has run out of tools (count 0) reverts to a colonist — it cannot build.
+        // A pioneer that has run out of tools (count 0) reverts to a colonist â€” it cannot build.
         Game game = GameWithPioneer("model.tile.plains");
         Unit u = ThePioneer(game);
         u.RoleId = RoleType.DefaultRoleId;
@@ -141,7 +141,7 @@ public class PioneerBuildTests
         WorkTurns(game, 1);
         Assert.False(u.IsImproving);                          // completed
         Assert.True(game.Map.HasImprovement(u.Position, Road)); // road laid
-        Assert.True(u.HasDefaultRole);                        // out of tools → reverted to a colonist
+        Assert.True(u.HasDefaultRole);                        // out of tools â†’ reverted to a colonist
         Assert.Equal(0, u.RoleCount);
     }
 
@@ -152,17 +152,17 @@ public class PioneerBuildTests
         Unit u = ThePioneer(game);
 
         game.BuildImprovement(u, Road); // 3 work turns
-        WorkTurns(game, 1);             // hardy does 2 → 1 left
+        WorkTurns(game, 1);             // hardy does 2 â†’ 1 left
         Assert.Equal(1, u.WorkTurnsLeft);
         Assert.True(u.IsImproving);
-        WorkTurns(game, 1);             // 1 - 2 → done
+        WorkTurns(game, 1);             // 1 - 2 â†’ done
         Assert.True(game.Map.HasImprovement(u.Position, Road));
     }
 
     [Fact]
     public void PioneerWithSpareTools_StaysAPioneerAfterBuilding()
     {
-        // Count 2 (40 tools) → one road spends one count, leaving a still-tooled pioneer.
+        // Count 2 (40 tools) â†’ one road spends one count, leaving a still-tooled pioneer.
         Game game = GameWithPioneer("model.tile.plains", roleCount: 2);
         Unit u = ThePioneer(game);
         game.BuildImprovement(u, Road);
@@ -177,7 +177,7 @@ public class PioneerBuildTests
     public void Road_ReducesMovementCostBetweenTwoRoadTiles()
     {
         // Build a road on the pioneer's tile, then place a road on the neighbour via a second pioneer and check
-        // a land unit pays the road follow-cost (1) instead of plains (3) stepping road→road.
+        // a land unit pays the road follow-cost (1) instead of plains (3) stepping roadâ†’road.
         Game game = GameWithPioneer("model.tile.plains");
         Unit pioneer = ThePioneer(game);
         game.BuildImprovement(pioneer, Road);
@@ -223,7 +223,7 @@ public class PioneerBuildTests
         Assert.Equal(6, u.WorkTurnsLeft); // mixedForest basic-work-turns 4 + clearForest add-work-turns 2
         WorkTurns(game, 6);
 
-        Assert.Equal("model.tile.plains", game.Map.TerrainAt(tile).Id);   // mixedForest → plains
+        Assert.Equal("model.tile.plains", game.Map.TerrainAt(tile).Id);   // mixedForest â†’ plains
         Assert.False(game.Map.TerrainAt(tile).IsForest);
         Assert.Equal(lumberBefore + 20, colony.StoreOf(Lumber));          // one-off 20 lumber delivered
     }
@@ -253,7 +253,7 @@ public class PioneerBuildTests
         game.BuildImprovement(u, Clear);
         WorkTurns(game, Game.WorkTurnsToComplete(Classic.Terrain("model.tile.coniferForest"), Classic.Improvement(Clear)));
 
-        Assert.Equal("model.tile.grassland", game.Map.TerrainAt(tile).Id); // coniferForest → grassland, no crash
+        Assert.Equal("model.tile.grassland", game.Map.TerrainAt(tile).Id); // coniferForest â†’ grassland, no crash
     }
 
     // ---- Cycling + orders ----
@@ -265,7 +265,7 @@ public class PioneerBuildTests
         Unit u = ThePioneer(game);
         Assert.Same(u, game.NextUnitToMove(game.HumanPlayer)); // needs orders before building
         game.BuildImprovement(u, Road);
-        Assert.Null(game.NextUnitToMove(game.HumanPlayer));    // now busy → skipped
+        Assert.Null(game.NextUnitToMove(game.HumanPlayer));    // now busy â†’ skipped
     }
 
     [Fact]
@@ -307,5 +307,5 @@ public class PioneerBuildTests
     }
 
     [Fact]
-    public void SaveVersion_IsCurrent() => Assert.Equal(64, SaveGame.CurrentVersion);
+    public void SaveVersion_IsCurrent() => Assert.Equal(65, SaveGame.CurrentVersion);
 }

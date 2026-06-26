@@ -7859,6 +7859,7 @@ public sealed partial class Game
             // A ship still under repair stays pinned at 0 moves (FreeCol forced repair); everyone else resets.
             unit.MovementLeft = unit.IsUnderRepair ? 0 : InitialMovement(unit); // base + role bonus (dragoon/scout +9)
         }
+        RecordYearlyDemographics(CurrentYear); // snapshot the human's population/gold/score for the year now ending (once per year; see Game.Demographics)
         Turn++;
         RemoveExpiredTemporaryModifiers(); // strip any duration-bounded modifier now out of date for the new turn (FreeCol's per-new-turn temporary-modifier removal) — a no-op in classic (registry empty)
     }

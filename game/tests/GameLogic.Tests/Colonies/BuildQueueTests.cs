@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
@@ -10,7 +10,7 @@ namespace CrownAndColony.GameLogic.Tests.Colonies;
 /// <summary>
 /// Ordered build queue (<c>86d3c9nxe</c>, FreeCol <c>Colony.buildQueue</c> + <c>csNextBuildable</c>): a colony
 /// holds an ordered list of buildables; completing the front item auto-advances to the next, skipping any that
-/// became invalid. <c>CurrentBuild</c> is the front. The tail persists (save v24, omitted for a ≤1-item queue).
+/// became invalid. <c>CurrentBuild</c> is the front. The tail persists (save v24, omitted for a â‰¤1-item queue).
 /// </summary>
 public class BuildQueueTests
 {
@@ -73,9 +73,9 @@ public class BuildQueueTests
     public void AnInvalidQueuedItem_IsSkippedWithoutSpendingMaterials()
     {
         Game game = PlainsColony(out Colony colony);
-        // Queue the warehouse twice via the model, then build it the first time → the second is now invalid.
+        // Queue the warehouse twice via the model, then build it the first time â†’ the second is now invalid.
         colony.SetBuildQueue([Warehouse, Warehouse]);
-        colony.AddGoods(Hammers, 160); // enough for two — but the second is redundant once the first is built
+        colony.AddGoods(Hammers, 160); // enough for two â€” but the second is redundant once the first is built
 
         game.EndTurn(); // builds warehouse #1, advances to #2 (one build per turn)
         Assert.True(colony.HasBuilding(Warehouse));
@@ -93,7 +93,7 @@ public class BuildQueueTests
     public void ATransientlyUnbuildableItem_IsKeptWhileUnaffordable_NotDropped()
     {
         // Regression (FreeCol csNextBuildable runs only when the front item is affordable): a building queued
-        // before the colony can build it — here a stockade (needs population 3) at population 1 with no hammers —
+        // before the colony can build it â€” here a stockade (needs population 3) at population 1 with no hammers â€”
         // must NOT be silently dropped on idle turns. It waits, exactly as FreeCol does.
         Game game = PlainsColony(out Colony colony);
         colony.SetBuildQueue(["model.building.stockade"]); // requires population 3; colony is pop 1, produces no hammers
@@ -138,7 +138,7 @@ public class BuildQueueTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
         Assert.Equal([Warehouse, WarehouseExpansion], restored.Colonies[0].BuildQueue);
-        Assert.Equal(64, SaveGame.CurrentVersion);
+        Assert.Equal(65, SaveGame.CurrentVersion);
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public class BuildQueueTests
     {
         Game game = PlainsColony(out Colony colony);
         colony.SetBuildQueue([Warehouse]);
-        Assert.DoesNotContain("BuildQueueRest", SaveGame.From(game).ToJson()); // ≤1-item queue stays byte-identical to v23
+        Assert.DoesNotContain("BuildQueueRest", SaveGame.From(game).ToJson()); // â‰¤1-item queue stays byte-identical to v23
     }
 
     [Fact]
@@ -172,7 +172,7 @@ public class BuildQueueTests
         Assert.Equal([WarehouseExpansion, Warehouse], colony.BuildQueue);
         Assert.Equal(WarehouseExpansion, colony.CurrentBuild);
 
-        game.MoveBuildQueueItem(colony, 0, -1); // off the top → no-op
+        game.MoveBuildQueueItem(colony, 0, -1); // off the top â†’ no-op
         Assert.Equal([WarehouseExpansion, Warehouse], colony.BuildQueue);
     }
 

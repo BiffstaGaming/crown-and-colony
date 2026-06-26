@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
@@ -12,8 +12,8 @@ namespace CrownAndColony.GameLogic.Tests.Colonies;
 
 /// <summary>
 /// Building units in a colony (FreeCol <c>ServerColony.csBuildUnit</c> + <c>Colony.getNoBuildReason</c>): the
-/// construction queue can hold land units — <b>artillery</b> (192 hammers + 40 tools, needs an armory) and the
-/// <b>wagon train</b> (40 hammers, the free carpenter's house enables it) — and <b>ships</b> at a <b>coastal shipyard</b>
+/// construction queue can hold land units â€” <b>artillery</b> (192 hammers + 40 tools, needs an armory) and the
+/// <b>wagon train</b> (40 hammers, the free carpenter's house enables it) â€” and <b>ships</b> at a <b>coastal shipyard</b>
 /// colony (which launch on an adjacent water tile). A completed land unit musters on the colony tile under the colony's
 /// owner, costs no colonist, and can be built repeatedly; the wagon train is capped at one per colony. The free colonist
 /// is food-grown, never built. No save-format change (a unit id rides the queue strings).
@@ -44,9 +44,9 @@ public class BuildUnitTests
 
     [Theory]
     [InlineData("model.building.carpenterHouse", WagonTrain)]
-    [InlineData("model.building.lumberMill", WagonTrain)]   // extends carpenterHouse → inherits the scope
+    [InlineData("model.building.lumberMill", WagonTrain)]   // extends carpenterHouse â†’ inherits the scope
     [InlineData("model.building.armory", Artillery)]
-    [InlineData("model.building.magazine", Artillery)]      // extends armory → inherits the scope
+    [InlineData("model.building.magazine", Artillery)]      // extends armory â†’ inherits the scope
     [InlineData("model.building.arsenal", Artillery)]
     public void BuildAbilityScopes_AreCollectedDownTheExtendsChain(string buildingId, string unitId)
     {
@@ -104,10 +104,10 @@ public class BuildUnitTests
     [Fact]
     public void ALandlockedShipyard_CannotBuildShips_AndNoColonyBuildsAFreeColonist()
     {
-        Game game = PlainsColony(out Colony colony); // 1×1 all-land map → the colony has no water neighbour
-        // A shipyard grants the naval build scope, but a ship needs a port to launch into — a landlocked colony can't.
+        Game game = PlainsColony(out Colony colony); // 1Ã—1 all-land map â†’ the colony has no water neighbour
+        // A shipyard grants the naval build scope, but a ship needs a port to launch into â€” a landlocked colony can't.
         colony.AddBuilding("model.building.shipyard");
-        Assert.False(game.CheckSetBuild(colony, "model.unit.caravel").Allowed);       // no port → no ship
+        Assert.False(game.CheckSetBuild(colony, "model.unit.caravel").Allowed);       // no port â†’ no ship
         Assert.False(game.CheckSetBuild(colony, "model.unit.freeColonist").Allowed);  // food-grown, not built
     }
 
@@ -243,7 +243,7 @@ public class BuildUnitTests
         game.EndTurn();
 
         Assert.Equal(2, game.Units.Count(u => u.Type.Id == Artillery)); // built one per turn, queue never emptied
-        Assert.Equal(Artillery, colony.CurrentBuild);                   // still set — keeps churning them out
+        Assert.Equal(Artillery, colony.CurrentBuild);                   // still set â€” keeps churning them out
     }
 
     [Fact]
@@ -285,16 +285,16 @@ public class BuildUnitTests
 
         Assert.True(game.CheckSetBuild(first, WagonTrain).Allowed);              // 0 wagons < 2 colonies
         game.SpawnUnit(Classic.Unit(WagonTrain), positions.spare);              // now own 1 wagon train
-        Assert.True(game.CheckSetBuild(first, WagonTrain).Allowed);              // 1 < 2 → still allowed
+        Assert.True(game.CheckSetBuild(first, WagonTrain).Allowed);              // 1 < 2 â†’ still allowed
         game.SpawnUnit(Classic.Unit(WagonTrain), positions.spare2);            // now own 2 (== 2 colonies)
-        Assert.False(game.CheckSetBuild(first, WagonTrain).Allowed);            // 2 < 2 false → capped
+        Assert.False(game.CheckSetBuild(first, WagonTrain).Allowed);            // 2 < 2 false â†’ capped
     }
 
     [Fact]
     public void ALoneWagonTrainOrder_RepeatsUntilTheCap_ThenClears()
     {
         // The REMOVE_EXCEPT_LAST repeat meets the one-per-colony cap: a lone wagon-train order builds one, then the
-        // cap (1 < 1 is false) makes the next turn skip it and the queue clears — no runaway wagon-train spam.
+        // cap (1 < 1 is false) makes the next turn skip it and the queue clears â€” no runaway wagon-train spam.
         Game game = PlainsColony(out Colony colony); // one colony, the free carpenter's house enables wagon trains
         colony.AddGoods(Hammers, 1000);
         game.SetBuild(colony, WagonTrain);
@@ -303,8 +303,8 @@ public class BuildUnitTests
         Assert.Single(game.Units, u => u.Type.Id == WagonTrain);
         Assert.Equal(WagonTrain, colony.CurrentBuild);
 
-        game.EndTurn(); // now 1 wagon == 1 colony → capped → the affordable-but-unbuildable front is skipped, queue clears
-        Assert.Single(game.Units, u => u.Type.Id == WagonTrain); // still exactly one — the cap held
+        game.EndTurn(); // now 1 wagon == 1 colony â†’ capped â†’ the affordable-but-unbuildable front is skipped, queue clears
+        Assert.Single(game.Units, u => u.Type.Id == WagonTrain); // still exactly one â€” the cap held
         Assert.Null(colony.CurrentBuild);
         Assert.Equal(960, colony.StoreOf(Hammers)); // the skipped second build spent nothing
     }
@@ -321,27 +321,27 @@ public class BuildUnitTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
         Assert.Equal([Artillery, WagonTrain, Warehouse], restored.Colonies[0].BuildQueue);
-        Assert.Equal(64, SaveGame.CurrentVersion);
+        Assert.Equal(65, SaveGame.CurrentVersion);
     }
 
     [Fact]
     public void AnEmptyBuildQueue_PersistsNoQueueTokens()
     {
-        // Building units rides the existing v24 queue strings — an idle colony adds no new bytes (byte-stable).
+        // Building units rides the existing v24 queue strings â€” an idle colony adds no new bytes (byte-stable).
         Game game = PlainsColony(out _);
         string json = SaveGame.From(game).ToJson();
-        Assert.DoesNotContain("CurrentBuild", json);   // nothing under construction → omitted
-        Assert.DoesNotContain("BuildQueueRest", json); // no queued tail → omitted
+        Assert.DoesNotContain("CurrentBuild", json);   // nothing under construction â†’ omitted
+        Assert.DoesNotContain("BuildQueueRest", json); // no queued tail â†’ omitted
     }
 
     [Fact]
     public void BuildingAUnit_DrawsNoRandomness()
     {
         // Two identically-seeded games: one builds artillery this turn, one has its queue cleared. If construction
-        // drew from the RNG their RNG state would diverge after EndTurn — it must not (ADR-009).
+        // drew from the RNG their RNG state would diverge after EndTurn â€” it must not (ADR-009).
         Game building = ArmoryArtilleryGame();
         Game idle = ArmoryArtilleryGame();
-        idle.SetBuild(idle.Colonies[0], null); // clear the queue → no construction this turn
+        idle.SetBuild(idle.Colonies[0], null); // clear the queue â†’ no construction this turn
 
         building.EndTurn();
         idle.EndTurn();
@@ -372,7 +372,7 @@ public class BuildUnitTests
         return game;
     }
 
-    /// <summary>A coastal colony with no shipyard: plains at (0,0), ocean at (1,0) — the colony's port.</summary>
+    /// <summary>A coastal colony with no shipyard: plains at (0,0), ocean at (1,0) â€” the colony's port.</summary>
     private static Game CoastalColony(out Colony colony, out Position water)
     {
         var game = new SaveGame
@@ -392,7 +392,7 @@ public class BuildUnitTests
         return game;
     }
 
-    /// <summary>A coastal colony (see <see cref="CoastalColony"/>) with a shipyard — can build and launch ships.</summary>
+    /// <summary>A coastal colony (see <see cref="CoastalColony"/>) with a shipyard â€” can build and launch ships.</summary>
     private static Game CoastalShipyardColony(out Colony colony, out Position water)
     {
         Game game = CoastalColony(out colony, out water);
@@ -400,7 +400,7 @@ public class BuildUnitTests
         return game;
     }
 
-    /// <summary>A seeded 1×1 colony with an armory and exactly enough goods to build artillery this turn.</summary>
+    /// <summary>A seeded 1Ã—1 colony with an armory and exactly enough goods to build artillery this turn.</summary>
     private static Game ArmoryArtilleryGame()
     {
         Game game = PlainsColony(out Colony colony);
@@ -411,7 +411,7 @@ public class BuildUnitTests
         return game;
     }
 
-    /// <summary>Two colonies (cols 0 and 4 of a 5×1 plains strip) plus two spare land tiles to spawn wagon trains on.</summary>
+    /// <summary>Two colonies (cols 0 and 4 of a 5Ã—1 plains strip) plus two spare land tiles to spawn wagon trains on.</summary>
     private static Game TwoColonyWorld(out Colony first, out (Position spare, Position spare2) positions)
     {
         var game = new SaveGame

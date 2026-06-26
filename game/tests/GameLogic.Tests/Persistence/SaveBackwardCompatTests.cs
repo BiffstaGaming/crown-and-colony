@@ -102,6 +102,7 @@ public class SaveBackwardCompatTests
     [InlineData(45)]
     [InlineData(50)]
     [InlineData(55)]
+    [InlineData(64)]
     public void DownVersionedSave_LoadsWithoutThrowing_AndKeepsCoreStateIntact(int version)
     {
         // Take a fully-populated current save, stamp an older Version and strip the top-level fields added AFTER that
@@ -170,14 +171,18 @@ public class SaveBackwardCompatTests
     /// </summary>
     private static SaveGame DownVersion(SaveGame s, int version) => version switch
     {
+        // After v64: the year-by-year Demographics series (v65, top-level). v64 itself added no field (river magnitude
+        // rides the existing Improvements token), so a v64 save is a v65 save minus Demographics.
+        64 => s with { Version = 64, Demographics = null },
+
         // After v55: TradeAccounts (v56), GeneralStock (per-settlement, v57), History (v58), MessageLog (v59),
-        // LastTaxRaiseTurn (per-player, v60). The per-player/per-settlement ones are nested and omitted-when-default,
-        // so only the top-level History/MessageLog need nulling here.
-        55 => s with { Version = 55, History = null, MessageLog = null },
+        // LastTaxRaiseTurn (per-player, v60), then everything through v64. The per-player/per-settlement ones are nested
+        // and omitted-when-default; only the top-level History/MessageLog/Demographics need nulling here.
+        55 => s with { Version = 55, History = null, MessageLog = null, Demographics = null },
 
         // After v50: region discovery (v51, nested in Regions), unit nationality/name (v52, nested), PeaceTurns (v53,
         // nested), NextUnitId + MilitaryStock (v54), AlarmChannels (v55, nested), and everything from the v55 case.
-        50 => (s with { Version = 50, NextUnitId = null, History = null, MessageLog = null }),
+        50 => (s with { Version = 50, NextUnitId = null, History = null, MessageLog = null, Demographics = null }),
 
         // After v45: DifficultyLevel + ResourceQuantities + PendingMonarchDemand (v46), Improvements + RefEntryTile
         // (v47), then all the later top-level fields too.
@@ -192,6 +197,7 @@ public class SaveBackwardCompatTests
             NextUnitId = null,
             History = null,
             MessageLog = null,
+            Demographics = null,
         }),
         _ => throw new ArgumentOutOfRangeException(nameof(version), version, "Unhandled down-version target."),
     };

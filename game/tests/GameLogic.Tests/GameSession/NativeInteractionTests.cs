@@ -1,4 +1,4 @@
-using CrownAndColony.GameLogic.GameSession;
+﻿using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
@@ -11,7 +11,7 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 /// <summary>
 /// Native interaction (Phase 5 slice 3): the alarm/tension model, speaking with a
 /// settlement's chief (tales + gift), and learning its skill. FreeCol-pinned values
-/// (alarm bands from Tension.java, decay from ServerPlayer, gift 10–80).
+/// (alarm bands from Tension.java, decay from ServerPlayer, gift 10â€“80).
 /// </summary>
 public class NativeInteractionTests
 {
@@ -76,7 +76,7 @@ public class NativeInteractionTests
         (Game game, NativeSettlement settlement, _) = Setup();
         game.ChangeNativeAlarm(settlement, 500);
         game.EndTurn();
-        // FreeCol decay: −value/100 − 4 → 500 − (5 + 4) = 491.
+        // FreeCol decay: âˆ’value/100 âˆ’ 4 â†’ 500 âˆ’ (5 + 4) = 491.
         Assert.Equal(491, settlement.Alarm);
     }
 
@@ -100,7 +100,7 @@ public class NativeInteractionTests
         Assert.True(game.Explored.Count > exploredBefore, "speaking with the chief reveals nearby lands");
         Assert.Equal(0, colonist.MovementLeft);
 
-        // A second visit is refused — you've already spoken with this chief.
+        // A second visit is refused â€” you've already spoken with this chief.
         Assert.False(game.CheckVisit(colonist, settlement).Allowed);
     }
 
@@ -176,8 +176,8 @@ public class NativeInteractionTests
     [Theory] // skill-learner eligibility is read from the spec's model.unitChange.natives data (86d3fpxaw), not a hardcoded pair
     [InlineData("model.unit.freeColonist", true)]      // a learner type (has a natives change row)
     [InlineData("model.unit.indenturedServant", true)] // also a learner type
-    [InlineData("model.unit.pettyCriminal", false)]    // no natives row → cannot learn directly
-    [InlineData("model.unit.expertFarmer", false)]     // already an expert → no natives row
+    [InlineData("model.unit.pettyCriminal", false)]    // no natives row â†’ cannot learn directly
+    [InlineData("model.unit.expertFarmer", false)]     // already an expert â†’ no natives row
     public void LearnSkill_EligibilityIsDataDriven_FromTheSpec(string colonistType, bool eligible)
     {
         (Game game, NativeSettlement settlement, Unit unit) =
@@ -202,7 +202,7 @@ public class NativeInteractionTests
     public void CheckLearnSkill_RefusedWhenSettlementTeachesNothing()
     {
         (Game game, NativeSettlement settlement, Unit colonist) = Setup();
-        // A settlement on the same tile but with no skill — the colonist is adjacent to it too.
+        // A settlement on the same tile but with no skill â€” the colonist is adjacent to it too.
         var noSkill = new NativeSettlement(
             9999, settlement.NationTypeId, settlement.SettlementTypeId, false, settlement.Position, 5, learnableSkill: null);
         Assert.False(game.CheckLearnSkill(colonist, noSkill).Allowed);
@@ -219,10 +219,10 @@ public class NativeInteractionTests
     }
 
     [Theory]
-    [InlineData(3, 0)]   // 3 − (0 + 4) → clamped to 0
-    [InlineData(4, 0)]   // 4 − (0 + 4) = 0
-    [InlineData(5, 1)]   // 5 − (0 + 4) = 1
-    [InlineData(101, 96)] // 101 − (1 + 4) = 96 (stays Content)
+    [InlineData(3, 0)]   // 3 âˆ’ (0 + 4) â†’ clamped to 0
+    [InlineData(4, 0)]   // 4 âˆ’ (0 + 4) = 0
+    [InlineData(5, 1)]   // 5 âˆ’ (0 + 4) = 1
+    [InlineData(101, 96)] // 101 âˆ’ (1 + 4) = 96 (stays Content)
     public void Alarm_DecayHandlesLowValuesAndClampsAtZero(int start, int expected)
     {
         (Game game, NativeSettlement settlement, _) = Setup();
@@ -251,5 +251,5 @@ public class NativeInteractionTests
     }
 
     [Fact]
-    public void SaveVersion_IsCurrent() => Assert.Equal(64, SaveGame.CurrentVersion);
+    public void SaveVersion_IsCurrent() => Assert.Equal(65, SaveGame.CurrentVersion);
 }

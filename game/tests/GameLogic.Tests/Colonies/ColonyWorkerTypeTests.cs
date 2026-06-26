@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
@@ -11,7 +11,7 @@ namespace CrownAndColony.GameLogic.Tests.Colonies;
 
 /// <summary>
 /// Per-colonist worker-type overlay (<c>86d3b6nrz</c> slice 2): each colony worker carries a unit-type identity (a
-/// sparse overlay over the count model — absent ⇒ free colonist), persisted in save v30 (omitted when all free).
+/// sparse overlay over the count model â€” absent â‡’ free colonist), persisted in save v30 (omitted when all free).
 /// Production is still type-blind in this slice; the overlay just <em>tracks</em> who's a specialist and round-trips.
 /// </summary>
 public class ColonyWorkerTypeTests
@@ -38,7 +38,7 @@ public class ColonyWorkerTypeTests
                         && !game.Units.Any(u => u.IsOnMap && u.Position == n));
         Unit expert = game.SpawnUnit(Classic.Unit(ExpertOreMiner), adj);
 
-        game.JoinColony(expert, colony); // joins → idle → maybe auto-assigned
+        game.JoinColony(expert, colony); // joins â†’ idle â†’ maybe auto-assigned
 
         bool tracked = colony.TileWorkerTypes.Values.Contains(ExpertOreMiner)
             || colony.IdleWorkerTypes.Contains(ExpertOreMiner)
@@ -62,7 +62,7 @@ public class ColonyWorkerTypeTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
         Colony r = restored.Colonies.Single(c => c.Id == colony.Id);
 
-        Assert.Equal(64, SaveGame.CurrentVersion);
+        Assert.Equal(65, SaveGame.CurrentVersion);
         Assert.Equal(ExpertFarmer, r.WorkerTypeAt(tile));
         Assert.Contains(MasterCarpenter, r.BuildingWorkerTypes[TownHall]);
         Assert.Contains(ExpertOreMiner, r.IdleWorkerTypes);
@@ -110,7 +110,7 @@ public class ColonyWorkerTypeTests
         Colony colony = FoundFreeColony(game);
         foreach (Position t in colony.TileWorkers.Keys.ToList())
         {
-            game.UnassignWork(colony, t); // founder → idle, then into the carpenter's house as a master carpenter
+            game.UnassignWork(colony, t); // founder â†’ idle, then into the carpenter's house as a master carpenter
         }
         colony.AssignBuildingWorker(Carpenter, MasterCarpenter);
 
@@ -147,7 +147,7 @@ public class ColonyWorkerTypeTests
 
         Unit departed = game.LeaveColony(colony);
 
-        Assert.Equal(ExpertOreMiner, departed.Type.Id);                  // no free colonist → the idle expert leaves
+        Assert.Equal(ExpertOreMiner, departed.Type.Id);                  // no free colonist â†’ the idle expert leaves
         Assert.Equal(1, colony.Population);
         Assert.Contains(ExpertFarmer, colony.TileWorkerTypes.Values);    // the working expert is undisturbed
         Assert.DoesNotContain(ExpertOreMiner, colony.IdleWorkerTypes);
@@ -173,7 +173,7 @@ public class ColonyWorkerTypeTests
         Assert.Equal(before, after); // the colony's mix of types plus the colonist who left equals the original mix
     }
 
-    /// <summary>Every colonist's unit type in a colony — tile workers, building occupants (free-padded), idle (free-padded).</summary>
+    /// <summary>Every colonist's unit type in a colony â€” tile workers, building occupants (free-padded), idle (free-padded).</summary>
     private static List<string> TypeMultiset(Colony colony)
     {
         var types = new List<string>();
