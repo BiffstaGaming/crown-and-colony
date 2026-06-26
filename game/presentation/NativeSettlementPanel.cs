@@ -395,7 +395,8 @@ public partial class NativeSettlementPanel : PanelContainer
                 : _game.TryHaggleSell(_settlement, goodsId, _tradeAmount, offer, _haggleRound);
             if (result.Accepted)
             {
-                CommitTrade(ship, goodsId); // they took the player's offer
+                _haggleCounter = result.CounterPrice; // the chief took the player's offer → deal at the player's price
+                CommitTrade(ship, goodsId);
                 return;
             }
             _haggleRound++;
@@ -415,12 +416,14 @@ public partial class NativeSettlementPanel : PanelContainer
     private static int HaggleDownOffer(int price) => price * 9 / 10;
 
     /// <summary>
-    /// Commits the trade through the sell/buy oracle: re-checks the gate (the world cannot change behind this modal,
-    /// but the oracle is the single authority — ADR-006), executes the trade, and surfaces the outcome (or the guard
-    /// failure) in the panel before returning to the action menu. Never throws — a refused trade only sets the outcome.
-    /// The haggle loop is advisory (it surfaces the offer/counter); the engine charges its standard native price
-    /// (<see cref="Game.NativeSalePrice"/>/<see cref="Game.NativeBuyPrice"/>, the oracle's <c>Cost</c>), which is the
-    /// gold actually returned — so the panel reports that, not the player's haggled figure.
+    /// Commits the trade through the sell/buy oracle at the <b>agreed haggled price</b> (<see cref="_haggleCounter"/>,
+    /// the standing figure the chief accepted): re-checks the gate (the world cannot change behind this modal, but the
+    /// oracle is the single authority — ADR-006), executes the price-carrying trade
+    /// (<see cref="Game.SellToNatives(Unit, NativeSettlement, string, int, int)"/> /
+    /// <see cref="Game.BuyFromNatives(Unit, NativeSettlement, string, int, int)"/>), and surfaces the outcome (or the
+    /// guard failure) before returning to the action menu. Never throws — a refused trade only sets the outcome. The
+    /// engine validates the agreed price against the haggle band, so a hard bargain actually pays off (and the panel
+    /// reports the gold actually moved, which is the agreed price).
     /// </summary>
     private void CommitTrade(Unit ship, string goodsId)
     {
@@ -435,12 +438,12 @@ public partial class NativeSettlementPanel : PanelContainer
         }
         if (_buying)
         {
-            int paid = _game.BuyFromNatives(ship, _settlement, goodsId, _tradeAmount);
+            int paid = _game.BuyFromNatives(ship, _settlement, goodsId, _tradeAmount, _haggleCounter);
             _outcome = $"Bought {_tradeAmount} {Short(goodsId)} for {paid} gold.";
         }
         else
         {
-            int got = _game.SellToNatives(ship, _settlement, goodsId, _tradeAmount);
+            int got = _game.SellToNatives(ship, _settlement, goodsId, _tradeAmount, _haggleCounter);
             _outcome = $"Sold {_tradeAmount} {Short(goodsId)} for {got} gold.";
         }
         _screen = Screen.Actions;

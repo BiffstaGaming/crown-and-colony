@@ -1464,6 +1464,7 @@ public sealed partial class Game
     {
         settlement.SetAlarm(playerId, Math.Clamp(settlement.AlarmFor(playerId) + delta, 0, Ruleset.Difficulty.NativeTension.MaxAlarm));
         UpdateMostHated(settlement);
+        PropagateToTribe(settlement, playerId, delta); // a share of a per-settlement act stirs the whole tribe (86d3fpzkq; Game.Natives.cs)
     }
 
     /// <summary>
@@ -9348,6 +9349,15 @@ public sealed partial class Game
     /// </summary>
     private void RunNativeTurn(Player player)
     {
+        // Each settlement produces one turn of goods into its store (FreeCol ServerIndianSettlement.csNewTurn) and the
+        // tribe-wide tension cools a turn (FreeCol the native player's Tension decay) — both on the nation's own stream /
+        // RNG-free, so the human's stream 0 is untouched (86d3fpzvy/86d3fpzkq; logic in Game.Natives.cs).
+        ProduceNativeNationGoods(player);
+        if (player.NationId is { } nationId)
+        {
+            DecayTribeTensionForNation(nationId);
+        }
+
         // Spread the nation's arms to where they're needed (FreeCol NativeAIPlayer.secureSettlements arms-spreading):
         // a calm, well-stocked camp ships a surplus half-unit of muskets/horses to a threatened (alarmed) camp that has
         // none — so a tribe's weapons reach the front line instead of sitting idle in a peaceful village. RNG-free, and
@@ -9391,50 +9401,15 @@ public sealed partial class Game
                     MoveUnit(brave, step); // hemmed-in hostile braves simply wait (no fallback wander)
                 }
             }
-            else if (!hostile && TryBringGift(player, brave))
+            else if (!hostile && TryBringGiftFromStore(player, brave))
             {
-                // a friendly tribe left a gift at an adjacent human colony — the brave's turn is spent
+                // a friendly tribe left a store-backed gift at an adjacent human colony — the brave's turn is spent (86d3fpzx1)
             }
             else if (Wander(player, brave) is { } wanderStep)
             {
                 MoveUnit(brave, wanderStep);
             }
         }
-    }
-
-    private const int NativeGiftChanceDenominator = 8; // ~1-in-8 chance per eligible (Happy + colony-adjacent) brave turn
-    private const int NativeGiftAmount = 25;           // a modest parcel of the shared good
-    // A raw trade good the tribes grow — NOT food: gifting food would grow the human colony, adding tile workers and
-    // thus extra stream-0 experience rolls, so a native-RNG gift would perturb the human's stream 0 (ADR-009). A raw
-    // warehouse good has no such feedback into the human's draw sequence. (We model no native goods store; the parcel
-    // is abstracted, like pillage's goods-to-nowhere.)
-    private const string NativeGiftGoodsId = "model.goods.tobacco";
-
-    /// <summary>
-    /// A friendly tribe's brave brings a gift to an adjacent human colony (FreeCol <c>IndianBringGiftMission</c>):
-    /// when the brave's home settlement is <see cref="AlarmLevel.Happy"/> toward the human and it stands beside one of
-    /// the human's colonies, a per-turn chance (the nation's OWN RNG stream) leaves a parcel of goods in that colony's
-    /// warehouse, recording a <see cref="ColonyGiftNotice"/>. Returns true when a gift was delivered (the brave's turn
-    /// is then spent). Pure goodwill — no alarm change, no brave consumed. The chance is drawn only when the brave is
-    /// already Happy <em>and</em> colony-adjacent, so an ineligible brave never perturbs the native stream (ADR-009).
-    /// </summary>
-    private bool TryBringGift(Player nation, Unit brave)
-    {
-        if (HomeSettlement(nation, brave) is not { AlarmLevel: AlarmLevel.Happy })
-        {
-            return false;
-        }
-        Colony? colony = _colonies
-            .Where(c => IsHumanOwned(c) && brave.Position.IsAdjacentTo(c.Position))
-            .OrderBy(c => c.Position.Y).ThenBy(c => c.Position.X)
-            .FirstOrDefault();
-        if (colony is null || RandomFor(nation).Next(NativeGiftChanceDenominator) != 0)
-        {
-            return false;
-        }
-        colony.AddGoods(NativeGiftGoodsId, NativeGiftAmount);
-        _colonyGiftNotices.Add(new ColonyGiftNotice(nation.NationId!, colony.Name, NativeGiftGoodsId, NativeGiftAmount, colony.Position));
-        return true;
     }
 
     /// <summary>The brave role granting muskets (FreeCol <c>model.role.armedBrave</c>).</summary>

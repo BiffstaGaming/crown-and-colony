@@ -39,15 +39,27 @@ public class NativeAiTests
     }
 
     [Fact]
-    public void AFriendlyTribe_BringsAGiftToAnAdjacentHumanColony()
+    public void AFriendlyTribe_BringsAStoreBackedGiftToAnAdjacentHumanColony()
     {
+        // Store-backed gifts (86d3fpzx1): the gift good + amount are drawn from the home settlement's actual goods
+        // store, deducted from it, and bounded to FreeCol's [GIFT_MINIMUM, GIFT_MAXIMUM] = [10, 80].
         Game game = Game.New(Classic, seed: 7);
         Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.Type.CanFoundColony));
-        string nation = game.NativeSettlements.First().NationTypeId;
+        NativeSettlement home = game.NativeSettlements.First();
+        string nation = home.NationTypeId;
         Position adj = colony.Position.Neighbours().First(n => Free(game, n));
         Unit brave = game.SpawnUnit(Classic.Unit("model.unit.brave"), adj, nation);
 
+        // Give the home settlement a genuine surplus of RUM (manufactured → never refilled by production, so the
+        // store-deduction assertion is clean) and strip its seeded farmed stock so the gift can only be rum.
+        foreach (var kv in home.GeneralStock.ToList())
+        {
+            home.AddGoods(kv.Key, -kv.Value);
+        }
+        home.AddGoods("model.goods.rum", 200);
+
         bool gifted = false;
+        int storeBeforeGift = 0;
         for (int turn = 0; turn < 60 && !gifted; turn++)
         {
             foreach (NativeSettlement s in game.NativeSettlements) // keep the tribe Happy (cancel any ambient alarm)
@@ -55,6 +67,7 @@ public class NativeAiTests
                 game.ChangeNativeAlarm(s, -s.Alarm);
             }
             brave.Position = adj; // park it beside the colony (it would otherwise wander off between gift rolls)
+            storeBeforeGift = home.GeneralStockOf("model.goods.rum");
             game.EndTurn();
             gifted = game.ColonyGiftNotices.Any(g => g.ColonyName == colony.Name);
         }
@@ -62,9 +75,10 @@ public class NativeAiTests
         Assert.True(gifted, "a Happy tribe's brave beside a human colony should eventually bring a gift");
         ColonyGiftNotice gift = game.ColonyGiftNotices.First(g => g.ColonyName == colony.Name);
         Assert.Equal(nation, gift.GiverNationId);
-        Assert.Equal("model.goods.tobacco", gift.GoodsId);
-        Assert.Equal(25, gift.Amount);
-        Assert.True(colony.StoreOf("model.goods.tobacco") >= 25); // the parcel reached the warehouse
+        Assert.Equal("model.goods.rum", gift.GoodsId);       // drawn from the store, not a fixed good
+        Assert.InRange(gift.Amount, 10, 80);                 // FreeCol GIFT_MINIMUM..GIFT_MAXIMUM
+        Assert.True(colony.StoreOf("model.goods.rum") >= gift.Amount); // the parcel reached the warehouse
+        Assert.Equal(storeBeforeGift - gift.Amount, home.GeneralStockOf("model.goods.rum")); // deducted from the settlement's store
     }
 
     [Fact]

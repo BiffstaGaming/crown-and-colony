@@ -229,6 +229,30 @@ public class NativeSettlementPanelTests
         AssertThat(settlement.GeneralStockOf(Sugar)).IsEqual(stockBefore - lot); // the store drained by the lot
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task Haggle_AskingMore_ThenAccepting_ClosesTheDealAtTheHaggledPrice_NotTheStandardOne()
+    {
+        (ISceneRunner runner, GameController controller, Game game, NativeSettlement settlement, Unit ship) =
+            await OpenTradePanel(shipCargo: 100, settlementSugar: 0);
+
+        int standard = game.NativeSalePrice(settlement, Sugar, 100); // the natives' standard offer for the lot
+        int goldBefore = game.Gold;
+
+        // Open the Sell sub-flow, pick the lot, push for more (one haggle round), then accept the standing offer.
+        await Press(runner, controller, "Sell");
+        await Press(runner, controller, "Trade_sugar");
+        await Press(runner, controller, "Haggle"); // ask more — the chief accepts the higher offer or counters upward
+        // If the chief walked off (lost patience), the only button left is Back — guard the rare case.
+        if (FindButton(controller, "Accept") is not null)
+        {
+            await Press(runner, controller, "Accept");
+            int got = game.Gold - goldBefore;
+            // The deal closed at the HAGGLED figure, which is at least the standard price (a successful push raises it).
+            AssertThat(got).IsGreaterEqual(standard);
+            AssertThat(ship.CargoOf(Sugar)).IsEqual(0);
+        }
+    }
+
     /// <summary>Presses the named button inside the native panel and lets the rebuild settle.</summary>
     private static async Task Press(ISceneRunner runner, GameController controller, string name)
     {

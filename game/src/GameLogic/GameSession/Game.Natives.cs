@@ -1,6 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using CrownAndColony.GameLogic.Colonies;
+using CrownAndColony.GameLogic.Combat;
 using CrownAndColony.GameLogic.Natives;
+using CrownAndColony.GameLogic.Randomness;
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 
@@ -160,11 +165,409 @@ public partial class Game
         // settlement of this nation gets it). The rival then resents the instigator (colonial tension +250).
         foreach (NativeSettlement s in _nativeSettlements.Where(s => s.NationTypeId == settlement.NationTypeId))
         {
-            ChangeNativeAlarm(s, rivalId, InciteWarAlarm);
+            ChangeNativeAlarm(s, rivalId, InciteWarAlarm); // also propagates a share to the tribe channel (PropagateToTribe)
         }
+        RaiseTribeTension(settlement.NationTypeId, rivalId, InciteWarAlarm); // the whole NATION goes to war (FreeCol applies WAR_MODIFIER to the native player itself)
         ChangeTension(rivalId, player.PlayerId, TensionWarInciter, symmetric: false); // FreeCol TENSION_ADD_WAR_INCITER
 
         unit.MovementLeft = 0; // the audience ends the unit's turn
         return new InciteNativesResult(Incited: true, Cost: cost, RivalId: rivalId);
+    }
+
+    // ============================================================================================================
+    // Haggle honours the named price (86d3fpzqd) — FreeCol's price-carrying trade.
+    //
+    // The haggle loop (Game.TryHaggleSell/TryHaggleBuy) surfaces an offer/counter; the deal closes at the AGREED
+    // price, not the settlement's standard valuation. FreeCol's NativeTrade carries the negotiated price through to
+    // the moveGoods (NativeAIPlayer.handleTrade ACK at the player's offer), so a hard bargain actually pays off. We
+    // mirror that with price-carrying overloads that validate the agreed price against the haggle band — the panel
+    // can only present a figure the haggle oracle could have produced, so the UI cannot mint free gold (ADR-006).
+    // ============================================================================================================
+
+    /// <summary>
+    /// The widest a settlement will ever stray from its standard price during a haggle (FreeCol's haggle ladder is
+    /// bounded by the patience roll: <see cref="NativeHaggleNumber"/> walk-down/up steps of ×9/10 · ×11/10). A deal at
+    /// more than this multiple of the standard valuation could never arise from the haggle loop, so a price-carrying
+    /// trade rejects it — the engine's guard that the agreed figure is one the haggle oracle could have reached, not a
+    /// number the UI invented. Selling: the player can push the price up to ~×(11/10)^3 ≈ 1.331 above standard before
+    /// the chief is certain to walk; buying: down to ~×(9/10)^3 ≈ 0.729. We clamp generously (the chief never pays/charges
+    /// more than 2× / less than ½× standard) so legitimate haggled deals always pass and only absurd figures are caught.
+    /// </summary>
+    private const int HaggleSellPriceCeilingPercent = 200; // a seller can never extract more than 2× the standard price
+    private const int HaggleBuyPriceFloorPercent = 50;     // a buyer can never pay less than ½ the standard price
+
+    /// <summary>
+    /// Sells goods from a ship to an adjacent settlement at an <b>agreed haggled price</b> (FreeCol's price-carrying
+    /// trade — the deal closes at the figure the chief accepted in <see cref="TryHaggleSell"/>, not the standard
+    /// <see cref="NativeSalePrice"/>). Identical to <see cref="SellToNatives(Unit, NativeSettlement, string, int)"/> in
+    /// every other respect (cargo moves into the store, gold credited with no European tax, goodwill, re-priced wanted
+    /// goods, ends the ship's turn) — only the gold figure differs. <paramref name="agreedPrice"/> is validated to be
+    /// non-negative and no more than <see cref="HaggleSellPriceCeilingPercent"/>% of the standard price (a deal the
+    /// haggle ladder could plausibly reach); a figure outside that band falls back to the standard price, so the UI can
+    /// never mint gold. Goodwill scales with the gold actually paid (FreeCol ALARM_BONUS_SELL).
+    /// </summary>
+    /// <returns>The gold received (the agreed price).</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckSellToNatives"/>.</exception>
+    public int SellToNatives(Unit ship, NativeSettlement settlement, string goodsId, int amount, int agreedPrice) =>
+        SellToNatives(_human, ship, settlement, goodsId, amount, agreedPrice);
+
+    /// <summary>Sells at an agreed haggled price on behalf of <paramref name="player"/> (the ship's owner).</summary>
+    internal int SellToNatives(Player player, Unit ship, NativeSettlement settlement, string goodsId, int amount, int agreedPrice)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
+        MoveCheck check = CheckSellToNatives(ship, settlement, goodsId, amount);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        int standard = check.Cost;
+        int price = ClampHaggledSalePrice(agreedPrice, standard);
+        ship.AddCargo(goodsId, -amount);
+        settlement.AddGoods(goodsId, amount); // the goods join the settlement's store (FreeCol moveGoods unit→settlement)
+        player.Gold += price; // natives pay in gold at the agreed price; no European market tax
+        ChangeNativeAlarm(settlement, player.PlayerId, -Math.Max(1, price / 50)); // goodwill scales with what was paid (FreeCol ALARM_BONUS_SELL)
+        RecomputeWantedGoods(settlement); // the fuller store re-prices its cravings (FreeCol csSell → updateWantedGoods)
+        ship.MovementLeft = 0; // opening a trade session ends the ship's turn
+        return price;
+    }
+
+    /// <summary>Buys goods from an adjacent settlement at an <b>agreed haggled price</b> (FreeCol's price-carrying trade — the figure the chief accepted in <see cref="TryHaggleBuy"/>, not the standard <see cref="NativeBuyPrice"/>).</summary>
+    /// <returns>The gold paid (the agreed price).</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBuyFromNatives"/>.</exception>
+    public int BuyFromNatives(Unit ship, NativeSettlement settlement, string goodsId, int amount, int agreedPrice) =>
+        BuyFromNatives(_human, ship, settlement, goodsId, amount, agreedPrice);
+
+    /// <summary>Buys at an agreed haggled price on behalf of <paramref name="player"/> (the ship's owner). The agreed price must be affordable and within the haggle floor (it can never undercut <see cref="HaggleBuyPriceFloorPercent"/>% of standard).</summary>
+    internal int BuyFromNatives(Player player, Unit ship, NativeSettlement settlement, string goodsId, int amount, int agreedPrice)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
+        MoveCheck check = CheckBuyFromNatives(ship, settlement, goodsId, amount);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        int standard = check.Cost;
+        int price = ClampHaggledBuyPrice(agreedPrice, standard);
+        if (player.Gold < price)
+        {
+            throw new InvalidMoveException("You cannot afford that."); // a haggle can't raise the price above the affordability gate, but guard anyway
+        }
+        settlement.AddGoods(goodsId, -amount); // drained from the settlement's store (FreeCol moveGoods settlement→unit)
+        ship.AddCargo(goodsId, amount);
+        player.Gold -= price; // the agreed price; no European market tax
+        ChangeNativeAlarm(settlement, player.PlayerId, -Math.Max(1, price / 200)); // a little goodwill (FreeCol ALARM_BONUS_BUY)
+        RecomputeWantedGoods(settlement); // the emptier store re-prices its cravings (FreeCol csBuy → updateWantedGoods)
+        ship.MovementLeft = 0; // opening a trade session ends the ship's turn
+        return price;
+    }
+
+    /// <summary>The haggled sale price the engine will honour: the player's agreed figure, clamped to [standard, <see cref="HaggleSellPriceCeilingPercent"/>% of standard] — a seller never accepts less than the standard offer, and the chief never pays beyond the haggle ceiling (an out-of-band figure from the UI degrades to the standard price). Pure, RNG-free.</summary>
+    private static int ClampHaggledSalePrice(int agreedPrice, int standard)
+    {
+        int ceiling = standard * HaggleSellPriceCeilingPercent / 100;
+        return agreedPrice < standard || agreedPrice > ceiling ? standard : agreedPrice;
+    }
+
+    /// <summary>The haggled buy price the engine will honour: the player's agreed figure, clamped to [<see cref="HaggleBuyPriceFloorPercent"/>% of standard, standard] — a buyer never pays more than the standard ask, and the chief never sells below the haggle floor (an out-of-band figure degrades to the standard price). Pure, RNG-free.</summary>
+    private static int ClampHaggledBuyPrice(int agreedPrice, int standard)
+    {
+        int floor = standard * HaggleBuyPriceFloorPercent / 100;
+        return agreedPrice > standard || agreedPrice < floor ? standard : agreedPrice;
+    }
+
+    // ============================================================================================================
+    // Settlement goods store driven by native production over time (86d3fpzvy) — FreeCol IndianSettlement production.
+    //
+    // FreeCol's ServerIndianSettlement.csNewTurn produces each tile good (getTotalProductionOf) into the goods store
+    // every turn, capped at the warehouse. We do not simulate the natives' tiles, so production is ABSTRACTED: each
+    // turn a settlement replenishes the raw New-World goods it gathers (the ones it can trade), sized by its
+    // population, biased toward the goods it is shortest of — so a frontier camp's store actually refills between
+    // visits and a fuller good grows slower (FreeCol's stock-fill curve). Drawn on the NATION's own RNG stream, never
+    // the human's stream 0 (ADR-009); the seeded variance keeps soak twin-determinism intact.
+    // ============================================================================================================
+
+    /// <summary>Base units of a raw good a settlement gathers per resident per turn (the abstracted tile yield, tuned so a size-5 camp refills a tradeable lot over several turns — FreeCol produces the full tile potential each turn; we under-produce deliberately so trade stays worthwhile).</summary>
+    private const int NativeProductionPerResident = 2;
+
+    /// <summary>The ceiling a settlement lets a single good's store reach from production — one full trade hold (FreeCol caps at the warehouse; <see cref="NativeTradeCargoSize"/> is our store-trade unit). Production never pushes a good above this; player sales still can.</summary>
+    private const int NativeProductionStoreCeiling = NativeTradeCargoSize;
+
+    /// <summary>
+    /// Replenishes <paramref name="settlement"/>'s general goods store from one turn of abstracted native production
+    /// (FreeCol <c>ServerIndianSettlement.csNewTurn</c> producing its tile goods): the settlement gathers the raw,
+    /// storable, tradeable New-World goods it trades, <see cref="NativeProductionPerResident"/> units per resident
+    /// scaled down as that good's store fills toward <see cref="NativeProductionStoreCeiling"/> (the stock-fill curve —
+    /// a good it already has plenty of grows slowly), plus a small per-good variance drawn on
+    /// <paramref name="rng"/> (the nation's stream). A good already at/above the ceiling produces nothing. After
+    /// replenishing, the settlement re-prices its wanted goods (FreeCol's per-turn <c>updateWantedGoods</c>). RNG-free
+    /// for the human (stream 0 untouched): only the nation's stream is drawn (ADR-009).
+    /// </summary>
+    /// <param name="settlement">The settlement producing this turn.</param>
+    /// <param name="rng">The owning nation's RNG stream (never the human's stream 0).</param>
+    internal void ProduceNativeGoods(NativeSettlement settlement, IGameRandom rng)
+    {
+        bool changed = false;
+        // Deterministic good order (spec order) so the per-good variance draws are stable for a seed.
+        foreach (GoodsType good in Ruleset.GoodsTypes
+            .Where(g => g.IsFarmed && g.IsNewWorldGoods && g.IsStorable && g.IsTradeable && !g.IsMilitary && !g.IsFood))
+        {
+            int current = settlement.GeneralStockOf(good.Id);
+            if (current >= NativeProductionStoreCeiling)
+            {
+                continue; // brimming with this good — produce no more of it (FreeCol warehouse cap)
+            }
+            // Base gather scaled by the headroom left (stock-fill curve: a fuller store grows slower), plus 0–1 unit
+            // of variance per resident on the nation's stream. Always at least 1 unit of headroom is produced.
+            int headroom = NativeProductionStoreCeiling - current;
+            int baseGather = NativeProductionPerResident * settlement.Size * headroom / NativeProductionStoreCeiling;
+            int variance = rng.Next(0, settlement.Size + 1); // 0..Size, nation stream
+            int produced = Math.Min(headroom, Math.Max(1, baseGather + variance));
+            if (produced > 0)
+            {
+                settlement.AddGoods(good.Id, produced);
+                changed = true;
+            }
+        }
+        if (changed)
+        {
+            RecomputeWantedGoods(settlement); // the refreshed store re-prices its cravings (FreeCol csNewTurn → updateWantedGoods)
+        }
+    }
+
+    /// <summary>
+    /// One turn of production for every settlement of <paramref name="nation"/> (the per-nation driver called from the
+    /// native turn — FreeCol runs <c>csNewTurn</c> for each settlement during its owner's turn). Settlements iterate in
+    /// stable id order; each draws only on <paramref name="nation"/>'s stream (ADR-009). Also seeds the tribe-wide
+    /// tension channel on first touch so a loaded game has a sensible base. Public entry the turn loop calls.
+    /// </summary>
+    /// <param name="nation">The native nation taking its turn.</param>
+    internal void ProduceNativeNationGoods(Player nation)
+    {
+        IGameRandom rng = RandomFor(nation);
+        foreach (NativeSettlement settlement in _nativeSettlements
+            .Where(s => s.NationTypeId == nation.NationId)
+            .OrderBy(s => s.Id))
+        {
+            ProduceNativeGoods(settlement, rng);
+        }
+    }
+
+    // ============================================================================================================
+    // Nation-level (tribe-wide) tension (86d3fpzkq) — FreeCol's player-level Tension on the native nation, distinct
+    // from the per-settlement alarm (IndianSettlement.getAlarm). FreeCol keeps BOTH: an act against one camp also
+    // stirs the whole nation a little (csModifyTension propagates a fraction nation-wide), and the nation's tension —
+    // not just one camp's — gates the AI's willingness to war.
+    //
+    // We model the nation channel as a TRANSIENT accumulator keyed by nationTypeId → (playerId → tension), seeded on
+    // first touch from the max of that nation's per-settlement channels (so a loaded game starts coherent without a
+    // save field — no save bump). Acts raise it; it decays each turn alongside the settlement alarm. Reads feed the
+    // report's tribe band and the uprising check. Deterministic, RNG-free.
+    // ============================================================================================================
+
+    /// <summary>Tribe-wide tension by nation type id → (colonial player id → tension 0..MaxAlarm). Transient (not serialized): seeded lazily from the per-settlement channels (<see cref="TribeTensionFor"/>), so a save round-trips byte-identically (ADR-009).</summary>
+    private readonly Dictionary<string, Dictionary<int, int>> _tribeTension = [];
+
+    /// <summary>The fraction (percent) of a per-settlement alarm change that also stirs the whole nation (FreeCol propagates a share of a settlement act to the player-level Tension). A minor share — the nation warms/cools more slowly than any single camp.</summary>
+    private const int TribeTensionPropagationPercent = 25;
+
+    private Dictionary<int, int> TribeChannelsFor(string nationTypeId)
+    {
+        if (!_tribeTension.TryGetValue(nationTypeId, out Dictionary<int, int>? channels))
+        {
+            // Seed from the nation's settlements: the tribe is, at least, as tense as its angriest camp toward each
+            // player (FreeCol's nation tension tracks alongside the settlements). Deterministic, RNG-free.
+            channels = [];
+            foreach (NativeSettlement s in _nativeSettlements.Where(s => s.NationTypeId == nationTypeId))
+            {
+                foreach (KeyValuePair<int, int> kv in s.AlarmChannels)
+                {
+                    channels[kv.Key] = Math.Max(channels.GetValueOrDefault(kv.Key), kv.Value);
+                }
+            }
+            _tribeTension[nationTypeId] = channels;
+        }
+        return channels;
+    }
+
+    /// <summary>
+    /// The tribe-wide tension <paramref name="nationTypeId"/> holds toward the colonial player <paramref name="playerId"/>
+    /// (FreeCol the native <em>player</em>'s Tension, 0..<c>MaxAlarm</c>) — a channel distinct from any single
+    /// settlement's alarm. Seeded on first read from the nation's angriest settlement toward that player; raised by
+    /// <see cref="RaiseTribeTension"/> when an act stirs the nation, and decayed each turn. A read oracle (ADR-006).
+    /// </summary>
+    /// <param name="nationTypeId">The native nation type id (a settlement's <see cref="NativeSettlement.NationTypeId"/>).</param>
+    /// <param name="playerId">The colonial player whose channel to read (the human is <see cref="HumanAlarmChannel"/>).</param>
+    public int TribeTensionFor(string nationTypeId, int playerId) =>
+        TribeChannelsFor(nationTypeId).GetValueOrDefault(playerId);
+
+    /// <summary>
+    /// The tribe-wide tension band of <paramref name="nationTypeId"/> toward <paramref name="playerId"/> (FreeCol
+    /// <c>Tension.getLevel</c> on the native player) against the data-overridable thresholds. The report tab and the
+    /// uprising check read this — the nation-level channel, NOT the per-settlement <see cref="NativeSettlement.AlarmLevel"/>.
+    /// </summary>
+    public AlarmLevel TribeAlarmLevelFor(string nationTypeId, int playerId)
+    {
+        NativeTensionOptions t = Ruleset.Difficulty.NativeTension;
+        int tension = TribeTensionFor(nationTypeId, playerId);
+        return tension <= t.HappyMax ? AlarmLevel.Happy
+            : tension <= t.ContentMax ? AlarmLevel.Content
+            : tension <= t.DispleasedMax ? AlarmLevel.Displeased
+            : tension <= t.AngryMax ? AlarmLevel.Angry
+            : AlarmLevel.Hateful;
+    }
+
+    /// <summary>
+    /// Raises (or, with a negative <paramref name="delta"/>, eases) <paramref name="nationTypeId"/>'s tribe-wide tension
+    /// toward <paramref name="playerId"/>, clamped to [0, <c>MaxAlarm</c>]. The nation-level counterpart of
+    /// <see cref="ChangeNativeAlarm(NativeSettlement, int, int)"/> — called when an act stirs the whole tribe (e.g. an
+    /// incite, or the propagated share of a per-settlement act, <see cref="PropagateToTribe"/>). RNG-free.
+    /// </summary>
+    internal void RaiseTribeTension(string nationTypeId, int playerId, int delta)
+    {
+        Dictionary<int, int> channels = TribeChannelsFor(nationTypeId);
+        int next = Math.Clamp(channels.GetValueOrDefault(playerId) + delta, 0, Ruleset.Difficulty.NativeTension.MaxAlarm);
+        if (next <= 0)
+        {
+            channels.Remove(playerId);
+        }
+        else
+        {
+            channels[playerId] = next;
+        }
+    }
+
+    /// <summary>
+    /// Propagates a fraction (<see cref="TribeTensionPropagationPercent"/>) of a per-settlement alarm gain to the owning
+    /// tribe's nation channel (FreeCol's csModifyTension spreading a share of a settlement act nation-wide). Only positive
+    /// changes propagate — appeasing one camp does not calm the whole nation (FreeCol eases the nation only via decay).
+    /// Called from <c>Game.ChangeNativeAlarm</c> after a settlement's alarm rises. RNG-free.
+    /// </summary>
+    /// <param name="settlement">The settlement whose alarm just changed.</param>
+    /// <param name="playerId">The colonial player whose channel changed.</param>
+    /// <param name="delta">The signed alarm change applied to the settlement (only positive deltas stir the nation).</param>
+    internal void PropagateToTribe(NativeSettlement settlement, int playerId, int delta)
+    {
+        if (delta <= 0)
+        {
+            return;
+        }
+        RaiseTribeTension(settlement.NationTypeId, playerId, delta * TribeTensionPropagationPercent / 100);
+    }
+
+    /// <summary>
+    /// Decays every nation's tribe-wide tension one turn (FreeCol the native player's per-turn Tension decay, mirroring
+    /// the per-settlement <c>DecayNativeAlarm</c>): each channel loses <c>value/DecayDivisor + DecayBase</c>, dropping to
+    /// nothing as it cools. Called once per turn from the native turn driver (<see cref="DecayTribeTensionForNation"/>).
+    /// RNG-free; a channel that reaches 0 is removed, so an all-calm nation holds no channels.
+    /// </summary>
+    internal void DecayTribeTensionForNation(string nationTypeId)
+    {
+        NativeTensionOptions t = Ruleset.Difficulty.NativeTension;
+        Dictionary<int, int> channels = TribeChannelsFor(nationTypeId);
+        foreach (int playerId in channels.Keys.ToList())
+        {
+            int alarm = channels[playerId];
+            int next = Math.Max(0, alarm - (alarm / t.DecayDivisor + t.DecayBase));
+            if (next <= 0)
+            {
+                channels.Remove(playerId);
+            }
+            else
+            {
+                channels[playerId] = next;
+            }
+        }
+    }
+
+    // ============================================================================================================
+    // Gifts FROM natives, realism pass (86d3fpzx1) — FreeCol IndianSettlement.getRandomGift + the AI gift throttle.
+    //
+    // Before: a Happy brave beside a human colony had a 1-in-8 chance to drop a FIXED 25 tobacco, with no store
+    // backing and no cooldown — a settlement could rain gifts forever. FreeCol draws the gift from the settlement's
+    // actual goods store (only a good it holds above GIFT_THRESHOLD + KEEP_RAW_MATERIAL), an amount in
+    // [GIFT_MINIMUM, GIFT_MAXIMUM], and throttles delivery (per-turn gift probability + one mission in flight). We
+    // now: (a) draw the gift good + amount from the home settlement's GeneralStock, (b) deduct it from the store, and
+    // (c) gate each settlement on a per-settlement cooldown (NativeSettlement.LastGiftTurn). The gift chance + the
+    // good/amount picks draw on the NATION's stream, never the human's stream 0 (ADR-009).
+    // ============================================================================================================
+
+    /// <summary>Per-turn gift chance for an eligible (Happy, off-cooldown, store-backed, colony-adjacent) brave — ~1-in-8 (drawn on the nation's stream).</summary>
+    private const int NativeGiftChanceDenominator = 8;
+
+    /// <summary>FreeCol <c>IndianSettlement.GIFT_MINIMUM</c> — the smallest parcel a settlement will part with.</summary>
+    private const int NativeGiftMinimum = 10;
+
+    /// <summary>FreeCol <c>IndianSettlement.GIFT_MAXIMUM</c> — the largest single gift.</summary>
+    private const int NativeGiftMaximum = 80;
+
+    /// <summary>The store a settlement keeps back before a good is giftable (FreeCol <c>KEEP_RAW_MATERIAL</c> 50 + <c>GIFT_THRESHOLD</c> 25): it only gives away a genuine surplus.</summary>
+    private const int NativeGiftThreshold = 75;
+
+    /// <summary>Turns a settlement must wait between gifts (our explicit cooldown standing in for FreeCol's gift-probability + one-mission-in-flight throttle).</summary>
+    public const int NativeGiftCooldownTurns = 10;
+
+    /// <summary>
+    /// A friendly tribe's brave brings a <b>store-backed</b> gift to an adjacent human colony (FreeCol
+    /// <c>IndianBringGiftMission</c> + <c>getRandomGift</c>): when the brave's home settlement is
+    /// <see cref="AlarmLevel.Happy"/>, off cooldown (<see cref="NativeSettlement.LastGiftTurn"/> +
+    /// <see cref="NativeGiftCooldownTurns"/> ≤ the turn), holds a surplus of some tradeable good (above
+    /// <see cref="NativeGiftThreshold"/>), and stands beside a human colony, a per-turn chance (the nation's stream)
+    /// draws one such good and a parcel of <see cref="NativeGiftMinimum"/>..<see cref="NativeGiftMaximum"/> units from
+    /// the settlement's <see cref="NativeSettlement.GeneralStock"/>, <b>deducts it from the store</b>, leaves it in the
+    /// colony's warehouse, stamps the cooldown, and records a <see cref="ColonyGiftNotice"/>. Returns true when a gift
+    /// was delivered (the brave's turn is then spent). Pure goodwill — no alarm change, no brave consumed. The chance
+    /// and the good/amount picks are drawn only when the brave is already eligible, so an ineligible brave never
+    /// perturbs the native stream (ADR-009). Replaces the old fixed-25-tobacco <c>TryBringGift</c>.
+    /// </summary>
+    private bool TryBringGiftFromStore(Player nation, Unit brave)
+    {
+        if (HomeSettlement(nation, brave) is not { AlarmLevel: AlarmLevel.Happy } home)
+        {
+            return false;
+        }
+        if (Turn - home.LastGiftTurn < NativeGiftCooldownTurns && home.LastGiftTurn != 0)
+        {
+            return false; // still on cooldown — one gift per settlement per cooldown window
+        }
+        Colony? colony = _colonies
+            .Where(c => IsHumanOwned(c) && brave.Position.IsAdjacentTo(c.Position))
+            .OrderBy(c => c.Position.Y).ThenBy(c => c.Position.X)
+            .FirstOrDefault();
+        if (colony is null)
+        {
+            return false;
+        }
+
+        // The goods the settlement holds a genuine surplus of (above the keep-back threshold), tradeable + non-military,
+        // in stable id order so the random pick is deterministic for a seed.
+        List<string> giftable = home.GeneralStock
+            .Where(kv => kv.Value > NativeGiftThreshold
+                && Ruleset.Goods(kv.Key).IsTradeable && !Ruleset.Goods(kv.Key).IsMilitary)
+            .Select(kv => kv.Key)
+            .OrderBy(k => k, System.StringComparer.Ordinal)
+            .ToList();
+        if (giftable.Count == 0)
+        {
+            return false; // nothing to spare — no gift this turn (FreeCol getRandomGift returns null)
+        }
+
+        IGameRandom rng = RandomFor(nation);
+        if (rng.Next(NativeGiftChanceDenominator) != 0)
+        {
+            return false; // the gift roll (nation's stream) did not fire
+        }
+
+        string goodsId = giftable[rng.Next(giftable.Count)];
+        int available = home.GeneralStockOf(goodsId) - (NativeGiftThreshold - NativeGiftMinimum); // surplus above keep-back, down to GIFT_MINIMUM
+        int span = Math.Max(1, Math.Min(available, NativeGiftMaximum) - NativeGiftMinimum + 1);
+        int amount = Math.Min(NativeGiftMaximum, NativeGiftMinimum + rng.Next(span));
+        amount = Math.Min(amount, home.GeneralStockOf(goodsId)); // never give more than the store holds
+
+        home.AddGoods(goodsId, -amount); // the gift leaves the settlement's store (FreeCol moveGoods settlement→unit→colony)
+        RecomputeWantedGoods(home);       // the emptier store re-prices its cravings
+        home.LastGiftTurn = Turn;         // stamp the cooldown
+        colony.AddGoods(goodsId, amount);
+        _colonyGiftNotices.Add(new ColonyGiftNotice(nation.NationId!, colony.Name, goodsId, amount, colony.Position));
+        return true;
     }
 }

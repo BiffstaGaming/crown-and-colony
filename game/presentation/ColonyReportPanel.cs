@@ -648,7 +648,9 @@ public partial class ColonyReportPanel : PanelContainer
                 .OrderByDescending(s => s.IsCapital) // FreeCol lists the capital first
                 .ThenBy(s => s.Position.Y).ThenBy(s => s.Position.X)
                 .ToList();
-            AlarmLevel tribeAlarm = nationSettlements.Max(s => s.AlarmLevel);
+            // The tribe-wide tension band toward the human (FreeCol the native player's Tension) — the distinct
+            // nation-level channel, not the angriest single settlement (86d3fpzkq).
+            AlarmLevel tribeAlarm = _game.TribeAlarmLevelFor(nation.Key, _game.HumanPlayer.PlayerId);
             dynamic.AddChild(new Label
             {
                 Name = $"NativeNation_{Strip(nation.Key)}",

@@ -382,6 +382,15 @@ public sealed class NativeSettlement
     /// </summary>
     public int LastTribute { get; internal set; }
 
+    /// <summary>
+    /// The turn number of the last gift this settlement sent the human (FreeCol gifts are throttled by the AI's
+    /// per-turn gift probability + the one-mission-in-flight cap; we model the throttle as an explicit per-settlement
+    /// cooldown). A settlement won't send another gift until <see cref="GameSession.Game.NativeGiftCooldownTurns"/>
+    /// turns have passed. <b>Transient</b> (not serialized): defaults to 0, so a generated/loaded settlement is freshly
+    /// giftable and every save round-trips byte-identically — mirroring the <see cref="LastTribute"/> abstraction.
+    /// </summary>
+    public int LastGiftTurn { get; internal set; }
+
     /// <summary>The wanted-good slot of a goods id (0 = most wanted), or -1 if not wanted.</summary>
     public int WantedSlot(string goodsId)
     {
