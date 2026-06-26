@@ -338,10 +338,74 @@ public sealed partial class Game
         }
     }
 
+    // ── REF reinforcement waves + the King's morale (FreeCol Monarch ADD_TO_REF cadence + checkForREFDefeat) ──
+
+    /// <summary>The number of successive waves the King lands his expeditionary force in (Col1/FreeCol-spirit: the REF
+    /// comes ashore in echelons rather than all at once). The whole force still musters in Europe at the declaration —
+    /// so it counts fully toward the King's strength — but only ~<c>1/<see cref="RefWaveCount"/></c> of the units still
+    /// waiting in Europe are brought ashore per landing, the rest following in later waves.</summary>
+    private const int RefWaveCount = 3;
+
+    /// <summary>Turns between successive REF reinforcement waves coming ashore (the next echelon lands this many turns
+    /// after the last). Deterministic (no RNG) so the cadence is byte-stable and soak-safe (ADR-009).</summary>
+    private const int RefWaveInterval = 4;
+
+    /// <summary>Turns until the next REF reinforcement wave may come ashore (counts down each REF turn); 0 or less lands a wave. Persisted (v62).</summary>
+    private int _refWaveCountdown;
+
+    /// <summary>The high-water mark of the King's <b>morale</b> — the full land army he committed at the declaration,
+    /// the denominator the <see cref="RefMoraleBreakFloor"/> break test measures the surviving force against (FreeCol's
+    /// <c>checkForREFDefeat</c> "the REF is arrogant" resolve). Persisted (v62); the <em>current</em> morale is derived
+    /// live from the survivors (<see cref="RefMorale"/>), so it never goes stale. 0 means "not yet at war" (no REF).</summary>
+    private int _refMoralePeak;
+
+    /// <summary>The fraction of its peak the King's morale must fall below for his resolve to break and the REF to
+    /// withdraw (1/4): once three-quarters of the army he committed has been ground down, a beaten King gives up even
+    /// before the raw unit-count thresholds (<see cref="CheckForRefDefeat"/>) are met. A faithful-spirit reconstruction
+    /// of FreeCol's morale/arrogance resolve (documented as a simplification in independence.md).</summary>
+    private const int RefMoraleBreakFloor = 4; // break when morale < peak / 4
+
+    /// <summary>
+    /// The King's <b>current morale</b> — his resolve to keep prosecuting the war, derived live as the number of REF
+    /// land units still surviving (ashore <em>or</em> still mustering in Europe), capped at the <see cref="RefMoralePeak"/>.
+    /// Falls as the expeditionary force is ground down; once it breaks (<see cref="RefMoraleBroken"/>) a beaten King's
+    /// resolve fails and the surviving force <see cref="GiveIndependence">withdraws</see>. A <b>pure read</b> (no stored
+    /// scalar) so it is always current — disbanding REF units lowers it immediately. 0 before the REF takes the field.
+    /// </summary>
+    internal int RefMorale
+    {
+        get
+        {
+            if (_refMoralePeak <= 0)
+            {
+                return 0; // no REF afield
+            }
+            Player? refPlayer = _players.FirstOrDefault(p => p.PlayerType == PlayerType.RoyalExpeditionaryForce);
+            int surviving = refPlayer is null ? 0 : _units.Count(u => u.OwnerId == refPlayer.PlayerId && !u.Type.IsNaval);
+            return Math.Min(_refMoralePeak, surviving);
+        }
+    }
+
+    /// <summary>The King's peak morale (save state, v62).</summary>
+    internal int RefMoralePeak => _refMoralePeak;
+
+    /// <summary>Turns until the next REF wave comes ashore (save state, v62).</summary>
+    internal int RefWaveCountdown => _refWaveCountdown;
+
+    /// <summary>Re-installs the restored REF wave + morale-peak state on load (v62). The current morale is derived live, so only the peak persists.</summary>
+    internal void SetRefReinforcementState(int waveCountdown, int moralePeak)
+    {
+        _refWaveCountdown = waveCountdown;
+        _refMoralePeak = moralePeak;
+    }
+
     /// <summary>
     /// Brings the Royal Expeditionary Force into play as a new <see cref="PlayerType.RoyalExpeditionaryForce"/> AI
     /// player at war with the rebel, realising the King's amassed <see cref="Force"/> into real units mustering in
-    /// Europe (they sail and land in the next slice). The REF draws from its own RNG stream (ADR-009).
+    /// Europe. They come ashore in <b>successive waves</b> (<see cref="LandRefUnits"/> lands only an echelon at a time),
+    /// so the whole force still counts toward the King's strength from the outset but reaches the field over several
+    /// turns. The King's morale-<see cref="_refMoralePeak">peak</see> is set to the full land army so his resolve
+    /// (<see cref="RefMorale"/>) can erode as the force is ground down. The REF draws from its own RNG stream (ADR-009).
     /// </summary>
     private void CreateRefPlayer(Player rebel)
     {
@@ -356,6 +420,13 @@ public sealed partial class Game
         refPlayer.StanceMap[rebel.PlayerId] = Stance.War;
         rebel.StanceMap[refPlayer.PlayerId] = Stance.War;
 
+        // The King's resolve peaks at the full committed army (FreeCol's REF strength), so it can break as the force is
+        // whittled down across the war (the morale/withdrawal trigger). The current morale derives live from survivors.
+        _refMoralePeak = force.LandUnitCount;
+        _refWaveCountdown = 0; // the first wave may come ashore on the REF's very first turn
+
+        // The whole force musters in Europe now (so it counts toward the King's strength immediately); LandRefUnits
+        // brings it ashore an echelon at a time.
         foreach (ForceEntry entry in force.LandUnits.Concat(force.NavalUnits))
         {
             for (int i = 0; i < entry.Count; i++)
@@ -364,6 +435,20 @@ public sealed partial class Game
             }
         }
     }
+
+    /// <summary>The size of a landing wave: ~<c>1/<see cref="RefWaveCount"/></c> of the whole committed army (at least 1),
+    /// so the King's army reaches the field over roughly <see cref="RefWaveCount"/> echelons. Reads the peak (the full
+    /// army), so the cap is stable across the war; RNG-free.</summary>
+    private int RefWaveSize() => Math.Max(1, (_refMoralePeak > 0 ? _refMoralePeak : EnsureRefForce().LandUnitCount) / RefWaveCount);
+
+    /// <summary>
+    /// Whether the King's resolve has <b>broken</b> (his current <see cref="RefMorale">morale</see> has fallen below
+    /// <c>peak / <see cref="RefMoraleBreakFloor"/></c>): three-quarters of the army he committed has been destroyed, so a
+    /// beaten King abandons the war. False before the REF takes the field (peak 0). The earlier of this and the raw
+    /// <see cref="CheckForRefDefeat"/> thresholds ends the war for the King. A faithful-spirit reconstruction of
+    /// FreeCol's morale resolve. A pure read — reflects the surviving force immediately (no per-turn lag).
+    /// </summary>
+    internal bool RefMoraleBroken => _refMoralePeak > 0 && RefMorale < _refMoralePeak / RefMoraleBreakFloor;
 
     /// <summary>
     /// The Royal Expeditionary Force's turn (item 8 + <c>86d3drn5a</c> specialised combat AI): bring any units still
@@ -390,7 +475,7 @@ public sealed partial class Game
     /// </summary>
     private void RunRefTurn(Player refPlayer)
     {
-        LandRefUnits(refPlayer);
+        LandRefUnits(refPlayer); // bring this turn's echelon ashore (staggered — only a wave at a time)
 
         Player? rebel = RefRebel(refPlayer);
         if (rebel is null)
@@ -665,10 +750,15 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Brings the REF's in-Europe units ashore. The King's fleet makes landfall at its fixed entry tile (chosen near
-    /// the human's start at game creation, FreeCol <c>Player.entryTile</c>): each unit takes the nearest empty tile
-    /// (land for land units, water for ships) around that beachhead, falling back to the ring around a rebel's
-    /// connected-port colonies when the entry tile is unset (pre-v47 save) or its surroundings are full.
+    /// Brings the REF's in-Europe units ashore in <b>successive waves</b> (the staggered reinforcement, 86d3fq0ak): on
+    /// each REF turn the wave timer counts down, and when it elapses one echelon — the whole fleet plus up to
+    /// <see cref="RefWaveSize"/> land units still waiting in Europe — comes ashore, the timer resetting to
+    /// <see cref="RefWaveInterval"/> until the next wave. So the King's army reaches the field over several turns rather
+    /// than all at once, fresh redcoats landing as the war drags on. The King's fleet makes landfall at its fixed entry
+    /// tile (chosen near the human's start at game creation, FreeCol <c>Player.entryTile</c>): each unit takes the
+    /// nearest empty tile (land for land units, water for ships) around that beachhead, falling back to the ring around
+    /// a rebel's connected-port colonies when the entry tile is unset (pre-v47 save) or its surroundings are full.
+    /// Deterministic — the cadence is a fixed interval and the wave a fixed cap, so no stream is drawn (ADR-009).
     /// </summary>
     private void LandRefUnits(Player refPlayer)
     {
@@ -683,11 +773,28 @@ public sealed partial class Game
             return; // no rebel port to invade and no fixed beachhead
         }
 
+        // The next echelon is still crossing the Atlantic — count down and land nothing this turn.
+        if (_refWaveCountdown > 0)
+        {
+            _refWaveCountdown--;
+            return;
+        }
+
+        int landed = 0;
+        int waveCap = RefWaveSize();
+        bool anyLeftBehind = false;
         foreach (Unit unit in _units
             .Where(u => IsOwnedBy(u, refPlayer) && u.Location == UnitLocation.InEurope)
             .OrderBy(u => u.Id)
             .ToList())
         {
+            // Only a wave of LAND units lands per echelon (the fleet escorts and always sails in); when the wave is
+            // full the rest of the army waits for the next echelon (the countdown below paces it).
+            if (!unit.Type.IsNaval && landed >= waveCap)
+            {
+                anyLeftBehind = true;
+                continue;
+            }
             // Land at the fixed entry-tile beachhead first (the King's fleet arrives at the human's coast), then fall
             // back to the rebel colonies' surroundings if that beachhead is full this turn.
             Position? spot = (_refEntryTile is { } entry ? FindLandingTileNear(entry, unit.Type.IsNaval) : null)
@@ -697,9 +804,19 @@ public sealed partial class Game
                 unit.Position = s;
                 unit.Location = UnitLocation.OnMap;
                 RevealForOwner(unit);
+                if (!unit.Type.IsNaval)
+                {
+                    landed++;
+                }
             }
-            // Units that don't fit this turn wait in Europe and land next turn.
+            else
+            {
+                anyLeftBehind = true; // no room ashore this turn — try again next wave
+            }
         }
+        // If an echelon is still owed (units waited this turn), the next wave lands after the interval; otherwise the
+        // army is fully ashore and the timer rests at 0.
+        _refWaveCountdown = anyLeftBehind ? RefWaveInterval : 0;
     }
 
     /// <summary>The nearest empty landing tile (water for ships, land for land units) to <paramref name="centre"/>, scanning outward in rings up to radius 4. Deterministic; null if none free.</summary>
@@ -752,6 +869,21 @@ public sealed partial class Game
     internal void SetSpanishSuccessionDone(bool done) => _spanishSuccessionDone = done;
 
     /// <summary>
+    /// Whether the winner chose to <see cref="ContinuePlaying">keep playing</see> after victory, which disables the
+    /// game's victory conditions (FreeCol <c>continuePlaying</c> writes the three <c>VICTORY_*</c> game options false; we
+    /// short-circuit <see cref="Winner"/> at game scope instead, to avoid mutating a possibly-shared ruleset). Persisted
+    /// (v62) so a game saved after "keep playing" reloads with the win still disabled — without it a reload would re-fire
+    /// the victory and re-show the screen. Defaults false (the common case).
+    /// </summary>
+    private bool _victoryConditionsDisabled;
+
+    /// <summary>Whether the player chose to keep playing after winning, so the victory conditions are off (save state, v62).</summary>
+    internal bool VictoryConditionsDisabled => _victoryConditionsDisabled;
+
+    /// <summary>Re-applies the restored "kept playing after winning" state on load (v62): disables the victory conditions exactly as <see cref="ContinuePlaying"/> did.</summary>
+    internal void SetVictoryConditionsDisabled(bool disabled) => _victoryConditionsDisabled = disabled;
+
+    /// <summary>
     /// The player that has won the game (FreeCol <c>ServerGame.checkForWinner</c>), or null while it continues — a
     /// <b>pure read</b> over the live players, evaluated against the ruleset's enabled victory conditions (each a
     /// parsed-or-defaulted boolean, so the classic defaults leave the default game's outcome unchanged):
@@ -771,6 +903,10 @@ public sealed partial class Game
     {
         get
         {
+            if (_victoryConditionsDisabled)
+            {
+                return null; // the winner chose to keep playing — the victory conditions are off (FreeCol continuePlaying)
+            }
             if (Ruleset.VictoryDefeatRef
                 && _players.FirstOrDefault(p => p.PlayerType == PlayerType.Independent) is { } independent)
             {
@@ -794,6 +930,95 @@ public sealed partial class Game
             }
             return null;
         }
+    }
+
+    // ── Voluntary retirement (FreeCol InGameController.retire → ServerPlayer.csWithdraw) ──────────────────────
+
+    /// <summary>
+    /// Whether <paramref name="player"/> may <see cref="Retire">retire</see> from the game right now (FreeCol gates the
+    /// Retire menu action on a live, in-play player): the player is still <em>playing</em> — a colonial power, a rebel
+    /// mid-war, or an independent nation — and has not already retired, been defeated, or had the game won out from
+    /// under it. A pure, RNG-free read; the presentation gates the Retire affordance on it (ADR-006).
+    /// </summary>
+    public MoveCheck CheckRetire(Player player)
+    {
+        if (player.PlayerType is not (PlayerType.Colonial or PlayerType.Rebel or PlayerType.Independent))
+        {
+            return MoveCheck.No("Only an active nation can retire.");
+        }
+        if (IsRebelDefeated(player))
+        {
+            return MoveCheck.No("A defeated nation cannot retire.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Voluntarily <b>retires</b> <paramref name="player"/> from the game (FreeCol <c>InGameController.retire</c>):
+    /// builds the player's leaderboard <see cref="HighScore"/> entry from the current state (the same pure
+    /// <see cref="RecordHighScore"/> read the win/defeat path uses, with <paramref name="gameId"/> for de-duplication),
+    /// then withdraws the player by flipping it to <see cref="PlayerType.Retired"/> — the game is over for it. The
+    /// caller persists the returned score to the leaderboard store (kept entirely separate from the game save, exactly
+    /// as FreeCol keeps high scores in their own file). A retired player's <see cref="PlayerType"/> ordinal is saved by
+    /// the existing player-state path, so a game saved mid-retirement reloads retired.
+    /// <para><b>Faithful-subset note.</b> FreeCol's <c>csWithdraw</c> also kills the player's units/colonies and emits a
+    /// "nation withdrawn" history+message. Our single-human model treats retirement as an end-of-game state for the
+    /// human (the presentation stops play and shows the end screen) rather than dismantling the board, so we keep only
+    /// the score-record + player-type-flip half; the world is simply frozen behind the end-game screen. Documented in
+    /// independence.md. <b>ADR-009:</b> wholly RNG-free (the score is a pure read and the type flip draws nothing), so
+    /// retiring leaves the human's stream 0 byte-identical.</para>
+    /// </summary>
+    /// <param name="player">The player retiring — normally the human.</param>
+    /// <param name="gameId">An optional per-game id for leaderboard de-duplication; empty if unknown.</param>
+    /// <returns>The completed high-score entry for the caller to persist.</returns>
+    /// <exception cref="InvalidMoveException">The player cannot retire now; see <see cref="CheckRetire"/>.</exception>
+    public HighScore Retire(Player player, string gameId = "")
+    {
+        MoveCheck check = CheckRetire(player);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        HighScore score = RecordHighScore(player, won: player.PlayerType == PlayerType.Independent, gameId);
+        player.PlayerType = PlayerType.Retired; // withdraw — the game is over for this player (FreeCol changePlayerType(RETIRED))
+        return score;
+    }
+
+    /// <summary>Whether the human has voluntarily <see cref="Retire">retired</see> — the game is over for them (the presentation reads this for the end-game screen, like <see cref="IsHumanDefeated"/>).</summary>
+    public bool IsHumanRetired => _human.PlayerType == PlayerType.Retired;
+
+    // ── Continue playing after winning (FreeCol InGameController.continuePlaying) ─────────────────────────────
+
+    /// <summary>
+    /// Whether the human may choose to <see cref="ContinuePlaying">keep playing</see> right now — there is a
+    /// <see cref="Winner"/>, that winner is the human, and the victory conditions have not already been disabled by a
+    /// previous "keep playing" (FreeCol restricts <c>continuePlaying</c> to single-player and to the actual winner). A
+    /// pure read; the victory screen gates its "keep playing" button on it (ADR-006).
+    /// </summary>
+    public bool CanContinuePlaying =>
+        !_victoryConditionsDisabled && Winner is { } w && w.PlayerId == _human.PlayerId;
+
+    /// <summary>
+    /// Lets a single-player <b>winner keep playing</b> after victory (FreeCol <c>InGameController.continuePlaying</c>,
+    /// which writes the three <c>VICTORY_*</c> game options false): sets the game-level
+    /// <see cref="VictoryConditionsDisabled"/> flag, so <see cref="Winner"/> returns null thereafter and the game
+    /// proceeds. The flag is persisted (v62) so a reload after "keep playing" does not re-fire the win. A no-op unless
+    /// the human <see cref="CanContinuePlaying">may continue</see>.
+    /// <para><b>Why a game-level flag, not a ruleset mutation.</b> FreeCol's spec is per-game, so it disables the win by
+    /// flipping the spec's victory options; our <see cref="Specification.Ruleset"/> may be shared across games (and is in
+    /// tests), so mutating it would leak the disabled win into other games. The flag short-circuits <see cref="Winner"/>
+    /// at the game scope, achieving the same effect without touching the shared ruleset.</para>
+    /// <para><b>ADR-009:</b> RNG-free — it only sets a boolean, drawing no stream — so continuing leaves the human's
+    /// stream 0 byte-identical. The default game never wins inside the soak window, so this never fires there and the
+    /// soak stays byte-identical.</para>
+    /// </summary>
+    public void ContinuePlaying()
+    {
+        if (!CanContinuePlaying)
+        {
+            return; // not a winner, or already continuing — nothing to disable
+        }
+        _victoryConditionsDisabled = true;
     }
 
     /// <summary>
@@ -866,8 +1091,10 @@ public sealed partial class Game
 
     /// <summary>
     /// Whether the rebel has broken the Royal Expeditionary Force (FreeCol <c>checkForREFDefeat</c>): the REF holds no
-    /// settlements, the rebel's land power is at least 1.5× the REF's, and the REF is reduced below 7 land or 2 naval
-    /// units (counting the whole force, including reinforcements still mustering — so the win can't fire before it lands).
+    /// settlements, and <b>either</b> the King's <see cref="RefMoraleBroken">morale has broken</see> (a beaten King's
+    /// resolve fails) <b>or</b> the rebel's land power is at least 1.5× the REF's and the REF is reduced below 7 land or
+    /// 2 naval units. The unit counts include the King's units still mustering in Europe (the un-landed waves), so the
+    /// win can't fire before his reinforcements are committed. When either path fires the surviving force surrenders.
     /// </summary>
     internal bool CheckForRefDefeat(Player refPlayer, Player rebel)
     {
@@ -875,13 +1102,22 @@ public sealed partial class Game
         {
             return false; // the REF still holds captured colonies — the rebellion isn't won
         }
+
+        // Count every REF unit the King still owns — ashore AND the waves still mustering in Europe — so a war is never
+        // declared won while fresh reinforcements survive (they keep him in the fight until they are destroyed too).
         int land = _units.Count(u => u.OwnerId == refPlayer.PlayerId && !u.Type.IsNaval);
         int naval = _units.Count(u => u.OwnerId == refPlayer.PlayerId && u.Type.IsNaval);
+
         if (land >= RefDefeatLandThreshold && naval >= RefDefeatNavalThreshold)
         {
-            return false; // the REF is still a credible force
+            return false; // the REF still has its minimum credible force (FreeCol's 7-land/2-naval hang-on floor)
         }
-        return LandPowerOf(rebel) >= RefDefeatPowerRatio * LandPowerOf(refPlayer);
+
+        // Below the hang-on floor: the King gives up if EITHER the rebel now out-musters him 1.5× (FreeCol's raw test)
+        // OR his morale has broken — three-quarters of the army he committed is gone, so a beaten King abandons the war
+        // even when neither side is the clear stronger (the morale/withdrawal trigger, 86d3fq0ak). The morale path is
+        // gated behind the floor above, so a still-credible force (≥7 land, ≥2 naval) never withdraws on morale alone.
+        return RefMoraleBroken || LandPowerOf(rebel) >= RefDefeatPowerRatio * LandPowerOf(refPlayer);
     }
 
     /// <summary>
@@ -910,6 +1146,11 @@ public sealed partial class Game
                 _units.Remove(unit); // the fleet and any in Europe sail home
             }
         }
+
+        // The war is over: the King's wave/morale state is retired so a reload of the won game carries no pending
+        // reinforcement (the REF is gone, so there would be nothing to land anyway).
+        _refWaveCountdown = 0;
+        _refMoralePeak = 0;
     }
 
     /// <summary>The number of a player's colonies with a connected port (FreeCol <c>Player.getNumberOfPorts</c>).</summary>

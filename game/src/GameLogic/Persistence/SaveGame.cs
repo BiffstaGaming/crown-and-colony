@@ -20,7 +20,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 61;
+    public const int CurrentVersion = 62;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -234,6 +234,22 @@ public sealed record SaveGame
     /// mid-training</b> (null), so a non-teaching game serialises byte-identically to v60 and pre-v61 saves load with each
     /// in-progress school continuing on its first teacher. Determinism (ADR-009): teaching draws no RNG and the soak's
     /// all-free colonies never staff a school, so the schema change is soak-inert and twin-deterministic.
+    /// v62 added the <b>endgame niceties</b> (86d3fq125 / 86d3fq161 / 86d3fq0ak): (a) the winner's <b>keep-playing</b>
+    /// flag (<see cref="VictoryConditionsDisabled"/> — FreeCol <c>continuePlaying</c> writes the three <c>VICTORY_*</c>
+    /// options false), so a game saved after choosing to play on past victory reloads with the win still disabled; and
+    /// (b) the REF's <b>staggered reinforcement</b> state — the turns until the next landing wave
+    /// (<see cref="RefWaveCountdown"/>) and the King's morale <b>peak</b> (<see cref="RefMoralePeak"/>, the army he
+    /// committed; the current morale is derived live from the survivors, so it needs no field), so a war saved
+    /// mid-reinforcement reloads with the remaining waves and the King's resolve intact. (The un-landed units themselves
+    /// are ordinary REF units sitting in Europe, already persisted by the unit list — no force snapshot is needed.)
+    /// (Voluntary <b>retirement</b> needed no new field — a retired player rides the existing
+    /// <see cref="GameSession.PlayerType"/> ordinal.) All three are additive + <b>omitted when default</b>
+    /// (false / null / 0 — every game that has not won-and-continued and is not mid-REF-war), so a default game serialises
+    /// byte-identically to v61 and pre-v62 saves load with no kept-playing override and no pending REF waves (a war
+    /// reloaded from a pre-v62 save has its whole REF land at once on the next REF turn, exactly as it did before).
+    /// Determinism (ADR-009): the kept-playing flag and the wave/morale state draw no RNG (the cadence is a fixed
+    /// interval, morale a pure count of losses), so a reloaded game continues on the identical random sequence and the
+    /// soak — which never wins or reaches the war in its window — stays byte-identical and twin-deterministic.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -307,6 +323,15 @@ public sealed record SaveGame
 
     /// <summary>Whether the Spanish Succession consolidation has happened (v42; null/omitted until it fires, so a game before 1600 stays byte-identical to v41).</summary>
     public bool? SpanishSuccession { get; init; }
+
+    /// <summary>Whether the winner chose to keep playing past victory, disabling the victory conditions (v62; FreeCol <c>continuePlaying</c>). Null/omitted when false — every game that has not won-and-continued — so a default game stays byte-identical to v61; pre-v62 saves load with the win still enabled.</summary>
+    public bool? VictoryConditionsDisabled { get; init; }
+
+    /// <summary>Turns until the King's next REF reinforcement wave comes ashore (v62; null/omitted when 0 — no wave pending). Pre-v62 saves load with no pending wave (the whole REF lands at once, as before this version).</summary>
+    public int? RefWaveCountdown { get; init; }
+
+    /// <summary>The high-water mark of the King's morale — the full land army he committed at the declaration, the denominator of the morale-break test (v62; null/omitted when 0, i.e. no REF at war). The <em>current</em> morale is derived live from the survivors, so only this peak persists. Pre-v62 saves load with peak 0 (a reloaded war never breaks on morale, only on the raw unit thresholds, exactly as before this version).</summary>
+    public int? RefMoralePeak { get; init; }
 
     /// <summary>The spec id of the difficulty level this game plays under (v46; null/omitted for the default <c>model.difficulty.medium</c>, so a default game stays byte-identical to v45). On load the ruleset is re-loaded under this level so the balance matches; pre-v46 saves load the default level.</summary>
     public string? DifficultyLevel { get; init; }
@@ -554,6 +579,12 @@ public sealed record SaveGame
                 : null,
             // The Spanish Succession flag; omitted until it fires so a pre-1600 game stays byte-identical to v41.
             SpanishSuccession = game.SpanishSuccessionDone ? true : null,
+            // The winner's keep-playing flag (v62); omitted when false so a game that has not won-and-continued stays byte-identical to v61.
+            VictoryConditionsDisabled = game.VictoryConditionsDisabled ? true : null,
+            // The REF wave timer + the King's morale-peak (v62); both omitted when 0 (no REF at war), so a game not
+            // mid-REF-war stays byte-identical to v61. The current morale is derived live, so it is not persisted.
+            RefWaveCountdown = game.RefWaveCountdown != 0 ? game.RefWaveCountdown : null,
+            RefMoralePeak = game.RefMoralePeak != 0 ? game.RefMoralePeak : null,
             // Player-scoped state: authoritative in (and written only to) Players[]. The legacy flat
             // top-level fields are no longer written as of FP-7 — they remain readable for ≤v19 / pre-FP-7
             // v20 saves (the fold path), but the v20 load path was always Players[]-only, so the format
@@ -811,6 +842,16 @@ public sealed record SaveGame
         if (SpanishSuccession == true) // v42; pre-v42 / omitted → not yet done
         {
             game.SetSpanishSuccessionDone(true);
+        }
+        if (VictoryConditionsDisabled == true) // v62; pre-v62 / omitted → the win is still enabled
+        {
+            game.SetVictoryConditionsDisabled(true); // re-disables the victory conditions exactly as ContinuePlaying did
+        }
+        // The REF reinforcement + morale state (v62; pre-v62 / omitted → no wave timer, peak 0 — a reloaded war lands
+        // its whole REF at once on the next REF turn and never breaks on morale, exactly as before this version).
+        if (RefWaveCountdown is not null || RefMoralePeak is not null)
+        {
+            game.SetRefReinforcementState(RefWaveCountdown ?? 0, RefMoralePeak ?? 0);
         }
         if (PendingMonarchDemand is { } md) // v46; pre-v46 / omitted → no demand was pending
         {

@@ -286,6 +286,8 @@ public partial class GameController : Node2D
         GetNode<Button>("UI/ColopediaPanel/VBox/CloseButton").Pressed += () => _colopediaPanel.Hide();
         GetNode<Button>("UI/ColonyReportPanel/VBox/CloseButton").Pressed += () => _colonyReportPanel.Hide();
         GetNode<Button>("UI/VictoryPanel/VBox/CloseButton").Pressed += () => _victoryPanel.Hide();
+        ((VictoryPanel)_victoryPanel).OnContinuePlaying = OnContinuePlaying; // keep playing past victory (FreeCol continuePlaying)
+        ((VictoryPanel)_victoryPanel).OnRetire = OnRetire;                   // record the score + end the game (FreeCol retire)
         GetNode<Button>("UI/HighScoresPanel/VBox/CloseButton").Pressed += () => _highScoresPanel.Hide();
         GetNode<Button>("UI/FindSettlementPanel/VBox/CloseButton").Pressed += () => _findSettlementPanel.Hide();
         GetNode<Button>("UI/FoundingFatherPanel/VBox/CloseButton").Pressed += () => _foundingFatherPanel.Hide();
@@ -1998,22 +2000,26 @@ public partial class GameController : Node2D
     }
 
     /// <summary>
-    /// Reflects human defeat in the HUD: a game-over overlay over the map and a disabled, relabelled End Turn
-    /// button. Presentation-only (ADR-006) — defeat is computed by <see cref="Game.IsHumanDefeated"/>; this never
-    /// mutates game state and deliberately does <b>not</b> stop the turn loop (a short-circuit in
+    /// Reflects the end of the human's game in the HUD — defeat (<see cref="Game.IsHumanDefeated"/>) <b>or</b> a
+    /// voluntary <see cref="Game.IsHumanRetired">retirement</see> (86d3fq125): a game-over overlay over the map and a
+    /// disabled, relabelled End Turn button. Presentation-only (ADR-006) — both end-states are computed in GameLogic;
+    /// this never mutates game state and deliberately does <b>not</b> stop the turn loop (a short-circuit in
     /// <see cref="Game.EndTurn"/> would freeze the human's RNG stream 0 and break ADR-009 byte-stability — see the
     /// human-defeat slice). The overlay's full-rect <c>Control</c> swallows map clicks while shown; "New Game"
-    /// (and the N hotkey) start a fresh game, which clears the defeat and hides the overlay.
+    /// (and the N hotkey) start a fresh game, which clears the end-state and hides the overlay.
     /// </summary>
     private void UpdateDefeatUi()
     {
         bool defeated = _game.IsHumanDefeated;
-        _endTurnButton.Disabled = defeated;
-        _endTurnButton.Text = defeated ? "Game Over" : "End Turn";
-        if (defeated)
+        bool retired = _game.IsHumanRetired;
+        bool over = defeated || retired;
+        _endTurnButton.Disabled = over;
+        _endTurnButton.Text = over ? "Game Over" : "End Turn";
+        if (over)
         {
-            _gameOverMessage.Text =
-                $"You have lost your last colony and all your units on turn {_game.Turn}.\nThe colony is over.";
+            _gameOverMessage.Text = retired
+                ? $"You retired from the colony on turn {_game.Turn}.\nYour deeds are recorded in the high scores."
+                : $"You have lost your last colony and all your units on turn {_game.Turn}.\nThe colony is over.";
             // Tidy any panel that happened to be open (e.g. Europe) so it can't be orphaned behind the overlay,
             // which draws on top of and click-blocks the earlier UI siblings.
             _colonyPanel.Hide();
@@ -2024,7 +2030,7 @@ public partial class GameController : Node2D
             _moundsPanel.Hide();
             _monarchDialog.Hide();
         }
-        _gameOverScreen.Visible = defeated;
+        _gameOverScreen.Visible = over;
     }
 
     /// <summary>
@@ -2070,6 +2076,50 @@ public partial class GameController : Node2D
         _highScoreRecorded = true;
         HighScoresService.Record(_game.RecordHighScore(_game.HumanPlayer, won, _gameId));
     }
+
+    /// <summary>
+    /// Handles the victory screen's <b>Keep Playing</b> choice (86d3fq161): forwards to <see cref="Game.ContinuePlaying"/>
+    /// — which disables the victory conditions so the single-player winner keeps playing — then refreshes the HUD so the
+    /// victory state clears and play resumes on the final board. Presentation-only (ADR-006): the rule lives in GameLogic.
+    /// </summary>
+    private void OnContinuePlaying()
+    {
+        _game.ContinuePlaying();
+        _victoryShown = false; // the win is disabled now; if a later (alternate) victory fires it can show again
+        RefreshView();
+    }
+
+    /// <summary>
+    /// Handles the victory screen's <b>Retire</b> choice (86d3fq125): forwards to <see cref="Game.Retire"/> — which
+    /// records the (winning) high score and withdraws the player — then persists the returned score to the leaderboard
+    /// (marking the end-of-game one-shot so <see cref="RecordHighScoreIfGameEnded"/> won't double-add) and refreshes so
+    /// the end-game state shows. Presentation-only (ADR-006): scoring + withdrawal are decided in GameLogic.
+    /// </summary>
+    private void OnRetire()
+    {
+        if (!_game.CheckRetire(_game.HumanPlayer).Allowed)
+        {
+            return; // can't retire now (already ended) — guard against a stale button press
+        }
+        HighScore score = _game.Retire(_game.HumanPlayer, _gameId);
+        if (!_highScoreRecorded)
+        {
+            _highScoreRecorded = true; // the retire records the leaderboard entry; block the auto end-of-game record
+            HighScoresService.Record(score);
+        }
+        _victoryPanel.Hide();
+        RefreshView(); // the human has withdrawn — the end-game (game-over) UI takes over
+    }
+
+    /// <summary>Whether the human may retire right now (FreeCol gates the Retire menu action on a live, in-play player). The pause menu reads this to enable/disable its Retire button. Pure read (ADR-006).</summary>
+    public bool CanRetire => _game.CheckRetire(_game.HumanPlayer).Allowed;
+
+    /// <summary>
+    /// The <b>mid-game Retire</b> entry point (the pause menu's Retire item, FreeCol's <c>RetireAction</c>): records the
+    /// human's high score and ends the game for them, then refreshes so the end-game UI takes over. Same flow as the
+    /// victory screen's Retire (<see cref="OnRetire"/>); public so the pause menu (and scene tests) can drive it.
+    /// </summary>
+    public void RequestRetire() => OnRetire();
 
     /// <summary>Opens the high-scores leaderboard screen (loads <c>user://highscores.json</c> via <see cref="HighScoresService"/>). Public so the menu and scene tests can drive it.</summary>
     public void OpenHighScoresPanel() => ((HighScoresPanel)_highScoresPanel).Open(HighScoresService.Load());

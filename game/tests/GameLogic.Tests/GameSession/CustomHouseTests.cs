@@ -82,7 +82,7 @@ public class CustomHouseTests
 
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
-        Assert.Equal(61, SaveGame.CurrentVersion);
+        Assert.Equal(62, SaveGame.CurrentVersion);
         Assert.Equal(AutoExportMode.ExportAllOverLevel, restored.AutoExportMode);
         Assert.Equal(new Colony.ExportSetting(true, 75), restored.Colonies.Single(c => c.Id == colony.Id).ExportOf(Sugar));
     }

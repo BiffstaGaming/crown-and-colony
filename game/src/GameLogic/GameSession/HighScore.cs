@@ -4,15 +4,16 @@ namespace CrownAndColony.GameLogic.GameSession;
 
 /// <summary>
 /// One completed-game leaderboard entry — a faithful port of FreeCol's <c>HighScore</c>
-/// (<c>net.sf.freecol.common.model.HighScore</c>). Captured when a game ends (a <see cref="Game.Winner"/> emerges or
-/// the human is defeated): it records who played, which nation and nation type, the final <see cref="Game.PlayerScore"/>,
-/// the honorific <see cref="ScoreLevel"/> that score earns, the difficulty, the end-of-game unit/colony counts, the turn
-/// the player retired (and, if they won, the turn independence was declared), and when it was recorded.
+/// (<c>net.sf.freecol.common.model.HighScore</c>). Captured when a game ends (a <see cref="Game.Winner"/> emerges, the
+/// human is defeated, or the player <see cref="Game.Retire">voluntarily retires</see>): it records who played, which
+/// nation and nation type, the final <see cref="Game.PlayerScore"/>, the honorific <see cref="ScoreLevel"/> that score
+/// earns, the difficulty, the end-of-game unit/colony counts, the turn the player retired (and, if they won, the turn
+/// independence was declared), and when it was recorded.
 /// <para>
 /// A pure value object (a <c>record</c>): it holds no <see cref="Game"/> references, draws no randomness, and is
 /// serialized to its own JSON store by <see cref="Persistence.HighScoreStore"/> — <b>separately from the game save</b>, exactly as
 /// FreeCol keeps high scores in their own file rather than inside a saved game. Recording a score therefore never
-/// touches and never bumps the game-save version (still v52).
+/// touches and never bumps the game-save version (the leaderboard is its own file).
 /// </para>
 /// </summary>
 /// <param name="PlayerName">The human player's display name (FreeCol <c>player.getName()</c>; here the nation's display name).</param>

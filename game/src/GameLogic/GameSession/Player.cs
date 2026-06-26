@@ -25,6 +25,14 @@ public enum PlayerType
 
     /// <summary>The King's Royal Expeditionary Force — the AI army sent to crush a rebellion.</summary>
     RoyalExpeditionaryForce = 4,
+
+    /// <summary>
+    /// A player who has <b>voluntarily retired</b> from the game (FreeCol <c>Player.PlayerType.RETIRED</c>): their
+    /// high score is recorded and they withdraw — the game is over for them. Distinct from <see cref="Independent"/>
+    /// (a win) and an in-progress defeat. Set by <see cref="Game.Retire"/>; the presentation reads it for the
+    /// end-game screen. Persisted as the ordinal in the existing player-type save field.
+    /// </summary>
+    Retired = 5,
 }
 
 /// <summary>

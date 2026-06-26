@@ -799,10 +799,16 @@ public class IndependenceTests
         game.EndTurn(); // first resolution seeds the liberty snapshot (no accrual yet)
         int bellsAfterSeed = rebel.InterventionBells;
 
-        rebel.Liberty += 250; // simulate a turn's liberty production
+        // Measure one quiet turn's baseline bell accrual (the rebel's surviving colony produces a little liberty each
+        // turn — with the REF now landing in staggered waves, the colony is not overrun turn-one and keeps producing).
+        game.EndTurn();
+        int baselineGain = rebel.InterventionBells - bellsAfterSeed;
+
+        int before = rebel.InterventionBells;
+        rebel.Liberty += 250; // simulate a turn's extra liberty production on top of the colony's baseline
         game.EndTurn();
 
-        Assert.Equal(bellsAfterSeed + 250, rebel.InterventionBells); // the gain banked toward the threshold
+        Assert.Equal(before + baselineGain + 250, rebel.InterventionBells); // the injected gain banked atop the baseline
     }
 
     [Fact]
@@ -827,15 +833,16 @@ public class IndependenceTests
     [Fact]
     public void InterventionForce_LandingDrawsNothingFromStreamZero()
     {
-        // The friendly ally's landfall must not perturb the human's stream 0 (ADR-009 isolation): it draws only on
-        // the dedicated InterventionStreamId. With the human idle, stream 0 stays frozen across the landing.
+        // The friendly ally's landfall must not perturb the human's stream 0 (ADR-009 isolation): it draws only on the
+        // dedicated InterventionStreamId. We resolve the war directly (not a full EndTurn) so only the intervention
+        // landing runs — a full turn would also run the rebel's own colony economy, which legitimately draws stream 0.
         (Game game, _) = RebellionReady(4242);
         game.DeclareIndependence(game.HumanPlayer);
-        game.EndTurn(); // settle the REF/rebel turn, seed snapshots
+        game.ResolveWarOfIndependence(); // seed the liberty snapshot (gain 0 on first sight)
         RandomState frozen = game.RandomState;
 
         game.HumanPlayer.InterventionBells = Classic.InterventionBells;
-        game.EndTurn(); // the intervention force lands
+        game.ResolveWarOfIndependence(); // the intervention force lands — only the ally's dedicated stream is drawn
 
         Assert.Equal(frozen, game.RandomState);
     }
@@ -1596,4 +1603,251 @@ public class IndependenceTests
         Assert.True(twoIntervals > oneInterval, "two intervals brings a larger landing than one");
         Assert.True(threeIntervals > twoIntervals, "the landings keep growing the longer the war drags on");
     }
+
+    // ── Voluntary retirement (86d3fq125, FreeCol InGameController.retire) ──────────────────────────────────
+
+    [Fact]
+    public void Retire_RecordsTheScore_AndEndsTheGameForThePlayer()
+    {
+        (Game game, _) = RebellionReady();
+        Player human = game.HumanPlayer;
+        Assert.True(game.CheckRetire(human).Allowed); // an active colonial power may retire
+        int expectedScore = game.PlayerScore(human);
+
+        HighScore score = game.Retire(human, gameId: "g1");
+
+        Assert.Equal(expectedScore, score.Score);          // the leaderboard entry carries the final score
+        Assert.Equal(game.Turn, score.RetirementTurn);     // …stamped with the retirement turn (FreeCol retirementTurn)
+        Assert.Equal("g1", score.GameId);                  // …and the per-game id for de-dup
+        Assert.Equal(PlayerType.Retired, human.PlayerType); // the player has withdrawn — the game is over for them
+        Assert.True(game.IsHumanRetired);
+    }
+
+    [Fact]
+    public void CheckRetire_RejectsAnAlreadyEndedPlayer()
+    {
+        (Game game, _) = RebellionReady();
+        game.Retire(game.HumanPlayer);
+        Assert.False(game.CheckRetire(game.HumanPlayer).Allowed); // a retired player can't retire again
+        Assert.Throws<InvalidMoveException>(() => game.Retire(game.HumanPlayer));
+    }
+
+    [Fact]
+    public void Retire_OnAnIndependentWinner_RecordsAVictory()
+    {
+        (Game game, _) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer);
+        game.GiveIndependence(Ref(game), game.HumanPlayer); // the human won its independence
+        HighScore score = game.Retire(game.HumanPlayer);
+        Assert.True(score.Won); // retiring as an independent nation records a win, not a defeat
+    }
+
+    [Fact]
+    public void Retire_DrawsNothingFromStreamZero()
+    {
+        // Retiring is a pure read + a type flip — it must leave the human's stream 0 byte-identical (ADR-009).
+        (Game game, _) = RebellionReady();
+        RandomState frozen = game.RandomState;
+        game.Retire(game.HumanPlayer);
+        Assert.Equal(frozen, game.RandomState);
+    }
+
+    [Fact]
+    public void RetiredPlayerType_RoundTripsSaveLoad()
+    {
+        (Game game, _) = RebellionReady();
+        game.Retire(game.HumanPlayer);
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+        Assert.Equal(PlayerType.Retired, loaded.HumanPlayer.PlayerType);
+        Assert.True(loaded.IsHumanRetired);
+    }
+
+    // ── Continue playing after winning (86d3fq161, FreeCol InGameController.continuePlaying) ───────────────
+
+    [Fact]
+    public void ContinuePlaying_ClearsTheWinAndLetsTheGameProceed()
+    {
+        (Game game, _) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer);
+        game.GiveIndependence(Ref(game), game.HumanPlayer);
+        Assert.Equal(game.HumanPlayer, game.Winner); // the human has won
+        Assert.True(game.CanContinuePlaying);
+
+        game.ContinuePlaying();
+
+        Assert.Null(game.Winner);                 // the victory conditions are disabled — no winner now
+        Assert.True(game.VictoryConditionsDisabled);
+        Assert.False(game.CanContinuePlaying);    // already continuing — the option is spent
+        game.EndTurn();                           // the game proceeds without re-firing the win
+        Assert.Null(game.Winner);
+    }
+
+    [Fact]
+    public void CanContinuePlaying_IsFalse_WhileTheGameIsStillRunning()
+    {
+        (Game game, _) = RebellionReady();
+        Assert.Null(game.Winner);
+        Assert.False(game.CanContinuePlaying); // no winner yet — nothing to continue past
+        game.ContinuePlaying();                // a no-op
+        Assert.False(game.VictoryConditionsDisabled);
+    }
+
+    [Fact]
+    public void ContinuePlaying_DrawsNothingFromStreamZero()
+    {
+        (Game game, _) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer);
+        game.GiveIndependence(Ref(game), game.HumanPlayer);
+        RandomState frozen = game.RandomState;
+        game.ContinuePlaying();
+        Assert.Equal(frozen, game.RandomState); // flipping config booleans draws no stream (ADR-009)
+    }
+
+    [Fact]
+    public void ContinuePlaying_RoundTripsSaveLoad_WinStaysDisabled()
+    {
+        (Game game, _) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer);
+        game.GiveIndependence(Ref(game), game.HumanPlayer);
+        game.ContinuePlaying();
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.True(loaded.VictoryConditionsDisabled);
+        Assert.Null(loaded.Winner); // the disabled win persisted — the reload does not re-fire victory
+    }
+
+    // ── REF staggered reinforcement waves + the King's morale (86d3fq0ak) ──────────────────────────────────
+
+    [Fact]
+    public void Ref_LandsInSuccessiveWaves_NotAllAtOnce()
+    {
+        (Game game, _) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer);
+        Player refP = Ref(game);
+        int totalLand = game.Units.Count(u => u.OwnerId == refP.PlayerId && !u.Type.IsNaval);
+        Assert.True(totalLand >= 60); // the whole army mustered in Europe at the declaration
+
+        // The REF's first turn brings only the first echelon ashore — NOT the whole army at once.
+        game.EndTurn();
+        int ashoreFirstWave = game.Units.Count(u => u.OwnerId == refP.PlayerId && u.IsOnMap && !u.Type.IsNaval);
+        int stillInEurope = game.Units.Count(u => u.OwnerId == refP.PlayerId && u.Location == UnitLocation.InEurope && !u.Type.IsNaval);
+        Assert.True(ashoreFirstWave > 0, "the first wave landed");
+        Assert.True(ashoreFirstWave < totalLand, "but not the whole army at once");
+        Assert.True(stillInEurope > 0, "later waves wait in Europe");
+
+        // The next echelon is held for the wave interval, then a second wave comes ashore — strictly more troops on the
+        // field than after the first wave (proving the staggered reinforcement). RNG-free: a fixed cadence.
+        for (int i = 0; i < RefWaveIntervalConst + 1; i++)
+        {
+            game.EndTurn();
+        }
+        int ashoreSecondWave = game.Units.Count(u => u.OwnerId == refP.PlayerId && u.IsOnMap && !u.Type.IsNaval);
+        Assert.True(ashoreSecondWave > ashoreFirstWave, "a later wave brought fresh redcoats ashore");
+    }
+
+    [Fact]
+    public void RefDefeat_CountsTheUnLandedWaves_SoTheWinCannotFireBeforeReinforcementsAreSpent()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        Player refP = Ref(game);
+        game.EndTurn(); // only the first wave is ashore; the rest waits in Europe
+
+        // Disband everything ASHORE — but the un-landed waves still in Europe keep the King in the fight.
+        foreach (Unit u in game.Units.Where(u => u.OwnerId == refP.PlayerId && u.IsOnMap).ToList())
+        {
+            game.Disband(u);
+        }
+        Assert.Contains(game.Units, u => u.OwnerId == refP.PlayerId && u.Location == UnitLocation.InEurope);
+        Assert.False(game.CheckForRefDefeat(refP, rebel)); // reinforcements survive in Europe → not yet broken
+    }
+
+    [Fact]
+    public void RefMorale_Breaks_WhenMostOfTheCommittedArmyIsDestroyed_AndTheKingWithdraws()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        Player refP = Ref(game);
+        Assert.False(game.RefMoraleBroken); // a full army — resolve intact
+        int peak = game.RefMoralePeak;
+        Assert.True(peak > 0);
+
+        // Grind the King's land army down below a quarter of its peak (and below the 7-land hang-on floor), keeping a
+        // couple of ships. The rebel here is weak (no army to speak of), so the 1.5×-power path does NOT fire — only the
+        // King's broken morale (three-quarters of the army he committed is gone) ends the war. This is the distinct
+        // value of the morale trigger: a thoroughly-beaten King gives up even when neither side clearly out-musters.
+        ReduceRefTo(game, refP, keepLand: 3, keepNaval: 2); // 3 < peak/4 and < 7 → morale broken, below the floor
+        Assert.True(game.RefMoraleBroken);
+        Assert.False(game.LandPowerOf(rebel) >= 1.5 * game.LandPowerOf(refP)); // the rebel is NOT 1.5× stronger
+        Assert.True(game.CheckForRefDefeat(refP, rebel)); // …yet the morale break alone satisfies the defeat test
+
+        game.EndTurn(); // ResolveWarOfIndependence withdraws the King → independence
+
+        Assert.Equal(PlayerType.Independent, rebel.PlayerType);
+        Assert.Equal(rebel, game.Winner);
+    }
+
+    [Fact]
+    public void Ref_WavesAndMorale_AreDeterministic_AcrossTwinGames()
+    {
+        // The whole staggered-reinforcement + morale machinery is RNG-free, so the same seed produces byte-identical
+        // wave timing, morale, and REF unit positions across twin games (ADR-009 determinism).
+        (Game a, _) = RebellionReady(4242);
+        (Game b, _) = RebellionReady(4242);
+        a.DeclareIndependence(a.HumanPlayer);
+        b.DeclareIndependence(b.HumanPlayer);
+        for (int i = 0; i < RefWaveIntervalConst * 2 + 2; i++)
+        {
+            a.EndTurn();
+            b.EndTurn();
+        }
+        Assert.Equal(a.RefWaveCountdown, b.RefWaveCountdown);
+        Assert.Equal(a.RefMorale, b.RefMorale);
+        Assert.Equal(a.RefMoralePeak, b.RefMoralePeak);
+        var aRef = a.Units.Where(u => u.OwnerId == Ref(a).PlayerId).Select(u => (u.Id, u.Position, u.Location)).OrderBy(x => x.Id).ToList();
+        var bRef = b.Units.Where(u => u.OwnerId == Ref(b).PlayerId).Select(u => (u.Id, u.Position, u.Location)).OrderBy(x => x.Id).ToList();
+        Assert.Equal(aRef, bRef);
+    }
+
+    [Fact]
+    public void RefReinforcementState_RoundTripsSaveLoad()
+    {
+        (Game game, _) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer);
+        game.EndTurn(); // the wave timer + morale are now non-default (a wave landed, more owed)
+        int countdown = game.RefWaveCountdown;
+        int morale = game.RefMorale;
+        int peak = game.RefMoralePeak;
+        Assert.True(peak > 0);
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(countdown, loaded.RefWaveCountdown);
+        Assert.Equal(morale, loaded.RefMorale);
+        Assert.Equal(peak, loaded.RefMoralePeak);
+    }
+
+    [Fact]
+    public void PreV62Save_LoadsCleanly_WithNoKeptPlayingOverride_AndNoPendingRefWaves()
+    {
+        // A v61 save (this slice's predecessor) carries none of the v62 fields. It must load with the victory still
+        // enabled and the REF wave/morale state defaulted (countdown 0, morale 0) — byte-compatible down-version load.
+        Game game = Game.New(Classic, Seed);
+        SaveGame v62 = SaveGame.From(game);
+        Assert.Equal(62, v62.Version);
+
+        // Simulate an older save: stamp the version back and drop the v62 fields (they were all omitted/default anyway).
+        SaveGame asV61 = v62 with { Version = 61, VictoryConditionsDisabled = null, RefWaveCountdown = null, RefMoralePeak = null };
+        Game loaded = SaveGame.FromJson(asV61.ToJson()).Restore(Classic);
+
+        Assert.False(loaded.VictoryConditionsDisabled); // no kept-playing override
+        Assert.Equal(0, loaded.RefWaveCountdown);        // no pending wave
+        Assert.Equal(0, loaded.RefMorale);               // morale derives to 0 (no REF afield)
+        Assert.Equal(0, loaded.RefMoralePeak);
+    }
+
+    private const int RefWaveIntervalConst = 4; // mirrors Game.RefWaveInterval (private)
 }

@@ -727,7 +727,7 @@ public class NativeAiTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
         NativeSettlement r = restored.NativeSettlements.Single(s => s.Id == settlement.Id);
 
-        Assert.Equal(61, SaveGame.CurrentVersion);
+        Assert.Equal(62, SaveGame.CurrentVersion);
         Assert.True(r.HasBeenVisitedBy(power.PlayerId)); // the power's visit survives the round trip
     }
 

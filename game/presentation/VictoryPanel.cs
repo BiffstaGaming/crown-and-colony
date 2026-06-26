@@ -25,6 +25,20 @@ public partial class VictoryPanel : PanelContainer
     private Game _game = null!;
 
     /// <summary>
+    /// Invoked when the player chooses to <b>keep playing</b> after winning (the "Keep Playing" button). The host
+    /// (<see cref="GameController"/>) forwards to <see cref="Game.ContinuePlaying"/> and refreshes — the panel itself
+    /// owns no rules (ADR-006). Null until the host wires it.
+    /// </summary>
+    public System.Action? OnContinuePlaying { get; set; }
+
+    /// <summary>
+    /// Invoked when the player chooses to <b>retire</b> from the victory screen (the "Retire" button). The host forwards
+    /// to <see cref="Game.Retire"/> (recording the high score) and ends the game; the panel only forwards (ADR-006).
+    /// Null until the host wires it.
+    /// </summary>
+    public System.Action? OnRetire { get; set; }
+
+    /// <summary>
     /// Opens the victory screen over <paramref name="game"/> when it has a <see cref="Game.Winner"/>. A no-op (and
     /// stays hidden) if the game is still running, so a caller can blindly offer it after a turn resolves.
     /// </summary>
@@ -84,6 +98,29 @@ public partial class VictoryPanel : PanelContainer
         dynamic.AddChild(new Label { Name = "StatPopulation", Text = $"    Total population: {population}" });
         dynamic.AddChild(new Label { Name = "StatTurns", Text = $"    Turns played: {_game.Turn}" });
         dynamic.AddChild(new Label { Name = "StatYear", Text = $"    Final year: {_game.CalendarLabel}" });
+
+        // ── End-game choices (FreeCol's victory dialog: keep playing or retire) ───────────────────────────
+        dynamic.AddChild(new HSeparator());
+        var choices = new HBoxContainer { Name = "Choices" };
+        dynamic.AddChild(choices);
+
+        // "Keep Playing" — only the single-player winner may continue (disables the victory conditions, FreeCol
+        // continuePlaying). Hidden once the win is already disabled or the winner is not the human.
+        if (_game.CanContinuePlaying)
+        {
+            var keepPlaying = new Button { Name = "KeepPlayingButton", Text = "Keep Playing" };
+            keepPlaying.Pressed += () =>
+            {
+                OnContinuePlaying?.Invoke();
+                Hide(); // the game proceeds — close the screen so play resumes on the final board
+            };
+            choices.AddChild(keepPlaying);
+        }
+
+        // "Retire" — record the (winning) high score and end the game. Always offered on the victory screen.
+        var retire = new Button { Name = "RetireButton", Text = "Retire" };
+        retire.Pressed += () => OnRetire?.Invoke();
+        choices.AddChild(retire);
     }
 
     private static void ScoreLine(VBoxContainer dynamic, string name, string label, int points) =>

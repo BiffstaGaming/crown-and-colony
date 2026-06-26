@@ -206,4 +206,35 @@ public class PauseMenuTests
 
         pause.Resume(); // leave the shared tree unpaused for the next test
     }
+
+    [TestCase]
+    public async Task RetireButton_Appears_ConfirmsAndEndsTheGame()
+    {
+        // 86d3fq125: the pause menu offers a Retire item (built in code). It confirms first; confirming forwards to the
+        // host (GameController.RequestRetire) which records the score and ends the game — the End Turn button disables.
+        ISceneRunner runner = ISceneRunner.Load(GameScene);
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        var pause = controller.GetNode<PauseMenu>("UI/PauseMenu");
+        pause.Open();
+        await runner.SimulateFrames(1);
+
+        var retire = pause.GetNodeOrNull<Button>("Panel/VBox/RetireButton");
+        AssertThat(retire).IsNotNull();          // the affordance is present
+        AssertThat(retire!.Disabled).IsFalse();  // an active game → retire is available
+        AssertThat(controller.CanRetire).IsTrue();
+
+        retire.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        var confirm = pause.GetParent().GetChildren().OfType<ConfirmationDialog>().FirstOrDefault();
+        AssertThat(confirm).IsNotNull();         // it confirms before ending the game
+
+        confirm!.EmitSignal(AcceptDialog.SignalName.Confirmed);
+        await runner.SimulateFrames(2);
+
+        // The human has retired — the game is over (the End Turn button is disabled and relabelled).
+        AssertThat(controller.CanRetire).IsFalse();
+        AssertThat(controller.GetNode<Button>("UI/EndTurnButton").Disabled).IsTrue();
+        AssertThat(pause.GetTree().Paused).IsFalse(); // retiring resumed the tree (the end-game UI governs now)
+    }
 }

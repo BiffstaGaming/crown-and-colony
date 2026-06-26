@@ -79,6 +79,69 @@ public class VictoryPanelTests
         AssertThat(controller.GetNode<PanelContainer>("UI/VictoryPanel").Visible).IsFalse();
     }
 
+    [TestCase]
+    public async Task Victory_KeepPlayingButton_DisablesTheWin_AndResumes()
+    {
+        // 86d3fq161: the victory screen offers a "Keep Playing" button to the human winner; clicking it forwards to
+        // Game.ContinuePlaying (disabling the victory conditions), so Game.Winner clears and the panel hides.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        Game game = WinningGame(controller);
+        AssertThat(game.CanContinuePlaying).IsTrue();
+
+        controller.OpenVictoryPanel();
+        await runner.SimulateFrames(1);
+        var dynamic = controller.GetNode<VBoxContainer>("UI/VictoryPanel/VBox/Dynamic");
+        var keepPlaying = dynamic.GetNodeOrNull<Button>("Choices/KeepPlayingButton");
+        AssertThat(keepPlaying).IsNotNull(); // the affordance appears for the winner
+
+        keepPlaying!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.Winner).IsNull();                 // the win is disabled — the game proceeds
+        AssertThat(game.CanContinuePlaying).IsFalse();    // already continuing — the option is spent
+        AssertThat(controller.GetNode<PanelContainer>("UI/VictoryPanel").Visible).IsFalse(); // resumed
+    }
+
+    [TestCase]
+    public async Task Victory_RetireButton_RecordsAndEndsTheGame()
+    {
+        // 86d3fq125: the victory screen offers a "Retire" button; clicking it forwards to Game.Retire (recording the
+        // score and withdrawing the player), so the human becomes Retired and the panel hides.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        Game game = WinningGame(controller);
+
+        controller.OpenVictoryPanel();
+        await runner.SimulateFrames(1);
+        var dynamic = controller.GetNode<VBoxContainer>("UI/VictoryPanel/VBox/Dynamic");
+        var retire = dynamic.GetNodeOrNull<Button>("Choices/RetireButton");
+        AssertThat(retire).IsNotNull();
+
+        retire!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.IsHumanRetired).IsTrue(); // the player withdrew — the game is over for them
+        AssertThat(controller.GetNode<PanelContainer>("UI/VictoryPanel").Visible).IsFalse();
+    }
+
+    /// <summary>Builds a winning game (the human as an Independent nation) on the controller and returns it.</summary>
+    private static Game WinningGame(GameController controller)
+    {
+        Game game = GetGame(controller);
+        game.FoundColony(game.Units[0]);
+        SaveGame save = SaveGame.From(game);
+        var players = save.Players!
+            .Select(p => p.IsHuman ? p with { PlayerType = (int)PlayerType.Independent } : p)
+            .ToList();
+        game = (save with { Players = players }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        AssertThat(game.Winner).IsNotNull();
+        return game;
+    }
+
     private static Game GetGame(GameController controller) =>
         (Game)controller
             .GetType()

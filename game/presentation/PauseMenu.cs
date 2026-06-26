@@ -44,10 +44,39 @@ public partial class PauseMenu : Control
         GetNode<Button>("Panel/VBox/SettingsButton").Pressed += OnSettings;
         GetNode<Button>("Panel/VBox/HelpButton").Pressed += OnHelp;
         GetNode<Button>("Panel/VBox/AboutButton").Pressed += OnAbout;
+        BuildRetireButton(); // a Retire item, built in code (no scene edit), placed above the Quit choices
         GetNode<Button>("Panel/VBox/QuitToMenuButton").Pressed += OnQuitToMenu;
         GetNode<Button>("Panel/VBox/QuitToDesktopButton").Pressed += OnQuitToDesktop;
         Hide();
     }
+
+    private Button _retireButton = null!;
+
+    /// <summary>
+    /// Adds the <b>Retire</b> menu item in code (FreeCol's <c>RetireAction</c>, 86d3fq125): inserted just above the Quit
+    /// choices, it confirms then ends the game for the human, recording their high score via
+    /// <see cref="GameController.RequestRetire"/>. Built programmatically (the scene is not edited); its enabled state
+    /// tracks <see cref="GameController.CanRetire"/> each time the menu opens, so it greys out once the game has ended.
+    /// </summary>
+    private void BuildRetireButton()
+    {
+        var vbox = GetNode<VBoxContainer>("Panel/VBox");
+        _retireButton = new Button { Name = "RetireButton", Text = "Retire" };
+        _retireButton.Pressed += OnRetire;
+        vbox.AddChild(_retireButton);
+        // Place it directly above the Quit-to-Menu button (FreeCol groups Retire with the end-of-game actions).
+        int quitIndex = GetNode<Button>("Panel/VBox/QuitToMenuButton").GetIndex();
+        vbox.MoveChild(_retireButton, quitIndex);
+    }
+
+    /// <summary>Confirms before retiring (it ends the game — like quitting, an irreversible end-state), then hands off to the host's <see cref="GameController.RequestRetire"/>; the end-game UI takes over and the menu resumes/closes.</summary>
+    private void OnRetire() => ConfirmQuit(
+        "Retire from the colony? This records your score and ends the game.",
+        () =>
+        {
+            Game.RequestRetire();
+            Resume(); // unpause + close the menu; the end-game (game-over) screen now governs the board
+        });
 
     /// <summary>Esc toggles the menu — open it over the paused game, or resume if it is already open (ignored while a sub-overlay is up; use its own Back button).</summary>
     public override void _UnhandledInput(InputEvent @event)
@@ -71,6 +100,7 @@ public partial class PauseMenu : Control
     public void Open()
     {
         GetTree().Paused = true;
+        _retireButton.Disabled = !Game.CanRetire; // greyed out once the game has ended (already retired/defeated/won)
         Show();
     }
 

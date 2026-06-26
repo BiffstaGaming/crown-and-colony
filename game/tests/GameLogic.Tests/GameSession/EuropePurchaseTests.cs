@@ -157,7 +157,7 @@ public class EuropePurchaseTests
 
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
-        Assert.Equal(61, SaveGame.CurrentVersion);
+        Assert.Equal(62, SaveGame.CurrentVersion);
         Assert.Equal(600, restored.HumanPlayer.UnitPriceOverrides[Artillery]);
     }
 
