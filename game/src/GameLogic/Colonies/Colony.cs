@@ -69,7 +69,7 @@ public sealed class Colony
     private readonly Dictionary<string, List<string>> _buildingWorkerTypes = []; // building → its non-free occupants' types
     private readonly List<string> _idleWorkerTypes = [];                          // non-free colonists with no assignment
     private readonly Dictionary<Position, int> _tileWorkerExperience = [];        // tile → its free-colonist worker's accrued on-the-job experience (86d3c9pgj; absent ⇒ 0, cleared when the occupant leaves/changes)
-    private readonly Dictionary<string, int> _schoolTrainingTurns = [];           // school building id → turns accrued toward the current least-skilled student (86d3c9p7f; absent ⇒ 0)
+    private readonly Dictionary<string, List<int>> _schoolTrainingTurns = [];     // school building id → per-teacher-slot turns accrued toward each teacher's current student (86d3fpyc0; absent/short ⇒ 0; one entry per parallel teacher — schoolhouse 1, college 2, university 3)
 
     /// <summary>The unit-type id of a plain colonist — the implicit default for any worker without an overlay entry.</summary>
     public const string FreeColonistTypeId = "model.unit.freeColonist";
@@ -405,25 +405,71 @@ public sealed class Colony
         }
     }
 
-    /// <summary>Accrued training turns toward the current student in a school building (86d3c9p7f; 0 by default).</summary>
-    public int SchoolTrainingTurnsAt(string buildingId) => _schoolTrainingTurns.GetValueOrDefault(buildingId);
+    /// <summary>
+    /// Accrued training turns toward the current student of a school building's <b>first</b> teacher slot (slot 0)
+    /// — the single-teacher reading kept for callers/tests that pre-date parallel teaching (a schoolhouse has only
+    /// slot 0). For a multi-teacher college/university use <see cref="SchoolTrainingTurnsAt(string, int)"/>.
+    /// (86d3c9p7f / 86d3fpyc0; 0 by default).
+    /// </summary>
+    public int SchoolTrainingTurnsAt(string buildingId) => SchoolTrainingTurnsAt(buildingId, 0);
 
-    /// <summary>Accrued school training turns by building id (sparse — a school not currently teaching is absent). 86d3c9p7f.</summary>
-    public IReadOnlyDictionary<string, int> SchoolTrainingTurns => _schoolTrainingTurns;
+    /// <summary>Accrued training turns toward the current student of teacher <paramref name="slot"/> (0-based) in a school building (86d3fpyc0; 0 when absent or the slot is short).</summary>
+    public int SchoolTrainingTurnsAt(string buildingId, int slot) =>
+        _schoolTrainingTurns.TryGetValue(buildingId, out List<int>? slots) && slot >= 0 && slot < slots.Count ? slots[slot] : 0;
 
-    /// <summary>Adds one turn of accrued training to a school building (86d3c9p7f).</summary>
-    internal void AddSchoolTrainingTurn(string buildingId) =>
-        _schoolTrainingTurns[buildingId] = _schoolTrainingTurns.GetValueOrDefault(buildingId) + 1;
+    /// <summary>Accrued school-training turns by building id — the per-teacher-slot list (sparse — a school not currently teaching is absent). 86d3fpyc0.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<int>> SchoolTrainingTurns =>
+        _schoolTrainingTurns.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<int>)kv.Value);
 
-    /// <summary>Resets a school building's accrued training (no eligible student this turn, or a student just graduated). 86d3c9p7f.</summary>
-    internal void ResetSchoolTraining(string buildingId) => _schoolTrainingTurns.Remove(buildingId);
+    /// <summary>Adds one turn of accrued training to teacher <paramref name="slot"/> (0-based) of a school building, growing the per-slot list as needed (86d3fpyc0).</summary>
+    internal void AddSchoolTrainingTurn(string buildingId, int slot = 0)
+    {
+        if (!_schoolTrainingTurns.TryGetValue(buildingId, out List<int>? slots))
+        {
+            _schoolTrainingTurns[buildingId] = slots = [];
+        }
+        while (slots.Count <= slot)
+        {
+            slots.Add(0);
+        }
+        slots[slot]++;
+    }
 
-    /// <summary>Restores a school building's accrued training from a save (skips 0 to keep the map sparse). 86d3c9p7f.</summary>
+    /// <summary>Resets teacher <paramref name="slot"/>'s accrued training (no eligible student this turn, or its student just graduated); drops the building entry once every slot is back to 0 (86d3fpyc0).</summary>
+    internal void ResetSchoolTraining(string buildingId, int slot = 0)
+    {
+        if (!_schoolTrainingTurns.TryGetValue(buildingId, out List<int>? slots))
+        {
+            return;
+        }
+        if (slot < slots.Count)
+        {
+            slots[slot] = 0;
+        }
+        if (slots.All(t => t == 0))
+        {
+            _schoolTrainingTurns.Remove(buildingId); // every slot lapsed → keep the map sparse
+        }
+    }
+
+    /// <summary>Resets <b>every</b> teacher slot of a school building (the school lost its teacher, or has none eligible). 86d3fpyc0.</summary>
+    internal void ResetAllSchoolTraining(string buildingId) => _schoolTrainingTurns.Remove(buildingId);
+
+    /// <summary>Restores a school building's per-teacher-slot accrued training from a save (skips an all-zero list to keep the map sparse). 86d3fpyc0.</summary>
+    internal void RestoreSchoolTraining(string buildingId, IReadOnlyList<int> slots)
+    {
+        if (slots.Count > 0 && slots.Any(t => t > 0))
+        {
+            _schoolTrainingTurns[buildingId] = [.. slots];
+        }
+    }
+
+    /// <summary>Restores a single-counter (slot-0) school training value from a pre-86d3fpyc0 save (v32..v59 wrote one int per school). 86d3fpyc0 down-version compat.</summary>
     internal void RestoreSchoolTraining(string buildingId, int turns)
     {
         if (turns > 0)
         {
-            _schoolTrainingTurns[buildingId] = turns;
+            _schoolTrainingTurns[buildingId] = [turns];
         }
     }
 

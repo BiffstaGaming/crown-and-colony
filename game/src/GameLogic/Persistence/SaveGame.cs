@@ -20,7 +20,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 60;
+    public const int CurrentVersion = 61;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -226,6 +226,14 @@ public sealed record SaveGame
     /// so a game with no tax raise yet serialises byte-identically to v59 and pre-v60 saves load with no cooldown active.
     /// Determinism (ADR-009): the cooldown only gates which actions the chooser offers (it draws nothing itself), and the
     /// stamp is persisted, so a reloaded game offers the identical action set and the soak stays twin-deterministic.
+    /// v61 changed school training to <b>per-teacher-slot</b> counters (<see cref="SavedColony.SchoolTrainingSlots"/>,
+    /// 86d3fpyc0): a college/university now teaches one student per teacher in parallel, so each teacher carries its own
+    /// accrued-turn counter (a list per school) rather than one counter per building. The legacy single-int field
+    /// (<see cref="SavedColony.SchoolTraining"/>, v32..v60) is still <em>read</em> for older saves — restored as a
+    /// school's slot-0 (first teacher's) turns — but no longer written. Additive + <b>omitted when no school is
+    /// mid-training</b> (null), so a non-teaching game serialises byte-identically to v60 and pre-v61 saves load with each
+    /// in-progress school continuing on its first teacher. Determinism (ADR-009): teaching draws no RNG and the soak's
+    /// all-free colonies never staff a school, so the schema change is soak-inert and twin-deterministic.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -480,9 +488,14 @@ public sealed record SaveGame
                         ? c.BuildingWorkerTypes.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value.ToList())
                         : null,
                     c.IdleWorkerTypes.Count > 0 ? c.IdleWorkerTypes.ToList() : null,
-                    c.SchoolTrainingTurns.Count > 0 ? new Dictionary<string, int>(c.SchoolTrainingTurns) : null,
+                    SchoolTraining: null, // v60: superseded by SchoolTrainingSlots (per-teacher parallel teaching); never written
                     // Boston-Tea-Party bell-surge turns remaining; omitted when none (v37, byte-identical to v36).
-                    c.TeaPartyBellTurns == 0 ? null : c.TeaPartyBellTurns))
+                    TeaPartyBellTurns: c.TeaPartyBellTurns == 0 ? null : c.TeaPartyBellTurns,
+                    // Per-teacher-slot school training (v60): one accrued-turn counter per parallel teacher; omitted when
+                    // no school is mid-training, so a non-teaching game stays byte-identical to v59.
+                    SchoolTrainingSlots: c.SchoolTrainingTurns.Count > 0
+                        ? c.SchoolTrainingTurns.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<int>)kv.Value.ToList())
+                        : null))
                 .ToList(),
             Resources = game.Map.Resources.Count > 0
                 ? game.Map.Resources
@@ -727,9 +740,16 @@ public sealed record SaveGame
                 {
                     colony.AddIdleColonist(type);
                 }
+                // Per-teacher-slot school training (v60). Pre-v60 saves carry a single counter per school in the legacy
+                // SchoolTraining field — restored as the building's slot-0 (first teacher's) turns. Pre-v32 → none.
                 foreach ((string buildingId, int turns) in c.SchoolTraining ?? new Dictionary<string, int>())
                 {
-                    colony.RestoreSchoolTraining(buildingId, turns); // v32; pre-v32 → no training in progress
+                    colony.RestoreSchoolTraining(buildingId, turns); // v32..v59 single-counter → slot 0
+                }
+                foreach ((string buildingId, IReadOnlyList<int> slots) in
+                         c.SchoolTrainingSlots ?? new Dictionary<string, IReadOnlyList<int>>())
+                {
+                    colony.RestoreSchoolTraining(buildingId, slots); // v60 per-teacher-slot turns
                 }
                 colony.ReconcileWorkerTypes(); // belt-and-braces: the overlay never exceeds the restored counts
                 return colony;
@@ -921,8 +941,9 @@ public sealed record SaveGame
 /// <param name="Exports">Custom-house export settings by good (only non-default goods; null/omitted when none; v28, additive).</param>
 /// <param name="BuildingWorkerTypes">Per building, its NON-FREE occupant unit-type ids (v30; null/omitted when every building worker is a free colonist). The free occupants are implicit (count − non-free).</param>
 /// <param name="IdleWorkerTypes">The colony's NON-FREE idle colonists' unit-type ids (v30; null/omitted when all idle are free colonists).</param>
-/// <param name="SchoolTraining">Per school building, the accrued training turns toward its current student (v32; null/omitted when no school is mid-training, so a non-teaching game is byte-identical to v31).</param>
+/// <param name="SchoolTraining">Pre-v60 per-school single-counter training turns (v32..v59; one int per school). Read-only legacy field for loading older saves — restored as the building's slot-0 teacher turns; never written by v60+ (which uses <paramref name="SchoolTrainingSlots"/>).</param>
 /// <param name="TeaPartyBellTurns">Turns remaining of the Boston-Tea-Party bell surge (v37; null/omitted when 0, so a no-party colony is byte-identical to v36).</param>
+/// <param name="SchoolTrainingSlots">Per school building, the per-teacher-slot accrued training turns (v60; a college/university teaches one student per teacher in parallel, so each teacher carries its own counter). Null/omitted when no school is mid-training, so a non-teaching game is byte-identical to v59.</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
     IReadOnlyDictionary<string, int>? Stores = null,
@@ -937,7 +958,8 @@ public sealed record SavedColony(
     IReadOnlyDictionary<string, IReadOnlyList<string>>? BuildingWorkerTypes = null,
     IReadOnlyList<string>? IdleWorkerTypes = null,
     IReadOnlyDictionary<string, int>? SchoolTraining = null,
-    int? TeaPartyBellTurns = null);
+    int? TeaPartyBellTurns = null,
+    IReadOnlyDictionary<string, IReadOnlyList<int>>? SchoolTrainingSlots = null);
 
 /// <summary>A colony's custom-house export setting for one good (v28+; only non-default goods are stored).</summary>
 /// <param name="Exported">Whether the good auto-exports.</param>

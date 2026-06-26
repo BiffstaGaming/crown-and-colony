@@ -992,6 +992,74 @@ public class ColonyPanelTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task AssignTeacherButton_SeatsAnEligibleExpertIntoASchool()
+    {
+        // 86d3fpxd6: a schoolhouse with a free teacher slot and an idle expert ore miner offers a "Teach: …" button;
+        // clicking it designates that expert as the teacher (the engine's AssignTeacher), seating it in the school.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Give the colony a schoolhouse (empty) plus one idle expert ore miner, via the save layer.
+        const string School = "model.building.schoolhouse";
+        const string Miner = "model.unit.expertOreMiner";
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with
+            {
+                Population = c.Population + 1, // the extra idle expert
+                Buildings = (c.Buildings ?? new List<string>()).Append(School).ToList(),
+                IdleWorkerTypes = new[] { Miner },
+            }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(game.AssignableTeachers(colony, School).Contains(Miner)).IsTrue();
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        // The button name is built from the expert's short name (expertOreMiner).
+        var teach = FindButton(controller, "AssignTeacher_schoolhouse_expertOreMiner");
+        AssertThat(teach).IsNotNull();
+        teach!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(colony.BuildingOccupants(School).Contains(Miner)).IsTrue(); // the expert now teaches in the school
+        AssertThat(colony.IdleWorkerTypes.Contains(Miner)).IsFalse();          // …and left the idle pool
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task AssignTeacherButton_IsHidden_WhenNoEligibleExpertIsIdle()
+    {
+        // A schoolhouse with only free colonists idle offers NO assign-teacher button (a free colonist can't teach).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        const string School = "model.building.schoolhouse";
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with { Buildings = (c.Buildings ?? new List<string>()).Append(School).ToList() } // no idle expert
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(game.AssignableTeachers(colony, School).Count).IsEqual(0);
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+        AssertThat(FindButton(controller, "AssignTeacher_schoolhouse_")).IsNull(); // hidden — no eligible expert
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task PayBoycottButton_PaysTheArrears_AndLiftsTheBoycott()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

@@ -205,7 +205,7 @@ public class ExperienceUpgradeTests
 
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
-        Assert.Equal(60, SaveGame.CurrentVersion);
+        Assert.Equal(61, SaveGame.CurrentVersion);
         Colony r = restored.Colonies.Single(c => c.Id == colony.Id);
         Assert.Equal(137, r.TileWorkerExperienceAt(tile));
     }

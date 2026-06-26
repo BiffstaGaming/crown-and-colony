@@ -964,6 +964,26 @@ public partial class ColonyPanel : PanelContainer
             controls.AddChild(remove);
         }
         box.AddChild(controls);
+
+        // Assign-a-teacher (86d3fpxd6): for a SCHOOL with a free teacher slot, offer one "Teach: <expert>" button per
+        // idle expert whose skill fits the school's window (the engine's AssignableTeachers oracle — ADR-006). Unlike the
+        // generic "+" (which seats a free colonist who can neither teach nor learn), this designates a specific expert as
+        // the teacher, mirroring FreeCol's "drag a unit into the schoolhouse". Skipped for non-schools / no eligible expert.
+        if (building.Teaches)
+        {
+            foreach (string teacherType in _game.AssignableTeachers(_colony, buildingId))
+            {
+                string t = teacherType;
+                var teach = new Button
+                {
+                    Name = $"AssignTeacher_{building.ShortName}_{Short(teacherType)}",
+                    Text = $"Teach: {Display(Short(teacherType))}",
+                    MouseFilter = Control.MouseFilterEnum.Stop,
+                };
+                teach.Pressed += () => { _game.AssignTeacher(_colony, buildingId, t); Changed(); };
+                box.AddChild(teach);
+            }
+        }
         return cell;
     }
 

@@ -12185,19 +12185,50 @@ public sealed partial class Game
     /// <summary>Where a school student currently sits, so it can be upgraded in place (86d3c9p7f).</summary>
     private enum StudentLocation { Tile, Building, Idle }
 
-    /// <summary>The least-skilled colonist a school's teacher can raise this turn, with its location for an in-place upgrade.</summary>
-    private readonly record struct Student(int Skill, StudentLocation Where, string Type, Position Tile, string BuildingId);
+    /// <summary>
+    /// A stable identity for a claimable student within one teaching turn (86d3fpyc0) — so that when several teachers
+    /// in a college/university teach in parallel, no two claim the same colonist. A tile worker is keyed by its tile;
+    /// a building or idle colonist (interchangeable by type) is keyed by (location, building/empty, type, occurrence
+    /// index) — the Nth same-typed colonist in that group. Not a persistent unit id (we have none); valid only within
+    /// a single <see cref="RunSchoolTeaching"/> sweep.
+    /// </summary>
+    private readonly record struct StudentRef(StudentLocation Where, Position Tile, string BuildingId, string Type, int Index);
+
+    /// <summary>The least-skilled colonist a school's teacher can raise this turn, with its location for an in-place upgrade and a per-turn <see cref="StudentRef"/> so parallel teachers don't double-claim it (86d3c9p7f / 86d3fpyc0).</summary>
+    private readonly record struct Student(int Skill, StudentLocation Where, string Type, Position Tile, string BuildingId, int Index)
+    {
+        /// <summary>The per-turn claim key for this student (tile by position; building/idle by type + occurrence index).</summary>
+        public StudentRef Ref => new(Where, Tile, BuildingId, Type, Index);
+    }
 
     /// <summary>
-    /// One colony's schooling step (86d3c9p7f, FreeCol <c>ServerBuilding.csTeach</c>): each school building's eligible
-    /// expert teacher (its <see cref="UnitType.Skill"/> fits the building's <see cref="BuildingType.MaximumSkill"/>)
-    /// raises the colony's least-skilled teachable colonist one rung toward the teacher's expertise — petty criminal →
-    /// indentured servant → free colonist → the teacher's skill-taught — after the needed turns accrue. Needed turns are
-    /// the spec base (4/6/8) reduced by the Sons-of-Liberty <see cref="Colony.ProductionBonus"/>, floored at 1. The
-    /// accrued count resets when a student graduates or no eligible student is present. <b>Deterministic — no RNG</b>
-    /// (classic automatic student selection): a colony with no expert in a school is a pure no-op, so the L5 soak (all
-    /// free-colonist colonies) stays byte-stable. A single counter per building teaches one student at a time even in a
-    /// multi-workplace college/university — a documented first-cut (see [education-schools]).
+    /// The eligible teachers in a school building, deterministically ordered (86d3fpyc0): every occupant whose
+    /// <see cref="UnitType.Skill"/> fits the building's <see cref="BuildingType.MinimumSkill"/>..<see cref="BuildingType.MaximumSkill"/>
+    /// window, ordered by unit-type id (Ordinal). A college has 2 teacher slots and a university 3, so a parallel
+    /// school can have more than one teacher; the index in this list is the teacher's <b>slot</b> for its own
+    /// training counter. FreeCol's <c>getNoAddReason</c> MINIMUM_SKILL/MAXIMUM_SKILL — the floor is ≥ 1 for every
+    /// classic school, so only an expert ever teaches.
+    /// </summary>
+    private List<string> EligibleTeachers(Colony colony, string buildingId)
+    {
+        BuildingType building = Ruleset.Building(buildingId);
+        return colony.BuildingOccupants(buildingId)
+            .Where(t => Ruleset.Unit(t).Skill >= building.MinimumSkill && Ruleset.Unit(t).Skill <= building.MaximumSkill)
+            .OrderBy(t => t, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
+    /// One colony's schooling step (86d3c9p7f / 86d3fpyc0, FreeCol <c>ServerBuilding.csTeach</c>): <b>each</b> eligible
+    /// expert teacher in a school building raises a student in parallel — a schoolhouse has 1 teacher slot, a college 2,
+    /// a university 3, and FreeCol teaches one student <b>per teacher</b>, not one per building. Every teacher takes the
+    /// colony's least-skilled teachable colonist it can raise — petty criminal → indentured servant → free colonist →
+    /// the teacher's skill-taught — but no two teachers claim the same student in one turn (FreeCol <c>findStudent</c>
+    /// excludes a colonist already bound to another teacher). Needed turns are the spec base (4/6/8) reduced by the
+    /// Sons-of-Liberty <see cref="Colony.ProductionBonus"/>, floored at 1; a teacher's per-slot counter resets when its
+    /// student graduates or it has no eligible student. <b>Deterministic — no RNG</b> (classic automatic student
+    /// selection): a colony with no expert in a school is a pure no-op, so the L5 soak (all free-colonist colonies)
+    /// stays byte-stable.
     /// </summary>
     internal void RunSchoolTeaching(Colony colony)
     {
@@ -12208,65 +12239,91 @@ public sealed partial class Game
             {
                 continue;
             }
-            // The teacher: an occupant whose skill is within the school's window (deterministic pick — Ordinal-first —
-            // for the single-counter model; FreeCol getNoAddReason MINIMUM_SKILL/MAXIMUM_SKILL — the floor is ≥ 1 for
-            // every classic school, so only an expert teaches).
-            string? teacher = colony.BuildingOccupants(buildingId)
-                .Where(t => Ruleset.Unit(t).Skill >= building.MinimumSkill && Ruleset.Unit(t).Skill <= building.MaximumSkill)
-                .OrderBy(t => t, StringComparer.Ordinal)
-                .FirstOrDefault();
-            if (teacher is null || FindLeastSkilledStudent(colony, teacher) is not { } student)
+            List<string> teachers = EligibleTeachers(colony, buildingId);
+            if (teachers.Count == 0)
             {
-                colony.ResetSchoolTraining(buildingId); // no teacher, or no eligible student — progress lapses (FreeCol)
+                colony.ResetAllSchoolTraining(buildingId); // no teacher → every slot lapses (FreeCol)
                 continue;
             }
 
-            colony.AddSchoolTrainingTurn(buildingId);
-            int needed = Math.Max(1, Ruleset.NeededTurnsOfTraining(teacher, student.Type) - colony.ProductionBonus);
-            if (colony.SchoolTrainingTurnsAt(buildingId) >= needed
-                && Ruleset.GetTeachingType(teacher, student.Type) is { } target)
+            // One student per teacher, in parallel (FreeCol csTeach iterates each teacher in the building). Done in two
+            // passes so every teacher's student selection sees the SAME colony state this turn: pass 1 claims a distinct
+            // least-skilled student per teacher (StudentRef claimed-set = FreeCol findStudent's u.getTeacher()==null) and
+            // accrues a turn; pass 2 applies the graduations. Folding the graduations into pass 1 would mutate the worker
+            // overlay mid-loop and shift a later teacher's claim indices.
+            var claimed = new HashSet<StudentRef>();
+            var graduations = new List<(Student student, string target)>();
+            for (int slot = 0; slot < teachers.Count; slot++)
             {
-                UpgradeStudent(colony, student, target.Id);
-                colony.ResetSchoolTraining(buildingId);
+                string teacher = teachers[slot];
+                if (FindLeastSkilledStudent(colony, teacher, claimed) is not { } student)
+                {
+                    colony.ResetSchoolTraining(buildingId, slot); // this teacher has no eligible student — its progress lapses
+                    continue;
+                }
+                claimed.Add(student.Ref);
+                colony.AddSchoolTrainingTurn(buildingId, slot);
+                int needed = Math.Max(1, Ruleset.NeededTurnsOfTraining(teacher, student.Type) - colony.ProductionBonus);
+                if (colony.SchoolTrainingTurnsAt(buildingId, slot) >= needed
+                    && Ruleset.GetTeachingType(teacher, student.Type) is { } target)
+                {
+                    graduations.Add((student, target.Id));
+                    colony.ResetSchoolTraining(buildingId, slot);
+                }
+            }
+            foreach ((Student student, string target) in graduations)
+            {
+                UpgradeStudent(colony, student, target); // pass 2: apply after every teacher has claimed + accrued
             }
         }
     }
 
     /// <summary>
     /// The colony's least-skilled colonist a teacher of <paramref name="teacherType"/> can teach (FreeCol
-    /// <c>Colony.findStudent</c>, least-skill-first), searched across worked tiles, buildings and the idle pool.
+    /// <c>Colony.findStudent</c>, least-skill-first), searched across worked tiles, buildings and the idle pool, skipping
+    /// any colonist already <paramref name="claimed"/> by another teacher in the same turn (FreeCol <c>findStudent</c>'s
+    /// <c>u.getTeacher() == null</c> — so parallel college/university teachers each raise a <b>distinct</b> student).
     /// <b>Trade tie-break (`86d3c9p7f` follow-up):</b> among equally-least-skilled students, one already producing the
     /// teacher's expert good (<see cref="UnitType.ExpertProduction"/>) wins — so an expert ore miner teaches the
     /// colonist already mining ore first (FreeCol <c>findStudent</c>'s <c>getWorkType() == expertise</c>). Remaining
     /// ties fall back to a stable enumeration order (tiles row-major, then buildings, then idle). Deterministic, no RNG.
-    /// Null when the teacher can raise no one (e.g. every colonist is already an expert).
+    /// Null when the teacher can raise no unclaimed one (e.g. every other colonist is already an expert or claimed).
     /// </summary>
-    private Student? FindLeastSkilledStudent(Colony colony, string teacherType)
+    /// <param name="colony">The colony whose colonists are searched.</param>
+    /// <param name="teacherType">The teacher's unit-type id (its skill-taught sets what students can climb toward).</param>
+    /// <param name="claimed">Students already taken by earlier teachers this turn (empty for the single-teacher case).</param>
+    private Student? FindLeastSkilledStudent(Colony colony, string teacherType, IReadOnlySet<StudentRef> claimed)
     {
         string? expertGood = Ruleset.Unit(teacherType).ExpertProduction; // the good the teacher is expert in (null = non-goods expert)
         Student? best = null;
         bool bestWorksExpertGood = false;
-        void Consider(string type, StudentLocation where, Position tile, string buildingId, bool worksExpertGood)
+        void Consider(string type, StudentLocation where, Position tile, string buildingId, int index, bool worksExpertGood)
         {
             if (Ruleset.GetTeachingType(teacherType, type) is null)
             {
                 return; // not teachable by this teacher (already at/above the taught skill, or no education rung)
             }
-            int skill = Ruleset.Unit(type).Skill;
+            var candidate = new Student(Ruleset.Unit(type).Skill, where, type, tile, buildingId, index);
+            if (claimed.Contains(candidate.Ref))
+            {
+                return; // another teacher already took this exact colonist this turn (FreeCol getTeacher() != null)
+            }
+            int skill = candidate.Skill;
             // Lower skill always wins; on a skill tie, a student already working the teacher's good wins over one that isn't.
             if (best is null
                 || skill < best.Value.Skill
                 || (skill == best.Value.Skill && worksExpertGood && !bestWorksExpertGood))
             {
-                best = new Student(skill, where, type, tile, buildingId);
+                best = candidate;
                 bestWorksExpertGood = worksExpertGood;
             }
         }
         foreach (Position tile in colony.TileWorkers.Keys.OrderBy(p => p.Y).ThenBy(p => p.X))
         {
             // TileWorkers maps a tile to the good worked there, so a tile student works the teacher's good directly.
+            // A tile is keyed by its position (index 0), so each tile worker is its own claimable student.
             bool worksExpertGood = expertGood is not null && colony.TileWorkers[tile] == expertGood;
-            Consider(colony.WorkerTypeAt(tile), StudentLocation.Tile, tile, "", worksExpertGood);
+            Consider(colony.WorkerTypeAt(tile), StudentLocation.Tile, tile, "", 0, worksExpertGood);
         }
         foreach (string b in colony.Buildings)
         {
@@ -12280,18 +12337,30 @@ public sealed partial class Game
                 .Where(p => !p.Unattended)
                 .SelectMany(p => p.Outputs)
                 .Any(o => o.GoodsId == expertGood);
+            // Same-typed occupants are interchangeable, so index them per-type within the building to keep each distinct.
+            var seenInBuilding = new Dictionary<string, int>();
             foreach (string occupant in colony.BuildingOccupants(b))
             {
-                Consider(occupant, StudentLocation.Building, default, b, buildingMakesExpertGood);
+                int index = seenInBuilding.GetValueOrDefault(occupant);
+                seenInBuilding[occupant] = index + 1;
+                Consider(occupant, StudentLocation.Building, default, b, index, buildingMakesExpertGood);
             }
         }
+        // Idle colonists (non-free overlay entries first, then the implicit free ones), indexed per-type so two idle
+        // colonists of the same type are distinct claims.
+        var seenIdle = new Dictionary<string, int>();
         foreach (string idle in colony.IdleWorkerTypes)
         {
-            Consider(idle, StudentLocation.Idle, default, "", worksExpertGood: false); // idle colonists produce nothing
+            int index = seenIdle.GetValueOrDefault(idle);
+            seenIdle[idle] = index + 1;
+            Consider(idle, StudentLocation.Idle, default, "", index, worksExpertGood: false); // idle colonists produce nothing
         }
-        if (colony.IdleColonists - colony.IdleWorkerTypes.Count > 0)
+        int implicitFree = colony.IdleColonists - colony.IdleWorkerTypes.Count;
+        for (int i = 0; i < implicitFree; i++)
         {
-            Consider(Colony.FreeColonistTypeId, StudentLocation.Idle, default, "", worksExpertGood: false);
+            int index = seenIdle.GetValueOrDefault(Colony.FreeColonistTypeId);
+            seenIdle[Colony.FreeColonistTypeId] = index + 1;
+            Consider(Colony.FreeColonistTypeId, StudentLocation.Idle, default, "", index, worksExpertGood: false);
         }
         return best;
     }
@@ -12312,6 +12381,80 @@ public sealed partial class Game
                 break;
         }
     }
+
+    /// <summary>
+    /// Whether <paramref name="teacherType"/> may be placed as a <b>teacher</b> in school building
+    /// <paramref name="buildingId"/> (86d3fpxd6, the assign-a-teacher gate; FreeCol <c>WorkLocation.getNoAddReason</c>'s
+    /// MINIMUM_SKILL / MAXIMUM_SKILL on a school): the building must teach and have a free workplace, an idle colonist of
+    /// that type must be available, and its <see cref="UnitType.Skill"/> must fall inside the school's
+    /// <see cref="BuildingType.MinimumSkill"/>..<see cref="BuildingType.MaximumSkill"/> window — so a non-expert (skill
+    /// below the floor) or an over-skilled expert (an elder statesman in a schoolhouse) is refused up front, rather than
+    /// being seated and silently never teaching. The skill-window check is what distinguishes this from the generic
+    /// <see cref="CheckAssignBuildingWork"/> (which any idle colonist passes). ADR-006: the panel reads this oracle and
+    /// forwards <see cref="AssignTeacher"/>; the rule lives here and is xUnit-tested.
+    /// </summary>
+    public MoveCheck CheckAssignTeacher(Colony colony, string buildingId, string teacherType)
+    {
+        if (!colony.HasBuilding(buildingId))
+        {
+            return MoveCheck.No("The colony does not have that building.");
+        }
+        BuildingType building = Ruleset.Building(buildingId);
+        if (!building.Teaches)
+        {
+            return MoveCheck.No($"The {building.ShortName} is not a school.");
+        }
+        if (colony.BuildingWorkers.GetValueOrDefault(buildingId) >= building.Workplaces)
+        {
+            return MoveCheck.No($"The {building.ShortName} has no free teacher slot.");
+        }
+        if (teacherType == Colony.FreeColonistTypeId || !colony.IdleWorkerTypes.Contains(teacherType))
+        {
+            return MoveCheck.No("That expert is not available in the colony.");
+        }
+        int skill = Ruleset.Unit(teacherType).Skill;
+        if (skill < building.MinimumSkill)
+        {
+            return MoveCheck.No($"A {Ruleset.Unit(teacherType).ShortName} is not skilled enough to teach here.");
+        }
+        if (skill > building.MaximumSkill)
+        {
+            return MoveCheck.No($"A {Ruleset.Unit(teacherType).ShortName} is too advanced to teach in the {building.ShortName}.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Seats a specific idle expert as a <b>teacher</b> in a school building (86d3fpxd6): the player's explicit
+    /// teacher-designation command — places <paramref name="teacherType"/> into <paramref name="buildingId"/> so it
+    /// teaches the colony's least-skilled colonist (FreeCol's "drag a unit into the schoolhouse"). Gated by
+    /// <see cref="CheckAssignTeacher"/> — only an idle colonist whose skill fits the school's window is accepted, so a
+    /// non-expert or an over-skilled expert is rejected rather than seated as dead weight. Unlike
+    /// <see cref="AssignBuildingWork(Colony, string)"/> (which picks a free colonist), this places the named expert.
+    /// </summary>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckAssignTeacher"/>.</exception>
+    public void AssignTeacher(Colony colony, string buildingId, string teacherType)
+    {
+        MoveCheck check = CheckAssignTeacher(colony, buildingId, teacherType);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        colony.AssignBuildingWorker(buildingId, teacherType); // draws the named expert from the idle pool into the school
+    }
+
+    /// <summary>
+    /// The distinct idle expert unit-type ids that could be designated as a teacher in school <paramref name="buildingId"/>
+    /// (86d3fpxd6) — each passes <see cref="CheckAssignTeacher"/> — for the colony panel's assign-teacher control. Ordered
+    /// by unit-type id (Ordinal) so the panel is deterministic. Empty when the building is not a school, is fully staffed,
+    /// or no idle colonist's skill fits the school's window.
+    /// </summary>
+    public IReadOnlyList<string> AssignableTeachers(Colony colony, string buildingId) =>
+        colony.IdleWorkerTypes
+            .Distinct()
+            .Where(t => CheckAssignTeacher(colony, buildingId, t).Allowed)
+            .OrderBy(t => t, StringComparer.Ordinal)
+            .ToList();
 
     /// <summary>
     /// On-the-job experience (86d3c9pgj, FreeCol <c>model.unitChange.experience</c>): a colonist working a tile accrues
