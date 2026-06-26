@@ -1,6 +1,9 @@
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession.Diplomacy;
+using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Trade;
+using CrownAndColony.GameLogic.Units;
+using CrownAndColony.GameLogic.World;
 
 namespace CrownAndColony.GameLogic.GameSession;
 
@@ -186,6 +189,343 @@ public sealed partial class Game
         ChangeTension(victimId, beneficiaryId, TensionWarInciter, symmetric: false); // the victim resents the instigator
     }
 
+    // ---- Declare war on a rival (86d3fq0bf, FreeCol InGameController.declareWarFromPeace → csChangeStance(WAR)) ----
+
+    /// <summary>
+    /// Whether <paramref name="declarerId"/> may declare war on <paramref name="targetId"/> right now (the player-initiated
+    /// declare-war oracle, ADR-006): both are distinct colonial powers and they are currently <b>met and not yet at war</b>
+    /// — at <see cref="Stance.Peace"/>, <see cref="Stance.CeaseFire"/>, or <see cref="Stance.Alliance"/>. A pair that is
+    /// <see cref="Stance.Uncontacted"/> has not met (war there is declared implicitly by the first attack, FreeCol's
+    /// uncontacted-attack path), and a pair already at <see cref="Stance.War"/> has nothing to declare. The presentation
+    /// enables its "Declare war" action from this; no RNG, no mutation.
+    /// </summary>
+    public bool CanDeclareWar(int declarerId, int targetId) =>
+        declarerId != targetId && IsColonialPlayer(declarerId) && IsColonialPlayer(targetId)
+        && StanceBetween(declarerId, targetId) is Stance.Peace or Stance.CeaseFire or Stance.Alliance;
+
+    /// <summary>
+    /// Declares war from <paramref name="declarerId"/> on <paramref name="targetId"/> (86d3fq0bf, FreeCol
+    /// <c>ServerPlayer.csChangeStance(Stance.WAR, target, symmetric:true)</c>): the explicit player-initiated counterpart
+    /// to war-by-attack / King-imposed war / a rival breaking the peace. Routes through
+    /// <see cref="ApplyStanceWithTension"/>, so the pair becomes mutually <see cref="Stance.War"/> <b>and</b> the matching
+    /// stance-change tension modifier is applied (FreeCol <c>old.getTensionModifier(WAR)</c> — Peace/Alliance→War spikes to
+    /// <see cref="TensionWar"/>, CeaseFire→War adds <see cref="TensionResumeWarModifier"/>), and the war is recorded in the
+    /// human's history (via <see cref="SetStance"/>). A no-op unless <see cref="CanDeclareWar"/> holds. Draws no RNG
+    /// (ADR-009) — like every stance act it leaves the human's stream 0 byte-identical.
+    /// </summary>
+    /// <returns>True if war was declared; false if the demand was illegal (not a contacted at-peace rival).</returns>
+    public bool DeclareWar(int declarerId, int targetId)
+    {
+        if (!CanDeclareWar(declarerId, targetId))
+        {
+            return false;
+        }
+        ApplyStanceWithTension(declarerId, targetId, Stance.War);
+        return true;
+    }
+
+    // ---- Trade goods at a rival's colony (86d3fq0dj, FreeCol moveTrade → a TRADE-context carrier deal at a foreign port) ----
+
+    /// <summary>
+    /// Whether <paramref name="ship"/> may <b>sell</b> <paramref name="amount"/> of <paramref name="goodsId"/> into the
+    /// rival colony at <paramref name="colonyPos"/> now (86d3fq0dj). A carrier-at-a-foreign-port trade (FreeCol
+    /// <c>moveTrade</c>, the <see cref="Diplomacy.TradeContext.Trade"/> deal): the ship's owner must hold de Witt's
+    /// <see cref="CanTradeWithForeignColonies"/> ability, the carrier must be on the map at or beside the colony, the
+    /// colony must belong to a <b>different</b> colonial power the trader is <b>not at war with</b>, the amount positive,
+    /// the good actually aboard and tradeable in the trader's market, and the colony able to pay (its owner can afford the
+    /// price). The price is the rival owner's market <b>bid</b> for the lot. A read oracle (ADR-006) — no RNG, no mutation.
+    /// </summary>
+    public MoveCheck CheckSellToForeignColony(Unit ship, Position colonyPos, string goodsId, int amount)
+    {
+        MoveCheck gate = CheckForeignColonyTrade(ship, colonyPos, goodsId, amount, out Colony? colony, out Player? owner);
+        if (!gate.Allowed)
+        {
+            return gate;
+        }
+        if (ship.CargoOf(goodsId) < amount)
+        {
+            return MoveCheck.No($"The ship is not carrying {amount} {goodsId}.");
+        }
+        int price = ForeignColonyBidPrice(owner!, goodsId, amount);
+        if (owner!.Gold < price)
+        {
+            return MoveCheck.No($"The {NationDisplayName(colony!.OwnerId)} colony cannot afford that.");
+        }
+        return MoveCheck.Yes(price);
+    }
+
+    /// <summary>
+    /// Sells goods from <paramref name="ship"/>'s hold into the adjacent rival colony for gold (86d3fq0dj, FreeCol
+    /// <c>moveTrade</c>): the goods leave the hold and join the rival colony's warehouse; the rival owner pays from its
+    /// treasury and the trader is credited (no European market tax — this is a foreign-port deal, not a Europe sale, and
+    /// it does not move the trader's home market). Ends the ship's turn (opening a trade session, as the native-trade path
+    /// does). Draws no RNG (a deterministic transfer at the quoted price). A no-op-safe command guarded by
+    /// <see cref="CheckSellToForeignColony"/>.
+    /// </summary>
+    /// <returns>The gold the trader received.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckSellToForeignColony"/>.</exception>
+    public int SellToForeignColony(Unit ship, Position colonyPos, string goodsId, int amount)
+    {
+        MoveCheck check = CheckSellToForeignColony(ship, colonyPos, goodsId, amount);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        int price = check.Cost;
+        Colony colony = ColonyAt(colonyPos)!;
+        Player owner = PlayerById(colony.OwnerId)!;
+        ship.AddCargo(goodsId, -amount);
+        colony.AddGoods(goodsId, amount);          // the lot joins the rival colony's warehouse (FreeCol moveGoods unit→settlement)
+        owner.Gold -= price;                       // the rival colony's owner pays for the goods…
+        PlayerById(ship.OwnerId)!.Gold += price;   // …and the trader is credited (no European market tax)
+        ship.MovementLeft = 0;                     // opening a trade session ends the ship's turn
+        return price;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="ship"/> may <b>buy</b> <paramref name="amount"/> of <paramref name="goodsId"/> from the
+    /// rival colony at <paramref name="colonyPos"/> now (86d3fq0dj, the buy half of FreeCol <c>moveTrade</c>): the same
+    /// gates as <see cref="CheckSellToForeignColony"/> (de Witt ability, adjacency, a non-war rival owner, a positive
+    /// amount, a tradeable good), plus the colony must actually <b>hold</b> at least <paramref name="amount"/> of the good
+    /// and the trader must be able to afford the rival owner's <b>ask</b> price for the lot. A read oracle — no RNG, no
+    /// mutation.
+    /// </summary>
+    public MoveCheck CheckBuyFromForeignColony(Unit ship, Position colonyPos, string goodsId, int amount)
+    {
+        MoveCheck gate = CheckForeignColonyTrade(ship, colonyPos, goodsId, amount, out Colony? colony, out Player? owner);
+        if (!gate.Allowed)
+        {
+            return gate;
+        }
+        if (colony!.StoreOf(goodsId) < amount)
+        {
+            return MoveCheck.No($"The colony does not have {amount} {goodsId} to sell.");
+        }
+        int price = ForeignColonyAskPrice(owner!, goodsId, amount);
+        if (PlayerById(ship.OwnerId)!.Gold < price)
+        {
+            return MoveCheck.No("You cannot afford that.");
+        }
+        return MoveCheck.Yes(price);
+    }
+
+    /// <summary>
+    /// Buys goods out of the adjacent rival colony's warehouse into <paramref name="ship"/>'s hold for gold (86d3fq0dj,
+    /// FreeCol <c>moveTrade</c>): the goods leave the rival warehouse and go aboard; the trader pays from its treasury and
+    /// the rival owner is credited. No European market tax, no home-market move; ends the ship's turn. Draws no RNG.
+    /// Guarded by <see cref="CheckBuyFromForeignColony"/>.
+    /// </summary>
+    /// <returns>The gold the trader paid.</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBuyFromForeignColony"/>.</exception>
+    public int BuyFromForeignColony(Unit ship, Position colonyPos, string goodsId, int amount)
+    {
+        MoveCheck check = CheckBuyFromForeignColony(ship, colonyPos, goodsId, amount);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+        int price = check.Cost;
+        Colony colony = ColonyAt(colonyPos)!;
+        Player owner = PlayerById(colony.OwnerId)!;
+        colony.AddGoods(goodsId, -amount);         // drained from the rival colony's warehouse (FreeCol moveGoods settlement→unit)
+        ship.AddCargo(goodsId, amount);
+        PlayerById(ship.OwnerId)!.Gold -= price;   // the trader pays…
+        owner.Gold += price;                       // …and the rival owner is credited
+        ship.MovementLeft = 0;                     // opening a trade session ends the ship's turn
+        return price;
+    }
+
+    /// <summary>The lot's value at the rival colony owner's market <b>bid</b> (what a foreign port pays the trader for goods sold in) — the foreign-trade sell price (FreeCol values a foreign-colony sale at the local market bid).</summary>
+    private int ForeignColonyBidPrice(Player owner, string goodsId, int amount) => owner.Market.BidPrice(goodsId) * amount;
+
+    /// <summary>The lot's cost at the rival colony owner's market <b>ask</b> (what a foreign port charges the trader for goods bought out) — the foreign-trade buy price.</summary>
+    private int ForeignColonyAskPrice(Player owner, string goodsId, int amount) => owner.Market.AskPrice(goodsId) * amount;
+
+    /// <summary>
+    /// The shared precondition gate for a carrier trading at a rival colony (sell or buy): the ship is a carrier on the
+    /// map adjacent to (or on) the colony tile, the colony belongs to a <b>different</b> colonial power the trader's owner
+    /// holds <see cref="CanTradeWithForeignColonies"/> for and is <b>not at war with</b>, the amount is positive, and the
+    /// good is a real, tradeable ruleset type. Emits the resolved <paramref name="colony"/> and its <paramref name="owner"/>
+    /// for the caller's price step. Returns an allowed <see cref="MoveCheck.Yes(int)"/> (cost 0 — the caller sets the real
+    /// price) or the first failing reason. No RNG, no mutation.
+    /// </summary>
+    private MoveCheck CheckForeignColonyTrade(Unit ship, Position colonyPos, string goodsId, int amount, out Colony? colony, out Player? owner)
+    {
+        colony = null;
+        owner = null;
+        if (!ship.Type.IsCarrier || !ship.IsOnMap)
+        {
+            return MoveCheck.No("Only a ship on the map can trade with a colony.");
+        }
+        if (!CanTradeWithForeignColonies(ship.OwnerId))
+        {
+            return MoveCheck.No("You cannot trade with foreign colonies (requires Jan de Witt).");
+        }
+        if (!Map.InBounds(colonyPos))
+        {
+            return MoveCheck.No("Target is off the map.");
+        }
+        if (ship.Position != colonyPos && !ship.Position.IsAdjacentTo(colonyPos))
+        {
+            return MoveCheck.No("The ship must be next to the colony to trade.");
+        }
+        if (ColonyAt(colonyPos) is not { } c)
+        {
+            return MoveCheck.No("There is no colony to trade with there.");
+        }
+        if (c.OwnerId == ship.OwnerId || !IsColonialPlayer(c.OwnerId))
+        {
+            return MoveCheck.No("That is not a rival colony.");
+        }
+        if (StanceBetween(ship.OwnerId, c.OwnerId) == Stance.War)
+        {
+            return MoveCheck.No("You are at war with that power — make peace before trading.");
+        }
+        if (amount <= 0)
+        {
+            return MoveCheck.No("Nothing to trade.");
+        }
+        if (!Ruleset.GoodsTypes.Any(g => g.Id == goodsId))
+        {
+            return MoveCheck.No("That is not a tradeable good.");
+        }
+        colony = c;
+        owner = PlayerById(c.OwnerId);
+        return MoveCheck.Yes(0);
+    }
+
+    // ---- Demand tribute from a rival EUROPEAN colony (86d3fq0ev, FreeCol moveTribute → makePeaceTreaty(TRIBUTE) + a gold clause) ----
+
+    /// <summary>Tension the demanding power gains in the rival's eyes when it shakes down a European colony, paid or not (mirrors the native-demand insult; FreeCol routes a European tribute through diplomacy, where the threat sours relations either way).</summary>
+    internal const int TensionDemandTribute = 200;
+
+    /// <summary>The outcome of a <see cref="DemandTributeFromColony(Unit, Position)"/> attempt: <see cref="Paid"/> says whether the rival colony yielded, and <see cref="Gold"/> is the tribute extracted (0 on a refusal). Mirrors the native <see cref="TributeResult"/>.</summary>
+    /// <param name="Paid">True when the rival paid tribute (gold &gt; 0); false when it refused.</param>
+    /// <param name="Gold">The gold extracted (0 on a refusal).</param>
+    public readonly record struct EuropeanTributeResult(bool Paid, int Gold);
+
+    /// <summary>
+    /// Whether <paramref name="unit"/> may demand tribute from the <b>rival European colony</b> at <paramref name="target"/>
+    /// now (86d3fq0ev, FreeCol <c>moveTribute</c>'s European branch). The European analogue of
+    /// <see cref="CheckDemandTribute"/>: a colonial (non-native) unit with offensive strength and movement left, standing
+    /// on or beside a colony that belongs to a <b>met</b> rival colonial power (a stance is recorded — you cannot shake
+    /// down a power you have never met). Unlike the native demand, war is not required — the threat of force is the lever
+    /// at any non-uncontacted stance. A read oracle (ADR-006) — no RNG, no mutation.
+    /// </summary>
+    public MoveCheck CheckDemandTributeFromColony(Unit unit, Position target)
+    {
+        if (!unit.IsOnMap)
+        {
+            return MoveCheck.No("The unit is at sea or in Europe.");
+        }
+        if (unit.IsNative)
+        {
+            return MoveCheck.No("Native units do not demand tribute of colonies.");
+        }
+        if (!Map.InBounds(target))
+        {
+            return MoveCheck.No("Target is off the map.");
+        }
+        if (!unit.Position.IsAdjacentTo(target) && unit.Position != target)
+        {
+            return MoveCheck.No("Move next to the colony to demand tribute.");
+        }
+        if (unit.MovementLeft <= 0)
+        {
+            return MoveCheck.No("No movement left this turn.");
+        }
+        if (OffenceBase(unit) <= 0)
+        {
+            return MoveCheck.No($"A {unit.Type.ShortName} has no offensive strength — arm it first.");
+        }
+        if (ColonyAt(target) is not { } colony || colony.OwnerId == unit.OwnerId || !IsColonialPlayer(colony.OwnerId))
+        {
+            return MoveCheck.No("There is no rival colony to demand tribute of there.");
+        }
+        if (StanceBetween(unit.OwnerId, colony.OwnerId) == Stance.Uncontacted)
+        {
+            return MoveCheck.No("You have not met that power.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>The gold a rival colony's treasury that the per-demand tribute cap draws from (mirrors the native <c>TributeGoldCap</c> = 100): a single demand never extracts more than this even from a rich, cowed rival.</summary>
+    internal const int EuropeanTributeGoldCap = 100;
+
+    /// <summary>
+    /// The tribute a rival colony would yield to a demand right now (86d3fq0ev), as a pure function of the
+    /// <b>military strength ratio</b> of the demander over the colony's owner and one RNG draw from
+    /// <paramref name="random"/> — faithful to FreeCol routing a European tribute through <c>acceptDiplomaticTrade</c>,
+    /// whose gold/stance verdict is strength-ratio-gated. A rival that is badly outmatched pays; an even or stronger one
+    /// refuses:
+    /// <list type="bullet">
+    /// <item>ratio &lt; 0.5 (the demander is the weaker side) → refuses outright (0, no RNG drawn) — it will not be cowed.</item>
+    /// <item>ratio in [0.5, 0.66] (an even match) → pays a token <c>roll·(ratio−0.5)·2</c> share, capped at
+    /// <see cref="EuropeanTributeGoldCap"/>, but never more than its owner's treasury.</item>
+    /// <item>ratio &gt; 0.66 (the demander dominates) → pays the full <c>roll</c> share, capped, treasury-limited.</item>
+    /// </list>
+    /// The <c>roll</c> is <c>random.Next(EuropeanTributeGoldCap + 1)</c> (0..100). <c>internal</c> so the band rule can be
+    /// unit-tested directly with an injected RNG (ADR-006).
+    /// </summary>
+    internal int EvaluateColonyTributeDemand(Colony colony, int demanderId, IGameRandom random)
+    {
+        Player? owner = PlayerById(colony.OwnerId);
+        if (owner is null)
+        {
+            return 0;
+        }
+        double ratio = StrengthRatio(demanderId, colony.OwnerId);
+        if (ratio < 0.5)
+        {
+            return 0; // the demander is the weaker side — the rival refuses, no RNG drawn (FreeCol's strength gate)
+        }
+        int roll = random.Next(EuropeanTributeGoldCap + 1); // 0..100
+        int share = ratio > 0.66
+            ? roll                                          // dominant → full roll
+            : (int)Math.Round(roll * (ratio - 0.5) * 2.0, MidpointRounding.AwayFromZero); // even match → token share scaling 0→1 across [0.5,0.66]
+        return Math.Min(Math.Min(share, EuropeanTributeGoldCap), Math.Max(0, owner.Gold));
+    }
+
+    /// <summary>
+    /// Demands tribute from the rival European colony at <paramref name="target"/> under threat of force (86d3fq0ev,
+    /// FreeCol <c>moveTribute</c>'s European branch — <c>makePeaceTreaty(TRIBUTE)</c> + a <see cref="Diplomacy.GoldTradeItem"/>
+    /// the rival pays). The colony's owner weighs the threat by the military strength ratio
+    /// (<see cref="EvaluateColonyTributeDemand"/>): a badly-outmatched rival pays gold out of its treasury to the demander;
+    /// an even-or-stronger one refuses. <b>Either way the demand is an act of aggression</b> — the rival's tension toward
+    /// the demander rises by <see cref="TensionDemandTribute"/> (200), which (through the existing tension→stance machine)
+    /// can tip a strained peace toward war — and the unit's turn ends. Paid gold moves from the rival owner's treasury to
+    /// the demander's. The amount draws from the <b>demander's own RNG stream</b> (<see cref="RandomFor"/>), so a foreign
+    /// power demanding never perturbs the human's stream 0 (ADR-009).
+    /// </summary>
+    /// <returns>Whether tribute was paid and how much (0 on a refusal).</returns>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckDemandTributeFromColony"/>.</exception>
+    public EuropeanTributeResult DemandTributeFromColony(Unit unit, Position target) =>
+        DemandTributeFromColony(unit, target, RandomFor(PlayerById(unit.OwnerId) ?? _human));
+
+    /// <summary>The European-tribute resolution drawing from an explicit RNG (tests inject a fixed RNG to force the rolled amount), mirroring the native <see cref="DemandTribute(Unit, Position, IGameRandom)"/> overload.</summary>
+    internal EuropeanTributeResult DemandTributeFromColony(Unit unit, Position target, IGameRandom random)
+    {
+        MoveCheck check = CheckDemandTributeFromColony(unit, target);
+        if (!check.Allowed)
+        {
+            throw new InvalidMoveException(check.Reason!);
+        }
+
+        Colony colony = ColonyAt(target)!;
+        Player owner = PlayerById(colony.OwnerId)!;
+        int gold = EvaluateColonyTributeDemand(colony, unit.OwnerId, random);
+        if (gold > 0)
+        {
+            owner.Gold -= gold;                                  // paid out of the rival owner's treasury…
+            (PlayerById(unit.OwnerId) ?? _human).Gold += gold;   // …to the demander
+        }
+        // Demanding is an act of aggression whether or not they paid — the rival resents the demander (directional, FreeCol
+        // routes it through the tension machinery), which the tension→stance machine may later escalate to war.
+        ChangeTension(colony.OwnerId, unit.OwnerId, TensionDemandTribute, symmetric: false);
+        unit.MovementLeft = 0; // the demand ends the unit's turn
+        return new EuropeanTributeResult(gold > 0, gold);
+    }
+
     // ---- Stance-change tension modifiers (86d3c9u3z) ----
 
     /// <summary>Tension applied to a colonial pair when they ally (FreeCol <c>Tension.ALLIANCE_MODIFIER</c>).</summary>
@@ -198,7 +538,7 @@ public sealed partial class Game
     private const int TensionCeaseFireModifier = -250;
 
     /// <summary>Tension applied to a colonial pair when war resumes from a cease-fire (FreeCol <c>Tension.RESUME_WAR_MODIFIER</c>).</summary>
-    private const int TensionResumeWarModifier = 750;
+    internal const int TensionResumeWarModifier = 750;
 
     /// <summary>Tension a victim gains toward the power that incited war against it (FreeCol <c>Tension.TENSION_ADD_WAR_INCITER</c>).</summary>
     internal const int TensionWarInciter = 250;

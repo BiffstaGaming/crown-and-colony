@@ -51,6 +51,9 @@ public partial class NegotiationPanel : PanelContainer
     /// <summary>When the panel was opened by a scout standing at a rival colony, the colony being negotiated with (so the proposer list is pinned to its owner); null for the general diplomacy view.</summary>
     private int? _scoutColonyOwnerId;
 
+    /// <summary>When the panel is pinned to a specific rival colony (opened via <see cref="OpenForColony"/>), that colony — the gate for the carrier-trade and demand-tribute affordances surfaced in the pinned view (86d3fq0dj / 86d3fq0ev); null in the general diplomacy view.</summary>
+    private Colony? _pinnedColony;
+
     /// <summary>When non-null, the panel is in scout-mission-menu mode (Spy / Negotiate) for the rival colony at this owner, rather than the diplomacy offer/propose view.</summary>
     private (Colony Colony, Action OnSpy, Action OnNegotiate)? _scoutMissions;
 
@@ -85,14 +88,15 @@ public partial class NegotiationPanel : PanelContainer
     /// </summary>
     public void OpenForColony(Game game, Colony rivalColony, Action onChanged)
     {
-        Init(game, onChanged, scoutColonyOwnerId: rivalColony.OwnerId);
+        Init(game, onChanged, scoutColonyOwnerId: rivalColony.OwnerId, pinnedColony: rivalColony);
     }
 
-    private void Init(Game game, Action onChanged, int? scoutColonyOwnerId)
+    private void Init(Game game, Action onChanged, int? scoutColonyOwnerId, Colony? pinnedColony = null)
     {
         _game = game;
         _onChanged = onChanged;
         _scoutColonyOwnerId = scoutColonyOwnerId;
+        _pinnedColony = pinnedColony;
         _scoutMissions = null;
         _builderTargetId = null;
         _clauses.Clear();
@@ -120,6 +124,7 @@ public partial class NegotiationPanel : PanelContainer
         _game = game;
         _onChanged = () => { };
         _scoutColonyOwnerId = rivalColony.OwnerId;
+        _pinnedColony = null;
         _scoutMissions = (rivalColony, onSpy, onNegotiate);
         _builderTargetId = null;
         _clauses.Clear();
@@ -236,6 +241,85 @@ public partial class NegotiationPanel : PanelContainer
 
         BuildPendingOffers(dynamic);
         BuildTargetChooser(dynamic);
+        BuildPinnedColonyActions(dynamic);
+    }
+
+    /// <summary>
+    /// The carrier-trade (86d3fq0dj) and demand-tribute (86d3fq0ev) affordances surfaced when the panel is pinned to a
+    /// specific rival colony (<see cref="OpenForColony"/>). Each is gated by its <see cref="Game"/> oracle against the
+    /// first eligible human unit standing at the colony (a carrier with cargo for trade, an armed unit for tribute), so a
+    /// kind with no eligible unit/ability simply does not appear — the panel invents no rules, it only forwards the
+    /// command. A no-op in the general diplomacy view (no pinned colony).
+    /// </summary>
+    private void BuildPinnedColonyActions(VBoxContainer dynamic)
+    {
+        if (_pinnedColony is not { } colony)
+        {
+            return;
+        }
+
+        // --- Trade goods at this rival colony (a human carrier on/beside it, de Witt's ability, not at war) ---
+        Unit? trader = _game.Units.FirstOrDefault(u =>
+            u.OwnerId == HumanId && u.Type.IsCarrier && u.IsOnMap
+            && (u.Position == colony.Position || u.Position.IsAdjacentTo(colony.Position)));
+        if (trader is not null && _game.CanTradeWithForeignColonies(HumanId))
+        {
+            // Sell: the first good aboard the trader the colony can pay for.
+            (string GoodsId, int Amount)? sell = _game.Ruleset.GoodsTypes
+                .Select(g => (g.Id, Amount: Math.Min(100, trader.CargoOf(g.Id))))
+                .Where(g => g.Amount > 0 && _game.CheckSellToForeignColony(trader, colony.Position, g.Id, g.Amount).Allowed)
+                .Select(g => ((string, int)?)(g.Id, g.Amount))
+                .FirstOrDefault();
+            if (sell is { } s)
+            {
+                dynamic.AddChild(Heading("Trade at this colony"));
+                int quote = _game.CheckSellToForeignColony(trader, colony.Position, s.GoodsId, s.Amount).Cost;
+                dynamic.AddChild(ActionButton("TradeSell", $"Sell {s.Amount} {Short(s.GoodsId)} for {quote}g", () =>
+                {
+                    int got = _game.SellToForeignColony(trader, colony.Position, s.GoodsId, s.Amount);
+                    _outcome = $"You sold {s.Amount} {Short(s.GoodsId)} to the {PowerLabel(colony.OwnerId)} for {got} gold.";
+                    Changed();
+                }));
+            }
+
+            // Buy: the first good the colony holds that the trader can afford.
+            (string GoodsId, int Amount)? buy = _game.Ruleset.GoodsTypes
+                .Select(g => (g.Id, Amount: Math.Min(100, colony.StoreOf(g.Id))))
+                .Where(g => g.Amount > 0 && _game.CheckBuyFromForeignColony(trader, colony.Position, g.Id, g.Amount).Allowed)
+                .Select(g => ((string, int)?)(g.Id, g.Amount))
+                .FirstOrDefault();
+            if (buy is { } b)
+            {
+                if (sell is null)
+                {
+                    dynamic.AddChild(Heading("Trade at this colony"));
+                }
+                int quote = _game.CheckBuyFromForeignColony(trader, colony.Position, b.GoodsId, b.Amount).Cost;
+                dynamic.AddChild(ActionButton("TradeBuy", $"Buy {b.Amount} {Short(b.GoodsId)} for {quote}g", () =>
+                {
+                    int paid = _game.BuyFromForeignColony(trader, colony.Position, b.GoodsId, b.Amount);
+                    _outcome = $"You bought {b.Amount} {Short(b.GoodsId)} from the {PowerLabel(colony.OwnerId)} for {paid} gold.";
+                    Changed();
+                }));
+            }
+        }
+
+        // --- Demand tribute under threat of force (an armed human unit on/beside the colony) ---
+        Unit? bully = _game.Units.FirstOrDefault(u =>
+            u.OwnerId == HumanId && u.IsOnMap
+            && (u.Position == colony.Position || u.Position.IsAdjacentTo(colony.Position))
+            && _game.CheckDemandTributeFromColony(u, colony.Position).Allowed);
+        if (bully is not null)
+        {
+            dynamic.AddChild(ActionButton("DemandTribute", $"Demand tribute from the {PowerLabel(colony.OwnerId)}", () =>
+            {
+                Game.EuropeanTributeResult result = _game.DemandTributeFromColony(bully, colony.Position);
+                _outcome = result.Paid
+                    ? $"The {PowerLabel(colony.OwnerId)} paid {result.Gold} gold in tribute."
+                    : $"The {PowerLabel(colony.OwnerId)} refused your demand.";
+                Changed();
+            }));
+        }
     }
 
     private string DefaultInfo()
@@ -511,6 +595,20 @@ public partial class NegotiationPanel : PanelContainer
                 }));
             }
             dynamic.AddChild(stanceRow);
+        }
+
+        // --- Declare war (86d3fq0bf): a UNILATERAL act, not a treaty clause the rival accepts. Shown only when the rival
+        // is a contacted at-peace power (CanDeclareWar); it forwards straight to Game.DeclareWar and ends the builder. ---
+        if (_game.CanDeclareWar(HumanId, targetId))
+        {
+            dynamic.AddChild(ActionButton("DeclareWar", $"Declare war on the {PowerLabel(targetId)}", () =>
+            {
+                _game.DeclareWar(HumanId, targetId); // csChangeStance(WAR) — mutual war + the stance-change tension spike
+                _outcome = $"You declared war on the {PowerLabel(targetId)}.";
+                _builderTargetId = null;
+                _clauses.Clear();
+                Changed();
+            }));
         }
     }
 
