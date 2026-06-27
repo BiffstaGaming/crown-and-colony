@@ -144,6 +144,8 @@ public sealed partial class Game
     private readonly List<MonarchDecreeNotice> _monarchDecreeNotices = []; // transient: immediate (no-choice) monarch actions taken this turn (not saved; empty before the grace period)
     private readonly List<FirstContactNotice> _firstContactNotices = []; // transient: the human's first contacts with rival colonial powers this turn (not saved)
     private readonly List<StanceChangeNotice> _stanceChangeNotices = []; // transient: turn-driven (tension-derived) stance shifts involving the human this turn (not saved)
+    private readonly List<PriceChangeNotice> _priceChangeNotices = []; // transient: the human's Europe-market goods whose price moved this turn (not saved; rebuilt each EndTurn by comparing the live ask prices to the per-turn baseline)
+    private readonly Dictionary<string, int> _priceSnapshot = []; // transient: each human-market good's buy (ask) price as the human last saw it (the baseline _priceChangeNotices compares against; seeded at New/Restore, re-baselined each EndTurn — not saved)
     private readonly List<TemporaryModifier> _temporaryModifiers = []; // transient: duration-bounded modifiers currently in force; empty in classic (nothing registers one), so never saved and the default game is byte-identical (86d3drpgz)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
@@ -933,6 +935,21 @@ public sealed partial class Game
     /// / deterministic (ADR-009).
     /// </summary>
     public IReadOnlyList<StanceChangeNotice> StanceChangeNotices => _stanceChangeNotices;
+
+    /// <summary>
+    /// The human's Europe-market goods whose <b>price changed</b> over the most recent <see cref="EndTurn"/> — one entry
+    /// per good whose buy (ask) price differs from the baseline (the price the player last saw, recorded at the end of the
+    /// previous turn; FreeCol <c>ServerPlayer.csFlushMarket</c>'s <c>model.market.priceIncrease</c>/<c>priceDecrease</c>
+    /// message). The market only moves when something trades (a Europe sell/buy, a custom-house auto-sale, a trade-route
+    /// delivery), and that movement returns nothing the human UI reads after End Turn, so the game keeps a per-turn ask
+    /// baseline (seeded at <see cref="New"/>/<see cref="Restore"/>) and re-derives this list when the turn resolves, then
+    /// re-baselines. The watched window spans the whole turn — the human's own pre-End-Turn trades and the turn's
+    /// custom-house/trade-route activity. Transient per-turn UI scratch (rebuilt each <c>EndTurn</c>, never saved); the
+    /// presentation reads it after the turn to tell the player which goods rose or fell. Emitted in the market's stable
+    /// goods order, so the sequence is deterministic. RNG-free (ADR-009) — it only compares two recorded prices, drawing
+    /// no randomness. Empty when no human-market price moved this turn (the common case).
+    /// </summary>
+    public IReadOnlyList<PriceChangeNotice> PriceChangeNotices => _priceChangeNotices;
 
     /// <summary>
     /// The duration-bounded modifiers currently registered (FreeCol's temporary <c>Modifier</c>s — those carrying a
@@ -4468,6 +4485,7 @@ public sealed partial class Game
 
         game.GenerateOffers(human); // Congress choices available from the first turn
         game.InitRecruitDock(human); // three recruits waiting on the Europe dock from turn 1
+        game.SeedPriceBaseline(); // baseline the price-change watch at the ruleset seed prices, so a turn-1 Europe trade is caught (86d3fpz0p)
 
         return game;
     }
@@ -4844,6 +4862,7 @@ public sealed partial class Game
         }
 
         game.RefreshSonsOfLibertyModifiers(); // re-derive each colony's standing SoL bonus from its owner's Congress (Bolívar)
+        game.SeedPriceBaseline(); // baseline the price-change watch at the restored (already-moved) prices, so a reload does not re-announce old changes (86d3fpz0p)
         return game;
     }
 
@@ -5165,6 +5184,7 @@ public sealed partial class Game
             SyncPassengers(unit); // any colonists aboard move with the ship
         }
         ActivateSentries(unit); // an enemy stepping adjacent wakes any sentried unit guarding the spot (FreeCol csActivateSentries)
+        NoteFirstLandfall(unit); // a human land unit stepping ashore for the first time triggers the one-shot name-the-new-world prompt (FreeCol csMove firstLanding)
         TryExploreRumour(unit, target); // a land unit stepping onto a Lost City Rumour investigates it (may consume/transform the unit)
     }
 
@@ -6938,6 +6958,7 @@ public sealed partial class Game
         unit.Position = target;
         unit.MovementLeft = 0; // disembarking ends the unit's turn
         Reveal(unit);
+        NoteFirstLandfall(unit); // the classic Col1 first landing: a human colonist stepping ashore off the caravel triggers the one-shot name prompt
         TryExploreRumour(unit, target); // an amphibious landing onto a Lost City Rumour investigates it too (FreeCol explores on any move)
     }
 
@@ -7848,6 +7869,7 @@ public sealed partial class Game
         _monarchDecreeNotices.Clear(); // and any immediate (no-choice) King's decrees this turn (empty before the monarch grace period)
         _firstContactNotices.Clear(); // and the human's first contacts with rival colonial powers this turn (FP-6a; DetectColonialContacts re-fills it)
         _stanceChangeNotices.Clear(); // and any turn-driven (tension-derived) stance shifts involving the human this turn (FP-6b; UpdateColonialStances re-fills it)
+        _priceChangeNotices.Clear(); // and any Europe-market price moves from last turn (re-derived below by comparing the live prices to the baseline snapshot)
         _rumourNotices.Clear(); // and any rumour outcomes the human explored this turn (normally drained by the UI mid-turn; cleared here belt-and-braces)
         ClearPendingHumanProposals(); // and this round's AI alliance/cease-fire offers to the human (86d3drn4f; drained by the negotiation UI, cleared here belt-and-braces so the seam holds only the current round)
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
@@ -7884,6 +7906,7 @@ public sealed partial class Game
             // A ship still under repair stays pinned at 0 moves (FreeCol forced repair); everyone else resets.
             unit.MovementLeft = unit.IsUnderRepair ? 0 : InitialMovement(unit); // base + role bonus (dragoon/scout +9)
         }
+        DetectMarketPriceChanges(); // compare each human-market good's ask price to the baseline (last turn's prices) and emit a notice for each that moved (FreeCol csFlushMarket); then re-baseline for next turn
         RecordYearlyDemographics(CurrentYear); // snapshot the human's population/gold/score for the year now ending (once per year; see Game.Demographics)
         Turn++;
         RemoveExpiredTemporaryModifiers(); // strip any duration-bounded modifier now out of date for the new turn (FreeCol's per-new-turn temporary-modifier removal) — a no-op in classic (registry empty)

@@ -768,7 +768,7 @@ public class RiverTests
 
         SaveGame save = SaveGame.From(game);
         Assert.NotNull(save.Improvements);
-        Assert.Equal(65, SaveGame.CurrentVersion);
+        Assert.Equal(66, SaveGame.CurrentVersion);
 
         Game loaded = SaveGame.FromJson(save.ToJson()).Restore(Classic);
         // The river layer round-trips exactly, INCLUDING each tile's stored magnitude (small vs large) — the renderer

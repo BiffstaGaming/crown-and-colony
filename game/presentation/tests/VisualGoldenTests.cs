@@ -110,6 +110,8 @@ public class VisualGoldenTests
         var dest = origin.Neighbours().First(n =>
             game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater && game.CheckMove(unit, n).Allowed);
         game.MoveUnit(unit, dest);
+        game.NameNewWorld("Golden"); // stepping ashore is now a first landfall; pre-answer the name prompt so the
+                                     // incidental naming dialog (86d3fq1fn) does not overlay this fog-rendering golden
         controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
         controller.GetNode<Camera2D>("Camera").Position = MapView.TileCentre(origin);
         await runner.SimulateFrames(3);

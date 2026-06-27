@@ -198,6 +198,12 @@ public partial class GameController : Node2D
     private bool _dirty;
 
     /// <summary>
+    /// Whether the "name the new world" dialog is currently on screen (86d3fq1fn) — a re-entrancy guard so a second
+    /// move/refresh while the modal prompt is open does not stack a second copy of it. Cleared when the dialog closes.
+    /// </summary>
+    private bool _newWorldNameDialogOpen;
+
+    /// <summary>
     /// Unit ids the player has <b>skipped</b> for this turn (Space — 86d3f0vuy). A skipped unit is passed over by the
     /// W-cycle (<see cref="SelectNextUnitToMove"/>) until the set clears at turn rollover (in <see cref="OnEndTurnPressed"/>).
     /// Session-only / controller-side and <b>never persisted</b> (ADR-009) — it's a transient input convenience, not game
@@ -636,6 +642,7 @@ public partial class GameController : Node2D
             .Concat(_game.FirstContactNotices.Select(n => Logged(MessageCategory.Diplomacy, FormatFirstContactNotice(n))))         // the human met a new colonial power (FP-6a)
             .Concat(_game.StanceChangeNotices.Select(n => Logged(MessageCategory.Diplomacy, FormatStanceChangeNotice(n))))         // a turn-driven stance shift with a rival (FP-6b)
             .Concat(_game.CustomHouseSaleNotices.Select(n => Logged(MessageCategory.Economy, FormatCustomHouseSaleNotice(n))))
+            .Concat(_game.PriceChangeNotices.Select(n => Logged(MessageCategory.Economy, FormatPriceChangeNotice(n))))             // a Europe-market good's price rose or fell (86d3fpz0p)
             .ToList();
         if (_game.IsHumanDefeated)
         {
@@ -683,6 +690,7 @@ public partial class GameController : Node2D
             _demandPanel.Hide();
         }
 
+        MaybePromptNewWorldName(); // a goto/auto-move that landed a unit ashore this turn may owe the name-the-new-world prompt (86d3fq1fn)
         MaybeAutosave();
     }
 
@@ -749,6 +757,19 @@ public partial class GameController : Node2D
     /// <summary>Turns a custom-house auto-sale into a turn-message row ("💰 Your custom house in X sold N goods for G gold.").</summary>
     private string FormatCustomHouseSaleNotice(CustomHouseSaleNotice notice) =>
         $"💰 Your custom house in {notice.ColonyName} sold {notice.Amount} {_game.Ruleset.Goods(notice.GoodsId).ShortName} for {notice.Gold} gold.";
+
+    /// <summary>
+    /// Turns a Europe-market price-change notice into a turn-message row (FreeCol's <c>model.market.priceIncrease</c>/
+    /// <c>priceDecrease</c> "told about price" message). Phrases it as the good rising or falling, and surfaces the new
+    /// buy/sell prices so the player can react without opening the Trade report. The notice carries the buy (ask) price
+    /// it keys off; the sell (bid) rides alongside.
+    /// </summary>
+    private string FormatPriceChangeNotice(PriceChangeNotice notice)
+    {
+        string goods = _game.Ruleset.Goods(notice.GoodsId).ShortName;
+        string direction = notice.NewPrice > notice.OldPrice ? "rose" : "fell";
+        return $"⚖ The price of {goods} {direction} to {notice.SellPrice}/{notice.NewPrice} (sell/buy).";
+    }
 
     /// <summary>Turns a warehouse-overflow notice into a turn-message row (goods wasted over the warehouse cap).</summary>
     private string FormatWarehouseOverflowNotice(WarehouseOverflowNotice notice) =>
@@ -1251,6 +1272,58 @@ public partial class GameController : Node2D
         RefreshView();
     }
 
+    /// <summary>
+    /// Opens the one-shot <b>name-the-new-world</b> dialog when the human has just made first landfall but not yet named
+    /// the continent (FreeCol <c>newLandNameHandler</c> — Col1 prompts on the first landing; `86d3fq1fn`). Gated on the
+    /// engine's <see cref="Game.NewWorldNamePending"/> oracle (the rule lives in GameLogic, ADR-006), so it fires exactly
+    /// once per game and never for a goto/auto-move that has already been answered. A code-built modal (no scene edit): a
+    /// text field pre-filled with the engine's default name plus an OK button; confirming (or pressing Enter) forwards the
+    /// typed name to <see cref="Game.NameNewWorld"/> (a blank falls back to the default, decided in GameLogic). The
+    /// re-entrancy guard (<see cref="_newWorldNameDialogOpen"/>) keeps a second move/refresh from stacking the prompt.
+    /// </summary>
+    private void MaybePromptNewWorldName()
+    {
+        if (_newWorldNameDialogOpen || !_game.NewWorldNamePending)
+        {
+            return; // already prompting, or the world is already named / no landfall yet
+        }
+        _newWorldNameDialogOpen = true;
+
+        var dialog = new AcceptDialog
+        {
+            Title = "The New World",
+            OkButtonText = "Name it",
+            Exclusive = true,
+        };
+        var nameField = new LineEdit
+        {
+            Name = "NewWorldNameField",
+            Text = Game.DefaultNewWorldName, // the engine's fixed default (RNG-free); the player may type over it
+            CustomMinimumSize = new Vector2(220, 0),
+        };
+        nameField.SelectAll();
+        // A short prompt label above the field, in a column so the dialog lays them out vertically.
+        var column = new VBoxContainer();
+        column.AddChild(new Label { Text = "Your explorers have reached a new land. What shall it be called?" });
+        column.AddChild(nameField);
+        dialog.AddChild(column);
+
+        void Confirm()
+        {
+            _game.NameNewWorld(nameField.Text); // GameLogic decides the blank→default fallback (ADR-006)
+            MarkDirty();                         // the named world is unsaved state (save v66)
+            _notice = $"You have named the New World \"{_game.NewWorldName}\".";
+            _newWorldNameDialogOpen = false;
+            dialog.QueueFree();
+            RefreshView();
+        }
+        dialog.Confirmed += Confirm;
+        nameField.TextSubmitted += _ => { dialog.Hide(); Confirm(); }; // Enter in the field confirms too
+        AddChild(dialog);
+        dialog.PopupCentered();
+        nameField.GrabFocus();
+    }
+
     private void HandleTileClick(Position tile)
     {
         if (!_game.Map.InBounds(tile))
@@ -1315,6 +1388,7 @@ public partial class GameController : Node2D
                 _notice = $"{passenger.Type.ShortName} went ashore at ({tile.X},{tile.Y}).";
                 _selectedUnit = passenger;
                 RefreshView();
+                MaybePromptNewWorldName(); // the classic first landing: a colonist stepping ashore may owe the name-the-new-world prompt (86d3fq1fn)
                 return;
             }
         }
@@ -1383,6 +1457,7 @@ public partial class GameController : Node2D
         }
 
         RefreshView();
+        MaybePromptNewWorldName(); // a land unit stepping ashore for the first time may owe the name-the-new-world prompt (86d3fq1fn)
     }
 
     /// <summary>

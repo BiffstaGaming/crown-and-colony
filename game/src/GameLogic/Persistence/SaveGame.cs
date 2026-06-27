@@ -20,7 +20,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 65;
+    public const int CurrentVersion = 66;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -280,6 +280,18 @@ public sealed record SaveGame
     /// game evolution — so a reloaded game continues on the identical random sequence whether or not it was persisted,
     /// and the soak stays byte-identical and twin-deterministic. (The history log — v58, <see cref="History"/> — is
     /// unchanged at v65; it already round-trips, so the History report has been save-stable since v58.)
+    /// v66 added the human's <b>name for the New World</b> (<see cref="NewWorldName"/> — the continent name the player
+    /// types at the first-landfall prompt, FreeCol <c>Player.newLandName</c> / <c>NameCache.getNewLandName</c>; 86d3fq1fn)
+    /// as a new top-level field. Additive + <b>omitted when the world is unnamed</b> (null), so a game that has not yet
+    /// made landfall (or that never answered the prompt) serialises byte-identically to v65; pre-v66 saves (or any with no
+    /// name) load with the world unnamed exactly as before — the prompt then fires naturally on the next first landfall.
+    /// A non-null name marks the world named <em>and</em> landed-on, so a reloaded named game never re-prompts. Determinism
+    /// (ADR-009): the name is pure UI scratch — set by the player, never fed back into game evolution, drawing no RNG (the
+    /// default suggested name is a fixed string) — so a reloaded game continues on the identical random sequence whether or
+    /// not it was persisted, and the soak (which never makes a human landfall in its window) stays byte-identical and
+    /// twin-deterministic. (The one-shot first-landfall flag is <b>not</b> separately persisted: it is implied by the
+    /// name's presence once answered, and a save taken in the one-turn gap before the player names the world simply
+    /// re-prompts on load — harmless and idempotent.)
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -452,6 +464,17 @@ public sealed record SaveGame
     /// continues on the identical random sequence whether or not it was persisted.
     /// </summary>
     public IReadOnlyList<SavedDemographicSnapshot>? Demographics { get; init; }
+
+    /// <summary>
+    /// The human's name for the New World — the continent name the player typed at the first-landfall prompt (FreeCol
+    /// <c>Player.newLandName</c>; v66, 86d3fq1fn). Additive + <b>omitted when null</b> (the world has not been named — every
+    /// game before the human's first landfall, and the whole pre-landing early game), so an unnamed game serialises
+    /// byte-identically to v65 and pre-v66 saves load the world unnamed (the prompt fires on the next first landfall). A
+    /// non-null name marks the world named <b>and</b> landed-on, so a reloaded named game never re-prompts. Pure UI scratch
+    /// (set by the player, never fed back into game evolution, RNG-free), so a reloaded game continues on the identical
+    /// random sequence whether or not it was persisted.
+    /// </summary>
+    public string? NewWorldName { get; init; }
 
     /// <summary>
     /// The in-session message log — the per-turn player notices the dismissible turn-message panel surfaced after each
@@ -653,6 +676,9 @@ public sealed record SaveGame
                     .Select(d => new SavedDemographicSnapshot(d.Year, d.Population, d.Gold, d.Score))
                     .ToList()
                 : null,
+            // The human's New-World name (v66); omitted when the world is unnamed (the common pre-landfall case), so an
+            // unnamed game stays byte-identical to v65. Only a named world writes the field (WhenWritingNull omits it).
+            NewWorldName = game.NewWorldName,
             NativeSettlements = game.NativeSettlements.Count > 0
                 ? game.NativeSettlements
                     .Select(s => new SavedNativeSettlement(
@@ -928,6 +954,7 @@ public sealed record SaveGame
             game.RestoreDemographics(demographics.Select(d =>
                 new DemographicSnapshot(d.Year, d.Population, d.Gold, d.Score)));
         }
+        game.RestoreNewWorldName(NewWorldName); // v66; pre-v66 / omitted (null) → the world stays unnamed (the prompt fires on the next first landfall)
         if (CitiesOfCibolaRemaining is { } cibolaLeft) // v63; pre-v63 / omitted → the full count of seven remains (the classic count)
         {
             game.SetCitiesOfCibolaRemaining(cibolaLeft);
