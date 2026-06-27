@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
@@ -9,9 +9,9 @@ namespace CrownAndColony.GameLogic.Tests.World;
 
 /// <summary>
 /// New-game world-size / land-mass options (<c>86d3c9w9c</c>, FreeCol <c>MapGeneratorOptions</c>): a player picks the
-/// map size and how much of it is land; the picks thread through <see cref="Game.New"/> â†’
+/// map size and how much of it is land; the picks thread through <see cref="Game.New"/> →
 /// <see cref="MapGenerator.Generate"/>. The presets are "data not code" (<see cref="WorldSizeOptions"/>); the defaults
-/// match the shipped world so a default game is byte-identical. No save-format change â€” map dimensions already persist.
+/// match the shipped world so a default game is byte-identical. No save-format change — map dimensions already persist.
 /// </summary>
 public class WorldSizeOptionsTests
 {
@@ -20,7 +20,7 @@ public class WorldSizeOptionsTests
     [Fact]
     public void EveryPreset_StaysWithinFreeColBounds()
     {
-        // FreeCol's MapGeneratorOptions limits: width 30â€“200, height 20â€“200, land mass 15â€“50%.
+        // FreeCol's MapGeneratorOptions limits: width 30–200, height 20–200, land mass 15–50%.
         Assert.All(WorldSizeOptions.Sizes, s =>
         {
             Assert.InRange(s.Width, 30, 200);
@@ -55,7 +55,7 @@ public class WorldSizeOptionsTests
     [Fact]
     public void TheDefaultLandStyle_IsContinent_AndIndexed()
     {
-        // The shipped default style is Continent (the historical generator) at the default index â€” the dialog pre-selects it.
+        // The shipped default style is Continent (the historical generator) at the default index — the dialog pre-selects it.
         Assert.Equal(LandStyle.Continent, WorldSizeOptions.DefaultLandStyle.Style);
         Assert.Equal(WorldSizeOptions.DefaultLandStyle, WorldSizeOptions.LandStyles[WorldSizeOptions.DefaultLandStyleIndex]);
         // The three FreeCol shapes are offered, Continent first.
@@ -67,7 +67,7 @@ public class WorldSizeOptionsTests
     [Fact]
     public void GameNew_WithDefaultLandStyle_MatchesTheParameterlessDefault()
     {
-        // Passing the default style (Continent) explicitly must equal omitting it â€” the byte-identity contract (ADR-009).
+        // Passing the default style (Continent) explicitly must equal omitting it — the byte-identity contract (ADR-009).
         Game omitted = Game.New(Classic, seed: 31);
         Game continent = Game.New(Classic, seed: 31, landStyle: LandStyle.Continent);
 
@@ -80,7 +80,7 @@ public class WorldSizeOptionsTests
     public void AnIslandsStyledGame_RoundTripsThroughSave_WithNoVersionBump()
     {
         // The landmass style only shapes which tiles are land; the result persists as terrain (since save v2), so a
-        // non-default style needs no new save field/version â€” it round-trips like any generated map.
+        // non-default style needs no new save field/version — it round-trips like any generated map.
         Game game = Game.New(Classic, seed: 23, mapWidth: 56, mapHeight: 38, landStyle: LandStyle.Islands);
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
@@ -94,7 +94,7 @@ public class WorldSizeOptionsTests
     public void GameNew_AtTheDefaultSize_MatchesTheParameterlessDefault()
     {
         // Omitting the world-shape params and passing the shipped defaults must produce the identical map (so the
-        // default new game â€” and the visual goldens/soak baseline that depend on it â€” never shift).
+        // default new game — and the visual goldens/soak baseline that depend on it — never shift).
         Game omitted = Game.New(Classic, seed: 13);
         WorldSize size = WorldSizeOptions.DefaultSize;
         Game explicitDefault = Game.New(Classic, seed: 13, size.Width, size.Height,

@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using CrownAndColony.GameLogic.Combat;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
@@ -12,7 +12,7 @@ using Xunit;
 namespace CrownAndColony.GameLogic.Tests.GameSession;
 
 /// <summary>
-/// Standing unit orders (<c>86d3c9pfh</c>): fortify (dig in for +50% defence â€” FreeCol FORTIFYING â†’ FORTIFIED),
+/// Standing unit orders (<c>86d3c9pfh</c>): fortify (dig in for +50% defence — FreeCol FORTIFYING → FORTIFIED),
 /// sentry (rest), clear-orders, and disband (permanent removal). The order state persists across save/load
 /// (v23) and the fortify bonus flows into the real combat path.
 /// </summary>
@@ -23,7 +23,7 @@ public class UnitOrdersTests
     private const string FreeColonist = "model.unit.freeColonist";
     private const string Caravel = "model.unit.caravel";
 
-    /// <summary>A fixed RNG returning the same NextDouble â€” forces a chosen combat band.</summary>
+    /// <summary>A fixed RNG returning the same NextDouble — forces a chosen combat band.</summary>
     private sealed class FixedRandom(double value) : IGameRandom
     {
         public int Next(int maxExclusive) => 0;
@@ -45,7 +45,7 @@ public class UnitOrdersTests
 
         Assert.Equal(UnitOrders.Fortifying, unit.Orders);
         Assert.Equal(0, unit.MovementLeft); // digging in consumes the turn
-        Assert.False(unit.IsFortified);      // not yet â€” it completes next turn
+        Assert.False(unit.IsFortified);      // not yet — it completes next turn
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public class UnitOrdersTests
 
         Assert.Equal(UnitOrders.Fortified, unit.Orders);
         Assert.True(unit.IsFortified);
-        Assert.True(unit.MovementLeft > 0); // it gets a fresh turn â€” free to stay dug in or move (which wakes it)
+        Assert.True(unit.MovementLeft > 0); // it gets a fresh turn — free to stay dug in or move (which wakes it)
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public class UnitOrdersTests
         var game = Game.New(Classic, Seed);
         Unit unit = game.PlayerUnits.First();
         game.Fortify(unit);
-        game.EndTurn(); // â†’ Fortified, full moves
+        game.EndTurn(); // → Fortified, full moves
         Position step = unit.Position.Neighbours().First(n => game.CheckMove(unit, n).Allowed);
 
         game.MoveUnit(unit, step);
@@ -104,7 +104,7 @@ public class UnitOrdersTests
         double pFortified = CombatModel.WinProbability(
             atk, CombatModel.DefencePower(probe.DefenceBase(brave0), new DefenceContext(TerrainDefenceBonus: terrain, Fortified: true)));
         Assert.True(pFortified < pActive); // sanity: fortifying helps the defender
-        double draw = (pActive + pFortified) / 2; // strictly between â†’ flips the outcome
+        double draw = (pActive + pFortified) / 2; // strictly between → flips the outcome
 
         Game active = SetupAttack(out _, out Unit a1, out Unit b1);
         Assert.Equal(UnitOrders.Active, b1.Orders);
@@ -161,7 +161,7 @@ public class UnitOrdersTests
     [Fact]
     public void Sentry_AutoWakes_WhenAnEnemyMovesAdjacent()
     {
-        // FreeCol csActivateSentries: a sentried unit returns to ACTIVE the instant a hostile unit moves next to it â€”
+        // FreeCol csActivateSentries: a sentried unit returns to ACTIVE the instant a hostile unit moves next to it —
         // so a sentry actually guards. Place a human colonist on sentry, then walk a native brave onto an adjacent tile.
         Game game = Game.New(Classic, Seed);
         // A spot with two free adjacent tiles: one for the brave's start, one for it to step onto next to the sentry.
@@ -177,15 +177,15 @@ public class UnitOrdersTests
         string nation = game.NativeSettlements.First().NationTypeId;
         Unit brave = game.SpawnUnit(Classic.Unit("model.unit.brave"), braveStart, nation);
 
-        Assert.Equal(UnitOrders.Sentry, sentry.Orders);     // still asleep â€” the brave is not adjacent yet
+        Assert.Equal(UnitOrders.Sentry, sentry.Orders);     // still asleep — the brave is not adjacent yet
         game.MoveUnit(brave, adjToSentry);                   // the brave steps next to the sentry
-        Assert.Equal(UnitOrders.Active, sentry.Orders);     // â€¦which wakes the sentry (it guards)
+        Assert.Equal(UnitOrders.Active, sentry.Orders);     // …which wakes the sentry (it guards)
     }
 
     [Fact]
     public void Sentry_DoesNotWake_WhenAFriendlyUnitMovesAdjacent()
     {
-        // The auto-wake fires only for enemies â€” a player's own units don't wake each other's sentries.
+        // The auto-wake fires only for enemies — a player's own units don't wake each other's sentries.
         Game game = Game.New(Classic, Seed);
         Position spot = game.Map.AllPositions().First(p => OpenLand(game, p)
             && p.Neighbours().Count(n => OpenLand(game, n)) >= 2);
@@ -198,7 +198,7 @@ public class UnitOrdersTests
 
         game.MoveUnit(friend, adjToSentry); // a friendly step next to the sentry
 
-        Assert.Equal(UnitOrders.Sentry, sentry.Orders); // stays asleep â€” only an enemy wakes it
+        Assert.Equal(UnitOrders.Sentry, sentry.Orders); // stays asleep — only an enemy wakes it
     }
 
     [Fact]
@@ -256,7 +256,7 @@ public class UnitOrdersTests
         var game = Game.New(Classic, Seed);
         Unit fortifier = game.PlayerUnits.First();
         game.Fortify(fortifier);
-        game.EndTurn(); // â†’ Fortified
+        game.EndTurn(); // → Fortified
         int id = fortifier.Id;
 
         string json = SaveGame.From(game).ToJson();
