@@ -198,6 +198,23 @@ public class AdvisorTests
         Assert.DoesNotContain(advice, r => r.Kind == AdvisorRecommendationKind.LearnSkill);
     }
 
+    [Fact]
+    public void SkillDisplayName_ProducesAllLowercaseWords_ForMultiWordSkillName()
+    {
+        // Regression guard for the Wave 9 review finding: SkillDisplayName was only lowercasing the first character
+        // (i==0) and appending subsequent chars verbatim, producing "expert Ore Miner" instead of "expert ore miner".
+        Game game = Game.New(Classic, Seed);
+        NativeSettlementWithSkill(game, out var settlement, out Position adjacent);
+        Unit colonist = game.SpawnUnit(Classic.Unit(FreeColonist), adjacent);
+
+        var advice = game.AdviseUnit(colonist);
+        Assert.Contains(advice, r => r.Kind == AdvisorRecommendationKind.LearnSkill);
+        string text = advice.First(r => r.Kind == AdvisorRecommendationKind.LearnSkill).Text;
+        // The Text must be all-lowercase words: no mid-sentence uppercase after a space
+        bool midSentenceUpper = text.Contains(' ') && text.Split(' ').Skip(1).Any(w => w.Length > 0 && char.IsUpper(w[0]));
+        Assert.False(midSentenceUpper, $"Skill display text has mid-sentence uppercase: \"{text}\"");
+    }
+
     // ---- Read-only guarantee ----
 
     [Fact]

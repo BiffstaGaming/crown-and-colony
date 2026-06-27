@@ -167,7 +167,7 @@ public sealed partial class Game
             {
                 sb.Append(' ');
             }
-            sb.Append(i == 0 ? char.ToLowerInvariant(c) : c);
+            sb.Append(char.ToLowerInvariant(c));
         }
         return sb.ToString();
     }
