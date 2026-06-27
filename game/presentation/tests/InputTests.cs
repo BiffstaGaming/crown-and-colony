@@ -178,6 +178,48 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task ReplacingAMarkerFarFromItsLastTile_SnapsInsteadOfStreaking()
+    {
+        // 86d3fq26m (Wave 7 integration guard): a unit re-emerging from fog / a ship / Europe many tiles from where its
+        // marker last sat must NOT slide (its LastTileCentre entry isn't pruned while off-map). With the slide forced ON,
+        // re-placing the same unit id beyond MaxSlideTiles (10 king-steps) spawns ZERO UnitMoveAnimation — it snaps.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+
+        var layer = controller.GetNode<Node2D>("MapView/UnitLayer");
+        var mapView = controller.GetNode<Node2D>("MapView");
+        foreach (Node child in layer.GetChildren())
+        {
+            child.QueueFree();
+        }
+        await runner.SimulateFrames(1);
+        UnitMarker.ResetMoveMemory();
+        UnitMoveAnimation.Enabled = true; // so the ONLY thing that can suppress the slide is the distance guard
+
+        var near = new Position(4, 4);
+        var far = new Position(4, 20); // 16 tiles away in Y — a reappearance, well beyond MaxSlideTiles (10)
+
+        var first = new UnitMarker { Position = MapView.TileCentre(near) };
+        first.SetUnit("freeColonist", "default", unitId: 7);
+        layer.AddChild(first);
+        await runner.SimulateFrames(1);
+        first.QueueFree();
+        await runner.SimulateFrames(1);
+
+        var reappeared = new UnitMarker { Position = MapView.TileCentre(far) };
+        reappeared.SetUnit("freeColonist", "default", unitId: 7);
+        layer.AddChild(reappeared);
+        await runner.SimulateFrames(1);
+
+        AssertThat(mapView.GetChildren().OfType<UnitMoveAnimation>().Count()).IsEqual(0); // snapped, not streaked
+        AssertThat(reappeared.Position).IsEqual(MapView.TileCentre(far));
+
+        UnitMoveAnimation.Enabled = false; // restore the suite default for the remaining cases
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task PressingW_SelectsTheNextUnitNeedingOrders_AndCentresOnIt()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

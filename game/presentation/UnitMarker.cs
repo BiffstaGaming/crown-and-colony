@@ -28,6 +28,13 @@ public partial class UnitMarker : Node2D
     private bool _hasPendingSlide;
 
     /// <summary>
+    /// Largest tile gap (king-steps) still animated as a move; a larger jump is treated as a reappearance/teleport and
+    /// snaps instead. Comfortably covers the fastest legitimate single-refresh move (a ship's per-turn sail) while
+    /// excluding a unit re-emerging from fog, a ship, or Europe many tiles from where its marker last sat.
+    /// </summary>
+    private const int MaxSlideTiles = 10;
+
+    /// <summary>
     /// Clears the per-unit slide memory. Called when the whole map is rebuilt for a different game (a new game / a load),
     /// so a marker at a reused position can't be mistaken for the same unit having moved there; GdUnit scene tests also
     /// call it for isolation. No effect on game state.
@@ -82,7 +89,8 @@ public partial class UnitMarker : Node2D
         // Compare this marker's final tile-pixel (set by the host before SetUnit) against where this unit's marker last
         // sat: a change means the unit moved, so queue a slide from the old pixel. The marker isn't in the scene tree
         // yet (the host AddChilds it after SetUnit), so defer the actual spawn to _EnterTree.
-        if (unitId is { } id && LastTileCentre.TryGetValue(id, out Vector2 previous) && previous != Position)
+        if (unitId is { } id && LastTileCentre.TryGetValue(id, out Vector2 previous) && previous != Position
+            && IsSlideDistance(previous, Position))
         {
             _pendingSlideFrom = previous;
             _hasPendingSlide = true;
@@ -112,6 +120,21 @@ public partial class UnitMarker : Node2D
 
     /// <summary>Inverse of <see cref="MapView.TileCentre"/> for a known on-grid pixel — recovers the tile a cached/marker pixel represents so the slide can be expressed in tiles.</summary>
     private static GameLogic.World.Position TileOf(Vector2 pixel) => MapView.TileAt(pixel);
+
+    /// <summary>
+    /// True when the gap between a unit's previous and current tile is small enough to be a real move worth animating.
+    /// A unit re-emerging from fog, a ship, or Europe can reappear far from where its marker last sat (its
+    /// <see cref="LastTileCentre"/> entry is stale because off-map/out-of-sight units are skipped, not pruned); sliding
+    /// across that gap would streak the sprite over untraversed terrain, so beyond <see cref="MaxSlideTiles"/> king-steps
+    /// we snap. Cosmetic only — never affects <c>Game</c> state.
+    /// </summary>
+    private static bool IsSlideDistance(Vector2 fromPixel, Vector2 toPixel)
+    {
+        GameLogic.World.Position a = TileOf(fromPixel);
+        GameLogic.World.Position b = TileOf(toPixel);
+        int kingSteps = System.Math.Max(System.Math.Abs(a.X - b.X), System.Math.Abs(a.Y - b.Y));
+        return kingSteps <= MaxSlideTiles;
+    }
 
     /// <summary>
     /// Resolves the FreeCol sprite for a unit by type + role short names, using the same candidate-path search as
