@@ -2175,16 +2175,18 @@ public partial class GameController : Node2D
         _riverLayer.ShowState(_game.Map, _game.Explored, _game.CurrentlyVisible);
         _improvementLayer.ShowState(_game.Map, _game.Explored, _game.CurrentlyVisible);
         _miniMap.ShowState(_game);
-        // Outline the selected unit's standing goto destination, if any.
+        // Outline the selected unit's standing goto destination, if any, and preview the projected route (86d3fq1pe).
         if (_selectedUnit is { Destination: { } dest })
         {
             _gotoMarker.Position = MapView.TileCentre(dest);
             _gotoMarker.Visible = true;
             _gotoMarker.QueueRedraw();
+            _mapView.ShowRoutePreview(_game.PreviewRoute(_selectedUnit, dest), _selectedUnit.Position);
         }
         else
         {
             _gotoMarker.Visible = false;
+            _mapView.ClearRoutePreview();
         }
         SyncColonyMarkers();
         SyncNativeMarkers();
