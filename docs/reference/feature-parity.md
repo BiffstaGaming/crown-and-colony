@@ -2,7 +2,7 @@
 
 Generated 2026-06-26 from a structured 22-domain research pass (FreeCol verified against the GPL freecol/ clone; Crown and Colony verified against this repo). Legend: Yes / Partial / No. Functionality described in our own words.
 
-Totals - Crown and Colony: 907 Yes / 61 Partial / 47 No across 1015 features.
+Totals - Crown and Colony: 910 Yes / 60 Partial / 45 No across 1015 features.
 
 ## Map Terrain Exploration
 
