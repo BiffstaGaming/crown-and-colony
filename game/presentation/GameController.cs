@@ -1319,6 +1319,20 @@ public partial class GameController : Node2D
         }
         dialog.Confirmed += Confirm;
         nameField.TextSubmitted += _ => { dialog.Hide(); Confirm(); }; // Enter in the field confirms too
+        // Dismissing the modal (Escape / window-close button — both route through AcceptDialog's `canceled`) accepts the
+        // engine default name: faithful to FreeCol's auto-named-then-renamable land, it clears NewWorldNamePending so the
+        // prompt never re-nags, resets the re-entrancy guard, and frees the node. Without this, an Escape/X left the guard
+        // stuck open (the world stayed unnamed all game) and leaked the dialog as an orphan (Wave 8 review). NameNewWorld
+        // is idempotent, so this never double-names even if it raced a confirm.
+        dialog.Canceled += () =>
+        {
+            _game.NameNewWorld(null); // null ⇒ DefaultNewWorldName (the blank→default rule lives in GameLogic, ADR-006)
+            MarkDirty();
+            _notice = $"The New World was named \"{_game.NewWorldName}\".";
+            _newWorldNameDialogOpen = false;
+            dialog.QueueFree();
+            RefreshView();
+        };
         AddChild(dialog);
         dialog.PopupCentered();
         nameField.GrabFocus();

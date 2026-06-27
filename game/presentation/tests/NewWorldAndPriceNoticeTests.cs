@@ -88,6 +88,41 @@ public class NewWorldAndPriceNoticeTests
     }
 
     [TestCase]
+    public async Task DismissingTheNamingDialog_AcceptsTheDefaultName_AndDoesNotReprompt()
+    {
+        // Wave 8 review regression guard: pressing Escape / the window-close button emits AcceptDialog.Canceled (not
+        // Confirmed). Dismissing must accept the default name (clearing NewWorldNamePending), reset the re-entrancy
+        // guard, and free the dialog — otherwise the guard stuck open and the prompt never re-fired (world unnamed all
+        // game) and the node leaked.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        Game game = CoastGame();
+        SetGame(controller, game);
+        game.MoveUnit(game.Units.First(u => u.Id == 1), new Position(1, 0));
+        InvokePrivate(controller, "MaybePromptNewWorldName");
+        await runner.SimulateFrames(2);
+
+        var dialog = controller.GetChildren().OfType<AcceptDialog>().FirstOrDefault(d => d.Title.ToString() == "The New World");
+        AssertThat(dialog).IsNotNull();
+
+        // Dismiss (Escape / titlebar X both raise Canceled) instead of confirming.
+        dialog!.EmitSignal(AcceptDialog.SignalName.Canceled);
+        await runner.SimulateFrames(2);
+
+        // The world took the default name, the prompt is satisfied, and the dialog was freed (no orphan, no stuck guard).
+        AssertThat(game.NewWorldName).IsEqual(Game.DefaultNewWorldName);
+        AssertThat(game.NewWorldNamePending).IsFalse();
+        AssertThat(GodotObject.IsInstanceValid(dialog)).IsFalse();
+
+        // A subsequent prompt attempt is a clean no-op (guard reset + nothing pending) — never re-nags.
+        InvokePrivate(controller, "MaybePromptNewWorldName");
+        await runner.SimulateFrames(1);
+        AssertThat(controller.GetChildren().OfType<AcceptDialog>().Any(d => d.Title.ToString() == "The New World")).IsFalse();
+    }
+
+    [TestCase]
     public async Task NamingDialog_DoesNotOpen_WhenNoLandfallIsPending()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
