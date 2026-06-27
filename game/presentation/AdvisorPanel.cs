@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using CrownAndColony.GameLogic.GameSession;
 using Godot;
 
@@ -8,11 +8,11 @@ namespace CrownAndColony.Presentation;
 /// The <b>active-unit advisor</b> HUD hint (parity <c>86d3fq1re</c>): a small, dismissible parchment card that surfaces
 /// the handful of concrete recommendations the <see cref="Game.AdviseUnit"/> oracle computes for the player's selected
 /// unit ("You could found a colony here", "Build a road here", "Learn expert farmer at this native settlement",
-/// "No orders — fortify, sentry, or move"). It is the lightweight echo of Col1's advisor characters who volunteered
+/// "No orders � fortify, sentry, or move"). It is the lightweight echo of Col1's advisor characters who volunteered
 /// advice; ours is curated and bounded (a fuller advisor engine is a follow-up).
 /// <para>
 /// Pure presentation (ADR-006): it renders an already-computed <see cref="AdvisorRecommendation"/> list it is
-/// <b>handed</b> — it holds no game state, runs no rule logic, and never mutates the game or the save. It is built
+/// <b>handed</b> � it holds no game state, runs no rule logic, and never mutates the game or the save. It is built
 /// entirely in code (no scene file), so the host can add it anywhere and the tests can drive it directly. Hidden by
 /// default; <see cref="Show(IReadOnlyList{AdvisorRecommendation})"/> fills and reveals it, the Close button (or
 /// <see cref="Dismiss"/>) hides it and raises <see cref="Dismissed"/>. An empty list hides the card (nothing to advise).
@@ -78,7 +78,7 @@ public partial class AdvisorPanel : PanelContainer
         EmitSignal(SignalName.Dismissed);
     }
 
-    // Rebuilds the recommendation rows. Signal-safe rebuild (detach now, free deferred) — mirrors the other panels.
+    // Rebuilds the recommendation rows. Signal-safe rebuild (detach now, free deferred) � mirrors the other panels.
     private void Render(IReadOnlyList<AdvisorRecommendation> recommendations)
     {
         foreach (Node child in _rows.GetChildren())
@@ -93,7 +93,7 @@ public partial class AdvisorPanel : PanelContainer
             _rows.AddChild(new Label
             {
                 Name = $"Advice_{rec.Kind}",
-                Text = $"• {rec.Text}",
+                Text = $"� {rec.Text}",
                 AutowrapMode = TextServer.AutowrapMode.WordSmart,
             });
         }

@@ -175,6 +175,7 @@ public partial class GameController : Node2D
     private PanelContainer _highScoresPanel = null!;
     private PanelContainer _declarationPanel = null!;
     private PanelContainer _negotiationPanel = null!;
+    private AdvisorPanel _advisorPanel = null!;
     private Button _independenceButton = null!;
     private Button _endTurnButton = null!;
     private Control _gameOverScreen = null!;
@@ -285,6 +286,8 @@ public partial class GameController : Node2D
         GetNode<CanvasLayer>("UI").AddChild(_mapControls);
         _mapControls.Build(GetNode<CameraController>("Camera"));
         _mapControls.RecentreRequested += RecentreCamera;
+        _advisorPanel = new AdvisorPanel();
+        GetNode<CanvasLayer>("UI").AddChild(_advisorPanel);
         _colonyPanel = GetNode<PanelContainer>("UI/ColonyPanel");
         _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
@@ -2350,10 +2353,12 @@ public partial class GameController : Node2D
             _skipButton.Disabled = false;
             _disbandButton.Disabled = !_game.CheckDisband(sel).Allowed;
             _selectedUnitPanel.Show();
+            _advisorPanel.Show(_game.AdviseUnit(sel));
         }
         else
         {
             _selectedUnitPanel.Hide();
+            _advisorPanel.Hide();
         }
 
         // Tile-info readout: the hovered tile's yield preview while the cursor is over the map (86d3fq1nk), else the

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Threading.Tasks;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.Presentation;
@@ -12,7 +12,7 @@ namespace CrownAndColony.Presentation.Tests;
 /// L3 interaction tests (docs/TESTING.md) for the active-unit <see cref="AdvisorPanel"/> (parity <c>86d3fq1re</c>):
 /// handed a recommendation list it renders one row per recommendation and reveals itself; an empty list keeps it
 /// hidden; and the Close button hides it and raises <c>Dismissed</c>. The panel is driven directly (instantiated and
-/// fed the oracle's output) — it needs no <c>GameController</c> seam, so the feature is verified without it. The advisor
+/// fed the oracle's output) � it needs no <c>GameController</c> seam, so the feature is verified without it. The advisor
 /// is presentation-only (ADR-006); the test hands it the same <see cref="AdvisorRecommendation"/> records the oracle
 /// produces.
 /// </summary>
@@ -30,7 +30,7 @@ public class AdvisorPanelTests
     private static IReadOnlyList<AdvisorRecommendation> SampleAdvice() => new[]
     {
         new AdvisorRecommendation(AdvisorRecommendationKind.FoundColony, "You could found a colony here."),
-        new AdvisorRecommendation(AdvisorRecommendationKind.Idle, "No orders — fortify, sentry, or move this unit."),
+        new AdvisorRecommendation(AdvisorRecommendationKind.Idle, "No orders � fortify, sentry, or move this unit."),
     };
 
     [TestCase]
