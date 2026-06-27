@@ -78,6 +78,13 @@ public partial class MapView : Node2D
     private readonly Dictionary<string, Texture2D> _bonusIcons = [];
     private Texture2D[] _unexplored = [];
 
+    /// <summary>
+    /// The goto route-preview overlay (a dedicated child so the projected path redraws independently of the expensive
+    /// terrain <see cref="_Draw"/>). Created lazily in <see cref="ShowRoutePreview"/> so a host that never previews a
+    /// route pays nothing. Pure presentation — it draws only the tile sequence handed to it (ADR-006).
+    /// </summary>
+    private RoutePreviewOverlay? _routeOverlay;
+
     public override void _Ready()
     {
         foreach (string name in new[]
@@ -139,6 +146,46 @@ public partial class MapView : Node2D
     /// <summary>Projects a map position to the pixel centre of its diamond.</summary>
     public static Vector2 TileCentre(Position p) =>
         new((p.X - p.Y) * (TileW / 2f), (p.X + p.Y) * (TileH / 2f));
+
+    /// <summary>
+    /// Shows a projected <b>goto route preview</b>: a waypoint line + dots from the unit's current tile through
+    /// <paramref name="route"/> to its destination (FreeCol's <c>displayPath</c>). The host passes the tiles the unit
+    /// would <b>enter</b> (the ordered sequence from <see cref="Game.PreviewRoute"/>) plus, optionally, the unit's
+    /// current tile as <paramref name="from"/> so the line starts at the unit (FreeCol's path includes the origin node).
+    /// An <b>empty</b> route clears the preview — so the same call both shows and hides it as the aimed tile changes.
+    /// Pure presentation: it draws only what it is given and reads/mutates no game state (ADR-006).
+    /// </summary>
+    /// <param name="route">The ordered tiles the unit would enter (empty = clear the preview).</param>
+    /// <param name="from">The unit's current tile, prepended so the line starts at the unit; null = start at the first waypoint.</param>
+    public void ShowRoutePreview(IReadOnlyList<Position> route, Position? from = null)
+    {
+        if (route.Count == 0)
+        {
+            ClearRoutePreview();
+            return;
+        }
+        _routeOverlay ??= AddRouteOverlay();
+        var tiles = new List<Position>(route.Count + 1);
+        if (from is { } start)
+        {
+            tiles.Add(start);
+        }
+        tiles.AddRange(route);
+        _routeOverlay.SetRoute(tiles);
+    }
+
+    /// <summary>Clears any shown goto route preview (a no-op when none is shown).</summary>
+    public void ClearRoutePreview() => _routeOverlay?.SetRoute([]);
+
+    /// <summary>The tiles the route preview is currently drawing (origin + waypoints), in order — for tests/hosts. Empty when no preview is shown.</summary>
+    public IReadOnlyList<Position> PreviewedRouteTiles => _routeOverlay?.Tiles ?? [];
+
+    private RoutePreviewOverlay AddRouteOverlay()
+    {
+        var overlay = new RoutePreviewOverlay { Name = "RoutePreview" };
+        AddChild(overlay); // a sibling of the terrain draw, in the same (map) coordinate space
+        return overlay;
+    }
 
     /// <summary>
     /// Converts a point in this node's local space to a map position (may be off-map).
@@ -275,4 +322,51 @@ public partial class MapView : Node2D
         new(c.X, c.Y + TileH / 2f),
         new(c.X - TileW / 2f, c.Y),
     ];
+
+    /// <summary>
+    /// Draws the projected goto route (FreeCol <c>MapViewer.displayPath</c>): a gold poly-line through the tile
+    /// centres of the previewed path plus a filled dot at each waypoint, so the player can see exactly where a
+    /// multi-turn move will take a unit before committing it. A dedicated overlay so the path can be redrawn (as the
+    /// aimed tile changes) without re-running the terrain draw. Pure presentation — it holds only the tile list it is
+    /// handed and reads no game state (ADR-006).
+    /// </summary>
+    private sealed partial class RoutePreviewOverlay : Node2D
+    {
+        private static readonly Color RouteColor = new(0.96f, 0.86f, 0.20f, 0.85f); // goto gold (matches GotoMarker)
+        private const float LineWidth = 4f;
+        private const float DotRadius = 6f;
+
+        private readonly List<Position> _tiles = [];
+
+        /// <summary>The route tiles currently drawn (origin + waypoints), in order.</summary>
+        public IReadOnlyList<Position> Tiles => _tiles;
+
+        /// <summary>Replaces the drawn route with <paramref name="tiles"/> (origin + waypoints) and redraws.</summary>
+        public void SetRoute(IReadOnlyList<Position> tiles)
+        {
+            _tiles.Clear();
+            _tiles.AddRange(tiles);
+            QueueRedraw();
+        }
+
+        public override void _Draw()
+        {
+            if (_tiles.Count == 0)
+            {
+                return;
+            }
+
+            // The connecting line: tile-centre to tile-centre along the path (skipped when only the origin is present).
+            for (int i = 1; i < _tiles.Count; i++)
+            {
+                DrawLine(TileCentre(_tiles[i - 1]), TileCentre(_tiles[i]), RouteColor, LineWidth);
+            }
+
+            // A waypoint dot on every tile the route passes through (the destination included).
+            foreach (Position tile in _tiles)
+            {
+                DrawCircle(TileCentre(tile), DotRadius, RouteColor);
+            }
+        }
+    }
 }

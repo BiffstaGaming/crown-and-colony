@@ -220,6 +220,82 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task ShowRoutePreview_DrawsTheWaypointLineForTheGivenRoute_AndClearsOnEmpty()
+    {
+        // 86d3fq1pe: drives the route-preview DRAWING API directly (the integrator wires GameController to feed it
+        // _game.PreviewRoute; until then it's exercised here with a passed-in route). A route of three explored
+        // neighbouring tiles must render the gold waypoint line/dots into the map layer; an empty route clears it.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+
+        var mapView = controller.GetNode<MapView>("MapView");
+        var origin = new Position(6, 6);
+        // A short straight diagonal route (origin → waypoints); pixel centres are well clear of the corner HUD.
+        IReadOnlyList<Position> route = [new Position(7, 6), new Position(8, 6), new Position(9, 6)];
+
+        // Centre the camera on the middle of the route so the gold line lands on-screen for the render check.
+        var camera = controller.GetNode<Camera2D>("Camera");
+        camera.Position = MapView.TileCentre(new Position(8, 6));
+        await runner.SimulateFrames(2);
+
+        mapView.ShowRoutePreview(route, from: origin);
+        await runner.SimulateFrames(2);
+
+        // The overlay holds origin + the three waypoints, in order (the drawn tile sequence).
+        AssertThat(mapView.PreviewedRouteTiles.Count).IsEqual(4);
+        AssertThat(mapView.PreviewedRouteTiles[0]).IsEqual(origin);
+        AssertThat(mapView.PreviewedRouteTiles[3]).IsEqual(route[2]);
+
+        // RENDER-VERIFY: capture the viewport to a temp PNG, read it back, scan the route's on-screen span for the
+        // gold path colour. Then DELETE the temp png — we never commit pngs.
+        Image img = controller.GetViewport().GetTexture().GetImage();
+        string tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"routepreview_{System.Guid.NewGuid():N}.png");
+        AssertThat(img.SavePng(tmp)).IsEqual(Error.Ok);
+        try
+        {
+            using var loaded = Image.LoadFromFile(tmp);
+            // Project a couple of the route's tile centres to screen space and scan a small box for goto gold.
+            bool foundGold = false;
+            foreach (Position tile in new[] { origin, route[0], route[1] })
+            {
+                Vector2 screen = mapView.GetGlobalTransformWithCanvas() * MapView.TileCentre(tile);
+                int cx = Mathf.RoundToInt(screen.X), cy = Mathf.RoundToInt(screen.Y);
+                for (int dy = -10; dy <= 10 && !foundGold; dy++)
+                {
+                    for (int dx = -10; dx <= 10 && !foundGold; dx++)
+                    {
+                        int x = cx + dx, y = cy + dy;
+                        if (x < 0 || y < 0 || x >= loaded.GetWidth() || y >= loaded.GetHeight())
+                        {
+                            continue;
+                        }
+                        Color c = loaded.GetPixel(x, y);
+                        if (c.R > 0.7f && c.G > 0.6f && c.B < 0.5f) // goto gold (0.96, 0.86, 0.20)
+                        {
+                            foundGold = true;
+                        }
+                    }
+                }
+            }
+            AssertThat(foundGold).IsTrue(); // the gold waypoint line/dots rendered along the route
+        }
+        finally
+        {
+            if (System.IO.File.Exists(tmp))
+            {
+                System.IO.File.Delete(tmp);
+            }
+        }
+
+        // An empty route clears the preview (the same call both shows and hides as the aimed tile changes).
+        mapView.ShowRoutePreview([]);
+        await runner.SimulateFrames(1);
+        AssertThat(mapView.PreviewedRouteTiles.Count).IsEqual(0);
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task PressingW_SelectsTheNextUnitNeedingOrders_AndCentresOnIt()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

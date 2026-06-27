@@ -6,6 +6,12 @@ namespace CrownAndColony.Presentation;
 /// A small overlay that outlines the selected unit's standing "go to" destination tile (FreeCol's goto marker).
 /// Pure presentation: <see cref="GameController"/> positions it at the destination's diamond centre and toggles
 /// its visibility based on the selected unit's <c>Destination</c>; it draws no game state itself.
+/// <para>
+/// This marks only the <b>destination</b> tile. The projected <b>route</b> the unit will walk to get there (the
+/// waypoint line/dots) is drawn by <see cref="MapView.ShowRoutePreview"/> from the read-only
+/// <see cref="CrownAndColony.GameLogic.GameSession.Game.PreviewRoute"/> oracle — so this marker and the route
+/// overlay together form the goto preview (FreeCol's destination flag + <c>displayPath</c>).
+/// </para>
 /// </summary>
 public partial class GotoMarker : Node2D
 {

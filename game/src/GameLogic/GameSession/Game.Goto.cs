@@ -63,6 +63,30 @@ public sealed partial class Game
                 minEnterCost: Ruleset.MovementConstants.MinMoveCost)
             : FindPath(unit, goal);
 
+    /// <summary>
+    /// The projected tile route <paramref name="unit"/> would walk to reach <paramref name="goal"/> — a
+    /// <b>read-only preview</b> for the presentation layer to draw a waypoint line before a multi-turn goto is
+    /// committed (ADR-006: the route is a game rule, computed here; the UI only draws what this returns). It is the
+    /// same A* the live goto uses (<see cref="RouteFor"/>), so the previewed line matches exactly the path
+    /// <see cref="AdvanceDestination"/> will walk, honouring the destination kind: a <b>settlement</b> the unit can't
+    /// enter routes to a tile <i>adjacent</i> to it, every other kind routes <i>onto</i> the goal. The returned list is
+    /// the ordered sequence of tiles the unit <b>enters</b> (it does <b>not</b> include the unit's current tile); it is
+    /// <b>empty</b> when there is no route or the unit is already at/beside the goal. This mutates nothing — neither the
+    /// unit, the <see cref="Game"/>, nor any RNG stream (ADR-009) — so it is safe to call on every cursor move while the
+    /// player aims a goto.
+    /// </summary>
+    /// <param name="unit">The unit a route is being previewed for.</param>
+    /// <param name="goal">The tile the player is aiming the goto at.</param>
+    /// <returns>The tiles to enter, in order (empty = no route / already arrived).</returns>
+    public IReadOnlyList<Position> PreviewRoute(Unit unit, Position goal)
+    {
+        if (!unit.IsOnMap || !Map.InBounds(goal) || goal == unit.Position || HasArrivedAt(unit, goal))
+        {
+            return [];
+        }
+        return RouteFor(unit, goal);
+    }
+
     /// <summary>Whether <paramref name="unit"/> has reached <paramref name="goal"/> for its destination kind: standing on a tile/sea/high-seas goal, or <i>beside</i> a settlement goal it cannot enter.</summary>
     private bool HasArrivedAt(Unit unit, Position goal) =>
         DestinationKindOf(unit, goal) == DestinationKind.Settlement

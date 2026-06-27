@@ -652,4 +652,78 @@ public class GotoTests
         // unit at (0,0) is separated from (2,0) by water — so no adjacent route exists → the goto is rejected.
         Assert.False(walled.CheckSetDestination(isolated, new Position(2, 0)).Allowed);
     }
+
+    // ── Read-only route preview oracle (86d3fq1pe) ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void PreviewRoute_ReturnsTheSameTileSequenceAsTheLivePathfinder()
+    {
+        // The preview MUST match exactly what AdvanceDestination would walk — for a plain Tile goal that is FindPath.
+        var game = Game.New(Classic, seed: 7);
+        Unit unit = LandUnit(game);
+        (Position goal, IReadOnlyList<Position> path) = game.Map.AllPositions()
+            .Where(p => !game.Map.TerrainAt(p).IsWater)
+            .Select(p => (p, path: game.FindPath(unit, p)))
+            .First(t => t.path.Count >= 3);
+
+        IReadOnlyList<Position> preview = game.PreviewRoute(unit, goal);
+
+        Assert.Equal(path, preview);                 // identical ordered tile sequence
+        Assert.DoesNotContain(unit.Position, preview); // the route is the tiles to ENTER, not the current tile
+        Assert.Equal(goal, preview[^1]);             // and ends on the goal
+    }
+
+    [Fact]
+    public void PreviewRoute_RoutesAdjacentToASettlementGoal()
+    {
+        // A settlement the unit can't enter is previewed routed-beside it (the same as the live goto's RouteFor).
+        Game game = GameOn(
+            ["model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.plains", "model.tile.plains"],
+            5, 1,
+            [new SavedUnit(1, "model.unit.freeColonist", 0, 0, 3)],
+            natives:
+            [new SavedNativeSettlement(7777, "model.nationType.apache", "model.settlement.camp", false, 4, 0, 5)]);
+        Unit colonist = game.Units.First(u => u.Id == 1);
+        var camp = new Position(4, 0);
+
+        IReadOnlyList<Position> preview = game.PreviewRoute(colonist, camp);
+
+        Assert.NotEmpty(preview);
+        Assert.DoesNotContain(camp, preview);                 // never routes ONTO the settlement
+        Assert.True(preview[^1].IsAdjacentTo(camp));          // it ends on a tile BESIDE the camp
+    }
+
+    [Fact]
+    public void PreviewRoute_IsEmpty_WhenUnreachableOrAlreadyArrived()
+    {
+        var game = Game.New(Classic, seed: 99);
+        Unit unit = LandUnit(game);
+
+        Assert.Empty(game.PreviewRoute(unit, unit.Position));                  // already on the goal
+        Assert.Empty(game.PreviewRoute(unit, new Position(-1, -1)));           // off-map goal
+        Assert.Empty(game.PreviewRoute(unit, game.Map.AllPositions()
+            .First(p => game.Map.TerrainAt(p).IsWater)));                      // a land unit can't reach water
+    }
+
+    [Fact]
+    public void PreviewRoute_DoesNotMutateTheUnitOrItsDestination()
+    {
+        // The preview is called on every cursor move while aiming a goto, so it must be side-effect free (ADR-009).
+        var game = Game.New(Classic, seed: 7);
+        Unit unit = LandUnit(game);
+        Position origin = unit.Position;
+        int movesBefore = unit.MovementLeft;
+        Position? destBefore = unit.Destination;
+        string before = SaveGame.From(game).ToJson();
+
+        Position goal = game.Map.AllPositions()
+            .Where(p => !game.Map.TerrainAt(p).IsWater)
+            .First(p => game.FindPath(unit, p).Count >= 3);
+        game.PreviewRoute(unit, goal);
+
+        Assert.Equal(origin, unit.Position);          // the unit did not move
+        Assert.Equal(movesBefore, unit.MovementLeft); // nor spend movement
+        Assert.Equal(destBefore, unit.Destination);   // nor gain a standing goto (preview ≠ commit)
+        Assert.Equal(before, SaveGame.From(game).ToJson()); // the whole game state is byte-identical
+    }
 }
