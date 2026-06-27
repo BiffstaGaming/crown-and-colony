@@ -19,6 +19,25 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-27 — Parity backlog Wave 9: custom unit naming + custom-house import levels + advisor pop-ups (3 parallel streams) ✅
+
+**Requested (Chris):** after Wave 8, picked **"Another small Wave 9"** from the steer menu.
+**Did:**
+- Launched 3 disjoint background worktree streams: S-A (custom unit naming / `86d3fpxa2`), S-B (custom-house import levels / `86d3fpz0t`, sole v67 bumper), S-C (advisor pop-ups / `86d3fq1re`).
+- Integrated via sequential cherry-pick (S-B → S-A → S-C); resolved 2 doc conflicts in `docs/modules/presentation.md` (both rows kept).
+- Wired S-C advisor seam: `_advisorPanel` field + init in `_Ready()` + `Show(AdviseUnit(sel))`/`Hide()` in `RefreshView()`.
+- Fixed 2 CP1252 mojibake files from S-C (`AdvisorPanel.cs`, `AdvisorPanelTests.cs`).
+- BOM/mojibake scan: 2 genuine files fixed; all others clean.
+- Ran 5-dimension adversarial review; 1 CONFIRMED-SERIOUS found and fixed: `SkillDisplayName` only lowercased `i==0`, producing "expert Ore Miner" — fixed to `char.ToLowerInvariant(c)` unconditionally + regression test added.
+- Recomputed parity Totals: **910 Yes / 60 Partial / 45 No** across 1015 (was 907/61/47).
+**Status:** 2512 L1/L2 ✓ · 5/5 soak ✓ · 297 L3/L4 ✓ · pushed · CI pending.
+**Changed:** `GameController.cs` (advisor seam + rename dialog), `Game.Advisor.cs` (SkillDisplayName fix), `AdvisorPanel.cs`, `AdvisorTests.cs`, `Colony.cs`, `Game.cs`, `SaveGame.cs` (v67), `ColonyPanel.cs`, `docs/reference/feature-parity.md`; commits `22bb014`, `acc0223`, `b0e81c3`, `5772f69`, `8040f64`, `8cd06bc`.
+**Decisions:** Deferred warehouse per-good thresholds (`86d3fq1ue`) — ColonyPanel collision risk + low value. MINOR ADR-006 finding (ColonyPanel capacity-to-sentinel) left as a follow-up task (trivially correct, no observable bug).
+**Scheduled next:** steer Chris on Wave 10 candidates — review the remaining 45 No / 60 Partial items in `docs/reference/feature-parity.md` and propose the next cluster. Or begin the rival-AI epic (`86d3fq1c9`) if Chris steers there.
+**Follow-ups / needs-you:** CI green confirmation (both L1+L2 and L3 Godot jobs). Minor ADR-006 violation in `ColonyPanel.SetImportLevel` (capacity→sentinel logic should move to `Game.SetColonyImportFromUi`) — created as a backlog task. Pre-v67 load test name is misleading (`APreV67Save_...` name doesn't match what it actually tests) — low priority, rename when convenient.
+
+---
+
 ## 2026-06-27 — Parity backlog Wave 8: name-the-new-world + price-change notice + goto preview (2 parallel streams) ✅
 
 **Requested (Chris):** after Wave 7, picked **"Small-QoL Wave 8"** from the steer menu.
