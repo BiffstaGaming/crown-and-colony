@@ -204,6 +204,13 @@ public partial class GameController : Node2D
     private bool _newWorldNameDialogOpen;
 
     /// <summary>
+    /// Whether the <b>rename-unit</b> dialog is currently on screen (86d3drmzu) — a re-entrancy guard so a second
+    /// right-click / refresh while the modal prompt is open does not stack a second copy of it. Cleared when the
+    /// dialog closes (confirm or cancel/Escape).
+    /// </summary>
+    private bool _renameUnitDialogOpen;
+
+    /// <summary>
     /// Unit ids the player has <b>skipped</b> for this turn (Space — 86d3f0vuy). A skipped unit is passed over by the
     /// W-cycle (<see cref="SelectNextUnitToMove"/>) until the set clears at turn rollover (in <see cref="OnEndTurnPressed"/>).
     /// Session-only / controller-side and <b>never persisted</b> (ADR-009) — it's a transient input convenience, not game
@@ -496,7 +503,7 @@ public partial class GameController : Node2D
         }
     }
 
-    /// <summary>One-line readout for the selected-unit HUD panel (type / moves / role / orders / goto). Reads-only (ADR-006).</summary>
+    /// <summary>One-line readout for the selected-unit HUD panel (custom name / type / moves / role / orders / goto). Reads-only (ADR-006).</summary>
     private string DescribeSelectedUnit(Unit u)
     {
         string role = u.HasDefaultRole ? "" : $"  ·  {u.RoleId[(u.RoleId.LastIndexOf('.') + 1)..]}";
@@ -506,8 +513,17 @@ public partial class GameController : Node2D
             ? $"  ·  building {imp[(imp.LastIndexOf('.') + 1)..]} ({u.WorkTurnsLeft})"
             : "";
         string goingTo = u.IsGoingTo ? "  ·  going to" : "";
-        return $"{u.Type.ShortName}  ·  moves {u.MovementLeft}/{u.Type.Movement}{role}{orders}{building}{goingTo}";
+        // A christened unit leads with its custom name (86d3drmzu), the generic type name following as its class.
+        string named = u.Name is { Length: > 0 } name ? $"\"{name}\"  ·  " : "";
+        return $"{named}{u.Type.ShortName}  ·  moves {u.MovementLeft}/{u.Type.Movement}{role}{orders}{building}{goingTo}";
     }
+
+    /// <summary>
+    /// The selected unit's display label for menus/prompts (86d3drmzu): its custom <see cref="Unit.Name"/> when
+    /// christened, else its generic type short name. Presentation-only (ADR-006) — the rename rule itself lives in
+    /// <see cref="Game.NameUnit"/>.
+    /// </summary>
+    private static string UnitDisplayName(Unit u) => u.Name is { Length: > 0 } name ? name : u.Type.ShortName;
 
     /// <summary>
     /// One- or two-line readout for the HUD tile-info panel (FreeCol's <c>InfoPanel</c> tile-info): the clicked
@@ -1206,8 +1222,17 @@ public partial class GameController : Node2D
         }
         const int CentreId = -1;
         const int GotoId = -2;
+        const int RenameId = -3;
         menu.AddItem("Centre here", CentreId);
         menu.AddItem("Go to here", GotoId);
+        // "Rename unit…" — the discoverable surface for the existing Game.NameUnit command (86d3drmzu). Offered when the
+        // selected unit is one of the human's own units standing on this tile (the natural per-unit christening target,
+        // FreeCol Nameable); opens a code-built rename dialog. Absent when nothing fitting is selected here.
+        if (_selectedUnit is { IsOnMap: true } chosen && unitsHere.Any(u => u.Id == chosen.Id))
+        {
+            menu.AddSeparator();
+            menu.AddItem($"Rename {UnitDisplayName(chosen)}…", RenameId);
+        }
 
         menu.IdPressed += id =>
         {
@@ -1218,6 +1243,9 @@ public partial class GameController : Node2D
                     break;
                 case GotoId:
                     SetSelectedDestination(tile); // arms/sets the selected unit's standing destination (no-op with no selection)
+                    break;
+                case RenameId:
+                    RenameSelectedUnit(); // opens the code-built rename dialog for the selected unit (no-op with no selection)
                     break;
                 default:
                     _selectedUnit = _game.PlayerUnits.FirstOrDefault(u => u.Id == (int)id && u.IsOnMap);
@@ -1332,6 +1360,72 @@ public partial class GameController : Node2D
             _newWorldNameDialogOpen = false;
             dialog.QueueFree();
             RefreshView();
+        };
+        AddChild(dialog);
+        dialog.PopupCentered();
+        nameField.GrabFocus();
+    }
+
+    /// <summary>
+    /// Opens the <b>rename-unit</b> dialog for the currently selected unit (86d3drmzu): the discoverable presentation
+    /// surface for the existing <see cref="Game.NameUnit"/> command (FreeCol christens an individual unit via
+    /// <c>Nameable</c>). A code-built modal (no scene edit) — a text field pre-filled with the unit's current custom
+    /// name (blank when un-christened) plus an OK button; confirming (or pressing Enter) forwards the typed text to
+    /// <see cref="Game.NameUnit"/>, which trims it or clears the name back to the generic type name on a blank
+    /// (the blank→clear rule lives in GameLogic, ADR-006). No-op with no selection. The re-entrancy guard
+    /// (<see cref="_renameUnitDialogOpen"/>) keeps a second right-click / refresh from stacking the prompt.
+    /// <para>
+    /// Cancel path (Wave 8 review regression guard): a code-built <see cref="AcceptDialog"/> raises <c>Canceled</c>
+    /// (not <c>Confirmed</c>) on Escape / the window-close button. The <c>Canceled</c> handler frees the node and
+    /// resets the guard, leaving the unit's name <b>unchanged</b> — without it, an Escape left the guard stuck open
+    /// (the rename never re-fired) and leaked the dialog as an orphan.
+    /// </para>
+    /// </summary>
+    private void RenameSelectedUnit()
+    {
+        if (_renameUnitDialogOpen || _selectedUnit is not { } unit)
+        {
+            return; // already prompting, or nothing selected to rename
+        }
+        _renameUnitDialogOpen = true;
+
+        var dialog = new AcceptDialog
+        {
+            Title = "Rename unit",
+            OkButtonText = "Rename",
+            Exclusive = true,
+        };
+        var nameField = new LineEdit
+        {
+            Name = "RenameUnitField",
+            Text = unit.Name ?? "", // the current custom name, or blank when the unit still shows its generic type name
+            PlaceholderText = unit.Type.ShortName,
+            CustomMinimumSize = new Vector2(220, 0),
+        };
+        nameField.SelectAll();
+        var column = new VBoxContainer();
+        column.AddChild(new Label { Text = $"Name this {unit.Type.ShortName} (clear it to use the default name):" });
+        column.AddChild(nameField);
+        dialog.AddChild(column);
+
+        void Confirm()
+        {
+            _game.NameUnit(unit, nameField.Text); // GameLogic trims, or clears on a blank (ADR-006)
+            MarkDirty();                           // the custom name is unsaved state (save v52)
+            _notice = string.IsNullOrWhiteSpace(unit.Name)
+                ? $"The {unit.Type.ShortName} reverted to its default name."
+                : $"Unit renamed to \"{unit.Name}\".";
+            _renameUnitDialogOpen = false;
+            dialog.QueueFree();
+            RefreshView();
+        }
+        dialog.Confirmed += Confirm;
+        nameField.TextSubmitted += _ => { dialog.Hide(); Confirm(); }; // Enter in the field confirms too
+        // Escape / titlebar X both raise Canceled: leave the name unchanged, reset the guard, free the node (no orphan).
+        dialog.Canceled += () =>
+        {
+            _renameUnitDialogOpen = false;
+            dialog.QueueFree();
         };
         AddChild(dialog);
         dialog.PopupCentered();
