@@ -553,6 +553,46 @@ public class ColonyPanelTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task CustomHouseImportControl_SetsTheImportLevel_AndAtCapacityClearsIt()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Give the colony a custom house (so the export/import section renders), via the save layer like the export test.
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with { Buildings = c.Buildings!.Append("model.building.customHouse").ToList() }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(game.ColonyHasCustomHouse(colony)).IsTrue();
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+        PanelContainer panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+
+        // The import control defaults to the warehouse capacity (the unset fall-back) and stores nothing until changed.
+        var import = panel.FindChild("Import_ore", recursive: true, owned: false) as SpinBox;
+        AssertThat(import).IsNotNull();
+        AssertThat(colony.ExportOf("model.goods.ore").ImportLevel).IsEqual(Colony.ImportLevelUnset); // unset by default
+
+        // Lower it below capacity → the panel forwards a real cap to the engine.
+        import!.EmitSignal(Range.SignalName.ValueChanged, 80.0);
+        await runner.SimulateFrames(1);
+        AssertThat(colony.ExportOf("model.goods.ore").ImportLevel).IsEqual(80);
+
+        // Push it back to the warehouse capacity → the panel normalises "at capacity" to unset (forgets the entry).
+        import.EmitSignal(Range.SignalName.ValueChanged, (double)game.ColonyWarehouseCapacity(colony));
+        await runner.SimulateFrames(1);
+        AssertThat(colony.ExportOf("model.goods.ore").ImportLevel).IsEqual(Colony.ImportLevelUnset);
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task CustomHouseExportSection_IsHidden_WithoutACustomHouse()
     {
         (_, GameController controller, Game game, Colony colony) = await OpenPanel();

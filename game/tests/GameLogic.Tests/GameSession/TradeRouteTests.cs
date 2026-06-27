@@ -88,6 +88,63 @@ public class TradeRouteTests
         Assert.Equal(0, alpha.StoreOf(Sugar)); // picked up at the source
     }
 
+    // ───────────────────────── Per-good import level cap (86d3fpz0t) ─────────────────────────
+
+    [Fact]
+    public void ImportLevel_CapsAutomaticDelivery_LeavingTheSurplusAboard()
+    {
+        Game game = TwoColonyStrip(out Unit wagon, out Colony alpha, out Colony beta);
+        beta.AddGoods(Sugar, 20);                  // Beta already holds 20 sugar
+        game.SetColonyImport(beta, Sugar, 30);     // …and won't auto-import sugar past 30
+
+        TradeRoute route = game.CreateTradeRoute(game.HumanPlayer, "Capped run",
+            [new TradeRouteStop(alpha.Id, [Sugar]), new TradeRouteStop(beta.Id, [])]); // pick up at Alpha, drop at Beta
+        game.AssignTradeRoute(wagon, route.Id);
+
+        for (int turn = 0; turn < 6; turn++)
+        {
+            game.EndTurn();
+        }
+
+        // FreeCol getImportAmount: deliver only up to (import level − present) = 30 − 20 = 10; Beta tops out at 30.
+        Assert.Equal(30, beta.StoreOf(Sugar));
+        // The carrier keeps shuttling but can never push Beta past 30, so the excess it loaded stays aboard / at Alpha.
+        Assert.True(wagon.CargoOf(Sugar) + alpha.StoreOf(Sugar) > 0, "the surplus the cap refused is left aboard / unmoved");
+    }
+
+    [Fact]
+    public void ImportLevel_AtWarehouseCapacityByDefault_DeliversTheWholeLoad()
+    {
+        // No import level set on Beta → the effective cap is its warehouse capacity, so delivery is bounded only by the
+        // warehouse exactly as before this feature. (Proves an untouched good auto-imports unchanged.)
+        Game game = TwoColonyStrip(out Unit wagon, out Colony alpha, out Colony beta);
+        Assert.Equal(game.ColonyWarehouseCapacity(beta), game.EffectiveImportLevel(beta, Sugar));
+
+        TradeRoute route = game.CreateTradeRoute(game.HumanPlayer, "Open run",
+            [new TradeRouteStop(alpha.Id, [Sugar]), new TradeRouteStop(beta.Id, [])]);
+        game.AssignTradeRoute(wagon, route.Id);
+
+        for (int turn = 0; turn < 6; turn++)
+        {
+            game.EndTurn();
+        }
+
+        Assert.Equal(100, beta.StoreOf(Sugar)); // all 100 hauled across (well under the depot's 100+ capacity)
+        Assert.Equal(0, alpha.StoreOf(Sugar));
+    }
+
+    [Fact]
+    public void ImportLevel_SurvivesSaveRoundTrip_AtV67()
+    {
+        Game game = TwoColonyStrip(out _, out _, out Colony beta);
+        game.SetColonyImport(beta, Sugar, 40);
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(67, SaveGame.CurrentVersion);
+        Assert.Equal(40, loaded.Colonies.Single(c => c.Id == beta.Id).ExportOf(Sugar).ImportLevel);
+    }
+
     // ───────────────────────── Europe stops (86d3e4bcp, GAP B) ─────────────────────────
 
     private const string Galleon = "model.unit.galleon";
@@ -160,7 +217,7 @@ public class TradeRouteTests
         Assert.False(restored.Stops[0].IsEurope);          // the colony stop
         Assert.True(restored.Stops[1].IsEurope);           // the Europe stop round-trips via the sentinel ColonyId (0)
         Assert.Equal([Sugar], restored.Stops[1].LoadGoodsIds);
-        Assert.Equal(66, SaveGame.CurrentVersion);         // Europe stop adds no save field of its own (existing TradeRouteStop shape); 58 comes from other slices
+        Assert.Equal(67, SaveGame.CurrentVersion);         // Europe stop adds no save field of its own (existing TradeRouteStop shape); 58 comes from other slices
     }
 
     [Fact]
@@ -187,7 +244,7 @@ public class TradeRouteTests
         Assert.DoesNotContain("\"TradeRouteId\"", json);
         Assert.DoesNotContain("\"TradeRouteStop\"", json);
         Assert.DoesNotContain("NextTradeRouteId", json); // omit-when-default (counter still 1) → byte-identical to v44
-        Assert.Equal(66, SaveGame.CurrentVersion);
+        Assert.Equal(67, SaveGame.CurrentVersion);
     }
 
     [Fact]

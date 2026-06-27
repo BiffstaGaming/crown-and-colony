@@ -138,7 +138,7 @@ public class BuildQueueTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
         Assert.Equal([Warehouse, WarehouseExpansion], restored.Colonies[0].BuildQueue);
-        Assert.Equal(66, SaveGame.CurrentVersion);
+        Assert.Equal(67, SaveGame.CurrentVersion);
     }
 
     [Fact]

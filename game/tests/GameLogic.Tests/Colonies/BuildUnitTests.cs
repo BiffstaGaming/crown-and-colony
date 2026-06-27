@@ -321,7 +321,7 @@ public class BuildUnitTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
         Assert.Equal([Artillery, WagonTrain, Warehouse], restored.Colonies[0].BuildQueue);
-        Assert.Equal(66, SaveGame.CurrentVersion);
+        Assert.Equal(67, SaveGame.CurrentVersion);
     }
 
     [Fact]

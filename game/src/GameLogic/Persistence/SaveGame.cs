@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Randomness;
@@ -20,7 +21,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 66;
+    public const int CurrentVersion = 67;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -292,6 +293,21 @@ public sealed record SaveGame
     /// twin-deterministic. (The one-shot first-landfall flag is <b>not</b> separately persisted: it is implied by the
     /// name's presence once answered, and a save taken in the one-turn gap before the player names the world simply
     /// re-prompts on load — harmless and idempotent.)
+    /// v67 added a colony's per-good custom-house <b>import level</b> (<see cref="SavedExport.ImportLevel"/> — the ceiling
+    /// an automatic delivery, i.e. a trade-route drop-off, will not stock a good past, FreeCol <c>ExportData.importLevel</c> /
+    /// <c>getEffectiveImportLevel</c>; 86d3fpz0t). It rides the <em>existing</em> per-colony <see cref="SavedColony.Exports"/>
+    /// token (which already serialised the export flag + retain level for non-default goods) as a third field on
+    /// <see cref="SavedExport"/>. Additive + <b>omitted when default</b>: the field defaults to <see cref="Colony.ImportLevelUnset"/>
+    /// (−1, "not set" → the effective cap is the warehouse capacity, i.e. no extra limit), and a good is only written to the
+    /// <see cref="SavedColony.Exports"/> map when it is non-default in <em>any</em> dimension (exported, retain ≠ 50, or import
+    /// level set), so a good with only an import level now serialises and a good at the all-default state still emits nothing.
+    /// A default game (no export toggles, no import levels) therefore serialises <b>byte-identically to v66</b> — the
+    /// <see cref="SavedColony.Exports"/> token is still omitted entirely — and pre-v67 saves (v28..v66, whose
+    /// <see cref="SavedExport"/> rows carried only the two export fields) load with every good's import level unset, i.e.
+    /// auto-delivery bounded only by the warehouse exactly as before this field existed. Determinism (ADR-009): the import
+    /// cap acts only on the trade-route delivery path (a pure min against the effective level), draws no RNG, and is inert
+    /// until a player sets a level, so a reloaded game continues on the identical random sequence and the soak — which runs
+    /// no import-capped trade routes — stays byte-identical and twin-deterministic.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -570,9 +586,14 @@ public sealed record SaveGame
                     c.Liberty == 0 ? null : c.Liberty,
                     // The queued tail after the front; omitted for a 0/1-item queue so it stays byte-identical to v23.
                     c.BuildQueue.Count > 1 ? c.BuildQueue.Skip(1).ToList() : null,
-                    // Custom-house export settings; only non-default goods are stored, omitted when none (v28).
+                    // Custom-house export/import settings; only non-default goods are stored, omitted when none (v28; the
+                    // import level rides as a third field, v67 — a good with only an import level is non-default, so it is
+                    // written; a good's import level defaults to ImportLevelUnset so an export-only good serialises as before).
                     c.Exports.Count > 0
-                        ? c.Exports.ToDictionary(kv => kv.Key, kv => new SavedExport(kv.Value.Exported, kv.Value.ExportLevel))
+                        ? c.Exports.ToDictionary(kv => kv.Key, kv => new SavedExport(
+                            kv.Value.Exported, kv.Value.ExportLevel,
+                            // ImportLevelUnset (−1) → null so WhenWritingNull omits it, keeping an export-only row byte-identical to v66.
+                            kv.Value.ImportLevel >= 0 ? kv.Value.ImportLevel : null))
                         : null,
                     // Per-colonist worker types (v30): a building's non-free occupants + the non-free idle colonists,
                     // omitted when all free so a free-colonist-only colony stays byte-identical to v29.
@@ -842,6 +863,10 @@ public sealed record SaveGame
                 foreach ((string goods, SavedExport export) in c.Exports ?? new Dictionary<string, SavedExport>())
                 {
                     colony.SetExport(goods, export.Exported, export.Level); // custom-house export settings (v28; pre-v28 → none)
+                    if (export.ImportLevel is { } importLevel) // per-good import level (v67; null/pre-v67 → leave unset)
+                    {
+                        colony.SetImport(goods, importLevel);
+                    }
                 }
                 // Per-colonist worker types (v30; pre-v30 / absent → all free colonists).
                 foreach ((string buildingId, IReadOnlyList<string> types) in
@@ -1072,7 +1097,7 @@ public sealed record SaveGame
 /// <param name="OwnerId">Owning colonial player id (null = the human, id 0; v20+, FP-2).</param>
 /// <param name="Liberty">Accumulated Sons-of-Liberty points (null = 0; v22, additive).</param>
 /// <param name="BuildQueueRest">Queued buildables after the front (<see cref="CurrentBuild"/>); null/omitted for a 0- or 1-item queue (v24, additive — a colony with no queued tail serializes byte-identically to v23).</param>
-/// <param name="Exports">Custom-house export settings by good (only non-default goods; null/omitted when none; v28, additive).</param>
+/// <param name="Exports">Custom-house export/import settings by good (only non-default goods; null/omitted when none; v28, additive — the per-good import level rides as a third field on <see cref="SavedExport"/>, v67).</param>
 /// <param name="BuildingWorkerTypes">Per building, its NON-FREE occupant unit-type ids (v30; null/omitted when every building worker is a free colonist). The free occupants are implicit (count − non-free).</param>
 /// <param name="IdleWorkerTypes">The colony's NON-FREE idle colonists' unit-type ids (v30; null/omitted when all idle are free colonists).</param>
 /// <param name="SchoolTraining">Pre-v60 per-school single-counter training turns (v32..v59; one int per school). Read-only legacy field for loading older saves — restored as the building's slot-0 teacher turns; never written by v60+ (which uses <paramref name="SchoolTrainingSlots"/>).</param>
@@ -1095,10 +1120,18 @@ public sealed record SavedColony(
     int? TeaPartyBellTurns = null,
     IReadOnlyDictionary<string, IReadOnlyList<int>>? SchoolTrainingSlots = null);
 
-/// <summary>A colony's custom-house export setting for one good (v28+; only non-default goods are stored).</summary>
+/// <summary>A colony's custom-house export/import setting for one good (v28+; only non-default goods are stored).</summary>
 /// <param name="Exported">Whether the good auto-exports.</param>
 /// <param name="Level">The amount to retain before exporting the surplus.</param>
-public sealed record SavedExport(bool Exported, int Level);
+/// <param name="ImportLevel">
+/// The amount to import to — an automatic delivery (a trade-route drop-off) will not stock the good past this (FreeCol
+/// <c>ExportData.importLevel</c>; v67). <b>Null/omitted</b> when "not set" (the serializer's <c>WhenWritingNull</c> drops
+/// it, mapping to <see cref="Colony.ImportLevelUnset"/> = −1 → the effective cap is the warehouse capacity), so a pre-v67
+/// save (whose <see cref="SavedExport"/> rows lacked this field) loads with every good's import level unset, and a good
+/// with only an export setting serialises <b>byte-identically to v66</b> (no extra field). A set import level writes the
+/// non-negative ceiling.
+/// </param>
+public sealed record SavedExport(bool Exported, int Level, int? ImportLevel = null);
 
 /// <summary>A bonus resource on a tile inside a <see cref="SaveGame"/>.</summary>
 /// <param name="Index">Row-major tile index (<c>y * MapWidth + x</c>).</param>

@@ -1310,13 +1310,16 @@ public partial class ColonyPanel : PanelContainer
         .OrderBy(g => g.Id, StringComparer.Ordinal);
 
     /// <summary>
-    /// FreeCol's custom-house export controls: one row per exportable good with an <b>Exported</b> on/off
-    /// <see cref="CheckBox"/> and a <b>retain-level</b> <see cref="SpinBox"/> (the warehouse amount to keep before the
-    /// surplus auto-sells each turn). Both forward to the host's <see cref="_setExport"/> command, which owns the engine
-    /// guards + status reporting (ADR-006); the panel only reads <see cref="Colony.ExportOf"/> for the current setting and
-    /// forwards the change. Toggling a good on (or off) sets it with the current level; changing the level keeps the
-    /// current on/off flag. The engine then auto-sells each exported good over its retain level on End Turn — only goods
-    /// flagged here sell (the default per-good mode), which is why this UI is what makes a custom house actually trade.
+    /// FreeCol's custom-house export/import controls: one row per exportable good with an <b>Exported</b> on/off
+    /// <see cref="CheckBox"/>, a <b>retain-level</b> <see cref="SpinBox"/> (the warehouse amount to keep before the surplus
+    /// auto-sells each turn) and a <b>max-import</b> <see cref="SpinBox"/> (the ceiling an automatic delivery — a
+    /// trade-route drop-off — will not stock the good past; FreeCol <c>ExportData.importLevel</c>). The export controls
+    /// forward to the host's <see cref="_setExport"/> command, which owns the engine guards + status reporting (ADR-006);
+    /// the import control forwards to <see cref="SetImportLevel"/> (a thin panel-side call onto the engine oracle, like the
+    /// other <c>_game</c> reads here). The panel only reads <see cref="Colony.ExportOf"/> / <see cref="Game.EffectiveImportLevel"/>
+    /// for the current values and forwards the change. Toggling a good on/off keeps its retain level; changing one level
+    /// keeps the other dimensions. The engine then auto-sells each exported good over its retain level, and caps each
+    /// automatic delivery at the good's max-import, on End Turn.
     /// </summary>
     private Control CustomHouseArea()
     {
@@ -1324,10 +1327,11 @@ public partial class ColonyPanel : PanelContainer
         box.AddThemeConstantOverride("separation", 4);
         box.AddChild(new Label
         {
-            Text = "Tick a good to auto-sell its surplus over the retain level each turn.",
+            Text = "Tick a good to auto-sell its surplus over the keep level; set max to cap automatic deliveries.",
             HorizontalAlignment = HorizontalAlignment.Center,
         });
 
+        int capacity = _game.ColonyWarehouseCapacity(_colony);
         foreach (GoodsType good in ExportableGoods())
         {
             string goodsId = good.Id;
@@ -1353,7 +1357,7 @@ public partial class ColonyPanel : PanelContainer
             {
                 Name = $"Retain_{good.ShortName}",
                 MinValue = 0,
-                MaxValue = _game.ColonyWarehouseCapacity(_colony),
+                MaxValue = capacity,
                 Step = CargoLot, // one hold-lot per click; the player can still type any value
                 Value = setting.ExportLevel,
                 CustomMinimumSize = new Vector2(96, 0),
@@ -1362,9 +1366,37 @@ public partial class ColonyPanel : PanelContainer
             level.ValueChanged += value => _setExport(_colony, goodsId, setting.Exported, (int)value);
             row.AddChild(level);
 
+            row.AddChild(new Label { Text = "max" });
+            var import = new SpinBox
+            {
+                Name = $"Import_{good.ShortName}",
+                MinValue = 0,
+                MaxValue = capacity, // at-capacity = "no cap beyond the warehouse" (the unset default)
+                Step = CargoLot,
+                // Show the EFFECTIVE level: a set level, else the warehouse capacity (the unset fall-back) — so an
+                // untouched good reads as "max" and leaving it there persists nothing (SetImportLevel maps it to unset).
+                Value = _game.EffectiveImportLevel(_colony, goodsId),
+                CustomMinimumSize = new Vector2(96, 0),
+            };
+            import.ValueChanged += value => SetImportLevel(goodsId, (int)value, capacity);
+            row.AddChild(import);
+
             box.AddChild(row);
         }
         return box;
+    }
+
+    /// <summary>
+    /// Forwards a custom-house <b>import-level</b> change to the engine (<see cref="Game.SetColonyImport"/>) and refreshes
+    /// the panel. A value at the colony's warehouse <paramref name="capacity"/> is normalised to
+    /// <see cref="Colony.ImportLevelUnset"/> (−1, "not set") — at-capacity means "no cap beyond the warehouse", the unset
+    /// default — so leaving an untouched control at its max persists nothing and the save stays byte-stable. The engine
+    /// owns the storable+tradeable guard (ADR-006); the goods listed here already pass it, so the call never throws.
+    /// </summary>
+    private void SetImportLevel(string goodsId, int value, int capacity)
+    {
+        _game.SetColonyImport(_colony, goodsId, value >= capacity ? Colony.ImportLevelUnset : value);
+        _onChange();
     }
 
     // ── Small UI helpers ────────────────────────────────────────────────────────────────────────────────────

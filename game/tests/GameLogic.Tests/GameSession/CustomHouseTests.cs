@@ -82,7 +82,7 @@ public class CustomHouseTests
 
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
-        Assert.Equal(66, SaveGame.CurrentVersion);
+        Assert.Equal(67, SaveGame.CurrentVersion);
         Assert.Equal(AutoExportMode.ExportAllOverLevel, restored.AutoExportMode);
         Assert.Equal(new Colony.ExportSetting(true, 75), restored.Colonies.Single(c => c.Id == colony.Id).ExportOf(Sugar));
     }
@@ -93,6 +93,121 @@ public class CustomHouseTests
         string json = SaveGame.From(Game.New(Classic, Seed)).ToJson();
         Assert.DoesNotContain("AutoExportMode", json); // PerGood default omitted
         Assert.DoesNotContain("Exports", json);        // no toggled goods
+    }
+
+    // ---- Per-good import level (86d3fpz0t) ----
+
+    [Fact]
+    public void ImportLevel_DefaultsToUnset_AndEffectiveLevelIsWarehouseCapacity()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundColony(game);
+
+        Assert.Equal(Colony.ImportLevelUnset, colony.ExportOf(Sugar).ImportLevel); // absent → unset (−1)
+        // Unset → the effective cap falls back to the warehouse capacity (FreeCol getEffectiveImportLevel).
+        Assert.Equal(game.ColonyWarehouseCapacity(colony), game.EffectiveImportLevel(colony, Sugar));
+    }
+
+    [Fact]
+    public void SetColonyImport_SetsTheLevel_AndPreservesTheExportPair()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundColony(game);
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 80); // an export setting first
+
+        game.SetColonyImport(colony, Sugar, 120);
+
+        Colony.ExportSetting s = colony.ExportOf(Sugar);
+        Assert.Equal(120, s.ImportLevel);          // import level set
+        Assert.True(s.Exported);                   // export flag preserved
+        Assert.Equal(80, s.ExportLevel);           // retain level preserved
+        Assert.Equal(120, game.EffectiveImportLevel(colony, Sugar)); // a set level is the effective level
+    }
+
+    [Fact]
+    public void SetColonyImport_AloneMakesAGoodNonDefault_AndClearingForgetsIt()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundColony(game);
+
+        game.SetColonyImport(colony, Sugar, 100);  // import level only — no export setting
+        Assert.Contains(Sugar, colony.Exports.Keys); // stored (non-default in the import dimension)
+
+        game.SetColonyImport(colony, Sugar, Colony.ImportLevelUnset); // back to unset → all-default → forgotten
+        Assert.DoesNotContain(Sugar, colony.Exports.Keys);
+    }
+
+    [Fact]
+    public void SetColonyImport_NegativeNormalisesToUnset()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundColony(game);
+        game.SetColonyImport(colony, Sugar, -5);   // any negative → unset, not stored
+        Assert.DoesNotContain(Sugar, colony.Exports.Keys);
+        Assert.Equal(Colony.ImportLevelUnset, colony.ExportOf(Sugar).ImportLevel);
+    }
+
+    [Fact]
+    public void SetColonyImport_RejectsNonTradeableGoods()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundColony(game);
+        Assert.Throws<InvalidMoveException>(() => game.SetColonyImport(colony, "model.goods.hammers", 100)); // no market
+    }
+
+    [Fact]
+    public void ImportLevel_RoundTripsThroughSave_V67()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundColony(game);
+        game.SetColonyImport(colony, Sugar, 130);                          // import-only good
+        game.SetColonyExport(colony, Ore, exported: true, exportLevel: 60); // export-only good (import stays unset)
+
+        Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+        Colony loaded = restored.Colonies.Single(c => c.Id == colony.Id);
+
+        Assert.Equal(67, SaveGame.CurrentVersion);
+        Assert.Equal(130, loaded.ExportOf(Sugar).ImportLevel);                 // set level survives
+        Assert.Equal(Colony.ImportLevelUnset, loaded.ExportOf(Ore).ImportLevel); // export-only good loads import-unset
+        Assert.Equal(new Colony.ExportSetting(true, 60), loaded.ExportOf(Ore));  // its export pair intact
+    }
+
+    [Fact]
+    public void AnExportOnlyGood_OmitsTheImportLevelField_ByteIdenticalToV66()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundColony(game);
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 75); // export only, import unset
+
+        string json = SaveGame.From(game).ToJson();
+        Assert.Contains("Exports", json);          // the export setting is written
+        Assert.DoesNotContain("ImportLevel", json); // …but the unset import level is omitted (WhenWritingNull)
+    }
+
+    [Fact]
+    public void ADefaultGame_WithNoImportLevels_OmitsTheExportsToken()
+    {
+        // The whole-Exports omit-when-empty still holds with the import field added: a game that touched nothing writes no token.
+        string json = SaveGame.From(Game.New(Classic, Seed)).ToJson();
+        Assert.DoesNotContain("Exports", json);
+        Assert.DoesNotContain("ImportLevel", json);
+    }
+
+    [Fact]
+    public void APreV67Save_WithoutTheImportField_LoadsWithTheLevelUnset()
+    {
+        // A v28..v66 save's export rows carried only {Exported, Level}; the ImportLevel field is absent.
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundColony(game);
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 80);
+
+        string json = SaveGame.From(game).ToJson();
+        Assert.DoesNotContain("ImportLevel", json); // an export-only save already lacks the field (the pre-v67 shape)
+
+        Game restored = SaveGame.FromJson(json).Restore(Classic);
+        Colony loaded = restored.Colonies.Single(c => c.Id == colony.Id);
+        Assert.Equal(Colony.ImportLevelUnset, loaded.ExportOf(Sugar).ImportLevel); // loads unset, as before the field existed
+        Assert.Equal(new Colony.ExportSetting(true, 80), loaded.ExportOf(Sugar));   // export pair unchanged
     }
 
     // ---- Per-turn auto-sell (86d3c9rx2) ----

@@ -117,5 +117,5 @@ public class ResourceDepletionTests
     }
 
     [Fact]
-    public void SaveVersion_IsUnchanged() => Assert.Equal(66, SaveGame.CurrentVersion);
+    public void SaveVersion_IsUnchanged() => Assert.Equal(67, SaveGame.CurrentVersion);
 }

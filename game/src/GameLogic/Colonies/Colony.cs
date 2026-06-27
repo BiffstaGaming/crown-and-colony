@@ -74,10 +74,27 @@ public sealed class Colony
     /// <summary>The unit-type id of a plain colonist — the implicit default for any worker without an overlay entry.</summary>
     public const string FreeColonistTypeId = "model.unit.freeColonist";
 
-    /// <summary>The custom-house export setting for one good (FreeCol <c>ExportData</c>): whether it auto-exports and the amount to retain.</summary>
+    /// <summary>
+    /// The custom-house export/import setting for one good (FreeCol <c>ExportData</c>): whether it auto-exports, the
+    /// amount to retain when exporting, and the ceiling an automatic delivery will not stock past.
+    /// </summary>
     /// <param name="Exported">Whether the custom house auto-sells this good's surplus.</param>
     /// <param name="ExportLevel">The amount to keep in the warehouse before exporting the rest.</param>
-    public readonly record struct ExportSetting(bool Exported, int ExportLevel);
+    /// <param name="ImportLevel">
+    /// The amount to import to: an automatic delivery (a trade-route drop-off) will not push this good above this level
+    /// (FreeCol <c>ExportData.importLevel</c>). The sentinel <see cref="ImportLevelUnset"/> (−1) means "not set" — the
+    /// effective cap then falls back to the colony's warehouse capacity (FreeCol <c>getEffectiveImportLevel</c>), i.e. no
+    /// extra limit beyond the warehouse itself, so an untouched good auto-imports exactly as before this field existed.
+    /// </param>
+    public readonly record struct ExportSetting(bool Exported, int ExportLevel, int ImportLevel = ImportLevelUnset);
+
+    /// <summary>
+    /// The "import level not set" sentinel for <see cref="ExportSetting.ImportLevel"/> (FreeCol <c>ExportData</c>'s
+    /// <c>importLevel = -1</c>). When a good's import level is this, its effective cap is the colony's warehouse capacity
+    /// (<see cref="GameSession.Game.ColonyWarehouseCapacity"/>) — i.e. automatic delivery is bounded only by the
+    /// warehouse, exactly as it was before per-good import levels existed.
+    /// </summary>
+    public const int ImportLevelUnset = -1;
 
     /// <summary>
     /// The default retain level for a good not yet configured (FreeCol <c>ExportData.EXPORT_LEVEL_DEFAULT</c> = 50) — the
@@ -711,28 +728,48 @@ public sealed class Colony
         return amount - take;
     }
 
-    /// <summary>All non-default custom-house export settings (good id → setting), sparse — a default good is absent.</summary>
+    /// <summary>All non-default custom-house export/import settings (good id → setting), sparse — a default good is absent.</summary>
     public IReadOnlyDictionary<string, ExportSetting> Exports => _exports;
 
-    /// <summary>The export setting for a good — its stored setting, or the default (not exported, retain <see cref="ExportRetainDefault"/>).</summary>
+    /// <summary>The export/import setting for a good — its stored setting, or the default (not exported, retain <see cref="ExportRetainDefault"/>, import level unset).</summary>
     public ExportSetting ExportOf(string goodsId) =>
-        _exports.GetValueOrDefault(goodsId, new ExportSetting(false, ExportRetainDefault));
+        _exports.GetValueOrDefault(goodsId, new ExportSetting(false, ExportRetainDefault, ImportLevelUnset));
 
     /// <summary>
-    /// Sets a good's custom-house export setting (the level is floored at 0). A setting equal to the default
-    /// (not exported, retain <see cref="ExportRetainDefault"/>) is <em>removed</em>, so an untouched/reset good
-    /// leaves no trace and the save stays byte-stable.
+    /// Sets a good's custom-house <b>export</b> pair (exported flag + retain level, floored at 0), <em>preserving</em> the
+    /// good's current import level. A good back at the all-default state (not exported, retain <see cref="ExportRetainDefault"/>,
+    /// import level <see cref="ImportLevelUnset"/>) is <em>removed</em>, so an untouched/reset good leaves no trace and the
+    /// save stays byte-stable.
     /// </summary>
-    internal void SetExport(string goodsId, bool exported, int exportLevel)
+    internal void SetExport(string goodsId, bool exported, int exportLevel) =>
+        Store(goodsId, exported, Math.Max(0, exportLevel), ExportOf(goodsId).ImportLevel);
+
+    /// <summary>
+    /// Sets a good's custom-house <b>import level</b> — the ceiling an automatic delivery will not stock the good past
+    /// (FreeCol <c>ExportData.setImportLevel</c>) — <em>preserving</em> the good's current export flag and retain level. A
+    /// non-negative level is honoured; any negative value is normalised to <see cref="ImportLevelUnset"/> (−1, "not set" →
+    /// the effective cap is the warehouse capacity). A good back at the all-default state is removed (save stays byte-stable).
+    /// </summary>
+    internal void SetImport(string goodsId, int importLevel)
     {
-        int level = Math.Max(0, exportLevel);
-        if (!exported && level == ExportRetainDefault)
+        ExportSetting current = ExportOf(goodsId);
+        Store(goodsId, current.Exported, current.ExportLevel, importLevel < 0 ? ImportLevelUnset : importLevel);
+    }
+
+    /// <summary>
+    /// Writes (or, when fully default, removes) a good's export/import setting. A setting equal to the default
+    /// (not exported, retain <see cref="ExportRetainDefault"/>, import level <see cref="ImportLevelUnset"/>) is removed so
+    /// the sparse dictionary only ever holds non-default goods — the invariant that keeps a default game byte-stable.
+    /// </summary>
+    private void Store(string goodsId, bool exported, int exportLevel, int importLevel)
+    {
+        if (!exported && exportLevel == ExportRetainDefault && importLevel == ImportLevelUnset)
         {
             _exports.Remove(goodsId);
         }
         else
         {
-            _exports[goodsId] = new ExportSetting(exported, level);
+            _exports[goodsId] = new ExportSetting(exported, exportLevel, importLevel);
         }
     }
 }

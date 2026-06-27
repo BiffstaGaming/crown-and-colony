@@ -5961,6 +5961,39 @@ public sealed partial class Game
         colony.SetExport(goodsId, exported, exportLevel ?? colony.ExportOf(goodsId).ExportLevel);
     }
 
+    /// <summary>
+    /// Sets a colony's custom-house <b>import level</b> for a good (FreeCol <c>ExportData.setImportLevel</c>): the ceiling
+    /// an automatic delivery (a trade-route drop-off) will not stock the good past. The good must be storable and
+    /// tradeable — the same gate as <see cref="SetColonyExport"/>. A non-negative <paramref name="importLevel"/> caps
+    /// delivery at that amount; a negative value (or <see cref="Colony.ImportLevelUnset"/>) clears the cap back to "not set",
+    /// so the effective ceiling reverts to the colony's warehouse capacity (FreeCol <c>getEffectiveImportLevel</c>) and the
+    /// good auto-imports exactly as it did before an import level was set. (Setting is allowed regardless of whether the
+    /// custom house is built; the cap only acts on the auto-delivery path.)
+    /// </summary>
+    /// <exception cref="InvalidMoveException">The good cannot be traded through the custom house (non-tradeable / non-storable).</exception>
+    public void SetColonyImport(Colony colony, string goodsId, int importLevel)
+    {
+        GoodsType goods = Ruleset.Goods(goodsId);
+        if (!goods.IsTradeable || !goods.IsStorable)
+        {
+            throw new InvalidMoveException($"{goodsId} cannot be traded through the custom house.");
+        }
+        colony.SetImport(goodsId, importLevel);
+    }
+
+    /// <summary>
+    /// A good's <b>effective import level</b> at <paramref name="colony"/> (FreeCol
+    /// <c>ExportData.getEffectiveImportLevel(capacity)</c>): the good's set import level, or — when unset
+    /// (<see cref="Colony.ImportLevelUnset"/>) — the colony's warehouse capacity. This is the ceiling an automatic
+    /// delivery will not stock the good past. Public oracle for the presentation (ADR-006) so the colony screen can show /
+    /// default the import-level control to the warehouse capacity, matching the cap the trade-route delivery applies.
+    /// </summary>
+    public int EffectiveImportLevel(Colony colony, string goodsId)
+    {
+        int set = colony.ExportOf(goodsId).ImportLevel;
+        return set >= 0 ? set : WarehouseCapacity(colony);
+    }
+
     /// <summary>Base turns a naval unit spends crossing the high seas each way from a high-seas <em>edge</em> tile (FreeCol TURNS_TO_SAIL); a tile deeper in the high-seas band sails longer — see <see cref="SailTurnsFor"/>.</summary>
     public const int SailTurns = 3;
 
@@ -6381,12 +6414,26 @@ public sealed partial class Game
         return lo;
     }
 
-    /// <summary>Serves one trade-route stop: deliver everything the carrier holds that <paramref name="stop"/> doesn't load, then load the stop's goods up to the carrier's free hold.</summary>
+    /// <summary>
+    /// Serves one trade-route stop: deliver everything the carrier holds that <paramref name="stop"/> doesn't load — but
+    /// no further than each good's <see cref="EffectiveImportLevel"/> (FreeCol <c>getImportAmount</c>, which caps an
+    /// automatic delivery at the colony's effective import level) — then load the stop's goods up to the carrier's free
+    /// hold. Any surplus a good's import cap forbids is left aboard the carrier (FreeCol leaves un-deliverable cargo on the
+    /// carrier, to ride to a stop that can take it).
+    /// </summary>
     private void ServeTradeRouteStop(Unit carrier, Colony colony, TradeRouteStop stop)
     {
         foreach ((string goodsId, int amount) in carrier.Cargo.Where(c => !stop.LoadGoodsIds.Contains(c.Key)).ToList())
         {
-            UnloadToColony(carrier, colony, goodsId, amount); // deliver what this stop doesn't want
+            // FreeCol getImportAmount: deliver at most (effective import level − what's already here), so an automatic
+            // delivery never stocks a good past its import level. Unset levels default to the warehouse capacity, so a
+            // good with no import level set delivers its whole load exactly as before (bounded only by the warehouse).
+            int room = EffectiveImportLevel(colony, goodsId) - colony.StoreOf(goodsId);
+            int deliver = Math.Min(amount, room);
+            if (deliver > 0)
+            {
+                UnloadToColony(carrier, colony, goodsId, deliver); // deliver what this stop doesn't want, up to the import cap
+            }
         }
         foreach (string goodsId in stop.LoadGoodsIds)
         {
