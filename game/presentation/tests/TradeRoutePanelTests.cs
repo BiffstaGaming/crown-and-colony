@@ -70,13 +70,13 @@ public class TradeRoutePanelTests
         (ISceneRunner runner, GameController controller, Game game) = await OpenTradeRoutes(CoastalPort());
         AssertThat(game.HumanPlayer.TradeRoutes.Count).IsEqual(0);
 
-        // Pick Europe as the "To" stop (it's the item after the single colony → index 1) and load sugar at the From colony.
-        OptionButton to = FindOption(controller, "ToColony")!;
-        AssertThat(to).IsNotNull();
-        int europeIndex = to.ItemCount - 1; // Europe is appended last
-        AssertThat(to.GetItemText(europeIndex)).IsEqual("Europe");
-        to.Select(europeIndex);
-        to.EmitSignal(OptionButton.SignalName.ItemSelected, (long)europeIndex);
+        // Pick Europe as the second stop's location (it's the item after the single colony → index 1).
+        OptionButton stop2 = FindOption(controller, "StopLocation_1")!;
+        AssertThat(stop2).IsNotNull();
+        int europeIndex = stop2.ItemCount - 1; // Europe is appended last
+        AssertThat(stop2.GetItemText(europeIndex)).IsEqual("Europe");
+        stop2.Select(europeIndex);
+        stop2.EmitSignal(OptionButton.SignalName.ItemSelected, (long)europeIndex);
         await runner.SimulateFrames(1);
 
         Button create = FindButton(controller, "CreateRoute")!;
@@ -104,12 +104,69 @@ public class TradeRoutePanelTests
         AssertThat(routeLabel.Text).Contains("→ Europe");
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task RouteWithWarning_RendersTheWarningLabel()
+    {
+        // 86d3fpz3w: a single-stop route trips the engine's NotEnoughStops warning; the panel should surface it as a
+        // RouteWarning_{routeId} Label carrying the engine's plain-English message (verbatim, prefixed with the icon).
+        (ISceneRunner runner, GameController controller, Game game) = await OpenTradeRoutes(TwoColonies(), PreCreateOneStopRoute);
+        TradeRoute route = game.HumanPlayer.TradeRoutes[0];
+        string expected = game.ValidateTradeRoute(route)[0].Message; // the oracle's text, surfaced as-is by the panel
+        AssertThat(expected.Length > 0).IsTrue();
+
+        Label? warning = Panel(controller).FindChild($"RouteWarning_{route.Id}", recursive: true, owned: false) as Label;
+        AssertThat(warning).IsNotNull();
+        AssertThat(warning!.Text).Contains(expected);
+        await runner.SimulateFrames(1);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task AddStop_CreatesAThreeStopRingWithTheChosenLoads()
+    {
+        // 86d3fpz5g: build a three-stop ring (Alpha load sugar → Beta load nothing → Alpha-again load nothing) through
+        // the dynamic form — Add stop appends a third row — and assert the created route has all three stops + the load.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenTradeRoutes(TwoColonies());
+        AssertThat(game.HumanPlayer.TradeRoutes.Count).IsEqual(0);
+
+        // Tick "sugar" to load at the first stop (a multi-good CheckBox named Stop_0_Good_<shortName>).
+        const string sugar = "model.goods.sugar";
+        CheckBox? load = Panel(controller).FindChild("Stop_0_Good_sugar", recursive: true, owned: false) as CheckBox;
+        AssertThat(load).IsNotNull();
+        load!.ButtonPressed = true;
+        load.EmitSignal(BaseButton.SignalName.Toggled, true);
+        await runner.SimulateFrames(1);
+
+        // Add a third stop, then point it at the first colony (default location index 0 = Alpha).
+        Button add = FindButton(controller, "AddStopButton")!;
+        AssertThat(add).IsNotNull();
+        add.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        OptionButton stop3 = FindOption(controller, "StopLocation_2")!;
+        AssertThat(stop3).IsNotNull(); // the third row exists
+
+        Button create = FindButton(controller, "CreateRoute")!;
+        AssertThat(create).IsNotNull();
+        create.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(game.HumanPlayer.TradeRoutes.Count).IsEqual(1);
+        TradeRoute route = game.HumanPlayer.TradeRoutes[0];
+        AssertThat(route.Stops.Count).IsEqual(3); // a three-stop ring built from the dynamic form
+        AssertThat(route.Stops[0].LoadGoodsIds.Contains(sugar)).IsTrue(); // the ticked load survived to the engine
+        AssertThat(route.Stops[1].LoadGoodsIds.Count).IsEqual(0);
+        AssertThat(route.Stops[2].LoadGoodsIds.Count).IsEqual(0);
+    }
+
     private static void PreCreateRoute(Game g)
     {
         Colony a = g.Colonies[0];
         Colony b = g.Colonies[1];
         g.CreateTradeRoute(g.HumanPlayer, "R", [new TradeRouteStop(a.Id, []), new TradeRouteStop(b.Id, [])]);
     }
+
+    /// <summary>Pre-creates a deliberately invalid one-stop route so the panel surfaces its NotEnoughStops warning.</summary>
+    private static void PreCreateOneStopRoute(Game g) =>
+        g.CreateTradeRoute(g.HumanPlayer, "R", [new TradeRouteStop(g.Colonies[0].Id, [])]);
 
     /// <summary>A 3×1 coastal strip — port colony Alpha at (0,0), ocean, high seas — with a human galleon beside the port.</summary>
     private static SaveGame CoastalPort() => new()

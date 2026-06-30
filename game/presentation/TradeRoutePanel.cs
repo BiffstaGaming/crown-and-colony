@@ -10,12 +10,13 @@ using Godot;
 namespace CrownAndColony.Presentation;
 
 /// <summary>
-/// The trade-route management screen (<c>86d3c9rrd</c>): lists the human player's trade routes, creates a new route
-/// (a <em>from</em> colony, a <em>to</em> stop that may be another colony <b>or Europe</b>, and a good to load at each
-/// stop), assigns a carrier to a route, and deletes one. Like
-/// the other panels it only renders state and forwards clicks to the Game oracles (ADR-006) — every rule
-/// (validation, the per-turn haul, save) lives in GameLogic (<see cref="Game.CreateTradeRoute"/> /
-/// <see cref="Game.AssignTradeRoute"/> / <see cref="Game.RemoveTradeRoute"/>); the per-turn hauling is automatic
+/// The trade-route management screen (<c>86d3c9rrd</c>): lists the human player's trade routes (each with its
+/// FreeCol-style validation warnings, <c>86d3fpz3w</c>), creates a new <b>multi-stop ring</b> route via a dynamic
+/// form — add/remove any number of stops, each a colony <b>or Europe</b> with a multi-good load selector
+/// (<c>86d3fpz5g</c>) — assigns a carrier to a route, and deletes one. Like the other panels it only renders state
+/// and forwards clicks to the Game oracles (ADR-006) — every rule (validation, the per-turn haul, save) lives in
+/// GameLogic (<see cref="Game.CreateTradeRoute"/> / <see cref="Game.AssignTradeRoute"/> /
+/// <see cref="Game.RemoveTradeRoute"/> / <see cref="Game.ValidateTradeRoute"/>); the per-turn hauling is automatic
 /// (see [trade-routes]). Built programmatically into the fixed <c>VBox/Dynamic</c> shell, like <see cref="EuropePanel"/>.
 /// </summary>
 public partial class TradeRoutePanel : PanelContainer
@@ -23,13 +24,44 @@ public partial class TradeRoutePanel : PanelContainer
     private Game _game = null!;
     private Action _onChange = () => { };
 
+    /// <summary>
+    /// The in-progress "New route" form (<c>86d3fpz5g</c>): an ordered list of draft stops the player is editing.
+    /// It survives a <see cref="Rebuild"/> (Add/Remove mutate it, then re-render) and resets after a route is created.
+    /// Defaults to two stops — the classic from→to shape — so the form opens identical to the old fixed editor.
+    /// </summary>
+    private readonly List<DraftStop> _draftStops = [new DraftStop(), new DraftStop()];
+
+    /// <summary>One editable stop in the New-route form: a chosen location and the set of goods to load there.</summary>
+    private sealed class DraftStop
+    {
+        /// <summary>The selected location dropdown index (0..colonies-1 = a colony; the last item = Europe).</summary>
+        public int LocationIndex { get; set; }
+
+        /// <summary>The goods ids ticked to load at this stop (FreeCol allows any number — multi-good).</summary>
+        public HashSet<string> LoadGoods { get; } = [];
+    }
+
     /// <summary>Opens the panel. <paramref name="onChange"/> runs after every action.</summary>
     public void Open(Game game, Action onChange)
     {
         _game = game;
         _onChange = onChange;
+        ResetDraft();
         Rebuild();
         Show();
+    }
+
+    /// <summary>
+    /// Resets the New-route form to its default two-stop shape (From = the first colony, To = the second if there is
+    /// one, else Europe — matching the classic from→to default the old fixed editor opened with). Called on open and
+    /// after a route is created so the next route starts clean.
+    /// </summary>
+    private void ResetDraft()
+    {
+        _draftStops.Clear();
+        int colonyCount = _game.Colonies.Count(c => c.OwnerId == _game.HumanPlayer.PlayerId);
+        _draftStops.Add(new DraftStop { LocationIndex = 0 });
+        _draftStops.Add(new DraftStop { LocationIndex = colonyCount >= 2 ? 1 : colonyCount }); // 2nd colony, else Europe
     }
 
     private void Changed()
@@ -88,9 +120,29 @@ public partial class TradeRoutePanel : PanelContainer
                 Changed();
             }));
             dynamic.AddChild(row);
+
+            // Advisory warnings (86d3fpz3w): the engine's FreeCol-style verify() (Game.ValidateTradeRoute) returns
+            // plain-English problems; render each in amber beneath this route's row. Warns, never blocks (ADR-006: we
+            // only surface the read). Named per-route + per-index for testability.
+            IReadOnlyList<TradeRouteWarning> warnings = _game.ValidateTradeRoute(route);
+            for (int w = 0; w < warnings.Count; w++)
+            {
+                var warningLabel = new Label
+                {
+                    Name = w == 0 ? $"RouteWarning_{routeId}" : $"RouteWarning_{routeId}_{w}",
+                    Text = $"⚠ {warnings[w].Message}",
+                    AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                };
+                warningLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.65f, 0.15f)); // amber = advisory
+                dynamic.AddChild(warningLabel);
+            }
         }
 
-        // — Create a route — (needs at least one own colony: the From stop; the To stop can be Europe, always available)
+        // — Create a route — a DYNAMIC, multi-stop form (86d3fpz5g). The player adds/removes any number of stops; each
+        // stop picks a location (a colony OR Europe — Europe rides at the end of the dropdown) and ticks any number of
+        // goods to load there (multi-good — FreeCol's stop cargo is a list). On submit we build the N-element
+        // List<TradeRouteStop> and hand it to the existing CreateTradeRoute oracle (ADR-006: no rule logic here).
+        // A route needs at least one own colony to be useful (the engine requires every non-Europe stop to be owned).
         dynamic.AddChild(SectionLabel("New route"));
         if (colonies.Count < 1)
         {
@@ -102,67 +154,96 @@ public partial class TradeRoutePanel : PanelContainer
             return;
         }
 
-        // The "To" stop may be a colony OR Europe. Europe rides at the end of the dropdown (index == colonies.Count),
-        // so a docked ship sells the colony's surplus there (and buys the "load at second stop" good back). FROM is always
-        // a colony (you load a colony's goods to haul out); the engine accepts a Europe stop anywhere (TradeRouteStop.Europe).
-        var fromOpt = new OptionButton { Name = "FromColony" };
-        var toOpt = new OptionButton { Name = "ToColony" };
-        foreach (Colony c in colonies)
-        {
-            fromOpt.AddItem(c.Name);
-            toOpt.AddItem(c.Name);
-        }
-        int europeItemIndex = colonies.Count; // Europe is the item after the last colony in the To dropdown
-        toOpt.AddItem("Europe");
-        fromOpt.Selected = 0;
-        toOpt.Selected = 1; // default the two ends to different colonies
-
-        // Goods to load at each stop (Load nothing = deliver/sell everything the carrier holds). The first selector
-        // loads at the FROM colony (haul a colony's surplus out); the second loads at the TO stop — at a colony that's
-        // a pick-up, at Europe that's a BUY (e.g. tools/muskets back home).
         var goods = _game.Ruleset.GoodsTypes.Where(g => _game.Market.IsTradeable(g.Id)).ToList();
-        var loadOpt = BuildGoodsOption("LoadGoods", goods);
-        var loadToOpt = BuildGoodsOption("LoadGoodsTo", goods);
+        int europeItemIndex = colonies.Count; // Europe is the item after the last colony in every stop's location dropdown
 
-        dynamic.AddChild(LabeledRow("From", fromOpt));
-        dynamic.AddChild(LabeledRow("To", toOpt));
-        dynamic.AddChild(LabeledRow("Load at first stop", loadOpt));
-        dynamic.AddChild(LabeledRow("Load at second stop", loadToOpt));
+        // Render one row per draft stop. Each row owns its location dropdown + per-good check buttons, bound back to the
+        // _draftStops model so a Rebuild (after Add/Remove) re-renders the player's in-progress choices.
+        for (int s = 0; s < _draftStops.Count; s++)
+        {
+            int stopIndex = s; // capture for the closures below
+            DraftStop draft = _draftStops[s];
+            draft.LocationIndex = Math.Clamp(draft.LocationIndex, 0, europeItemIndex); // a removed colony can't leave a stale index
+
+            var stopBox = new VBoxContainer { Name = $"Stop_{stopIndex}" };
+
+            var locOpt = new OptionButton { Name = $"StopLocation_{stopIndex}" };
+            foreach (Colony c in colonies)
+            {
+                locOpt.AddItem(c.Name);
+            }
+            locOpt.AddItem("Europe");
+            locOpt.Selected = draft.LocationIndex;
+            locOpt.ItemSelected += index => _draftStops[stopIndex].LocationIndex = (int)index;
+
+            var header = new HBoxContainer();
+            header.AddChild(Grow(new Label { Text = $"Stop {stopIndex + 1}" }));
+            header.AddChild(locOpt);
+            // Remove this stop (kept enabled only while more than two stops remain — a route needs ≥ 2).
+            if (_draftStops.Count > 2)
+            {
+                header.AddChild(ActionButton($"RemoveStop_{stopIndex}", "Remove stop", () =>
+                {
+                    _draftStops.RemoveAt(stopIndex);
+                    Rebuild();
+                }));
+            }
+            stopBox.AddChild(header);
+
+            // Multi-good load selector: one CheckBox per tradeable good, ticked goods = this stop's LoadGoodsIds.
+            var goodsBox = new HFlowContainer { Name = $"StopGoods_{stopIndex}" };
+            goodsBox.AddChild(new Label { Text = "Load:" });
+            foreach (GoodsType g in goods)
+            {
+                string goodsId = g.Id;
+                var check = new CheckBox
+                {
+                    // Use the short name in the node id (Godot node names can't hold the dotted goods id; ShortName is
+                    // the unique last segment, e.g. "sugar"). The full id still flows into LoadGoods/the engine below.
+                    Name = $"Stop_{stopIndex}_Good_{g.ShortName}",
+                    Text = g.ShortName,
+                    ButtonPressed = draft.LoadGoods.Contains(goodsId),
+                };
+                check.Toggled += pressed =>
+                {
+                    if (pressed)
+                    {
+                        _draftStops[stopIndex].LoadGoods.Add(goodsId);
+                    }
+                    else
+                    {
+                        _draftStops[stopIndex].LoadGoods.Remove(goodsId);
+                    }
+                };
+                goodsBox.AddChild(check);
+            }
+            stopBox.AddChild(goodsBox);
+            dynamic.AddChild(stopBox);
+        }
+
+        dynamic.AddChild(ActionButton("AddStopButton", "Add stop", () =>
+        {
+            _draftStops.Add(new DraftStop { LocationIndex = 0 });
+            Rebuild();
+        }));
+
         dynamic.AddChild(ActionButton("CreateRoute", "Create route", () =>
         {
-            int fromIdx = fromOpt.Selected;
-            int toIdx = toOpt.Selected;
-            bool toEurope = toIdx == europeItemIndex;
-            if (fromIdx < 0 || toIdx < 0 || (!toEurope && fromIdx == toIdx))
+            if (_draftStops.Count < 2)
             {
-                return; // need two distinct ends (a colony vs Europe is always distinct)
+                return; // a route needs at least two stops to move goods (the engine warns; we don't even submit)
             }
-            List<string> loadIds = loadOpt.Selected > 0 ? [goods[loadOpt.Selected - 1].Id] : [];
-            List<string> loadToIds = loadToOpt.Selected > 0 ? [goods[loadToOpt.Selected - 1].Id] : [];
-            TradeRouteStop secondStop = toEurope
-                ? TradeRouteStop.Europe(loadToIds)
-                : new TradeRouteStop(colonies[toIdx].Id, loadToIds);
-            List<TradeRouteStop> stops =
-            [
-                new(colonies[fromIdx].Id, loadIds),
-                secondStop,
-            ];
+            List<TradeRouteStop> stops = _draftStops.Select(d =>
+            {
+                List<string> loadIds = d.LoadGoods.ToList();
+                return d.LocationIndex == europeItemIndex
+                    ? TradeRouteStop.Europe(loadIds)
+                    : new TradeRouteStop(colonies[d.LocationIndex].Id, loadIds);
+            }).ToList();
             _game.CreateTradeRoute(_game.HumanPlayer, $"Route {_game.HumanPlayer.TradeRoutes.Count + 1}", stops);
+            ResetDraft();
             Changed();
         }));
-    }
-
-    /// <summary>Builds a "Load nothing" + one-item-per-tradeable-good dropdown (index 0 = load nothing, index i = <paramref name="goods"/>[i-1]).</summary>
-    private static OptionButton BuildGoodsOption(string name, List<GoodsType> goods)
-    {
-        var opt = new OptionButton { Name = name };
-        opt.AddItem("Load nothing");
-        foreach (GoodsType g in goods)
-        {
-            opt.AddItem(g.ShortName);
-        }
-        opt.Selected = 0;
-        return opt;
     }
 
     /// <summary>
