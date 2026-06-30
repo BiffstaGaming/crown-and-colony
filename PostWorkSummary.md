@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-30 — HUD dead-click fix: hide the bottom-right button column behind a full-screen panel ✅
+
+**Requested (Chris):** continue the outstanding backlog after the rival-AI epic — picked the highest-value disjoint task.
+**Did:**
+- Fixed `86d3fr6bc` (normal-pri UI bug from the Wave-1 review): the bottom-right HUD button column (EndTurn/Europe/Reports/Colopedia/HighScores/Diplomacy/TradeRoutes/MessageLog/Independence) is declared **after** the full-screen panels in `main.tscn`, so as a later sibling it drew on top and received input first — **floating over an open ColonyPanel/EuropePanel and swallowing clicks** meant for the panel's bottom-right corner.
+- Fix (presentation-only, no `main.tscn` edit): `GameController.RefreshHudButtonVisibility()` sets each corner button `Visible = !(ColonyPanel.Visible || EuropePanel.Visible)` (IndependenceButton keeps its `CheckDeclareIndependence` gate); wired to each panel's `VisibilityChanged` + called from `RefreshView`; the column returns on close.
+- +1 L3 guard (global-rect-intersection — the headless-catchable form, since headless Godot does no GUI mouse-picking). Self-reviewed edge cases (GameOverScreen draws above the column already; menu-state `_game` null guard; independence-button restoration on close).
+**Status:** 301 L3/L4 ✓ · 0 warnings · **CI green both jobs** (after re-running the known `TradeAtRivalColony` flake — see below) · pushed (`b90b91a`).
+**Changed:** `GameController.cs`, `ColonyPanelTests.cs`; docs `hud-input.md`, `presentation.md`.
+**Decisions:** chose hide-on-open (fixes both the dead-click AND the visual float) over `MouseFilter=Ignore` (which would leave confusing visible-but-dead buttons); scoped to the two `anchors_preset=15` full-screen panels (the reported ones).
+**Scheduled next:** continue the backlog — candidates: the recurring `TradeAtRivalColony` L3 flake (spawned a task chip — it's now cost two CI re-runs), the L4 golden-pipeline QA task (`86d3f69e9`, high), or L3 player-flow coverage (`86d3f62r5`, high).
+**Follow-ups / needs-you:** the `TradeAtRivalColony` L3 test is a recurring CI flake (passes locally + on re-run, fails all 3 in-run attempts on some pushes — a test-isolation issue, NOT a product bug). Flagged as a task chip; worth fixing so it stops costing re-runs.
+
+---
+
 ## 2026-06-30 — Rival European AI epic: audit + home-coast landing + honest matrix reconciliation ✅
 
 **Requested (Chris):** "pick the biggest wave and pursue it through to completion" overnight, then continue with other outstanding tasks.
