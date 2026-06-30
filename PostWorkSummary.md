@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-01 — Backlog wave: scope 14 items → 6 free flips + 3 implemented + honest triage ✅
+
+**Requested (Chris):** work the next 10-15 backlog items, using parallel streams where possible to batch same-file changes and reduce testing.
+**Did:**
+- **Scoped 14 candidates** (scoping workflow: true state vs actual code + FreeCol + tests). The matrix was stale AGAIN (the rival-AI lesson at scale): **6 of 10 scoped were already fully built with tests** → flipped Partial→Yes (braves-pillage-colonies, LCR burial ground, automatic colony defence, trade goods, Man-o-War, custom-house-post-DoI). 6 tasks Shipped.
+- **Built the 3 genuinely-incomplete items** via one background worktree stream (they all centre on `Game.cs`/`Independence`/`GameController`, so real parallelism wasn't available — I parallelized by doing the matrix reconciliation + triage in main concurrently): ambient-alarm missionary-calming branch (`86d3fpzng`), scout-revisit-returns-"nothing" (`86d3fpzkp`), and the REF-landing warning notice (`86d3fq0ef`). Integrated: cherry-pick → fixed 1 mojibake file → flipped their 3 rows.
+- **Honest triage of the rest:** AI-treasure No→Partial (routing/cash-in done, map marker deferred); **deferred with rationale** the native WAR-stance uprising (new stance + AI), market-propagation (would break the per-player-isolation soak invariant), nation-naming-on-declaration, and the export-status icon (non-FreeCol cosmetic).
+- **Adversarial review (4 agents): 0 confirmed-serious.** Scout/REF-notice/flip-honesty all CLEAN (totals recount exactly); 1 MINOR (ambient-alarm relief not halved under the Pocahontas/French damp — an edge-case over-calm, not a determinism issue) → documented in the matrix + spawned backlog task `86d3h9nha`.
+**Status:** 2529 L1/L2 ✓ · 5/5 soak ✓ · 303 L3/L4 ✓ · **CI green both jobs** (first run) · pushed (`0af26ea`). **Totals → 931 Yes / 45 Partial / 39 No** (+9 Yes).
+**Changed:** `Game.cs`, `Game.Independence.cs`, new `RefLandingNotice.cs`, `GameController.cs`, 3 test files; docs `natives.md`/`independence.md`/`players.md`/`feature-parity.md`. Commits `ddf2ed7`, `8f1601d`, `f973a45`, `586fbb7`.
+**Decisions:** scoped-before-building (caught 6 stale-done items — would have been wasted/duplicate work); deferred genuine gaps that collide on shared files or threaten the determinism design rather than forcing parallelism that would only manufacture conflicts. 9 tasks Shipped this wave.
+**Scheduled next (your steer):** the deferred high-value gaps each want a focused stream — native WAR-stance uprising (`86d3fpzqf`), market-propagation (`86d3fpyx3`, determinism-sensitive), or another scope+build wave over the remaining ~39 No / 45 Partial. Or the QA tasks (L4 golden pipeline `86d3f69e9`, the `TradeAtRivalColony` flake).
+**Follow-ups / needs-you:** review the wave (all green, none playtested). The MINOR ambient-alarm damp nuance is captured as `86d3h9nha` (low).
+
+---
+
 ## 2026-06-30 — L3 player-flow coverage slice + overnight wind-down ✅
 
 **Requested (Chris):** keep working the backlog overnight after the rival-AI epic.
