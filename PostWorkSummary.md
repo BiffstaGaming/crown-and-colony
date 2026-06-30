@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-30 — Rival European AI epic: audit + home-coast landing + honest matrix reconciliation ✅
+
+**Requested (Chris):** "pick the biggest wave and pursue it through to completion" overnight, then continue with other outstanding tasks.
+**Did:**
+- **Audit first (7-agent workflow):** the rival-AI epic was **~90% already built** — the matrix was badly stale (Wave-10 lesson at epic scale). The AI already founds/works/produces/sells/builds/trains/recruits, runs its own market, elects founding fathers, self-declares independence + defends.
+- **Skeptical verification caught the audit over-claiming R1131** (custom houses): `AutoExportMode` defaults to `PerGood`, the AI flags no exports → its custom house is **inert** in the default game (it sells surplus via the direct path). Kept R1131 honestly at **Partial** rather than flipping to Yes.
+- **Built one real, reachable improvement — home-coast landing** (`86d3fq1eb`, FreeCol CLASSIC `startsOnEastCoast`): `EuropeanNation.StartsOnEastCoast` parsed; `LandForeignPower` leads its candidate sort with a deterministic `OnPreferredCoast` key (east = Atlantic half; only Russia west). RNG-free → soak byte-stable; L4 goldens unchanged. +6 L1 (robust aggregate + lone-rival + Russia west-coast).
+- **Adversarial review (5 agents):** determinism CLEAN, both flip-honesty dimensions CLEAN (R1116/R1117/R1049 flips confirmed honest + FreeCol-faithful), **1 CONFIRMED-SERIOUS** — my coast test used strict per-rival equality that flakes ~2.8% of seeds (spacing relaxation). **Fixed** with an aggregate + lone-rival + Russia tests (production code was sound).
+- **Honest matrix reconciliation:** R1116 economy Partial→Yes, R1117 market No→Yes, R1049 placement Partial→Yes, R1131 No→Partial; fixed stale "AI never gets Stuyvesant" clauses (552/580); corrected R1118 note. **Totals → 922 Yes / 52 Partial / 41 No** (+3 Yes; the epic's core was already done).
+- **Descoped (documented, per "don't gold-plate"):** rebel-vs-REF offensive AI (large, never fires in default play, FreeCol has no `RebelAIPlayer` — task `86d3e4q65`); AI buy-goods (needs a shipping chain, low value); preferred-latitude (FreeCol's non-default HISTORICAL mode); R1131 export-flag (economically redundant).
+**Status:** 2523 L1/L2 ✓ · 5/5 soak ✓ · 300 L3/L4 ✓ · **CI green both jobs first run** ✓ · pushed (`21ca72a`).
+**Changed:** `EuropeanNationType.cs`, `Ruleset.cs`, `Game.cs` (LandForeignPower), `MultiPlayerTests.cs`; docs `players.md`, `feature-parity.md`. Commits `678c9cd`, `21ca72a`.
+**Decisions:** the honest finding (matrix badly understated the rival AI) IS the main deliverable; built the one medium-value reachable improvement (coast bias) and descoped low-value/unreachable gaps. Shipped epic `86d3fq1c9` + `86d3fq1dc` + `86d3fq1eb`.
+**Scheduled next:** continue the outstanding backlog — next up the floating-HUD dead-click UI bug (`86d3fr6bc`, normal priority) or the L4 golden-pipeline QA task (`86d3f69e9`, high). Will pick the highest-value disjoint task and drive it to completion.
+**Follow-ups / needs-you:** none blocking. Optional non-blocking review nits: an L1 test asserting an AI colony queues the custom house once it holds Stuyvesant; the R1049 row title still literally says "preferred-latitude" (note discloses latitude is the parked HISTORICAL mode).
+
+---
+
 ## 2026-06-30 — Parity backlog Wave 10: 6 free flips + dump goods + sail-to-Europe prompt + treasure connected-port ✅
 
 **Requested (Chris):** asked "what do we have left to move onto?" + "as efficient as possible"; from the steer menu picked **Efficient Wave 10 (small + free wins)**.
