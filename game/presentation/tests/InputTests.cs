@@ -417,6 +417,52 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task SelectedUnitPanel_SentryButton_SentriesTheUnit_AndClearOrdersWakesIt()
+    {
+        // 86d3f62r5 player-flow coverage: the Sentry + Clear-orders Order buttons were reachable but undriven by L3
+        // (only Fortify + Road were). Press Sentry → the unit sentries; press Clear-orders → it wakes back to active.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Unit unit = game.Units[0];
+
+        await ClickTile(runner, controller, unit.Position); // select → the Order buttons show
+        var sentry = controller.GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/SentryButton");
+        var clear = controller.GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/ClearButton");
+        AssertThat(sentry.Disabled).IsFalse(); // an active unit can sentry
+
+        sentry.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(unit.Orders).IsEqual(UnitOrders.Sentry);  // the order took
+        AssertThat(clear.Disabled).IsFalse();                // and Clear-orders can now wake it
+
+        clear.EmitSignal(BaseButton.SignalName.Pressed);     // press Clear-orders (not just check Disabled)
+        await runner.SimulateFrames(1);
+        AssertThat(unit.Orders).IsEqual(UnitOrders.Active);  // woken back to active
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task EuropeButton_OpensTheEuropePanel()
+    {
+        // 86d3f62r5 player-flow coverage: drive the real UI/EuropeButton (not OpenEuropePanel() directly) → the Europe
+        // screen opens. Closes the wiring-regression gap on the entry-point button (and exercises it with no panel open,
+        // where the corner-HUD-hide fix 86d3fr6bc keeps it visible/clickable).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+
+        var europePanel = controller.GetNode<PanelContainer>("UI/EuropePanel");
+        AssertThat(europePanel.Visible).IsFalse(); // closed at game start
+
+        controller.GetNode<Button>("UI/EuropeButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+        AssertThat(europePanel.Visible).IsTrue(); // the button wired through to OpenEuropePanel
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task SelectedUnitPanel_SailToEuropeButton_ShownForShipsOnly_EnabledOnHighSeas_AndSails()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
