@@ -690,6 +690,7 @@ public partial class GameController : Node2D
             .Concat(_game.ColonyFamineNotices.Select(n => Logged(MessageCategory.Colony, FormatColonyFamineNotice(n))))           // a colony lost a colonist to famine
             .Concat(_game.ColonyStarvedNotices.Select(n => Logged(MessageCategory.Colony, FormatColonyStarvedNotice(n))))         // a colony starved out of existence
             .Concat(_game.MonarchDecreeNotices.Select(n => Logged(MessageCategory.Monarch, FormatMonarchDecreeNotice(n))))         // immediate King's decrees (war/peace/tax/support/REF)
+            .Concat(_game.RefLandingNotices.Select(n => Logged(MessageCategory.Monarch, FormatRefLandingNotice(n))))              // the one-off "the King's army has landed" warning
             .Concat(_game.FirstContactNotices.Select(n => Logged(MessageCategory.Diplomacy, FormatFirstContactNotice(n))))         // the human met a new colonial power (FP-6a)
             .Concat(_game.StanceChangeNotices.Select(n => Logged(MessageCategory.Diplomacy, FormatStanceChangeNotice(n))))         // a turn-driven stance shift with a rival (FP-6b)
             .Concat(_game.CustomHouseSaleNotices.Select(n => Logged(MessageCategory.Economy, FormatCustomHouseSaleNotice(n))))
@@ -867,6 +868,16 @@ public partial class GameController : Node2D
                 return "👑 The Crown issued a decree.";
         }
     }
+
+    /// <summary>
+    /// Turns the one-off REF-landing warning into a turn-message row — fired the first time the King's Royal
+    /// Expeditionary Force comes ashore after the declaration. Names the nearest threatened colony when the rebel still
+    /// holds one (a besieged-out rebel produces an empty name → the un-located phrasing).
+    /// </summary>
+    private static string FormatRefLandingNotice(RefLandingNotice notice) =>
+        string.IsNullOrEmpty(notice.NearestColonyName)
+            ? "⚔ The King's Royal Expeditionary Force has landed! The war for independence has begun."
+            : $"⚔ The King's Royal Expeditionary Force has landed near {notice.NearestColonyName}! The war for independence has begun.";
 
     /// <summary>Turns a first-contact notice into a turn-message row — the human's explored fog just met a new colonial power (FP-6a; FreeCol's first-contact message).</summary>
     private static string FormatFirstContactNotice(FirstContactNotice notice) =>

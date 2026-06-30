@@ -129,4 +129,75 @@ public class AmbientAlarmTests
         }
         Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
     }
+
+    // ---- Per-turn missionary calming (FreeCol ServerPlayer.java:1896-1906; MISSION_INFLUENCE −10, ×2 for an expert) ----
+
+    /// <summary>The human's alarm at a chosen settlement after one EndTurn, given it starts at <paramref name="startAlarm"/> and optionally holds a mission.</summary>
+    private static int AlarmAfterTurn(int startAlarm, bool mission, bool expertMission)
+    {
+        Game game = Game.New(Classic, Seed);
+        NativeSettlement s = game.NativeSettlements.First();
+        int sid = s.Id;
+        game.ChangeNativeAlarm(s, startAlarm - s.Alarm); // pin to startAlarm
+        if (mission)
+        {
+            s.MissionOwnerId = game.HumanPlayer.PlayerId; // the human's resident mission
+            s.MissionIsExpert = expertMission;
+        }
+        game.EndTurn();
+        return game.NativeSettlements.First(x => x.Id == sid).Alarm;
+    }
+
+    [Fact]
+    public void MissionedSettlement_AlarmFallsByTheRelief_EachTurn()
+    {
+        // The only difference between the two runs is the resident human mission, so the gap is exactly the −10 relief.
+        // Start at 450 so the per-turn decay's proportional term (value/100 = 4) is identical for both the missioned
+        // (440) and un-missioned (450) state — isolating the missionary calming from the decay's own −value/100−4.
+        const int start = 450;
+        int withMission = AlarmAfterTurn(start, mission: true, expertMission: false);
+        int withoutMission = AlarmAfterTurn(start, mission: false, expertMission: false);
+        Assert.Equal(10, withoutMission - withMission); // MISSION_INFLUENCE = −10
+    }
+
+    [Fact]
+    public void AnExpertMission_DoublesTheRelief()
+    {
+        // 450 ordinary→440, 450 expert→430 — both share the decay's value/100 = 4, so the gap is the expert's extra −10.
+        const int start = 450;
+        int expert = AlarmAfterTurn(start, mission: true, expertMission: true);
+        int ordinary = AlarmAfterTurn(start, mission: true, expertMission: false);
+        Assert.Equal(10, ordinary - expert); // the expert's extra −10 over the ordinary mission's −10 (−20 vs −10)
+    }
+
+    [Fact]
+    public void MissionaryRelief_ClampsAtZero()
+    {
+        // A nearly-calm missioned settlement can't go negative — ChangeNativeAlarm clamps at 0 (and the decay floors there too).
+        int alarm = AlarmAfterTurn(startAlarm: 5, mission: true, expertMission: true);
+        Assert.Equal(0, alarm);
+    }
+
+    [Fact]
+    public void MissionaryRelief_IsReplayStable()
+    {
+        // RNG-free: two identical missioned setups stay byte-identical across several turns.
+        static Game Staged()
+        {
+            Game g = Game.New(Classic, Seed);
+            NativeSettlement s = g.NativeSettlements.First();
+            g.ChangeNativeAlarm(s, 400 - s.Alarm);
+            s.MissionOwnerId = g.HumanPlayer.PlayerId;
+            s.MissionIsExpert = true;
+            return g;
+        }
+        Game a = Staged();
+        Game b = Staged();
+        for (int turn = 0; turn < 5; turn++)
+        {
+            a.EndTurn();
+            b.EndTurn();
+        }
+        Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
+    }
 }

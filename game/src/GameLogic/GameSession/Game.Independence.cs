@@ -780,9 +780,14 @@ public sealed partial class Game
             return;
         }
 
+        // Has any REF unit already reached the map? An RNG-free read that gates the one-off "the REF has landed" warning
+        // below: it fires only on the FIRST landing (no REF unit ashore yet), never on the later staggered waves.
+        bool refAlreadyAshore = _units.Any(u => IsOwnedBy(u, refPlayer) && u.IsOnMap);
+
         int landed = 0;
         int waveCap = RefWaveSize();
         bool anyLeftBehind = false;
+        Position? firstLandingSpot = null; // where the first REF land unit came ashore this turn — anchors the warning
         foreach (Unit unit in _units
             .Where(u => IsOwnedBy(u, refPlayer) && u.Location == UnitLocation.InEurope)
             .OrderBy(u => u.Id)
@@ -807,12 +812,23 @@ public sealed partial class Game
                 if (!unit.Type.IsNaval)
                 {
                     landed++;
+                    firstLandingSpot ??= s; // the first land unit ashore anchors the landing warning
                 }
             }
             else
             {
                 anyLeftBehind = true; // no room ashore this turn — try again next wave
             }
+        }
+        // One-off REF-landing warning for the HUMAN rebel (FreeCol's REF-arrival message). Fired the first time the
+        // King's army actually comes ashore (no REF unit was on the map before this turn, and a land unit landed now),
+        // never on the later reinforcement waves (gated by refAlreadyAshore). RNG-free read; the rebel is the player the
+        // REF is at war with — only a HUMAN rebel gets the player-facing notice. The nearest rebel colony to the
+        // beachhead anchors the message (empty when the rebel holds none — a besieged-out rebel).
+        if (!refAlreadyAshore && firstLandingSpot is { } landingSpot && RefRebel(refPlayer) is { IsHuman: true } humanRebel)
+        {
+            string nearest = NearestColonyOf(humanRebel, landingSpot, int.MaxValue)?.Name ?? string.Empty;
+            _refLandingNotices.Add(new RefLandingNotice(nearest));
         }
         // If an echelon is still owed (units waited this turn), the next wave lands after the interval; otherwise the
         // army is fully ashore and the timer rests at 0.

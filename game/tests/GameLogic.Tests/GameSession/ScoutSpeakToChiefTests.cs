@@ -137,6 +137,37 @@ public class ScoutSpeakToChiefTests
     }
 
     [Fact]
+    public void ASecondScoutVisit_ToTheSameChief_GetsNothing_AndConsumesExactlyOneRnd()
+    {
+        // FreeCol InGameController:3518-3521 — on a revisit the scouting `rnd` is drawn FIRST, then hasAnyScouted()
+        // short-circuits to "nothing": no gold, no skill, no extra reveal, the turn just ends. We allow a scout to
+        // revisit (CheckVisit no longer hard-rejects a scout role) and consume exactly one rnd.
+        (Game game, NativeSettlement settlement, Unit scout) = ScoutAtSettlement(NotHatefulNorScoutTeacher);
+
+        // First visit: a normal beads outcome (rnd 4, gift roll 50) marks the chief scouted by this player.
+        game.Visit(game.HumanPlayer, scout, settlement, new ScriptedRandom(4, 50));
+        Assert.True(settlement.HasBeenVisitedBy(game.HumanPlayer.PlayerId));
+
+        // The scout is allowed back (a colonist would still be refused — covered by NativeInteractionTests).
+        scout.MovementLeft = 1; // give it a move again so CheckVisit passes
+        Assert.True(game.CheckVisit(scout, settlement).Allowed);
+
+        int goldBefore = game.HumanPlayer.Gold;
+        int exploredBefore = game.HumanPlayer.Explored.Count;
+        int id = scout.Id;
+
+        // Revisit: a SINGLE rnd is consumed (an empty remainder would throw — proving exactly one draw), then "nothing".
+        int gained = game.Visit(game.HumanPlayer, scout, settlement, new ScriptedRandom(7));
+
+        Assert.Equal(0, gained);                                          // no gold
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);
+        Assert.Equal(exploredBefore, game.HumanPlayer.Explored.Count);    // no new reveal
+        Assert.Equal(ScoutRole, game.Units.Single(u => u.Id == id).RoleId);
+        Assert.NotEqual(SeasonedScout, game.Units.Single(u => u.Id == id).Type.Id); // not upgraded
+        Assert.Equal(0, game.Units.Single(u => u.Id == id).MovementLeft);  // the audience still ends the turn
+    }
+
+    [Fact]
     public void ANonScoutColonist_StillGetsTheBasicFlatGift_NotBeads()
     {
         // A default-role colonist takes the simplified visit path (flat 10–80 gift), never the scout beads/tales/die.

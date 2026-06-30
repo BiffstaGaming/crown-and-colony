@@ -142,6 +142,7 @@ public sealed partial class Game
     private readonly List<ColonyFamineNotice> _colonyFamineNotices = []; // transient: human colonies that lost a colonist (but survived) to famine this turn (not saved; empty in classic)
     private readonly List<WarehouseOverflowNotice> _warehouseOverflowNotices = []; // transient: human-colony storable goods wasted over warehouse capacity this turn (not saved)
     private readonly List<MonarchDecreeNotice> _monarchDecreeNotices = []; // transient: immediate (no-choice) monarch actions taken this turn (not saved; empty before the grace period)
+    private readonly List<RefLandingNotice> _refLandingNotices = []; // transient: the one-off "the REF has landed" warning fired the first time the King's army comes ashore (not saved; empty until then)
     private readonly List<FirstContactNotice> _firstContactNotices = []; // transient: the human's first contacts with rival colonial powers this turn (not saved)
     private readonly List<StanceChangeNotice> _stanceChangeNotices = []; // transient: turn-driven (tension-derived) stance shifts involving the human this turn (not saved)
     private readonly List<PriceChangeNotice> _priceChangeNotices = []; // transient: the human's Europe-market goods whose price moved this turn (not saved; rebuilt each EndTurn by comparing the live ask prices to the per-turn baseline)
@@ -916,6 +917,14 @@ public sealed partial class Game
     public IReadOnlyList<MonarchDecreeNotice> MonarchDecreeNotices => _monarchDecreeNotices;
 
     /// <summary>
+    /// The one-off <b>"the Royal Expeditionary Force has landed"</b> warning, produced the first time REF units came
+    /// ashore during the most recent <see cref="EndTurn"/> after the human declared independence (FreeCol's REF-landing
+    /// turn message). At most one entry, and never re-produced on the later staggered reinforcement waves. Transient
+    /// per-turn UI scratch (cleared each <c>EndTurn</c>, never saved); the presentation reads it after the turn resolves.
+    /// </summary>
+    public IReadOnlyList<RefLandingNotice> RefLandingNotices => _refLandingNotices;
+
+    /// <summary>
     /// The human's <b>first contacts</b> with rival colonial powers during the most recent <see cref="EndTurn"/> — each
     /// turn the human's explored fog first covered that power's unit or colony, flipping the pair
     /// <see cref="Stance.Uncontacted"/> → <see cref="Stance.Peace"/> (FreeCol <c>makeContact</c>). Transient per-turn UI
@@ -1553,7 +1562,10 @@ public sealed partial class Game
         {
             return MoveCheck.No("Move next to the settlement to speak with its chief.");
         }
-        if (settlement.HasBeenVisitedBy(unit.OwnerId))
+        // A SCOUT may revisit a chief it has already spoken with — FreeCol draws the scouting roll then returns "nothing"
+        // (no gift/skill/reveal); see ScoutSpeakToChief's already-scouted branch. A plain colonist's one-time visit stays
+        // hard-rejected here (the simplified VisitAsColonist path has no "nothing" outcome).
+        if (settlement.HasBeenVisitedBy(unit.OwnerId) && unit.RoleId != ScoutRoleId)
         {
             return MoveCheck.No("You have already spoken with this settlement's chief.");
         }
@@ -1585,9 +1597,10 @@ public sealed partial class Game
             throw new InvalidMoveException(check.Reason!);
         }
 
+        bool alreadyScouted = settlement.HasBeenVisitedBy(player.PlayerId); // captured before the mark — drives the scout "nothing" revisit
         settlement.MarkVisitedBy(player.PlayerId); // per-player first contact (FreeCol's per-player hasVisited)
         return unit.RoleId == ScoutRoleId
-            ? ScoutSpeakToChief(player, unit, settlement, random)
+            ? ScoutSpeakToChief(player, unit, settlement, random, alreadyScouted)
             : VisitAsColonist(player, unit, settlement, random);
     }
 
@@ -1849,13 +1862,26 @@ public sealed partial class Game
 
     /// <summary>
     /// A scout's audience with the chief (FreeCol <c>InGameController.scoutSpeakToChief</c>): a <b>hateful</b> tribe
-    /// slays the scout; otherwise one "scouting" roll decides — the scout may be <b>trained</b> into a seasoned scout
-    /// (always if the chief teaches scouting, else a 1-in-10 chance), else <b>tales</b> (a wider reveal — taken 1-in-3
-    /// of the time or when the type gives no beads) or <b>beads</b> (gold from the type's <c>&lt;gifts&gt;</c> range,
-    /// +10% for an already-expert scout). Draws from <paramref name="random"/>. (We don't deduct the gold from a native
-    /// treasury — natives hold none, as with treasure plunder.)
+    /// slays the scout; otherwise the "scouting" roll is drawn and then — if <paramref name="alreadyScouted"/> — the
+    /// scout gets <b>nothing</b> (no gift/skill/reveal, the turn simply ends, FreeCol's <c>hasAnyScouted()</c> short
+    /// circuit); on a first visit one roll decides — the scout may be <b>trained</b> into a seasoned scout (always if
+    /// the chief teaches scouting, else a 1-in-10 chance), else <b>tales</b> (a wider reveal — taken 1-in-3 of the time
+    /// or when the type gives no beads) or <b>beads</b> (gold from the type's <c>&lt;gifts&gt;</c> range, +10% for an
+    /// already-expert scout). Draws from <paramref name="random"/>. (We don't deduct the gold from a native treasury —
+    /// natives hold none, as with treasure plunder.)
     /// </summary>
-    private int ScoutSpeakToChief(Player player, Unit unit, NativeSettlement settlement, IGameRandom random)
+    /// <param name="player">The acting player (the unit's owner); gold and reveals land on it, draws on its stream.</param>
+    /// <param name="unit">The scout-role unit speaking with the chief.</param>
+    /// <param name="settlement">The settlement whose chief is visited.</param>
+    /// <param name="random">The acting player's RNG stream (the human is 0).</param>
+    /// <param name="alreadyScouted">
+    /// Whether this player had already spoken with this chief before this visit (captured before the visit-mark). A
+    /// revisit draws exactly one "scouting" roll (matching FreeCol's draw-then-test order) and then returns nothing.
+    /// <b>Divergence:</b> FreeCol's <c>hasAnyScouted()</c> is true once <em>any</em> player has scouted the settlement;
+    /// ours is <em>per-player</em> (<see cref="NativeSettlement.HasBeenVisitedBy"/>), so a chief a rival scouted first is
+    /// still a fresh audience for the human (we track visits per colonial power, not a single global flag).
+    /// </param>
+    private int ScoutSpeakToChief(Player player, Unit unit, NativeSettlement settlement, IGameRandom random, bool alreadyScouted)
     {
         // Hateful natives kill the scout outright.
         if (AlarmLevelOf(settlement, player.PlayerId) == AlarmLevel.Hateful)
@@ -1866,7 +1892,14 @@ public sealed partial class Game
 
         unit.MovementLeft = 0; // the audience ends the scout's turn
         SettlementType type = Ruleset.Settlement(settlement.SettlementTypeId);
-        int rnd = random.Next(10); // FreeCol "scouting" roll
+        int rnd = random.Next(10); // FreeCol "scouting" roll — drawn BEFORE the already-scouted test, so a revisit consumes exactly one rnd
+
+        // A chief this player already spoke with gives "nothing" on a revisit (FreeCol: the roll is drawn, then
+        // hasAnyScouted short-circuits before any gift/skill/reveal). The turn has already ended (MovementLeft = 0).
+        if (alreadyScouted)
+        {
+            return 0;
+        }
 
         // Trained into a seasoned scout — always if this chief teaches scouting, otherwise a 1-in-10 chance.
         bool teachesScouting = settlement.LearnableSkill == SeasonedScoutUnitTypeId;
@@ -7948,6 +7981,7 @@ public sealed partial class Game
         _colonyFamineNotices.Clear(); // and any human colonies that lost a colonist (but survived) to famine this turn
         _warehouseOverflowNotices.Clear(); // and any human-colony goods wasted over warehouse capacity this turn
         _monarchDecreeNotices.Clear(); // and any immediate (no-choice) King's decrees this turn (empty before the monarch grace period)
+        _refLandingNotices.Clear(); // and the one-off "the REF has landed" warning (LandRefUnits re-fills it on the first landing only)
         _firstContactNotices.Clear(); // and the human's first contacts with rival colonial powers this turn (FP-6a; DetectColonialContacts re-fills it)
         _stanceChangeNotices.Clear(); // and any turn-driven (tension-derived) stance shifts involving the human this turn (FP-6b; UpdateColonialStances re-fills it)
         _priceChangeNotices.Clear(); // and any Europe-market price moves from last turn (re-derived below by comparing the live prices to the baseline snapshot)
@@ -13147,6 +13181,15 @@ public sealed partial class Game
     /// <summary>Alarm a human-controlled/used tile contributes to a nearby settlement each turn (FreeCol <c>ALARM_TILE_IN_USE</c>).</summary>
     private const int AlarmTileInUse = 2;
 
+    /// <summary>
+    /// The per-turn alarm relief a resident mission grants its owner (FreeCol <c>GameOptions.MISSION_INFLUENCE</c>, the
+    /// classic <c>model.option.missionInfluence</c> = −10), doubled for an expert/jesuit missionary. A <b>negative</b>
+    /// delta (calming) applied each turn in <see cref="ApplyAmbientNativeAlarm"/>, distinct from the one-time install
+    /// bonus <see cref="AlarmNewMissionary"/> (−100). We carry it as a named constant rather than routing the spec option
+    /// (the option is not parsed into our <see cref="Specification.NativeTensionOptions"/>); a variant retunes it here.
+    /// </summary>
+    private const int MissionInfluence = -10;
+
     /// <summary>Chebyshev (king-move) distance between two tiles — the grid's surrounding-tiles metric.</summary>
     private static int ChebyshevDistance(Position a, Position b) =>
         Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
@@ -13156,10 +13199,21 @@ public sealed partial class Game
     /// human's nearby footprint. Within <c>settlement radius + <see cref="NativeAlarmRadius"/></c> tiles, every human
     /// <b>colony</b> adds <see cref="AlarmTileInUse"/> + its population and every human <b>offensive land unit</b> adds
     /// its type offence; the total is damped by <b>Pocahontas</b>'s <c>nativeAlarmModifier</c> (−50%) — this is that
-    /// modifier's faithful home — then applied. Deterministic (no RNG; stable settlement/colony/unit iteration);
-    /// runs in <see cref="EndTurn"/> just before the alarm decay. (Tile-ownership/control pressure and missionary
-    /// calming are not modelled; alarm is tracked toward the human only, so foreign powers exert none.)
+    /// modifier's faithful home — then applied. A settlement that holds the human's <b>resident mission</b> also gets a
+    /// recurring <see cref="MissionInfluence"/> (−10, doubled for an expert/jesuit) <b>calming</b> each turn (FreeCol
+    /// <c>ServerPlayer.java:1896-1906</c>); being a negative delta it bypasses <see cref="ScaleNativeAlarmGain"/> (which
+    /// damps gains only) and clamps at 0. Deterministic (no RNG; stable settlement/colony/unit iteration); runs in
+    /// <see cref="EndTurn"/> just before the alarm decay. (Alarm is tracked toward the human only, so foreign powers
+    /// exert none.)
     /// </summary>
+    /// <remarks>
+    /// <b>Tile-control branch — model-limitation deviation (FreeCol <c>ServerPlayer.java:1887-1892</c>).</b> FreeCol also
+    /// adds <see cref="AlarmTileInUse"/> for a surrounding tile <em>claimed/worked by a European colony but holding no
+    /// unit or colony</em> (a European work-radius claim). Our map model (<see cref="GameMap"/>) tracks only <b>native</b>
+    /// tile ownership (<c>_nativeOwners</c>); there is no European colony work-radius claim, so this branch contributes
+    /// nothing without a new ownership model — out of scope. We faithfully implement the colony, military-unit and
+    /// missionary branches and document the tile-control branch as the deviation here. See [players] / [natives].
+    /// </remarks>
     private void ApplyAmbientNativeAlarm()
     {
         foreach (NativeSettlement settlement in _nativeSettlements)
@@ -13183,9 +13237,19 @@ public sealed partial class Game
                     pressure += (int)unit.Type.Offence; // unarmed colonists (offence 0) add nothing, as in FreeCol
                 }
             }
+            // Tile-control branch (ServerPlayer.java:1887-1892) is a no-op for us — no European work-radius claim model
+            // exists (GameMap tracks only native tile ownership); documented as a deviation in the remarks above.
             if (pressure > 0)
             {
                 ChangeNativeAlarm(settlement, ScaleNativeAlarmGain(pressure)); // Pocahontas −50% damps the ambient gain
+            }
+            // Per-turn missionary calming (ServerPlayer.java:1896-1906): a resident human mission eases the settlement's
+            // alarm toward the human each turn — MissionInfluence (−10), doubled for an expert/jesuit. A negative delta,
+            // so it BYPASSES ScaleNativeAlarmGain (which only damps gains) and clamps at 0 via ChangeNativeAlarm.
+            if (settlement.HasMission && settlement.MissionOwnerId == HumanAlarmChannel)
+            {
+                int relief = settlement.MissionIsExpert ? MissionInfluence * 2 : MissionInfluence;
+                ChangeNativeAlarm(settlement, relief);
             }
         }
     }

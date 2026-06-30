@@ -1747,6 +1747,34 @@ public class IndependenceTests
     }
 
     [Fact]
+    public void RefLanding_FiresExactlyOneWarning_OnTheFirstLanding_NotOnLaterWaves()
+    {
+        // After the human declares and the King's army first comes ashore, exactly ONE RefLandingNotice is produced —
+        // the player-facing "the REF has landed" warning (FreeCol's REF-arrival message). The later staggered
+        // reinforcement waves do NOT re-warn (gated on no REF unit having been ashore before the turn). RNG-free.
+        (Game game, Colony colony) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer);
+        Player refP = Ref(game);
+        // Before the first landing the whole REF is still in Europe → no warning yet.
+        Assert.Empty(game.RefLandingNotices);
+        Assert.DoesNotContain(game.Units, u => u.OwnerId == refP.PlayerId && u.IsOnMap);
+
+        // First REF turn: the first echelon lands → exactly one warning, naming the threatened rebel colony.
+        game.EndTurn();
+        Assert.Contains(game.Units, u => u.OwnerId == refP.PlayerId && u.IsOnMap);
+        Assert.Single(game.RefLandingNotices);
+        Assert.Equal(colony.Name, game.RefLandingNotices[0].NearestColonyName);
+
+        // Every subsequent turn (including the next reinforcement wave) produces NO further landing warning — the
+        // per-turn notice reset clears it and the gate (REF already ashore) keeps it from re-firing.
+        for (int i = 0; i < RefWaveIntervalConst * 2 + 2; i++)
+        {
+            game.EndTurn();
+            Assert.Empty(game.RefLandingNotices);
+        }
+    }
+
+    [Fact]
     public void RefDefeat_CountsTheUnLandedWaves_SoTheWinCannotFireBeforeReinforcementsAreSpent()
     {
         (Game game, _) = RebellionReady();
