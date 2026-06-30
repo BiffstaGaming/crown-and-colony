@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-01 — Backlog wave 2: independence/fathers/trade — 4 free flips + 5 implemented (2 parallel streams) ✅
+
+**Requested (Chris):** continue the backlog (ultracode — use workflows).
+**Did:**
+- **Scoped 12 items** (independence/fathers/trade cluster). Matrix stale again: **4 already-built → flipped Partial→Yes** (REF lands & assaults, de Witt diplomacy fathers, settlement-spread band, AI-recruits-fathers/declares).
+- **Ran 2 genuinely-parallel worktree streams** (disjoint files — real parallelism this wave):
+  - **Stream A** (`Game.cs`): wired the de Witt custom-house boycott foreign-sales (`86d3fpyvx`), the faithful "stop electing new fathers post-DoI" gate (`86d3fq0fj`, new `ContinueFoundingFatherRecruitment` option default false), and wagon overland native trade with no ship-penalty (`86d3fpzun`, also satisfies ship-trade-penalty). +11 L1.
+  - **Stream C** (`TradeRoutePanel.cs`): surfaced trade-route validation warnings (`86d3fpz3w`) + a dynamic multi-stop ring create form (`86d3fpz5g`). +2 L3.
+- Integrated both (cherry-pick → fixed 1 mojibake → flipped 7 rows).
+- **Adversarial review (5 agents): 1 CONFIRMED-SERIOUS** — the de Witt "better foreign-affairs report" is flag-only dead code, so my row-650 flip over-claimed it. **Corrected** (650 Yes→Partial, 836 note fixed) + backlog `86d3ha4cv`. 2 MINOR (wagon haggle counter-offer still shows ship penalty; custom-house peace-peer scope) → backlog `86d3ha4jb`. FF-gate + trade-route-UI dimensions CLEAN.
+**Status:** 2535 L1/L2 (Category!=Soak) ✓ · 5/5 soak ✓ · 305 L3/L4 ✓ · **CI green both jobs** (first run) · pushed (`2f6e8db`). **Totals → 941 Yes / 36 Partial / 38 No** (+10 this wave).
+**Changed:** `Game.cs`, `Game.Natives.cs`, `GameOptions.cs`, `Ruleset.cs`, `TradeRoutePanel.cs`, 4 test files; docs custom-house/founding-fathers/independence/natives/trade-routes/feature-parity. Commits `e97abcb`, `96be6ce`, `5006369`, `032555e`, `2f6e8db`.
+**Decisions:** scoped-before-building (caught 4 stale-done); ran 2 disjoint-file streams in true parallel + did the reconciliation in main concurrently; resolved the de-Witt-report honesty finding by correcting the matrix (the omission is a conscious prior-session deviation) rather than gold-plating a minor report refinement. 9 tasks Shipped (`86d3fpzhk` stays Backlog — its remaining report axis = `86d3ha4cv`).
+**Scheduled next (your steer):** another scope+build wave over the remaining 38 No / 36 Partial; the de-Witt-report wiring (`86d3ha4cv`) + wagon-haggle (`86d3ha4jb`); or the QA tasks (L4 golden pipeline `86d3f69e9`, the `TradeAtRivalColony` flake).
+**Follow-ups / needs-you:** review the wave (all green, none playtested). 3 review nits captured as `86d3ha4cv` (de-Witt report) + `86d3ha4jb` (wagon haggle + custom-house peer scope), all low.
+
+---
+
 ## 2026-07-01 — Backlog wave: scope 14 items → 6 free flips + 3 implemented + honest triage ✅
 
 **Requested (Chris):** work the next 10-15 backlog items, using parallel streams where possible to batch same-file changes and reduce testing.
