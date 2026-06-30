@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-30 — L3 player-flow coverage slice + overnight wind-down ✅
+
+**Requested (Chris):** keep working the backlog overnight after the rival-AI epic.
+**Did:**
+- Added a bounded, high-confidence slice of `86d3f62r5` (L3 player-flow coverage, high-pri): drove the **Sentry** + **Clear-orders** order buttons (pressed, not just Disabled-checked) and the **EuropeButton** entry point (the real button, not `OpenEuropePanel()` directly). All wiring sound — no bugs surfaced. `86d3f62r5` stays open for further slices (it's a ~15-item checklist).
+- **Wound down** the overnight run at a clean, fully-CI-green state. Four pieces shipped tonight, all CI-green both jobs, all documented + reviewed: **(1)** Parity Wave 10, **(2)** the Rival European AI epic (audit + home-coast landing + honest reconciliation → **922 Yes**), **(3)** the HUD dead-click fix, **(4)** this L3 coverage slice.
+**Status:** targeted L3 green · **CI green both jobs** (first run) · pushed (`aeda252`).
+**Changed:** `InputTests.cs` (+3 L3 tests). No production change (pure additive coverage).
+**Decisions:** stopped before the riskier/harder-to-verify-unsupervised tasks (L4 golden pipeline `86d3f69e9`; the recurring `TradeAtRivalColony` flake — both better with Chris able to review/iterate). Left them for a supervised session.
+**Scheduled next (for Chris to steer):** L4 golden-pipeline reliability (`86d3f69e9`, high); fix the `TradeAtRivalColony` L3 flake (task chip spawned — it's cost two CI re-runs); more `86d3f62r5` L3-coverage slices; or a new direction.
+**Follow-ups / needs-you:** **Review tonight's four shipments** when you're up — all green on `main` but none playtested by you yet. The `TradeAtRivalColony` flake fix and the L4 golden pipeline are the two best next tasks but want your eyes (or a go-ahead to tackle unsupervised).
+
+---
+
 ## 2026-06-30 — HUD dead-click fix: hide the bottom-right button column behind a full-screen panel ✅
 
 **Requested (Chris):** continue the outstanding backlog after the rival-AI epic — picked the highest-value disjoint task.
