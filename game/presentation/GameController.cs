@@ -178,6 +178,8 @@ public partial class GameController : Node2D
     private AdvisorPanel _advisorPanel = null!;
     private Button _independenceButton = null!;
     private Button _endTurnButton = null!;
+    /// <summary>The always-on bottom-right HUD button column (Europe/TradeRoutes/Reports/MessageLog/Colopedia/HighScores/Diplomacy/EndTurn) — hidden while a full-screen panel is open so it never floats over or eats clicks meant for the panel (86d3fr6bc). The IndependenceButton is handled separately (it carries its own game-state gate). Collected in <see cref="_Ready"/>.</summary>
+    private Button[] _cornerHudButtons = null!;
     private Control _gameOverScreen = null!;
     private Label _gameOverMessage = null!;
     private Unit? _selectedUnit;
@@ -336,6 +338,20 @@ public partial class GameController : Node2D
         GetNode<Button>("UI/HighScoresButton").Pressed += OpenHighScoresPanel;
         GetNode<Button>("UI/DiplomacyButton").Pressed += OpenNegotiationPanel;
         _independenceButton.Pressed += OpenDeclarationPanel;
+        // The bottom-right HUD button column is declared after the full-screen panels in the scene, so as a later sibling
+        // it draws on top and receives input first — eating clicks over an open ColonyPanel/EuropePanel's bottom-right
+        // footprint (86d3fr6bc). Collect the always-on buttons and hide the whole column whenever a full-screen panel is
+        // open (wired to each panel's VisibilityChanged + RefreshView), so it neither floats over the panel nor steals
+        // its clicks; it returns when the panel closes.
+        _cornerHudButtons = new[]
+        {
+            GetNode<Button>("UI/EuropeButton"), GetNode<Button>("UI/TradeRoutesButton"),
+            GetNode<Button>("UI/ReportsButton"), GetNode<Button>("UI/MessageLogButton"),
+            GetNode<Button>("UI/ColopediaButton"), GetNode<Button>("UI/HighScoresButton"),
+            GetNode<Button>("UI/DiplomacyButton"), _endTurnButton,
+        };
+        _colonyPanel.VisibilityChanged += RefreshHudButtonVisibility;
+        _europePanel.VisibilityChanged += RefreshHudButtonVisibility;
         GetNode<Button>("UI/ColopediaPanel/VBox/CloseButton").Pressed += () => _colopediaPanel.Hide();
         GetNode<Button>("UI/ColonyReportPanel/VBox/CloseButton").Pressed += () => _colonyReportPanel.Hide();
         GetNode<Button>("UI/VictoryPanel/VBox/CloseButton").Pressed += () => _victoryPanel.Hide();
@@ -2375,6 +2391,31 @@ public partial class GameController : Node2D
         }
     }
 
+    /// <summary>
+    /// Shows the bottom-right HUD button column only while no full-screen panel (<see cref="_colonyPanel"/>/
+    /// <see cref="_europePanel"/>, both <c>anchors_preset=15</c>) is open (86d3fr6bc). The column is declared after those
+    /// panels in <c>main.tscn</c>, so as a later sibling it draws on top and receives input first over the panel's
+    /// bottom-right footprint; hiding it while a panel is open stops it both floating over the panel and consuming
+    /// clicks meant for it. Wired to each panel's <c>VisibilityChanged</c> and called from <see cref="RefreshView"/>.
+    /// The <see cref="_independenceButton"/> keeps its game-state gate (FreeCol's <c>declareIndependence</c> menu item —
+    /// shown only when <see cref="Game.CheckDeclareIndependence"/> allows and the human is not defeated), now also
+    /// suppressed while a panel is open. A no-op before a game starts (no <c>_game</c>), so the column keeps its scene default.
+    /// </summary>
+    private void RefreshHudButtonVisibility()
+    {
+        if (_game is null)
+        {
+            return; // not in a game yet (the menu) — leave the column at its scene-default visibility
+        }
+        bool fullScreenPanelOpen = _colonyPanel.Visible || _europePanel.Visible;
+        foreach (Button button in _cornerHudButtons)
+        {
+            button.Visible = !fullScreenPanelOpen;
+        }
+        _independenceButton.Visible = !fullScreenPanelOpen
+            && !_game.IsHumanDefeated && _game.CheckDeclareIndependence(_game.HumanPlayer).Allowed;
+    }
+
     private void RefreshView()
     {
         // Drop a stale selection: the selected unit may have just joined a colony (or been removed in combat),
@@ -2477,12 +2518,9 @@ public partial class GameController : Node2D
         // camera-centred visual goldens (which never move the mouse) are unaffected (ADR-006).
         RefreshTileInfo();
 
-        // The Declare-Independence HUD action appears only once the human may actually declare (FreeCol surfaces the
-        // declareIndependence menu item the same way) — gated purely on the CheckDeclareIndependence oracle (ADR-006):
-        // a colonial power with ≥ 50% national rebel sentiment, a connected port and still within the colonial era.
-        // Hidden the rest of the game (and once the nation has rebelled) so it never clutters the HUD or the goldens.
-        _independenceButton.Visible = !_game.IsHumanDefeated
-            && _game.CheckDeclareIndependence(_game.HumanPlayer).Allowed;
+        // The bottom-right HUD column (incl. the game-state-gated Declare-Independence action) — shown only when no
+        // full-screen panel is open, so it never overlaps an open ColonyPanel/EuropePanel (86d3fr6bc).
+        RefreshHudButtonVisibility();
 
         UpdateDefeatUi();
         UpdateVictoryUi();

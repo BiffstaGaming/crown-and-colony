@@ -593,6 +593,41 @@ public class ColonyPanelTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task OpeningTheColonyPanel_HidesTheCornerHudButtons_SoNoneOverlapTheOpenPanel()
+    {
+        // 86d3fr6bc: the bottom-right HUD button column is declared AFTER the full-screen panels in main.tscn, so as a
+        // later sibling it draws on top and receives input first over the panel's bottom-right footprint — a dead click
+        // that hits a HUD button instead of the colony screen. The fix hides the column while a full-screen panel is
+        // open. This is the headless global-rect-intersection guard (headless Godot does no GUI mouse-picking, so the
+        // dead click itself can't be simulated): assert no HUD button is left VISIBLE overlapping the open ColonyPanel,
+        // and that the column returns when the panel closes.
+        (ISceneRunner runner, GameController controller, _, _) = await OpenPanel();
+        var panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+        AssertThat(panel.Visible).IsTrue();
+
+        string[] hudButtons =
+        {
+            "EuropeButton", "TradeRoutesButton", "ReportsButton", "MessageLogButton",
+            "ColopediaButton", "HighScoresButton", "DiplomacyButton", "EndTurnButton", "IndependenceButton",
+        };
+        Rect2 panelRect = panel.GetGlobalRect();
+        foreach (string name in hudButtons)
+        {
+            var button = controller.GetNode<Button>($"UI/{name}");
+            // The class guard: no button may be left visible while overlapping the open panel (would be a dead click).
+            AssertThat(button.Visible && button.GetGlobalRect().Intersects(panelRect)).IsFalse();
+            AssertThat(button.Visible).IsFalse(); // specifically, the column is hidden while the panel is open
+        }
+
+        // Closing the panel restores the always-on column.
+        controller.GetNode<Button>("UI/ColonyPanel/VBox/CloseButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+        AssertThat(panel.Visible).IsFalse();
+        AssertThat(controller.GetNode<Button>("UI/EndTurnButton").Visible).IsTrue();
+        AssertThat(controller.GetNode<Button>("UI/EuropeButton").Visible).IsTrue();
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task WarehouseDumpButton_ThrowsAwayTheGoodsStack_WithNoGold()
     {
         // FreeCol warehouse dump (86d3fq0bq): the per-good "Dump" button discards the whole stack — frees space, no gold.
