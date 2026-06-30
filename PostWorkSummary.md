@@ -19,6 +19,25 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-06-30 — Parity backlog Wave 10: 6 free flips + dump goods + sail-to-Europe prompt + treasure connected-port ✅
+
+**Requested (Chris):** asked "what do we have left to move onto?" + "as efficient as possible"; from the steer menu picked **Efficient Wave 10 (small + free wins)**.
+**Did:**
+- **Orient pass first** (10 read-only agents): re-verified 7 stale Partials + scoped the 3 implementation items (current state, FreeCol spec, exact files, save-bump, disjointness) — the efficient move that avoided re-implementing done work.
+- **6 free parity flips (zero code):** hover-yield, map-controls overlay, zoom levels, tile-yield badges, **pioneer clear-forest** (terrain change + lumber + resource-exposure roll already done), **go-to/sail-to-Europe** standing order — all confirmed delivered by Waves 7-9 against code + FreeCol. (Music war/tension context correctly left Partial.)
+- **IMP1 dump goods** (`86d3fq0bq`): `Game.DumpColonyGoods` + per-good "Dump" button in the warehouse bar (no gold/market/tax). +3 L1, +1 L3.
+- **IMP2 auto sail-to-Europe prompt** (`86d3fpzqp`): `ConfirmationDialog` when a ship *crosses* onto the high seas (gated on a genuine crossing; cancel-path wired). +2 L3.
+- **IMP3 treasure connected-port** (`86d3fpy96`): cash-in needs a coastal own colony — **caught & fixed an AI-routing regression** (treasures would've stuck at inland colonies) by routing AI treasures to the nearest *coastal* colony. +2 L1.
+- Chose to implement the 3 items **directly in main** (not parallel worktrees): they share `GameController.cs`/`Game.cs`, so parallel streams would only manufacture merge conflicts — direct was the efficient path.
+- 5-dimension adversarial review: **0 confirmed-serious**, 1 MINOR (a wrong `<exception>` doc tag on `DumpColonyGoods`) — fixed.
+**Status:** 2517 L1/L2 ✓ · 5/5 soak ✓ · 300 L3/L4 ✓ · **CI green both jobs first run** ✓ · pushed (`7c80134`).
+**Changed:** `Game.cs` (DumpColonyGoods, treasure coastal rule, AI routing), `GameController.cs`, `ColonyPanel.cs`, 4 test files; docs `colonies.md`/`europe.md`/`treasure-train.md`/`game-logic.md`/`presentation.md`/`feature-parity.md`. Commits `50f159a`, `c986352`, `7c80134`.
+**Decisions:** Parity Totals **919 Yes / 53 Partial / 43 No** (+9 Yes this wave). Did the orient + free-flips before coding to honour the efficiency steer. Deferred the carrier-availability nuance + rebel full-value treasure cash-in (noted in docs).
+**Scheduled next:** **steer Chris on the next direction** — the remaining base-game gaps cluster into Rival European AI (the big one, `86d3fq1c9`), War & Independence endgame, and Native AI aggression. No granular task is pre-picked; await Chris's pick (the AskUserQuestion menu from this session still applies).
+**Follow-ups / needs-you:** (1) Pick the next wave/epic. (2) Optional non-blocking nits from the review: a focused L1 test for the AI treasure *routing* branch (currently soak-covered only); drop the redundant `moved.Destination is null` clause in the sail-prompt gate (always true after MoveUnit). Neither blocks.
+
+---
+
 ## 2026-06-27 — Parity backlog Wave 9: custom unit naming + custom-house import levels + advisor pop-ups (3 parallel streams) ✅
 
 **Requested (Chris):** after Wave 8, picked **"Another small Wave 9"** from the steer menu.
