@@ -5957,7 +5957,8 @@ public sealed partial class Game
     /// <param name="colony">The colony whose warehouse loses the goods.</param>
     /// <param name="goodsId">The good to discard.</param>
     /// <param name="amount">How much to throw away (must be positive and ≤ the stored amount).</param>
-    /// <exception cref="InvalidMoveException">A non-positive amount, or the colony does not hold that much of the good.</exception>
+    /// <exception cref="System.ArgumentOutOfRangeException">The amount is zero or negative.</exception>
+    /// <exception cref="InvalidMoveException">The colony does not hold that much of the good.</exception>
     public void DumpColonyGoods(Colony colony, string goodsId, int amount)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
