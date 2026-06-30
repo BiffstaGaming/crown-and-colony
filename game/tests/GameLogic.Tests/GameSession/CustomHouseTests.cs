@@ -470,4 +470,88 @@ public class CustomHouseTests
         Assert.True(colony.StoreOf(Sugar) >= 90);     // boycotted sugar skipped
         Assert.Equal(50, colony.StoreOf(Ore));        // un-boycotted ore still sold down to its level
     }
+
+    // ---- Jan de Witt sells boycotted goods to foreign powers at peace (86d3fpyvx) ----
+    //
+    // FreeCol Player.canTrade(type, CUSTOM_HOUSE) ignores a boycott when EITHER customIgnoreBoycott is on OR the player
+    // holds de Witt's customHouseTradesWithForeignCountries ability AND is at peace with a foreign power. These tests
+    // pin the de Witt half with the smuggling option OFF, so the oracle (not the option) is what allows the sale.
+
+    private const string DeWitt = "model.foundingFather.janDeWitt";
+
+    private static int ForeignPowerId(Game game) =>
+        game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).PlayerId;
+
+    /// <summary>A human colony with a custom house under a ruleset where the smuggling option is OFF, plus its game.</summary>
+    private static (Game Game, Colony Colony) DeWittColony_OptionOff()
+    {
+        Game game = Game.New(Ruleset.LoadClassic().WithCustomIgnoreBoycott(false), Seed);
+        Colony colony = FoundColony(game);
+        colony.AddBuilding(CustomHouse);
+        return (game, colony);
+    }
+
+    [Fact]
+    public void AutoSell_DeWitt_SellsBoycottedGood_ToForeignPowerAtPeace_EvenWithSmugglingOff()
+    {
+        (Game game, Colony colony) = DeWittColony_OptionOff();
+        game.HumanPlayer.CongressList.Add(DeWitt);                          // de Witt grants the foreign-trade ability
+        game.SetStance(game.HumanPlayer.PlayerId, ForeignPowerId(game), Stance.Peace); // at peace with a foreign power
+        Assert.True(game.CustomHouseTradesWithForeignCountries(game.HumanPlayer.PlayerId)); // the oracle is satisfied
+
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 50);
+        colony.AddGoods(Sugar, 90);                                          // 40 surplus over the level
+        game.HumanPlayer.Market.SetArrears(Sugar, 5000);                     // boycott it
+        Assert.False(game.HumanPlayer.Market.CanTrade(Sugar));               // genuinely boycotted
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.EndTurn();                                                     // must NOT throw
+
+        Assert.Equal(50, colony.StoreOf(Sugar));                            // de Witt's custom house sold it down
+        Assert.True(game.HumanPlayer.Gold > goldBefore);                    // …for gold (tax applied, price moved)
+        Assert.Equal(5000, game.HumanPlayer.Market.Arrears(Sugar));         // the boycott itself is not lifted
+    }
+
+    [Fact]
+    public void AutoSell_NoDeWitt_StillSkipsBoycottedGood_WhenSmugglingOff()
+    {
+        // Regression: without de Witt and with the smuggling option off, a boycotted good is still skipped.
+        (Game game, Colony colony) = DeWittColony_OptionOff();
+        game.SetStance(game.HumanPlayer.PlayerId, ForeignPowerId(game), Stance.Peace); // peace, but no de Witt ability
+        Assert.False(game.CustomHouseTradesWithForeignCountries(game.HumanPlayer.PlayerId));
+
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 50);
+        colony.AddGoods(Sugar, 90);
+        game.HumanPlayer.Market.SetArrears(Sugar, 5000);
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.EndTurn();
+
+        Assert.True(colony.StoreOf(Sugar) >= 90);                           // boycotted good left alone
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);                    // nothing sold
+    }
+
+    [Fact]
+    public void AutoSell_DeWitt_ButAtWarWithAllForeignPowers_StillSkipsBoycottedGood()
+    {
+        // The oracle encodes the at-peace condition: de Witt with NO foreign power at peace (the default Uncontacted /
+        // an explicit war) cannot smuggle the boycotted good — it is skipped, as without de Witt.
+        (Game game, Colony colony) = DeWittColony_OptionOff();
+        game.HumanPlayer.CongressList.Add(DeWitt);
+        foreach (Player foreign in game.Players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial))
+        {
+            game.SetStance(game.HumanPlayer.PlayerId, foreign.PlayerId, Stance.War); // at war with every foreign power
+        }
+        Assert.False(game.CustomHouseTradesWithForeignCountries(game.HumanPlayer.PlayerId)); // no peace → oracle false
+
+        game.SetColonyExport(colony, Sugar, exported: true, exportLevel: 50);
+        colony.AddGoods(Sugar, 90);
+        game.HumanPlayer.Market.SetArrears(Sugar, 5000);
+        int goldBefore = game.HumanPlayer.Gold;
+
+        game.EndTurn();
+
+        Assert.True(colony.StoreOf(Sugar) >= 90);                           // not sold (no foreign power at peace)
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);
+    }
 }

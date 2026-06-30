@@ -93,6 +93,18 @@ namespace CrownAndColony.GameLogic.Specification;
 /// AMPHIBIOUS_MOVES)</c>). The REF is excluded even when the option is on, matching FreeCol. Read by
 /// <see cref="GameSession.Game.CheckAttackAmphibious"/>. See [combat].
 /// </param>
+/// <param name="ContinueFoundingFatherRecruitment">
+/// Whether a player may keep recruiting <b>new</b> founding fathers after declaring independence (spec
+/// <c>model.option.continueFoundingFatherRecruitment</c>, a <c>booleanOption</c> in the <c>gameOptions</c> group,
+/// classic default <b>false</b>). In classic Colonization the Continental Congress closes its doors once you become a
+/// rebel — no further fathers are elected, though the ones already in your Congress keep aiding the war (FreeCol
+/// <c>ServerPlayer.canRecruitFoundingFather</c>: a <c>COLONIAL</c> player recruits freely; a <c>REBEL</c> or
+/// <c>INDEPENDENT</c> player only if this option is on). With this option <b>off</b> (the classic default) a rebel's
+/// banked liberty still updates each colony's Sons of Liberty, but no new father is elected and no fresh offers are
+/// generated. With it <b>on</b>, post-declaration recruitment continues exactly as for a colonial. Read by
+/// <see cref="GameSession.Game"/>'s liberty/election pass (<c>AccumulateLibertyAndElectFathers</c>). See
+/// [founding-fathers], [independence].
+/// </param>
 public sealed record GameOptions(
     int InitialImmigration,
     int EuropeanUnitImmigrationPenalty,
@@ -103,14 +115,16 @@ public sealed record GameOptions(
     int PeaceProbability,
     bool FogOfWar,
     bool CustomIgnoreBoycott,
-    bool AmphibiousMoves)
+    bool AmphibiousMoves,
+    bool ContinueFoundingFatherRecruitment)
 {
     /// <summary>
     /// The classic ruleset's <c>gameOptions</c> values — the fallback when a spec omits an option, and the source of
     /// truth for the default game's base numbers: the immigration trio (15 / −4 / +2), the
     /// <c>gameOptions.years</c> gate cluster (mandatoryColonyYear 1600 / lastColonialYear 1800 / independenceTurn 468),
-    /// the peace-hold base (peaceProbability 90), fog of war (on), custom-house boycott smuggling (on), and
-    /// amphibious moves (off — the classic spec defaults <c>model.option.amphibiousMoves</c> to <c>false</c>).
+    /// the peace-hold base (peaceProbability 90), fog of war (on), custom-house boycott smuggling (on),
+    /// amphibious moves (off — the classic spec defaults <c>model.option.amphibiousMoves</c> to <c>false</c>), and
+    /// post-independence founding-father recruitment (off — classic Congress closes at the Declaration).
     /// </summary>
     public static readonly GameOptions ClassicDefaults = new(
         InitialImmigration: 15,
@@ -122,7 +136,8 @@ public sealed record GameOptions(
         PeaceProbability: 90,
         FogOfWar: true,
         CustomIgnoreBoycott: true,
-        AmphibiousMoves: false);
+        AmphibiousMoves: false,
+        ContinueFoundingFatherRecruitment: false);
 
     /// <summary>
     /// The peace-hold base as a 0–1 multiplier (FreeCol <c>Specification.getPercentageMultiplier</c> =

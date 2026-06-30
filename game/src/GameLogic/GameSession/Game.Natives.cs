@@ -199,7 +199,7 @@ public partial class Game
     /// <summary>
     /// Sells goods from a ship to an adjacent settlement at an <b>agreed haggled price</b> (FreeCol's price-carrying
     /// trade — the deal closes at the figure the chief accepted in <see cref="TryHaggleSell"/>, not the standard
-    /// <see cref="NativeSalePrice"/>). Identical to <see cref="SellToNatives(Unit, NativeSettlement, string, int)"/> in
+    /// <see cref="NativeSalePrice(NativeSettlement, string, int)"/>). Identical to <see cref="SellToNatives(Unit, NativeSettlement, string, int)"/> in
     /// every other respect (cargo moves into the store, gold credited with no European tax, goodwill, re-priced wanted
     /// goods, ends the ship's turn) — only the gold figure differs. <paramref name="agreedPrice"/> is validated to be
     /// non-negative and no more than <see cref="HaggleSellPriceCeilingPercent"/>% of the standard price (a deal the

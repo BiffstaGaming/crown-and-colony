@@ -358,6 +358,104 @@ public class NativeTradeTests
         Assert.Equal(67, SaveGame.CurrentVersion);
     }
 
+    // ---- Overland wagon-train trade pays no ship-trade penalty (86d3fpzun) ----
+    //
+    // FreeCol's ship-trade penalty (model.option.shipTradePenalty) is a SEA-trader penalty: an overland wagon train
+    // trading with an inland settlement earns the better, un-penalised price. The carrier checks already gate on
+    // IsCarrier (not naval), so a wagon already passes adjacency/carrier — only the price formula must drop the penalty.
+
+    private const string WagonTrain = "model.unit.wagonTrain";
+
+    /// <summary>A game with a wagon train on a land tile beside a (test-built) inland camp on the adjacent land.</summary>
+    private static (Game game, NativeSettlement settlement, Unit wagon) SetupOverlandTrade(
+        IReadOnlyList<string>? wanted, int startingGold = 0)
+    {
+        Game game = Game.New(Classic, Seed, startingGold: startingGold);
+        // An inland land tile whose neighbour is also land — no water touches the pair (a genuinely inland settlement).
+        Position land = game.Map.AllPositions().First(p =>
+            !game.Map.TerrainAt(p).IsWater
+            && p.Neighbours().Any(n => game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+                && game.ColonyAt(n) is null && game.NativeSettlementAt(n) is null
+                && !game.Units.Any(u => u.IsOnMap && u.Position == n)));
+        Position camp = land.Neighbours().First(n => game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.ColonyAt(n) is null && game.NativeSettlementAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+        var settlement = new NativeSettlement(
+            8888, "model.nationType.apache", "model.settlement.camp", false, camp, 5, learnableSkill: null)
+        {
+            WantedGoods = wanted ?? [],
+        };
+        Unit wagon = game.SpawnUnit(Classic.Unit(WagonTrain), land);
+        return (game, settlement, wagon);
+    }
+
+    [Fact]
+    public void WagonSalePrice_OmitsTheShipTradePenalty_PaysMoreThanACaravel()
+    {
+        // Same camp, same good, same amount: the wagon (land carrier) is paid the full price; the caravel pays the
+        // medium −30% ship-trade penalty on top.
+        (Game game, NativeSettlement settlement, _) = SetupOverlandTrade(["model.goods.sugar"]);
+
+        int wagonPrice = game.NativeSalePrice(settlement, "model.goods.sugar", 100, naval: false);
+        int shipPrice = game.NativeSalePrice(settlement, "model.goods.sugar", 100, naval: true);
+
+        Assert.Equal(2190, wagonPrice);  // un-penalised getPriceToSell (base 13 × 150% wanted, +11/10 markup)
+        Assert.Equal(1533, shipPrice);   // 2190 × (100 − 30)/100 — the ship pays the penalty
+        Assert.True(wagonPrice > shipPrice, "an overland wagon train earns the better price");
+        // The default 3-arg entry stays the naval (penalised) price — unchanged for every existing ship caller.
+        Assert.Equal(shipPrice, game.NativeSalePrice(settlement, "model.goods.sugar", 100));
+    }
+
+    [Fact]
+    public void WagonSale_BesideAnInlandSettlement_Succeeds_AndPaysMoreThanACaravelsSameSale()
+    {
+        (Game game, NativeSettlement settlement, Unit wagon) = SetupOverlandTrade(["model.goods.sugar"]);
+        wagon.AddCargo("model.goods.sugar", 100);
+        game.ChangeNativeAlarm(settlement, 300); // Content, so trading is allowed
+        int goldBefore = game.Gold;
+
+        MoveCheck check = game.CheckSellToNatives(wagon, settlement, "model.goods.sugar", 100);
+        Assert.True(check.Allowed, check.Reason); // the wagon passes the carrier/adjacency gate at an inland settlement
+        int wagonPrice = game.SellToNatives(wagon, settlement, "model.goods.sugar", 100);
+
+        Assert.Equal(2190, wagonPrice);                       // un-penalised — more than a caravel's 1533
+        Assert.Equal(goldBefore + wagonPrice, game.Gold);
+        Assert.Equal(0, wagon.CargoOf("model.goods.sugar"));
+        Assert.Equal(0, wagon.MovementLeft);                  // the trade ends the wagon's turn
+
+        // A caravel selling the identical lot to an identical camp earns less (the ship-trade penalty).
+        (Game shipGame, NativeSettlement coastal, Unit ship) = SetupCoastalTrade(["model.goods.sugar"]);
+        ship.AddCargo("model.goods.sugar", 100);
+        shipGame.ChangeNativeAlarm(coastal, 300);
+        int shipPrice = shipGame.SellToNatives(ship, coastal, "model.goods.sugar", 100);
+        Assert.True(wagonPrice > shipPrice, $"wagon {wagonPrice} should beat caravel {shipPrice}");
+    }
+
+    [Fact]
+    public void WagonBuy_FromAnInlandSettlement_Works_AndIsAlreadyPenaltyFree()
+    {
+        (Game game, NativeSettlement settlement, Unit wagon) = SetupOverlandTrade(null, startingGold: 10000);
+        settlement.AddGoods("model.goods.sugar", 80);
+        game.RecomputeWantedGoods(settlement);
+        game.ChangeNativeAlarm(settlement, 300); // Content
+
+        MoveCheck check = game.CheckBuyFromNatives(wagon, settlement, "model.goods.sugar", 40);
+        Assert.True(check.Allowed, check.Reason);
+        int goldBefore = game.Gold;
+        int paid = game.BuyFromNatives(wagon, settlement, "model.goods.sugar", 40);
+
+        Assert.Equal(check.Cost, paid);
+        Assert.Equal(goldBefore - paid, game.Gold);
+        Assert.Equal(40, wagon.CargoOf("model.goods.sugar"));
+        Assert.Equal(40, settlement.GeneralStockOf("model.goods.sugar")); // 80 → 40
+        // Buying carries no ship-trade penalty for any carrier (NativeBuyPrice has no naval term), so the wagon paid
+        // exactly the formula price — the same a caravel would pay for the identical lot.
+        (Game shipGame, NativeSettlement coastal, _) = SetupCoastalTrade(null, startingGold: 10000);
+        coastal.AddGoods("model.goods.sugar", 80);
+        shipGame.RecomputeWantedGoods(coastal);
+        Assert.Equal(shipGame.NativeBuyPrice(coastal, "model.goods.sugar", 40), check.Cost);
+    }
+
     [Fact]
     public void GeneralStock_SurvivesASaveRoundTrip_AndOmitsWhenEmpty()
     {

@@ -2045,34 +2045,52 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// What a settlement pays for <paramref name="amount"/> of <paramref name="goodsId"/> you sell it
+    /// What a settlement pays for <paramref name="amount"/> of <paramref name="goodsId"/> a <b>ship</b> sells it
     /// (FreeCol <c>getPriceToSell</c> ≈ <c>amount + 11·getPriceToBuy/10</c>): a per-unit base of
     /// <c>12 + the settlement's trade bonus</c>, <b>reduced as its store of that good fills toward capacity</b>
     /// (<see cref="NativeNormalUnitPrice"/>, FreeCol's stock-fill decay), times a wanted-goods premium (150 / 125 / 110%
     /// for its 1st / 2nd / 3rd wanted good), then the classic <b>ship-trade penalty</b> (a settlement pays a ship-borne
     /// trader less — <see cref="DifficultyOptions.ShipTradePenalty"/>, −30% at medium; FreeCol
-    /// <c>model.option.shipTradePenalty</c> applied with <c>sense=true</c> for the player's sale). Native trade here is
-    /// ship-only (<see cref="CheckSellToNatives"/>), so the penalty always applies.
+    /// <c>model.option.shipTradePenalty</c> applied with <c>sense=true</c> for the player's sale). This naval-trader
+    /// overload always applies the penalty; an overland wagon train pays the un-penalised price via
+    /// <see cref="NativeSalePrice(NativeSettlement, string, int, bool)"/>.
     /// </summary>
-    public int NativeSalePrice(NativeSettlement settlement, string goodsId, int amount)
+    public int NativeSalePrice(NativeSettlement settlement, string goodsId, int amount) =>
+        NativeSalePrice(settlement, goodsId, amount, naval: true);
+
+    /// <summary>
+    /// What a settlement pays for <paramref name="amount"/> of <paramref name="goodsId"/> a trader sells it, with the
+    /// classic <b>ship-trade penalty</b> applied only when <paramref name="naval"/> is true (FreeCol
+    /// <c>model.option.shipTradePenalty</c> is a sea-trader penalty). A naval carrier is paid
+    /// <see cref="DifficultyOptions.ShipTradePenalty"/>% less; an <b>overland wagon train</b> (a land carrier) is paid
+    /// the full un-penalised price — the better deal an inland trader earns. The pre-penalty formula is FreeCol's
+    /// <c>getPriceToSell</c> ≈ <c>amount + 11·getPriceToBuy/10</c> (stock-fill base × wanted premium). RNG-free.
+    /// </summary>
+    public int NativeSalePrice(NativeSettlement settlement, string goodsId, int amount, bool naval)
     {
         int basePerUnit = NativeNormalUnitPrice(settlement, goodsId, settlement.GeneralStockOf(goodsId));
         int perUnit = basePerUnit * NativeWantedMultiplier(settlement, goodsId) / 100;
         int price = amount + (11 * perUnit * amount) / 10;
-        // The ship-trade penalty is a percentage modifier on the whole sale price (FreeCol applyModifiers).
-        return price * (100 + Ruleset.Difficulty.ShipTradePenalty) / 100;
+        // The ship-trade penalty is a percentage modifier on the whole sale price (FreeCol applyModifiers), applied to
+        // a SEA trader only — a wagon train trading overland gets the full, un-penalised price.
+        return naval ? price * (100 + Ruleset.Difficulty.ShipTradePenalty) / 100 : price;
     }
 
-    /// <summary>Whether <paramref name="ship"/> may sell <paramref name="amount"/> of a good to <paramref name="settlement"/> now.</summary>
+    /// <summary>
+    /// Whether the carrier <paramref name="ship"/> (a ship <em>or</em> an overland wagon train) may sell
+    /// <paramref name="amount"/> of a good to <paramref name="settlement"/> now. The quoted price applies the
+    /// ship-trade penalty only to a naval carrier — a wagon train trading overland with an inland settlement is paid
+    /// the better un-penalised price (<see cref="NativeSalePrice(NativeSettlement, string, int, bool)"/>).
+    /// </summary>
     public MoveCheck CheckSellToNatives(Unit ship, NativeSettlement settlement, string goodsId, int amount)
     {
         if (!ship.Type.IsCarrier || !ship.IsOnMap)
         {
-            return MoveCheck.No("Only a ship on the map can trade with a settlement.");
+            return MoveCheck.No("Only a carrier on the map can trade with a settlement.");
         }
         if (ship.Position != settlement.Position && !ship.Position.IsAdjacentTo(settlement.Position))
         {
-            return MoveCheck.No("The ship must be next to the settlement to trade.");
+            return MoveCheck.No("The carrier must be next to the settlement to trade.");
         }
         if (AlarmLevelOf(settlement, ship.OwnerId) >= AlarmLevel.Angry)
         {
@@ -2084,16 +2102,17 @@ public sealed partial class Game
         }
         if (ship.CargoOf(goodsId) < amount)
         {
-            return MoveCheck.No($"The ship is not carrying {amount} {goodsId}.");
+            return MoveCheck.No($"The carrier is not carrying {amount} {goodsId}.");
         }
-        return MoveCheck.Yes(NativeSalePrice(settlement, goodsId, amount));
+        return MoveCheck.Yes(NativeSalePrice(settlement, goodsId, amount, ship.Type.IsNaval));
     }
 
     /// <summary>
-    /// Sells goods from a ship's hold to an adjacent native settlement for gold (no European tax),
-    /// at the native price. Trading builds goodwill (lowers the settlement's alarm) and ends the
-    /// ship's turn. (Buying from settlements needs a settlement goods-stock model — a later slice;
-    /// inland settlements need wagon trains, also later, so only coastal settlements are reachable today.)
+    /// Sells goods from a carrier's hold to an adjacent native settlement for gold (no European tax), at the native
+    /// price. The carrier may be a ship (beside a coastal settlement) <b>or</b> an overland wagon train (beside an
+    /// inland settlement); a wagon train is paid the un-penalised price, a ship the ship-trade-penalised one (see
+    /// <see cref="NativeSalePrice(NativeSettlement, string, int, bool)"/>). Trading builds goodwill (lowers the
+    /// settlement's alarm) and ends the carrier's turn.
     /// </summary>
     /// <returns>The gold received.</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckSellToNatives"/>.</exception>
@@ -2115,7 +2134,7 @@ public sealed partial class Game
         player.Gold += price; // natives pay in gold; no European market tax
         ChangeNativeAlarm(settlement, player.PlayerId, -Math.Max(1, price / 50)); // goodwill toward this trader (FreeCol ALARM_BONUS_SELL ≈ 20% → price/50; min 1 per trade)
         RecomputeWantedGoods(settlement); // the fuller store re-prices its cravings (FreeCol csSell → updateWantedGoods)
-        ship.MovementLeft = 0; // opening a trade session ends the ship's turn
+        ship.MovementLeft = 0; // opening a trade session ends the carrier's turn
         return price;
     }
 
@@ -2124,7 +2143,7 @@ public sealed partial class Game
     /// <summary>
     /// What you pay a settlement to <b>buy</b> <paramref name="amount"/> of <paramref name="goodsId"/> from its store
     /// (FreeCol <c>IndianSettlement.getPriceToSell</c>, the settlement's asking price): <c>amount + max(0,
-    /// 11·getPriceToBuy/10)</c> — i.e. the settlement's own buy valuation (<see cref="NativeSalePrice"/>'s un-penalised
+    /// 11·getPriceToBuy/10)</c> — i.e. the settlement's own buy valuation (<see cref="NativeSalePrice(NativeSettlement, string, int)"/>'s un-penalised
     /// per-unit base × the wanted premium) marked up ~10%, with a one-unit floor per unit. Unlike selling <em>to</em>
     /// the natives there is no ship-trade penalty (FreeCol applies that only to the player's sale, <c>sense=true</c>).
     /// The price rises as their store empties (the stock-fill term), so each purchase makes the next dearer.
@@ -2157,16 +2176,20 @@ public sealed partial class Game
     /// <summary>A settlement won't sell fewer than this many units of a good (FreeCol <c>IndianSettlement.TRADE_MINIMUM_SIZE</c>).</summary>
     private const int NativeTradeMinimumSize = 20;
 
-    /// <summary>Whether <paramref name="ship"/> may buy <paramref name="amount"/> of a good from <paramref name="settlement"/> now.</summary>
+    /// <summary>
+    /// Whether the carrier <paramref name="ship"/> (a ship or an overland wagon train) may buy <paramref name="amount"/>
+    /// of a good from <paramref name="settlement"/> now. The buy price carries no ship-trade penalty for either carrier
+    /// (FreeCol applies that only to the player's sale).
+    /// </summary>
     public MoveCheck CheckBuyFromNatives(Unit ship, NativeSettlement settlement, string goodsId, int amount)
     {
         if (!ship.Type.IsCarrier || !ship.IsOnMap)
         {
-            return MoveCheck.No("Only a ship on the map can trade with a settlement.");
+            return MoveCheck.No("Only a carrier on the map can trade with a settlement.");
         }
         if (ship.Position != settlement.Position && !ship.Position.IsAdjacentTo(settlement.Position))
         {
-            return MoveCheck.No("The ship must be next to the settlement to trade.");
+            return MoveCheck.No("The carrier must be next to the settlement to trade.");
         }
         if (AlarmLevelOf(settlement, ship.OwnerId) >= AlarmLevel.Angry)
         {
@@ -2189,9 +2212,9 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Buys goods from an adjacent native settlement's store into a ship's hold for gold (no European tax), at the native
-    /// asking price. Draining the store re-prices the settlement's wanted goods and ends the ship's turn. (Inland
-    /// settlements still need wagon trains — a later slice — so only coastal settlements are reachable today.)
+    /// Buys goods from an adjacent native settlement's store into a carrier's hold for gold (no European tax), at the
+    /// native asking price. The carrier may be a ship (beside a coastal settlement) or an overland wagon train (beside
+    /// an inland settlement). Draining the store re-prices the settlement's wanted goods and ends the carrier's turn.
     /// </summary>
     /// <returns>The gold paid.</returns>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckBuyFromNatives"/>.</exception>
@@ -2213,7 +2236,7 @@ public sealed partial class Game
         player.Gold -= price; // no European market tax
         ChangeNativeAlarm(settlement, player.PlayerId, -Math.Max(1, price / 200)); // a little goodwill (FreeCol ALARM_BONUS_BUY ≈ 5% → price/200; min 1)
         RecomputeWantedGoods(settlement); // the emptier store re-prices its cravings (FreeCol csBuy → updateWantedGoods)
-        ship.MovementLeft = 0; // opening a trade session ends the ship's turn
+        ship.MovementLeft = 0; // opening a trade session ends the carrier's turn
         return price;
     }
 
@@ -2287,7 +2310,7 @@ public sealed partial class Game
     /// Offers to <b>sell</b> <paramref name="amount"/> of <paramref name="goodsId"/> to a settlement at the player's
     /// asking <paramref name="offerPrice"/> after <paramref name="round"/> prior haggle rounds (0 = the opening offer) —
     /// FreeCol <c>NativeAIPlayer.handleTrade</c>'s SELL branch. The settlement's fair price is
-    /// <see cref="NativeSalePrice"/> walked <b>down</b> ×9/10 per round so far (each round the natives offer a little
+    /// <see cref="NativeSalePrice(NativeSettlement, string, int)"/> walked <b>down</b> ×9/10 per round so far (each round the natives offer a little
     /// less). If the player asks no more than that, the trade is accepted at the player's price; otherwise the natives
     /// either counter (their lower price) or — with rising probability the longer it drags on (FreeCol's
     /// <c>randomInt(HAGGLE_NUMBER + haggle) ≥ HAGGLE_NUMBER</c>) — lose patience and walk away
@@ -10616,8 +10639,12 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Converts each colony's freshly-produced bells into player liberty, elects
-    /// the chosen father once enough is banked, and refreshes the offered set.
+    /// Converts each colony's freshly-produced bells into player liberty, then — unless the player has declared
+    /// independence (a <see cref="PlayerType.Rebel"/>/<see cref="PlayerType.Independent"/> player, under the classic
+    /// <see cref="GameOptions.ContinueFoundingFatherRecruitment"/> = false) — elects the chosen father once enough is
+    /// banked and refreshes the offered set. Faithful to classic Colonization, the Continental Congress closes at the
+    /// Declaration: a rebel's bells still update Sons of Liberty (the bake stays ungated) and already-elected fathers
+    /// keep aiding the war, but no NEW father is recruited. With the option on, recruitment continues post-declaration.
     /// </summary>
     private void AccumulateLibertyAndElectFathers(Player player)
     {
@@ -10642,6 +10669,27 @@ public sealed partial class Game
         }
         player.Liberty = Math.Max(0, player.Liberty); // a net-negative bell turn can't push the founding-father pool below 0
 
+        // Classic Colonization closes the Continental Congress at the Declaration of Independence: a Rebel/Independent
+        // player elects no NEW fathers and is offered none (the bells→Liberty bake above stays ungated so Sons of
+        // Liberty keep updating, and already-elected fathers keep their effects via player.Congress). FreeCol
+        // ServerPlayer.canRecruitFoundingFather: COLONIAL recruits freely; REBEL/INDEPENDENT only under
+        // model.option.continueFoundingFatherRecruitment (classic default false). Skipping the block for a HUMAN rebel
+        // also removes that turn's RandomFor(player) offers draw — but only on the Rebel/Independent path; the COLONIAL
+        // path's draw sequence (the only one the default soak exercises) is byte-identical (ADR-009).
+        if (player.PlayerType is not (PlayerType.Rebel or PlayerType.Independent)
+            || Ruleset.GameOptions.ContinueFoundingFatherRecruitment)
+        {
+            ElectAndRefreshFounders(player);
+        }
+    }
+
+    /// <summary>
+    /// Elects the chosen father once enough liberty is banked and refreshes the offered set — the recruitment half of
+    /// <see cref="AccumulateLibertyAndElectFathers"/>, gated out for a rebel under the classic ruleset (see that method
+    /// and <see cref="GameOptions.ContinueFoundingFatherRecruitment"/>).
+    /// </summary>
+    private void ElectAndRefreshFounders(Player player)
+    {
         if (player.CurrentFather is not null && player.Liberty >= TotalFoundingFatherCost(player))
         {
             string elected = player.CurrentFather; // capture before it is cleared
@@ -13106,12 +13154,17 @@ public sealed partial class Game
     /// determinism (ADR-009); a colony with no custom house — and the default PerGood mode with no toggles — sells
     /// nothing, so the soak stays byte-stable.
     /// <para>
-    /// Boycott handling follows FreeCol's <c>Player.canTrade(type, Market.Access.CUSTOM_HOUSE)</c>: when the
-    /// <c>customIgnoreBoycott</c> game option is on (classic default, <see cref="GameOptions.CustomIgnoreBoycott"/>)
-    /// the custom house <b>smuggles</b> a boycotted good — it still sells, with tax and price movement, no extra
-    /// penalty (the sale is made with the boycott gate bypassed). When the option is off a boycotted good is
-    /// <b>skipped</b> safely — it is never sold and, crucially, the sell path is never even entered, so End Turn never
-    /// throws <see cref="InvalidMoveException"/> on a boycotted custom-house good.
+    /// Boycott handling follows FreeCol's <c>Player.canTrade(type, Market.Access.CUSTOM_HOUSE)</c>: a boycotted good
+    /// still sells (the custom house <b>smuggles</b> it — tax and price movement as a normal sale, no extra penalty)
+    /// when <b>either</b> the <c>customIgnoreBoycott</c> game option is on (classic default,
+    /// <see cref="GameOptions.CustomIgnoreBoycott"/>) <b>or</b> this owner holds Jan de Witt's
+    /// <c>customHouseTradesWithForeignCountries</c> ability while at peace with a foreign power
+    /// (<see cref="CustomHouseTradesWithForeignCountries"/>) — de Witt lets a custom house sell boycotted goods to
+    /// foreign powers it is at peace with even with the smuggling option off. When neither condition holds a boycotted
+    /// good is <b>skipped</b> safely — it is never sold and, crucially, the sell path is never even entered, so End Turn
+    /// never throws <see cref="InvalidMoveException"/> on a boycotted custom-house good. The player-level allow flag is
+    /// computed once above the per-good loop, then passed to <see cref="SellColonyGoods(Player, Colony, string, int, bool)"/>
+    /// as its <c>ignoreBoycott</c> so the boycotted good's sale is made with the gate bypassed rather than throwing.
     /// </para>
     /// Each sale from a <b>human-owned</b> colony records a transient
     /// <see cref="CustomHouseSaleNotice"/> (good + amount + after-tax gold) the HUD surfaces after End Turn.
@@ -13123,7 +13176,12 @@ public sealed partial class Game
             return;
         }
         bool exportAll = AutoExportMode == AutoExportMode.ExportAllOverLevel;
-        bool ignoreBoycott = Ruleset.GameOptions.CustomIgnoreBoycott;
+        // A boycotted good is still sold when EITHER the customIgnoreBoycott smuggling option is on (the classic
+        // default) OR this owner has Jan de Witt's customHouseTradesWithForeignCountries ability and is at peace with a
+        // foreign power (FreeCol Player.canTrade(type, CUSTOM_HOUSE): the boycott is ignored under either condition).
+        // Hoisted ABOVE the per-good loop — it is a player-level fact, not a per-good one.
+        bool mayTradeBoycotted = Ruleset.GameOptions.CustomIgnoreBoycott
+            || CustomHouseTradesWithForeignCountries(owner.PlayerId);
         foreach (string goodsId in colony.Stores.Keys.OrderBy(g => g, StringComparer.Ordinal).ToList())
         {
             GoodsType goods = Ruleset.Goods(goodsId);
@@ -13137,16 +13195,17 @@ public sealed partial class Game
             {
                 continue;
             }
-            // Boycott gate (FreeCol canTrade(CUSTOM_HOUSE)): smuggle when customIgnoreBoycott is on, otherwise skip the
-            // good entirely so End Turn never throws on it. Either way the sell path is only entered when allowed.
-            if (!ignoreBoycott && !owner.Market.CanTrade(goodsId))
+            // Boycott gate (FreeCol canTrade(CUSTOM_HOUSE)): sell a boycotted good only when allowed (smuggling option
+            // OR de Witt's foreign-trade ability), otherwise skip it entirely so End Turn never throws on it. Either way
+            // the sell path is only entered when allowed.
+            if (!mayTradeBoycotted && !owner.Market.CanTrade(goodsId))
             {
                 continue;
             }
             int surplus = colony.StoreOf(goodsId) - setting.ExportLevel;
             if (surplus > 0)
             {
-                int gold = SellColonyGoods(owner, colony, goodsId, surplus, ignoreBoycott);
+                int gold = SellColonyGoods(owner, colony, goodsId, surplus, ignoreBoycott: mayTradeBoycotted);
                 if (IsHumanOwned(colony))
                 {
                     // Transient player-facing notice (ADR-006): the HUD surfaces what each custom house sold after

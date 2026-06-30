@@ -1878,4 +1878,109 @@ public class IndependenceTests
     }
 
     private const int RefWaveIntervalConst = 4; // mirrors Game.RefWaveInterval (private)
+
+    // ── No NEW founding fathers after the Declaration of Independence (classic) (86d3fq0fj) ───────────────
+    //
+    // FreeCol ServerPlayer.canRecruitFoundingFather: a COLONIAL player recruits freely; a REBEL/INDEPENDENT player only
+    // under model.option.continueFoundingFatherRecruitment (classic default false). The bells→Liberty bake stays ungated
+    // (Sons of Liberty must keep updating) and already-elected fathers keep aiding the war — only NEW recruitment stops.
+
+    private const string Washington = "model.foundingFather.georgeWashington";
+
+    [Fact]
+    public void GameOption_ContinueFoundingFatherRecruitment_ParsesClassicFalse_AndSeamCanOverride()
+    {
+        Assert.False(Classic.GameOptions.ContinueFoundingFatherRecruitment);                 // classic ships defaultValue="false"
+        Assert.False(GameOptions.ClassicDefaults.ContinueFoundingFatherRecruitment);          // fallback matches the spec
+        Assert.True(Ruleset.LoadClassic().WithContinueFoundingFatherRecruitment(true).GameOptions.ContinueFoundingFatherRecruitment);
+        Assert.False(Ruleset.LoadClassic().WithContinueFoundingFatherRecruitment(false).GameOptions.ContinueFoundingFatherRecruitment);
+    }
+
+    [Fact]
+    public void Rebel_WithBankedLiberty_AndAChosenFather_ElectsNoNewFather_ClassicDefault()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        string target = game.OfferedFathers[0];
+        rebel.CurrentFather = target;
+        rebel.Liberty = game.TotalFoundingFatherCost() + 1000; // far more than the cost — a colonial would elect at once
+
+        game.DeclareIndependence(rebel);                       // → Rebel; the Congress closes (classic)
+        Assert.Equal(PlayerType.Rebel, rebel.PlayerType);
+
+        game.EndTurn();                                        // the rebel runs the colonial bell/liberty path
+
+        Assert.DoesNotContain(target, game.Congress);          // NO new father elected post-declaration
+        Assert.Equal(target, game.CurrentFather);              // the choice is simply stalled, not consumed
+    }
+
+    [Fact]
+    public void Rebel_BellsStillBakeIntoSonsOfLiberty_EvenThoughRecruitmentStops()
+    {
+        // The bake above the election gate is ungated: a rebel colony's bells still feed its colony Sons-of-Liberty
+        // liberty each turn, so the SoL machinery keeps working after the Declaration (only NEW fathers are blocked).
+        (Game game, Colony colony) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        game.DeclareIndependence(rebel);
+        colony.Liberty = 0;                                    // zero the colony's accrued liberty
+
+        game.EndTurn();                                        // the town hall makes bells → liberty (ungated bake)
+
+        Assert.True(colony.Liberty > 0, "a rebel colony's bells must still bake into its Sons-of-Liberty liberty");
+    }
+
+    [Fact]
+    public void ElectedWashington_StillAutoPromotes_ARebelsWinningUnit()
+    {
+        // The DONE half (already-elected fathers keep aiding the war): a rebel with Washington in Congress still gets the
+        // automatic promotion on an ordinary win — the effect derives from player.Congress, not the player type.
+        (Game game, Colony colony) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        rebel.CongressList.Add(Washington);
+        game.DeclareIndependence(rebel);
+        Assert.Equal(PlayerType.Rebel, rebel.PlayerType);
+        Assert.Contains(Washington, game.Congress);            // Washington survives the Declaration
+
+        // A rebel soldier standing beside a native brave, on free adjacent land.
+        bool Free(Position n) =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.NativeSettlementAt(n) is null && game.ColonyAt(n) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n);
+        Unit brave = game.NativeUnits.First(b => b.Position.Neighbours().Any(Free));
+        Position spot = brave.Position.Neighbours().First(Free);
+        Unit soldier = game.SpawnUnit(Classic.Unit(Game.StartingUnitTypeId), spot);
+        soldier.OwnerId = rebel.PlayerId;
+        soldier.RoleId = "model.role.soldier";
+        soldier.RoleCount = 1;
+        int id = soldier.Id;
+
+        game.Attack(soldier, brave.Position, new FixedWin()); // an ordinary (non-great) win
+
+        Assert.Equal("model.unit.veteranSoldier", game.Units.First(u => u.Id == id).Type.Id); // Washington promoted it
+    }
+
+    [Fact]
+    public void Rebel_WithTheOptionOn_StillElectsNewFathers_PostDeclaration()
+    {
+        (Game game, _) = RebellionReady(Ruleset.LoadClassic().WithContinueFoundingFatherRecruitment(true));
+        Player rebel = game.HumanPlayer;
+        string target = game.OfferedFathers[0];
+        rebel.CurrentFather = target;
+        rebel.Liberty = game.TotalFoundingFatherCost() + 1000;
+
+        game.DeclareIndependence(rebel);
+        game.EndTurn();
+
+        Assert.Contains(target, game.Congress);                // the option restores post-declaration recruitment
+        Assert.Null(game.CurrentFather);                       // the choice was consumed by the election
+    }
+
+    /// <summary>A fixed RNG forcing an ordinary (non-great) combat win — NextDouble 0.5 lands in the win band.</summary>
+    private sealed class FixedWin : IGameRandom
+    {
+        public int Next(int maxExclusive) => 0;
+        public int Next(int minInclusive, int maxExclusive) => minInclusive;
+        public double NextDouble() => 0.5;
+        public RandomState SaveState() => new(0, 0);
+    }
 }
