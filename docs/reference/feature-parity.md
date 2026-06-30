@@ -2,7 +2,7 @@
 
 Generated 2026-06-26 from a structured 22-domain research pass (FreeCol verified against the GPL freecol/ clone; Crown and Colony verified against this repo). Legend: Yes / Partial / No. Functionality described in our own words.
 
-Totals - Crown and Colony: 916 Yes / 54 Partial / 45 No across 1015 features.
+Totals - Crown and Colony: 919 Yes / 53 Partial / 43 No across 1015 features.
 
 ## Map Terrain Exploration
 
@@ -309,7 +309,7 @@ Totals - Crown and Colony: 916 Yes / 54 Partial / 45 No across 1015 features.
 | Wagon train hauls goods colony-to-colony overland | Yes | Yes | Yes | LoadFromColony/UnloadToColony gated on IsCarrier (space>0) not IsNaval; colony-screen Cargo section loads/unloads a hold-lot at a time with the carrier on/adjacent to a colony. |
 | Wagon train carries passengers/units | No | No | No | Wagons carry goods only in all three — Col1 wagon trains never carried units. Documented in transport.md (wagon trains carry goods only, not passengers). Not a gap vs Col1. |
 | Wagon-train build limit (one per colony) | Yes | Yes | Yes | model.limit.wagonTrains operator lt enforced; UnitBuildLimit parsed and applied (WagonTrain_CarriesItsBuildLimit test). |
-| Treasure cash-in 'own-colony-only' / Europe-connectivity rule | Yes | Yes | Partial | FreeCol requires a port connected to Europe and only lets the King ship when no carrier available; us simplifies — any owned colony qualifies (no Europe-connectivity graph). Independent/rebel full-value cash-in deferred until independence exists. |
+| Treasure cash-in 'own-colony-only' / Europe-connectivity rule | Yes | Yes | Yes | Cash-in requires an OWN colony (rival/away refused) that is a CONNECTED PORT — enforced via IsColonyCoastal (our Settlement.isConnectedPort analogue), so an inland colony cannot cash in; or in Europe / aboard a galleon docked there. Tests: TreasureTrainTests (coastal-allowed, inland-refused, rival-refused, away-refused). Minor remaining FreeCol nuance: the carrier-availability clause (King ships only when no suitable carrier) and rebel full-value cash-in are deferred. |
 
 ## Colony Founding Population
 
@@ -625,7 +625,7 @@ Totals - Crown and Colony: 916 Yes / 54 Partial / 45 No across 1015 features.
 | Drag-and-drop interactions on the Europe screen | No | Partial | Yes | Us: an additive drag layer — colonist->ship (board), ship->sail-zone (sail), good->ship (buy), hold cargo->market (sell), passenger->docks (disembark). A modern convenience; every click button still works. FreeCol's Swing panel supports some drag of units/goods. |
 | Survival auto-recruit (free colonist to a wiped-out power before 1600) | No | Yes | Partial | FreeCol MigrationType.SURVIVAL / checkForDeath -> IS_AUTORECRUIT. Us: MaybeSurvivalRecruit grants one free dock colonist to a stripped-bare colonial power before mandatoryColonyYear (1600), but wired for FOREIGN POWERS ONLY — the human carve-out (stream-0 byte-stability) is an explicitly-unmodelled corner. Not a feature of the 1994 original. |
 | Cash in a treasure train carried home (fee-free on a galleon) | Yes | Yes | Yes | Us: CashInTreasureTrain from the hold or the docks; the galleon path is fee-free. (Treasure transport detail in treasure-train.md.) |
-| Auto-prompt to sail to Europe when a ship reaches a high-seas tile | Yes | Yes | No | FreeCol MOVE_HIGH_SEAS prompts a destination/confirm dialog when a ship moves onto a high-seas tile. Us: only a manual HUD 'Sail to Europe' button — the auto-prompt on entering the high seas is a documented follow-up (not yet implemented). |
+| Auto-prompt to sail to Europe when a ship reaches a high-seas tile | Yes | Yes | Yes | FreeCol MOVE_HIGH_SEAS prompts a confirm dialog when a ship moves onto a high-seas tile. Us: GameController offers a "Sail to Europe?" ConfirmationDialog when a ship CROSSES onto a high-seas tile (it was not already there and has no standing Europe goto), forwarding to the existing SailToEurope command on confirm; the manual HUD button remains. Tests: InputTests (confirm sails, cancel leaves it). |
 | King's naval support / mercenary man-o-war delivery to Europe | Partial | Yes | Partial | Us: SpawnInEurope places a King-delivered man-o-war on the entry tile near the player's territory; the man-o-war is mercenary-only (not freely purchasable). Monarchy/REF mechanics live in monarchy.md/royal-expeditionary-force.md. |
 | Recruit a unit directly into a colony's population (skip the ship) | No | No | No | All: a recruited/emigrated unit lands in Europe and must be shipped home; it cannot be teleported into an existing colony. Noted as a known limitation in transport.md. |
 
@@ -947,7 +947,7 @@ Totals - Crown and Colony: 916 Yes / 54 Partial / 45 No across 1015 features.
 | Colony: arm/equip colonist from colony stores (soldier/dragoon/scout/pioneer) | Yes | Yes | Yes | ArmRoles list lets a colonist standing in the colony be equipped from stores. |
 | Colony: rename colony | Yes | Yes | Yes | Col1/FreeCol let you rename a colony. Wired: ColonyPanel rename LineEdit + button → GameController.RenameColony → Game.RenameColony (86d3fq0aw/86d3fpy6k). |
 | Colony: abandon colony | Yes | Yes | Yes | FreeCol/Col1 can disband/abandon a colony. Wired: ColonyPanel Abandon button gated on CheckAbandonColony → GameController.AbandonColony → Game.AbandonColony (86d3fq0bg/86d3fpy8f). |
-| Colony: dump/throw away goods | Yes | Yes | No | FreeCol/Col1 let you discard goods from the warehouse. No dump-goods control in our colony screen; overflow only auto-discards via warehouse-overflow on end turn. |
+| Colony: dump/throw away goods | Yes | Yes | Yes | The colony-screen warehouse bar has a per-good "Dump" button that throws away that good's whole stack via Game.DumpColonyGoods (no gold, no market move — unlike a sale), freeing space for a boycotted or overflowing good. Engine guard (positive, ≤ stored) + L1 tests (ColonyEconomyTests); L3 dump-button test (ColonyPanelTests). |
 | Colony: production overview / per-good totals | Yes | Yes | Yes | Top production bar plus the empire Production report tab give per-good breakdown. |
 | Europe screen (recruit/train/buy/market/port) | Yes | Yes | Yes | EuropePanel.cs (1284 lines): header (treasury, immigration clock, next-recruit price), recruit/train/purchase card, goods-market card, ships-in-port with holds, sail-to-New-World drop, on-the-docks colonists + treasure trains. FreeCol sprites throughout. |
 | Europe: recruit colonist from the recruitment dock (3 slots) | Yes | Yes | Yes | Three recruit portrait cards with cost; Recruit_{slot} buttons gated on Game.CheckRecruit. |

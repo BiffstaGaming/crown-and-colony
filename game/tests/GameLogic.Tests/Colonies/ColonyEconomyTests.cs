@@ -120,6 +120,45 @@ public class ColonyEconomyTests
     }
 
     [Fact]
+    public void DumpColonyGoods_DestroysTheGoods_WithNoGoldOrMarketEffect()
+    {
+        // FreeCol warehouse dump (86d3fq0bq): the goods are thrown away — no payment, no market move (unlike a sale).
+        Game game = PlainsColony();
+        Colony colony = game.Colonies[0];
+        colony.AddGoods(Cotton, 50);
+        int goldBefore = game.HumanPlayer.Gold;
+        int bidBefore = game.Market.BidPrice(Cotton);
+
+        game.DumpColonyGoods(colony, Cotton, 30);
+
+        Assert.Equal(20, colony.StoreOf(Cotton));               // 30 destroyed, 20 left
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);        // no gold credited (it was not sold)
+        Assert.Equal(bidBefore, game.Market.BidPrice(Cotton));  // the market price is unmoved
+    }
+
+    [Fact]
+    public void DumpColonyGoods_MoreThanStored_IsRefused_AndLeavesTheStockUntouched()
+    {
+        Game game = PlainsColony();
+        Colony colony = game.Colonies[0];
+        colony.AddGoods(Cotton, 10);
+
+        Assert.Throws<InvalidMoveException>(() => game.DumpColonyGoods(colony, Cotton, 11));
+        Assert.Equal(10, colony.StoreOf(Cotton)); // unchanged on a refused dump
+    }
+
+    [Fact]
+    public void DumpColonyGoods_NonPositiveAmount_IsRefused()
+    {
+        Game game = PlainsColony();
+        Colony colony = game.Colonies[0];
+        colony.AddGoods(Cotton, 10);
+
+        Assert.Throws<System.ArgumentOutOfRangeException>(() => game.DumpColonyGoods(colony, Cotton, 0));
+        Assert.Equal(10, colony.StoreOf(Cotton));
+    }
+
+    [Fact]
     public void GrainAndFish_StoreAsFood_PerSpec()
     {
         // The spec's stored-as model: raw food goods normalize into one

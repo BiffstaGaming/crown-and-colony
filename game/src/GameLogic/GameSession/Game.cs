@@ -1391,11 +1391,13 @@ public sealed partial class Game
 
     /// <summary>
     /// Whether <paramref name="train"/> may be cashed in where it stands: it must be a treasure-carrying unit with
-    /// gold aboard, standing at a colony its owner holds (FreeCol requires a port connected to Europe — we have no
-    /// connectivity graph, so any owned colony qualifies), docked in Europe, <b>or loaded as cargo on a ship docked in
-    /// Europe</b> (the classic "carry the treasure home on a galleon, fee-free" play — FreeCol
-    /// <c>canCashInTreasureTrain</c> accepts <c>loc instanceof Unit &amp;&amp; ((Unit)loc).isInEurope()</c>). The check's
-    /// cost carries the net gold.
+    /// gold aboard, standing at a colony its owner holds <b>that is a port connected to Europe</b> (FreeCol
+    /// <c>canCashInTreasureTrain</c> requires <c>colony.isConnectedPort()</c> — a coastal colony with a sea route home;
+    /// an inland colony cannot summon the King's ship, so the treasure must be moved to a coastal colony or carried
+    /// home by galleon), docked in Europe, <b>or loaded as cargo on a ship docked in Europe</b> (the classic "carry the
+    /// treasure home on a galleon, fee-free" play — FreeCol accepts <c>loc instanceof Unit &amp;&amp;
+    /// ((Unit)loc).isInEurope()</c>). The connected-port test reuses <see cref="IsColonyCoastal"/> (our
+    /// <c>isConnectedPort</c> analogue, lake-side colonies excluded). The check's cost carries the net gold.
     /// </summary>
     public MoveCheck CheckCashInTreasureTrain(Unit train)
     {
@@ -1407,11 +1409,13 @@ public sealed partial class Game
         {
             return MoveCheck.No("The treasure train carries no gold.");
         }
-        bool atOwnColony = train.IsOnMap && ColonyAt(train.Position) is { } colony && colony.OwnerId == train.OwnerId;
+        // FreeCol requires a connected port (coastal colony) at which to cash in — an inland colony has no sea route for
+        // the King's ship, so it does not qualify. IsColonyCoastal is our Settlement.isConnectedPort analogue.
+        bool atOwnColony = train.IsOnMap && ColonyAt(train.Position) is { } colony && colony.OwnerId == train.OwnerId && IsColonyCoastal(colony);
         bool inEurope = TreasureIsInEurope(train); // docked itself, or aboard a galleon docked in Europe (fee-free)
         if (!atOwnColony && !inEurope)
         {
-            return MoveCheck.No("Bring the treasure train to one of your colonies (or aboard a ship to Europe) to cash it in.");
+            return MoveCheck.No("Bring the treasure train to one of your coastal colonies (a port connected to Europe), or carry it home aboard a ship, to cash it in.");
         }
         return PlayerById(train.OwnerId) is { } owner ? MoveCheck.Yes(CashInValue(owner, train)) : MoveCheck.No("The treasure train has no owner.");
     }
@@ -5943,6 +5947,28 @@ public sealed partial class Game
     }
 
     /// <summary>
+    /// Throws away <paramref name="amount"/> of a stored good from <paramref name="colony"/>'s warehouse — the FreeCol
+    /// warehouse <b>dump</b> / discard (<c>Colony.removeGoods</c> with no market, gold or tax effect): the goods are
+    /// simply destroyed, freeing warehouse space. Unlike <see cref="SellColonyGoods(Colony, string, int)"/> there is no
+    /// payment and no price move — it is for ditching a good you cannot or will not sell (a boycotted good, or one
+    /// overflowing the warehouse and wasting each turn's production). The colony must actually hold that much of the
+    /// good. <b>RNG-free</b> and save-neutral (it only lowers an already-saved stored amount).
+    /// </summary>
+    /// <param name="colony">The colony whose warehouse loses the goods.</param>
+    /// <param name="goodsId">The good to discard.</param>
+    /// <param name="amount">How much to throw away (must be positive and ≤ the stored amount).</param>
+    /// <exception cref="InvalidMoveException">A non-positive amount, or the colony does not hold that much of the good.</exception>
+    public void DumpColonyGoods(Colony colony, string goodsId, int amount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amount);
+        if (colony.StoreOf(goodsId) < amount)
+        {
+            throw new InvalidMoveException($"The colony does not have {amount} {goodsId} to dump.");
+        }
+        colony.AddGoods(goodsId, -amount); // destroyed: no gold, no market move, no tax (AddGoods floors at 0)
+    }
+
+    /// <summary>
     /// Sets a colony's custom-house export setting for a good (FreeCol <c>setGoodsLevels</c>): whether its surplus
     /// auto-sells and the level to retain (<paramref name="exportLevel"/> null keeps the current level). The good
     /// must be storable and tradeable (have a European market) — <b>food included</b>, which FreeCol's custom house
@@ -8672,19 +8698,21 @@ public sealed partial class Game
             }
 
             // AI logistics (86d3c9vq9, FreeCol CashInTreasureTrainMission): a power's treasure train — won by sacking a
-            // native settlement or from a Lost City Rumour — heads to the nearest owned colony and banks its gold there,
-            // instead of sitting idle forever. The cash-in is RNG-free; the step draws the power's OWN stream (never
-            // stream 0). Guarded on owning a loaded treasure train, so a power without one is unaffected.
+            // native settlement or from a Lost City Rumour — heads to the nearest owned colony that is a CONNECTED PORT
+            // (coastal, so the King's ship can reach it — the cash-in rule, 86d3fpy96) and banks its gold there, instead
+            // of sitting idle forever. Routing to a coastal colony (not just the nearest, which could be land-locked and
+            // never cashable) keeps the treasure from getting stuck. The cash-in is RNG-free; the step draws the power's
+            // OWN stream (never stream 0). Guarded on owning a loaded treasure train, so a power without one is unaffected.
             if (unit.Type.CarryTreasure && unit.TreasureAmount > 0)
             {
                 if (CheckCashInTreasureTrain(unit).Allowed)
                 {
-                    CashInTreasureTrain(unit); // standing at an owned colony → bank the net gold to the power
+                    CashInTreasureTrain(unit); // standing at an owned connected-port colony → bank the net gold to the power
                 }
-                else if (NearestColonyOf(power, unit.Position, Map.Width + Map.Height) is { } bank
+                else if (NearestColonyOf(power, unit.Position, Map.Width + Map.Height, IsColonyCoastal) is { } bank
                     && StepToward(power, unit, bank.Position) is { } toBank)
                 {
-                    MoveUnit(unit, toBank); // escort it toward the nearest owned colony
+                    MoveUnit(unit, toBank); // escort it toward the nearest owned coastal (connected-port) colony
                 }
                 continue;
             }
@@ -10412,10 +10440,15 @@ public sealed partial class Game
             .ThenBy(c => c.Position.Y).ThenBy(c => c.Position.X)
             .FirstOrDefault();
 
-    /// <summary>The nearest colony of <paramref name="owner"/> within <paramref name="maxDistance"/> (Chebyshev) of <paramref name="origin"/>, or null (used to muster a mission convert; the owner may be any colonial player).</summary>
-    private Colony? NearestColonyOf(Player owner, Position origin, int maxDistance) =>
+    /// <summary>
+    /// The nearest colony of <paramref name="owner"/> within <paramref name="maxDistance"/> (Chebyshev) of
+    /// <paramref name="origin"/>, optionally restricted to colonies matching <paramref name="predicate"/>, or null. Used
+    /// to muster a mission convert (any colony) and to route a treasure train to a <b>connected port</b> (coastal colony
+    /// only — see the AI treasure logistics). The owner may be any colonial player.
+    /// </summary>
+    private Colony? NearestColonyOf(Player owner, Position origin, int maxDistance, Func<Colony, bool>? predicate = null) =>
         ColoniesOf(owner)
-            .Where(c => Chebyshev(c.Position, origin) <= maxDistance)
+            .Where(c => Chebyshev(c.Position, origin) <= maxDistance && (predicate is null || predicate(c)))
             .OrderBy(c => Chebyshev(c.Position, origin))
             .ThenBy(c => c.Position.Y).ThenBy(c => c.Position.X)
             .FirstOrDefault();

@@ -114,15 +114,47 @@ public class TreasureTrainTests
 
     private const string Cortes = "model.foundingFather.hernanCortes";
 
-    /// <summary>A human colony with a human-owned treasure train standing on it, carrying <paramref name="amount"/>.</summary>
+    /// <summary>
+    /// A human-owned <b>coastal</b> port colony with a human-owned treasure train standing on it, carrying
+    /// <paramref name="amount"/>. A 2×1 strip — plains port colony at (0,0) with ocean at (1,0) — so the colony is a
+    /// connected port (FreeCol <c>isConnectedPort</c>) where a treasure train may be cashed in (see
+    /// <see cref="TrainAtInlandColony"/> for the land-locked refusal case). Deterministic, seed-independent.
+    /// </summary>
     private static (Game game, Unit train, Colony colony) TrainAtColony(int amount)
     {
-        Game game = Game.New(Classic, Seed);
-        Colony colony = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        var save = new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 2, MapHeight = 1,
+            Terrain = ["model.tile.plains", "model.tile.ocean"],
+            Units = [new SavedUnit(1, TreasureTrain, 0, 0, 3, TreasureAmount: amount)],
+            Explored = [0, 1],
+            Colonies = [new SavedColony(1, "Port", 0, 0, 1)],
+        };
+        Game game = save.Restore(Classic);
         game.HumanPlayer.TaxRate = 0; // isolate the King's transport cut from the monarch tax
-        Unit train = game.SpawnUnit(Classic.Unit(TreasureTrain), colony.Position);
-        train.SetTreasureAmount(amount);
-        return (game, train, colony);
+        return (game, game.Units.First(u => u.Id == 1), game.Colonies.First());
+    }
+
+    /// <summary>
+    /// A human-owned <b>inland</b> (land-locked) colony with a human treasure train on it. A 3×1 all-land strip —
+    /// plains colony at (1,0) with land on both sides — so the colony is NOT a connected port and a treasure cannot be
+    /// cashed in there (FreeCol <c>canCashInTreasureTrain</c> requires <c>isConnectedPort</c>).
+    /// </summary>
+    private static (Game game, Unit train, Colony colony) TrainAtInlandColony(int amount)
+    {
+        var save = new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 3, MapHeight = 1,
+            Terrain = ["model.tile.plains", "model.tile.plains", "model.tile.plains"],
+            Units = [new SavedUnit(1, TreasureTrain, 1, 0, 3, TreasureAmount: amount)],
+            Explored = [0, 1, 2],
+            Colonies = [new SavedColony(1, "Inland", 1, 0, 1)],
+        };
+        Game game = save.Restore(Classic);
+        game.HumanPlayer.TaxRate = 0;
+        return (game, game.Units.First(u => u.Id == 1), game.Colonies.First());
     }
 
     [Fact]
@@ -231,6 +263,26 @@ public class TreasureTrainTests
 
         Assert.False(game.CheckCashInTreasureTrain(train).Allowed);
         Assert.Throws<InvalidMoveException>(() => game.CashInTreasureTrain(train));
+    }
+
+    [Fact]
+    public void CashIn_AtACoastalOwnColony_IsAllowed()
+    {
+        // A connected port (coastal own colony) is a valid cash-in site — the King can ship the treasure home from it.
+        (Game game, Unit train, _) = TrainAtColony(1000);
+        Assert.True(game.CheckCashInTreasureTrain(train).Allowed);
+    }
+
+    [Fact]
+    public void CashIn_AtAnInlandOwnColony_IsRefused()
+    {
+        // FreeCol canCashInTreasureTrain requires isConnectedPort: a land-locked colony has no sea route for the King's
+        // ship, so the treasure cannot be cashed in there — it must be moved to a coastal colony or carried home by ship.
+        (Game game, Unit train, _) = TrainAtInlandColony(1000);
+
+        Assert.False(game.CheckCashInTreasureTrain(train).Allowed);
+        Assert.Throws<InvalidMoveException>(() => game.CashInTreasureTrain(train));
+        Assert.Contains(game.Units, u => u.Id == train.Id); // not consumed
     }
 
     [Fact]

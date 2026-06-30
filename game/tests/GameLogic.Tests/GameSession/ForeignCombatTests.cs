@@ -565,8 +565,12 @@ public class ForeignCombatTests
         }
         power.Gold = 0;
 
+        // A COASTAL settleable tile — a sea neighbour makes it a connected port, where a treasure train can be cashed in
+        // (the connected-port cash-in rule, 86d3fpy96) — with ample free land around it for the staged units.
         Position colonyTile = game.Map.AllPositions().First(p =>
-            Free(game, p) && game.Map.TerrainAt(p).CanSettle && p.Neighbours().All(n => game.Map.InBounds(n) && Free(game, n)));
+            Free(game, p) && game.Map.TerrainAt(p).CanSettle
+            && p.Neighbours().Any(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater && game.Map.TerrainAt(n).Id != "model.tile.lake")
+            && p.Neighbours().Count(n => Free(game, n)) >= 5);
         Unit founder = game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), colonyTile);
         founder.OwnerId = power.PlayerId;
         Colony colony = game.FoundColony(founder); // AI founder → auto-resolves any native claim (86d3e4bj7)

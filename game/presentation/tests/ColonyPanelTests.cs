@@ -593,6 +593,42 @@ public class ColonyPanelTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task WarehouseDumpButton_ThrowsAwayTheGoodsStack_WithNoGold()
+    {
+        // FreeCol warehouse dump (86d3fq0bq): the per-good "Dump" button discards the whole stack — frees space, no gold.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+
+        // Stock 80 ore via the save layer (Colony.AddGoods is internal to GameLogic), then reload into the controller.
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with { Stores = new Dictionary<string, int> { ["model.goods.ore"] = 80 } }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+        AssertThat(colony.StoreOf("model.goods.ore")).IsEqual(80);
+
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+        PanelContainer panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+
+        var dump = panel.FindChild("Dump_ore", recursive: true, owned: false) as Button;
+        AssertThat(dump).IsNotNull();
+
+        int goldBefore = game.Gold;
+        dump!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+
+        AssertThat(colony.StoreOf("model.goods.ore")).IsEqual(0); // the whole stack thrown away
+        AssertThat(game.Gold).IsEqual(goldBefore);                // no gold for dumped goods (unlike a sale)
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task CustomHouseExportSection_IsHidden_WithoutACustomHouse()
     {
         (_, GameController controller, Game game, Colony colony) = await OpenPanel();

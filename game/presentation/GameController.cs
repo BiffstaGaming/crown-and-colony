@@ -212,6 +212,22 @@ public partial class GameController : Node2D
     private bool _renameUnitDialogOpen;
 
     /// <summary>
+    /// Whether the <b>sail-to-Europe</b> auto-prompt is currently on screen (86d3fpzqp) — a re-entrancy guard so a
+    /// second move/refresh while the modal prompt is open does not stack a second copy of it. Cleared when the dialog
+    /// closes (confirm or cancel/Escape).
+    /// </summary>
+    private bool _sailPromptDialogOpen;
+
+    /// <summary>
+    /// A ship that has just <b>crossed onto a high-seas tile</b> this map-click and so is owed a "sail to Europe?"
+    /// prompt (86d3fpzqp, FreeCol <c>moveHighSeas</c>). Set by the move handler only on a fresh crossing (the ship was
+    /// not on the high seas before the move and carries no standing Europe goto) and consumed once by
+    /// <see cref="MaybePromptSailToEurope"/> after the view refresh — so a plain re-selection of a ship already sitting
+    /// on the high seas never re-nags. Null the rest of the time.
+    /// </summary>
+    private Unit? _pendingSailPromptShip;
+
+    /// <summary>
     /// Unit ids the player has <b>skipped</b> for this turn (Space — 86d3f0vuy). A skipped unit is passed over by the
     /// W-cycle (<see cref="SelectNextUnitToMove"/>) until the set clears at turn rollover (in <see cref="OnEndTurnPressed"/>).
     /// Session-only / controller-side and <b>never persisted</b> (ADR-009) — it's a transient input convenience, not game
@@ -1370,6 +1386,65 @@ public partial class GameController : Node2D
     }
 
     /// <summary>
+    /// Offers to sail a ship to Europe when it has just <b>crossed onto a high-seas tile</b> (86d3fpzqp, FreeCol
+    /// <c>InGameController.moveHighSeas</c>): a code-built <see cref="ConfirmationDialog"/> ("Sail to Europe?") whose OK
+    /// forwards to the existing <see cref="Game.SailToEurope"/> command and whose Cancel leaves the ship on the high
+    /// seas. The just-crossed ship is handed in via <see cref="_pendingSailPromptShip"/> (set by the move handler only
+    /// on a genuine crossing — see there), and consumed here exactly once, so a plain re-selection of a ship already
+    /// on the high seas never re-nags. Reads-only over <see cref="Game.CheckSailToEurope"/> (ADR-006); the re-entrancy
+    /// guard (<see cref="_sailPromptDialogOpen"/>) plus the modal's <c>Exclusive</c> flag stop a second prompt stacking.
+    /// <para>
+    /// Cancel path (Wave 8/9 dialog discipline): the <c>Canceled</c> signal (Cancel button / Escape / window-close)
+    /// resets the guard and frees the node, leaving the ship where it is — without it the guard would stick and the
+    /// node would leak.
+    /// </para>
+    /// </summary>
+    private void MaybePromptSailToEurope()
+    {
+        if (_pendingSailPromptShip is not { } ship)
+        {
+            return; // no fresh crossing this click
+        }
+        _pendingSailPromptShip = null; // one-shot: consume the pending crossing
+        if (_sailPromptDialogOpen || !_game.CheckSailToEurope(ship).Allowed)
+        {
+            return; // already prompting, or the ship is no longer on the high seas (defensive re-check)
+        }
+        _sailPromptDialogOpen = true;
+
+        var dialog = new ConfirmationDialog
+        {
+            Title = "Sail to Europe",
+            DialogText = $"{UnitDisplayName(ship)} has reached the high seas. Sail to Europe?\n"
+                + $"The crossing takes {Game.SailTurns} turns.",
+            OkButtonText = "Set sail",
+            CancelButtonText = "Stay",
+            Exclusive = true,
+        };
+        dialog.Confirmed += () =>
+        {
+            // Re-check on confirm: the oracle is the single gate (ADR-006). The world can't change behind the modal.
+            if (_game.CheckSailToEurope(ship).Allowed)
+            {
+                _game.SailToEurope(ship);
+                MarkDirty(); // 86d3fq1v8
+                _notice = $"{UnitDisplayName(ship)} sets sail for Europe.";
+            }
+            _sailPromptDialogOpen = false;
+            dialog.QueueFree();
+            RefreshView();
+        };
+        // Cancel / Escape / window-close: leave the ship on the high seas, reset the guard, free the node (no orphan).
+        dialog.Canceled += () =>
+        {
+            _sailPromptDialogOpen = false;
+            dialog.QueueFree();
+        };
+        AddChild(dialog);
+        dialog.PopupCentered();
+    }
+
+    /// <summary>
     /// Opens the <b>rename-unit</b> dialog for the currently selected unit (86d3drmzu): the discoverable presentation
     /// surface for the existing <see cref="Game.NameUnit"/> command (FreeCol christens an individual unit via
     /// <c>Nameable</c>). A code-built modal (no scene edit) — a text field pre-filled with the unit's current custom
@@ -1557,8 +1632,18 @@ public partial class GameController : Node2D
                 MoveCheck check = _game.CheckMove(_selectedUnit, tile);
                 if (check.Allowed)
                 {
-                    _game.MoveUnit(_selectedUnit, tile);
+                    Unit moved = _selectedUnit;
+                    // FreeCol moveHighSeas: offer to sail to Europe only when a ship CROSSES onto the high seas this
+                    // move — it was not already there (couldSailBefore) and carries no standing Europe goto (which sails
+                    // silently on arrival). Captured before the move; the prompt fires after RefreshView.
+                    bool couldSailBefore = moved.Type.IsNaval && _game.CheckSailToEurope(moved).Allowed;
+                    _game.MoveUnit(moved, tile);
                     MarkDirty(); // 86d3fq1v8
+                    if (moved.Type.IsNaval && moved.Destination is null && !couldSailBefore
+                        && _game.CheckSailToEurope(moved).Allowed)
+                    {
+                        _pendingSailPromptShip = moved; // a fresh high-seas crossing → offer Europe (86d3fpzqp)
+                    }
                 }
                 else
                 {
@@ -1569,6 +1654,7 @@ public partial class GameController : Node2D
 
         RefreshView();
         MaybePromptNewWorldName(); // a land unit stepping ashore for the first time may owe the name-the-new-world prompt (86d3fq1fn)
+        MaybePromptSailToEurope(); // a ship that just crossed onto the high seas may offer to sail to Europe (86d3fpzqp)
     }
 
     /// <summary>
@@ -1816,7 +1902,7 @@ public partial class GameController : Node2D
 
     /// <summary>Opens the interactive colony screen. Public so scene tests can drive it directly.</summary>
     public void OpenColonyPanel(Colony colony) =>
-        ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView, LoadColonyCargo, UnloadColonyCargo, SetColonyExport, RenameColony, AbandonColony, PayBoycott);
+        ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView, LoadColonyCargo, UnloadColonyCargo, SetColonyExport, RenameColony, AbandonColony, PayBoycott, DumpColonyGoods);
 
     /// <summary>
     /// Thin colony-screen command (86d3fq0aw/86d3fpy6k): renames <paramref name="colony"/> via the
@@ -1955,6 +2041,31 @@ public partial class GameController : Node2D
         catch (InvalidMoveException ex)
         {
             _notice = ex.Message; // e.g. "… cannot be exported through the custom house." — show, don't throw to the UI
+        }
+        RefreshView();
+    }
+
+    /// <summary>
+    /// Thin colony-screen command (86d3fq0bq): throws away <paramref name="amount"/> of <paramref name="goodsId"/> from
+    /// <paramref name="colony"/>'s warehouse via the <see cref="Game.DumpColonyGoods"/> oracle — the FreeCol warehouse
+    /// discard, freeing space for a good that cannot be sold (boycotted) or is overflowing and wasting production. The
+    /// engine guards the amount (positive, ≤ the stored stock) and throws <see cref="InvalidMoveException"/>; the reason
+    /// is surfaced in the status bar instead of bubbling to the UI (ADR-006 — the rule lives in <see cref="Game"/>; this
+    /// only forwards the command and reflects the outcome). No gold and no market move (unlike a sale).
+    /// </summary>
+    public void DumpColonyGoods(Colony colony, string goodsId, int amount)
+    {
+        try
+        {
+            _game.DumpColonyGoods(colony, goodsId, amount);
+            MarkDirty(); // 86d3fq1v8 — the warehouse changed
+            _notice = $"Threw away {amount} {goodsId[(goodsId.LastIndexOf('.') + 1)..]} from {colony.Name}.";
+            PlaySound(SoundEvent.CargoMoved); // goods leaving the warehouse (shares the load/unload clip)
+        }
+        catch (InvalidMoveException ex)
+        {
+            _notice = ex.Message;
+            PlaySound(SoundEvent.IllegalMove); // refused dump → the deny buzz
         }
         RefreshView();
     }

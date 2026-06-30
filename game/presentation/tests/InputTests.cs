@@ -453,6 +453,77 @@ public class InputTests
         AssertThat(ship.Location).IsEqual(UnitLocation.SailingToEurope); // the existing SailToEurope command fired
     }
 
+    /// <summary>An ocean tile (not yet the high seas) with an unoccupied high-seas neighbour — the crossing the prompt fires on.</summary>
+    private static (Position ocean, Position highSeas) AnOceanTileBesideTheHighSeas(Game game) =>
+        (from p in game.Map.AllPositions()
+         where game.Map.TerrainAt(p).IsWater && game.Map.TerrainAt(p).Id != "model.tile.highSeas"
+             && !game.Units.Any(u => u.IsOnMap && u.Position == p)
+         from n in p.Neighbours()
+         where game.Map.InBounds(n) && game.Map.TerrainAt(n).Id == "model.tile.highSeas"
+             && !game.Units.Any(u => u.IsOnMap && u.Position == n)
+         select (p, n)).First();
+
+    [TestCase(Timeout = 60000)]
+    public async Task MovingAShipOntoTheHighSeas_PromptsToSailToEurope_AndConfirmingSails()
+    {
+        // FreeCol moveHighSeas: a ship that CROSSES onto the high seas is offered the Europe passage (86d3fpzqp).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        (Position ocean, Position highSeas) = AnOceanTileBesideTheHighSeas(game);
+        Unit ship = game.SpawnUnit(game.Ruleset.Unit("model.unit.caravel"), ocean);
+
+        await ClickTile(runner, controller, ocean);    // select the ship
+        await ClickTile(runner, controller, highSeas); // move it onto the high seas → the auto-prompt fires
+
+        var dialog = controller.GetChildren().OfType<ConfirmationDialog>()
+            .FirstOrDefault(d => d.Title.ToString() == "Sail to Europe");
+        AssertThat(dialog).IsNotNull();
+        AssertThat(ship.Position).IsEqual(highSeas);      // it crossed (a plain move, not yet sailing)
+        AssertThat(ship.Location).IsEqual(UnitLocation.OnMap);
+
+        dialog!.EmitSignal(AcceptDialog.SignalName.Confirmed);
+        await runner.SimulateFrames(2);
+
+        AssertThat(ship.Location).IsEqual(UnitLocation.SailingToEurope); // confirm forwarded to SailToEurope
+        AssertThat(GodotObject.IsInstanceValid(dialog)).IsFalse();       // freed, no orphan
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task CancellingTheSailToEuropePrompt_LeavesTheShipOnTheHighSeas_AndFreesTheDialog()
+    {
+        // Cancel-path guard (Wave 8/9 discipline): Cancel / Escape / window-close raises Canceled (not Confirmed); the
+        // ship stays put, the re-entrancy guard resets, and the node is freed (no stuck guard, no orphan).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        (Position ocean, Position highSeas) = AnOceanTileBesideTheHighSeas(game);
+        Unit ship = game.SpawnUnit(game.Ruleset.Unit("model.unit.caravel"), ocean);
+
+        await ClickTile(runner, controller, ocean);
+        await ClickTile(runner, controller, highSeas);
+
+        var dialog = controller.GetChildren().OfType<ConfirmationDialog>()
+            .FirstOrDefault(d => d.Title.ToString() == "Sail to Europe");
+        AssertThat(dialog).IsNotNull();
+
+        dialog!.EmitSignal(AcceptDialog.SignalName.Canceled);
+        await runner.SimulateFrames(2);
+
+        AssertThat(ship.IsOnMap).IsTrue();                              // stayed on the map (did not sail)
+        AssertThat(ship.Location).IsNotEqual(UnitLocation.SailingToEurope);
+        AssertThat(GodotObject.IsInstanceValid(dialog)).IsFalse();      // freed, no orphan
+        bool guard = (bool)controller.GetType()
+            .GetField("_sailPromptDialogOpen", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(controller)!;
+        AssertThat(guard).IsFalse();                                    // re-entrancy guard reset
+    }
+
     [TestCase(Timeout = 60000)]
     public async Task GotoMode_Arms_AndSetsTheSelectedUnitDestination_AndDrawsTheMarker()
     {

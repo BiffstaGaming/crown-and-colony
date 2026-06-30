@@ -30,6 +30,9 @@ public partial class ColonyPanel : PanelContainer
     /// <summary>The colony-screen command that sets a good's custom-house export setting (wired by <see cref="GameController.OpenColonyPanel"/>; engine guards + status reporting live there). Args: colony, goodsId, exported, retainLevel. Default no-op keeps a bare test scene safe.</summary>
     private Action<Colony, string, bool, int> _setExport = (_, _, _, _) => { };
 
+    /// <summary>The colony-screen command that throws away a stored good from the warehouse (wired by <see cref="GameController.OpenColonyPanel"/>; the engine guard + confirmation + status reporting live there). Args: colony, goodsId, amount. Default no-op keeps a bare test scene safe.</summary>
+    private Action<Colony, string, int> _dumpGoods = (_, _, _) => { };
+
     /// <summary>The colony-screen command that renames the colony (wired by <see cref="GameController.OpenColonyPanel"/>; engine guard against a blank name + status reporting live there). Args: colony, name. Default no-op keeps a bare test scene safe.</summary>
     private Action<Colony, string> _renameColony = (_, _) => { };
 
@@ -95,11 +98,12 @@ public partial class ColonyPanel : PanelContainer
     /// status reporting (ADR-006), so the panel only chooses the target and forwards the click. The overloads without
     /// them keep existing callers/tests working with no-op commands.
     /// </summary>
-    public void Open(Game game, Colony colony, Action onChange, Action<Unit, Colony, string, int> loadCargo, Action<Unit, Colony, string, int> unloadCargo, Action<Colony, string, bool, int> setExport, Action<Colony, string> renameColony, Action<Colony> abandonColony, Action<string> payBoycott)
+    public void Open(Game game, Colony colony, Action onChange, Action<Unit, Colony, string, int> loadCargo, Action<Unit, Colony, string, int> unloadCargo, Action<Colony, string, bool, int> setExport, Action<Colony, string> renameColony, Action<Colony> abandonColony, Action<string> payBoycott, Action<Colony, string, int> dumpGoods)
     {
         _renameColony = renameColony;
         _abandonColony = abandonColony;
         _payBoycott = payBoycott;
+        _dumpGoods = dumpGoods;
         Open(game, colony, onChange, loadCargo, unloadCargo, setExport);
     }
 
@@ -1145,6 +1149,24 @@ public partial class ColonyPanel : PanelContainer
             cell.AddChild(markerLabel);
             cell.AddChild(icon);
             cell.AddChild(amountLabel);
+
+            // Dump (throw away) this good's whole stack — FreeCol's warehouse discard (86d3fq0bq): frees warehouse space
+            // for a good you cannot sell (boycotted) or that is overflowing and wasting production. One click, like the
+            // carrier unload-lot button; the host (GameController.DumpColonyGoods) owns the engine guard + status notice.
+            string g = good;
+            int qty = amount;
+            var dump = new Button
+            {
+                Name = $"Dump_{Short(good)}",
+                Text = "Dump",
+                TooltipText = $"Throw away all {qty} {name} — frees warehouse space; you get no gold for it.",
+            };
+            dump.Pressed += () =>
+            {
+                _dumpGoods(_colony, g, qty); // whole stack; the host guards + reports (ADR-006)
+                RebuildDeferred();           // the command already refreshed the HUD + set the status notice
+            };
+            cell.AddChild(dump);
             bar.AddChild(cell);
         }
         return bar;
