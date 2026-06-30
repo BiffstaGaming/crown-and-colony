@@ -147,6 +147,45 @@ public class MultiPlayerTests
     }
 
     [Fact]
+    public void Spec_ParsesStartsOnEastCoast_DefaultTrue_RussiaFalse()
+    {
+        // FreeCol <nation starts-on-east-coast="…">: absent ⇒ true (the Atlantic seaboard); only Russia sets false.
+        Assert.True(Classic.EuropeanNation("model.nation.dutch").StartsOnEastCoast);
+        Assert.True(Classic.EuropeanNation("model.nation.french").StartsOnEastCoast);
+        Assert.True(Classic.EuropeanNation("model.nation.spanish").StartsOnEastCoast);
+        Assert.False(Classic.EuropeanNation("model.nation.russian").StartsOnEastCoast);
+    }
+
+    [Theory]
+    [InlineData(7)]
+    [InlineData(31337)]
+    [InlineData(99)]
+    public void ForeignPowers_LandOnTheirNationsPreferredCoast(ulong seed)
+    {
+        // 86d3fq1eb (FreeCol CLASSIC startsOnEastCoast): each rival lands on its nation's historical seaboard — the
+        // default classic powers are all east-coast, so they land on the eastern (high-X, Atlantic) half of the map.
+        // The bias is a pure deterministic sort key (no RNG), so the soak stays byte-stable.
+        var game = Game.New(Classic, seed: seed);
+        int mid = game.Map.Width / 2;
+        var landed = game.Players
+            .Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial && p.NationId is not null)
+            .Select(p => (nation: Classic.EuropeanNation(p.NationId!),
+                          anchor: game.Units.Where(u => u.OwnerId == p.PlayerId && u.IsOnMap)
+                              .OrderBy(u => u.Id)
+                              .Select(u => (CrownAndColony.GameLogic.World.Position?)u.Position).FirstOrDefault()))
+            .Where(x => x.anchor is not null)
+            .ToList();
+
+        Assert.NotEmpty(landed);
+        foreach ((EuropeanNation nation, CrownAndColony.GameLogic.World.Position? anchor) in landed)
+        {
+            bool onEast = anchor!.Value.X >= mid;
+            Assert.True(onEast == nation.StartsOnEastCoast,
+                $"{nation.ShortName} (eastCoast={nation.StartsOnEastCoast}) landed at X={anchor.Value.X} (mid={mid}, seed {seed})");
+        }
+    }
+
+    [Fact]
     public void RefEntryTile_IsSet_NearTheHumanStart_OnWater()
     {
         var game = Game.New(Classic, seed: 7);

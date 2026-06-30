@@ -80,6 +80,13 @@ public sealed record EuropeanNationType(
 /// <param name="Selectable">Whether the nation is a playable colonial power.</param>
 /// <param name="RefNationId">The nation's Royal Expeditionary Force nation id (null for REF nations themselves).</param>
 /// <param name="ColonyNames">Colony names used in order when this nation founds colonies (classic FreeCol list; empty if none).</param>
+/// <param name="StartsOnEastCoast">
+/// Whether the nation historically lands on the New World's <b>eastern</b> (Atlantic) seaboard (FreeCol
+/// <c>&lt;nation starts-on-east-coast="…"&gt;</c>, <c>Nation.getStartsOnEastCoast</c>). <b>Default true</b> — every classic
+/// power lands on the east coast except Russia (<c>starts-on-east-coast="false"</c>, the Pacific side). Biases the rival's
+/// landing anchor toward that map edge (used by <c>LandForeignPower</c>); FreeCol's default CLASSIC starting-positions mode
+/// selects each power's coast by exactly this flag.
+/// </param>
 public sealed record EuropeanNation(
     string Id,
     string DisplayName,
@@ -87,7 +94,8 @@ public sealed record EuropeanNation(
     string? Color,
     bool Selectable,
     string? RefNationId,
-    IReadOnlyList<string> ColonyNames)
+    IReadOnlyList<string> ColonyNames,
+    bool StartsOnEastCoast = true)
 {
     /// <summary>Whether this nation is a Royal Expeditionary Force (inert until Phase 6).</summary>
     public bool IsRef => NationType.IsRef;

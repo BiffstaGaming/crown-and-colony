@@ -1659,7 +1659,9 @@ public sealed class Ruleset
                 Color: (string?)el.Attribute("color"),
                 Selectable: (bool?)el.Attribute("selectable") ?? false,
                 RefNationId: (string?)el.Attribute("ref"),
-                ColonyNames: colonyNamesByNation.GetValueOrDefault(id, []));
+                ColonyNames: colonyNamesByNation.GetValueOrDefault(id, []),
+                // FreeCol <nation starts-on-east-coast="…">: absent ⇒ true (the Atlantic seaboard); only Russia sets false.
+                StartsOnEastCoast: (bool?)el.Attribute("starts-on-east-coast") ?? true);
         }
         return nations;
     }

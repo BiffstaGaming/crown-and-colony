@@ -4704,12 +4704,19 @@ public sealed partial class Game
         Position? FirstFree(Position anchor, Func<Position, bool> free) =>
             free(anchor) ? anchor : anchor.Neighbours().Where(free).Cast<Position?>().FirstOrDefault();
 
-        // Candidate coastal land anchors far from the human, ordered farthest-first (stable tie-break). FreeCol spreads
-        // powers by a minimum distance between their starts; we honour it when a candidate satisfies the spacing for
-        // every already-placed power, and relax to the best available tile when the map is too crowded to.
+        // Candidate coastal land anchors, ordered: (1) the nation's historical seaboard first — FreeCol's default CLASSIC
+        // starting-positions mode lands each power on its preferred coast (Nation.startsOnEastCoast; east = the high-X
+        // Atlantic half toward Europe, west = the low-X Pacific half — only Russia starts west); then (2) farthest from
+        // the human; then (3) a stable Y/X tie-break. FreeCol also spreads powers by a minimum distance between their
+        // starts; we honour it when a candidate satisfies the spacing for every already-placed power, and relax (first
+        // to the off-coast candidates, finally to any tile) when the map is too crowded. Pure deterministic comparator —
+        // no RNG draw, so the human's stream 0 stays byte-identical (ADR-009); placement just shifts which coast a rival
+        // prefers.
+        bool OnPreferredCoast(Position p) => (p.X >= Map.Width / 2) == nation.StartsOnEastCoast;
         var candidates = Map.AllPositions()
             .Where(p => FreeLand(p) && Chebyshev(p, humanStart) >= ForeignLandingMinDistance && p.Neighbours().Any(FreeWater))
-            .OrderByDescending(p => Chebyshev(p, humanStart)).ThenBy(p => p.Y).ThenBy(p => p.X)
+            .OrderByDescending(OnPreferredCoast)
+            .ThenByDescending(p => Chebyshev(p, humanStart)).ThenBy(p => p.Y).ThenBy(p => p.X)
             .ToList();
         Position? anchor =
             candidates.Cast<Position?>().FirstOrDefault(
