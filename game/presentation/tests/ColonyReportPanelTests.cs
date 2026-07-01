@@ -344,6 +344,51 @@ public class ColonyReportPanelTests
     }
 
     [TestCase]
+    public async Task RequirementsTab_RendersProductionShortage_AndTileSuggestion_Lines()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // Found a colony, unassign its tile workers (so nothing makes cotton), staff the weaver's house, and seed cotton
+        // via the save layer — the weaver then burns cotton the colony no longer produces, i.e. a net-negative input →
+        // the production-shortage warning. The founded colony's remaining worked/centre tiles also carry a plow/road
+        // yield gain → the tile-improvement suggestion. Both come from the Game.Reports oracles this commit added.
+        Game game = GetGame(controller);
+        Colony founded = game.FoundColony(game.Units[0]);
+        foreach (Position tile in founded.TileWorkers.Keys.ToList())
+        {
+            game.UnassignWork(founded, tile);
+        }
+        game.AssignBuildingWork(founded, "model.building.weaverHouse");
+
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with { Stores = new Dictionary<string, int> { ["model.goods.cotton"] = 30 } }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+
+        // Sanity-check the oracle premise before checking the render.
+        AssertThat(game.ColonyProductionWarnings(colony).Any(w => w.OutputGoodsId == "model.goods.cloth")).IsTrue();
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Requirements").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        AssertThat(dynamic.GetNodeOrNull($"Requirements_{colony.Id}")).IsNotNull();
+
+        // Gather every warning label under the requirements dynamic view and assert both new kinds render.
+        var warningTexts = dynamic.FindChildren("RequirementWarning_*", recursive: true, owned: false)
+            .OfType<Label>().Select(l => l.Text).ToList();
+        AssertThat(warningTexts.Any(t => t.Contains("production is short of"))).IsTrue();
+        AssertThat(warningTexts.Any(t => t.Contains("would yield more with") || t.Contains("unexplored"))).IsTrue();
+    }
+
+    [TestCase]
     public async Task MilitaryTab_ShowsHumanStrengthAndRefComparison()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

@@ -1,5 +1,6 @@
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Natives;
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 
@@ -181,6 +182,119 @@ public sealed partial class Game
             result.Add(new LabourLocation(LabourFieldLocation, field));
         }
 
+        return result;
+    }
+
+    // ── Colony requirements advisor (FreeCol ReportRequirementsPanel.checkColony extras) ─────────────────────
+
+    /// <summary>
+    /// One production-shortage warning for a colony (a row of FreeCol's <c>ReportRequirementsPanel</c>
+    /// production/missing-goods warnings): a manned building making <see cref="OutputGoodsId"/> is below its potential
+    /// because the colony is net-short of the input <see cref="InputGoodsId"/> it consumes. A pure value projection for
+    /// the Requirements report.
+    /// </summary>
+    /// <param name="OutputGoodsId">The good the starved building makes (e.g. <c>model.goods.cloth</c>).</param>
+    /// <param name="InputGoodsId">The input good the colony is net-negative on, throttling that output (e.g. <c>model.goods.cotton</c>).</param>
+    public readonly record struct ColonyProductionWarning(string OutputGoodsId, string InputGoodsId);
+
+    /// <summary>
+    /// The <b>production-shortage warnings</b> for a colony (a read-only oracle, ADR-006; FreeCol
+    /// <c>ReportRequirementsPanel.checkColony</c>'s "not enough input" branch — a building whose
+    /// <c>ProductionInfo</c> is <c>!atMaximumProduction()</c> warns for each of its input goods). A manned,
+    /// non-teaching building making a good is flagged when the colony's whole-colony <b>net</b> production of one of
+    /// that building's input goods is <b>negative</b> (it burns more than it makes, so the building runs below its
+    /// potential output). Reuses <see cref="ColonyProductionSummary"/> (the same tested figure the production overview
+    /// shows) for the net; the panel stays rules-free. One warning per distinct (output, input) pair, in building /
+    /// production order. Pure and RNG-free; never mutates, never persisted.
+    /// </summary>
+    /// <param name="colony">The colony to check.</param>
+    /// <returns>The production-shortage warnings (empty when every manned building has its inputs covered).</returns>
+    public IReadOnlyList<ColonyProductionWarning> ColonyProductionWarnings(Colony colony)
+    {
+        IReadOnlyDictionary<string, ColonyGoodFlow> flows = ColonyProductionSummary(colony);
+        var result = new List<ColonyProductionWarning>();
+        var seen = new HashSet<(string, string)>();
+
+        foreach (string buildingId in colony.Buildings)
+        {
+            BuildingType building = Ruleset.Building(buildingId);
+            if (building.Teaches || colony.BuildingWorkers.GetValueOrDefault(buildingId) == 0)
+            {
+                continue; // teachers aren't producers; an unmanned building makes nothing to be short for
+            }
+            foreach (ProductionEntry entry in building.Productions)
+            {
+                if (entry.Inputs.Count == 0)
+                {
+                    continue; // no input good to be short of (an unattended bell/cross line)
+                }
+                foreach (GoodsOutput output in entry.Outputs)
+                {
+                    foreach (GoodsOutput input in entry.Inputs)
+                    {
+                        // Net-negative colony-wide production of the input good ⇒ the building is starved (below max).
+                        string inputStored = Ruleset.StorageIdOf(input.GoodsId);
+                        if (flows.TryGetValue(inputStored, out ColonyGoodFlow flow) && flow.Net < 0
+                            && seen.Add((output.GoodsId, input.GoodsId)))
+                        {
+                            result.Add(new ColonyProductionWarning(output.GoodsId, input.GoodsId));
+                        }
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// One tile-improvement suggestion for a colony (a row of FreeCol's <c>ReportRequirementsPanel</c> tile warnings,
+    /// from <c>Colony.getTileImprovementSuggestions</c>): the worked colony tile that would benefit, and — when
+    /// <see cref="ImprovementId"/> is set — the improvement (plow/road) that would raise its worked good's yield;
+    /// a <c>null</c> <see cref="ImprovementId"/> marks an <b>unexplored</b> worked tile to send a scout to. A pure
+    /// value projection for the Requirements report.
+    /// </summary>
+    /// <param name="Tile">The worked colony tile the suggestion is about.</param>
+    /// <param name="ImprovementId">The improvement ruleset id (<c>model.improvement.plow</c> / <c>road</c>) that would help, or <c>null</c> for an "explore this tile" suggestion.</param>
+    public readonly record struct TileImprovementSuggestion(Position Tile, string? ImprovementId);
+
+    /// <summary>
+    /// The <b>tile-improvement suggestions</b> for a colony (a read-only oracle, ADR-006; mirrors FreeCol
+    /// <c>Colony.getTileImprovementSuggestions</c> restricted to the tiles the colony actually works). For each of the
+    /// colony's <b>worked</b> tiles: if the tile is <b>unexplored</b> by the human it yields an explore suggestion
+    /// (<see cref="TileImprovementSuggestion.ImprovementId"/> <c>null</c>); otherwise, for each non-natural improvement
+    /// the human can build (plow / road) that the tile does not already carry, applies to the tile's terrain, and would
+    /// <b>raise the worked good's yield</b> (<see cref="World.Improvements.ImprovementProduction.YieldDelta(World.Improvements.TileImprovementType, string)"/> &gt; 0 —
+    /// FreeCol's <c>ct.improvedBy(ti) &gt; 0</c>), it yields a plow/road suggestion. Tiles are visited in row-major
+    /// order; a river (a natural improvement) is never suggested. Reuses the pure improvement-yield rule, so the panel
+    /// stays rules-free. Pure and RNG-free; never mutates, never persisted.
+    /// </summary>
+    /// <param name="colony">The colony whose worked tiles to check.</param>
+    /// <returns>The tile-improvement / explore suggestions (empty when every worked tile is explored and already optimal).</returns>
+    public IReadOnlyList<TileImprovementSuggestion> ColonyTileImprovementSuggestions(Colony colony)
+    {
+        var result = new List<TileImprovementSuggestion>();
+        foreach ((Position tile, string good) in colony.TileWorkers.OrderBy(kv => kv.Key.Y).ThenBy(kv => kv.Key.X))
+        {
+            if (!IsExplored(tile))
+            {
+                result.Add(new TileImprovementSuggestion(tile, null)); // send a scout — the tile is still fogged
+                continue;
+            }
+            TerrainType terrain = Map.TerrainAt(tile);
+            foreach (World.Improvements.TileImprovementType imp in Ruleset.ImprovementTypes)
+            {
+                if (imp.Id == World.Improvements.TileImprovementType.RiverId // natural — not player-buildable
+                    || Map.HasImprovement(tile, imp.Id)                      // already there
+                    || !imp.AppliesTo(terrain))                             // illegal on this terrain
+                {
+                    continue;
+                }
+                if (World.Improvements.ImprovementProduction.YieldDelta(imp, good) > 0) // FreeCol improvedBy > 0
+                {
+                    result.Add(new TileImprovementSuggestion(tile, imp.Id));
+                }
+            }
+        }
         return result;
     }
 }

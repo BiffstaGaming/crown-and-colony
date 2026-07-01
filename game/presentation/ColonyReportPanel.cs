@@ -900,9 +900,12 @@ public partial class ColonyReportPanel : PanelContainer
     private void BuildRequirements(VBoxContainer dynamic)
     {
         // FreeCol's ReportRequirementsPanel warns, per colony, where production is sub-optimal: a non-expert doing a
-        // job a resident expert should do (bad assignment), and a job done with no expert anywhere in the colony
-        // (missing expert). We read the colony's worker overlays + Ruleset.ExpertForProducing (pure ruleset data, no
-        // rules logic in the panel; ADR-006) to assemble the warnings. "Requirements met" when a colony has none.
+        // job a resident expert should do (bad assignment), a job done with no expert anywhere in the colony (missing
+        // expert), a manned building below max output because an input good is net-short (production shortage), and a
+        // worked tile that would gain from a plow/road or is still unexplored (tile suggestions). We read the colony's
+        // worker overlays + Ruleset.ExpertForProducing plus the Game.ColonyProductionWarnings /
+        // ColonyTileImprovementSuggestions oracles (pure reads, rules live in GameLogic; ADR-006). "Requirements met"
+        // when a colony has none.
         List<Colony> colonies = HumanColonies();
         if (colonies.Count == 0)
         {
@@ -959,9 +962,25 @@ public partial class ColonyReportPanel : PanelContainer
                 }
             }
 
+            // Production shortage: a manned building below max output because an input good is net-negative colony-wide
+            // (FreeCol's "not enough input" warning). Read from the Game.Reports oracle — the panel stays rules-free.
+            foreach (Game.ColonyProductionWarning pw in _game.ColonyProductionWarnings(c))
+            {
+                warnings.Add(
+                    $"    {Display(_game.Ruleset.Goods(pw.OutputGoodsId).ShortName)} production is short of " +
+                    $"{Display(_game.Ruleset.Goods(pw.InputGoodsId).ShortName)}.");
+            }
+            // Tile-improvement suggestions: a worked tile that would gain from a plow/road, or an unexplored worked tile.
+            foreach (Game.TileImprovementSuggestion tis in _game.ColonyTileImprovementSuggestions(c))
+            {
+                warnings.Add(tis.ImprovementId is { } impId
+                    ? $"    The tile at ({tis.Tile.X}, {tis.Tile.Y}) would yield more with a {Display(Strip(impId))}."
+                    : $"    The tile at ({tis.Tile.X}, {tis.Tile.Y}) is unexplored — send a scout.");
+            }
+
             foreach (string w in warnings.Distinct())
             {
-                dynamic.AddChild(new Label { Text = w, AutowrapMode = TextServer.AutowrapMode.WordSmart });
+                dynamic.AddChild(new Label { Name = $"RequirementWarning_{c.Id}", Text = w, AutowrapMode = TextServer.AutowrapMode.WordSmart });
             }
             if (warnings.Count == 0)
             {
