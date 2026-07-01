@@ -5135,17 +5135,22 @@ public sealed partial class Game
     /// A unit's movement points for a fresh turn: its unit-type base plus its role's movement bonus
     /// (FreeCol <c>Unit.getInitialMovesLeft</c> folding <c>model.modifier.movementBonus</c>) — e.g. a
     /// dragoon/scout/cavalry/mounted brave gets +9 (one extra "move" is 3 points). For a <b>naval</b> unit it
-    /// also folds the owner's Congress <c>movementBonus</c> — among fathers only <b>Ferdinand Magellan</b> (+3,
-    /// scoped to naval units) carries it, so the <c>IsNaval</c> gate is Magellan's scope. The role lookup is
-    /// null-safe so minimal rulesets without role data simply get the base. (Per-nation movement bonuses are a
-    /// separate scoped modifier, still deferred.)
+    /// also folds the owner's <c>movementBonus</c> — <b>Ferdinand Magellan</b> (+3, Congress) and the <b>Portuguese</b>
+    /// <c>naval</c> nation-type advantage (+3, spec-scoped <c>model.ability.navalUnit</c>): both ride the same
+    /// <see cref="ApplyGoodsModifiers(Player, string, int, int?)"/> fold (which now also folds nation-type modifiers),
+    /// and the surrounding <c>IsNaval</c> gate <b>is</b> the naval scope — a land unit never enters this branch, so the
+    /// Portuguese +3 (like Magellan's) applies to ships only. Stacked when a Portuguese player also elects Magellan (+6).
+    /// The role lookup is null-safe so minimal rulesets without role data simply get the base.
     /// </summary>
     private int InitialMovement(Unit unit)
     {
         int moves = unit.Type.Movement + (int)(Ruleset.Roles.FirstOrDefault(r => r.Id == unit.RoleId)?.MovementBonus ?? 0);
         if (unit.Type.IsNaval && PlayerById(unit.OwnerId) is { } owner)
         {
-            moves = ApplyGoodsModifiers(owner, MovementBonusId, moves); // Magellan +3 (naval-scoped)
+            // Magellan (+3, Congress) AND the Portuguese naval nation-type advantage (+3) both target movementBonus;
+            // ApplyGoodsModifiers folds the father modifier and the nation-type one together. The IsNaval gate is the
+            // naval scope for both — so the nation advantage never leaks onto land units.
+            moves = ApplyGoodsModifiers(owner, MovementBonusId, moves);
         }
         return moves;
     }
@@ -11018,6 +11023,17 @@ public sealed partial class Game
             .SelectMany(f => f.Modifiers)
             .Where(m => m.TargetId == goodsId)
             .ToList();
+        // A player's nation-type GOODS advantage (FreeCol european-nation-type <modifier id="model.goods.*">): the
+        // Swedish lumber +2, Danish grain +2 and Russian furs +2 — the UNSCOPED (tile-yield) advantages. The only
+        // goods-yield callers of this method are the TileYield overloads, so folding here targets tile output. The
+        // PERSON-scoped building advantages (Swedish hammers, Russian coats — scoped model.ability.person in the spec)
+        // must NOT fold here: building output does not run through this method, and those are folded per working
+        // colonist in ComputeBuildingProduction instead — so they are excluded here to keep the scopes honest even if
+        // a future caller passes a person-scoped good. The classic four nations carry no goods advantage → no change.
+        if (!PersonScopedNationGoods.Contains(goodsId))
+        {
+            modifiers.AddRange(NationTypeModifiers(player, goodsId));
+        }
         if (goodsId == BellsId && HasAbilityFor(player, AddTaxToBellsAbility))
         {
             // Paine: the spec template modifier (index 40) takes the current tax rate as its value.
@@ -11281,6 +11297,22 @@ public sealed partial class Game
     /// <c>&lt;modifier&gt;</c>s) — the reusable seam for national advantages. Empty for a player with no nation (the human's
     /// default), so a default game folds none.
     /// </summary>
+    /// <summary>The building-hammers goods id (Swedish <c>building</c> nation-type advantage, +2, <c>person</c>-scoped).</summary>
+    private const string HammersGoodsId = "model.goods.hammers";
+
+    /// <summary>The refined-coats goods id (Russian <c>furTrapping</c> nation-type advantage, +2, <c>person</c>-scoped).</summary>
+    private const string CoatsGoodsId = "model.goods.coats";
+
+    /// <summary>
+    /// The goods whose nation-type advantage modifier is <c>person</c>-scoped (FreeCol <c>&lt;scope ability-id="model.ability.person"/&gt;</c>)
+    /// — the Swedish <b>hammers</b> +2 and Russian <b>coats</b> +2. These apply to a colonist's BUILDING production (folded per
+    /// working occupant in <see cref="ComputeBuildingProduction"/>), never to raw tile yield, so they are excluded from the
+    /// tile-yield fold in <see cref="ApplyGoodsModifiers(Player, string, int, int?)"/>. Our modifier parser drops the spec's
+    /// <c>ability-id</c> scope (it only captures unit-type <c>&lt;scope type="…"/&gt;</c>), so we honour the person-scope by
+    /// PLACEMENT — this set is the single source of truth for which goods route to the building path instead of the tile path.
+    /// </summary>
+    private static readonly HashSet<string> PersonScopedNationGoods = new(StringComparer.Ordinal) { HammersGoodsId, CoatsGoodsId };
+
     private IEnumerable<FatherModifier> NationTypeModifiers(Player player, string targetId) =>
         // With national advantages turned OFF (the New-Game dial, 86d3fq0za) no nation-type advantage applies, so the
         // seam folds nothing for every player — a chosen nation plays with the neutral default. On (the classic default)
@@ -12202,13 +12234,22 @@ public sealed partial class Game
         // workers, identical to the old scalar path (free colonists carry no production modifier, so competence is a
         // no-op for them and competence=1 buildings are byte-identical).
         int rebelBonus = entry.Unattended ? 0 : (int)Math.Floor(colony.ProductionBonus * building.RebelFactor);
+        Player colonyOwner = PlayerById(colony.OwnerId)!; // the owner whose nation-type PERSON advantage folds per colonist
         Dictionary<string, int> outputTotals = new(entry.Outputs.Count);
         foreach (GoodsOutput output in entry.Outputs)
         {
+            // A PERSON-scoped nation-type BUILDING advantage (FreeCol <scope ability-id="model.ability.person">): the
+            // Swedish hammers +2 and Russian coats +2, added PER working colonist (its faithful home — building output
+            // never routes through ApplyGoodsModifiers). Empty (and byte-identical) for the four classic nations and an
+            // unattended entry. Folded on the worker-modified per-occupant output, uncompeted (FreeCol applies the flat
+            // nation modifier alongside the worker's own, not scaled by the building's competence factor).
+            int nationPersonBonus = entry.Unattended || !PersonScopedNationGoods.Contains(output.GoodsId)
+                ? 0
+                : (int)NationTypeModifiers(colonyOwner, output.GoodsId).Aggregate(0.0, (v, m) => m.ApplyTo(v));
             outputTotals[output.GoodsId] = entry.Unattended
                 ? output.Amount
                 : occupants.Sum(t => ApplyWorkerProductionModifiers(
-                    t, output.GoodsId, output.Amount + rebelBonus, building.CompetenceFactor));
+                    t, output.GoodsId, output.Amount + rebelBonus, building.CompetenceFactor) + nationPersonBonus);
         }
 
         // Input consumption / scarcity follow FreeCol's minimumRatio: each input is wanted in proportion to the

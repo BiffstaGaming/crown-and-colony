@@ -4,6 +4,7 @@ using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
+using CrownAndColony.GameLogic.World;
 using Xunit;
 
 namespace CrownAndColony.GameLogic.Tests.GameSession;
@@ -242,4 +243,150 @@ public class HumanNationTests
     /// <summary>A human-owned on-map colonist able to found a colony (the starting pioneer/soldier carry roles; a plain colonist founds cleanly).</summary>
     private static Unit FounderColonist(Game game) =>
         game.PlayerUnits.First(u => u.IsOnMap && !u.Type.IsNaval);
+
+    // ---- Extra-nation archetype advantages (86d3fq0y7, FreeCol spec nation-types 3045-3085) ----
+    // Portugal (naval): +3 naval movement; Sweden (building): +2 lumber(tile) / +2 hammers(building, person-scoped);
+    // Denmark (agriculture): +2 grain(tile); Russia (furTrapping): +2 furs(tile) / +2 coats(building, person-scoped).
+    // The four CLASSIC nations carry no goods/naval advantage, so wiring these leaves a classic human byte-identical.
+
+    private const string Portuguese = "model.nation.portuguese";
+    private const string Swedish = "model.nation.swedish";
+    private const string Danish = "model.nation.danish";
+    private const string Russian = "model.nation.russian";
+    private const string Lumber = "model.goods.lumber";
+    private const string Grain = "model.goods.grain";
+    private const string Hammers = "model.goods.hammers";
+    private const string Coats = "model.goods.coats";
+    private const string Free = "model.unit.freeColonist";
+    private const string Caravel = "model.unit.caravel";
+
+    [Fact]
+    public void PortugueseShip_GetsThreeExtraMovement_OverAClassicShip()
+    {
+        // The Portuguese naval advantage (movementBonus +3, ability-id=navalUnit) folds through InitialMovement's
+        // IsNaval gate — a caravel gets base + 3. A classic (English/no-advantage) caravel gets the plain base.
+        Assert.Equal(ShipMovement(null) + 3, ShipMovement(Portuguese));
+        Assert.Equal(ShipMovement(null), ShipMovement(EnglishId)); // a classic nation adds nothing
+    }
+
+    [Fact]
+    public void PortugueseAdvantage_IsNavalOnly_NotAppliedToLandUnits()
+    {
+        // The naval scope IS the IsNaval gate: a Portuguese land colonist gets NO movement bonus (movementBonus is
+        // folded only inside InitialMovement's naval branch), so a Portuguese pioneer moves like any other.
+        Assert.Equal(LandUnitMovement(null), LandUnitMovement(Portuguese));
+    }
+
+    [Fact]
+    public void SwedishColony_GetsTwoExtraLumberOnATile()
+    {
+        // The Swedish building advantage: lumber +2 (unscoped → tile yield), folded in ApplyGoodsModifiers.
+        Assert.Equal(TileGoodsYield(null, Lumber) + 2, TileGoodsYield(Swedish, Lumber));
+    }
+
+    [Fact]
+    public void SwedishColony_GetsTwoExtraHammersPerWorker_InTheCarpenter()
+    {
+        // The Swedish hammers +2 is PERSON-scoped (building production): one carpenter yields +2 hammers over a
+        // no-nation carpenter. Same one-worker carpenter setup so only the nation advantage differs.
+        Assert.Equal(CarpenterHammers(null) + 2, CarpenterHammers(Swedish));
+    }
+
+    [Fact]
+    public void DanishColony_GetsTwoExtraGrainOnATile()
+    {
+        // The Danish agriculture advantage: grain +2 (unscoped → tile yield).
+        Assert.Equal(TileGoodsYield(null, Grain) + 2, TileGoodsYield(Danish, Grain));
+    }
+
+    [Fact]
+    public void RussianColony_GetsTwoExtraFursOnATile()
+    {
+        // The Russian furTrapping advantage: furs +2 (unscoped → tile yield).
+        Assert.Equal(TileGoodsYield(null, Furs) + 2, TileGoodsYield(Russian, Furs));
+    }
+
+    [Fact]
+    public void RussianColony_GetsTwoExtraCoatsPerWorker_InTheFurTrader()
+    {
+        // The Russian coats +2 is PERSON-scoped (building production): one fur trader yields +2 coats over a
+        // no-nation fur trader.
+        Assert.Equal(FurTraderCoats(null) + 2, FurTraderCoats(Russian));
+    }
+
+    [Theory]
+    [InlineData(DutchId)]
+    [InlineData(FrenchId)]
+    [InlineData(EnglishId)]
+    [InlineData(SpanishId)]
+    public void TheFourClassicNations_HaveNoGoodsOrNavalAdvantage(string classicNation)
+    {
+        // None of the classic four carry a goods or naval nation-type advantage, so their tile yields, building output
+        // and ship movement match the no-nation human exactly — the guarantee that wiring the extra advantages leaves
+        // the classic human byte-identical (only an AI rival playing an extra nation changes).
+        Assert.Equal(TileGoodsYield(null, Lumber), TileGoodsYield(classicNation, Lumber));
+        Assert.Equal(TileGoodsYield(null, Grain), TileGoodsYield(classicNation, Grain));
+        Assert.Equal(TileGoodsYield(null, Furs), TileGoodsYield(classicNation, Furs));
+        Assert.Equal(CarpenterHammers(null), CarpenterHammers(classicNation));
+        Assert.Equal(FurTraderCoats(null), FurTraderCoats(classicNation));
+        Assert.Equal(ShipMovement(null), ShipMovement(classicNation));
+    }
+
+    /// <summary>A fresh caravel's initial movement for a human of <paramref name="nationId"/> (base + role, plus the naval nation/father folds), observed via the movement refreshed at the start of the next turn.</summary>
+    private static int ShipMovement(string? nationId)
+    {
+        Game game = Game.New(Classic, seed: 9, humanNationId: nationId);
+        Position water = game.Map.AllPositions().First(p => game.Map.TerrainAt(p).IsWater);
+        Unit ship = game.SpawnUnit(Classic.Unit(Caravel), water);
+        game.EndTurn(); // start-of-turn refresh sets MovementLeft = InitialMovement(ship)
+        return ship.MovementLeft;
+    }
+
+    /// <summary>A fresh free-colonist's initial (land) movement for a human of <paramref name="nationId"/> — the control that the naval advantage must NOT touch.</summary>
+    private static int LandUnitMovement(string? nationId)
+    {
+        Game game = Game.New(Classic, seed: 9, humanNationId: nationId);
+        Position land = game.Map.AllPositions().First(p =>
+            !game.Map.TerrainAt(p).IsWater && game.ColonyAt(p) is null && game.NativeSettlementAt(p) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p));
+        Unit colonist = game.SpawnUnit(Classic.Unit(Free), land);
+        game.EndTurn();
+        return colonist.MovementLeft;
+    }
+
+    /// <summary>The yield of <paramref name="goods"/> when a free colonist of <paramref name="nationId"/>'s human works its best tile — folds the nation's unscoped goods advantage.</summary>
+    private static int TileGoodsYield(string? nationId, string goods)
+    {
+        Game game = Game.New(Classic, seed: 9, humanNationId: nationId);
+        Position tile = game.Map.AllPositions().First(p =>
+            game.TileYieldPotential(p, goods) > 0 && game.Map.ResourceAt(p) is null); // no resource → isolate the nation add
+        return game.TileYield(game.HumanPlayer, Free, tile, goods);
+    }
+
+    /// <summary>Hammers produced by a one-free-colonist carpenter's house in a fresh colony of <paramref name="nationId"/>'s human — folds the person-scoped hammers advantage.</summary>
+    private static int CarpenterHammers(string? nationId) =>
+        BuildingOutput(nationId, Lumber, "model.building.carpenterHouse", Hammers);
+
+    /// <summary>Coats produced by a one-free-colonist fur trader's house in a fresh colony of <paramref name="nationId"/>'s human — folds the person-scoped coats advantage.</summary>
+    private static int FurTraderCoats(string? nationId) =>
+        BuildingOutput(nationId, Furs, "model.building.furTraderHouse", Coats);
+
+    /// <summary>
+    /// Building output for <paramref name="outGood"/> from a fresh colony of <paramref name="nationId"/>'s human staffed by
+    /// exactly one <b>free colonist</b> in <paramref name="buildingId"/> — the worker type is pinned (not the nation's
+    /// special starting specialist) so the only difference between two nations is their person-scoped nation advantage.
+    /// </summary>
+    private static int BuildingOutput(string? nationId, string inputGood, string buildingId, string outGood)
+    {
+        Game game = Game.New(Classic, seed: 9, humanNationId: nationId);
+        Colony colony = game.FoundColony(FounderColonist(game));
+        foreach (Position tile in colony.TileWorkers.Keys.ToList())
+        {
+            game.UnassignWork(colony, tile); // pull the founder(s) off the fields so only building work runs
+        }
+        colony.Population = 1;
+        colony.AssignBuildingWorker(buildingId, Free); // pin a FREE COLONIST (identical base output in both nations)
+        colony.AddGoods(inputGood, 50); // ample input so scarcity never caps the conversion
+        return game.ColonyProductionSummary(colony)[outGood].Produced;
+    }
 }
