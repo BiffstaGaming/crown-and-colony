@@ -446,7 +446,7 @@ public partial class Game
     // report's tribe band and the uprising check. Deterministic, RNG-free.
     // ============================================================================================================
 
-    /// <summary>Tribe-wide tension by nation type id → (colonial player id → tension 0..MaxAlarm). Transient (not serialized): seeded lazily from the per-settlement channels (<see cref="TribeTensionFor"/>), so a save round-trips byte-identically (ADR-009).</summary>
+    /// <summary>Tribe-wide tension by nation type id → (colonial player id → tension 0..<see cref="MaxTension"/>, the native-player Tension ceiling). Transient (not serialized): seeded lazily from the per-settlement channels (<see cref="TribeTensionFor"/>), so a save round-trips byte-identically (ADR-009).</summary>
     private readonly Dictionary<string, Dictionary<int, int>> _tribeTension = [];
 
     /// <summary>The fraction (percent) of a per-settlement alarm change that also stirs the whole nation (FreeCol propagates a share of a settlement act to the player-level Tension). A minor share — the nation warms/cools more slowly than any single camp.</summary>
@@ -500,14 +500,20 @@ public partial class Game
 
     /// <summary>
     /// Raises (or, with a negative <paramref name="delta"/>, eases) <paramref name="nationTypeId"/>'s tribe-wide tension
-    /// toward <paramref name="playerId"/>, clamped to [0, <c>MaxAlarm</c>]. The nation-level counterpart of
+    /// toward <paramref name="playerId"/>, clamped to [0, <see cref="MaxTension"/>]. The nation-level counterpart of
     /// <see cref="ChangeNativeAlarm(NativeSettlement, int, int)"/> — called when an act stirs the whole tribe (e.g. an
     /// incite, or the propagated share of a per-settlement act, <see cref="PropagateToTribe"/>). RNG-free.
+    /// <para>The ceiling is <see cref="MaxTension"/> (FreeCol <c>Tension.TENSION_MAX = HATEFUL.limit + 100</c> = 1100),
+    /// the native <em>player</em>'s Tension ceiling — <b>not</b> the per-settlement alarm's Hateful cap
+    /// (<c>MaxAlarm</c> = 1000). This mirrors FreeCol keeping a native player's Tension in [0, 1100] and matters for the
+    /// uprising: <see cref="StanceFromTension"/> escalates peace→War only above <c>HATEFUL.limit + DELTA</c> (1010), so
+    /// a channel capped at 1000 could never reach War (86d3fpzqf). The band display still reads Hateful for anything
+    /// above <c>AngryMax</c> (800), so 1000–1100 all band as Hateful (<see cref="TribeAlarmLevelFor"/>).</para>
     /// </summary>
     internal void RaiseTribeTension(string nationTypeId, int playerId, int delta)
     {
         Dictionary<int, int> channels = TribeChannelsFor(nationTypeId);
-        int next = Math.Clamp(channels.GetValueOrDefault(playerId) + delta, 0, Ruleset.Difficulty.NativeTension.MaxAlarm);
+        int next = Math.Clamp(channels.GetValueOrDefault(playerId) + delta, 0, MaxTension);
         if (next <= 0)
         {
             channels.Remove(playerId);
@@ -560,6 +566,96 @@ public partial class Game
             }
         }
     }
+
+    // ============================================================================================================
+    // Native uprising / nation-level WAR stance (86d3fpzqf) — FreeCol NativeAIPlayer.determineStances +
+    // Stance.getStanceFromTension. A native NATION forms a diplomatic stance toward each colonial power from its
+    // tribe-wide tension (_tribeTension), escalating to WAR when that tension peaks (Hateful) and de-escalating
+    // WAR → CEASE_FIRE → PEACE as it decays — the same FreeCol hysteresis the colonial machine uses.
+    //
+    // This stance is a DERIVED, TRANSIENT signal — recomputed each turn from _tribeTension (itself transient),
+    // NEVER written to the saved Stances dictionary. So it adds no save field, bumps no save version, and a default
+    // game whose natives never reach Hateful sees no change at all (byte-identical soak). It is ADDITIVE: braves
+    // already ATTACK at the per-settlement Displeased threshold (RunNativeTurn), so the WAR stance is nation-level
+    // signalling for the report/UI + a faithful stance model, not a new attack path. RNG-free (draws no stream).
+    // ============================================================================================================
+
+    /// <summary>
+    /// The native nations' <b>transient</b> diplomatic stance toward each colonial power, keyed by native nation type
+    /// id → (colonial player id → <see cref="Stance"/>). Recomputed each turn by <see cref="DetermineNativeStances"/>
+    /// from the transient <see cref="_tribeTension"/>; <b>never serialized</b> and never written to the colonial
+    /// <see cref="Player.Stances"/> map — so a save round-trips byte-identically and the classic soak is unaffected
+    /// (ADR-009). Absent entry reads as <see cref="Stance.Peace"/> (a met native nation defaults to peace).
+    /// </summary>
+    private readonly Dictionary<string, Dictionary<int, Stance>> _nativeStances = [];
+
+    /// <summary>
+    /// Re-derives every native nation's WAR/CEASE_FIRE/PEACE stance toward each colonial power from its tribe-wide
+    /// tension (FreeCol <c>NativeAIPlayer.determineStances</c> → <c>Stance.getStanceFromTension</c>), run once at the
+    /// start of the nation's turn <b>before</b> the brave loop. For each colonial player it reads the existing
+    /// transient <see cref="TribeTensionFor"/> and applies the same FreeCol hysteresis the colonial machine uses
+    /// (<see cref="StanceFromTension"/>): peace/cease-fire flares to <see cref="Stance.War"/> when tension exceeds
+    /// <c>HATEFUL.limit + DELTA</c> (1010), a war cools to <see cref="Stance.CeaseFire"/> at ≤ 590 and a cease-fire
+    /// warms to <see cref="Stance.Peace"/> at ≤ 90 — keeping the <em>previous</em> native stance so the band does not
+    /// oscillate. The result is stored only in the transient <see cref="_nativeStances"/> (never the saved
+    /// <see cref="Player.Stances"/>): it is a report/UI signal, not a stored diplomatic fact, so it adds no save field
+    /// and leaves a default game byte-identical. RNG-free (draws no stream). A stance that settles back to
+    /// <see cref="Stance.Peace"/> drops its entry so a fully-calm nation holds none.
+    /// </summary>
+    /// <param name="nation">The native nation taking its turn (its <see cref="Player.NationId"/> is the nation type id).</param>
+    internal void DetermineNativeStances(Player nation)
+    {
+        if (nation.NationId is not { } nationTypeId)
+        {
+            return;
+        }
+        Dictionary<int, Stance> stances = NativeStanceChannels(nationTypeId);
+        // Only colonial powers have a native↔colonial stance (the human is player 0); rebels/REF/etc. are excluded,
+        // matching the colonial diplomacy machine. Stable id order — purely cosmetic here (no RNG), but consistent.
+        foreach (Player colonial in _players.Where(p => p.PlayerType == PlayerType.Colonial).OrderBy(p => p.PlayerId))
+        {
+            int tension = TribeTensionFor(nationTypeId, colonial.PlayerId);
+            // A never-yet-tense nation reads as Peace (a met native defaults to peace, not the colonial "Uncontacted"
+            // — braves already share the map): so escalation to War is reachable exactly as FreeCol's peace→war branch.
+            Stance previous = stances.GetValueOrDefault(colonial.PlayerId, Stance.Peace);
+            Stance next = StanceFromTension(previous, tension);
+            if (next == Stance.Peace)
+            {
+                stances.Remove(colonial.PlayerId); // a fully-calm channel holds nothing (mirrors the tension map)
+            }
+            else
+            {
+                stances[colonial.PlayerId] = next;
+            }
+        }
+    }
+
+    /// <summary>The transient native-stance channel map for a nation type id, created empty on first touch. Not serialized.</summary>
+    private Dictionary<int, Stance> NativeStanceChannels(string nationTypeId)
+    {
+        if (!_nativeStances.TryGetValue(nationTypeId, out Dictionary<int, Stance>? channels))
+        {
+            channels = [];
+            _nativeStances[nationTypeId] = channels;
+        }
+        return channels;
+    }
+
+    /// <summary>
+    /// The native nation <paramref name="nationTypeId"/>'s current <b>transient</b> diplomatic stance toward the
+    /// colonial player <paramref name="playerId"/> (FreeCol the native player's stance toward that colonial player) —
+    /// <see cref="Stance.War"/> once the nation's tribe tension has peaked, de-escalating through
+    /// <see cref="Stance.CeaseFire"/> back to <see cref="Stance.Peace"/> as it cools. A read oracle (ADR-006): the
+    /// report/UI reads it to show "at war with the &lt;tribe&gt;". Derived, never stored in the saved
+    /// <see cref="Player.Stances"/> map, so it costs no save field; defaults to <see cref="Stance.Peace"/> for a nation
+    /// that has never been provoked. Recomputed each native turn by <see cref="DetermineNativeStances"/>. No RNG, no mutation.
+    /// </summary>
+    /// <param name="nationTypeId">The native nation type id (a settlement's <see cref="NativeSettlement.NationTypeId"/> / the native player's <see cref="Player.NationId"/>).</param>
+    /// <param name="playerId">The colonial player whose channel to read (the human is <see cref="HumanAlarmChannel"/>).</param>
+    public Stance NativeStanceToward(string nationTypeId, int playerId) =>
+        _nativeStances.TryGetValue(nationTypeId, out Dictionary<int, Stance>? channels)
+            ? channels.GetValueOrDefault(playerId, Stance.Peace)
+            : Stance.Peace;
 
     // ============================================================================================================
     // Gifts FROM natives, realism pass (86d3fpzx1) — FreeCol IndianSettlement.getRandomGift + the AI gift throttle.

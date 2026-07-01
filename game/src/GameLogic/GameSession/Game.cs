@@ -9804,6 +9804,13 @@ public sealed partial class Game
             DecayTribeTensionForNation(nationId);
         }
 
+        // Re-derive the nation-level WAR/CEASE_FIRE/PEACE stance toward each colonial power from the (now-decayed)
+        // tribe tension (FreeCol NativeAIPlayer.determineStances → Stance.getStanceFromTension) — the uprising signal
+        // when alarm peaks (86d3fpzqf). TRANSIENT + RNG-free: recomputed each turn, never written to the saved Stances
+        // dict, so it adds no save field and a default game (natives never reach Hateful) stays byte-identical. Braves
+        // already attack at the per-settlement Displeased threshold below — this is additive nation-level signalling.
+        DetermineNativeStances(player);
+
         // Spread the nation's arms to where they're needed (FreeCol NativeAIPlayer.secureSettlements arms-spreading):
         // a calm, well-stocked camp ships a surplus half-unit of muskets/horses to a threatened (alarmed) camp that has
         // none — so a tribe's weapons reach the front line instead of sitting idle in a peaceful village. RNG-free, and

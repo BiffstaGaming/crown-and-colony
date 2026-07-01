@@ -854,4 +854,132 @@ public class NativeAiTests
         string json = SaveGame.From(Game.New(Classic, seed: 7)).ToJson();
         Assert.DoesNotContain("VisitedByPowers", json); // additive: omitted → byte-identical to v43 but for the version
     }
+
+    // ── Native uprising / nation-level WAR stance when alarm peaks (86d3fpzqf) ───────────────────────────────────────
+    // FreeCol NativeAIPlayer.determineStances → Stance.getStanceFromTension: a native NATION forms a WAR/CEASE_FIRE/PEACE
+    // stance toward each colonial power from its tribe-wide tension, escalating to WAR when it peaks (Hateful) and
+    // de-escalating as it cools. The stance is DERIVED + TRANSIENT — recomputed each native turn from the (transient)
+    // _tribeTension, never written to the saved Stances dict — so it adds no save field and leaves a default game
+    // byte-identical. Braves already attack at the per-settlement Displeased threshold, so the WAR stance is additive.
+
+    /// <summary>A native nation type id that has at least one settlement (the tribe whose stance we drive).</summary>
+    private static string ANativeNation(Game game) => game.NativeSettlements.First().NationTypeId;
+
+    [Fact]
+    public void ANationReachingHateful_FlipsToWar_AndTheRaidPathStillFires()
+    {
+        // A tribe whose nation-wide tension peaks past FreeCol's HATEFUL.limit + DELTA (1010) forms a WAR stance toward
+        // the human — AND (independently) its enraged braves still raid, since braves attack at the per-settlement
+        // Displeased threshold, unchanged by this additive nation-level signal.
+        Game game = Game.New(Classic, seed: 7);
+        int human = game.HumanPlayer.PlayerId;
+
+        Unit brave = game.NativeUnits.First(b => b.Position.Neighbours().Any(n => Free(game, n)));
+        string nation = brave.OwnerNationId!;
+
+        // Peak the tribe's nation-wide tension well past the war threshold (survives the turn's decay) and enrage its
+        // settlements so the existing raid path is live too.
+        game.RaiseTribeTension(nation, human, NativeSettlement.MaxAlarm + 100); // → 1100 (the native-player Tension ceiling)
+        foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == nation))
+        {
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // Hateful → its braves raid
+        }
+        Position spot = brave.Position.Neighbours().First(n => Free(game, n));
+        game.SpawnUnit(Classic.Unit(FreeColonist), spot); // a human colonist beside the brave
+
+        Assert.Equal(Stance.Peace, game.NativeStanceToward(nation, human)); // at peace before its turn runs
+
+        game.EndTurn(); // the native turn re-derives the stance (before the brave loop) then the braves raid
+
+        Assert.Equal(Stance.War, game.NativeStanceToward(nation, human)); // the nation is now AT WAR with the human
+        Assert.Contains(game.CombatNotices, n => n.AttackerNationId == nation && n.Position == spot); // …and it still raided
+    }
+
+    [Fact]
+    public void TheNativeWarStance_DeEscalates_WarToCeaseFireToPeace_AsTensionDecays()
+    {
+        // FreeCol's getStanceFromTension hysteresis, driven purely off the transient tribe tension: WAR cools to
+        // CEASE_FIRE at ≤ 590 (CONTENT.limit − DELTA), and CEASE_FIRE warms to PEACE at ≤ 90 (HAPPY.limit − DELTA).
+        Game game = Game.New(Classic, seed: 7);
+        int human = game.HumanPlayer.PlayerId;
+        string nation = ANativeNation(game);
+        Player nationPlayer = NationPlayer(game, nation);
+
+        // Peak past the war threshold → WAR.
+        game.RaiseTribeTension(nation, human, 1100);
+        game.DetermineNativeStances(nationPlayer);
+        Assert.Equal(Stance.War, game.NativeStanceToward(nation, human));
+
+        // Still above the cease-fire band (591..) → stays WAR (hysteresis: a war doesn't cool until ≤ 590).
+        SetTribeTension(game, nation, human, 700);
+        game.DetermineNativeStances(nationPlayer);
+        Assert.Equal(Stance.War, game.NativeStanceToward(nation, human));
+
+        // Down into the Content band (≤ 590) → WAR cools to CEASE_FIRE.
+        SetTribeTension(game, nation, human, 500);
+        game.DetermineNativeStances(nationPlayer);
+        Assert.Equal(Stance.CeaseFire, game.NativeStanceToward(nation, human));
+
+        // Still above the peace band (91..) → stays CEASE_FIRE.
+        SetTribeTension(game, nation, human, 200);
+        game.DetermineNativeStances(nationPlayer);
+        Assert.Equal(Stance.CeaseFire, game.NativeStanceToward(nation, human));
+
+        // Down to the Happy band (≤ 90) → CEASE_FIRE warms to PEACE (and the calm channel is dropped).
+        SetTribeTension(game, nation, human, 50);
+        game.DetermineNativeStances(nationPlayer);
+        Assert.Equal(Stance.Peace, game.NativeStanceToward(nation, human));
+    }
+
+    /// <summary>Forces the transient tribe-tension channel to an exact value (raise/lower relative to the current level).</summary>
+    private static void SetTribeTension(Game game, string nation, int playerId, int target) =>
+        game.RaiseTribeTension(nation, playerId, target - game.TribeTensionFor(nation, playerId));
+
+    [Fact]
+    public void TheNativeWarStance_IsTransient_LeavingASaveByteIdentical()
+    {
+        // The decisive save guard: driving a tribe all the way to WAR against the human changes NO save bytes — the
+        // native stance is derived from the transient _tribeTension and never written to the saved Stances dict. So a
+        // provoked game and a pristine same-seed game serialize identically (no new field, no save-version bump).
+        Game provoked = Game.New(Classic, seed: 4242);
+        Game pristine = Game.New(Classic, seed: 4242);
+        int human = provoked.HumanPlayer.PlayerId;
+        string nation = ANativeNation(provoked);
+
+        game_RaiseToWar(provoked, nation, human);
+        Assert.Equal(Stance.War, provoked.NativeStanceToward(nation, human)); // it really is at war…
+
+        // …yet the save is byte-identical to the untouched game: the WAR stance left no trace on disk.
+        Assert.Equal(SaveGame.From(pristine).ToJson(), SaveGame.From(provoked).ToJson());
+
+        // And the human's own colonial Stances map never gained a War entry — natives stay off the saved stance system.
+        Assert.All(provoked.HumanPlayer.Stances.Values, s => Assert.NotEqual(Stance.War, s));
+    }
+
+    /// <summary>Drives <paramref name="nation"/> to a WAR stance toward <paramref name="playerId"/> and re-derives the stance.</summary>
+    private static void game_RaiseToWar(Game game, string nation, int playerId)
+    {
+        game.RaiseTribeTension(nation, playerId, 1100);
+        game.DetermineNativeStances(NationPlayer(game, nation));
+    }
+
+    [Fact]
+    public void TheDefaultGame_NeverReachesHateful_SoNoNativeNationDeclaresWar()
+    {
+        // The classic/default path is unaffected: with no provocation the natives never reach the war band, so every
+        // native nation stays at PEACE toward the human through a long autoplay (the soak's byte-identity precondition).
+        Game game = Game.New(Classic, seed: 20240702);
+        int human = game.HumanPlayer.PlayerId;
+
+        for (int turn = 0; turn < 30; turn++)
+        {
+            game.EndTurn();
+        }
+
+        foreach (string nation in game.NativeSettlements.Select(s => s.NationTypeId).Distinct())
+        {
+            Assert.Equal(Stance.Peace, game.NativeStanceToward(nation, human)); // never provoked → never at war
+            Assert.NotEqual(AlarmLevel.Hateful, game.TribeAlarmLevelFor(nation, human));
+        }
+    }
 }

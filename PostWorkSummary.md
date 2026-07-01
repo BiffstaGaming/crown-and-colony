@@ -19,6 +19,25 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-02 — Native uprising / nation-level WAR stance when alarm peaks (86d3fpzqf) ✅
+
+**Requested (Chris):** implement the native-uprising determinism-parity feature — a native nation forms a nation-level WAR stance when its tribe alarm peaks, kept transient (no save field) and RNG-free so the soak stays byte-identical.
+**Did:**
+- **New `DetermineNativeStances(nation)` pass** at the top of `RunNativeTurn` (before the brave loop, after tension decay): for each colonial power it reads the existing transient `TribeTensionFor` and applies the **existing** `StanceFromTension` hysteresis (peace/cease-fire → War above 1010; War → CeaseFire at ≤ 590; CeaseFire → Peace at ≤ 90), keeping the previous native stance for DELTA hysteresis — faithful to FreeCol `NativeAIPlayer.determineStances` → `Stance.getStanceFromTension`.
+- **Kept the stance TRANSIENT + DERIVED:** stored in a new in-memory `_nativeStances` map (`nationTypeId → playerId → Stance`), **never** written to the serialized `Player.Stances` dict; read via the new public oracle `NativeStanceToward(nationTypeId, playerId)` (report/UI "at war with the <tribe>"). No save field, no save bump (still v61).
+- **One required clamp fix:** `RaiseTribeTension` now clamps the (transient) tribe channel to `MaxTension` (FreeCol `TENSION_MAX` 1100, the native-*player* Tension ceiling) instead of `MaxAlarm` (1000) — otherwise the channel could never cross the 1010 war threshold. Transient-only; the band display (`TribeAlarmLevelFor`, Hateful above 800) is unaffected. Existing tribe-tension tests (500/900) unaffected.
+- **Additive, not a new attack path:** braves already raid at the per-settlement Displeased threshold (unchanged) — the WAR stance is nation-level signalling over raids already happening. RNG-free (draws no stream).
+- **+4 L1 tests** (`NativeAiTests`): reach-Hateful → War **and** the raid still fires; War→CeaseFire→Peace de-escalation with hysteresis; provoked-to-War leaves the save byte-identical + no War entry in the human's Stances; 30-turn unprovoked autoplay stays at Peace / never Hateful.
+- Updated `docs/systems/natives.md` (both layers + Verification + changelog) and `docs/modules/game-logic.md` (public-oracle changelog). Did **not** touch `docs/reference/feature-parity.md` (parent owns the matrix row).
+**Status:** **2602 L1/L2 green** (incl. the 4 new) · **soak byte-identity + twin-determinism green** (3/3 determinism soak; the 5th soak test is a wall-clock perf micro-benchmark that fails **identically on the pristine baseline** under full-soak load — a pre-existing machine-load flake, not a regression). Committed on the worktree branch for the parent to cherry-pick.
+**Changed:** `Game.cs` (+7, the `DetermineNativeStances` orchestration line + comment), `Game.Natives.cs` (+~95, the stance machinery + clamp fix + doc), `NativeAiTests.cs` (+4 tests), `docs/systems/natives.md`, `docs/modules/game-logic.md`. One commit (see git log below).
+**Decisions:** reused the existing colonial `StanceFromTension` rather than a parallel native mapping (FreeCol's `getStanceFromTension` takes current-stance + tension, so the previous native stance is needed — kept transient/in-memory, rebuilt from tension each turn, so no save field). Widened only the transient tribe-tension clamp to 1100 (the correct native-player Tension ceiling, matching the colonial channel) — the minimal change that makes War reachable without touching any serialized state.
+**Scheduled next (my recommendation):** the other focused determinism stream — **market-propagation `86d3fpyx3`** (Ready, full scope on-task) — or another scope wave over the remaining ~33 No / 24 Partial.
+**Follow-ups:** parent should flip the feature-parity matrix row 'Native uprising / war when alarm peaks' to Yes; SoL% formula `86d3hzz4w`; custom-difficulty `86d3fq0x7`; QA-test `86d3fy56v`; disaster-persistence `86d3hz9ga`.
+**Needs you:** Nothing blocking. Visible in-game once wired to UI: provoking a tribe past Hateful now shows the whole nation "at war with you" in the Native Affairs Advisor (braves were already raiding); an unprovoked game is unchanged.
+
+---
+
 ## 2026-07-02 — Fixed the persistent TradeAtRivalColony L3 flake at its root (86d3hzz6d) ✅
 
 **Requested (Chris):** work through more outstanding tasks (I picked the top of my own recommendation — the flake that intermittently red-gates unrelated pushes and erodes CI-green trust).
