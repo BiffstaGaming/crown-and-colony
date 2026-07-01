@@ -302,7 +302,10 @@ public class NegotiationPanelTests
         AssertThat(game.CheckSellToForeignColony(ship, rival.Position, Tobacco, 100).Allowed).IsTrue();
 
         controller.OpenNegotiationForColony(rival);
-        await runner.SimulateFrames(1);
+        // OpenForColony -> Init runs Rebuild() + Show() SYNCHRONOUSLY (NegotiationPanel.Init), so the panel is visible
+        // and its buttons exist immediately. Assert them BEFORE any SimulateFrames so no bled held-key input from a
+        // prior L3 suite (the recurring 86d3hzz6d flake) can reprocess the running scene in a frame between the
+        // synchronous build and the button lookup — the frame is only needed AFTER the button press below.
         var panel = controller.GetNode<PanelContainer>("UI/NegotiationPanel");
         AssertThat(panel.Visible).IsTrue();
 
@@ -315,6 +318,43 @@ public class NegotiationPanelTests
 
         AssertThat(rival.StoreOf(Tobacco) > storeBefore).IsTrue(); // the goods moved into the rival warehouse
         AssertThat(ship.CargoOf(Tobacco) < 100).IsTrue();          // and left the hold
+    }
+
+    [TestCase]
+    public async Task TradeAtRivalColony_PrefersACarrierThatCanTrade_WhenAnEmptyOneIsAlsoAdjacent()
+    {
+        // Regression for the 86d3hzz6d flake: a colony can have several adjacent human carriers. The panel must surface
+        // the trade using a carrier that can ACTUALLY trade, not mask a laden ship behind an empty carrier that merely
+        // iterates first. (The flake was CI-only, caused by a sibling suite's held-key input bleeding the human's
+        // starting ship adjacent to the rival colony — but the fix is a real product robustness improvement.)
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+        int foreignId = ForeignPowerId(game);
+
+        Colony rival = FoundCoastalColony(game, foreignId);
+        SetStance(game, humanId, foreignId, Stance.Peace);
+        GrantDeWitt(game, humanId);
+        SetGold(game.Players.First(p => p.PlayerId == foreignId), 5000);
+        Position water = rival.Position.Neighbours().First(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater);
+        Unit empty = game.SpawnUnit(game.Ruleset.Unit("model.unit.caravel"), water); // spawned FIRST -> iterates first, carries nothing
+        Unit laden = game.SpawnUnit(game.Ruleset.Unit("model.unit.caravel"), water);
+        AddCargo(laden, Tobacco, 100);
+
+        controller.OpenNegotiationForColony(rival);
+        var panel = controller.GetNode<PanelContainer>("UI/NegotiationPanel");
+        Button? sell = FindButton(panel, "TradeSell");
+        AssertThat(sell != null).IsTrue(); // the empty carrier did NOT mask the laden one
+
+        int storeBefore = rival.StoreOf(Tobacco);
+        sell!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(rival.StoreOf(Tobacco) > storeBefore).IsTrue(); // the laden ship's cargo was the one traded
+        AssertThat(laden.CargoOf(Tobacco) < 100).IsTrue();
+        AssertThat(empty.CargoOf(Tobacco)).IsEqual(0);             // the empty ship was untouched
     }
 
     [TestCase]
@@ -336,7 +376,10 @@ public class NegotiationPanelTests
         Unit gun = game.SpawnUnit(game.Ruleset.Unit("model.unit.artillery"), adj); // human-owned offensive unit
 
         controller.OpenNegotiationForColony(rival);
-        await runner.SimulateFrames(1);
+        // OpenForColony -> Init runs Rebuild() + Show() SYNCHRONOUSLY (NegotiationPanel.Init), so the panel is visible
+        // and its buttons exist immediately. Assert them BEFORE any SimulateFrames so no bled held-key input from a
+        // prior L3 suite (the recurring 86d3hzz6d flake) can reprocess the running scene in a frame between the
+        // synchronous build and the button lookup — the frame is only needed AFTER the button press below.
         var panel = controller.GetNode<PanelContainer>("UI/NegotiationPanel");
         AssertThat(panel.Visible).IsTrue();
 

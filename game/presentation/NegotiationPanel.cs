@@ -259,10 +259,24 @@ public partial class NegotiationPanel : PanelContainer
         }
 
         // --- Trade goods at this rival colony (a human carrier on/beside it, de Witt's ability, not at war) ---
-        Unit? trader = _game.Units.FirstOrDefault(u =>
-            u.OwnerId == HumanId && u.Type.IsCarrier && u.IsOnMap
-            && (u.Position == colony.Position || u.Position.IsAdjacentTo(colony.Position)));
-        if (trader is not null && _game.CanTradeWithForeignColonies(HumanId))
+        // Pick the first adjacent human carrier that can ACTUALLY trade here — one carrying a good the colony can pay for,
+        // or one able to afford a good the colony sells. A colony can have several adjacent human carriers, so a laden
+        // trader must not be masked by an empty one that merely iterates first (this folds the capability check into the
+        // selection, exactly like the DemandTribute pick below; fixes the intermittent L3 flake 86d3hzz6d).
+        bool CanTradeHere(Unit u) => _game.Ruleset.GoodsTypes.Any(g =>
+        {
+            int sellAmount = Math.Min(100, u.CargoOf(g.Id));
+            int buyAmount = Math.Min(100, colony.StoreOf(g.Id));
+            return (sellAmount > 0 && _game.CheckSellToForeignColony(u, colony.Position, g.Id, sellAmount).Allowed)
+                || (buyAmount > 0 && _game.CheckBuyFromForeignColony(u, colony.Position, g.Id, buyAmount).Allowed);
+        });
+        Unit? trader = _game.CanTradeWithForeignColonies(HumanId)
+            ? _game.Units.FirstOrDefault(u =>
+                u.OwnerId == HumanId && u.Type.IsCarrier && u.IsOnMap
+                && (u.Position == colony.Position || u.Position.IsAdjacentTo(colony.Position))
+                && CanTradeHere(u))
+            : null;
+        if (trader is not null)
         {
             // Sell: the first good aboard the trader the colony can pay for.
             (string GoodsId, int Amount)? sell = _game.Ruleset.GoodsTypes
