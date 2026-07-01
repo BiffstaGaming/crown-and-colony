@@ -308,6 +308,29 @@ public class NativeTradeTests
     }
 
     [Fact]
+    public void WagonHaggleSell_QuotesTheUnPenalisedPrice_NotTheShipPrice()
+    {
+        // A wagon train's haggle offer/counter is quoted off the un-penalised land price (naval:false) — matching the
+        // price the committed sale already pays; the default (naval) haggle keeps the penalised ship basis. Only a
+        // displayed figure changes, no RNG draw depends on the carrier (86d3ha4jb).
+        (Game game, NativeSettlement settlement, _) = SetupOverlandTrade(["model.goods.sugar"]);
+
+        int wagonFair = game.NativeSalePrice(settlement, "model.goods.sugar", 100, naval: false); // 2190 un-penalised
+        int shipFair = game.NativeSalePrice(settlement, "model.goods.sugar", 100, naval: true);   // 1533 (−30% penalty)
+
+        // A wagon asking exactly its un-penalised fair price is accepted at that price.
+        var wagon = game.TryHaggleSell(settlement, "model.goods.sugar", 100, offerPrice: wagonFair, round: 0, naval: false);
+        Assert.True(wagon.Accepted);
+        Assert.Equal(wagonFair, wagon.CounterPrice);
+
+        // The default (naval) haggle counters at the lower ship price for the same ask — proving the carrier flag flows.
+        var ship = game.TryHaggleSell(settlement, "model.goods.sugar", 100, offerPrice: wagonFair, round: 0);
+        Assert.False(ship.Accepted);
+        Assert.Equal(shipFair, ship.CounterPrice);
+        Assert.True(wagon.CounterPrice > ship.CounterPrice, "the wagon's haggle quote beats the ship's penalised quote");
+    }
+
+    [Fact]
     public void HaggleBuy_AcceptsAGenerousOffer_CountersALowBid()
     {
         (Game game, NativeSettlement settlement, _) = SetupBuy(sugarStock: 80);

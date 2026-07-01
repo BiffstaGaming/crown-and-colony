@@ -2331,10 +2331,17 @@ public sealed partial class Game
     /// (<see cref="NativeHaggleResult.Done"/>). The haggle roll is drawn on the <b>native</b> stream, never the human's
     /// economy stream 0 (ADR-009). This surfaces the offer/counter loop without committing the sale — call
     /// <see cref="SellToNatives(Unit, NativeSettlement, string, int)"/> once a price is agreed.
+    /// <para>
+    /// <paramref name="naval"/> selects the fair-price basis to match the carrier: <c>true</c> (the default) applies the
+    /// classic ship-trade penalty (a sea trader is paid less); <c>false</c> — pass this for an overland <b>wagon train</b> —
+    /// uses the un-penalised land price, so a wagon's <em>displayed</em> counter-offer matches the un-penalised price the
+    /// committed sale already uses (the sale via <see cref="CheckSellToNatives"/> passes <c>ship.Type.IsNaval</c>). Only
+    /// the displayed fair-price basis changes — no RNG draw depends on it (ADR-009).
+    /// </para>
     /// </summary>
-    public NativeHaggleResult TryHaggleSell(NativeSettlement settlement, string goodsId, int amount, int offerPrice, int round)
+    public NativeHaggleResult TryHaggleSell(NativeSettlement settlement, string goodsId, int amount, int offerPrice, int round, bool naval = true)
     {
-        int fair = NativeSalePrice(settlement, goodsId, amount);
+        int fair = NativeSalePrice(settlement, goodsId, amount, naval);
         for (int h = 0; h < round; h++)
         {
             fair = HaggleDown(fair);
@@ -11184,15 +11191,38 @@ public sealed partial class Game
     /// <summary>
     /// Whether <paramref name="playerId"/>'s custom houses may sell to foreign markets — Jan de Witt's
     /// <c>customHouseTradesWithForeignCountries</c> ability, and (faithful to FreeCol <c>Player.canTrade</c>) only while
-    /// he is at <see cref="Stance.Peace"/> or <see cref="Stance.Alliance"/> with at least one other European power. The
-    /// oracle that will let a custom house auto-sell a boycotted good once the custom-house boycott gate lands; false
-    /// for every player until de Witt is elected, so the default game's custom-house behaviour is unchanged.
+    /// he is at <see cref="Stance.Peace"/> or <see cref="Stance.Alliance"/> with at least one other <b>European power</b>.
+    /// The peer set matches FreeCol's <c>getLiveEuropeanPlayers(this)</c> — a <em>live</em> player whose type is
+    /// <see cref="IsEuropeanPower"/> (Colonial, Rebel, Independent, or the Royal Expeditionary Force), so a post-declaration
+    /// rebel/independent nation, and the REF itself while it is a live player, all count as trade peers; the native nations
+    /// (and a wiped-out power) never do. The oracle that will let a custom house auto-sell a boycotted good once the
+    /// custom-house boycott gate lands; false for every player until de Witt is elected, so the default game's
+    /// custom-house behaviour is unchanged.
     /// </summary>
     public bool CustomHouseTradesWithForeignCountries(int playerId) =>
         PlayerById(playerId) is { PlayerType: PlayerType.Colonial } p
         && HasAbilityFor(p, CustomHouseForeignTradeAbility)
-        && _players.Any(o => o.PlayerId != p.PlayerId && o.PlayerType == PlayerType.Colonial
+        && _players.Any(o => o.PlayerId != p.PlayerId && IsLiveEuropeanPower(o)
             && p.Stances.GetValueOrDefault(o.PlayerId) is Stance.Peace or Stance.Alliance);
+
+    /// <summary>
+    /// Whether <paramref name="player"/> is a <b>European power</b> (FreeCol <c>Player.isEuropean</c>): a Colonial,
+    /// Rebel, Independent, or Royal-Expeditionary-Force player — i.e. any non-native, non-retired nation that competes on
+    /// the European stage. Used to scope diplomacy/trade peer sets to the powers FreeCol counts as European.
+    /// </summary>
+    private static bool IsEuropeanPower(Player player) =>
+        player.PlayerType is PlayerType.Colonial or PlayerType.Rebel or PlayerType.Independent
+            or PlayerType.RoyalExpeditionaryForce;
+
+    /// <summary>
+    /// Whether <paramref name="player"/> is a <see cref="IsEuropeanPower"/> that is still <b>live</b> — it holds at least
+    /// one colony or one non-native unit (the same liveness the victory reads use, FreeCol's not-<c>isDead</c>). The REF
+    /// counts while it still has un-landed/landed forces. Mirrors FreeCol <c>getLiveEuropeanPlayers</c> (which, unlike
+    /// <see cref="LiveEuropeanPowers"/>, includes the REF).
+    /// </summary>
+    private bool IsLiveEuropeanPower(Player player) =>
+        IsEuropeanPower(player)
+        && (ColoniesOf(player).Any() || _units.Any(u => u.OwnerId == player.PlayerId && !u.IsNative));
 
     /// <summary>
     /// Whether <paramref name="playerId"/> sees the full foreign-affairs report — Jan de Witt's

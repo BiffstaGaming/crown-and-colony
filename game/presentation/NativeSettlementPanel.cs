@@ -392,7 +392,8 @@ public partial class NativeSettlementPanel : PanelContainer
             int offer = _buying ? HaggleDownOffer(_haggleCounter) : HaggleUpOffer(_haggleCounter);
             Game.NativeHaggleResult result = _buying
                 ? _game.TryHaggleBuy(_settlement, goodsId, _tradeAmount, offer, _haggleRound)
-                : _game.TryHaggleSell(_settlement, goodsId, _tradeAmount, offer, _haggleRound);
+                // A wagon train (non-naval) is quoted the un-penalised land price, matching the committed sale.
+                : _game.TryHaggleSell(_settlement, goodsId, _tradeAmount, offer, _haggleRound, ship.Type.IsNaval);
             if (result.Accepted)
             {
                 _haggleCounter = result.CounterPrice; // the chief took the player's offer → deal at the player's price
