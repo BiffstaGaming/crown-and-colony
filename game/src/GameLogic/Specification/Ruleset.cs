@@ -428,6 +428,27 @@ public sealed class Ruleset
     }
 
     /// <summary>
+    /// Returns this ruleset with the <b>experts-have-connections</b> game option
+    /// (<see cref="GameOptions.ExpertsHaveConnections"/>) overridden — FreeCol's
+    /// <c>model.option.expertsHaveConnections</c>. Like <see cref="WithFogOfWar"/> / <see cref="WithAmphibiousMoves"/>
+    /// this is a <b>configuration</b> seam, not a rules change: it only flips whether an expert worker in a factory-tier
+    /// building (one carrying <c>model.ability.expertsUseConnections</c>) keeps producing when the raw input runs short
+    /// — see <see cref="GameSession.Game.ComputeBuildingProduction"/>, which applies the connections input-scarcity
+    /// floor only when this option is on. Each loaded ruleset is a fresh parse (never cached/shared —
+    /// <see cref="LoadEmbedded"/>), so replacing the bundle on the just-loaded instance is safe; the method returns
+    /// <c>this</c> for a fluent call right after load. Passing the parsed default (classic <b>false</b>) leaves the
+    /// ruleset byte-identical and the per-turn production path untouched, so a default new game is unchanged (ADR-009)
+    /// — this option is off in classic precisely so the L5 determinism soak stays byte-identical. Not persisted in the
+    /// save — a reloaded game re-derives the option from its variant's spec default (matching the other game-option seams).
+    /// </summary>
+    /// <param name="expertsHaveConnections">Whether factory experts produce without raw inputs (classic <b>off</b>).</param>
+    public Ruleset WithExpertsHaveConnections(bool expertsHaveConnections)
+    {
+        GameOptions = GameOptions with { ExpertsHaveConnections = expertsHaveConnections };
+        return this;
+    }
+
+    /// <summary>
     /// Returns this ruleset with the <b>post-independence founding-father recruitment</b> game option
     /// (<see cref="GameOptions.ContinueFoundingFatherRecruitment"/>) overridden — FreeCol's
     /// <c>model.option.continueFoundingFatherRecruitment</c>. Like <see cref="WithFogOfWar"/> /
@@ -945,7 +966,14 @@ public sealed class Ruleset
                 // scoped to model.goods.lumber, folded multiplicatively up the extends chain. FreeCol
                 // ServerUnit.csImproveTile → Settlement.apply(amount, …, TILE_TYPE_CHANGE_PRODUCTION, lumber).
                 LumberTileTypeChangeFactor: ResolveScopedMultiplicativeFactorUpChain(
-                    el, "model.modifier.tileTypeChangeProduction", "model.goods.lumber", buildingElements));
+                    el, "model.modifier.tileTypeChangeProduction", "model.goods.lumber", buildingElements),
+                // Per-expert "connections" production floor (factory tier 4; default 0, resolved up the extends chain
+                // like Upkeep). When the experts-have-connections game option is on, an expert worker of the building's
+                // expert type keeps producing this many units even without the raw input (FreeCol
+                // BuildingProductionCalculator input-scarcity floor). Off in classic (the option defaults off), so it
+                // never affects classic production. FreeCol falls back to 4 when the expertsUseConnections ability is
+                // present but the attribute is unset — BuildingType.EffectiveExpertConnectionProduction replicates that.
+                ExpertConnectionProduction: ResolveIntAttribute(el, "experts-with-connections-production", buildingElements) ?? 0);
         }
 
         var fathers = new Dictionary<string, FoundingFather>();
@@ -1225,8 +1253,9 @@ public sealed class Ruleset
     /// toggle (<c>model.option.amphibiousMoves</c>, a boolean, classic <b>false</b>), the post-independence
     /// founding-father-recruitment toggle (<c>model.option.continueFoundingFatherRecruitment</c>, a boolean, classic
     /// <b>false</b>), the coastal-only-custom-house toggle (<c>model.option.customsOnCoast</c>, a boolean, classic
-    /// <b>false</b>), and the enhanced-trade-routes toggle (<c>model.option.enhancedTradeRoutes</c>, a boolean, classic
-    /// <b>false</b>). Unlike <see cref="ParseDifficulty"/>,
+    /// <b>false</b>), the enhanced-trade-routes toggle (<c>model.option.enhancedTradeRoutes</c>, a boolean, classic
+    /// <b>false</b>), and the experts-have-connections toggle (<c>model.option.expertsHaveConnections</c>, a boolean,
+    /// classic <b>false</b>). Unlike <see cref="ParseDifficulty"/>,
     /// these are not restated per level, so each is a plain document-wide option lookup (its <c>value</c>, else
     /// <c>defaultValue</c>); a missing option falls back to its classic value in
     /// <see cref="GameOptions.ClassicDefaults"/>, so the default
@@ -1260,7 +1289,9 @@ public sealed class Ruleset
             CustomsOnCoast: ParseBooleanOption(
                 root, "model.option.customsOnCoast", GameOptions.ClassicDefaults.CustomsOnCoast),
             EnhancedTradeRoutes: ParseBooleanOption(
-                root, "model.option.enhancedTradeRoutes", GameOptions.ClassicDefaults.EnhancedTradeRoutes));
+                root, "model.option.enhancedTradeRoutes", GameOptions.ClassicDefaults.EnhancedTradeRoutes),
+            ExpertsHaveConnections: ParseBooleanOption(
+                root, "model.option.expertsHaveConnections", GameOptions.ClassicDefaults.ExpertsHaveConnections));
 
     /// <summary>
     /// Parses the colony/production scalar constants into <see cref="Specification.ColonyConstants"/>. Each source is

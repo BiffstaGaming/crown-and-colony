@@ -269,4 +269,87 @@ public class BuildingWorkerTypeProductionTests
         Assert.Equal(expectedRum, colony.StoreOf(Rum));
         Assert.Equal(sugar - expectedSugarUsed, colony.StoreOf(Sugar));
     }
+
+    // ---- Experts have connections: a factory expert produces without raw input when the option is on (86d3fpyja) ----
+    // FreeCol BuildingProductionCalculator input-scarcity floor, gated behind model.option.expertsHaveConnections
+    // (classic default OFF, so classic production is untouched — the byte-identity / soak guard).
+
+    [Fact]
+    public void ExpertsHaveConnections_OptionPlumbsThrough_ClassicDefaultOff()
+    {
+        // The option defaults off in classic (byte-identity guard) and the seam flips it on a FRESH ruleset (never the
+        // shared static Classic, which the seam would mutate in place).
+        Assert.False(Ruleset.LoadClassic().GameOptions.ExpertsHaveConnections);
+        Assert.True(Ruleset.LoadClassic().WithExpertsHaveConnections(true).GameOptions.ExpertsHaveConnections);
+        Assert.False(Ruleset.LoadClassic().WithExpertsHaveConnections(false).GameOptions.ExpertsHaveConnections);
+    }
+
+    [Fact]
+    public void RumFactory_DeclaresExpertsUseConnections_WithAFloorOfFour()
+    {
+        // The rum factory carries the ability + the experts-with-connections-production="4" attribute (parsed).
+        BuildingType rumFactory = Classic.Building(RumFactory);
+        Assert.True(rumFactory.ExpertsUseConnections);
+        Assert.Equal(4, rumFactory.EffectiveExpertConnectionProduction);
+        // A base building without the ability has no floor.
+        Assert.False(Classic.Building(Carpenter).ExpertsUseConnections);
+        Assert.Equal(0, Classic.Building(Carpenter).EffectiveExpertConnectionProduction);
+    }
+
+    [Fact]
+    public void MasterDistiller_WithNoSugar_ProducesTheConnectionsFloor_OnlyWhenTheOptionIsOn()
+    {
+        // A master distiller in a rum factory (sugar 6 → rum 9, distiller ×2 → output ratio 2) with ZERO sugar.
+        // OFF (classic default): no input → no rum (the byte-identity guard).
+        Game off = Game.New(Classic, Seed);
+        Colony offColony = BuildingColony(off, RumFactory, population: 1, liberty: 0, MasterDistiller);
+        Assert.Equal(0, offColony.ProductionBonus);
+        // (no sugar added)
+        off.EndTurn();
+        Assert.Equal(0, offColony.StoreOf(Rum));
+        Assert.Equal(0, offColony.StoreOf(Sugar)); // nothing consumed either
+
+        // ON (fresh ruleset — never mutate the shared Classic): the connections floor lifts the effective sugar to
+        // 4 × 1 expert = 4, so scarcity = 4/12 and the master makes floor(18 × 4/12) = 6 rum with no sugar on hand.
+        Ruleset connected = Ruleset.LoadClassic().WithExpertsHaveConnections(true);
+        Game on = Game.New(connected, Seed);
+        Colony onColony = BuildingColony(on, RumFactory, population: 1, liberty: 0, MasterDistiller);
+        Assert.Equal(0, onColony.ProductionBonus);
+        on.EndTurn();
+        Assert.Equal(6, onColony.StoreOf(Rum));
+        Assert.Equal(0, onColony.StoreOf(Sugar)); // no sugar existed to consume; the floor draws none down (clamped ≥ 0)
+    }
+
+    [Fact]
+    public void ConnectionsFloor_OnlyRaisesOutput_NeverLowersAWellStockedFactory()
+    {
+        // With plenty of sugar the floor is inert (available already ≥ required), so the option-on output equals the
+        // option-off output — the floor "only ever raises available, never lowers it".
+        Game off = Game.New(Classic, Seed);
+        Colony offColony = BuildingColony(off, RumFactory, population: 1, liberty: 0, MasterDistiller);
+        offColony.AddGoods(Sugar, 40);
+        off.EndTurn();
+        int offRum = offColony.StoreOf(Rum);
+
+        Ruleset connected = Ruleset.LoadClassic().WithExpertsHaveConnections(true);
+        Game on = Game.New(connected, Seed);
+        Colony onColony = BuildingColony(on, RumFactory, population: 1, liberty: 0, MasterDistiller);
+        onColony.AddGoods(Sugar, 40);
+        on.EndTurn();
+
+        Assert.Equal(offRum, onColony.StoreOf(Rum));
+        Assert.True(offRum > 0);
+    }
+
+    [Fact]
+    public void ConnectionsFloor_IsInertForANonExpertWorker_EvenWithTheOptionOn()
+    {
+        // A FREE colonist is not the building's expert type, so the expert count is 0 → floor 0 → no relief: a rum
+        // factory with a free colonist and no sugar makes no rum even with the option on (only EXPERTS have connections).
+        Ruleset connected = Ruleset.LoadClassic().WithExpertsHaveConnections(true);
+        Game on = Game.New(connected, Seed);
+        Colony onColony = BuildingColony(on, RumFactory, population: 1, liberty: 0, Free);
+        on.EndTurn();
+        Assert.Equal(0, onColony.StoreOf(Rum));
+    }
 }

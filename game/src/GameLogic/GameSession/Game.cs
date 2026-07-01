@@ -12137,11 +12137,32 @@ public sealed partial class Game
         double ratio = primaryBase > 0
             ? (double)outputTotals[entry.Outputs[0].GoodsId] / primaryBase
             : (entry.Unattended ? 1.0 : workers);
+        // Expert "connections" floor (FreeCol BuildingProductionCalculator, gated on the experts-have-connections game
+        // option — OFF in classic, so this whole block is skipped in the default game and the per-turn production is
+        // byte-identical, ADR-009 / L5 soak). When on and the building carries model.ability.expertsUseConnections
+        // (the factory tier), each expert worker of the building's expert type guarantees expertConnectionProduction
+        // (4) units of output even without the raw input — modelled by RAISING the available input to at least that
+        // floor before the scarcity ratio, never lowering it. Computed once (option-gated) so classic pays nothing.
+        int expertConnectionFloor = 0;
+        if (Ruleset.GameOptions.ExpertsHaveConnections && building.ExpertsUseConnections && entry.Outputs.Count > 0
+            && Ruleset.ExpertForProducing(entry.Outputs[0].GoodsId) is { } buildingExpertType)
+        {
+            int expertCount = occupants.Count(t => t == buildingExpertType);
+            expertConnectionFloor = building.EffectiveExpertConnectionProduction * expertCount;
+        }
+
         double scarcity = 1.0;
         foreach (GoodsOutput input in entry.Inputs)
         {
             long required = (long)Math.Floor(input.Amount * ratio);
             int available = storeOf(Ruleset.StorageIdOf(input.GoodsId));
+            // The connections floor only ever raises `available` (FreeCol: available = max(available, floor)); it
+            // never lowers it, so it can only relieve scarcity. Applied here for the scarcity ratio only — the actual
+            // input consumed below is still charged against real stock, so no phantom goods are drawn down.
+            if (expertConnectionFloor > available)
+            {
+                available = expertConnectionFloor;
+            }
             if (required > 0 && available < required)
             {
                 scarcity = Math.Min(scarcity, (double)available / required);
@@ -12150,7 +12171,17 @@ public sealed partial class Game
 
         foreach (GoodsOutput input in entry.Inputs)
         {
-            yield return (Ruleset.StorageIdOf(input.GoodsId), -(int)Math.Floor(input.Amount * ratio * scarcity + Epsilon));
+            int wantConsume = (int)Math.Floor(input.Amount * ratio * scarcity + Epsilon);
+            // With the connections floor raising `scarcity`, the wanted consumption can exceed the real stock (the
+            // experts produce off "connections", not off input they don't have). Charge only what is actually present
+            // so the warehouse is never drawn below 0 — FreeCol never consumes absent input. Without the floor this
+            // clamp is inert (scarcity ≤ available/required already, so wantConsume ≤ stock), keeping classic
+            // byte-identical.
+            if (expertConnectionFloor > 0)
+            {
+                wantConsume = Math.Min(wantConsume, storeOf(Ruleset.StorageIdOf(input.GoodsId)));
+            }
+            yield return (Ruleset.StorageIdOf(input.GoodsId), -wantConsume);
         }
         foreach (GoodsOutput output in entry.Outputs)
         {

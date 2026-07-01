@@ -104,6 +104,17 @@ namespace CrownAndColony.GameLogic.Specification;
 /// (FreeCol <c>ServerUnit.csImproveTile</c> → <c>Settlement.apply(amount, …, TILE_TYPE_CHANGE_PRODUCTION, lumber)</c>).
 /// Resolved multiplicatively up the <c>extends</c> chain.
 /// </param>
+/// <param name="ExpertConnectionProduction">
+/// The per-expert "connections" production floor this building grants when the <c>experts-have-connections</c> game
+/// option is on (spec <c>experts-with-connections-production</c> attribute; the factory tier sets <b>4</b>, default 0).
+/// FreeCol <c>BuildingProductionCalculator</c>: when an input runs short in a building carrying the
+/// <c>model.ability.expertsUseConnections</c> ability, each expert worker of the building's expert type guarantees this
+/// many units of output regardless of the missing raw material (an iron works' master blacksmiths keep making 4 tools
+/// each with no ore). Only consulted when both the ability is present and the <see cref="Ruleset.GameOptions"/>
+/// <c>ExpertsHaveConnections</c> option is on; FreeCol falls back to <b>4</b> when the ability is present but the
+/// attribute is unset, which we replicate (<see cref="EffectiveExpertConnectionProduction"/>). Off in the classic
+/// game (the option defaults off), so it never affects classic production.
+/// </param>
 public sealed record BuildingType(
     string Id,
     string? UpgradesFrom,
@@ -125,10 +136,14 @@ public sealed record BuildingType(
     int Upkeep = 0,
     int MaximumSkill = 0,
     int MinimumSkill = 0,
-    double LumberTileTypeChangeFactor = 1.0)
+    double LumberTileTypeChangeFactor = 1.0,
+    int ExpertConnectionProduction = 0)
 {
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
     private static readonly IReadOnlySet<string> NoUnits = new HashSet<string>();
+
+    /// <summary>FreeCol's default per-expert connections production when the ability is present but the attribute is unset.</summary>
+    private const int DefaultExpertConnectionProduction = 4;
 
     /// <summary>Short name derived from the id: <c>model.building.townHall</c> → <c>townHall</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
@@ -185,6 +200,28 @@ public sealed record BuildingType(
     /// <c>ColonyTile.getNoWorkReason</c> → <c>MISSING_ABILITY</c> when <c>!hasAbility(PRODUCE_IN_WATER) &amp;&amp; !tile.isLand()</c>).
     /// </summary>
     public bool ProducesInWater => HasAbility("model.ability.produceInWater");
+
+    /// <summary>
+    /// Whether this building's expert workers "have connections" — i.e. it declares
+    /// <c>model.ability.expertsUseConnections</c> (data-driven; the factory tier grants it). When the
+    /// <c>experts-have-connections</c> game option is <b>also</b> on, an expert worker of the building's expert type
+    /// keeps producing (at <see cref="EffectiveExpertConnectionProduction"/> each) even when the raw input runs short
+    /// (FreeCol <c>BuildingProductionCalculator</c> input-scarcity floor). Off in classic (the option defaults off), so
+    /// this capability changes nothing in the default game.
+    /// </summary>
+    public bool ExpertsUseConnections => HasAbility("model.ability.expertsUseConnections");
+
+    /// <summary>
+    /// The per-expert connections production floor actually used: the spec's
+    /// <see cref="ExpertConnectionProduction"/> when it is &gt; 0, else — when the building carries the
+    /// <see cref="ExpertsUseConnections"/> ability but the attribute was unset — FreeCol's default of <b>4</b>. 0 when
+    /// the building has no such ability (never a producer of a connections floor). Only meaningful when the
+    /// <c>experts-have-connections</c> game option is on.
+    /// </summary>
+    public int EffectiveExpertConnectionProduction =>
+        ExpertConnectionProduction > 0
+            ? ExpertConnectionProduction
+            : (ExpertsUseConnections ? DefaultExpertConnectionProduction : 0);
 
     /// <summary>Abilities required to build this, id → required value (an empty map when unconditional).</summary>
     public IReadOnlyDictionary<string, bool> RequiredAbilitiesOrEmpty => RequiredAbilities ?? NoAbilities;

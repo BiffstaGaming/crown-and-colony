@@ -117,6 +117,19 @@ namespace CrownAndColony.GameLogic.Specification;
 /// house builds as before and the default game is unchanged (ADR-009). Read by <see cref="GameSession.Game"/>'s
 /// build gate (<c>BuildRefusal</c>). See [custom-house], [colonies].
 /// </param>
+/// <param name="ExpertsHaveConnections">
+/// Whether <b>experts have connections</b> — i.e. an expert worker in a factory-tier building keeps producing even
+/// when the raw input runs short (spec <c>model.option.expertsHaveConnections</c>, a <c>booleanOption</c> in the
+/// <c>gameOptions.colony</c> group, classic default <b>false</b>). FreeCol
+/// <c>BuildingProductionCalculator</c>: when an input is scarce in a building carrying the
+/// <c>model.ability.expertsUseConnections</c> ability (the factory tier) <b>and</b> this option is on, the available
+/// input is treated as at least <c>expertConnectionProduction (4) × the count of expert workers of the building's
+/// expert type</c> — so an iron works' master blacksmiths keep making tools with no ore (they "have connections").
+/// The floor only ever <b>raises</b> the effective input, never lowers it, so it can only <em>increase</em> output.
+/// With this <b>off</b> (the classic default) no such floor is applied and factory production runs on real inputs
+/// only, so the default game's per-turn production is byte-identical (ADR-009) — critical for the L5 soak. Read by
+/// <see cref="GameSession.Game"/>'s <c>ComputeBuildingProduction</c>. See [colony-production].
+/// </param>
 /// <param name="EnhancedTradeRoutes">
 /// Whether the <b>enhanced trade routes</b> ruleset is in effect (spec <c>model.option.enhancedTradeRoutes</c>, a
 /// <c>booleanOption</c> in the <c>gameOptions</c> group, classic default <b>false</b>). FreeCol's enhanced-trade-route
@@ -142,7 +155,8 @@ public sealed record GameOptions(
     bool AmphibiousMoves,
     bool ContinueFoundingFatherRecruitment,
     bool CustomsOnCoast,
-    bool EnhancedTradeRoutes)
+    bool EnhancedTradeRoutes,
+    bool ExpertsHaveConnections)
 {
     /// <summary>
     /// The classic ruleset's <c>gameOptions</c> values — the fallback when a spec omits an option, and the source of
@@ -151,8 +165,9 @@ public sealed record GameOptions(
     /// the peace-hold base (peaceProbability 90), fog of war (on), custom-house boycott smuggling (on),
     /// amphibious moves (off — the classic spec defaults <c>model.option.amphibiousMoves</c> to <c>false</c>),
     /// post-independence founding-father recruitment (off — classic Congress closes at the Declaration),
-    /// coastal-only custom houses (off — classic lets a custom house be built inland), and enhanced trade routes
-    /// (off — classic keeps the always-present-goods route warning).
+    /// coastal-only custom houses (off — classic lets a custom house be built inland), enhanced trade routes
+    /// (off — classic keeps the always-present-goods route warning), and experts-have-connections (off — classic
+    /// factory production runs on real inputs only).
     /// </summary>
     public static readonly GameOptions ClassicDefaults = new(
         InitialImmigration: 15,
@@ -167,7 +182,8 @@ public sealed record GameOptions(
         AmphibiousMoves: false,
         ContinueFoundingFatherRecruitment: false,
         CustomsOnCoast: false,
-        EnhancedTradeRoutes: false);
+        EnhancedTradeRoutes: false,
+        ExpertsHaveConnections: false);
 
     /// <summary>
     /// The peace-hold base as a 0–1 multiplier (FreeCol <c>Specification.getPercentageMultiplier</c> =
