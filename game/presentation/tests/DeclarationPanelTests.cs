@@ -16,7 +16,7 @@ namespace CrownAndColony.Presentation.Tests;
 /// <summary>
 /// L3 interaction tests (docs/TESTING.md) for the <see cref="DeclarationPanel"/> (`86d3c9xht`): the
 /// Declaration-of-Independence signing screen. When the human is eligible the panel shows the consequences and, on
-/// confirm, forwards <see cref="Game.DeclareIndependence"/> and shows the signed declaration; when ineligible it shows
+/// confirm, forwards <see cref="Game.DeclareIndependence(Player, string?)"/> and shows the signed declaration; when ineligible it shows
 /// the <see cref="Game.CheckDeclareIndependence"/> gate's reason. Presentation-only (ADR-006) — the panel reads oracles
 /// and forwards the one command. The eligible state is built through the public save layer (founding a coastal colony,
 /// then rewriting its banked liberty so national Sons-of-Liberty hits 100%), so the test needs no internal access.

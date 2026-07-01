@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-01 — Name the new independent nation on declaring (Stream B, save v67→v68) ✅
+
+**Requested:** Build the wave's isolated save-format-bump feature — name the new independent nation on declaring (`86d3fq0a2`), mirroring the v66 NewWorldName additive/omit-when-null precedent exactly; one commit for the parent to cherry-pick.
+**Did:**
+- **`Player.IndependentNationName`** (nullable) + a new **`DeclareIndependence(Player, string?)`** overload (blank ⇒ unset); kept the old `DeclareIndependence(Player)` routing through it with null.
+- **Label resolution:** `PlayerDisplayName` (leaderboard) + `NationDisplayName` (history/war/peace) now return the chosen name once Rebel/Independent (FreeCol `getNationLabel`→`independentNationName`); blank → colonial-nation fallback. New public oracle **`Game.NationLabelOf(Player)`** for presentation (ADR-006).
+- **Persistence:** save **v67→v68** — new per-player `SavedPlayer.IndependentNationName` (additive, omit-when-null); wired through `ToSavedPlayer`/`ToRestored`/`BuildPlayer`. Reused `NewWorldName` for the country half (not duplicated).
+- **Presentation:** `DeclarationPanel` now prompts for the nation name (LineEdit defaulting to the current label) and forwards it.
+- **Docs:** `independence.md` (both layers + changelog + header rows) and `save-load.md` (v68 changelog row). Did NOT touch feature-parity.md (parent owns it).
+- **Tests:** +8 L1 in `IndependenceTests`; bumped 67→68 save-version asserts across ~29 affected test files.
+**Status:** **full L1/L2 2560 green + 5 soak green** (soak's save-byte-identity + twin-determinism = the additive-field-doesn't-perturb proof) · full solution builds clean (presentation incl.). Committed one commit for cherry-pick.
+**Changed:** `Player.cs`, `Game.cs`, `Game.History.cs`, `Game.Independence.cs`, `Persistence/SaveGame.cs`, `Colonies/ToryExpulsionNotice.cs`, `presentation/DeclarationPanel.cs` (+ cref fixes); `IndependenceTests.cs` (+8 tests) + ~29 version-assert bumps; docs `independence.md`, `save-load.md`.
+**Decisions:** Made `NationDisplayName` independence-aware too (not just the leaderboard) for faithful `getNationLabel` behaviour everywhere the nation is named. Blank name left null (omit-when-null) rather than storing the default string — keeps a default-named rebel byte-identical. Disambiguated all `DeclareIndependence` crefs (two overloads → ambiguous-cref-as-error).
+**Scheduled next (parent's call):** parent integrates Stream B (cherry-pick) into the wave; then the next parity scope+build wave over the remaining No/Partial rows.
+**Follow-ups:** —
+**Needs you:** Nothing — all green, none playtested. Default game byte-identical (nobody declares in the soak window); the new prompt only appears at the Declaration screen.
+
 ## 2026-07-01 — Parity scope+build wave 3: 6 items shipped (2 parallel streams) + 6 flips/corrections → 947 Yes ✅
 
 **Requested (Chris):** start the recommended parity scope+build wave; test at the end; parallel streams to knock off many items with one test batch.

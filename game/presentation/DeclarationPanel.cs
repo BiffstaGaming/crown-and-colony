@@ -11,16 +11,17 @@ namespace CrownAndColony.Presentation;
 /// breaking from the Crown. Opened from the HUD when the human is eligible
 /// (<see cref="Game.CheckDeclareIndependence"/> says <c>Allowed</c>), it runs in two phases:
 /// <list type="number">
-/// <item><b>Confirm</b> — names the consequences (Europe closes and every unit there or at sea is seized, the King's
-/// Royal Expeditionary Force takes the field, and a continental army musters from the colonies' veterans), echoes the
-/// rebel-sentiment reading, and offers <em>"Liberty or Death!"</em> / <em>"Maybe Later"</em>.</item>
-/// <item><b>Signed</b> — on confirm it forwards <see cref="Game.DeclareIndependence"/> and shows the signed
+/// <item><b>Confirm</b> — prompts the player to <b>name the new nation</b> (FreeCol's <c>declareIndependence(nationName, …)</c>
+/// prompt; defaulting to the nation's normal label), names the consequences (Europe closes and every unit there or at
+/// sea is seized, the King's Royal Expeditionary Force takes the field, and a continental army musters from the colonies'
+/// veterans), echoes the rebel-sentiment reading, and offers <em>"Liberty or Death!"</em> / <em>"Maybe Later"</em>.</item>
+/// <item><b>Signed</b> — on confirm it forwards <see cref="Game.DeclareIndependence(Player, string?)"/> and shows the signed
 /// declaration's flavour text (FreeCol's <c>declareIndependence.resolution</c>), with a single Close.</item>
 /// </list>
 /// <para>Pure presentation (ADR-006): every conditional reads a <see cref="Game"/> oracle — the eligibility gate
 /// (<see cref="Game.CheckDeclareIndependence"/>), the national Sons-of-Liberty reading
 /// (<see cref="Game.NationalSonsOfLiberty"/>) and the units-in-Europe count (<see cref="Game.UnitsInEurope"/>) — and
-/// the only mutation is the forwarded <see cref="Game.DeclareIndependence"/> command. The rules (the 50% SoL
+/// the only mutation is the forwarded <see cref="Game.DeclareIndependence(Player, string?)"/> command. The rules (the 50% SoL
 /// threshold, the connected-port requirement, the last-colonial-year cutoff, the muster, the REF, losing Europe) all
 /// live in GameLogic. Built programmatically into the fixed <c>VBox/Dynamic</c> shell with the signal-safe rebuild
 /// idiom (<c>RemoveChild</c> then <c>QueueFree</c>, never <c>Free</c>), mirroring <see cref="FoundingFatherPanel"/>.</para>
@@ -96,6 +97,16 @@ public partial class DeclarationPanel : PanelContainer
         });
         dynamic.AddChild(new HSeparator());
 
+        // Name the new nation (FreeCol's declareIndependence(nationName, …) prompt). Defaults to the nation's normal
+        // label; the player may type its free-nation name over it, forwarded to the naming DeclareIndependence overload.
+        dynamic.AddChild(new Label { Name = "NationNameLabel", Text = "Name your new nation:" });
+        dynamic.AddChild(new LineEdit
+        {
+            Name = "NationNameField",
+            Text = _game.NationLabelOf(human), // the current nation label is the suggested default (RNG-free, ADR-006)
+        });
+        dynamic.AddChild(new HSeparator());
+
         dynamic.AddChild(new Label { Name = "ConsequencesHeader", Text = "Should you declare independence:" });
 
         int inEurope = _game.UnitsInEurope.Count();
@@ -132,13 +143,15 @@ public partial class DeclarationPanel : PanelContainer
     }
 
     /// <summary>
-    /// Forwards the declaration command (<see cref="Game.DeclareIndependence"/>) and switches to the signed phase. The
-    /// gate was checked when the confirm phase was built; the command re-checks it (and would throw if it had lapsed),
-    /// so a stale-state click can't slip a forbidden declaration through.
+    /// Forwards the declaration command (<see cref="Game.DeclareIndependence(Player, string?)"/>) with the free nation's
+    /// chosen name, then switches to the signed phase. The gate was checked when the confirm phase was built; the command
+    /// re-checks it (and would throw if it had lapsed), so a stale-state click can't slip a forbidden declaration through.
+    /// A blank name field falls back to the nation's default label in GameLogic (the naming overload's blank→default rule).
     /// </summary>
     private void OnConfirm()
     {
-        _game.DeclareIndependence(_game.HumanPlayer);
+        string? nationName = GetNodeOrNull<LineEdit>("VBox/Dynamic/NationNameField")?.Text;
+        _game.DeclareIndependence(_game.HumanPlayer, nationName);
         _onChange(); // the HUD/map/end-turn all change once the nation rebels — refresh the host view
         RebuildSigned();
     }

@@ -1865,7 +1865,7 @@ public class IndependenceTests
         // enabled and the REF wave/morale state defaulted (countdown 0, morale 0) — byte-compatible down-version load.
         Game game = Game.New(Classic, Seed);
         SaveGame v62 = SaveGame.From(game);
-        Assert.Equal(67, v62.Version); // current version (the v62 down-version logic below still holds — a fresh game omits the later fields too)
+        Assert.Equal(68, v62.Version); // current version (the v62 down-version logic below still holds — a fresh game omits the later fields too)
 
         // Simulate an older save: stamp the version back and drop the v62 fields (they were all omitted/default anyway).
         SaveGame asV61 = v62 with { Version = 61, VictoryConditionsDisabled = null, RefWaveCountdown = null, RefMoralePeak = null };
@@ -1973,6 +1973,129 @@ public class IndependenceTests
 
         Assert.Contains(target, game.Congress);                // the option restores post-declaration recruitment
         Assert.Null(game.CurrentFather);                       // the choice was consumed by the election
+    }
+
+    // ── Name the new independent nation on declaring (86d3fq0a2, FreeCol declareIndependence(nationName, …)) ──
+    //
+    // The free nation takes the name the player chose at the Declaration (Player.IndependentNationName), which becomes
+    // its display label once Rebel/Independent (getNationLabel → independentNationName). A blank name falls back to the
+    // colonial nation's normal label. The name persists additively (v68, omit-when-null): a game that never declares
+    // serialises byte-identically to v67, and a pre-v68 save loads every player with the name unset.
+
+    [Fact]
+    public void DeclareIndependence_WithAName_SetsIt_AndRelabelsTheNation()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+
+        game.DeclareIndependence(rebel, "United States");
+
+        Assert.Equal(PlayerType.Rebel, rebel.PlayerType);
+        Assert.Equal("United States", rebel.IndependentNationName);
+        Assert.Equal("United States", game.NationLabelOf(rebel)); // the label switches to the chosen name (getNationLabel)
+    }
+
+    [Fact]
+    public void DeclareIndependence_TrimsTheChosenName()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+
+        game.DeclareIndependence(rebel, "  Gran Colombia  ");
+
+        Assert.Equal("Gran Colombia", rebel.IndependentNationName); // surrounding whitespace is trimmed
+        Assert.Equal("Gran Colombia", game.NationLabelOf(rebel));
+    }
+
+    [Fact]
+    public void DeclareIndependence_BlankName_FallsBackToTheColonialNationLabel()
+    {
+        // A blank/whitespace answer leaves IndependentNationName unset, so the label falls back to the nation's normal
+        // display name. A nation-less default game labels "Anonymous" (FreeCol's anonymous fallback), unchanged by rebel.
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        string colonialLabel = game.NationLabelOf(rebel); // captured while still Colonial
+
+        game.DeclareIndependence(rebel, "   "); // whitespace ⇒ unset
+
+        Assert.Null(rebel.IndependentNationName);
+        Assert.Equal(colonialLabel, game.NationLabelOf(rebel)); // the label is unchanged — the default fallback applies
+    }
+
+    [Fact]
+    public void DeclareIndependence_NameLessOverload_LeavesTheNameUnset()
+    {
+        // The kept name-less DeclareIndependence(player) overload routes through the naming one with a null name.
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        string colonialLabel = game.NationLabelOf(rebel);
+
+        game.DeclareIndependence(rebel); // no name
+
+        Assert.Null(rebel.IndependentNationName);
+        Assert.Equal(colonialLabel, game.NationLabelOf(rebel));
+    }
+
+    [Fact]
+    public void IndependentNationName_RoundTripsSaveLoad()
+    {
+        (Game game, _) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer, "United States");
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal("United States", loaded.HumanPlayer.IndependentNationName);
+        Assert.Equal("United States", loaded.NationLabelOf(loaded.HumanPlayer)); // the label survives the reload
+    }
+
+    [Fact]
+    public void IndependentNationName_IsOmittedWhenUnset_ByteIdenticalToPriorVersion()
+    {
+        // A game that never declared writes no IndependentNationName token, and the whole save is byte-identical to the
+        // one produced with the field explicitly nulled everywhere — the omit-when-null proof the soak's byte-identity
+        // check relies on. A fresh, never-declared game is the default case.
+        Game game = Game.New(Classic, Seed);
+        string json = SaveGame.From(game).ToJson();
+
+        Assert.DoesNotContain("\"IndependentNationName\"", json); // WhenWritingNull → the field is absent
+
+        // A rebel that took the default (blank) name also omits the field.
+        (Game rebelGame, _) = RebellionReady();
+        rebelGame.DeclareIndependence(rebelGame.HumanPlayer); // no name → unset
+        string rebelJson = SaveGame.From(rebelGame).ToJson();
+        Assert.DoesNotContain("\"IndependentNationName\"", rebelJson);
+    }
+
+    [Fact]
+    public void NamedNation_WritesTheField()
+    {
+        (Game game, _) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer, "United States");
+        string json = SaveGame.From(game).ToJson();
+        Assert.Contains("\"IndependentNationName\"", json); // a named nation writes the field
+        Assert.Contains("United States", json);
+    }
+
+    [Fact]
+    public void PreV68Save_LoadsWithTheNameUnset()
+    {
+        // A v67 (pre-v68) save carries no per-player IndependentNationName. Simulate one by declaring, nulling the field
+        // on every saved player (exactly what pre-v68 code would have written), and stamping the version back: a restored
+        // rebel loads with the name unset and keeps labelling itself by its colonial nation name (the pre-this-feature
+        // behaviour). The field rides the per-player Players[] collection and is omitted-when-null.
+        (Game game, _) = RebellionReady();
+        game.DeclareIndependence(game.HumanPlayer, "United States");
+
+        SaveGame current = SaveGame.From(game);
+        SaveGame preV68Save = current with
+        {
+            Version = 67,
+            Players = current.Players!.Select(p => p with { IndependentNationName = null }).ToList(),
+        };
+        Game preV68 = SaveGame.FromJson(preV68Save.ToJson()).Restore(Classic);
+
+        Assert.Null(preV68.HumanPlayer.IndependentNationName); // no name restored from a pre-v68 save
+        Assert.Equal(PlayerType.Rebel, preV68.HumanPlayer.PlayerType); // still a rebel — just labelled by the colonial name
     }
 
     /// <summary>A fixed RNG forcing an ordinary (non-great) combat win — NextDouble 0.5 lands in the win band.</summary>

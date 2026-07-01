@@ -141,7 +141,7 @@ public class TradeRouteTests
 
         Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
-        Assert.Equal(67, SaveGame.CurrentVersion);
+        Assert.Equal(68, SaveGame.CurrentVersion);
         Assert.Equal(40, loaded.Colonies.Single(c => c.Id == beta.Id).ExportOf(Sugar).ImportLevel);
     }
 
@@ -285,7 +285,7 @@ public class TradeRouteTests
         Assert.False(restored.Stops[0].IsEurope);          // the colony stop
         Assert.True(restored.Stops[1].IsEurope);           // the Europe stop round-trips via the sentinel ColonyId (0)
         Assert.Equal([Sugar], restored.Stops[1].LoadGoodsIds);
-        Assert.Equal(67, SaveGame.CurrentVersion);         // Europe stop adds no save field of its own (existing TradeRouteStop shape); 58 comes from other slices
+        Assert.Equal(68, SaveGame.CurrentVersion);         // Europe stop adds no save field of its own (existing TradeRouteStop shape); 58 comes from other slices
     }
 
     [Fact]
@@ -312,7 +312,7 @@ public class TradeRouteTests
         Assert.DoesNotContain("\"TradeRouteId\"", json);
         Assert.DoesNotContain("\"TradeRouteStop\"", json);
         Assert.DoesNotContain("NextTradeRouteId", json); // omit-when-default (counter still 1) → byte-identical to v44
-        Assert.Equal(67, SaveGame.CurrentVersion);
+        Assert.Equal(68, SaveGame.CurrentVersion);
     }
 
     [Fact]

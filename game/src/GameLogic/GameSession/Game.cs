@@ -781,13 +781,23 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// The display name for a player on the leaderboard (FreeCol records <c>player.getName()</c>). Our players carry no
-    /// free-text name, so this is the nation's display name — the capitalised tail of the nation id (e.g.
-    /// <c>model.nation.dutch</c> → "Dutch") — or "Anonymous" for a nation-less default game, mirroring FreeCol's
+    /// The display name for a player on the leaderboard and everywhere the player's nation is labelled (FreeCol
+    /// <c>Player.getNationLabel</c> / <c>getName</c>). Once the player has declared independence — it is a
+    /// <see cref="PlayerType.Rebel"/> or <see cref="PlayerType.Independent"/> — this is the free nation's chosen
+    /// <see cref="Player.IndependentNationName"/> (e.g. "United States"), exactly as FreeCol's <c>getNationLabel</c>
+    /// switches to <c>independentNationName</c> for those types. A rebel that named itself blank, and every player that
+    /// has not declared, falls through to the colonial nation's display name — the capitalised tail of the nation id
+    /// (e.g. <c>model.nation.dutch</c> → "Dutch") — or "Anonymous" for a nation-less default game, mirroring FreeCol's
     /// "anonymous" fallback.
     /// </summary>
     private static string PlayerDisplayName(Player player)
     {
+        // A declared nation labels itself by the name it chose on declaring (FreeCol getNationLabel → independentNationName).
+        if (player.PlayerType is PlayerType.Rebel or PlayerType.Independent
+            && player.IndependentNationName is { Length: > 0 } chosen)
+        {
+            return chosen;
+        }
         if (player.NationId is { } id && id.LastIndexOf('.') is var dot && dot + 1 < id.Length)
         {
             string tail = id[(dot + 1)..];
@@ -4973,6 +4983,7 @@ public sealed partial class Game
             LastTaxRaiseTurn = saved.LastTaxRaiseTurn,
             DeclaredIndependenceTurn = saved.DeclaredIndependenceTurn,
             InterventionBells = saved.InterventionBells,
+            IndependentNationName = saved.IndependentNationName, // v68; the free nation's chosen name on declaring
         };
         if (saved.Congress is not null)
         {

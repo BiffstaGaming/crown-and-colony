@@ -31,6 +31,17 @@ public sealed partial class Game
     }
 
     /// <summary>
+    /// The player-facing label for <paramref name="player"/>'s nation (FreeCol <c>Player.getNationLabel</c>): the free
+    /// nation's chosen <see cref="Player.IndependentNationName"/> once it has declared independence (it is a
+    /// <see cref="PlayerType.Rebel"/> or <see cref="PlayerType.Independent"/>), otherwise the colonial nation's normal
+    /// display name (e.g. <c>model.nation.dutch</c> → "Dutch"), or "Anonymous" for a nation-less default game. A rebel
+    /// that named itself blank also falls back to the colonial name. The single oracle presentation reads to title the
+    /// HUD and reports (ADR-006), so the rebranded nation name appears everywhere after a declaration.
+    /// </summary>
+    /// <param name="player">The player whose nation label is wanted.</param>
+    public string NationLabelOf(Player player) => PlayerDisplayName(player);
+
+    /// <summary>
     /// Whether <paramref name="player"/> may declare independence now (FreeCol <c>model.event.declareIndependence</c>
     /// limits): still a colonial power, national Sons of Liberty ≥ 50%, at least one connected-port colony, and not
     /// past the ruleset's last colonial year (<see cref="Specification.Ruleset.LastColonialYear"/>; classic 1800).
@@ -113,7 +124,7 @@ public sealed partial class Game
     /// <summary>
     /// The AI declaration step (kanban <c>86d3e49jp</c>), run once for each non-human colonial power on its turn
     /// (<see cref="RunPlayerTurn"/>): if <see cref="ShouldAiDeclareIndependence"/> holds, the power declares through the
-    /// very same <see cref="DeclareIndependence"/> the human UI calls — flipping to a <see cref="PlayerType.Rebel"/>,
+    /// very same <see cref="DeclareIndependence(Player)"/> the human UI calls — flipping to a <see cref="PlayerType.Rebel"/>,
     /// forfeiting its Europe units, mustering its continental army, and bringing the REF into the field at war with it.
     /// From the next turn <see cref="RunRefTurn"/> prosecutes the war and <see cref="ResolveWarOfIndependence"/> resolves
     /// it, both of which already handle a rebel of either kind; the AI rebel itself runs the colonial economy path and
@@ -133,13 +144,29 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Declares independence (FreeCol <c>csDeclareIndependence</c>): the player becomes a <see cref="PlayerType.Rebel"/>,
-    /// loses every unit in or sailing to Europe (and its recruiting), musters its veterans into colonial regulars, the
-    /// King's Royal Expeditionary Force takes the field at war with the new nation, the natives who most resented the
-    /// departing Crown swing behind the rebel, and the King offers a one-off war-mercenary (Hessian) force for hire.
+    /// Declares independence under the nation's <em>default</em> name (the colonial nation's display name) — the
+    /// name-less overload kept for callers and tests that do not name the new nation. Routes through
+    /// <see cref="DeclareIndependence(Player, string?)"/> with a null name, so the label falls back to the default.
     /// </summary>
     /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckDeclareIndependence"/>.</exception>
-    public void DeclareIndependence(Player player)
+    public void DeclareIndependence(Player player) => DeclareIndependence(player, null);
+
+    /// <summary>
+    /// Declares independence (FreeCol <c>csDeclareIndependence(nationName, countryName)</c>): the player becomes a
+    /// <see cref="PlayerType.Rebel"/> under the free nation's chosen <paramref name="nationName"/>, loses every unit in
+    /// or sailing to Europe (and its recruiting), musters its veterans into colonial regulars, the King's Royal
+    /// Expeditionary Force takes the field at war with the new nation, the natives who most resented the departing Crown
+    /// swing behind the rebel, and the King offers a one-off war-mercenary (Hessian) force for hire.
+    /// <para>The <paramref name="nationName"/> becomes the player's <see cref="Player.IndependentNationName"/> and thereby
+    /// its display label everywhere the nation is named (FreeCol <c>getNationLabel</c>); a blank/whitespace name is left
+    /// unset, so the label falls back to the colonial nation's normal display name. The <em>country</em> half of
+    /// FreeCol's two-name declaration is the New-World name, already modelled as <see cref="NewWorldName"/> (86d3fq1fn) —
+    /// this overload names only the nation, reusing that field for the land.</para>
+    /// </summary>
+    /// <param name="player">The colonial power declaring independence.</param>
+    /// <param name="nationName">The name the free nation takes (e.g. "United States"); blank/whitespace ⇒ the default nation name.</param>
+    /// <exception cref="InvalidMoveException">Not allowed; see <see cref="CheckDeclareIndependence"/>.</exception>
+    public void DeclareIndependence(Player player, string? nationName)
     {
         MoveCheck check = CheckDeclareIndependence(player);
         if (!check.Allowed)
@@ -149,6 +176,9 @@ public sealed partial class Game
 
         player.PlayerType = PlayerType.Rebel;
         player.DeclaredIndependenceTurn = Turn;
+        // The free nation takes the name it chose (FreeCol setIndependentNationName); a blank answer is left unset so the
+        // label falls back to the colonial nation's display name (PlayerDisplayName / NationDisplayName handle it).
+        player.IndependentNationName = string.IsNullOrWhiteSpace(nationName) ? null : nationName.Trim();
         _units.RemoveAll(u => u.OwnerId == player.PlayerId && !u.IsNative && !u.IsOnMap); // units in/bound for Europe are forfeit
         player.RecruitDockList.Clear(); // Europe is closed to a rebel
         player.Market.Reinitialise();   // the new nation trades on a clean market — colonial boycotts/drift cleared (FreeCol reinitialiseMarket)
@@ -170,7 +200,7 @@ public sealed partial class Game
     private readonly List<Colonies.ToryExpulsionNotice> _toryExpulsionNotices = [];
 
     /// <summary>
-    /// Loyalist (Tory) colonists who abandoned each colony on the human's <see cref="DeclareIndependence">declaration of
+    /// Loyalist (Tory) colonists who abandoned each colony on the human's <see cref="DeclareIndependence(Player)">declaration of
     /// independence</see> — the royalists who would not bear arms against their King deserted the new nation. <b>Col1
     /// reconstruction</b> (FreeCol does not model this); see <see cref="ExpelTories"/> for the exact fraction. Transient
     /// UI scratch: refreshed each declaration (a one-off player action) and never saved — the colony's reduced

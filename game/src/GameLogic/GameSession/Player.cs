@@ -149,6 +149,16 @@ public sealed class Player
     /// <summary>The turn this player declared independence (FreeCol <c>Player.getIndependenceTurn</c>), or null if it never did. Persisted v41 (omit-when-null). See [independence].</summary>
     public int? DeclaredIndependenceTurn { get; internal set; }
 
+    /// <summary>
+    /// The name this nation chose for itself on declaring independence (FreeCol <c>Player.independentNationName</c>): the
+    /// free nation's name — e.g. <em>"United States"</em> — that replaces the colonial nation's name once the player is a
+    /// <see cref="PlayerType.Rebel"/> or <see cref="PlayerType.Independent"/>. Null until declaration (and for every
+    /// player that never declares); a blank/whitespace answer falls back to the nation's normal display name, so the
+    /// nation is always labelled. Read by <see cref="Game"/>'s player-label resolver, which returns this once the player
+    /// has rebelled (FreeCol <c>getNationLabel</c>). Persisted v68 (omit-when-null). See [independence].
+    /// </summary>
+    public string? IndependentNationName { get; internal set; }
+
     /// <summary>Bells accrued by a rebel toward the Foreign Intervention Force (FreeCol <c>interventionBells</c>); 0 until rebellion. Persisted v41 (omit-when-0). See [independence].</summary>
     public int InterventionBells { get; internal set; }
 
@@ -275,4 +285,5 @@ public sealed record RestoredPlayer(
     IReadOnlyList<TradeRoute>? TradeRoutes = null,
     int? NextTradeRouteId = null,
     IReadOnlyDictionary<int, int>? PeaceTurns = null,
-    IReadOnlyDictionary<string, TradeAccount>? TradeAccounts = null);
+    IReadOnlyDictionary<string, TradeAccount>? TradeAccounts = null,
+    string? IndependentNationName = null);

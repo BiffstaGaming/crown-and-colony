@@ -106,10 +106,17 @@ public sealed partial class Game
     /// </summary>
     public int HistoryEventScore => _history.Sum(h => h.Score);
 
-    /// <summary>A readable nation name for a player id (e.g. <c>model.nation.dutch</c> → "Dutch"), or "rival" when unknown.</summary>
+    /// <summary>A readable nation name for a player id (e.g. <c>model.nation.dutch</c> → "Dutch"), or "rival" when unknown.
+    /// Once the player has declared independence it is the free nation's chosen name (FreeCol <c>getNationLabel</c> →
+    /// <c>independentNationName</c>); a rebel that named itself blank falls back to the colonial nation name.</summary>
     private string NationDisplayName(int playerId)
     {
-        string? id = PlayerById(playerId)?.NationId;
+        Player? player = PlayerById(playerId);
+        if (player is { PlayerType: PlayerType.Rebel or PlayerType.Independent, IndependentNationName: { Length: > 0 } chosen })
+        {
+            return chosen; // the declared nation labels itself by the name it chose on declaring
+        }
+        string? id = player?.NationId;
         if (id is null || id.Length == 0)
         {
             return "rival";

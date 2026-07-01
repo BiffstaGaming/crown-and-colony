@@ -21,7 +21,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 67;
+    public const int CurrentVersion = 68;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -308,6 +308,16 @@ public sealed record SaveGame
     /// cap acts only on the trade-route delivery path (a pure min against the effective level), draws no RNG, and is inert
     /// until a player sets a level, so a reloaded game continues on the identical random sequence and the soak — which runs
     /// no import-capped trade routes — stays byte-identical and twin-deterministic.
+    /// v68 added the free nation's <b>chosen name on declaring independence</b> (<see cref="SavedPlayer.IndependentNationName"/>
+    /// — the name the player types for its new nation at the Declaration, FreeCol <c>Player.independentNationName</c>;
+    /// 86d3fq0a2). It rides the per-player <see cref="Players"/> collection as a new field on <see cref="SavedPlayer"/>.
+    /// Additive + <b>omitted when null</b> (every player that has not declared, and a rebel that took the default name),
+    /// so a game where nobody has declared independence serialises <b>byte-identically to v67</b> — no player writes the
+    /// field — and pre-v68 saves load every player with the name unset (a reloaded pre-this-feature rebel keeps labelling
+    /// itself by its colonial nation name, exactly as before). Determinism (ADR-009): the name is pure UI scratch — set
+    /// by the player at the declaration, never fed back into game evolution, drawing no RNG (the default label is a fixed
+    /// derivation of the nation id) — so a reloaded game continues on the identical random sequence whether or not it was
+    /// persisted, and the soak (which never declares independence in its window) stays byte-identical and twin-deterministic.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -1018,7 +1028,8 @@ public sealed record SaveGame
         // v56; per-good trade accounting → the live TradeAccount triples. Pre-v56 / omitted → no counters (all 0).
         p.TradeAccounts?.ToDictionary(
             kv => kv.Key,
-            kv => new TradeAccount(kv.Value.Sales, kv.Value.IncomeBeforeTaxes, kv.Value.IncomeAfterTaxes)));
+            kv => new TradeAccount(kv.Value.Sales, kv.Value.IncomeBeforeTaxes, kv.Value.IncomeAfterTaxes)),
+        p.IndependentNationName); // v68; the free nation's chosen name on declaring (pre-v68 / omitted → unset)
 
     /// <summary>
     /// Folds the legacy flat top-level fields into the single human player — taken for a ≤v19 save, or any save
@@ -1070,7 +1081,10 @@ public sealed record SaveGame
                 ? accounts.ToDictionary(kv => kv.Key, kv => new SavedTradeAccount(
                     kv.Value.Sales, kv.Value.IncomeBeforeTaxes, kv.Value.IncomeAfterTaxes))
                 : null,
-            p.LastTaxRaiseTurn); // v60; omit-when-null → byte-identical to v59 until the King first raises tax
+            p.LastTaxRaiseTurn, // v60; omit-when-null → byte-identical to v59 until the King first raises tax
+            // v68; the free nation's chosen name on declaring — omit-when-null → byte-identical to v67 until a declaration
+            // names a nation (a rebel that took the default name leaves it null, so it is only written for a named nation).
+            string.IsNullOrEmpty(p.IndependentNationName) ? null : p.IndependentNationName);
     }
 
     /// <summary>Serializes to JSON.</summary>
@@ -1350,6 +1364,7 @@ public sealed record SavedUnit(
 /// <param name="PeaceTurns">The turn this player's peace took force with each other player, by their id (v53 additive, FreeCol <c>EuropeanAIPlayer.peaceHolds</c>' <c>peaceTurn</c>; null/omitted when it has no recorded peace — the common case and every player in a no-contact game, so a default game stays byte-identical to v52). Feeds the decaying peace-hold (<c>(PEACE_PROBABILITY/100)^(turn − peaceTurn)</c>); pre-v53 saves load with no stamps (the gate is inert without Franklin anyway).</param>
 /// <param name="TradeAccounts">This player's cumulative per-good trade accounting for the Trade report (v56 additive; FreeCol <c>MarketData</c>'s <c>sales</c>/<c>incomeBeforeTaxes</c>/<c>incomeAfterTaxes</c>), as goods-id → net <see cref="SavedTradeAccount"/>. Null/omitted when the player has traded nothing (every counter still 0 — the common pre-trade case and a fresh game), so a never-traded market stays byte-identical to v55; only goods that have actually been traded are written. Pre-v56 saves load with all counters 0.</param>
 /// <param name="LastTaxRaiseTurn">The turn the King last raised this player's tax (v60 additive; null/omitted when he never has, so a game with no tax raise yet stays byte-identical to v59). Enforces the inter-raise tax grace period (<see cref="Game.TaxRaiseGraceTurns"/>) deterministically across save/load. Pre-v60 saves load with null (no cooldown active).</param>
+/// <param name="IndependentNationName">The free nation's chosen name on declaring independence (v68 additive; FreeCol <c>Player.independentNationName</c>; null/omitted for every player that has not declared and for a rebel that took the default name, so a game where nobody has declared stays byte-identical to v67). Becomes the player's display label once it is a rebel/independent (<see cref="Game.NationLabelOf"/>); pre-v68 saves load it unset (the colonial nation name still labels a restored rebel).</param>
 public sealed record SavedPlayer(
     int PlayerId, string? NationId, bool IsHuman, int PlayerType,
     int Gold = 0, int Tax = 0,
@@ -1373,7 +1388,8 @@ public sealed record SavedPlayer(
     int? NextTradeRouteId = null,
     IReadOnlyDictionary<int, int>? PeaceTurns = null,
     IReadOnlyDictionary<string, SavedTradeAccount>? TradeAccounts = null,
-    int? LastTaxRaiseTurn = null);
+    int? LastTaxRaiseTurn = null,
+    string? IndependentNationName = null);
 
 /// <summary>
 /// One good's cumulative trade accounting inside a <see cref="SavedPlayer"/> (v56; FreeCol <c>MarketData</c>'s
