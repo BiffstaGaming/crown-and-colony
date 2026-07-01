@@ -427,6 +427,26 @@ public sealed class Ruleset
     }
 
     /// <summary>
+    /// Returns this ruleset with the <b>coastal-only custom house</b> game option
+    /// (<see cref="GameOptions.CustomsOnCoast"/>) overridden — FreeCol's <c>model.option.customsOnCoast</c>. Like
+    /// <see cref="WithFogOfWar"/> / <see cref="WithCustomIgnoreBoycott"/> this is a <b>configuration</b> seam, not a
+    /// rules change: it only flips whether a custom house may be built inland (off, classic) or needs a coastal port
+    /// (on) — see <see cref="GameSession.Game"/>'s <c>BuildRefusal</c>, which reads the custom house's
+    /// <c>model.ability.coastalOnly</c> effective value (the declared classic value is <c>false</c>; this option
+    /// flips it on, mirroring FreeCol <c>Specification.clean</c>). Each loaded ruleset is a fresh parse (never
+    /// cached/shared — <see cref="LoadEmbedded"/>), so replacing the bundle on the just-loaded instance is safe; the
+    /// method returns <c>this</c> for a fluent call right after load. Passing the parsed default (classic <b>false</b>)
+    /// leaves the ruleset byte-identical, so a default new game is unchanged (ADR-009). Not persisted in the save — a
+    /// reloaded game re-derives the option from its variant's spec default (matching the other game-option seams).
+    /// </summary>
+    /// <param name="customsOnCoast">Whether a custom house may only be built in a coastal colony (classic <b>off</b>).</param>
+    public Ruleset WithCustomsOnCoast(bool customsOnCoast)
+    {
+        GameOptions = GameOptions with { CustomsOnCoast = customsOnCoast };
+        return this;
+    }
+
+    /// <summary>
     /// Returns this ruleset with the <b>starting year</b> of the calendar overridden to the player's New-Game pick —
     /// FreeCol's <c>model.option.startingYear</c>, chosen at game setup (86d3fq1fd). Like <see cref="WithFogOfWar"/> this
     /// is a <b>configuration</b> seam, not a rules change: it only shifts which year turn 1 maps to (and therefore the
@@ -1181,8 +1201,9 @@ public sealed class Ruleset
     /// <c>lastColonialYear</c> / <c>independenceTurn</c>), the peace-hold base (<c>model.option.peaceProbability</c>),
     /// the <c>fogOfWar</c> toggle (<c>model.option.fogOfWar</c>, a boolean), the custom-house boycott-smuggling
     /// toggle (<c>model.option.customIgnoreBoycott</c>, a boolean, classic <b>true</b>), the amphibious-moves
-    /// toggle (<c>model.option.amphibiousMoves</c>, a boolean, classic <b>false</b>), and the post-independence
+    /// toggle (<c>model.option.amphibiousMoves</c>, a boolean, classic <b>false</b>), the post-independence
     /// founding-father-recruitment toggle (<c>model.option.continueFoundingFatherRecruitment</c>, a boolean, classic
+    /// <b>false</b>), and the coastal-only-custom-house toggle (<c>model.option.customsOnCoast</c>, a boolean, classic
     /// <b>false</b>). Unlike <see cref="ParseDifficulty"/>,
     /// these are not restated per level, so each is a plain document-wide option lookup (its <c>value</c>, else
     /// <c>defaultValue</c>); a missing option falls back to its classic value in
@@ -1213,7 +1234,9 @@ public sealed class Ruleset
                 root, "model.option.amphibiousMoves", GameOptions.ClassicDefaults.AmphibiousMoves),
             ContinueFoundingFatherRecruitment: ParseBooleanOption(
                 root, "model.option.continueFoundingFatherRecruitment",
-                GameOptions.ClassicDefaults.ContinueFoundingFatherRecruitment));
+                GameOptions.ClassicDefaults.ContinueFoundingFatherRecruitment),
+            CustomsOnCoast: ParseBooleanOption(
+                root, "model.option.customsOnCoast", GameOptions.ClassicDefaults.CustomsOnCoast));
 
     /// <summary>
     /// Parses the colony/production scalar constants into <see cref="Specification.ColonyConstants"/>. Each source is

@@ -115,10 +115,52 @@ public class BuildAbilityGateTests
         Assert.True(with.CheckSetBuild(hasFather, CustomHouse).Allowed);
     }
 
+    // ---- Coastal gate (custom house under the customsOnCoast option, 86d3fpyx9) ----
+
+    [Fact]
+    public void CustomsOnCoast_OptionPlumbsThrough_ClassicDefaultOff()
+    {
+        // The option defaults off in classic (byte-identity guard) and the seam flips it.
+        Assert.False(Ruleset.LoadClassic().GameOptions.CustomsOnCoast);
+        Assert.True(Ruleset.LoadClassic().WithCustomsOnCoast(true).GameOptions.CustomsOnCoast);
+        Assert.False(Ruleset.LoadClassic().WithCustomsOnCoast(false).GameOptions.CustomsOnCoast);
+    }
+
+    [Fact]
+    public void CustomHouse_WhenCustomsOnCoastOff_BuildableInland()
+    {
+        // Default game: an inland colony with Stuyvesant may raise a custom house — no coast needed (classic).
+        Game inland = InlandColony(out Colony landlocked, congress: [Stuyvesant]);
+        Assert.True(inland.CheckSetBuild(landlocked, CustomHouse).Allowed);
+        Assert.Contains(inland.Buildables(landlocked), b => b.Id == CustomHouse);
+    }
+
+    [Fact]
+    public void CustomHouse_WhenCustomsOnCoastOn_RefusedInland()
+    {
+        // With the option on, the custom house's coastalOnly ability flips true: an inland colony is refused (COASTAL).
+        Ruleset coastal = Ruleset.LoadClassic().WithCustomsOnCoast(true);
+        Game inland = InlandColony(out Colony landlocked, congress: [Stuyvesant], ruleset: coastal);
+        MoveCheck refused = inland.CheckSetBuild(landlocked, CustomHouse);
+        Assert.False(refused.Allowed);
+        Assert.Contains("coastal", refused.Reason);
+        Assert.DoesNotContain(inland.Buildables(landlocked), b => b.Id == CustomHouse);
+    }
+
+    [Fact]
+    public void CustomHouse_WhenCustomsOnCoastOn_AllowedOnCoast()
+    {
+        // With the option on, a sea-connected colony (with Stuyvesant) may still raise a custom house.
+        Ruleset coastal = Ruleset.LoadClassic().WithCustomsOnCoast(true);
+        Game port = CoastalColony(out Colony seaside, congress: [Stuyvesant], ruleset: coastal);
+        Assert.True(port.CheckSetBuild(seaside, CustomHouse).Allowed);
+        Assert.Contains(port.Buildables(seaside), b => b.Id == CustomHouse);
+    }
+
     // ---- Fixtures ----
 
     /// <summary>A 1×1 inland plains colony (no water neighbour → no port), with an optional founding-father congress.</summary>
-    private static Game InlandColony(out Colony colony, IReadOnlyList<string>? congress = null)
+    private static Game InlandColony(out Colony colony, IReadOnlyList<string>? congress = null, Ruleset? ruleset = null)
     {
         var game = new SaveGame
         {
@@ -132,13 +174,13 @@ public class BuildAbilityGateTests
             Explored = [0],
             Colonies = [new SavedColony(1, "Inland", 0, 0, 1)],
             Congress = congress,
-        }.Restore(Classic);
+        }.Restore(ruleset ?? Classic);
         colony = game.Colonies[0];
         return game;
     }
 
     /// <summary>A plains colony at (0,0) with an ocean tile beside it (a port / coastal colony).</summary>
-    private static Game CoastalColony(out Colony colony)
+    private static Game CoastalColony(out Colony colony, IReadOnlyList<string>? congress = null, Ruleset? ruleset = null)
     {
         var game = new SaveGame
         {
@@ -151,7 +193,8 @@ public class BuildAbilityGateTests
             Units = [],
             Explored = [0, 1],
             Colonies = [new SavedColony(1, "Port", 0, 0, 1)],
-        }.Restore(Classic);
+            Congress = congress,
+        }.Restore(ruleset ?? Classic);
         colony = game.Colonies[0];
         return game;
     }

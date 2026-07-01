@@ -105,6 +105,18 @@ namespace CrownAndColony.GameLogic.Specification;
 /// <see cref="GameSession.Game"/>'s liberty/election pass (<c>AccumulateLibertyAndElectFathers</c>). See
 /// [founding-fathers], [independence].
 /// </param>
+/// <param name="CustomsOnCoast">
+/// Whether a <b>custom house</b> may only be built in a <b>coastal</b> colony (spec
+/// <c>model.option.customsOnCoast</c>, a <c>booleanOption</c> in the <c>gameOptions.colony</c> group, classic
+/// default <b>false</b>). In classic Colonization the custom house can be built anywhere — an inland colony with
+/// Peter Stuyvesant may raise one and it smuggles goods to market with no coast needed. FreeCol adds this optional
+/// realism rule: with it <b>on</b>, the custom house declares the <c>model.ability.coastalOnly</c> ability true
+/// (FreeCol flips it in <c>Specification.clean</c>), and <c>Colony.getNoBuildReason</c> returns COASTAL for a
+/// landlocked colony — a custom house then needs a sea-connected port, exactly like docks. With it <b>off</b> (the
+/// classic default) the custom house's declared <c>coastalOnly=false</c> imposes no such gate, so an inland custom
+/// house builds as before and the default game is unchanged (ADR-009). Read by <see cref="GameSession.Game"/>'s
+/// build gate (<c>BuildRefusal</c>). See [custom-house], [colonies].
+/// </param>
 public sealed record GameOptions(
     int InitialImmigration,
     int EuropeanUnitImmigrationPenalty,
@@ -116,15 +128,17 @@ public sealed record GameOptions(
     bool FogOfWar,
     bool CustomIgnoreBoycott,
     bool AmphibiousMoves,
-    bool ContinueFoundingFatherRecruitment)
+    bool ContinueFoundingFatherRecruitment,
+    bool CustomsOnCoast)
 {
     /// <summary>
     /// The classic ruleset's <c>gameOptions</c> values — the fallback when a spec omits an option, and the source of
     /// truth for the default game's base numbers: the immigration trio (15 / −4 / +2), the
     /// <c>gameOptions.years</c> gate cluster (mandatoryColonyYear 1600 / lastColonialYear 1800 / independenceTurn 468),
     /// the peace-hold base (peaceProbability 90), fog of war (on), custom-house boycott smuggling (on),
-    /// amphibious moves (off — the classic spec defaults <c>model.option.amphibiousMoves</c> to <c>false</c>), and
-    /// post-independence founding-father recruitment (off — classic Congress closes at the Declaration).
+    /// amphibious moves (off — the classic spec defaults <c>model.option.amphibiousMoves</c> to <c>false</c>),
+    /// post-independence founding-father recruitment (off — classic Congress closes at the Declaration), and
+    /// coastal-only custom houses (off — classic lets a custom house be built inland).
     /// </summary>
     public static readonly GameOptions ClassicDefaults = new(
         InitialImmigration: 15,
@@ -137,7 +151,8 @@ public sealed record GameOptions(
         FogOfWar: true,
         CustomIgnoreBoycott: true,
         AmphibiousMoves: false,
-        ContinueFoundingFatherRecruitment: false);
+        ContinueFoundingFatherRecruitment: false,
+        CustomsOnCoast: false);
 
     /// <summary>
     /// The peace-hold base as a 0–1 multiplier (FreeCol <c>Specification.getPercentageMultiplier</c> =

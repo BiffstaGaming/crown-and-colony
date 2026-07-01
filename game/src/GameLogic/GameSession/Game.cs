@@ -2381,6 +2381,7 @@ public sealed partial class Game
     private const string OffenceModifierId = "model.modifier.offence"; // Francis Drake (+50%, scoped to privateers)
     private const string DefenceModifierId = "model.modifier.defence";
     private const string HasPortAbility = "model.ability.hasPort"; // a coastal colony — docks/drydock/shipyard gate
+    private const string CoastalOnlyAbility = "model.ability.coastalOnly"; // a building buildable only in a coastal colony (custom house under customsOnCoast)
 
     /// <summary>
     /// A unit's offence base for combat: the type's pre-role additive plus its role's offence, then the
@@ -7760,6 +7761,15 @@ public sealed partial class Game
         {
             return abilityReason;
         }
+        // COASTAL gate (FreeCol Colony.getNoBuildReason COASTAL): a building carrying the coastalOnly ability may only
+        // be raised in a sea-connected colony. Classic data declares the custom house's coastalOnly=false, so this
+        // never fires by default; the customsOnCoast game option flips the effective value on (mirroring FreeCol
+        // Specification.clean), and a variant may set the ability true directly in data — either way the gate is
+        // data-driven. Buildings only (a unit never declares coastalOnly).
+        if (!target.IsUnit && BuildingRequiresCoast(target.Id) && !IsColonyCoastal(colony))
+        {
+            return $"A {target.ShortName} can only be built in a coastal colony.";
+        }
         if (target.IsUnit && target.Unit is { } unit)
         {
             // LIMIT_EXCEEDED then MISSING_BUILD_ABILITY (FreeCol getNoBuildReason order, after MISSING_ABILITY).
@@ -7821,6 +7831,30 @@ public sealed partial class Game
             "eq" => owned == colonies,
             _ => true,
         };
+    }
+
+    /// <summary>
+    /// Whether the building with id <paramref name="buildingId"/> may only be built in a coastal colony — its
+    /// <b>effective</b> <c>model.ability.coastalOnly</c> value (FreeCol <c>BuildingType.hasAbility(COASTAL_ONLY)</c>,
+    /// which <c>Specification.clean</c> flips on when <c>model.option.customsOnCoast</c> is set). True when the
+    /// building either declares the ability true directly in the ruleset (a variant may do so) OR declares it (at any
+    /// value, as the classic custom house declares <c>coastalOnly=false</c>) while the <see cref="GameOptions.CustomsOnCoast"/>
+    /// game option is on. Classic data declares the custom house's <c>coastalOnly=false</c> and the option defaults off,
+    /// so this returns <c>false</c> for every classic building and the default game is unchanged (ADR-009).
+    /// </summary>
+    private bool BuildingRequiresCoast(string buildingId)
+    {
+        if (Ruleset.FindBuilding(buildingId) is not { } building)
+        {
+            return false;
+        }
+        if (building.HasAbility(CoastalOnlyAbility))
+        {
+            return true; // variant data set the ability true — coastal-only regardless of the option
+        }
+        // The classic custom house declares coastalOnly=false; the customsOnCoast option flips the effective value on.
+        return Ruleset.GameOptions.CustomsOnCoast
+            && building.Abilities is { } abilities && abilities.ContainsKey(CoastalOnlyAbility);
     }
 
     /// <summary>
