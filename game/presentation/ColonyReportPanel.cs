@@ -38,10 +38,12 @@ namespace CrownAndColony.Presentation;
 /// <item><b>Military</b> (`86d3e4buh` — FreeCol's ReportMilitaryPanel): the human's land/naval unit counts and combined
 /// land attack power (<see cref="Game.HumanMilitaryStrength"/>) shown beside the Royal Expeditionary Force the King
 /// would send (<see cref="Game.ExpeditionaryForceStrength"/>) — the strength comparison ahead of independence.</item>
-/// <item><b>Foreign</b> (`86d3c9x3c` / `86d3f0wcg` — FreeCol's ReportForeignAffairPanel): one row per rival colonial
-/// power with its stance, colony/unit counts, gold, and — shown unconditionally, like FreeCol's
-/// <see cref="NationSummary"/> — its combined land + naval attack strength (<see cref="Game.ColonialStrength"/>); SoL%,
-/// tax and father count stay hidden (FreeCol's de-Witt gating, which we omit).</item>
+/// <item><b>Foreign</b> (`86d3c9x3c` / `86d3f0wcg` / `86d3ha4cv` — FreeCol's ReportForeignAffairPanel): one row per rival
+/// colonial power with its stance, colony/unit counts, gold, and — shown unconditionally, like FreeCol's
+/// <see cref="NationSummary"/> — its combined land + naval attack strength (<see cref="Game.ColonialStrength"/>). When
+/// the human holds <b>Jan de Witt</b> (<see cref="Game.HasBetterForeignAffairsReport"/>), each row also carries the
+/// rival's SoL%, elected-father count and tax% (the <see cref="Game.ForeignReportRows"/> oracle) — FreeCol's de-Witt
+/// gate, faithfully reproduced (those columns are absent for a Congress without de Witt).</item>
 /// <item><b>Natives</b> (`86d3c9x3c` / `86d3f0wav` — FreeCol's ReportIndianPanel): the discovered settlements grouped
 /// under their owning native NATION, each nation a header (name + settlement count + the tribe-wide tension band/stance
 /// toward the human) over its settlement rows; each settlement shows its alarm, the colonial nation it
@@ -656,11 +658,18 @@ public partial class ColonyReportPanel : PanelContainer
         }
 
         // FreeCol's NationSummary shows a rival's stance, #colonies, #units, military + naval strength and gold to
-        // everyone unconditionally; SoL%, father count and tax% stay hidden without the De Witt ability (which we omit
-        // faithfully). Strength is the combined land / naval attack power (Game.ColonialStrength → FreeCol
-        // NationSummary.getMilitaryStrength/getNavalStrength), rounded to a whole figure for the row. The
-        // tension/attitude band is the human's tension toward the rival, banded by the Game.TensionLevelBetween oracle
-        // (FreeCol Tension.getLevel) — the report's attitude column.
+        // everyone unconditionally; SoL%, father count and tax% are hidden UNLESS the viewer holds Jan de Witt's
+        // betterForeignAffairsReport (FreeCol NationSummary sets them −1 without it, and the panel omits the negative
+        // columns). We reproduce that gate: HasBetterForeignAffairsReport(human) → append the extra columns from the
+        // Game.ForeignReportRows oracle (86d3ha4cv), else leave them off. Strength is the combined land / naval attack
+        // power (Game.ColonialStrength → FreeCol NationSummary.getMilitaryStrength/getNavalStrength), rounded to a whole
+        // figure for the row. The tension/attitude band is the human's tension toward the rival, banded by the
+        // Game.TensionLevelBetween oracle (FreeCol Tension.getLevel) — the report's attitude column.
+        bool deWitt = _game.HasBetterForeignAffairsReport((int)human);
+        // The de-Witt intelligence keyed by rival player id (only queried when the human holds the ability).
+        Dictionary<int, Game.ForeignReportRow> extra = deWitt
+            ? _game.ForeignReportRows((int)human).ToDictionary(r => r.Player.PlayerId)
+            : new Dictionary<int, Game.ForeignReportRow>();
         foreach (Player p in powers)
         {
             Stance stance = _game.StanceBetween((int)human, p.PlayerId);
@@ -668,11 +677,16 @@ public partial class ColonyReportPanel : PanelContainer
             int colonies = _game.Colonies.Count(c => c.OwnerId == p.PlayerId);
             int units = _game.Units.Count(u => u.OwnerId == p.PlayerId);
             (double landPower, double navalPower) = _game.ColonialStrength(p);
+            // The de-Witt columns (SoL% · fathers · tax%) — appended only when the human holds the ability, faithful to
+            // FreeCol's report omitting the negative NationSummary figures.
+            string deWittColumns = deWitt && extra.TryGetValue(p.PlayerId, out Game.ForeignReportRow row)
+                ? $"  ·  SoL {row.SonsOfLiberty}%, fathers {row.FoundingFathers}, tax {row.TaxRate}%"
+                : "";
             dynamic.AddChild(new Label
             {
                 Name = $"Foreign_{p.PlayerId}",
                 Text = $"{Strip(p.NationId)} — {stance}, attitude {attitude}, {colonies} colonies, {units} units  ·  " +
-                       $"military {landPower:0.#}, naval {navalPower:0.#}  ·  {p.Gold} gold",
+                       $"military {landPower:0.#}, naval {navalPower:0.#}  ·  {p.Gold} gold{deWittColumns}",
             });
         }
     }

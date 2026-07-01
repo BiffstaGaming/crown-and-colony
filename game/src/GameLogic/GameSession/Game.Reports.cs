@@ -300,4 +300,42 @@ public sealed partial class Game
         }
         return result;
     }
+
+    // ── Foreign Affairs de-Witt columns (FreeCol ReportForeignAffairPanel: SoL% / fathers / tax) ──────────────
+
+    /// <summary>
+    /// One rival colonial power's extra Foreign-Affairs intelligence (a row of FreeCol's
+    /// <c>ReportForeignAffairPanel</c>'s De-Witt-gated columns): the power, its national Sons-of-Liberty percentage, how
+    /// many Founding Fathers sit in its Continental Congress, and its tax rate. In FreeCol these three figures come off
+    /// the <c>NationSummary</c>, which sets them to −1 (hidden) unless the <b>viewer</b> holds Jan de Witt's
+    /// <c>betterForeignAffairsReport</c> ability; the panel omits the column when the figure is negative. A pure value
+    /// projection for the report — the gate itself is the panel's concern (it only appends these when
+    /// <see cref="HasBetterForeignAffairsReport"/> is true).
+    /// </summary>
+    /// <param name="Player">The rival colonial power this row describes.</param>
+    /// <param name="SonsOfLiberty">The power's national Sons-of-Liberty percentage (<see cref="NationalSonsOfLiberty"/>).</param>
+    /// <param name="FoundingFathers">How many Founding Fathers the power has elected (<see cref="Player.Congress"/> count).</param>
+    /// <param name="TaxRate">The power's tax rate as a percentage (<see cref="Player.TaxRate"/>).</param>
+    public readonly record struct ForeignReportRow(Player Player, int SonsOfLiberty, int FoundingFathers, int TaxRate);
+
+    /// <summary>
+    /// The <b>De-Witt-gated Foreign-Affairs intelligence</b> on every rival colonial power (a read-only oracle,
+    /// ADR-006; the analogue of FreeCol <c>ReportForeignAffairPanel</c>'s <c>getSoL</c> / <c>getFoundingFathers</c> /
+    /// <c>getTax</c> columns, which <c>NationSummary</c> fills only when the viewer holds Jan de Witt's
+    /// <c>betterForeignAffairsReport</c>). For each <b>live European power</b> that is a colonial nation other than the
+    /// viewer, returns its national Sons-of-Liberty percentage (<see cref="NationalSonsOfLiberty"/>), its elected-father
+    /// count (<see cref="Player.Congress"/>) and its tax rate (<see cref="Player.TaxRate"/>), in stable player-id order.
+    /// The data is <b>always computed</b> — the De-Witt gate is a <em>presentation</em> gate (the Foreign report appends
+    /// these columns only when <see cref="HasBetterForeignAffairsReport"/> is true; see the panel), exactly as
+    /// <see cref="ForeignNationStances"/> supplies stance data the flag unlocks. Pure and RNG-free; never mutates, never
+    /// persisted.
+    /// </summary>
+    /// <param name="playerId">The viewer's <see cref="Player.PlayerId"/> — its own row is excluded.</param>
+    /// <returns>The per-rival SoL / fathers / tax rows, in player-id order (empty when there is no other colonial power).</returns>
+    public IReadOnlyList<ForeignReportRow> ForeignReportRows(int playerId) =>
+        LiveEuropeanPowers()
+            .Where(p => p.PlayerId != playerId && p.PlayerType == PlayerType.Colonial)
+            .OrderBy(p => p.PlayerId)
+            .Select(p => new ForeignReportRow(p, NationalSonsOfLiberty(p), p.Congress.Count, p.TaxRate))
+            .ToList();
 }

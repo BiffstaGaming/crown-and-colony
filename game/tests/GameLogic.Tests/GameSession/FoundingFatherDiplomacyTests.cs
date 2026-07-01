@@ -340,4 +340,45 @@ public class FoundingFatherDiplomacyTests
         Assert.False(game.CanTradeWithForeignColonies(nid));
         Assert.False(game.HasBetterForeignAffairsReport(nid));
     }
+
+    // ───────────────────────── Jan de Witt — ForeignReportRows (SoL / fathers / tax) 86d3ha4cv ─────────────────────────
+
+    [Fact]
+    public void ForeignReportRows_ReportEveryRivalsSoLFathersAndTax_InPlayerIdOrder()
+    {
+        var game = Game.New(Classic, seed: 7);
+        int fid = ForeignPowerId(game);
+        int other = SecondForeignPowerId(game);
+
+        // Give the two rivals distinguishable tax rates and Congress sizes; SoL is 0 for a rival with no colonists.
+        game.Players.First(p => p.PlayerId == fid).TaxRate = 17;
+        game.Players.First(p => p.PlayerId == other).TaxRate = 42;
+        Elect(game, fid, Franklin);
+        Elect(game, other, Franklin);
+        Elect(game, other, DeWitt); // `other` now holds two fathers
+
+        var rows = game.ForeignReportRows(0);
+
+        // Every other colonial power appears exactly once, in ascending id order, and the viewer (0) is excluded.
+        Assert.DoesNotContain(rows, r => r.Player.PlayerId == 0);
+        Assert.Equal(rows.Select(r => r.Player.PlayerId).OrderBy(id => id), rows.Select(r => r.Player.PlayerId));
+
+        Game.ForeignReportRow rowFid = rows.First(r => r.Player.PlayerId == fid);
+        Assert.Equal(17, rowFid.TaxRate);
+        Assert.Equal(1, rowFid.FoundingFathers);
+        Assert.Equal(game.NationalSonsOfLiberty(rowFid.Player), rowFid.SonsOfLiberty);
+
+        Game.ForeignReportRow rowOther = rows.First(r => r.Player.PlayerId == other);
+        Assert.Equal(42, rowOther.TaxRate);
+        Assert.Equal(2, rowOther.FoundingFathers);
+    }
+
+    [Fact]
+    public void ForeignReportRows_ExcludeNativesAndTheRoyalExpeditionaryForce()
+    {
+        var game = Game.New(Classic, seed: 7);
+        var rows = game.ForeignReportRows(0);
+        // Only live colonial powers appear — never a native tribe or the REF.
+        Assert.All(rows, r => Assert.Equal(PlayerType.Colonial, r.Player.PlayerType));
+    }
 }

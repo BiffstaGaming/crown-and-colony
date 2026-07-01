@@ -148,6 +148,64 @@ public class ColonyReportPanelTests
     }
 
     [TestCase]
+    public async Task ForeignTab_WithoutDeWitt_HidesTheSoLFathersAndTaxColumns()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // A fresh game's human Congress holds no father → FreeCol's de-Witt gate keeps SoL%/fathers/tax hidden.
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Foreign").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        Game game = GetGame(controller);
+        Player rival = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        var row = dynamic.GetNodeOrNull<Label>($"Foreign_{rival.PlayerId}");
+        AssertThat(row).IsNotNull();
+        // The gated columns are absent without de Witt (the row still carries the unconditional military/gold columns).
+        AssertThat(row!.Text).Contains("military");
+        AssertThat(row.Text).NotContains("SoL");
+        AssertThat(row.Text).NotContains("fathers");
+        AssertThat(row.Text).NotContains("tax");
+    }
+
+    [TestCase]
+    public async Task ForeignTab_WithDeWitt_ShowsTheSoLFathersAndTaxColumns()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // Elect Jan de Witt into the HUMAN's Congress BEFORE opening the panel (an already-open panel keeps the old game
+        // reference — wave-4 L3 lesson). Go through the public SaveGame/Restore path, since the scene-test assembly can't
+        // reach GameLogic's internal Congress list (mirrors the Education/Natives tests).
+        Game game = GetGame(controller);
+        SaveGame save = SaveGame.From(game);
+        var players = save.Players!
+            .Select(p => p.IsHuman ? p with { Congress = new[] { "model.foundingFather.janDeWitt" } } : p)
+            .ToList();
+        game = (save with { Players = players }).Restore(game.Ruleset);
+        SetGame(controller, game);
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Foreign").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        Player rival = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        var row = dynamic.GetNodeOrNull<Label>($"Foreign_{rival.PlayerId}");
+        AssertThat(row).IsNotNull();
+        // With de Witt elected, each rival row carries the SoL% / father-count / tax% columns (Game.ForeignReportRows).
+        AssertThat(row!.Text).Contains("SoL");
+        AssertThat(row.Text).Contains("fathers");
+        AssertThat(row.Text).Contains("tax");
+    }
+
+    [TestCase]
     public async Task NavalTab_ListsTheHumansFleet()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
