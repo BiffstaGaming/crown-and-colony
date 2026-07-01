@@ -982,12 +982,16 @@ public sealed partial class Game
     /// The temporary modifiers targeting <paramref name="targetId"/> that are active on the current <see cref="Turn"/>
     /// (FreeCol <c>FeatureContainer.getModifiers</c> filtered by <c>appliesTo(turn)</c>): a registered modifier
     /// contributes only inside its <c>[firstTurn, lastTurn]</c> window. Empty whenever the registry is empty (always,
-    /// in the classic default game), so a caller that folds these is a no-op there.
+    /// in the classic default game), so a caller that folds these is a no-op there. <paramref name="colonyId"/> scopes
+    /// the query to one colony's production: a colony-scoped modifier (a disaster penalty) is returned only when its
+    /// colony matches; an unscoped modifier (a variant/event bonus) is always returned; a <c>null</c> id (a non-colony
+    /// fold — movement, sail time) returns only unscoped modifiers, so a colony-scoped penalty never touches them.
     /// </summary>
     /// <param name="targetId">The modifier target to match (e.g. a goods id).</param>
-    /// <returns>The active temporary modifiers for that target, in registration order.</returns>
-    public IEnumerable<TemporaryModifier> ActiveTemporaryModifiers(string targetId) =>
-        _temporaryModifiers.Where(m => m.TargetId == targetId && m.AppliesTo(Turn));
+    /// <param name="colonyId">The colony whose production is being folded, or <c>null</c> for a non-colony fold (returns only unscoped modifiers).</param>
+    /// <returns>The active temporary modifiers for that target and colony scope, in registration order.</returns>
+    public IEnumerable<TemporaryModifier> ActiveTemporaryModifiers(string targetId, int? colonyId = null) =>
+        _temporaryModifiers.Where(m => m.TargetId == targetId && m.AppliesTo(Turn) && m.AppliesToColony(colonyId));
 
     /// <summary>Drains and clears the collected <see cref="RumourNotices"/> (the presentation reads them once, after a move that explored a rumour).</summary>
     public IReadOnlyList<RumourNotice> TakeRumourNotices()
@@ -8377,9 +8381,23 @@ public sealed partial class Game
                     }
                     break;
                 case DisasterEffectKind.ProductionPenalty:
-                    // A timed (3-turn) −50% production modifier in FreeCol; applying it needs persisted per-colony
-                    // timed-modifier state (a save bump), so we record that it fired but do not apply the penalty.
-                    productionPenalty = true;
+                    // FreeCol csApplyDisaster: for each modifier the effect carries, attach a TIMED modifier (a −50%
+                    // percentage on that good for `duration` turns) to the STRUCK COLONY at DISASTER_PRODUCTION_INDEX
+                    // (ServerPlayer.java:1690-1695; specification.xml:833-889). We register a colony-scoped
+                    // TemporaryModifier per modifier so the penalty damps only this colony's production (folded into
+                    // tile yield / building output while in window, stripped when it expires). Only fires when the
+                    // naturalDisasters option is > 0 (classic 0 → this branch is never reached), so classic is
+                    // byte-identical (ADR-009); the registry is transient, so no save bump.
+                    foreach (DisasterModifier mod in effect.Modifiers)
+                    {
+                        if (mod.Duration <= 0)
+                        {
+                            continue; // a permanent penalty is a different (bankruptcy) mechanism, handled via Player.Bankrupt
+                        }
+                        var payload = new FatherModifier(mod.GoodsId, mod.Type, mod.Value, DisasterProductionIndex);
+                        RegisterTemporaryModifier(TemporaryModifier.MakeTimed(payload, mod.Duration, Turn, colony.Id));
+                        productionPenalty = true;
+                    }
                     break;
             }
         }
@@ -10970,7 +10988,7 @@ public sealed partial class Game
     /// folds its OWN Congress (FP-5), so a foreign power's economy is independent of the human's fathers; with
     /// no relevant fathers elected the base is returned unchanged.
     /// </summary>
-    internal int ApplyGoodsModifiers(Player player, string goodsId, int baseAmount)
+    internal int ApplyGoodsModifiers(Player player, string goodsId, int baseAmount, int? colonyId = null)
     {
         var modifiers = player.Congress.Select(Ruleset.Father)
             .SelectMany(f => f.Modifiers)
@@ -10984,7 +11002,9 @@ public sealed partial class Game
         // Fold any duration-bounded modifier currently active for this goods (FreeCol's temporary Modifiers join the
         // permanent ones in applyModifiers). The registry is empty in the classic default game, so this adds nothing
         // there and the result is byte-identical; a registered event/variant bonus folds here while it is in window.
-        modifiers.AddRange(ActiveTemporaryModifiers(goodsId).Select(m => m.Payload));
+        // A colony id scopes the fold to that colony's production, so a per-colony disaster penalty (registered with a
+        // ColonyId) only damps the struck colony — a non-colony fold (null id) sees only unscoped modifiers.
+        modifiers.AddRange(ActiveTemporaryModifiers(goodsId, colonyId).Select(m => m.Payload));
         if (modifiers.Count == 0)
         {
             return baseAmount;
@@ -11460,7 +11480,7 @@ public sealed partial class Game
     public int TileWorkerNetYield(Colony colony, Position tile, string goodsId)
     {
         Player owner = PlayerById(colony.OwnerId) ?? _human;
-        return Math.Max(0, TileYield(owner, colony.WorkerTypeAt(tile), tile, goodsId) + colony.ProductionBonus);
+        return Math.Max(0, TileYield(owner, colony.WorkerTypeAt(tile), tile, goodsId, colony.Id) + colony.ProductionBonus);
     }
 
     /// <summary>
@@ -11548,7 +11568,7 @@ public sealed partial class Game
         // (2) worked tiles (worker type + Sons-of-Liberty bonus, floored at 0 — the RunColonyTurn fold).
         foreach ((Position tile, string goodsId) in colony.TileWorkers)
         {
-            Bank(goodsId, Math.Max(0, TileYield(owner, colony.WorkerTypeAt(tile), tile, goodsId) + colony.ProductionBonus));
+            Bank(goodsId, Math.Max(0, TileYield(owner, colony.WorkerTypeAt(tile), tile, goodsId, colony.Id) + colony.ProductionBonus));
         }
         // (3) buildings, in build order, against the running working copy (scarcity matches the live turn). Breeding
         //     (auto-production) is skipped — it eats only this-turn's surplus, an auto-production special case.
@@ -11616,10 +11636,11 @@ public sealed partial class Game
     /// founding-father modifiers (index 40). Faithful to FreeCol's modifier ordering; a free colonist (or any type
     /// with no modifier for this good) yields the plain figure.
     /// </summary>
-    internal int TileYield(Player player, string workerTypeId, Position tile, string goodsId) =>
+    internal int TileYield(Player player, string workerTypeId, Position tile, string goodsId, int? colonyId = null) =>
         ApplyGoodsModifiers(player, goodsId,
             ApplyWorkerProductionModifiers(workerTypeId, goodsId,
-                ApplyScopedResourceModifiers(workerTypeId, tile, goodsId, TileYieldPotential(tile, goodsId))));
+                ApplyScopedResourceModifiers(workerTypeId, tile, goodsId, TileYieldPotential(tile, goodsId))),
+            colonyId); // colonyId scopes a per-colony disaster production penalty to the struck colony's tile output
 
     /// <summary>
     /// Applies a tile's bonus-resource modifiers <b>scoped to the working unit type</b> (FreeCol resource
@@ -12214,8 +12235,33 @@ public sealed partial class Game
             {
                 total *= BankruptcyProductionFactor;
             }
+            // A per-colony disaster building-production penalty (FreeCol lossOfBuildingProduction: a timed −50% on the
+            // struck colony's building goods, at DISASTER_PRODUCTION_INDEX) folds on the final output here. Classic
+            // registers none, so ApplyColonyTemporaryModifiers is a no-op and this stays byte-identical (ADR-009).
+            total = ApplyColonyTemporaryModifiers(colony.Id, output.GoodsId, total);
             yield return (Ruleset.StorageIdOf(output.GoodsId), (int)Math.Floor(total + Epsilon));
         }
+    }
+
+    /// <summary>
+    /// Folds the colony-scoped active temporary modifiers targeting <paramref name="goodsId"/> into a colony's
+    /// building-production <paramref name="value"/> (in ascending modifier index) — the FreeCol
+    /// <c>lossOfBuildingProduction</c> disaster penalty (a timed −50% on the struck colony's building goods, at
+    /// <c>DISASTER_PRODUCTION_INDEX</c>). Only <b>colony-scoped</b> modifiers whose colony matches are applied (an
+    /// unscoped game-wide modifier is <em>not</em> folded here — building output does not otherwise run through
+    /// <see cref="ApplyGoodsModifiers(Player, string, int, int?)"/>, so folding unscoped ones would double-count them
+    /// elsewhere). The classic registry is empty, so this returns the value unchanged and the default game is byte-identical.
+    /// </summary>
+    private double ApplyColonyTemporaryModifiers(int colonyId, string goodsId, double value)
+    {
+        double result = value;
+        foreach (TemporaryModifier modifier in _temporaryModifiers
+            .Where(m => m.TargetId == goodsId && m.ColonyId == colonyId && m.AppliesTo(Turn))
+            .OrderBy(m => m.Payload.Index))
+        {
+            result = modifier.Payload.ApplyTo(result);
+        }
+        return result;
     }
 
     /// <summary>
@@ -12224,6 +12270,14 @@ public sealed partial class Game
     /// bankrupt colony makes half its normal building output until the player can pay upkeep again.
     /// </summary>
     private const double BankruptcyProductionFactor = 0.5;
+
+    /// <summary>
+    /// The modifier index a natural-disaster production penalty applies at (FreeCol <c>Modifier.DISASTER_PRODUCTION_INDEX</c>
+    /// = 100) — high, so it folds <b>after</b> the worker/expert (index 30) and founding-father (index 40) modifiers,
+    /// on the final goods production. Used when a <see cref="DisasterEffectKind.ProductionPenalty"/> registers its
+    /// timed <see cref="TemporaryModifier"/>.
+    /// </summary>
+    private const int DisasterProductionIndex = 100;
 
     /// <summary>
     /// Auto-production horse breeding (FreeCol <c>BuildingProductionCalculator</c> autoProduction): a pasture/stables
@@ -12313,7 +12367,7 @@ public sealed partial class Game
         {
             if (Ruleset.StorageIdOf(goodsId) == Colony.FoodId)
             {
-                produced += Math.Max(0, TileYield(owner, colony.WorkerTypeAt(tile), tile, goodsId) + colony.ProductionBonus);
+                produced += Math.Max(0, TileYield(owner, colony.WorkerTypeAt(tile), tile, goodsId, colony.Id) + colony.ProductionBonus);
             }
         }
         return produced - colony.Population * Ruleset.ColonyConstants.FoodPerColonist;
@@ -12773,8 +12827,10 @@ public sealed partial class Game
         {
             string storageId = Ruleset.StorageIdOf(goodsId);
             string workerType = colony.WorkerTypeAt(tile);
-            // The working colonist's type folds its expert bonus into the yield (free colonist → no change).
-            int produced = Math.Max(0, TileYield(owner, workerType, tile, goodsId) + colony.ProductionBonus);
+            // The working colonist's type folds its expert bonus into the yield (free colonist → no change). The
+            // colony id scopes any active per-colony disaster tile-production penalty to this colony (FreeCol
+            // lossOfTileProduction, applied to the struck colony only).
+            int produced = Math.Max(0, TileYield(owner, workerType, tile, goodsId, colony.Id) + colony.ProductionBonus);
             colony.AddGoods(storageId, produced);
             if (storageId == Colony.FoodId)
             {

@@ -29,10 +29,27 @@ namespace CrownAndColony.GameLogic.GameSession;
 /// <param name="Payload">The modifier value/type/target/scope to fold while active (FreeCol the underlying <c>Modifier</c>).</param>
 /// <param name="FirstTurn">The first turn the modifier is active, inclusive (FreeCol <c>Modifier.firstTurn</c>).</param>
 /// <param name="LastTurn">The last turn the modifier is active, inclusive (FreeCol <c>Modifier.lastTurn</c>); it expires the turn <em>after</em> this.</param>
-public sealed record TemporaryModifier(FatherModifier Payload, int FirstTurn, int LastTurn)
+/// <param name="ColonyId">
+/// The colony this modifier is scoped to, or <c>null</c> for a game-wide (player-scoped) modifier. FreeCol attaches a
+/// disaster's timed production penalty to the <em>struck colony</em> (<c>cs.addModifier(this, colony, …)</c>), so it
+/// damps only that colony's output; a colony-scoped modifier folds only when the production folding a value passes the
+/// matching colony id. A <c>null</c> id is unscoped and folds everywhere (a variant/event bonus), preserving the
+/// original behaviour.
+/// </param>
+public sealed record TemporaryModifier(FatherModifier Payload, int FirstTurn, int LastTurn, int? ColonyId = null)
 {
     /// <summary>What this modifier targets (a goods id, a combat target, …) — the <see cref="Payload"/>'s target.</summary>
     public string TargetId => Payload.TargetId;
+
+    /// <summary>
+    /// Whether this modifier applies to production being folded for colony <paramref name="colonyId"/> (or, when
+    /// <paramref name="colonyId"/> is <c>null</c>, to a non-colony fold such as movement/sail time). An unscoped
+    /// modifier (<see cref="ColonyId"/> == <c>null</c>) matches every fold; a colony-scoped one matches only when the
+    /// fold's colony id equals its own — so a disaster penalty on one colony never leaks to another (FreeCol's
+    /// per-colony <c>addModifier</c> scoping).
+    /// </summary>
+    /// <param name="colonyId">The colony whose production is being folded, or <c>null</c> for a non-colony fold.</param>
+    public bool AppliesToColony(int? colonyId) => ColonyId is null || ColonyId == colonyId;
 
     /// <summary>
     /// Whether this modifier is active on <paramref name="turn"/> (FreeCol <c>Feature.appliesTo(Turn)</c>):
@@ -58,14 +75,15 @@ public sealed record TemporaryModifier(FatherModifier Payload, int FirstTurn, in
     /// <param name="template">The modifier value/type/target/scope to apply while active.</param>
     /// <param name="duration">The number of turns the modifier stays active (≥ 1).</param>
     /// <param name="start">The turn the modifier becomes active (its <see cref="FirstTurn"/>).</param>
+    /// <param name="colonyId">The colony to scope the modifier to (FreeCol's per-colony disaster modifier), or <c>null</c> for a game-wide modifier.</param>
     /// <returns>A <see cref="TemporaryModifier"/> bounded to <c>[start, start + duration - 1]</c>.</returns>
-    public static TemporaryModifier MakeTimed(FatherModifier template, int duration, int start)
+    public static TemporaryModifier MakeTimed(FatherModifier template, int duration, int start, int? colonyId = null)
     {
         if (duration < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(duration), duration, "A temporary modifier must last at least one turn.");
         }
 
-        return new TemporaryModifier(template, start, start + duration - 1);
+        return new TemporaryModifier(template, start, start + duration - 1, colonyId);
     }
 }
