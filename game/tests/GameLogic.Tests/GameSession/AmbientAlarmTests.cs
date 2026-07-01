@@ -179,6 +179,53 @@ public class AmbientAlarmTests
     }
 
     [Fact]
+    public void MissionRelief_IsHalvedUnderPocahontas()
+    {
+        // FreeCol folds the mission relief into the SAME per-settlement accumulator as the ambient pressure, then scales
+        // the NET by NATIVE_ALARM_MODIFIER once — so Pocahontas's −50% damps the relief too, not just gains. With no
+        // ambient pressure (net = relief only) an ordinary mission's −10 halves to −5 and an expert's −20 halves to −10.
+        // We measure the relief as (no-mission alarm) − (mission alarm) after one turn: the shared start and decay cancel,
+        // leaving exactly the scaled relief. Pinned high (450) so the decay's value/100 term is identical across runs.
+        const int start = 450;
+        int ordinary = ReliefUnderPocahontas(start, expertMission: false);
+        int expert = ReliefUnderPocahontas(start, expertMission: true);
+        Assert.Equal(5, ordinary);  // −10 relief damped −50% → −5
+        Assert.Equal(10, expert);   // −20 expert relief damped −50% → −10
+    }
+
+    /// <summary>
+    /// The per-turn relief (as a positive magnitude) a resident human mission grants under Pocahontas, isolated by
+    /// differencing a missioned run against a bare run at the same start. Every human on-map unit is disbanded first so
+    /// the ambient proximity pressure is <b>0</b> at every settlement — the net that folds/scales is then the relief
+    /// alone, so the gap is exactly the Pocahontas-scaled relief (−5 ordinary / −10 expert).
+    /// </summary>
+    private static int ReliefUnderPocahontas(int startAlarm, bool expertMission)
+    {
+        static int Run(int startAlarm, bool mission, bool expertMission)
+        {
+            Game game = GameWithPocahontas();
+            // Zero the human's footprint so no settlement gains ambient proximity pressure — isolating the mission relief.
+            foreach (Unit u in game.Units.Where(u => u.IsOnMap && u.OwnerId == game.HumanPlayer.PlayerId).ToList())
+            {
+                game.Disband(u);
+            }
+            NativeSettlement s = game.NativeSettlements.First();
+            int sid = s.Id;
+            game.ChangeNativeAlarm(s, startAlarm - s.Alarm);
+            if (mission)
+            {
+                s.MissionOwnerId = game.HumanPlayer.PlayerId;
+                s.MissionIsExpert = expertMission;
+            }
+            game.EndTurn();
+            return game.NativeSettlements.First(x => x.Id == sid).Alarm;
+        }
+        int withMission = Run(startAlarm, mission: true, expertMission);
+        int withoutMission = Run(startAlarm, mission: false, expertMission: false);
+        return withoutMission - withMission; // shared start + decay cancel; the gap is the scaled relief
+    }
+
+    [Fact]
     public void MissionaryRelief_IsReplayStable()
     {
         // RNG-free: two identical missioned setups stay byte-identical across several turns.

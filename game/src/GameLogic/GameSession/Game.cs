@@ -10957,19 +10957,21 @@ public sealed partial class Game
     private const string SailHighSeasId = "model.modifier.sailHighSeas";
 
     /// <summary>
-    /// Scales a positive native-alarm <em>gain</em> by the human's <see cref="NativeAlarmModifierId"/> modifiers — both
-    /// the elected-father one (Pocahontas −50%) and the player's <b>nation-type advantage</b> (the French
-    /// <c>model.nationType.cooperation</c> −50%), stacked. Gains only — goodwill and decay (negative
-    /// deltas) pass through unchanged. Applied to the per-turn <b>ambient</b> proximity alarm
-    /// (<see cref="ApplyAmbientNativeAlarm"/>), matching FreeCol (<c>ServerPlayer.csNewTurn</c>); combat tension is
-    /// raw (<see cref="ApplyNativeCombatTension"/>).
+    /// Scales a native-alarm <em>net</em> ambient delta by the human's <see cref="NativeAlarmModifierId"/> modifiers —
+    /// both the elected-father one (Pocahontas −50%) and the player's <b>nation-type advantage</b> (the French
+    /// <c>model.nationType.cooperation</c> −50%), stacked. Applied to the per-turn <b>ambient</b> proximity alarm
+    /// (<see cref="ApplyAmbientNativeAlarm"/>), which folds the negative mission relief into the same per-settlement net
+    /// <b>before</b> scaling, so the modifier damps the net once — matching FreeCol (<c>ServerPlayer.csNewTurn</c>, which
+    /// applies <c>NATIVE_ALARM_MODIFIER</c> to the accumulated <c>extra</c> including the mission influence). Both signs
+    /// are scaled: a −50% modifier halves an ambient gain <em>and</em> the mission relief inside the same net, so relief
+    /// is no longer applied 2× too fast. Combat tension is a separate, raw path (<see cref="ApplyNativeCombatTension"/>)
+    /// and never routes through here. Goodwill from trade and the whole-tribe decay are also separate and unscaled.
     /// </summary>
     private int ScaleNativeAlarmGain(int delta)
     {
-        if (delta <= 0)
-        {
-            return delta;
-        }
+        // FreeCol applies NATIVE_ALARM_MODIFIER to the whole accumulated net (gain minus mission relief), not to gains
+        // only — so we scale ANY delta. Combat tension does not come through here (audited: the sole caller is the
+        // ambient pass in ApplyAmbientNativeAlarm; ApplyNativeCombatTension applies its delta raw via ChangeNativeAlarm).
         // Two damping sources, stacked as FreeCol stacks them: the founding-father modifier (Pocahontas −50%) and the
         // player's nation-type advantage (the French — model.nationType.cooperation — −50%); the human's nation is null
         // by default, so a default game folds only what's in Congress.
@@ -13445,10 +13447,13 @@ public sealed partial class Game
     /// human's nearby footprint. Within <c>settlement radius + <see cref="NativeAlarmRadius"/></c> tiles, every human
     /// <b>colony</b> adds <see cref="AlarmTileInUse"/> + its population and every human <b>offensive land unit</b> adds
     /// its type offence; the total is damped by <b>Pocahontas</b>'s <c>nativeAlarmModifier</c> (−50%) — this is that
-    /// modifier's faithful home — then applied. A settlement that holds the human's <b>resident mission</b> also gets a
-    /// recurring <see cref="MissionInfluence"/> (−10, doubled for an expert/jesuit) <b>calming</b> each turn (FreeCol
-    /// <c>ServerPlayer.java:1896-1906</c>); being a negative delta it bypasses <see cref="ScaleNativeAlarmGain"/> (which
-    /// damps gains only) and clamps at 0. Deterministic (no RNG; stable settlement/colony/unit iteration); runs in
+    /// modifier's faithful home. A settlement that holds the human's <b>resident mission</b> also gets a recurring
+    /// <see cref="MissionInfluence"/> (−10, doubled for an expert/jesuit) <b>calming</b> each turn (FreeCol
+    /// <c>ServerPlayer.java:1896-1906</c>); FreeCol folds that relief into the <em>same</em> per-settlement accumulator as
+    /// the ambient pressure and scales the <b>net</b> by <c>NATIVE_ALARM_MODIFIER</c> once, so under Pocahontas/French the
+    /// relief is damped too (−5 ordinary / −10 expert), not applied at full strength — we mirror that here (one
+    /// <see cref="ChangeNativeAlarm(NativeSettlement, int)"/> on <c>ScaleNativeAlarmGain(pressure + relief)</c>), clamped at 0. Deterministic
+    /// (no RNG; stable settlement/colony/unit iteration); runs in
     /// <see cref="EndTurn"/> just before the alarm decay. (Alarm is tracked toward the human only, so foreign powers
     /// exert none.)
     /// </summary>
@@ -13485,17 +13490,20 @@ public sealed partial class Game
             }
             // Tile-control branch (ServerPlayer.java:1887-1892) is a no-op for us — no European work-radius claim model
             // exists (GameMap tracks only native tile ownership); documented as a deviation in the remarks above.
-            if (pressure > 0)
-            {
-                ChangeNativeAlarm(settlement, ScaleNativeAlarmGain(pressure)); // Pocahontas −50% damps the ambient gain
-            }
+
             // Per-turn missionary calming (ServerPlayer.java:1896-1906): a resident human mission eases the settlement's
-            // alarm toward the human each turn — MissionInfluence (−10), doubled for an expert/jesuit. A negative delta,
-            // so it BYPASSES ScaleNativeAlarmGain (which only damps gains) and clamps at 0 via ChangeNativeAlarm.
+            // alarm — MissionInfluence (−10), doubled for an expert/jesuit. FreeCol folds this into the SAME per-settlement
+            // accumulator as the ambient pressure, then applies NATIVE_ALARM_MODIFIER to the NET once. So we compute the
+            // net here (pressure + relief) and scale the whole thing — under Pocahontas/French the relief is halved too,
+            // not applied at full strength (the old two-call path damped the gain but never the relief, calming 2× fast).
+            int net = pressure;
             if (settlement.HasMission && settlement.MissionOwnerId == HumanAlarmChannel)
             {
-                int relief = settlement.MissionIsExpert ? MissionInfluence * 2 : MissionInfluence;
-                ChangeNativeAlarm(settlement, relief);
+                net += settlement.MissionIsExpert ? MissionInfluence * 2 : MissionInfluence;
+            }
+            if (net != 0)
+            {
+                ChangeNativeAlarm(settlement, ScaleNativeAlarmGain(net)); // Pocahontas/French −50% damps the whole net; clamps at 0
             }
         }
     }
