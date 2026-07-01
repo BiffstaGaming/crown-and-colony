@@ -19,20 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
-## 2026-07-01 — Monarch SUPPORT_LAND difficulty-scaled tier composition (0-4) ✅
+## 2026-07-01 — Parity scope+build wave 3: 6 items shipped (2 parallel streams) + 6 flips/corrections → 947 Yes ✅
 
-**Requested (Chris):** implement `86d3fq0c7` — monarch difficulty-scaled support size, FreeCol tiers 0-4 (isolated worktree stream, single commit + tests + doc).
+**Requested (Chris):** start the recommended parity scope+build wave; test at the end; parallel streams to knock off many items with one test batch.
 **Did:**
-- **`Game.Monarch.cs` `GetSupport(naval:false)`** rewritten to `switch` `MonarchSupportLevel` as a **tier index (0-4)** into FreeCol's five fixed compositions (Monarch.java:597-658): tier 4 = 1 artillery + 2 dragoon, tier 3 = 2 dragoon + 1 soldier, tier 2 = 2 dragoon, tier 1 = 1 dragoon + 1 soldier, tier 0 = 1 soldier, **any other value (incl. 6) = no units** (FreeCol's `default: break`). Added `SupportArtilleryUnitTypeId` const for the tier-4 bombard.
-- **Renamed** the misleading `MonarchOptions.SupportLandMountedUnits` (it was read as a *count*, correct only at medium by coincidence) → **`MonarchSupportLevel`**; updated its XML doc, the `Ruleset.cs` read site, `difficulty.md`, and every test reference.
-- **Tests:** +`SupportLand_DeliversTheTierComposition` Theory over tiers 0-4 (exact dragoon/soldier/artillery counts + no stray units), +`SupportLand_OutOfRangeTier_GrantsNoUnits` (value 6 → zero), fixed the parse test's expectation to the renamed field, kept the existing medium two-dragoon test green.
-- **Doc:** `monarchy.md` both layers (plain-English tier list + technical `getSupport` mapping) + changelog row + Last-verified header; `difficulty.md` field rename.
-**Status:** **full L1/L2 2541 green + soak 5 green** (soak proves tier 2 = medium default is byte-identical → stream 0 / save bytes unchanged). Committed in isolated worktree for parent cherry-pick.
-**Changed:** `Game.Monarch.cs`, `MonarchOptions.cs`, `Ruleset.cs`, `MonarchTests.cs`, `docs/systems/monarchy.md`, `docs/systems/difficulty.md`. Single commit in this isolated worktree (SHA reported in the stream's final message — the parent cherry-picks it).
-**Decisions:** left `feature-parity.md` untouched (parent owns the matrix); no save-version bump (difficulty is ruleset-derived, no persisted state changed). Tier-4 artillery uses the default (null) role per FreeCol's `DEFAULT_ROLE_ID` bombard mapping.
-**Scheduled next (parent's steer):** parent to cherry-pick this commit; then continue the parity backlog wave over remaining No/Partial rows (`86d3fq0c7` moves to Partial→Yes in the parent's matrix pass).
-**Follow-ups:** — (the SUPPORT_LAND row's own gate note is already FreeCol-faithful from `86d3fq0bj`).
-**Needs you:** Nothing — all green, byte-identical at the classic default.
+- **Scoped 17 candidates** (read-only fan-out workflows; matrix chronically stale). → 4 real builds + 2 already-built free flips + 4 reference corrections; 4 deferred with rationale.
+- **Ran 2 genuinely-parallel worktree build streams** (disjoint files, one test batch at the end):
+  - **ECON** (`GameOptions`/`Ruleset`/`Game.cs`/`BuildingType`): customsOnCoast coastal-build gate (`86d3fpyx9`), enhancedTradeRoutes option wired to the ruleset (`86d3fpz6g`), experts-have-connections factory floor (`86d3fpyja`, soak-critical — option-gated OFF in classic).
+  - **MONARCH** (`Game.Monarch`/`MonarchOptions`): monarchSupport 0-4 tier compositions (`86d3fq0c7`, renamed the misleading count-field `SupportLandMountedUnits`→`MonarchSupportLevel`).
+- **6 free flips / already-built (verified vs code+tests):** building-upkeep (`86d3fpyfu`), bankruptcy (`86d3fpygv`), Hessian mercenary (`86d3fq0a9`), REF-entry-tile (`86d3fq0z5`), ship-trade-penalty phantom (`86d3fpz32`). Two rested on **false matrix premises I verified against FreeCol source myself** (543 phantom = native penalty already at row 704; 862 Hessian uses the land-only generator — `InGameController.java:783`).
+- **4 reference corrections** (FreeCol column was wrong): offensive-auto-equip (`86d3fpxa3`), naval-support-unit (`86d3fpy8w`), settlement-distance (`86d3fpy92`) all FreeCol→No; King's-naval note (frigate, not man-o-war).
+- **Integrated** both streams (cherry-pick, clean auto-merge on `Ruleset.cs`, mojibake scan clean), reconciled the matrix in one pass.
+- **Adversarial review (5 dims × verify): 0 serious / 0 minor / 5 nits.** Fixed 2 (dangling doc slug, over-stated "soak-verified" wording); backlogged 3 variant-only nits (`86d3hjz87`).
+**Status:** **one test batch, integrated tree: 2552 L1/L2 + 5 soak green** · full solution builds clean · **CI green both jobs** (L1+L2 + L3, run 28500698599) · pushed (`f04d5a7`). **Totals → 947 Yes / 31 Partial / 37 No** (+6 Yes).
+**Changed:** `GameOptions.cs`, `Ruleset.cs`, `Game.cs`, `Game.Monarch.cs`, `BuildingType.cs`, `MonarchOptions.cs`, 4 test files; docs `custom-house`/`trade-routes`/`colonies`/`monarchy`/`difficulty`/`feature-parity`. Commits `4a06c27`, `42d4bfd`, `25b64b5`, `a19add7`, `9e5400a`, `f04d5a7`.
+**Decisions:** scoped-before-building (banked 6 free flips/corrections vs 6 built); 2 disjoint-file worktree streams in true parallel + verified the trickiest flips against FreeCol myself rather than trusting the agents; **deferred `86d3fq0eg` naval-mercenary** on a discovered FreeCol-read conflict (periodic Hessian uses the land-only generator; the man-o-war fixed force is DoI-only — `InGameController.java:783` vs `:1553`), trace captured on the task; kept 3 high-risk/low-value items deferred (yearly-market-drift, MOUNDS-genstamp, native-re-stancing). All 3 new options default-OFF → classic byte-identical (soak-proven).
+**Scheduled next (your steer):** the next parity scope+build wave over the remaining **37 No / 31 Partial** (proven, low-risk) — my recommendation — OR a focused-stream gap: `86d3fq0eg` naval-mercenary (do the Hessian-vs-DoI FreeCol trace first), native WAR-stance uprising (`86d3fpzqf`), or market-propagation (`86d3fpyx3`, determinism-sensitive).
+**Follow-ups:** variant-robustness nits (`86d3hjz87`, low); the 3 deferred items stay Backlog with rationale on-task.
+**Needs you:** review the wave (all green, none playtested). Visible changes are option-gated (off in classic) so default play is unchanged; monarch force compositions differ only at non-medium difficulty.
 
 ---
 
