@@ -145,6 +145,74 @@ public class TradeRouteTests
         Assert.Equal(40, loaded.Colonies.Single(c => c.Id == beta.Id).ExportOf(Sugar).ImportLevel);
     }
 
+    // ───────────────────────── Per-type compact-cargo load cap (86d3fpz2g) ─────────────────────────
+
+    /// <summary>
+    /// A 3-tile coastal strip — plains port Alpha at (0,0) with a <b>warehouse expansion</b> (capacity 300) pre-stocked
+    /// with 250 sugar, ocean at (1,0), high seas at (2,0) — and a human <b>galleon</b> (6-slot hold) on the ocean beside
+    /// Alpha. The big depot lets the 250 survive end-of-turn warehouse spillage, and the galleon's large hold means the
+    /// per-type load cap, not the hold, is what binds.
+    /// </summary>
+    private static Game BigDepotWithGalleon(out Unit galleon, out Colony alpha)
+    {
+        var save = new SaveGame
+        {
+            Turn = 1,
+            RandomStateValue = 1,
+            RandomIncrement = 1,
+            MapWidth = 3,
+            MapHeight = 1,
+            Terrain = ["model.tile.plains", "model.tile.ocean", "model.tile.highSeas"],
+            Units = [new SavedUnit(1, Galleon, 1, 0, 18)], // galleon on the ocean tile, adjacent to Alpha
+            Explored = [0, 1, 2],
+            Colonies =
+            [
+                new SavedColony(1, "Alpha", 0, 0, 1, new Dictionary<string, int> { [Sugar] = 250 },
+                    Buildings: ["model.building.warehouseExpansion"]),
+            ],
+        };
+        Game game = save.Restore(Classic);
+        galleon = game.Units[0];
+        alpha = game.Colonies[0];
+        return game;
+    }
+
+    [Fact]
+    public void AutoLoad_CapsEachGoodAtOneCargoSlotPerListing_NotTheWholeHold()
+    {
+        // FreeCol getCompactCargo: the auto-load target for a good is CargoSlotSize(100) × (times it is listed at the
+        // stop). Alpha holds 250 sugar and the galleon has a 6-slot hold (600) — before this fix it grabbed the whole
+        // hold (all 250); now, sugar listed ONCE tops the galleon up to exactly 100. One EndTurn loads-and-advances at
+        // Alpha but doesn't reach Beta, so we read the load straight off the carrier before any delivery.
+        Game game = BigDepotWithGalleon(out Unit galleon, out Colony alpha);
+
+        TradeRoute route = game.CreateTradeRoute(game.HumanPlayer, "One listing",
+            [new TradeRouteStop(alpha.Id, [Sugar]), TradeRouteStop.Europe([])]); // sugar listed once, deliver in Europe
+        game.AssignTradeRoute(galleon, route.Id);
+
+        game.EndTurn();
+
+        Assert.Equal(100, galleon.CargoOf(Sugar)); // exactly one slot, not the whole 600-unit hold
+        Assert.Equal(150, alpha.StoreOf(Sugar));   // 250 − 100 left behind
+    }
+
+    [Fact]
+    public void AutoLoad_ListingAGoodTwice_RaisesItsCapToTwoCargoSlots()
+    {
+        // Listing sugar TWICE at the stop doubles its compact-cargo target to 200 (CargoSlotSize × 2). The galleon's
+        // hold is far bigger, so the cap — not the hold — binds at 200. Proves the cap scales with the listing count.
+        Game game = BigDepotWithGalleon(out Unit galleon, out Colony alpha);
+
+        TradeRoute route = game.CreateTradeRoute(game.HumanPlayer, "Two listings",
+            [new TradeRouteStop(alpha.Id, [Sugar, Sugar]), TradeRouteStop.Europe([])]); // sugar listed twice
+        game.AssignTradeRoute(galleon, route.Id);
+
+        game.EndTurn();
+
+        Assert.Equal(200, galleon.CargoOf(Sugar)); // two slots' worth
+        Assert.Equal(50, alpha.StoreOf(Sugar));    // 250 − 200
+    }
+
     // ───────────────────────── Europe stops (86d3e4bcp, GAP B) ─────────────────────────
 
     private const string Galleon = "model.unit.galleon";

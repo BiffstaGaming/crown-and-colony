@@ -6469,14 +6469,16 @@ public sealed partial class Game
                 SellShipCargo(player, carrier, goodsId, amount); // sell what this stop doesn't want
             }
         }
-        foreach (string goodsId in stop.LoadGoodsIds)
+        foreach (string goodsId in stop.LoadGoodsIds.Distinct())
         {
             if (!player.Market.IsTradeable(goodsId))
             {
                 continue;
             }
             int partial = SlotsFor(carrier.CargoOf(goodsId)) * CargoSlotSize - carrier.CargoOf(goodsId); // slack in the current stack
-            int room = partial + CargoSlotsFree(carrier) * CargoSlotSize;
+            // FreeCol getCompactCargo caps the buy target at CargoSlotSize × (times listed) − what's already aboard, not
+            // the whole free hold (Ref TradeRouteStop.java:164; InGameController.java:2431).
+            int room = Math.Min(partial + CargoSlotsFree(carrier) * CargoSlotSize, CompactCargoRoom(carrier, stop, goodsId));
             // buy as much as fits AND the treasury affords (chunked price rises as we drain the market) — binary-narrow the max
             int buy = MaxAffordableBuy(player, carrier, goodsId, room);
             if (buy > 0)
@@ -6526,16 +6528,33 @@ public sealed partial class Game
                 UnloadToColony(carrier, colony, goodsId, deliver); // deliver what this stop doesn't want, up to the import cap
             }
         }
-        foreach (string goodsId in stop.LoadGoodsIds)
+        foreach (string goodsId in stop.LoadGoodsIds.Distinct())
         {
             int available = colony.StoreOf(goodsId);
             int partial = SlotsFor(carrier.CargoOf(goodsId)) * CargoSlotSize - carrier.CargoOf(goodsId); // slack in the current stack
-            int load = Math.Min(available, partial + CargoSlotsFree(carrier) * CargoSlotSize);
+            int holdRoom = partial + CargoSlotsFree(carrier) * CargoSlotSize;
+            // FreeCol getCompactCargo: the auto-load TARGET for a good is CargoSlotSize × (times it is listed at this
+            // stop), minus what's already aboard — not the whole free hold. We honour that per-type cap so a good listed
+            // once tops up to 100, listed twice to 200, etc. (Ref TradeRouteStop.java:164; InGameController.java:2293.)
+            int load = Math.Min(Math.Min(available, holdRoom), CompactCargoRoom(carrier, stop, goodsId));
             if (load > 0)
             {
                 LoadFromColony(carrier, colony, goodsId, load);
             }
         }
+    }
+
+    /// <summary>
+    /// The remaining amount of <paramref name="goodsId"/> a trade-route auto-load should top the <paramref name="carrier"/>
+    /// up to at <paramref name="stop"/>, mirroring FreeCol <c>TradeRouteStop.getCompactCargo</c> (each listing of a goods
+    /// type contributes <see cref="CargoSlotSize"/> to that type's load target, duplicates accumulating), less what the
+    /// carrier already holds of it. So a good listed once auto-loads up to 100 units, listed twice up to 200, and so on —
+    /// never the whole free hold. Never negative. (Ref <c>TradeRouteStop.java:164</c>; <c>InGameController.java:2293/2431</c>.)
+    /// </summary>
+    private int CompactCargoRoom(Unit carrier, TradeRouteStop stop, string goodsId)
+    {
+        int listings = stop.LoadGoodsIds.Count(g => g == goodsId);
+        return Math.Max(0, listings * CargoSlotSize - carrier.CargoOf(goodsId));
     }
 
     // ----- Trade-route validation (86d3drn0j) -----------------------------------------------------------------
