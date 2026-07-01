@@ -344,16 +344,18 @@ public class ColonyReportPanelTests
     }
 
     [TestCase]
-    public async Task RequirementsTab_RendersProductionShortage_AndTileSuggestion_Lines()
+    public async Task RequirementsTab_RendersProductionShortageWarning()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
         await runner.SimulateFrames(2);
         var controller = (GameController)runner.Scene();
 
-        // Found a colony, unassign its tile workers (so nothing makes cotton), staff the weaver's house, and seed cotton
-        // via the save layer — the weaver then burns cotton the colony no longer produces, i.e. a net-negative input →
-        // the production-shortage warning. The founded colony's remaining worked/centre tiles also carry a plow/road
-        // yield gain → the tile-improvement suggestion. Both come from the Game.Reports oracles this commit added.
+        // Found a colony, unassign its tile workers (freeing the sole colonist, and leaving nothing making cotton), staff
+        // the weaver's house, and seed cotton via the save layer — the weaver then burns cotton the colony no longer
+        // produces, i.e. a net-negative input → the production-shortage warning (Game.ColonyProductionWarnings). This
+        // asserts the panel RENDERS a requirements warning; the tile-improvement suggestion oracle
+        // (Game.ColonyTileImprovementSuggestions) is covered by ColonyRequirementsAdvisorTests (L1) and renders through
+        // this same RequirementWarning_{id} path — a pop-1 colony can't staff both a tile and a building at once.
         Game game = GetGame(controller);
         Colony founded = game.FoundColony(game.Units[0]);
         foreach (Position tile in founded.TileWorkers.Keys.ToList())
@@ -381,11 +383,10 @@ public class ColonyReportPanelTests
         var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
         AssertThat(dynamic.GetNodeOrNull($"Requirements_{colony.Id}")).IsNotNull();
 
-        // Gather every warning label under the requirements dynamic view and assert both new kinds render.
+        // Gather every warning label under the requirements dynamic view and assert the production-shortage kind renders.
         var warningTexts = dynamic.FindChildren("RequirementWarning_*", recursive: true, owned: false)
             .OfType<Label>().Select(l => l.Text).ToList();
         AssertThat(warningTexts.Any(t => t.Contains("production is short of"))).IsTrue();
-        AssertThat(warningTexts.Any(t => t.Contains("would yield more with") || t.Contains("unexplored"))).IsTrue();
     }
 
     [TestCase]

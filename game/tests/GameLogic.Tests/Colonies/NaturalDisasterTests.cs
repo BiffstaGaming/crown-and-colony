@@ -163,7 +163,9 @@ public class NaturalDisasterTests
         int full = game.TileYield(game.HumanPlayer, Free, tile, Sugar, colony.Id);
         Assert.True(full > 0, "need a tile that actually produces sugar");
 
-        // FreeCol makeTimedModifier at the strike turn: window [Turn, Turn+2] — active for three colony turns.
+        // Direct MakeTimed contract: MakeTimed(duration:3) is active [Turn, Turn+2] (3 inclusive turns). (ApplyDisaster
+        // itself passes the spec duration + 1 so a spec-duration-3 disaster matches FreeCol's [Turn, Turn+3] — asserted
+        // end-to-end in ApplyDisaster_WiresTheProductionPenalty below; here we exercise the raw fold/strip mechanic.)
         var payload = new FatherModifier(Sugar, ModifierType.Percentage, -50, 100);
         game.RegisterTemporaryModifier(TemporaryModifier.MakeTimed(payload, duration: 3, start: game.Turn, colonyId: colony.Id));
 
@@ -222,5 +224,8 @@ public class NaturalDisasterTests
         Assert.NotEmpty(scoped);
         Assert.All(scoped, m => Assert.Equal(-50, m.Payload.Value));
         Assert.All(scoped, m => Assert.Equal(ModifierType.Percentage, m.Payload.Type));
+        // FreeCol-faithful window: makeTimedModifier lastTurn = start + duration (the classic disaster spec duration is 3),
+        // so the inclusive window spans FirstTurn..FirstTurn+3 (ApplyDisaster passes mod.Duration + 1).
+        Assert.All(scoped, m => Assert.Equal(3, m.LastTurn - m.FirstTurn));
     }
 }

@@ -198,14 +198,17 @@ public sealed partial class Game
     public readonly record struct ColonyProductionWarning(string OutputGoodsId, string InputGoodsId);
 
     /// <summary>
-    /// The <b>production-shortage warnings</b> for a colony (a read-only oracle, ADR-006; FreeCol
-    /// <c>ReportRequirementsPanel.checkColony</c>'s "not enough input" branch — a building whose
-    /// <c>ProductionInfo</c> is <c>!atMaximumProduction()</c> warns for each of its input goods). A manned,
-    /// non-teaching building making a good is flagged when the colony's whole-colony <b>net</b> production of one of
-    /// that building's input goods is <b>negative</b> (it burns more than it makes, so the building runs below its
-    /// potential output). Reuses <see cref="ColonyProductionSummary"/> (the same tested figure the production overview
-    /// shows) for the net; the panel stays rules-free. One warning per distinct (output, input) pair, in building /
-    /// production order. Pure and RNG-free; never mutates, never persisted.
+    /// The <b>production-shortage warnings</b> for a colony (a read-only oracle, ADR-006; the analogue of FreeCol
+    /// <c>ReportRequirementsPanel.checkColony</c>'s "not enough input" branch). A manned, non-teaching building making a
+    /// good is flagged when the colony's whole-colony <b>net</b> production of one of that building's input goods is
+    /// <b>negative</b> (the colony burns more than it makes). <b>Faithful-subset approximation:</b> FreeCol gates this on
+    /// each building's own <c>ProductionInfo.!atMaximumProduction()</c> (that specific building throttled this turn),
+    /// whereas we use the colony-wide net &lt; 0 as a proxy — cheaper and reuses the tested
+    /// <see cref="ColonyProductionSummary"/> figure, but it diverges at the edges (a building running at full output off a
+    /// large stored stockpile of a net-negative input is flagged here though FreeCol would not, and a building throttled
+    /// while the colony net is ≥ 0 is not flagged though FreeCol would). Acceptable for an advisory hint; the panel stays
+    /// rules-free. One warning per distinct (output, input) pair, in building / production order. Pure, RNG-free, never
+    /// persisted.
     /// </summary>
     /// <param name="colony">The colony to check.</param>
     /// <returns>The production-shortage warnings (empty when every manned building has its inputs covered).</returns>

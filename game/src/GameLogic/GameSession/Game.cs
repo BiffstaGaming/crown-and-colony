@@ -8413,7 +8413,11 @@ public sealed partial class Game
                             continue; // a permanent penalty is a different (bankruptcy) mechanism, handled via Player.Bankrupt
                         }
                         var payload = new FatherModifier(mod.GoodsId, mod.Type, mod.Value, DisasterProductionIndex);
-                        RegisterTemporaryModifier(TemporaryModifier.MakeTimed(payload, mod.Duration, Turn, colony.Id));
+                        // FreeCol Modifier.makeTimedModifier sets lastTurn = start + duration (inclusive), i.e. a window
+                        // of duration+1 turns; MakeTimed's window is [start, start+duration-1], so pass mod.Duration + 1
+                        // to match FreeCol exactly ([Turn, Turn+duration]). The strike turn's production has already run
+                        // (disasters resolve after RunColonyTurn), so a spec duration of 3 penalises the next 3 cycles.
+                        RegisterTemporaryModifier(TemporaryModifier.MakeTimed(payload, mod.Duration + 1, Turn, colony.Id));
                         productionPenalty = true;
                     }
                     break;
