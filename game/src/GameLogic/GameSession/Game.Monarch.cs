@@ -59,6 +59,8 @@ public sealed partial class Game
     private const string MercenaryUnitTypeId = "model.unit.veteranSoldier";
     private const string MercenarySoldierRoleId = "model.role.soldier";
     private const string MercenaryDragoonRoleId = "model.role.dragoon";
+    // SUPPORT_LAND tier 4 delivers a piece of artillery in its default role (FreeCol bombardTypes → BOMBARD, DEFAULT_ROLE_ID).
+    private const string SupportArtilleryUnitTypeId = "model.unit.artillery";
     private const string NavalSupportUnitTypeId = "model.unit.frigate"; // SUPPORT_SEA free naval aid (faithful-subset naval supportUnit)
 
     // Royal Expeditionary Force (item 6) unit/role identities (the counts are difficulty-driven, see MonarchOpts).
@@ -498,13 +500,41 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// The free military aid a SUPPORT action grants (FreeCol <c>Monarch.getSupport</c>): SUPPORT_SEA = one naval
-    /// support ship; SUPPORT_LAND at the medium support level (2) = two mounted veterans. RNG-free at medium (the
-    /// composition is fixed).
+    /// The free military aid a SUPPORT action grants (FreeCol <c>Monarch.getSupport</c>). SUPPORT_SEA = one naval
+    /// support ship. SUPPORT_LAND switches the difficulty <see cref="MonarchOptions.MonarchSupportLevel"/> <b>tier</b>
+    /// (0-4, <em>not</em> a count) into one of five fixed compositions of veteran soldiers (armed = soldier role, mounted =
+    /// dragoon role) plus artillery at the top tier:
+    /// <list type="bullet">
+    /// <item>tier 4 → 1 artillery + 2 dragoon</item>
+    /// <item>tier 3 → 2 dragoon + 1 soldier</item>
+    /// <item>tier 2 → 2 dragoon <em>(the classic medium default — byte-identical to the old two-dragoon grant)</em></item>
+    /// <item>tier 1 → 1 dragoon + 1 soldier</item>
+    /// <item>tier 0 → 1 soldier</item>
+    /// <item>any other value (incl. 6) → no units (FreeCol's <c>default: break</c>)</item>
+    /// </list>
+    /// RNG-free (each tier is a single fixed candidate unit/role set at the classic default). See monarchy.md §2.
     /// </summary>
-    internal IReadOnlyList<ForceEntry> GetSupport(bool naval) => naval
-        ? [new ForceEntry(NavalSupportUnitTypeId, null, 1)]
-        : [new ForceEntry(MercenaryUnitTypeId, MercenaryDragoonRoleId, MonarchOpts.SupportLandMountedUnits)];
+    internal IReadOnlyList<ForceEntry> GetSupport(bool naval)
+    {
+        if (naval)
+        {
+            return [new ForceEntry(NavalSupportUnitTypeId, null, 1)];
+        }
+
+        ForceEntry Dragoon(int n) => new(MercenaryUnitTypeId, MercenaryDragoonRoleId, n);
+        ForceEntry Soldier(int n) => new(MercenaryUnitTypeId, MercenarySoldierRoleId, n);
+        ForceEntry Artillery(int n) => new(SupportArtilleryUnitTypeId, null, n);
+
+        return MonarchOpts.MonarchSupportLevel switch
+        {
+            4 => [Artillery(1), Dragoon(2)],
+            3 => [Dragoon(2), Soldier(1)],
+            2 => [Dragoon(2)],
+            1 => [Dragoon(1), Soldier(1)],
+            0 => [Soldier(1)],
+            _ => [], // any other value (incl. 6) grants nothing — FreeCol's default branch
+        };
+    }
 
     /// <summary>Delivers a free force to the human's Europe dock (the King's military support — no gold cost).</summary>
     private void GrantSupport(IReadOnlyList<ForceEntry> force)

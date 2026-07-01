@@ -614,7 +614,8 @@ public class MonarchTests
     public void SupportLand_GrantsTwoMountedVeterans_ButIsNeverOfferedAtMedium()
     {
         Game game = FoundedGame();
-        // The handler delivers the level-2 composition (2 mounted veterans), free.
+        // The handler delivers the tier-2 composition (2 mounted veterans), free — the classic medium default,
+        // byte-identical to the pre-tier grant (this guards the determinism/soak invariant).
         game.DispatchMonarchAction(MonarchAction.SupportLand, new Pcg32Random(1));
         Assert.Equal(2, game.UnitsInEurope.Count(u =>
             u.Type.Id == "model.unit.veteranSoldier" && u.RoleId == "model.role.dragoon"));
@@ -622,6 +623,51 @@ public class MonarchTests
         // …but the chooser never offers it at medium difficulty (dx == 3).
         game.AttackedByPrivateers = true;
         Assert.DoesNotContain(MonarchAction.SupportLand, game.GetMonarchActionChoices(50).Select(c => c.Action));
+    }
+
+    // ── SUPPORT_LAND is a difficulty-scaled TIER (0-4), not a unit count (86d3fq0c7) ──────────────────────────
+    //
+    // FreeCol's Monarch.getSupport switches model.option.monarchSupport (the TIER index) into one of five fixed
+    // force compositions; our monarchSupport option carries the same tier. These prove each tier delivers FreeCol's
+    // exact composition (counts of veteranSoldier in dragoon vs soldier role, plus artillery at the top tier), and
+    // that an out-of-range tier (FreeCol's `default: break`) grants no units at all.
+
+    /// <summary>
+    /// Each SUPPORT_LAND tier delivers FreeCol's exact force to the Europe dock (Monarch.java:597-658):
+    /// tier 4 = 1 artillery + 2 dragoon, tier 3 = 2 dragoon + 1 soldier, tier 2 = 2 dragoon (the medium default),
+    /// tier 1 = 1 dragoon + 1 soldier, tier 0 = 1 soldier.
+    /// </summary>
+    [Theory]
+    [InlineData(4, 2, 0, 1)] // tier 4: 2 dragoon, 0 soldier, 1 artillery
+    [InlineData(3, 2, 1, 0)] // tier 3: 2 dragoon, 1 soldier
+    [InlineData(2, 2, 0, 0)] // tier 2: 2 dragoon (classic medium)
+    [InlineData(1, 1, 1, 0)] // tier 1: 1 dragoon, 1 soldier
+    [InlineData(0, 0, 1, 0)] // tier 0: 1 soldier
+    public void SupportLand_DeliversTheTierComposition(int tier, int dragoons, int soldiers, int artillery)
+    {
+        Game game = FoundedGame(RulesetWithMonarch(("model.option.monarchSupport", tier.ToString())));
+        game.DispatchMonarchAction(MonarchAction.SupportLand, new Pcg32Random(1));
+
+        Assert.Equal(dragoons, game.UnitsInEurope.Count(u =>
+            u.Type.Id == "model.unit.veteranSoldier" && u.RoleId == "model.role.dragoon"));
+        Assert.Equal(soldiers, game.UnitsInEurope.Count(u =>
+            u.Type.Id == "model.unit.veteranSoldier" && u.RoleId == "model.role.soldier"));
+        Assert.Equal(artillery, game.UnitsInEurope.Count(u => u.Type.Id == "model.unit.artillery"));
+        // No stray units of any other type/role were delivered.
+        Assert.Equal(dragoons + soldiers + artillery, game.UnitsInEurope.Count());
+    }
+
+    /// <summary>
+    /// An out-of-range monarchSupport tier (e.g. 6 — FreeCol has no <c>case 6</c>, so it hits <c>default: break</c>)
+    /// grants ZERO units. This is the fix for the old bug that treated the value as a mounted-dragoon count (86d3fq0c7).
+    /// </summary>
+    [Fact]
+    public void SupportLand_OutOfRangeTier_GrantsNoUnits()
+    {
+        Game game = FoundedGame(RulesetWithMonarch(("model.option.monarchSupport", "6")));
+        Assert.Empty(game.GetSupport(naval: false)); // FreeCol default: break → empty force
+        game.DispatchMonarchAction(MonarchAction.SupportLand, new Pcg32Random(1));
+        Assert.Empty(game.UnitsInEurope); // nothing arrives on the dock
     }
 
     [Fact]
@@ -798,7 +844,7 @@ public class MonarchTests
         Assert.Equal(65, mon.MaximumTaxRate);
         Assert.Equal(2, mon.TaxAdjustment);
         Assert.Equal(65, mon.MercenaryPricePercent);
-        Assert.Equal(2, mon.SupportLandMountedUnits);
+        Assert.Equal(2, mon.MonarchSupportLevel); // tier index (not a count): medium = tier 2 = two dragoons
         Assert.Equal(31, mon.RefBaseInfantry);
         Assert.Equal(15, mon.RefBaseCavalry);
         Assert.Equal(14, mon.RefBaseArtillery);
@@ -829,7 +875,9 @@ public class MonarchTests
         Assert.Equal(75, mon.MaximumTaxRate);
         Assert.Equal(3, mon.TaxAdjustment);
         Assert.Equal(80, mon.MercenaryPricePercent);
-        Assert.Equal(6, mon.SupportLandMountedUnits);
+        // monarchSupport is a tier INDEX (not a count): 6 is out of FreeCol's 0-4 range, so the option parses to the
+        // raw value 6 here (proving the id is read) and GetSupport(naval:false) grants ZERO units for it (see below).
+        Assert.Equal(6, mon.MonarchSupportLevel);
     }
 
     /// <summary>The REF base counts are read from the nested <c>refSize</c> unitListOption (each block's <c>number</c>).</summary>

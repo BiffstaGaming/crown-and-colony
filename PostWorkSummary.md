@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-01 — Monarch SUPPORT_LAND difficulty-scaled tier composition (0-4) ✅
+
+**Requested (Chris):** implement `86d3fq0c7` — monarch difficulty-scaled support size, FreeCol tiers 0-4 (isolated worktree stream, single commit + tests + doc).
+**Did:**
+- **`Game.Monarch.cs` `GetSupport(naval:false)`** rewritten to `switch` `MonarchSupportLevel` as a **tier index (0-4)** into FreeCol's five fixed compositions (Monarch.java:597-658): tier 4 = 1 artillery + 2 dragoon, tier 3 = 2 dragoon + 1 soldier, tier 2 = 2 dragoon, tier 1 = 1 dragoon + 1 soldier, tier 0 = 1 soldier, **any other value (incl. 6) = no units** (FreeCol's `default: break`). Added `SupportArtilleryUnitTypeId` const for the tier-4 bombard.
+- **Renamed** the misleading `MonarchOptions.SupportLandMountedUnits` (it was read as a *count*, correct only at medium by coincidence) → **`MonarchSupportLevel`**; updated its XML doc, the `Ruleset.cs` read site, `difficulty.md`, and every test reference.
+- **Tests:** +`SupportLand_DeliversTheTierComposition` Theory over tiers 0-4 (exact dragoon/soldier/artillery counts + no stray units), +`SupportLand_OutOfRangeTier_GrantsNoUnits` (value 6 → zero), fixed the parse test's expectation to the renamed field, kept the existing medium two-dragoon test green.
+- **Doc:** `monarchy.md` both layers (plain-English tier list + technical `getSupport` mapping) + changelog row + Last-verified header; `difficulty.md` field rename.
+**Status:** **full L1/L2 2541 green + soak 5 green** (soak proves tier 2 = medium default is byte-identical → stream 0 / save bytes unchanged). Committed in isolated worktree for parent cherry-pick.
+**Changed:** `Game.Monarch.cs`, `MonarchOptions.cs`, `Ruleset.cs`, `MonarchTests.cs`, `docs/systems/monarchy.md`, `docs/systems/difficulty.md`. Single commit in this isolated worktree (SHA reported in the stream's final message — the parent cherry-picks it).
+**Decisions:** left `feature-parity.md` untouched (parent owns the matrix); no save-version bump (difficulty is ruleset-derived, no persisted state changed). Tier-4 artillery uses the default (null) role per FreeCol's `DEFAULT_ROLE_ID` bombard mapping.
+**Scheduled next (parent's steer):** parent to cherry-pick this commit; then continue the parity backlog wave over remaining No/Partial rows (`86d3fq0c7` moves to Partial→Yes in the parent's matrix pass).
+**Follow-ups:** — (the SUPPORT_LAND row's own gate note is already FreeCol-faithful from `86d3fq0bj`).
+**Needs you:** Nothing — all green, byte-identical at the classic default.
+
+---
+
 ## 2026-07-01 — QA: L4 golden pipeline + TradeAtRivalColony L3 flake — both shipped ✅
 
 **Requested (Chris):** "L4 Golden Pipeline and TradeAtRivalColony. Get to it" — the two open QA tasks.

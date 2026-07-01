@@ -21,9 +21,12 @@ namespace CrownAndColony.GameLogic.Specification;
 /// The percentage of the European purchase price the King charges for a mercenary (spec <c>model.option.mercenaryPrice</c>;
 /// medium 65 → offer price = europeanPurchasePrice × 65%).
 /// </param>
-/// <param name="SupportLandMountedUnits">
-/// The number of mounted veterans a SUPPORT_LAND grant delivers at this level (spec <c>model.option.monarchSupport</c>;
-/// medium 2). SUPPORT_LAND is never offered at medium (dx == 3), but the handler honours the level for fidelity.
+/// <param name="MonarchSupportLevel">
+/// The SUPPORT_LAND difficulty <b>tier index</b> (0-4) — <em>not</em> a unit count (spec <c>model.option.monarchSupport</c>;
+/// classic per-difficulty 4/3/2/1/0, medium = 2). FreeCol's <c>Monarch.getSupport</c> switches this tier into one of five
+/// fixed force compositions (tier 4 = 1 artillery + 2 dragoon; tier 3 = 2 dragoon + 1 soldier; tier 2 = 2 dragoon;
+/// tier 1 = 1 dragoon + 1 soldier; tier 0 = 1 soldier); any other value (incl. 6) grants no units. SUPPORT_LAND is never
+/// offered at medium (dx == 3), but the handler honours the tier for fidelity.
 /// </param>
 /// <param name="ArrearsFactor">
 /// The boycott back-tax multiplier — a tea-party boycott sets the good's arrears to <c>salePrice × ArrearsFactor</c>
@@ -50,7 +53,7 @@ public sealed record MonarchOptions(
     int MaximumTaxRate,
     int TaxAdjustment,
     int MercenaryPricePercent,
-    int SupportLandMountedUnits,
+    int MonarchSupportLevel,
     int ArrearsFactor,
     int RefBaseInfantry,
     int RefBaseCavalry,
@@ -65,7 +68,7 @@ public sealed record MonarchOptions(
         MaximumTaxRate: 65,
         TaxAdjustment: 2,
         MercenaryPricePercent: 65,
-        SupportLandMountedUnits: 2,
+        MonarchSupportLevel: 2,
         ArrearsFactor: 300,
         RefBaseInfantry: 31,
         RefBaseCavalry: 15,

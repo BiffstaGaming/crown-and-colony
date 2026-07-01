@@ -1220,7 +1220,7 @@ public sealed class Ruleset
                 MaximumTaxRate: IntOption("model.option.maximumTax", mon.MaximumTaxRate),
                 TaxAdjustment: IntOption("model.option.taxAdjustment", mon.TaxAdjustment),
                 MercenaryPricePercent: IntOption("model.option.mercenaryPrice", mon.MercenaryPricePercent),
-                SupportLandMountedUnits: IntOption("model.option.monarchSupport", mon.SupportLandMountedUnits),
+                MonarchSupportLevel: IntOption("model.option.monarchSupport", mon.MonarchSupportLevel),
                 // ArrearsFactor: the classic game has always used 300 here, not the spec's medium 500; kept at the
                 // const-preserving default (not read from model.option.arrearsFactor) so behaviour is byte-identical.
                 ArrearsFactor: mon.ArrearsFactor,
