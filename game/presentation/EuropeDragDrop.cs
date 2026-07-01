@@ -123,14 +123,27 @@ public partial class EuropeDragSource : Control
     /// <summary>Builds the drag payload + preview, or returns <c>default</c> when nothing is draggable here (Godot issue 78507: C# this override is non-nullable, so <c>default</c> = "no drag").</summary>
     public override Variant _GetDragData(Vector2 atPosition)
     {
-        Variant payload = _payload();
-        if (payload.VariantType == Variant.Type.Nil)
+        Variant payload = BuildDragPayload();
+        if (payload.VariantType != Variant.Type.Nil)
         {
-            return default;
+            // SetDragPreview is only valid while the viewport reports a live drag (it asserts gui_is_dragging()); Godot
+            // calls this override at the START of a real drag, so that holds here. NOTE: driving this override directly
+            // (outside a real drag) would trip that assert and orphan the preview Control — L3 tests must therefore call
+            // BuildDragPayload() instead of _GetDragData().
+            SetDragPreview(EuropeDrag.Preview(_previewText()));
         }
-        SetDragPreview(EuropeDrag.Preview(_previewText()));
         return payload;
     }
+
+    /// <summary>
+    /// Builds the drag payload only (no preview), or <c>default</c> when nothing is draggable here. This is the rule-free
+    /// transport half of <see cref="_GetDragData"/> WITHOUT the <see cref="Control.SetDragPreview"/> side effect. L3 tests
+    /// drive drag-and-drop by invoking the callbacks directly (Godot can't synthesise a real mouse-drag headlessly), and
+    /// <see cref="Control.SetDragPreview"/> asserts <c>gui_is_dragging()</c> — false outside a real drag — which logs a
+    /// viewport error and orphans the preview Control. Tests call this seam so the payload is exercised without that leak;
+    /// production still routes through <see cref="_GetDragData"/> and gets its preview during a genuine drag.
+    /// </summary>
+    public Variant BuildDragPayload() => _payload();
 
     /// <summary>
     /// Fires the configured <see cref="OnClick"/> action on a left-button release that wasn't consumed by a drag (Godot

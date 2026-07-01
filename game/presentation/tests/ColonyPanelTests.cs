@@ -792,10 +792,12 @@ public class ColonyPanelTests
 
     // ── Phase 2: drag-and-drop worker assignment ───────────────────────────────────────────────────────────────
     // L3 drives the drag CALLBACKS directly (Godot can't synthesise a real mouse-drag headlessly — same limitation the
-    // EuropePanel drag tests work around): get an idle chip's payload via source._GetDragData(pos), assert the target's
+    // EuropePanel drag tests work around): get an idle chip's payload via source.BuildDragPayload(), assert the target's
     // target._CanDropData(pos, data), call target._DropData(pos, data), then assert the ENGINE state changed. A position
     // of Vector2.Zero is fine — the colony sources/targets ignore the position (whole-control hit). The existing
-    // click-to-assign tests above stay green (the drag is additive).
+    // click-to-assign tests above stay green (the drag is additive). We use BuildDragPayload rather than the real
+    // _GetDragData override because that override's SetDragPreview asserts gui_is_dragging() (false outside a real drag)
+    // and orphans the preview Control, dirtying the shared viewport drag state for later L3 cases (86d3fd0gp).
 
     [TestCase(Timeout = 60000)]
     public async Task DragIdleColonistOntoFreeTile_AssignsTheWorker()
@@ -816,7 +818,7 @@ public class ColonyPanelTests
         AssertThat(source).IsNotNull();
         AssertThat(target).IsNotNull();
 
-        Variant data = source._GetDragData(Vector2.Zero);
+        Variant data = source.BuildDragPayload(); // NOT _GetDragData — that calls SetDragPreview (asserts gui_is_dragging, orphans the preview) when driven directly
         AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue(); // a free, workable tile accepts the worker
         target._DropData(Vector2.Zero, data);
         await runner.SimulateFrames(1);
@@ -854,7 +856,7 @@ public class ColonyPanelTests
         AssertThat(source).IsNotNull();
         AssertThat(target).IsNotNull();
 
-        Variant data = source._GetDragData(Vector2.Zero);
+        Variant data = source.BuildDragPayload(); // NOT _GetDragData — that calls SetDragPreview (asserts gui_is_dragging, orphans the preview) when driven directly
         AssertThat(target._CanDropData(Vector2.Zero, data)).IsFalse(); // an already-worked tile is refused
 
         target._DropData(Vector2.Zero, data); // even forced, the re-check no-ops
@@ -878,7 +880,7 @@ public class ColonyPanelTests
         AssertThat(source).IsNotNull();
         AssertThat(target).IsNotNull();
 
-        Variant data = source._GetDragData(Vector2.Zero);
+        Variant data = source.BuildDragPayload(); // NOT _GetDragData — that calls SetDragPreview (asserts gui_is_dragging, orphans the preview) when driven directly
         AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue(); // a building with a free workplace accepts the worker
         target._DropData(Vector2.Zero, data);
         await runner.SimulateFrames(1);
@@ -923,7 +925,7 @@ public class ColonyPanelTests
         AssertThat(source).IsNotNull();
         AssertThat(target).IsNotNull();
 
-        Variant data = source._GetDragData(Vector2.Zero);
+        Variant data = source.BuildDragPayload(); // NOT _GetDragData — that calls SetDragPreview (asserts gui_is_dragging, orphans the preview) when driven directly
         AssertThat(target._CanDropData(Vector2.Zero, data)).IsFalse(); // full building — refused
 
         target._DropData(Vector2.Zero, data); // forced drop no-ops

@@ -288,9 +288,11 @@ public class EuropePanelTests
 
     // ── Phase 2: drag-and-drop + ship picker ────────────────────────────────────────────────────────────────────
     // L3 drives the drag CALLBACKS directly (Godot can't synthesise a real mouse-drag headlessly, GdUnit issue): get a
-    // source's payload via source._GetDragData(pos), assert the target's target._CanDropData(pos, data), call
+    // source's payload via source.BuildDragPayload(), assert the target's target._CanDropData(pos, data), call
     // target._DropData(pos, data), then assert the ENGINE state changed. A position of Vector2.Zero is fine — the
-    // EuropePanel sources/targets ignore the position (whole-control hit).
+    // EuropePanel sources/targets ignore the position (whole-control hit). We call BuildDragPayload rather than the real
+    // _GetDragData override because that override calls Control.SetDragPreview, which asserts gui_is_dragging() — false
+    // outside a genuine drag — and orphans the preview Control, leaving the viewport's drag state dirty for later cases.
 
     [TestCase(Timeout = 60000)]
     public async Task DragColonistOntoShip_Boards()
@@ -314,7 +316,7 @@ public class EuropePanelTests
         AssertThat(source).IsNotNull();
         AssertThat(target).IsNotNull();
 
-        Variant data = source._GetDragData(Vector2.Zero);
+        Variant data = source.BuildDragPayload(); // NOT _GetDragData — that calls SetDragPreview (asserts gui_is_dragging, orphans the preview) when driven directly
         AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue(); // the engine allows boarding
         target._DropData(Vector2.Zero, data);
         await runner.SimulateFrames(1);
@@ -346,7 +348,7 @@ public class EuropePanelTests
 
         EuropeDragSource source = FindControl<EuropeDragSource>(controller, "DockColonist_2")!;
         EuropeDropTarget target = FindControl<EuropeDropTarget>(controller, "ShipDrop_1")!;
-        Variant data = source._GetDragData(Vector2.Zero);
+        Variant data = source.BuildDragPayload(); // NOT _GetDragData — that calls SetDragPreview (asserts gui_is_dragging, orphans the preview) when driven directly
         AssertThat(target._CanDropData(Vector2.Zero, data)).IsFalse(); // full ship — refused
 
         target._DropData(Vector2.Zero, data); // even forced, the re-check no-ops
@@ -372,7 +374,7 @@ public class EuropePanelTests
         AssertThat(source).IsNotNull();
         AssertThat(target).IsNotNull();
 
-        Variant data = source._GetDragData(Vector2.Zero);
+        Variant data = source.BuildDragPayload(); // NOT _GetDragData — that calls SetDragPreview (asserts gui_is_dragging, orphans the preview) when driven directly
         AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue();
         target._DropData(Vector2.Zero, data);
         await runner.SimulateFrames(1);
@@ -399,7 +401,7 @@ public class EuropePanelTests
         AssertThat(source).IsNotNull();
         AssertThat(target).IsNotNull();
 
-        Variant data = source._GetDragData(Vector2.Zero);
+        Variant data = source.BuildDragPayload(); // NOT _GetDragData — that calls SetDragPreview (asserts gui_is_dragging, orphans the preview) when driven directly
         AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue();
         target._DropData(Vector2.Zero, data);
         await runner.SimulateFrames(1);
@@ -430,7 +432,7 @@ public class EuropePanelTests
         AssertThat(source).IsNotNull();
         AssertThat(target).IsNotNull();
 
-        Variant data = source._GetDragData(Vector2.Zero);
+        Variant data = source.BuildDragPayload(); // NOT _GetDragData — that calls SetDragPreview (asserts gui_is_dragging, orphans the preview) when driven directly
         AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue();
         target._DropData(Vector2.Zero, data);
         await runner.SimulateFrames(1);
@@ -458,7 +460,7 @@ public class EuropePanelTests
         EuropeDropTarget target = FindControl<EuropeDropTarget>(controller, "ShipDrop_1")!;
         AssertThat(source).IsNotNull();
 
-        Variant data = source._GetDragData(Vector2.Zero);
+        Variant data = source.BuildDragPayload(); // NOT _GetDragData — that calls SetDragPreview (asserts gui_is_dragging, orphans the preview) when driven directly
         AssertThat(target._CanDropData(Vector2.Zero, data)).IsFalse(); // unaffordable — refused
         target._DropData(Vector2.Zero, data);                          // forced drop no-ops
         await runner.SimulateFrames(1);
@@ -488,7 +490,7 @@ public class EuropePanelTests
         AssertThat(source).IsNotNull();
         AssertThat(target).IsNotNull();
 
-        Variant data = source._GetDragData(Vector2.Zero);
+        Variant data = source.BuildDragPayload(); // NOT _GetDragData — that calls SetDragPreview (asserts gui_is_dragging, orphans the preview) when driven directly
         AssertThat(target._CanDropData(Vector2.Zero, data)).IsTrue();
         target._DropData(Vector2.Zero, data);
         await runner.SimulateFrames(1);

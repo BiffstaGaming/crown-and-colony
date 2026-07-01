@@ -26,6 +26,45 @@ namespace CrownAndColony.Presentation.Tests;
 [RequireGodotRuntime]
 public class NegotiationPanelTests
 {
+    /// <summary>
+    /// Resets the process-global Godot <see cref="Input"/> singleton before and after every case so this suite is
+    /// order-independent under the CI run order (mirrors <c>InputTests.ResetGlobalInputState</c> — the proven isolation
+    /// pattern in this repo). Godot's <see cref="Input"/>, the viewport's GUI-drag state, and static fields are
+    /// process-global and persist across GdUnit cases within one headless run. A prior L3 case that left a mouse button
+    /// flagged held or the viewport in a "gui is dragging" state (e.g. the Europe/Colony drag-drop cases, now fixed to
+    /// call <c>BuildDragPayload</c>) would then contend with this panel's input. Releasing the left mouse button and
+    /// flushing the buffer at case boundaries closes that bleed regardless of which suite ran before us. This is a
+    /// belt-and-suspenders guard alongside the source fix in the drag-drop tests; it changes no product behaviour.
+    /// </summary>
+    [BeforeTest]
+    public void ResetGlobalInputStateBeforeEachTest() => ResetGlobalInputState();
+
+    [AfterTest]
+    public void ResetGlobalInputStateAfterEachTest() => ResetGlobalInputState();
+
+    private static void ResetGlobalInputState()
+    {
+        // Release the left mouse button in case a prior case (e.g. an InputTests click that didn't complete cleanly, or an
+        // Europe/Colony drag) left a press flagged held on the global Input.
+        Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        // Release every key the sibling L3 suites drive (InputTests presses W/G/N/B/D/Space/Enter/F1/F5/F9 + arrows + Ctrl),
+        // so no key stays flagged pressed across suites and bleeds a spurious action into this panel's fresh scene. This is
+        // the exact key set InputTests.ResetGlobalInputState releases — kept in lockstep so whichever suite runs first, the
+        // process-global Input is clean before ours.
+        foreach (Key key in new[]
+        {
+            Key.W, Key.G, Key.N, Key.B, Key.D, Key.Space, Key.Enter, Key.F1, Key.F5, Key.F9,
+            Key.Left, Key.Right, Key.Up, Key.Down, Key.Ctrl,
+        })
+        {
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, Pressed = false });
+        }
+        // Park the cursor at a neutral origin so any relative motion starts from a known position.
+        Input.WarpMouse(Vector2.Zero);
+        // Drain anything queued above (and any leftover from the previous case) before this case runs.
+        Input.FlushBufferedEvents();
+    }
+
     [TestCase]
     public async Task PendingAiOffer_OpensTheDialog_AndAcceptSettlesTheStance()
     {
