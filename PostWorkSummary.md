@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-01 — QA: L4 golden pipeline + TradeAtRivalColony L3 flake — both shipped ✅
+
+**Requested (Chris):** "L4 Golden Pipeline and TradeAtRivalColony. Get to it" — the two open QA tasks.
+**Did:**
+- **L4 golden pipeline (`86d3f69e9`, high):** added a `workflow_dispatch` **`golden_update`** path to ci.yml — renders every `GoldenAssert` target on the **CI Linux runner** with `GOLDEN_UPDATE=1` and uploads the `goldens-linux` artifact for adoption (replaces the old scavenge-the-`visual-diffs`-failure-artifact guesswork; the normal L3+L4 assert step is gated off in that mode). **Re-enabled the 3 deferred assertions** (colony-panel, europe-panel, help-panel) at the 0.02 text tolerance; rendered their baselines on CI, **visually verified each is a correct frame** (help text / Jamestown overview / Europe harbour — not blank/error), committed them. Proven end-to-end on a `golden-regen` branch (dispatch → artifact → adopt → normal CI green), then fast-forwarded to main.
+- **TradeAtRivalColony L3 flake:** background agent root-caused **two** process-global leaks (not the drag state itself): (1) **held-key input bleed** from `InputTests` into `NegotiationPanelTests` (which had no `[BeforeTest]` reset) starved the `TradeSell` button → the actual flake; (2) drag-preview orphan + `gui_is_dragging` spam (`86d3fd0gp`). Fix = a preview-free `BuildDragPayload()` seam (production `_GetDragData` behaviourally identical), 11 drag tests routed through it, and a `ResetGlobalInputState` on `NegotiationPanelTests` mirroring `InputTests`. **Reviewed the diff** (clean, test-isolation-only, zero product change, no RNG) → cherry-picked to main.
+- **Housekeeping:** tracked the untracked `RefLandingNotice.cs.uid` (matches the 365 tracked `.uid` convention); pruned the merged `golden-regen` branch (local+remote) + the integrated flake worktree.
+**Status:** **CI green both jobs on all 3 main pushes** (goldens `28497794552`, flake `28497978544`, uid `28498107974`). L3 passed **first-attempt (1m29s, no retries)** after the flake fix. Builds clean.
+**Changed:** `ci.yml`, `UiPanelGoldenTests.cs`, `MenuGoldenTests.cs`, 3 goldens (`help-panel` new + `colony-panel-seed424242`/`europe-panel` refreshed), `EuropeDragDrop.cs`, `ColonyPanelTests.cs`, `EuropePanelTests.cs`, `NegotiationPanelTests.cs`, `docs/TESTING.md`, `RefLandingNotice.cs.uid`. Commits `9a66cac`, `6a15e73`, `0daccd3`, `6f70aa3`.
+**Decisions:** adopted **only the 3 functionally-changed goldens** — the other byte-"CHANGED" PNGs are PNG re-encode noise (their committed versions still pass Linux pixel-tolerance, so re-committing = pointless binary churn). Marked `86d3f1y8j` **Shipped** not Cancelled (its Done criteria were literally met here). Accepted the `BuildDragPayload` seam as a fair test-fidelity trade (the preview side-effect can't be exercised without a real drag anyway).
+**Scheduled next (your steer):** the next **scope+build backlog wave** over the remaining **38 No / 36 Partial** parity rows (proven, low-risk, banks free flips) — my recommendation — OR one of the two deferred high-value gaps that each want a focused stream: native WAR-stance uprising (`86d3fpzqf`) or market-propagation (`86d3fpyx3`, determinism-sensitive).
+**Follow-ups:** de-Witt-report wiring (`86d3ha4cv`), wagon-haggle + custom-house peer scope (`86d3ha4jb`), ambient-alarm damp (`86d3h9nha`) — all low. ~34 stale agent worktrees under `.claude/worktrees/` (pre-existing, harmless) could be pruned some session.
+**Needs you:** review the two QA fixes (all green, none playtested) — the re-enabled panel goldens are the only visible change; the flake fix is test-only. **3 tasks Shipped:** `86d3f69e9`, `86d3f1y8j`, `86d3fd0gp` (already closed by the agent).
+
+---
+
 ## 2026-07-01 — Backlog wave 2: independence/fathers/trade — 4 free flips + 5 implemented (2 parallel streams) ✅
 
 **Requested (Chris):** continue the backlog (ultracode — use workflows).
