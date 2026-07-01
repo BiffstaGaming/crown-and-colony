@@ -850,12 +850,20 @@ public class MonarchTests
         Assert.Equal(14, mon.RefBaseArtillery);
         Assert.Equal(8, mon.RefBaseManOWar);
         Assert.Equal(1500, mon.WarSupportGold);
-        // The war-support force is a list (record equality is reference-based), so compare its block-by-block contents…
+        // The war-support and mercenary forces are lists (record equality is reference-based), so compare each
+        // block-by-block…
         Assert.Equal(
             MonarchOptions.ClassicMedium.WarSupportForce.Select(b => (b.UnitTypeId, b.RoleId, b.Number)),
             mon.WarSupportForce.Select(b => (b.UnitTypeId, b.RoleId, b.Number)));
-        // …then equate the rest of the record by normalising both to the same list instance.
-        Assert.Equal(MonarchOptions.ClassicMedium, mon with { WarSupportForce = MonarchOptions.ClassicMedium.WarSupportForce });
+        Assert.Equal(
+            MonarchOptions.ClassicMedium.MercenaryForce.Select(b => (b.UnitTypeId, b.RoleId, b.Number)),
+            mon.MercenaryForce.Select(b => (b.UnitTypeId, b.RoleId, b.Number)));
+        // …then equate the rest of the record by normalising both list members to the same instances.
+        Assert.Equal(MonarchOptions.ClassicMedium, mon with
+        {
+            WarSupportForce = MonarchOptions.ClassicMedium.WarSupportForce,
+            MercenaryForce = MonarchOptions.ClassicMedium.MercenaryForce,
+        });
     }
 
     /// <summary>Each monarch integer option is read by its own spec id (non-default values prove no silent fallback).</summary>
@@ -1188,6 +1196,36 @@ public class MonarchTests
         Assert.Equal(VeteranSoldier, block.UnitTypeId);
         Assert.Equal(SoldierRole, block.RoleId);
         Assert.Equal(4, block.Number);
+    }
+
+    /// <summary>
+    /// 86d3fq0eg/86d3fpztm: the fixed declaration-of-independence mercenary force parses from
+    /// <c>model.option.mercenaryForce</c> — the classic 3 armed + 3 mounted veterans, 3 artillery, and 2 men-o-war (the
+    /// naval half the old land-only generator never offered). Proves the man-o-war block is present with the default role.
+    /// </summary>
+    [Fact]
+    public void ClassicRuleset_ParsesTheMercenaryForce_IncludingTwoMenOWar()
+    {
+        MonarchOptions mon = Classic.Difficulty.Monarch;
+        Assert.Equal(
+            new[]
+            {
+                (VeteranSoldier, (string?)SoldierRole, 3),
+                (VeteranSoldier, (string?)"model.role.dragoon", 3),
+                ("model.unit.artillery", (string?)"model.role.default", 3),
+                ("model.unit.manOWar", (string?)"model.role.default", 2),
+            },
+            mon.MercenaryForce.Select(b => (b.UnitTypeId, b.RoleId, b.Number)));
+    }
+
+    /// <summary>The man-o-war's per-unit mercenary hire price is its <c>mercenary-price</c> (10000); a veteran soldier,
+    /// having no mercenary-price, falls back to its Europe price (2000) — the two prices the fixed offer is costed by.</summary>
+    [Fact]
+    public void ClassicRuleset_MercenaryHirePrice_ReadsTheManOWarSpecialCasePrice()
+    {
+        Assert.Equal(10000, Classic.Unit("model.unit.manOWar").MercenaryHirePrice);   // mercenary-price attribute
+        Assert.Equal(2000, Classic.Unit(VeteranSoldier).MercenaryHirePrice);          // falls back to Europe price
+        Assert.Equal(500, Classic.Unit("model.unit.artillery").MercenaryHirePrice);   // artillery's Europe price
     }
 
     [Fact]

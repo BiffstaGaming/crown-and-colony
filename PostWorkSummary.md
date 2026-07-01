@@ -19,6 +19,25 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-02 — Man-o-war mercenaries in the declaration-of-independence force (Stream C, `86d3fq0eg` + `86d3fpztm`)
+
+**Requested (Chris):** implement the FreeCol-parity fix so the King's parting war-mercenary offer on a declaration of independence includes men-o-war (closes both `86d3fq0eg` and `86d3fpztm` — same build; the wave-3 deferral, now resolved).
+**Did:**
+- **Root cause (matrix row 887 = No, accurate):** `OfferWarMercenaries` reused the land-only periodic `LoadMercenaries` generator (veteran soldiers only), so no man-o-war was ever offered on a declaration.
+- **Parsed the fixed force:** new `MonarchOptions.MercenaryForce` (spec `model.option.mercenaryForce`) via a shared `UnitForceOption` helper (refactored from the `WarSupportForce` parse). Classic roster = **3 `veteranSoldier`/soldier + 3 `veteranSoldier`/dragoon + 3 `artillery`/default + 2 `manOWar`/default**.
+- **Priced it faithfully:** new `UnitType.MercenaryPrice` (parsed from the `mercenary-price` attribute, inherits up the `extends` chain) + `MercenaryHirePrice` (= `mercenary-price` when set — man-o-war 10000 — else Europe `Price`, no role goods cost; FreeCol `Player.getMercenaryHirePrice`).
+- **Rewrote `OfferWarMercenaries` → `LoadMercenaryForce(rebel, rng)`:** builds from the fixed roster, then **affordability-trims FreeCol-style** (`Monarch.loadMercenaryForce`) — drop one unit from a **random** surviving block on the **monarch RNG** until the total (classic 33500) fits the treasury; null when nothing affordable. Men-o-war (10000 each) trimmed first for a poorer rebel. Accepted men-o-war seat at the Europe entry tile via the existing `SpawnInEurope` (no new delivery code).
+- **Left the periodic in-game paths land-only** (`LoadMercenaries` untouched) — FreeCol's `MONARCH_MERCENARIES`/monarch-tick Hessian use `loadMercenaries`, which is land-only; man-o-war is declaration-force-only. This is faithful.
+- **Tests:** updated the existing war-mercenary asserts to the fixed-force values (11 units / 33500 / includes 2 men-o-war); added accept-seats-2-men-o-war-on-the-Europe-dock, under-funded-rebel-gets-a-trimmed-affordable-subset, `mercenaryForce`-parse + hire-price-parse asserts. Normalised the two new list members in the `MonarchOptions`/`DifficultyOptions` record-equality tests.
+**Status:** **2584 L1/L2 green + 5 soak green** (stream 0 byte-identical — the offer rides the ephemeral monarch RNG, a DoI event, never the human's stream 0). Build clean, 0 warnings. Committed as ONE commit for the parent to cherry-pick. CI not yet run (parent integrates).
+**Changed:** `game/src/GameLogic/Specification/MonarchOptions.cs`, `Ruleset.cs`, `UnitType.cs`; `game/src/GameLogic/GameSession/Game.Independence.cs`; tests `IndependenceTests.cs`, `MonarchTests.cs`, `DifficultyOptionsTests.cs`; docs `docs/systems/independence.md` (both layers + changelog + checklist), `docs/systems/monarchy.md`.
+**Decisions:** no save-version bump — `MonarchOptions` is ruleset-derived and the offer round-trips via the existing `PendingMonarchDemand.Offer` (already supports arbitrary `ForceEntry` types); added `MercenaryPrice` at the **end** of the `UnitType` record (default -1) so no positional caller breaks (only the named-arg Ruleset parse constructs it); did **not** touch `docs/reference/feature-parity.md` (parent owns the matrix — row 887 No→Yes is theirs to flip).
+**Scheduled next (parent's steer):** parent cherry-picks this commit into the wave; the remaining wave-4 cut-off items are next per the 2026-07-01 entry — ambient-alarm damp (`86d3h9nha`), extra-nation advantages (`86d3fq0y7`), de-Witt foreign columns (`86d3ha4cv`), report→colopedia deep-link (`86d3fymc5`).
+**Follow-ups:** the two closed tasks (`86d3fq0eg`, `86d3fpztm`) → Shipped once integrated + CI green; matrix row 887 → Yes (parent).
+**Needs you:** nothing — all green. Visible in-game: a well-funded rebel declaring independence is now offered 2 men-o-war (plus 3 armed + 3 mounted veterans + 3 artillery) to hire; accepting puts the men-o-war on the Europe dock ready to sail out and fight the REF's fleet.
+
+---
+
 ## 2026-07-01 — Parity scope+build wave 4: 7 shipped + 3 cancels, reviewed & CI-fixed → 953 Yes ✅
 
 **Requested (Chris):** next parity scope+build wave; work through at least 10 new tasks.

@@ -928,7 +928,7 @@ public class IndependenceTests
     {
         (Game game, _) = RebellionReady();
         Player rebel = game.HumanPlayer;
-        rebel.Gold = 100000; // plenty to fund a Hessian force
+        rebel.Gold = 100000; // plenty to fund the whole fixed force untrimmed
 
         game.DeclareIndependence(rebel);
 
@@ -936,8 +936,36 @@ public class IndependenceTests
         Assert.NotNull(game.PendingMonarchDemand);
         Assert.Equal(MonarchAction.HessianMercenaries, game.PendingMonarchDemand!.Action);
         Assert.NotNull(game.PendingMonarchDemand.Offer);
-        Assert.True(game.PendingMonarchDemand.Offer!.Sum(e => e.Count) > 0);
-        Assert.True(game.PendingMonarchDemand.Price > 0);
+
+        // 86d3fq0eg/86d3fpztm: the declaration force is the FIXED model.option.mercenaryForce, not the land-only
+        // periodic generator — so a well-funded rebel is offered the whole classic roster: 3 armed + 3 mounted veterans,
+        // 3 artillery, and — the parity fix — 2 men-o-war (11 units), priced by hire price (3·2000 + 3·2000 + 3·500 +
+        // 2·10000 = 33500). Previously the old LoadMercenaries generator offered only 2-3 groups of armed veterans.
+        var offer = game.PendingMonarchDemand.Offer!;
+        Assert.Equal(11, offer.Sum(e => e.Count));
+        Assert.Equal(2, offer.Single(e => e.UnitTypeId == "model.unit.manOWar").Count); // the parity gap: a rebel navy
+        Assert.Equal(3, offer.Single(e => e.UnitTypeId == "model.unit.veteranSoldier" && e.RoleId == "model.role.soldier").Count);
+        Assert.Equal(3, offer.Single(e => e.UnitTypeId == "model.unit.veteranSoldier" && e.RoleId == "model.role.dragoon").Count);
+        Assert.Equal(3, offer.Single(e => e.UnitTypeId == "model.unit.artillery").Count);
+        Assert.Equal(33500, game.PendingMonarchDemand.Price);
+    }
+
+    [Fact]
+    public void DeclareIndependence_AcceptingMercenaries_SpawnsTheMenOWar_OnTheRebelsEuropeDock()
+    {
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        rebel.Gold = 100000; // fund the whole fixed force so both men-o-war are offered
+
+        game.DeclareIndependence(rebel);
+        Assert.Equal(2, game.PendingMonarchDemand!.Offer!.Single(e => e.UnitTypeId == "model.unit.manOWar").Count);
+
+        game.RespondToMonarch(accept: true);
+
+        // The two hired men-o-war arrive on the rebel's Europe dock (SpawnInEurope seats naval units at the Europe
+        // entry tile, InEurope) — the rebel now has a navy to sail out and face the REF at sea.
+        Assert.Equal(2, game.Units.Count(u => u.OwnerId == rebel.PlayerId
+            && u.Location == UnitLocation.InEurope && u.Type.Id == "model.unit.manOWar"));
     }
 
     [Fact]
@@ -990,6 +1018,24 @@ public class IndependenceTests
         game.DeclareIndependence(rebel);
 
         Assert.Null(game.PendingMonarchDemand);
+    }
+
+    [Fact]
+    public void DeclareIndependence_MercenaryOffer_IsTrimmedToTheTreasury_WhenTheWholeForceIsUnaffordable()
+    {
+        // A rebel who cannot afford the whole 33500 roster is offered an affordability-trimmed subset (FreeCol
+        // loadMercenaryForce drops random units until the running total is payable). With 5000 gold the offer never
+        // exceeds the treasury, and — as at least one land unit (cheapest 500) is affordable — an offer is still made.
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        rebel.Gold = 5000;
+
+        game.DeclareIndependence(rebel);
+
+        Assert.NotNull(game.PendingMonarchDemand);
+        Assert.True(game.PendingMonarchDemand!.Offer!.Sum(e => e.Count) > 0);
+        Assert.True(game.PendingMonarchDemand.Price <= 5000); // trimmed to what the treasury can pay
+        Assert.True(game.PendingMonarchDemand.Price > 0);
     }
 
     // ── Item 3: Alternative victory conditions (86d3drn5n / victoryDefeat* options) ───────────────────────

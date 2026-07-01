@@ -48,6 +48,15 @@ namespace CrownAndColony.GameLogic.Specification;
 /// The base gold the King grants alongside <see cref="WarSupportForce"/> (spec <c>model.option.warSupportGold</c>; medium
 /// 2500). Varied ±20% by the monarch's own roll (FreeCol <c>InGameController</c> war-support branch).
 /// </param>
+/// <param name="MercenaryForce">
+/// The <b>fixed</b> professional force the King dangles for hire on the very turn a colonist declares independence (spec
+/// <c>model.option.mercenaryForce</c> <c>unitListOption</c>; classic = 3 <c>model.unit.veteranSoldier</c>/soldier + 3
+/// <c>model.unit.veteranSoldier</c>/dragoon + 3 <c>model.unit.artillery</c>/default + 2 <c>model.unit.manOWar</c>/default).
+/// Unlike the land-only periodic <c>loadMercenaries</c> generator (armed veterans only), this declaration-of-independence
+/// force is a fixed roster that <b>includes men-o-war</b> — a rebel who can afford them gains a navy to fight the REF at
+/// sea. FreeCol's <c>Monarch.loadMercenaryForce</c> starts from this whole roster and drops random units until the total
+/// hire price is payable (per-unit price = the unit type's mercenary-price, or its Europe price when unset). See [monarchy].
+/// </param>
 public sealed record MonarchOptions(
     int Meddling,
     int MaximumTaxRate,
@@ -60,7 +69,8 @@ public sealed record MonarchOptions(
     int RefBaseArtillery,
     int RefBaseManOWar,
     IReadOnlyList<MonarchSupportUnit> WarSupportForce,
-    int WarSupportGold)
+    int WarSupportGold,
+    IReadOnlyList<MonarchSupportUnit> MercenaryForce)
 {
     /// <summary>The classic <c>model.difficulty.medium</c> monarch values — the fallback and default source of truth.</summary>
     public static readonly MonarchOptions ClassicMedium = new(
@@ -75,7 +85,16 @@ public sealed record MonarchOptions(
         RefBaseArtillery: 14,
         RefBaseManOWar: 8,
         WarSupportForce: [new MonarchSupportUnit("model.unit.veteranSoldier", "model.role.soldier", 4)],
-        WarSupportGold: 1500);
+        WarSupportGold: 1500,
+        // The classic declaration-of-independence mercenary force (specification.xml:3523-3543): armed + mounted
+        // veterans, artillery, and — the parity gap this closes — two men-o-war (the rebel's would-be navy).
+        MercenaryForce:
+        [
+            new MonarchSupportUnit("model.unit.veteranSoldier", "model.role.soldier", 3),
+            new MonarchSupportUnit("model.unit.veteranSoldier", "model.role.dragoon", 3),
+            new MonarchSupportUnit("model.unit.artillery", "model.role.default", 3),
+            new MonarchSupportUnit("model.unit.manOWar", "model.role.default", 2),
+        ]);
 }
 
 /// <summary>

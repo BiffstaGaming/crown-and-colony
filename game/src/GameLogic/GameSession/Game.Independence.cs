@@ -302,14 +302,16 @@ public sealed partial class Game
     /// <c>csDeclareIndependence</c>'s <c>loadMercenaryForce</c> + <c>csMercenaries(HESSIAN_MERCENARIES)</c>): a one-off
     /// professional force the new nation may hire for gold to face the REF. Surfaced as a
     /// <see cref="PendingMonarchDemand"/> (the same accept/decline seam as the King's in-game mercenary offers), built
-    /// from the in-game <see cref="LoadMercenaries"/> generator and applied only on accept via
-    /// <see cref="RespondToMonarch"/> — never auto-applied, so the rebel's stream 0 stays byte-identical until the
-    /// player chooses (ADR-009). An offer is made only when one affordable to the rebel can be built; otherwise none.
-    /// <para><b>Faithful-subset note.</b> FreeCol draws the Hessian force from the Monarch's pre-built
-    /// <c>mercenaryForce</c> (a fixed ruleset force, priced by hire price). We reuse our existing affordability-trimmed
-    /// mercenary generator (veteran soldiers, armed or mounted) so the offer is consistent with the King's other
-    /// mercenary offers and never exceeds the treasury — the same documented simplification the in-game offer makes.
-    /// The offer rides the monarch RNG (an ephemeral stream off the rebel's current state), never stream 0.</para>
+    /// from the <b>fixed</b> declaration-of-independence <see cref="MonarchOptions.MercenaryForce"/> and applied only on
+    /// accept via <see cref="RespondToMonarch"/> — never auto-applied, so the rebel's stream 0 stays byte-identical until
+    /// the player chooses (ADR-009). An offer is made only when at least one unit is affordable; otherwise none.
+    /// <para><b>Faithful to FreeCol (86d3fq0eg/86d3fpztm).</b> Unlike the land-only periodic <see cref="LoadMercenaries"/>
+    /// generator (armed veterans only — used by the in-game <c>MONARCH_MERCENARIES</c>/monarch-tick Hessian offers), the
+    /// declaration force is the fixed ruleset roster — classic 3 armed + 3 mounted veterans, 3 artillery, and <b>2
+    /// men-o-war</b> — so a well-funded rebel can hire a navy to face the REF at sea (the parity gap this closes). It is
+    /// affordability-trimmed FreeCol-style (<c>Monarch.loadMercenaryForce</c>): random units are dropped on the monarch
+    /// RNG until the total <see cref="UnitType.MercenaryHirePrice">hire price</see> is payable. The offer rides the monarch
+    /// RNG (an ephemeral stream off the rebel's current state), never stream 0.</para>
     /// </summary>
     private void OfferWarMercenaries(Player rebel)
     {
@@ -322,11 +324,60 @@ public sealed partial class Game
         // same isolation the monarch tick uses (a human rebel's economy stream stays byte-identical until it answers).
         RandomState humanState = _random.SaveState();
         var rng = new Pcg32Random(humanState.State + (ulong)Turn, MonarchStreamId);
-        if (LoadMercenaries(rng) is { } offer) // an affordability-trimmed force, or none
+        if (LoadMercenaryForce(rebel, rng) is { } offer) // the fixed force, affordability-trimmed, or none
         {
             _pendingMonarchDemand = new PendingMonarchDemand(
                 MonarchAction.HessianMercenaries, Offer: offer.Force, Price: offer.Price);
         }
+    }
+
+    /// <summary>
+    /// Builds the declaration-of-independence mercenary offer from the fixed <see cref="MonarchOptions.MercenaryForce"/>,
+    /// trimmed to what <paramref name="rebel"/> can afford (FreeCol <c>Monarch.loadMercenaryForce</c>). Each block's
+    /// per-unit price is the unit type's <see cref="UnitType.MercenaryHirePrice"/> (its <c>mercenary-price</c> when set —
+    /// classic only the man-o-war, 10000 — otherwise its Europe price); blocks whose per-unit price is ≤ 0 are dropped as
+    /// un-hireable. If the whole roster is unaffordable, single units are removed one at a time — a <b>random</b> surviving
+    /// block on the monarch <paramref name="rng"/> — until the running total is payable (so an expensive man-o-war may be
+    /// dropped to fit the treasury). Returns the trimmed force and its total price, or null when nothing is affordable.
+    /// <para><b>ADR-009.</b> Every draw is on the ephemeral monarch stream (<see cref="MonarchStreamId"/>), never stream 0;
+    /// the human's economy stream is untouched until the offer is answered.</para>
+    /// </summary>
+    private (IReadOnlyList<ForceEntry> Force, int Price)? LoadMercenaryForce(Player rebel, IGameRandom rng)
+    {
+        // Start from the whole fixed roster, pairing each block with its per-unit hire price; drop un-hireable blocks
+        // (price ≤ 0), mirroring FreeCol's price==0/INFINITY prune before the downsizing loop.
+        var blocks = new List<(string UnitTypeId, string? RoleId, int Count, int UnitPrice)>();
+        foreach (MonarchSupportUnit block in MonarchOpts.MercenaryForce)
+        {
+            int unitPrice = Ruleset.Unit(block.UnitTypeId).MercenaryHirePrice;
+            if (unitPrice > 0 && block.Number > 0)
+            {
+                blocks.Add((block.UnitTypeId, block.RoleId, block.Number, unitPrice));
+            }
+        }
+        int total = blocks.Sum(b => b.Count * b.UnitPrice);
+
+        // Downsize FreeCol-style: while the roster is unaffordable, drop one unit from a random surviving block on the
+        // monarch RNG (removing the block when its last unit goes), until it fits the treasury or nothing remains.
+        while (blocks.Count > 0 && total > rebel.Gold)
+        {
+            int r = rng.Next(blocks.Count);
+            var b = blocks[r];
+            total -= b.UnitPrice;
+            if (b.Count > 1)
+            {
+                blocks[r] = b with { Count = b.Count - 1 };
+            }
+            else
+            {
+                blocks.RemoveAt(r);
+            }
+        }
+        if (blocks.Count == 0)
+        {
+            return null; // nothing affordable — no offer (FreeCol's negative price)
+        }
+        return (blocks.Select(b => new ForceEntry(b.UnitTypeId, b.RoleId, b.Count)).ToList(), total);
     }
 
     /// <summary>

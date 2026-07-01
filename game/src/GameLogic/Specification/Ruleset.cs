@@ -1171,12 +1171,14 @@ public sealed class Ruleset
                 .Select(o => ParseInt((string?)o.Element("number")?.Attribute("value")))
                 .FirstOrDefault(v => v is not null) ?? fallback;
 
-        // The King's war-support force: a <unitListOption id="model.option.warSupportForce"> of <unitOption> blocks,
-        // each a <unitType>/<role>/<number>. Parses every block into a MonarchSupportUnit; falls back if absent/empty.
-        IReadOnlyList<MonarchSupportUnit> WarSupportForce(IReadOnlyList<MonarchSupportUnit> fallback)
+        // A monarch unit-force option: a <unitListOption id="…"> of <unitOption> blocks, each a <unitType>/<role>/<number>.
+        // Parses every block into a MonarchSupportUnit; falls back to the given default if the option is absent or empty.
+        // Shared by the King's war-support force (model.option.warSupportForce) and the declaration-of-independence
+        // mercenary force (model.option.mercenaryForce) — both are unitListOptions of the same block shape.
+        IReadOnlyList<MonarchSupportUnit> UnitForceOption(string optionId, IReadOnlyList<MonarchSupportUnit> fallback)
         {
             XElement? listOption = level.Descendants("unitListOption")
-                .FirstOrDefault(o => (string?)o.Attribute("id") == "model.option.warSupportForce");
+                .FirstOrDefault(o => (string?)o.Attribute("id") == optionId);
             if (listOption is null)
             {
                 return fallback;
@@ -1228,8 +1230,9 @@ public sealed class Ruleset
                 RefBaseCavalry: RefSize("model.option.refSize.dragoons", mon.RefBaseCavalry),
                 RefBaseArtillery: RefSize("model.option.refSize.artillery", mon.RefBaseArtillery),
                 RefBaseManOWar: RefSize("model.option.refSize.menOfWar", mon.RefBaseManOWar),
-                WarSupportForce: WarSupportForce(mon.WarSupportForce),
-                WarSupportGold: IntOption("model.option.warSupportGold", mon.WarSupportGold)),
+                WarSupportForce: UnitForceOption("model.option.warSupportForce", mon.WarSupportForce),
+                WarSupportGold: IntOption("model.option.warSupportGold", mon.WarSupportGold),
+                MercenaryForce: UnitForceOption("model.option.mercenaryForce", mon.MercenaryForce)),
             // Ai: FreeCol scales none of the rival-AI constants by difficulty (the colony cap, seek ladder and our
             // Europe spend floor are all hardcoded in EuropeanAIPlayer — see AiTuning), so there is no spec option to
             // read. Kept at the classic-medium value across every level (the ArrearsFactor pattern), data-overridable.
@@ -2153,6 +2156,10 @@ public sealed class Ruleset
                 // price = Europe purchase/training cost (0 if absent; manOWar uses
                 // mercenary-price, not price, so it stays non-purchasable here).
                 Price: ResolveIntAttribute(el, "price", elements) ?? 0,
+                // mercenary-price = the fixed gold another power charges to hire this type (FreeCol UNDEFINED = -1;
+                // inherited up the extends chain like price). Classic sets it only on manOWar (10000), so it is the
+                // per-unit hire price for the declaration-of-independence mercenary force (UnitType.MercenaryHirePrice).
+                MercenaryPrice: ResolveIntAttribute(el, "mercenary-price", elements) ?? -1,
                 // Combat power, split at the role-modifier index (30) so a unit's role additive can
                 // fold in at the correct point: the pre-role additive base (attribute + the type's own
                 // index-<30 additive modifiers, e.g. king's regular +4) and the post-role multiplier

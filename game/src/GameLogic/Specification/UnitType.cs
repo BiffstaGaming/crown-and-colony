@@ -121,6 +121,13 @@ public sealed record UnitProductionModifier(string GoodsId, ModifierType Type, d
 /// colonist 3, an expert 4–6, a man-o-war 8. 0 for a type the spec gives no <c>score-value</c> (braves and other
 /// native units), so they never count toward a colonial score.
 /// </param>
+/// <param name="MercenaryPrice">
+/// The fixed gold price another power (the King) charges to hire one of this unit as a mercenary (spec
+/// <c>mercenary-price</c>; <b>inherited</b> down the <c>extends</c> chain; <c>-1</c> = unset, FreeCol's <c>UNDEFINED</c>).
+/// Used by the declaration-of-independence mercenary offer (FreeCol <c>Player.getMercenaryHirePrice</c>): the per-unit
+/// hire price is this value when set (classic only <c>model.unit.manOWar</c> = 10000), otherwise the type's
+/// <see cref="Price"/>. Unlike a Europe purchase it does <em>not</em> add the role's required-goods cost. See [monarchy].
+/// </param>
 public sealed record UnitType(
     string Id,
     int Movement,
@@ -155,8 +162,16 @@ public sealed record UnitType(
     int MaximumExperience = 0,
     int ExploreLostCityRumourBonus = 0,
     string? SkillTaught = null,
-    int ScoreValue = 0)
+    int ScoreValue = 0,
+    int MercenaryPrice = -1)
 {
+    /// <summary>
+    /// The per-unit price the King charges to hire this type as a mercenary (FreeCol <c>Player.getMercenaryHirePrice</c>):
+    /// its <see cref="MercenaryPrice"/> when the spec sets one (classic only <c>model.unit.manOWar</c> = 10000), else its
+    /// Europe <see cref="Price"/>. Never includes the role's required-goods cost (a mercenary is offered ready-equipped).
+    /// </summary>
+    public int MercenaryHirePrice => MercenaryPrice >= 0 ? MercenaryPrice : Price;
+
     private static readonly IReadOnlyList<GoodsOutput> NoCost = [];
     private static readonly IReadOnlyDictionary<string, bool> NoAbilities = new Dictionary<string, bool>();
     private static readonly IReadOnlyList<UnitProductionModifier> NoProductionModifiers = [];
