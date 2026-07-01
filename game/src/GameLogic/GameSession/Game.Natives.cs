@@ -646,7 +646,8 @@ public partial class Game
     /// colonial player <paramref name="playerId"/> (FreeCol the native player's stance toward that colonial player) —
     /// <see cref="Stance.War"/> once the nation's tribe tension has peaked, de-escalating through
     /// <see cref="Stance.CeaseFire"/> back to <see cref="Stance.Peace"/> as it cools. A read oracle (ADR-006): the
-    /// report/UI reads it to show "at war with the &lt;tribe&gt;". Derived, never stored in the saved
+    /// empire report's Native-affairs tab reads it (<c>ColonyReportPanel.BuildNatives</c>) to show each tribe's stance
+    /// ("at war" / "cease-fire" / "at peace") beside its tension band. Derived, never stored in the saved
     /// <see cref="Player.Stances"/> map, so it costs no save field; defaults to <see cref="Stance.Peace"/> for a nation
     /// that has never been provoked. Recomputed each native turn by <see cref="DetermineNativeStances"/>. No RNG, no mutation.
     /// </summary>

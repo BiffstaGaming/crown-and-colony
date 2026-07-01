@@ -2,7 +2,7 @@
 
 Generated 2026-06-26 from a structured 22-domain research pass (FreeCol verified against the GPL freecol/ clone; Crown and Colony verified against this repo). Legend: Yes / Partial / No. Functionality described in our own words.
 
-Totals - Crown and Colony: 958 Yes / 24 Partial / 33 No across 1015 features.
+Totals - Crown and Colony: 959 Yes / 23 Partial / 33 No across 1015 features.
 
 ## Map Terrain Exploration
 
@@ -792,7 +792,7 @@ Totals - Crown and Colony: 958 Yes / 24 Partial / 33 No across 1015 features.
 | Taking native land by force angers the tribe | Yes | Yes | Yes | FreeCol TENSION_ADD_LAND_TAKEN (+200). Us: ClaimLandByStealing / forced LandClaimChoice 'Steal' adds +200 on the acting player's channel, nation-wide. |
 | Pocahontas resets/halves native alarm | Yes | Yes | Yes | FreeCol model.event.resetNativeAlarm + nativeAlarmModifier −50%. Us: ResetAllNativeAlarm on election + ambient gain halved; see founding-fathers.md. |
 | French national trait — natives anger half as fast | Yes | Yes | Yes | FreeCol model.nationType.cooperation nativeAlarmModifier −50%. Us (86d3df4u1): French carry the −50% trait via NationTypeModifiers; stacks with Pocahontas to ×0.25. |
-| Native uprising / war when alarm peaks | Yes | Yes | Partial | FreeCol declares native-nation war/uprising (Stance.WAR) with coordinated multi-settlement assaults. Us: Displeased+ braves hunt human units + pillage/demand, but there is no nation-level WAR stance or coordinated uprising declaration (per-settlement alarm only; documented deviation). |
+| Native uprising / war when alarm peaks | Yes | Yes | Yes | FreeCol declares native-nation war/uprising (Stance.WAR) with coordinated multi-settlement assaults. Us (86d3fpzqf): a native nation now forms a nation-level WAR stance toward a colonial power when its tribe-wide tension peaks past FreeCol's threshold (1010 = Hateful.limit + DELTA), de-escalating through CeaseFire back to Peace as it cools (DetermineNativeStances → StanceFromTension, the same FreeCol hysteresis the colonial machine uses). The empire report's Native-affairs tab shows each tribe's stance beside its tension band (Game.NativeStanceToward → ColonyReportPanel.BuildNatives). The assaults are the existing per-settlement raids: a war-declaring tribe is by definition Hateful, so its settlements are all high-alarm and their braves hunt/pillage/demand — the stance is the faithful nation-level declaration atop that (not a separate stance-driven attack path). Transient/derived (no save field, RNG-free) → default game byte-identical. Tests: NativeAiTests (L1 stance + hysteresis), ColonyReportPanelTests (L3 report shows the stance). |
 | Native gifts to friendly colonies (goodwill deliveries) | Yes | Yes | Yes | FreeCol IndianBringGiftMission. Us (86d3dfcfe): TryBringGift — a Happy tribe's brave beside a colony leaves 25 tobacco (1-in-8). Deviation: tobacco not food (ADR-009), abstracted goods store. |
 | Two-way trade with native settlements (no European tax) | Yes | Yes | Yes | FreeCol IndianSettlement trade session (buy/sell/haggle). Us (86d3e4bh2/86d3f62qh): SellToNatives/BuyFromNatives + haggle, stock-driven prices, wanted-goods premium, ship-trade penalty; reachable via NativeSettlementPanel Sell/Buy. Inland (wagon) trade deferred. |
 | Native Affairs Advisor report (tribes/alarm overview) | Yes | Yes | Yes | FreeCol ReportIndianPanel. Us: reports screen 'Natives' tab grouped by nation — mood band, skill, mission, wanted goods, most-hated rival; count is discovered-settlements only (no spy total). |

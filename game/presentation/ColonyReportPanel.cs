@@ -752,11 +752,15 @@ public partial class ColonyReportPanel : PanelContainer
             // The tribe-wide tension band toward the human (FreeCol the native player's Tension) — the distinct
             // nation-level channel, not the angriest single settlement (86d3fpzkq).
             AlarmLevel tribeAlarm = _game.TribeAlarmLevelFor(nation.Key, _game.HumanPlayer.PlayerId);
+            // The nation-level WAR / cease-fire / peace stance toward the human — the authoritative derived stance
+            // (Game.NativeStanceToward, FreeCol determineStances hysteresis), NOT a naive banding of the current alarm,
+            // so it de-escalates through cease-fire as tension cools rather than snapping with the band (86d3fpzqf).
+            Stance tribeStance = _game.NativeStanceToward(nation.Key, _game.HumanPlayer.PlayerId);
             dynamic.AddChild(new Label
             {
                 Name = $"NativeNation_{Strip(nation.Key)}",
                 Text = $"{Display(Strip(nation.Key))} — {nationSettlements.Count} settlement(s)  ·  " +
-                       $"tension {tribeAlarm} ({TribeStance(tribeAlarm)})",
+                       $"tension {tribeAlarm} ({NativeStanceLabel(tribeStance)})",
             });
 
             foreach (NativeSettlement s in nationSettlements)
@@ -801,10 +805,10 @@ public partial class ColonyReportPanel : PanelContainer
     }
 
     /// <summary>A presentation-derived tribe stance from its worst alarm band (our natives carry no colonial stance): hateful → at war, displeased/angry → uneasy, else at peace.</summary>
-    private static string TribeStance(AlarmLevel alarm) => alarm switch
+    private static string NativeStanceLabel(Stance stance) => stance switch
     {
-        AlarmLevel.Hateful => "at war",
-        AlarmLevel.Angry or AlarmLevel.Displeased => "uneasy",
+        Stance.War => "at war",
+        Stance.CeaseFire => "cease-fire",
         _ => "at peace",
     };
 

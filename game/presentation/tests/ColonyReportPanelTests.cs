@@ -328,6 +328,9 @@ public class ColonyReportPanelTests
         var row = dynamic.GetNodeOrNull<Button>($"Native_{settlement.Position.X}_{settlement.Position.Y}"); // EntityLink cell (86d3fymc5): a flat link Button
         AssertThat(row).IsNotNull();
         AssertThat(row!.Text).Contains("most hated");
+        // The nation header also surfaces the derived WAR/cease-fire/peace stance (Game.NativeStanceToward, 86d3fpzqf) —
+        // a fresh game is "at peace"; the War/CeaseFire transitions are covered at L1 (NativeAiTests).
+        AssertThat(nationHeader.Text).Contains("at peace");
     }
 
     private static string Strip(string id) => id[(id.LastIndexOf('.') + 1)..];
