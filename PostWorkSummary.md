@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-02 — Fixed the persistent TradeAtRivalColony L3 flake at its root (86d3hzz6d) ✅
+
+**Requested (Chris):** work through more outstanding tasks (I picked the top of my own recommendation — the flake that intermittently red-gates unrelated pushes and erodes CI-green trust).
+**Did:**
+- **Reproduced it locally** (the key breakthrough): running `InputTests + NegotiationPanelTests` together fails `TradeAtRivalColony` ~30% of runs — a sibling suite's held-key input bleeds the human's **starting ship** adjacent to the test's rival colony, so the colony ends up with **two** adjacent human carriers.
+- **Root cause = a real product bug, not a test artifact:** `NegotiationPanel.BuildPinnedColonyActions` picked the trade carrier via `FirstOrDefault(adjacent carrier)`, so the empty starting ship (iterating first) **masked** the laden test ship → no sellable good → the `TradeSell` button was never built (confirmed via diagnostics: `Rebuild()` is synchronous, the game wasn't swapped, the gate held, but ≥2 carriers were adjacent).
+- **Fix:** fold the capability check into the carrier selection (first adjacent carrier that can actually sell/buy) — mirroring the sibling `DemandTribute` pick, which already gated on `.Allowed` and so never flaked. Pure presentation over existing oracles; no engine/RNG/save change. A genuine multi-carrier robustness improvement.
+- Added a **+1 L3 regression test** (empty carrier adjacent first + a laden one → the trade still surfaces the laden ship) and a `diplomacy.md` changelog row.
+**Status:** **reproduced ~30% → 0/12 after the fix** · `NegotiationPanelTests` 9/9 · **CI green both jobs** (run 28552268941, `e567ee8`). The intermittent red L3 gate should now be stable.
+**Changed:** `game/presentation/NegotiationPanel.cs`, `NegotiationPanelTests.cs` (+regression), `docs/systems/diplomacy.md`. Commit `e567ee8`.
+**Decisions:** fixed the product (carrier selection) rather than papering over the test, since the multi-carrier case is real; kept the fix minimal (mirrors the existing DemandTribute pattern). The prior drag-preview/input-reset fixes (`86d3fd0gp`) were necessary but not sufficient — this was a distinct, deeper cause.
+**Scheduled next (your steer):** the two focused determinism streams now that CI is trustworthy again — **native-uprising `86d3fpzqf`** (high) or market-propagation `86d3fpyx3` (both Ready with full scope on-task); or another scope wave over the remaining ~33 No / 24 Partial.
+**Follow-ups:** SoL% formula `86d3hzz4w`, custom-difficulty `86d3fq0x7`, QA-test `86d3fy56v`, disaster-persistence `86d3hz9ga`.
+**Needs you:** Nothing — CI green + the flaky gate is fixed. In-game effect: opening negotiation at a rival colony with several of your ships nearby now correctly offers the trade using a laden ship, not an empty one.
+
+---
+
 ## 2026-07-02 — Parity scope+build wave 5: 6 built (7 tasks) + 2 flips, reviewed & CI-fixed → 958 Yes ✅
 
 **Requested (Chris):** continue — another scope+build wave, same concept as wave 4.
