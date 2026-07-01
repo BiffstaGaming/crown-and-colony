@@ -270,7 +270,7 @@ public class ColonyReportPanelTests
         AssertThat(header!.Text).Contains("Royal Expeditionary Force");
         AssertThat(dynamic.GetNodeOrNull("RefLandTitle")).IsNotNull();
         // A "N × King's Regular (infantry)" row is named Ref_kingsRegular_infantry in the classic ruleset's base REF.
-        AssertThat(dynamic.GetNodeOrNull<Label>("Ref_kingsRegular_infantry")).IsNotNull();
+        AssertThat(dynamic.GetNodeOrNull<Button>("Ref_kingsRegular_infantry")).IsNotNull(); // an EntityLink cell (86d3fymc5): a flat link Button, not a Label
     }
 
     [TestCase]
@@ -325,7 +325,7 @@ public class ColonyReportPanelTests
         var nationHeader = dynamic.GetNodeOrNull<Label>($"NativeNation_{Strip(settlement.NationTypeId)}");
         AssertThat(nationHeader).IsNotNull();
         AssertThat(nationHeader!.Text).Contains("tension"); // tribe-wide tension band + stance
-        var row = dynamic.GetNodeOrNull<Label>($"Native_{settlement.Position.X}_{settlement.Position.Y}");
+        var row = dynamic.GetNodeOrNull<Button>($"Native_{settlement.Position.X}_{settlement.Position.Y}"); // EntityLink cell (86d3fymc5): a flat link Button
         AssertThat(row).IsNotNull();
         AssertThat(row!.Text).Contains("most hated");
     }
@@ -350,7 +350,7 @@ public class ColonyReportPanelTests
         // The net-after-tax summary line always renders.
         AssertThat(dynamic.GetNodeOrNull("TradeTotal")).IsNotNull();
         // Tobacco is always market-tradeable in the classic ruleset → its row renders, with price + sold + income.
-        var tobacco = dynamic.GetNodeOrNull<Label>("Trade_tobacco");
+        var tobacco = dynamic.GetNodeOrNull<Button>("Trade_tobacco"); // EntityLink cell (86d3fymc5): a flat link Button (Button.Text carries the same content)
         AssertThat(tobacco).IsNotNull();
         AssertThat(tobacco!.Text).Contains("sell");
         AssertThat(tobacco.Text).Contains("buy");
