@@ -47,6 +47,9 @@ public partial class ColonyPanel : PanelContainer
 
     private static readonly Color Negative = new(0.9f, 0.3f, 0.25f);
 
+    /// <summary>Muted grey-green tint for the neutral/advisory population hint (room to grow, or at ideal size).</summary>
+    private static readonly Color Advisory = new(0.6f, 0.68f, 0.55f);
+
     /// <summary>Warehouse high-water-mark warning tint (amber) — a good at/near capacity that will spill on End Turn.</summary>
     private static readonly Color WarehouseHigh = new(0.85f, 0.55f, 0.15f);
 
@@ -488,12 +491,31 @@ public partial class ColonyPanel : PanelContainer
             bonusLabel.AddThemeColorOverride("font_color", Negative);
         }
         centre.AddChild(bonusLabel);
+        centre.AddChild(PreferredSizeHint());
         row.AddChild(centre);
 
         row.AddChild(StatCell($"Royalists: {_colony.ToryCount}", "RoyalistCount", $"{100 - sol}%", "RoyalistPercent"));
         box.AddChild(row);
         box.AddChild(SolMeter(sol));
         return box;
+    }
+
+    /// <summary>
+    /// The colony's preferred-size advisory (FreeCol <c>Colony.getPreferredSizeChange</c>, surfaced under the
+    /// population count): "+N room to grow" while the colony can still add colonists without losing its production
+    /// bonus, "−N overcrowded" (in the warning tint) when it is over-populated for its Sons of Liberty and should
+    /// shed colonists, or "at ideal size" at the sweet spot. Reads the derived <see cref="Colony.PreferredSizeChange"/>
+    /// oracle only (ADR-006).
+    /// </summary>
+    private Label PreferredSizeHint()
+    {
+        int change = _colony.PreferredSizeChange();
+        string text = change > 0 ? $"+{change} room to grow"
+            : change < 0 ? $"{change} overcrowded"
+            : "at ideal size";
+        var label = new Label { Name = "PreferredSizeHint", Text = text, HorizontalAlignment = HorizontalAlignment.Center };
+        label.AddThemeColorOverride("font_color", change < 0 ? Negative : Advisory);
+        return label;
     }
 
     private static Control StatCell(string topText, string topName, string bottomText, string bottomName)

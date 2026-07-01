@@ -292,6 +292,121 @@ public sealed class Colony
         : ToryCount > Government.Bad ? -1
         : 0;
 
+    // ── Preferred-size advisory (FreeCol Colony.getPreferredSizeChange / getUnitsToAdd / getUnitsToRemove) ─────
+
+    /// <summary>
+    /// The Sons-of-Liberty membership this colony <em>would</em> have at a hypothetical <paramref name="unitCount"/>,
+    /// keeping its current <see cref="Liberty"/> and <see cref="SolModifierBonus"/> (FreeCol
+    /// <c>calculateSoLPercentage(uc, liberty)</c>): <c>floor(liberty·100 / (200·uc)) + SolModifierBonus</c>, clamped
+    /// 0–100; 0 for a non-positive count. Pure read used by the preferred-size projection.
+    /// </summary>
+    private int ProjectedSonsOfLiberty(int unitCount) =>
+        unitCount <= 0 ? 0 : Math.Clamp(Liberty * 100 / (RebelLibertyDivisor * unitCount) + SolModifierBonus, 0, 100);
+
+    /// <summary>The tory count this colony would have at a hypothetical <paramref name="unitCount"/> and its projected SoL% (FreeCol <c>calculateToryCount</c>: <c>uc − floor(SoL%·uc/100)</c>).</summary>
+    private static int ProjectedToryCount(int unitCount, int projectedSol) => unitCount - projectedSol * unitCount / 100;
+
+    /// <summary>
+    /// Whether this colony's government <b>would improve (+1), stay the same (0), or deteriorate (−1)</b> if its
+    /// population were <paramref name="unitCount"/> instead of its current <see cref="Population"/> (FreeCol
+    /// <c>Colony.governmentChange</c>). Compares the projected SoL% / tory count at that count — keeping the current
+    /// banked liberty — against the current SoL% / tory count through the same Good / Very-Good SoL bands and Bad /
+    /// Very-Bad tory bands the <see cref="ProductionBonus"/> uses. A read-only oracle (ADR-006); RNG-free, never
+    /// persisted. Used by <see cref="UnitsToAdd"/> / <see cref="UnitsToRemove"/> to size the preferred-size hint.
+    /// </summary>
+    /// <param name="unitCount">The proposed population to test.</param>
+    /// <returns>1 (government improves), 0 (unchanged), or −1 (government worsens).</returns>
+    public int GovernmentChange(int unitCount)
+    {
+        int newSol = ProjectedSonsOfLiberty(unitCount);
+        int newTory = ProjectedToryCount(unitCount, newSol);
+        int oldSol = SonsOfLiberty;
+        int oldTory = ToryCount;
+
+        if (newSol >= Government.VeryGood) // no tories left
+        {
+            return oldSol < Government.VeryGood ? 1 : 0;
+        }
+        if (newSol >= Government.Good)
+        {
+            if (oldSol >= Government.VeryGood)
+            {
+                return -1;
+            }
+            return oldSol < Government.Good ? 1 : 0;
+        }
+        if (oldSol >= Government.Good)
+        {
+            return -1;
+        }
+        // No bonus applies at either end — penalties may.
+        if (newTory > Government.VeryBad)
+        {
+            return oldTory <= Government.VeryBad ? -1 : 0;
+        }
+        if (newTory > Government.Bad)
+        {
+            if (oldTory <= Government.Bad)
+            {
+                return -1;
+            }
+            return oldTory > Government.VeryBad ? 1 : 0;
+        }
+        return oldTory > Government.Bad ? 1 : 0;
+    }
+
+    /// <summary>The upper bound on how many colonists the preferred-size advisory will suggest adding or removing (FreeCol <c>Colony.CHANGE_UPPER_BOUND</c> = 10).</summary>
+    public const int PreferredSizeChangeUpperBound = 10;
+
+    /// <summary>
+    /// How many colonists could be <b>added</b> before the colony's government would first deteriorate — the extra
+    /// population it can absorb without losing its production bonus (FreeCol <c>Colony.getUnitsToAdd</c>). Loops
+    /// 1..<see cref="PreferredSizeChangeUpperBound"/>, returning one short of the first count whose
+    /// <see cref="GovernmentChange"/> is −1, or the whole bound if none deteriorates. A read-only oracle (ADR-006);
+    /// RNG-free.
+    /// </summary>
+    /// <returns>The safe number of colonists to add, 0..<see cref="PreferredSizeChangeUpperBound"/>.</returns>
+    public int UnitsToAdd()
+    {
+        for (int i = 1; i <= PreferredSizeChangeUpperBound; i++)
+        {
+            if (GovernmentChange(Population + i) == -1)
+            {
+                return i - 1;
+            }
+        }
+        return PreferredSizeChangeUpperBound;
+    }
+
+    /// <summary>
+    /// How many colonists would need to be <b>removed</b> for the colony's government to first improve — the
+    /// overcrowding to shed to recover its production bonus (FreeCol <c>Colony.getUnitsToRemove</c>). Loops
+    /// 1..<see cref="Population"/>−1, returning the first count whose <see cref="GovernmentChange"/> is +1, or 0 if
+    /// none improves. A read-only oracle (ADR-006); RNG-free.
+    /// </summary>
+    /// <returns>The number of colonists to remove, or 0 when removing none would help.</returns>
+    public int UnitsToRemove()
+    {
+        for (int i = 1; i < Population; i++)
+        {
+            if (GovernmentChange(Population - i) == 1)
+            {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    /// <summary>
+    /// The colony's preferred population change (FreeCol <c>Colony.getPreferredSizeChange</c>): when the current
+    /// <see cref="ProductionBonus"/> is negative it wants to <b>shrink</b> — a negative figure, the negation of
+    /// <see cref="UnitsToRemove"/>; otherwise it wants to <b>grow</b> — the (non-negative) <see cref="UnitsToAdd"/>.
+    /// A single signed hint (+N room to grow, −N crowd to shed, 0 at the sweet spot) for the colony screen's
+    /// population advisory. A read-only oracle (ADR-006); RNG-free, never persisted.
+    /// </summary>
+    /// <returns>A positive count of colonists worth adding, a negative count worth removing, or 0.</returns>
+    public int PreferredSizeChange() => ProductionBonus < 0 ? -UnitsToRemove() : UnitsToAdd();
+
     internal void AddBuilding(string buildingId) => _buildings.Add(buildingId);
 
     /// <summary>Swaps an upgraded building for its successor, preserving staffing (count + worker-type overlay).</summary>

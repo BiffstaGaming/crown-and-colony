@@ -4,8 +4,8 @@
 |---|---|
 | **Status** | Implemented (model + bar + production bonus + bell upkeep + Simón Bolívar) |
 | **Last verified** | 2026-06-18 @ government limits routed through the difficulty system (`86d3c9y08` slice 2) |
-| **Code** | `game/src/GameLogic/Colonies/Colony.cs` (liberty + SoL properties), `game/src/GameLogic/GameSession/Game.cs` (`AccumulateLibertyAndElectFathers`) |
-| **Tests** | `game/tests/GameLogic.Tests/Colonies/SonsOfLibertyTests.cs`, `game/presentation/tests/ColonyPanelTests.cs` (the bar) |
+| **Code** | `game/src/GameLogic/Colonies/Colony.cs` (liberty + SoL properties + preferred-size oracles), `game/src/GameLogic/GameSession/Game.cs` (`AccumulateLibertyAndElectFathers`), `game/presentation/ColonyPanel.cs` (`PreferredSizeHint`) |
+| **Tests** | `game/tests/GameLogic.Tests/Colonies/SonsOfLibertyTests.cs`, `game/tests/GameLogic.Tests/Colonies/ColonyPreferredSizeTests.cs`, `game/presentation/tests/ColonyPanelTests.cs` (the bar) |
 | **FreeCol reference** | `freecol/src/.../common/model/Colony.java` (`calculateSoLPercentage`/`calculateRebelCount`/`calculateToryCount`/`calculateProductionBonus`/`modifyLiberty`, L1251–1352), `freecol/data/rules/classic/specification.xml` (government limits, `model.difficulty.medium`) |
 | **Related systems** | [colonies.md](colonies.md), [founding-fathers.md](founding-fathers.md), [turns.md](turns.md) |
 
@@ -22,7 +22,10 @@ Every colony has a mood. As its town hall produces **liberty bells**, the coloni
 **Worked example:**
 > A 5-colonist colony has banked 600 liberty. 600 ÷ (200 × 5) = 60%, so it's **60% Sons of Liberty** → 3 rebels, 2 royalists. Because membership is ≥ 50%, it earns a **+1** production bonus.
 
-**What the player sees and does:** the colony screen shows a **Rebels · Population · Royalists** band with the SoL% and the production bonus, over a gold/dark membership meter. The player raises SoL by producing more bells (staffing the town hall) and keeping colonies from growing faster than their bell output.
+**What the player sees and does:** the colony screen shows a **Rebels · Population · Royalists** band with the SoL% and the production bonus, over a gold/dark membership meter. Under the population count a small **preferred-size hint** advises whether the colony has room to grow: "**+N room to grow**" (it can add N colonists before the bonus would drop), "**−N overcrowded**" (it should shed N colonists to recover its bonus), or "**at ideal size**". The player raises SoL by producing more bells (staffing the town hall) and keeping colonies from growing faster than their bell output.
+
+**Preferred-size worked example:**
+> A colony of 5 has banked 900 liberty → 90% Sons of Liberty (+1 bonus). Spreading that same 900 over more colonists dilutes the percentage; it stays at or above 50% up to a population of 9, then drops below at 10. So the hint reads "**+4 room to grow**" — four more colonists can join before the +1 bonus is at risk. A crowded colony of 12 with no liberty has 12 royalists (very-bad government, −2); shedding 2 brings it to 10 royalists and recovers a tier, so its hint reads "**−2 overcrowded**".
 
 ## 2. Detailed rules
 
@@ -38,6 +41,10 @@ Every colony has a mood. As its town hall produces **liberty bells**, the coloni
 | otherwise | **0** (a small colony — ≤ 6 royalists — never gets a penalty regardless of low SoL) |
 | Bolívar (`model.modifier.SoL`) in the owner's Congress | SoL% gets **+20** (added after the conversion, before the clamp) |
 | net bells this turn `n = (FF-modified gross) − max(0, P−2)` | colony liberty `+= n` (floored at 0; clamped to `200·P` once SoL ≥ 100); player founding-father pool `+= n` (floored at 0) |
+| government change at projected population `u` | project SoL% + tories at `u` (same banked liberty) and compare tiers vs the current SoL%/tories → **+1** (improves), **0** (unchanged), **−1** (deteriorates) — FreeCol `governmentChange` |
+| units to add | largest `i∈1..10` with no deterioration when population grows by `i` (one short of the first `−1`); capped at 10 |
+| units to remove | smallest `i∈1..P−1` whose removal first yields a `+1` improvement; 0 if none helps |
+| preferred-size change | `ProductionBonus < 0` → `−(units to remove)` (shed); else `+(units to add)` (grow) |
 
 **Deviations from original 1994 / FreeCol behavior:**
 - **Bell upkeep is in.** Each colonist past the first two consumes 1 bell/turn (FreeCol `unitsThatUseNoBells` = 2), netted off before banking — so a colony that outgrows its bell output *loses* liberty and its SoL falls. A growing colony must **staff its town hall** to keep electing fathers; the net figure also feeds the player's founding-father pool (floored at 0), so it shifts election timing for large colonies. The "2 free colonists" value comes from the difficulty level (`Ruleset.Difficulty.UnitsThatUseNoBells`, 2 on every classic level; see [difficulty](difficulty.md)).
@@ -49,6 +56,8 @@ Every colony has a mood. As its town hall produces **liberty bells**, the coloni
 ## 3. Technical design
 
 **Domain model:** `Colony` holds the stored `Liberty` field and four pure computed properties — `SonsOfLiberty`, `RebelCount`, `ToryCount`, `ProductionBonus` — each an integer function of `Liberty` + `Population` (single source of truth; the colony screen reads these, computes nothing). `AddLiberty(int)` floors at 0 and applies the 100%-SoL cap (`Liberty = 200·Population`).
+
+**Preferred-size advisory (read-only oracles, ADR-006):** `Colony.GovernmentChange(int unitCount)` projects the SoL% and tory count the colony *would* have at a hypothetical population (keeping the current banked liberty and Bolívar bonus) via private `ProjectedSonsOfLiberty`/`ProjectedToryCount`, then runs FreeCol's `governmentChange` band comparison (Good/Very-Good SoL bands, Bad/Very-Bad tory bands) against the current tiers → +1/0/−1. `UnitsToAdd()` loops 1..`PreferredSizeChangeUpperBound` (=10) returning one short of the first deterioration; `UnitsToRemove()` loops 1..`Population−1` returning the first improvement; `PreferredSizeChange()` returns `−UnitsToRemove()` when the current bonus is negative, else `UnitsToAdd()`. All derived (never persisted), integer-only, RNG-free — the colony screen reads `PreferredSizeChange()` and formats the hint.
 
 **Data sources:** the four government limits come from the selected difficulty level — `Ruleset.Difficulty.Government` (a `GovernmentLimits` value, default `model.difficulty.medium` = 100/50/6/10), set on `Colony.Government` at founding/load (the colony carries the value, not a `Ruleset` reference, keeping the colony logic pure). `LibertyPerRebel = 200` is FreeCol's `Colony.LIBERTY_PER_REBEL` code constant. See [difficulty](difficulty.md).
 
@@ -66,14 +75,15 @@ Every colony has a mood. As its town hall produces **liberty bells**, the coloni
 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
-| L1 Unit | Always | `SonsOfLibertyTests` — SoL% (half/full/over/truncate/empty), rebel+tory split (sum=pop), bonus tiers incl. the 6/10 penalty pins, `AddLiberty` floor + 100%-cap, per-turn accumulation tracking the player pool, v22 save round-trip (+ omitted-when-0, pre-v22 loads 0), the bonus reaching tile + building output (+2/worker), **bell upkeep (first two colonists free; a colony outgrowing its bells loses liberty)**. `PrintingPressTests` — printing press +50% / newspaper +100% bell bonus parsed + applied (101 → 151 liberty; 51 → 102) | ✅ |
+| L1 Unit | Always | `SonsOfLibertyTests` — SoL% (half/full/over/truncate/empty), rebel+tory split (sum=pop), bonus tiers incl. the 6/10 penalty pins, `AddLiberty` floor + 100%-cap, per-turn accumulation tracking the player pool, v22 save round-trip (+ omitted-when-0, pre-v22 loads 0), the bonus reaching tile + building output (+2/worker), **bell upkeep (first two colonists free; a colony outgrowing its bells loses liberty)**. `PrintingPressTests` — printing press +50% / newspaper +100% bell bonus parsed + applied (101 → 151 liberty; 51 → 102). `ColonyPreferredSizeTests` — `GovernmentChange` direction (same-pop 0, grow-past-Good −1, shrink-out-of-Very-Bad +1), `UnitsToAdd` (4 for the pop-5/liberty-900 colony, bound-capped for a tiny high-liberty one), `UnitsToRemove` (2 for the crowded colony, 0 at full SoL), `PreferredSizeChange` sign (+ healthy / − overcrowded / FreeCol empty-colony math) | ✅ |
 | L2 Scenario | When economy-touching | Existing economy suites unchanged (bonus is 0 below goodGovernment, so pop≤6/SoL-0 colonies are byte-identical — verified zero churn) | ✅ |
-| L3 Interaction | The bar | `ColonyPanelTests.SonsOfLibertyBar_ShowsRebelsRoyalistsAndBonus_FromColonyLiberty` (pop 5 / liberty 600 → Rebels 3, 60%, Bonus +1, Royalists 2, 40%) | ✅ |
+| L3 Interaction | The bar | `ColonyPanelTests.SonsOfLibertyBar_ShowsRebelsRoyalistsAndBonus_FromColonyLiberty` (pop 5 / liberty 600 → Rebels 3, 60%, Bonus +1, Royalists 2, 40%). The `PreferredSizeHint` label rides the same `SonsOfLibertyBar` render (a `PreferredSizeChange`-driven "room to grow / overcrowded / ideal" line under the population count) | ✅ |
 | L4 Visual | Optional | — | ⬜ |
 | L5 Soak | When economy-touching | The 200-turn soak stays green with the bonus applied — the floor-at-0 guards prevent negative production; no new starvation | ✅ |
 
 ## Changelog
 
+| 2026-07-01 | **Colony preferred-size advisory** (`86d3fpy8p`): new read-only oracles on `Colony` — `GovernmentChange(unitCount)` (FreeCol `Colony.governmentChange`, projecting SoL%/tories at a hypothetical population against the current tiers → +1/0/−1), `UnitsToAdd()` / `UnitsToRemove()` (looping to `PreferredSizeChangeUpperBound` = 10 / `Population−1`), and `PreferredSizeChange()` (`−UnitsToRemove` when the bonus is negative, else `UnitsToAdd`). The colony screen surfaces a `PreferredSizeHint` label under the population count ("+N room to grow" / "−N overcrowded" / "at ideal size"). All derived, RNG-free, never persisted (reuses the existing `ProductionBonus` government tiers); zero economy churn. +10 L1 (`ColonyPreferredSizeTests`). | Phase (`86d3fpy8p`) |
 | 2026-06-18 | **Government limits routed through the difficulty system** (`86d3c9y08` slice 2): the four production-bonus thresholds (`veryGood`/`good`/`bad`/`veryBad GovernmentLimit`) are now parsed into `Ruleset.Difficulty.Government` (a `GovernmentLimits` value) and carried on `Colony.Government` (set at founding/load; default medium 100/50/6/10), replacing the four hardcoded `Colony` consts — `ProductionBonus` reads them. The colony stays free of a `Ruleset` dependency (it holds the small value, not the ruleset). Behaviour-preserving at the default (medium); no save change (re-derived at load); soak byte-stable. The "must become data-driven" debt note is now resolved. +3 L1 (`DifficultyOptionsTests`). See [difficulty](difficulty.md). | Phase (`86d3c9y08` slice 2) |
 | 2026-06-18 | **Building production bonus made FreeCol-faithful** (`86d3b6nrz` slice 5): the per-worker building SoL bonus is now folded into each worker's output **before** its index-30 expert modifier and scaled by the building's `rebel-factor` (new `BuildingType.RebelFactor`; lumber mill/cathedral 2, factory tier 1.5), and floored **per worker** instead of pooled. So a multiplicative expert multiplies the bonus (master distiller at +1 → 8 rum, was 7), rebel-factor buildings get more of it (lumber mill at +1 → +2/worker), and a −2 bonus no longer wipes a productive colonist's output when a co-worker floors. The tile path was already correct. Driven by a 10-agent adversarial review of the per-worker production fold. Zero churn where `ProductionBonus == 0` or `RebelFactor == 1` with no multiplicative expert (every prior test colony); +5 L1 in `BuildingWorkerTypeProductionTests`. See [colonies](colonies.md). | Phase 3 (`86d3b6nrz` slice 5) |
 
