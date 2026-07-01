@@ -128,7 +128,7 @@ namespace CrownAndColony.GameLogic.Specification;
 /// The floor only ever <b>raises</b> the effective input, never lowers it, so it can only <em>increase</em> output.
 /// With this <b>off</b> (the classic default) no such floor is applied and factory production runs on real inputs
 /// only, so the default game's per-turn production is byte-identical (ADR-009) — critical for the L5 soak. Read by
-/// <see cref="GameSession.Game"/>'s <c>ComputeBuildingProduction</c>. See [colony-production].
+/// <see cref="GameSession.Game"/>'s <c>ComputeBuildingProduction</c>. See [colonies].
 /// </param>
 /// <param name="EnhancedTradeRoutes">
 /// Whether the <b>enhanced trade routes</b> ruleset is in effect (spec <c>model.option.enhancedTradeRoutes</c>, a
