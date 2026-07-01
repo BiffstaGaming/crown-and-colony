@@ -23,7 +23,7 @@ public class TradeRouteValidationTests
     private const string Cotton = "model.goods.cotton";
 
     /// <summary>A 3-tile plains strip: human colonies Alpha (0,0, 100 sugar) and Beta (2,0), a human wagon train on Alpha.</summary>
-    private static Game TwoColonyStrip(out Colony alpha, out Colony beta)
+    private static Game TwoColonyStrip(out Colony alpha, out Colony beta, Ruleset? ruleset = null)
     {
         var save = new SaveGame
         {
@@ -41,7 +41,7 @@ public class TradeRouteValidationTests
                 new SavedColony(2, "Beta", 2, 0, 1),
             ],
         };
-        Game game = save.Restore(Classic);
+        Game game = save.Restore(ruleset ?? Classic);
         alpha = game.Colonies[0];
         beta = game.Colonies[1];
         return game;
@@ -104,6 +104,30 @@ public class TradeRouteValidationTests
             w => w.Kind == TradeRouteWarningKind.GoodsAlwaysPresent);
         Assert.Equal(Sugar, warning.GoodsId);
         Assert.Contains("sugar", warning.Message);
+    }
+
+    [Fact]
+    public void EnhancedTradeRoutes_OptionPlumbsThrough_ClassicDefaultOff()
+    {
+        // The option defaults off in classic (byte-identity guard) and the seam flips it.
+        Assert.False(Ruleset.LoadClassic().GameOptions.EnhancedTradeRoutes);
+        Assert.True(Ruleset.LoadClassic().WithEnhancedTradeRoutes(true).GameOptions.EnhancedTradeRoutes);
+        Assert.False(Ruleset.LoadClassic().WithEnhancedTradeRoutes(false).GameOptions.EnhancedTradeRoutes);
+    }
+
+    [Fact]
+    public void AGoodLoadedAtEveryStop_WhenEnhancedTradeRoutesOn_NoAlwaysPresentWarning()
+    {
+        // Same setup as AGoodLoadedAtEveryStop_WarnsAlwaysPresent, but with model.option.enhancedTradeRoutes ON:
+        // FreeCol TradeRoute.verify() relaxes the always-present check (cargoes are re-sorted for max transfer), so
+        // the GoodsAlwaysPresent advisory is suppressed and this otherwise-flagged route validates clean.
+        Ruleset enhanced = Ruleset.LoadClassic().WithEnhancedTradeRoutes(true);
+        Game game = TwoColonyStrip(out Colony alpha, out Colony beta, enhanced);
+        TradeRoute route = game.CreateTradeRoute(game.HumanPlayer, "Stuck",
+            [new TradeRouteStop(alpha.Id, [Sugar]), new TradeRouteStop(beta.Id, [Sugar])]);
+
+        IReadOnlyList<TradeRouteWarning> warnings = game.ValidateTradeRoute(route);
+        Assert.DoesNotContain(warnings, w => w.Kind == TradeRouteWarningKind.GoodsAlwaysPresent);
     }
 
     [Fact]

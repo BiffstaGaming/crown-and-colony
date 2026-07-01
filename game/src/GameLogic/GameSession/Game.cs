@@ -6546,12 +6546,14 @@ public sealed partial class Game
 
     /// <summary>
     /// Whether the ENHANCED_TRADE_ROUTES game option is in effect (FreeCol <c>GameOptions.ENHANCED_TRADE_ROUTES</c>,
-    /// <c>model.option.enhancedTradeRoutes</c>). The classic ruleset ships it <c>defaultValue="false"</c> and we do not
-    /// yet parse it, so it is always <b>off</b> today — the default, faithful behaviour. When on, FreeCol relaxes the
-    /// "always-present goods" check (cargoes are sorted to maximise transfer); we honour that relaxation here so the
-    /// flag becomes a one-line flip once option plumbing lands.
+    /// <c>model.option.enhancedTradeRoutes</c>, classic <c>defaultValue="false"</c>). Read live from the parsed ruleset
+    /// (<see cref="Specification.GameOptions.EnhancedTradeRoutes"/>), overridable at New Game via
+    /// <see cref="Ruleset.WithEnhancedTradeRoutes"/>. When on, FreeCol relaxes the "always-present goods" check (cargoes
+    /// are sorted to maximise transfer); we honour that relaxation here (the always-present advisory is suppressed).
+    /// Only the validation relaxation is modelled — the cargo re-sort / import-amount behaviours are a separate item.
+    /// Off in the classic ruleset, so the default game's route validation is unchanged (ADR-009).
     /// </summary>
-    private bool EnhancedTradeRoutes => false;
+    private bool EnhancedTradeRoutes => Ruleset.GameOptions.EnhancedTradeRoutes;
 
     /// <summary>
     /// Validates a single trade route and returns its advisory <see cref="TradeRouteWarning"/>s (FreeCol

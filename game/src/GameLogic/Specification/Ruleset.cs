@@ -407,6 +407,27 @@ public sealed class Ruleset
     }
 
     /// <summary>
+    /// Returns this ruleset with the <b>enhanced-trade-routes</b> game option
+    /// (<see cref="GameOptions.EnhancedTradeRoutes"/>) overridden — FreeCol's <c>model.option.enhancedTradeRoutes</c>.
+    /// Like <see cref="WithFogOfWar"/> / <see cref="WithAmphibiousMoves"/> this is a <b>configuration</b> seam, not a
+    /// rules change: today it only flips whether the "a good loaded at every stop is never delivered anywhere" route
+    /// advisory (<see cref="GameSession.TradeRouteWarningKind.GoodsAlwaysPresent"/>) is suppressed — see
+    /// <see cref="GameSession.Game.ValidateTradeRoute(GameSession.TradeRoute)"/>. (FreeCol's fuller enhanced-trade-route behaviours — cargo
+    /// re-sort, import-amount respect — are a separate larger item and are not modelled here.) Each loaded ruleset is a
+    /// fresh parse (never cached/shared — <see cref="LoadEmbedded"/>), so replacing the bundle on the just-loaded
+    /// instance is safe; the method returns <c>this</c> for a fluent call right after load. Passing the parsed default
+    /// (classic <b>false</b>) leaves the ruleset byte-identical, so a default new game is unchanged (ADR-009). Not
+    /// persisted in the save — a reloaded game re-derives the option from its variant's spec default (matching the
+    /// other game-option seams).
+    /// </summary>
+    /// <param name="enhancedTradeRoutes">Whether enhanced trade routes are in effect (classic <b>off</b>).</param>
+    public Ruleset WithEnhancedTradeRoutes(bool enhancedTradeRoutes)
+    {
+        GameOptions = GameOptions with { EnhancedTradeRoutes = enhancedTradeRoutes };
+        return this;
+    }
+
+    /// <summary>
     /// Returns this ruleset with the <b>post-independence founding-father recruitment</b> game option
     /// (<see cref="GameOptions.ContinueFoundingFatherRecruitment"/>) overridden — FreeCol's
     /// <c>model.option.continueFoundingFatherRecruitment</c>. Like <see cref="WithFogOfWar"/> /
@@ -1203,7 +1224,8 @@ public sealed class Ruleset
     /// toggle (<c>model.option.customIgnoreBoycott</c>, a boolean, classic <b>true</b>), the amphibious-moves
     /// toggle (<c>model.option.amphibiousMoves</c>, a boolean, classic <b>false</b>), the post-independence
     /// founding-father-recruitment toggle (<c>model.option.continueFoundingFatherRecruitment</c>, a boolean, classic
-    /// <b>false</b>), and the coastal-only-custom-house toggle (<c>model.option.customsOnCoast</c>, a boolean, classic
+    /// <b>false</b>), the coastal-only-custom-house toggle (<c>model.option.customsOnCoast</c>, a boolean, classic
+    /// <b>false</b>), and the enhanced-trade-routes toggle (<c>model.option.enhancedTradeRoutes</c>, a boolean, classic
     /// <b>false</b>). Unlike <see cref="ParseDifficulty"/>,
     /// these are not restated per level, so each is a plain document-wide option lookup (its <c>value</c>, else
     /// <c>defaultValue</c>); a missing option falls back to its classic value in
@@ -1236,7 +1258,9 @@ public sealed class Ruleset
                 root, "model.option.continueFoundingFatherRecruitment",
                 GameOptions.ClassicDefaults.ContinueFoundingFatherRecruitment),
             CustomsOnCoast: ParseBooleanOption(
-                root, "model.option.customsOnCoast", GameOptions.ClassicDefaults.CustomsOnCoast));
+                root, "model.option.customsOnCoast", GameOptions.ClassicDefaults.CustomsOnCoast),
+            EnhancedTradeRoutes: ParseBooleanOption(
+                root, "model.option.enhancedTradeRoutes", GameOptions.ClassicDefaults.EnhancedTradeRoutes));
 
     /// <summary>
     /// Parses the colony/production scalar constants into <see cref="Specification.ColonyConstants"/>. Each source is

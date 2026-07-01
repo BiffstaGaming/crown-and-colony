@@ -117,6 +117,18 @@ namespace CrownAndColony.GameLogic.Specification;
 /// house builds as before and the default game is unchanged (ADR-009). Read by <see cref="GameSession.Game"/>'s
 /// build gate (<c>BuildRefusal</c>). See [custom-house], [colonies].
 /// </param>
+/// <param name="EnhancedTradeRoutes">
+/// Whether the <b>enhanced trade routes</b> ruleset is in effect (spec <c>model.option.enhancedTradeRoutes</c>, a
+/// <c>booleanOption</c> in the <c>gameOptions</c> group, classic default <b>false</b>). FreeCol's enhanced-trade-route
+/// bundle sorts cargoes for maximum transfer and respects per-good import amounts (FreeCol
+/// <c>GameOptions.ENHANCED_TRADE_ROUTES</c>). We model only the part that affects route <b>validation</b>: with this
+/// <b>on</b>, the "a good loaded at every stop is never delivered anywhere" advisory
+/// (<see cref="GameSession.TradeRouteWarningKind.GoodsAlwaysPresent"/>) is <b>suppressed</b> — FreeCol's cargo re-sort
+/// makes an always-loaded good deliverable, so the warning no longer applies. With it <b>off</b> (the classic default)
+/// the warning fires as before, so a default game's route validation is unchanged (ADR-009). The cargo re-sort /
+/// import-amount behaviours themselves are a larger, separate item and are not modelled here. Read by
+/// <see cref="GameSession.Game.ValidateTradeRoute(GameSession.TradeRoute)"/>. See [trade-routes].
+/// </param>
 public sealed record GameOptions(
     int InitialImmigration,
     int EuropeanUnitImmigrationPenalty,
@@ -129,7 +141,8 @@ public sealed record GameOptions(
     bool CustomIgnoreBoycott,
     bool AmphibiousMoves,
     bool ContinueFoundingFatherRecruitment,
-    bool CustomsOnCoast)
+    bool CustomsOnCoast,
+    bool EnhancedTradeRoutes)
 {
     /// <summary>
     /// The classic ruleset's <c>gameOptions</c> values — the fallback when a spec omits an option, and the source of
@@ -137,8 +150,9 @@ public sealed record GameOptions(
     /// <c>gameOptions.years</c> gate cluster (mandatoryColonyYear 1600 / lastColonialYear 1800 / independenceTurn 468),
     /// the peace-hold base (peaceProbability 90), fog of war (on), custom-house boycott smuggling (on),
     /// amphibious moves (off — the classic spec defaults <c>model.option.amphibiousMoves</c> to <c>false</c>),
-    /// post-independence founding-father recruitment (off — classic Congress closes at the Declaration), and
-    /// coastal-only custom houses (off — classic lets a custom house be built inland).
+    /// post-independence founding-father recruitment (off — classic Congress closes at the Declaration),
+    /// coastal-only custom houses (off — classic lets a custom house be built inland), and enhanced trade routes
+    /// (off — classic keeps the always-present-goods route warning).
     /// </summary>
     public static readonly GameOptions ClassicDefaults = new(
         InitialImmigration: 15,
@@ -152,7 +166,8 @@ public sealed record GameOptions(
         CustomIgnoreBoycott: true,
         AmphibiousMoves: false,
         ContinueFoundingFatherRecruitment: false,
-        CustomsOnCoast: false);
+        CustomsOnCoast: false,
+        EnhancedTradeRoutes: false);
 
     /// <summary>
     /// The peace-hold base as a 0–1 multiplier (FreeCol <c>Specification.getPercentageMultiplier</c> =
