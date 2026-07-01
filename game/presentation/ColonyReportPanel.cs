@@ -81,6 +81,15 @@ public partial class ColonyReportPanel : PanelContainer
     private Game _game = null!;
     private Tab _tab = Tab.Colonies;
 
+    /// <summary>
+    /// The report → Colopedia deep-link (<c>86d3fymc5</c>; FreeCol's <c>ReportPanel.showColopediaPanel</c>): invoked with
+    /// a Colopedia category + an entity anchor (a ruleset <c>ShortName</c>) when the human clicks a report entity cell
+    /// (a colony's build, a trade good, a native settlement's skill, a unit type). Injected by <c>GameController</c>
+    /// (which hides this report and calls <c>ColopediaPanel.OpenTo</c>); <c>null</c> when unwired (tests that open the
+    /// panel directly), in which case the entity cells render as plain, non-clickable labels.
+    /// </summary>
+    private System.Action<ColopediaPanel.Category, string>? _openColopedia;
+
     /// <summary>The good the Production tab is currently breaking down (its ruleset id); null = "(nothing selected)".</summary>
     private string? _productionGood;
 
@@ -111,9 +120,15 @@ public partial class ColonyReportPanel : PanelContainer
     };
 
     /// <summary>Opens the reports screen on the Colonies tab over the current game state.</summary>
-    public void Open(Game game)
+    /// <param name="game">The current game (read-only oracle source; ADR-006).</param>
+    /// <param name="openColopedia">
+    /// Optional report → Colopedia deep-link (<c>86d3fymc5</c>): when supplied, report entity cells become link buttons
+    /// that invoke it with the target category + anchor; when <c>null</c> they render as plain labels.
+    /// </param>
+    public void Open(Game game, System.Action<ColopediaPanel.Category, string>? openColopedia = null)
     {
         _game = game;
+        _openColopedia = openColopedia;
         _tab = Tab.Colonies;
         Rebuild();
         Show();
@@ -208,12 +223,23 @@ public partial class ColonyReportPanel : PanelContainer
             IReadOnlyDictionary<string, int> net = _game.ColonyNetProduction(c);
             int food = net.GetValueOrDefault(Colony.FoodId);
             string bonus = c.ProductionBonus != 0 ? $", bonus {Signed(c.ProductionBonus)}" : "";
-            // The header label carries the per-colony name + summary; named for the L3 test to find by colony id.
-            dynamic.AddChild(new Label
+            // The header carries the per-colony name + summary; named for the L3 test to find by colony id. When the
+            // colony is building something it becomes a Colopedia deep-link to that build item's entry (86d3fymc5 —
+            // FreeCol's report cells open the colopedia); with an idle build queue there is no entry to point at, so it
+            // stays a plain label.
+            string headerText = $"{c.Name} — pop {c.Population}, SoL {c.SonsOfLiberty}%{bonus}";
+            if (c.CurrentBuild is { } buildId && _game.DescribeBuildable(buildId) is { } build)
             {
-                Name = $"Colony_{c.Id}",
-                Text = $"{c.Name} — pop {c.Population}, SoL {c.SonsOfLiberty}%{bonus}",
-            });
+                dynamic.AddChild(EntityLink(
+                    $"Colony_{c.Id}",
+                    headerText,
+                    build.IsUnit ? ColopediaPanel.Category.Units : ColopediaPanel.Category.Buildings,
+                    build.ShortName));
+            }
+            else
+            {
+                dynamic.AddChild(new Label { Name = $"Colony_{c.Id}", Text = headerText });
+            }
             dynamic.AddChild(new Label { Text = $"    Food {Signed(food)}/turn  ·  Building: {BuildingSummary(c)}" });
             dynamic.AddChild(new Label { Text = $"    Producing: {ProductionSummary(net)}" });
             dynamic.AddChild(new HSeparator());
@@ -630,11 +656,12 @@ public partial class ColonyReportPanel : PanelContainer
             .GroupBy(r => r.Type)
             .OrderBy(g => g.Key, System.StringComparer.Ordinal))
         {
-            dynamic.AddChild(new Label
-            {
-                Name = $"Labour_{Strip(group.Key)}",
-                Text = $"— {Display(Strip(group.Key))} ({group.Count()}) —",
-            });
+            // Each unit-type group header deep-links to that unit's Colopedia entry (86d3fymc5).
+            dynamic.AddChild(EntityLink(
+                $"Labour_{Strip(group.Key)}",
+                $"— {Display(Strip(group.Key))} ({group.Count()}) —",
+                ColopediaPanel.Category.Units,
+                _game.Ruleset.Unit(group.Key).ShortName));
             foreach ((string _, string location, string job) in group)
             {
                 dynamic.AddChild(new Label { Text = $"    {location}: {job}" });
@@ -740,12 +767,23 @@ public partial class ColonyReportPanel : PanelContainer
                 string wanted = s.WantedGoods.Count > 0
                     ? "  ·  wants " + string.Join(", ", s.WantedGoods.Select(Strip))
                     : "";
-                dynamic.AddChild(new Label
+                string settlementText =
+                    $"    {Strip(s.NationTypeId)}{capital} ({s.Position.X},{s.Position.Y}) — alarm {s.AlarmLevel}, " +
+                    $"most hated {MostHatedNation(s)}, teaches {skill}{mission}{wanted}";
+                // A settlement teaching a skill deep-links to that skill's (a unit type) Colopedia entry (86d3fymc5);
+                // a settlement with no teachable skill has no entry to point at, so it stays a plain label.
+                if (s.LearnableSkill is { } skillId)
                 {
-                    Name = $"Native_{s.Position.X}_{s.Position.Y}",
-                    Text = $"    {Strip(s.NationTypeId)}{capital} ({s.Position.X},{s.Position.Y}) — alarm {s.AlarmLevel}, " +
-                           $"most hated {MostHatedNation(s)}, teaches {skill}{mission}{wanted}",
-                });
+                    dynamic.AddChild(EntityLink(
+                        $"Native_{s.Position.X}_{s.Position.Y}",
+                        settlementText,
+                        ColopediaPanel.Category.Units,
+                        _game.Ruleset.Unit(skillId).ShortName));
+                }
+                else
+                {
+                    dynamic.AddChild(new Label { Name = $"Native_{s.Position.X}_{s.Position.Y}", Text = settlementText });
+                }
             }
             dynamic.AddChild(new HSeparator());
         }
@@ -866,11 +904,12 @@ public partial class ColonyReportPanel : PanelContainer
             string boycott = _game.Market.CanTrade(g.Id)
                 ? ""
                 : $"  ·  BOYCOTT (arrears {_game.Market.Arrears(g.Id)} gold)";
-            dynamic.AddChild(new Label
-            {
-                Name = $"Trade_{Strip(g.Id)}",
-                Text = $"{g.ShortName} — sell {bid} / buy {ask}  ·  sold {sold}  ·  income {before} / {after}{boycott}",
-            });
+            // The good is a Colopedia deep-link (86d3fymc5): click it to open the Goods entry (FreeCol report → colopedia).
+            dynamic.AddChild(EntityLink(
+                $"Trade_{Strip(g.Id)}",
+                $"{g.ShortName} — sell {bid} / buy {ask}  ·  sold {sold}  ·  income {before} / {after}{boycott}",
+                ColopediaPanel.Category.Goods,
+                g.ShortName));
         }
     }
 
@@ -1149,11 +1188,12 @@ public partial class ColonyReportPanel : PanelContainer
             string role = b.RoleId is { } rid && !rid.EndsWith(".default")
                 ? $" ({Display(_game.Ruleset.Role(rid).ShortName)})"
                 : "";
-            dynamic.AddChild(new Label
-            {
-                Name = $"Ref_{Strip(b.UnitTypeId)}_{(b.RoleId is { } r ? Strip(r) : "none")}",
-                Text = $"    {b.Count} × {type}{role}",
-            });
+            // Each REF block deep-links to its unit type's Colopedia entry (86d3fymc5).
+            dynamic.AddChild(EntityLink(
+                $"Ref_{Strip(b.UnitTypeId)}_{(b.RoleId is { } r ? Strip(r) : "none")}",
+                $"    {b.Count} × {type}{role}",
+                ColopediaPanel.Category.Units,
+                _game.Ruleset.Unit(b.UnitTypeId).ShortName));
         }
     }
 
@@ -1385,6 +1425,37 @@ public partial class ColonyReportPanel : PanelContainer
                 DrawLine(Point(i - 1), Point(i), color, 2f);
             }
         }
+    }
+
+    /// <summary>
+    /// A report entity cell that deep-links into the Colopedia (<c>86d3fymc5</c>; FreeCol's report cells →
+    /// <c>showColopediaPanel</c>). When the deep-link delegate is wired it returns a <b>flat link Button</b> (reads like a
+    /// hyperlink, pointing-hand cursor) whose Pressed forwards <paramref name="category"/> / <paramref name="anchor"/> to
+    /// <c>GameController</c> (which hides this report and opens the Colopedia there); when unwired (tests opening the panel
+    /// directly) it returns a plain <see cref="Label"/>. Either way the control keeps <paramref name="nodeName"/> so the
+    /// L3 tests and layout find it by the same name. Pure presentation (ADR-006) — the delegate reads oracles only.
+    /// </summary>
+    /// <param name="nodeName">The node name to keep (e.g. <c>Colony_3</c>, <c>Trade_tobacco</c>).</param>
+    /// <param name="text">The cell's display text.</param>
+    /// <param name="category">The Colopedia category the entity lives in.</param>
+    /// <param name="anchor">The entity's ruleset <c>ShortName</c> (the Colopedia row anchor).</param>
+    private Control EntityLink(string nodeName, string text, ColopediaPanel.Category category, string anchor)
+    {
+        if (_openColopedia is not { } open)
+        {
+            return new Label { Name = nodeName, Text = text };
+        }
+        var button = new Button
+        {
+            Name = nodeName,
+            Text = text,
+            Flat = true,
+            SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin,
+            MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+            TooltipText = $"Open the Colopedia entry for {text}",
+        };
+        button.Pressed += () => open(category, anchor);
+        return button;
     }
 
     /// <summary>The readable tail of a <c>model.*.foo</c> id (e.g. <c>model.nation.dutch</c> → <c>dutch</c>).</summary>

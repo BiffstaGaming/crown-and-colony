@@ -25,8 +25,10 @@ namespace CrownAndColony.Presentation;
 /// <b>Cross-links (<c>86d3fq0jx</c>):</b> entries reference each other — a building links to the goods it produces, a
 /// good to what it is refined from / into, and a help topic to the entities it mentions. Clicking a cross-link
 /// navigates to that entity's category, selects it (Concepts) and scrolls it into view with a brief highlight, all
-/// within this panel (FreeCol's in-text help anchors / report→colopedia links). The broader
-/// <i>report → colopedia</i> deep-link (from <c>ColonyReportPanel</c>) is a separate cross-stream follow-up.
+/// within this panel (FreeCol's in-text help anchors / report→colopedia links). The <b>report → Colopedia</b>
+/// deep-link (<c>86d3fymc5</c>) — a report entity cell (a colony's build, a trade good, a native settlement's skill, a
+/// unit type) opening the Colopedia on the matching entry — arrives here through <see cref="OpenTo"/>, which
+/// <c>ColonyReportPanel</c> is wired to call (FreeCol's <c>ReportPanel.showColopediaPanel</c>).
 /// </para>
 /// <para>
 /// Pure presentation (ADR-006): reads <see cref="Game.Ruleset"/> and <see cref="Game.Market"/> only, never mutates.
@@ -36,7 +38,10 @@ namespace CrownAndColony.Presentation;
 /// </summary>
 public partial class ColopediaPanel : PanelContainer
 {
-    private enum Category { Goods, Terrain, Units, Buildings, Fathers, Nations, Resources, Concepts }
+    /// <summary>The Colopedia's top-level reference categories — one per ruleset collection (plus free-text Concepts).
+    /// Public so a cross-panel deep-link (e.g. <see cref="ColonyReportPanel"/>'s report → Colopedia links) can target a
+    /// category through <see cref="OpenTo"/>.</summary>
+    public enum Category { Goods, Terrain, Units, Buildings, Fathers, Nations, Resources, Concepts }
 
     private Game _game = null!;
     private Category _category = Category.Goods;
@@ -70,6 +75,24 @@ public partial class ColopediaPanel : PanelContainer
         _category = Category.Goods;
         _focusNode = null;
         Rebuild();
+        Show();
+    }
+
+    /// <summary>
+    /// Opens the Colopedia straight to a specific entry (a cross-panel deep-link — FreeCol's report cells
+    /// <c>showColopediaPanel(command)</c>): switches to <paramref name="category"/>, selects the concept when the target
+    /// is a help topic, then rebuilds and shows with the target row scrolled into view and briefly highlighted (the same
+    /// reveal path an in-panel cross-link uses). Called by <see cref="ColonyReportPanel"/> when the human clicks a
+    /// report entity cell. Pure navigation — reads only <see cref="Game.Ruleset"/> / <see cref="Game.Market"/>, mutates
+    /// no game state (ADR-006).
+    /// </summary>
+    /// <param name="game">The current game (the panel may have been closed since last shown, so re-seed it).</param>
+    /// <param name="category">The category the linked entity lives in.</param>
+    /// <param name="anchor">The entity's ruleset <c>ShortName</c>, or a concept <b>title</b> for the Concepts category.</param>
+    public void OpenTo(Game game, Category category, string anchor)
+    {
+        _game = game;
+        Navigate(category, anchor); // sets category + focus row, Rebuild()s
         Show();
     }
 

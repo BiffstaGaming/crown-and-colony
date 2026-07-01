@@ -359,6 +359,73 @@ public class ColonyReportPanelTests
     }
 
     [TestCase]
+    public async Task TradeLink_DeepLinksIntoTheColopediaGoodsEntry()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // Open through GameController so the report → Colopedia deep-link delegate is wired (86d3fymc5).
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Trade").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // Tobacco is always tradeable → its Trade_tobacco cell is now a flat link Button; clicking it hides the report
+        // and opens the Colopedia on the Goods category, scrolled to the tobacco entry.
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var tobaccoLink = dynamic.GetNodeOrNull<Button>("Trade_tobacco");
+        AssertThat(tobaccoLink).IsNotNull();
+        tobaccoLink!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // The report closed and the Colopedia opened on the right category + row.
+        AssertThat(controller.GetNode<PanelContainer>("UI/ColonyReportPanel").Visible).IsFalse();
+        var colopedia = controller.GetNode<PanelContainer>("UI/ColopediaPanel");
+        AssertThat(colopedia.Visible).IsTrue();
+        AssertThat(controller.GetNode<Label>("UI/ColopediaPanel/VBox/ColopediaTitle").Text).Contains("Goods");
+        AssertThat(controller.GetNode<VBoxContainer>("UI/ColopediaPanel/VBox/Scroll/Dynamic")
+            .GetNodeOrNull<HBoxContainer>("Goods_tobacco")).IsNotNull();
+    }
+
+    [TestCase]
+    public async Task ColonyLink_DeepLinksIntoTheColopediaBuildEntry()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // Found a colony and give it a build target (a docks) BEFORE opening the panel, so its Colony_{id} header is a
+        // Colopedia deep-link to that building's entry (a colony with an idle build queue stays a plain label).
+        Game game = GetGame(controller);
+        Colony colony = game.FoundColony(game.Units[0]);
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!
+            .Select(c => c.Id == colony.Id ? c with { CurrentBuild = "model.building.warehouse" } : c)
+            .ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+
+        controller.OpenColonyReportPanel();
+        await runner.SimulateFrames(1);
+
+        // The colony header is a link Button (the colony is building a warehouse); clicking it opens the Colopedia on the
+        // Buildings category at the warehouse entry.
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var colonyLink = dynamic.GetNodeOrNull<Button>($"Colony_{colony.Id}");
+        AssertThat(colonyLink).IsNotNull();
+        colonyLink!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(controller.GetNode<PanelContainer>("UI/ColonyReportPanel").Visible).IsFalse();
+        var colopedia = controller.GetNode<PanelContainer>("UI/ColopediaPanel");
+        AssertThat(colopedia.Visible).IsTrue();
+        AssertThat(controller.GetNode<Label>("UI/ColopediaPanel/VBox/ColopediaTitle").Text).Contains("Buildings");
+        AssertThat(controller.GetNode<VBoxContainer>("UI/ColopediaPanel/VBox/Scroll/Dynamic")
+            .GetNodeOrNull<HBoxContainer>("Buildings_warehouse")).IsNotNull();
+    }
+
+    [TestCase]
     public async Task ExplorationTab_RendersFromASeededGame()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

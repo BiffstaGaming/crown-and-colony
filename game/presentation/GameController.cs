@@ -2107,7 +2107,18 @@ public partial class GameController : Node2D
 
     /// <summary>Opens the empire colony report (per-colony population / production / build requirements). Public so scene tests can drive it.</summary>
     public void OpenColonyReportPanel() =>
-        ((ColonyReportPanel)_colonyReportPanel).Open(_game);
+        ((ColonyReportPanel)_colonyReportPanel).Open(_game, OpenColopediaFromReport);
+
+    /// <summary>
+    /// The report → Colopedia deep-link (`86d3fymc5`; FreeCol's <c>ReportPanel.showColopediaPanel</c>): hides the empire
+    /// report and opens the Colopedia straight to the clicked entity's entry (<see cref="ColopediaPanel.OpenTo"/>). Passed
+    /// to <see cref="ColonyReportPanel.Open"/> as its entity-cell link handler; pure presentation (ADR-006).
+    /// </summary>
+    private void OpenColopediaFromReport(ColopediaPanel.Category category, string anchor)
+    {
+        _colonyReportPanel.Hide();
+        ((ColopediaPanel)_colopediaPanel).OpenTo(_game, category, anchor);
+    }
 
     /// <summary>
     /// Opens the message log — the accumulated per-turn notices that the dismissible <see cref="TurnMessagePanel"/>
