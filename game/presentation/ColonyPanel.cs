@@ -56,6 +56,9 @@ public partial class ColonyPanel : PanelContainer
     /// <summary>Warehouse low-water-mark warning tint (muted red) — a good that is nearly exhausted.</summary>
     private static readonly Color WarehouseLow = new(0.78f, 0.32f, 0.28f);
 
+    /// <summary>Export-marker tint (muted teal-green) — a good the custom house auto-sells over its retain level.</summary>
+    private static readonly Color ExportMark = new(0.35f, 0.7f, 0.55f);
+
     /// <summary>
     /// Warehouse low water-mark: a stored good at or below this absolute floor is flagged "running low" (a fixed
     /// presentation default; a configurable per-good threshold is a later enhancement). Mirrors FreeCol's low-stock
@@ -1126,7 +1129,9 @@ public partial class ColonyPanel : PanelContainer
     /// marker and a "will overflow" tooltip; a good <b>running low</b> is tinted red with a ▼ marker and a "running low"
     /// tooltip; a normal good shows neither. Pure presentation over <see cref="Colony.Stores"/> +
     /// <see cref="Game.ColonyWarehouseCapacity"/> (ADR-006) — no engine rule keys off these marks. The amount label is
-    /// named <c>Warehouse_{good}</c> so the warning state is testable.
+    /// named <c>Warehouse_{good}</c> so the warning state is testable. A good flagged for custom-house export (its
+    /// <see cref="Colony.ExportOf"/> <c>Exported</c> is set) additionally shows an <c>ExportMarker</c> "→" cell in the
+    /// export tint with an "auto-exports over N" tooltip line; a non-exported good has no such cell.
     /// </summary>
     private Control WarehouseBar()
     {
@@ -1167,8 +1172,22 @@ public partial class ColonyPanel : PanelContainer
                     tooltip = $"{name}: {amount}/{capacity}";
                     break;
             }
+            // Export indicator (86d3fpza8): a good the custom house auto-sells shows a "→" marker in the export tint,
+            // a sibling of the water-mark marker (FreeCol tints the exported good on the goods bar — no map-tile icon).
+            // Reads the existing Colony.ExportOf oracle only (pure presentation, ADR-006).
+            Colony.ExportSetting export = _colony.ExportOf(good);
+            if (export.Exported)
+            {
+                tooltip += $"\nAuto-exports over {export.ExportLevel} (custom house).";
+            }
             cell.TooltipText = tooltip;
             cell.AddChild(markerLabel);
+            if (export.Exported)
+            {
+                var exportLabel = new Label { Name = "ExportMarker", Text = "→", HorizontalAlignment = HorizontalAlignment.Center };
+                exportLabel.AddThemeColorOverride("font_color", ExportMark);
+                cell.AddChild(exportLabel);
+            }
             cell.AddChild(icon);
             cell.AddChild(amountLabel);
 

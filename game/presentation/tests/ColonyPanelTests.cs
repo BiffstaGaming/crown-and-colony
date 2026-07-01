@@ -1371,6 +1371,50 @@ public class ColonyPanelTests
         AssertThat(toolsCell!.TooltipText.Contains("overflow") || toolsCell.TooltipText.Contains("running low")).IsFalse();
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task WarehouseBar_ShowsExportMarker_OnAFlaggedGood_NotOnANormalGood()
+    {
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+
+        // Seed a colony with a custom house, ore flagged for export (retain 50), and plain tools — via the save layer.
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == colony.Id
+            ? c with
+            {
+                Stores = new Dictionary<string, int>
+                {
+                    ["model.goods.ore"] = 80,   // exported
+                    ["model.goods.tools"] = 40, // not exported
+                },
+                Buildings = c.Buildings!.Append("model.building.customHouse").ToList(),
+                Exports = new Dictionary<string, SavedExport> { ["model.goods.ore"] = new SavedExport(Exported: true, Level: 50) },
+            }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony seeded = game.Colonies.First(c => c.Id == colony.Id);
+        AssertThat(game.ColonyHasCustomHouse(seeded)).IsTrue();
+        AssertThat(seeded.ExportOf("model.goods.ore").Exported).IsTrue();
+
+        controller.OpenColonyPanel(seeded);
+        await runner.SimulateFrames(2);
+        var panel = controller.GetNode<PanelContainer>("UI/ColonyPanel");
+
+        // The exported good shows a "→" ExportMarker cell + an "auto-exports over N" tooltip line.
+        var oreCell = panel.FindChild("Warehouse_ore", recursive: true, owned: false) as VBoxContainer;
+        AssertThat(oreCell).OverrideFailureMessage("warehouse cell for ore not found").IsNotNull();
+        var oreExport = oreCell!.FindChild("ExportMarker", recursive: true, owned: false) as Label;
+        AssertThat(oreExport).OverrideFailureMessage("exported ore should show an ExportMarker").IsNotNull();
+        AssertThat(oreExport!.Text).IsEqual("→");
+        AssertThat(oreCell.TooltipText.Contains("Auto-exports over 50")).IsTrue();
+
+        // The non-exported good has no ExportMarker cell.
+        var toolsCell = panel.FindChild("Warehouse_tools", recursive: true, owned: false) as VBoxContainer;
+        AssertThat(toolsCell).OverrideFailureMessage("warehouse cell for tools not found").IsNotNull();
+        AssertThat(toolsCell!.FindChild("ExportMarker", recursive: true, owned: false))
+            .OverrideFailureMessage("a non-exported good must not show an ExportMarker").IsNull();
+    }
+
     private static string MarkerOf(VBoxContainer cell) =>
         ((Label)cell.FindChild("Marker", recursive: true, owned: false)).Text;
 
