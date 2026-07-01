@@ -25,10 +25,8 @@ public class UiPanelGoldenTests
 {
     private const ulong GoldenSeed = 424242;
     private static readonly Vector2I CaptureSize = new(1024, 600);
-
-    // NOTE: both panel goldens (Colony + Europe) currently assert a render-without-crash smoke rather than diffing a
-    // committed PNG — see 86d3f69e9 and the per-test comments. The text-diff tolerance and GoldenAssert call return
-    // when the Linux-CI golden pipeline is restored and the PNGs are regenerated.
+    /// <summary>Looser fraction than the map goldens — text-heavy panels accumulate more cross-platform font-antialiasing noise (matches <see cref="MenuGoldenTests"/>).</summary>
+    private const double TextTolerance = 0.02;
 
     [TestCase(Timeout = 60000)]
     public async Task ColonyPanel_FreshColony_MatchesGolden()
@@ -47,12 +45,9 @@ public class UiPanelGoldenTests
         controller.OpenColonyPanel(colony);
         await runner.SimulateFrames(4); // let the deferred rebuild + layout settle
 
-        // L4 golden assertion deferred (86d3f69e9): the colony panel was reworked (production overview + per-slot
-        // worker portraits), so the committed golden is stale, and the CI visual-diffs artifact didn't capture this
-        // panel's render for re-adoption (the golden-pipeline issue). The panel's behaviour is covered by the three
-        // functional ColonyPanelTests; this remains a render-without-crash smoke until the golden is regenerated on
-        // the Linux CI renderer and the assertion is re-enabled.
-        AssertThat(controller.GetViewport().GetTexture().GetImage().GetWidth()).IsGreater(0);
+        // L4 golden (86d3f69e9): the reworked colony panel (production overview + per-slot worker portraits) diffed
+        // against the committed Linux-CI baseline, regenerated via the GOLDEN_UPDATE=1 workflow_dispatch on the CI runner.
+        GoldenAssert.Assert("colony-panel-seed424242", controller.GetViewport().GetTexture().GetImage(), TextTolerance);
     }
 
     [TestCase(Timeout = 60000)]
@@ -99,13 +94,10 @@ public class UiPanelGoldenTests
         controller.OpenEuropePanel();
         await runner.SimulateFrames(4);
 
-        // L4 golden assertion deferred (86d3f69e9): the Europe panel was reworked from a flat text list into the zoned
-        // harbour layout (header + recruit/train/purchase + goods market + ships-in-port hold-slot cards + sail + docks),
-        // so the committed golden is stale, and the CI golden-capture pipeline didn't render this panel for re-adoption
-        // (the golden-pipeline issue). The zones' behaviour is covered by the functional EuropePanelTests; this remains a
-        // render-without-crash smoke until the golden is regenerated on the Linux CI renderer and the assertion is
-        // re-enabled. (Mirrors the ColonyPanel_FreshColony deferral above.)
-        AssertThat(controller.GetViewport().GetTexture().GetImage().GetWidth()).IsGreater(0);
+        // L4 golden (86d3f69e9): the reworked zoned-harbour Europe panel (header + recruit/train/purchase + goods market
+        // + ships-in-port hold-slot cards + sail + docks) diffed against the committed Linux-CI baseline, regenerated via
+        // the GOLDEN_UPDATE=1 workflow_dispatch on the CI runner.
+        GoldenAssert.Assert("europe-panel", controller.GetViewport().GetTexture().GetImage(), TextTolerance);
     }
 
     private static Game GameOf(GameController controller) =>

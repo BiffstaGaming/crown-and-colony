@@ -5,6 +5,12 @@ on:
     branches: ["**"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      golden_update:
+        description: "Regenerate the L4 golden PNGs on the CI Linux renderer and upload them as the goldens-linux artifact (for adoption/commit) instead of asserting against them."
+        type: boolean
+        default: false
 
 jobs:
   logic-tests:
@@ -88,6 +94,7 @@ jobs:
       #      test failure still shows as failed>0 (or a missing TRX on a crash),
       #      so this masks ONLY the leak-at-exit warning, never a real failure.
       - name: Run scene tests (L3 + L4 goldens, up to 3 attempts)
+        if: github.event.inputs.golden_update != 'true'
         working-directory: game
         run: |
           trx="TestResults/scene.trx"
@@ -122,9 +129,29 @@ jobs:
           echo "::error::Scene tests failed after 3 attempts (real test failures or host could not start)."
           exit 1
 
+      # Golden regeneration path (workflow_dispatch with golden_update=true): render every L4 golden on THIS Linux
+      # runner with GOLDEN_UPDATE=1 (GoldenAssert saves the PNG and returns instead of asserting), then upload the whole
+      # goldens dir as an artifact for adoption. The process exit code is ignored (leak-at-exit + a golden that has no
+      # baseline both exit non-zero even though every PNG was written). See kanban 86d3f69e9.
+      - name: Regenerate L4 goldens on CI Linux (GOLDEN_UPDATE)
+        if: github.event.inputs.golden_update == 'true'
+        working-directory: game
+        run: |
+          GOLDEN_UPDATE=1 xvfb-run --auto-servernum dotnet test CrownAndColony.csproj \
+            --no-build --settings .runsettings --logger "console;verbosity=normal" || true
+          echo "Regenerated goldens:"; ls -la tests/visual/goldens/
+
+      - name: Upload regenerated goldens (goldens-linux)
+        if: github.event.inputs.golden_update == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: goldens-linux
+          path: game/tests/visual/goldens/
+          if-no-files-found: error
+
       # Publish the L3/L4 results so the QA-REPORT generator can read them.
       - name: Upload scene test results (TRX)
-        if: always()
+        if: always() && github.event.inputs.golden_update != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: trx-scene

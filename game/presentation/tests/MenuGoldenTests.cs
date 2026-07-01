@@ -73,9 +73,19 @@ public class MenuGoldenTests
         GoldenAssert.Assert("about-panel", scene.GetViewport().GetTexture().GetImage(), TextTolerance);
     }
 
-    // NOTE: HelpPanel_MatchesGolden (L4) intentionally omitted — there is no CI-Linux baseline for help-panel yet, and a
-    // baseline rendered on a Windows dev host fails CI's Linux renderer (font/GPU raster diff > tolerance). The HelpPanel's
-    // behaviour is covered functionally by HelpPanelTests; the L4 golden is tracked as a follow-up (generate on CI). 86d3e98db.
+    [TestCase(Timeout = 60000)]
+    public async Task HelpPanel_MatchesGolden()
+    {
+        // The standalone help screen (goal + core loops + controls reference). Baseline generated on the CI Linux
+        // renderer via the GOLDEN_UPDATE=1 workflow_dispatch (86d3f69e9), so a Windows dev host's font/GPU raster
+        // differences no longer block adoption. Functional behaviour is covered by HelpPanelTests.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/HelpPanel.tscn");
+        var scene = (Control)runner.Scene();
+        scene.GetWindow().Size = CaptureSize;
+        await runner.SimulateFrames(5);
+
+        GoldenAssert.Assert("help-panel", scene.GetViewport().GetTexture().GetImage(), TextTolerance);
+    }
 
     [TestCase(Timeout = 60000)]
     public async Task InfoPopup_MatchesGolden()
