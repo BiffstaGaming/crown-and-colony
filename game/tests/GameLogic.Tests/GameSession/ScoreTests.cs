@@ -77,13 +77,17 @@ public class ScoreTests
         Unit colonist = game.SpawnUnit(Classic.Unit(Game.StartingUnitTypeId), spot);
         int before = game.PlayerScore(game.HumanPlayer); // the new colonist itself scores 3
 
+        // Founding reveals a wider radius than the spawn did, which can first-discover a region — since river
+        // regions became discoverable (86d3fpxnm) this seed's founding reveal discovers one (+its score). Net that
+        // exploration delta out (like Unit_AddsItsRulesetScoreValue) so this asserts only the liberty summand.
+        int discBefore = game.HistoryEventScore;
         Colony colony = game.FoundColony(colonist);
         colony.Liberty = 350;
 
         // The colonist became colony population: it leaves the map-unit list but is now counted as a COLONY WORKER
         // (still a free colonist worth 3), so its unit score is unchanged — only relocated. The colony's 350 liberty
         // is added on top: net change is +350 over the pre-founding score (the worker's 3 stays in the unit sum).
-        Assert.Equal(before + 350, game.PlayerScore(game.HumanPlayer));
+        Assert.Equal(before + 350 + (game.HistoryEventScore - discBefore), game.PlayerScore(game.HumanPlayer));
     }
 
     // ── Summand: unit score values (FreeCol sum(getUnits(), Unit::getScoreValue)) ─────────────────────────
@@ -117,11 +121,14 @@ public class ScoreTests
         Unit colonist = game.SpawnUnit(Classic.Unit(Game.StartingUnitTypeId), spot);
         int withMapUnit = game.PlayerScore(game.HumanPlayer); // the colonist scores 3 as a map unit
 
+        // Founding's wider reveal can first-discover a region — a discoverable RIVER region on this seed since
+        // 86d3fpxnm — so net the exploration delta out and assert only the worker-relocation invariant.
+        int discBefore = game.HistoryEventScore;
         game.FoundColony(colonist); // the colonist becomes colony population (one free colonist)
 
         // It left the map-unit list but is now counted as a colony worker (still a free colonist, 3) — so the unit
-        // score is unchanged. (No liberty/fathers/gold added, and founding reveals already-seen tiles → no new score.)
-        Assert.Equal(withMapUnit, game.PlayerScore(game.HumanPlayer));
+        // score is unchanged. (No liberty/fathers/gold added; the reveal's discovery score is netted out above.)
+        Assert.Equal(withMapUnit + (game.HistoryEventScore - discBefore), game.PlayerScore(game.HumanPlayer));
     }
 
     [Fact]

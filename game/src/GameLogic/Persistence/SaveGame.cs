@@ -335,8 +335,13 @@ public sealed record SaveGame
     /// load with no stamps (every rumour resolves by the explore-time roll, exactly as before). The type roll draws on
     /// a dedicated derived stream (<see cref="World.LostCityRumourGenerator.MoundsTypeStreamId"/> = 106), so rumour
     /// POSITIONS for a seed are byte-identical to v68 (ADR-009).
-    /// (Slice (c) — the region bounding boxes + river/thirds regions, 86d3fpxnm — lands under this same bump in its
-    /// own commit and extends this note.)
+    /// <b>(c)</b> A region's optional virtual <b>bounding box</b> (<see cref="SavedRegion.Bounds"/> — carried only by
+    /// the nine geographic-thirds regions FreeCol's <c>ServerRegion.getStandardRegions</c> creates for native
+    /// placement; 86d3fpxnm): omitted for every tile-bearing region — all of a v68-era save's — so a v68-era region
+    /// table round-trips byte-identically. New maps also append per-river-system <see cref="World.RegionType.River"/>
+    /// regions (river tiles reassigned to them, FreeCol <c>ServerRegion.addTile</c>) and the nine keyed thirds boxes
+    /// to the table under the existing v35 region layer — an existing-layer <i>content</i> change, not a schema
+    /// change: pre-v69 saves load their persisted layer verbatim (never re-derived while regions are present).
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -711,9 +716,11 @@ public sealed record SaveGame
                 ? game.Map.Regions
                     // Discovery fields (v51) are omitted while undiscovered (DiscoveredBy null), so an undiscovered
                     // region serializes byte-identically to v50; a discovered region carries its discoverer/name/turn.
+                    // A thirds region's virtual bounding box (v69) is omitted for every tile-bearing region.
                     .Select(r => new SavedRegion(
                         r.Id, (int)r.Type, r.ScoreValue, r.Key, r.ParentId,
-                        r.DiscoveredBy, r.Name, r.DiscoveredInTurn))
+                        r.DiscoveredBy, r.Name, r.DiscoveredInTurn,
+                        r.Bounds is { } b ? new SavedBounds(b.X, b.Y, b.Width, b.Height) : null))
                     .ToList()
                 : null,
             // Custom-house auto-export mode; omitted for the PerGood default so a default game stays byte-identical to v27.
@@ -819,7 +826,8 @@ public sealed record SaveGame
             RegionIds,
             Regions?.Select(r => new Region(
                 r.Id, (RegionType)r.Type, r.ScoreValue, r.Key, r.ParentId,
-                r.DiscoveredBy, r.Name, r.DiscoveredInTurn)).ToList(), // v51; pre-v51 / omitted → undiscovered (null)
+                r.DiscoveredBy, r.Name, r.DiscoveredInTurn, // v51; pre-v51 / omitted → undiscovered (null)
+                r.Bounds is { } b ? new RegionBounds(b.X, b.Y, b.Width, b.Height) : null)).ToList(), // v69; pre-v69 / omitted → no box
             // Finite resource quantities by tile (v46; pre-v46 / omitted → none).
             ResourceQuantities?.ToDictionary(
                 q => new Position(q.Index % MapWidth, q.Index / MapWidth),
@@ -1265,14 +1273,23 @@ public sealed record SavedForceEntry(string UnitTypeId, string? RoleId, int Coun
 /// <param name="Id">Region id (indexed by <see cref="SaveGame.RegionIds"/>).</param>
 /// <param name="Type">The <see cref="RegionType"/> enum ordinal.</param>
 /// <param name="ScoreValue">Discovery score.</param>
-/// <param name="Key">Fixed-region key (e.g. <c>model.region.arctic</c>); null/omitted for a dynamic land/mountain region.</param>
+/// <param name="Key">Fixed-region key (e.g. <c>model.region.arctic</c>); null/omitted for a dynamic land/mountain/river region.</param>
 /// <param name="ParentId">Parent region id (an ocean quadrant's parent ocean); null/omitted at the top level.</param>
 /// <param name="DiscoveredBy">The player id that first discovered this region (v51; null/omitted while undiscovered, so an undiscovered map stays byte-identical to v50).</param>
 /// <param name="Name">The name assigned on discovery (v51; null/omitted while undiscovered).</param>
 /// <param name="DiscoveredInTurn">The turn the region was discovered in (v51; null/omitted while undiscovered).</param>
+/// <param name="Bounds">The virtual bounding box of a geographic-thirds region (v69, 86d3fpxnm; FreeCol <c>ServerRegion.bounds</c>); null/omitted for every tile-bearing region, so a v68-era region table round-trips byte-identically.</param>
 public sealed record SavedRegion(
     int Id, int Type, int ScoreValue, string? Key = null, int? ParentId = null,
-    int? DiscoveredBy = null, string? Name = null, int? DiscoveredInTurn = null);
+    int? DiscoveredBy = null, string? Name = null, int? DiscoveredInTurn = null,
+    SavedBounds? Bounds = null);
+
+/// <summary>A region's virtual bounding box inside a <see cref="SaveGame"/> (v69) — the half-open tile box <c>[X, X+Width) × [Y, Y+Height)</c> a geographic-thirds region carries (see <see cref="World.RegionBounds"/>).</summary>
+/// <param name="X">Left column, inclusive.</param>
+/// <param name="Y">Top row, inclusive.</param>
+/// <param name="Width">Box width in tiles.</param>
+/// <param name="Height">Box height in tiles.</param>
+public sealed record SavedBounds(int X, int Y, int Width, int Height);
 
 /// <summary>A serialised <see cref="GameSession.Force"/> (the Royal Expeditionary Force) inside a <see cref="SaveGame"/> (v40).</summary>
 /// <param name="Land">Land-unit blocks.</param>

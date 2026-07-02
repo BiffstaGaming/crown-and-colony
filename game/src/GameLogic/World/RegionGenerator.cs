@@ -2,23 +2,32 @@ namespace CrownAndColony.GameLogic.World;
 
 /// <summary>
 /// Assigns every tile of a finished map to exactly one <see cref="Region"/> (FreeCol
-/// <c>ServerRegion.requireFixedRegions</c> + <c>TerrainGenerator.createLandRegions/createMountains</c>):
+/// <c>ServerRegion.requireFixedRegions</c> + <c>TerrainGenerator.createLandRegions/createMountains/createRivers</c>):
 /// the arctic/antarctic polar bands, the Atlantic/Pacific oceans split into north/south quadrants,
-/// contiguous mountain ranges, and the per-landmass land regions (split when larger than 75 tiles).
+/// contiguous mountain ranges, the per-landmass land regions (split when larger than 75 tiles), and one
+/// <see cref="RegionType.River"/> region per connected river system (river tiles are <b>reassigned</b> from their
+/// land region — FreeCol <c>ServerRegion.addTile</c> re-points <c>tile.setRegion</c>). It also appends FreeCol's
+/// nine virtual <b>geographic-thirds</b> regions (<c>ServerRegion.getStandardRegions</c>): keyed, score-0
+/// bounding-box regions that claim no tiles, splitting the (non-polar) land into equal-land thirds each way —
+/// consumed by native settlement placement in FreeCol (our placement doesn't read them yet; documented gap).
 ///
 /// <para>Like <see cref="NativeLandClaimGenerator"/> this is a <b>pure, deterministic, RNG-free</b> function
-/// of the terrain — it draws no randomness, so it perturbs no RNG stream and recomputes byte-identically at
-/// game start and on load. Region ownership is therefore re-derivable; saves persist it (v35) only so a
-/// loaded game keeps the exact ids it was played with even if this algorithm later changes.</para>
+/// of the terrain + river layer — it draws no randomness, so it perturbs no RNG stream and recomputes
+/// byte-identically at game start and on load. Region ownership is therefore re-derivable; saves persist it (v35)
+/// only so a loaded game keeps the exact ids it was played with even if this algorithm later changes.</para>
 ///
 /// <para>Faithful subset and divergences (see <c>docs/systems/map-terrain.md</c>): FreeCol builds mountain
 /// regions during a generation-time range walk; our altitude is per-tile noise, so we derive mountain regions
 /// from the resulting hill/mountain terrain instead (same <see cref="RegionType.Mountain"/> and
-/// <c>score = 2 × size</c>). Enclosed water the ocean fill cannot reach is tagged <see cref="RegionType.Lake"/>
-/// (FreeCol <c>TerrainGenerator.createLakeRegions</c>); <see cref="MapGenerator"/> then retypes those tiles to lake
-/// <i>terrain</i> after region assignment (FreeCol <c>makeLakes</c>). FreeCol's nine virtual
-/// "geographic thirds" bounding boxes (used only to seed native placement) and the RIVER/COAST/DESERT region
-/// types are deferred until rivers and that placement hook exist.</para>
+/// <c>score = 2 × size</c>). FreeCol likewise builds one river region per river <i>walk</i>; our river identity is
+/// the finished improvement layer, so we derive one region per <b>connected river system</b> (a tributary and its
+/// trunk share one region) with the same <c>score = 2 × Σ magnitude</c>. Enclosed water the ocean fill cannot reach
+/// is tagged <see cref="RegionType.Lake"/> (FreeCol <c>TerrainGenerator.createLakeRegions</c>);
+/// <see cref="MapGenerator"/> then retypes those tiles to lake <i>terrain</i> after region assignment (FreeCol
+/// <c>makeLakes</c>). The COAST/DESERT region types are <b>reserved, never instantiated</b> — faithful: FreeCol's
+/// generator never creates them either. The thirds boxes partition the whole map (FreeCol's <c>ensureWithinMap</c>
+/// cap drops the last row/column from every box — a Java <c>Rectangle</c> artifact we deliberately do not copy, so
+/// the nine boxes tile the map exactly).</para>
 /// </summary>
 public static class RegionGenerator
 {
@@ -45,10 +54,10 @@ public static class RegionGenerator
         Array.Fill(ids, GameMap.NoRegion);
         var regions = new List<Region>();
 
-        int NewRegion(RegionType type, int score, string? key = null, int? parent = null)
+        int NewRegion(RegionType type, int score, string? key = null, int? parent = null, RegionBounds? bounds = null)
         {
             int id = regions.Count;
-            regions.Add(new Region(id, type, score, key, parent));
+            regions.Add(new Region(id, type, score, key, parent, Bounds: bounds));
             return id;
         }
 
@@ -139,7 +148,154 @@ public static class RegionGenerator
         // ── 4. Land regions: the remaining unclaimed land, one per landmass, split when larger than 75 ───────
         AssignLand(map, ids, w, h, NewRegion);
 
+        // ── 5. River regions (86d3fpxnm): one per connected river system, REASSIGNING its tiles ──────────────
+        // FreeCol TerrainGenerator.createRivers creates a discoverable ServerRegion(RegionType.RIVER) per river and
+        // River.java adds every river tile to it — ServerRegion.addTile L203-204 re-points tile.setRegion, so a
+        // river tile genuinely leaves its land region. Our river identity is the finished improvement layer, so a
+        // connected component of river-improved tiles (8-dir, scan order) is one system; score = 2 × Σ per-tile
+        // magnitude (FreeCol 2 × Σ RiverSection.getSize()). Appended AFTER the land regions so every pre-existing
+        // region keeps its id (the table prefix is unchanged; only river TILES change region — the ruling's
+        // deliberate layer change). Runs before the thirds so the thirds ids are the table's last nine.
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                var p = new Position(x, y);
+                if (!map.HasRiver(p) || regions[ids[Idx(x, y)]].Type == RegionType.River)
+                {
+                    continue; // not a river tile, or already claimed by an earlier system
+                }
+                var system = CollectBlob((px, py) => map.HasRiver(new Position(px, py))
+                    && regions[ids[Idx(px, py)]].Type != RegionType.River, x, y, w, h);
+                int score = 2 * system.Sum(t => map.RiverAt(new Position(t.X, t.Y))!.Magnitude);
+                int region = NewRegion(RegionType.River, score);
+                foreach ((int bx, int by) in system)
+                {
+                    ids[Idx(bx, by)] = region; // reassignment — the faithful ServerRegion.addTile behaviour
+                }
+            }
+        }
+
+        // ── 6. The nine geographic-thirds boxes (86d3fpxnm): virtual, keyed, score 0, no tiles ───────────────
+        AppendGeographicThirds(map, w, h, NewRegion);
+
         return (ids, regions);
+    }
+
+    /// <summary>
+    /// Appends FreeCol's nine virtual "geographic thirds" regions (<c>ServerRegion.getStandardRegions</c>,
+    /// <c>server/model/ServerRegion.java</c> L370-472): keyed <see cref="RegionType.Land"/> regions carrying only a
+    /// bounding box — they claim no tiles and are never discoverable (they have keys). The delimiters are
+    /// <b>land-weighted</b> thirds, not geometric ones (FreeCol <c>findYForThirdsOfLand</c>/<c>findXForThirdsOfLand</c>/
+    /// <c>findThirdsOfValues</c>): the two Y delimiters split the non-polar land tiles into three equal-count
+    /// horizontal bands, then each band gets its own two X delimiters splitting that band's land into equal-count
+    /// column thirds (the X count includes the delimiter rows on both sides, exactly like FreeCol's inclusive
+    /// <c>subMap</c> ranges). Our boxes are the half-open partition <c>[0,xD0)/[xD0,xD1)/[xD1,w)</c> per band
+    /// <c>[0,yD0)/[yD0,yD1)/[yD1,h)</c> — covering the map exactly, without FreeCol's <c>ensureWithinMap</c>
+    /// last-row/column drop (a Java Rectangle artifact; documented deviation). Creation order NW, N, NE, W, C, E,
+    /// SW, S, SE (the FreeCol order), so the nine ids are stable per map.
+    /// </summary>
+    private static void AppendGeographicThirds(
+        GameMap map, int w, int h, Func<RegionType, int, string?, int?, RegionBounds?, int> newRegion)
+    {
+        // FreeCol Map.isPolar: y <= POLAR_HEIGHT || y >= height - POLAR_HEIGHT - 1 (rows 0..2 and h-3..h-1) —
+        // polar land never counts toward the thirds.
+        bool IsCountedLand(int x, int y) =>
+            !map.TerrainAt(new Position(x, y)).IsWater
+            && y > PolarHeight && y < h - PolarHeight - 1;
+
+        // Y delimiters over all counted land (findYForThirdsOfLand: array length h-1 — a counted tile never sits in
+        // the last row, which is polar).
+        var rowCounts = new int[Math.Max(1, h - 1)];
+        long total = 0;
+        for (int y = 0; y < h - 1; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                if (IsCountedLand(x, y))
+                {
+                    rowCounts[y]++;
+                    total++;
+                }
+            }
+        }
+        int[] yD = FindThirdsOfValues(rowCounts, total);
+
+        // Per horizontal band, the X delimiters (findXForThirdsOfLand over the band's INCLUSIVE row range — FreeCol's
+        // subMap(0, startY, w-1, endY-startY+1) shares the delimiter row with both adjacent bands). Array length w-1
+        // faithfully; a counted land tile at x == w-1 would overflow FreeCol's array (it throws there) — we skip it
+        // defensively (generated maps keep a watery margin, so none exists in practice).
+        int[] XDelims(int startY, int endY)
+        {
+            var colCounts = new int[Math.Max(1, w - 1)];
+            long sum = 0;
+            for (int y = Math.Max(0, startY); y <= Math.Min(h - 1, endY); y++)
+            {
+                for (int x = 0; x < w - 1; x++)
+                {
+                    if (IsCountedLand(x, y))
+                    {
+                        colCounts[x]++;
+                        sum++;
+                    }
+                }
+            }
+            return FindThirdsOfValues(colCounts, sum);
+        }
+
+        int[] xTop = XDelims(0, yD[0]);
+        int[] xMid = XDelims(yD[0], yD[1]);
+        int[] xBot = XDelims(yD[1], h - 1);
+
+        // Nine half-open boxes partitioning the map; FreeCol creation order (NW,N,NE,W,C,E,SW,S,SE) → stable ids.
+        (string Key, int[] XD, int RowFrom, int RowTo)[] bands =
+        [
+            ("model.region.northWest", xTop, 0, yD[0]),
+            ("model.region.north", xTop, 0, yD[0]),
+            ("model.region.northEast", xTop, 0, yD[0]),
+            ("model.region.west", xMid, yD[0], yD[1]),
+            ("model.region.center", xMid, yD[0], yD[1]),
+            ("model.region.east", xMid, yD[0], yD[1]),
+            ("model.region.southWest", xBot, yD[1], h),
+            ("model.region.south", xBot, yD[1], h),
+            ("model.region.southEast", xBot, yD[1], h),
+        ];
+        for (int i = 0; i < bands.Length; i++)
+        {
+            (string key, int[] xd, int rowFrom, int rowTo) = bands[i];
+            int colFrom = (i % 3) switch { 0 => 0, 1 => xd[0], _ => xd[1] };
+            int colTo = (i % 3) switch { 0 => xd[0], 1 => xd[1], _ => w };
+            newRegion(RegionType.Land, 0, key, null,
+                new RegionBounds(colFrom, rowFrom, Math.Max(0, colTo - colFrom), Math.Max(0, rowTo - rowFrom)));
+        }
+    }
+
+    /// <summary>
+    /// The two indices splitting a weighted array into three equal-weight parts (FreeCol
+    /// <c>ServerRegion.findThirdsOfValues</c>, ported verbatim): the first index whose running total reaches
+    /// <c>sum/3</c>, and the first reaching <c>(2·sum)/3</c> (integer division; a zero <paramref name="sum"/> yields
+    /// <c>[0, 0]</c> — empty west/centre boxes, everything in the east/south, exactly as FreeCol degenerates).
+    /// </summary>
+    private static int[] FindThirdsOfValues(int[] timesTheValue, long sum)
+    {
+        var result = new int[2];
+        long accumulated = 0;
+        bool needFirst = true;
+        for (int i = 0; i < timesTheValue.Length; i++)
+        {
+            accumulated += timesTheValue[i];
+            if (needFirst && accumulated >= sum / 3)
+            {
+                result[0] = i;
+                needFirst = false;
+            }
+            if (accumulated >= (2 * sum) / 3)
+            {
+                result[1] = i;
+                break;
+            }
+        }
+        return result;
     }
 
     /// <summary>
@@ -228,7 +384,8 @@ public static class RegionGenerator
     /// landmass, split any larger than <see cref="LandRegionMaxSize"/> into ~75-tile chunks, and score each
     /// <c>max((int)(size/landsize·1000), 5)</c> where <c>landsize</c> is the total land-tile count.
     /// </summary>
-    private static void AssignLand(GameMap map, int[] ids, int w, int h, Func<RegionType, int, string?, int?, int> newRegion)
+    private static void AssignLand(
+        GameMap map, int[] ids, int w, int h, Func<RegionType, int, string?, int?, RegionBounds?, int> newRegion)
     {
         bool IsLand(int x, int y) => !map.TerrainAt(new Position(x, y)).IsWater;
 
@@ -347,7 +504,7 @@ public static class RegionGenerator
                 continue;
             }
             int score = Math.Max((int)((float)finalsize[c] / landsize * LandRegionsScoreValue), LandRegionMinScore);
-            landregion[c] = newRegion(RegionType.Land, score, null, null);
+            landregion[c] = newRegion(RegionType.Land, score, null, null, null);
         }
         for (int y = 0; y < h; y++)
         {

@@ -203,10 +203,18 @@ public class SaveBackwardCompatTests
     /// </summary>
     private static SaveGame DownVersion(SaveGame s, int version) => version switch
     {
-        // After v68: the v69 bump (86d3hz9ga/86d3fpxv8/86d3fpxnm) — the active timed disaster modifiers + the
-        // gen-time MOUNDS pre-stamps. A v68 save is a v69 save minus both (a default game may write MoundsRumours —
-        // gen-time content — so nulling it here is load-bearing, not just drift-proofing).
-        68 => s with { Version = 68, TemporaryModifiers = null, MoundsRumours = null },
+        // After v68: the v69 bump (86d3hz9ga/86d3fpxv8/86d3fpxnm) — the active timed disaster modifiers, the
+        // gen-time MOUNDS pre-stamps, and the thirds regions' bounding boxes. A v68 save is a v69 save minus all
+        // three (a default game writes MoundsRumours/Bounds — gen-time content — so stripping them here is
+        // load-bearing, not just drift-proofing). The river/thirds REGIONS themselves stay in the table: the loader
+        // restores a persisted region table verbatim whatever it contains, so they are harmless in the v68 shape.
+        68 => s with
+        {
+            Version = 68,
+            TemporaryModifiers = null,
+            MoundsRumours = null,
+            Regions = s.Regions?.Select(r => r with { Bounds = null }).ToList(),
+        },
 
         // After v65: the human's New-World name (v66, top-level). A v65 save is a v66 save minus NewWorldName.
         65 => s with { Version = 65, NewWorldName = null },

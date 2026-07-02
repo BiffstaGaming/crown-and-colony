@@ -37,9 +37,16 @@ namespace CrownAndColony.GameLogic.World;
 /// The game turn the region was discovered in, or <c>null</c> while undiscovered. Mirrors FreeCol
 /// <c>Region.discoveredIn</c>.
 /// </param>
+/// <param name="Bounds">
+/// The virtual bounding box of a <b>geographic-thirds</b> region (86d3fpxnm; FreeCol <c>ServerRegion.bounds</c>, set
+/// only by <c>getStandardRegions</c>' nine thirds boxes for native settlement placement), or <c>null</c> for every
+/// tile-bearing region. A bounded region is <b>virtual</b>: it claims no tiles (no tile's region id points at it) and
+/// is never discoverable (it always carries a fixed <see cref="Key"/>).
+/// </param>
 public sealed record Region(
     int Id, RegionType Type, int ScoreValue, string? Key = null, int? ParentId = null,
-    int? DiscoveredBy = null, string? Name = null, int? DiscoveredInTurn = null)
+    int? DiscoveredBy = null, string? Name = null, int? DiscoveredInTurn = null,
+    RegionBounds? Bounds = null)
 {
     /// <summary>The Pacific Ocean's predefined key — the one ocean region the player can discover (FreeCol <c>Region.PACIFIC_KEY</c>).</summary>
     public const string PacificKey = "model.region.pacific";
@@ -49,13 +56,31 @@ public sealed record Region(
 
     /// <summary>
     /// Whether this region can still be discovered (FreeCol <c>ServerRegion</c> discoverability): an
-    /// undiscovered, dynamically-numbered <see cref="RegionType.Land"/>/<see cref="RegionType.Mountain"/>
-    /// region (one with no fixed <see cref="Key"/>), or the undiscovered Pacific Ocean. The polar bands, the
-    /// Atlantic, the ocean leaf quadrants and lakes are never directly discoverable — their tiles resolve to
-    /// the discoverable Pacific parent (if any) at the map level.
+    /// undiscovered, dynamically-numbered <see cref="RegionType.Land"/>/<see cref="RegionType.Mountain"/>/
+    /// <see cref="RegionType.River"/> region (one with no fixed <see cref="Key"/> — FreeCol's
+    /// <c>new ServerRegion(game, RegionType.RIVER)</c> ctor sets <c>discoverable = true</c> like the land/mountain
+    /// ones), or the undiscovered Pacific Ocean. The polar bands, the Atlantic, the ocean leaf quadrants, lakes and
+    /// the keyed geographic-thirds boxes are never directly discoverable — their tiles (if any) resolve to the
+    /// discoverable Pacific parent at the map level.
     /// </summary>
     public bool IsDiscoverable =>
         !IsDiscovered
-        && ((Type is RegionType.Land or RegionType.Mountain && Key is null)
+        && ((Type is RegionType.Land or RegionType.Mountain or RegionType.River && Key is null)
             || Key == PacificKey);
+}
+
+/// <summary>
+/// A region's virtual bounding box (FreeCol <c>ServerRegion.bounds</c>, a <c>java.awt.Rectangle</c>): the half-open
+/// tile box <c>[X, X+Width) × [Y, Y+Height)</c>. Carried only by the nine geographic-thirds regions (86d3fpxnm); the
+/// nine boxes partition the map exactly (every tile lies in exactly one). Consumed the way FreeCol's
+/// <c>SimpleMapGenerator</c> uses <c>getBounds()</c> — a <c>Rectangle.contains(x, y)</c> point test.
+/// </summary>
+/// <param name="X">Left column, inclusive.</param>
+/// <param name="Y">Top row, inclusive.</param>
+/// <param name="Width">Box width in tiles (right edge <c>X + Width</c> exclusive).</param>
+/// <param name="Height">Box height in tiles (bottom edge <c>Y + Height</c> exclusive).</param>
+public readonly record struct RegionBounds(int X, int Y, int Width, int Height)
+{
+    /// <summary>Whether <paramref name="p"/> lies inside this half-open box (Java <c>Rectangle.contains</c> semantics).</summary>
+    public bool Contains(Position p) => p.X >= X && p.X < X + Width && p.Y >= Y && p.Y < Y + Height;
 }

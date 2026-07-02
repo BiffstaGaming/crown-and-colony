@@ -1,6 +1,9 @@
+using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
+using CrownAndColony.GameLogic.World.Improvements;
 using Xunit;
 
 namespace CrownAndColony.GameLogic.Tests.World;
@@ -351,5 +354,207 @@ public class RegionGeneratorTests
         var antarcticLand = a.AllPositions().Where(p => !a.TerrainAt(p).IsWater && p.Y >= a.Height - 3).ToList();
         Assert.NotEmpty(antarcticLand); // the assertion below is not vacuous
         Assert.All(antarcticLand, p => Assert.Equal("model.region.antarctic", a.RegionOf(p)!.Key));
+    }
+
+    // ── River regions + geographic thirds (86d3fpxnm) ────────────────────────────────────────────────────
+    //
+    // FreeCol creates one discoverable ServerRegion(RegionType.RIVER) per river (TerrainGenerator.createRivers
+    // ~L587) and River.java adds each river tile to it — ServerRegion.addTile L203-204 re-points tile.setRegion,
+    // so river tiles genuinely LEAVE their land region (integrator ruling: the faithful option). It also appends
+    // nine virtual "geographic thirds" regions (ServerRegion.getStandardRegions L370-472): keyed, score-0,
+    // land-weighted bounding boxes claiming no tiles, consumed by FreeCol's native placement (our placement
+    // doesn't read them yet — a documented consumer gap). COAST/DESERT stay reserved-only: FreeCol declares but
+    // never instantiates them, and so do we.
+
+    /// <summary>The nine thirds keys in FreeCol creation order (<c>ServerRegion.getStandardRegions</c>).</summary>
+    private static readonly string[] ThirdsKeys =
+    [
+        "model.region.northWest", "model.region.north", "model.region.northEast",
+        "model.region.west", "model.region.center", "model.region.east",
+        "model.region.southWest", "model.region.south", "model.region.southEast",
+    ];
+
+    /// <summary>An 8×8 all-plains map with river improvements stamped on the given tiles (magnitude 1).</summary>
+    private static GameMap PlainsWithRivers(params Position[] riverTiles)
+    {
+        TileImprovementType river = Classic.ImprovementTypes.First(i => i.Id == TileImprovementType.RiverId);
+        var improvements = riverTiles.ToDictionary(
+            p => p, p => (IReadOnlyList<TileImprovementType>)new List<TileImprovementType> { river });
+        var map = new GameMap(8, 8, [.. Enumerable.Repeat(Classic.Terrain("model.tile.plains"), 64)],
+            improvements: improvements);
+        (int[] ids, IReadOnlyList<Region> regions) = RegionGenerator.Assign(map);
+        map.SetRegions(ids, regions);
+        return map;
+    }
+
+    [Fact]
+    public void GeographicThirds_AreNineKeyedVirtualBoxes_PartitioningTheMapExactly()
+    {
+        GameMap map = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(7));
+        var thirds = map.Regions.Where(r => r.Bounds is not null).ToList();
+
+        Assert.Equal(ThirdsKeys, thirds.Select(r => r.Key));                        // nine, in FreeCol creation order
+        Assert.Equal(map.Regions.Count - 9, thirds[0].Id);                          // appended as the table's last nine
+        Assert.All(thirds, r => Assert.Equal(RegionType.Land, r.Type));             // FreeCol creates them as LAND
+        Assert.All(thirds, r => Assert.Equal(0, r.ScoreValue));                     // never worth discovery points
+        Assert.All(thirds, r => Assert.False(r.IsDiscoverable));                    // keyed → never discoverable
+        // Virtual: no tile's region id points at a thirds region (a bounded region claims no tiles).
+        Assert.All(map.AllPositions(), p => Assert.Null(map.RegionOf(p)!.Bounds));
+        // The nine half-open boxes cover the map exactly and are disjoint: every tile lies in exactly one.
+        Assert.All(map.AllPositions(), p =>
+            Assert.Equal(1, thirds.Count(r => r.Bounds!.Value.Contains(p))));
+    }
+
+    [Fact]
+    public void GeographicThirds_UseLandWeightedDelimiters_PinnedOnAUniformFixture()
+    {
+        // 12×12 all-land (the OversizedLandmass fixture shape). Counted land excludes polar rows (FreeCol
+        // Map.isPolar: y <= 2 or y >= h-3 → counted y = 3..8) and defensively the last column (x = 0..10; FreeCol's
+        // w-1-length array would throw on x = 11). Hand-derivation of the verbatim findThirdsOfValues port:
+        //   rows: 6 rows × 11 = 66; 66/3 = 22 → yD0 = 4 (cum 11,22); (2·66)/3 = 44 → yD1 = 6 (cum 33,44).
+        //   top band rows 0..4 inclusive → counted y 3..4 → 22; 22/3 = 7 → xD0 = 3 (cum 2,4,6,8); 44/3 = 14 → xD1 = 6.
+        //   mid band rows 4..6 → counted y 4..6 → 33; 33/3 = 11 → xD0 = 3 (cum 12 at x=3); 22 → xD1 = 7 (cum 24).
+        //   bottom band rows 6..11 → counted y 6..8 → 33 → same delimiters as mid.
+        // Boxes are the half-open partition per band: [0,yD0)/[yD0,yD1)/[yD1,h) × [0,xD0)/[xD0,xD1)/[xD1,w).
+        string allLand = new string('L', 12);
+        GameMap map = FromRows(Enumerable.Repeat(allLand, 12).ToArray());
+        var thirds = map.Regions.Where(r => r.Bounds is not null).ToList();
+
+        Assert.Equal(9, thirds.Count);
+        RegionBounds BoundsOf(string key) => thirds.Single(r => r.Key == key).Bounds!.Value;
+        Assert.Equal(new RegionBounds(0, 0, 3, 4), BoundsOf("model.region.northWest"));
+        Assert.Equal(new RegionBounds(3, 0, 3, 4), BoundsOf("model.region.north"));
+        Assert.Equal(new RegionBounds(6, 0, 6, 4), BoundsOf("model.region.northEast"));
+        Assert.Equal(new RegionBounds(0, 4, 3, 2), BoundsOf("model.region.west"));
+        Assert.Equal(new RegionBounds(3, 4, 4, 2), BoundsOf("model.region.center"));
+        Assert.Equal(new RegionBounds(7, 4, 5, 2), BoundsOf("model.region.east"));
+        Assert.Equal(new RegionBounds(0, 6, 3, 6), BoundsOf("model.region.southWest"));
+        Assert.Equal(new RegionBounds(3, 6, 4, 6), BoundsOf("model.region.south"));
+        Assert.Equal(new RegionBounds(7, 6, 5, 6), BoundsOf("model.region.southEast"));
+    }
+
+    [Fact]
+    public void RiverTiles_AreReassignedToRiverRegions_EverythingElseKeepsItsRegion_AndThePrefixIsUnchanged()
+    {
+        // The determinism bar (integrator ruling): the region LAYER may change deliberately, but every NON-river
+        // tile keeps its prior region and the pre-existing region-table prefix is unchanged. Pin it comparatively:
+        // the same generated terrain with and without its river layer must agree everywhere except river tiles.
+        GameMap withRivers = MapGenerator.Generate(Classic, 36, 24, new Pcg32Random(7));
+        var riverless = new GameMap(36, 24, [.. withRivers.AllPositions().Select(withRivers.TerrainAt)]);
+        (int[] bareIds, IReadOnlyList<Region> bareRegions) = RegionGenerator.Assign(riverless);
+
+        var riverTiles = withRivers.AllPositions().Where(withRivers.HasRiver).ToList();
+        Assert.NotEmpty(riverTiles); // the default 36×24 seed-7 map has rivers — the comparison is non-vacuous
+
+        // Non-river tiles: identical region id in both layers (the bare layer has no river regions at all).
+        Assert.All(withRivers.AllPositions().Where(p => !withRivers.HasRiver(p)),
+            p => Assert.Equal(bareIds[p.Y * 36 + p.X], withRivers.RegionIdAt(p)));
+        // River tiles: reassigned to a River region (the faithful ServerRegion.addTile re-point).
+        Assert.All(riverTiles, p => Assert.Equal(RegionType.River, withRivers.RegionOf(p)!.Type));
+
+        // The pre-existing table prefix (fixed + lakes + mountains + land — everything before the appended river
+        // regions) is byte-identical to the riverless derivation's same prefix.
+        int prefixLength = bareRegions.Count - 9; // the bare table = the old prefix + its nine thirds
+        Assert.True(prefixLength > 0);
+        Assert.Equal(bareRegions.Take(prefixLength), withRivers.Regions.Take(prefixLength));
+        // And the appended tail is exactly: the river regions, then the nine thirds (same boxes as the bare run —
+        // rivers don't change the land count — with ids shifted by the river-region count).
+        var riverRegions = withRivers.Regions.Skip(prefixLength).Where(r => r.Type == RegionType.River).ToList();
+        Assert.NotEmpty(riverRegions);
+        Assert.Equal(withRivers.Regions.Count, prefixLength + riverRegions.Count + 9);
+        Assert.Equal(
+            bareRegions.Skip(prefixLength).Select(r => r with { Id = 0 }),
+            withRivers.Regions.Skip(prefixLength + riverRegions.Count).Select(r => r with { Id = 0 }));
+
+        // Each river region's score is FreeCol's 2 × Σ per-tile magnitude over exactly its tiles.
+        foreach (Region region in riverRegions)
+        {
+            var tiles = withRivers.AllPositions().Where(p => withRivers.RegionIdAt(p) == region.Id).ToList();
+            Assert.NotEmpty(tiles);
+            Assert.All(tiles, p => Assert.True(withRivers.HasRiver(p)));
+            Assert.Equal(2 * tiles.Sum(p => withRivers.RiverAt(p)!.Magnitude), region.ScoreValue);
+        }
+    }
+
+    [Fact]
+    public void RiverSystems_OneRegionPerConnectedSystem_DiscoverableViaTheExistingPath()
+    {
+        // Two 2-tile rivers, far apart (not 8-adjacent) → two distinct keyless River regions; each tile resolves to
+        // its own region through DiscoverableRegionOf (rivers are discoverable/nameable like land/mountain —
+        // FreeCol's ServerRegion(game, RegionType.RIVER) ctor sets discoverable = true).
+        GameMap map = PlainsWithRivers(new Position(1, 4), new Position(2, 4), new Position(6, 4), new Position(6, 5));
+
+        Region a = map.RegionOf(new Position(1, 4))!;
+        Region b = map.RegionOf(new Position(6, 4))!;
+        Assert.Equal(RegionType.River, a.Type);
+        Assert.Equal(RegionType.River, b.Type);
+        Assert.Equal(a.Id, map.RegionOf(new Position(2, 4))!.Id);  // connected tiles share one system
+        Assert.Equal(b.Id, map.RegionOf(new Position(6, 5))!.Id);
+        Assert.NotEqual(a.Id, b.Id);                               // separate systems, separate regions
+        Assert.Null(a.Key);                                        // dynamic, keyless…
+        Assert.True(a.IsDiscoverable);                             // …and discoverable
+        Assert.Equal(2 * 2, a.ScoreValue);                         // 2 × Σ magnitude (two magnitude-1 tiles)
+        Assert.Equal(a.Id, map.DiscoverableRegionOf(new Position(1, 4))!.Id); // the existing discovery path finds it
+    }
+
+    // ── Persistence (v69: bounds omit-when-null; the river/thirds regions ride the existing v35 layer) ────
+
+    [Fact]
+    public void RegionLayer_WithRiversAndThirds_RoundTripsThroughSave()
+    {
+        Game game = Game.New(Classic, seed: 7);
+        Assert.Contains(game.Map.Regions, r => r.Type == RegionType.River); // precondition: the layer has rivers
+        Assert.Equal(9, game.Map.Regions.Count(r => r.Bounds is not null)); // …and the nine thirds boxes
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(game.Map.Regions, loaded.Map.Regions); // record equality — incl. types, keys, scores, bounds
+        Assert.Equal(
+            game.Map.AllPositions().Select(game.Map.RegionIdAt),
+            loaded.Map.AllPositions().Select(loaded.Map.RegionIdAt));
+    }
+
+    [Fact]
+    public void ARegionlessSave_ReDerivesTheFullLayer_IncludingRiversAndThirds()
+    {
+        // A pre-v35 (regionless) save re-derives on load; the re-derivation now includes the river regions (from
+        // the persisted improvement layer) and the nine thirds — structurally identical to the layer the game was
+        // created with. (Discovery state rides the region TABLE, so a regionless save loses it — the pre-existing
+        // v51 semantics — hence the structural comparison ignores the discovery fields.)
+        Game game = Game.New(Classic, seed: 7);
+        SaveGame regionless = SaveGame.From(game) with { Regions = null, RegionIds = null };
+
+        Game loaded = SaveGame.FromJson(regionless.ToJson()).Restore(Classic);
+
+        Assert.Equal(
+            game.Map.Regions.Select(r => (r.Id, r.Type, r.ScoreValue, r.Key, r.ParentId, r.Bounds)),
+            loaded.Map.Regions.Select(r => (r.Id, r.Type, r.ScoreValue, r.Key, r.ParentId, r.Bounds)));
+        Assert.Contains(loaded.Map.Regions, r => r.Type == RegionType.River);  // rivers re-derived from improvements
+        Assert.Equal(9, loaded.Map.Regions.Count(r => r.Bounds is not null));  // the nine thirds re-derived
+        Assert.Equal(
+            game.Map.AllPositions().Select(game.Map.RegionIdAt),
+            loaded.Map.AllPositions().Select(loaded.Map.RegionIdAt));
+    }
+
+    [Fact]
+    public void ATileBearingRegion_OmitsTheBoundsToken_FromJson()
+    {
+        // Every tile-bearing region (all of a v68-era save's) omits Bounds, so a v68-era region table round-trips
+        // byte-identically; only a thirds region writes the token.
+        string without = System.Text.Json.JsonSerializer.Serialize(
+            new SavedRegion(0, (int)RegionType.Land, 500),
+            new System.Text.Json.JsonSerializerOptions
+            {
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            });
+        Assert.DoesNotContain("Bounds", without);
+
+        string with_ = System.Text.Json.JsonSerializer.Serialize(
+            new SavedRegion(9, (int)RegionType.Land, 0, "model.region.northWest", Bounds: new SavedBounds(0, 0, 12, 8)),
+            new System.Text.Json.JsonSerializerOptions
+            {
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            });
+        Assert.Contains("Bounds", with_);
     }
 }
