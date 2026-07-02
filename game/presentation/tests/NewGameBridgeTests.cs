@@ -50,6 +50,8 @@ public class NewGameBridgeTests
         NewGameDialog.PendingMapOptions = null;
         NewGameDialog.PendingRumourNumber = null;
         NewGameDialog.PendingNationalAdvantages = null;
+        NewGameDialog.PendingDifficultyOverrides = null; // custom difficulty (86d3fq0x7)
+        NewGameDialog.PendingImportedMap = null;         // imported scenario map (86d3fq1cg)
     }
 
     [BeforeTest]

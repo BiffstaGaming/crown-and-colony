@@ -4339,11 +4339,12 @@ public sealed partial class Game
     /// an unpicked new game byte-identical (ADR-009).
     /// </param>
     /// <param name="importOverride">
-    /// A test-only seam (default null): a pre-built <see cref="MapImportResult"/> (terrain + declared native
-    /// settlements, fixed start tiles, region layer) used in place of importing <paramref name="mapSource"/> from disk.
-    /// Lets a test drive a scenario map that declares <c>[settlements]</c>/<c>[starts]</c>/<c>[regions]</c> sections
-    /// through the real install path without shipping it as a <see cref="MapSource"/>. Null in normal play, so the
-    /// production America/Random paths are unchanged.
+    /// A pre-built <see cref="MapImportResult"/> (terrain + declared native settlements, fixed start tiles, region
+    /// layer) used in place of importing <paramref name="mapSource"/> from disk. Two callers: tests driving scenario
+    /// maps that declare <c>[settlements]</c>/<c>[starts]</c>/<c>[regions]</c> sections through the real install path,
+    /// and the New-Game "Import map…" flow (86d3fq1cg — a player-picked <c>.txt</c>/<c>.MP</c> file validated by
+    /// <see cref="World.MapImporter.ImportFile"/> and threaded through <c>NewGameDialog.PendingImportedMap</c>).
+    /// Null otherwise, so the stock America/Random paths are unchanged.
     /// </param>
     /// <param name="greatRivers">
     /// Whether to generate navigable <b>great-river</b> terrain — the spine of long rivers retyped to
