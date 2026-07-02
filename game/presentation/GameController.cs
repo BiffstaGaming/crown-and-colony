@@ -128,6 +128,17 @@ public partial class GameController : Node2D
     public ulong Seed { get; set; }
 
     private Game _game = null!;
+
+    /// <summary>
+    /// The running game, read-only — <c>null</c> only in the brief window before <c>_Ready</c> has started one (a new
+    /// game or a pending load). A <b>read seam for tests and read-only observers</b> (86d3fy56v: the New-Game bridge L3
+    /// asserts the consumed <c>Pending*</c> dials actually reached the started game through it): all mutation still goes
+    /// through the controller's command methods / the <see cref="Game"/> rules API (ADR-006 — the presentation layer
+    /// owns no rules), so exposing the reference read-only adds no new mutation surface beyond what <c>Game</c>'s own
+    /// public API already allows.
+    /// </summary>
+    public Game? CurrentGame => _game;
+
     private ulong _currentSeed;
     private GameVariant _variant = GameVariants.Default;
     private MapView _mapView = null!;
