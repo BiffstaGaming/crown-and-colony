@@ -11,6 +11,7 @@ public sealed class GameMap
     private readonly Dictionary<Position, int> _resourceQuantities; // tile → a finite resource's remaining quantity (sparse; absent = limitless / no range)
     private readonly Dictionary<Position, List<TileImprovementType>> _improvements; // tile → the improvements on it (sparse; a tile may carry several — e.g. a river + a road + a plow)
     private readonly HashSet<Position> _rumours;
+    private readonly HashSet<Position> _moundsRumours; // rumour tiles the map generator pre-stamped as strange MOUNDS (a subset of _rumours; saved, v69)
     private readonly Dictionary<Position, string> _nativeOwners = []; // tile → owning native nation type id (derived, not saved)
     private readonly HashSet<Position> _claimedFromNatives; // tiles bought/taken from the natives — a SAVED override the derivation honours
     private int[]? _regionIds; // dense row-major region id per tile (index y*Width+x); null until assigned, NoRegion = unassigned tile
@@ -27,6 +28,7 @@ public sealed class GameMap
     /// <param name="regions">The region table indexed by region id (null = none). Restored alongside <paramref name="regionIds"/>.</param>
     /// <param name="resourceQuantities">A finite resource's remaining quantity by tile (sparse; null = none). Restored from a v46+ save; only finite (min/max-ranged) resources carry one.</param>
     /// <param name="improvements">The tile improvements on each tile (sparse; null = none) — a tile may carry several (a river plus a pioneer-built road/plow). Restored from a v47+ save; rivers are stamped at game start by the map generator, roads/plows/clearings by pioneers. A pre-v47 save has none.</param>
+    /// <param name="moundsRumours">The rumour tiles the map generator pre-stamped as strange MOUNDS (a subset of <paramref name="rumours"/>; sparse; null = none). Restored from a v69+ save; stamped at game start by <see cref="LostCityRumourGenerator"/>. A pre-v69 save has none.</param>
     public GameMap(
         int width, int height, IReadOnlyList<TerrainType> terrain,
         IReadOnlyDictionary<Position, string>? resources = null,
@@ -35,7 +37,8 @@ public sealed class GameMap
         IReadOnlyList<int>? regionIds = null,
         IReadOnlyList<Region>? regions = null,
         IReadOnlyDictionary<Position, int>? resourceQuantities = null,
-        IReadOnlyDictionary<Position, IReadOnlyList<TileImprovementType>>? improvements = null)
+        IReadOnlyDictionary<Position, IReadOnlyList<TileImprovementType>>? improvements = null,
+        IReadOnlyCollection<Position>? moundsRumours = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
@@ -59,6 +62,7 @@ public sealed class GameMap
             ? []
             : improvements.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key, kv => kv.Value.ToList());
         _rumours = rumours is null ? [] : [.. rumours];
+        _moundsRumours = moundsRumours is null ? [] : [.. moundsRumours];
         _claimedFromNatives = claimedFromNatives is null ? [] : [.. claimedFromNatives];
         _regionIds = regionIds is null ? null : [.. regionIds];
         _regions = regions is null ? [] : [.. regions];
@@ -201,8 +205,27 @@ public sealed class GameMap
     /// <summary>Places a Lost City Rumour on a tile (game-start generation only).</summary>
     internal void AddRumour(Position p) => _rumours.Add(p);
 
-    /// <summary>Removes a Lost City Rumour from a tile once it has been explored (one-shot).</summary>
-    internal void RemoveRumour(Position p) => _rumours.Remove(p);
+    /// <summary>Removes a Lost City Rumour from a tile once it has been explored (one-shot). A MOUNDS pre-stamp on the tile is consumed with it.</summary>
+    internal void RemoveRumour(Position p)
+    {
+        _rumours.Remove(p);
+        _moundsRumours.Remove(p);
+    }
+
+    /// <summary>
+    /// True when the rumour on a tile was pre-stamped as strange MOUNDS by the map generator (FreeCol
+    /// <c>SimpleMapGenerator.makeLostCityRumours</c> calling <c>LostCityRumour.setType(MOUNDS)</c> when the gen-time
+    /// <c>chooseType(null, random)</c> roll lands MOUNDS on native-owned land). A pre-stamped rumour's type is already
+    /// determined — FreeCol short-circuits the explore-time roll for it, and offers the investigate/decline prompt
+    /// <b>only</b> for a pre-stamped MOUNDS (<c>InGameController</c> ~L1789-1796).
+    /// </summary>
+    public bool HasMoundsStamp(Position p) => _moundsRumours.Contains(p);
+
+    /// <summary>All rumour tiles pre-stamped as strange MOUNDS (a subset of <see cref="Rumours"/>; sparse). Persisted (v69).</summary>
+    public IReadOnlyCollection<Position> MoundsRumours => _moundsRumours;
+
+    /// <summary>Pre-stamps the rumour on a tile as strange MOUNDS (game-start generation only; see <see cref="HasMoundsStamp"/>).</summary>
+    internal void StampMoundsRumour(Position p) => _moundsRumours.Add(p);
 
     /// <summary>True when a tile is claimed by a native nation (within a native settlement's claim radius).</summary>
     public bool IsNativeOwned(Position p) => _nativeOwners.ContainsKey(p);

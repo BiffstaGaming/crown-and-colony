@@ -203,9 +203,10 @@ public class SaveBackwardCompatTests
     /// </summary>
     private static SaveGame DownVersion(SaveGame s, int version) => version switch
     {
-        // After v68: the v69 bump (86d3hz9ga/86d3fpxv8/86d3fpxnm) — the active timed disaster modifiers. A v68 save
-        // is a v69 save minus TemporaryModifiers (a default game omits it anyway; nulled here so the case can't drift).
-        68 => s with { Version = 68, TemporaryModifiers = null },
+        // After v68: the v69 bump (86d3hz9ga/86d3fpxv8/86d3fpxnm) — the active timed disaster modifiers + the
+        // gen-time MOUNDS pre-stamps. A v68 save is a v69 save minus both (a default game may write MoundsRumours —
+        // gen-time content — so nulling it here is load-bearing, not just drift-proofing).
+        68 => s with { Version = 68, TemporaryModifiers = null, MoundsRumours = null },
 
         // After v65: the human's New-World name (v66, top-level). A v65 save is a v66 save minus NewWorldName.
         65 => s with { Version = 65, NewWorldName = null },

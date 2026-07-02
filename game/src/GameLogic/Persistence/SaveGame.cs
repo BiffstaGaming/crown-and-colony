@@ -326,8 +326,17 @@ public sealed record SaveGame
     /// survives a save/reload mid-window and still expires on the same turn. Omitted when the registry is empty — the
     /// classic default game (disaster chance 0) registers none, so a default game serialises byte-identically to v68
     /// and pre-v69 saves load with no active penalty (the pre-persistence behaviour).
-    /// (Slices (b) — the gen-time strange-mounds pre-stamps, 86d3fpxv8 — and (c) — the region bounding boxes +
-    /// river/thirds regions, 86d3fpxnm — land under this same bump in their own commits and extend this note.)
+    /// <b>(b)</b> The map's gen-time <b>strange-mounds pre-stamps</b> (<see cref="MoundsRumours"/> — the rumour tiles
+    /// the generator stamped MOUNDS at creation, FreeCol <c>SimpleMapGenerator.makeLostCityRumours</c>'s
+    /// <c>chooseType(null, random) == MOUNDS &amp;&amp; getOwningSettlement() != null</c> pre-stamp persisted via the
+    /// rumour's <c>TYPE_TAG</c>; 86d3fpxv8): a sorted row-major index list, a subset of <see cref="Rumours"/>, omitted
+    /// when no rumour is stamped. Gen-time content (v46/v57 precedent), so a default-seed NEW game may write the token;
+    /// a v68-era loaded state has no stamps and re-saves byte-identically apart from the Version line. Pre-v69 saves
+    /// load with no stamps (every rumour resolves by the explore-time roll, exactly as before). The type roll draws on
+    /// a dedicated derived stream (<see cref="World.LostCityRumourGenerator.MoundsTypeStreamId"/> = 106), so rumour
+    /// POSITIONS for a seed are byte-identical to v68 (ADR-009).
+    /// (Slice (c) — the region bounding boxes + river/thirds regions, 86d3fpxnm — lands under this same bump in its
+    /// own commit and extends this note.)
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -383,6 +392,17 @@ public sealed record SaveGame
 
     /// <summary>Tiles holding an unexplored Lost City Rumour, by row-major tile index (v25; null/omitted when none, so a rumour-free game stays byte-identical to v24).</summary>
     public IReadOnlyList<int>? Rumours { get; init; }
+
+    /// <summary>
+    /// The rumour tiles the map generator <b>pre-stamped as strange MOUNDS</b>, by row-major tile index, sorted — a
+    /// subset of <see cref="Rumours"/> (v69; 86d3fpxv8). FreeCol's <c>SimpleMapGenerator.makeLostCityRumours</c> draws
+    /// <c>chooseType(null, random)</c> once per placed rumour and persists <c>setType(MOUNDS)</c> when the roll lands
+    /// MOUNDS on native-owned land; this list is that persisted type. Null/omitted when no rumour is stamped — a
+    /// pre-v69 save loads with none (every rumour resolves by the explore-time roll, exactly as before). Gen-time
+    /// content (like the v46/v57 gen-time tokens), so a default-seed NEW game may write it; a v68-era loaded state has
+    /// no stamps and re-saves byte-identically apart from the Version line.
+    /// </summary>
+    public IReadOnlyList<int>? MoundsRumours { get; init; }
 
     /// <summary>Tiles the player has bought or taken from the natives, by row-major tile index (v26; null/omitted when none, so a game with no land purchases stays byte-identical to v25). The native-ownership re-derivation honours these so a claimed tile never reverts to the natives.</summary>
     public IReadOnlyList<int>? ClaimedTiles { get; init; }
@@ -673,6 +693,11 @@ public sealed record SaveGame
             Rumours = game.Map.Rumours.Count > 0
                 ? game.Map.Rumours.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList()
                 : null,
+            // Gen-time MOUNDS pre-stamps by row-major index (v69); omitted when none, so a stamp-free game (and every
+            // v68-era loaded state) serialises byte-identically apart from the Version line.
+            MoundsRumours = game.Map.MoundsRumours.Count > 0
+                ? game.Map.MoundsRumours.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList()
+                : null,
             // Tiles bought/taken from the natives by row-major index; omitted when none (byte-identical to v25).
             ClaimedTiles = game.Map.ClaimedFromNatives.Count > 0
                 ? game.Map.ClaimedFromNatives.Select(p => p.Y * game.Map.Width + p.X).OrderBy(i => i).ToList()
@@ -808,7 +833,9 @@ public sealed record SaveGame
                     g => new Position(g.Key % MapWidth, g.Key / MapWidth),
                     g => (IReadOnlyList<TileImprovementType>)g
                         .Select(i => ruleset.Improvement(i.ImprovementId) with { Magnitude = i.Magnitude })
-                        .ToList()));
+                        .ToList()),
+            // Gen-time MOUNDS pre-stamps (v69; pre-v69 / omitted → none — every rumour resolves by the explore-time roll).
+            MoundsRumours?.Select(i => new Position(i % MapWidth, i / MapWidth)).ToList());
 
         // Pre-v35 saves (and any save without a persisted region layer) re-derive regions deterministically from
         // the terrain — exactly the layer the generator would have produced (mirrors the native-land re-derivation).

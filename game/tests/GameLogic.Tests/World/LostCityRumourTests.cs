@@ -1021,4 +1021,130 @@ public class LostCityRumourTests
         Assert.Null(game.PendingMounds);
         Assert.False(game.Map.HasRumour(tile));
     }
+
+    // ---- Gen-time MOUNDS pre-stamp (86d3fpxv8, save v69) ----
+    //
+    // FreeCol's SimpleMapGenerator.makeLostCityRumours (~L188-193) draws LostCityRumour.chooseType(null, random)
+    // once per placed rumour and PERSISTS setType(MOUNDS) when the roll lands MOUNDS on native-owned land. Our
+    // generator now mirrors that: after the position picks, one type draw per chosen tile on a FRESH derived
+    // stream (Pcg32Random(lcrState, MoundsTypeStreamId = 106)), stamping via GameMap.StampMoundsRumour. The
+    // placement stream is never advanced by the type roll, so rumour POSITIONS for a seed are byte-identical
+    // to before this feature (ADR-009). NOTE: the explore-time consumers (the pre-stamped-type short-circuit in
+    // ExploreRumour and the prompt-only-for-pre-stamped gate in TryExploreRumour) are Game.cs seams owned by the
+    // integrator — until wired, exploring keeps the pre-seam behaviour; these tests cover generation + the map
+    // model + persistence.
+
+    /// <summary>All-plains map with every tile owned by the given nation (or none), for generator-level stamp tests.</summary>
+    private static GameMap AllPlainsMap(int size, string? nativeNation)
+    {
+        var map = new GameMap(size, size, [.. Enumerable.Repeat(Classic.Terrain("model.tile.plains"), size * size)]);
+        if (nativeNation is not null)
+        {
+            foreach (Position p in map.AllPositions())
+            {
+                map.SetNativeOwner(p, nativeNation);
+            }
+        }
+        return map;
+    }
+
+    [Fact]
+    public void RumourPositions_AreUnchangedByTheGenTimeTypeRoll_PinnedForTheDefaultSeed()
+    {
+        // Regression pin against the PRE-stamping generator: these are the exact seed-0xC0FFEE default-game rumour
+        // positions captured from the code BEFORE 86d3fpxv8 landed (row-major order). The type roll draws only on
+        // the derived stream 106, so the placement shuffle — and hence these positions — must be byte-identical.
+        Game game = Game.New(Classic, Seed);
+        Position[] expected =
+        [
+            new(27, 3), new(29, 6), new(31, 7), new(21, 9), new(24, 9), new(14, 10),
+            new(22, 11), new(11, 12), new(21, 12), new(11, 15), new(18, 15),
+        ];
+        Assert.Equal(expected, game.Map.Rumours.OrderBy(p => p.Y * game.Map.Width + p.X).ToArray());
+    }
+
+    [Fact]
+    public void GenStamps_AreDeterministicPerSeed_ASubsetOfRumours_AndOnlyOnNativeLand()
+    {
+        Game a = Game.New(Classic, Seed);
+        Game b = Game.New(Classic, Seed);
+        Assert.Equal(
+            a.Map.MoundsRumours.OrderBy(p => p.Y * a.Map.Width + p.X),
+            b.Map.MoundsRumours.OrderBy(p => p.Y * b.Map.Width + p.X)); // same seed → same stamps
+        Assert.All(a.Map.MoundsRumours, p => Assert.True(a.Map.HasRumour(p)));      // a stamp is always on a rumour tile
+        Assert.All(a.Map.MoundsRumours, p => Assert.True(a.Map.IsNativeOwned(p)));  // and only on native-owned land
+    }
+
+    [Fact]
+    public void GenStamps_DrawFromTheDerivedStream_NeverThePlacementStream_AndOnlyStampNativeLand()
+    {
+        // Two identical all-plains maps, one fully native-owned and one unowned, fed identically-seeded placement
+        // streams. The type roll must not touch the placement stream (identical positions AND identical post-Place
+        // stream state on both maps), and the stamp gate must hold (stamps on the owned map only). rumourNumber 2
+        // gives ~360 rumour targets on 40×40, so the ~5% MOUNDS slot (8·48 of the 7704-weight table) stamps a
+        // healthy, deterministic handful on the owned map.
+        const string Nation = "model.nationType.apache";
+        GameMap owned = AllPlainsMap(40, Nation);
+        GameMap unowned = AllPlainsMap(40, null);
+        var rngOwned = new Pcg32Random(Seed, 100);
+        var rngUnowned = new Pcg32Random(Seed, 100);
+
+        var placedOwned = LostCityRumourGenerator.Place(owned, new HashSet<Position>(), rngOwned, rumourNumber: 2);
+        var placedUnowned = LostCityRumourGenerator.Place(unowned, new HashSet<Position>(), rngUnowned, rumourNumber: 2);
+
+        Assert.Equal(placedOwned, placedUnowned);                          // positions independent of ownership
+        Assert.Equal(rngOwned.SaveState(), rngUnowned.SaveState());        // the placement stream ends identically…
+        Assert.NotEmpty(owned.MoundsRumours);                              // …yet the owned map got stamps
+        Assert.True(owned.MoundsRumours.Count < placedOwned.Count / 4,     // a minority slot (~5%), never the bulk
+            $"{owned.MoundsRumours.Count} stamps of {placedOwned.Count} rumours — the MOUNDS slot should be rare");
+        Assert.Empty(unowned.MoundsRumours);                               // no native owner → nothing stamped
+        Assert.All(owned.MoundsRumours, p => Assert.Contains(p, placedOwned)); // stamps ⊆ the placed rumours
+    }
+
+    [Fact]
+    public void RemoveRumour_ConsumesTheMoundsStamp_WithIt()
+    {
+        var p = new Position(2, 2);
+        var map = new GameMap(5, 5, [.. Enumerable.Repeat(Classic.Terrain("model.tile.plains"), 25)], rumours: [p]);
+        map.StampMoundsRumour(p);
+        Assert.True(map.HasMoundsStamp(p));
+
+        map.RemoveRumour(p); // exploring (or declining) the rumour consumes the stamp with it
+
+        Assert.False(map.HasMoundsStamp(p));
+        Assert.Empty(map.MoundsRumours);
+    }
+
+    [Fact]
+    public void MoundsStamps_RoundTripThroughSave()
+    {
+        // Force a deterministic stamped state (independent of whether the default seed stamps anything): stamp one
+        // of the game's real rumour tiles, save, reload, and assert the stamp (and only it) survives.
+        Game game = Game.New(Classic, Seed);
+        Position stamped = game.Map.Rumours.OrderBy(p => p.Y * game.Map.Width + p.X).First();
+        game.Map.StampMoundsRumour(stamped);
+        var before = game.Map.MoundsRumours.OrderBy(p => p.Y * game.Map.Width + p.X).ToList();
+
+        Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.Equal(before, restored.Map.MoundsRumours.OrderBy(p => p.Y * restored.Map.Width + p.X).ToList());
+        Assert.True(restored.Map.HasMoundsStamp(stamped));
+    }
+
+    [Fact]
+    public void AStampFreeState_OmitsTheMoundsToken_AndOldSavesLoadWithNone()
+    {
+        // A state with no stamps writes no MoundsRumours token — the v68-era byte-identity guarantee (a v68 save has
+        // no stamps, so its re-save differs only in the Version line); a v68-style save (no token) loads with none.
+        var save = new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.plains"], Units = [], Explored = [],
+        };
+        string json = save.ToJson();
+        Assert.DoesNotContain("MoundsRumours", json);
+
+        Game loaded = SaveGame.FromJson(json).Restore(Classic);
+        Assert.Empty(loaded.Map.MoundsRumours);
+    }
 }
