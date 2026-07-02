@@ -7781,6 +7781,11 @@ public sealed partial class Game
     /// <c>null</c> when it may. Buildings are one-per-colony and may be an upgrade; a unit can be built any number
     /// of times (so the already-built/already-queued and upgrade gates apply to buildings only). <paramref name="queueing"/>
     /// also accepts an upgrade predecessor that sits earlier in the queue (not yet standing).
+    /// <para>The gates run in FreeCol's exact reason order (<c>Colony.java:1092-1116</c>, 86d3hjz87): NOT_BUILDABLE
+    /// (no build cost) → POPULATION_TOO_SMALL → COASTAL → MISSING_ABILITY → LIMIT_EXCEEDED → the
+    /// <c>canBeBuiltInColony</c> tail (a unit's MISSING_BUILD_ABILITY; a building's already-built/queued/WRONG_UPGRADE).
+    /// Only the <em>reported reason</em> under stacked failures follows this order — the allowed/refused outcome is
+    /// gate-order-independent (all gates must pass either way).</para>
     /// </summary>
     private string? BuildRefusal(Colony colony, Buildable target, bool queueing)
     {
@@ -7788,38 +7793,22 @@ public sealed partial class Game
         {
             return $"The {target.ShortName} cannot be constructed.";
         }
-        if (!target.IsUnit)
-        {
-            if (colony.HasBuilding(target.Id))
-            {
-                return $"The colony already has a {target.ShortName}.";
-            }
-            if (queueing && colony.BuildQueue.Contains(target.Id))
-            {
-                return $"The {target.ShortName} is already queued.";
-            }
-            if (target.UpgradesFrom is { } parent
-                && !colony.HasBuilding(parent) && !(queueing && colony.BuildQueue.Contains(parent)))
-            {
-                return $"A {target.ShortName} upgrades a building the colony has not built or queued.";
-            }
-        }
         if (colony.Population < target.RequiredPopulation)
         {
             return $"The {target.ShortName} needs a population of {target.RequiredPopulation}.";
         }
-        if (RequiredAbilityRefusal(colony, target.ShortName, target.RequiredAbilities) is { } abilityReason)
-        {
-            return abilityReason;
-        }
-        // COASTAL gate (FreeCol Colony.getNoBuildReason COASTAL): a building carrying the coastalOnly ability may only
-        // be raised in a sea-connected colony. Classic data declares the custom house's coastalOnly=false, so this
-        // never fires by default; the customsOnCoast game option flips the effective value on (mirroring FreeCol
-        // Specification.clean), and a variant may set the ability true directly in data — either way the gate is
-        // data-driven. Buildings only (a unit never declares coastalOnly).
+        // COASTAL gate (FreeCol Colony.getNoBuildReason COASTAL — before MISSING_ABILITY): a building carrying the
+        // coastalOnly ability may only be raised in a sea-connected colony. Classic data declares the custom house's
+        // coastalOnly=false, so this never fires by default; the customsOnCoast game option flips the effective value
+        // on (mirroring FreeCol Specification.clean), and a variant may set the ability true directly in data — either
+        // way the gate is data-driven. Buildings only (a unit never declares coastalOnly).
         if (!target.IsUnit && BuildingRequiresCoast(target.Id) && !IsColonyCoastal(colony))
         {
             return $"A {target.ShortName} can only be built in a coastal colony.";
+        }
+        if (RequiredAbilityRefusal(colony, target.ShortName, target.RequiredAbilities) is { } abilityReason)
+        {
+            return abilityReason;
         }
         if (target.IsUnit && target.Unit is { } unit)
         {
@@ -7834,6 +7823,25 @@ public sealed partial class Game
                 return enabler is not null
                     ? $"A {target.ShortName} needs a {enabler.ShortName} in the colony."
                     : $"The {target.ShortName} cannot be built in this colony.";
+            }
+        }
+        if (!target.IsUnit)
+        {
+            // The canBeBuiltInColony tail (FreeCol BuildableType.canBeBuiltInColony, run LAST): a building the colony
+            // already has (or queued) and an upgrade whose predecessor is missing report only after every general gate
+            // above has passed.
+            if (colony.HasBuilding(target.Id))
+            {
+                return $"The colony already has a {target.ShortName}.";
+            }
+            if (queueing && colony.BuildQueue.Contains(target.Id))
+            {
+                return $"The {target.ShortName} is already queued.";
+            }
+            if (target.UpgradesFrom is { } parent
+                && !colony.HasBuilding(parent) && !(queueing && colony.BuildQueue.Contains(parent)))
+            {
+                return $"A {target.ShortName} upgrades a building the colony has not built or queued.";
             }
         }
         return null;
@@ -12284,8 +12292,8 @@ public sealed partial class Game
         // (4) units of output even without the raw input — modelled by RAISING the available input to at least that
         // floor before the scarcity ratio, never lowering it. Computed once (option-gated) so classic pays nothing.
         int expertConnectionFloor = 0;
-        if (Ruleset.GameOptions.ExpertsHaveConnections && building.ExpertsUseConnections && entry.Outputs.Count > 0
-            && Ruleset.ExpertForProducing(entry.Outputs[0].GoodsId) is { } buildingExpertType)
+        if (Ruleset.GameOptions.ExpertsHaveConnections && building.ExpertsUseConnections
+            && BuildingExpertType(entry) is { } buildingExpertType)
         {
             int expertCount = occupants.Count(t => t == buildingExpertType);
             expertConnectionFloor = building.EffectiveExpertConnectionProduction * expertCount;
@@ -12311,16 +12319,15 @@ public sealed partial class Game
 
         foreach (GoodsOutput input in entry.Inputs)
         {
+            // FreeCol-exact consumption (BuildingProductionCalculator.java:203-214): the input charged is
+            // floor(amount × minimumRatio + EPSILON) with NO clamp to the real stock — with the connections floor
+            // raising `scarcity`, the wanted consumption can exceed what is on hand, and FreeCol still charges the
+            // full figure (the store simply bottoms out: both application sites floor at 0 — Colony.AddGoods for the
+            // live turn, the summary's Consume working copy). An earlier min(want, store) clamp here under-charged
+            // a connections factory vs FreeCol (86d3hjz87); end-of-turn stores were identical (both hit 0), but the
+            // reported consumption was wrong. Without the floor the figure is ≤ stock anyway (scarcity ≤
+            // available/required), so classic stays byte-identical.
             int wantConsume = (int)Math.Floor(input.Amount * ratio * scarcity + Epsilon);
-            // With the connections floor raising `scarcity`, the wanted consumption can exceed the real stock (the
-            // experts produce off "connections", not off input they don't have). Charge only what is actually present
-            // so the warehouse is never drawn below 0 — FreeCol never consumes absent input. Without the floor this
-            // clamp is inert (scarcity ≤ available/required already, so wantConsume ≤ stock), keeping classic
-            // byte-identical.
-            if (expertConnectionFloor > 0)
-            {
-                wantConsume = Math.Min(wantConsume, storeOf(Ruleset.StorageIdOf(input.GoodsId)));
-            }
             yield return (Ruleset.StorageIdOf(input.GoodsId), -wantConsume);
         }
         foreach (GoodsOutput output in entry.Outputs)
@@ -12342,6 +12349,18 @@ public sealed partial class Game
             yield return (Ruleset.StorageIdOf(output.GoodsId), (int)Math.Floor(total + Epsilon));
         }
     }
+
+    /// <summary>
+    /// The expert unit type of a building production <paramref name="entry"/> — the first output, <b>in declared
+    /// order, over ALL outputs</b>, for which the ruleset knows an expert (FreeCol
+    /// <c>BuildingProductionCalculator.getExpertUnitType</c>: <c>find(map(outputs, getExpertForProducing), isNotNull())</c>
+    /// scans every output, not just the first); <c>null</c> when no output has one. Every classic building entry is
+    /// single-output, so this matches the old first-output-only read there (byte-identical, ADR-009); a multi-output
+    /// variant entry whose <em>first</em> output has no expert (e.g. [tradeGoods, rum]) now correctly finds the rum
+    /// expert instead of losing the connections floor (86d3hjz87).
+    /// </summary>
+    internal string? BuildingExpertType(ProductionEntry entry) =>
+        entry.Outputs.Select(o => Ruleset.ExpertForProducing(o.GoodsId)).FirstOrDefault(e => e is not null);
 
     /// <summary>
     /// Folds the colony-scoped active temporary modifiers targeting <paramref name="goodsId"/> into a colony's

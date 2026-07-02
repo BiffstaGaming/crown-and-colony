@@ -157,6 +157,27 @@ public class BuildAbilityGateTests
         Assert.Contains(port.Buildables(seaside), b => b.Id == CustomHouse);
     }
 
+    [Fact]
+    public void CoastalRefusal_OutranksAMissingAbility_FreeColReasonOrder()
+    {
+        // FreeCol Colony.getNoBuildReason checks COASTAL BEFORE MISSING_ABILITY (Colony.java:1092-1116, 86d3hjz87):
+        // an inland colony withOUT Stuyvesant, with customsOnCoast on, stacks both failures — the reported reason
+        // must be the coastal one, not the missing founding father. (The refused OUTCOME is order-independent —
+        // every gate must pass either way; only the reported reason follows FreeCol's order.)
+        Ruleset coastal = Ruleset.LoadClassic().WithCustomsOnCoast(true);
+        Game inland = InlandColony(out Colony landlocked, congress: null, ruleset: coastal);
+        MoveCheck refused = inland.CheckSetBuild(landlocked, CustomHouse);
+        Assert.False(refused.Allowed);
+        Assert.Contains("coastal", refused.Reason);
+        Assert.DoesNotContain("Stuyvesant", refused.Reason);
+
+        // On the coast the COASTAL gate passes and the ability gate reports next (the same FreeCol order).
+        Game port = CoastalColony(out Colony seaside, congress: null, ruleset: coastal);
+        MoveCheck noFather = port.CheckSetBuild(seaside, CustomHouse);
+        Assert.False(noFather.Allowed);
+        Assert.Contains("Stuyvesant", noFather.Reason);
+    }
+
     // ---- Fixtures ----
 
     /// <summary>A 1×1 inland plains colony (no water neighbour → no port), with an optional founding-father congress.</summary>

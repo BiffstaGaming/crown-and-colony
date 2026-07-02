@@ -352,4 +352,51 @@ public class BuildingWorkerTypeProductionTests
         on.EndTurn();
         Assert.Equal(0, onColony.StoreOf(Rum));
     }
+
+    [Fact]
+    public void ConnectionsFloor_ChargesTheFreeColConsumption_NotClampedToStock()
+    {
+        // FreeCol BuildingProductionCalculator.java:203-214 charges consumption = floor(amount × minimumRatio + ε)
+        // with NO clamp to the stock on hand (86d3hjz87). A master distiller in a rum factory (sugar 6 → rum 9,
+        // distiller ×2 → output ratio 2, required floor(6·2) = 12) holding only 2 sugar: the connections floor lifts
+        // the effective sugar to 4 → scarcity 4/12 = 1/3 → rum floor(18/3 + ε) = 6, and the sugar CHARGED is
+        // floor(6 × 2 × 1/3 + ε) = 4 — not the old min(4, stock 2). The warehouse itself still bottoms out at 0
+        // (both application sites floor there — Colony.AddGoods and the summary's working copy), so the end-of-turn
+        // stores match FreeCol's; only the reported consumption figure moves.
+        Ruleset connected = Ruleset.LoadClassic().WithExpertsHaveConnections(true);
+        Game game = Game.New(connected, Seed);
+        Colony colony = BuildingColony(game, RumFactory, population: 1, liberty: 0, MasterDistiller);
+        Assert.Equal(0, colony.ProductionBonus);
+        colony.AddGoods(Sugar, 2);
+
+        ColonyGoodFlow sugarFlow = game.ColonyProductionSummary(colony)[Sugar];
+        Assert.Equal(4, sugarFlow.Consumed); // the FreeCol figure — the deleted clamp under-reported 2 (the stock)
+        Assert.Equal(-4, sugarFlow.Net);     // nothing in this colony produces sugar (non-sugar centre tile, Seed 3)
+
+        game.EndTurn();
+        Assert.Equal(6, colony.StoreOf(Rum));   // production is untouched by the charge (scarcity already used the floor)
+        Assert.Equal(0, colony.StoreOf(Sugar)); // 2 − 4 floors at 0 — the store never goes negative (FreeCol-identical)
+    }
+
+    [Fact]
+    public void BuildingExpertType_ScansAllOutputs_ForTheFirstExpert()
+    {
+        // FreeCol BuildingProductionCalculator.getExpertUnitType scans ALL outputs for the first non-null expert
+        // (find(map(outputs, getExpertForProducing), isNotNull())) — not just Outputs[0] (86d3hjz87). Trade goods
+        // have no producing expert in classic, so a synthetic two-output entry [tradeGoods, rum] must find the
+        // master distiller via the SECOND output (the old first-output-only read returned null and silently
+        // dropped the connections floor for such an entry).
+        Game game = Game.New(Classic, Seed);
+        var twoOutput = new ProductionEntry(false,
+            [new GoodsOutput("model.goods.tradeGoods", 1), new GoodsOutput(Rum, 1)]);
+        Assert.Equal(MasterDistiller, game.BuildingExpertType(twoOutput));
+
+        // No output with an expert → null (no floor).
+        Assert.Null(game.BuildingExpertType(
+            new ProductionEntry(false, [new GoodsOutput("model.goods.tradeGoods", 1)])));
+
+        // A classic single-output entry is unchanged: the rum factory's own entry still finds the master distiller.
+        Assert.Equal(MasterDistiller, game.BuildingExpertType(
+            Classic.Building(RumFactory).Productions.First(p => !p.Unattended)));
+    }
 }
