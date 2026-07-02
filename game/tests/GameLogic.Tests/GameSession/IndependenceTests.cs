@@ -47,11 +47,36 @@ public class IndependenceTests
             .Take(count).ToList();
 
     [Fact]
-    public void NationalSonsOfLiberty_IsRebelsOverPopulation()
+    public void NationalSonsOfLiberty_IsThePerColonyUnweightedAverage()
     {
-        (Game game, Colony colony) = RebellionReady();
-        Assert.Equal(100, game.NationalSonsOfLiberty(game.HumanPlayer));
-        colony.Liberty = 0;
+        // FreeCol Player.getSoL (Player.java:1409-1413): the UNWEIGHTED average of each colony's own SoL% with Java
+        // integer (floor) division — NOT rebels-over-population. A pop-10 colony at 100% + a pop-1 colony at 0%
+        // average to (100 + 0) / 2 = 50; the old population-weighted formula gave 10·100/11 = 90 (86d3hzz4w).
+        (Game game, Colony fervent) = RebellionReady();
+        fervent.Population = 10;
+        fervent.Liberty = Colony.LibertyPerRebel * fervent.Population; // SoL 100
+        Position unclaimed = game.Map.AllPositions().First(p =>
+            !game.Map.TerrainAt(p).IsWater && !game.Map.IsNativeOwned(p)
+            && game.ColonyAt(p) is null && game.NativeSettlementAt(p) is null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p));
+        Unit colonist = game.SpawnUnit(Classic.Unit(Game.StartingUnitTypeId), unclaimed);
+        Colony apathetic = game.FoundColony(colonist); // population 1, Liberty 0 → SoL 0
+        apathetic.Liberty = 0;
+        Assert.Equal(100, fervent.SonsOfLiberty);
+        Assert.Equal(0, apathetic.SonsOfLiberty);
+
+        Assert.Equal(50, game.NationalSonsOfLiberty(game.HumanPlayer)); // (100 + 0) / 2, not 90
+
+        fervent.Liberty = 0; // both colonies at 0 → average 0
+        Assert.Equal(0, game.NationalSonsOfLiberty(game.HumanPlayer));
+    }
+
+    [Fact]
+    public void NationalSonsOfLiberty_IsZeroWithNoColonies()
+    {
+        // FreeCol Player.getSoL returns 0 for a player with no colonies (colonies.isEmpty() → 0).
+        Game game = Game.New(Classic, Seed);
+        Assert.DoesNotContain(game.Colonies, c => c.OwnerId == game.HumanPlayer.PlayerId);
         Assert.Equal(0, game.NationalSonsOfLiberty(game.HumanPlayer));
     }
 

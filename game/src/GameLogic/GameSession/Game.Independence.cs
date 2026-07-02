@@ -21,13 +21,18 @@ public sealed partial class Game
     private const int IndependenceSoLThreshold = 50;  // model.limit.independence.rebels (≥ 50% national SoL)
 
     /// <summary>
-    /// A player's national Sons-of-Liberty percentage (FreeCol <c>Player.getSoL</c>): rebels across all its colonies
-    /// as a percentage of total population. 0 with no colonists. Drives the Declaration-of-Independence gate.
+    /// A player's national Sons-of-Liberty percentage (FreeCol <c>Player.getSoL</c>, Player.java:1409-1413): the
+    /// <b>unweighted average of each colony's own Sons-of-Liberty percentage</b> (<see cref="Colony.SonsOfLiberty"/>),
+    /// with Java integer (floor) division; 0 with no colonies. <b>Not</b> population-weighted — a pop-10 colony at
+    /// 100% SoL plus a pop-1 colony at 0% average to <c>(100 + 0) / 2 = 50</c>, where the old rebels-over-population
+    /// formula gave 90. Drives the Declaration-of-Independence gate, the AI-declare gate, the limit engine's
+    /// <c>getSoL</c> operand (Spanish-Succession year limit), the succession's weak/strong ranking, and the
+    /// de-Witt foreign-report column.
     /// </summary>
     public int NationalSonsOfLiberty(Player player)
     {
-        int population = ColoniesOf(player).Sum(c => c.Population);
-        return population <= 0 ? 0 : ColoniesOf(player).Sum(c => c.RebelCount) * 100 / population;
+        List<Colony> colonies = ColoniesOf(player).ToList();
+        return colonies.Count == 0 ? 0 : colonies.Sum(c => c.SonsOfLiberty) / colonies.Count;
     }
 
     /// <summary>
