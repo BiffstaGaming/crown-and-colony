@@ -498,10 +498,11 @@ public partial class GameController : Node2D
             new Vector2(Mathf.Min(Mathf.Min(c0.X, c1.X), Mathf.Min(c2.X, c3.X)), Mathf.Min(Mathf.Min(c0.Y, c1.Y), Mathf.Min(c2.Y, c3.Y))),
             new Vector2(Mathf.Max(Mathf.Max(c0.X, c1.X), Mathf.Max(c2.X, c3.X)), Mathf.Max(Mathf.Max(c0.Y, c1.Y), Mathf.Max(c2.Y, c3.Y))));
         camera.Position = MapView.TileCentre(focus);
-        // Switch the background music to the in-game context as the game starts. Both the menu and gameplay currently
-        // share FreeCol's single Background playlist, so this keeps the music seamless (SetContext only restarts the
-        // playlist when the mood actually changes) — the seam is here for a future war/tension context (86d3fq1wy).
-        SetMusicContext(MusicContext.Background);
+        // Switch the background music to match the fresh game's state (86d3fq1wy): peace for a new game, war for a
+        // loaded save mid-war. Menu and InGamePeace share FreeCol's single background playlist, so a new game stays
+        // seamless (SetContext relabels without restarting when the audible playlist is unchanged). Must run BEFORE
+        // PlayAnthem — the anthem is a one-shot over the (possibly just switched) background bed.
+        RefreshMusicContext();
         // Cue the human player's national anthem once over the running background music (FreeCol plays it at game start).
         PlayAnthem(_game.HumanPlayer.NationId);
         RefreshView();
@@ -1837,12 +1838,24 @@ public partial class GameController : Node2D
         GetNodeOrNull<MusicService>("/root/Music")?.PlayAnthem(nationId);
 
     /// <summary>
-    /// Switches the background music to match <paramref name="context"/> (menu vs in-game vs a future war/tension cue)
+    /// Switches the background music to match <paramref name="context"/> (menu vs in-game peace vs the war cue)
     /// via the <c>Music</c> autoload. Resolved lazily by node path (no-op if the autoload is absent, e.g. headless scene
-    /// tests). The service only restarts the playlist when the mood actually changes, so a same-context call is harmless.
+    /// tests). The service only restarts the playlist when the audible playlist actually changes, so a same-context or
+    /// same-playlist call is harmless.
     /// </summary>
     private void SetMusicContext(MusicContext context) =>
         GetNodeOrNull<MusicService>("/root/Music")?.SetContext(context);
+
+    /// <summary>
+    /// Re-derives the music context from the current game state (the pure <see cref="MusicContextSelector"/> — war with
+    /// a non-native power → the war bed, else peace; 86d3fq1wy) and feeds it to the Music autoload. Called from
+    /// <see cref="StartGame"/> and every <see cref="RefreshView"/>, the universal post-state-change hook, so a war
+    /// starting or ending anywhere (an attack, a declaration of independence, a peace treaty, end-turn AI moves) flips
+    /// the music without per-event wiring. Cheap: the selector is a read-only stance scan and the service no-ops when
+    /// nothing audible changes.
+    /// </summary>
+    private void RefreshMusicContext() =>
+        SetMusicContext(MusicContextSelector.For(_game));
 
     private void FoundColony()
     {
@@ -2440,6 +2453,11 @@ public partial class GameController : Node2D
 
     private void RefreshView()
     {
+        // Keep the music in step with the game state (86d3fq1wy): RefreshView is the universal post-state-change hook
+        // (end turn, attacks, panels), so re-deriving the context here catches every war start/end. No-op when nothing
+        // audible changed.
+        RefreshMusicContext();
+
         // Drop a stale selection: the selected unit may have just joined a colony (or been removed in combat),
         // so it's no longer in the game — leaving it dangling would mis-route the next map click.
         if (_selectedUnit is not null && !_game.Units.Contains(_selectedUnit))

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using CrownAndColony.GameLogic.Audio;
 using Godot;
 
@@ -7,7 +8,7 @@ namespace CrownAndColony.Presentation;
 /// <summary>
 /// Global autoload (<c>/root/Music</c>) that plays looping background music — and per-nation anthems — on the
 /// <c>Music</c> audio bus. Game/UI code asks for a logical <see cref="MusicContext"/> (e.g.
-/// <see cref="MusicContext.Background"/>) or a nation anthem; this service resolves it to clip paths via the engine-free
+/// <see cref="MusicContext.InGamePeace"/>) or a nation anthem; this service resolves it to clip paths via the engine-free
 /// <see cref="MusicTrackCatalog"/> and streams them on the Music bus so the settings Music-volume slider applies
 /// (ADR-006: logic decides <em>what</em> mood to cue; this layer decides <em>how</em> it sounds).
 /// </summary>
@@ -29,7 +30,8 @@ public partial class MusicService : Node
 
     // The context the background playlist is currently playing — so SetContext can skip a redundant restart (which would
     // re-shuffle and cut the current track) when the mood has not actually changed (e.g. menu → in-game, same playlist).
-    private MusicContext _context = MusicContext.Background;
+    // The autoload boots on the main menu (project.godot run/main_scene), so the initial context is Menu.
+    private MusicContext _context = MusicContext.Menu;
 
     // True while a one-shot anthem is playing; when it finishes we fall back to the background playlist.
     private bool _anthemPlaying;
@@ -49,12 +51,16 @@ public partial class MusicService : Node
         PlayBackground();
     }
 
+    /// <summary>The context whose playlist is currently loaded — read by game code and L3 tests to verify the wiring.</summary>
+    public MusicContext CurrentContext => _context;
+
     /// <summary>
     /// Starts (or restarts) the looping background playlist for <paramref name="context"/> (default
-    /// <see cref="MusicContext.Background"/>). Re-shuffles the order each time it is started. No-op if the context has no
-    /// tracks. Call this on the main menu and when a game begins; it keeps looping until replaced.
+    /// <see cref="MusicContext.Menu"/>, the boot screen's context). Re-shuffles the order each time it is started.
+    /// No-op if the context has no tracks. Call this on the main menu and when a game begins; it keeps looping until
+    /// replaced.
     /// </summary>
-    public void PlayBackground(MusicContext context = MusicContext.Background)
+    public void PlayBackground(MusicContext context = MusicContext.Menu)
     {
         _anthemPlaying = false;
         _context = context;
@@ -68,16 +74,29 @@ public partial class MusicService : Node
     }
 
     /// <summary>
-    /// Switches the background music to match a game state — the menu vs an in-game vs a tenser context. Restarts the
-    /// playlist (re-shuffled) only when the context actually changes, so moving from the menu into a game that shares the
-    /// same <see cref="MusicContext.Background"/> playlist does <em>not</em> interrupt the current track (faithful to
-    /// FreeCol's single shared background bed). Call this from <c>GameController</c> as the game state changes.
+    /// Switches the background music to match a game state — the menu vs in-game-at-peace vs the war context
+    /// (86d3fq1wy). Restarts the playlist (re-shuffled) only when the <em>audible</em> playlist actually changes:
+    /// a same-context call is a no-op, and a context whose catalog playlist is identical to the current one (Menu ↔
+    /// <see cref="MusicContext.InGamePeace"/> share FreeCol's single background bed) is <em>relabelled</em> without
+    /// interrupting the current track. Call this from <c>GameController</c>/<c>MainMenu</c> as the game state changes.
     /// </summary>
+    /// <remarks>
+    /// Accepted edge: if a one-shot anthem is mid-play when the playlist genuinely changes (e.g. war breaks out during
+    /// the game-start anthem), the anthem is cut in favour of the new bed — war music trumps ceremony.
+    /// </remarks>
     public void SetContext(MusicContext context)
     {
         if (context == _context && _player.Playing)
         {
             return; // same mood, music already running → leave the current track alone
+        }
+        if (_player.Playing
+            && MusicTrackCatalog.TryGetPlaylist(context, out IReadOnlyList<string> next)
+            && MusicTrackCatalog.TryGetPlaylist(_context, out IReadOnlyList<string> current)
+            && next.SequenceEqual(current))
+        {
+            _context = context; // identical playlist → relabel only, keep the current track playing (seamless menu→game)
+            return;
         }
         PlayBackground(context);
     }

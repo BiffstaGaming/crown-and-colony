@@ -14,7 +14,9 @@ namespace CrownAndColony.GameLogic.Audio;
 /// Tracks are FreeCol's own music, copied unmodified into <c>game/assets/freecol/music/</c> (see that folder's
 /// <c>PROVENANCE.md</c>). The background playlist tracks are CC-BY 4.0 (Alexander Zhelanov / Stian Grenborgen); the
 /// anthems are part of FreeCol's GPL-v2 package. FreeCol plays one shuffled "default" playlist (<c>sound.music.playlist.default</c>)
-/// as background music across menu and gameplay; we mirror a representative subset of it. Paths use Godot's <c>res://</c> scheme.
+/// as background music across menu and gameplay; we mirror a representative subset of it as the shared
+/// <see cref="MusicContext.Menu"/>/<see cref="MusicContext.InGamePeace"/> bed, plus an interim
+/// <see cref="MusicContext.InGameWar"/> subset (no dedicated war asset exists yet). Paths use Godot's <c>res://</c> scheme.
 /// </remarks>
 public static class MusicTrackCatalog
 {
@@ -25,7 +27,9 @@ public static class MusicTrackCatalog
     public const string AnthemDir = MusicDir + "anthem/";
 
     // The looping background playlist — a faithful subset of FreeCol's shuffled "default" playlist. MusicService
-    // shuffles and cross-cycles these so the menu and the running game share one ambient bed (FreeCol behaviour).
+    // shuffles and cross-cycles these so the menu and the running game share one ambient bed (FreeCol behaviour):
+    // Menu and InGamePeace map to this SAME list, which is what lets MusicService relabel the context without
+    // restarting the track when the player moves between them.
     private static readonly IReadOnlyList<string> BackgroundPlaylist = new[]
     {
         MusicDir + "el-dorado.ogg",
@@ -36,10 +40,22 @@ public static class MusicTrackCatalog
         MusicDir + "fearless-sailors.ogg",
     };
 
+    // INTERIM war playlist (86d3fq1wy): FreeCol ships no dedicated war/tension track, and this project adds no new
+    // assets in this wave — so the war bed is the two most martial-sounding tracks of the existing six. It must stay
+    // a DIFFERENT list from BackgroundPlaylist (the L1 audible-switch guard) until a real war track is sourced
+    // (asset gap recorded in the audio system doc's TODO + the Asset Register).
+    private static readonly IReadOnlyList<string> WarPlaylist = new[]
+    {
+        MusicDir + "el-dorado.ogg",
+        MusicDir + "fearless-sailors.ogg",
+    };
+
     private static readonly IReadOnlyDictionary<MusicContext, IReadOnlyList<string>> Tracks =
         new Dictionary<MusicContext, IReadOnlyList<string>>
         {
-            [MusicContext.Background] = BackgroundPlaylist,
+            [MusicContext.Menu] = BackgroundPlaylist,
+            [MusicContext.InGamePeace] = BackgroundPlaylist, // same list as Menu — the seamless menu→game bed
+            [MusicContext.InGameWar] = WarPlaylist,
         };
 
     // The 8 European powers FreeCol ships an anthem for, keyed by their full nation id (model.nation.<x>). The track

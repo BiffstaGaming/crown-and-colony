@@ -42,7 +42,9 @@ covered by the FreeCol GPL-v2 grant.
 
 ## Background-playlist files (CC BY 4.0 — from FreeCol `data/default/resources/music/default/`)
 
-These form the looping background playlist (`MusicContext.Background`). A faithful
+These form the looping background playlist (the shared `MusicContext.Menu` /
+`MusicContext.InGamePeace` bed; the interim `MusicContext.InGameWar` playlist is a
+subset of the same files — no separate war asset is shipped). A faithful
 subset of FreeCol's shuffled "default" playlist (`sound.music.playlist.default`).
 
 | Our file (`game/assets/freecol/music/`) | FreeCol source path           | Author             |

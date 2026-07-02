@@ -3,6 +3,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using CrownAndColony.GameLogic.Audio;
+using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.Presentation;
 using GdUnit4;
@@ -137,7 +138,7 @@ public class AudioWiringTests
         var posField = typeof(MusicService).GetField("_playlistPos", BindingFlags.NonPublic | BindingFlags.Instance)!;
         var advance = typeof(MusicService).GetMethod("OnTrackFinished", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-        music.PlayBackground(MusicContext.Background); // (re)build + start the shuffled playlist
+        music.PlayBackground(MusicContext.InGamePeace); // (re)build + start the shuffled playlist
         var playlist = (List<string>)playlistField.GetValue(music)!;
         AssertThat(playlist.Count).IsGreater(1);
 
@@ -156,14 +157,79 @@ public class AudioWiringTests
         var music = Music();
 
         var posField = typeof(MusicService).GetField("_playlistPos", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        music.PlayBackground(MusicContext.Background);
+        music.PlayBackground(MusicContext.InGamePeace);
         // Move off track 0 so a restart (which resets pos to 0) would be observable.
         var advance = typeof(MusicService).GetMethod("OnTrackFinished", BindingFlags.NonPublic | BindingFlags.Instance)!;
         advance.Invoke(music, null);
         int posBefore = (int)posField.GetValue(music)!;
 
-        music.SetContext(MusicContext.Background); // same context, already playing → no-op
+        music.SetContext(MusicContext.InGamePeace); // same context, already playing → no-op
         int posAfter = (int)posField.GetValue(music)!;
         AssertThat(posAfter).IsEqual(posBefore); // position preserved → the current track was not interrupted
+    }
+
+    [TestCase]
+    public async Task StartingAGame_SwitchesTheContextAwayFromTheMenu()
+    {
+        // Booting the game scene derives the context from real game state (GameController.StartGame →
+        // RefreshMusicContext → MusicContextSelector): a fresh game has no wars, so the context lands on InGamePeace
+        // (never stuck on Menu, never war). 86d3fq1wy.
+        Music().SetContext(MusicContext.Menu); // whatever an earlier test left playing, start from the menu bed
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+
+        AssertThat(Music().CurrentContext).IsEqual(MusicContext.InGamePeace);
+    }
+
+    [TestCase]
+    public async Task MenuToPeace_RelabelsWithoutRestartingTheSharedPlaylist()
+    {
+        // Menu and InGamePeace resolve to the identical catalog playlist, so the switch must be a pure relabel: the
+        // context updates but the position in the playing track order is untouched (the seamless menu→game guarantee).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var music = Music();
+
+        var posField = typeof(MusicService).GetField("_playlistPos", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var advance = typeof(MusicService).GetMethod("OnTrackFinished", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        music.PlayBackground(MusicContext.Menu);
+        advance.Invoke(music, null); // move off track 0 so a restart (pos → 0) would be observable
+        int posBefore = (int)posField.GetValue(music)!;
+
+        music.SetContext(MusicContext.InGamePeace); // different context, identical playlist → relabel only
+
+        AssertThat(music.CurrentContext).IsEqual(MusicContext.InGamePeace);
+        int posAfter = (int)posField.GetValue(music)!;
+        AssertThat(posAfter).IsEqual(posBefore); // the current track kept playing
+    }
+
+    [TestCase]
+    public async Task ForcedWarState_FlipsToTheWarPlaylist_ThroughRefreshView()
+    {
+        // War with a colonial rival must flip the bed via the universal RefreshView hook — no per-event wiring. Force
+        // the human's stance to War by reflection (StanceMap is internal to GameLogic), then drive the same refresh
+        // every state change funnels through.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        var game = GameOf(controller);
+        AssertThat(Music().CurrentContext).IsEqual(MusicContext.InGamePeace); // a fresh game starts at peace
+
+        Player rival = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
+        var stanceMap = (Dictionary<int, Stance>)typeof(Player)
+            .GetProperty("StanceMap", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(game.HumanPlayer)!;
+        stanceMap[rival.PlayerId] = Stance.War;
+
+        typeof(GameController).GetMethod("RefreshView", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(controller, null);
+        await runner.SimulateFrames(1);
+
+        AssertThat(Music().CurrentContext).IsEqual(MusicContext.InGameWar);
+        var playlist = (List<string>)typeof(MusicService)
+            .GetField("_playlist", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(Music())!;
+        // The loaded (shuffled) playlist is exactly the war set — order-insensitive.
+        AssertThat(playlist.ToHashSet().SetEquals(MusicTrackCatalog.Playlist(MusicContext.InGameWar))).IsTrue();
     }
 }

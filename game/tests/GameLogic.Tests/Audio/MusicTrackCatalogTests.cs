@@ -36,15 +36,41 @@ public class MusicTrackCatalogTests
     }
 
     [Fact]
-    public void AllBackgroundTracks_AreOggFilesUnderTheMusicDirectory_AndUnique()
+    public void EveryContextsTracks_AreOggFilesUnderTheMusicDirectory_AndUnique()
     {
-        IReadOnlyList<string> playlist = MusicTrackCatalog.Playlist(MusicContext.Background);
-        foreach (string path in playlist)
+        foreach (MusicContext ctx in Enum.GetValues<MusicContext>())
         {
-            Assert.StartsWith(MusicTrackCatalog.MusicDir, path);
-            Assert.EndsWith(".ogg", path);
+            IReadOnlyList<string> playlist = MusicTrackCatalog.Playlist(ctx);
+            foreach (string path in playlist)
+            {
+                Assert.StartsWith(MusicTrackCatalog.MusicDir, path);
+                Assert.EndsWith(".ogg", path);
+            }
+            Assert.Equal(playlist.Count, playlist.Distinct().Count()); // no duplicate tracks in a playlist
         }
-        Assert.Equal(playlist.Count, playlist.Distinct().Count()); // no duplicate tracks in the playlist
+    }
+
+    [Fact]
+    public void MenuAndInGamePeace_ShareTheIdenticalPlaylist()
+    {
+        // The seamless menu→game guarantee (86d3fq1wy): MusicService relabels instead of restarting only because the
+        // two contexts resolve to the SAME track sequence (FreeCol's single shared background bed).
+        Assert.Equal(
+            MusicTrackCatalog.Playlist(MusicContext.Menu),
+            MusicTrackCatalog.Playlist(MusicContext.InGamePeace));
+    }
+
+    [Fact]
+    public void WarPlaylist_DiffersFromPeace_AndReusesOnlyExistingTracks()
+    {
+        // The audible-switch guard: war must SOUND different (a different sequence than peace), and — no new audio
+        // assets this wave — every war track must already ship in the shared background playlist (interim subset;
+        // the dedicated war track is a recorded asset gap).
+        IReadOnlyList<string> war = MusicTrackCatalog.Playlist(MusicContext.InGameWar);
+        IReadOnlyList<string> peace = MusicTrackCatalog.Playlist(MusicContext.InGamePeace);
+        Assert.NotEmpty(war);
+        Assert.False(war.SequenceEqual(peace), "War must not resolve to the same playlist as peace (no audible switch).");
+        Assert.All(war, track => Assert.Contains(track, peace)); // interim: only existing, already-licensed tracks
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using CrownAndColony.GameLogic.Audio;
 using Godot;
 
 namespace CrownAndColony.Presentation;
@@ -37,6 +38,12 @@ public partial class MainMenu : Control
     /// <summary>Builds the menu's look (theme, backdrop, parchment skin, carved-wood frame) and wires the buttons.</summary>
     public override void _Ready()
     {
+        // This screen is the Menu music context (86d3fq1wy). The Music autoload persists across scene changes (e.g.
+        // quit-to-menu from the pause menu with the war bed playing), so re-assert Menu here; the service relabels
+        // without restarting when the audible playlist is unchanged (Menu shares the in-game peace bed). Lazy lookup:
+        // no-op when the autoload is absent (bare headless test scenes).
+        GetNodeOrNull<MusicService>("/root/Music")?.SetContext(MusicContext.Menu);
+
         Theme = ColonyTheme.Get(); // cohesive parchment/wood styling cascades to every child
 
         if (ResourceLoader.Exists(BackdropPath))
