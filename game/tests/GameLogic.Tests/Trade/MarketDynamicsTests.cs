@@ -177,36 +177,36 @@ public class MarketDynamicsTests
     [Fact]
     public void Propagation_NeverTouchesStreamZero_OrTheTradersOwnMarketAndGold()
     {
-        // ADR-009 stream-isolation pin: a propagated human sale must leave the human's game byte-identical to a twin
-        // that made the same sale WITHOUT propagation — same gold, same own-market datum, same stream-0 state, and
-        // every AI player's own stream untouched. Only the rivals' market inventories may differ.
+        // ADR-009 stream-isolation pin, post-seam form: SellColonyGoods now propagates IN-PATH (86d3fpyx3), so a
+        // propagation-free twin no longer exists. The pinned properties are the same ones: the sale + its propagation
+        // advance NO persisted RNG stream (the roll rides a transient generator), the whole operation is
+        // twin-deterministic through the real path, and the ripple lands on the rivals only (the trader is excluded
+        // by construction; the worked-example test pins the trader-side numbers).
         var game = Game.New(Classic, seed: 7, startingGold: 100, startingTax: 25);
         var twin = Game.New(Classic, seed: 7, startingGold: 100, startingTax: 25);
         foreach (Game g in new[] { game, twin })
         {
             g.FoundColony(g.Units[0]);
             g.Colonies[0].AddGoods(Silver, 30);
-            g.SellColonyGoods(g.Colonies[0], Silver, 30);
         }
 
-        game.PropagateTradeToRivalMarkets(game.HumanPlayer, Silver, 30); // only in `game`
-
-        Assert.Equal(twin.Gold, game.Gold);
-        Assert.Equal(twin.Market.AmountInMarket(Silver), game.Market.AmountInMarket(Silver));
-        Assert.Equal(twin.Market.BidPrice(Silver), game.Market.BidPrice(Silver));
-        Assert.Equal(twin.Market.SalesOf(Silver), game.Market.SalesOf(Silver));
-        Assert.Equal(twin.Market.IncomeAfterTaxesOf(Silver), game.Market.IncomeAfterTaxesOf(Silver));
+        SaveGame before = SaveGame.From(game);
+        foreach (Game g in new[] { game, twin })
+        {
+            g.SellColonyGoods(g.Colonies[0], Silver, 30); // real path — propagates via the seam
+        }
 
         SaveGame gs = SaveGame.From(game);
-        SaveGame ts = SaveGame.From(twin);
-        Assert.Equal(ts.RandomStateValue, gs.RandomStateValue); // the human's stream 0 never advanced
+        Assert.Equal(before.RandomStateValue, gs.RandomStateValue); // the human's stream 0 never advanced
         Assert.Equal(
-            ts.Players!.Select(p => (p.RngState, p.RngIncrement)),
+            before.Players!.Select(p => (p.RngState, p.RngIncrement)),
             gs.Players!.Select(p => (p.RngState, p.RngIncrement))); // no AI stream advanced either
 
-        // The propagation did land: rivals moved in `game`, not in the twin (30 × 5..30% ≥ 1).
+        // Twin-determinism through the propagating path: the entire game state, rivals included, is byte-identical.
+        Assert.Equal(SaveGame.From(twin).ToJson(), gs.ToJson());
+
+        // The propagation did land on every rival (30 × 5..30% ≥ 1).
         Assert.All(ColonialRivals(game), r => Assert.NotEmpty(r.Market.SaveDeltas()));
-        Assert.All(ColonialRivals(twin), r => Assert.Empty(r.Market.SaveDeltas()));
     }
 
     [Fact]

@@ -9,8 +9,10 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 /// <summary>
 /// The minimal foreign-power economy (FP-5, ADR-019): foreign colonial powers produce, bank liberty and
 /// immigration, sell surplus to their OWN per-player market and recruit from Europe — each on its own RNG
-/// stream so the human's stream 0 and market stay byte-stable. These tests prove the economy runs, the
-/// per-player markets are independent and persist, and recruited units belong to the power, not the human.
+/// stream so the human's stream 0 stays byte-stable. Since 86d3fpyx3, each sale also ripples a 5-30%
+/// propagation into every other European market's INVENTORY (FreeCol propagateToEuropeanMarkets) — sales
+/// and income counters remain strictly per-player. These tests prove the economy runs, the per-player
+/// markets are independent and persist, and recruited units belong to the power, not the human.
 /// </summary>
 public class ForeignPowerEconomyTests
 {
@@ -42,8 +44,12 @@ public class ForeignPowerEconomyTests
             power.Immigration > 0 || game.Units.Any(u =>
                 u.OwnerId == power.PlayerId && u.OwnerNationId is null && u.Location == UnitLocation.InEurope),
             "the power accrued no immigration and no colonist reached its Europe");
-        // The human did nothing, so its own market never moved — proof the foreign trade stayed on its own market.
-        Assert.Empty(game.Market.SaveDeltas());
+        // The human traded nothing itself, so its SALES/INCOME counters are untouched — the proof the foreign trade
+        // ran on the power's own market. (Since 86d3fpyx3 a rival's sale DOES ripple 5-30% of the traded amount into
+        // every other European market's inventory — FreeCol propagateToEuropeanMarkets — so human inventory deltas
+        // are expected and prove the powers really traded.)
+        Assert.NotEmpty(game.Market.SaveDeltas());
+        Assert.All(game.Market.SaveDeltas().Keys, g => Assert.Equal(0, game.Market.SalesOf(g)));
     }
 
     [Fact]

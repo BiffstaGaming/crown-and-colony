@@ -6034,6 +6034,7 @@ public sealed partial class Game
         colony.AddGoods(goodsId, -amount);
         SaleResult sale = player.Market.Sell(goodsId, amount, player.TaxRate, MarketVolumeFactor(player));
         player.Gold += sale.GoldAfterTax;
+        PropagateTradeToRivalMarkets(player, goodsId, amount); // FreeCol ServerPlayer.sellInEurope:1327 — incl. custom house (ServerColony:851)
         return sale.GoldAfterTax;
     }
 
@@ -6772,6 +6773,7 @@ public sealed partial class Game
         ship.AddCargo(goodsId, -amount);
         SaleResult sale = player.Market.Sell(goodsId, amount, player.TaxRate, MarketVolumeFactor(player));
         player.Gold += sale.GoldAfterTax;
+        PropagateTradeToRivalMarkets(player, goodsId, amount); // FreeCol ServerPlayer.sellInEurope:1327
         return sale.GoldAfterTax;
     }
 
@@ -6828,6 +6830,7 @@ public sealed partial class Game
         int cost = player.Market.Buy(goodsId, amount, MarketVolumeFactor(player)); // moves the market (the ask rises)
         player.Gold -= cost;
         ship.AddCargo(goodsId, amount);
+        PropagateTradeToRivalMarkets(player, goodsId, -amount); // FreeCol ServerPlayer.buyInEurope:1261 (sign negated)
         return cost;
     }
 
@@ -8229,6 +8232,8 @@ public sealed partial class Game
         }
 
         BombardEnemyShips(player); // fort/fortress colonies fire on adjacent enemy ships first (FreeCol csStartTurn)
+
+        RunYearlyMarketAdjust(player); // FreeCol ServerPlayer.csStartTurn:1813 → csYearlyGoodsAdjust — every European turn start
 
         ProcessImprovements(player); // advance any pioneers building tile improvements; land completed ones (no-op + RNG-free when none)
 
