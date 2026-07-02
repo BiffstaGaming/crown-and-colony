@@ -88,10 +88,12 @@ public sealed record MapImportResult(
 /// + learnable skill), fixed player start positions (<c>[starts]</c>) and a per-tile region layer (<c>[regions]</c>).
 /// A map that declares no <c>[regions]</c> section leaves the region layer for the generator to re-derive from terrain;
 /// one that declares no <c>[starts]</c> section leaves the start tiles to the caller's heuristic — so a definition
-/// declaring neither (the shipped <c>america.txt</c>) is unchanged. Deliberately <i>deferred</i> (documented in
-/// <c>docs/systems/map-terrain.md</c>): river connection styling, tile ownership without a settlement, European
-/// colonies/units, and the binary FreeCol <c>.fsm</c>/Colonization <c>.MP</c> containers (we read our extracted text
-/// form — see <c>game/data/maps/PROVENANCE.md</c>).
+/// declaring neither (the shipped <c>america.txt</c>) is unchanged. The binary Colonization <c>.MP</c> container is
+/// <i>also</i> read (<see cref="ImportColonization"/>, a port of FreeCol <c>ColonizationMapLoader</c> — terrain +
+/// river magnitude only, exactly FreeCol's subset); <see cref="ImportFile"/> dispatches on the file extension.
+/// Deliberately <i>deferred</i> (documented in <c>docs/systems/map-terrain.md</c>): river connection styling, tile
+/// ownership without a settlement, European colonies/units, and the binary FreeCol <c>.fsm</c> container (we read our
+/// extracted text form — see <c>game/data/maps/PROVENANCE.md</c>).
 /// </para>
 /// </remarks>
 public static class MapImporter
@@ -200,6 +202,179 @@ public static class MapImporter
             regionIds: regionLayer?.Ids,
             regions: regionLayer?.Regions);
         return new MapImportResult(map, settlements, humanStart, refEntry);
+    }
+
+    // --- Colonization .MP import (86d3fpxjc) --------------------------------
+
+    /// <summary>
+    /// The 27 FreeCol tile short-names a Colonization <c>.MP</c> terrain code (the byte's low five bits) maps to —
+    /// ported <b>verbatim</b> from FreeCol <c>ColonizationMapLoader.tiletypes</c>, including its duplicated forest
+    /// block (codes 8–15 and 16–23 name the same eight forests; the two blocks differ only in the original game's
+    /// hidden data, which FreeCol — and we — decode identically). Codes 24–26 are arctic / ocean / high seas; codes
+    /// 27–31 have no base terrain and are legal only with a hills/mountains overlay (see
+    /// <see cref="ImportColonization"/>).
+    /// </summary>
+    private static readonly string[] ColonizationTileTypes =
+    {
+        "tundra", "desert", "plains", "prairie", "grassland", "savannah", "marsh", "swamp",
+        "borealForest", "scrubForest", "mixedForest", "broadleafForest",
+        "coniferForest", "tropicalForest", "wetlandForest", "rainForest",
+        "borealForest", "scrubForest", "mixedForest", "broadleafForest",
+        "coniferForest", "tropicalForest", "wetlandForest", "rainForest",
+        "arctic", "ocean", "highSeas",
+    };
+
+    /// <summary>Byte length of the Colonization <c>.MP</c> header (width/height at offsets 0/2; bytes 4–5 have an unknown, fixed function and are ignored — FreeCol ignores them too).</summary>
+    private const int ColonizationHeaderLength = 6;
+
+    /// <summary>
+    /// Imports a map definition from <paramref name="path"/>, dispatching on the file extension: a <c>.mp</c> file
+    /// (case-insensitive) is read as a binary Colonization map via <see cref="ImportColonization"/>; anything else is
+    /// read as our UTF-8 text definition via <see cref="Import"/>. The seam the New-Game import UI uses (86d3fq1cg).
+    /// </summary>
+    /// <param name="path">Path of the map file to import.</param>
+    /// <param name="ruleset">The ruleset whose ids the definition resolves against.</param>
+    /// <exception cref="InvalidDataException">The definition is malformed (see <see cref="Import"/> / <see cref="ImportColonization"/>).</exception>
+    /// <exception cref="IOException">The file cannot be read.</exception>
+    public static MapImportResult ImportFile(string path, Ruleset ruleset)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(ruleset);
+        string sourceName = Path.GetFileName(path);
+        using FileStream stream = File.OpenRead(path);
+        if (Path.GetExtension(path).Equals(".mp", StringComparison.OrdinalIgnoreCase))
+        {
+            return ImportColonization(stream, ruleset, sourceName);
+        }
+        using var reader = new StreamReader(stream);
+        return Import(reader, ruleset, sourceName);
+    }
+
+    /// <summary>
+    /// Imports an original-Colonization binary map (<c>.MP</c>) — a faithful port of FreeCol
+    /// <c>ColonizationMapLoader</c> (GPL v2). Format: a 6-byte header whose bytes 0/2 carry the map width/height
+    /// (read as UInt16 little-endian — identical to FreeCol's signed-byte read for every file FreeCol itself can
+    /// load, and additionally correct for widths over 127), then <c>width×height</c> terrain bytes (the first of the
+    /// file's three same-size layers; FreeCol reads only this first layer and so do we — layers 2–3 are ignored).
+    /// Each terrain byte decodes as <c>terrain = b &amp; 0b11111</c>, <c>overlay = b &gt;&gt; 5</c>: a terrain code
+    /// below 27 is the base tile (<see cref="ColonizationTileTypes"/>); otherwise overlay 1/3 is hills and 5/7
+    /// mountains. Overlay 2/3 lays a minor river (magnitude 1) and 6/7 a major river (magnitude 2), with no
+    /// connection styling (FreeCol's loader leaves connections a TODO).
+    /// </summary>
+    /// <remarks>
+    /// <b>Faithful-subset scope:</b> exactly FreeCol's — terrain plus river magnitude. The format carries no
+    /// bonus resources, rumours, settlements or start positions, so the result's settlement list is empty and its
+    /// start tiles null (the caller's generators lay rivers'-worth of gameplay on top, as for any terrain-only map).
+    /// <b>Documented deviation:</b> a terrain code ≥ 27 whose overlay is not hills/mountains (1/3/5/7) makes FreeCol
+    /// silently reuse the <i>previous</i> tile's type (and throw on tile 0) — a latent bug; we throw a clean
+    /// <see cref="InvalidDataException"/> instead.
+    /// </remarks>
+    /// <param name="stream">The <c>.MP</c> bytes. Not disposed here.</param>
+    /// <param name="ruleset">The ruleset whose terrain/river ids the decoded codes resolve against.</param>
+    /// <param name="sourceName">A name for the map (e.g. the file name) used in parse-error messages.</param>
+    /// <exception cref="InvalidDataException">The map is malformed (short header, zero dimension, truncated terrain layer, undefined terrain code).</exception>
+    public static MapImportResult ImportColonization(Stream stream, Ruleset ruleset, string sourceName)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(ruleset);
+
+        static InvalidDataException Error(string source, string message) =>
+            new($"Map '{source}': {message}.");
+
+        byte[] header = new byte[ColonizationHeaderLength];
+        if (ReadUpTo(stream, header) < ColonizationHeaderLength)
+        {
+            throw Error(sourceName, $"a Colonization .MP map starts with a {ColonizationHeaderLength}-byte header; the file is shorter");
+        }
+        int width = header[0] | (header[1] << 8);   // UInt16 LE at offset 0
+        int height = header[2] | (header[3] << 8);  // UInt16 LE at offset 2
+        if (width < 1 || height < 1)
+        {
+            throw Error(sourceName, $"the header declares an empty {width}x{height} map (dimensions must be at least 1)");
+        }
+
+        byte[] layer1 = new byte[width * height];
+        int read = ReadUpTo(stream, layer1);
+        if (read < layer1.Length)
+        {
+            throw Error(sourceName, $"the terrain layer is truncated: the header declares {width}x{height} = {layer1.Length} tiles, but only {read} bytes follow");
+        }
+
+        var terrain = new TerrainType[width * height];
+        var improvements = new Dictionary<Position, IReadOnlyList<TileImprovementType>>();
+        TileImprovementType? riverType = null; // resolved on first river tile (a river-less map never needs it)
+        for (int index = 0; index < layer1.Length; index++)
+        {
+            int x = index % width;
+            int y = index / width;
+            int decimalValue = layer1[index]; // FreeCol's `b & 0xff` — C# bytes are already unsigned
+            int terrainCode = decimalValue & 0b11111;
+            int overlay = decimalValue >> 5;
+
+            // Base terrain: a code below 27 IS the tile (even under a hill/river overlay — FreeCol checks the code
+            // first); 27-31 have no base type and are only legal as hills (overlay 1/3) or mountains (overlay 5/7).
+            string shortName;
+            if (terrainCode < ColonizationTileTypes.Length)
+            {
+                shortName = ColonizationTileTypes[terrainCode];
+            }
+            else if (overlay is 1 or 3)
+            {
+                shortName = "hills";
+            }
+            else if (overlay is 5 or 7)
+            {
+                shortName = "mountains";
+            }
+            else
+            {
+                // FreeCol silently reuses the previous tile's type here (NPE on tile 0) — we fail cleanly instead.
+                throw Error(sourceName, $"tile ({x},{y}) has undefined Colonization terrain code 0x{decimalValue:X2} (terrain {terrainCode} with overlay {overlay})");
+            }
+            try
+            {
+                terrain[index] = ruleset.Terrain(Qualify("model.tile.", shortName));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                throw new InvalidDataException($"Map '{sourceName}': tile ({x},{y}) decodes to terrain '{shortName}', which this ruleset does not define.", ex);
+            }
+
+            // Rivers: overlay 2/3 = minor (magnitude 1), 6/7 = major (magnitude 2). No connection styling (FreeCol
+            // EMPTY_RIVER_STYLE, "//TODO: connections!").
+            if (overlay is 2 or 3 or 6 or 7)
+            {
+                try
+                {
+                    riverType ??= ruleset.Improvement(TileImprovementType.RiverId);
+                }
+                catch (KeyNotFoundException ex)
+                {
+                    throw new InvalidDataException($"Map '{sourceName}': tile ({x},{y}) carries a river, but this ruleset defines no '{TileImprovementType.RiverId}'.", ex);
+                }
+                improvements[new Position(x, y)] = [riverType with { Magnitude = overlay <= 3 ? 1 : 2 }];
+            }
+        }
+
+        var map = new GameMap(width, height, terrain,
+            improvements: improvements.Count > 0 ? improvements : null);
+        return new MapImportResult(map, []);
+    }
+
+    /// <summary>Reads up to <paramref name="buffer"/>.Length bytes from <paramref name="stream"/> (looping over partial reads); returns how many were actually read (less than the buffer length only at end of stream).</summary>
+    private static int ReadUpTo(Stream stream, byte[] buffer)
+    {
+        int total = 0;
+        while (total < buffer.Length)
+        {
+            int n = stream.Read(buffer, total, buffer.Length - total);
+            if (n == 0)
+            {
+                break;
+            }
+            total += n;
+        }
+        return total;
     }
 
     private static (int Width, int Height) ReadHeader(LineCursor lines)
