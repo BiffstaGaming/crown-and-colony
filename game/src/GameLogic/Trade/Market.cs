@@ -78,6 +78,31 @@ public sealed class Market
     public int AmountInMarket(string goodsId) => _data.TryGetValue(goodsId, out var d) ? d.AmountInMarket : 0;
 
     /// <summary>
+    /// The ruleset's seed inventory for a good (the spec's <c>initial-amount</c>, FreeCol
+    /// <c>GoodsType.getInitialAmount</c>) — the baseline the per-turn market drift pulls a traded good's
+    /// <see cref="AmountInMarket"/> back toward (see <c>Game.RunYearlyMarketAdjust</c>). 0 for an untradeable good.
+    /// </summary>
+    internal int InitialAmountOf(string goodsId) =>
+        _data.TryGetValue(goodsId, out var d) ? d.Goods.Market!.InitialAmount : 0;
+
+    /// <summary>
+    /// Whether a good has seen any trade activity on this market (FreeCol <c>Market.hasBeenTraded</c>) — the gate
+    /// deciding which goods the per-turn market drift adjusts. FreeCol keeps a live <c>traded</c> flag (set by every
+    /// <c>addGoodsToMarket</c>); we <b>derive</b> it from already-persisted state instead — any non-zero trade counter,
+    /// or an inventory off its ruleset seed — anchored on FreeCol's own save-load fallback
+    /// (<c>MarketData.java:478</c>: <c>traded = sales != 0</c>), widened to also catch counter-free movement (a rival's
+    /// propagated trade or a drift adjust, both of which set FreeCol's live flag). Deriving it avoids a save-format
+    /// bump. <b>Documented divergence</b> (docs/systems/market.md): a good that was only ever propagated/drifted and
+    /// later lands back on exactly its seed amount with all counters zero reads untraded again, where FreeCol's sticky
+    /// flag would stay true — cosmetic (the good merely skips drift ticks until it moves again). False for an
+    /// untradeable good.
+    /// </summary>
+    internal bool HasBeenTraded(string goodsId) =>
+        _data.TryGetValue(goodsId, out var d)
+        && (d.Sales != 0 || d.IncomeBeforeTaxes != 0 || d.IncomeAfterTaxes != 0
+            || d.AmountInMarket != d.Goods.Market!.InitialAmount);
+
+    /// <summary>
     /// The cumulative <b>net units sold</b> of a good for the Trade report (FreeCol <c>MarketData.getSales</c>): every
     /// <see cref="Sell"/> adds the units, every <see cref="Buy"/> subtracts them, so a player who has bought back more
     /// than sold reads negative. 0 for an untraded or untradeable good.

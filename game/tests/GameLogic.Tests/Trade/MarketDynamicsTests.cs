@@ -238,6 +238,172 @@ public class MarketDynamicsTests
         Assert.InRange(rival.Market.BidPrice(Silver), 1, 19);
     }
 
+    // ── Per-turn market drift (86d3fpyyq, FreeCol ServerPlayer.csYearlyGoodsAdjust:1767-1800) ──────────────────────
+
+    private const string TradeGoods = "model.goods.tradeGoods"; // 3000 @ price 1 — drift never moves its price (no clamp noise)
+
+    [Fact]
+    public void Drift_MovesTradedGoodsTowardTheirBaseline_InBothDirections_WithoutTouchingStreamZero()
+    {
+        // Turn 200 → per-good bound 20 (extra type 41), so any single tick moves a good by at most 40. Sugar was
+        // flooded above its seed (drift must subtract), tradeGoods drained below it (drift must add).
+        Game game = AtTurn(200, seed: 7);
+        game.HumanPlayer.Market.Sell(Sugar, 600, taxPercent: 0); // 1500 → 2100, above baseline
+        game.HumanPlayer.Market.Buy(TradeGoods, 300);            // 3000 → 2700, below baseline
+        int sugarBefore = game.Market.AmountInMarket(Sugar);
+        int tradeBefore = game.Market.AmountInMarket(TradeGoods);
+        ulong stream0Before = SaveGame.From(game).RandomStateValue;
+
+        game.RunYearlyMarketAdjust(game.HumanPlayer);
+
+        Assert.InRange(game.Market.AmountInMarket(Sugar), sugarBefore - 40, sugarBefore);      // toward (or at) the seed
+        Assert.InRange(game.Market.AmountInMarket(TradeGoods), tradeBefore, tradeBefore + 40); // toward (or at) the seed
+        Assert.Equal(stream0Before, SaveGame.From(game).RandomStateValue); // ADR-009: stream 0 never advanced
+        // Drift moves inventory only — the trade counters (and so the Trade report) are untouched.
+        Assert.Equal(600, game.Market.SalesOf(Sugar));
+        Assert.Equal(-300, game.Market.SalesOf(TradeGoods));
+    }
+
+    [Fact]
+    public void WorkedExample_DriftTick_IsByteExactAgainstAHandReplayOfTheFreeColFormula()
+    {
+        // Full-fidelity pin of csYearlyGoodsAdjust: the test replays the documented FreeCol algorithm by hand on a
+        // twin game — one extra-type draw over the goods list, then per TRADED good (spec order): direction from
+        // amount < initial (at EXACTLY initial it subtracts — FreeCol's quirky '<' at :1783), bound Turn/10
+        // (2×that+1 for the extra type), a uniform 0..bound-1 draw, AddGoodsToMarket, queue; then one 5-30% roll per
+        // queued adjust propagated to every rival (flushExtraTrades) — and demands the twin's save be BYTE-IDENTICAL
+        // to the engine's. The setup covers all three directions: sugar above seed, tradeGoods below seed, and
+        // silver traded back to exactly its seed (the '<' quirk: it must subtract, not add).
+        Game game = AtTurn(200, seed: 11);
+        Game twin = AtTurn(200, seed: 11);
+        foreach (Game g in new[] { game, twin })
+        {
+            g.HumanPlayer.Market.Sell(Sugar, 600, taxPercent: 0); // above baseline
+            g.HumanPlayer.Market.Buy(TradeGoods, 300);            // below baseline
+            g.HumanPlayer.Market.Sell(Silver, 7, taxPercent: 0);  // …
+            g.HumanPlayer.Market.Buy(Silver, 7);                  // …back to exactly baseline, counters non-zero
+            Assert.Equal(g.Market.InitialAmountOf(Silver), g.Market.AmountInMarket(Silver));
+        }
+
+        game.RunYearlyMarketAdjust(game.HumanPlayer); // the engine…
+
+        // …vs the hand replay on the twin, from the same persisted inputs (stream-0 state, turn, player id 0).
+        var goods = twin.Market.TradeableGoods.ToList();
+        var rng = new Pcg32Random(
+            SaveGame.From(twin).RandomStateValue ^ ((ulong)twin.Turn << 1), 105); // MarketDynamicsStreamId
+        string extraType = goods[rng.Next(goods.Count)];
+        var extras = new List<(string GoodsId, int Amount)>();
+        foreach (string g in goods)
+        {
+            if (!twin.Market.HasBeenTraded(g))
+            {
+                continue;
+            }
+            bool add = twin.Market.AmountInMarket(g) < twin.Market.InitialAmountOf(g);
+            int bound = twin.Turn / 10;
+            if (g == extraType)
+            {
+                bound = 2 * bound + 1;
+            }
+            if (bound <= 0)
+            {
+                continue;
+            }
+            int amount = rng.Next(bound);
+            if (!add)
+            {
+                amount = -amount;
+            }
+            twin.Market.AddGoodsToMarket(g, amount);
+            extras.Add((g, amount));
+        }
+        List<Player> rivals = ColonialRivals(twin);
+        foreach ((string g, int amount) in extras)
+        {
+            int r = rng.Next(26) + 5;
+            int part = amount * r / 100;
+            if (part == 0)
+            {
+                continue;
+            }
+            foreach (Player rival in rivals)
+            {
+                rival.Market.AddGoodsToMarket(g, part);
+            }
+        }
+
+        Assert.Equal(SaveGame.From(twin).ToJson(), SaveGame.From(game).ToJson()); // byte-identical, rivals included
+    }
+
+    [Fact]
+    public void Drift_BeforeTurnTen_MovesNothing()
+    {
+        // bound = Turn/10 = 0 for every good; the extra type's bound is 1, whose only draw is 0 — so the early game
+        // never drifts (and the 0-adjust's propagation roll scales to 0 for the rivals too).
+        var game = Game.New(Classic, seed: 7); // turn 1
+        game.HumanPlayer.Market.Sell(Sugar, 600, taxPercent: 0);
+        int before = game.Market.AmountInMarket(Sugar);
+
+        game.RunYearlyMarketAdjust(game.HumanPlayer);
+
+        Assert.Equal(before, game.Market.AmountInMarket(Sugar));
+        Assert.All(ColonialRivals(game), r => Assert.Empty(r.Market.SaveDeltas()));
+    }
+
+    [Fact]
+    public void Drift_NeverAdjustsAnUntradedGood()
+    {
+        // hasBeenTraded gates the whole adjust (ServerPlayer.java:1781-1782): a market that has seen no trade sits
+        // perfectly still even deep into the game — the extra type included.
+        Game game = AtTurn(200, seed: 7);
+
+        game.RunYearlyMarketAdjust(game.HumanPlayer);
+
+        Assert.All(game.Players, p => Assert.Empty(p.Market.SaveDeltas()));
+    }
+
+    [Fact]
+    public void Drift_RunsOnTheDriftingPlayersOwnMarketAndStream()
+    {
+        // A foreign power's tick drifts ITS market (its own stream state seeds the generator, read without
+        // advancing); its adjusts then propagate onward to the other Europeans — the human included — per
+        // flushExtraTrades. Neither the power's own stream nor the human's stream 0 advances.
+        Game game = AtTurn(200, seed: 7);
+        Player power = ColonialRivals(game)[0];
+        power.Market.Sell(Sugar, 600, taxPercent: 0); // the power floods ITS OWN sugar market
+        int before = power.Market.AmountInMarket(Sugar);
+        SaveGame preTick = SaveGame.From(game);
+
+        game.RunYearlyMarketAdjust(power);
+
+        Assert.InRange(power.Market.AmountInMarket(Sugar), before - 40, before); // its market drifted toward the seed
+        SaveGame postTick = SaveGame.From(game);
+        Assert.Equal(preTick.RandomStateValue, postTick.RandomStateValue); // human stream 0 untouched
+        Assert.Equal(
+            preTick.Players!.Select(p => (p.RngState, p.RngIncrement)),
+            postTick.Players!.Select(p => (p.RngState, p.RngIncrement))); // no player stream advanced — the power's included
+    }
+
+    [Fact]
+    public void Drift_IsDeterministic_AndSaveRoundTripsByteIdentically()
+    {
+        var a = AtTurn(50, seed: 4242);
+        var b = AtTurn(50, seed: 4242);
+        foreach (Game g in new[] { a, b })
+        {
+            g.HumanPlayer.Market.Sell(Sugar, 600, taxPercent: 0);
+            g.RunYearlyMarketAdjust(g.HumanPlayer);
+        }
+        Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson()); // twin determinism
+
+        string json = SaveGame.From(a).ToJson();
+        Assert.Equal(json, SaveGame.From(SaveGame.FromJson(json).Restore(Classic)).ToJson()); // no new save field
+    }
+
+    /// <summary>A fresh seeded game fast-forwarded to <paramref name="turn"/> via the save layer (no turns played).</summary>
+    private static Game AtTurn(int turn, ulong seed) =>
+        (SaveGame.From(Game.New(Classic, seed)) with { Turn = turn }).Restore(Classic);
+
     /// <summary>64-bit FNV-1a over an ASCII ruleset id — mirrors the engine's seed hash (white-box formula pin).</summary>
     private static ulong Fnv1a(string text)
     {

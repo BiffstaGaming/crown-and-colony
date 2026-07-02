@@ -133,4 +133,82 @@ public sealed partial class Game
         }
     }
 
+    /// <summary>
+    /// Runs one European player's per-turn market drift (FreeCol <c>ServerPlayer.csYearlyGoodsAdjust</c>,
+    /// ServerPlayer.java:1767-1800, called from <c>csStartTurn</c>:1813 for <b>every European player every turn</b> —
+    /// the "yearly" in FreeCol's name is historical, not a real once-a-year gate): each good the player has actually
+    /// traded (<see cref="Market.HasBeenTraded"/>) gets a small random nudge back toward its ruleset baseline, so a
+    /// flooded market slowly recovers and a drained one refills. Per traded good, in the market's stable spec order:
+    /// <list type="bullet">
+    /// <item>direction: <b>add</b> when the inventory is strictly below its seed (<see cref="Market.InitialAmountOf"/>),
+    /// else subtract — at <em>exactly</em> the seed it subtracts (FreeCol's <c>&lt;</c> at :1783, a faithful quirk);</item>
+    /// <item>magnitude bound: <c>Turn / 10</c> (integer division — no drift at all before turn 10), except the one
+    /// uniformly-drawn <b>extra type</b> whose bound is <c>2 × (Turn / 10) + 1</c> (:1785-1786); a bound ≤ 0 skips the
+    /// good; the draw is uniform 0..bound−1 (:1788), so a drift tick can be 0;</item>
+    /// <item>the adjust lands via <see cref="Market.AddGoodsToMarket"/> (no counters move) and is queued;</item>
+    /// <item>finally every queued adjust propagates onward to the rival European markets with one 5–30% roll each
+    /// (<c>flushExtraTrades</c>:366-371 → <c>propagateToEuropeanMarkets</c>) from the same generator — even a 0
+    /// adjust rolls (the roll precedes the cutoff), exactly as FreeCol.</item>
+    /// </list>
+    /// The extra-type draw runs over the market's goods list, which in the classic spec is <b>exactly</b> FreeCol's
+    /// storable-goods list (every good with a <c>&lt;market&gt;</c> is storable and vice versa); on a hypothetical
+    /// ruleset where a storable good had no market the draw pool would differ (documented in docs/systems/market.md).
+    /// <para>
+    /// <b>ADR-009:</b> one transient stream-<see cref="MarketDynamicsStreamId"/> generator per player per turn, seeded
+    /// disaster-style from persisted inputs only (the player's own stream state read without advancing, the turn and
+    /// the player id) — the human's stream 0 never advances, and a save/load replays the same tick. All movement lands
+    /// in already-persisted market state, so no save bump. Called (once wired) from <c>RunPlayerTurn</c> right after
+    /// <c>BombardEnemyShips</c>, matching FreeCol's <c>csStartTurn</c> order (bombard → yearly adjust → fathers); the
+    /// REF branch returns before the colonial path, so the REF's market does not drift — a documented divergence
+    /// (the REF never trades or reads prices, so its market is inert anyway).
+    /// </para>
+    /// </summary>
+    /// <param name="player">The European (colonial/rebel/independent) player whose market drifts this turn.</param>
+    internal void RunYearlyMarketAdjust(Player player)
+    {
+        Market market = player.Market;
+        List<string> goods = market.TradeableGoods.ToList(); // classic: == FreeCol's storable list, in spec order
+        if (goods.Count == 0)
+        {
+            return;
+        }
+        ulong baseState = RandomFor(player).SaveState().State; // read-only: never advances the underlying stream
+        var rng = new Pcg32Random(
+            baseState ^ ((ulong)Turn << 1) ^ ((ulong)(uint)player.PlayerId << 32), MarketDynamicsStreamId);
+
+        string extraType = goods[rng.Next(goods.Count)]; // one uniform draw (ServerPlayer.java:1777-1778)
+        var extraTrades = new List<(string GoodsId, int Amount)>();
+        foreach (string goodsId in goods)
+        {
+            if (!market.HasBeenTraded(goodsId))
+            {
+                continue; // only goods this player has actually traded drift (ServerPlayer.java:1781-1782)
+            }
+            bool add = market.AmountInMarket(goodsId) < market.InitialAmountOf(goodsId); // at exactly initial: subtract
+            int bound = Turn / 10; // int division, as FreeCol's turn/10
+            if (goodsId == extraType)
+            {
+                bound = 2 * bound + 1;
+            }
+            if (bound <= 0)
+            {
+                continue;
+            }
+            int amount = rng.Next(bound); // uniform 0..bound-1 (can be 0 — FreeCol still applies + queues it)
+            if (!add)
+            {
+                amount = -amount;
+            }
+            market.AddGoodsToMarket(goodsId, amount);
+            extraTrades.Add((goodsId, amount));
+        }
+        // flushExtraTrades (ServerPlayer.java:366-371): each queued adjust propagates onward to the rival European
+        // markets — one 5-30% roll per adjust from the same generator, unchunked and even for a 0 adjust (the roll
+        // precedes the cutoff), exactly as FreeCol's propagateToEuropeanMarkets is called once per queued trade.
+        List<Player> recipients = RivalEuropeanMarketsOf(player);
+        foreach ((string goodsId, int amount) in extraTrades)
+        {
+            PropagateToMarkets(recipients, goodsId, amount, rng);
+        }
+    }
 }
