@@ -195,9 +195,10 @@ public sealed class Ruleset
 
     /// <summary>
     /// The selected difficulty level's tuning numbers (default <c>model.difficulty.medium</c>), parsed from the spec.
-    /// Balance constants read these instead of hardcoding values.
+    /// Balance constants read these instead of hardcoding values. The setter is private — only
+    /// <see cref="WithDifficultyOverrides"/> (the custom-difficulty New-Game seam) ever swaps the bundle.
     /// </summary>
-    public DifficultyOptions Difficulty { get; }
+    public DifficultyOptions Difficulty { get; private set; }
 
     /// <summary>
     /// The base <c>gameOptions</c>-group tuning numbers (not per-difficulty-level) — currently the immigration trio
@@ -509,6 +510,28 @@ public sealed class Ruleset
         // (FreeCol keeps the two ordered). The seasons-per-year and the split year itself are unchanged.
         int seasonYear = Math.Max(startingYear + 1, Calendar.SeasonYear);
         Calendar = Calendar with { StartingYear = startingYear, SeasonYear = seasonYear };
+        return this;
+    }
+
+    /// <summary>
+    /// Returns this ruleset with its <b>difficulty options bundle</b> (<see cref="Difficulty"/>) replaced by the
+    /// player's per-option <b>custom difficulty</b> edits — FreeCol's editable <c>DifficultyDialog</c> semantic (its
+    /// <c>model.difficulty.custom</c> group cloned from a selected level; 86d3fq0x7), chosen at game setup. Like
+    /// <see cref="WithVictoryConditions"/> this is a <b>configuration</b> seam, not a rules change: it only swaps
+    /// which tuning numbers the (unchanged) balance formulas read. <see cref="DifficultyLevelId"/> is deliberately
+    /// <b>unchanged</b> — it keeps naming the <em>base</em> level the overrides were cloned from, because that id is
+    /// what the save persists: a reloaded game re-derives the base level's stock values (the custom edits are
+    /// <b>session-only</b>; persisting the edited values would need a save-format change — the documented
+    /// future-save seam, see docs/systems/difficulty.md). Each loaded ruleset is a fresh parse (never cached/shared —
+    /// <see cref="LoadEmbedded"/>), so replacing the bundle on the just-loaded instance is safe; the method returns
+    /// <c>this</c> for a fluent call right after load. Passing the base level's own parsed values (or omitting the
+    /// call) leaves the ruleset byte-identical, so a default new game is unchanged (ADR-009).
+    /// </summary>
+    /// <param name="overrides">The player-edited difficulty options (typically seeded from a base level's parsed values and edited per field).</param>
+    public Ruleset WithDifficultyOverrides(DifficultyOptions overrides)
+    {
+        ArgumentNullException.ThrowIfNull(overrides);
+        Difficulty = overrides;
         return this;
     }
 

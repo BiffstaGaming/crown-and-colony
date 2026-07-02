@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -19,6 +20,17 @@ public static class DifficultyLevels
 {
     /// <summary>The spec id of the default level (<c>model.difficulty.medium</c>) — what an unspecified new game uses.</summary>
     public const string DefaultId = "model.difficulty.medium";
+
+    /// <summary>
+    /// The spec id of FreeCol's <b>custom</b> difficulty group (<c>model.difficulty.custom</c>, FreeCol
+    /// <c>DifficultyDialog</c>'s editable clone target; 86d3fq0x7). Deliberately <b>not</b> a member of
+    /// <see cref="All"/>: our custom difficulty is a per-session <em>override record</em> layered onto a real base
+    /// level via <see cref="Ruleset.WithDifficultyOverrides"/> — the ruleset keeps loading (and the save keeps
+    /// recording) the <em>base</em> level's id, so a reloaded game re-derives the base stock values (a persisted
+    /// custom level would need a save-format change; documented deviation). The id exists in the classic spec (its
+    /// group holds FreeCol's editor-scratch values, not a medium copy) but nothing loads it.
+    /// </summary>
+    public const string CustomId = "model.difficulty.custom";
 
     /// <summary>The offered levels, easiest first; names follow the classic Colonization difficulty titles.</summary>
     public static IReadOnlyList<DifficultyLevel> All { get; } =
@@ -180,4 +192,139 @@ public sealed record DifficultyOptions(
         // Medium and harder ship expertStartingUnits=false (only veryEasy/easy enable it) — so the default game keeps
         // the free-colonist roster, byte-identical (ADR-009).
         ExpertStartingUnits: false);
+}
+
+/// <summary>
+/// One player-editable custom-difficulty field (86d3fq0x7): a display label, the spec option id it mirrors, and (on
+/// the typed subclasses) the get/with accessor pair that reads and rewrites the value on a
+/// <see cref="DifficultyOptions"/> record. The schema is <b>data, not code</b>: the custom-difficulty editor builds
+/// its rows from <see cref="DifficultyFields.All"/> and folds the edited values back through the
+/// <c>With</c> delegates, so adding an editable option is a list entry, not an editor change.
+/// </summary>
+/// <param name="Label">The player-facing row label (e.g. "Founding-father factor").</param>
+/// <param name="OptionId">The spec option id the field mirrors (e.g. <c>model.option.foundingFatherFactor</c>).</param>
+public abstract record DifficultyField(string Label, string OptionId)
+{
+    /// <summary>
+    /// A Godot-safe node name for the field's editor control: the <see cref="OptionId"/> with its
+    /// <c>model.option.</c> prefix stripped, each remaining dot-segment PascalCased and joined, plus <c>Field</c>
+    /// (e.g. <c>model.option.refSize.soldiers</c> → <c>RefSizeSoldiersField</c>). Node names cannot contain
+    /// <c>'.'</c>; deriving the name here keeps it deterministic and L1-testable (unique per field, no dots).
+    /// </summary>
+    public string NodeName =>
+        string.Concat(
+            OptionId.Replace("model.option.", "", StringComparison.Ordinal)
+                .Split('.')
+                .Select(s => char.ToUpperInvariant(s[0]) + s[1..]))
+        + "Field";
+}
+
+/// <summary>An integer custom-difficulty field — see <see cref="DifficultyField"/>.</summary>
+/// <param name="Label">The player-facing row label.</param>
+/// <param name="OptionId">The spec option id the field mirrors.</param>
+/// <param name="Get">Reads the field's current value off a <see cref="DifficultyOptions"/>.</param>
+/// <param name="With">Returns the options with the field rewritten to a new value (everything else unchanged).</param>
+public sealed record IntDifficultyField(
+    string Label,
+    string OptionId,
+    Func<DifficultyOptions, int> Get,
+    Func<DifficultyOptions, int, DifficultyOptions> With) : DifficultyField(Label, OptionId);
+
+/// <summary>A boolean custom-difficulty field — see <see cref="DifficultyField"/>.</summary>
+/// <param name="Label">The player-facing row label.</param>
+/// <param name="OptionId">The spec option id the field mirrors.</param>
+/// <param name="Get">Reads the field's current value off a <see cref="DifficultyOptions"/>.</param>
+/// <param name="With">Returns the options with the field rewritten to a new value (everything else unchanged).</param>
+public sealed record BoolDifficultyField(
+    string Label,
+    string OptionId,
+    Func<DifficultyOptions, bool> Get,
+    Func<DifficultyOptions, bool, DifficultyOptions> With) : DifficultyField(Label, OptionId);
+
+/// <summary>
+/// The custom-difficulty field schema (86d3fq0x7): every per-level scalar a player may edit on the
+/// custom-difficulty screen — the 15 top-level <see cref="DifficultyOptions"/> integers, the
+/// <see cref="DifficultyOptions.ExpertStartingUnits"/> boolean, the four <see cref="GovernmentLimits"/> thresholds
+/// and the 11 <see cref="MonarchOptions"/> scalars (31 fields). <b>Excluded, deliberately and documented</b>
+/// (docs/systems/difficulty.md §2): the two Monarch <em>unit lists</em> (<c>warSupportForce</c>/<c>mercenaryForce</c>
+/// — roster editing needs its own UI), <see cref="AiTuning"/> and <see cref="NativeTensionOptions"/> (faithful-subset
+/// bundles FreeCol keeps as engine constants, not spec options), and the intervention trio
+/// (<c>interventionBells</c>/<c>Turns</c>/<c>Force</c> — parsed outside <see cref="DifficultyOptions"/>, see
+/// <see cref="Ruleset.InterventionBells"/>).
+/// </summary>
+public static class DifficultyFields
+{
+    /// <summary>Every editable field, in editor row order (the top-level ints, the expert-units flag, the government limits, then the monarch scalars).</summary>
+    public static IReadOnlyList<DifficultyField> All { get; } =
+    [
+        // ── Top-level DifficultyOptions integers (15) ──────────────────────────────────────────────────────────
+        new IntDifficultyField("Founding-father factor", "model.option.foundingFatherFactor",
+            d => d.FoundingFatherFactor, (d, v) => d with { FoundingFatherFactor = v }),
+        new IntDifficultyField("Colonists free of bell upkeep", "model.option.unitsThatUseNoBells",
+            d => d.UnitsThatUseNoBells, (d, v) => d with { UnitsThatUseNoBells = v }),
+        new IntDifficultyField("Land price factor", "model.option.landPriceFactor",
+            d => d.LandPriceFactor, (d, v) => d with { LandPriceFactor = v }),
+        new IntDifficultyField("Native demands", "model.option.nativeDemands",
+            d => d.NativeDemands, (d, v) => d with { NativeDemands = v }),
+        new IntDifficultyField("Native convert chance (%)", "model.option.nativeConvertProbability",
+            d => d.NativeConvertProbability, (d, v) => d with { NativeConvertProbability = v }),
+        new IntDifficultyField("Mission burn chance (%)", "model.option.burnProbability",
+            d => d.BurnProbability, (d, v) => d with { BurnProbability = v }),
+        new IntDifficultyField("Rumour difficulty", "model.option.rumourDifficulty",
+            d => d.RumourDifficulty, (d, v) => d with { RumourDifficulty = v }),
+        new IntDifficultyField("Bad rumour chance (%)", "model.option.badRumour",
+            d => d.RumourBadPercent, (d, v) => d with { RumourBadPercent = v }),
+        new IntDifficultyField("Good rumour chance (%)", "model.option.goodRumour",
+            d => d.RumourGoodPercent, (d, v) => d with { RumourGoodPercent = v }),
+        new IntDifficultyField("Crosses increment", "model.option.crossesIncrement",
+            d => d.CrossesIncrement, (d, v) => d with { CrossesIncrement = v }),
+        new IntDifficultyField("Recruit price increase", "model.option.recruitPriceIncrease",
+            d => d.RecruitPriceIncrease, (d, v) => d with { RecruitPriceIncrease = v }),
+        new IntDifficultyField("Recruit price floor increase", "model.option.lowerCapIncrease",
+            d => d.RecruitLowerCapIncrease, (d, v) => d with { RecruitLowerCapIncrease = v }),
+        new IntDifficultyField("Artillery price increase", "model.option.priceIncrease.artillery",
+            d => d.ArtilleryPriceIncrease, (d, v) => d with { ArtilleryPriceIncrease = v }),
+        new IntDifficultyField("Treasure transport fee (%)", "model.option.treasureTransportFee",
+            d => d.TreasureTransportFee, (d, v) => d with { TreasureTransportFee = v }),
+        new IntDifficultyField("Ship trade penalty (%)", "model.option.shipTradePenalty",
+            d => d.ShipTradePenalty, (d, v) => d with { ShipTradePenalty = v }),
+
+        // ── The expert-starting-units flag (1) ─────────────────────────────────────────────────────────────────
+        new BoolDifficultyField("Expert starting units", "model.option.expertStartingUnits",
+            d => d.ExpertStartingUnits, (d, v) => d with { ExpertStartingUnits = v }),
+
+        // ── Government limits (4) ──────────────────────────────────────────────────────────────────────────────
+        new IntDifficultyField("Very-good government SoL limit (%)", "model.option.veryGoodGovernmentLimit",
+            d => d.Government.VeryGood, (d, v) => d with { Government = d.Government with { VeryGood = v } }),
+        new IntDifficultyField("Good government SoL limit (%)", "model.option.goodGovernmentLimit",
+            d => d.Government.Good, (d, v) => d with { Government = d.Government with { Good = v } }),
+        new IntDifficultyField("Bad government tory limit", "model.option.badGovernmentLimit",
+            d => d.Government.Bad, (d, v) => d with { Government = d.Government with { Bad = v } }),
+        new IntDifficultyField("Very-bad government tory limit", "model.option.veryBadGovernmentLimit",
+            d => d.Government.VeryBad, (d, v) => d with { Government = d.Government with { VeryBad = v } }),
+
+        // ── Monarch scalars (11; the two unit lists are excluded — see the class summary) ─────────────────────
+        new IntDifficultyField("Monarch meddling", "model.option.monarchMeddling",
+            d => d.Monarch.Meddling, (d, v) => d with { Monarch = d.Monarch with { Meddling = v } }),
+        new IntDifficultyField("Maximum tax rate (%)", "model.option.maximumTax",
+            d => d.Monarch.MaximumTaxRate, (d, v) => d with { Monarch = d.Monarch with { MaximumTaxRate = v } }),
+        new IntDifficultyField("Tax adjustment", "model.option.taxAdjustment",
+            d => d.Monarch.TaxAdjustment, (d, v) => d with { Monarch = d.Monarch with { TaxAdjustment = v } }),
+        new IntDifficultyField("Mercenary price (%)", "model.option.mercenaryPrice",
+            d => d.Monarch.MercenaryPricePercent, (d, v) => d with { Monarch = d.Monarch with { MercenaryPricePercent = v } }),
+        new IntDifficultyField("Monarch support level", "model.option.monarchSupport",
+            d => d.Monarch.MonarchSupportLevel, (d, v) => d with { Monarch = d.Monarch with { MonarchSupportLevel = v } }),
+        new IntDifficultyField("Boycott arrears factor", "model.option.arrearsFactor",
+            d => d.Monarch.ArrearsFactor, (d, v) => d with { Monarch = d.Monarch with { ArrearsFactor = v } }),
+        new IntDifficultyField("REF infantry", "model.option.refSize.soldiers",
+            d => d.Monarch.RefBaseInfantry, (d, v) => d with { Monarch = d.Monarch with { RefBaseInfantry = v } }),
+        new IntDifficultyField("REF cavalry", "model.option.refSize.dragoons",
+            d => d.Monarch.RefBaseCavalry, (d, v) => d with { Monarch = d.Monarch with { RefBaseCavalry = v } }),
+        new IntDifficultyField("REF artillery", "model.option.refSize.artillery",
+            d => d.Monarch.RefBaseArtillery, (d, v) => d with { Monarch = d.Monarch with { RefBaseArtillery = v } }),
+        new IntDifficultyField("REF men-o-war", "model.option.refSize.menOfWar",
+            d => d.Monarch.RefBaseManOWar, (d, v) => d with { Monarch = d.Monarch with { RefBaseManOWar = v } }),
+        new IntDifficultyField("War support gold", "model.option.warSupportGold",
+            d => d.Monarch.WarSupportGold, (d, v) => d with { Monarch = d.Monarch with { WarSupportGold = v } }),
+    ];
 }

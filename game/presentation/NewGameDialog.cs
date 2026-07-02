@@ -17,7 +17,9 @@ namespace CrownAndColony.Presentation;
 /// an original-Colonization <c>.MP</c>, validated on pick and forwarded via <see cref="PendingImportedMap"/>;
 /// 86d3fq1cg), the world <b>size</b>, how much of the map is <b>land</b> (FreeCol's
 /// <c>model.option.mapWidth</c>/<c>mapHeight</c> + <c>model.option.landMass</c>), the landmass <b>style</b>
-/// (<c>model.option.landGeneratorType</c>), the <b>difficulty</b> level (FreeCol's five classic levels), the
+/// (<c>model.option.landGeneratorType</c>), the <b>difficulty</b> level (FreeCol's five classic levels, plus a
+/// <b>Custom…</b> row opening the per-option <see cref="DifficultyEditor"/> — FreeCol's editable
+/// <c>DifficultyDialog</c>; 86d3fq0x7), the
 /// <b>nation</b> the human plays (the ruleset's selectable European powers — Dutch/French/English/Spanish — or "No
 /// nation" for the classic nation-less start), and the honoured base <b>game options</b>, grouped as FreeCol's
 /// <c>GameOptionsDialog</c> groups them: the three alternative <b>victory conditions</b>
@@ -43,8 +45,11 @@ namespace CrownAndColony.Presentation;
 /// <see cref="MapGenerator"/> / <see cref="GameLogic.World.LostCityRumourGenerator"/>, not plumbed through
 /// <see cref="GameLogic.GameSession.Game.New"/>, so a dial here would be inert — the only wired map-generator options
 /// (size / land mass / landmass style) <em>are</em> surfaced. The difficulty <em>level</em> is surfaced (its own
-/// dropdown); the per-level difficulty option <em>values</em> (FreeCol's editable <c>DifficultyDialog</c>) are not, as
-/// the engine reads them from the level's spec, not a live override.</para>
+/// dropdown), and the per-level difficulty option <em>values</em> (FreeCol's editable <c>DifficultyDialog</c>) are
+/// now editable too via the Custom… row (86d3fq0x7) — a <b>scalar subset</b> (the 31 <see cref="DifficultyFields"/>;
+/// the monarch unit lists / AI tuning / native tension / intervention trio are excluded, see
+/// docs/systems/difficulty.md §2), applied as a session-only override via
+/// <see cref="Ruleset.WithDifficultyOverrides"/>.</para>
 /// Presentation-only (ADR-006). Built programmatically (no scene file) and added as a child of the main menu like the
 /// other overlays; shares the parchment/wood look via <see cref="ColonyTheme"/>.
 /// </summary>
@@ -163,6 +168,18 @@ public partial class NewGameDialog : Control
     /// </summary>
     public static MapImportResult? PendingImportedMap { get; set; }
 
+    /// <summary>
+    /// The player's per-option <b>custom difficulty</b> edits (86d3fq0x7, FreeCol's editable
+    /// <c>DifficultyDialog</c>); null = no edits → the chosen level's stock values (byte-identical default). Set on
+    /// Start only while the difficulty dropdown's "Custom…" row is active with an applied edit. The <c>onStart</c>
+    /// callback still receives the <b>base</b> <see cref="DifficultyLevel"/> the edits were seeded from — the host
+    /// loads the ruleset under that base level as usual, then applies this record via
+    /// <see cref="Ruleset.WithDifficultyOverrides"/>. <b>Session-only</b> — the save keeps recording the base level
+    /// id, so a reloaded game re-derives the base stock values (persisting the edits is the documented future-save
+    /// seam; see docs/systems/difficulty.md).
+    /// </summary>
+    public static DifficultyOptions? PendingDifficultyOverrides { get; set; }
+
     private OptionButton _variantOption = null!;
     private OptionButton _mapOption = null!;
     private OptionButton _sizeOption = null!;
@@ -199,6 +216,12 @@ public partial class NewGameDialog : Control
     private MapImportResult? _importedMap;
     private Label _importStatusLabel = null!;
     private FileDialog? _importFileDialog;
+    // The custom-difficulty state (86d3fq0x7): the applied per-option edits (null until the editor's OK), the editor
+    // overlay itself, and the last REAL level the dropdown sat on (the base the edits are seeded from — and what the
+    // dropdown reverts to when the editor is cancelled, and what the onStart callback receives while Custom is active).
+    private DifficultyOptions? _customDifficulty;
+    private DifficultyEditor _difficultyEditor = null!;
+    private int _difficultyBaseIndex = DifficultyLevels.DefaultIndex;
     private Action<WorldSize, LandMass, DifficultyLevel, MapSource>? _onStart;
 
     /// <summary>
@@ -316,7 +339,11 @@ public partial class NewGameDialog : Control
         {
             _difficultyOption.AddItem(d.Name);
         }
+        // The final "Custom…" row (86d3fq0x7, index == DifficultyLevels.All.Count — deliberately NOT a
+        // DifficultyLevel): selecting it opens the per-option editor seeded from the current base level's values.
+        _difficultyOption.AddItem("Custom…");
         _difficultyOption.Selected = DifficultyLevels.DefaultIndex;
+        _difficultyOption.ItemSelected += OnDifficultySelected;
         vbox.AddChild(LabeledRow("Difficulty", _difficultyOption));
 
         // Nation picker: the ruleset's selectable European powers, preceded by "No nation" (the byte-identical default).
@@ -408,6 +435,11 @@ public partial class NewGameDialog : Control
         back.Pressed += () => EmitSignal(SignalName.Closed);
         vbox.AddChild(back);
 
+        // The custom-difficulty editor overlay (86d3fq0x7) — a sibling-on-top of the whole dialog, hidden until the
+        // "Custom…" difficulty row opens it.
+        _difficultyEditor = new DifficultyEditor { Name = "DifficultyEditor" };
+        AddChild(_difficultyEditor);
+
         UpdateWorldSizeEnabled(); // size/land start enabled (Random is the default map)
         Hide();
     }
@@ -432,7 +464,13 @@ public partial class NewGameDialog : Control
         PendingImportedMap = importActive ? _importedMap : null;
         WorldSize size = WorldSizeOptions.Sizes[_sizeOption.Selected];
         LandMass land = WorldSizeOptions.LandMasses[_landOption.Selected];
-        DifficultyLevel difficulty = DifficultyLevels.All[_difficultyOption.Selected];
+        // The difficulty forwarded to the host is always a REAL level: while the "Custom…" row is active the base
+        // level the edits were seeded from is forwarded (the host loads the ruleset under it), and the edits ride
+        // PendingDifficultyOverrides (applied on top via Ruleset.WithDifficultyOverrides). A Custom row without an
+        // applied edit (transient — the editor's cancel reverts the dropdown) degrades to the plain base level.
+        bool onCustomDifficulty = _difficultyOption.Selected >= DifficultyLevels.All.Count;
+        DifficultyLevel difficulty = DifficultyLevels.All[onCustomDifficulty ? _difficultyBaseIndex : _difficultyOption.Selected];
+        PendingDifficultyOverrides = onCustomDifficulty ? _customDifficulty : null;
         // The chosen scenario / variant rides its own static into Game.New (it selects which ruleset the game loads —
         // ADR-018). The default variant (Classic, index 0) → the byte-identical default world.
         GameController.PendingVariant = _variantByIndex[_variantOption.Selected];
@@ -546,6 +584,45 @@ public partial class NewGameDialog : Control
         _sizeOption.Disabled = !randomMap;
         _landOption.Disabled = !randomMap;
         _landStyleOption.Disabled = !randomMap; // a fixed/imported map's land shape is loaded, so the style doesn't apply
+    }
+
+    /// <summary>
+    /// Difficulty-dropdown selection handler (86d3fq0x7): a real level updates the remembered base index; the
+    /// "Custom…" row opens the per-option editor seeded from the current base level's parsed values (or the player's
+    /// earlier edits when re-opened). The editor's OK stores the edits (the dropdown stays on Custom…); its Cancel
+    /// reverts the dropdown to the base level (a select via code emits no ItemSelected, so no loop).
+    /// </summary>
+    private void OnDifficultySelected(long index)
+    {
+        if (index < DifficultyLevels.All.Count)
+        {
+            _difficultyBaseIndex = (int)index;
+            return;
+        }
+        DifficultyOptions seed = _customDifficulty ?? BaseDifficultyValues(DifficultyLevels.All[_difficultyBaseIndex]);
+        _difficultyEditor.Open(
+            seed,
+            onApply: edited => _customDifficulty = edited,
+            onCancel: () => _difficultyOption.Select(_difficultyBaseIndex));
+    }
+
+    /// <summary>
+    /// The parsed <see cref="DifficultyOptions"/> of a base level — the seed the custom editor starts from (FreeCol's
+    /// <c>DifficultyDialog</c> clones the selected level). Read from the default-variant ruleset under that level;
+    /// on any load failure the classic medium values keep the dialog alive (the defensive pattern of
+    /// <see cref="DefaultRulesetOrClassic"/>).
+    /// </summary>
+    private static DifficultyOptions BaseDifficultyValues(DifficultyLevel baseLevel)
+    {
+        try
+        {
+            return GameVariants.Default.LoadRuleset(baseLevel.Id).Difficulty;
+        }
+        catch (Exception e)
+        {
+            GD.PushWarning($"NewGameDialog: could not load the '{baseLevel.Id}' difficulty values ({e.Message}); seeding the editor from classic medium.");
+            return DifficultyOptions.ClassicMedium;
+        }
     }
 
     /// <summary>Map-dropdown selection handler: keeps the size/land/style enablement in sync and, on the "Import map…" row (86d3fq1cg), opens the file picker.</summary>

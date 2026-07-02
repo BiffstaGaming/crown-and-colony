@@ -439,4 +439,136 @@ public class DifficultyOptionsTests
         Game loaded = SaveGame.FromJson(v45.ToJson()).Restore(Ruleset.LoadClassic());
         Assert.Equal("model.difficulty.medium", loaded.DifficultyLevelId);
     }
+
+    // ── Custom difficulty (86d3fq0x7: the editable per-option override — FreeCol's DifficultyDialog) ──────────────────
+
+    [Fact]
+    public void CustomId_IsFreeColsCustomGroup_AndDeliberatelyNotASelectableLevel()
+    {
+        Assert.Equal("model.difficulty.custom", DifficultyLevels.CustomId);
+        // The custom "level" is an override RECORD layered onto a real base level (WithDifficultyOverrides), never a
+        // loadable/persistable level of its own — so it must NOT be in the selectable-levels registry.
+        Assert.DoesNotContain(DifficultyLevels.All, l => l.Id == DifficultyLevels.CustomId);
+    }
+
+    [Fact]
+    public void DifficultyFields_CoverTheDocumentedScalarSubset()
+    {
+        // 15 top-level ints + 1 bool (expertStartingUnits) + 4 government limits + 11 monarch scalars = 31 fields.
+        // (Excluded, documented in docs/systems/difficulty.md §2: the two monarch unit lists, AiTuning,
+        // NativeTensionOptions, and the intervention trio.)
+        Assert.Equal(31, DifficultyFields.All.Count);
+        Assert.Equal(30, DifficultyFields.All.OfType<IntDifficultyField>().Count());
+        Assert.Single(DifficultyFields.All.OfType<BoolDifficultyField>());
+        // Every field mirrors a distinct spec option.
+        Assert.Equal(31, DifficultyFields.All.Select(f => f.OptionId).Distinct().Count());
+    }
+
+    [Fact]
+    public void DifficultyFields_NodeNames_AreUniqueGodotSafeAndSuffixed()
+    {
+        // The editor names each control from the schema; node names cannot contain '.' and must be unique.
+        var names = DifficultyFields.All.Select(f => f.NodeName).ToList();
+        Assert.Equal(names.Count, names.Distinct().Count());
+        Assert.All(names, n => Assert.DoesNotContain(".", n));
+        Assert.All(names, n => Assert.EndsWith("Field", n));
+        // The dotted ids flatten predictably (the editor/L3 suites address fields by these names).
+        Assert.Contains("FoundingFatherFactorField", names);
+        Assert.Contains("RefSizeSoldiersField", names);
+        Assert.Contains("PriceIncreaseArtilleryField", names);
+    }
+
+    [Fact]
+    public void EveryIntField_GetAndWith_HitTheSameSlot_AndOnlyThatSlot()
+    {
+        // For each int field: rewriting it changes exactly that value, leaves every OTHER field's value untouched,
+        // and never clobbers the non-scalar members (the monarch unit lists / Ai / NativeTension ride along).
+        foreach (IntDifficultyField field in DifficultyFields.All.OfType<IntDifficultyField>())
+        {
+            int before = field.Get(DifficultyOptions.ClassicMedium);
+            DifficultyOptions modified = field.With(DifficultyOptions.ClassicMedium, before + 7);
+
+            Assert.Equal(before + 7, field.Get(modified));
+            foreach (IntDifficultyField other in DifficultyFields.All.OfType<IntDifficultyField>()
+                         .Where(o => o.OptionId != field.OptionId))
+            {
+                Assert.Equal(other.Get(DifficultyOptions.ClassicMedium), other.Get(modified));
+            }
+            Assert.False(DifficultyFields.All.OfType<BoolDifficultyField>().Single().Get(modified));
+            Assert.Same(DifficultyOptions.ClassicMedium.Monarch.WarSupportForce, modified.Monarch.WarSupportForce);
+            Assert.Same(DifficultyOptions.ClassicMedium.Monarch.MercenaryForce, modified.Monarch.MercenaryForce);
+            Assert.Same(DifficultyOptions.ClassicMedium.Ai, modified.Ai);
+            Assert.Same(DifficultyOptions.ClassicMedium.NativeTension, modified.NativeTension);
+        }
+    }
+
+    [Fact]
+    public void TheBoolField_FlipsExpertStartingUnits_AndNothingElse()
+    {
+        BoolDifficultyField field = DifficultyFields.All.OfType<BoolDifficultyField>().Single();
+        Assert.Equal("model.option.expertStartingUnits", field.OptionId);
+        Assert.False(field.Get(DifficultyOptions.ClassicMedium));
+
+        DifficultyOptions modified = field.With(DifficultyOptions.ClassicMedium, true);
+        Assert.True(modified.ExpertStartingUnits);
+        Assert.Equal(DifficultyOptions.ClassicMedium, modified with { ExpertStartingUnits = false });
+    }
+
+    [Fact]
+    public void FieldValues_MatchTheParsedLevel_ForEveryClassicLevel()
+    {
+        // The editor seeds its rows from a base level's parsed values via the schema Gets — cross-check a ladder
+        // option per level so the seed always equals what the level actually plays at.
+        IntDifficultyField factor = DifficultyFields.All.OfType<IntDifficultyField>()
+            .Single(f => f.OptionId == "model.option.foundingFatherFactor");
+        Assert.Equal(24, factor.Get(Ruleset.LoadClassic("model.difficulty.veryEasy").Difficulty));
+        Assert.Equal(40, factor.Get(Ruleset.LoadClassic().Difficulty));
+        Assert.Equal(56, factor.Get(Ruleset.LoadClassic("model.difficulty.veryHard").Difficulty));
+    }
+
+    [Fact]
+    public void WithDifficultyOverrides_SwapsTheBundle_ButKeepsTheBaseLevelId()
+    {
+        Ruleset ruleset = Ruleset.LoadClassic();
+        DifficultyOptions custom = ruleset.Difficulty with { FoundingFatherFactor = 77 };
+
+        Ruleset overridden = ruleset.WithDifficultyOverrides(custom);
+
+        Assert.Same(ruleset, overridden); // the fluent With* pattern mutates the fresh, never-shared instance
+        Assert.Equal(77, overridden.Difficulty.FoundingFatherFactor);
+        // The level id deliberately keeps naming the BASE level — it is what the save persists, so a reload
+        // re-derives the base stock values (custom edits are session-only; the documented future-save seam).
+        Assert.Equal("model.difficulty.medium", overridden.DifficultyLevelId);
+    }
+
+    [Fact]
+    public void WithDifficultyOverrides_DrivesTheBalanceFormulas()
+    {
+        // The override is a configuration seam: the (unchanged) founding-father cost formula reads the swapped value.
+        Ruleset ruleset = Ruleset.LoadClassic();
+        ruleset.WithDifficultyOverrides(ruleset.Difficulty with { FoundingFatherFactor = 77 });
+        Game game = Game.New(ruleset, 0xC0FFEEUL);
+        Assert.Equal(77, game.TotalFoundingFatherCost());
+    }
+
+    [Fact]
+    public void TheEmbeddedSpec_CarriesFreeColsCustomGroup_WhichWeDeliberatelyNeverLoad()
+    {
+        // FreeCol's spec ships a model.difficulty.custom optionGroup (its editor's clone target). Its shipped values
+        // are editor scratch, NOT a medium copy (e.g. foundingFatherFactor 56 there vs medium's 40) — which is
+        // exactly why our editor seeds from the BASE level's parsed values and nothing ever loads this group. Pinned
+        // so a spec refresh that changes this picture is a visible change.
+        XElement root = LoadClassicSpecRoot();
+        Assert.Contains(root.Descendants("optionGroup"),
+            g => (string?)g.Attribute("id") == DifficultyLevels.CustomId);
+        Assert.Equal(56, Ruleset.ParseDifficulty(root, DifficultyLevels.CustomId).FoundingFatherFactor);
+    }
+
+    /// <summary>The classic spec's root element (for direct ParseDifficulty probes).</summary>
+    private static XElement LoadClassicSpecRoot()
+    {
+        using var stream = typeof(Ruleset).Assembly.GetManifestResourceStream(
+            "CrownAndColony.GameLogic.Specification.classic.specification.xml")!;
+        return XElement.Load(stream);
+    }
 }

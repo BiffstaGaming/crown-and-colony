@@ -191,4 +191,175 @@ public class NewGameSetupUiTests
         AssertThat(NewGameDialog.PendingImportedMap).IsNull();
         NewGameDialog.PendingImportedMap = null;
     }
+
+    // ── Custom difficulty (86d3fq0x7) ───────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The difficulty dropdown's "Custom…" row index (after the five real levels).</summary>
+    private static int CustomDifficultyIndex => DifficultyLevels.All.Count;
+
+    [TestCase]
+    public async Task DifficultyDropdown_OffersTheCustomRow_AfterTheFiveLevels()
+    {
+        (ISceneRunner _, NewGameDialog dialog) = await OpenDialog();
+
+        var difficultyOption = Find<OptionButton>(dialog, "DifficultyOption");
+        AssertThat(difficultyOption.ItemCount).IsEqual(DifficultyLevels.All.Count + 1);
+        AssertThat(difficultyOption.GetItemText(CustomDifficultyIndex)).Contains("Custom");
+        AssertThat(difficultyOption.Selected).IsEqual(DifficultyLevels.DefaultIndex); // Conquistador — the default
+        // The editor overlay exists (as a hidden child) with one control per schema field.
+        var editor = dialog.FindChild("DifficultyEditor", recursive: true, owned: false) as DifficultyEditor;
+        AssertThat(editor).IsNotNull();
+        AssertThat(editor!.Visible).IsFalse();
+        AssertThat(editor.FindChild("FoundingFatherFactorField", recursive: true, owned: false)).IsNotNull();
+        AssertThat(editor.FindChild("RefSizeSoldiersField", recursive: true, owned: false)).IsNotNull();
+        AssertThat(editor.FindChild("ExpertStartingUnitsField", recursive: true, owned: false)).IsNotNull();
+    }
+
+    [TestCase]
+    public async Task PickingCustom_EditingAField_AndStarting_ForwardsTheOverrides_OnTheBaseLevel()
+    {
+        (ISceneRunner runner, NewGameDialog dialog) = await OpenDialog();
+        NewGameDialog.PendingDifficultyOverrides = null; // clean slate (statics survive between tests)
+        try
+        {
+            DifficultyLevel? chosenDifficulty = null;
+            dialog.Open((_, _, difficulty, _) => chosenDifficulty = difficulty);
+
+            // Select() does not emit ItemSelected — emit it explicitly (the MainMenuTests recipe) to open the editor.
+            var difficultyOption = Find<OptionButton>(dialog, "DifficultyOption");
+            difficultyOption.Select(CustomDifficultyIndex);
+            difficultyOption.EmitSignal(OptionButton.SignalName.ItemSelected, CustomDifficultyIndex);
+            await runner.SimulateFrames(1);
+
+            var editor = (DifficultyEditor)dialog.FindChild("DifficultyEditor", recursive: true, owned: false)!;
+            AssertThat(editor.Visible).IsTrue();
+
+            // The fields seed from the base level's parsed values (medium: foundingFatherFactor 40); edit one.
+            var factor = (LineEdit)editor.FindChild("FoundingFatherFactorField", recursive: true, owned: false)!;
+            AssertThat(factor.Text).IsEqual("40");
+            factor.Text = "77";
+            ((Button)editor.FindChild("ApplyButton", recursive: true, owned: false)!)
+                .EmitSignal(BaseButton.SignalName.Pressed);
+            await runner.SimulateFrames(1);
+            AssertThat(editor.Visible).IsFalse(); // a valid OK closes the editor; the dropdown stays on Custom…
+
+            Find<Button>(dialog, "StartButton").EmitSignal(BaseButton.SignalName.Pressed);
+            await runner.SimulateFrames(1);
+
+            // The onStart callback receives the BASE level (medium); the edits ride the overrides static.
+            AssertThat(chosenDifficulty).IsNotNull();
+            AssertThat(chosenDifficulty!.Id).IsEqual(DifficultyLevels.DefaultId);
+            AssertThat(NewGameDialog.PendingDifficultyOverrides).IsNotNull();
+            AssertThat(NewGameDialog.PendingDifficultyOverrides!.FoundingFatherFactor).IsEqual(77);
+            // The unedited fields keep the base level's values (the seed was medium's parsed options).
+            AssertThat(NewGameDialog.PendingDifficultyOverrides.Government.Bad).IsEqual(6);
+        }
+        finally
+        {
+            NewGameDialog.PendingDifficultyOverrides = null; // tidy the static for the next test
+        }
+    }
+
+    [TestCase]
+    public async Task CancellingTheEditor_RevertsTheDropdown_AndForwardsNoOverrides()
+    {
+        (ISceneRunner runner, NewGameDialog dialog) = await OpenDialog();
+        NewGameDialog.PendingDifficultyOverrides = null;
+        try
+        {
+            DifficultyLevel? chosenDifficulty = null;
+            dialog.Open((_, _, difficulty, _) => chosenDifficulty = difficulty);
+
+            // Sit on a real non-default level first (Viceroy, index 4) so the revert target is observable.
+            var difficultyOption = Find<OptionButton>(dialog, "DifficultyOption");
+            difficultyOption.Select(4);
+            difficultyOption.EmitSignal(OptionButton.SignalName.ItemSelected, 4);
+            difficultyOption.Select(CustomDifficultyIndex);
+            difficultyOption.EmitSignal(OptionButton.SignalName.ItemSelected, CustomDifficultyIndex);
+            await runner.SimulateFrames(1);
+
+            var editor = (DifficultyEditor)dialog.FindChild("DifficultyEditor", recursive: true, owned: false)!;
+            AssertThat(editor.Visible).IsTrue();
+            // The seed is the CURRENT base level's values (veryHard: foundingFatherFactor 56), not always medium's.
+            AssertThat(((LineEdit)editor.FindChild("FoundingFatherFactorField", recursive: true, owned: false)!).Text)
+                .IsEqual("56");
+
+            ((Button)editor.FindChild("CancelButton", recursive: true, owned: false)!)
+                .EmitSignal(BaseButton.SignalName.Pressed);
+            await runner.SimulateFrames(1);
+
+            AssertThat(editor.Visible).IsFalse();
+            AssertThat(difficultyOption.Selected).IsEqual(4); // reverted to the base level
+
+            Find<Button>(dialog, "StartButton").EmitSignal(BaseButton.SignalName.Pressed);
+            await runner.SimulateFrames(1);
+
+            AssertThat(chosenDifficulty!.Id).IsEqual(DifficultyLevels.All[4].Id);
+            AssertThat(NewGameDialog.PendingDifficultyOverrides).IsNull(); // a cancel arms nothing
+        }
+        finally
+        {
+            NewGameDialog.PendingDifficultyOverrides = null;
+        }
+    }
+
+    [TestCase]
+    public async Task AnInvalidFieldValue_ShowsAnInlineError_AndKeepsTheEditorOpen()
+    {
+        (ISceneRunner runner, NewGameDialog dialog) = await OpenDialog();
+        NewGameDialog.PendingDifficultyOverrides = null;
+        try
+        {
+            dialog.Open((_, _, _, _) => { });
+
+            var difficultyOption = Find<OptionButton>(dialog, "DifficultyOption");
+            difficultyOption.Select(CustomDifficultyIndex);
+            difficultyOption.EmitSignal(OptionButton.SignalName.ItemSelected, CustomDifficultyIndex);
+            await runner.SimulateFrames(1);
+
+            var editor = (DifficultyEditor)dialog.FindChild("DifficultyEditor", recursive: true, owned: false)!;
+            var factor = (LineEdit)editor.FindChild("FoundingFatherFactorField", recursive: true, owned: false)!;
+            factor.Text = "not a number";
+            ((Button)editor.FindChild("ApplyButton", recursive: true, owned: false)!)
+                .EmitSignal(BaseButton.SignalName.Pressed);
+            await runner.SimulateFrames(1);
+
+            // The editor stays open with an inline error naming the bad field; nothing was applied.
+            AssertThat(editor.Visible).IsTrue();
+            var error = (Label)editor.FindChild("ErrorLabel", recursive: true, owned: false)!;
+            AssertThat(error.Visible).IsTrue();
+            AssertThat(error.Text).Contains("Founding-father factor");
+
+            // Correcting the value lets OK through.
+            factor.Text = "41";
+            ((Button)editor.FindChild("ApplyButton", recursive: true, owned: false)!)
+                .EmitSignal(BaseButton.SignalName.Pressed);
+            await runner.SimulateFrames(1);
+            AssertThat(editor.Visible).IsFalse();
+
+            Find<Button>(dialog, "StartButton").EmitSignal(BaseButton.SignalName.Pressed);
+            await runner.SimulateFrames(1);
+            AssertThat(NewGameDialog.PendingDifficultyOverrides).IsNotNull();
+            AssertThat(NewGameDialog.PendingDifficultyOverrides!.FoundingFatherFactor).IsEqual(41);
+        }
+        finally
+        {
+            NewGameDialog.PendingDifficultyOverrides = null;
+        }
+    }
+
+    [TestCase]
+    public async Task DefaultStart_LeavesPendingDifficultyOverridesNull()
+    {
+        (ISceneRunner runner, NewGameDialog dialog) = await OpenDialog();
+        // A stale static from an earlier (aborted) session must be overwritten with null on a default Start.
+        NewGameDialog.PendingDifficultyOverrides = DifficultyOptions.ClassicMedium;
+        dialog.Open((_, _, _, _) => { });
+
+        Find<Button>(dialog, "StartButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(NewGameDialog.PendingDifficultyOverrides).IsNull();
+        NewGameDialog.PendingDifficultyOverrides = null;
+    }
 }
