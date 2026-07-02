@@ -8264,7 +8264,7 @@ public sealed partial class Game
         {
             MaybeDeclareIndependence(player); // 86d3e49jp: a dominant AI colonial power that out-strengthens the amassed REF rebels (RNG-free gate; no-op in the default game) — flips to Rebel, spawns the REF; it then runs the path below and DEFENDS this same turn
             RunForeignPowerEconomy(player); // FP-5: pursue a father, sell surplus, recruit (own stream/market)
-            RunForeignPowerTurn(player);     // FP-4: move / explore / found (a rebel at war with the REF — not the human — falls through to the FP-5 garrison/arming defence)
+            RunForeignPowerTurn(player);     // FP-4: move / explore / found (an AI rebel at war with the REF prosecutes that war offensively — 86d3e4q65 — with the FP-5 garrison/arming defence beneath)
         }
     }
 
@@ -8799,17 +8799,33 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// The minimal foreign-power AI (FP-4 / 1c-2 / 1c-3f): per unit in stable by-id order. When the power is at
-    /// <see cref="Stance.War"/> with the human (war only starts when the human attacks it), an <b>armed</b> unit
-    /// goes on the offensive — an armed <b>land</b> unit beside an <b>undefended</b> human colony captures it
-    /// (1c-3f, the decisive move; a garrisoned colony's defender is fought via the unit-hunt first), otherwise it
-    /// hunts the nearest human unit, attacking when adjacent (1c-2); with no field unit to chase, a land unit
-    /// instead <b>marches on the nearest human colony</b> (86d3bx03d besiege fallback) so it closes on a colony to
+    /// The Royal Expeditionary Force enemy a <b>rebel/independent</b> AI <paramref name="power"/> is at war with —
+    /// the enemy its offensive war AI prosecutes (86d3e4q65) — or <c>null</c> for any other player type or when no
+    /// REF war is running (e.g. the war already resolved to peace). The mirror of
+    /// <see cref="RefRebel"/> (which finds the rebel from the REF's side). Pure read, RNG-free; in the default game
+    /// no AI ever becomes a rebel (see <see cref="ShouldAiDeclareIndependence"/>), so this is always null there and
+    /// the human's stream 0 is untouched (ADR-009).
+    /// </summary>
+    private Player? RebelRefEnemy(Player power) =>
+        power.PlayerType is PlayerType.Rebel or PlayerType.Independent
+            ? _players.FirstOrDefault(p => p.PlayerType == PlayerType.RoyalExpeditionaryForce
+                && StanceBetween(power.PlayerId, p.PlayerId) == Stance.War)
+            : null;
+
+    /// <summary>
+    /// The minimal foreign-power AI (FP-4 / 1c-2 / 1c-3f): per unit in stable by-id order. When the power has a
+    /// <b>war enemy</b>, an <b>armed</b> unit goes on the offensive — the enemy is the <b>REF</b> for an AI rebel
+    /// prosecuting its War of Independence (86d3e4q65; REF war takes precedence), else the <b>human</b> when at
+    /// <see cref="Stance.War"/> with it (war only starts when the human attacks it, or from territorial tension).
+    /// An armed <b>land</b> unit beside an <b>undefended</b> enemy colony captures it (1c-3f, the decisive move; a
+    /// garrisoned colony's defender is fought via the unit-hunt first), otherwise it hunts the enemy's units via the
+    /// scored seek-and-destroy pick (FP-6a), attacking when adjacent (1c-2); with no field unit to chase, a land unit
+    /// instead <b>marches on the nearest enemy colony</b> (86d3bx03d besiege fallback) so it closes on a colony to
     /// capture rather than wandering off. Otherwise a colonist founds a colony where it stands while the power has
     /// fewer than <see cref="MaxAiColonies"/> colonies, else steps one tile toward the nearest unexplored tile;
     /// ships and non-founders idle. Every choice draws from the player's own RNG stream
     /// (ADR-009) — never the human's stream 0 — so the human's game stays byte-stable. At war an armed
-    /// <b>warship</b> hunts the human's nearest ship too (1c-3a′); transports/unarmed ships idle.
+    /// <b>warship</b> hunts the enemy's nearest ship too (1c-3a′); transports/unarmed ships idle.
     /// </summary>
     private void RunForeignPowerTurn(Player power)
     {
@@ -8851,14 +8867,21 @@ public sealed partial class Game
 
         bool atWarWithHuman = StanceBetween(power.PlayerId, _human.PlayerId) == Stance.War;
 
+        // The enemy the offensive below prosecutes (86d3e4q65): an AI rebel's War of Independence against the REF
+        // takes PRECEDENCE over any human war (the King's army is the existential threat — FreeCol's REF war is the
+        // rebel's whole game); any other power keeps the human as before (null when at peace, so the offensive is
+        // skipped). In the default game no AI is ever a rebel, so this is exactly the old atWarWithHuman gate there.
+        Player? warEnemy = RebelRefEnemy(power) ?? (atWarWithHuman ? _human : null);
+
         // AI logistics — transport missions (86d3c9vq9, FreeCol TransportMission/WishRealizationMission): drive the
         // power's carrier ships to ferry its Europe colonists/experts to the colony that most wants a worker (the
         // worker-wish realisation). Run BEFORE the per-unit loop so a carrier on a transport job holds its
         // position there (it spent its movement here) instead of being marched off to explore, and so a freshly-landed
-        // colonist is integrated this same turn. Skipped for an armed carrier at war with the human (it hunts below).
+        // colonist is integrated this same turn. Skipped for an armed carrier with a war enemy (it hunts below) —
+        // the same value as atWarWithHuman for every non-rebel power (default game byte-identical, ADR-009).
         // Every draw is the power's OWN stream (StepToward); the board/sail/join seams are RNG-free — human stream 0 is
         // byte-identical (ADR-009).
-        RunForeignPowerTransport(power, atWarWithHuman);
+        RunForeignPowerTransport(power, warEnemy is not null);
 
         // Snapshot the owned units (founding/combat removes a unit from _units mid-loop).
         foreach (Unit unit in _units.Where(u => IsOwnedBy(u, power)).OrderBy(u => u.Id).ToList())
@@ -8895,22 +8918,24 @@ public sealed partial class Game
                 continue;
             }
 
-            // At war, an armed unit goes on the offensive instead of expanding. A land unit beside an undefended
-            // human colony captures it (1c-3f — the decisive move, taking priority over chasing a field unit);
-            // otherwise it hunts the human's nearest unit (1c-2 / 1c-3a′). Combat draws from the power's own RNG
-            // stream via the internal Attack/AttackColony overloads (siblings of RaidHumanUnit), never stream 0.
-            if (atWarWithHuman && unit.MovementLeft > 0 && OffenceBase(unit) > 0)
+            // At war, an armed unit goes on the offensive instead of expanding — against the power's war enemy: the
+            // REF for an AI rebel (86d3e4q65), the human otherwise. A land unit beside an undefended enemy colony
+            // captures it (1c-3f — the decisive move, taking priority over chasing a field unit; for a rebel this
+            // RECAPTURES a colony the REF took); otherwise it hunts the enemy's nearest unit (1c-2 / 1c-3a′). Combat
+            // draws from the power's own RNG stream via the internal Attack/AttackColony overloads (siblings of
+            // RaidHumanUnit), never stream 0; the notices inside the combat wrappers fire only for a human victim.
+            if (warEnemy is { } enemy && unit.MovementLeft > 0 && OffenceBase(unit) > 0)
             {
-                if (!unit.Type.IsNaval && AdjacentCapturableHumanColony(unit) is { } colonyTile)
+                if (!unit.Type.IsNaval && AdjacentCapturableEnemyColony(unit, enemy) is { } colonyTile)
                 {
                     CapturePlayerColony(power, unit, colonyTile);
                     continue;
                 }
-                // Scored seek-and-destroy (FP-6a): pick the best human unit-tile OR colony within an escalating
+                // Scored seek-and-destroy (FP-6a): pick the best enemy unit-tile OR colony within an escalating
                 // Chebyshev range (FreeCol's 8/12/16 ladder) by the `UnitSeekAndDestroyMission` heuristic — value
                 // minus distance, weak/valuable/treasure targets favoured, fortifications avoided — instead of just
                 // hunting the nearest unit. Attack when adjacent + legal, else step toward it.
-                if (PickAttackTarget(unit) is { } target)
+                if (PickAttackTarget(unit, enemy) is { } target)
                 {
                     bool adjacent = unit.Position.IsAdjacentTo(target.Position);
                     if (target.IsColony)
@@ -8926,7 +8951,7 @@ public sealed partial class Game
                     }
                     else if (adjacent && CheckAttack(unit, target.Position).Allowed)
                     {
-                        AttackHumanUnit(power, unit, target.Position);
+                        AttackEnemyUnit(power, unit, target.Position);
                     }
                     else if (StepToward(power, unit, target.Position) is { } chase)
                     {
@@ -8934,19 +8959,19 @@ public sealed partial class Game
                     }
                     continue;
                 }
-                // Nothing scored within the seek range (every human target is >16 tiles off): close on the nearest
-                // human unit at ANY distance so a war unit — a warship, or a non-founder land unit like artillery —
+                // Nothing scored within the seek range (every enemy target is >16 tiles off): close on the nearest
+                // enemy unit at ANY distance so a war unit — a warship, or a non-founder land unit like artillery —
                 // pursues rather than idling (the uncapped chase the pre-FP-6a AI used; the scored pick above is the
-                // preferred behaviour, this is the out-of-range fallback). Same-domain + human-only via NearestHumanUnit.
-                if (NearestHumanUnit(unit) is { } distantPrey && StepToward(power, unit, distantPrey.Position) is { } pursue)
+                // preferred behaviour, this is the out-of-range fallback). Same-domain + enemy-only via NearestEnemyUnit.
+                if (NearestEnemyUnit(unit, enemy) is { } distantPrey && StepToward(power, unit, distantPrey.Position) is { } pursue)
                 {
                     MoveUnit(unit, pursue);
                     continue;
                 }
-                // With no human field unit anywhere, a land unit marches on the nearest human colony (the war objective)
+                // With no enemy field unit anywhere, a land unit marches on the nearest enemy colony (the war objective)
                 // so it besieges instead of wandering off to explore (86d3bx03d) — closing on an undefended colony to
                 // capture above, or on a garrison to fight as a field unit. Naval units can't besiege a colony.
-                if (!unit.Type.IsNaval && NearestHumanColony(unit) is { } targetColony
+                if (!unit.Type.IsNaval && NearestEnemyColony(unit, enemy) is { } targetColony
                     && StepToward(power, unit, targetColony.Position) is { } colonyStep)
                 {
                     MoveUnit(unit, colonyStep);
@@ -9149,22 +9174,24 @@ public sealed partial class Game
     /// </list>
     /// Each carrier spends its movement here (so the per-unit loop's explore fallback can't also march it); a carrier
     /// it deliberately holds in place keeps its movement (it has no transport job, so exploring is fine). Skipped for an
-    /// <b>armed</b> carrier while <paramref name="atWarWithHuman"/> — that ship hunts in the per-unit loop instead
-    /// (FreeCol: a transport with no cargo may turn pirate). All movement draws the power's OWN stream via
+    /// <b>armed</b> carrier while <paramref name="atWar"/> — that ship hunts the power's war enemy (the human, or the
+    /// REF for an AI rebel — 86d3e4q65) in the per-unit loop instead (FreeCol: a transport with no cargo may turn
+    /// pirate). All movement draws the power's OWN stream via
     /// <see cref="StepToward"/>; boarding, sailing, disembarking and joining are RNG-free — so the human's stream 0
     /// stays byte-identical (ADR-009).
     /// </summary>
     /// <param name="power">The foreign power taking its transport turn.</param>
-    /// <param name="atWarWithHuman">Whether the power is at war with the human (an armed carrier then hunts, not ferries).</param>
-    private void RunForeignPowerTransport(Player power, bool atWarWithHuman)
+    /// <param name="atWar">Whether the power has a war enemy (an armed carrier then hunts, not ferries). For a
+    /// non-rebel power this is exactly "at war with the human", as before.</param>
+    private void RunForeignPowerTransport(Player power, bool atWar)
     {
         foreach (Unit carrier in _units
             .Where(u => IsOwnedBy(u, power) && u.Type.IsNaval && u.Type.IsCarrier && !u.IsUnderRepair)
             .OrderBy(u => u.Id).ToList())
         {
-            if (atWarWithHuman && OffenceBase(carrier) > 0)
+            if (atWar && OffenceBase(carrier) > 0)
             {
-                continue; // an armed warship hunts the human in the per-unit loop; don't divert it to ferrying
+                continue; // an armed warship hunts the power's war enemy in the per-unit loop; don't divert it to ferrying
             }
 
             if (carrier.Location == UnitLocation.InEurope)
@@ -9679,48 +9706,60 @@ public sealed partial class Game
             .FirstOrDefault();
 
     /// <summary>
-    /// Resolves a foreign power's attack on the human unit at <paramref name="target"/> through the power's OWN
-    /// RNG stream (never stream 0), recording a <see cref="CombatNotice"/> for the presentation. The foreign
-    /// sibling of <see cref="RaidHumanUnit"/>: the defender is human-owned (filtered by <see cref="NearestHumanUnit"/>).
+    /// Resolves a foreign power's attack on the enemy unit at <paramref name="target"/> through the power's OWN
+    /// RNG stream (never stream 0), recording a <see cref="CombatNotice"/> for the presentation <b>only when the
+    /// victim is human-owned</b> — the notices are the human's victim log, and a rebel-vs-REF battle (86d3e4q65) is
+    /// not the human's business (the same rule as <see cref="RaidForeignUnit"/>). The foreign sibling of
+    /// <see cref="RaidHumanUnit"/>: the defender is enemy-owned (filtered by the target pick upstream).
     /// </summary>
-    private void AttackHumanUnit(Player power, Unit attacker, Position target)
+    private void AttackEnemyUnit(Player power, Unit attacker, Position target)
     {
-        Unit defender = DefenderAt(attacker, target)!;       // human-owned (filtered upstream)
+        Unit defender = DefenderAt(attacker, target)!;       // enemy-owned (filtered upstream)
         string defenderTypeId = defender.Type.Id;            // capture before the attack — a beaten loser is removed
+        bool humanVictim = IsHumanOwned(defender);           // read before the attack — a beaten loser is removed
         CombatResult result = Attack(attacker, target, RandomFor(power)); // INTERNAL overload → the power's stream
-        // A privateer flies no flag (FreeCol isOwnerHidden): the victim sees an anonymous raider, not the nation.
-        string attackerNation = attacker.Type.Piracy ? UnknownEnemyNationId : power.NationId!;
-        _combatNotices.Add(new CombatNotice(attackerNation, defenderTypeId, result, target));
+        if (humanVictim)
+        {
+            // A privateer flies no flag (FreeCol isOwnerHidden): the victim sees an anonymous raider, not the nation.
+            string attackerNation = attacker.Type.Piracy ? UnknownEnemyNationId : power.NationId!;
+            _combatNotices.Add(new CombatNotice(attackerNation, defenderTypeId, result, target));
+        }
     }
 
     /// <summary>
-    /// The tile of an undefended human colony this land unit may capture right now — adjacent and ungarrisoned,
-    /// as gated by <see cref="CheckAttackColony"/> (ties broken by position), or null if none. The
-    /// <see cref="IsHumanOwned(Colony)"/> filter is the same sole contract as <see cref="NearestHumanUnit"/>:
-    /// <see cref="CheckAttackColony"/> alone would also admit another rival's colony, so the human filter keeps
-    /// the AI assaulting only the human. A garrisoned human colony is excluded here (its garrison is fought via
-    /// the unit-hunt first) so it only becomes capturable once undefended.
+    /// The tile of an undefended colony of <paramref name="enemy"/> this land unit may capture right now — adjacent
+    /// and ungarrisoned, as gated by <see cref="CheckAttackColony"/> (ties broken by position), or null if none. The
+    /// enemy-owner filter is the same sole contract as <see cref="NearestEnemyUnit"/>:
+    /// <see cref="CheckAttackColony"/> alone would also admit any rival's colony, so the filter keeps the AI
+    /// assaulting only its war enemy — the human, or the REF for an AI rebel (86d3e4q65, where this is the
+    /// RECAPTURE of a colony the REF took; mirror of <see cref="AdjacentCapturableRebelColony"/>). A garrisoned
+    /// colony is excluded here (its garrison is fought via the unit-hunt first) so it only becomes capturable once
+    /// undefended.
     /// </summary>
-    private Position? AdjacentCapturableHumanColony(Unit attacker) =>
+    private Position? AdjacentCapturableEnemyColony(Unit attacker, Player enemy) =>
         _colonies
-            .Where(c => IsHumanOwned(c) && CheckAttackColony(attacker, c.Position).Allowed)
+            .Where(c => c.OwnerId == enemy.PlayerId && CheckAttackColony(attacker, c.Position).Allowed)
             .OrderBy(c => c.Position.Y).ThenBy(c => c.Position.X)
             .Select(c => (Position?)c.Position)
             .FirstOrDefault();
 
     /// <summary>
-    /// Resolves a foreign power's assault on the undefended human colony at <paramref name="target"/> through the
-    /// power's OWN RNG stream (never stream 0), recording a <see cref="ColonyLossNotice"/> on a win so the
-    /// presentation can tell the player. The colony-capture sibling of <see cref="AttackHumanUnit"/>; it reuses
-    /// the shared <see cref="AttackColony(Unit, Position, Randomness.IGameRandom)"/> resolution — a win hands the
+    /// Resolves a foreign power's assault on the undefended enemy colony at <paramref name="target"/> through the
+    /// power's OWN RNG stream (never stream 0), recording a <see cref="ColonyLossNotice"/> on a win <b>only when the
+    /// colony was human-owned</b> (read before the assault hands it over) — the notice is the human's loss log, and a
+    /// rebel recapturing a REF-held colony (86d3e4q65) is not the human's business. The colony-capture sibling of
+    /// <see cref="AttackEnemyUnit"/>; it reuses the shared
+    /// <see cref="AttackColony(Unit, Position, Randomness.IGameRandom)"/> resolution — a win hands the
     /// colony (people/buildings/stores) to the power, a loss disarms/demotes the repelled attacker (no notice).
-    /// The colony name is read before the handover, while it is still the human's.
+    /// The colony name is read before the handover, while it is still the victim's.
     /// </summary>
     private void CapturePlayerColony(Player power, Unit attacker, Position target)
     {
-        string colonyName = ColonyAt(target)!.Name; // read before AttackColony hands the colony over
+        Colony colony = ColonyAt(target)!;
+        string colonyName = colony.Name;             // read before AttackColony hands the colony over
+        bool humanVictim = IsHumanOwned(colony);     // likewise — after a win the owner is the attacker's power
         CombatResult result = AttackColony(attacker, target, RandomFor(power)); // INTERNAL overload → the power's stream
-        if (result is CombatResult.GreatWin or CombatResult.Win)
+        if (humanVictim && result is CombatResult.GreatWin or CombatResult.Win)
         {
             _colonyLossNotices.Add(new ColonyLossNotice(power.NationId!, colonyName, target));
         }
@@ -10064,7 +10103,7 @@ public sealed partial class Game
     /// The tile of an undefended pillageable human colony this brave may raid right now — adjacent, ungarrisoned,
     /// with lootable goods, as gated by <see cref="CheckPillageColony"/> (ties broken by position), or null if
     /// none. Human-owned is the same sole target contract as <see cref="NearestHumanUnit"/> (natives raid the
-    /// human only). The sibling of <see cref="AdjacentCapturableHumanColony"/> for the native side.
+    /// human only). The sibling of <see cref="AdjacentCapturableEnemyColony"/> for the native side.
     /// </summary>
     private Position? AdjacentPillageableHumanColony(Unit brave) =>
         _colonies
@@ -10423,19 +10462,26 @@ public sealed partial class Game
     private IReadOnlyList<int> SeekRangeLadder => Ruleset.Difficulty.Ai.SeekRangeLadder;
 
     /// <summary>
-    /// The best scored attack target for an armed foreign-power unit at war with the human (FP-6a, FreeCol
-    /// <c>UnitSeekAndDestroyMission</c> + <c>getSeekAndDestroyMission</c>'s 8/12/16 ladder): searches human unit-tiles
-    /// (same domain) and — for a land unit — human colonies within an escalating Chebyshev range, scoring each by
+    /// The best scored attack target against the <b>human</b> — the single-enemy overload kept for the pre-86d3e4q65
+    /// callers and tests; forwards to <see cref="PickAttackTarget(Unit, Player)"/> with the human as the enemy.
+    /// </summary>
+    internal ScoredTarget? PickAttackTarget(Unit unit) => PickAttackTarget(unit, _human);
+
+    /// <summary>
+    /// The best scored attack target for an armed foreign-power unit at war with <paramref name="enemy"/> — the human,
+    /// or the REF for an AI rebel (86d3e4q65) — (FP-6a, FreeCol
+    /// <c>UnitSeekAndDestroyMission</c> + <c>getSeekAndDestroyMission</c>'s 8/12/16 ladder): searches the enemy's unit-tiles
+    /// (same domain) and — for a land unit — the enemy's colonies within an escalating Chebyshev range, scoring each by
     /// <see cref="ScoreUnitTarget"/> / <see cref="ScoreColonyTarget"/> (value minus distance; weak/valuable/treasure
     /// targets favoured; fortifications avoided). The first range gate that yields any target wins; ties resolve by a
     /// stable candidate order (units by id, colonies by position) with no RNG, so the human's stream 0 is untouched.
     /// Null when nothing is reachable within the widest gate (the caller then besieges the nearest colony, as before).
     /// </summary>
-    internal ScoredTarget? PickAttackTarget(Unit unit)
+    internal ScoredTarget? PickAttackTarget(Unit unit, Player enemy)
     {
         foreach (int range in SeekRangeLadder)
         {
-            if (BestTargetWithin(unit, range) is { } best)
+            if (BestTargetWithin(unit, range, enemy) is { } best)
             {
                 return best;
             }
@@ -10443,14 +10489,15 @@ public sealed partial class Game
         return null;
     }
 
-    /// <summary>The strict-max scored target within a Chebyshev <paramref name="range"/>, or null if none is eligible (see <see cref="PickAttackTarget"/>).</summary>
-    private ScoredTarget? BestTargetWithin(Unit unit, int range)
+    /// <summary>The strict-max scored target of <paramref name="enemy"/> within a Chebyshev <paramref name="range"/>, or null if none is eligible (see <see cref="PickAttackTarget(Unit, Player)"/>).</summary>
+    private ScoredTarget? BestTargetWithin(Unit unit, int range, Player enemy)
     {
         ScoredTarget? best = null;
-        // Human unit-tile candidates (same domain), one per occupied tile (scored vs its strongest defender), in stable
-        // id order so the first top-scorer wins on a tie.
+        // Enemy unit-tile candidates (same domain), one per occupied tile (scored vs its strongest defender), in stable
+        // id order so the first top-scorer wins on a tie. IsOwnedBy(u, enemy) is exactly IsHumanOwned(u) when the
+        // enemy is the human (the same OwnerNationId-null + OwnerId test), so the pre-86d3e4q65 path is byte-identical.
         foreach (Position tile in _units
-                     .Where(u => u.IsOnMap && IsHumanOwned(u) && u.Type.IsNaval == unit.Type.IsNaval
+                     .Where(u => u.IsOnMap && IsOwnedBy(u, enemy) && u.Type.IsNaval == unit.Type.IsNaval
                                  && Chebyshev(u.Position, unit.Position) <= range)
                      .OrderBy(u => u.Id)
                      .Select(u => u.Position)
@@ -10462,14 +10509,14 @@ public sealed partial class Game
                 best = new ScoredTarget(tile, IsColony: false, score);
             }
         }
-        // Human colony candidates — a land unit only (naval can't besiege/capture), in stable position order. A
+        // Enemy colony candidates — a land unit only (naval can't besiege/capture), in stable position order. A
         // GARRISONED colony is excluded (its garrison is a unit-tile candidate, fought first — like the adjacent path):
         // scoring it as a capture target would let it outscore its own garrison, then `CheckAttackColony` rejects the
         // capture and the unit wanders off without ever engaging (the seek-and-destroy garrison-first rule).
         if (!unit.Type.IsNaval)
         {
             foreach (Colony colony in _colonies
-                         .Where(c => IsHumanOwned(c) && Chebyshev(c.Position, unit.Position) <= range
+                         .Where(c => c.OwnerId == enemy.PlayerId && Chebyshev(c.Position, unit.Position) <= range
                                      && !_units.Any(u => u.IsOnMap && u.Position == c.Position))
                          .OrderBy(c => c.Position.Y).ThenBy(c => c.Position.X))
             {
@@ -10530,16 +10577,24 @@ public sealed partial class Game
         : 0;
 
     /// <summary>
-    /// The nearest on-map human-owned unit the <paramref name="hunter"/> can fight (Chebyshev, ties broken by
-    /// position), or null if none. Two filters: (1) human-owned — the <b>sole contract</b> keeping the AI
-    /// attacking the human only (the engine's <see cref="CheckAttack"/>/<see cref="DefenderAt"/> gate on
-    /// owner-inequality would also admit other rivals); (2) <b>same domain</b> — a ship hunts ships, a land unit
-    /// hunts land units (naval and land combat don't mix), so a warship never chases an unreachable land unit and
-    /// a brave never chases a ship. (Still used by the native raid AI; the foreign-power war AI now uses the scored
-    /// <see cref="PickAttackTarget"/>.)
+    /// The nearest on-map human-owned unit the <paramref name="hunter"/> can fight — the human-scoped shorthand the
+    /// <b>native raid AI</b> still uses (natives raid the human only); delegates to
+    /// <see cref="NearestEnemyUnit"/> with the human as the enemy (byte-identical filter, 86d3e4q65).
     /// </summary>
-    private Unit? NearestHumanUnit(Unit hunter) =>
-        _units.Where(u => u.IsOnMap && IsHumanOwned(u) && u.Type.IsNaval == hunter.Type.IsNaval)
+    private Unit? NearestHumanUnit(Unit hunter) => NearestEnemyUnit(hunter, _human);
+
+    /// <summary>
+    /// The nearest on-map unit of <paramref name="enemy"/> the <paramref name="hunter"/> can fight (Chebyshev, ties
+    /// broken by position), or null if none. Two filters: (1) enemy-owned — the <b>sole contract</b> keeping the AI
+    /// attacking its war enemy only (the engine's <see cref="CheckAttack"/>/<see cref="DefenderAt"/> gate on
+    /// owner-inequality would also admit other rivals); the enemy is the human for an ordinary war power, the REF
+    /// for an AI rebel (86d3e4q65); (2) <b>same domain</b> — a ship hunts ships, a land unit
+    /// hunts land units (naval and land combat don't mix), so a warship never chases an unreachable land unit and
+    /// a brave never chases a ship. (The out-of-seek-range fallback; the scored
+    /// <see cref="PickAttackTarget(Unit, Player)"/> is the preferred pick.)
+    /// </summary>
+    private Unit? NearestEnemyUnit(Unit hunter, Player enemy) =>
+        _units.Where(u => u.IsOnMap && IsOwnedBy(u, enemy) && u.Type.IsNaval == hunter.Type.IsNaval)
             .OrderBy(u => Chebyshev(u.Position, hunter.Position))
             .ThenBy(u => u.Position.Y).ThenBy(u => u.Position.X)
             .FirstOrDefault();
@@ -10614,13 +10669,15 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// The nearest human colony to <paramref name="unit"/> (Chebyshev, ties by position), or null if the human has
-    /// none — the besiege target for a war-power land unit with no field unit to chase (86d3bx03d). Human-owned is
-    /// the same sole contract as <see cref="NearestHumanUnit"/>; pure (no RNG). Targets any human colony (an
+    /// The nearest colony of <paramref name="enemy"/> to <paramref name="unit"/> (Chebyshev, ties by position), or
+    /// null if the enemy has none — the besiege target for a war-power land unit with no field unit to chase
+    /// (86d3bx03d); the enemy is the human for an ordinary war power, the REF for an AI rebel (86d3e4q65, where a
+    /// REF colony is a rebel colony the King captured). Enemy-owned is
+    /// the same sole contract as <see cref="NearestEnemyUnit"/>; pure (no RNG). Targets any enemy colony (an
     /// undefended one is then captured on arrival; a garrisoned one's garrison becomes the nearest field unit).
     /// </summary>
-    private Colony? NearestHumanColony(Unit unit) =>
-        _colonies.Where(IsHumanOwned)
+    private Colony? NearestEnemyColony(Unit unit, Player enemy) =>
+        _colonies.Where(c => c.OwnerId == enemy.PlayerId)
             .OrderBy(c => Chebyshev(c.Position, unit.Position))
             .ThenBy(c => c.Position.Y).ThenBy(c => c.Position.X)
             .FirstOrDefault();
@@ -10721,7 +10778,7 @@ public sealed partial class Game
     /// RNG stream (never stream 0), like <see cref="RaidHumanUnit"/> but against a non-human colonial power. No
     /// <see cref="CombatNotice"/> is recorded — those are the <em>human</em>'s victim log (combat the human suffered),
     /// and this fight is between a native nation and a rival AI, which the human is not party to (the foreign-power AI's
-    /// <see cref="AttackHumanUnit"/> likewise records a notice only for human victims). The defender is non-native (a
+    /// <see cref="AttackEnemyUnit"/> likewise records a notice only for human victims). The defender is non-native (a
     /// colonial rival, filtered upstream), so the native-alarm path in
     /// <see cref="Attack(Unit, Position, Randomness.IGameRandom)"/> is skipped — a raid never raises the raider's own
     /// nation's alarm. Drawing only on the nation's stream keeps the human's stream 0 byte-stable (ADR-009).

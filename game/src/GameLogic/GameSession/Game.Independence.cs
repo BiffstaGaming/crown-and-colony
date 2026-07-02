@@ -864,7 +864,7 @@ public sealed partial class Game
     /// <summary>
     /// The tile of an undefended rebel colony this REF land unit may capture right now — adjacent and ungarrisoned, as
     /// gated by <see cref="CheckAttackColony"/> (ties by position), or null. Mirror of
-    /// <see cref="AdjacentCapturableHumanColony"/> but rebel-scoped (the REF targets the rebel, not generically "the
+    /// <see cref="AdjacentCapturableEnemyColony"/> but rebel-scoped (the REF targets the rebel, not generically "the
     /// human" — they coincide in single-player, but this keeps the doctrine correct against any rebel).
     /// </summary>
     private Position? AdjacentCapturableRebelColony(Unit attacker, Player rebel) =>
@@ -885,7 +885,7 @@ public sealed partial class Game
     /// <summary>
     /// Resolves a REF unit's attack on the rebel unit at <paramref name="target"/> through the REF's OWN RNG stream
     /// (never stream 0), recording a <see cref="CombatNotice"/> for the presentation. The REF sibling of
-    /// <see cref="AttackHumanUnit"/>: the defender is rebel-owned (filtered upstream by <see cref="PickRefUnitTarget"/>).
+    /// <see cref="AttackEnemyUnit"/>: the defender is rebel-owned (filtered upstream by <see cref="PickRefUnitTarget"/>).
     /// </summary>
     private void AttackRebelUnit(Player refPlayer, Unit attacker, Position target)
     {
