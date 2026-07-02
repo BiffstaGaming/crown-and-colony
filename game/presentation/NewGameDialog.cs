@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
@@ -12,7 +13,9 @@ namespace CrownAndColony.Presentation;
 /// the game-options section <c>86d3drn64</c> + the options-surface widening <c>86d3e4bu0</c>): the player picks the
 /// <b>scenario / variant</b> (the ruleset that defines the world — Colonial America today; the seam a future Australia
 /// variant plugs into, FreeCol's "rules" dropdown on its New-game panel), the <b>map</b> (a procedurally generated
-/// random New World, or FreeCol's fixed America), the world <b>size</b>, how much of the map is <b>land</b> (FreeCol's
+/// random New World, FreeCol's fixed America, or an <b>imported map file</b> — our <c>.txt</c> scenario definition or
+/// an original-Colonization <c>.MP</c>, validated on pick and forwarded via <see cref="PendingImportedMap"/>;
+/// 86d3fq1cg), the world <b>size</b>, how much of the map is <b>land</b> (FreeCol's
 /// <c>model.option.mapWidth</c>/<c>mapHeight</c> + <c>model.option.landMass</c>), the landmass <b>style</b>
 /// (<c>model.option.landGeneratorType</c>), the <b>difficulty</b> level (FreeCol's five classic levels), the
 /// <b>nation</b> the human plays (the ruleset's selectable European powers — Dutch/French/English/Spanish — or "No
@@ -51,12 +54,15 @@ public partial class NewGameDialog : Control
     [Signal]
     public delegate void ClosedEventHandler();
 
-    /// <summary>The offered map sources, in dropdown order (index ↔ <see cref="MapSource"/>); Random is the default.</summary>
+    /// <summary>The offered map sources, in dropdown order (index ↔ <see cref="MapSource"/>); Random is the default. The dropdown carries one extra row after these — "Import map…" (<see cref="ImportMapIndex"/>), which is an import choice modelled inside the dialog, not a <see cref="MapSource"/> (the enum is engine data; the imported map rides <see cref="PendingImportedMap"/> while the underlying source stays <see cref="MapSource.Random"/>).</summary>
     private static readonly (MapSource Source, string Label)[] MapChoices =
     {
         (MapSource.Random, "Random New World"),
         (MapSource.America, "America (fixed)"),
     };
+
+    /// <summary>The map-dropdown index of the "Import map…" row (86d3fq1cg) — the first row after <see cref="MapChoices"/>. Selecting it opens a file picker for a scenario/custom map (our <c>.txt</c> definition or an original-Colonization <c>.MP</c>); the validated import rides <see cref="PendingImportedMap"/>.</summary>
+    private const int ImportMapIndex = 2;
 
     /// <summary>The offered rival-power counts (FreeCol's <c>NationOptions</c> roster size; 86d3fq1df), in dropdown order. Index 3 (= 3 rivals) is the classic default, pre-selected so an untouched Start is byte-identical.</summary>
     private static readonly int[] RivalCountChoices = { 0, 1, 2, 3, 4, 5, 6, 7 };
@@ -146,6 +152,17 @@ public partial class NewGameDialog : Control
     /// <summary>The chosen national-advantages mode (null = <see cref="NationalAdvantages.Selectable"/>); threaded into <see cref="GameLogic.GameSession.Game.New"/>'s <c>nationalAdvantages</c>.</summary>
     public static NationalAdvantages? PendingNationalAdvantages { get; set; }
 
+    /// <summary>
+    /// The imported scenario/custom map chosen via the map dropdown's "Import map…" row (86d3fq1cg); null = no import
+    /// → the chosen <see cref="MapSource"/> as usual. Set on Start only while the import row is active with a
+    /// successfully validated file. The new-game host passes it into <see cref="GameLogic.GameSession.Game.New"/>'s
+    /// existing <c>importOverride</c> parameter (which then skips <see cref="FixedMap.TryImport"/> and decorates the
+    /// imported terrain instead); the underlying <see cref="MapSource"/> forwarded through the <c>onStart</c> callback
+    /// stays <see cref="MapSource.Random"/> (the enum is engine data a dialog must not extend). <b>Session-only</b> —
+    /// like the other setup picks, the import is not persisted (a save stores the resulting terrain, not the file).
+    /// </summary>
+    public static MapImportResult? PendingImportedMap { get; set; }
+
     private OptionButton _variantOption = null!;
     private OptionButton _mapOption = null!;
     private OptionButton _sizeOption = null!;
@@ -177,6 +194,11 @@ public partial class NewGameDialog : Control
     // Initialised to the ruleset's parsed spec default (classic on) so an untouched Start is byte-identical; unticking it
     // makes a colony's custom house skip a boycotted good instead of smuggling it.
     private CheckBox _customIgnoreBoycottCheck = null!;
+    // The map-import row's state (86d3fq1cg): the validated import (null until a file validates), the status line
+    // under the Map row (file name + dimensions, or the validation error), and the lazily-built file picker.
+    private MapImportResult? _importedMap;
+    private Label _importStatusLabel = null!;
+    private FileDialog? _importFileDialog;
     private Action<WorldSize, LandMass, DifficultyLevel, MapSource>? _onStart;
 
     /// <summary>
@@ -248,9 +270,21 @@ public partial class NewGameDialog : Control
         {
             _mapOption.AddItem(label);
         }
+        _mapOption.AddItem("Import map… (.txt / .MP)"); // ImportMapIndex — a scenario/custom map file (86d3fq1cg)
         _mapOption.Selected = 0; // Random — the historical default world
-        _mapOption.ItemSelected += _ => UpdateWorldSizeEnabled();
+        _mapOption.ItemSelected += OnMapChoiceSelected;
         vbox.AddChild(LabeledRow("Map", _mapOption));
+
+        // The import status line (86d3fq1cg): the validated file's name + dimensions + settlement count, or the
+        // validation error. Hidden until the import row is used, so the default dialog layout is unchanged.
+        _importStatusLabel = new Label
+        {
+            Name = "ImportStatusLabel",
+            Visible = false,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            CustomMinimumSize = new Vector2(340, 0),
+        };
+        vbox.AddChild(_importStatusLabel);
 
         _sizeOption = new OptionButton { Name = "SizeOption" };
         foreach (WorldSize s in WorldSizeOptions.Sizes)
@@ -341,7 +375,7 @@ public partial class NewGameDialog : Control
         // default-variant ruleset, data-driven), so an untouched Start is byte-identical (REF on / Europeans on / Humans
         // off / fog on / custom-house smuggling on). (The other gameOptions toggles are still NOT surfaced — the engine
         // doesn't read them yet; see the dialog summary.)
-        Ruleset defaults = VictoryDefaults();
+        Ruleset defaults = DefaultRulesetOrClassic();
 
         // gameOptions.victoryConditions — the three alternative win checks (read by Game.Winner).
         vbox.AddChild(SectionLabel("VictorySectionLabel", "Victory conditions"));
@@ -387,7 +421,15 @@ public partial class NewGameDialog : Control
 
     private void OnStart()
     {
-        MapSource source = MapChoices[_mapOption.Selected].Source;
+        // The import row (86d3fq1cg) is a dialog-level choice, not a MapSource: while it is active with a validated
+        // file, the import rides PendingImportedMap (consumed by Game.New's importOverride) and the underlying source
+        // stays Random. An import row without a validated file (transient — validation failure/cancel reverts the
+        // dropdown) degrades to the plain Random world.
+        bool importActive = _mapOption.Selected == ImportMapIndex && _importedMap is not null;
+        MapSource source = _mapOption.Selected < MapChoices.Length
+            ? MapChoices[_mapOption.Selected].Source
+            : MapSource.Random;
+        PendingImportedMap = importActive ? _importedMap : null;
         WorldSize size = WorldSizeOptions.Sizes[_sizeOption.Selected];
         LandMass land = WorldSizeOptions.LandMasses[_landOption.Selected];
         DifficultyLevel difficulty = DifficultyLevels.All[_difficultyOption.Selected];
@@ -445,12 +487,13 @@ public partial class NewGameDialog : Control
     }
 
     /// <summary>
-    /// The ruleset whose parsed <c>gameOptions.victoryConditions</c> defaults seed the victory checkboxes (read from
-    /// the default-variant ruleset — data-driven, so a variant's own spec defaults drive the dialog). On any load
-    /// failure the classic spec defaults (REF on / Europeans on / Humans off) are used via the embedded fallback, so
-    /// the dialog never crashes the main menu.
+    /// The default-variant ruleset, with the embedded classic spec as the never-crash fallback — the dialog's shared
+    /// data source: it seeds the game-option checkboxes' parsed spec defaults (<c>gameOptions.victoryConditions</c> /
+    /// fog of war / custom-house smuggling) and resolves an imported map file's terrain/improvement ids
+    /// (86d3fq1cg). Data-driven, so a variant's own spec drives the dialog; on any load failure the classic defaults
+    /// keep the main menu alive.
     /// </summary>
-    private static Ruleset VictoryDefaults()
+    private static Ruleset DefaultRulesetOrClassic()
     {
         try
         {
@@ -458,7 +501,7 @@ public partial class NewGameDialog : Control
         }
         catch (Exception e)
         {
-            GD.PushWarning($"NewGameDialog: could not load victory-condition defaults ({e.Message}); using classic spec defaults.");
+            GD.PushWarning($"NewGameDialog: could not load the default-variant ruleset ({e.Message}); using the embedded classic spec.");
             return Ruleset.LoadClassic();
         }
     }
@@ -495,13 +538,87 @@ public partial class NewGameDialog : Control
     private static string NationLabel(EuropeanNation nation) =>
         $"{nation.DisplayName} ({nation.NationType.ShortName})";
 
-    /// <summary>Greys out the world-size/land-mass dropdowns when a fixed map is chosen (its dimensions are set by the loaded grid, so those choices don't apply — see <see cref="GameLogic.GameSession.Game.New"/>).</summary>
+    /// <summary>Greys out the world-size/land-mass dropdowns when a fixed or imported map is chosen (its dimensions are set by the loaded grid, so those choices don't apply — see <see cref="GameLogic.GameSession.Game.New"/>).</summary>
     private void UpdateWorldSizeEnabled()
     {
-        bool randomMap = MapChoices[_mapOption.Selected].Source == MapSource.Random;
+        bool randomMap = _mapOption.Selected < MapChoices.Length
+            && MapChoices[_mapOption.Selected].Source == MapSource.Random;
         _sizeOption.Disabled = !randomMap;
         _landOption.Disabled = !randomMap;
-        _landStyleOption.Disabled = !randomMap; // a fixed map's land shape is loaded, so the style doesn't apply
+        _landStyleOption.Disabled = !randomMap; // a fixed/imported map's land shape is loaded, so the style doesn't apply
+    }
+
+    /// <summary>Map-dropdown selection handler: keeps the size/land/style enablement in sync and, on the "Import map…" row (86d3fq1cg), opens the file picker.</summary>
+    private void OnMapChoiceSelected(long index)
+    {
+        UpdateWorldSizeEnabled();
+        if (index == ImportMapIndex)
+        {
+            OpenImportFileDialog();
+        }
+    }
+
+    /// <summary>Opens the (lazily-built) native file picker for a map file — our <c>.txt</c> definition or an original-Colonization <c>.MP</c>. A pick lands in <see cref="OnImportFileSelected"/>; a cancel with no prior valid import reverts the dropdown to Random.</summary>
+    private void OpenImportFileDialog()
+    {
+        if (_importFileDialog is null)
+        {
+            _importFileDialog = new FileDialog
+            {
+                Name = "ImportFileDialog",
+                Title = "Import map",
+                FileMode = FileDialog.FileModeEnum.OpenFile,
+                Access = FileDialog.AccessEnum.Filesystem,
+                Filters = ["*.txt ; Text map definition", "*.mp ; Colonization map"],
+            };
+            _importFileDialog.FileSelected += OnImportFileSelected;
+            _importFileDialog.Canceled += OnImportCancelled;
+            AddChild(_importFileDialog);
+        }
+        _importFileDialog.PopupCentered(new Vector2I(700, 500));
+    }
+
+    /// <summary>
+    /// Validates and stores a picked map file (86d3fq1cg): the file is imported via
+    /// <see cref="MapImporter.ImportFile"/> against the default-variant ruleset — success shows
+    /// "<c>name — W×H, N settlements</c>" on the status line and arms the import for Start; failure shows the parse
+    /// error and reverts the map dropdown to Random. <c>internal</c> so the L3 suite can drive the validation path
+    /// directly (the native file picker cannot be scripted headlessly).
+    /// </summary>
+    /// <param name="path">The picked map file (<c>.txt</c> definition or Colonization <c>.MP</c>).</param>
+    internal void OnImportFileSelected(string path)
+    {
+        try
+        {
+            MapImportResult result = MapImporter.ImportFile(path, DefaultRulesetOrClassic());
+            _importedMap = result;
+            _mapOption.Select(ImportMapIndex); // keep/restore the import row (a re-pick may come from any state)
+            SetImportStatus($"{Path.GetFileName(path)} — {result.Map.Width}×{result.Map.Height}, {result.Settlements.Count} settlements");
+        }
+        catch (Exception e)
+        {
+            _importedMap = null;
+            _mapOption.Select(0); // revert to Random — an invalid file must not leave a dead import row armed
+            SetImportStatus(e.Message);
+        }
+        UpdateWorldSizeEnabled();
+    }
+
+    /// <summary>File-picker cancel: with no valid import armed the "Import map…" row is meaningless, so the dropdown reverts to Random; an earlier validated import stays armed (the player just backed out of re-picking).</summary>
+    private void OnImportCancelled()
+    {
+        if (_importedMap is null)
+        {
+            _mapOption.Select(0);
+            UpdateWorldSizeEnabled();
+        }
+    }
+
+    /// <summary>Shows <paramref name="status"/> on the import status line (null/empty hides it, restoring the default layout).</summary>
+    private void SetImportStatus(string? status)
+    {
+        _importStatusLabel.Text = status ?? "";
+        _importStatusLabel.Visible = !string.IsNullOrEmpty(status);
     }
 
     private static HBoxContainer LabeledRow(string label, Control control)
