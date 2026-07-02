@@ -888,36 +888,163 @@ public class IndependenceTests
         Assert.Equal(0, loaded.HumanPlayer.InterventionBells); // the reset counter persisted (omitted at 0)
     }
 
-    // ── Item 1: Native re-stancing on the Declaration of Independence (86d3drn4p) ─────────────────────────
+    // ── Item 1: Native re-stancing on the Declaration of Independence (86d3drn4p → full mechanism 86d3fq0b9,
+    //    FreeCol InGameController.java:1482-1548) ────────────────────────────────────────────────────────────
 
-    [Fact]
-    public void DeclareIndependence_CalmsTheMostHostileContactedNativeNation()
+    /// <summary>Marks every settlement of <paramref name="nation"/> chief-visited by <paramref name="playerId"/> — the contact proxy for FreeCol <c>hasContacted</c>.</summary>
+    private static void VisitNation(Game game, string nation, int playerId)
     {
-        // FreeCol csDeclareIndependence: the most-hostile contacted native nation throws in with the rebel and is
-        // calmed toward it (to the CONTENT band). We model the faithful, representable half: the angriest contacted
-        // nation's settlements drop to at most CONTENT (600). Set one contacted nation hateful, then declare.
-        (Game game, _) = RebellionReady();
-        Player rebel = game.HumanPlayer;
-        NativeSettlement settlement = game.NativeSettlements.First();
-        string nation = settlement.NationTypeId;
         foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == nation))
         {
-            s.MarkVisitedBy(rebel.PlayerId);          // the rebel has met this nation (FreeCol hasContacted)
-            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm); // → hateful (1000)
+            s.MarkVisitedBy(playerId);
         }
+    }
+
+    /// <summary>Pins the transient tribe-tension channel to an exact value (raise/lower relative to the current level).</summary>
+    private static void SetTribeTension(Game game, string nation, int playerId, int target) =>
+        game.RaiseTribeTension(nation, playerId, target - game.TribeTensionFor(nation, playerId));
+
+    /// <summary>The native player owning <paramref name="nationId"/> (drives <c>DetermineNativeStances</c> in tests).</summary>
+    private static Player NationPlayer(Game game, string nationId) =>
+        game.Players.First(p => p.PlayerType == PlayerType.Native && p.NationId == nationId);
+
+    /// <summary>The first <paramref name="count"/> distinct native nations (stable id order), asserted to exist.</summary>
+    private static List<string> DistinctNations(Game game, int count)
+    {
+        List<string> nations = game.NativeSettlements.Select(s => s.NationTypeId).Distinct()
+            .OrderBy(n => n, System.StringComparer.Ordinal).Take(count).ToList();
+        Assert.Equal(count, nations.Count); // the classic map seeds several native nations
+        return nations;
+    }
+
+    [Fact]
+    public void DeclareIndependence_LeastHostileContactedNation_BecomesTheAlly_HatefulTowardTheRef()
+    {
+        // FreeCol InGameController.java:1482-1548: the LEAST-hostile contacted nation is the ALLY (`good = first` of
+        // the tension-ascending sort) — at peace its tension toward the rebel is untouched (delta 0) and it turns
+        // hateful (1000, HATEFUL.limit) toward the REF; the MOST-hostile contacted nation not already at war is the
+        // ENEMY — set hateful (1000) toward the rebel with an immediate WAR stance, its REF tension zeroed.
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        List<string> nations = DistinctNations(game, 2);
+        (string ally, string enemy) = (nations[0], nations[1]);
+        VisitNation(game, ally, rebel.PlayerId);
+        VisitNation(game, enemy, rebel.PlayerId);
+        SetTribeTension(game, ally, rebel.PlayerId, 50);   // least hostile
+        SetTribeTension(game, enemy, rebel.PlayerId, 900); // most hostile, stance still Peace (never derived)
+        int allyTensionBefore = game.TribeTensionFor(ally, rebel.PlayerId);
+        Dictionary<int, int> enemyAlarmsBefore = game.NativeSettlements.Where(s => s.NationTypeId == enemy)
+            .ToDictionary(s => s.Id, s => s.AlarmFor(rebel.PlayerId));
+
+        game.DeclareIndependence(rebel);
+        int refId = game.Players.First(p => p.PlayerType == PlayerType.RoyalExpeditionaryForce).PlayerId;
+
+        // The ally: at peace → tension toward the rebel unchanged (FreeCol's PEACE branch, delta 0)…
+        Assert.Equal(allyTensionBefore, game.TribeTensionFor(ally, rebel.PlayerId));
+        Assert.Equal(Stance.Peace, game.NativeStanceToward(ally, rebel.PlayerId));
+        // …and hateful toward the King's force — on the nation channel AND its settlements (the persistence path).
+        Assert.Equal(NativeSettlement.MaxAlarm, game.TribeTensionFor(ally, refId));
+        Assert.Equal(AlarmLevel.Hateful, game.TribeAlarmLevelFor(ally, refId));
+        Assert.All(game.NativeSettlements.Where(s => s.NationTypeId == ally),
+            s => Assert.Equal(NativeSettlement.MaxAlarm, s.AlarmFor(refId)));
+
+        // The enemy: pinned to HATEFUL (1000) toward the rebel with an immediate transient WAR stance; each of its
+        // camps gained the same delta FreeCol's csModifyTension propagates (1000 − 900 = +100); REF channel zero.
+        Assert.Equal(NativeSettlement.MaxAlarm, game.TribeTensionFor(enemy, rebel.PlayerId));
+        Assert.Equal(Stance.War, game.NativeStanceToward(enemy, rebel.PlayerId));
+        Assert.All(game.NativeSettlements.Where(s => s.NationTypeId == enemy),
+            s => Assert.Equal(enemyAlarmsBefore[s.Id] + 100, s.AlarmFor(rebel.PlayerId)));
+        Assert.Equal(0, game.TribeTensionFor(enemy, refId));
+        Assert.All(game.NativeSettlements.Where(s => s.NationTypeId == enemy),
+            s => Assert.Equal(0, s.AlarmFor(refId)));
+    }
+
+    [Fact]
+    public void DeclareIndependence_AllyAtWar_IsCalmedToContent()
+    {
+        // FreeCol's WAR branch: a formally-warring ally is calmed TO CONTENT.limit (600) — the delta lands on the
+        // nation channel and (csModifyTension) on every one of its camps alike.
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        string nation = DistinctNations(game, 1).Single();
+        VisitNation(game, nation, rebel.PlayerId);
+        foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == nation))
+        {
+            game.ChangeNativeAlarm(s, rebel.PlayerId, NativeSettlement.MaxAlarm); // camps at Hateful (1000)
+        }
+        SetTribeTension(game, nation, rebel.PlayerId, 1100); // past the >1010 war threshold
+        game.DetermineNativeStances(NationPlayer(game, nation));
+        Assert.Equal(Stance.War, game.NativeStanceToward(nation, rebel.PlayerId)); // formally at war before declaring
 
         game.DeclareIndependence(rebel);
 
-        // Every settlement of the angriest contacted nation is calmed down to the CONTENT limit (600), not beyond.
+        // Calmed to exactly CONTENT (600): tension 1100 → 600, so every camp drops by the same −500 (1000 → 500).
+        Assert.Equal(NativeSettlement.AlarmContentMax, game.TribeTensionFor(nation, rebel.PlayerId));
         Assert.All(game.NativeSettlements.Where(s => s.NationTypeId == nation),
-            s => Assert.Equal(NativeSettlement.AlarmContentMax, s.Alarm));
+            s => Assert.Equal(NativeSettlement.MaxAlarm - 500, s.AlarmFor(rebel.PlayerId)));
+        // No direct stance write for the ALLY: at 600 (> the ≤590 cease-fire limit) the war cools only through the
+        // normal DetermineNativeStances hysteresis on later turns — faithful de-escalation, not an instant flip.
+        Assert.Equal(Stance.War, game.NativeStanceToward(nation, rebel.PlayerId));
+    }
+
+    [Fact]
+    public void DeclareIndependence_SingleContactedNation_HasNoEnemyHalf()
+    {
+        // FreeCol's reverse scan breaks immediately at `good` → bad == null: a single contacted nation is the ally
+        // only — nobody is set hateful toward the rebel and no WAR stance appears.
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        string nation = DistinctNations(game, 1).Single();
+        VisitNation(game, nation, rebel.PlayerId);
+        SetTribeTension(game, nation, rebel.PlayerId, 400); // Peace stance → the ally's tension stays untouched
+        int before = game.TribeTensionFor(nation, rebel.PlayerId);
+
+        game.DeclareIndependence(rebel);
+        int refId = game.Players.First(p => p.PlayerType == PlayerType.RoyalExpeditionaryForce).PlayerId;
+
+        Assert.Equal(before, game.TribeTensionFor(nation, rebel.PlayerId));            // ally half: Peace → delta 0
+        Assert.Equal(Stance.Peace, game.NativeStanceToward(nation, rebel.PlayerId));   // no enemy half → no WAR write
+        Assert.Equal(NativeSettlement.MaxAlarm, game.TribeTensionFor(nation, refId));  // ally half still runs vs the REF
+    }
+
+    [Fact]
+    public void DeclareIndependence_ThirdNation_IsUntouched()
+    {
+        // Three contacted nations: the least-hostile allies, the most-hostile turns enemy — the middle one keeps its
+        // tension, stance and settlement alarm (FreeCol touches exactly `good` and `bad`, nobody else).
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        List<string> nations = DistinctNations(game, 3);
+        (string ally, string middle, string enemy) = (nations[0], nations[1], nations[2]);
+        foreach (string nation in nations)
+        {
+            VisitNation(game, nation, rebel.PlayerId);
+        }
+        SetTribeTension(game, ally, rebel.PlayerId, 50);
+        SetTribeTension(game, middle, rebel.PlayerId, 500);
+        SetTribeTension(game, enemy, rebel.PlayerId, 900);
+        Dictionary<int, int> middleAlarmsBefore = game.NativeSettlements.Where(s => s.NationTypeId == middle)
+            .ToDictionary(s => s.Id, s => s.AlarmFor(rebel.PlayerId));
+
+        game.DeclareIndependence(rebel);
+        int refId = game.Players.First(p => p.PlayerType == PlayerType.RoyalExpeditionaryForce).PlayerId;
+
+        // The middle nation is wholly untouched — tension, stance, REF channel, and every camp's alarm.
+        Assert.Equal(500, game.TribeTensionFor(middle, rebel.PlayerId));
+        Assert.Equal(Stance.Peace, game.NativeStanceToward(middle, rebel.PlayerId));
+        Assert.Equal(0, game.TribeTensionFor(middle, refId));
+        Assert.All(game.NativeSettlements.Where(s => s.NationTypeId == middle),
+            s => Assert.Equal(middleAlarmsBefore[s.Id], s.AlarmFor(rebel.PlayerId)));
+        // Sanity: the halves landed on the right nations.
+        Assert.Equal(NativeSettlement.MaxAlarm, game.TribeTensionFor(ally, refId));
+        Assert.Equal(Stance.War, game.NativeStanceToward(enemy, rebel.PlayerId));
     }
 
     [Fact]
     public void DeclareIndependence_LeavesUncontactedNativesUntouched()
     {
-        // Only a nation the rebel has CONTACTED can swing behind it (FreeCol filters on hasContacted). A hostile but
-        // never-met nation keeps its alarm — and a nation already calmer than CONTENT is not stirred up.
+        // Only a nation the rebel has CONTACTED can realign (FreeCol filters on hasContacted). A hostile but
+        // never-met nation keeps its alarm.
         (Game game, _) = RebellionReady();
         Player rebel = game.HumanPlayer;
         NativeSettlement uncontacted = game.NativeSettlements.First();
@@ -930,20 +1057,54 @@ public class IndependenceTests
     }
 
     [Fact]
+    public void DeclareIndependence_NativeRealignment_RoundTripsSaveLoad()
+    {
+        // The realignment persists WITHOUT a save field: the ally's REF hate and the enemy's rebel hate ride the v55
+        // per-settlement alarm channels, and the transient tribe channels re-derive from them on load.
+        (Game game, _) = RebellionReady();
+        Player rebel = game.HumanPlayer;
+        List<string> nations = DistinctNations(game, 2);
+        (string ally, string enemy) = (nations[0], nations[1]);
+        VisitNation(game, ally, rebel.PlayerId);
+        VisitNation(game, enemy, rebel.PlayerId);
+        SetTribeTension(game, ally, rebel.PlayerId, 50);
+        SetTribeTension(game, enemy, rebel.PlayerId, 900);
+        game.DeclareIndependence(rebel);
+        int refId = game.Players.First(p => p.PlayerType == PlayerType.RoyalExpeditionaryForce).PlayerId;
+        Dictionary<int, int> enemyAlarms = game.NativeSettlements.Where(s => s.NationTypeId == enemy)
+            .ToDictionary(s => s.Id, s => s.AlarmFor(rebel.PlayerId));
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+
+        Assert.All(loaded.NativeSettlements.Where(s => s.NationTypeId == ally),
+            s => Assert.Equal(NativeSettlement.MaxAlarm, s.AlarmFor(refId)));           // the ally's REF hate persisted
+        Assert.All(loaded.NativeSettlements.Where(s => s.NationTypeId == enemy),
+            s => Assert.Equal(enemyAlarms[s.Id], s.AlarmFor(rebel.PlayerId)));          // the enemy's rebel hate persisted
+        // The transient tribe channels re-derive from the angriest persisted camp (the documented lazy seed): the
+        // ally's REF channel comes back at the full 1000; the enemy's rebel channel at its angriest camp's alarm.
+        Assert.Equal(NativeSettlement.MaxAlarm, loaded.TribeTensionFor(ally, refId));
+        Assert.Equal(enemyAlarms.Values.Max(), loaded.TribeTensionFor(enemy, rebel.PlayerId));
+    }
+
+    [Fact]
     public void DeclareIndependence_NativeReStancing_IsByteStableOnStreamZero()
     {
-        // The re-stancing is RNG-free — twins (same seed) advance stream 0 identically through the declaration.
+        // The re-stancing is RNG-free — twins (same seed) advance stream 0 identically through the declaration, with
+        // BOTH halves (ally + enemy) running, and serialize byte-identically afterwards.
         (Game a, _) = RebellionReady(7777);
         (Game b, _) = RebellionReady(7777);
         foreach (Game g in new[] { a, b })
         {
-            NativeSettlement s = g.NativeSettlements.First();
-            s.MarkVisitedBy(g.HumanPlayer.PlayerId);
-            g.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm);
+            List<string> nations = DistinctNations(g, 2);
+            VisitNation(g, nations[0], g.HumanPlayer.PlayerId);
+            VisitNation(g, nations[1], g.HumanPlayer.PlayerId);
+            SetTribeTension(g, nations[0], g.HumanPlayer.PlayerId, 50);
+            SetTribeTension(g, nations[1], g.HumanPlayer.PlayerId, 900);
         }
         a.DeclareIndependence(a.HumanPlayer);
         b.DeclareIndependence(b.HumanPlayer);
         Assert.Equal(a.RandomState, b.RandomState);
+        Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
     }
 
     // ── Item 2: War-time mercenary (Hessian) offer on declaration (86d3c9vdb) ─────────────────────────────

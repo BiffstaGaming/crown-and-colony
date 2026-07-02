@@ -260,47 +260,123 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// The native realignment that follows a declaration of independence (FreeCol <c>csDeclareIndependence</c>'s
-    /// native block): the most-hostile contacted native nation throws in with the new rebel and is <b>calmed</b>
-    /// toward it. FreeCol shifts the friendliest such nation's tension toward the rebel down to <c>CONTENT</c> (from
-    /// war) or <c>HAPPY</c> (from a cease-fire) and makes it hateful toward the freshly-arrived REF, while the
-    /// <em>least</em>-hostile contacted nation turns on the rebel.
-    /// <para><b>Faithful-subset deviation.</b> Our native model is single-player: a settlement tracks one
-    /// <see cref="NativeSettlement.Alarm"/> figure toward the human, and there is <em>no</em> native↔REF relationship
-    /// (the REF is a colonial-like player the natives never meet) and no second human to turn hostile. So we keep only
-    /// the faithful, representable half: the nation the human-rebel has angered the most (highest alarm, among the
-    /// nations whose chief the human has met) is <b>brought onside</b> — every one of its settlements is calmed to at
-    /// most FreeCol's <c>CONTENT</c> band (it backs the rebellion against the departed Crown). The REF-hostility and
-    /// the "least-hostile turns on you" halves have no analogue here and are omitted (documented in independence.md).
-    /// RNG-free; touches only native alarm, which is not persisted at nation scope beyond the per-settlement field.</para>
+    /// The native realignment that follows a declaration of independence (FreeCol <c>declareIndependence</c>'s native
+    /// block, <c>InGameController.java:1482-1548</c>). Among the native nations the rebel has <b>contacted</b> (a chief
+    /// visited — our proxy for FreeCol's <c>hasContacted</c>), sorted ascending by tribe-wide tension toward the rebel:
+    /// <list type="bullet">
+    /// <item>The <b>least-hostile</b> nation becomes the <b>ally</b>: its tension toward the rebel is <em>set to</em>
+    /// <c>CONTENT</c> (600) if it was formally at war, to <c>HAPPY</c> (100) from a cease-fire, and left unchanged at
+    /// peace — and it turns <b>hateful (1000)</b> toward the freshly-arrived REF (<c>makeContact</c> +
+    /// <c>csModifyTension(HATEFUL.limit)</c>).</item>
+    /// <item>Scanning back from the <b>most hostile</b>, the first nation that is not the ally (stopping early at an
+    /// allied nation), scanning <em>past</em> nations already at war with the rebel, becomes the <b>enemy</b>: its
+    /// tension toward the rebel is set to <c>HATEFUL</c> (1000) when at peace/cease-fire (unchanged when already at
+    /// war), it takes an immediate transient <see cref="Stance.War"/> (see <see cref="SetNativeStance"/> for why the
+    /// write is direct), and its tension toward the REF is zeroed (<c>csModifyTension(−current)</c> — a no-op for the
+    /// freshly-created REF, kept for faithfulness). A single contacted nation yields the ally half only.</item>
+    /// </list>
+    /// <para>Every tension change goes through <see cref="SetNationTension"/> — the same delta lands on the nation
+    /// channel and every settlement of the nation, mirroring FreeCol <c>ServerPlayer.csModifyTension</c>
+    /// (<c>ServerPlayer.java:1415-1447</c>) and giving save persistence via the per-settlement alarm channels (v55);
+    /// no save field, no version bump. The ally gets <b>no</b> direct stance write — its calmed tension de-escalates
+    /// through the faithful <see cref="DetermineNativeStances"/> hysteresis.</para>
+    /// <para><b>Documented deviations:</b> contact = ≥ 1 settlement <see cref="NativeSettlement.HasBeenVisitedBy"/>
+    /// the rebel (FreeCol's stance-based <c>hasContacted</c> isn't modelled); tension ties break by nation id
+    /// (FreeCol uses player-list order); the REF-channel settlement writes touch <em>all</em> the nation's settlements
+    /// (FreeCol filters to REF-contacted settlements — none exist, the REF being brand new). RNG-free (ADR-009); both
+    /// the human and the AI declare path run it.</para>
     /// </summary>
     private void ShiftNativeStanceOnDeclaration(Player rebel)
     {
-        // Among nations the human-rebel has actually contacted (spoken with a chief, FreeCol hasContacted), pick the
-        // one whose settlements are angriest at the rebel (highest peak alarm) — FreeCol's "most hostile" ally pick.
-        string? ally = _nativeSettlements
+        Player? refPlayer = _players.FirstOrDefault(p => p.PlayerType == PlayerType.RoyalExpeditionaryForce);
+        // Contacted native nations, ASCENDING by tribe-wide tension toward the rebel (FreeCol sorts
+        // getLiveNativePlayers by getTension(serverPlayer); deterministic nation-id tie-break — a documented deviation).
+        List<string> natives = _nativeSettlements
             .Where(s => s.HasBeenVisitedBy(rebel.PlayerId))
-            .GroupBy(s => s.NationTypeId)
-            .OrderByDescending(g => g.Max(s => s.AlarmFor(rebel.PlayerId)))
-            .ThenBy(g => g.Key) // deterministic tie-break
-            .Select(g => g.Key)
-            .FirstOrDefault();
-        if (ally is null)
+            .Select(s => s.NationTypeId)
+            .Distinct()
+            .OrderBy(n => TribeTensionFor(n, rebel.PlayerId))
+            .ThenBy(n => n, StringComparer.Ordinal)
+            .ToList();
+        if (natives.Count == 0)
         {
-            return; // the rebel has met no natives — nobody to swing behind it
+            return; // the rebel has met no natives — nobody realigns
         }
 
-        // The ally is calmed to at most the CONTENT band: it stops resenting the rebel now the Crown it really hated
-        // has gone (FreeCol sets the tension into the CONTENT/HAPPY range). Settlements calmer than CONTENT are left.
-        // Only the rebel's own channel shifts — a tribe stays as angry as it was at any other power.
-        foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == ally && s.AlarmFor(rebel.PlayerId) > NativeAllyCalmedAlarm))
+        // The ALLY (`good = first(natives)`): calmed toward the rebel by current stance — WAR → CONTENT (600),
+        // CEASE_FIRE → HAPPY (100), PEACE/ALLIANCE/default → delta 0 — then made hateful (1000) toward the King's REF.
+        string good = natives[0];
+        int allyTarget = NativeStanceToward(good, rebel.PlayerId) switch
         {
-            ChangeNativeAlarm(settlement, rebel.PlayerId, NativeAllyCalmedAlarm - settlement.AlarmFor(rebel.PlayerId)); // down to the CONTENT limit
+            Stance.War => NativeSettlement.AlarmContentMax,     // 600 — Tension.Level.CONTENT.getLimit()
+            Stance.CeaseFire => NativeSettlement.AlarmHappyMax, // 100 — Tension.Level.HAPPY.getLimit()
+            _ => TribeTensionFor(good, rebel.PlayerId),         // Peace/Alliance: no calming needed (delta 0)
+        };
+        SetNationTension(good, rebel.PlayerId, allyTarget);
+        if (refPlayer is not null)
+        {
+            SetNationTension(good, refPlayer.PlayerId, NativeSettlement.MaxAlarm); // hateful (1000, HATEFUL.limit) toward the REF
+        }
+
+        // The ENEMY (FreeCol's reverse scan): from the most hostile downwards, the first contacted nation that is not
+        // the ally (and not allied to the rebel — unreachable for natives today, kept for exactness), remembering but
+        // scanning PAST nations already at war and stopping at the first that is not.
+        string? bad = null;
+        for (int i = natives.Count - 1; i >= 0; i--)
+        {
+            string p = natives[i];
+            if (p == good || NativeStanceToward(p, rebel.PlayerId) == Stance.Alliance)
+            {
+                break;
+            }
+            bad = p;
+            if (NativeStanceToward(p, rebel.PlayerId) != Stance.War)
+            {
+                break;
+            }
+        }
+        if (bad is null)
+        {
+            return; // a single contacted nation is the ally only — no enemy half
+        }
+        if (NativeStanceToward(bad, rebel.PlayerId) is Stance.Peace or Stance.CeaseFire)
+        {
+            SetNationTension(bad, rebel.PlayerId, NativeSettlement.MaxAlarm); // hateful (1000) toward the rebel (already-at-war: delta 0)
+        }
+        SetNativeStance(bad, rebel.PlayerId, Stance.War); // FreeCol announces this war at the declaration — see SetNativeStance
+        if (refPlayer is not null)
+        {
+            SetNationTension(bad, refPlayer.PlayerId, 0); // at peace (tension zeroed) with the King's force
         }
     }
 
-    /// <summary>The alarm a native nation that backs the rebellion is calmed <em>to</em> (FreeCol <c>Tension.Level.CONTENT.getLimit()</c> = 600, the band an ally settles into when the war-time Crown departs).</summary>
-    private const int NativeAllyCalmedAlarm = NativeSettlement.AlarmContentMax;
+    /// <summary>
+    /// Pins <paramref name="nationTypeId"/>'s tribe-wide tension toward the player <paramref name="playerId"/> to
+    /// exactly <paramref name="target"/>, first applying the same delta to <b>every settlement</b> of the nation
+    /// (FreeCol <c>ServerPlayer.csModifyTension</c>, <c>ServerPlayer.java:1415-1447</c>: a native player's tension
+    /// change propagates the identical delta as settlement alarm nation-wide — the incite precedent,
+    /// <see cref="InciteNatives(Unit, NativeSettlement, int)"/>). The settlement writes both <b>persist</b> the
+    /// relationship (the v55 per-settlement alarm channels are saved; the transient nation channel re-derives from
+    /// them on load) and feed 25% of any <em>positive</em> delta back into the nation channel
+    /// (<see cref="PropagateToTribe"/>) — so the exact pin comes <b>after</b> them, correcting any overshoot.
+    /// A zero delta writes nothing. RNG-free (ADR-009).
+    /// </summary>
+    /// <param name="nationTypeId">The native nation whose tension channel is pinned.</param>
+    /// <param name="playerId">The player the tension is held toward.</param>
+    /// <param name="target">The exact tension the nation channel ends at (0..<see cref="MaxTension"/>).</param>
+    private void SetNationTension(string nationTypeId, int playerId, int target)
+    {
+        int delta = target - TribeTensionFor(nationTypeId, playerId);
+        if (delta == 0)
+        {
+            return;
+        }
+        foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == nationTypeId))
+        {
+            ChangeNativeAlarm(settlement, playerId, delta);
+        }
+        RaiseTribeTension(nationTypeId, playerId, target - TribeTensionFor(nationTypeId, playerId)); // exact pin, after the 25% propagation
+    }
 
     /// <summary>
     /// The King's parting offer of a war-mercenary (Hessian) force on the very turn of the declaration (FreeCol
