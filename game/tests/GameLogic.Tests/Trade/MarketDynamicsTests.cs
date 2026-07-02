@@ -1,0 +1,266 @@
+using CrownAndColony.GameLogic.Colonies;
+using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Persistence;
+using CrownAndColony.GameLogic.Randomness;
+using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.Units;
+using CrownAndColony.GameLogic.World;
+using Xunit;
+
+namespace CrownAndColony.GameLogic.Tests.Trade;
+
+/// <summary>
+/// Market dynamics (Parity Wave: 86d3fpyx3 rival-market trade propagation + 86d3fpyyq per-turn market drift), FreeCol
+/// <c>ServerPlayer.propagateToEuropeanMarkets</c> / <c>csYearlyGoodsAdjust</c>.
+/// <para>
+/// <b>Honesty note:</b> the four <c>Game.cs</c> call-site seams (sell/buy propagation + the per-turn drift tick in
+/// <c>RunPlayerTurn</c>) are NOT applied in this change — the integrator wires them. Every test here therefore calls
+/// <c>PropagateTradeToRivalMarkets</c> / <c>RunYearlyMarketAdjust</c> <b>directly</b>, in the exact order the seams
+/// will (trade first, then propagate), so the behaviour is verified but the end-to-end EndTurn flow is not until the
+/// seams land.
+/// </para>
+/// </summary>
+public class MarketDynamicsTests
+{
+    private static readonly Ruleset Classic = Ruleset.LoadClassic();
+
+    private const string Sugar = "model.goods.sugar";
+    private const string Silver = "model.goods.silver";
+    private const string Hammers = "model.goods.hammers"; // storable="false" — never propagates
+
+    /// <summary>The rival colonial powers (not the human, not natives) whose markets propagation must reach.</summary>
+    private static List<Player> ColonialRivals(Game game) =>
+        game.Players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).ToList();
+
+    // ── Rival-market trade propagation (86d3fpyx3, FreeCol ServerPlayer.propagateToEuropeanMarkets:1734-1755) ──────
+
+    [Fact]
+    public void HumanSale_MovesEveryRivalMarket_ByTheSameFiveToThirtyPercentOfTheChunk()
+    {
+        var game = Game.New(Classic, seed: 7);
+        List<Player> rivals = ColonialRivals(game);
+        Assert.Equal(3, rivals.Count); // the default game: human + 3 foreign powers
+        int before = rivals[0].Market.AmountInMarket(Sugar);
+
+        game.HumanPlayer.Market.Sell(Sugar, 100, taxPercent: 0);         // the seam order: the trade completes first…
+        game.PropagateTradeToRivalMarkets(game.HumanPlayer, Sugar, 100); // …then its raw amount propagates
+
+        // One ≤100 chunk → one 5-30% roll, shared by every recipient (FreeCol applies the same scaled amount to all).
+        int delta = rivals[0].Market.AmountInMarket(Sugar) - before;
+        Assert.InRange(delta, 5, 30);
+        Assert.All(rivals, r => Assert.Equal(before + delta, r.Market.AmountInMarket(Sugar)));
+        // Propagation is inventory-only: no recipient's trade accounting moves (Market.java:214-222 — no counters).
+        Assert.All(rivals, r => Assert.Equal(0, r.Market.SalesOf(Sugar)));
+        Assert.All(rivals, r => Assert.Equal(0, r.Market.IncomeBeforeTaxesOf(Sugar)));
+    }
+
+    [Fact]
+    public void HumanBuy_PropagatesNegative_DrainingRivalMarkets()
+    {
+        var game = Game.New(Classic, seed: 7);
+        Player rival = ColonialRivals(game)[0];
+        int before = rival.Market.AmountInMarket(Silver);
+
+        game.HumanPlayer.Market.Buy(Silver, 100);
+        game.PropagateTradeToRivalMarkets(game.HumanPlayer, Silver, -100); // buyInEurope:1261 — the sign is negated
+
+        int delta = rival.Market.AmountInMarket(Silver) - before;
+        Assert.InRange(delta, -30, -5); // rivals lose 5-30% of the buy: their supply shrinks, their price firms up
+    }
+
+    [Fact]
+    public void TinyTrade_ThreeUnitsOrLess_PropagatesNothing()
+    {
+        // 3 × 30 / 100 = 0 with integer truncation — the roll happens, the scaled amount dies at the zero cutoff
+        // (ServerPlayer.java:1745-1747), so a trickle of trade never telegraphs to the rivals.
+        var game = Game.New(Classic, seed: 7);
+        game.HumanPlayer.Market.Sell(Sugar, 3, taxPercent: 0);
+        game.PropagateTradeToRivalMarkets(game.HumanPlayer, Sugar, 3);
+
+        Assert.All(ColonialRivals(game), r => Assert.Empty(r.Market.SaveDeltas()));
+    }
+
+    [Fact]
+    public void NonStorableGoods_NeverPropagate()
+    {
+        // ServerPlayer.java:1736: if (!type.isStorable()) return — before any roll or market touch. Hammers are
+        // storable="false" (and have no market), so this must be a clean no-op, not a throw.
+        var game = Game.New(Classic, seed: 7);
+        game.PropagateTradeToRivalMarkets(game.HumanPlayer, Hammers, 100);
+
+        Assert.All(ColonialRivals(game), r => Assert.Empty(r.Market.SaveDeltas()));
+    }
+
+    [Fact]
+    public void WorkedExample_LargeSale_DecomposesIntoChunksAndTruncates_ExactlyPerTheSeededFormula()
+    {
+        // White-box pin of the whole propagation formula: a 250-unit sale splits into chunks of 100/100/50
+        // (FreeCol's caller-side chunking in sellInEurope), each chunk rolls its own uniform 5..30, and the 50-chunk
+        // truncates (50×r₃/100 = r₃/2). The test reconstructs the event generator from the same persisted inputs the
+        // engine uses — stream-0 state (read from the save, never advanced), turn, player id 0, the FNV-1a of the
+        // goods id and the post-trade counters — so it computes the exact rival delta independently.
+        var game = Game.New(Classic, seed: 7);
+        List<Player> rivals = ColonialRivals(game);
+        int before = rivals[0].Market.AmountInMarket(Sugar);
+
+        game.HumanPlayer.Market.Sell(Sugar, 250, taxPercent: 0); // the trade completes (counters now post-trade)
+
+        ulong seed = SaveGame.From(game).RandomStateValue // the human's stream-0 state word
+            ^ ((ulong)game.Turn << 1)
+            // ^ playerId 0 << 32 — the human's term is 0
+            ^ Fnv1a(Sugar)
+            ^ unchecked((ulong)(uint)game.Market.SalesOf(Sugar) * 0x9E3779B97F4A7C15UL)
+            ^ unchecked((ulong)(uint)game.Market.IncomeBeforeTaxesOf(Sugar) * 0xC2B2AE3D27D4EB4FUL);
+        var rng = new Pcg32Random(seed, 105); // MarketDynamicsStreamId
+        int r1 = rng.Next(26) + 5;
+        int r2 = rng.Next(26) + 5;
+        int r3 = rng.Next(26) + 5;
+        int expected = r1 + r2 + 50 * r3 / 100; // 100×r₁/100 + 100×r₂/100 + 50×r₃/100, each truncated
+
+        game.PropagateTradeToRivalMarkets(game.HumanPlayer, Sugar, 250);
+
+        Assert.InRange(expected, 12, 75); // sanity: 5+5+2 ≤ expected ≤ 30+30+15
+        Assert.All(rivals, r => Assert.Equal(before + expected, r.Market.AmountInMarket(Sugar)));
+    }
+
+    [Fact]
+    public void Propagation_IsDeterministic_TwinGamesAgree()
+    {
+        var a = Game.New(Classic, seed: 4242);
+        var b = Game.New(Classic, seed: 4242);
+        foreach (Game g in new[] { a, b })
+        {
+            g.HumanPlayer.Market.Sell(Sugar, 250, taxPercent: 0);
+            g.PropagateTradeToRivalMarkets(g.HumanPlayer, Sugar, 250);
+        }
+        Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson());
+    }
+
+    [Fact]
+    public void NativesAndRetiredPlayers_NeverReceivePropagation()
+    {
+        // FreeCol's recipients are getLiveEuropeanPlayerList — isEuropean() (COLONIAL/REBEL/INDEPENDENT/ROYAL) only.
+        // Natives own a Market instance in our engine but must never feel European trade; a Retired player is out of
+        // the game entirely.
+        var game = Game.New(Classic, seed: 7);
+        Player native = game.Players.First(p => p.PlayerType == PlayerType.Native);
+        Player retired = ColonialRivals(game)[0];
+        retired.PlayerType = PlayerType.Retired;
+
+        game.HumanPlayer.Market.Sell(Sugar, 100, taxPercent: 0);
+        game.PropagateTradeToRivalMarkets(game.HumanPlayer, Sugar, 100);
+
+        Assert.Empty(native.Market.SaveDeltas());  // untouched
+        Assert.Empty(retired.Market.SaveDeltas()); // untouched
+        Assert.All(ColonialRivals(game), r => Assert.NotEmpty(r.Market.SaveDeltas())); // the live rivals still moved
+    }
+
+    [Fact]
+    public void TheRef_ReceivesPropagation_AfterIndependenceIsDeclared()
+    {
+        // Player.isEuropean() (Player.java:761-766) includes ROYAL — the King's market feels colonial trade too
+        // (faithful, if inconsequential: the REF never trades or reads prices).
+        Game game = RebellionReady(seed: 0xC0FFEEUL);
+        game.DeclareIndependence(game.HumanPlayer);
+        Player refPlayer = game.Players.Single(p => p.PlayerType == PlayerType.RoyalExpeditionaryForce);
+        int before = refPlayer.Market.AmountInMarket(Sugar);
+
+        game.HumanPlayer.Market.Sell(Sugar, 100, taxPercent: 0); // the rebel keeps trading
+        game.PropagateTradeToRivalMarkets(game.HumanPlayer, Sugar, 100);
+
+        int delta = refPlayer.Market.AmountInMarket(Sugar) - before;
+        Assert.InRange(delta, 5, 30);
+        // …and the still-colonial powers moved by the same shared roll.
+        Assert.All(ColonialRivals(game), r => Assert.Equal(before + delta, r.Market.AmountInMarket(Sugar)));
+    }
+
+    [Fact]
+    public void Propagation_NeverTouchesStreamZero_OrTheTradersOwnMarketAndGold()
+    {
+        // ADR-009 stream-isolation pin: a propagated human sale must leave the human's game byte-identical to a twin
+        // that made the same sale WITHOUT propagation — same gold, same own-market datum, same stream-0 state, and
+        // every AI player's own stream untouched. Only the rivals' market inventories may differ.
+        var game = Game.New(Classic, seed: 7, startingGold: 100, startingTax: 25);
+        var twin = Game.New(Classic, seed: 7, startingGold: 100, startingTax: 25);
+        foreach (Game g in new[] { game, twin })
+        {
+            g.FoundColony(g.Units[0]);
+            g.Colonies[0].AddGoods(Silver, 30);
+            g.SellColonyGoods(g.Colonies[0], Silver, 30);
+        }
+
+        game.PropagateTradeToRivalMarkets(game.HumanPlayer, Silver, 30); // only in `game`
+
+        Assert.Equal(twin.Gold, game.Gold);
+        Assert.Equal(twin.Market.AmountInMarket(Silver), game.Market.AmountInMarket(Silver));
+        Assert.Equal(twin.Market.BidPrice(Silver), game.Market.BidPrice(Silver));
+        Assert.Equal(twin.Market.SalesOf(Silver), game.Market.SalesOf(Silver));
+        Assert.Equal(twin.Market.IncomeAfterTaxesOf(Silver), game.Market.IncomeAfterTaxesOf(Silver));
+
+        SaveGame gs = SaveGame.From(game);
+        SaveGame ts = SaveGame.From(twin);
+        Assert.Equal(ts.RandomStateValue, gs.RandomStateValue); // the human's stream 0 never advanced
+        Assert.Equal(
+            ts.Players!.Select(p => (p.RngState, p.RngIncrement)),
+            gs.Players!.Select(p => (p.RngState, p.RngIncrement))); // no AI stream advanced either
+
+        // The propagation did land: rivals moved in `game`, not in the twin (30 × 5..30% ≥ 1).
+        Assert.All(ColonialRivals(game), r => Assert.NotEmpty(r.Market.SaveDeltas()));
+        Assert.All(ColonialRivals(twin), r => Assert.Empty(r.Market.SaveDeltas()));
+    }
+
+    [Fact]
+    public void PropagatedRivalMarkets_RoundTripThroughSave_ByteIdentically()
+    {
+        // The rival deltas land in already-persisted per-player market state (SaveDeltas) — no new save field — so a
+        // propagated game must round-trip byte-identically.
+        var game = Game.New(Classic, seed: 7);
+        game.HumanPlayer.Market.Sell(Sugar, 600, taxPercent: 0);
+        game.PropagateTradeToRivalMarkets(game.HumanPlayer, Sugar, 600);
+        Assert.All(ColonialRivals(game), r => Assert.NotEmpty(r.Market.SaveDeltas()));
+
+        string json = SaveGame.From(game).ToJson();
+        Assert.Equal(json, SaveGame.From(SaveGame.FromJson(json).Restore(Classic)).ToJson());
+    }
+
+    [Fact]
+    public void HugeNegativePropagation_FloorsRivalInventory_AndKeepsPricesInBounds()
+    {
+        // Market.AddGoodsToMarket floors at MINIMUM_AMOUNT = 100 (Market.java:217-219): even a colossal propagated
+        // buy cannot drain a rival's supply to zero (no divide-by-zero in the recompute).
+        var game = Game.New(Classic, seed: 7);
+        Player rival = ColonialRivals(game)[0];
+
+        game.PropagateTradeToRivalMarkets(game.HumanPlayer, Silver, -100_000);
+
+        Assert.True(rival.Market.AmountInMarket(Silver) >= 100, "the floor must hold");
+        Assert.InRange(rival.Market.AskPrice(Silver), 1, 19);
+        Assert.InRange(rival.Market.BidPrice(Silver), 1, 19);
+    }
+
+    /// <summary>64-bit FNV-1a over an ASCII ruleset id — mirrors the engine's seed hash (white-box formula pin).</summary>
+    private static ulong Fnv1a(string text)
+    {
+        ulong hash = 14695981039346656037UL;
+        foreach (char c in text)
+        {
+            hash = unchecked((hash ^ (byte)c) * 1099511628211UL);
+        }
+        return hash;
+    }
+
+    /// <summary>A game with one coastal colony at full Sons of Liberty, ready to declare (IndependenceTests pattern).</summary>
+    private static Game RebellionReady(ulong seed)
+    {
+        Game game = Game.New(Classic, seed);
+        Position coastal = game.Map.AllPositions().First(p =>
+            !game.Map.TerrainAt(p).IsWater
+            && game.ColonyAt(p) is null
+            && game.NativeSettlementAt(p) is null
+            && p.Neighbours().Any(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater));
+        Unit colonist = game.SpawnUnit(Classic.Unit(Game.StartingUnitTypeId), coastal);
+        Colony colony = game.FoundColony(colonist);
+        colony.Liberty = Colony.LibertyPerRebel * colony.Population; // force national SoL to 100%
+        return game;
+    }
+}

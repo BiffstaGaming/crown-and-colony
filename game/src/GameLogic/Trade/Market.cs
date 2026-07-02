@@ -239,6 +239,25 @@ public sealed class Market
         return cost;
     }
 
+    /// <summary>
+    /// Adds (or, when negative, removes) goods to this market's inventory <b>without</b> any payment or trade
+    /// accounting — a faithful port of FreeCol <c>Market.addGoodsToMarket</c> (Market.java:214-222): the inventory
+    /// floors at <see cref="MinimumAmountInMarket"/> and the price recomputes (jump-clamped, exactly as a real trade's
+    /// per-chunk recompute), while the <c>Sales</c>/income counters stay untouched — no sale happened on <em>this</em>
+    /// market. This is how a rival player's Europe trade propagates into this market
+    /// (<c>Game.PropagateTradeToRivalMarkets</c>) and how the per-turn drift nudges a traded good back toward its
+    /// baseline (<c>Game.RunYearlyMarketAdjust</c>). A zero <paramref name="amount"/> is a harmless no-op recompute
+    /// (FreeCol calls it with 0 too).
+    /// </summary>
+    /// <param name="goodsId">The good whose inventory moves (must be tradeable).</param>
+    /// <param name="amount">Units to add (positive — someone sold elsewhere) or remove (negative — someone bought).</param>
+    internal void AddGoodsToMarket(string goodsId, int amount)
+    {
+        Datum d = DatumOf(goodsId);
+        d.AmountInMarket = Math.Max(d.AmountInMarket + amount, MinimumAmountInMarket);
+        Recompute(d);
+    }
+
     private Datum DatumOf(string goodsId) =>
         _data.TryGetValue(goodsId, out Datum? d)
             ? d
