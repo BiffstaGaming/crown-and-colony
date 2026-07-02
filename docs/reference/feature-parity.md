@@ -2,7 +2,7 @@
 
 Generated 2026-06-26 from a structured 22-domain research pass (FreeCol verified against the GPL freecol/ clone; Crown and Colony verified against this repo). Legend: Yes / Partial / No. Functionality described in our own words.
 
-Totals - Crown and Colony: 962 Yes / 23 Partial / 30 No across 1015 features.
+Totals - Crown and Colony: 963 Yes / 22 Partial / 30 No across 1015 features.
 
 ## Map Terrain Exploration
 
@@ -922,7 +922,7 @@ Totals - Crown and Colony: 962 Yes / 23 Partial / 30 No across 1015 features.
 | Alternative victory: defeat all humans (multiplayer) | No | Yes | Yes | FreeCol victoryDefeatHumans (classic off). Us: Winner gated on Ruleset.VictoryDefeatHumans (parsed; off by default). Pure read. |
 | Per-game New-Game toggles for which victory conditions are enabled | No | Yes | Yes | FreeCol game-option booleans. Us: Ruleset.WithVictoryConditions + New-Game dialog checkboxes (session-only, not persisted). |
 | Losing: rebel driven from its last port -> defeat | Yes | Yes | Partial | Us: IsRebelDefeated (declared + GetNumberOfPorts==0) is a derived flag the presentation can read, but EndTurn never short-circuits and there is NO dedicated defeat screen yet (P7 TODO) — so it is modelled in logic but not surfaced to the player as a game-over. |
-| Rival/AI colonial power can also declare independence | No | Partial | Partial | Vanilla FreeCol AI never self-declares (getRebelStrengthRatio is debug-log only); FreeCol's engine supports a rebel/REF AI player. Us: faithful-SPIRIT addition — a dominant AI (army>=1.5x REF) self-declares via ShouldAiDeclareIndependence; but an AI rebel only DEFENDS (offensive rebel-vs-REF AI descoped). Col1 had no rival independence. |
+| Rival/AI colonial power can also declare independence | No | Partial | Yes | Vanilla FreeCol AI never self-declares (getRebelStrengthRatio is debug-log only); FreeCol's engine supports a rebel/REF AI player. Us: faithful-SPIRIT addition — a dominant AI (army>=1.5x REF) self-declares via ShouldAiDeclareIndependence AND now prosecutes the war offensively (86d3e4q65: recapture / seek-and-destroy / pursue / besiege, war-enemy-parameterised so the same seek-and-destroy family serves foreign-vs-human and rebel-vs-REF byte-identically; notices gated on a human victim). Col1 had no rival independence. Follow-up 86d3jgwhj: REF-initiated notices not yet human-gated for an AI rebel. |
 | Spanish Succession (late-game consolidation of a fading power into the dominant one) | Yes | Yes | Yes | Us: RunSpanishSuccession (year>=1600 via the limit engine, weak SoL<50 absorbed by strong SoL>50). Ranks by SoL rather than full game score; only an AI can satisfy the trigger. |
 | Early-declaration score bonus (declare before ~1780 for more points) | Yes | Yes | Yes | Col1 rewarded an early declaration. FreeCol stores max(0, independenceTurn(468) - turn) on the DECLARE_INDEPENDENCE history event and scores it. Us: DeclareIndependence records the DeclaredIndependence history event with score max(0, Ruleset.IndependenceTurn - Turn) (Ruleset.IndependenceTurn newly surfaced; classic 468), folded into PlayerScore via HistoryEventScore → ScoreComponents.HistoryPoints. Tested: earlier declaration → larger bonus; at/after the independence turn → zero (EarlyDeclarationScoreTests). |
 | Independence victory score bonus (percentage uplift for the first/second/third free nation) | Yes | Yes | Yes | Us: ScoreComponents.IndependenceBonusPercent 100/50/25 for first/second/third independent power (FreeCol INDEPENDENCE history switch). Applied to the subtotal. |
