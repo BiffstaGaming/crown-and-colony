@@ -21,7 +21,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 68;
+    public const int CurrentVersion = 69;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -318,6 +318,16 @@ public sealed record SaveGame
     /// by the player at the declaration, never fed back into game evolution, drawing no RNG (the default label is a fixed
     /// derivation of the nation id) — so a reloaded game continues on the identical random sequence whether or not it was
     /// persisted, and the soak (which never declares independence in its window) stays byte-identical and twin-deterministic.
+    /// v69 is one bump covering three additive slices. <b>(a)</b> The <b>active duration-bounded modifiers</b>
+    /// (<see cref="TemporaryModifiers"/> — the timed disaster production penalties, FreeCol persisting a <c>Modifier</c>'s
+    /// <c>firstTurn</c>/<c>lastTurn</c> via <c>Feature.writeAttributes</c>, <c>common/model/Feature.java</c> L297-321;
+    /// 86d3hz9ga): each registered <see cref="GameSession.TemporaryModifier"/> serialises its payload
+    /// (target/type/value/index/scopes) plus its inclusive turn window and colony scope, so a disaster's −50% slump
+    /// survives a save/reload mid-window and still expires on the same turn. Omitted when the registry is empty — the
+    /// classic default game (disaster chance 0) registers none, so a default game serialises byte-identically to v68
+    /// and pre-v69 saves load with no active penalty (the pre-persistence behaviour).
+    /// (Slices (b) — the gen-time strange-mounds pre-stamps, 86d3fpxv8 — and (c) — the region bounding boxes +
+    /// river/thirds regions, 86d3fpxnm — land under this same bump in their own commits and extend this note.)
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -515,6 +525,18 @@ public sealed record SaveGame
     /// evolution, so a reloaded game continues on the identical random sequence.
     /// </summary>
     public IReadOnlyList<SavedLogMessage>? MessageLog { get; init; }
+
+    /// <summary>
+    /// The duration-bounded modifiers in force when the game was saved (v69) — today only a natural disaster's timed
+    /// production penalties (FreeCol persists a temporary <c>Modifier</c>'s <c>firstTurn</c>/<c>lastTurn</c> via
+    /// <c>Feature.writeAttributes</c>, <c>common/model/Feature.java</c> L297-321; 86d3hz9ga). Each row carries the
+    /// payload (target/type/value/index/scopes) plus the inclusive turn window and colony scope, so a struck colony's
+    /// −50% slump survives a save/reload mid-window and still expires on the same turn. Additive + <b>omitted when the
+    /// registry is empty</b> (null) — the classic default game (disaster chance 0) registers none, so a default game
+    /// serialises byte-identically to v68; pre-v69 saves load with no active penalty (the pre-persistence behaviour:
+    /// a reload dropped the slump).
+    /// </summary>
+    public IReadOnlyList<SavedTemporaryModifier>? TemporaryModifiers { get; init; }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -744,6 +766,16 @@ public sealed record SaveGame
             DifficultyLevel = game.DifficultyLevelId == DifficultyLevels.DefaultId ? null : game.DifficultyLevelId,
             // A pending monarch demand awaiting the human's accept/reject (v46); omitted when none — the common case.
             PendingMonarchDemand = game.PendingMonarchDemand is { } md ? SavedMonarchDemand.From(md) : null,
+            // The duration-bounded modifiers in force (v69) — a disaster's timed production penalties; omitted when the
+            // registry is empty (the classic default game — disaster chance 0 — registers none, byte-identical to v68).
+            TemporaryModifiers = game.TemporaryModifiers.Count > 0
+                ? game.TemporaryModifiers
+                    .Select(m => new SavedTemporaryModifier(
+                        m.Payload.TargetId, (int)m.Payload.Type, m.Payload.Value, m.Payload.Index,
+                        m.FirstTurn, m.LastTurn, m.ColonyId,
+                        m.Payload.ScopeUnitTypes is { Count: > 0 } scopes ? scopes.ToList() : null))
+                    .ToList()
+                : null,
         };
     }
 
@@ -993,6 +1025,12 @@ public sealed record SaveGame
         if (CitiesOfCibolaRemaining is { } cibolaLeft) // v63; pre-v63 / omitted → the full count of seven remains (the classic count)
         {
             game.SetCitiesOfCibolaRemaining(cibolaLeft);
+        }
+        if (TemporaryModifiers is { } timed) // v69; pre-v69 / omitted → no active timed modifier (the pre-persistence behaviour)
+        {
+            game.RestoreTemporaryModifiers(timed.Select(m => new TemporaryModifier(
+                new FatherModifier(m.TargetId, (ModifierType)m.ModifierType, m.Value, m.Index, m.ScopeUnitTypes),
+                m.FirstTurn, m.LastTurn, m.ColonyId)));
         }
         return game;
     }
@@ -1247,6 +1285,26 @@ public sealed record SavedDemographicSnapshot(int Year, int Population, int Gold
 /// <param name="Category">The <see cref="App.MessageCategory"/> enum ordinal (for the log's category filter).</param>
 /// <param name="Text">The already-formatted player-facing notice text.</param>
 public sealed record SavedLogMessage(int Turn, int Category, string Text);
+
+/// <summary>
+/// One duration-bounded modifier in force inside a <see cref="SaveGame"/> (v69) — a live
+/// <see cref="GameSession.TemporaryModifier"/> flattened to its payload + window + scope (FreeCol persists the
+/// temporary <c>Modifier</c>'s <c>firstTurn</c>/<c>lastTurn</c> attributes, <c>common/model/Feature.java</c> L297-321).
+/// The whole list is additive + <b>omitted when the registry is empty</b> (see <see cref="SaveGame.TemporaryModifiers"/>),
+/// so the classic default game (which registers none) stays byte-identical to v68; pre-v69 saves load with no active
+/// timed modifier.
+/// </summary>
+/// <param name="TargetId">What the payload modifies (a goods id) — <see cref="Specification.FatherModifier.TargetId"/>.</param>
+/// <param name="ModifierType">The <see cref="Specification.ModifierType"/> enum ordinal (how the value combines).</param>
+/// <param name="Value">The modifier value (e.g. −50 for the disaster percentage penalty).</param>
+/// <param name="Index">Application order (FreeCol <c>modifierIndex</c>; the disaster penalty uses 100).</param>
+/// <param name="FirstTurn">First turn the modifier is active, inclusive (FreeCol <c>firstTurn</c>).</param>
+/// <param name="LastTurn">Last turn the modifier is active, inclusive (FreeCol <c>lastTurn</c>); stripped the turn after.</param>
+/// <param name="ColonyId">The colony the modifier is scoped to (a disaster's struck colony), or null/omitted for a game-wide modifier.</param>
+/// <param name="ScopeUnitTypes">Unit-type ids the payload is restricted to, or null/omitted when unscoped (every classic disaster modifier).</param>
+public sealed record SavedTemporaryModifier(
+    string TargetId, int ModifierType, double Value, int Index,
+    int FirstTurn, int LastTurn, int? ColonyId = null, IReadOnlyList<string>? ScopeUnitTypes = null);
 
 /// <summary>A colonist's tile assignment inside a <see cref="SavedColony"/>.</summary>
 /// <param name="X">Worked tile column.</param>

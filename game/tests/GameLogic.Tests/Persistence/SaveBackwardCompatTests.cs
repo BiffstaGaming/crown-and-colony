@@ -104,6 +104,7 @@ public class SaveBackwardCompatTests
     [InlineData(55)]
     [InlineData(64)]
     [InlineData(65)]
+    [InlineData(68)]
     public void DownVersionedSave_LoadsWithoutThrowing_AndKeepsCoreStateIntact(int version)
     {
         // Take a fully-populated current save, stamp an older Version and strip the top-level fields added AFTER that
@@ -142,6 +143,36 @@ public class SaveBackwardCompatTests
     }
 
     [Fact]
+    public void V68EraSave_ReSavesByteIdentical_ApartFromTheVersionLine()
+    {
+        // The v69 bump's contract (86d3hz9ga/86d3fpxv8/86d3fpxnm): loading a v68-era game state and re-saving it
+        // reproduces the file byte-for-byte, apart from the single "Version" line (68 → 69). All three v69 slices are
+        // additive + omit-when-default, and a v68-era state carries none of them (no timed modifiers, no mounds
+        // stamps, a persisted region table restored verbatim — never re-derived), so nothing else may change.
+        var game = Game.New(Classic, seed: 321, startingGold: 100, startingTax: 4);
+        game.FoundColony(game.Units.First(u => !u.Type.IsNaval));
+        game.EndTurn();
+        game.EndTurn();
+
+        string v68Json = DownVersion(SaveGame.From(game), 68).ToJson();
+        string resavedJson = SaveGame.From(SaveGame.FromJson(v68Json).Restore(Classic)).ToJson();
+
+        string[] v68Lines = v68Json.Split('\n');
+        string[] resavedLines = resavedJson.Split('\n');
+        Assert.Equal(v68Lines.Length, resavedLines.Length); // no line added or removed
+        for (int i = 0; i < v68Lines.Length; i++)
+        {
+            if (v68Lines[i].Contains("\"Version\":"))
+            {
+                Assert.Contains("68", v68Lines[i]);
+                Assert.Contains("69", resavedLines[i]);
+                continue; // the one permitted difference
+            }
+            Assert.Equal(v68Lines[i], resavedLines[i]);
+        }
+    }
+
+    [Fact]
     public void CurrentSave_RoundTrips_AtL2()
     {
         // Mirror at L2 the round-trip the soak relies on: a current-version save reloads to identical core state. (The
@@ -172,6 +203,10 @@ public class SaveBackwardCompatTests
     /// </summary>
     private static SaveGame DownVersion(SaveGame s, int version) => version switch
     {
+        // After v68: the v69 bump (86d3hz9ga/86d3fpxv8/86d3fpxnm) — the active timed disaster modifiers. A v68 save
+        // is a v69 save minus TemporaryModifiers (a default game omits it anyway; nulled here so the case can't drift).
+        68 => s with { Version = 68, TemporaryModifiers = null },
+
         // After v65: the human's New-World name (v66, top-level). A v65 save is a v66 save minus NewWorldName.
         65 => s with { Version = 65, NewWorldName = null },
 

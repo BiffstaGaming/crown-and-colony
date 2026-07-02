@@ -3,6 +3,7 @@ using System.Linq;
 using System.Xml.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
 using Xunit;
@@ -227,5 +228,84 @@ public class NaturalDisasterTests
         // FreeCol-faithful window: makeTimedModifier lastTurn = start + duration (the classic disaster spec duration is 3),
         // so the inclusive window spans FirstTurn..FirstTurn+3 (ApplyDisaster passes mod.Duration + 1).
         Assert.All(scoped, m => Assert.Equal(3, m.LastTurn - m.FirstTurn));
+    }
+
+    // ===== Persistence (86d3hz9ga, save v69 — FreeCol persists a timed Modifier's firstTurn/lastTurn via
+    // Feature.writeAttributes, common/model/Feature.java L297-321): an active penalty survives save/reload
+    // mid-window and still expires on the same turn; a default game omits the token entirely. =====
+
+    [Fact]
+    public void ProductionPenalty_SurvivesSaveLoad_MidWindow_AndExpiresOnTheSameTurn()
+    {
+        // Register the penalty exactly as ApplyDisaster does, advance one turn INTO the window, save, reload,
+        // and assert: (a) the reloaded colony's tile yield is still the penalised pre-save value, and (b) the
+        // reloaded penalty expires on the same turn as the uninterrupted twin's (no reload extension/reset).
+        Game game = Game.New(Classic, Seed);
+        Colony colony = FoundColony(game);
+        Position tile = TileProducing(game, Sugar);
+        int full = game.TileYield(game.HumanPlayer, Free, tile, Sugar, colony.Id);
+        Assert.True(full > 0, "need a tile that actually produces sugar");
+
+        var payload = new FatherModifier(Sugar, ModifierType.Percentage, -50, 100);
+        game.RegisterTemporaryModifier(TemporaryModifier.MakeTimed(payload, duration: 3, start: game.Turn, colonyId: colony.Id));
+        game.EndTurn(); // mid-window: one active turn consumed, two remain (lastTurn = start + 2)
+        int penalisedBeforeSave = game.TileYield(game.HumanPlayer, Free, tile, Sugar, colony.Id);
+        Assert.Equal(full - full / 2, penalisedBeforeSave);
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
+        Colony loadedColony = loaded.Colonies.Single(c => c.Id == colony.Id);
+
+        // (a) The reloaded game still folds the penalty: same penalised yield as before the save.
+        Assert.Equal(penalisedBeforeSave, loaded.TileYield(loaded.HumanPlayer, Free, tile, Sugar, loadedColony.Id));
+        // The reloaded modifier is field-identical to the live one (payload + window + colony scope, record equality).
+        Assert.Equal(game.TemporaryModifiers, loaded.TemporaryModifiers);
+
+        // (b) Expiry on the same turn: both the uninterrupted game and the reloaded one stay penalised through
+        // the last active turn, then recover together on the next.
+        game.EndTurn();   // → last active turn (start + 2)
+        loaded.EndTurn();
+        Assert.Equal(full - full / 2, game.TileYield(game.HumanPlayer, Free, tile, Sugar, colony.Id));
+        Assert.Equal(full - full / 2, loaded.TileYield(loaded.HumanPlayer, Free, tile, Sugar, loadedColony.Id));
+        game.EndTurn();   // → past the window: the per-turn strip removes it in both
+        loaded.EndTurn();
+        Assert.Empty(game.TemporaryModifiers);
+        Assert.Empty(loaded.TemporaryModifiers);
+        Assert.Equal(full, game.TileYield(game.HumanPlayer, Free, tile, Sugar, colony.Id));
+        Assert.Equal(full, loaded.TileYield(loaded.HumanPlayer, Free, tile, Sugar, loadedColony.Id));
+    }
+
+    [Fact]
+    public void ApplyDisaster_PenaltyRoundTripsThroughSave_EndToEnd()
+    {
+        // End-to-end via the real ApplyDisaster path (the forced production-penalty spec): the registered
+        // colony-scoped timed modifiers round-trip through the save byte-for-byte (record equality).
+        Ruleset onlyPenalty = LoadClassicWithOnlyProductionPenaltyDisaster();
+        Game game = Game.New(onlyPenalty, Seed);
+        Colony colony = FoundColony(game);
+        game.HumanPlayer.Gold = 1000;
+        for (int i = 0; i < 10 && !game.TemporaryModifiers.Any(); i++)
+        {
+            game.EndTurn();
+        }
+        Assert.NotEmpty(game.TemporaryModifiers); // a strike registered at least one penalty
+
+        Game loaded = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(onlyPenalty);
+
+        Assert.Equal(game.TemporaryModifiers, loaded.TemporaryModifiers);
+        Assert.All(loaded.TemporaryModifiers, m => Assert.Equal(colony.Id, m.ColonyId)); // the colony scope survived
+    }
+
+    [Fact]
+    public void ADefaultGame_OmitsTheTemporaryModifiersToken_AndOldSavesLoadWithNone()
+    {
+        // The classic default game (disaster chance 0) registers no timed modifier, so a default save writes no
+        // TemporaryModifiers token (byte-identical to v68 content); a v68-style save (no token) loads with none.
+        Game fresh = Game.New(Classic, Seed);
+        string json = SaveGame.From(fresh).ToJson();
+        Assert.DoesNotContain("TemporaryModifiers", json);
+
+        SaveGame asV68 = SaveGame.FromJson(json) with { Version = 68, TemporaryModifiers = null };
+        Game loaded = SaveGame.FromJson(asV68.ToJson()).Restore(Classic);
+        Assert.Empty(loaded.TemporaryModifiers);
     }
 }
