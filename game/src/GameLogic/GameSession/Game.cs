@@ -4560,7 +4560,9 @@ public sealed partial class Game
         var lcrExcluded = new HashSet<Position>(start.Neighbours().Append(start));
         lcrExcluded.UnionWith(game._nativeSettlements.Select(s => s.Position));
         lcrExcluded.UnionWith(game._units.Where(u => u.IsOnMap).Select(u => u.Position));
-        foreach (Position p in LostCityRumourGenerator.Place(map, lcrExcluded, lcrRandom, rumourNumber))
+        foreach (Position p in LostCityRumourGenerator.Place(
+            map, lcrExcluded, lcrRandom, rumourNumber,
+            ruleset.Difficulty.RumourGoodPercent, ruleset.Difficulty.RumourBadPercent)) // classic 48/23 == the defaults; only non-medium games differ (86d3fpxv8 seam 3)
         {
             map.AddRumour(p);
         }
@@ -7271,9 +7273,11 @@ public sealed partial class Game
         {
             return; // a non-mounds rumour is fully resolved by the peek
         }
-        // Strange mounds need an investigate/decline decision. A human is prompted (the rumour waits on the tile);
-        // an AI / foreign power has no UI, so it auto-investigates inline on its own stream (keeps the soak headless).
-        if (owner.IsHuman)
+        // Strange mounds need an investigate/decline decision — but ONLY a gen-time pre-stamped MOUNDS tile prompts
+        // the human (FreeCol InGameController ~L1789-1796 shows the dialog only for the persisted MOUNDS type; an
+        // explore-time MOUNDS roll auto-resolves; 86d3fpxv8). An AI / foreign power always auto-investigates inline
+        // on its own stream (keeps the soak headless).
+        if (owner.IsHuman && Map.HasMoundsStamp(target))
         {
             _pendingMounds = new PendingMoundsDecision(unit.Id, target);
         }
@@ -7292,7 +7296,11 @@ public sealed partial class Game
     /// </summary>
     internal LostCityRumourType ExploreRumour(Unit unit, Position target, IGameRandom random)
     {
-        LostCityRumourType outcome = ChooseRumourType(unit, target, random);
+        // A gen-time MOUNDS pre-stamp short-circuits the roll (FreeCol ServerUnit.csExploreLostCityRumour reads the
+        // persisted rumour type first; 86d3fpxv8) — otherwise roll as before.
+        LostCityRumourType outcome = Map.HasMoundsStamp(target)
+            ? LostCityRumourType.Mounds
+            : ChooseRumourType(unit, target, random);
 
         // Resolve-time native gate (FreeCol ServerUnit.csExploreLostCityRumour): MOUNDS / BURIAL_GROUND on a tile
         // the natives don't own degrade to NOTHING. Belt-and-braces — conditional-add already keeps them off the

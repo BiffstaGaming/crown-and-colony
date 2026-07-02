@@ -961,7 +961,11 @@ public class LostCityRumourTests
         Assert.Equal(unitsBefore, game.Units.Count);
     }
 
-    /// <summary>Searches seeds for a fresh game where the human's first move onto a native-owned rumour rolls MOUNDS (deterministic).</summary>
+    /// <summary>
+    /// Builds a fresh game where the human's first move lands on a native-owned, gen-time PRE-STAMPED mounds rumour.
+    /// Since 86d3fpxv8 only a pre-stamped tile prompts (an explore-time MOUNDS roll auto-resolves, FreeCol
+    /// InGameController ~L1789-1796), so the prompt is deterministic — no seed search needed beyond a legal move.
+    /// </summary>
     private static (Game Game, Unit Unit, Position Tile)? FindHumanMoundsPrompt(ulong seed)
     {
         Game game = Game.New(Classic, seed);
@@ -977,6 +981,7 @@ public class LostCityRumourTests
             return null;
         }
         game.Map.AddRumour(to);
+        game.Map.StampMoundsRumour(to); // the pre-stamp is what makes the human prompt fire (86d3fpxv8)
         game.Map.SetNativeOwner(to, nation);
         game.MoveUnit(unit, to);
         return game.PendingMounds is not null ? (game, unit, to) : null;
@@ -990,7 +995,7 @@ public class LostCityRumourTests
         {
             found = FindHumanMoundsPrompt(s);
         }
-        Assert.NotNull(found); // a MOUNDS roll exists well within the window (~5% of native-tile rolls)
+        Assert.NotNull(found); // a pre-stamped tile prompts deterministically; the loop only needs a seed with a legal first move
         (Game game, Unit unit, Position tile) = found!.Value;
 
         Assert.Equal(tile, game.PendingMounds!.Tile);
