@@ -8357,14 +8357,18 @@ public sealed partial class Game
     /// players roll independently.
     /// </para>
     /// <para>
-    /// <b>Faithful subset (documented in docs/systems/colonies.md).</b> Two simplifications keep this within the
-    /// no-save-bump rule and our current model: (1) We do not yet map disasters to specific terrain/tiles, so the
-    /// colony's disaster pool is all <see cref="Ruleset.NaturalDisasters"/> (uniform), rather than only the disasters
-    /// its worked tiles allow (FreeCol <c>Colony.getDisasterChoices</c>). (2) The <c>lossOfTileProduction</c>/
-    /// <c>lossOfBuildingProduction</c> effects are <em>timed</em> modifiers (−50% for 3 turns); applying them would
-    /// need persisted per-colony timed-modifier state (a save bump), so we record that the effect fired but do not
-    /// apply the multi-turn penalty. The immediate effects — loss of money, loss of goods — are applied in full. The
-    /// loss-of-unit / loss-of-building / damaged-ship effects are likewise not yet modelled (no parse, no apply).
+    /// <b>Terrain-mapped pool.</b> Each candidate colony's disaster pool is its <b>centre-tile terrain's</b> disaster
+    /// list, weighted by the spec's per-terrain probabilities (FreeCol <c>Colony.getDisasterChoices</c>; see
+    /// <see cref="PickTerrainDisaster"/>) — plains → tornado, swamp → disease/flood, hills → earthquake/landslide, …. A
+    /// colony whose terrain lists no disaster takes none and the walk falls through to the next colony.
+    /// </para>
+    /// <para>
+    /// <b>Effects applied.</b> All the classic effect kinds are now resolved: <c>lossOfMoney</c> (plunder/5 of the
+    /// colony's plunder value), <c>lossOfGoods</c> (halve a random stored stack, capped at 50), the timed
+    /// <c>lossOfTileProduction</c>/<c>lossOfBuildingProduction</c> production penalty (a colony-scoped −50% for 3 turns),
+    /// <c>lossOfBuilding</c> (raze/downgrade a burnable building), <c>damagedUnit</c> (damage/sink a docked ship), and
+    /// <c>lossOfUnit</c> (remove a colonist — the colony's last colonist takes the colony with it). See
+    /// <see cref="ApplyDisaster"/>.
     /// </para>
     /// </summary>
     private void RollNaturalDisasters(Player player)
@@ -8375,8 +8379,7 @@ public sealed partial class Game
             return; // classic default: no disasters, default game byte-identical (no draw on any stream)
         }
         List<Colony> colonies = ColoniesOf(player).ToList();
-        IReadOnlyList<Disaster> pool = Ruleset.NaturalDisasters;
-        if (colonies.Count == 0 || pool.Count == 0)
+        if (colonies.Count == 0)
         {
             return;
         }
@@ -8391,17 +8394,41 @@ public sealed partial class Game
             return; // no disaster this turn
         }
 
-        // Pick a starting colony, then walk colonies until one takes an effect (FreeCol wraps around the list).
+        // Pick a starting colony, then walk colonies until one takes an effect (FreeCol wraps around the list). Each
+        // colony's disaster pool is its centre-tile terrain's disaster list (weighted by the spec's per-terrain
+        // probabilities, FreeCol Colony.getDisasterChoices); a colony whose terrain lists no disaster contributes
+        // nothing and the walk falls through to the next.
         int start = rng.Next(colonies.Count);
         for (int i = 0; i < colonies.Count; i++)
         {
             Colony colony = colonies[(start + i) % colonies.Count];
-            Disaster disaster = pool[rng.Next(pool.Count)];
-            if (ApplyDisaster(player, colony, disaster, rng))
+            Disaster? disaster = PickTerrainDisaster(colony, rng);
+            if (disaster is not null && ApplyDisaster(player, colony, disaster, rng))
             {
                 return; // one colony struck per turn (FreeCol returns after the first colony that takes an effect)
             }
         }
+    }
+
+    /// <summary>
+    /// Picks the natural disaster that strikes a colony, weighted by its centre-tile terrain's per-terrain disaster
+    /// probabilities (FreeCol <c>Colony.getDisasterChoices</c> — the <c>&lt;disaster id=.. probability=..&gt;</c> children
+    /// of the terrain's <c>&lt;tile-type&gt;</c>). Returns <c>null</c> when the terrain lists no disaster (the colony takes
+    /// none), or when none of its listed ids resolve to a known natural disaster. Draws one number from
+    /// <paramref name="rng"/> only when it actually picks (a terrain with a single weighted choice or many); an empty
+    /// list draws nothing. Only reached inside the <c>naturalDisasters &gt; 0</c> gate, so it is inert in the classic
+    /// default game (ADR-009).
+    /// </summary>
+    private Disaster? PickTerrainDisaster(Colony colony, IGameRandom rng)
+    {
+        IReadOnlyList<TerrainDisaster> choices = Map.TerrainAt(colony.Position).DisasterChoices;
+        List<(int Weight, Disaster Value)> weighted = choices
+            .Where(c => c.Probability > 0)
+            .Select(c => (c.Probability, Ruleset.FindDisaster(c.DisasterId)))
+            .Where(pair => pair.Item2 is not null)
+            .Select(pair => (pair.Probability, pair.Item2!))
+            .ToList();
+        return weighted.Count == 0 ? null : RandomChoice.WeightedRandom(rng, weighted);
     }
 
     /// <summary>
@@ -8422,6 +8449,9 @@ public sealed partial class Game
         string? goodsLostId = null;
         int goodsLost = 0;
         bool productionPenalty = false;
+        string? buildingLostId = null;
+        bool colonistLost = false;
+        bool shipDamaged = false;
         foreach (DisasterEffect effect in firing)
         {
             switch (effect.Kind)
@@ -8473,17 +8503,74 @@ public sealed partial class Game
                         productionPenalty = true;
                     }
                     break;
+                case DisasterEffectKind.LossOfBuilding:
+                    // FreeCol csApplyDisaster LOSS_OF_BUILDING: raze/downgrade one burnable building (getBurnableBuildings,
+                    // a random pick). Reuse the raid path (BurnBuilding: downgrade if it upgrades from an earlier tier,
+                    // else raze). No-op when the colony has no burnable building.
+                    IReadOnlyList<string> burnable = BurnableBuildings(colony);
+                    if (burnable.Count > 0)
+                    {
+                        string razed = burnable[rng.Next(burnable.Count)];
+                        BurnBuilding(colony, razed);
+                        buildingLostId = razed;
+                    }
+                    break;
+                case DisasterEffectKind.DamagedUnit:
+                    // FreeCol csApplyDisaster DAMAGED_UNIT (scope model.ability.navalUnit): damage one docked ship exactly
+                    // as a native raid does — it limps to a repair berth if it has one, else sinks (mirrors the pattern in
+                    // ResolveCaughtShips). No-op when no ship is in port.
+                    IReadOnlyList<Unit> docked = DockedShips(colony);
+                    if (docked.Count > 0)
+                    {
+                        Unit ship = docked[rng.Next(docked.Count)];
+                        if (RepairBerthFor(ship) is not null || CanRepairAtEurope(ship))
+                        {
+                            DamageShip(ship);
+                        }
+                        else
+                        {
+                            SinkShip(ship);
+                        }
+                        shipDamaged = true;
+                    }
+                    break;
+                case DisasterEffectKind.LossOfUnit:
+                    // FreeCol csApplyDisaster LOSS_OF_UNIT (scope model.ability.person): remove one colony colonist,
+                    // mirroring the famine path. With more than one colonist a single one is lost (assignments shrink to
+                    // fit); with only the last colonist left the colony is DESTROYED (StarveColonyToDeath), and a destroyed
+                    // colony takes no further effects — record the notice and return immediately.
+                    if (colony.Population > 1)
+                    {
+                        colony.Population--;
+                        TrimAssignments(colony);
+                        colonistLost = true;
+                    }
+                    else
+                    {
+                        // The colony loses its last colonist — it is gone. Record the loss (for the human) and stop:
+                        // a disposed colony must not be touched by any later effect this strike.
+                        if (player.IsHuman)
+                        {
+                            _disasterNotices.Add(new DisasterNotice(
+                                disaster.Id, colony.Name, colony.Position, goldLost, goodsLostId, goodsLost,
+                                productionPenalty, buildingLostId, ColonistLost: true, shipDamaged));
+                        }
+                        StarveColonyToDeath(player, colony);
+                        return true; // a destroyed colony takes no further effects (FreeCol stops on disposal)
+                    }
+                    break;
             }
         }
 
-        if (goldLost == 0 && goodsLost == 0 && !productionPenalty)
+        if (goldLost == 0 && goodsLost == 0 && !productionPenalty && buildingLostId is null && !colonistLost && !shipDamaged)
         {
             return false; // every effect was a no-op on this colony — try the next (FreeCol returns empty messages)
         }
         if (player.IsHuman)
         {
             _disasterNotices.Add(new DisasterNotice(
-                disaster.Id, colony.Name, colony.Position, goldLost, goodsLostId, goodsLost, productionPenalty));
+                disaster.Id, colony.Name, colony.Position, goldLost, goodsLostId, goodsLost, productionPenalty,
+                buildingLostId, colonistLost, shipDamaged));
         }
         return true;
     }

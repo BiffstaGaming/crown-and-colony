@@ -22,6 +22,9 @@ namespace CrownAndColony.GameLogic.Colonies;
 /// <param name="GoodsLostId">The goods type a loss-of-goods effect destroyed (e.g. <c>model.goods.tobacco</c>), or <c>null</c> if none.</param>
 /// <param name="GoodsLost">How much of <see cref="GoodsLostId"/> was destroyed (0 if none).</param>
 /// <param name="ProductionPenaltyApplied">Whether a production-penalty effect fired (a −50% goods penalty this turn).</param>
+/// <param name="BuildingLostId">The building a loss-of-building effect razed or downgraded (a building id, e.g. <c>model.building.docks</c>), or <c>null</c> if none.</param>
+/// <param name="ColonistLost">Whether a loss-of-unit effect removed a colonist from the colony (the colony may have been destroyed if it was its last).</param>
+/// <param name="ShipDamaged">Whether a damaged-unit effect damaged or sank a ship docked at the colony.</param>
 public readonly record struct DisasterNotice(
     string DisasterId,
     string ColonyName,
@@ -29,4 +32,7 @@ public readonly record struct DisasterNotice(
     int GoldLost,
     string? GoodsLostId,
     int GoodsLost,
-    bool ProductionPenaltyApplied);
+    bool ProductionPenaltyApplied,
+    string? BuildingLostId = null,
+    bool ColonistLost = false,
+    bool ShipDamaged = false);

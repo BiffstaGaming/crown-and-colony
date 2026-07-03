@@ -27,6 +27,13 @@ namespace CrownAndColony.GameLogic.Specification;
 /// A native attacker striking from — or at a defender standing on — such terrain negates the defender's terrain
 /// cover by gaining it as offence (FreeCol <c>Unit.canAmbush</c>; see [combat](combat.md)).
 /// </param>
+/// <param name="Disasters">
+/// The natural disasters that can strike a colony standing on this terrain, with their per-terrain pick weights (the
+/// spec's <c>&lt;disaster id=.. probability=..&gt;</c> children of each <c>&lt;tile-type&gt;</c>; FreeCol
+/// <c>Colony.getDisasterChoices</c> over the colony centre-tile terrain). Empty when the terrain lists none — a colony
+/// on such terrain takes no natural disaster. Only consulted when <c>model.option.naturalDisasters</c> is above 0
+/// (classic default 0), so it is inert in the default game.
+/// </param>
 public sealed record TerrainType(
     string Id,
     int MoveCost,
@@ -40,11 +47,25 @@ public sealed record TerrainType(
     GenRanges? Gen,
     IReadOnlyList<ResourceChance> Resources,
     double DefenceBonus = 0,
-    bool AmbushTerrain = false)
+    bool AmbushTerrain = false,
+    IReadOnlyList<TerrainDisaster>? Disasters = null)
 {
     /// <summary>Short name derived from the id: <c>model.tile.plains</c> → <c>plains</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
+
+    /// <summary>The natural disasters that can strike a colony on this terrain (never null — empty when the terrain lists none).</summary>
+    public IReadOnlyList<TerrainDisaster> DisasterChoices => Disasters ?? [];
 }
+
+/// <summary>
+/// One natural disaster a terrain can host, with its per-terrain pick weight (the spec's
+/// <c>&lt;disaster id=.. probability=..&gt;</c> child of a <c>&lt;tile-type&gt;</c>): e.g. plains → tornado @ 100, swamp →
+/// disease @ 50 + flood @ 50. Used to weight the per-colony natural-disaster pool by the struck colony's centre-tile
+/// terrain (FreeCol <c>Colony.getDisasterChoices</c>).
+/// </summary>
+/// <param name="DisasterId">Ruleset disaster id, e.g. <c>model.disaster.tornado</c>.</param>
+/// <param name="Probability">Relative weight when the roll picks among this terrain's disasters.</param>
+public sealed record TerrainDisaster(string DisasterId, int Probability);
 
 /// <summary>
 /// One production option of a terrain or building type: either automatic

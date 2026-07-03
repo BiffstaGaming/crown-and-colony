@@ -1563,9 +1563,9 @@ public sealed class Ruleset
     /// parent's effect list (the natural disasters all extend the abstract <c>common</c> disaster, which carries the
     /// shared effect set). An <c>abstract="true"</c> definition is parsed for inheritance but excluded from the
     /// resulting ruleset (FreeCol never instantiates abstract types). Effects are mapped to the discrete kinds we
-    /// resolve (<see cref="DisasterEffectKind"/>); an effect whose id we do not model (e.g. lossOfUnit/lossOfBuilding/
-    /// damagedUnit — these need full unit/building damage we have not yet wired) is skipped, so a struck colony applies
-    /// only the modelled subset (faithful subset; documented in docs/systems/colonies.md). Order is spec order.
+    /// resolve (<see cref="DisasterEffectKind"/>) — including <c>lossOfBuilding</c>, <c>lossOfUnit</c> and
+    /// <c>damagedUnit</c>, which <see cref="GameSession.Game.ApplyDisaster"/> now applies; an effect whose id we do not
+    /// model is skipped. Order is spec order.
     /// </summary>
     internal static Dictionary<string, Disaster> ParseDisasters(XElement? disastersElement)
     {
@@ -1619,18 +1619,24 @@ public sealed class Ruleset
         _ => DisasterEffects.One,
     };
 
-    /// <summary>Maps a single <c>&lt;effect&gt;</c> to a <see cref="DisasterEffect"/>, or null when its id is one we do not yet model.</summary>
+    /// <summary>Maps a single <c>&lt;effect&gt;</c> to a <see cref="DisasterEffect"/>, or null when its id is one we do not model.</summary>
     private static DisasterEffect? ParseDisasterEffect(XElement el)
     {
         string id = RequiredAttribute(el, "id");
         int probability = (int?)el.Attribute("probability") ?? 0;
+        // The spec's <scope ability-id=..> child (person / navalUnit) just declares which target class the effect is
+        // eligible against — the mapped KIND already implies that class (LossOfUnit → a colonist, DamagedUnit → a docked
+        // ship), so we don't need to read or store the scope; ApplyDisaster targets the right class per kind.
         DisasterEffectKind? kind = id switch
         {
             "model.disaster.effect.lossOfMoney" => DisasterEffectKind.LossOfMoney,
             "model.disaster.effect.lossOfGoods" => DisasterEffectKind.LossOfGoods,
             "model.disaster.effect.lossOfTileProduction" => DisasterEffectKind.ProductionPenalty,
             "model.disaster.effect.lossOfBuildingProduction" => DisasterEffectKind.ProductionPenalty,
-            _ => null, // lossOfUnit / lossOfBuilding / damagedUnit: not yet modelled (faithful subset)
+            "model.disaster.effect.lossOfBuilding" => DisasterEffectKind.LossOfBuilding,
+            "model.disaster.effect.lossOfUnit" => DisasterEffectKind.LossOfUnit,   // scope model.ability.person
+            "model.disaster.effect.damagedUnit" => DisasterEffectKind.DamagedUnit, // scope model.ability.navalUnit
+            _ => null, // any other effect id is not modelled
         };
         if (kind is null)
         {
@@ -2576,7 +2582,14 @@ public sealed class Ruleset
                 ?.Attribute("value") ?? 0,
             // Concealing terrain (forests + hills) that enables an ambush.
             AmbushTerrain: el.Elements("ability")
-                .Any(a => (string?)a.Attribute("id") == "model.ability.ambushTerrain" && ((bool?)a.Attribute("value") ?? true)));
+                .Any(a => (string?)a.Attribute("id") == "model.ability.ambushTerrain" && ((bool?)a.Attribute("value") ?? true)),
+            // Natural disasters this terrain can host, with their per-terrain pick weights (FreeCol Colony.getDisasterChoices):
+            // the <disaster id=.. probability=..> children of the <tile-type>. A missing probability defaults to 100.
+            Disasters: el.Elements("disaster")
+                .Select(d => new TerrainDisaster(
+                    RequiredAttribute(d, "id"),
+                    (int?)d.Attribute("probability") ?? 100))
+                .ToList());
     }
 
     /// <summary>

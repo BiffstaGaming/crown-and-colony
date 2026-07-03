@@ -31,6 +31,22 @@ public enum DisasterEffectKind
 
     /// <summary>Halve a random stored good in the colony, capped at 50 lost (FreeCol <c>LOSS_OF_GOODS</c>).</summary>
     LossOfGoods,
+
+    /// <summary>Raze/downgrade one of the colony's burnable buildings (FreeCol <c>model.disaster.effect.lossOfBuilding</c> →
+    /// <c>LOSS_OF_BUILDING</c>). No-op when the colony has no burnable building.</summary>
+    LossOfBuilding,
+
+    /// <summary>Remove one colony colonist; the colony's last colonist takes the colony with it (FreeCol
+    /// <c>model.disaster.effect.lossOfUnit</c> → <c>LOSS_OF_UNIT</c>, whose <c>&lt;scope ability-id="model.ability.person"/&gt;</c>
+    /// restricts the loss to a person — the kind already implies that target class, so the scope isn't stored). No-op when
+    /// the colony has no colonist to lose (unreachable — a colony always has ≥ 1).</summary>
+    LossOfUnit,
+
+    /// <summary>Damage (or sink, if it has nowhere to repair) one of the colony's docked ships (FreeCol
+    /// <c>model.disaster.effect.damagedUnit</c> → <c>DAMAGED_UNIT</c>, whose <c>&lt;scope ability-id="model.ability.navalUnit"/&gt;</c>
+    /// restricts the target to a naval unit — the kind already implies that, so the scope isn't stored). No-op when the
+    /// colony has no ship in port.</summary>
+    DamagedUnit,
 }
 
 /// <summary>

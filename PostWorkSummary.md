@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-03 — Natural-disaster parity: remaining effects + terrain-mapped pool (86d3fq0ye) ✅
+
+**Requested:** complete the two remaining gaps in the natural-disaster system — model+apply the three dropped effect kinds (lossOfBuilding / lossOfUnit / damagedUnit), and make the disaster pool the struck colony's centre-tile terrain's weighted list (both inert in classic, `naturalDisasters` defaults 0).
+**Did:**
+- **Three effect kinds** — added `DisasterEffectKind.LossOfBuilding/LossOfUnit/DamagedUnit`; `ParseDisasterEffect` now maps their ids (was `null`). `ApplyDisaster` gained a branch each, reusing the native-raid helpers: LossOfBuilding→`BurnBuilding` on a seeded pick of `BurnableBuildings` (raze/downgrade); DamagedUnit→`DamageShip`/`SinkShip` on a docked ship (limp-or-sink like `ResolveCaughtShips`); LossOfUnit→famine path (`Population--`+`TrimAssignments` above 1, else `StarveColonyToDeath` and return — a destroyed colony takes no further effect). Each no-ops when the colony has no eligible target.
+- **Terrain-mapped pool** — `TerrainType.Disasters`/`DisasterChoices` + `TerrainDisaster(id,prob)` parsed from each `<tile-type>`'s `<disaster>` children; new `Game.PickTerrainDisaster` draws from the colony centre-tile terrain's list via `RandomChoice.WeightedRandom`, replacing the uniform `Ruleset.NaturalDisasters` pick. A terrain listing none is never struck. Reserved `DisasterStreamId` + one-colony-per-turn behaviour unchanged.
+- `DisasterNotice` gained additive transient `BuildingLostId`/`ColonistLost`/`ShipDamaged` (no save bump); new `GameController.FormatDisasterNotice` (the notice was never surfaced before) renders each effect + wired into the turn-message aggregation.
+- Docs (same commit): `docs/systems/colonies.md` (both layers + changelog row + Code refs), two `feature-parity.md` rows flipped to **Yes**. XML `///` on all new members.
+**Status:** `dotnet build` slnx green; **L1/L2 2700 green** (was 2693; +7 new `NaturalDisasterTests`) incl. the **5 soak/determinism** — classic default byte-identical (no RNG drawn outside the `naturalDisasters>0` gate), **no save bump**. L3/L4 (Godot GdUnit) not run locally — CI covers them; the slnx compiles clean incl. presentation. Committed in this worktree (not pushed).
+**Changed:** `Specification/Disaster.cs`, `Specification/TerrainType.cs`, `Specification/Ruleset.cs` (`ParseDisasterEffect`/`ParseTileType`), `GameSession/Game.cs` (`RollNaturalDisasters`/`PickTerrainDisaster`/`ApplyDisaster`), `Colonies/DisasterNotice.cs`, `presentation/GameController.cs`, `tests/…/NaturalDisasterTests.cs`, `docs/systems/colonies.md`, `docs/reference/feature-parity.md`.
+**Decisions:** the `<scope ability-id=..>` child isn't stored — the mapped kind already implies the target class. `FormatDisasterNotice` didn't exist (notices weren't surfaced at all); added it + wired the aggregation as part of this parity work. Pinned the shared test `FoundColony` centre tile to plains (tornado@100) so the pre-existing strike-dependent tests stay deterministic under the terrain-mapped pool.
+**Scheduled next:** integrator merges this worktree; then back to the feature backlog — in-game tutorial `86d3fq1h9` or opening cinematic `86d3fq1kf` (both Ready), or localization phase 1 `86d3fq1w6`.
+**Follow-ups:** L3/L4 to be confirmed green in CI after integration (turn-message aggregation gained one additive row — empty in classic). `FoundInLostCity`-style edge cases for docked-ship targeting are unchanged. The `86d3fq0ye` kanban task can move to Shipped once CI is green post-merge.
+**Needs you:** nothing — this completes the scoped task. (Disaster system stays fully inert in the classic default game.)
+
+---
+
 ## 2026-07-03 — Friendly display names game-wide + Colopedia overhaul (86d3jr55y) ✅
 
 **Requested (Chris):** the Colopedia's look needs a lot of work, and why do items show as raw `freeColonist` instead of a UI-friendly name?

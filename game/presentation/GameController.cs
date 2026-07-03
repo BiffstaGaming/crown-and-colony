@@ -881,6 +881,7 @@ public partial class GameController : Node2D
             .Concat(_game.WarehouseLevelNotices.Select(n => Logged(MessageCategory.Economy, FormatWarehouseLevelNotice(n))))       // warehouse low/high water-mark warnings (86d3fq1ue)
             .Concat(_game.ColonyFamineNotices.Select(n => Logged(MessageCategory.Colony, FormatColonyFamineNotice(n))))           // a colony lost a colonist to famine
             .Concat(_game.ColonyStarvedNotices.Select(n => Logged(MessageCategory.Colony, FormatColonyStarvedNotice(n))))         // a colony starved out of existence
+            .Concat(_game.DisasterNotices.Select(n => Logged(MessageCategory.Colony, FormatDisasterNotice(n))))                   // a natural disaster struck a colony (inert in classic — disaster chance 0)
             .Concat(_game.MonarchDecreeNotices.Select(n => Logged(MessageCategory.Monarch, FormatMonarchDecreeNotice(n))))         // immediate King's decrees (war/peace/tax/support/REF)
             .Concat(_game.RefLandingNotices.Select(n => Logged(MessageCategory.Monarch, FormatRefLandingNotice(n))))              // the one-off "the King's army has landed" warning
             .Concat(_game.FirstContactNotices.Select(n => Logged(MessageCategory.Diplomacy, FormatFirstContactNotice(n))))         // the human met a new colonial power (FP-6a)
@@ -1035,6 +1036,46 @@ public partial class GameController : Node2D
     /// <summary>Turns a colony-destroyed-by-starvation notice into a turn-message row.</summary>
     private static string FormatColonyStarvedNotice(ColonyStarvedNotice notice) =>
         $"☠ {notice.ColonyName} starved and was lost at ({notice.Position.X},{notice.Position.Y}).";
+
+    /// <summary>
+    /// Turns a natural-disaster notice into a turn-message row (FreeCol's disaster <c>ModelMessage</c>). Names the
+    /// disaster and the colony, then appends whichever effects fired — gold lost, a good lost, a production slump, a
+    /// razed building, a lost colonist, or a damaged ship. Presentation-only (ADR-006); inert in the classic game,
+    /// where the disaster chance is 0 so no notice is ever produced. A lost colonist may mean the colony was
+    /// destroyed — the sibling <see cref="FormatColonyStarvedNotice"/> row (also raised by the disaster) tells the
+    /// player it was lost, so this row states only the colonist loss.
+    /// </summary>
+    private string FormatDisasterNotice(DisasterNotice notice)
+    {
+        string disaster = Naming.Humanize(notice.DisasterId[(notice.DisasterId.LastIndexOf('.') + 1)..]);
+        var effects = new List<string>();
+        if (notice.GoldLost > 0)
+        {
+            effects.Add($"{notice.GoldLost} gold lost");
+        }
+        if (notice.GoodsLostId is { } goodsId && notice.GoodsLost > 0)
+        {
+            effects.Add($"{notice.GoodsLost} {_game.Ruleset.Goods(goodsId).ShortName} destroyed");
+        }
+        if (notice.ProductionPenaltyApplied)
+        {
+            effects.Add("production slumped for 3 turns");
+        }
+        if (notice.BuildingLostId is { } buildingId)
+        {
+            effects.Add($"{Naming.Humanize(buildingId[(buildingId.LastIndexOf('.') + 1)..])} lost");
+        }
+        if (notice.ColonistLost)
+        {
+            effects.Add("a colonist was lost");
+        }
+        if (notice.ShipDamaged)
+        {
+            effects.Add("a ship in port was wrecked");
+        }
+        string tail = effects.Count > 0 ? $" — {string.Join(", ", effects)}." : ".";
+        return $"🌪 {disaster} struck {notice.ColonyName}{tail}";
+    }
 
     /// <summary>
     /// Turns an immediate King's-decree notice into a turn-message row (the no-choice monarch actions — lower/waive

@@ -5,6 +5,7 @@ using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 using Xunit;
 
@@ -44,6 +45,11 @@ public class NaturalDisasterTests
     {
         Colony colony = game.FoundColony(game.Units.First(u => u.IsOnMap && u.Type.CanFoundColony));
         colony.AddGoods("model.goods.food", 100);
+        // The disaster pool is now the colony's centre-tile terrain's disaster list (86d3fq0ye). Pin the centre tile to
+        // plains (spec: tornado @ 100) so a strike-dependent test deterministically has a disaster to draw, regardless of
+        // the seed's starting terrain (which may list none, e.g. grassland). Deterministic + RNG-free; a test that needs a
+        // different terrain (or none) overrides this with its own SetTerrain after founding.
+        game.Map.SetTerrain(colony.Position, game.Ruleset.Terrain("model.tile.plains"));
         return colony;
     }
 
@@ -307,5 +313,189 @@ public class NaturalDisasterTests
         SaveGame asV68 = SaveGame.FromJson(json) with { Version = 68, TemporaryModifiers = null };
         Game loaded = SaveGame.FromJson(asV68.ToJson()).Restore(Classic);
         Assert.Empty(loaded.TemporaryModifiers);
+    }
+
+    // ===== Effect parity (86d3fq0ye): lossOfBuilding / lossOfUnit / damagedUnit + terrain-mapped pool =====
+
+    /// <summary>
+    /// The classic ruleset with <c>naturalDisasters</c> forced to 100% and the shared "several" effect list forced to
+    /// fire ONLY the named effect id (that effect 100%, every other 0%) — so a strike deterministically applies just
+    /// that one effect. Optionally forces every tile-type's disaster list to a single disaster id so the terrain-mapped
+    /// pool is known.
+    /// </summary>
+    private static Ruleset LoadClassicForcingEffect(string effectId, string? soleTerrainDisasterId = null)
+    {
+        using Stream spec = typeof(Ruleset).Assembly.GetManifestResourceStream(GameVariants.ClassicSpecResource)!;
+        XDocument doc = XDocument.Load(spec);
+        XElement opt = doc.Descendants("percentageOption").Single(o => (string?)o.Attribute("id") == "model.option.naturalDisasters");
+        opt.SetAttributeValue("defaultValue", "100");
+        opt.SetAttributeValue("value", "100");
+        foreach (XElement effect in doc.Descendants("effect"))
+        {
+            bool wanted = (string?)effect.Attribute("id") == effectId;
+            effect.SetAttributeValue("probability", wanted ? "100" : "0");
+        }
+        if (soleTerrainDisasterId is not null)
+        {
+            // Point every tile-type at a single disaster so any colony (whatever its terrain) draws that one.
+            foreach (XElement tile in doc.Descendants("tile-type"))
+            {
+                tile.Elements("disaster").Remove();
+                tile.Add(new XElement("disaster", new XAttribute("id", soleTerrainDisasterId), new XAttribute("probability", "100")));
+            }
+        }
+        var buffer = new MemoryStream();
+        doc.Save(buffer);
+        buffer.Position = 0;
+        return Ruleset.Load(buffer);
+    }
+
+    private const string Docks = "model.building.docks";
+    private const string Warehouse = "model.building.warehouse";
+    private const string Depot = "model.building.depot";
+
+    [Fact]
+    public void LossOfBuilding_RazesOrDowngradesABurnableBuilding()
+    {
+        // A spec whose disaster fires ONLY lossOfBuilding, terrain forced to always pick model.disaster.flood.
+        Ruleset ruleset = LoadClassicForcingEffect("model.disaster.effect.lossOfBuilding", "model.disaster.flood");
+        Game game = Game.New(ruleset, Seed);
+        Colony colony = FoundColony(game);
+        // Give the colony one burnable building that DOWNGRADES (warehouse → depot), the sole burnable target.
+        colony.ReplaceBuilding(Depot, Warehouse);
+        Assert.Contains(Warehouse, colony.Buildings);
+
+        bool struck = false;
+        for (int i = 0; i < 20 && !struck; i++)
+        {
+            game.EndTurn();
+            struck = game.DisasterNotices.Any(n => n.BuildingLostId is not null);
+        }
+        Assert.True(struck, "the forced lossOfBuilding disaster should have razed/downgraded a building");
+        Assert.DoesNotContain(Warehouse, colony.Buildings); // burned…
+        Assert.Contains(Depot, colony.Buildings);           // …downgraded back to the depot
+        Assert.Equal(Warehouse, game.DisasterNotices.First(n => n.BuildingLostId is not null).BuildingLostId);
+    }
+
+    [Fact]
+    public void LossOfUnit_DropsColonyPopulationByOne_WhenAboveOne()
+    {
+        Ruleset ruleset = LoadClassicForcingEffect("model.disaster.effect.lossOfUnit", "model.disaster.flood");
+        Game game = Game.New(ruleset, Seed);
+        Colony colony = FoundColony(game);
+        colony.Population = 3;
+
+        bool struck = false;
+        for (int i = 0; i < 20 && !struck; i++)
+        {
+            game.EndTurn();
+            struck = game.DisasterNotices.Any(n => n.ColonistLost);
+        }
+        Assert.True(struck, "the forced lossOfUnit disaster should have removed a colonist");
+        Assert.True(colony.Population < 3, "population must have dropped");
+        Assert.Contains(game.Colonies, c => c.Id == colony.Id); // colony survives (it had > 1 colonist)
+    }
+
+    [Fact]
+    public void LossOfUnit_DestroysASizeOneColony()
+    {
+        Ruleset ruleset = LoadClassicForcingEffect("model.disaster.effect.lossOfUnit", "model.disaster.flood");
+        Game game = Game.New(ruleset, Seed);
+        Colony colony = FoundColony(game);
+        colony.Population = 1; // its last colonist
+        int id = colony.Id;
+
+        bool destroyed = false;
+        for (int i = 0; i < 20 && !destroyed; i++)
+        {
+            game.EndTurn();
+            destroyed = game.Colonies.All(c => c.Id != id);
+        }
+        Assert.True(destroyed, "losing the last colonist must destroy the colony");
+        Assert.Contains(game.DisasterNotices, n => n.ColonistLost); // the loss is noted for the human
+        Assert.Contains(game.ColonyStarvedNotices, n => n.ColonyName == colony.Name); // …and surfaced as a colony-lost row
+    }
+
+    [Fact]
+    public void DamagedUnit_DamagesOrSinksADockedShip()
+    {
+        Ruleset ruleset = LoadClassicForcingEffect("model.disaster.effect.damagedUnit", "model.disaster.flood");
+        Game game = Game.New(ruleset, Seed);
+        Colony colony = FoundColony(game);
+        // Park a human ship on a water tile adjacent to the colony (its port).
+        Position water = colony.Position.Neighbours()
+            .First(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater);
+        Unit ship = game.SpawnUnit(ruleset.Unit("model.unit.caravel"), water);
+        int shipId = ship.Id;
+
+        bool struck = false;
+        for (int i = 0; i < 20 && !struck; i++)
+        {
+            game.EndTurn();
+            struck = game.DisasterNotices.Any(n => n.ShipDamaged);
+        }
+        Assert.True(struck, "the forced damagedUnit disaster should have damaged the docked ship");
+        Unit after = game.Units.First(u => u.Id == shipId);
+        Assert.True(after.IsUnderRepair); // a colonial owner has Europe → the ship is damaged and limps off to repair
+    }
+
+    [Fact]
+    public void TerrainMappedPool_OnlyDrawsDisastersListedForTheColonysTerrain()
+    {
+        // Force the colony onto tundra (spec: blizzard @ 100 — its ONLY disaster) and force the disaster to fire ONLY
+        // lossOfMoney (100%) so a strike always registers a notice. Over many strikes the notice's disaster id must
+        // ALWAYS be the blizzard: the pool is the centre-tile terrain's disaster list, never uniform.
+        Ruleset ruleset = LoadClassicForcingEffect("model.disaster.effect.lossOfMoney");
+        Game game = Game.New(ruleset, Seed);
+        Colony colony = FoundColony(game);
+        game.Map.SetTerrain(colony.Position, ruleset.Terrain("model.tile.tundra"));
+
+        for (int i = 0; i < 25; i++)
+        {
+            game.HumanPlayer.Gold = 1000;  // keep a purse so the forced lossOfMoney always has something to take
+            colony.AddGoods("model.goods.food", 20); // keep the tundra colony fed so it isn't starved out
+            game.EndTurn();
+        }
+        Assert.NotEmpty(game.DisasterNotices); // tundra lists a disaster, so strikes land
+        Assert.All(game.DisasterNotices, n => Assert.Equal("model.disaster.blizzard", n.DisasterId));
+    }
+
+    [Fact]
+    public void TerrainWithNoDisasters_TakesNoDisaster()
+    {
+        // Grassland lists NO <disaster> child in the classic spec. A colony whose only terrain lists none is never struck
+        // (the colony contributes nothing to the walk), even at 100% disaster chance.
+        Ruleset ruleset = LoadClassicForcingEffect("model.disaster.effect.lossOfMoney");
+        Game game = Game.New(ruleset, Seed);
+        Colony colony = FoundColony(game);
+        game.Map.SetTerrain(colony.Position, ruleset.Terrain("model.tile.grassland")); // no disasters
+
+        for (int i = 0; i < 25; i++)
+        {
+            game.HumanPlayer.Gold = 1000;
+            colony.AddGoods("model.goods.food", 20);
+            game.EndTurn();
+        }
+        Assert.Empty(game.DisasterNotices); // grassland lists no disaster → this colony is never struck
+    }
+
+    [Fact]
+    public void ByteStabilityTwin_NaturalDisastersOff_TwoSameSeedGamesStayIdentical()
+    {
+        // The classic default (naturalDisasters = 0) draws no RNG in the disaster path: two same-seed games — one an
+        // untouched twin — stay byte-identical over a long horizon, and neither ever records a disaster (ADR-009).
+        Game a = Game.New(Classic, Seed);
+        Game b = Game.New(Classic, Seed);
+        FoundColony(a);
+        FoundColony(b);
+        for (int turn = 0; turn < 40; turn++)
+        {
+            a.EndTurn();
+            b.EndTurn();
+        }
+        Assert.Equal(SaveGame.From(a).ToJson(), SaveGame.From(b).ToJson()); // byte-identical
+        Assert.Equal(a.RandomState, b.RandomState);                        // stream 0 in lockstep
+        Assert.Empty(a.DisasterNotices);
+        Assert.Empty(b.DisasterNotices);
     }
 }
