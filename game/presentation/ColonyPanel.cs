@@ -714,6 +714,7 @@ public partial class ColonyPanel : PanelContainer
         bool canAfford = _game.HumanPlayer.Gold >= forced.BuyPrice;
         var dialog = new ConfirmationDialog
         {
+            Theme = ColonyTheme.Get(), // parchment-framed dialog (AcceptDialog panel) instead of Godot's default gray box
             Title = "Native land",
             DialogText = $"The {nation} own this tile.\nBuy it for {forced.BuyPrice} gold, take it by force (angering them), or abandon working it?",
             OkButtonText = canAfford ? $"Buy ({forced.BuyPrice}g)" : $"Buy ({forced.BuyPrice}g — can't afford)",

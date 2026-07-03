@@ -112,6 +112,21 @@ public static class ColonyArt
         return flat;
     }
 
+    /// <summary>
+    /// Frames a message/dialog surface in the shared parchment skin so it sits on the FreeCol paper rather than
+    /// Godot's default transparent/gray box. Assigns the parchment/wood <see cref="ColonyTheme"/> (so the panel's
+    /// text renders as dark ink on the parchment, not white-on-nothing) and gives the panel the tiled brown-paper
+    /// <see cref="ParchmentSkin"/> background. The single call every bare message panel uses. Pass
+    /// <paramref name="dense"/> for the large in-game info screens (reports / colopedia / native-settlement /
+    /// negotiation / trade-routes) that want the larger, bolder in-game body text; the modal event popups keep the
+    /// menu-sized baseline.
+    /// </summary>
+    public static void FramePanel(PanelContainer panel, bool dense = false)
+    {
+        panel.Theme = dense ? ColonyTheme.GetInGame() : ColonyTheme.Get();
+        panel.AddThemeStyleboxOverride("panel", ParchmentSkin());
+    }
+
     /// <summary>The colony settlement sprite drawn at the centre of the tiles grid.</summary>
     public static Texture2D? ColonyIcon() => Load("settlements/small.png");
 

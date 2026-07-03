@@ -44,6 +44,7 @@ public partial class VictoryPanel : PanelContainer
     /// </summary>
     public void Open(Game game)
     {
+        ColonyArt.FramePanel(this); // parchment image frame + dark-ink theme (not Godot's transparent default)
         _game = game;
         if (_game.Winner is null)
         {

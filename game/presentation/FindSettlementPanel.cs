@@ -17,6 +17,7 @@ public partial class FindSettlementPanel : PanelContainer
     /// <summary>Opens the dialog. <paramref name="onPick"/> receives the chosen colony's position; then the dialog hides.</summary>
     public void Open(Game game, Action<CrownAndColony.GameLogic.World.Position> onPick)
     {
+        ColonyArt.FramePanel(this); // parchment image frame + dark-ink theme (not Godot's transparent default)
         GetNode<Label>("VBox/FindTitle").Text = "Find settlement";
         var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
         foreach (Node child in dynamic.GetChildren())

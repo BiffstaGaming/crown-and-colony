@@ -29,6 +29,7 @@ public partial class HighScoresPanel : PanelContainer
     /// <param name="scores">The leaderboard to display, descending by score.</param>
     public void Open(IReadOnlyList<HighScore> scores)
     {
+        ColonyArt.FramePanel(this); // parchment image frame + dark-ink theme (not Godot's transparent default)
         _scores = scores;
         Rebuild();
         Show();

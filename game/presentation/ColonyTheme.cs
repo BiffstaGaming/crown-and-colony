@@ -64,9 +64,22 @@ public static class ColonyTheme
         StyleBuildingCell(theme);
         StyleLabels(theme);
         StyleSeparators(theme);
+        StyleDialogs(theme);
         StyleHeaderVariation(theme, "SectionHeader", sectionSize);
         StyleHeaderVariation(theme, "ColonyTitle", titleSize);
         return theme;
+    }
+
+    /// <summary>
+    /// Backs Godot's message dialogs with the parchment image instead of the engine's default flat-gray window. The
+    /// <c>panel</c> stylebox lives on the <c>AcceptDialog</c> theme type, which <c>ConfirmationDialog</c> and
+    /// <c>FileDialog</c> inherit — so one entry frames every code-built prompt (Sail to Europe, Disband, Cash-in
+    /// treasure, quit confirmations, …). The dialog's message Label already reads as dark <see cref="Ink"/> from
+    /// <see cref="StyleLabels"/>, so text stays legible on the parchment.
+    /// </summary>
+    private static void StyleDialogs(Theme theme)
+    {
+        theme.SetStylebox("panel", "AcceptDialog", ColonyArt.ParchmentSkin());
     }
 
     // Compact content margins (8 L/R, 4 top/bottom) so the tiny tile ✕ and the building +/− buttons stay small.

@@ -93,6 +93,7 @@ public partial class NegotiationPanel : PanelContainer
 
     private void Init(Game game, Action onChanged, int? scoutColonyOwnerId, Colony? pinnedColony = null)
     {
+        ColonyArt.FramePanel(this, dense: true); // parchment image frame + dark-ink in-game theme (not Godot's default gray box)
         _game = game;
         _onChanged = onChanged;
         _scoutColonyOwnerId = scoutColonyOwnerId;
@@ -120,6 +121,7 @@ public partial class NegotiationPanel : PanelContainer
     /// </summary>
     public void OpenScoutMissions(Game game, Colony rivalColony, int scoutId, Action onSpy, Action onNegotiate)
     {
+        ColonyArt.FramePanel(this, dense: true); // parchment image frame + dark-ink in-game theme (not Godot's default gray box)
         _ = scoutId; // the controller owns the scout id; kept in the signature so the entry point reads faithfully
         _game = game;
         _onChanged = () => { };

@@ -71,6 +71,7 @@ public partial class ColopediaPanel : PanelContainer
     /// <summary>Opens the Colopedia on the Goods category over the current ruleset / market.</summary>
     public void Open(Game game)
     {
+        ColonyArt.FramePanel(this, dense: true); // parchment image frame + dark-ink in-game theme (not Godot's default gray box)
         _game = game;
         _category = Category.Goods;
         _focusNode = null;

@@ -21,6 +21,7 @@ public partial class FoundingFatherPanel : PanelContainer
     /// <summary>Opens the dialog. <paramref name="onChange"/> runs after a choice (to refresh the host view).</summary>
     public void Open(Game game, Action onChange)
     {
+        ColonyArt.FramePanel(this); // parchment image frame + dark-ink theme (not Godot's transparent default)
         _game = game;
         _onChange = onChange;
         Rebuild();

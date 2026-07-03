@@ -66,6 +66,7 @@ public partial class NativeSettlementPanel : PanelContainer
         Func<Unit, NativeSettlement, string> establishMission, Func<Unit, NativeSettlement, string> denounceMission,
         Action<string> onAction)
     {
+        ColonyArt.FramePanel(this, dense: true); // parchment image frame + dark-ink in-game theme (not Godot's default gray box)
         _game = game;
         _settlement = settlement;
         _actingUnitId = actingUnitId;

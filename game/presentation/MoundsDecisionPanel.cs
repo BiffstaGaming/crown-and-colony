@@ -18,6 +18,7 @@ public partial class MoundsDecisionPanel : PanelContainer
 
     public override void _Ready()
     {
+        ColonyArt.FramePanel(this); // parchment image frame + dark-ink theme (not Godot's transparent default)
         GetNode<Button>("VBox/Buttons/InvestigateButton").Pressed += () => Resolve(investigate: true);
         GetNode<Button>("VBox/Buttons/DeclineButton").Pressed += () => Resolve(investigate: false);
     }

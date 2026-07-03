@@ -44,6 +44,7 @@ public partial class TradeRoutePanel : PanelContainer
     /// <summary>Opens the panel. <paramref name="onChange"/> runs after every action.</summary>
     public void Open(Game game, Action onChange)
     {
+        ColonyArt.FramePanel(this, dense: true); // parchment image frame + dark-ink in-game theme (not Godot's default gray box)
         _game = game;
         _onChange = onChange;
         ResetDraft();

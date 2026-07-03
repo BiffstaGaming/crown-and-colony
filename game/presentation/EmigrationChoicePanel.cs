@@ -26,6 +26,7 @@ public partial class EmigrationChoicePanel : PanelContainer
     /// </summary>
     public void Open(Game game, Action<string> onResolved)
     {
+        ColonyArt.FramePanel(this); // parchment image frame + dark-ink theme (not Godot's transparent default)
         _game = game;
         _onResolved = onResolved;
         if (game.PendingEmigration is not { } pending)

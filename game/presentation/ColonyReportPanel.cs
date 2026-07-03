@@ -127,6 +127,7 @@ public partial class ColonyReportPanel : PanelContainer
     /// </param>
     public void Open(Game game, System.Action<ColopediaPanel.Category, string>? openColopedia = null)
     {
+        ColonyArt.FramePanel(this, dense: true); // parchment image frame + dark-ink in-game theme (not Godot's default gray box)
         _game = game;
         _openColopedia = openColopedia;
         _tab = Tab.Colonies;

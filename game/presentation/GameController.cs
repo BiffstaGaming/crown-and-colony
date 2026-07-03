@@ -340,6 +340,8 @@ public partial class GameController : Node2D
         _endTurnButton = GetNode<Button>("UI/EndTurnButton");
         _gameOverScreen = GetNode<Control>("UI/GameOverScreen");
         _gameOverMessage = GetNode<Label>("UI/GameOverScreen/Panel/VBox/Message");
+        _gameOverScreen.Theme = ColonyTheme.Get(); // dark-ink parchment styling for the end-game card…
+        GetNode<PanelContainer>("UI/GameOverScreen/Panel").AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin()); // …on the parchment image, not a transparent box
         _endTurnButton.Pressed += OnEndTurnPressed;
         GetNode<Button>("UI/EuropeButton").Pressed += OpenEuropePanel;
         GetNode<Button>("UI/TradeRoutesButton").Pressed += OpenTradeRoutePanel;
@@ -1093,6 +1095,7 @@ public partial class GameController : Node2D
         }
         var dialog = new ConfirmationDialog
         {
+            Theme = ColonyTheme.Get(), // parchment-framed dialog (AcceptDialog panel) instead of Godot's default gray box
             Title = "Disband unit",
             DialogText = $"Disband the {unit.Type.ShortName}? It is removed from the game for good.",
             OkButtonText = "Disband",
@@ -1155,6 +1158,7 @@ public partial class GameController : Node2D
               + $"(Carry it home on a galleon yourself to keep all {amount}g.)";
         var dialog = new ConfirmationDialog
         {
+            Theme = ColonyTheme.Get(), // parchment-framed dialog (AcceptDialog panel) instead of Godot's default gray box
             Title = "Cash in treasure",
             DialogText = prompt,
             OkButtonText = $"Cash in ({value}g)",
@@ -1217,6 +1221,8 @@ public partial class GameController : Node2D
     private Label CreateKeysLegendLabel()
     {
         var label = new Label { Name = "KeysLegend", Visible = false, Text = BuildKeysLegendText() };
+        label.Theme = ColonyTheme.Get(); // dark ink on parchment…
+        label.AddThemeStyleboxOverride("normal", ColonyArt.ParchmentSkin()); // …the legend sits on the paper image, not floating transparent
         label.SetAnchorsPreset(Control.LayoutPreset.CenterRight);
         label.OffsetLeft = -280f;
         label.OffsetTop = 60f;
@@ -1276,7 +1282,7 @@ public partial class GameController : Node2D
         }
         _inspectedTile = tile;
 
-        var menu = new PopupMenu();
+        var menu = new PopupMenu { Theme = ColonyTheme.Get() }; // parchment popup styling, not Godot's default gray menu
         // One "Activate" entry per own on-map unit on the tile — selecting any of a stack (HandleTileClick picks the first).
         var unitsHere = _game.PlayerUnits.Where(u => u.IsOnMap && u.Position == tile).OrderBy(u => u.Id).ToList();
         foreach (Unit u in unitsHere)
@@ -1386,6 +1392,7 @@ public partial class GameController : Node2D
 
         var dialog = new AcceptDialog
         {
+            Theme = ColonyTheme.Get(), // parchment-framed dialog (AcceptDialog panel) instead of Godot's default gray box
             Title = "The New World",
             OkButtonText = "Name it",
             Exclusive = true,
@@ -1462,6 +1469,7 @@ public partial class GameController : Node2D
 
         var dialog = new ConfirmationDialog
         {
+            Theme = ColonyTheme.Get(), // parchment-framed dialog (AcceptDialog panel) instead of Godot's default gray box
             Title = "Sail to Europe",
             DialogText = $"{UnitDisplayName(ship)} has reached the high seas. Sail to Europe?\n"
                 + $"The crossing takes {Game.SailTurns} turns.",
@@ -1517,6 +1525,7 @@ public partial class GameController : Node2D
 
         var dialog = new AcceptDialog
         {
+            Theme = ColonyTheme.Get(), // parchment-framed dialog (AcceptDialog panel) instead of Godot's default gray box
             Title = "Rename unit",
             OkButtonText = "Rename",
             Exclusive = true,
@@ -1936,6 +1945,7 @@ public partial class GameController : Node2D
         bool canAfford = _game.HumanPlayer.Gold >= forced.BuyPrice;
         var dialog = new ConfirmationDialog
         {
+            Theme = ColonyTheme.Get(), // parchment-framed dialog (AcceptDialog panel) instead of Godot's default gray box
             Title = "Native land",
             DialogText = $"The {nation} own this land.\nBuy it for {forced.BuyPrice} gold, take it by force (angering them), or abandon the attempt?",
             OkButtonText = canAfford ? $"Buy ({forced.BuyPrice}g)" : $"Buy ({forced.BuyPrice}g — can't afford)",

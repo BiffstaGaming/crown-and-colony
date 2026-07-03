@@ -56,6 +56,7 @@ public partial class MessageLogPanel : PanelContainer
 
     public override void _Ready()
     {
+        ColonyArt.FramePanel(this); // parchment image frame + dark-ink theme (not Godot's transparent default)
         GetNode<Button>("VBox/CloseButton").Pressed += Hide;
     }
 
