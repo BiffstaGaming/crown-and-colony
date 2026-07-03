@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-03 — Friendly display names game-wide + Colopedia overhaul (86d3jr55y) ✅
+
+**Requested (Chris):** the Colopedia's look needs a lot of work, and why do items show as raw `freeColonist` instead of a UI-friendly name?
+**Did:**
+- **Diagnosed:** there's no display-name field anywhere — every UI name derives from `ShortName` (the camelCase id suffix). The Colopedia humanised it locally, but the helper wasn't shared, so raw ids leaked into the unit HUD panel + the empire report.
+- **Naming (systemic):** new shared `GameLogic.Specification.Naming.Humanize` (`freeColonist` → "Free Colonist"), the single humaniser until localisation (`86d3fq1w6`). Applied to `DescribeSelectedUnit` (unit panel) + the report's raw `.ShortName` sites (unit type / goods / trade rows) + the Colopedia build costs.
+- **Colopedia look:** (1) fixed the biggest issue — the bottom-right action cluster + mini-map now hide when the Colopedia / **any** full-screen panel is open (only Colony/Europe did before, so the HUD overlapped the panel + clipped its text); (2) widened the Colopedia + report panels 600→880px; (3) added a per-entry **icon** (goods icon / unit sprite / building image) to the Goods/Units/Buildings tabs via a new `AddIcon` helper.
+- **Verified visually** (captured all three tabs — icons, no overlap, full text) and the humanised unit panel.
+**Status:** presentation-only, no behaviour/save change; **golden-neutral** (Colopedia/reports aren't captured; colony/europe already hid the corner HUD). **L3 327 + L1/L2 2690 green** · **CI green both jobs** on main (`b006549`). +5 test updates (2 Colopedia, 3 InputTests).
+**Changed:** `Naming.cs` (new, GameLogic), `GameController.cs`, `ColopediaPanel.cs`, `ColonyReportPanel.cs`, `main.tscn` (widened panels), 2 test files; `docs/modules/presentation.md`. Commit `b006549`.
+**Decisions:** an interim camelCase humaniser (not full FreeCol name strings) — the proper localised names come with localisation phase 1 (`86d3fq1w6`), which will supersede it. Kept the shared helper in GameLogic so both layers can use it. Skipped icons on Terrain (isometric diamonds read poorly small) / Resources / Nations (no per-item art).
+**Scheduled next (your steer):** back to the feature backlog — in-game tutorial `86d3fq1h9` or opening cinematic `86d3fq1kf` (both Ready), or localization phase 1 `86d3fq1w6` (which also finishes the naming properly).
+**Follow-ups:** localisation phase 1 supersedes the humaniser; the advisor/unit-panel/zoom cluster could get carved-wood frames (still parchment cards); a couple of presentation files still carry source-comment `�` mojibake (cosmetic).
+**Needs you:** review the Colopedia (verified via captures, not playtested). Names are friendly everywhere now; the Colopedia has icons, fits its text, and no longer has the HUD buttons overlapping it.
+
+---
+
 ## 2026-07-03 — HUD polish: legible dark-wood status strip + carved-wood frames (86d3jnbek) ✅
 
 **Requested (Chris):** the redesign is much nicer but the top parchment text is hard to read and the bottom-right looks unfinished — source assets online if none fit.
