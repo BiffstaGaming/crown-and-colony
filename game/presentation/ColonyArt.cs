@@ -90,11 +90,12 @@ public static class ColonyArt
 
     /// <summary>
     /// A parchment panel skin for menu-style screens: FreeCol's brown parchment tiled (not stretched — the tile is
-    /// only 291×295), inset 26px so content clears the 23px carved-wood frame. Falls back to a warm solid fill if the
+    /// only 291×295), inset <paramref name="contentMargin"/>px (default 26, so content clears the 23px carved-wood
+    /// frame; pass a smaller value for slim HUD strips like the status bar). Falls back to a warm solid fill if the
     /// asset is absent (keeps the panel opaque in CI). Shared by the main-menu and settings screens; the colony screen
     /// keeps its own equivalent (<c>ColonyPanel.BuildPanelBackground</c>).
     /// </summary>
-    public static StyleBox ParchmentSkin()
+    public static StyleBox ParchmentSkin(int contentMargin = 26)
     {
         if (PanelParchment() is { } parchment)
         {
@@ -104,11 +105,11 @@ public static class ColonyArt
                 AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Tile,
                 AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Tile,
             };
-            skin.SetContentMarginAll(26);
+            skin.SetContentMarginAll(contentMargin);
             return skin;
         }
         var flat = new StyleBoxFlat { BgColor = new Color(0.18f, 0.12f, 0.07f) };
-        flat.SetContentMarginAll(26);
+        flat.SetContentMarginAll(contentMargin);
         return flat;
     }
 

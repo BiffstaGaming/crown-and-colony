@@ -54,10 +54,16 @@ public partial class MapControlsOverlay : Control
         OffsetRight = -8f;
         GrowHorizontal = GrowDirection.Begin;
         MouseFilter = MouseFilterEnum.Ignore; // the container itself is click-through; only the buttons take clicks
+        Theme = ColonyTheme.Get(); // wood-styled buttons matching the rest of the HUD, not Godot's default gray
+
+        // A parchment backing so the zoom/recentre cluster reads as a framed HUD corner, not floating buttons.
+        var back = new PanelContainer { Name = "Back" };
+        back.AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin(6));
+        AddChild(back);
 
         var column = new VBoxContainer { Name = "ControlsColumn" };
         column.AddThemeConstantOverride("separation", 4);
-        AddChild(column);
+        back.AddChild(column);
 
         _zoomInButton = MakeButton("ZoomInButton", "+", "Zoom in");
         _zoomOutButton = MakeButton("ZoomOutButton", "−", "Zoom out"); // a real minus sign, not a hyphen

@@ -380,6 +380,8 @@ public partial class GameController : Node2D
         GetNode<Button>("UI/TradeRoutePanel/VBox/CloseButton").Pressed += () => _tradeRoutePanel.Hide();
         GetNode<Button>("UI/GameOverScreen/Panel/VBox/NewGameButton").Pressed += NewGame;
 
+        LayoutHud(); // compose the HUD into framed regions (top status strip, action cluster, unit panel, mini-map)
+
         if (PendingLoadPath is { } loadPath)
         {
             PendingLoadPath = null;
@@ -389,6 +391,141 @@ public partial class GameController : Node2D
         {
             NewGame();
         }
+    }
+
+    /// <summary>
+    /// Composes the HUD into framed parchment regions (86d3jnbek) instead of the earlier floating widgets: a top
+    /// status strip (empire stats + date), a bottom-right action cluster with End Turn as the single primary button,
+    /// a bottom-centre selected-unit panel, and a framed bottom-left mini-map corner. Presentation-only (ADR-006);
+    /// every node keeps its existing path (the scene tests address them directly) — this only reframes, repositions,
+    /// and restyles. Run once from <see cref="_Ready"/>.
+    /// </summary>
+    private void LayoutHud()
+    {
+        var ui = GetNode<CanvasLayer>("UI");
+
+        // ── Top status strip: the status label becomes a slim parchment bar spanning the top; it now carries the
+        //    empire-at-a-glance line (nation · turn · date · gold · tax · liberty, built in RefreshView), not the old
+        //    debug seed / key hints. The dedicated calendar readout is folded into the strip, so hide its panel (its
+        //    label keeps updating — MainSceneTests reads CalendarLabel.Text).
+        _statusLabel.Theme = ColonyTheme.Get();
+        _statusLabel.AddThemeStyleboxOverride("normal", ColonyArt.ParchmentSkin(8));
+        _statusLabel.SetAnchorsPreset(Control.LayoutPreset.TopWide);
+        _statusLabel.OffsetLeft = 12;
+        _statusLabel.OffsetTop = 8;
+        _statusLabel.OffsetRight = -12;
+        _statusLabel.OffsetBottom = 48;
+        _statusLabel.VerticalAlignment = VerticalAlignment.Center;
+        GetNode<Control>("UI/CalendarPanel").Visible = false;
+
+        // ── Action cluster (bottom-right): a framed backing panel behind the report/menu buttons, laid out as a tidy
+        //    2-column grid with End Turn as a full-width primary button below. Buttons keep their flat paths; only
+        //    their offsets + End Turn's emphasis change. The backing is hidden with the buttons when a full-screen
+        //    panel opens (RefreshHudButtonVisibility), so it never floats beside an open panel.
+        _actionClusterBack = new Panel { Name = "ActionClusterBack", MouseFilter = Control.MouseFilterEnum.Ignore };
+        _actionClusterBack.AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin(10));
+        _actionClusterBack.SetAnchorsPreset(Control.LayoutPreset.BottomRight);
+        _actionClusterBack.OffsetLeft = -276;
+        _actionClusterBack.OffsetTop = -256;
+        _actionClusterBack.OffsetRight = -8;
+        _actionClusterBack.OffsetBottom = -8;
+        _actionClusterBack.GrowHorizontal = Control.GrowDirection.Begin;
+        _actionClusterBack.GrowVertical = Control.GrowDirection.Begin;
+        ui.AddChild(_actionClusterBack);
+        ui.MoveChild(_actionClusterBack, 0); // draw behind every button and panel
+
+        PlaceGridButton(GetNode<Button>("UI/EuropeButton"), 0, 0);
+        PlaceGridButton(GetNode<Button>("UI/ReportsButton"), 1, 0);
+        PlaceGridButton(GetNode<Button>("UI/ColopediaButton"), 0, 1);
+        PlaceGridButton(GetNode<Button>("UI/TradeRoutesButton"), 1, 1);
+        PlaceGridButton(GetNode<Button>("UI/MessageLogButton"), 0, 2);
+        PlaceGridButton(GetNode<Button>("UI/DiplomacyButton"), 1, 2);
+        PlaceGridButton(GetNode<Button>("UI/HighScoresButton"), 0, 3);
+        PlaceGridButton(_independenceButton, 1, 3); // contextual (hidden until independence is reachable)
+
+        // End Turn: the one primary action — full width across the bottom of the cluster, taller, accent-styled.
+        _endTurnButton.SetAnchorsPreset(Control.LayoutPreset.BottomRight);
+        _endTurnButton.OffsetLeft = -266;
+        _endTurnButton.OffsetTop = -52;
+        _endTurnButton.OffsetRight = -18;
+        _endTurnButton.OffsetBottom = -16;
+        _endTurnButton.GrowHorizontal = Control.GrowDirection.Begin;
+        _endTurnButton.GrowVertical = Control.GrowDirection.Begin;
+        _endTurnButton.AddThemeStyleboxOverride("normal", PrimaryButtonStyle(strong: false));
+        _endTurnButton.AddThemeStyleboxOverride("hover", PrimaryButtonStyle(strong: true));
+        _endTurnButton.AddThemeStyleboxOverride("pressed", PrimaryButtonStyle(strong: true));
+
+        // ── Selected-unit panel (bottom-centre): framed, moved from the top-left into a centred bottom panel that
+        //    only appears when a unit is active (its visibility is still driven by selection in RefreshView). Fixed to
+        //    the clear centre gap between the mini-map (left) and the action cluster (right); its order buttons live in
+        //    an HFlowContainer now, so they wrap to a second row within that width instead of running under the corners.
+        var unitPanel = GetNode<PanelContainer>("UI/SelectedUnitPanel");
+        unitPanel.Theme = ColonyTheme.GetInGame();
+        unitPanel.AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin(10));
+        unitPanel.AnchorLeft = 0.5f;
+        unitPanel.AnchorRight = 0.5f;
+        unitPanel.AnchorTop = 1f;
+        unitPanel.AnchorBottom = 1f;
+        unitPanel.OffsetLeft = -228;
+        unitPanel.OffsetRight = 228;
+        unitPanel.OffsetTop = -132;
+        unitPanel.OffsetBottom = -12;
+        unitPanel.GrowHorizontal = Control.GrowDirection.Both;
+        unitPanel.GrowVertical = Control.GrowDirection.Begin;
+
+        // Keep the active-unit advisor card clear of the top status strip (both sit top-left).
+        _advisorPanel.AnchorLeft = 0f;
+        _advisorPanel.AnchorTop = 0f;
+        _advisorPanel.AnchorRight = 0f;
+        _advisorPanel.AnchorBottom = 0f;
+        _advisorPanel.OffsetLeft = 12;
+        _advisorPanel.OffsetTop = 56;
+
+        // ── Mini-map corner (bottom-left): a framed parchment backing behind the map + zoom controls.
+        _miniMapBack = new Panel { Name = "MiniMapBack", MouseFilter = Control.MouseFilterEnum.Ignore };
+        _miniMapBack.AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin(6));
+        _miniMapBack.SetAnchorsPreset(Control.LayoutPreset.BottomLeft);
+        _miniMapBack.OffsetLeft = 6;
+        _miniMapBack.OffsetTop = -178;
+        _miniMapBack.OffsetRight = 258;
+        _miniMapBack.OffsetBottom = -6;
+        _miniMapBack.GrowVertical = Control.GrowDirection.Begin;
+        ui.AddChild(_miniMapBack);
+        ui.MoveChild(_miniMapBack, 0); // behind the mini-map
+    }
+
+    /// <summary>The parchment backing behind the bottom-right action cluster — hidden with the buttons when a full-screen panel is open.</summary>
+    private Panel _actionClusterBack = null!;
+    private Panel _miniMapBack = null!;
+
+    // The action-cluster grid: two 120px columns, 40px rows (44px pitch), inset from the panel's bottom-right corner.
+    private static void PlaceGridButton(Button button, int col, int row)
+    {
+        button.SetAnchorsPreset(Control.LayoutPreset.BottomRight);
+        button.GrowHorizontal = Control.GrowDirection.Begin;
+        button.GrowVertical = Control.GrowDirection.Begin;
+        int right = col == 0 ? -148 : -20;
+        button.OffsetLeft = right - 120;
+        button.OffsetRight = right;
+        int bottom = -60 - row * 44; // stack upward above the End Turn button
+        button.OffsetTop = bottom - 36;
+        button.OffsetBottom = bottom;
+    }
+
+    // The End Turn primary style: a stronger wood face with a gold border so the turn-advance action stands apart
+    // from the report/menu buttons. Two shades for rest/hover.
+    private static StyleBox PrimaryButtonStyle(bool strong)
+    {
+        var sb = new StyleBoxFlat
+        {
+            BgColor = strong ? new Color("#8a5a2c") : new Color("#6f4522"),
+            BorderColor = new Color("#c9a24b"),
+            AntiAliasing = true,
+        };
+        sb.SetBorderWidthAll(2);
+        sb.SetCornerRadiusAll(5);
+        sb.SetContentMarginAll(6);
+        return sb;
     }
 
     private void NewGame()
@@ -2477,6 +2614,7 @@ public partial class GameController : Node2D
         {
             button.Visible = !fullScreenPanelOpen;
         }
+        _actionClusterBack.Visible = !fullScreenPanelOpen; // the parchment backing hides with its buttons so it never floats beside an open panel
         _independenceButton.Visible = !fullScreenPanelOpen
             && !_game.IsHumanDefeated && _game.CheckDeclareIndependence(_game.HumanPlayer).Allowed;
     }
@@ -2526,22 +2664,16 @@ public partial class GameController : Node2D
         SyncRumourMarkers();
         SyncUnitMarkers();
 
-        Unit? unit = _game.PlayerUnits.FirstOrDefault(u => u.IsOnMap); // the human's first on-map unit, for the status line
-        int inEurope = _game.UnitsInEurope.Count();
-        string subject = unit is not null
-            ? $"{unit.Type.ShortName} on {_game.Map.TerrainAt(unit.Position).ShortName}, " +
-              $"movement {unit.MovementLeft}/{unit.Type.Movement}"
-            : _game.Colonies.LastOrDefault(c => c.OwnerId == _game.HumanPlayer.PlayerId) is { } ownColony
-                ? $"{ownColony.Name} (pop {ownColony.Population})"
-                : inEurope > 0
-                    ? $"{inEurope} in Europe — press E"
-                    : "no units";
+        // The top status strip: the empire at a glance (nation · turn · date · gold · tax · liberty), plus any
+        // transient ⚠ notice. The selected/active unit's own detail now lives in the bottom-centre unit panel; the
+        // debug seed + key hints were removed from the HUD (F1 shows the key legend).
+        string nation = _game.HumanPlayer.NationId is { } nid ? NationLabel(nid) : "Colony";
         string status =
-            $"Turn {_game.Turn} ({_game.CalendarLabel})   |   {subject}   |   seed {_currentSeed}" +
-            "   |   Enter end turn, Space skip, F1 keys";
+            $"{nation}      Turn {_game.Turn} ({_game.CalendarLabel})      Gold {_game.HumanPlayer.Gold:N0}" +
+            $"      Tax {_game.TaxRate}%      Liberty {_game.NationalSonsOfLiberty(_game.HumanPlayer)}%";
         if (_notice is not null)
         {
-            status += $"   |   ⚠ {_notice}";
+            status += $"      ⚠ {_notice}";
             _notice = null;
         }
         _statusLabel.Text = status;

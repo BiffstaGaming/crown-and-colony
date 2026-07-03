@@ -79,7 +79,7 @@ mouse_filter = 2
 layout_mode = 2
 mouse_filter = 2
 
-[node name="Orders" type="HBoxContainer" parent="UI/SelectedUnitPanel/VBox"]
+[node name="Orders" type="HFlowContainer" parent="UI/SelectedUnitPanel/VBox"]
 layout_mode = 2
 mouse_filter = 2
 

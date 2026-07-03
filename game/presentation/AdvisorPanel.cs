@@ -93,7 +93,7 @@ public partial class AdvisorPanel : PanelContainer
             _rows.AddChild(new Label
             {
                 Name = $"Advice_{rec.Kind}",
-                Text = $"� {rec.Text}",
+                Text = $"•  {rec.Text}",
                 AutowrapMode = TextServer.AutowrapMode.WordSmart,
             });
         }
