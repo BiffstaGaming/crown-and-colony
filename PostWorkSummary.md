@@ -19,6 +19,29 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-04 — Playtest remediation: window, SFX, readability, Europe bugs, privateer, cargo (86d3jy0rn) ✅
+
+**Requested (Chris, after playtesting):** the "UI run-through" missed real problems — window opens top-left with a scroll-bar, intro white text unreadable, static noise on every click, raw "savannah"/"freeColonist" ids, advisor spam, Europe text unreadable on dark-brown, artillery purchase produces nothing on the dock, goods-market text overlapped, no cargo view for a selected ship, privateer can't attack at peace. "I thought you did an entire system passthrough."
+**Did (owned that the audit was code-reading, not a playthrough; fixed each + verified by RENDERING/RUNNING the actual screens this time):**
+- **Window** (`project.godot` had **no `[display]`**): added `viewport 1024×600` (= the UI base) + `resizable`. No `stretch/mode` — it scales content when window≠base and broke the L3 tile-click coordinate maths; the anchored HUD + camera map fill any window without it. Verified the UI fills in an in-engine render.
+- **Click "static"**: `SoundService` played the illegal-move deny-buzz on every click → now **silent** (no click asset; real cues unchanged).
+- **Raw ids**: `DescribeTile` now `Naming.Humanize`s terrain/occupant ("Savannah"/"Free Colonist").
+- **Advisor**: now **opt-in, default off** (`SettingsService.AdvisorHints`).
+- **Intro**: cream text moved off the light parchment box onto a dark title-card backing (verified readable in a render).
+- **Ship cargo**: the selected-carrier HUD now lists hold contents + passengers.
+- **Europe market overlap**: `EuropeDragSource` (bare Control) didn't report its child min size + a FullRect anchor → added `_GetMinimumSize`, dropped the anchor, widened the card. Verified in a regenerated golden.
+- **Artillery invisible**: it's neither person/carrier/treasure so it fell through every "On the docks" list → broadened it. Added the **visibility** regression test the old state-only test lacked.
+- **Privateer at peace**: `AreEnemies` didn't exempt piracy → now piracy ⇒ enemy regardless of stance (soak byte-identical, +1 L2).
+- **#8 dark-text**: it was **Godot's unstyled tooltip** (dark box + dark ink) shown on button hover → `ColonyTheme.StyleTooltip` (dark-wood box + cream text).
+**Status:** **L1/L2 2710 + L3/L4 373 green, CI green (both jobs)**; soak byte-identical; `europe-panel` golden regenerated (market re-layout). Commits `d5f12a4` (the 9-item pass) + `6f8c0c1` (tooltips). Docs: presentation.md + combat.md.
+**Changed:** `project.godot`, `SoundService.cs`, `GameController.cs`, `SettingsService.cs`, `OpeningCinematic.cs`, `EuropePanel.cs`, `EuropeDragDrop.cs`, `ColonyTheme.cs`, `Game.cs` (privateer), + 5 test files, the `europe-panel` golden, docs.
+**Decisions:** dropped `stretch/mode` (test-coordinate conflict > the resize-scaling nicety; anchored UI adapts anyway). Advisor default-off (its advice is true everywhere; tutorial covers it). Click silent (no asset; better than the deny-buzz). Verified visually via in-engine renders (not computer-use — the Godot window isn't resolvable as an installed app).
+**Scheduled next:** back to `[EPIC P8] Australia variant` (`86d3b3r7h`) — still the only backlog item; this remediation is task `86d3jy0rn` (In Review).
+**Follow-ups:** a dedicated UI click SFX (needs a licensed asset); an Advisor on/off Settings toggle (the pref exists, no UI yet); per-good warehouse-threshold UI.
+**Needs you:** re-launch and confirm the **window fill** + **tooltip readability** on your machine (verified via renders + tests, not a hand-playthrough); and if any *other* Europe element still shows dark-on-dark, point me at it.
+
+---
+
 ## 2026-07-03 — UI run-through + clear the whole non-Australia backlog (session umbrella) ✅
 
 **Requested:** do another UI run-through and fix any annoying popups/on-screen messages; then complete **all** non-Australia backlog / ready / in-dev items so the **only** thing left outside In Review/Shipped is `[EPIC P8] Australia variant`. (Per-item detail is in the entries below this one.)
