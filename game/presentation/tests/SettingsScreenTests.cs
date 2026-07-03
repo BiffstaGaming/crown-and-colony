@@ -25,13 +25,13 @@ public class SettingsScreenTests
         await runner.SimulateFrames(2);
         var scene = runner.Scene();
 
-        AssertThat(scene.GetNode<Label>("Panel/VBox/Title").Text).IsEqual("Settings");
-        AssertThat(scene.GetNode<OptionButton>("Panel/VBox/WindowModeRow/WindowModeOption").ItemCount).IsEqual(2);
-        AssertThat(scene.GetNode<CheckButton>("Panel/VBox/VSyncRow/VSyncCheck")).IsNotNull();
-        AssertThat(scene.GetNode<HSlider>("Panel/VBox/MasterRow/MasterSlider")).IsNotNull();
-        AssertThat(scene.GetNode<HSlider>("Panel/VBox/MusicRow/MusicSlider")).IsNotNull();
-        AssertThat(scene.GetNode<HSlider>("Panel/VBox/SfxRow/SfxSlider")).IsNotNull();
-        AssertThat(scene.GetNode<Button>("Panel/VBox/BackButton").Text).IsEqual("Back");
+        AssertThat(scene.GetNode<Label>("Panel/Scroll/VBox/Title").Text).IsEqual("Settings");
+        AssertThat(scene.GetNode<OptionButton>("Panel/Scroll/VBox/WindowModeRow/WindowModeOption").ItemCount).IsEqual(2);
+        AssertThat(scene.GetNode<CheckButton>("Panel/Scroll/VBox/VSyncRow/VSyncCheck")).IsNotNull();
+        AssertThat(scene.GetNode<HSlider>("Panel/Scroll/VBox/MasterRow/MasterSlider")).IsNotNull();
+        AssertThat(scene.GetNode<HSlider>("Panel/Scroll/VBox/MusicRow/MusicSlider")).IsNotNull();
+        AssertThat(scene.GetNode<HSlider>("Panel/Scroll/VBox/SfxRow/SfxSlider")).IsNotNull();
+        AssertThat(scene.GetNode<Button>("Panel/Scroll/VBox/BackButton").Text).IsEqual("Back");
     }
 
     [TestCase]
@@ -41,13 +41,13 @@ public class SettingsScreenTests
         await runner.SimulateFrames(2);
         var scene = runner.Scene();
 
-        var slider = scene.GetNode<HSlider>("Panel/VBox/MasterRow/MasterSlider");
+        var slider = scene.GetNode<HSlider>("Panel/Scroll/VBox/MasterRow/MasterSlider");
         slider.Value = 0.5; // user-style change → applies live to the Master bus
         await runner.SimulateFrames(1);
 
         int master = AudioServer.GetBusIndex("Master");
         AssertThat(Mathf.IsEqualApprox(AudioServer.GetBusVolumeDb(master), Mathf.LinearToDb(0.5f))).IsTrue();
-        AssertThat(scene.GetNode<Label>("Panel/VBox/MasterRow/MasterValue").Text).IsEqual("50%");
+        AssertThat(scene.GetNode<Label>("Panel/Scroll/VBox/MasterRow/MasterValue").Text).IsEqual("50%");
     }
 
     [TestCase]
@@ -67,7 +67,7 @@ public class SettingsScreenTests
         await runner.SimulateFrames(2);
         var scene = runner.Scene();
 
-        var button = scene.GetNode<Button>("Panel/VBox/KeyBindingsButton");
+        var button = scene.GetNode<Button>("Panel/Scroll/VBox/KeyBindingsButton");
         AssertThat(button.Text).IsEqual("Key Bindings…");
     }
 
@@ -131,10 +131,10 @@ public class SettingsScreenTests
         await runner.SimulateFrames(2);
         var scene = runner.Scene();
 
-        AssertThat(scene.GetNodeOrNull<Label>("Panel/VBox/MessagesHeader")).IsNotNull();
+        AssertThat(scene.GetNodeOrNull<Label>("Panel/Scroll/VBox/MessagesHeader")).IsNotNull();
         // One (label+check) cell per MessageCategory, in the compact grid; spot-check the Diplomacy and Combat cells.
-        AssertThat(scene.GetNodeOrNull<CheckButton>("Panel/VBox/MessagePopupGrid/MessagePopupRow_Diplomacy/PopupCheck")).IsNotNull();
-        AssertThat(scene.GetNodeOrNull<CheckButton>("Panel/VBox/MessagePopupGrid/MessagePopupRow_Combat/PopupCheck")).IsNotNull();
+        AssertThat(scene.GetNodeOrNull<CheckButton>("Panel/Scroll/VBox/MessagePopupGrid/MessagePopupRow_Diplomacy/PopupCheck")).IsNotNull();
+        AssertThat(scene.GetNodeOrNull<CheckButton>("Panel/Scroll/VBox/MessagePopupGrid/MessagePopupRow_Combat/PopupCheck")).IsNotNull();
     }
 
     [TestCase]
@@ -148,7 +148,7 @@ public class SettingsScreenTests
         AssertThat(service).IsNotNull();
         service!.Settings.SilencedMessageCategories.Clear(); // start clean (the autoload is shared across the suite)
 
-        var box = scene.GetNode<CheckButton>("Panel/VBox/MessagePopupGrid/MessagePopupRow_Economy/PopupCheck");
+        var box = scene.GetNode<CheckButton>("Panel/Scroll/VBox/MessagePopupGrid/MessagePopupRow_Economy/PopupCheck");
         AssertThat(box.ButtonPressed).IsTrue(); // ticked = pops up (the default)
 
         box.ButtonPressed = false;
@@ -178,7 +178,7 @@ public class SettingsScreenTests
         const int DefaultPeriod = 1; // SettingsModel's shipped default (SaveLoadTests.EndingATurn_WritesTheAutosave relies on it)
         try
         {
-            var spin = scene.GetNode<SpinBox>("Panel/VBox/AutosaveRow/AutosaveSpin");
+            var spin = scene.GetNode<SpinBox>("Panel/Scroll/VBox/AutosaveRow/AutosaveSpin");
             spin.Value = 5;
             spin.EmitSignal(Godot.Range.SignalName.ValueChanged, 5.0); // user-style change → applies to the live model
             await runner.SimulateFrames(1);
@@ -206,13 +206,13 @@ public class SettingsScreenTests
         var scene = runner.Scene();
         SettingsService service = ServiceOf(scene);
 
-        var slider = scene.GetNode<HSlider>("Panel/VBox/UiScaleRow/UiScaleSlider");
+        var slider = scene.GetNode<HSlider>("Panel/Scroll/VBox/UiScaleRow/UiScaleSlider");
         slider.Value = 1.5; // within [MinUiScale, MaxUiScale]
         slider.EmitSignal(Godot.Range.SignalName.ValueChanged, 1.5);
         await runner.SimulateFrames(1);
 
         AssertThat(Mathf.IsEqualApprox(service.Settings.UiScale, 1.5f)).IsTrue(); // stored + applied
-        AssertThat(scene.GetNode<Label>("Panel/VBox/UiScaleRow/UiScaleValue").Text).IsEqual("150%");
+        AssertThat(scene.GetNode<Label>("Panel/Scroll/VBox/UiScaleRow/UiScaleValue").Text).IsEqual("150%");
 
         // Restore the default so this process-global content scale doesn't bleed into sibling scene suites.
         service.UpdateAndApply(s => s.UiScale = 1.0f);
@@ -230,7 +230,7 @@ public class SettingsScreenTests
         bool before = AccessibilityPalette.ColorblindMode;
         try
         {
-            var check = scene.GetNode<CheckButton>("Panel/VBox/ColorblindRow/ColorblindCheck");
+            var check = scene.GetNode<CheckButton>("Panel/Scroll/VBox/ColorblindRow/ColorblindCheck");
             check.ButtonPressed = true;
             check.EmitSignal(BaseButton.SignalName.Toggled, true);
             await runner.SimulateFrames(1);

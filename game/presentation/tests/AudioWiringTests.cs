@@ -105,7 +105,7 @@ public class AudioWiringTests
             .GetField("_service", BindingFlags.NonPublic | BindingFlags.Instance)!
             .GetValue(screen)!;
 
-        var mute = screen.GetNode<CheckButton>("Panel/VBox/MuteRow/MuteCheck");
+        var mute = screen.GetNode<CheckButton>("Panel/Scroll/VBox/MuteRow/MuteCheck");
         mute.ButtonPressed = true; // user-style toggle → applies live and flips the service flag
         await runner.SimulateFrames(1);
 

@@ -89,6 +89,63 @@ public partial class SettingsScreen : Control
         BuildMessagePopupToggles(); // the per-category popup-vs-silent message preference (86d3fq1tc), built in code (no scene edit)
         GetNode<Button>("Panel/VBox/KeyBindingsButton").Pressed += OnKeyBindings;
         GetNode<Button>("Panel/VBox/BackButton").Pressed += OnBack;
+
+        WrapContentInScroll(); // last: the settings list is taller than the panel — scroll it + pin the border (86d3jy0rn)
+    }
+
+    /// <summary>
+    /// Fixes two things Chris hit in playtest (86d3jy0rn): the settings list is taller than the panel, which made the
+    /// <see cref="PanelContainer"/> <b>grow past the fixed wood Border</b> (the frame no longer lined up) and <b>overflow a
+    /// short window</b> so Key Bindings/Back were cut off and you had to resize the window to reach them. This reparents
+    /// the content <see cref="VBoxContainer"/> into a <see cref="ScrollContainer"/> capped to the viewport height — so the
+    /// panel now stays a fixed size (nothing cut off; the list scrolls when it doesn't fit) — and keeps the wood
+    /// <c>Border</c> exactly on the panel's rect whenever it lays out, so the frame lines up at any window size. Run
+    /// <b>last</b> in <see cref="_Ready"/> so every earlier <c>Panel/VBox/…</c> lookup still resolves; after this the VBox
+    /// lives at <c>Panel/Scroll/VBox</c> (the L3 tests address it there).
+    /// </summary>
+    private void WrapContentInScroll()
+    {
+        var panel = GetNode<PanelContainer>("Panel");
+        var vbox = GetNode<VBoxContainer>("Panel/VBox");
+        var border = GetNode<NinePatchRect>("Border");
+
+        var scroll = new ScrollContainer
+        {
+            Name = "Scroll",
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, // vertical scroll only
+        };
+        panel.RemoveChild(vbox);
+        panel.AddChild(scroll);
+        scroll.AddChild(vbox);
+        vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+
+        scroll.SizeFlagsVertical = SizeFlags.ExpandFill; // the scroll fills the panel; the VBox keeps its content height so it scrolls
+
+        // Cap the panel to the *current* viewport height (less a margin) so it can never overflow the window — the scene's
+        // panel offset was 660px (taller than a 600px window). Recomputed on every resize (not just once at load) so the
+        // panel keeps fitting when Chris drags the window smaller as well as larger; the ScrollContainer supplies the
+        // scrollbar whenever the list is taller than the fit.
+        void FitPanel()
+        {
+            float half = Mathf.Max(220f, (GetViewportRect().Size.Y - 40f) / 2f);
+            panel.OffsetTop = -half;
+            panel.OffsetBottom = half;
+            scroll.CustomMinimumSize = new Vector2(510, half * 2f - 28f); // fill the panel minus its parchment padding
+        }
+
+        // Keep the wood Border exactly on the panel's *rendered* rect (not its offset rect — a PanelContainer grows past its
+        // offsets to fit its content, so an offset copy would leave the frame narrower than the panel and clip the labels).
+        // Snap the border to the panel's live GlobalPosition/Size; re-run deferred after every fit so the panel has settled.
+        void SyncBorder()
+        {
+            border.SetAnchorsPreset(LayoutPreset.TopLeft);
+            border.GlobalPosition = panel.GlobalPosition;
+            border.Size = panel.Size;
+        }
+        void OnResize() { FitPanel(); Callable.From(SyncBorder).CallDeferred(); }
+        GetViewport().SizeChanged += OnResize; // keep fitting + re-framing as the window resizes
+        FitPanel();
+        Callable.From(SyncBorder).CallDeferred(); // frame once the first layout has settled
     }
 
     /// <summary>

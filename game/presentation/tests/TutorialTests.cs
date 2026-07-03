@@ -267,7 +267,7 @@ public class TutorialTests
         var service = scene.GetNodeOrNull<SettingsService>("/root/Settings")!;
         service.SetTutorialHints(true); // start enabled (shared autoload)
 
-        var check = scene.GetNodeOrNull<CheckButton>("Panel/VBox/TutorialRow/TutorialCheck");
+        var check = scene.GetNodeOrNull<CheckButton>("Panel/Scroll/VBox/TutorialRow/TutorialCheck");
         AssertThat(check).IsNotNull();
         AssertThat(check!.ButtonPressed).IsTrue(); // ticked = enabled (the default)
 

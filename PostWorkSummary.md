@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-04 — Settings screen: fits any window + border stays aligned (86d3jy0rn) ✅
+
+**Requested (Chris, with 2 screenshots):** "I have to manually re-size the window to be able to see items? Then the entire border goes wrong?" — the Settings screen was cut off at the default window and its carved-wood frame broke when he resized.
+**Did (root-caused + fixed + verified by rendering the regenerated golden):**
+- **Root cause:** the settings list is **taller than both the panel and a 600px window**, so the `PanelContainer` grew past its fixed-size wood `Border` nine-patch (frame misaligned) **and** overflowed the viewport (Key Bindings/Back hidden until you enlarged the window).
+- **Fix — `SettingsScreen.WrapContentInScroll()`** (runs last in `_Ready`): reparents the content VBox into a **`ScrollContainer`** and **caps the centred panel's top/bottom offsets to the current viewport** so it always fits; the list scrolls when it doesn't. **Recomputed on every `Viewport.SizeChanged`**, so it keeps fitting when the window is dragged smaller *or* larger.
+- **Border:** snapped to the panel's **rendered** `GlobalPosition/Size` (not its offset rect — the container grows past its offsets, so an offset-copy clipped the labels) and **re-synced deferred on every resize** → frame stays locked at any size (fixes "the entire border goes wrong").
+- **Tests:** repointed the L3 paths for the Settings scene to `Panel/Scroll/VBox` — `SettingsScreenTests`, **`AudioWiringTests`** (mute row), `TutorialTests` (tutorial row), `PauseMenuTests` (settings-Back). Left the `KeyBindingsScreen.tscn` tests on `Panel/VBox` (separate, un-wrapped scene — my first blanket pass had wrongly changed them, producing double-`Scroll` paths; reverted).
+**Status:** **L3/L4 373 green** (settings-screen golden regenerated: title visible, panel fits, scrollbar, aligned frame — verified in-render across 3 iterations). Presentation-only; no L1/L2/save/RNG impact.
+**Changed:** `SettingsScreen.cs`, `SettingsScreenTests.cs`, `AudioWiringTests.cs`, `TutorialTests.cs`, `PauseMenuTests.cs`, `settings-screen.png` golden, `docs/modules/presentation.md`. (this commit)
+**Decisions:** cap the panel to the viewport + scroll (rather than shrink the font or the frame) — keeps the parchment framing intact and adapts to any window. Border tracks the panel's *actual* rect, not its offsets (the container grows past offsets). Recompute-on-resize over compute-once (Chris resizes).
+**Scheduled next:** back to `[EPIC P8] Australia variant` (`86d3b3r7h`) — the only remaining backlog item; this Settings fix folds into the in-review remediation task `86d3jy0rn`.
+**Follow-ups:** sweep the other tall full-screen panels (KeyBindings already self-scrolls; check Colopedia/empire-report for the same grow-past-frame pattern if Chris hits it).
+**Needs you:** on your machine, open **Settings**, confirm nothing is cut off at the default window, then **resize** and confirm the wood frame stays on the panel.
+
+---
+
 ## 2026-07-04 — Playtest remediation: window, SFX, readability, Europe bugs, privateer, cargo (86d3jy0rn) ✅
 
 **Requested (Chris, after playtesting):** the "UI run-through" missed real problems — window opens top-left with a scroll-bar, intro white text unreadable, static noise on every click, raw "savannah"/"freeColonist" ids, advisor spam, Europe text unreadable on dark-brown, artillery purchase produces nothing on the dock, goods-market text overlapped, no cargo view for a selected ship, privateer can't attack at peace. "I thought you did an entire system passthrough."

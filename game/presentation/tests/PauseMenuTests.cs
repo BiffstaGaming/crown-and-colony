@@ -77,7 +77,7 @@ public class PauseMenuTests
         var settings = pause.GetParent().GetChildren().OfType<SettingsScreen>().FirstOrDefault();
         AssertThat(settings).IsNotNull();
 
-        settings!.GetNode<Button>("Panel/VBox/BackButton").EmitSignal(BaseButton.SignalName.Pressed);
+        settings!.GetNode<Button>("Panel/Scroll/VBox/BackButton").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(2);
         AssertThat(pause.GetParent().GetChildren().OfType<SettingsScreen>().Any()).IsFalse();
 
