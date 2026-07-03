@@ -884,28 +884,40 @@ public sealed partial class Game
 
     /// <summary>
     /// Resolves a REF unit's attack on the rebel unit at <paramref name="target"/> through the REF's OWN RNG stream
-    /// (never stream 0), recording a <see cref="CombatNotice"/> for the presentation. The REF sibling of
-    /// <see cref="AttackEnemyUnit"/>: the defender is rebel-owned (filtered upstream by <see cref="PickRefUnitTarget"/>).
+    /// (never stream 0), recording a <see cref="CombatNotice"/> for the presentation <b>only when the rebel victim is
+    /// human-owned</b> — the notices are the human's victim log, and the REF fighting an <em>AI</em> rebel (a rival that
+    /// self-declared via <see cref="ShouldAiDeclareIndependence"/>) is not the human's business (the same human-victim
+    /// gate as <see cref="AttackEnemyUnit"/> / the <see cref="RaidForeignUnit"/> precedent, 86d3jgwhj). The REF sibling
+    /// of <see cref="AttackEnemyUnit"/>: the defender is rebel-owned (filtered upstream by <see cref="PickRefUnitTarget"/>).
     /// </summary>
     private void AttackRebelUnit(Player refPlayer, Unit attacker, Position target)
     {
         Unit defender = DefenderAt(attacker, target)!;          // rebel-owned (filtered upstream)
         string defenderTypeId = defender.Type.Id;               // capture before the attack — a beaten loser is removed
+        bool humanVictim = IsHumanOwned(defender);              // read before the attack — a beaten loser is removed
         CombatResult result = Attack(attacker, target, RandomFor(refPlayer)); // INTERNAL overload → the REF's stream
-        _combatNotices.Add(new CombatNotice(refPlayer.NationId!, defenderTypeId, result, target));
+        if (humanVictim)
+        {
+            _combatNotices.Add(new CombatNotice(refPlayer.NationId!, defenderTypeId, result, target));
+        }
     }
 
     /// <summary>
     /// Resolves the REF's assault on the undefended rebel colony at <paramref name="target"/> through the REF's OWN RNG
-    /// stream (never stream 0), recording a <see cref="ColonyLossNotice"/> on a win. The REF sibling of
-    /// <see cref="CapturePlayerColony"/>; a win hands the colony to the REF (its people/buildings/stores), a loss
-    /// disarms/demotes the repelled attacker. Capturing the first colony unlocks the REF's field-unit hunt next turn.
+    /// stream (never stream 0), recording a <see cref="ColonyLossNotice"/> on a win <b>only when the captured colony was
+    /// human-owned</b> (read before the assault hands it over) — the notice is the human's loss log, and the REF taking
+    /// an <em>AI</em> rebel's colony is not the human's business (mirrors <see cref="CapturePlayerColony"/>, 86d3jgwhj).
+    /// The REF sibling of <see cref="CapturePlayerColony"/>; a win hands the colony to the REF (its people/buildings/
+    /// stores), a loss disarms/demotes the repelled attacker. Capturing the first colony unlocks the REF's field-unit
+    /// hunt next turn.
     /// </summary>
     private void CaptureRebelColony(Player refPlayer, Unit attacker, Position target)
     {
-        string colonyName = ColonyAt(target)!.Name; // read before AttackColony hands the colony over
+        Colony colony = ColonyAt(target)!;
+        string colonyName = colony.Name;         // read before AttackColony hands the colony over
+        bool humanVictim = IsHumanOwned(colony); // likewise — after a win the owner is the REF
         CombatResult result = AttackColony(attacker, target, RandomFor(refPlayer)); // INTERNAL overload → the REF's stream
-        if (result is CombatResult.GreatWin or CombatResult.Win)
+        if (humanVictim && result is CombatResult.GreatWin or CombatResult.Win)
         {
             _colonyLossNotices.Add(new ColonyLossNotice(refPlayer.NationId!, colonyName, target));
         }

@@ -162,6 +162,69 @@ public class RebelWarAiTests
     }
 
     [Fact]
+    public void Ref_CapturesAnAiRebelsColony_WithNoHumanFacingLossNotice()
+    {
+        // The REF's OWN offensive against an AI rebel (CaptureRebelColony): a King's regular beside the rebel's
+        // undefended colony takes it on the REF's turn. 86d3jgwhj: before the gate the REF-side helpers recorded a
+        // ColonyLossNotice unconditionally, so a war between the King and an AI rebel spammed the human with loss
+        // notices about a war they are not part of. The notice must now stay empty (the human's victim log), while the
+        // capture itself still happens.
+        (Game game, Player rebel, Colony colony, Player refP) = AiRebelAtWar();
+        Position beside = colony.Position.Neighbours().First(n => FreeLandTile(game, n));
+        game.SpawnUnit(Classic.Unit(KingsRegular), beside, refP.PlayerId); // a landed redcoat beside the rebel port
+
+        game.EndTurn(); // the (unit-less) rebel does nothing; the REF regular captures the undefended colony
+
+        Assert.Equal(refP.PlayerId, game.ColonyAt(colony.Position)!.OwnerId); // the King took it
+        Assert.Empty(game.ColonyLossNotices); // …but the human — no party to this war — is never told
+        Assert.Empty(game.CombatNotices);
+    }
+
+    [Fact]
+    public void Ref_FightsAnAiRebelsGarrison_WithNoHumanFacingCombatNotice()
+    {
+        // The REF's OWN offensive against a garrisoned AI-rebel colony (AttackRebelUnit — the "garrisoned → fight the
+        // defender" branch): a King's regular beside a defended rebel colony fights its garrison on the REF's turn.
+        // 86d3jgwhj: AttackRebelUnit recorded a CombatNotice unconditionally; a REF-vs-AI-rebel battle must record none.
+        // Whatever fires this war turn — the REF attacking the garrison, or the rebel sortieing (already gated) — no
+        // human-facing notice may appear, since the human is not a party.
+        (Game game, Player rebel, Colony colony, Player refP) = AiRebelAtWar();
+        Position onColony = colony.Position;
+        Unit garrison = ArmedRebel(game, rebel, onColony); // an armed rebel standing in the colony → it is defended
+        garrison.Orders = UnitOrders.Fortified;            // dug in → the rebel offensive leaves it; the REF strikes it
+        Position beside = onColony.Neighbours().First(n => FreeLandTile(game, n));
+        game.SpawnUnit(Classic.Unit(KingsRegular), beside, refP.PlayerId);
+
+        game.EndTurn();
+
+        Assert.Empty(game.CombatNotices);     // REF-vs-AI-rebel combat never reaches the human's victim log
+        Assert.Empty(game.ColonyLossNotices);
+    }
+
+    [Fact]
+    public void Ref_CapturingTheHumanRebelsColony_StillNotifiesTheHuman()
+    {
+        // The regression pin: the human-victim gate must NOT over-suppress. When the HUMAN is the rebel, the REF taking
+        // their colony is very much their business — the ColonyLossNotice must still fire (the human declared, so
+        // IsHumanOwned is true even as a Rebel). This is the case AttackRebelUnit/CaptureRebelColony were written for.
+        Game game = Game.New(Classic, Seed);
+        Player human = game.HumanPlayer;
+        Colony colony = FoundColonyFor(game, human);
+        colony.Liberty = Colony.LibertyPerRebel * colony.Population; // 100% national SoL → eligible to declare
+        game.DeclareIndependence(human);
+        Player refP = Ref(game);
+        ClearRef(game, refP);
+        Assert.Equal(PlayerType.Rebel, human.PlayerType);
+        Position beside = colony.Position.Neighbours().First(n => FreeLandTile(game, n));
+        game.SpawnUnit(Classic.Unit(KingsRegular), beside, refP.PlayerId);
+
+        game.EndTurn();
+
+        Assert.Equal(refP.PlayerId, game.ColonyAt(colony.Position)!.OwnerId); // the King took the human's colony…
+        Assert.NotEmpty(game.ColonyLossNotices);                             // …and the human is told (their own loss)
+    }
+
+    [Fact]
     public void RebelRefWar_IsDeterministic_AcrossTwinGames()
     {
         // The whole offensive draws only the rebel's own seeded stream (target selection is RNG-free; combat is
