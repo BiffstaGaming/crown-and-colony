@@ -8655,15 +8655,28 @@ public sealed partial class Game
 
         // Sell the surplus of each tradeable good (the colony centre and worked tiles yield cash crops/ore
         // unattended) to the power's own market. Food is kept so the colony never starves itself for gold.
+        // A colony that has built a custom house instead FLAGS each such good for auto-export (86d3fpz8d): the
+        // custom-house auto-sell (RunColonyTurn → AutoSellExports, run earlier in the turn) then ships the surplus
+        // down to the same reserve line, exercising the foreign-power custom-house path. Selling that good directly
+        // here would double up, so a custom-house colony skips the direct sale — the auto-sell owns it.
         foreach (Colony colony in ColoniesOf(power).OrderBy(c => c.Id))
         {
+            bool hasCustomHouse = ColonyHasExportAbility(colony);
             foreach (string goodsId in colony.Stores.Keys.OrderBy(g => g, StringComparer.Ordinal).ToList())
             {
                 if (goodsId == Colony.FoodId || !power.Market.IsTradeable(goodsId))
                 {
                     continue;
                 }
-                int reserve = goodsId == ToolsGoodsId ? toolsReserve : MilitaryReserveFor(power, colony, goodsId);
+                int reserve = AiGoodsReserve(power, colony, goodsId, toolsReserve);
+                if (hasCustomHouse)
+                {
+                    // Route this good through the custom house: flag it for export, keeping the same reserve as the
+                    // keep-level, so AutoSellExports ships everything above the reserve to the power's own market next
+                    // turn. RNG-free state write (Colony.Exports round-trips at v28/v67 — no new save field).
+                    SetColonyExport(colony, goodsId, exported: true, exportLevel: reserve);
+                    continue;
+                }
                 int surplus = colony.StoreOf(goodsId) - reserve;
                 if (surplus > 0)
                 {
@@ -9531,6 +9544,17 @@ public sealed partial class Game
     /// 50 horses when the colony also stocks enough horses to mount a dragoon (the role the arm step prefers). Returns
     /// 0 (sell everything) otherwise. RNG-free read.
     /// </summary>
+    /// <summary>
+    /// How much of <paramref name="goodsId"/> a foreign-power colony keeps back from the surplus sell — the reserve
+    /// consulted both by the direct economy sell loop and by the custom-house export-flagging (86d3fpz8d), so a
+    /// custom-house colony sells down to the <em>same</em> line a colony without one would. Tools use the
+    /// pioneer-equipment reserve (<paramref name="toolsReserve"/>, pre-computed per power); muskets/horses use the
+    /// <see cref="MilitaryReserveFor">defence-arming reserve</see>; every other good keeps <see cref="AiTradeReserve"/>
+    /// (0 — sell it all). RNG-free read.
+    /// </summary>
+    private int AiGoodsReserve(Player power, Colony colony, string goodsId, int toolsReserve) =>
+        goodsId == ToolsGoodsId ? toolsReserve : MilitaryReserveFor(power, colony, goodsId);
+
     private int MilitaryReserveFor(Player power, Colony colony, string goodsId)
     {
         if ((goodsId != MusketsId && goodsId != HorsesId) || ColonyHasMilitaryDefender(colony))

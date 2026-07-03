@@ -37,6 +37,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-03 — AI actually USES custom houses (86d3fpz8d) ✅
+
+**Requested:** make the AI actually drive the foreign-custom-house / trade-route capability (the engine already handles foreign powers, but the AI never exercised either path). Prefer the smaller safer win; the soak (twin-determinism + round-trip + invariants) must stay green.
+**Did:**
+- **Picked Option 1 (AI custom houses)** — the mechanism was *almost* complete: the AI already elects **Stuyvesant** outright (`SelectFoundingFatherFor`) and builds a custom house (`RunForeignColonyBuildPlan`, EXPORT is level-exempt), but in the default **PerGood** auto-export mode it never *flagged* a good, so the foreign-power `AutoSellExports` path (which already runs for every colonial player in `RunColonyTurn`) sold nothing. Diagnostic confirmed **0 AI custom houses actually export** across 25 soak seeds.
+- **The fix:** in `RunForeignPowerEconomy`'s per-colony sell loop, a colony that `ColonyHasExportAbility` now **flags each tradeable non-food good for export** (`SetColonyExport`, keep-level = reserve) **instead of** direct-selling — so the earlier-running custom-house auto-sell ships the surplus to the power's own market. Extracted the shared per-good reserve into `AiGoodsReserve(...)` (tools/military reserves preserved) so a custom-house colony and one without sell to the same line and never double-sell.
+- **Determinism/safety:** RNG-free flag write; the sale draws no RNG and trades the power's **own** market → human stream 0 untouched. Flags ride the existing `Colony.Exports` save tokens — **no save bump (still v69)**.
+- **Tests:** +5 L2 `AiCustomHouseTests` (flags-then-auto-sells; no-CH sells the old way; 40-turn store/gold-never-negative invariant; save round-trip no-bump; **twin-determinism with the path active**).
+- **Docs (same commit):** `docs/systems/custom-house.md` (both layers + L2 verification row + TODO + changelog), `docs/systems/players.md` (technical note + changelog). XML `///` on the new `AiGoodsReserve`.
+**Status:** `dotnet build` slnx green; **L1/L2 2704 green** (+5 new) and **5 soak green** — twin-determinism ✓, byte-identical round-trip ✓, invariants (pop≥1, stores≥0, gold≥0, no softlock) ✓. Soak evolution byte-identical to before (no soak colony builds a custom house in the 200-turn window). L3/L4 (Godot) not run locally — CI covers them; no presentation change. Committed in this worktree (not pushed).
+**Changed:** `game/src/GameLogic/GameSession/Game.cs` (`RunForeignPowerEconomy` sell-loop branch + new `AiGoodsReserve` helper), `game/tests/GameLogic.Tests/GameSession/AiCustomHouseTests.cs` (new), `docs/systems/custom-house.md`, `docs/systems/players.md`.
+**Decisions:** did **not** implement Option 2 (AI trade routes) — Option 1 is the cleaner, safer win and the task asked for at least one. Did **not** touch father-election timing / custom-house build value — that would shift the whole soak evolution and is risky; left as a documented follow-up. The path is proven by targeted L2 fixtures rather than organically in the soak, because the AI only reaches Stuyvesant + a finished custom house late in a full game (rare in 200 turns).
+**Scheduled next:** integrator merges this worktree; then **Option 2 — AI trade routes** (a minimal deterministic surplus→Europe route heuristic for an idle carrier) is the natural follow-up under the same task family, or the next Ready backlog item. (Task `86d3fpz8d` → In Review, since the "AI reaches a custom house organically" tuning is a design call.)
+**Follow-ups:** (1) tune AI Stuyvesant priority / custom-house build value so a rival reaches one **mid-game** and the path fires in normal play (would deliberately shift the soak — separately verified); (2) Option 2 AI trade routes; (3) confirm L3/L4 green in CI post-merge (no presentation change here, so expected no-op).
+**Needs you:** a design call on whether to pursue the mid-game-organic tuning (follow-up 1) — it changes the soak's evolution on purpose. The shipped change itself is soak-safe and self-contained.
+
+---
+
 ## 2026-07-03 — Natural-disaster parity: remaining effects + terrain-mapped pool (86d3fq0ye) ✅
 
 **Requested:** complete the two remaining gaps in the natural-disaster system — model+apply the three dropped effect kinds (lossOfBuilding / lossOfUnit / damagedUnit), and make the disaster pool the struck colony's centre-tile terrain's weighted list (both inert in classic, `naturalDisasters` defaults 0).
