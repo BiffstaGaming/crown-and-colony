@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-03 — UI polish: framed every screen message in the parchment image (32 surfaces) ✅
+
+**Requested (Chris):** final-run polish — go through every screen message and ensure it sits within an image frame, not just a transparent box.
+**Did:**
+- **Audited** all message/dialog/notice surfaces (parallel read-only workflow): 45 total, 13 already framed, **32 unframed** (raw Godot `ConfirmationDialog`/`AcceptDialog` on the default flat-gray window, or bare `PanelContainer`s with no parchment stylebox).
+- **Framed all 32 uniformly** with the existing framed-panel idiom (presentation-only, ADR-006): new one-call `ColonyArt.FramePanel(PanelContainer, dense)` (assigns `ColonyTheme` dark-ink-on-parchment + the `ParchmentSkin()` background) in the 19 bare panel classes; a theme-level parchment `panel` stylebox for the `AcceptDialog` type in `ColonyTheme` (frames every raw dialog at once — Sail-to-Europe/Disband/Cash-in/Rename/Name-New-World/Native-land/quit/overwrite — since `ConfirmationDialog`/`FileDialog` inherit it); plus the game-over card, F1 keys legend (a `Label` via its `normal` stylebox), and the right-click tile menu.
+- **Deliberately left one:** the persistent top HUD status line (turn/order hints) — HUD chrome, not a transient popup, reads fine over the map, and it's in the `map` golden. Flagged as a decision (`86d3jmhfh`).
+**Status:** **no behaviour/save change; golden-neutral** (colony/europe — the only golden-captured panels — were already framed). **L3: 327 scene tests green** · **CI green both jobs** (`c4d3b6d`). **Visually verified** (captured + eyeballed the Reports panel + the Sail-to-Europe dialog rendering parchment). L1/L2 unaffected (no GameLogic change).
+**Changed:** `ColonyArt.cs` (FramePanel), `ColonyTheme.cs` (AcceptDialog panel), `GameController.cs` (7 dialogs + game-over + F1 legend + context menu), `ColonyPanel.cs` (1 dialog) + 17 panel classes; `docs/modules/presentation.md` changelog. Commit `c4d3b6d`.
+**Decisions:** framed via the theme (dialogs) + the shared `FramePanel` helper (panels) rather than per-surface bespoke styling, so the look is uniform and future message panels get it in one call; skipped the wood-border nine-patch overlay (the colony screen itself uses parchment-fill-alone, which the audit counts as framed) to stay golden-neutral and avoid per-surface .tscn churn.
+**Scheduled next (your steer):** back to the feature backlog — the two Ready small builds (in-game tutorial `86d3fq1h9`, opening cinematic `86d3fq1kf`), or localization phase 1 (`86d3fq1w6`, solo).
+**Follow-ups:** HUD status-line framing decision (`86d3jmhfh`); the wood-border overlay could be added later if you want the carved-wood edge on popups too (currently parchment-fill only, matching the colony screen).
+**Needs you:** review the look (all green, verified in captures but not playtested live). Visible: every popup/dialog/report/colopedia/message now renders on the FreeCol parchment with dark ink + wood buttons instead of a gray/transparent box. One call to make: do you want the top HUD status line boxed too (`86d3jmhfh`), or is it fine as HUD chrome?
+
+---
+
 ## 2026-07-03 — Parity Wave 9: 15 tasks shipped across 6 parallel streams (survived 3 spend-limit kills) → 968 Yes ✅
 
 **Requested (Chris):** work the backlog with parallel streams to minimise testing; complete the migration; don't defer.
