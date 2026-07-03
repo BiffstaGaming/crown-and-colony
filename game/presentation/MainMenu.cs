@@ -64,6 +64,28 @@ public partial class MainMenu : Control
         GetNode<Button>("Panel/VBox/HelpButton").Pressed += OnHelp;
         GetNode<Button>("Panel/VBox/AboutButton").Pressed += OnAbout;
         GetNode<Button>("Panel/VBox/QuitButton").Pressed += OnQuit;
+
+        ApplyLocalizedText();
+    }
+
+    /// <summary>
+    /// Sets the title, subtitle and every menu button from localization <b>keys</b> (looked up through
+    /// <see cref="Loc"/>) rather than the hard-coded English baked into the scene. This is the i18n proof slice
+    /// (86d3fq1w6): in the default English locale every string resolves byte-identically to the old text (so the
+    /// main-menu golden is unchanged), and switching the locale (see <see cref="Loc.SetLocale"/>) re-renders this
+    /// screen in the other language. Converting the remaining screens is the documented follow-up
+    /// (see <c>docs/systems/localization.md</c>).
+    /// </summary>
+    internal void ApplyLocalizedText()
+    {
+        GetNode<Label>("Panel/VBox/Title").Text = Loc.T("menu.title");
+        GetNode<Label>("Panel/VBox/Subtitle").Text = Loc.T("menu.subtitle");
+        GetNode<Button>("Panel/VBox/NewGameButton").Text = Loc.T("menu.new_game");
+        GetNode<Button>("Panel/VBox/LoadGameButton").Text = Loc.T("menu.load_game");
+        GetNode<Button>("Panel/VBox/SettingsButton").Text = Loc.T("menu.settings");
+        GetNode<Button>("Panel/VBox/HelpButton").Text = Loc.T("menu.help");
+        GetNode<Button>("Panel/VBox/AboutButton").Text = Loc.T("menu.about");
+        GetNode<Button>("Panel/VBox/QuitButton").Text = Loc.T("menu.quit");
     }
 
     /// <summary>

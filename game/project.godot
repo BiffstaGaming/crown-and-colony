@@ -19,6 +19,7 @@ boot_splash/bg_color=Color(0.04, 0.06, 0.1, 1)
 
 [autoload]
 
+Loc="*res://presentation/Loc.cs"
 Settings="*res://presentation/SettingsService.cs"
 Sound="*res://presentation/SoundService.cs"
 Music="*res://presentation/MusicService.cs"
@@ -26,6 +27,15 @@ Music="*res://presentation/MusicService.cs"
 [dotnet]
 
 project/assembly_name="CrownAndColony"
+
+[internationalization]
+
+; English is the default/fallback locale — a key with no entry for the active locale (or an app that never
+; switches locale) always shows the English string, kept byte-identical to the original hard-coded text.
+; The translation tables (res://localization/*.csv) are merged into the TranslationServer at startup by the
+; Loc autoload (game/presentation/Loc.cs) rather than via editor-imported *.translation binaries (which are
+; gitignored and never produced by the headless CI/test workflow). See docs/systems/localization.md.
+locale/fallback="en"
 
 [input]
 
