@@ -65,6 +65,7 @@ public static class ColonyTheme
         StyleLabels(theme);
         StyleSeparators(theme);
         StyleDialogs(theme);
+        StyleTooltip(theme);
         StyleHeaderVariation(theme, "SectionHeader", sectionSize);
         StyleHeaderVariation(theme, "ColonyTitle", titleSize);
         return theme;
@@ -80,6 +81,21 @@ public static class ColonyTheme
     private static void StyleDialogs(Theme theme)
     {
         theme.SetStylebox("panel", "AcceptDialog", ColonyArt.ParchmentSkin());
+    }
+
+    /// <summary>
+    /// Styles Godot's hover tooltips (<c>TooltipPanel</c> + <c>TooltipLabel</c>). Without this they rendered on the
+    /// engine's dark default panel while inheriting the theme's dark <see cref="Ink"/> label font — black text on a dark
+    /// box, unreadable (Chris's playtest: "Europe text isn't readable on the dark brown background with black writing",
+    /// 86d3jy0rn — the tooltips shown when hovering the recruit/buy buttons). A dark wood panel with cream text (matching
+    /// the buttons) reads clearly. The visual goldens never hover, so this adds no golden churn.
+    /// </summary>
+    private static void StyleTooltip(Theme theme)
+    {
+        var panel = WoodBox(WoodDark, Gold, borderW: 1);
+        panel.SetContentMarginAll(6);
+        theme.SetStylebox("panel", "TooltipPanel", panel);
+        theme.SetColor("font_color", "TooltipLabel", TextOnWood); // cream on dark wood — high contrast
     }
 
     // Compact content margins (8 L/R, 4 top/bottom) so the tiny tile ✕ and the building +/− buttons stay small.
