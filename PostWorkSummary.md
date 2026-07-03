@@ -19,6 +19,27 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-03 — HUD layout redesign: four framed regions + hierarchy (86d3jnbek) ✅
+
+**Requested (Chris):** a nicer HUD layout — approved the proposed mockup, "lets go ahead".
+**Did:**
+- **Audited the current HUD** (floating magic-offset widgets) and **rebuilt it as a composed layout** in one `GameController.LayoutHud()` (presentation-only, ADR-006; every node keeps its path so the ~30 scene-test node references are untouched — only reframe/reposition/restyle):
+  - **Top status strip** — the status label is now a slim parchment bar with the empire-at-a-glance line (nation · turn · date · gold · tax · liberty); the debug `seed` + key hints are gone, the calendar year folded in.
+  - **Action cluster** (bottom-right) — framed backing + tidy 2-column button grid, **End Turn** a full-width accent primary button; the backing hides with the buttons when a full-screen panel opens.
+  - **Selected-unit panel** — framed, moved to the bottom-centre gap; its order row switched to an `HFlowContainer` so the buttons wrap to a second row instead of running under the corners.
+  - **Mini-map** + the top-right **zoom/recentre cluster** — parchment backings + wood buttons.
+  - Advisor card cleared below the strip; its `•` bullet fixed (was a mojibaked `�`). New `ColonyArt.ParchmentSkin(margin)` overload.
+- **Verified visually** in-engine (captured the fresh + unit-selected HUD, iterated on two collisions — advisor/status overlap and the unit panel clipping the mini-map — until clean).
+- **Golden regen (deliberate):** the map goldens hide the UI so they're unaffected; the colony/europe/pause goldens capture the surrounding HUD chrome, so they were regenerated on the **CI Linux runner** (golden_update dispatch), adopted (only those 3; verified each shows the unchanged panel with the new framed HUD around it), and validated green on CI.
+**Status:** **L3: 327 scene tests green** (3 goldens re-baselined) · **CI green both jobs** on main (`0c456f9`, fast-forwarded from a CI-verified branch). No behaviour/save change; L1/L2 unaffected (presentation only).
+**Changed:** `GameController.cs` (LayoutHud + status text), `ColonyArt.cs` (ParchmentSkin overload), `MapControlsOverlay.cs`, `AdvisorPanel.cs`, `main.tscn` (Orders → HFlowContainer), 3 golden PNGs; `docs/modules/presentation.md`. Commits `7a089eb`, `0c456f9`.
+**Decisions:** kept every node at its path (reframe/reposition, no reparenting) so no test node-path churn; framed via the shared `ParchmentSkin`/`ColonyTheme` idiom for consistency; regenerated goldens CI-side (Windows-vs-Linux font AA is unreliable for local golden adoption). Superseded the status-line follow-up `86d3jmhfh` (the strip frames it).
+**Scheduled next (your steer):** back to the feature backlog — the two Ready small builds (in-game tutorial `86d3fq1h9`, opening cinematic `86d3fq1kf`), or localization phase 1 (`86d3fq1w6`, solo).
+**Follow-ups:** the HUD is code-positioned in `LayoutHud` (magic offsets in C# rather than the scene) — fine, but a later pass could move it into `main.tscn` containers if desired. Source-comment `�` mojibake remains in a few presentation files (cosmetic, not user-visible).
+**Needs you:** review the look (verified in captures + the committed colony/europe/pause goldens, not live-playtested). The HUD now reads as four framed parchment regions with End Turn as the clear primary action. Run the game to see it in motion.
+
+---
+
 ## 2026-07-03 — UI polish: framed every screen message in the parchment image (32 surfaces) ✅
 
 **Requested (Chris):** final-run polish — go through every screen message and ensure it sits within an image frame, not just a transparent box.
