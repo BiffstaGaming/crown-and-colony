@@ -19,6 +19,29 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-03 — Parity Wave 9: 15 tasks shipped across 6 parallel streams (survived 3 spend-limit kills) → 968 Yes ✅
+
+**Requested (Chris):** work the backlog with parallel streams to minimise testing; complete the migration; don't defer.
+**Did:**
+- **6 disjoint worktree streams → 15 backlog tasks shipped**, integrated as staged pushed milestones (each CI-green before the next):
+  - **S-A Market:** rival-market trade propagation (`86d3fpyx3`) + per-turn drift toward baseline (`86d3fpyyq`) — new `Game.MarketDynamics.cs`, reserved RNG **stream 105**, 4 Game.cs seams I wired at integration (FreeCol `propagateToEuropeanMarkets`/`csYearlyGoodsAdjust`).
+  - **S-B Independence:** FreeCol-faithful per-colony SoL average (`86d3hzz4w`) + native re-stancing on declaration (`86d3fq0b9`) — **research caught the ClickUp blurb had ally/enemy inverted vs the Java**; implemented per source (least-hostile tribe = the ally).
+  - **S-C Persistence/MapGen:** disaster-modifier save persistence (`86d3hz9ga`), gen-time MOUNDS pre-stamp (`86d3fpxv8`, stream 106, 2 explore-path seams I wired), river regions + nine geographic-thirds boxes (`86d3fpxnm`) — **sole save-bump v68→v69**; corrected a false matrix premise (FreeCol declares but never instantiates COAST/DESERT).
+  - **S-D Game.cs AI:** offensive rebel-vs-REF war AI (`86d3e4q65`, closes `86d3fq0cf` Partial→Yes) + 3 FreeCol-exactness nits (`86d3hjz87`).
+  - **S-E Setup UI:** editable custom difficulty (`86d3fq0x7`), map-import UI (`86d3fq1cg`), `.MP` binary loader port (`86d3fpxjc`) — GameController bridge seams I wired.
+  - **S-F Presentation:** music context switching menu/peace/war (`86d3fq1wy`) + New-Game bridge L3 test (`86d3fy56v`).
+- **Adversarial review (Opus 4.8, 4 dims × verify): 0 serious, 1 confirmed minor** — a stale `MarketDynamicsTests` header (written pre-seam-wiring) asserting the seams were unwired; fixed it + added an end-to-end `EndTurn` test closing the drift-tick coverage gap it flagged.
+- **P7 trademark clearance** (`86d3e98df` → In Review): "Crown & Colony" = **LOW risk, proceed with the free release**; 15-min manual AU/UK/EU register check flagged for you.
+- **Scoped 3 big items to Ready** with full build-scopes on-task: tutorial (`86d3fq1h9`, S), cinematic (`86d3fq1kf`, S), localization (`86d3fq1w6`, M phase-1, solo-only).
+**Status:** **main @ `843e800`, pushed, CI green both jobs** (L1+L2 + L3). **2690 L1/L2 + 5/5 soak green.** **Save v68→v69** (additive, default byte-identical). **Feature-parity: 959 → 968 Yes / 20 Partial / 27 No** (+9 Yes; the extra flips are matrix corrections found during the wave).
+**Changed:** `Game.cs`, `Game.MarketDynamics.cs` (new), `Game.Persistence.cs` (new), `Game.Independence.cs`, `Game.Natives.cs`, `Market.cs`, `SaveGame.cs`, `MapImporter.cs`, `NewGameDialog.cs`, `DifficultyEditor.cs` (new), `GameController.cs`, `MusicContextSelector.cs` (new), `World/*` regions, ~14 test files; docs across market/independence/natives/colonies/save-load/lost-city-rumours/map-terrain/difficulty/audio/presentation + feature-parity. Commits `15f36c6`..`843e800`.
+**Decisions:** the spend limit killed the fleet **3×** mid-run — recovered by resuming dead agents from their retained transcripts (2 returned "WORKSPACE GONE" + full design dumps → relaunched as fresh worktrees with the dump as spec; later kills left committed work intact via the commit-incrementally rule). Integrated in **staged pushed milestones** rather than one big merge, so each landed CI-verified. Wired all cross-file seams myself at integration (streams can't test seams in their own worktree).
+**Scheduled next (your steer):** the two Ready small builds — **in-game tutorial `86d3fq1h9`** (high) and **opening cinematic `86d3fq1kf`** (high) — both parallel-worktree-safe with scopes on-task; then **localization phase 1 `86d3fq1w6`** (solo). Larger remaining: the rival-AI colonial-economy epic (`86d3fq1c9`).
+**Follow-ups:** war-music asset sourcing (`86d3jh3rh`), REF notice-gating for AI-rebel wars (`86d3jgwhj`), QA L3 player-flow coverage (`86d3f62r5`), custom-difficulty save persistence (noted on `86d3fq0x7`).
+**Needs you:** review the wave (all green, none playtested). Visible: trading in Europe now nudges rival prices + markets self-heal yearly; provoking then declaring independence re-sides the tribes; music shifts to a tenser bed at war; New-Game gains custom difficulty + "Import map…" (.txt/.MP). **Trademark:** do the 15-min manual IP-Australia check before any paid release. **Heads-up:** save format is now v69 (old saves still load).
+
+---
+
 ## 2026-07-02 — Native uprising / nation-level WAR stance (86d3fpzqf) — built, review-caught flag-only, wired a consumer → 959 Yes ✅
 
 **Requested (Chris):** work through more tasks — I took the native-uprising determinism-parity feature (a native nation forms a WAR stance when its tribe alarm peaks), kept transient + RNG-free so the soak stays byte-identical.
