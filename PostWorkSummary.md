@@ -53,6 +53,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-03 — Opening cinematic / new-game intro (86d3fq1kf) ✅
+
+**Requested:** add a skippable opening cinematic — a few atmospheric 1492-expedition narrative panels shown when starting a NEW game (after New-Game setup, before the board), then fade into the game.
+**Did:**
+- **New `OpeningCinematic`** (`game/presentation/`, code-built `Control`): the menu's map/parchment backdrop + a dim vignette + a centred parchment beat panel; **4 fixed narrative beats** (King's charter → ocean crossing → landfall → send-off) as a `Tween` fade-in/hold/fade-out chain, then raises `Finished`. **Skippable/non-blocking:** left-click advances a beat; **Skip ▸** button + **Esc** end it at once (one-shot `Finish`). No new assets, no audio, no RNG (ADR-009).
+- **Wired into the interactive path only:** `MainMenu.OnNewGame` → `StartGameAfterIntro` shows the cinematic (gated on `ShouldPlayIntro`), and boots the game on its `Finished`. **Deliberately NOT injected into `GameController.StartNewGame`** — the L3 fast path + goldens that call it directly are untouched.
+- **Settings toggle:** new `SettingsModel.PlayIntro` (engine-free, default **on**, key `play_intro`, persisted in settings.cfg) + a code-built "Play opening intro" toggle in the Settings→Game section (no scene edit, mirrors the message-popup toggles). Off → straight to game.
+- **Tests:** +6 L3 (`OpeningCinematicTests` — first beat shows; Skip/Esc/click-through raise `Finished` once; MainMenu shows the cinematic when on, gate follows the setting) + L1 `PlayIntro` default/round-trip/missing-key. Docs: new `docs/systems/opening-cinematic.md` (dual-audience) + changelog rows in `presentation.md` & `settings.md`; XML `///` on the new types.
+**Status:** **build green** (slnx + csproj, 0 warn). **L1/L2 2693 green.** **Full L3/L4 suite 334/334 green** (328 baseline + 6 new), run twice, deterministic. Committed in worktree (not pushed) — see hash below.
+**Changed:** new `OpeningCinematic.cs`(+`.uid`), `OpeningCinematicTests.cs`(+`.uid`); `MainMenu.cs`, `SettingsScreen.cs`, `SettingsModel.cs`, `SettingsModelTests.cs`; regenerated `settings-screen.png` golden; new `docs/systems/opening-cinematic.md`; `docs/modules/presentation.md`, `docs/systems/settings.md`.
+**Decisions:** (1) Cinematic kept OUT of `StartNewGame` (front step in the *interactive* flow only) so tests/goldens/fast-path are safe. (2) **Save format untouched** — `SaveGame.CurrentVersion` stays 69; `PlayIntro` is a client option, not save state. (3) **`settings-screen` golden regenerated** for the new toggle row (17.6% diff, same size) — matches prior precedent (mute/keybindings/message-toggle regens); done on Windows, all other committed goldens also pass on this host, but the integrator should re-adopt the canonical **CI-Linux** baseline if the 2% text tolerance is exceeded there. (4) Fixed a test-contamination bug found en route: the OFF-path wiring test originally fired the real `ChangeSceneToFile`, which swapped the shared root scene under later suites (broke 10 map/render goldens) — reworked to assert the internal `ShouldPlayIntro` gate hermetically instead (project convention: never fire the real nav in a test).
+**Scheduled next (your steer):** in-game tutorial `86d3fq1h9` (Ready) — the other queued new-player feature; or localization phase 1 `86d3fq1w6`.
+**Follow-ups:** optional war/menu **music** cue under the intro is a separate audio task (cinematic plays silent by design); optional future per-beat art/Ken-Burns pan if license-clear art appears; integrator to confirm the regenerated settings golden holds on CI-Linux (else re-adopt via `GOLDEN_UPDATE=1` workflow_dispatch).
+**Needs you:** nothing blocking — playtest the intro when convenient (verified via L3, not a manual playthrough). Confirm you're happy with the 4 narrative beats' wording.
+
+---
+
 ## 2026-07-03 — Friendly display names game-wide + Colopedia overhaul (86d3jr55y) ✅
 
 **Requested (Chris):** the Colopedia's look needs a lot of work, and why do items show as raw `freeColonist` instead of a UI-friendly name?

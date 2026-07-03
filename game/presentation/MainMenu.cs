@@ -86,9 +86,43 @@ public partial class MainMenu : Control
             GameController.PendingLandMass = land;
             GameController.PendingDifficulty = difficulty;
             GameController.PendingMapSource = mapSource;
-            GetTree().ChangeSceneToFile(GameScenePath);
+            // The setup picks now ride the Pending* statics across the scene change; play the optional opening cinematic
+            // first (interactive New-Game path only), then boot the game. The cinematic is a presentation-only front step
+            // (ADR-006): it changes nothing, and is NOT injected into GameController.StartNewGame — the fast path many L3
+            // tests take stays intact. Skipped entirely when the player has turned the intro off.
+            StartGameAfterIntro();
         });
     }
+
+    /// <summary>
+    /// Plays the skippable opening cinematic (86d3fq1kf) and then boots the game scene — the interactive New-Game
+    /// hand-off. When the intro is off (<see cref="ShouldPlayIntro"/> false) this goes straight to the game so nothing
+    /// is delayed. Otherwise an <see cref="OpeningCinematic"/> overlay is shown; its <see cref="OpeningCinematic.Finished"/>
+    /// signal (fired when it plays through, is clicked past, skipped, or Esc'd) advances to the game exactly once.
+    /// </summary>
+    private void StartGameAfterIntro()
+    {
+        if (!ShouldPlayIntro())
+        {
+            GetTree().ChangeSceneToFile(GameScenePath);
+            return;
+        }
+        var cinematic = new OpeningCinematic { Name = "OpeningCinematic" };
+        cinematic.Finished += () => GetTree().ChangeSceneToFile(GameScenePath);
+        AddChild(cinematic);
+        cinematic.Play();
+    }
+
+    /// <summary>
+    /// Whether the interactive New-Game path should play the opening cinematic (86d3fq1kf): true when the Settings
+    /// autoload's "Play intro" option (<see cref="GameLogic.App.SettingsModel.PlayIntro"/>) is on. When the autoload is
+    /// absent (a bare test scene with no <c>/root/Settings</c>) this is false, so nothing is delayed and the game boots
+    /// straight away. Exposed <c>internal</c> so the L3 suite can assert the gate decision without firing the scene
+    /// change (the project's test-seam convention — the actual navigation stays untested to avoid freeing the scene out
+    /// from under the runner, matching <see cref="MainMenuTests"/>).
+    /// </summary>
+    internal bool ShouldPlayIntro() =>
+        GetNodeOrNull<SettingsService>("/root/Settings")?.Settings.PlayIntro ?? false;
 
     /// <summary>Opens the save-slot dialog; choosing a save boots the game scene loaded from it.</summary>
     private void OnLoadGame()

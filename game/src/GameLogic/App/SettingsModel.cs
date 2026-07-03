@@ -38,6 +38,7 @@ public sealed class SettingsModel
     private const string KeyAutosavePeriod = "autosave_period";
     private const string KeyHiddenMessageCategories = "hidden_message_categories";
     private const string KeySilencedMessageCategories = "silenced_message_categories";
+    private const string KeyPlayIntro = "play_intro";
 
     /// <summary>Smallest allowed <see cref="UiScale"/> (75% — text/UI noticeably tighter but still legible).</summary>
     public const float MinUiScale = 0.75f;
@@ -84,6 +85,15 @@ public sealed class SettingsModel
     /// FreeCol's <c>ClientOptions.AUTOSAVE_PERIOD</c>. Default: 1 (autosave every turn).
     /// </summary>
     public int AutosavePeriod { get; set; } = 1;
+
+    /// <summary>
+    /// Whether the short <b>opening cinematic</b> (the 1492-expedition narrative beats) plays when the player starts a
+    /// <b>new</b> game from the main menu, before the game board appears. A client preference (no FreeCol equivalent —
+    /// FreeCol has only a static splash); presentation-only, it gates a purely cosmetic front step and never touches
+    /// game rules or the save. The intro is always skippable regardless of this toggle; turning it off skips it up
+    /// front so an experienced player goes straight into the game. Default: on.
+    /// </summary>
+    public bool PlayIntro { get; set; } = true;
 
     /// <summary>
     /// The message-log categories the player has chosen to <b>hide</b> — events of these kinds are filtered out of the
@@ -139,6 +149,7 @@ public sealed class SettingsModel
             [KeyUiScale] = UiScale.ToString("R", CultureInfo.InvariantCulture),
             [KeyColorblind] = ColorblindMode ? "true" : "false",
             [KeyAutosavePeriod] = AutosavePeriod.ToString(CultureInfo.InvariantCulture),
+            [KeyPlayIntro] = PlayIntro ? "true" : "false",
         };
         // Hidden message categories: omitted entirely when none are hidden (the default), so a player who never
         // touched the filter keeps a settings file with no extra key — written sorted by ordinal for a stable layout.
@@ -179,6 +190,10 @@ public sealed class SettingsModel
         if (data.TryGetValue(KeyColorblind, out string? cb))
         {
             m.ColorblindMode = cb.Equals("true", StringComparison.OrdinalIgnoreCase);
+        }
+        if (data.TryGetValue(KeyPlayIntro, out string? intro))
+        {
+            m.PlayIntro = intro.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
         if (data.TryGetValue(KeyAutosavePeriod, out string? ap)
             && int.TryParse(ap, NumberStyles.Integer, CultureInfo.InvariantCulture, out int period))

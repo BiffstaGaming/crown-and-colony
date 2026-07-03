@@ -34,6 +34,7 @@ public partial class SettingsScreen : Control
     private Label _uiScaleValue = null!;
     private CheckButton _colorblind = null!;
     private SpinBox _autosave = null!;
+    private CheckButton _playIntro = null!;
     private bool _populating;
 
     /// <summary>Builds the look, resolves the settings service, populates the controls, and wires them.</summary>
@@ -83,7 +84,8 @@ public partial class SettingsScreen : Control
         _uiScale.ValueChanged += OnUiScale;
         _colorblind.Toggled += OnColorblind;
         _autosave.ValueChanged += OnAutosavePeriod;
-        BuildTutorialToggle(); // the guided-intro tutorial-hints preference (86d3fq1h9), built in code (no scene edit)
+        BuildTutorialToggle();  // the guided-intro tutorial-hints preference (86d3fq1h9), built in code (no scene edit)
+        BuildPlayIntroToggle(); // the opening-cinematic toggle (86d3fq1kf), built in code (no scene edit)
         BuildMessagePopupToggles(); // the per-category popup-vs-silent message preference (86d3fq1tc), built in code (no scene edit)
         GetNode<Button>("Panel/VBox/KeyBindingsButton").Pressed += OnKeyBindings;
         GetNode<Button>("Panel/VBox/BackButton").Pressed += OnBack;
@@ -125,6 +127,45 @@ public partial class SettingsScreen : Control
             return;
         }
         _service.SetTutorialHints(enabled);
+    }
+
+    /// <summary>
+    /// Builds the <b>Play intro</b> toggle in code (no scene edit, like the message-popup toggles): a labelled
+    /// <see cref="CheckButton"/> placed in the <b>Game</b> section just under the autosave row (above Key Bindings). It
+    /// is ticked when the opening cinematic (86d3fq1kf) plays on a new game (the default) and un-ticked to skip it. The
+    /// wrapper row is named <c>PlayIntroRow</c> and the check <c>PlayIntroCheck</c> so the L3 test can address it by a
+    /// stable path. Toggling it mutates the live <see cref="SettingsModel.PlayIntro"/> option through the service (Back
+    /// persists it like every other setting). Presentation-only (ADR-006): a client preference, no game rule.
+    /// </summary>
+    private void BuildPlayIntroToggle()
+    {
+        var vbox = GetNode<VBoxContainer>("Panel/VBox");
+        int insertAt = GetNode<Button>("Panel/VBox/KeyBindingsButton").GetIndex();
+
+        var row = new HBoxContainer { Name = "PlayIntroRow" };
+        row.AddThemeConstantOverride("separation", 12);
+        row.AddChild(new Label
+        {
+            Text = "Play opening intro",
+            CustomMinimumSize = new Vector2(220, 0),
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+        });
+        _playIntro = new CheckButton { Name = "PlayIntroCheck", ButtonPressed = _service.Settings.PlayIntro };
+        _playIntro.Toggled += OnPlayIntro;
+        row.AddChild(_playIntro);
+        vbox.AddChild(row);
+        vbox.MoveChild(row, insertAt); // directly under the autosave row, above the Key Bindings button
+    }
+
+    // The opening-cinematic toggle: on = play the intro for a new game, off = skip straight into the game. No engine
+    // effect to apply (it is read by the main menu when starting a new game), so a plain set-mutate suffices; Back persists.
+    private void OnPlayIntro(bool on)
+    {
+        if (_populating)
+        {
+            return;
+        }
+        _service.UpdateAndApply(s => s.PlayIntro = on);
     }
 
     // Display order + label for each message category's popup toggle (matches the MessageLogPanel filter order).

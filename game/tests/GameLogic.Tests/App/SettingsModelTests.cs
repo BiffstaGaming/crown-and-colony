@@ -19,6 +19,7 @@ public class SettingsModelTests
         Assert.Equal(1.0f, m.UiScale);     // accessibility: no scaling by default
         Assert.False(m.ColorblindMode);    // accessibility: default ruleset palette
         Assert.Equal(1, m.AutosavePeriod); // autosave every turn by default (FreeCol AUTOSAVE_PERIOD)
+        Assert.True(m.PlayIntro);          // the opening cinematic plays for a new game by default (86d3fq1kf)
     }
 
     [Fact]
@@ -74,6 +75,7 @@ public class SettingsModelTests
             UiScale = 1.5f,
             ColorblindMode = true,
             AutosavePeriod = 7,
+            PlayIntro = false,
         };
 
         SettingsModel restored = SettingsModel.FromDictionary(original.ToDictionary());
@@ -86,6 +88,7 @@ public class SettingsModelTests
         Assert.Equal(original.UiScale, restored.UiScale);
         Assert.Equal(original.ColorblindMode, restored.ColorblindMode);
         Assert.Equal(original.AutosavePeriod, restored.AutosavePeriod);
+        Assert.Equal(original.PlayIntro, restored.PlayIntro); // the opening-cinematic toggle round-trips (86d3fq1kf)
     }
 
     [Fact]
@@ -200,6 +203,7 @@ public class SettingsModelTests
         Assert.Equal(1.0f, m.UiScale);
         Assert.False(m.ColorblindMode);
         Assert.Equal(1, m.AutosavePeriod); // missing → default (every turn)
+        Assert.True(m.PlayIntro);          // missing → default (intro on)
     }
 
     [Fact]
