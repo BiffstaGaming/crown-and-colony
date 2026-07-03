@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-03 — UI run-through + clear the whole non-Australia backlog (session umbrella) ✅
+
+**Requested:** do another UI run-through and fix any annoying popups/on-screen messages; then complete **all** non-Australia backlog / ready / in-dev items so the **only** thing left outside In Review/Shipped is `[EPIC P8] Australia variant`. (Per-item detail is in the entries below this one.)
+**Did:**
+- **UI run-through (flag + fix):** a verified multi-agent audit of every on-screen message surface flagged 4 real annoyances; fixed the two that mattered with regular-user judgement — the **advisor card that reappeared after "Dismiss"** (RefreshView re-showed it every action; now sticky per-unit, resets on unit-change/new-turn) and the **"Game loaded" popup shown over an already-live game** (now keeps the tree paused behind the popup like OnSave). **Declined** a false positive (native tribute-demand panel — it is correctly non-blocking + auto-refusing; the suggested guard would show stale text). Shipped as `86d3jrzah`.
+- **Cleared every non-Australia item** (mix of hands-on + parallel worktree agents, each integrated as a staged CI-green milestone): REF combat-notice human-victim gate `86d3jgwhj`; natural-disaster parity `86d3fq0ye`; warehouse low/high water-mark warnings `86d3fq1ue`; in-game tutorial `86d3fq1h9`; opening cinematic `86d3fq1kf`; localization foundation + MainMenu slice `86d3fq1w6`; AI actually uses custom houses `86d3fpz8d`; L3 wiring-regression coverage `86d3f62r5` (+ fixed the real "Centre here" mis-wiring it surfaced); war-music research `86d3jh3rh`; EPIC P7 polish/release close-out `86d3b3r7e`.
+**Status:** **all merged to `main` and CI-green (both jobs — L1+L2 and the Godot L3/L4)** across ~10 staged pushes. Final tallies: **L1/L2 2709**, **L3/L4 ~367**, soak byte-identical. Board now shows **only `[EPIC P8] Australia variant`** outside In Review/Shipped — goal met.
+**Changed:** dozens of files across `game/` + `docs/` over the milestones (see each per-item entry below for specifics + commits). Head `fe54d0f`.
+**Decisions:** parallelised independent streams via isolated-worktree agents + integrated as staged, individually-CI-green milestones (survives interruption); **In Review vs Shipped** — pure, fully-CI-green logic/parity fixes → Shipped (REF gate, disasters); new player-facing UX + partial/foundation items awaiting your review → In Review (tutorial, cinematic, warehouse-defaults, localization-foundation, AI-custom-houses, P7, war-music). Did **not** create new backlog tasks for the documented follow-ups (they'd violate the "only P8 in backlog" goal) — captured them in-task/in-docs instead.
+**Scheduled next:** `[EPIC P8] Australia variant` (`86d3b3r7h`) — the only remaining item; decompose it into granular tasks when you start that phase.
+**Follow-ups (captured in-task/in-docs, no new kanban items):** localization full string sweep + language-picker; AI trade-routes Option 2 + organic-custom-house tuning (a soak-shifting design call); per-good warehouse-threshold UI; carved-wood frames for the advisor/unit-panel.
+**Needs you:** (1) **war-music licensing sign-off** — 2 CC-BY OpenGameArt candidates on `86d3jh3rh`; (2) **playtest** the tutorial + opening cinematic; (3) the two AI-trade design calls noted on `86d3fpz8d`.
+
+---
+
 ## 2026-07-03 — Localization foundation + Main Menu proof slice (86d3fq1w6) ✅
 
 **Requested:** build a clean, tested i18n **foundation** for multi-language strings and prove it end-to-end on the Main Menu; the full string sweep is an explicit follow-up. Scope tight (no GameController/Game.cs/test-file collisions with concurrent agents).
