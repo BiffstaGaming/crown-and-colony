@@ -43,6 +43,12 @@ parchment background, tiled as the panel fill so the map can't show through.
 Copied unmodified from FreeCol `data/base/resources/images/ui/bg_paper_brown.png`
 (GPL v2, ADR-014).
 
+**UI menu bar** (`ui/bg_menubar.png`, 1166×64) — a dark carved-wood horizontal
+strip, used (stretched to width) as the top HUD status-bar background so the
+empire-stat text reads as light-on-dark rather than dark-on-parchment (86d3jnbek).
+Copied unmodified from FreeCol `data/base/resources/images/ui/bg_menubar.png`
+(GPL v2, ADR-014).
+
 **UI border** (`ui/colony_border.png`, 194×194 nine-patch) — the colony
 window's carved-wood frame. **Composited** (not unmodified) from FreeCol's
 `data/base/resources/images/ui/border/carvedwood/carvedwoodenborder-{nw,n,ne,w,e,sw,s,se}.png`

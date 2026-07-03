@@ -404,33 +404,38 @@ public partial class GameController : Node2D
     {
         var ui = GetNode<CanvasLayer>("UI");
 
-        // ── Top status strip: the status label becomes a slim parchment bar spanning the top; it now carries the
-        //    empire-at-a-glance line (nation · turn · date · gold · tax · liberty, built in RefreshView), not the old
-        //    debug seed / key hints. The dedicated calendar readout is folded into the strip, so hide its panel (its
-        //    label keeps updating — MainSceneTests reads CalendarLabel.Text).
-        _statusLabel.Theme = ColonyTheme.Get();
-        _statusLabel.AddThemeStyleboxOverride("normal", ColonyArt.ParchmentSkin(8));
+        // ── Top status strip: the status label becomes a dark carved-wood bar spanning the top (FreeCol's bg_menubar),
+        //    carrying the empire-at-a-glance line (nation · turn · date · gold · tax · liberty, built in RefreshView) in
+        //    large cream text with a dark rim so it reads clearly — not the old thin dark-on-parchment / debug seed. The
+        //    calendar readout is folded in, so its panel is hidden (its label keeps updating — MainSceneTests reads it).
+        _statusLabel.Theme = ColonyTheme.GetInGame(); // the bolder in-game face
+        _statusLabel.AddThemeStyleboxOverride("normal", ColonyArt.MenuBarSkin());
+        _statusLabel.AddThemeColorOverride("font_color", new Color("#F3E4C3")); // warm cream on the wood grain
+        _statusLabel.AddThemeColorOverride("font_outline_color", new Color(0f, 0f, 0f, 0.65f));
+        _statusLabel.AddThemeConstantOverride("outline_size", 3); // a dark rim so the stats pop off the grain
+        _statusLabel.AddThemeFontSizeOverride("font_size", 19);
         _statusLabel.SetAnchorsPreset(Control.LayoutPreset.TopWide);
         _statusLabel.OffsetLeft = 12;
         _statusLabel.OffsetTop = 8;
         _statusLabel.OffsetRight = -12;
-        _statusLabel.OffsetBottom = 48;
+        _statusLabel.OffsetBottom = 50;
         _statusLabel.VerticalAlignment = VerticalAlignment.Center;
         GetNode<Control>("UI/CalendarPanel").Visible = false;
 
-        // ── Action cluster (bottom-right): a framed backing panel behind the report/menu buttons, laid out as a tidy
-        //    2-column grid with End Turn as a full-width primary button below. Buttons keep their flat paths; only
-        //    their offsets + End Turn's emphasis change. The backing is hidden with the buttons when a full-screen
-        //    panel opens (RefreshHudButtonVisibility), so it never floats beside an open panel.
+        // ── Action cluster (bottom-right): a parchment backing wrapped in the carved-wood frame (the same finished edge
+        //    the popups/colony screen carry), with the report/menu buttons in a 2-column grid inset inside the frame and
+        //    End Turn a full-width primary button below. Buttons keep their flat paths; only their offsets + End Turn's
+        //    emphasis change. The backing (and its frame) hide with the buttons when a full-screen panel opens.
         _actionClusterBack = new Panel { Name = "ActionClusterBack", MouseFilter = Control.MouseFilterEnum.Ignore };
-        _actionClusterBack.AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin(10));
+        _actionClusterBack.AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin());
         _actionClusterBack.SetAnchorsPreset(Control.LayoutPreset.BottomRight);
-        _actionClusterBack.OffsetLeft = -276;
-        _actionClusterBack.OffsetTop = -256;
+        _actionClusterBack.OffsetLeft = -312;
+        _actionClusterBack.OffsetTop = -320;
         _actionClusterBack.OffsetRight = -8;
         _actionClusterBack.OffsetBottom = -8;
         _actionClusterBack.GrowHorizontal = Control.GrowDirection.Begin;
         _actionClusterBack.GrowVertical = Control.GrowDirection.Begin;
+        ColonyArt.AddWoodFrame(_actionClusterBack);
         ui.AddChild(_actionClusterBack);
         ui.MoveChild(_actionClusterBack, 0); // draw behind every button and panel
 
@@ -443,22 +448,22 @@ public partial class GameController : Node2D
         PlaceGridButton(GetNode<Button>("UI/HighScoresButton"), 0, 3);
         PlaceGridButton(_independenceButton, 1, 3); // contextual (hidden until independence is reachable)
 
-        // End Turn: the one primary action — full width across the bottom of the cluster, taller, accent-styled.
+        // End Turn: the one primary action — full width across the bottom of the cluster (inside the frame), accent-styled.
         _endTurnButton.SetAnchorsPreset(Control.LayoutPreset.BottomRight);
-        _endTurnButton.OffsetLeft = -266;
-        _endTurnButton.OffsetTop = -52;
-        _endTurnButton.OffsetRight = -18;
-        _endTurnButton.OffsetBottom = -16;
+        _endTurnButton.OffsetLeft = -286;
+        _endTurnButton.OffsetTop = -80;
+        _endTurnButton.OffsetRight = -34;
+        _endTurnButton.OffsetBottom = -36;
         _endTurnButton.GrowHorizontal = Control.GrowDirection.Begin;
         _endTurnButton.GrowVertical = Control.GrowDirection.Begin;
         _endTurnButton.AddThemeStyleboxOverride("normal", PrimaryButtonStyle(strong: false));
         _endTurnButton.AddThemeStyleboxOverride("hover", PrimaryButtonStyle(strong: true));
         _endTurnButton.AddThemeStyleboxOverride("pressed", PrimaryButtonStyle(strong: true));
 
-        // ── Selected-unit panel (bottom-centre): framed, moved from the top-left into a centred bottom panel that
-        //    only appears when a unit is active (its visibility is still driven by selection in RefreshView). Fixed to
-        //    the clear centre gap between the mini-map (left) and the action cluster (right); its order buttons live in
-        //    an HFlowContainer now, so they wrap to a second row within that width instead of running under the corners.
+        // ── Selected-unit panel (bottom-centre): parchment-framed, moved from the top-left into a centred bottom panel
+        //    that only appears when a unit is active (visibility still driven by selection in RefreshView). Fixed to the
+        //    clear centre gap between the mini-map and the action cluster; its order buttons live in an HFlowContainer
+        //    now, so they wrap to a second row within that width instead of running under the corners.
         var unitPanel = GetNode<PanelContainer>("UI/SelectedUnitPanel");
         unitPanel.Theme = ColonyTheme.GetInGame();
         unitPanel.AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin(10));
@@ -481,34 +486,42 @@ public partial class GameController : Node2D
         _advisorPanel.OffsetLeft = 12;
         _advisorPanel.OffsetTop = 56;
 
-        // ── Mini-map corner (bottom-left): a framed parchment backing behind the map + zoom controls.
+        // ── Mini-map corner (bottom-left): a parchment backing wrapped in the carved-wood frame, with the mini-map
+        //    inset inside the frame.
         _miniMapBack = new Panel { Name = "MiniMapBack", MouseFilter = Control.MouseFilterEnum.Ignore };
-        _miniMapBack.AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin(6));
+        _miniMapBack.AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin());
         _miniMapBack.SetAnchorsPreset(Control.LayoutPreset.BottomLeft);
         _miniMapBack.OffsetLeft = 6;
-        _miniMapBack.OffsetTop = -178;
-        _miniMapBack.OffsetRight = 258;
+        _miniMapBack.OffsetTop = -192;
+        _miniMapBack.OffsetRight = 266;
         _miniMapBack.OffsetBottom = -6;
         _miniMapBack.GrowVertical = Control.GrowDirection.Begin;
+        ColonyArt.AddWoodFrame(_miniMapBack);
         ui.AddChild(_miniMapBack);
         ui.MoveChild(_miniMapBack, 0); // behind the mini-map
+
+        var miniMap = GetNode<Control>("UI/MiniMap");
+        miniMap.OffsetLeft = 30;
+        miniMap.OffsetTop = -168;
+        miniMap.OffsetRight = 242;
+        miniMap.OffsetBottom = -30;
     }
 
-    /// <summary>The parchment backing behind the bottom-right action cluster — hidden with the buttons when a full-screen panel is open.</summary>
+    /// <summary>The parchment+wood backing behind the bottom-right action cluster — hidden with the buttons when a full-screen panel is open.</summary>
     private Panel _actionClusterBack = null!;
     private Panel _miniMapBack = null!;
 
-    // The action-cluster grid: two 120px columns, 40px rows (44px pitch), inset from the panel's bottom-right corner.
+    // The action-cluster grid: two 120px columns, 42px rows (48px pitch), inset inside the carved-wood frame, stacked
+    // upward above the full-width End Turn button.
     private static void PlaceGridButton(Button button, int col, int row)
     {
         button.SetAnchorsPreset(Control.LayoutPreset.BottomRight);
         button.GrowHorizontal = Control.GrowDirection.Begin;
         button.GrowVertical = Control.GrowDirection.Begin;
-        int right = col == 0 ? -148 : -20;
-        button.OffsetLeft = right - 120;
-        button.OffsetRight = right;
-        int bottom = -60 - row * 44; // stack upward above the End Turn button
-        button.OffsetTop = bottom - 36;
+        button.OffsetLeft = col == 0 ? -284 : -156;
+        button.OffsetRight = col == 0 ? -164 : -36;
+        int bottom = -90 - row * 48; // stack upward above the End Turn button
+        button.OffsetTop = bottom - 42;
         button.OffsetBottom = bottom;
     }
 

@@ -88,6 +88,51 @@ public static class ColonyArt
     /// <summary>The colony window's carved-wood frame — FreeCol's <c>carvedwoodenborder</c> edge/corner pieces composited into one 194×194 nine-patch (23px margins); null if absent.</summary>
     public static Texture2D? ColonyBorder() => Load("ui/colony_border.png");
 
+    /// <summary>FreeCol's dark carved-wood menu bar (<c>bg_menubar</c>, 1166×64) — the HUD top status strip's backing, so its stat text reads light-on-dark; null if absent.</summary>
+    public static Texture2D? MenuBar() => Load("ui/bg_menubar.png");
+
+    /// <summary>
+    /// A dark-wood bar skin for the top HUD status strip: FreeCol's <c>bg_menubar</c> stretched to the strip's width so
+    /// the empire-stat text sits on rich dark wood (light text, high contrast) rather than a busy light parchment.
+    /// Falls back to a solid dark-wood fill if the asset is absent. The wood stays opaque, so nothing shows through.
+    /// </summary>
+    public static StyleBox MenuBarSkin()
+    {
+        if (MenuBar() is { } bar)
+        {
+            var skin = new StyleBoxTexture { Texture = bar }; // stretched to fill (a horizontal wood grain, so width-stretch reads fine)
+            skin.SetContentMarginAll(6);
+            skin.ContentMarginLeft = 16;
+            skin.ContentMarginRight = 16;
+            return skin;
+        }
+        var flat = new StyleBoxFlat { BgColor = new Color(0.16f, 0.10f, 0.05f) };
+        flat.SetContentMarginAll(6);
+        return flat;
+    }
+
+    /// <summary>
+    /// Overlays the carved-wood frame (<see cref="ColonyBorder"/>) on <paramref name="panel"/> as a full-rect,
+    /// click-through <see cref="NinePatchRect"/> child — the same finished edge the colony screen and the popups carry,
+    /// so a HUD backing reads as a framed panel rather than a bare parchment rectangle. No-op if the border asset is
+    /// absent (CI). The panel's own content must stay inset ≥23px so it clears the frame.
+    /// </summary>
+    public static void AddWoodFrame(Control panel)
+    {
+        if (ColonyBorder() is not { } border)
+        {
+            return;
+        }
+        var frame = new NinePatchRect { Name = "WoodFrame", Texture = border };
+        frame.PatchMarginLeft = 23;
+        frame.PatchMarginTop = 23;
+        frame.PatchMarginRight = 23;
+        frame.PatchMarginBottom = 23;
+        frame.MouseFilter = Control.MouseFilterEnum.Ignore;
+        frame.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        panel.AddChild(frame);
+    }
+
     /// <summary>
     /// A parchment panel skin for menu-style screens: FreeCol's brown parchment tiled (not stretched — the tile is
     /// only 291×295), inset <paramref name="contentMargin"/>px (default 26, so content clears the 23px carved-wood
