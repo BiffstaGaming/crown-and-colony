@@ -13,11 +13,17 @@ namespace CrownAndColony.GameLogic.Tests.Trade;
 /// Market dynamics (Parity Wave: 86d3fpyx3 rival-market trade propagation + 86d3fpyyq per-turn market drift), FreeCol
 /// <c>ServerPlayer.propagateToEuropeanMarkets</c> / <c>csYearlyGoodsAdjust</c>.
 /// <para>
-/// <b>Honesty note:</b> the four <c>Game.cs</c> call-site seams (sell/buy propagation + the per-turn drift tick in
-/// <c>RunPlayerTurn</c>) are NOT applied in this change — the integrator wires them. Every test here therefore calls
-/// <c>PropagateTradeToRivalMarkets</c> / <c>RunYearlyMarketAdjust</c> <b>directly</b>, in the exact order the seams
-/// will (trade first, then propagate), so the behaviour is verified but the end-to-end EndTurn flow is not until the
-/// seams land.
+/// The four <c>Game.cs</c> call-site seams <b>are wired</b> as of the wave integration:
+/// <c>SellColonyGoods</c>/<c>SellShipCargo</c>/<c>BuyEuropeGoods</c> each call
+/// <c>PropagateTradeToRivalMarkets</c> after the trade completes (FreeCol <c>sellInEurope:1327</c>/<c>buyInEurope:1261</c>),
+/// and <c>RunPlayerTurn</c> calls <c>RunYearlyMarketAdjust</c> right after <c>BombardEnemyShips</c> (FreeCol
+/// <c>csStartTurn:1813</c>). Most tests below still call <c>PropagateTradeToRivalMarkets</c> / <c>RunYearlyMarketAdjust</c>
+/// <b>directly</b> for isolation / white-box pinning (asserting the exact seed-derived deltas); the live end-to-end
+/// paths are covered by <see cref="Propagation_NeverTouchesStreamZero_OrTheTradersOwnMarketAndGold"/> (real
+/// <c>SellColonyGoods</c>) and <see cref="EndTurn_RunsPropagationAndDriftThroughTheLivePath"/> (real
+/// <c>RunPlayerTurn</c> tick). FreeCol's two double-propagation bugs (<c>InGameController.buyGoods:1050</c>;
+/// <c>ServerColony:853-855</c>) are deliberately NOT copied — every trade propagates exactly once, so do not add a
+/// second propagation call at any trade site.
 /// </para>
 /// </summary>
 public class MarketDynamicsTests
@@ -398,6 +404,39 @@ public class MarketDynamicsTests
 
         string json = SaveGame.From(a).ToJson();
         Assert.Equal(json, SaveGame.From(SaveGame.FromJson(json).Restore(Classic)).ToJson()); // no new save field
+    }
+
+    [Fact]
+    public void EndTurn_RunsPropagationAndDriftThroughTheLivePath()
+    {
+        // End-to-end coverage of the two wired Game.cs seams (the direct-call tests above pin the exact numbers; this
+        // proves the live paths are actually REACHED by a real turn — a guard against someone deleting a seam line):
+        //   (1) SellColonyGoods → PropagateTradeToRivalMarkets (FreeCol sellInEurope:1327) — a colony sale ripples to
+        //       every rival market in-path, before any EndTurn.
+        //   (2) RunPlayerTurn → RunYearlyMarketAdjust (FreeCol csStartTurn:1813) — the human's per-turn drift tick,
+        //       reached first in the player ring, pulls its now-traded, above-baseline silver back toward baseline.
+        // The human sells via the colony but nothing else touches its Europe silver: the colony's own production lands
+        // in its warehouse, not the market, and — asserted below — no rival sells silver this turn, so no propagation
+        // flows back into the human's silver. Hence the only thing that can move it across EndTurn is its own drift.
+        Game game = AtTurn(200, seed: 7);
+        Colony colony = game.FoundColony(game.Units.First(u => u.IsOnMap && !u.Type.IsNaval));
+        colony.AddGoods(Silver, 100);
+
+        int rivalSilverBefore = ColonialRivals(game)[0].Market.AmountInMarket(Silver);
+        game.SellColonyGoods(colony, Silver, 100); // live sell of one ≤100 chunk → one 5-30% propagation roll
+        int baseline = game.Market.InitialAmountOf(Silver);
+        int humanSilverAfterSale = game.Market.AmountInMarket(Silver);
+        Assert.True(humanSilverAfterSale > baseline, "the sale should push the human's silver above its baseline");
+        Assert.All(ColonialRivals(game), r =>
+            Assert.InRange(r.Market.AmountInMarket(Silver) - rivalSilverBefore, 5, 30)); // (1) every rival rippled 5-30%
+
+        game.EndTurn(); // (2) the human's RunPlayerTurn runs first in the ring → the drift tick
+
+        Assert.All(ColonialRivals(game), r => Assert.Equal(0, r.Market.SalesOf(Silver))); // no rival sold silver in
+        int humanSilverAfterTurn = game.Market.AmountInMarket(Silver);
+        Assert.True(humanSilverAfterTurn < humanSilverAfterSale,
+            "the live drift tick must pull the above-baseline traded good back down");
+        Assert.True(humanSilverAfterTurn >= baseline, "one drift tick never overshoots the baseline");
     }
 
     /// <summary>A fresh seeded game fast-forwarded to <paramref name="turn"/> via the save layer (no turns played).</summary>
