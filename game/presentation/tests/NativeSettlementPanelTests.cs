@@ -150,6 +150,89 @@ public class NativeSettlementPanelTests
         AssertThat(FindButton(controller, "Incite")).IsNull();
     }
 
+    // ---- Learn skill (86d3f62r5) ----------------------------------------------------------------------------
+
+    [TestCase(Timeout = 60000)]
+    public async Task LearnButton_ShownForALearnableColonist_TrainsItIntoTheTaughtExpert()
+    {
+        // 86d3f62r5: the native-settlement "Learn skill" action was reachable but undriven by L3. A free colonist
+        // beside a Content settlement teaching a skill it can learn: the Learn button is offered; pressing it upgrades
+        // the colonist to the taught expert type (keeping its id) and consumes the settlement's skill.
+        (ISceneRunner runner, GameController controller, Game game, NativeSettlement settlement, Unit colonist) =
+            await OpenLearnPanel();
+        int colonistId = colonist.Id;
+
+        AssertThat(game.CheckLearnSkill(colonist, settlement).Allowed).IsTrue(); // sanity: learnable
+        string taughtSkill = settlement.LearnableSkill!; // capture before the press consumes it
+        Button? learn = FindButton(controller, "Learn");
+        AssertThat(learn).IsNotNull();
+
+        // Press the button we already resolved (a re-lookup after the press would miss it — the action rebuilds the panel).
+        learn!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // The colonist upgraded to the settlement's taught expert type (same id) — the core of the flow. A non-capital
+        // settlement also consumes its skill on teaching; a capital teaches indefinitely (SkillConsumed stays false), so
+        // the consume side is asserted only when the staged settlement is not a capital.
+        Unit upgraded = game.Units.First(u => u.Id == colonistId);
+        AssertThat(upgraded.Type.Id).IsEqual(taughtSkill);
+        if (!settlement.IsCapital)
+        {
+            AssertThat(settlement.SkillConsumed).IsTrue();
+        }
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task LearnButton_NotShown_ForAnExpertWhoCannotLearn()
+    {
+        // An expert farmer already knows a profession, so it has no natives-change row for the taught skill: the Learn
+        // action is not offered (the oracle gates it).
+        (_, GameController controller, _, _, _) = await OpenLearnPanel(unitType: "model.unit.expertFarmer");
+        AssertThat(FindButton(controller, "Learn")).IsNull();
+    }
+
+    /// <summary>
+    /// Stages (through the save layer) a human colonist (<paramref name="unitType"/>) on a free land tile adjacent to a
+    /// discovered settlement whose <c>LearnableSkill</c> is forced to <c>expertFarmer</c> and whose alarm is Content
+    /// (below Angry, so it teaches), then opens the native-settlement panel acting with it. Mirrors <c>OpenMissionPanel</c>.
+    /// </summary>
+    private static async Task<(ISceneRunner, GameController, Game, NativeSettlement, Unit)> OpenLearnPanel(
+        string unitType = FreeColonist)
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+
+        NativeSettlement seed = game.NativeSettlements.First(s =>
+            s.Position.Neighbours().Any(n => FreeLand(game, n)));
+        Position land = seed.Position.Neighbours().First(n => FreeLand(game, n));
+
+        SaveGame save = SaveGame.From(game);
+        int unitId = game.Units.Max(u => u.Id) + 1;
+        int move = game.Ruleset.Unit(unitType).Movement;
+        var staged = new SavedUnit(unitId, unitType, land.X, land.Y, move, OwnerId: humanId);
+        // Force a known learnable skill so the case never depends on the seed's random skill assignment.
+        List<SavedNativeSettlement> settlements = save.NativeSettlements!
+            .Select(s => s.Id == seed.Id ? s with { LearnableSkill = "model.unit.expertFarmer" } : s)
+            .ToList();
+        Game injected = (save with { Units = save.Units.Concat([staged]).ToList(), NativeSettlements = settlements })
+            .Restore(game.Ruleset);
+        SetGame(controller, injected);
+
+        NativeSettlement settlement = injected.NativeSettlements.First(s => s.Id == seed.Id);
+        injected.ChangeNativeAlarm(settlement, 300); // Content — below Angry, so it teaches
+        Unit unit = injected.Units.First(u => u.Id == unitId);
+
+        controller.OpenNativeSettlementPanel(settlement, unit);
+        await runner.SimulateFrames(1);
+        var panel = controller.GetNode<PanelContainer>("UI/NativeSettlementPanel");
+        AssertThat(panel.Visible).IsTrue();
+        return (runner, controller, injected, settlement, unit);
+    }
+
     /// <summary>
     /// Stages (through the save layer) a human <see cref="Artillery"/> on a free land tile adjacent to a discovered
     /// settlement set <b>Content</b> (so it pays tribute), and opens the native-settlement panel acting with it. Mirrors

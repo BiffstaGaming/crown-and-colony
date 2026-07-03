@@ -9,6 +9,7 @@ using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
+using CrownAndColony.GameLogic.World.Improvements;
 using GdUnit4;
 using Godot;
 using static GdUnit4.Assertions;
@@ -1718,6 +1719,377 @@ public class InputTests
             await runner.SimulateFrames(1);
         }
     }
+
+    // ── 86d3f62r5: player-flow coverage for reachable-but-undriven UI paths ──────────────────────────────────────────
+
+    [TestCase(Timeout = 60000)]
+    public async Task SelectedUnitPanel_PlowButton_StartsPlowingTheField()
+    {
+        // 86d3f62r5: the Plow order button was reachable but undriven by L3 (only Fortify + Road were). Arm a pioneer,
+        // move it onto a plowable (non-forested, non-hill/mountain/arctic) land tile, press Plow → the build order takes.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Unit unit = game.Units[0];
+
+        // Arm the starting colonist as a tooled pioneer (internal setters via reflection, like the Road test), then
+        // teleport it onto a plow-eligible tile (the plow scope excludes water/forest/hills/mountains/arctic).
+        typeof(Unit).GetProperty("RoleId")!.GetSetMethod(nonPublic: true)!.Invoke(unit, ["model.role.pioneer"]);
+        typeof(Unit).GetProperty("RoleCount")!.GetSetMethod(nonPublic: true)!.Invoke(unit, [1]);
+        Position plowable = game.Map.AllPositions().First(p =>
+            Free(game, p) && game.CheckBuildImprovement(SetUnitAt(unit, p), TileImprovementType.PlowId).Allowed);
+        typeof(Unit).GetProperty("Position")!.GetSetMethod(nonPublic: true)!.Invoke(unit, [plowable]);
+
+        await ClickTile(runner, controller, plowable); // select → the build-order buttons gate on the oracle
+        var plow = controller.GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/PlowButton");
+        AssertThat(plow.Disabled).IsFalse(); // a tooled pioneer on a plowable tile can plow
+
+        plow.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(unit.IsImproving).IsTrue();                                    // the build order took
+        AssertThat(unit.WorkImprovementId).IsEqual(TileImprovementType.PlowId);
+        AssertThat(unit.MovementLeft).IsEqual(0);                                 // committed for the turn
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task SelectedUnitPanel_ClearForestButton_StartsClearingTheForest()
+    {
+        // 86d3f62r5: the Clear-forest order button was reachable but undriven by L3. Arm a pioneer, move it onto a
+        // forested tile (the clear-forest scope requires isForested=true), press Clear-forest → the build order takes.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Unit unit = game.Units[0];
+
+        typeof(Unit).GetProperty("RoleId")!.GetSetMethod(nonPublic: true)!.Invoke(unit, ["model.role.pioneer"]);
+        typeof(Unit).GetProperty("RoleCount")!.GetSetMethod(nonPublic: true)!.Invoke(unit, [1]);
+        Position forested = game.Map.AllPositions().First(p =>
+            Free(game, p) && game.Map.TerrainAt(p).IsForest
+            && game.CheckBuildImprovement(SetUnitAt(unit, p), TileImprovementType.ClearForestId).Allowed);
+        typeof(Unit).GetProperty("Position")!.GetSetMethod(nonPublic: true)!.Invoke(unit, [forested]);
+
+        await ClickTile(runner, controller, forested); // select → the build-order buttons gate on the oracle
+        var clearForest = controller.GetNode<Button>("UI/SelectedUnitPanel/VBox/Orders/ClearForestButton");
+        AssertThat(clearForest.Disabled).IsFalse(); // a tooled pioneer on a forested tile can clear it
+
+        clearForest.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(unit.IsImproving).IsTrue();                                          // the build order took
+        AssertThat(unit.WorkImprovementId).IsEqual(TileImprovementType.ClearForestId);
+        AssertThat(unit.MovementLeft).IsEqual(0);                                       // committed for the turn
+    }
+
+    // NOTE (86d3f62r5): the right-click menu's "Centre here" item is NOT covered here because it is genuinely
+    // MIS-WIRED, not merely undriven. HandleRightClick adds it with `menu.AddItem("Centre here", CentreId)` where
+    // CentreId == -1 — but Godot 4.6's PopupMenu.AddItem treats id == -1 as the "auto-assign to the item index"
+    // sentinel, so "Centre here" is stored with id 0 (its index), NOT -1. A real click therefore emits IdPressed(0),
+    // which misses the `case CentreId` (-1) arm and falls through to the unit-select `default`, so the camera never
+    // centres. ("Go to here" uses -2, which Godot preserves, so it IS wired — covered below.) Per the ADR-006 /
+    // presentation-only constraint this is reported to the integrator to fix in source (use a non −1 sentinel, e.g.
+    // -100), rather than adding wiring here. A test that drove the real control would fail today.
+
+    [TestCase(Timeout = 60000)]
+    public async Task RightClickTileMenu_GoToHere_SetsTheSelectedUnitsDestination()
+    {
+        // 86d3f62r5: the right-click menu's "Go to here" item was reachable but undriven. With a unit selected, open the
+        // menu on a reachable explored tile and fire "Go to here" → the unit's standing destination is set (GotoId == -2).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        controller.GetNode<CameraController>("Camera").EdgeScrollEnabled = false;
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Unit unit = game.Units[0];
+        Position origin = unit.Position;
+
+        await ClickTile(runner, controller, unit.Position); // select the unit (the goto item acts on the selection)
+
+        // A reachable explored neighbour is the destination; aim the right-click at it and fire "Go to here".
+        Position dest = origin.Neighbours().First(n => game.CheckSetDestination(unit, n).Allowed);
+        controller.GetNode<Camera2D>("Camera").Position = MapView.TileCentre(dest);
+        await runner.SimulateFrames(1);
+        Vector2 screenCentre = controller.GetViewport().GetVisibleRect().Size / 2f;
+        controller.GetType().GetMethod("HandleRightClick", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(controller, [screenCentre]);
+        await runner.SimulateFrames(1);
+
+        var menu = controller.GetNode<CanvasLayer>("UI").GetChildren().OfType<PopupMenu>().First();
+        int gotoId = ItemIdWithText(menu, "Go to here");
+        menu.EmitSignal(PopupMenu.SignalName.IdPressed, gotoId);
+        await runner.SimulateFrames(1);
+
+        AssertThat(unit.Destination.HasValue).IsTrue();
+        AssertThat(unit.Destination!.Value).IsEqual(dest);       // the standing goto order was recorded
+        AssertThat(unit.Position).IsEqual(origin);               // setting a destination doesn't move the unit
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task SettingAGotoDestination_ThenEndingTheTurn_WalksTheUnitTowardIt()
+    {
+        // 86d3f62r5: the full goto-walk player flow — arm goto (G), click a destination two tiles off, End Turn → the
+        // per-turn ProcessGotos walks the unit toward the goal (it leaves its origin, closer to the destination).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        controller.GetNode<CameraController>("Camera").EdgeScrollEnabled = false;
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Unit unit = TrimHumanRosterToOne(game); // a single unit so the walk is unambiguous
+        Position origin = unit.Position;
+
+        // A destination two tiles away with a legal, reachable path (so ProcessGotos has somewhere to walk). The engine's
+        // own path oracle (Game.FindPath, internal) confirms the goal is reachable — reached by reflection here.
+        Position dest = game.Map.AllPositions().First(p =>
+            p != origin && Cheb(origin, p) == 2 && game.CheckSetDestination(unit, p).Allowed
+            && GamePath(game, unit, p).Count > 0);
+
+        // Arm goto via the real G key, then click the destination tile → SetSelectedDestination records the standing order.
+        await ClickTile(runner, controller, origin);
+        runner.SimulateKeyPressed(Key.G);
+        await runner.SimulateFrames(1);
+        await ClickTile(runner, controller, dest);
+        AssertThat(unit.Destination!.Value).IsEqual(dest); // the goto order is set (not yet walked)
+        AssertThat(unit.Position).IsEqual(origin);
+
+        // End the turn via the button → ProcessGotos walks the unit toward the goal.
+        controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+
+        AssertThat(unit.Position).IsNotEqual(origin);                            // it moved off its start tile
+        AssertThat(Cheb(unit.Position, dest)).IsLess(Cheb(origin, dest));        // and closer to the destination
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ClickingARivalColony_WithASelectedUnit_AssaultsIt_ToCapture()
+    {
+        // 86d3f62r5: the player-initiated assault on a rival colony was reachable but undriven by L3. Stage an
+        // undefended rival colony and a human artillery adjacent to it, at war; click the colony → the assault resolves
+        // (the attacker spends its turn, and on a win the colony changes hands). Staged via the save layer (the
+        // presentation project can't set Unit.OwnerId / Colony.OwnerId / stance directly).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+
+        // Found a colony with a spawned rival colonist (so it belongs to the rival after we reassign it via the save
+        // layer), then place a human artillery beside it and put the two at war.
+        Position site = game.Map.AllPositions().First(p =>
+            Free(game, p) && game.Map.TerrainAt(p).CanSettle && !game.Map.IsNativeOwned(p)
+            && p.Neighbours().Any(n => Free(game, n))
+            && p.Neighbours().All(n => !game.Map.InBounds(n) || game.ColonyAt(n) is null));
+        Unit founder = game.SpawnUnit(game.Ruleset.Unit("model.unit.freeColonist"), site);
+        Colony colony = game.FoundColony(founder); // human-owned for now; reassigned to the rival below
+        int colonyId = colony.Id;
+        Position gunPos = site.Neighbours().First(n => Free(game, n));
+
+        SaveGame save = SaveGame.From(game);
+        SavedPlayer rival = save.Players!.First(p => !p.IsHuman && p.PlayerType == (int)PlayerType.Colonial);
+        int gunId = game.Units.Max(u => u.Id) + 1;
+        var staged = new SavedUnit(gunId, "model.unit.artillery", gunPos.X, gunPos.Y, 1, OwnerId: humanId);
+        var colonies = save.Colonies!.Select(c => c.Id == colonyId ? c with { OwnerId = rival.PlayerId } : c).ToList();
+        List<SavedPlayer> players = save.Players!.Select(p =>
+            p.PlayerId == rival.PlayerId ? p with { Stances = WithWar(p.Stances, humanId) }
+            : p.PlayerId == humanId ? p with { Stances = WithWar(p.Stances, rival.PlayerId) }
+            : p).ToList();
+        Game injected = (save with { Units = save.Units.Append(staged).ToList(), Colonies = colonies, Players = players })
+            .Restore(game.Ruleset);
+        SetGame(controller, injected);
+        Colony rivalColony = injected.Colonies.First(c => c.Id == colonyId);
+
+        Unit gun = injected.Units.First(u => u.Id == gunId);
+        AssertThat(injected.CheckAttackColony(gun, rivalColony.Position).Allowed).IsTrue(); // sanity: the assault is legal
+
+        // Select the artillery, then click the rival colony → the assault fires (no scout mission — artillery is no scout).
+        await ClickTile(runner, controller, gunPos);
+        await ClickTile(runner, controller, rivalColony.Position);
+        await runner.SimulateFrames(2);
+
+        // The assault resolved: the attacker spent its turn (0 movement, or it was destroyed). A rejected/blocked click
+        // would have left it with full movement on its own tile.
+        Unit? after = injected.Units.FirstOrDefault(u => u.Id == gunId);
+        AssertThat(after == null || after.MovementLeft == 0).IsTrue();
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task FoundingOnNativeOwnedLand_RaisesTheClaimPrompt_AndStealTakesTheLand()
+    {
+        // 86d3f62r5: the forced buy/steal/abandon land-claim prompt (founding on native-owned land) was reachable but
+        // undriven by L3. Make the founder's tile native-owned, press B → the "Native land" ConfirmationDialog opens;
+        // fire the "Steal" button → the colony is founded and the tile is taken (no gold spent).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Unit founder = TrimHumanRosterToOne(game);
+        Position tile = founder.Position;
+
+        // Make ONLY the founder's tile native-owned (clear its ring so the auto food-assign never claims another tile),
+        // via the internal GameMap mutators reached by reflection (the presentation project can't call them directly).
+        string nation = game.NativeSettlements.Select(s => s.NationTypeId).First();
+        foreach (Position n in tile.Neighbours().Where(game.Map.InBounds))
+        {
+            InvokeMap(game, "ClearNativeOwner", n);
+        }
+        InvokeMap(game, "SetNativeOwner", tile, nation);
+        AssertThat(game.RequiredLandClaim(tile).Required).IsTrue(); // sanity: founding here forces the claim
+
+        await ClickTile(runner, controller, tile); // select the founder
+        runner.SimulateKeyPressed(Key.B);           // found → the forced-claim prompt opens (not an immediate found)
+        await runner.SimulateFrames(2);
+
+        AssertThat(game.Colonies.Count).IsEqual(0); // nothing founded yet — the claim must be answered first
+        var dialog = controller.GetChildren().OfType<ConfirmationDialog>().First(d => d.Title.ToString() == "Native land");
+        AssertThat(dialog).IsNotNull();
+
+        // Fire the "Steal" custom button (added via ConfirmationDialog.AddButton) → the colony is founded on the taken
+        // tile, free of charge. The custom button is nested in the dialog's button row, so search all descendants.
+        int goldBefore = game.HumanPlayer.Gold;
+        Button steal = DescendantButtons(dialog).First(b => b.Text.ToString() == "Steal");
+        steal.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+
+        AssertThat(game.Colonies.Count).IsEqual(1);             // the colony was founded after the steal
+        AssertThat(game.ColonyAt(tile)).IsNotNull();
+        AssertThat(game.Map.IsNativeOwned(tile)).IsFalse();     // the land was taken
+        AssertThat(game.HumanPlayer.Gold).IsEqual(goldBefore);  // stealing costs no gold
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task FoundingOnNativeOwnedLand_ThenAbandon_FoundsNothing_AndKeepsTheLandNative()
+    {
+        // 86d3f62r5 (the Abandon branch of the forced land-claim prompt): pressing B raises the prompt; choosing
+        // Abandon (Cancel) founds nothing and leaves the land in native hands.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Unit founder = TrimHumanRosterToOne(game);
+        Position tile = founder.Position;
+
+        string nation = game.NativeSettlements.Select(s => s.NationTypeId).First();
+        foreach (Position n in tile.Neighbours().Where(game.Map.InBounds))
+        {
+            InvokeMap(game, "ClearNativeOwner", n);
+        }
+        InvokeMap(game, "SetNativeOwner", tile, nation);
+
+        await ClickTile(runner, controller, tile);
+        runner.SimulateKeyPressed(Key.B);
+        await runner.SimulateFrames(2);
+
+        var dialog = controller.GetChildren().OfType<ConfirmationDialog>().First(d => d.Title.ToString() == "Native land");
+        dialog.EmitSignal(AcceptDialog.SignalName.Canceled); // "Abandon" is the dialog's Cancel action
+        await runner.SimulateFrames(2);
+
+        AssertThat(game.Colonies.Count).IsEqual(0);         // nothing founded
+        AssertThat(game.Map.IsNativeOwned(tile)).IsTrue();  // still the natives'
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task NativeTributeDemand_Refuse_ClearsTheDemand_WithoutPaying()
+    {
+        // 86d3f62r5: the tribute-demand modal's "Refuse" branch was reachable but undriven by L3 (only Pay was). Same
+        // setup as the pay test: garrison a stocked colony and enrage a brave beside it so End Turn raises a demand;
+        // press Refuse → the demand clears and NOTHING is paid (gold and the colony store are untouched).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        Colony founded = game.FoundColony(game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony));
+        SaveGame save = SaveGame.From(game);
+        var colonies = save.Colonies!.Select(c => c.Id == founded.Id
+            ? c with { Stores = new Dictionary<string, int> { ["model.goods.tobacco"] = 100 } }
+            : c).ToList();
+        game = (save with { Colonies = colonies }).Restore(game.Ruleset);
+        SetGame(controller, game);
+        Colony colony = game.Colonies.First(c => c.Id == founded.Id);
+
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.artillery"), colony.Position); // garrison → demands (not pillages)
+        string nation = game.NativeSettlements.First().NationTypeId;
+        Position adj = colony.Position.Neighbours().First(n => Free(game, n));
+        game.SpawnUnit(game.Ruleset.Unit("model.unit.brave"), adj, nation);
+        foreach (NativeSettlement s in game.NativeSettlements.Where(s => s.NationTypeId == nation))
+        {
+            game.ChangeNativeAlarm(s, NativeSettlement.MaxAlarm);
+        }
+
+        controller.GetNode<Button>("UI/EndTurnButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(2);
+
+        var panel = controller.GetNode<PanelContainer>("UI/NativeDemandPanel");
+        AssertThat(panel.Visible).IsTrue();
+        AssertThat(game.PendingDemand).IsNotNull();
+        int goldBefore = game.HumanPlayer.Gold;
+        int tobaccoBefore = colony.StoreOf("model.goods.tobacco");
+
+        controller.GetNode<Button>("UI/NativeDemandPanel/VBox/Buttons/RefuseButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(panel.Visible).IsFalse();                                         // the modal closed
+        AssertThat(game.PendingDemand).IsNull();                                     // the demand was cleared
+        AssertThat(game.HumanPlayer.Gold).IsEqual(goldBefore);                       // no gold paid
+        AssertThat(colony.StoreOf("model.goods.tobacco")).IsEqual(tobaccoBefore);    // no goods paid
+    }
+
+    /// <summary>Teleports <paramref name="unit"/> to <paramref name="p"/> (internal Position setter, by reflection) and returns it — a fluent helper for the improvement-tile scans.</summary>
+    private static Unit SetUnitAt(Unit unit, Position p)
+    {
+        typeof(Unit).GetProperty("Position")!.GetSetMethod(nonPublic: true)!.Invoke(unit, [p]);
+        return unit;
+    }
+
+    /// <summary>The id of the first popup-menu item whose text equals <paramref name="text"/> (for firing "Centre here"/"Go to here").</summary>
+    private static int ItemIdWithText(PopupMenu menu, string text)
+    {
+        for (int i = 0; i < menu.ItemCount; i++)
+        {
+            if (menu.GetItemText(i) == text)
+            {
+                return menu.GetItemId(i);
+            }
+        }
+        throw new System.InvalidOperationException($"No popup-menu item with text '{text}'.");
+    }
+
+    /// <summary>Invokes an internal <see cref="GameMap"/> method (e.g. SetNativeOwner/ClearNativeOwner) by reflection — the presentation project can't call them directly.</summary>
+    private static void InvokeMap(Game game, string method, params object[] args) =>
+        typeof(GameMap).GetMethod(method, BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(game.Map, args);
+
+    /// <summary>Chebyshev (king-move) distance between two tiles — the map's step metric (8-way movement).</summary>
+    private static int Cheb(Position a, Position b) => System.Math.Max(System.Math.Abs(a.X - b.X), System.Math.Abs(a.Y - b.Y));
+
+    /// <summary>Every <see cref="Button"/> anywhere under <paramref name="root"/> (recursive, including internal children) — for finding a code-built dialog's custom buttons.</summary>
+    private static IEnumerable<Button> DescendantButtons(Node root)
+    {
+        foreach (Node child in root.GetChildren(true))
+        {
+            if (child is Button b)
+            {
+                yield return b;
+            }
+            foreach (Button nested in DescendantButtons(child))
+            {
+                yield return nested;
+            }
+        }
+    }
+
+    /// <summary>The engine's own path from <paramref name="unit"/> to <paramref name="goal"/> (internal <c>Game.FindPath</c>), reached by reflection to confirm reachability in the goto-walk case.</summary>
+    private static IReadOnlyList<Position> GamePath(Game game, Unit unit, Position goal) =>
+        (IReadOnlyList<Position>)typeof(Game).GetMethod("FindPath", BindingFlags.NonPublic | BindingFlags.Instance,
+            binder: null, types: [typeof(Unit), typeof(Position)], modifiers: null)!.Invoke(game, [unit, goal])!;
 
     private static void SetGame(GameController controller, Game game) =>
         controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(controller, game);

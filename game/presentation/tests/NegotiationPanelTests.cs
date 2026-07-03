@@ -392,9 +392,296 @@ public class NegotiationPanelTests
         AssertThat(gun.MovementLeft).IsEqual(0); // the demand resolved and ended the unit's turn
     }
 
+    // ---- Scout-mission menu (86d3f62r5 / 86d3c9ubw) ----
+
+    [TestCase]
+    public async Task ScoutMissionMenu_OffersSpyAndNegotiate_AndSpyGlimpsesTheColony()
+    {
+        // 86d3f62r5: the scout-at-the-gate mission menu (OpenScoutMissions → Spy / Negotiate) was reachable but undriven
+        // by L3. Stage a scout adjacent to a rival colony, open the mission menu, and fire Spy → the scout's spy mission
+        // runs (it always succeeds — the scout's turn ends).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+        int foreignId = ForeignPowerId(game);
+
+        Colony rival = FoundCoastalColony(game, foreignId);
+        SetStance(game, humanId, foreignId, Stance.Peace);
+        Unit scout = StageScoutBeside(game, rival, humanId);
+        AssertThat(game.CheckSpyOnColony(scout, rival.Position).Allowed).IsTrue(); // sanity: the spy mission is legal
+
+        // Open the mission menu exactly as the controller does (spy + negotiate callbacks routed back through it).
+        int scoutId = scout.Id;
+        bool negotiateOpened = false;
+        ((NegotiationPanel)controller.GetNode<PanelContainer>("UI/NegotiationPanel")).OpenScoutMissions(
+            game, rival, scoutId,
+            onSpy: () => controller.GetType().GetMethod("SpyOnRivalColony", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(controller, [scoutId, rival.Position]),
+            onNegotiate: () => negotiateOpened = true);
+        var panel = controller.GetNode<PanelContainer>("UI/NegotiationPanel");
+        AssertThat(panel.Visible).IsTrue();
+
+        // Both missions are offered.
+        AssertThat(FindButton(panel, "Spy")).IsNotNull();
+        AssertThat(FindButton(panel, "Negotiate")).IsNotNull();
+
+        // Fire Spy → the scout spends its turn (FreeCol spySettlement always succeeds and ends the scout's turn).
+        FindButton(panel, "Spy")!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(game.Units.First(u => u.Id == scoutId).MovementLeft).IsEqual(0); // the spy ended the scout's turn
+        AssertThat(negotiateOpened).IsFalse(); // Spy, not Negotiate
+    }
+
+    [TestCase]
+    public async Task ScoutMissionMenu_Negotiate_RoutesToTheColonyNegotiation()
+    {
+        // The mission menu's Negotiate choice forwards to the colony-pinned negotiation (OpenForColony); assert the
+        // callback fired (the controller routes it into OpenNegotiationForColony).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+        int foreignId = ForeignPowerId(game);
+
+        Colony rival = FoundCoastalColony(game, foreignId);
+        SetStance(game, humanId, foreignId, Stance.Peace);
+        Unit scout = StageScoutBeside(game, rival, humanId);
+
+        bool negotiateFired = false;
+        ((NegotiationPanel)controller.GetNode<PanelContainer>("UI/NegotiationPanel")).OpenScoutMissions(
+            game, rival, scout.Id, onSpy: () => { }, onNegotiate: () => negotiateFired = true);
+        var panel = controller.GetNode<PanelContainer>("UI/NegotiationPanel");
+
+        FindButton(panel, "Negotiate")!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(negotiateFired).IsTrue(); // the Negotiate mission routed to the colony negotiation
+    }
+
+    // ---- Offer-builder clause coverage (86d3f62r5) — reject-counter + goods/colony/unit/incite ----
+
+    [TestCase]
+    public async Task OfferBuilder_RejectCounter_DropsTheDeal_LeavingTheStanceUnchanged()
+    {
+        // 86d3f62r5: the RejectCounter branch was undriven (only AcceptCounter was). Same setup as the accept-counter
+        // test — a large gold demand the rival can't accept, so it counters — but the human REJECTS: nothing settles
+        // (the stance stays Peace) and the builder closes.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+        int foreignId = ForeignPowerId(game);
+
+        SetStance(game, humanId, foreignId, Stance.Peace);
+
+        controller.OpenNegotiationPanel();
+        await runner.SimulateFrames(1);
+        var panel = controller.GetNode<PanelContainer>("UI/NegotiationPanel");
+
+        PressFirstButton(panel, $"Negotiate_{foreignId}");
+        await runner.SimulateFrames(1);
+        PressFirstButton(panel, "AddGoldGive"); // a small give the counter keeps
+        await runner.SimulateFrames(1);
+        for (int i = 0; i < 50; i++) // pump to a 5100g demand the rival can't accept net-positive
+        {
+            PressFirstButton(panel, "GoldPlus");
+        }
+        await runner.SimulateFrames(1);
+        PressFirstButton(panel, "AddGoldDemand");
+        await runner.SimulateFrames(1);
+        PressFirstButton(panel, "Submit");
+        await runner.SimulateFrames(1);
+
+        Button? rejectCounter = FindButton(panel, "RejectCounter");
+        AssertThat(rejectCounter != null).IsTrue(); // a counter was surfaced
+
+        rejectCounter!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        // Rejecting applies nothing — the stance stays Peace and the counter is consumed (no RejectCounter button left).
+        AssertThat(game.StanceBetween(humanId, foreignId)).IsEqual(Stance.Peace);
+        AssertThat(FindButton(panel, "RejectCounter") == null).IsTrue();
+    }
+
+    [TestCase]
+    public async Task OfferBuilder_AddGoodsClause_AppearsInTheRunningOffer()
+    {
+        // 86d3f62r5: the goods clause was undriven. With a stocked human colony and a rival colony, the "Give N goods"
+        // add-clause button is offered; pressing it appends a clause to the running offer (a ClauseRow renders).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+        int foreignId = ForeignPowerId(game);
+
+        Colony human = FoundCoastalColony(game, humanId);
+        AddColonyStore(human, Tobacco, 100); // a non-empty stockpile → the goods clause is offered
+        FoundCoastalColony(game, foreignId); // a rival colony the goods are given TO
+        SetStance(game, humanId, foreignId, Stance.Peace);
+
+        var panel = OpenBuilderAgainst(controller, foreignId);
+        await runner.SimulateFrames(1);
+
+        Button? addGoods = FindButton(panel, "AddGoods");
+        AssertThat(addGoods != null).IsTrue();
+        addGoods!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(FindNodeNamed(panel, "ClauseRow_0")).IsNotNull(); // the goods clause joined the running offer
+    }
+
+    [TestCase]
+    public async Task OfferBuilder_AddColonyClauses_AppearInTheRunningOffer()
+    {
+        // 86d3f62r5: the colony give/demand clauses were undriven. With a human colony and a rival colony, both the
+        // "Cede <ours>" and "Demand <theirs>" buttons are offered; each appends a clause.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+        int foreignId = ForeignPowerId(game);
+
+        FoundCoastalColony(game, humanId);
+        FoundCoastalColony(game, foreignId);
+        SetStance(game, humanId, foreignId, Stance.Peace);
+
+        var panel = OpenBuilderAgainst(controller, foreignId);
+        await runner.SimulateFrames(1);
+
+        AssertThat(FindButton(panel, "AddColonyGive")).IsNotNull();
+        AssertThat(FindButton(panel, "AddColonyDemand")).IsNotNull();
+        FindButton(panel, "AddColonyGive")!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(FindNodeNamed(panel, "ClauseRow_0")).IsNotNull(); // ceding our colony joined the offer
+
+        FindButton(panel, "AddColonyDemand")!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(FindNodeNamed(panel, "ClauseRow_1")).IsNotNull(); // demanding theirs joined it too
+    }
+
+    [TestCase]
+    public async Task OfferBuilder_AddUnitClauses_AppearInTheRunningOffer()
+    {
+        // 86d3f62r5: the unit give/demand clauses were undriven. The human always has starting units (give); staging a
+        // rival unit makes the demand offered too. Each add appends a clause.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+        int foreignId = ForeignPowerId(game);
+
+        SetStance(game, humanId, foreignId, Stance.Peace);
+        // A rival non-native unit somewhere on land → the "Demand <their unit>" clause is offered.
+        Position spot = game.Map.AllPositions().First(p =>
+            game.Map.InBounds(p) && !game.Map.TerrainAt(p).IsWater
+            && game.ColonyAt(p) == null && game.NativeSettlementAt(p) == null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == p));
+        Unit rivalUnit = game.SpawnUnit(game.Ruleset.Unit("model.unit.freeColonist"), spot);
+        SetUnitOwner(rivalUnit, foreignId);
+
+        var panel = OpenBuilderAgainst(controller, foreignId);
+        await runner.SimulateFrames(1);
+
+        AssertThat(FindButton(panel, "AddUnitGive")).IsNotNull();
+        AssertThat(FindButton(panel, "AddUnitDemand")).IsNotNull();
+        FindButton(panel, "AddUnitGive")!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(FindNodeNamed(panel, "ClauseRow_0")).IsNotNull(); // handing over our unit joined the offer
+
+        FindButton(panel, "AddUnitDemand")!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(FindNodeNamed(panel, "ClauseRow_1")).IsNotNull(); // demanding theirs joined it too
+    }
+
+    [TestCase]
+    public async Task OfferBuilder_AddInciteClause_AppearsInTheRunningOffer()
+    {
+        // 86d3f62r5: the incite clause (have the rival go to war with a THIRD contacted power) was undriven. Contact two
+        // rivals so an incite victim exists; the Incite button is offered against the second, and pressing it appends a clause.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+
+        // Two distinct contacted colonial rivals: the target we negotiate with, and the victim we incite war on.
+        List<int> rivals = game.Players.Where(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial)
+            .Select(p => p.PlayerId).Take(2).ToList();
+        AssertThat(rivals.Count).IsEqual(2); // the classic start has several colonial powers
+        int targetId = rivals[0];
+        int victimId = rivals[1];
+        SetStance(game, humanId, targetId, Stance.Peace);
+        SetStance(game, humanId, victimId, Stance.Peace); // contacted → a valid incite victim
+
+        var panel = OpenBuilderAgainst(controller, targetId);
+        await runner.SimulateFrames(1);
+
+        Button? incite = FindButton(panel, "AddIncite");
+        AssertThat(incite != null).IsTrue();
+        incite!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(FindNodeNamed(panel, "ClauseRow_0")).IsNotNull(); // the incite clause joined the running offer
+    }
+
     // ---- helpers ----
 
     private const string Tobacco = "model.goods.tobacco";
+
+    /// <summary>Opens the negotiation panel and steps into the offer-builder against <paramref name="targetId"/> (the "Negotiate_<id>" row press).</summary>
+    private static PanelContainer OpenBuilderAgainst(GameController controller, int targetId)
+    {
+        controller.OpenNegotiationPanel();
+        var panel = controller.GetNode<PanelContainer>("UI/NegotiationPanel");
+        PressFirstButton(panel, $"Negotiate_{targetId}");
+        return panel;
+    }
+
+    /// <summary>Stages a human scout (model.role.scout, full movement) on a free land tile adjacent to <paramref name="colony"/>.</summary>
+    private static Unit StageScoutBeside(Game game, Colony colony, int ownerId)
+    {
+        Position adj = colony.Position.Neighbours().First(n =>
+            game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+            && game.ColonyAt(n) == null && game.NativeSettlementAt(n) == null
+            && !game.Units.Any(u => u.IsOnMap && u.Position == n));
+        Unit scout = game.SpawnUnit(game.Ruleset.Unit("model.unit.seasonedScout"), adj);
+        SetUnitOwner(scout, ownerId);
+        typeof(Unit).GetProperty("RoleId")!.GetSetMethod(nonPublic: true)!.Invoke(scout, ["model.role.scout"]);
+        return scout;
+    }
+
+    /// <summary>Sets a unit's internal-set <c>OwnerId</c> by reflection (no public setter).</summary>
+    private static void SetUnitOwner(Unit unit, int ownerId) =>
+        typeof(Unit).GetProperty("OwnerId")!.SetValue(unit, ownerId);
+
+    /// <summary>Adds goods to a colony's warehouse via the internal <c>Colony.AddGoods</c> (not visible to this assembly) by reflection.</summary>
+    private static void AddColonyStore(Colony colony, string goodsId, int amount) =>
+        typeof(Colony).GetMethod("AddGoods", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(colony, [goodsId, amount]);
+
+    /// <summary>The first descendant node (recursive) named <paramref name="name"/>, or null (for asserting a ClauseRow rendered).</summary>
+    private static Node? FindNodeNamed(Node root, string name)
+    {
+        if (root.Name == name)
+        {
+            return root;
+        }
+        foreach (Node child in root.GetChildren())
+        {
+            if (FindNodeNamed(child, name) is { } found)
+            {
+                return found;
+            }
+        }
+        return null;
+    }
 
     private static int ForeignPowerId(Game game) =>
         game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial).PlayerId;

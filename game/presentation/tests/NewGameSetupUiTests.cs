@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
@@ -190,6 +191,61 @@ public class NewGameSetupUiTests
 
         AssertThat(NewGameDialog.PendingImportedMap).IsNull();
         NewGameDialog.PendingImportedMap = null;
+    }
+
+    // ── Landmass style forwarding (86d3f62r5) ───────────────────────────────────────────────────────────────────────
+
+    [TestCase]
+    public async Task LandStyleDropdown_OffersTheThreeStyles_AndStartForwardsThePickedStyle()
+    {
+        // 86d3f62r5: the landmass-style dropdown was reachable but undriven by L3. Selecting a non-default style and
+        // pressing Start forwards it onto GameController.PendingLandStyle (consumed by the new-game host into Game.New).
+        (ISceneRunner runner, NewGameDialog dialog) = await OpenDialog();
+        GameController.PendingLandStyle = null; // clean slate (statics survive between tests)
+        try
+        {
+            var landStyle = Find<OptionButton>(dialog, "LandStyleOption");
+            AssertThat(landStyle.ItemCount).IsEqual(WorldSizeOptions.LandStyles.Count); // Continent / Archipelago / Islands
+            AssertThat(landStyle.Selected).IsEqual(WorldSizeOptions.DefaultLandStyleIndex); // Continent — the shipped default
+
+            dialog.Open((_, _, _, _) => { });
+
+            // Pick a NON-default style (the first that differs from the default index) and Start.
+            int pick = Enumerable.Range(0, WorldSizeOptions.LandStyles.Count)
+                .First(i => i != WorldSizeOptions.DefaultLandStyleIndex);
+            landStyle.Select(pick);
+            Find<Button>(dialog, "StartButton").EmitSignal(BaseButton.SignalName.Pressed);
+            await runner.SimulateFrames(1);
+
+            // The picked style rides the static into the new-game host (ADR-006 — the style shapes only the random map).
+            AssertThat(GameController.PendingLandStyle).IsNotNull();
+            AssertThat(GameController.PendingLandStyle!.Style).IsEqual(WorldSizeOptions.LandStyles[pick].Style);
+        }
+        finally
+        {
+            GameController.PendingLandStyle = null; // tidy the static for the next test
+        }
+    }
+
+    [TestCase]
+    public async Task DefaultStart_ForwardsTheDefaultLandStyle()
+    {
+        // Left untouched, Start forwards the shipped-default (Continent) style — the byte-identical historical map.
+        (ISceneRunner runner, NewGameDialog dialog) = await OpenDialog();
+        GameController.PendingLandStyle = null;
+        try
+        {
+            dialog.Open((_, _, _, _) => { });
+            Find<Button>(dialog, "StartButton").EmitSignal(BaseButton.SignalName.Pressed);
+            await runner.SimulateFrames(1);
+
+            AssertThat(GameController.PendingLandStyle).IsNotNull();
+            AssertThat(GameController.PendingLandStyle!.Style).IsEqual(WorldSizeOptions.DefaultLandStyle.Style); // Continent
+        }
+        finally
+        {
+            GameController.PendingLandStyle = null;
+        }
     }
 
     // ── Custom difficulty (86d3fq0x7) ───────────────────────────────────────────────────────────────────────────────

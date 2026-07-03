@@ -55,6 +55,25 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-03 — L3 player-flow coverage: close the wiring-regression gap (86d3f62r5) ✅
+
+**Requested:** add L3 scene tests that press/drive the **real** player control (not the underlying oracle) for a batch of reachable-but-undriven UI flows, so a wiring regression would fail CI. Establish the "playable = UI path + L3 player-flow test" bar.
+**Did:**
+- **`InputTests` (+8):** Plow + Clear-forest order buttons; right-click menu **"Go to here"**; the **goto-walk** full flow (arm G → click 2-tile dest → End Turn walks it via `ProcessGotos`); **player-initiated assault on a rival colony** (click a rival colony with a human artillery → assault resolves); the forced native-land-claim **Steal** and **Abandon** branches (press B on native-owned land → "Native land" dialog); the tribute-demand **Refuse** branch (End Turn → demand → Refuse clears it, pays nothing).
+- **`NativeSettlementPanelTests` (+2):** **Learn-skill** (a free colonist learns `expertFarmer` → the colonist upgrades, keeping its id) + the not-shown gate for an expert.
+- **`NegotiationPanelTests` (+5):** the **scout-mission menu** (`OpenScoutMissions` → Spy ends the scout's turn / Negotiate routes to the colony negotiation) and the offer-builder **reject-counter**, **goods**, **colony**, **unit**, **incite** clause add-buttons.
+- **`SettingsScreenTests` (+3):** **autosave-period** SpinBox, **UI-scale** slider (+ label), **colourblind** toggle (flips `AccessibilityPalette.ColorblindMode`).
+- **`NewGameSetupUiTests` (+2):** **landmass-style** dropdown forwards the picked style onto `GameController.PendingLandStyle` (+ default forwards Continent).
+- Docs (same commit): changelog row in `docs/modules/presentation.md`; two new L3 discipline notes in `docs/TESTING.md` (the "playable = UI path + L3 player-flow" bar; shared-autoload restore hygiene).
+**Status:** **test-only**, no game-logic/presentation behaviour changed. `dotnet build` slnx green. **Full L3/L4 366 green** (was 344; +22 new), **two consecutive full-suite runs, no flakes**. Committed in this worktree (not pushed).
+**Changed:** `game/presentation/tests/{InputTests,NativeSettlementPanelTests,NegotiationPanelTests,SettingsScreenTests,NewGameSetupUiTests}.cs`, `docs/modules/presentation.md`, `docs/TESTING.md`. Commit — see below.
+**Decisions:** (1) **"Centre here" right-click item is genuinely mis-wired** — `HandleRightClick` adds it with id `CentreId == -1`, but Godot 4.6's `PopupMenu.AddItem` treats −1 as the auto-assign-to-index sentinel, so its stored id is 0 and a real click misses the `case CentreId` arm (the camera never centres); "Go to here" (id −2) is preserved and works. Per the presentation-only constraint I **reported it** (spawned a follow-up task) instead of adding the wiring in a test-only change. (2) A new autosave-period test was leaking period 5 into the shared `/root/Settings` autoload (and thence `settings.cfg`), flaking `SaveLoadTests.EndingATurn_WritesTheAutosave` on the 2nd run; fixed by restoring the default (1) + `Save()` in a `finally`. (3) Learn-skill asserts `SkillConsumed` only for non-capital settlements (capitals teach indefinitely).
+**Scheduled next:** integrator merges this worktree and confirms the CI L3/L4 (Godot GdUnit) job is green; then the **"Centre here" mis-wiring fix** (spawned follow-up: change the `CentreId` sentinel off −1, add its L3 test).
+**Follow-ups:** the "Centre here" sentinel fix + test (spawned task); confirm the CI L3/L4 job green post-merge (per memory: CI-green must include the Godot job, not just local).
+**Needs you:** nothing — scoped task complete. One real bug surfaced ("Centre here"), captured as a follow-up rather than fixed here (test-only change).
+
+---
+
 ## 2026-07-03 — Natural-disaster parity: remaining effects + terrain-mapped pool (86d3fq0ye) ✅
 
 **Requested:** complete the two remaining gaps in the natural-disaster system — model+apply the three dropped effect kinds (lossOfBuilding / lossOfUnit / damagedUnit), and make the disaster pool the struck colony's centre-tile terrain's weighted list (both inert in classic, `naturalDisasters` defaults 0).

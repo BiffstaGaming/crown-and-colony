@@ -164,6 +164,97 @@ public class SettingsScreenTests
         service.Settings.SilencedMessageCategories.Clear(); // leave it clean for other suites
     }
 
+    // ── 86d3f62r5: the Game-section controls beyond the Master slider ────────────────────────────────────────────────
+
+    [TestCase]
+    public async Task ChangingAutosaveSpin_StoresThePeriodOnTheLiveSettings()
+    {
+        // 86d3f62r5: the autosave-period SpinBox was reachable but undriven by L3 (only the Master slider was). Driving
+        // it stores the new period on the live settings model (read at turn end by the GameController).
+        ISceneRunner runner = ISceneRunner.Load(SettingsScene);
+        await runner.SimulateFrames(2);
+        var scene = runner.Scene();
+        SettingsService service = ServiceOf(scene);
+        const int DefaultPeriod = 1; // SettingsModel's shipped default (SaveLoadTests.EndingATurn_WritesTheAutosave relies on it)
+        try
+        {
+            var spin = scene.GetNode<SpinBox>("Panel/VBox/AutosaveRow/AutosaveSpin");
+            spin.Value = 5;
+            spin.EmitSignal(Godot.Range.SignalName.ValueChanged, 5.0); // user-style change → applies to the live model
+            await runner.SimulateFrames(1);
+
+            AssertThat(service.Settings.AutosavePeriod).IsEqual(5); // the period stored on the live settings
+        }
+        finally
+        {
+            // Restore the DEFAULT period on the shared autoload AND persist it, so neither the in-memory autoload nor the
+            // on-disk settings.cfg leaks a non-default period into SaveLoadTests.EndingATurn_WritesTheAutosave (which
+            // needs period 1 so a single turn-end writes the autosave). Restoring to the constant (not the pre-read
+            // value) also self-heals a settings.cfg an earlier run may have left at 5.
+            service.UpdateAndApply(s => s.AutosavePeriod = DefaultPeriod);
+            service.Save();
+        }
+    }
+
+    [TestCase]
+    public async Task ChangingUiScaleSlider_AppliesTheScale_AndUpdatesItsLabel()
+    {
+        // 86d3f62r5: the UI-scale HSlider was reachable but undriven. Driving it stores + applies the new root
+        // content-scale factor and updates the percent readout.
+        ISceneRunner runner = ISceneRunner.Load(SettingsScene);
+        await runner.SimulateFrames(2);
+        var scene = runner.Scene();
+        SettingsService service = ServiceOf(scene);
+
+        var slider = scene.GetNode<HSlider>("Panel/VBox/UiScaleRow/UiScaleSlider");
+        slider.Value = 1.5; // within [MinUiScale, MaxUiScale]
+        slider.EmitSignal(Godot.Range.SignalName.ValueChanged, 1.5);
+        await runner.SimulateFrames(1);
+
+        AssertThat(Mathf.IsEqualApprox(service.Settings.UiScale, 1.5f)).IsTrue(); // stored + applied
+        AssertThat(scene.GetNode<Label>("Panel/VBox/UiScaleRow/UiScaleValue").Text).IsEqual("150%");
+
+        // Restore the default so this process-global content scale doesn't bleed into sibling scene suites.
+        service.UpdateAndApply(s => s.UiScale = 1.0f);
+    }
+
+    [TestCase]
+    public async Task TogglingColorblindCheck_FlipsTheAccessibilityPalette()
+    {
+        // 86d3f62r5: the colourblind CheckButton was reachable but undriven. Toggling it swaps the map palette via
+        // AccessibilityPalette (the static flag the markers/minimap read on redraw).
+        ISceneRunner runner = ISceneRunner.Load(SettingsScene);
+        await runner.SimulateFrames(2);
+        var scene = runner.Scene();
+        SettingsService service = ServiceOf(scene);
+        bool before = AccessibilityPalette.ColorblindMode;
+        try
+        {
+            var check = scene.GetNode<CheckButton>("Panel/VBox/ColorblindRow/ColorblindCheck");
+            check.ButtonPressed = true;
+            check.EmitSignal(BaseButton.SignalName.Toggled, true);
+            await runner.SimulateFrames(1);
+            AssertThat(service.Settings.ColorblindMode).IsTrue();           // stored on the live model
+            AssertThat(AccessibilityPalette.ColorblindMode).IsTrue();       // and applied to the palette flag
+
+            check.ButtonPressed = false;
+            check.EmitSignal(BaseButton.SignalName.Toggled, false);
+            await runner.SimulateFrames(1);
+            AssertThat(AccessibilityPalette.ColorblindMode).IsFalse();      // toggled back off
+        }
+        finally
+        {
+            // Restore whatever the palette flag was, so this process-global toggle can't bleed into sibling suites.
+            service.UpdateAndApply(s => s.ColorblindMode = before);
+        }
+    }
+
+    /// <summary>The <see cref="SettingsService"/> the screen actually uses (its private <c>_service</c> field — the autoload or the transient fallback), by reflection.</summary>
+    private static SettingsService ServiceOf(Node scene) =>
+        (SettingsService)scene.GetType()
+            .GetField("_service", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(scene)!;
+
     [TestCase]
     public async Task Service_SaveThenLoad_RoundTripsThroughDisk()
     {
