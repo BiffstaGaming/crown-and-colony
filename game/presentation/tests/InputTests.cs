@@ -1785,14 +1785,40 @@ public class InputTests
         AssertThat(unit.MovementLeft).IsEqual(0);                                       // committed for the turn
     }
 
-    // NOTE (86d3f62r5): the right-click menu's "Centre here" item is NOT covered here because it is genuinely
-    // MIS-WIRED, not merely undriven. HandleRightClick adds it with `menu.AddItem("Centre here", CentreId)` where
-    // CentreId == -1 — but Godot 4.6's PopupMenu.AddItem treats id == -1 as the "auto-assign to the item index"
-    // sentinel, so "Centre here" is stored with id 0 (its index), NOT -1. A real click therefore emits IdPressed(0),
-    // which misses the `case CentreId` (-1) arm and falls through to the unit-select `default`, so the camera never
-    // centres. ("Go to here" uses -2, which Godot preserves, so it IS wired — covered below.) Per the ADR-006 /
-    // presentation-only constraint this is reported to the integrator to fix in source (use a non −1 sentinel, e.g.
-    // -100), rather than adding wiring here. A test that drove the real control would fail today.
+    [TestCase(Timeout = 60000)]
+    public async Task RightClickTileMenu_CentreHere_CentresTheCameraOnThatTile()
+    {
+        // 86d3f62r5 regression: "Centre here" was mis-wired — `menu.AddItem("Centre here", CentreId)` with CentreId == -1,
+        // but Godot 4.6's PopupMenu.AddItem treats id == -1 as the "auto-assign the item index" sentinel, so the item was
+        // stored with id 0 and a real click missed the `case CentreId` arm (the camera never centred). Fixed to a non-(-1)
+        // id; firing the real menu item must now centre the camera on the right-clicked tile.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        controller.GetNode<CameraController>("Camera").EdgeScrollEnabled = false;
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Right-click a specific explored tile: aim the camera at it so the screen-centre right-click maps there.
+        Position target = game.Units[0].Position;
+        var camera = controller.GetNode<Camera2D>("Camera");
+        camera.Position = MapView.TileCentre(target);
+        await runner.SimulateFrames(1);
+        Vector2 screenCentre = controller.GetViewport().GetVisibleRect().Size / 2f;
+        controller.GetType().GetMethod("HandleRightClick", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(controller, [screenCentre]);
+        await runner.SimulateFrames(1);
+
+        // Move the camera away, then fire "Centre here" via its REAL menu id → it snaps back to the clicked tile's centre.
+        camera.Position = MapView.TileCentre(target) + new Vector2(400, 400);
+        await runner.SimulateFrames(1);
+        var menu = controller.GetNode<CanvasLayer>("UI").GetChildren().OfType<PopupMenu>().First();
+        int centreId = ItemIdWithText(menu, "Centre here"); // −10 after the fix (Godot preserves any non-(-1) id)
+        menu.EmitSignal(PopupMenu.SignalName.IdPressed, centreId);
+        await runner.SimulateFrames(1);
+
+        AssertThat(camera.Position).IsEqual(MapView.TileCentre(target)); // centred back on the right-clicked tile
+    }
 
     [TestCase(Timeout = 60000)]
     public async Task RightClickTileMenu_GoToHere_SetsTheSelectedUnitsDestination()

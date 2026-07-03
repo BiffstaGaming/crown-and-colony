@@ -1544,7 +1544,10 @@ public partial class GameController : Node2D
         {
             menu.AddSeparator();
         }
-        const int CentreId = -1;
+        // Godot's PopupMenu.AddItem treats id == -1 as the "auto-assign the item's index" sentinel, so a menu id must
+        // NEVER be -1 — "Centre here" was −1, silently became 0, and a real click missed its case arm (the camera never
+        // centred, 86d3f62r5). All three use distinct non-(-1) negatives so they can't collide with a positive unit id.
+        const int CentreId = -10;
         const int GotoId = -2;
         const int RenameId = -3;
         menu.AddItem("Centre here", CentreId);
