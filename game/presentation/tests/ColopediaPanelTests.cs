@@ -33,11 +33,11 @@ public class ColopediaPanelTests
         AssertThat(controller.GetNode<Label>("UI/ColopediaPanel/VBox/ColopediaTitle").Text).Contains("Goods");
 
         // Tobacco is always in the classic ruleset and is market-tradeable → its row renders, named by the good, with
-        // the readable name + sell/buy market price on the row's fact label (the HBox's first child).
+        // the readable name + sell/buy market price on the row's named fact label (an icon may precede it now).
         var dynamic = controller.GetNode<VBoxContainer>("UI/ColopediaPanel/VBox/Scroll/Dynamic");
         var tobacco = dynamic.GetNodeOrNull<HBoxContainer>("Goods_tobacco");
         AssertThat(tobacco).IsNotNull();
-        var tobaccoFact = tobacco!.GetChild<Label>(0);
+        var tobaccoFact = tobacco!.GetNode<Label>("Fact");
         AssertThat(tobaccoFact.Text).Contains("Tobacco");
         AssertThat(tobaccoFact.Text).Contains("sell");
         AssertThat(tobaccoFact.Text).Contains("buy");
@@ -69,7 +69,7 @@ public class ColopediaPanelTests
         controller.GetNode<Button>("UI/ColopediaPanel/VBox/Scroll/Dynamic/Tabs/Cat_Units").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
         AssertThat(title.Text).Contains("Units");
-        AssertThat(dynamic.GetNodeOrNull<Label>("Units_freeColonist")).IsNotNull();
+        AssertThat(dynamic.GetNodeOrNull<HBoxContainer>("Units_freeColonist")).IsNotNull();
 
         // Buildings: the town hall is always present.
         controller.GetNode<Button>("UI/ColopediaPanel/VBox/Scroll/Dynamic/Tabs/Cat_Buildings").EmitSignal(BaseButton.SignalName.Pressed);

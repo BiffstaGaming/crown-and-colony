@@ -363,8 +363,16 @@ public partial class GameController : Node2D
             GetNode<Button>("UI/ColopediaButton"), GetNode<Button>("UI/HighScoresButton"),
             GetNode<Button>("UI/DiplomacyButton"), _endTurnButton,
         };
-        _colonyPanel.VisibilityChanged += RefreshHudButtonVisibility;
-        _europePanel.VisibilityChanged += RefreshHudButtonVisibility;
+        // Every full-screen panel hides the bottom-right corner HUD while it is open (so the action cluster / mini-map
+        // never overlap it), and restores it on close — wire each one's visibility to the refresh.
+        foreach (PanelContainer panel in new[]
+        {
+            _colonyPanel, _europePanel, _colopediaPanel, _colonyReportPanel, _tradeRoutePanel, _negotiationPanel,
+            _nativePanel, _highScoresPanel, _foundingFatherPanel, _declarationPanel, _victoryPanel, _findSettlementPanel,
+        })
+        {
+            panel.VisibilityChanged += RefreshHudButtonVisibility;
+        }
         GetNode<Button>("UI/ColopediaPanel/VBox/CloseButton").Pressed += () => _colopediaPanel.Hide();
         GetNode<Button>("UI/ColonyReportPanel/VBox/CloseButton").Pressed += () => _colonyReportPanel.Hide();
         GetNode<Button>("UI/VictoryPanel/VBox/CloseButton").Pressed += () => _victoryPanel.Hide();
@@ -714,16 +722,16 @@ public partial class GameController : Node2D
     /// <summary>One-line readout for the selected-unit HUD panel (custom name / type / moves / role / orders / goto). Reads-only (ADR-006).</summary>
     private string DescribeSelectedUnit(Unit u)
     {
-        string role = u.HasDefaultRole ? "" : $"  ·  {u.RoleId[(u.RoleId.LastIndexOf('.') + 1)..]}";
+        string role = u.HasDefaultRole ? "" : $"  ·  {Naming.Humanize(u.RoleId[(u.RoleId.LastIndexOf('.') + 1)..])}";
         string orders = u.Orders == UnitOrders.Active ? "" : $"  ·  {u.Orders.ToString().ToLowerInvariant()}";
         // An in-progress tile improvement: show what's being built and the turns of work left.
         string building = u.WorkImprovementId is { } imp
-            ? $"  ·  building {imp[(imp.LastIndexOf('.') + 1)..]} ({u.WorkTurnsLeft})"
+            ? $"  ·  building {Naming.Humanize(imp[(imp.LastIndexOf('.') + 1)..])} ({u.WorkTurnsLeft})"
             : "";
         string goingTo = u.IsGoingTo ? "  ·  going to" : "";
         // A christened unit leads with its custom name (86d3drmzu), the generic type name following as its class.
         string named = u.Name is { Length: > 0 } name ? $"\"{name}\"  ·  " : "";
-        return $"{named}{u.Type.ShortName}  ·  moves {u.MovementLeft}/{u.Type.Movement}{role}{orders}{building}{goingTo}";
+        return $"{named}{Naming.Humanize(u.Type.ShortName)}  ·  moves {u.MovementLeft}/{u.Type.Movement}{role}{orders}{building}{goingTo}";
     }
 
     /// <summary>
@@ -731,7 +739,7 @@ public partial class GameController : Node2D
     /// christened, else its generic type short name. Presentation-only (ADR-006) — the rename rule itself lives in
     /// <see cref="Game.NameUnit"/>.
     /// </summary>
-    private static string UnitDisplayName(Unit u) => u.Name is { Length: > 0 } name ? name : u.Type.ShortName;
+    private static string UnitDisplayName(Unit u) => u.Name is { Length: > 0 } name ? name : Naming.Humanize(u.Type.ShortName);
 
     /// <summary>
     /// One- or two-line readout for the HUD tile-info panel (FreeCol's <c>InfoPanel</c> tile-info): the clicked
@@ -2622,7 +2630,10 @@ public partial class GameController : Node2D
         {
             return; // not in a game yet (the menu) — leave the column at its scene-default visibility
         }
-        bool fullScreenPanelOpen = _colonyPanel.Visible || _europePanel.Visible;
+        bool fullScreenPanelOpen =
+            _colonyPanel.Visible || _europePanel.Visible || _colopediaPanel.Visible || _colonyReportPanel.Visible ||
+            _tradeRoutePanel.Visible || _negotiationPanel.Visible || _nativePanel.Visible || _highScoresPanel.Visible ||
+            _foundingFatherPanel.Visible || _declarationPanel.Visible || _victoryPanel.Visible || _findSettlementPanel.Visible;
         foreach (Button button in _cornerHudButtons)
         {
             button.Visible = !fullScreenPanelOpen;

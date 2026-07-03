@@ -255,9 +255,9 @@ public partial class ColonyReportPanel : PanelContainer
             return "—";
         }
         IEnumerable<string> reqs = info.BuildCost
-            .Select(o => $"{_game.Ruleset.Goods(o.GoodsId).ShortName} {colony.StoreOf(o.GoodsId)}/{o.Amount}");
+            .Select(o => $"{Display(_game.Ruleset.Goods(o.GoodsId).ShortName)} {colony.StoreOf(o.GoodsId)}/{o.Amount}");
         string needs = reqs.Any() ? $" (needs {string.Join(", ", reqs)})" : "";
-        return $"{info.ShortName}{needs}";
+        return $"{Display(info.ShortName)}{needs}";
     }
 
     /// <summary>The colony's non-food net production, signed and named, or "nothing".</summary>
@@ -266,7 +266,7 @@ public partial class ColonyReportPanel : PanelContainer
         List<string> parts = net
             .Where(kv => kv.Key != Colony.FoodId && kv.Value != 0)
             .OrderBy(kv => kv.Key, System.StringComparer.Ordinal)
-            .Select(kv => $"{Signed(kv.Value)} {_game.Ruleset.Goods(kv.Key).ShortName}")
+            .Select(kv => $"{Signed(kv.Value)} {Display(_game.Ruleset.Goods(kv.Key).ShortName)}")
             .ToList();
         return parts.Count > 0 ? string.Join(", ", parts) : "nothing";
     }
@@ -303,8 +303,8 @@ public partial class ColonyReportPanel : PanelContainer
 
     private string TypeAndRole(Unit u)
     {
-        string role = u.HasDefaultRole ? "" : $" ({_game.Ruleset.Role(u.RoleId).Id[(u.RoleId.LastIndexOf('.') + 1)..]})";
-        return $"{u.Type.ShortName}{role}";
+        string role = u.HasDefaultRole ? "" : $" ({Display(_game.Ruleset.Role(u.RoleId).Id[(u.RoleId.LastIndexOf('.') + 1)..])})";
+        return $"{Display(u.Type.ShortName)}{role}";
     }
 
     private static string Where(Unit u)
@@ -338,7 +338,7 @@ public partial class ColonyReportPanel : PanelContainer
         parts.AddRange(carrier.Cargo
             .Where(kv => kv.Value > 0)
             .OrderBy(kv => kv.Key, System.StringComparer.Ordinal)
-            .Select(kv => $"{kv.Value} {_game.Ruleset.Goods(kv.Key).ShortName}"));
+            .Select(kv => $"{kv.Value} {Display(_game.Ruleset.Goods(kv.Key).ShortName)}"));
         return parts.Count > 0 ? $"  [{string.Join(", ", parts)}]" : "";
     }
 
@@ -912,7 +912,7 @@ public partial class ColonyReportPanel : PanelContainer
             // The good is a Colopedia deep-link (86d3fymc5): click it to open the Goods entry (FreeCol report → colopedia).
             dynamic.AddChild(EntityLink(
                 $"Trade_{Strip(g.Id)}",
-                $"{g.ShortName} — sell {bid} / buy {ask}  ·  sold {sold}  ·  income {before} / {after}{boycott}",
+                $"{Display(g.ShortName)} — sell {bid} / buy {ask}  ·  sold {sold}  ·  income {before} / {after}{boycott}",
                 ColopediaPanel.Category.Goods,
                 g.ShortName));
         }

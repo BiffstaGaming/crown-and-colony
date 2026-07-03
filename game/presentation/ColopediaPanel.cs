@@ -245,7 +245,8 @@ public partial class ColopediaPanel : PanelContainer
                 : "not traded in Europe";
 
             var row = new HBoxContainer { Name = $"Goods_{g.ShortName}" };
-            row.AddChild(new Label { Text = $"{Title(g.ShortName)} — {GoodsKind(g)}  ·  {price}" });
+            AddIcon(row, ColonyArt.GoodsIcon(g.ShortName));
+            row.AddChild(new Label { Name = "Fact", Text = $"{Title(g.ShortName)} — {GoodsKind(g)}  ·  {price}" });
 
             // Refined good → a link to its raw input (its "made from"); raw good → links to whatever is refined from it.
             if (g.MadeFrom is { } rawId)
@@ -324,12 +325,15 @@ public partial class ColopediaPanel : PanelContainer
     {
         foreach (UnitType u in _game.Ruleset.UnitTypes)
         {
-            dynamic.AddChild(new Label
+            var row = new HBoxContainer { Name = $"Units_{u.ShortName}" };
+            AddIcon(row, ColonyArt.UnitIcon(u.ShortName));
+            row.AddChild(new Label
             {
-                Name = $"Units_{u.ShortName}",
+                Name = "Fact",
                 Text = $"{Title(u.ShortName)} — {UnitKind(u)}, move {u.Movement}, " +
                        $"attack {u.Offence:0.#} / defence {u.Defence:0.#}  ·  {UnitSource(u)}",
             });
+            dynamic.AddChild(row);
         }
     }
 
@@ -363,7 +367,7 @@ public partial class ColopediaPanel : PanelContainer
         foreach (BuildingType b in _game.Ruleset.BuildingTypes)
         {
             string cost = b.BuildCost.Count > 0
-                ? string.Join(", ", b.BuildCost.Select(c => $"{c.Amount} {_game.Ruleset.Goods(c.GoodsId).ShortName}"))
+                ? string.Join(", ", b.BuildCost.Select(c => $"{c.Amount} {Title(_game.Ruleset.Goods(c.GoodsId).ShortName)}"))
                 : "free (starting building)";
 
             // The distinct goods this building's attended production yields (lumber mill → hammers, weaver's → cloth…).
@@ -375,6 +379,7 @@ public partial class ColopediaPanel : PanelContainer
                 .ToList();
 
             var row = new HBoxContainer { Name = $"Buildings_{b.ShortName}" };
+            AddIcon(row, ColonyArt.BuildingImage(b.ShortName));
             row.AddChild(new Label
             {
                 Text = $"{Title(b.ShortName)} — needs pop {b.RequiredPopulation}, {b.Workplaces} workplaces  ·  cost: {cost}",
@@ -609,6 +614,26 @@ public partial class ColopediaPanel : PanelContainer
     };
 
     // ── Shared helpers ───────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Entry-icon side length (px) — a small goods/unit/building thumbnail at the left of a Colopedia row.</summary>
+    private const int IconSize = 30;
+
+    /// <summary>Prepends a small entry icon to a row when its art exists (goods icon / unit sprite / building image), else no-op so the row is label-only.</summary>
+    private static void AddIcon(HBoxContainer row, Texture2D? tex)
+    {
+        if (tex is null)
+        {
+            return;
+        }
+        row.AddChild(new TextureRect
+        {
+            Texture = tex,
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            CustomMinimumSize = new Vector2(IconSize, IconSize),
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+        });
+    }
 
     /// <summary>A percentage label for a defence bonus (0 → "+0%").</summary>
     private static string Pct(double v) => $"{(v >= 0 ? "+" : "")}{v:0.#}%";

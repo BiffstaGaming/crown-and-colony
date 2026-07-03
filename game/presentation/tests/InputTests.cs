@@ -6,6 +6,7 @@ using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
 using CrownAndColony.GameLogic.Persistence;
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 using GdUnit4;
@@ -317,7 +318,7 @@ public class InputTests
         // The camera centres on it and the selected-unit panel reflects it.
         AssertThat(controller.GetNode<Camera2D>("Camera").Position).IsEqual(MapView.TileCentre(expected.Position));
         AssertThat(controller.GetNode<PanelContainer>("UI/SelectedUnitPanel").Visible).IsTrue();
-        AssertThat(controller.GetNode<Label>("UI/SelectedUnitPanel/VBox/Label").Text).Contains(expected.Type.ShortName);
+        AssertThat(controller.GetNode<Label>("UI/SelectedUnitPanel/VBox/Label").Text).Contains(Naming.Humanize(expected.Type.ShortName));
     }
 
     [TestCase(Timeout = 60000)]
@@ -337,7 +338,7 @@ public class InputTests
 
         AssertThat(panel.Visible).IsTrue();
         var label = controller.GetNode<Label>("UI/SelectedUnitPanel/VBox/Label");
-        AssertThat(label.Text).Contains(unit.Type.ShortName); // type
+        AssertThat(label.Text).Contains(Naming.Humanize(unit.Type.ShortName)); // type (humanised, e.g. "Free Colonist")
         AssertThat(label.Text).Contains("moves");             // and its movement readout
     }
 
@@ -413,7 +414,7 @@ public class InputTests
         AssertThat(unit.IsImproving).IsTrue();                            // the build order took
         AssertThat(unit.WorkImprovementId).IsEqual("model.improvement.road");
         AssertThat(unit.MovementLeft).IsEqual(0);                         // committed for the turn
-        AssertThat(controller.GetNode<Label>("UI/SelectedUnitPanel/VBox/Label").Text).Contains("building road"); // shown
+        AssertThat(controller.GetNode<Label>("UI/SelectedUnitPanel/VBox/Label").Text).Contains("building Road"); // shown (humanised improvement)
     }
 
     [TestCase(Timeout = 60000)]
