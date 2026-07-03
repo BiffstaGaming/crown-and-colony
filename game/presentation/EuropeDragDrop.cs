@@ -117,7 +117,29 @@ public partial class EuropeDragSource : Control
     public EuropeDragSource WithChild(Control child)
     {
         AddChild(child);
+        // A bare Control does NOT aggregate its child's minimum size (it reports only its own CustomMinimumSize), so a
+        // drag source in an HBox row was claiming width 0 — the wrapped label (icon+name) then got no reserved space and
+        // its FullRect-anchored content drew over the Buy/Sell buttons beside it (the goods-market overlap, 86d3jy0rn).
+        // Re-query this source's min size whenever the child's changes so it sizes like a single-child container (mirrors
+        // EuropeDropTarget). The _GetMinimumSize override below returns the child's combined minimum.
+        child.MinimumSizeChanged += UpdateMinimumSize;
+        UpdateMinimumSize();
         return this;
+    }
+
+    /// <summary>This source's minimum size — the per-axis maximum of its visible children's combined minimums (so a wrapped label/card reserves real width in a row), or its own <see cref="Control.CustomMinimumSize"/> when it has none. Mirrors <see cref="EuropeDropTarget._GetMinimumSize"/>.</summary>
+    public override Vector2 _GetMinimumSize()
+    {
+        var min = Vector2.Zero;
+        foreach (Node node in GetChildren())
+        {
+            if (node is Control { Visible: true } control)
+            {
+                Vector2 childMin = control.GetCombinedMinimumSize();
+                min = new Vector2(Mathf.Max(min.X, childMin.X), Mathf.Max(min.Y, childMin.Y));
+            }
+        }
+        return min;
     }
 
     /// <summary>Builds the drag payload + preview, or returns <c>default</c> when nothing is draggable here (Godot issue 78507: C# this override is non-nullable, so <c>default</c> = "no drag").</summary>

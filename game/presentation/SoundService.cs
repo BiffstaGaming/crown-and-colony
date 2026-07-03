@@ -26,9 +26,11 @@ public partial class SoundService : Node
     // A handful of voices is plenty for UI/event SFX; the oldest is reused if all are busy (round-robin).
     private const int VoiceCount = 6;
 
-    // The logical cue used for a generic UI button click. IllegalMove's clip doubles as the click/deny cue in FreeCol
-    // (see SoundEvent.IllegalMove); a dedicated click clip can be mapped here later without touching the wiring.
-    private const SoundEvent UiClickEvent = SoundEvent.IllegalMove;
+    // The cue for a generic UI button click. There is NO dedicated click clip yet, and reusing the illegal-move
+    // "deny buzz" made every single button press sound like static (86d3jy0rn). Until a proper click asset is sourced
+    // (licensing), a plain button click is SILENT (null) — the meaningful cues (attack / sell / alert, and the deny buzz
+    // on an ACTUAL illegal move) still fire from their own call sites. Map a real click clip here to re-enable it.
+    private static readonly SoundEvent? UiClickEvent = null;
 
     private readonly List<AudioStreamPlayer> _voices = new();
     private readonly Dictionary<SoundEvent, AudioStream> _streams = new();
@@ -101,8 +103,14 @@ public partial class SoundService : Node
         }
     }
 
-    /// <summary>Plays the generic UI button-click cue. Wired automatically to every <see cref="BaseButton"/>'s click; safe to call directly too.</summary>
-    public void PlayUiClick() => Play(UiClickEvent);
+    /// <summary>Plays the generic UI button-click cue, if one is mapped. Wired automatically to every <see cref="BaseButton"/>'s click; a no-op while <see cref="UiClickEvent"/> is null (no click asset yet — silent beats the deny-buzz-on-every-click, 86d3jy0rn).</summary>
+    public void PlayUiClick()
+    {
+        if (UiClickEvent is { } cue)
+        {
+            Play(cue);
+        }
+    }
 
     /// <summary>
     /// Plays the clip mapped to <paramref name="evt"/> on a free voice (round-robin). No-op (with a warning) if the clip

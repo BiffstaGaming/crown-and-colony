@@ -17,6 +17,18 @@ config/icon="res://icon.svg"
 boot_splash/show_image=false
 boot_splash/bg_color=Color(0.04, 0.06, 0.1, 1)
 
+[display]
+
+; The UI is designed at a 1024x600 base. Without this section the game opened in Godot's default window (a different
+; size than the UI), leaving it pinned top-left with a scroll-bar (86d3jy0rn); opening at exactly the 1024x600 base
+; makes the window match the interface so it fills cleanly. Resizable so the player can grow/maximise the window.
+; NOTE: deliberately NO window/stretch/mode — a canvas-items stretch scales the content when the window differs from
+; the base, which breaks the screen<->tile coordinate maths the L3 interaction tests rely on (they share one window
+; whose size varies across the suite). The map view already recentres to fill a larger window without a global stretch.
+window/size/viewport_width=1024
+window/size/viewport_height=600
+window/size/resizable=true
+
 [autoload]
 
 Loc="*res://presentation/Loc.cs"

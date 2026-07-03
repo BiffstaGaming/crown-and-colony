@@ -227,6 +227,12 @@ public class EuropePanelTests
         AssertThat(game.UnitsInEurope.Count()).IsEqual(inEuropeBefore + 1);
         AssertThat(game.Gold).IsEqual(goldBefore - price);
         AssertThat(game.EuropeUnitPrice(Artillery)).IsEqual(price + 100); // escalates +100 for the next buy
+
+        // …and it must actually SHOW on the dock (86d3jy0rn): artillery is neither a person nor a carrier nor treasure,
+        // so it used to fall through every "On the docks" list and be invisible while its price still rose. This assertion
+        // (not just the game-state ones above) is what would have caught the bug.
+        Unit bought = game.UnitsInEurope.First(u => u.Type.Id == Artillery);
+        AssertThat(FindControl<EuropeDragSource>(controller, $"DockColonist_{bought.Id}")).IsNotNull();
     }
 
     [TestCase(Timeout = 60000)]

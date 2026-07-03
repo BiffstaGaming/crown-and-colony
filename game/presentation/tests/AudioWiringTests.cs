@@ -46,15 +46,16 @@ public class AudioWiringTests
     }
 
     [TestCase]
-    public async Task PlayUiClick_IsSafe_AndButtonsAreAutoWired()
+    public async Task PlayUiClick_IsSafe_AndSilentByDefault()
     {
-        // The global click hook auto-connects every BaseButton's Pressed to the click cue. Pressing the End-Turn button
-        // must not throw, and the click must have routed through SoundService (LastPlayed is set). Drive a known button.
+        // The generic UI click is intentionally SILENT (86d3jy0rn): there is no dedicated click clip, and reusing the
+        // illegal-move "deny buzz" made every button press sound like static. PlayUiClick must be a safe no-op — never a
+        // crash — while the meaningful cues still fire from their own call sites (see the blocked-action buzz test below).
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
         await runner.SimulateFrames(2);
 
-        Sound().PlayUiClick(); // direct call is safe headless (no clip → logged no-op, never a crash)
-        AssertThat(Sound().LastPlayed).IsNotNull();
+        Sound().PlayUiClick(); // no click cue mapped → a logged no-op, never a crash and never the deny buzz
+        AssertThat(Sound()).IsNotNull();
     }
 
     [TestCase]

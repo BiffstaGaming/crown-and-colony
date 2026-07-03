@@ -350,6 +350,7 @@ public class InputTests
         // runs on every move/click/action) unconditionally re-Show()ed the card, so dismissal did nothing.
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
         var controller = (GameController)runner.Scene();
+        controller.GetNode<SettingsService>("/root/Settings").SetAdvisorHints(true); // the advisor is opt-in (off by default, 86d3jy0rn) — enable it for this test
         controller.StartNewGame(Seed);
         controller.GetNode<CameraController>("Camera").EdgeScrollEnabled = false; // parked test cursor must not drift the camera
         await runner.SimulateFrames(2);
@@ -397,8 +398,8 @@ public class InputTests
 
         AssertThat(panel.Visible).IsTrue();
         var label = controller.GetNode<Label>("UI/TileInfoPanel/VBox/Label");
-        AssertThat(label.Text).Contains(game.Map.TerrainAt(tile).ShortName); // terrain
-        AssertThat(label.Text).Contains(unit.Type.ShortName);                // occupant
+        AssertThat(label.Text).Contains(Naming.Humanize(game.Map.TerrainAt(tile).ShortName)); // terrain (humanised, 86d3jy0rn)
+        AssertThat(label.Text).Contains(Naming.Humanize(unit.Type.ShortName));                // occupant (humanised)
     }
 
     [TestCase(Timeout = 60000)]

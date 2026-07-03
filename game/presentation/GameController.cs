@@ -767,9 +767,28 @@ public partial class GameController : Node2D
             ? $"  ·  building {Naming.Humanize(imp[(imp.LastIndexOf('.') + 1)..])} ({u.WorkTurnsLeft})"
             : "";
         string goingTo = u.IsGoingTo ? "  ·  going to" : "";
+        // A carrier's manifest — the goods stacks it holds + the names of any passengers aboard, so a selected ship shows
+        // what is in its cargo spots (86d3jy0rn). Empty carriers say so; non-carriers show nothing.
+        string cargo = "";
+        if (u.Type.IsCarrier)
+        {
+            var items = new List<string>();
+            foreach (KeyValuePair<string, int> stack in u.Cargo)
+            {
+                if (stack.Value > 0)
+                {
+                    items.Add($"{stack.Value} {Naming.Humanize(_game.Ruleset.Goods(stack.Key).ShortName)}");
+                }
+            }
+            foreach (Unit passenger in _game.Passengers(u))
+            {
+                items.Add(UnitDisplayName(passenger));
+            }
+            cargo = items.Count > 0 ? $"  ·  carrying: {string.Join(", ", items)}" : "  ·  hold empty";
+        }
         // A christened unit leads with its custom name (86d3drmzu), the generic type name following as its class.
         string named = u.Name is { Length: > 0 } name ? $"\"{name}\"  ·  " : "";
-        return $"{named}{Naming.Humanize(u.Type.ShortName)}  ·  moves {u.MovementLeft}/{u.Type.Movement}{role}{orders}{building}{goingTo}";
+        return $"{named}{Naming.Humanize(u.Type.ShortName)}  ·  moves {u.MovementLeft}/{u.Type.Movement}{role}{orders}{building}{goingTo}{cargo}";
     }
 
     /// <summary>
@@ -794,11 +813,11 @@ public partial class GameController : Node2D
 
         // Terrain + bonus resource. The resource short name is derived from its ruleset id the same way MapView
         // turns the bonus id into an icon name (e.g. model.resource.minerals → minerals); no new oracle needed.
-        string terrain = _game.Map.TerrainAt(tile).ShortName;
+        string terrain = Naming.Humanize(_game.Map.TerrainAt(tile).ShortName); // "savannah" → "Savannah" (86d3jy0rn — the tile panel leaked raw ids)
         string line = terrain;
         if (_game.Map.ResourceAt(tile) is { } resourceId)
         {
-            line += $"  ·  {resourceId[(resourceId.LastIndexOf('.') + 1)..]}";
+            line += $"  ·  {Naming.Humanize(resourceId[(resourceId.LastIndexOf('.') + 1)..])}";
         }
 
         // Occupant: the human's own colony, a discovered native settlement, then any on-map unit. Foreign colonies
@@ -813,7 +832,7 @@ public partial class GameController : Node2D
         }
         else if (_game.Units.FirstOrDefault(u => u.IsOnMap && u.Position == tile) is { } unit)
         {
-            line += $"\n{unit.Type.ShortName}";
+            line += $"\n{Naming.Humanize(unit.Type.ShortName)}"; // "freeColonist" → "Free Colonist" (86d3jy0rn)
         }
         return line;
     }
@@ -2888,20 +2907,31 @@ public partial class GameController : Node2D
             _skipButton.Disabled = false;
             _disbandButton.Disabled = !_game.CheckDisband(sel).Allowed;
             _selectedUnitPanel.Show();
-            // A different unit than the one the dismissal applied to → the player wants fresh advice again, so reset the
-            // sticky-dismiss flag. While the same unit stays selected, a dismissed card stays hidden across refreshes.
-            if (sel.Id != _advisorDismissedUnitId)
-            {
-                _advisorDismissed = false;
-                _advisorDismissedUnitId = sel.Id;
-            }
-            if (_advisorDismissed)
+            // The advisor is an opt-in hint (default off, 86d3jy0rn — its "you could found a colony here" fired on nearly
+            // every tile and read as noise; the tutorial already teaches the opening loop). Only when the player has
+            // enabled advisor hints does the sticky-dismiss logic run at all.
+            bool advisorEnabled = GetNodeOrNull<SettingsService>("/root/Settings")?.AdvisorHints ?? false;
+            if (!advisorEnabled)
             {
                 _advisorPanel.Hide();
             }
             else
             {
-                _advisorPanel.Show(_game.AdviseUnit(sel));
+                // A different unit than the one the dismissal applied to → the player wants fresh advice again, so reset
+                // the sticky-dismiss flag. While the same unit stays selected, a dismissed card stays hidden across refreshes.
+                if (sel.Id != _advisorDismissedUnitId)
+                {
+                    _advisorDismissed = false;
+                    _advisorDismissedUnitId = sel.Id;
+                }
+                if (_advisorDismissed)
+                {
+                    _advisorPanel.Hide();
+                }
+                else
+                {
+                    _advisorPanel.Show(_game.AdviseUnit(sel));
+                }
             }
         }
         else

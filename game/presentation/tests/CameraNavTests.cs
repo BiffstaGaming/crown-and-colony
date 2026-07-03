@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Threading.Tasks;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Specification;
 using GdUnit4;
 using Godot;
 using static GdUnit4.Assertions;
@@ -233,7 +234,7 @@ public class CameraNavTests
         var panel = controller.GetNode<PanelContainer>("UI/TileInfoPanel");
         var label = controller.GetNode<Label>("UI/TileInfoPanel/VBox/Label");
         AssertThat(panel.Visible).IsTrue();
-        AssertThat(label.Text).Contains(g.Map.TerrainAt(tile).ShortName); // terrain
+        AssertThat(label.Text).Contains(Naming.Humanize(g.Map.TerrainAt(tile).ShortName)); // terrain (humanised, 86d3jy0rn)
         AssertThat(label.Text.ToLower()).Contains("yield");                // the preview line
         AssertThat(label.Text).Contains(shortGood);                        // the best good it can make
     }

@@ -27,6 +27,12 @@ public partial class SettingsService : Node
     // overlay the player can turn off. Default ON: a new player sees the tutorial unless they opt out.
     private const string KeyTutorialHints = "tutorial_hints";
 
+    // The active-unit advisor card is an opt-in hint. It said "You could found a colony here" on essentially every land
+    // tile, which reads as noise (86d3jy0rn), and the guided tutorial already teaches the opening loop — so it is a
+    // presentation-only CLIENT preference held here, default OFF. A player who wants the hints can set advisor_hints=true
+    // in settings.cfg (a Settings toggle is a follow-up).
+    private const string KeyAdvisorHints = "advisor_hints";
+
     private static readonly string[] AuxBuses = { "Music", "SFX" };
 
     /// <summary>The live settings. Mutate through <see cref="UpdateAndApply"/> so changes reach the engine.</summary>
@@ -48,6 +54,14 @@ public partial class SettingsService : Node
     /// </summary>
     public bool TutorialHints { get; private set; } = true;
 
+    /// <summary>
+    /// Whether the active-unit <b>advisor</b> card is shown. Default <b>off</b>: its "you could do X here" advice is true
+    /// on almost every tile, so it reads as noise, and the guided tutorial already covers the opening loop. A
+    /// presentation-only client preference persisted in <c>settings.cfg</c> (no save bump — ADR-006); set
+    /// <c>advisor_hints=true</c> to opt in (a Settings toggle is a follow-up). Mutate through <see cref="SetAdvisorHints"/>.
+    /// </summary>
+    public bool AdvisorHints { get; private set; }
+
     /// <summary>On startup: ensure the Music/SFX buses exist, load saved settings, apply them to the engine, and apply any saved key-binding overrides to the global <c>InputMap</c> (so a rebound key works before the game scene runs).</summary>
     public override void _Ready()
     {
@@ -55,6 +69,7 @@ public partial class SettingsService : Node
         Settings = Load();
         MasterMute = LoadMute();
         TutorialHints = LoadTutorialHints();
+        AdvisorHints = LoadAdvisorHints();
         Apply();
         KeyBindingsService.LoadAndApply(); // saved hotkey overrides → InputMap (settings.cfg [keybindings]; no save bump)
     }
@@ -73,6 +88,9 @@ public partial class SettingsService : Node
     /// toggle both silence the guided intro.
     /// </summary>
     public void SetTutorialHints(bool enabled) => TutorialHints = enabled;
+
+    /// <summary>Enables or disables the active-unit advisor card (does not persist — call <see cref="Save"/> for that). A client preference with no engine effect; <c>GameController</c> reads it to decide whether to show the card.</summary>
+    public void SetAdvisorHints(bool enabled) => AdvisorHints = enabled;
 
     /// <summary>Applies <paramref name="mutate"/> to the live settings, clamps them, and re-applies to the engine (does not persist — call <see cref="Save"/> for that).</summary>
     public void UpdateAndApply(Action<SettingsModel> mutate)
@@ -130,6 +148,7 @@ public partial class SettingsService : Node
         }
         cfg.SetValue(Section, KeyMasterMute, MasterMute); // presentation-only flag, alongside the model's keys
         cfg.SetValue(Section, KeyTutorialHints, TutorialHints); // presentation-only client preference, no save bump
+        cfg.SetValue(Section, KeyAdvisorHints, AdvisorHints);   // presentation-only client preference, default off
         cfg.Save(ConfigPath);
     }
 
@@ -171,6 +190,18 @@ public partial class SettingsService : Node
             return true;
         }
         return cfg.GetValue(Section, KeyTutorialHints, true).AsBool();
+    }
+
+    // Reads the advisor-hints flag from the [settings] section. Defaults to OFF when missing/unreadable — the advisor is
+    // opt-in (its advice is noise for most players; 86d3jy0rn). Kept separate from SettingsModel like the other flags.
+    private static bool LoadAdvisorHints()
+    {
+        var cfg = new ConfigFile();
+        if (cfg.Load(ConfigPath) != Error.Ok || !cfg.HasSection(Section))
+        {
+            return false;
+        }
+        return cfg.GetValue(Section, KeyAdvisorHints, false).AsBool();
     }
 
     // The default project has only a Master bus; create Music/SFX (routed to Master) so their volume sliders are real

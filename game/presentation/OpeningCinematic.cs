@@ -100,8 +100,15 @@ public partial class OpeningCinematic : Control
         centre.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(centre);
 
+        // A dark translucent backing (NOT the light parchment skin) so the cream beat text reads clearly — cream on
+        // parchment was near-invisible (86d3jy0rn). Dark box + cream text is high-contrast and reads as a title card.
         var panel = new PanelContainer { Name = "Panel", MouseFilter = MouseFilterEnum.Ignore };
-        panel.AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin());
+        var backing = new StyleBoxFlat { BgColor = new Color(0.04f, 0.05f, 0.09f, 0.74f) };
+        backing.SetContentMarginAll(30);
+        backing.SetCornerRadiusAll(10);
+        backing.SetBorderWidthAll(2);
+        backing.BorderColor = new Color(0.62f, 0.5f, 0.32f, 0.55f); // faint warm gilt edge, matching the wood palette
+        panel.AddThemeStyleboxOverride("panel", backing);
         panel.CustomMinimumSize = new Vector2(620, 0);
         centre.AddChild(panel);
 

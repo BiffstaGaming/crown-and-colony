@@ -286,6 +286,14 @@ public sealed partial class Game
         {
             return true;
         }
+        // A privateer (model.ability.piracy) flies no flag: it can raid — and be raided — regardless of stance, so peace
+        // does not shield it (FreeCol csCombat's deniable-raid rule, the whole point of a privateer; 86d3jy0rn). The
+        // deniable-raid CONSEQUENCES (no stance change, the attacked-by-privateers flag) were already coded downstream;
+        // this is the missing gate that lets the raid start at peace in the first place.
+        if (a.Type.Piracy || b.Type.Piracy)
+        {
+            return true;
+        }
         // Two distinct colonial powers: hostile only at War, or while still Uncontacted (the FreeCol edge case where
         // the attack itself makes first contact + declares the war). Peace/CeaseFire/Alliance are NOT hostile.
         Stance stance = StanceBetween(a.OwnerId, b.OwnerId);

@@ -366,9 +366,11 @@ public partial class EuropePanel : PanelContainer
         backing.AddChild(card);
 
         var ships = _game.UnitsInEurope.Where(u => u.Type.IsCarrier && !u.IsAboard).ToList();
-        var onDock = _game.UnitsInEurope.Where(u => u.Type.IsPerson && !u.IsAboard).ToList();
-        // Treasure trains carried home and put on the dock are neither carriers nor persons, so they fall through both
-        // lists above — they get their own cash-in entry in the docks zone or the carry-it-home play dead-ends.
+        // Everything on the dock that isn't a ship or a treasure train: colonists AND other land units waiting for a
+        // carrier — crucially **artillery** (bought via BuyUnit), which is neither a person nor a carrier nor treasure,
+        // so it used to fall through every list and be invisible even though it existed and its price had risen (86d3jy0rn).
+        var onDock = _game.UnitsInEurope.Where(u => !u.IsAboard && !u.Type.IsCarrier && !u.Type.CarryTreasure).ToList();
+        // Treasure trains carried home get their own cash-in entry (they aren't carriers or persons).
         var treasureOnDock = _game.UnitsInEurope.Where(u => u.Type.CarryTreasure && !u.IsAboard).ToList();
 
         card.AddChild(ImmigrationZone());
@@ -378,7 +380,7 @@ public partial class EuropePanel : PanelContainer
         var topRow = new HBoxContainer { Name = "TopRow", SizeFlagsHorizontal = SizeFlags.ShrinkCenter, Alignment = BoxContainer.AlignmentMode.Begin };
         topRow.AddThemeConstantOverride("separation", 16);
         topRow.AddChild(Card("Recruit & train", RecruitTrainPurchaseZone(), 400));
-        topRow.AddChild(Card("Goods market", GoodsMarketZone(ships), 440));
+        topRow.AddChild(Card("Goods market", GoodsMarketZone(ships), 480));
         card.AddChild(topRow);
 
         card.AddChild(SectionLabel("Ships in port"));
@@ -612,7 +614,10 @@ public partial class EuropePanel : PanelContainer
                 name.TooltipText = $"Boycotted — pay {_game.Market.Arrears(id)} gold in back taxes to trade again.";
             }
             labelBox.AddChild(name);
-            labelBox.SetAnchorsPreset(LayoutPreset.FullRect);
+            // NOTE: do NOT FullRect-anchor labelBox here. Anchoring a child of the bare-Control drag source made the
+            // icon+name draw across the whole row on top of the Buy/Sell buttons (the goods-market overlap, 86d3jy0rn).
+            // The EuropeDragSource now reports labelBox's combined min size (its _GetMinimumSize), so the HBox reserves
+            // proper width for the label and lays the buttons out beside it without anchoring.
             // A taller min row so the 17px-bold name + 28px icon sit with breathing room rather than clipping (playtest).
             row.AddChild(new EuropeDragSource { Name = $"MarketGood_{shortName}", SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 34), SizeFlagsVertical = SizeFlags.Fill }
                 .Configure(
@@ -654,7 +659,7 @@ public partial class EuropePanel : PanelContainer
             if (tradeShip is { } sellShip && aboard > 0 && !boycott && _game.CheckSellShipCargo(sellShip, id, aboard).Allowed)
             {
                 int proceeds = _game.CheckSellShipCargo(sellShip, id, aboard).Cost;
-                row.AddChild(ActionButton($"Sell_{sellShip.Id}_{shortName}", $"Sell {aboard} ({proceeds})", () =>
+                row.AddChild(ActionButton($"Sell_{sellShip.Id}_{shortName}", $"Sell {aboard} (+{proceeds}g)", () =>
                 {
                     if (_game.CheckSellShipCargo(sellShip, id, aboard).Allowed)
                     {

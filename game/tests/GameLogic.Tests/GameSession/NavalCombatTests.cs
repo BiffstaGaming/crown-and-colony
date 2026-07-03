@@ -423,6 +423,24 @@ public class NavalCombatTests
     }
 
     [Fact]
+    public void Privateer_MayAttackARivalShipAtPeace_ButAWarshipMayNot()
+    {
+        // 86d3jy0rn (the playtest bug): a privateer flies no flag and can raid regardless of stance, so CheckAttack must
+        // ALLOW it even at PEACE — while a regular warship at peace may not attack (no war declared). The existing piracy
+        // tests drive game.Attack() directly, bypassing the CheckAttack gate, so they never caught that AreEnemies gated
+        // BOTH ship kinds on War/Uncontacted and silently blocked a player's privateer from starting a raid at peace.
+        (Game game, Unit privateer, Unit rival, int foreignId) = TwoShips(Privateer, Caravel);
+        game.SetStance(game.HumanPlayer.PlayerId, foreignId, Stance.Peace);
+        game.SetStance(foreignId, game.HumanPlayer.PlayerId, Stance.Peace);
+        Assert.True(game.CheckAttack(privateer, rival.Position).Allowed); // the privateer may raid at peace
+
+        (Game game2, Unit frigate, Unit rival2, int foreignId2) = TwoShips(Frigate, Caravel);
+        game2.SetStance(game2.HumanPlayer.PlayerId, foreignId2, Stance.Peace);
+        game2.SetStance(foreignId2, game2.HumanPlayer.PlayerId, Stance.Peace);
+        Assert.False(game2.CheckAttack(frigate, rival2.Position).Allowed); // a warship at peace may not attack
+    }
+
+    [Fact]
     public void AttackingAPrivateer_DoesNotDeclareWar()
     {
         (Game game, Unit frigate, Unit privateer, int foreignId) = TwoShips(Frigate, Privateer);
