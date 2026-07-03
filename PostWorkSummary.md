@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-03 — HUD polish: legible dark-wood status strip + carved-wood frames (86d3jnbek) ✅
+
+**Requested (Chris):** the redesign is much nicer but the top parchment text is hard to read and the bottom-right looks unfinished — source assets online if none fit.
+**Did:**
+- **No external sourcing needed** — FreeCol's own UI art (GPL-v2/CC-BY, license-clean, aesthetically native) had exactly what was missing.
+- **Top strip legibility:** swapped the light parchment strip for FreeCol's **dark carved-wood `bg_menubar`** (new in-repo asset) with **large cream text + a dark outline** → light-on-dark, high contrast, easily readable (was thin dark-on-parchment).
+- **Bottom-right "unfinished":** wrapped the action cluster in the **carved-wood frame** (`ColonyArt.AddWoodFrame`, the same nine-patch edge the popups/colony screen carry), buttons inset inside it, End Turn the full-width primary. Framed the **mini-map** to match (resized to fit its frame) — symmetric wood-framed bottom corners.
+- New `ColonyArt` helpers: `MenuBar()`/`MenuBarSkin()`, `AddWoodFrame(Control)`. `bg_menubar` added to `PROVENANCE.md`.
+- **Verified visually** in-engine (fresh + unit-selected captures) before regenerating goldens.
+**Status:** presentation-only, no behaviour/save change; **L3 green** (colony/europe/pause + mini-map goldens regenerated on CI Linux and adopted, verified the pause golden shows the polished HUD); **CI green both jobs** on main (`3dc1eda`; one L3 host-timeout flake cleared on re-run). L1/L2 unaffected.
+**Changed:** `GameController.cs` (LayoutHud), `ColonyArt.cs` (+3 helpers), `game/assets/freecol/ui/bg_menubar.png` (+.import), `PROVENANCE.md`, 4 golden PNGs, `docs/modules/presentation.md`. Commits `4752b2c`, `3dc1eda`.
+**Decisions:** used FreeCol's in-repo GPL art rather than sourcing externally (license-clean, consistent); the advisor/unit-panel/zoom-cluster stay parchment "cards" (a lighter treatment vs the structural wood-framed panels) — a defensible hierarchy, and framing the dynamically-sized advisor cleanly would need per-frame rect sync.
+**Scheduled next (your steer):** back to the feature backlog — in-game tutorial `86d3fq1h9` or opening cinematic `86d3fq1kf` (both Ready), or localization phase 1 `86d3fq1w6`.
+**Follow-ups:** if you want the advisor / unit panel / zoom cluster carved-wood-framed too (currently parchment cards), that's a small follow-up; source-comment `�` mojibake remains in a few presentation files (cosmetic).
+**Needs you:** review the look (verified via captures + the committed pause/colony/europe goldens). Top stats now read clearly on dark wood; the bottom-right + mini-map have the finished carved-wood frame.
+
+---
+
 ## 2026-07-03 — HUD layout redesign: four framed regions + hierarchy (86d3jnbek) ✅
 
 **Requested (Chris):** a nicer HUD layout — approved the proposed mockup, "lets go ahead".
