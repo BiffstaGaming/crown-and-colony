@@ -21,6 +21,12 @@ public partial class SettingsService : Node
     // no model change; it round-trips through the same settings.cfg ConfigFile as every other option.
     private const string KeyMasterMute = "master_mute";
 
+    // The tutorial-hints flag lives in the [settings] section under this key. Like the master-mute flag it is a
+    // presentation-only CLIENT preference (FreeCol's ClientOptions tutorial toggle) held here — NOT on the engine-free
+    // SettingsModel and NOT in the save (ADR-006 / no save bump) — so the guided-intro tip cards are a purely cosmetic
+    // overlay the player can turn off. Default ON: a new player sees the tutorial unless they opt out.
+    private const string KeyTutorialHints = "tutorial_hints";
+
     private static readonly string[] AuxBuses = { "Music", "SFX" };
 
     /// <summary>The live settings. Mutate through <see cref="UpdateAndApply"/> so changes reach the engine.</summary>
@@ -33,12 +39,22 @@ public partial class SettingsService : Node
     /// </summary>
     public bool MasterMute { get; private set; }
 
+    /// <summary>
+    /// Whether the guided-intro <b>tutorial hints</b> are enabled — the small contextual tip cards a new player sees as
+    /// they reach each early milestone. A presentation-only CLIENT preference persisted alongside <see cref="Settings"/>
+    /// in <c>settings.cfg</c> (not game state, no save bump — ADR-006); mutate through <see cref="SetTutorialHints"/>.
+    /// Default <b>on</b>, so a new player is taught the opening loop unless they opt out (the Settings toggle or the
+    /// card's "Skip tutorial" button).
+    /// </summary>
+    public bool TutorialHints { get; private set; } = true;
+
     /// <summary>On startup: ensure the Music/SFX buses exist, load saved settings, apply them to the engine, and apply any saved key-binding overrides to the global <c>InputMap</c> (so a rebound key works before the game scene runs).</summary>
     public override void _Ready()
     {
         EnsureAudioBuses();
         Settings = Load();
         MasterMute = LoadMute();
+        TutorialHints = LoadTutorialHints();
         Apply();
         KeyBindingsService.LoadAndApply(); // saved hotkey overrides → InputMap (settings.cfg [keybindings]; no save bump)
     }
@@ -49,6 +65,14 @@ public partial class SettingsService : Node
         MasterMute = muted;
         Apply();
     }
+
+    /// <summary>
+    /// Enables or disables the tutorial hints (does not persist — call <see cref="Save"/> for that). Purely a client
+    /// preference: there is no engine effect to apply, so this only records the flag; the <c>TutorialService</c> reads it
+    /// to decide whether to show its tip cards. Turning it off is how the card's "Skip tutorial" button and the Settings
+    /// toggle both silence the guided intro.
+    /// </summary>
+    public void SetTutorialHints(bool enabled) => TutorialHints = enabled;
 
     /// <summary>Applies <paramref name="mutate"/> to the live settings, clamps them, and re-applies to the engine (does not persist — call <see cref="Save"/> for that).</summary>
     public void UpdateAndApply(Action<SettingsModel> mutate)
@@ -105,6 +129,7 @@ public partial class SettingsService : Node
             cfg.SetValue(Section, kv.Key, kv.Value);
         }
         cfg.SetValue(Section, KeyMasterMute, MasterMute); // presentation-only flag, alongside the model's keys
+        cfg.SetValue(Section, KeyTutorialHints, TutorialHints); // presentation-only client preference, no save bump
         cfg.Save(ConfigPath);
     }
 
@@ -133,6 +158,19 @@ public partial class SettingsService : Node
             return false;
         }
         return cfg.GetValue(Section, KeyMasterMute, false).AsBool();
+    }
+
+    // Reads the tutorial-hints flag from the [settings] section. Defaults to ON when missing/unreadable — a first run, or
+    // a config written before the tutorial existed — so a new player is taught the opening loop by default. Kept separate
+    // from SettingsModel so the engine-free model stays pure (matches the master-mute flag's treatment).
+    private static bool LoadTutorialHints()
+    {
+        var cfg = new ConfigFile();
+        if (cfg.Load(ConfigPath) != Error.Ok || !cfg.HasSection(Section))
+        {
+            return true;
+        }
+        return cfg.GetValue(Section, KeyTutorialHints, true).AsBool();
     }
 
     // The default project has only a Master bus; create Music/SFX (routed to Master) so their volume sliders are real

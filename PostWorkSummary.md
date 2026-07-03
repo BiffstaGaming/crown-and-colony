@@ -36,6 +36,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-03 — In-game guided-intro tutorial (86d3fq1h9) ✅
+
+**Requested (Chris):** add a skippable, non-nagging in-game tutorial for new players — a small scripted sequence of contextual tip cards teaching the opening loop.
+**Did:**
+- **New `TutorialService`** (code-built, engine-light, presentation-only): a fixed **5-step** ordered sequence — welcome → send-a-colonist-ashore → found-your-first-colony → put-colonists-to-work → end-your-turn. Each step advances when its goal is met (a land unit on the map / the human owns a colony / the player opened a colony / the player ended a turn) and **never rewinds** — each tip shows once. Goals are pure reads over public `Game` oracles + two observed UI flags (`ColonyOpened`/`TurnEnded`); **no game rule, no RNG, no state mutation** (ADR-006/009).
+- **New `TutorialPanel`** (code-built `PanelContainer`, no `.tscn`, parchment skin, top-centre — clear of the advisor card + bottom HUD) with **"Got it"** (advance) and **"Skip tutorial"** (disable) buttons.
+- **Wired from `GameController`:** fresh service per new/loaded game; refreshed from `RefreshView` + every full-screen panel's / the pause menu's `VisibilityChanged` so the card hides behind any open screen and advances on close.
+- **On/off preference:** new `SettingsService.TutorialHints` (default **on**, persisted in `settings.cfg` like master-mute — **not** on the engine-free `SettingsModel`, **no save bump**), surfaced as a code-built **Settings → Tutorial hints** toggle; the card's Skip button flips it off.
+**Status:** presentation-only, **no save-version bump**. **Build green** · **L1/L2 2693 green** (unaffected — presentation-only; one flake cleared on re-run) · **full L3/L4 338 green** (+10 new `TutorialTests`, no flakes). **Goldens: no churn** on the map (`VisualGolden` 8 ✓) or pause-menu (card hides behind it); the **`settings-screen` golden was deliberately regenerated** for the new toggle row. **Committed in this worktree** (not pushed).
+**Changed:** `game/presentation/TutorialService.cs` (new), `TutorialPanel.cs` (new), `tests/TutorialTests.cs` (new), `GameController.cs`, `SettingsService.cs`, `SettingsScreen.cs`, `game/tests/visual/goldens/settings-screen.png` (regen); docs: `docs/systems/tutorial.md` (new), `docs/systems/settings.md`, `docs/modules/presentation.md`. Commit — see below.
+**Decisions:** (1) tutorial preference kept on `SettingsService` (like master-mute), **not** `SettingsModel`, to avoid any GameLogic change — honours the presentation-only constraint. (2) Steps 3/4 don't collide: founding satisfies step 3, opening a colony (a distinct action) satisfies step 4, so the "work your colony" tip is never skipped. (3) Settings toggle only (the New-Game dialog checkbox was optional per the task's "and/or") — flagged as a follow-up. (4) Regenerated the `settings-screen` golden on Windows; **flag for CI-Linux regen** if the raster drifts (project convention for UI goldens).
+**Scheduled next (your steer):** opening cinematic `86d3fq1kf` (Ready), or localization phase 1 `86d3fq1w6` (Ready) — both in the feature backlog.
+**Follow-ups:** richer tutorial (more steps / per-screen hints / replayable lesson mode, closer to FreeCol's tutorial mod); optional New-Game "start with tutorial" checkbox; run tutorial step text through localisation `86d3fq1w6` when it lands; **verify the settings-screen golden on CI Linux** (regenerated on Windows).
+**Needs you:** review the tutorial in a fresh game (verified via the 338-green L3/L4 suite, not hand-playtested). Confirm the CI L3/L4 job is green after integration (per memory: CI-green must include the Godot L3/L4 job, not just local).
+
+---
+
 ## 2026-07-03 — Friendly display names game-wide + Colopedia overhaul (86d3jr55y) ✅
 
 **Requested (Chris):** the Colopedia's look needs a lot of work, and why do items show as raw `freeColonist` instead of a UI-friendly name?

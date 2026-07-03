@@ -83,9 +83,48 @@ public partial class SettingsScreen : Control
         _uiScale.ValueChanged += OnUiScale;
         _colorblind.Toggled += OnColorblind;
         _autosave.ValueChanged += OnAutosavePeriod;
+        BuildTutorialToggle(); // the guided-intro tutorial-hints preference (86d3fq1h9), built in code (no scene edit)
         BuildMessagePopupToggles(); // the per-category popup-vs-silent message preference (86d3fq1tc), built in code (no scene edit)
         GetNode<Button>("Panel/VBox/KeyBindingsButton").Pressed += OnKeyBindings;
         GetNode<Button>("Panel/VBox/BackButton").Pressed += OnBack;
+    }
+
+    /// <summary>
+    /// Builds the <b>Tutorial hints</b> toggle in code (no scene edit, like the message-popup toggles): a single
+    /// <see cref="CheckButton"/> in a labelled row, inserted just above the Messages section. Ticked when the guided-intro
+    /// tutorial is enabled (the default); un-ticking turns it off (the same client preference the card's "Skip tutorial"
+    /// button flips). Toggling mutates <see cref="SettingsService.TutorialHints"/> through the service; Back persists it
+    /// like every other setting. Presentation-only (ADR-006): a client preference, no game rule. The row is named
+    /// <c>TutorialRow</c> and the check <c>TutorialCheck</c> so the L3 test can find them by a stable path.
+    /// </summary>
+    private void BuildTutorialToggle()
+    {
+        var vbox = GetNode<VBoxContainer>("Panel/VBox");
+        int insertAt = GetNode<Button>("Panel/VBox/KeyBindingsButton").GetIndex();
+
+        var row = new HBoxContainer { Name = "TutorialRow" };
+        row.AddThemeConstantOverride("separation", 8);
+        row.AddChild(new Label { Text = "Tutorial hints", CustomMinimumSize = new Vector2(160, 0) });
+        var check = new CheckButton
+        {
+            Name = "TutorialCheck",
+            ButtonPressed = _service.TutorialHints, // ticked = enabled (the default)
+        };
+        check.Toggled += OnTutorialHints;
+        row.AddChild(check);
+        vbox.AddChild(row);
+        vbox.MoveChild(row, insertAt); // above the Messages header + Key Bindings button
+    }
+
+    // The tutorial-hints toggle: on = enabled, off = disabled. A client preference on the service (no engine effect to
+    // apply); Back persists it like every other setting.
+    private void OnTutorialHints(bool enabled)
+    {
+        if (_populating)
+        {
+            return;
+        }
+        _service.SetTutorialHints(enabled);
     }
 
     // Display order + label for each message category's popup toggle (matches the MessageLogPanel filter order).

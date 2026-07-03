@@ -192,6 +192,13 @@ public partial class GameController : Node2D
     // and re-appears when a *different* unit is selected. _advisorDismissedUnitId records which unit the flag applies to.
     private bool _advisorDismissed;
     private int _advisorDismissedUnitId = -1;
+
+    // The guided-intro tutorial (86d3fq1h9): a code-built dismissible card shown top-centre that walks a new player
+    // through the opening loop (welcome → ashore → found colony → work colony → end turn). Presentation-only (ADR-006):
+    // the service reads live Game state to pick the current step; the panel renders it. A fresh service per game (reset
+    // in StartGame) so a new/loaded game restarts the sequence. Gated on the SettingsService.TutorialHints preference.
+    private TutorialPanel _tutorialPanel = null!;
+    private TutorialService _tutorial = new();
     private Button _independenceButton = null!;
     private Button _endTurnButton = null!;
     /// <summary>The always-on bottom-right HUD button column (Europe/TradeRoutes/Reports/MessageLog/Colopedia/HighScores/Diplomacy/EndTurn) — hidden while a full-screen panel is open so it never floats over or eats clicks meant for the panel (86d3fr6bc). The IndependenceButton is handled separately (it carries its own game-state gate). Collected in <see cref="_Ready"/>.</summary>
@@ -324,6 +331,15 @@ public partial class GameController : Node2D
         // Remember a dismissal so RefreshView stops re-showing the card for the current unit (cleared on unit change).
         _advisorPanel.Dismissed += () => _advisorDismissed = true;
         GetNode<CanvasLayer>("UI").AddChild(_advisorPanel);
+        // The guided-intro tutorial card (86d3fq1h9), built in code and added under the UI CanvasLayer. "Got it" advances
+        // one step; "Skip tutorial" completes the tutorial and turns the client preference off (persisted). Both re-run
+        // the tutorial refresh so the card updates immediately.
+        _tutorialPanel = new TutorialPanel();
+        _tutorialPanel.GotIt += OnTutorialGotIt;
+        _tutorialPanel.SkipRequested += OnTutorialSkip;
+        GetNode<CanvasLayer>("UI").AddChild(_tutorialPanel);
+        // Hide the tutorial card while the pause menu is open too (it dims the whole HUD), and re-evaluate on close.
+        GetNode<PauseMenu>("UI/PauseMenu").VisibilityChanged += RefreshTutorial;
         _colonyPanel = GetNode<PanelContainer>("UI/ColonyPanel");
         _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
@@ -371,7 +387,9 @@ public partial class GameController : Node2D
             GetNode<Button>("UI/DiplomacyButton"), _endTurnButton,
         };
         // Every full-screen panel hides the bottom-right corner HUD while it is open (so the action cluster / mini-map
-        // never overlap it), and restores it on close — wire each one's visibility to the refresh.
+        // never overlap it), and restores it on close — wire each one's visibility to the refresh. The tutorial card is
+        // refreshed on the same hook so it hides while a panel is open and re-appears (or advances — e.g. after the player
+        // opens then closes a colony) the moment the panel closes (86d3fq1h9).
         foreach (PanelContainer panel in new[]
         {
             _colonyPanel, _europePanel, _colopediaPanel, _colonyReportPanel, _tradeRoutePanel, _negotiationPanel,
@@ -379,6 +397,7 @@ public partial class GameController : Node2D
         })
         {
             panel.VisibilityChanged += RefreshHudButtonVisibility;
+            panel.VisibilityChanged += RefreshTutorial;
         }
         GetNode<Button>("UI/ColopediaPanel/VBox/CloseButton").Pressed += () => _colopediaPanel.Hide();
         GetNode<Button>("UI/ColonyReportPanel/VBox/CloseButton").Pressed += () => _colonyReportPanel.Hide();
@@ -500,6 +519,17 @@ public partial class GameController : Node2D
         _advisorPanel.AnchorBottom = 0f;
         _advisorPanel.OffsetLeft = 12;
         _advisorPanel.OffsetTop = 56;
+
+        // The tutorial card sits top-centre, below the status strip — clear of the advisor card (top-left) and the bottom
+        // HUD. Anchored to the top edge and grown from its horizontal centre so it stays centred at any window width.
+        _tutorialPanel.AnchorLeft = 0.5f;
+        _tutorialPanel.AnchorRight = 0.5f;
+        _tutorialPanel.AnchorTop = 0f;
+        _tutorialPanel.AnchorBottom = 0f;
+        _tutorialPanel.OffsetLeft = -230;
+        _tutorialPanel.OffsetRight = 230;
+        _tutorialPanel.OffsetTop = 62;
+        _tutorialPanel.GrowHorizontal = Control.GrowDirection.Both;
 
         // ── Mini-map corner (bottom-left): a parchment backing wrapped in the carved-wood frame, with the mini-map
         //    inset inside the frame.
@@ -662,6 +692,7 @@ public partial class GameController : Node2D
         UnitMarker.ResetMoveMemory(); // drop per-unit last-tile cache on a game swap so a reused tile/id can't spuriously slide (86d3fq26m)
         MarkClean(); // a fresh or just-loaded game matches what's on disk — no unsaved changes yet (86d3fq1v8)
         _skippedThisTurn.Clear(); // a fresh/loaded game starts with no skipped units (session-only set; 86d3f0vuy)
+        _tutorial = new TutorialService(); // a fresh/loaded game restarts the guided-intro sequence (86d3fq1h9)
         _victoryShown = false; // re-arm the one-shot victory screen for the fresh game (new or loaded)
         _highScoreRecorded = false; // re-arm the one-shot end-of-game high-score record
         _gameId = System.Guid.NewGuid().ToString(); // per-session game id for high-score de-duplication (not persisted in the save)
@@ -865,6 +896,7 @@ public partial class GameController : Node2D
         // …and a dismissed advisor returns next turn (dismissal silences advice only for the current unit this turn).
         _advisorDismissed = false;
         _advisorDismissedUnitId = -1;
+        _tutorial.NotifyTurnEnded(); // advances the tutorial's closing "end your turn" step (86d3fq1h9)
         // Surface what the human suffered or received during the AI phase (no return value to read, unlike a
         // player-initiated attack): raids on units (1c-2/1c-3a′), native pillages of colonies, captures of colonies
         // (1c-3f), then custom-house auto-sales. Notices are in deterministic order; instead of cramming them into
@@ -2190,8 +2222,11 @@ public partial class GameController : Node2D
     }
 
     /// <summary>Opens the interactive colony screen. Public so scene tests can drive it directly.</summary>
-    public void OpenColonyPanel(Colony colony) =>
+    public void OpenColonyPanel(Colony colony)
+    {
+        _tutorial.NotifyColonyOpened(); // advances the tutorial's "put your colonists to work" step (86d3fq1h9)
         ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView, LoadColonyCargo, UnloadColonyCargo, SetColonyExport, RenameColony, AbandonColony, PayBoycott, DumpColonyGoods);
+    }
 
     /// <summary>
     /// Thin colony-screen command (86d3fq0aw/86d3fpy6k): renames <paramref name="colony"/> via the
@@ -2704,6 +2739,64 @@ public partial class GameController : Node2D
             && !_game.IsHumanDefeated && _game.CheckDeclareIndependence(_game.HumanPlayer).Allowed;
     }
 
+    /// <summary>
+    /// Refreshes the guided-intro tutorial card (86d3fq1h9): asks the <see cref="TutorialService"/> for the current step
+    /// given the live game and shows it, or hides the card when the tutorial is disabled (the client preference), complete,
+    /// or a full-screen panel is open (so a tip never floats over the colony/Europe screen). Presentation-only (ADR-006) —
+    /// the service only reads game state. Called from <see cref="RefreshView"/>, so a milestone reached this action
+    /// advances the card at once; the card never re-nags because each step shows once and the service never rewinds.
+    /// </summary>
+    private void RefreshTutorial()
+    {
+        if (_game is null)
+        {
+            return; // not in a game yet (the menu)
+        }
+
+        // Disabled by the client preference, or a full-screen panel / the pause menu is open, or the human is out of the
+        // game → no card (so a tip never floats over the colony/Europe/pause screen — keeps those goldens stable too).
+        bool enabled = GetNodeOrNull<SettingsService>("/root/Settings")?.TutorialHints ?? true;
+        bool overlayOpen =
+            _colonyPanel.Visible || _europePanel.Visible || _colopediaPanel.Visible || _colonyReportPanel.Visible ||
+            _tradeRoutePanel.Visible || _negotiationPanel.Visible || _nativePanel.Visible || _highScoresPanel.Visible ||
+            _foundingFatherPanel.Visible || _declarationPanel.Visible || _victoryPanel.Visible || _findSettlementPanel.Visible ||
+            GetNode<PauseMenu>("UI/PauseMenu").Visible;
+        if (!enabled || overlayOpen || _game.IsHumanDefeated)
+        {
+            _tutorialPanel.HideCard();
+            return;
+        }
+
+        if (_tutorial.Evaluate(_game) is { } step)
+        {
+            _tutorialPanel.ShowStep(step);
+        }
+        else
+        {
+            _tutorialPanel.HideCard(); // complete / between steps
+        }
+    }
+
+    // "Got it" — advance one tutorial step and refresh the card so the next tip (if any) shows immediately.
+    private void OnTutorialGotIt()
+    {
+        _tutorial.DismissCurrent();
+        RefreshTutorial();
+    }
+
+    // "Skip tutorial" — complete the tutorial for this game AND turn the client preference off so it stays off for future
+    // games (persisted like every other setting). The card hides on the refresh.
+    private void OnTutorialSkip()
+    {
+        _tutorial.Skip();
+        if (GetNodeOrNull<SettingsService>("/root/Settings") is { } settings)
+        {
+            settings.SetTutorialHints(false);
+            settings.Save();
+        }
+        RefreshTutorial();
+    }
+
     private void RefreshView()
     {
         // Keep the music in step with the game state (86d3fq1wy): RefreshView is the universal post-state-change hook
@@ -2822,6 +2915,10 @@ public partial class GameController : Node2D
         // The bottom-right HUD column (incl. the game-state-gated Declare-Independence action) — shown only when no
         // full-screen panel is open, so it never overlaps an open ColonyPanel/EuropePanel (86d3fr6bc).
         RefreshHudButtonVisibility();
+
+        // The guided-intro tutorial card: shows the current step's tip (or hides when disabled / complete). Runs after
+        // every action like the advisor, so a milestone reached this refresh advances the card immediately (86d3fq1h9).
+        RefreshTutorial();
 
         UpdateDefeatUi();
         UpdateVictoryUi();
