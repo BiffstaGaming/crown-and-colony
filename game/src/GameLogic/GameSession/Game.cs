@@ -141,6 +141,7 @@ public sealed partial class Game
     private readonly List<ColonyStarvedNotice> _colonyStarvedNotices = []; // transient: human colonies destroyed by starvation this turn (not saved; empty in classic — centre tile feeds the last colonist)
     private readonly List<ColonyFamineNotice> _colonyFamineNotices = []; // transient: human colonies that lost a colonist (but survived) to famine this turn (not saved; empty in classic)
     private readonly List<WarehouseOverflowNotice> _warehouseOverflowNotices = []; // transient: human-colony storable goods wasted over warehouse capacity this turn (not saved)
+    private readonly List<WarehouseLevelNotice> _warehouseLevelNotices = []; // transient: human-colony goods that crossed a warehouse low/high water-mark this turn (not saved)
     private readonly List<MonarchDecreeNotice> _monarchDecreeNotices = []; // transient: immediate (no-choice) monarch actions taken this turn (not saved; empty before the grace period)
     private readonly List<RefLandingNotice> _refLandingNotices = []; // transient: the one-off "the REF has landed" warning fired the first time the King's army comes ashore (not saved; empty until then)
     private readonly List<FirstContactNotice> _firstContactNotices = []; // transient: the human's first contacts with rival colonial powers this turn (not saved)
@@ -915,6 +916,29 @@ public sealed partial class Game
     /// overflowed; empty when nothing spilled.
     /// </summary>
     public IReadOnlyList<WarehouseOverflowNotice> WarehouseOverflowNotices => _warehouseOverflowNotices;
+
+    /// <summary>
+    /// Storable goods in a human colony that <b>crossed a warehouse water-mark</b> this turn — rose past the high mark
+    /// (filling toward the cap) or fell below the low mark (running short) — FreeCol <c>ServerColony.csNewTurn</c>'s
+    /// <c>warehouseFull</c>/<c>warehouseEmpty</c> warnings. Edge-triggered (only on the crossing turn) so a good sitting
+    /// high/low does not re-warn. Transient per-turn UI scratch (cleared each <c>EndTurn</c>, never saved); the
+    /// presentation surfaces it after the turn resolves. The early-warning sibling of <see cref="WarehouseOverflowNotices"/>.
+    /// </summary>
+    public IReadOnlyList<WarehouseLevelNotice> WarehouseLevelNotices => _warehouseLevelNotices;
+
+    /// <summary>
+    /// The <b>high water-mark</b> percentage of a colony's warehouse capacity above which a filling good raises a
+    /// warning (FreeCol <c>ExportData.HIGH_LEVEL_DEFAULT</c> = 90). A per-good/per-colony configurable override is a
+    /// planned refinement; today every colony uses this default.
+    /// </summary>
+    public const int WarehouseHighWaterMarkPercent = 90;
+
+    /// <summary>
+    /// The <b>low water-mark</b> percentage of a colony's warehouse capacity below which a dwindling good raises a
+    /// warning (FreeCol <c>ExportData.LOW_LEVEL_DEFAULT</c> = 10); food is exempt. A per-good/per-colony configurable
+    /// override is a planned refinement; today every colony uses this default.
+    /// </summary>
+    public const int WarehouseLowWaterMarkPercent = 10;
 
     /// <summary>
     /// Immediate <b>King's-decree</b> actions the home-nation Monarch took on the human's behalf during the most recent
@@ -8105,6 +8129,7 @@ public sealed partial class Game
         _colonyStarvedNotices.Clear(); // and any human colonies starved out of existence this turn (empty in classic — the centre tile feeds the last colonist)
         _colonyFamineNotices.Clear(); // and any human colonies that lost a colonist (but survived) to famine this turn
         _warehouseOverflowNotices.Clear(); // and any human-colony goods wasted over warehouse capacity this turn
+        _warehouseLevelNotices.Clear(); // and any human-colony goods that crossed a warehouse low/high water-mark this turn
         _monarchDecreeNotices.Clear(); // and any immediate (no-choice) King's decrees this turn (empty before the monarch grace period)
         _refLandingNotices.Clear(); // and the one-off "the REF has landed" warning (LandRefUnits re-fills it on the first landing only)
         _firstContactNotices.Clear(); // and the human's first contacts with rival colonial powers this turn (FP-6a; DetectColonialContacts re-fills it)
@@ -12984,6 +13009,14 @@ public sealed partial class Game
 
     private void RunColonyTurn(Player owner, Colony colony)
     {
+        // Snapshot each storable good's stock BEFORE this turn's production, so the warehouse water-mark warnings below
+        // can be edge-triggered (fire only on the turn a good crosses a mark, not every turn it sits there) — FreeCol's
+        // ServerColony compares against GoodsContainer.getOldGoodsCount, the previous turn's stored amount. A local, not
+        // saved state — the warnings resolve within this same EndTurn.
+        Dictionary<string, int> goodsBefore = colony.Stores
+            .Where(kv => Ruleset.Goods(kv.Key).IsStorable)
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+
         // 1a. The colony square works itself (unattended yield). Goods enter
         //     the warehouse under their stored-as id: grain/fish → food.
         // Track this turn's gross FOOD production (centre + worked tiles) — horse breeding may eat only a share of
@@ -13046,7 +13079,7 @@ public sealed partial class Game
         //     (FreeCol csNewTurnWarnings — getWarehouseCapacity). Non-storable goods (bells/crosses/hammers,
         //     which accrue toward liberty/immigration/construction) and food (consumed/grown, never warehoused
         //     to a cap here) are exempt. Run after construction so a build isn't starved of materials it consumes.
-        SpillWarehouseOverflow(owner, colony);
+        SpillWarehouseOverflow(owner, colony, goodsBefore);
 
         // 2. Colonists eat; an unfed colonist starves. With more than one colonist a single colonist is lost that
         //    turn (FreeCol's per-turn famine victim); with only the LAST colonist left and still no food, the colony
@@ -13441,11 +13474,15 @@ public sealed partial class Game
     public int ColonyWarehouseCapacity(Colony colony) => WarehouseCapacity(colony);
 
     /// <summary>
-    /// Discards each storable good held above the colony's warehouse capacity (FreeCol's warehouse waste).
-    /// Food (consumed/grown) and non-storable goods (bells/crosses/hammers) are exempt. A guard skips a colony
-    /// with no capacity data (0) so a malformed/legacy colony never silently loses everything.
+    /// Resolves a colony's warehouse at turn end (FreeCol <c>ServerColony.csNewTurn</c>'s warehouse block): discards each
+    /// storable good held above capacity (the waste/overflow), and — for a human colony — raises <b>edge-triggered
+    /// low/high water-mark warnings</b> (<see cref="WarehouseLevelNotice"/>) when a good crosses the low or high mark this
+    /// turn (comparing <paramref name="goodsBefore"/>, the pre-production stock, to the post-production stock). Food
+    /// (consumed/grown) and non-storable goods (bells/crosses/hammers) are exempt from waste; food is also exempt from the
+    /// low warning (a colony is meant to run its food down). A guard skips a colony with no capacity data (0) so a
+    /// malformed/legacy colony never silently loses everything.
     /// </summary>
-    private void SpillWarehouseOverflow(Player owner, Colony colony)
+    private void SpillWarehouseOverflow(Player owner, Colony colony, IReadOnlyDictionary<string, int> goodsBefore)
     {
         int capacity = WarehouseCapacity(colony);
         if (capacity <= 0)
@@ -13453,11 +13490,25 @@ public sealed partial class Game
             return;
         }
         bool notify = owner.PlayerId == _human.PlayerId;
+        int high = WarehouseHighWaterMarkPercent * capacity / 100; // FreeCol: highLevel * (capacity / 100)
+        int low = WarehouseLowWaterMarkPercent * capacity / 100;   // FreeCol: lowLevel  * (capacity / 100)
         foreach (string goodsId in colony.Stores.Keys.ToList())
         {
             GoodsType goods = Ruleset.Goods(goodsId);
+            if (!goods.IsStorable)
+            {
+                continue; // bells/crosses/hammers accrue elsewhere and have no warehouse cap
+            }
             int held = colony.StoreOf(goodsId);
-            if (goods.IsStorable && !goods.IsFood && held > capacity)
+            int before = goodsBefore.GetValueOrDefault(goodsId, 0);
+
+            // Running-low: fell below the low mark this turn (food is exempt — it is meant to be drawn down).
+            if (notify && !goods.IsFood && held < low && before >= low)
+            {
+                _warehouseLevelNotices.Add(new WarehouseLevelNotice(colony.Name, colony.Position, goodsId, WarehouseLevelKind.RunningLow, held, low));
+            }
+
+            if (!goods.IsFood && held > capacity)
             {
                 int wasted = held - capacity;
                 colony.AddGoods(goodsId, -wasted); // drop the overflow to the cap
@@ -13466,6 +13517,12 @@ public sealed partial class Game
                     // Warn the human their warehouse is spilling this good (FreeCol's warehouse-overflow message).
                     _warehouseOverflowNotices.Add(new WarehouseOverflowNotice(colony.Name, colony.Position, goodsId, wasted));
                 }
+            }
+            // Filling: rose past the high mark this turn but is not (yet) overflowing (FreeCol's else-if after the waste
+            // check) — the early warning that the warehouse is filling toward the cap.
+            else if (notify && !goods.IsFood && held > high && before <= high)
+            {
+                _warehouseLevelNotices.Add(new WarehouseLevelNotice(colony.Name, colony.Position, goodsId, WarehouseLevelKind.Filling, held, high));
             }
         }
     }

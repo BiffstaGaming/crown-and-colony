@@ -878,6 +878,7 @@ public partial class GameController : Node2D
             .Concat(_game.ColonyRaidNotices.Select(n => Logged(MessageCategory.Natives, FormatColonyRaidNotice(n))))
             .Concat(_game.ColonyLossNotices.Select(n => Logged(MessageCategory.Combat, FormatColonyLossNotice(n))))
             .Concat(_game.WarehouseOverflowNotices.Select(n => Logged(MessageCategory.Economy, FormatWarehouseOverflowNotice(n)))) // warehouse spilling over capacity
+            .Concat(_game.WarehouseLevelNotices.Select(n => Logged(MessageCategory.Economy, FormatWarehouseLevelNotice(n))))       // warehouse low/high water-mark warnings (86d3fq1ue)
             .Concat(_game.ColonyFamineNotices.Select(n => Logged(MessageCategory.Colony, FormatColonyFamineNotice(n))))           // a colony lost a colonist to famine
             .Concat(_game.ColonyStarvedNotices.Select(n => Logged(MessageCategory.Colony, FormatColonyStarvedNotice(n))))         // a colony starved out of existence
             .Concat(_game.MonarchDecreeNotices.Select(n => Logged(MessageCategory.Monarch, FormatMonarchDecreeNotice(n))))         // immediate King's decrees (war/peace/tax/support/REF)
@@ -1017,6 +1018,15 @@ public partial class GameController : Node2D
     /// <summary>Turns a warehouse-overflow notice into a turn-message row (goods wasted over the warehouse cap).</summary>
     private string FormatWarehouseOverflowNotice(WarehouseOverflowNotice notice) =>
         $"📦 {notice.ColonyName}'s warehouse is full — {notice.Wasted} {_game.Ruleset.Goods(notice.GoodsId).ShortName} spoiled this turn.";
+
+    /// <summary>Turns a warehouse water-mark notice into a turn-message row — a good filling toward the cap (early overflow warning), or running low.</summary>
+    private string FormatWarehouseLevelNotice(WarehouseLevelNotice notice)
+    {
+        string goods = _game.Ruleset.Goods(notice.GoodsId).ShortName;
+        return notice.Kind == WarehouseLevelKind.Filling
+            ? $"📦 {notice.ColonyName}'s warehouse is filling with {goods} ({notice.Amount}) — sell or use it before it spoils."
+            : $"📉 {notice.ColonyName} is running low on {goods} ({notice.Amount}).";
+    }
 
     /// <summary>Turns a survivable-famine notice into a turn-message row (a colony lost a colonist but lives on).</summary>
     private static string FormatColonyFamineNotice(ColonyFamineNotice notice) =>
