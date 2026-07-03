@@ -187,6 +187,11 @@ public partial class GameController : Node2D
     private PanelContainer _declarationPanel = null!;
     private PanelContainer _negotiationPanel = null!;
     private AdvisorPanel _advisorPanel = null!;
+    // Advisor dismissal is sticky per selected unit: once the player dismisses the advisor card for the active unit it
+    // stays hidden for that unit (RefreshView runs on every move/action and would otherwise resurrect it, 86d3jrzah),
+    // and re-appears when a *different* unit is selected. _advisorDismissedUnitId records which unit the flag applies to.
+    private bool _advisorDismissed;
+    private int _advisorDismissedUnitId = -1;
     private Button _independenceButton = null!;
     private Button _endTurnButton = null!;
     /// <summary>The always-on bottom-right HUD button column (Europe/TradeRoutes/Reports/MessageLog/Colopedia/HighScores/Diplomacy/EndTurn) — hidden while a full-screen panel is open so it never floats over or eats clicks meant for the panel (86d3fr6bc). The IndependenceButton is handled separately (it carries its own game-state gate). Collected in <see cref="_Ready"/>.</summary>
@@ -316,6 +321,8 @@ public partial class GameController : Node2D
         _mapControls.Build(GetNode<CameraController>("Camera"));
         _mapControls.RecentreRequested += RecentreCamera;
         _advisorPanel = new AdvisorPanel();
+        // Remember a dismissal so RefreshView stops re-showing the card for the current unit (cleared on unit change).
+        _advisorPanel.Dismissed += () => _advisorDismissed = true;
         GetNode<CanvasLayer>("UI").AddChild(_advisorPanel);
         _colonyPanel = GetNode<PanelContainer>("UI/ColonyPanel");
         _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
@@ -855,6 +862,9 @@ public partial class GameController : Node2D
         }
         // A fresh turn: every unit may need orders again, so the session-only skip set (Space) clears at rollover (86d3f0vuy).
         _skippedThisTurn.Clear();
+        // …and a dismissed advisor returns next turn (dismissal silences advice only for the current unit this turn).
+        _advisorDismissed = false;
+        _advisorDismissedUnitId = -1;
         // Surface what the human suffered or received during the AI phase (no return value to read, unlike a
         // player-initiated attack): raids on units (1c-2/1c-3a′), native pillages of colonies, captures of colonies
         // (1c-3f), then custom-house auto-sales. Notices are in deterministic order; instead of cramming them into
@@ -2731,7 +2741,21 @@ public partial class GameController : Node2D
             _skipButton.Disabled = false;
             _disbandButton.Disabled = !_game.CheckDisband(sel).Allowed;
             _selectedUnitPanel.Show();
-            _advisorPanel.Show(_game.AdviseUnit(sel));
+            // A different unit than the one the dismissal applied to → the player wants fresh advice again, so reset the
+            // sticky-dismiss flag. While the same unit stays selected, a dismissed card stays hidden across refreshes.
+            if (sel.Id != _advisorDismissedUnitId)
+            {
+                _advisorDismissed = false;
+                _advisorDismissedUnitId = sel.Id;
+            }
+            if (_advisorDismissed)
+            {
+                _advisorPanel.Hide();
+            }
+            else
+            {
+                _advisorPanel.Show(_game.AdviseUnit(sel));
+            }
         }
         else
         {

@@ -343,6 +343,40 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task DismissingTheAdvisor_KeepsItHiddenForThatUnitAcrossRefreshes_ButReturnsForAnother()
+    {
+        // Regression for 86d3jrzah: pressing the advisor's "Dismiss" must stick. Before the fix RefreshView (which
+        // runs on every move/click/action) unconditionally re-Show()ed the card, so dismissal did nothing.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        controller.GetNode<CameraController>("Camera").EdgeScrollEnabled = false; // parked test cursor must not drift the camera
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+
+        // Two on-map human units that actually have advice (so the card shows), at distinct tiles.
+        var advised = game.PlayerUnits.Where(u => u.IsOnMap && game.AdviseUnit(u).Count > 0).ToList();
+        AssertThat(advised.Count >= 2).IsTrue(); // the classic start (ship + colonists) has several
+        Unit unitA = advised[0];
+        Unit unitB = advised.First(u => u.Position != unitA.Position);
+
+        var advisor = controller.GetNode<AdvisorPanel>("UI/AdvisorPanel");
+
+        await ClickTile(runner, controller, unitA.Position); // select A → the advisor card appears
+        AssertThat(advisor.Visible).IsTrue();
+
+        controller.GetNode<Button>("UI/AdvisorPanel/VBox/CloseButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        AssertThat(advisor.Visible).IsFalse(); // dismissed
+
+        await ClickTile(runner, controller, unitA.Position); // re-select the SAME unit → RefreshView must NOT resurrect it
+        AssertThat(advisor.Visible).IsFalse();
+
+        await ClickTile(runner, controller, unitB.Position); // a DIFFERENT unit → fresh advice is welcome again
+        AssertThat(advisor.Visible).IsTrue();
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task ClickingATile_ShowsTheTileInfoReadout_WithTerrainAndOccupant()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

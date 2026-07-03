@@ -160,8 +160,13 @@ public partial class PauseMenu : Control
         dialog.Open(SaveLoadDialog.Mode.Load, path =>
         {
             Game.LoadFrom(path);
-            Resume(); // unpause + hide the pause menu; the loaded game is now live
-            InfoPopup.Show(Ui, "Game loaded", "Your saved game has been loaded.");
+            // Confirm over the still-paused game (as OnSave does), so stray keyboard input (End Turn, hotkeys) can't
+            // reach the freshly-loaded game behind the popup; dismissing the confirmation resumes + closes the menu
+            // and hands the board to the loaded game (86d3jrzah). Previously we resumed *before* the popup, so the
+            // game went live under an un-blocking notice.
+            InfoPopup popup = InfoPopup.Show(Ui, "Game loaded", "Your saved game has been loaded.");
+            popup.ProcessMode = ProcessModeEnum.Always; // stays interactive while the tree is paused behind it
+            popup.Closed += Resume; // unpause + hide the pause menu once acknowledged
         });
         ResumeAfter(dialog);
     }
