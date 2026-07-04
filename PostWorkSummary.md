@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-05 — Detailed handbook: screenshot pipeline proven + PoC (86d3k3a1f)
+
+**Requested:** Make the handbook more detailed, with screenshots.
+**Did:**
+- **Scouted** (3-agent workflow) the visual assets + chapter depth: only ~6 existing golden shots (the menus) are handbook-grade; gameplay-screen goldens hide the HUD or are stale, and the golden-capture pipeline is documented broken. But the L4 harness CAN render any screen from a seeded game and `SavePng` it.
+- **Confirmed your two choices** (AskUserQuestion): generated **data appendix** (tables from the ruleset XML — regenerable, drift-safe) + **auto-generate all** screenshots.
+- **Built & proved a screenshot capture harness** — `game/presentation/tests/DocsCaptureTests.cs` (gated behind `DOCS_CAPTURE=1`): drives a seeded game to any screen at 1024×600 and writes a clean PNG. Generated 6 real shots (world map+HUD, colony, Europe, Founding Fathers, Colopedia, colony report) and **fixed the floating minimap/map-controls overlapping panels** (hidden for panel captures). Verified by eye — clean, handbook-grade.
+- **PoC gallery** published (Artifact) for sign-off; **kicked off** a ruleset-API survey to build the data-appendix generator next.
+**Status:** Capture pipeline working (build + import + `dotnet test --filter`, exit 0, PNGs written). No committed repo change beyond this summary; `DocsCaptureTests.cs` is WIP (scratch output path) — finalize with the full set.
+**Changed:** (uncommitted WIP) `game/presentation/tests/DocsCaptureTests.cs`; this summary.
+**Decisions:** screenshots at **1024×600** (UI authored for that; larger is untested/broken layout); appendix **generated** from the ruleset (not hand-written) to stay drift-safe.
+**Scheduled next:** Generate the **full screenshot set** (remaining chapter shots) + build the **data-appendix generator** from the ruleset-API survey, then wire screenshots + tables into all 22 chapters and rebuild the site. Kanban **`86d3k3a1f`**.
+**Follow-ups:** finalize `DocsCaptureTests.cs` output path before committing; add a lightbox (mkdocs-glightbox) so shots zoom; attempt the harder screens (pre-combat, monarch, native settlement, victory) that need extra state.
+**Needs you:** glance at the PoC gallery (Artifact link in chat) and confirm the screenshot look before I generate the full set + expand the chapters.
+
+---
+
 ## 2026-07-05 — Player guide: full 22-chapter website built (MkDocs → Pages) (86d3k3a1f)
 
 **Requested:** After picking website-primary, build the full user guide and host it.
