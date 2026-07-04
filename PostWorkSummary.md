@@ -19,7 +19,18 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
-## 2026-07-04 — Opening cinematic centred + portrait FreeCol-faithful map (86d3jy0rn) ✅
+## 2026-07-04 — Minimap current-view box + North-America map clarification (86d3jy0rn) ✅
+
+**Requested (Chris, screenshot on the revealed portrait map):** (1) "the minimap isn't moving"; (2) "do you think this looks right? For being North America?"
+**Did:**
+- **Minimap view box** (`77d1619`): the minimap drew terrain + dots but had **no "where am I looking" indicator** and only redrew on a game action (never on a camera pan). Added a **view box** = the main camera's visible rectangle, inverse-projected from the iso world to the flat tile grid (renders as a rotated diamond), in `MiniMap._Draw`; `SetCamera(Camera2D)` (wired in `GameController._Ready`) + a `_Process` that watches `Position`/`Zoom` and `QueueRedraw`s so the box **follows pans/zooms**. `minimap-seed424242` golden regenerated (shows the box). **Verified by render.** L3/L4 380 green; CI green both jobs.
+- **North-America question (answered, no code):** the default is a **Random New World** — procedurally generated, a different continent every game (faithful to Colonization's random default), *not* a replica of North America. The real Americas are the **"America (fixed)"** option in New Game → Map (FreeCol's hand-made 40×180 Americas). The portrait change now makes even the random continent run north–south.
+**Status:** minimap fix committed `77d1619`, pushed, **CI green both jobs**.
+**Changed:** `MiniMap.cs` (view box + camera follow), `GameController.cs` (SetCamera wiring), `minimap-seed424242` golden, presentation.md.
+**Decisions:** the view box is a diamond because the main view is isometric (the visible rect projects to a rotated square on the top-down minimap) — correct, not a bug.
+**Scheduled next:** back to `[EPIC P8] Australia variant` (`86d3b3r7h`) — unless Chris wants a map-look change first (see follow-ups).
+**Follow-ups:** (a) **the minimap can't fit a very tall map** (40×180 America) — it centres + clips instead of scaling-to-fit; add a fit-to-map zoom. (b) If Chris wants the recognisable Americas by default, make **America (fixed)** the default map (one-line). (c) Optionally tune the random continent generator to look more cohesive.
+**Needs you:** decide on the map look — keep Random New World as default (and pick "America (fixed)" when you want the real Americas), OR make America the default. And say if you want the minimap to fit tall maps.
 
 **Requested (Chris, 3 screenshots):** (1) the Start intro isn't centred/main-focus; (2) the "America" map feels "WAY different to original Colonization — squished? rotated incorrectly?"
 **Did:**
