@@ -224,6 +224,11 @@ public partial class NewGameDialog : Control
     private int _difficultyBaseIndex = DifficultyLevels.DefaultIndex;
     private Action<WorldSize, LandMass, DifficultyLevel, MapSource>? _onStart;
 
+    /// <summary>Re-centres + re-fits the panel and re-frames the wood border to it. Set in <see cref="_Ready"/>; called
+    /// again (deferred) from <see cref="Open"/> after <c>Show()</c> — the panel's real size isn't known while the dialog
+    /// is still hidden/zero-sized during <c>_Ready</c>, so the layout must be re-applied once it becomes visible.</summary>
+    private Action _relayout = () => { };
+
     /// <summary>
     /// The variant each <see cref="_variantOption"/> dropdown row maps to, by item index — the shipped
     /// <see cref="GameVariants.All"/> in menu order. The selected one becomes the new game's ruleset source (forwarded
@@ -239,42 +244,51 @@ public partial class NewGameDialog : Control
     /// </summary>
     private readonly List<string?> _nationByIndex = new() { null };
 
-    /// <summary>Builds the overlay (dim + parchment panel + the two dropdowns + Start/Back) and starts hidden.</summary>
+    /// <summary>Builds the overlay (dim + centred, carved-wood-framed parchment panel + the scrolling option list with a
+    /// pinned Title and Start/Back) and starts hidden.</summary>
     public override void _Ready()
     {
         Theme = ColonyTheme.Get();
         SetAnchorsPreset(LayoutPreset.FullRect);
+        MouseFilter = MouseFilterEnum.Stop; // modal: swallow clicks so the menu behind never receives them
 
-        var dim = new ColorRect { Color = new Color(0, 0, 0, 0.5f), Name = "Dim" };
+        var dim = new ColorRect { Color = new Color(0, 0, 0, 0.55f), Name = "Dim" };
         dim.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(dim);
 
-        var centre = new CenterContainer();
-        centre.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(centre);
-
+        // The panel is centred manually (anchor-centre + fitted offsets) rather than via a CenterContainer: the option
+        // list is far taller than any window, and a CenterContainer given an over-tall child pins it to the top-left
+        // (the bug Chris hit — the dialog stuck to the corner, unframed, with Start/Back off-screen). Anchor-centre keeps
+        // it centred at every size; FitPanel() (below) caps its height to the viewport so it always fits.
         var panel = new PanelContainer { Name = "Panel" };
         panel.AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin());
-        centre.AddChild(panel);
+        AddChild(panel);
 
-        // The full set of setup dials is taller than a small window, so the options scroll inside a bounded viewport
-        // (the panel keeps its parchment frame; the Start/Back buttons sit inside the scroll so they're always reachable
-        // by scrolling). A generous max height keeps every row visible on a normal screen without clipping.
-        var scroll = new ScrollContainer { Name = "Scroll", CustomMinimumSize = new Vector2(0, 0) };
-        scroll.SetCustomMinimumSize(new Vector2(360, 560));
-        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
-        panel.AddChild(scroll);
+        // Panel content: a pinned Title on top, the scrolling option list in the middle (expands to fill), and the
+        // Start/Back buttons pinned at the bottom — so the buttons are ALWAYS visible no matter how far you scroll (the
+        // old layout put them at the end of the scroll, off-screen on a short window).
+        var outer = new VBoxContainer { Name = "Outer", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        outer.AddThemeConstantOverride("separation", 10);
+        panel.AddChild(outer);
 
-        var vbox = new VBoxContainer { Name = "VBox", SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        vbox.AddThemeConstantOverride("separation", 12);
-        scroll.AddChild(vbox);
-
-        vbox.AddChild(new Label
+        outer.AddChild(new Label
         {
             Name = "Title",
             Text = "New Game",
             HorizontalAlignment = HorizontalAlignment.Center,
         });
+
+        var scroll = new ScrollContainer
+        {
+            Name = "Scroll",
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, // vertical scroll only
+            SizeFlagsVertical = SizeFlags.ExpandFill, // fill the space between the pinned Title and buttons
+        };
+        outer.AddChild(scroll);
+
+        var vbox = new VBoxContainer { Name = "VBox", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        vbox.AddThemeConstantOverride("separation", 12);
+        scroll.AddChild(vbox);
 
         // Scenario / variant picker (the ruleset that defines the world) — FreeCol's "rules" dropdown. The shipped
         // variants are read from the registry (data-driven, ADR-018), so a future variant becomes a row here for free.
@@ -323,7 +337,9 @@ public partial class NewGameDialog : Control
             _landOption.AddItem($"{l.Name} ({(int)Math.Round(l.Fraction * 100)}% land)");
         }
         _landOption.Selected = WorldSizeOptions.DefaultLandMassIndex;
-        vbox.AddChild(LabeledRow("Land mass", _landOption));
+        // "Land amount" (how much of the map is land) — distinct from "Land shape" below (the landmass style). The two
+        // were both labelled "Land mass"/"Landmass", which read as duplicates.
+        vbox.AddChild(LabeledRow("Land amount", _landOption));
 
         // Landmass style (FreeCol landGeneratorType): one continent (default), a few big islands, or many small ones.
         _landStyleOption = new OptionButton { Name = "LandStyleOption" };
@@ -332,7 +348,7 @@ public partial class NewGameDialog : Control
             _landStyleOption.AddItem(s.Name);
         }
         _landStyleOption.Selected = WorldSizeOptions.DefaultLandStyleIndex; // Continent — the historical default
-        vbox.AddChild(LabeledRow("Landmass", _landStyleOption));
+        vbox.AddChild(LabeledRow("Land shape", _landStyleOption));
 
         _difficultyOption = new OptionButton { Name = "DifficultyOption" };
         foreach (DifficultyLevel d in DifficultyLevels.All)
@@ -427,18 +443,63 @@ public partial class NewGameDialog : Control
             "CustomIgnoreBoycottCheck", "Custom house sells boycotted goods", defaults.GameOptions.CustomIgnoreBoycott);
         vbox.AddChild(_customIgnoreBoycottCheck);
 
+        // Start/Back are added to the pinned `outer` VBox (not the scroll's `vbox`), so they stay visible at the panel's
+        // foot however far the option list is scrolled.
         var start = new Button { Name = "StartButton", Text = "Start" };
         start.Pressed += OnStart;
-        vbox.AddChild(start);
+        outer.AddChild(start);
 
         var back = new Button { Name = "BackButton", Text = "Back" };
         back.Pressed += () => EmitSignal(SignalName.Closed);
-        vbox.AddChild(back);
+        outer.AddChild(back);
 
-        // The custom-difficulty editor overlay (86d3fq0x7) — a sibling-on-top of the whole dialog, hidden until the
-        // "Custom…" difficulty row opens it.
+        // The carved-wood frame (the same finished edge the main menu / colony screen / popups carry) as a sibling ON TOP
+        // of the panel, kept exactly on the panel's rendered rect by SyncFrame(). A sibling (not an AddWoodFrame child of
+        // the PanelContainer) because a PanelContainer would arrange the frame as inset content instead of a full-bleed
+        // edge. No-op if the border asset is absent (CI still renders the parchment panel).
+        var border = new NinePatchRect { Name = "Border", MouseFilter = MouseFilterEnum.Ignore };
+        if (ColonyArt.ColonyBorder() is { } borderTex)
+        {
+            border.Texture = borderTex;
+            border.PatchMarginLeft = border.PatchMarginTop = border.PatchMarginRight = border.PatchMarginBottom = 23;
+        }
+        AddChild(border);
+
+        // The custom-difficulty editor overlay (86d3fq0x7) — a sibling-on-top of the whole dialog (added last, so it sits
+        // above the frame), hidden until the "Custom…" difficulty row opens it.
         _difficultyEditor = new DifficultyEditor { Name = "DifficultyEditor" };
         AddChild(_difficultyEditor);
+
+        // Centre the panel over the viewport and cap its height so it always fits a short window (the tall option list
+        // scrolls; Title/Start/Back are pinned outside the scroll). The panel is positioned with ABSOLUTE offsets under
+        // top-left anchors rather than a 0.5 centre-anchor: this overlay's own Control ends up 0×0 when it is added to the
+        // menu (a centre-anchor then resolves against a zero-size parent and pins the panel to the corner — exactly the
+        // bug Chris hit). Top-left anchors + explicit offsets don't depend on the parent's size, so the panel centres
+        // correctly regardless. The dim + this control are forced to cover the viewport so the modal darkens the menu.
+        _relayout = () =>
+        {
+            Vector2 vp = GetViewportRect().Size;
+            Position = Vector2.Zero;
+            Size = vp; // cover the whole viewport (the dim is a FullRect child, so it follows)
+            const float w = 520f; // comfortable width for the long victory-condition rows
+            float h = Mathf.Min(vp.Y - 40f, 900f); // capped to the window (with a margin); content taller than this scrolls
+            float x = Mathf.Max(0f, (vp.X - w) / 2f);
+            float y = Mathf.Max(0f, (vp.Y - h) / 2f);
+            panel.AnchorLeft = panel.AnchorTop = panel.AnchorRight = panel.AnchorBottom = 0f; // top-left anchor
+            panel.OffsetLeft = x;
+            panel.OffsetTop = y;
+            panel.OffsetRight = x + w;
+            panel.OffsetBottom = y + h;
+            // Frame after the panel has re-laid-out to its new rect.
+            Callable.From(() =>
+            {
+                border.SetAnchorsPreset(LayoutPreset.TopLeft);
+                border.GlobalPosition = panel.GlobalPosition;
+                border.Size = panel.Size;
+            }).CallDeferred();
+        };
+        GetViewport().SizeChanged += () => _relayout();
+        _relayout();
 
         UpdateWorldSizeEnabled(); // size/land start enabled (Random is the default map)
         Hide();
@@ -449,6 +510,9 @@ public partial class NewGameDialog : Control
     {
         _onStart = onStart;
         Show();
+        // Re-centre/re-fit now that the dialog is visible and sized (its rect was 0 while hidden during _Ready), deferred
+        // one frame so the layout has propagated.
+        Callable.From(() => _relayout()).CallDeferred();
     }
 
     private void OnStart()
@@ -702,7 +766,10 @@ public partial class NewGameDialog : Control
     {
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", 12);
-        row.AddChild(new Label { Text = label, SizeFlagsHorizontal = SizeFlags.ExpandFill });
+        // Fixed-width label + expanding control, so every dropdown fills the same column (aligned left/right edges)
+        // instead of an expanding label pushing each dropdown to a ragged right-aligned width.
+        row.AddChild(new Label { Text = label, CustomMinimumSize = new Vector2(170, 0) });
+        control.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         row.AddChild(control);
         return row;
     }

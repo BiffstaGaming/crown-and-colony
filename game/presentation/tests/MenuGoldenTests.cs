@@ -63,6 +63,24 @@ public class MenuGoldenTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task NewGameDialog_MatchesGolden()
+    {
+        // The New-Game setup overlay opened over the menu (86d3jy0rn — Chris's playtest: the tall option list was
+        // cut off + unframed). Instantiate it directly (OnNewGame is private) and open it with a no-op onStart.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");
+        var scene = (Control)runner.Scene();
+        scene.GetWindow().Size = CaptureSize;
+        await runner.SimulateFrames(3);
+
+        var dialog = new NewGameDialog();
+        scene.AddChild(dialog);
+        dialog.Open((_, _, _, _) => { });
+        await runner.SimulateFrames(6);
+
+        GoldenAssert.Assert("new-game-dialog", scene.GetViewport().GetTexture().GetImage(), TextTolerance);
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task AboutPanel_MatchesGolden()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/AboutPanel.tscn");
