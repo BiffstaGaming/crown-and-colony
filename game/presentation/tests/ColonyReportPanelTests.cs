@@ -40,7 +40,7 @@ public class ColonyReportPanelTests
         var panel = controller.GetNode<PanelContainer>("UI/ColonyReportPanel");
         AssertThat(panel.Visible).IsTrue();
 
-        var header = controller.GetNode<Label>($"UI/ColonyReportPanel/VBox/Dynamic/Colony_{colony.Id}");
+        var header = controller.GetNode<Label>($"UI/ColonyReportPanel/VBox/Scroll/Dynamic/Colony_{colony.Id}");
         AssertThat(header.Text).Contains(colony.Name);
         AssertThat(header.Text).Contains("pop 1"); // a freshly founded colony has population 1
 
@@ -60,7 +60,7 @@ public class ColonyReportPanelTests
         controller.OpenColonyReportPanel(); // turn 1: the human has not founded a colony yet
         await runner.SimulateFrames(1);
 
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         bool hasEmptyMessage = false;
         foreach (Node child in dynamic.GetChildren())
         {
@@ -83,12 +83,12 @@ public class ColonyReportPanelTests
         await runner.SimulateFrames(1);
 
         // Switch to the Units tab and assert the four FreeCol groups render, with a non-empty roster.
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Units")
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Units")
             .EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Unit report");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         foreach (string section in new[] { "Military", "Naval", "Cargo", "Labour" })
         {
             AssertThat(dynamic.GetNodeOrNull($"UnitSection_{section}")).IsNotNull();
@@ -105,17 +105,17 @@ public class ColonyReportPanelTests
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
         var title = controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
 
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Foreign").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Foreign").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
         AssertThat(title.Text).IsEqual("Foreign affairs"); // a fresh game has 3 landed rival powers to list
 
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Natives").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Natives").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
         AssertThat(title.Text).IsEqual("Native nations");
 
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Religion").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Religion").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
         AssertThat(title.Text).IsEqual("Religion");
         AssertThat(dynamic.GetNodeOrNull("ReligionImmigration")).IsNotNull(); // the immigration bar always renders
@@ -130,14 +130,14 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Foreign").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Foreign").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Foreign affairs");
         // A fresh game has landed rival powers; each Foreign_{id} row carries the unconditional military + naval
         // strength figures (FreeCol NationSummary.getMilitaryStrength/getNavalStrength via Game.ColonialStrength) and
         // the tension/attitude band (Game.TensionLevelBetween → FreeCol Tension.getLevel).
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         Game game = GetGame(controller);
         Player rival = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
         var row = dynamic.GetNodeOrNull<Label>($"Foreign_{rival.PlayerId}");
@@ -157,10 +157,10 @@ public class ColonyReportPanelTests
         // A fresh game's human Congress holds no father → FreeCol's de-Witt gate keeps SoL%/fathers/tax hidden.
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Foreign").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Foreign").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         Game game = GetGame(controller);
         Player rival = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
         var row = dynamic.GetNodeOrNull<Label>($"Foreign_{rival.PlayerId}");
@@ -192,10 +192,10 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Foreign").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Foreign").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         Player rival = game.Players.First(p => !p.IsHuman && p.PlayerType == PlayerType.Colonial);
         var row = dynamic.GetNodeOrNull<Label>($"Foreign_{rival.PlayerId}");
         AssertThat(row).IsNotNull();
@@ -214,11 +214,11 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Naval").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Naval").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Naval");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         // The fleet header always renders; the start units include a carrier (caravel), so a Ship_ row renders too.
         var header = dynamic.GetNodeOrNull<Label>("NavalHeader");
         AssertThat(header).IsNotNull();
@@ -237,11 +237,11 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Cargo").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Cargo").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Cargo");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         AssertThat(dynamic.GetNodeOrNull("CargoHeader")).IsNotNull();
         // The start units include a carrier → a Cargo_ row renders (it begins empty: "[empty]").
         Game game = GetGame(controller);
@@ -259,11 +259,11 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Ref").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Ref").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Expeditionary Force");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         // The header (with the land/naval totals) and a land breakdown row both render: the base REF has King's Regulars.
         var header = dynamic.GetNodeOrNull<Label>("RefHeader");
         AssertThat(header).IsNotNull();
@@ -282,11 +282,11 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Score").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Score").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Score");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         var total = dynamic.GetNodeOrNull<Label>("ScoreTotal");
         AssertThat(total).IsNotNull();
         AssertThat(total!.Text).Contains("Your score");
@@ -315,11 +315,11 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Natives").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Natives").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Native nations");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         NativeSettlement settlement = game.NativeSettlements.First(s => game.IsExplored(s.Position));
         // The owning nation's grouped header renders, and the settlement's row carries the most-hated column.
         var nationHeader = dynamic.GetNodeOrNull<Label>($"NativeNation_{Strip(settlement.NationTypeId)}");
@@ -345,11 +345,11 @@ public class ColonyReportPanelTests
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
 
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Trade").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Trade").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Trade");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         // The net-after-tax summary line always renders.
         AssertThat(dynamic.GetNodeOrNull("TradeTotal")).IsNotNull();
         // Tobacco is always market-tradeable in the classic ruleset → its row renders, with price + sold + income.
@@ -371,12 +371,12 @@ public class ColonyReportPanelTests
         // Open through GameController so the report → Colopedia deep-link delegate is wired (86d3fymc5).
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Trade").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Trade").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         // Tobacco is always tradeable → its Trade_tobacco cell is now a flat link Button; clicking it hides the report
         // and opens the Colopedia on the Goods category, scrolled to the tobacco entry.
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         var tobaccoLink = dynamic.GetNodeOrNull<Button>("Trade_tobacco");
         AssertThat(tobaccoLink).IsNotNull();
         tobaccoLink!.EmitSignal(BaseButton.SignalName.Pressed);
@@ -414,7 +414,7 @@ public class ColonyReportPanelTests
 
         // The colony header is a link Button (the colony is building a warehouse); clicking it opens the Colopedia on the
         // Buildings category at the warehouse entry.
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         var colonyLink = dynamic.GetNodeOrNull<Button>($"Colony_{colony.Id}");
         AssertThat(colonyLink).IsNotNull();
         colonyLink!.EmitSignal(BaseButton.SignalName.Pressed);
@@ -438,11 +438,11 @@ public class ColonyReportPanelTests
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
 
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Exploration").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Exploration").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Exploration");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         // The human's opening tile reveal discovers at least one land region, so the header + a Region_ row render;
         // if (rarely) none is discovered, the empty-state line renders instead — either way the tab built a row.
         bool rendered = dynamic.GetNodeOrNull("ExplorationHeader") is not null
@@ -463,11 +463,11 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Requirements").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Requirements").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Requirements");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         AssertThat(dynamic.GetNodeOrNull($"Requirements_{colony.Id}")).IsNotNull(); // the per-colony section header
     }
 
@@ -487,11 +487,11 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Military").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Military").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Military");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         var human = dynamic.GetNodeOrNull<Label>("MilitaryHuman");
         AssertThat(human).IsNotNull();
         AssertThat(human!.Text).Contains("Land units");
@@ -511,11 +511,11 @@ public class ColonyReportPanelTests
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
 
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Congress").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Congress").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Continental Congress");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         // The recruit + liberty-progress header always renders, named for the test.
         var progress = dynamic.GetNodeOrNull<Label>("CongressProgress");
         AssertThat(progress).IsNotNull();
@@ -536,11 +536,11 @@ public class ColonyReportPanelTests
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
 
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_History").EmitSignal(BaseButton.SignalName.Pressed);
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_History").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("History");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         // The colony-founded event ("Turn N: Founded <colony>.") is listed — it may not be first, since a
         // region discovery during the human's opening tile reveal can precede it in the history log.
         bool listsTheFounding = false;
@@ -581,12 +581,12 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Education")
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Education")
             .EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Education");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         AssertThat(dynamic.GetNodeOrNull($"School_{founded.Id}")).IsNotNull();
         var student = dynamic.GetNodeOrNull<Label>($"Student_{founded.Id}_schoolhouse");
         AssertThat(student).IsNotNull();
@@ -607,12 +607,12 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Production")
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Production")
             .EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Production");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         var selector = dynamic.GetNodeOrNull<OptionButton>("ProductionGood");
         AssertThat(selector).IsNotNull();
 
@@ -650,12 +650,12 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Labour")
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Labour")
             .EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Labour");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         // A freshly founded colony's lone resident is a free colonist → its group header renders.
         AssertThat(dynamic.GetNodeOrNull("Labour_freeColonist")).IsNotNull();
     }
@@ -674,12 +674,12 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Labour")
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Labour")
             .EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         // Drive the drill-down selector to the free-colonist type.
-        var selector = controller.GetNode<OptionButton>("UI/ColonyReportPanel/VBox/Dynamic/LabourDetailSelector");
+        var selector = controller.GetNode<OptionButton>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/LabourDetailSelector");
         int item = -1;
         for (int i = 0; i < selector.ItemCount; i++)
         {
@@ -694,7 +694,7 @@ public class ColonyReportPanelTests
         await runner.SimulateFrames(1);
 
         // The drill-down detail header renders for the chosen type, with a per-location breakdown beneath it.
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         var header = dynamic.GetNodeOrNull<Label>("LabourDetail_freeColonist");
         AssertThat(header).IsNotNull();
         AssertThat(header!.Text).Contains("total");
@@ -713,12 +713,12 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_History")
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_History")
             .EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("History");
-        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Dynamic");
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColonyReportPanel/VBox/Scroll/Dynamic");
         // At least one History_<i> row exists (the founded-colony event) — i.e. the log is NOT the empty placeholder.
         AssertThat(dynamic.GetNodeOrNull("HistoryEmpty")).IsNull();
         AssertThat(dynamic.GetNodeOrNull("History_0")).IsNotNull();
@@ -739,12 +739,12 @@ public class ColonyReportPanelTests
 
         controller.OpenColonyReportPanel();
         await runner.SimulateFrames(1);
-        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Dynamic/Tabs/Tab_Demographics")
+        controller.GetNode<Button>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/Tabs/Tab_Demographics")
             .EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(3);
 
         AssertThat(controller.GetNode<Label>("UI/ColonyReportPanel/VBox/ReportTitle").Text).IsEqual("Demographics");
-        var graph = controller.GetNode<Control>("UI/ColonyReportPanel/VBox/Dynamic/DemographicGraph");
+        var graph = controller.GetNode<Control>("UI/ColonyReportPanel/VBox/Scroll/Dynamic/DemographicGraph");
         AssertThat(graph).IsNotNull();
         AssertThat(graph.Size.X).IsGreater(0f); // the graph laid out with a real size
 

@@ -4,6 +4,7 @@ using System.Linq;
 using CrownAndColony.GameLogic.Combat;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using Godot;
 
@@ -110,7 +111,7 @@ public partial class NativeSettlementPanel : PanelContainer
         string type = Short(_settlement.SettlementTypeId);
         GetNode<Label>("VBox/NativeTitle").Text = _settlement.IsCapital ? $"{nation} {type} ★" : $"{nation} {type}";
 
-        string teaches = _settlement.LearnableSkill is { } skill && !_settlement.SkillConsumed ? Short(skill) : "nothing";
+        string teaches = _settlement.LearnableSkill is { } skill && !_settlement.SkillConsumed ? Naming.Humanize(Short(skill)) : "nothing";
         GetNode<Label>("VBox/NativeInfo").Text =
             $"Mood: {_settlement.AlarmLevel}   |   Teaches: {teaches}\n" +
             (_settlement.HasBeenVisited ? "You have spoken with this chief.\n" : "") +
@@ -176,10 +177,10 @@ public partial class NativeSettlementPanel : PanelContainer
         if (_game.CheckLearnSkill(unit, _settlement).Allowed)
         {
             any = true;
-            dynamic.AddChild(ActionButton("Learn", $"Learn {Short(_settlement.LearnableSkill!)}", () =>
+            dynamic.AddChild(ActionButton("Learn", $"Learn {Naming.Humanize(Short(_settlement.LearnableSkill!))}", () =>
             {
                 Unit expert = _game.LearnSkill(unit, _settlement);
-                _outcome = $"Your colonist trained as a {Short(expert.Type.Id)}.";
+                _outcome = $"Your colonist trained as a {Naming.Humanize(Short(expert.Type.Id))}.";
                 Changed();
             }));
         }
@@ -336,7 +337,7 @@ public partial class NativeSettlementPanel : PanelContainer
             }
             any = true;
             string verb = _buying ? "for" : "→";
-            dynamic.AddChild(ActionButton($"Trade_{Short(goodsId)}", $"{amount} {Short(goodsId)}  {verb} {check.Cost} gold", () =>
+            dynamic.AddChild(ActionButton($"Trade_{Short(goodsId)}", $"{amount} {Naming.Humanize(Short(goodsId))}  {verb} {check.Cost} gold", () =>
             {
                 _tradeGoodsId = goodsId;
                 _tradeAmount = amount;
@@ -370,7 +371,7 @@ public partial class NativeSettlementPanel : PanelContainer
             return;
         }
 
-        string lot = $"{_tradeAmount} {Short(goodsId)}";
+        string lot = $"{_tradeAmount} {Naming.Humanize(Short(goodsId))}";
         if (_haggleDone)
         {
             dynamic.AddChild(Hint($"The chief is done bargaining over {lot}."));
@@ -441,12 +442,12 @@ public partial class NativeSettlementPanel : PanelContainer
         if (_buying)
         {
             int paid = _game.BuyFromNatives(ship, _settlement, goodsId, _tradeAmount, _haggleCounter);
-            _outcome = $"Bought {_tradeAmount} {Short(goodsId)} for {paid} gold.";
+            _outcome = $"Bought {_tradeAmount} {Naming.Humanize(Short(goodsId))} for {paid} gold.";
         }
         else
         {
             int got = _game.SellToNatives(ship, _settlement, goodsId, _tradeAmount, _haggleCounter);
-            _outcome = $"Sold {_tradeAmount} {Short(goodsId)} for {got} gold.";
+            _outcome = $"Sold {_tradeAmount} {Naming.Humanize(Short(goodsId))} for {got} gold.";
         }
         _screen = Screen.Actions;
         _tradeGoodsId = null;

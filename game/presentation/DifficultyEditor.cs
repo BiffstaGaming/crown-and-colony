@@ -34,41 +34,51 @@ public partial class DifficultyEditor : Control
     private Action<DifficultyOptions>? _onApply;
     private Action? _onCancel;
 
+    /// <summary>Re-centres + re-fits the panel and re-frames the wood border to it; re-run from <see cref="Open"/> (the
+    /// panel's real size isn't known while it is built hidden inside NewGameDialog's <c>_Ready</c>). Mirrors NewGameDialog.</summary>
+    private Action _relayout = () => { };
+
     /// <summary>Builds the overlay (dim + parchment panel + one schema-driven row per editable field + OK/Cancel) and starts hidden.</summary>
     public override void _Ready()
     {
         Theme = ColonyTheme.Get();
         SetAnchorsPreset(LayoutPreset.FullRect);
 
-        var dim = new ColorRect { Color = new Color(0, 0, 0, 0.5f), Name = "Dim" };
+        var dim = new ColorRect { Color = new Color(0, 0, 0, 0.55f), Name = "Dim" };
         dim.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(dim);
 
-        var centre = new CenterContainer();
-        centre.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(centre);
-
+        // Robust centred, framed modal (the NewGameDialog pattern, 86d3jy0rn): the panel is positioned with absolute
+        // offsets from the viewport (a CenterContainer/centre-anchor corner-pins when this overlay's own size is 0, which
+        // it is while built hidden inside NewGameDialog's _Ready); the Title is pinned above the scroll and OK/Cancel
+        // below it so they are always reachable; a synced wood Border matches the rest of the UI.
         var panel = new PanelContainer { Name = "Panel" };
         panel.AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin());
-        centre.AddChild(panel);
+        AddChild(panel);
 
-        // 31 rows outgrow a small window, so they scroll in a bounded viewport (the NewGameDialog pattern; the
-        // OK/Cancel buttons sit inside the scroll so they are always reachable).
-        var scroll = new ScrollContainer { Name = "Scroll" };
-        scroll.SetCustomMinimumSize(new Vector2(430, 560));
-        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
-        panel.AddChild(scroll);
+        var outer = new VBoxContainer { Name = "Outer", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        outer.AddThemeConstantOverride("separation", 8);
+        panel.AddChild(outer);
 
-        var vbox = new VBoxContainer { Name = "VBox", SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        vbox.AddThemeConstantOverride("separation", 8);
-        scroll.AddChild(vbox);
-
-        vbox.AddChild(new Label
+        outer.AddChild(new Label
         {
             Name = "Title",
             Text = "Custom difficulty",
             HorizontalAlignment = HorizontalAlignment.Center,
         });
+
+        // 31 rows outgrow a small window, so they scroll in a bounded viewport; the pinned OK/Cancel below stay reachable.
+        var scroll = new ScrollContainer
+        {
+            Name = "Scroll",
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+        };
+        outer.AddChild(scroll);
+
+        var vbox = new VBoxContainer { Name = "VBox", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        vbox.AddThemeConstantOverride("separation", 8);
+        scroll.AddChild(vbox);
 
         // One row per schema field, in schema order. The controls are node-named from the schema (NodeName — the
         // option id PascalCased, dots removed) so the L3 suite and any future code can find a field deterministically.
@@ -89,7 +99,8 @@ public partial class DifficultyEditor : Control
             }
         }
 
-        // Inline validation error (shown by OK when a field isn't a whole number; the editor stays open).
+        // Inline validation error + OK/Cancel are pinned in `outer` (below the scroll), so they stay visible however far
+        // the 31-row list is scrolled.
         _errorLabel = new Label
         {
             Name = "ErrorLabel",
@@ -97,15 +108,51 @@ public partial class DifficultyEditor : Control
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
             CustomMinimumSize = new Vector2(410, 0),
         };
-        vbox.AddChild(_errorLabel);
+        outer.AddChild(_errorLabel);
 
         var ok = new Button { Name = "ApplyButton", Text = "OK" };
         ok.Pressed += OnApplyPressed;
-        vbox.AddChild(ok);
+        outer.AddChild(ok);
 
         var cancel = new Button { Name = "CancelButton", Text = "Cancel" };
         cancel.Pressed += OnCancelPressed;
-        vbox.AddChild(cancel);
+        outer.AddChild(cancel);
+
+        // Carved-wood frame (a synced sibling NinePatchRect — a PanelContainer would inset an AddWoodFrame child).
+        var border = new NinePatchRect { Name = "Border", MouseFilter = MouseFilterEnum.Ignore };
+        if (ColonyArt.ColonyBorder() is { } borderTex)
+        {
+            border.Texture = borderTex;
+            border.PatchMarginLeft = border.PatchMarginTop = border.PatchMarginRight = border.PatchMarginBottom = 23;
+        }
+        AddChild(border);
+
+        // Centre the panel over the viewport with absolute offsets (top-left anchors — a centre-anchor corner-pins when
+        // this overlay's own size is 0, as it is while built hidden inside NewGameDialog); cap the height to the window
+        // and keep the wood frame on the panel's rendered rect. The NewGameDialog fit-and-frame pattern (86d3jy0rn).
+        _relayout = () =>
+        {
+            Vector2 vp = GetViewportRect().Size;
+            Position = Vector2.Zero;
+            Size = vp;
+            const float w = 470f;
+            float h = Mathf.Min(vp.Y - 40f, 900f);
+            float x = Mathf.Max(0f, (vp.X - w) / 2f);
+            float y = Mathf.Max(0f, (vp.Y - h) / 2f);
+            panel.AnchorLeft = panel.AnchorTop = panel.AnchorRight = panel.AnchorBottom = 0f;
+            panel.OffsetLeft = x;
+            panel.OffsetTop = y;
+            panel.OffsetRight = x + w;
+            panel.OffsetBottom = y + h;
+            Callable.From(() =>
+            {
+                border.SetAnchorsPreset(LayoutPreset.TopLeft);
+                border.GlobalPosition = panel.GlobalPosition;
+                border.Size = panel.Size;
+            }).CallDeferred();
+        };
+        GetViewport().SizeChanged += () => _relayout();
+        _relayout();
 
         Hide();
     }
@@ -137,6 +184,7 @@ public partial class DifficultyEditor : Control
         }
         _errorLabel.Visible = false;
         Show();
+        Callable.From(() => _relayout()).CallDeferred(); // re-centre/fit now that the overlay is visible and sized
     }
 
     /// <summary>OK: validates every integer field (any non-integer → inline error, stays open), folds the values onto the seed via the schema's <c>With</c> delegates, hides, and hands the record to the opener.</summary>

@@ -81,6 +81,24 @@ public class MenuGoldenTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task DifficultyEditor_MatchesGolden()
+    {
+        // The custom-difficulty editor opened over the menu (86d3jy0rn — refactored to the robust centred+framed+scrolled
+        // modal pattern). Instantiate + open it directly with the classic-medium seed.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");
+        var scene = (Control)runner.Scene();
+        scene.GetWindow().Size = CaptureSize;
+        await runner.SimulateFrames(3);
+
+        var editor = new DifficultyEditor();
+        scene.AddChild(editor);
+        editor.Open(CrownAndColony.GameLogic.Specification.DifficultyOptions.ClassicMedium, _ => { }, () => { });
+        await runner.SimulateFrames(6);
+
+        GoldenAssert.Assert("difficulty-editor", scene.GetViewport().GetTexture().GetImage(), TextTolerance);
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task AboutPanel_MatchesGolden()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/AboutPanel.tscn");

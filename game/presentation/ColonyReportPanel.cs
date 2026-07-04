@@ -138,7 +138,7 @@ public partial class ColonyReportPanel : PanelContainer
     private void Rebuild()
     {
         GetNode<Label>("VBox/ReportTitle").Text = Titles[_tab];
-        var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
+        var dynamic = GetNode<VBoxContainer>("VBox/Scroll/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
             // Detach immediately (so the freshly-built tab row below never collides with a stale one) but QUEUE the
@@ -713,7 +713,7 @@ public partial class ColonyReportPanel : PanelContainer
             dynamic.AddChild(new Label
             {
                 Name = $"Foreign_{p.PlayerId}",
-                Text = $"{Strip(p.NationId)} — {stance}, attitude {attitude}, {colonies} colonies, {units} units  ·  " +
+                Text = $"{Display(Strip(p.NationId))} — {stance}, attitude {attitude}, {colonies} colonies, {units} units  ·  " +
                        $"military {landPower:0.#}, naval {navalPower:0.#}  ·  {p.Gold} gold{deWittColumns}",
             });
         }
@@ -773,7 +773,7 @@ public partial class ColonyReportPanel : PanelContainer
                     ? "  ·  wants " + string.Join(", ", s.WantedGoods.Select(Strip))
                     : "";
                 string settlementText =
-                    $"    {Strip(s.NationTypeId)}{capital} ({s.Position.X},{s.Position.Y}) — alarm {s.AlarmLevel}, " +
+                    $"    {Display(Strip(s.NationTypeId))}{capital} ({s.Position.X},{s.Position.Y}) — alarm {s.AlarmLevel}, " +
                     $"most hated {MostHatedNation(s)}, teaches {skill}{mission}{wanted}";
                 // A settlement teaching a skill deep-links to that skill's (a unit type) Colopedia entry (86d3fymc5);
                 // a settlement with no teachable skill has no entry to point at, so it stays a plain label.
@@ -802,7 +802,7 @@ public partial class ColonyReportPanel : PanelContainer
             return "—";
         }
         Player? hated = _game.Players.FirstOrDefault(p => p.PlayerId == hatedId);
-        return hated?.NationId is { } nationId ? Strip(nationId) : "—";
+        return hated?.NationId is { } nationId ? Display(Strip(nationId)) : "—";
     }
 
     /// <summary>A presentation-derived tribe stance from its worst alarm band (our natives carry no colonial stance): hateful → at war, displeased/angry → uneasy, else at peace.</summary>
@@ -1228,7 +1228,7 @@ public partial class ColonyReportPanel : PanelContainer
             dynamic.AddChild(new Label
             {
                 Name = $"Standing_{s.Player.PlayerId}",
-                Text = $"{rank++}. {Strip(s.Player.NationId)}{you} — {s.Score} pts · {s.ColonyCount} colonies · {s.UnitCount} units",
+                Text = $"{rank++}. {Display(Strip(s.Player.NationId))}{you} — {s.Score} pts · {s.ColonyCount} colonies · {s.UnitCount} units",
             });
         }
     }
@@ -1240,7 +1240,7 @@ public partial class ColonyReportPanel : PanelContainer
         // FreeCol's Continental Congress report: the father currently being recruited, the liberty (bells) banked
         // toward the next election, and the fathers presently on offer (one per category). Read-only — the actual
         // election lives in FoundingFatherPanel (ADR-006). Mirrors FoundingFatherPanel's reads exactly.
-        string current = _game.CurrentFather is { } cf ? _game.Ruleset.Father(cf).ShortName : "(none)";
+        string current = _game.CurrentFather is { } cf ? Display(_game.Ruleset.Father(cf).ShortName) : "(none)";
         dynamic.AddChild(new Label
         {
             Name = "CongressProgress",
@@ -1260,8 +1260,8 @@ public partial class ColonyReportPanel : PanelContainer
             string recruiting = _game.CurrentFather == id ? "  — recruiting" : "";
             dynamic.AddChild(new Label
             {
-                Name = $"Father_{father.ShortName}",
-                Text = $"{father.ShortName}  ({father.Type}){recruiting}",
+                Name = $"Father_{father.ShortName}", // node name stays raw (test lookup)
+                Text = $"{Display(father.ShortName)}  ({father.Type}){recruiting}",
             });
         }
     }

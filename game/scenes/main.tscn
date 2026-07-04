@@ -614,8 +614,13 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 22
 horizontal_alignment = 1
 
-[node name="Dynamic" type="VBoxContainer" parent="UI/TradeRoutePanel/VBox"]
+[node name="Scroll" type="ScrollContainer" parent="UI/TradeRoutePanel/VBox"]
 layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Dynamic" type="VBoxContainer" parent="UI/TradeRoutePanel/VBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="CloseButton" type="Button" parent="UI/TradeRoutePanel/VBox"]
@@ -645,8 +650,13 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 22
 horizontal_alignment = 1
 
-[node name="Dynamic" type="VBoxContainer" parent="UI/ColonyReportPanel/VBox"]
+[node name="Scroll" type="ScrollContainer" parent="UI/ColonyReportPanel/VBox"]
 layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Dynamic" type="VBoxContainer" parent="UI/ColonyReportPanel/VBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="CloseButton" type="Button" parent="UI/ColonyReportPanel/VBox"]
@@ -743,8 +753,13 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 22
 horizontal_alignment = 1
 
-[node name="Dynamic" type="VBoxContainer" parent="UI/FindSettlementPanel/VBox"]
+[node name="Scroll" type="ScrollContainer" parent="UI/FindSettlementPanel/VBox"]
 layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Dynamic" type="VBoxContainer" parent="UI/FindSettlementPanel/VBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="CloseButton" type="Button" parent="UI/FindSettlementPanel/VBox"]

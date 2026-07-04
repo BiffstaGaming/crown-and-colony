@@ -4,6 +4,7 @@ using System.Linq;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.GameSession.Diplomacy;
+using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using Godot;
 
@@ -184,8 +185,8 @@ public partial class NegotiationPanel : PanelContainer
             ? $"You pay {g.Amount} gold."
             : $"The {PowerLabel(item.Source)} pay you {g.Amount} gold.",
         GoodsTradeItem gd => gd.Source == HumanId
-            ? $"You give {gd.Amount} {Short(gd.GoodsId)}."
-            : $"The {PowerLabel(item.Source)} give you {gd.Amount} {Short(gd.GoodsId)}.",
+            ? $"You give {gd.Amount} {Naming.Humanize(Short(gd.GoodsId))}."
+            : $"The {PowerLabel(item.Source)} give you {gd.Amount} {Naming.Humanize(Short(gd.GoodsId))}.",
         ColonyTradeItem c => c.Source == HumanId
             ? $"You cede {ColonyName(c.ColonyId)}."
             : $"The {PowerLabel(item.Source)} cede {ColonyName(c.ColonyId)} to you.",
@@ -208,7 +209,7 @@ public partial class NegotiationPanel : PanelContainer
         _game.Colonies.FirstOrDefault(c => c.Id == colonyId)?.Name ?? $"colony #{colonyId}";
 
     private string UnitLabel(int unitId) =>
-        _game.Units.FirstOrDefault(u => u.Id == unitId) is { } u ? $"{u.Type.ShortName} #{u.Id}" : $"unit #{unitId}";
+        _game.Units.FirstOrDefault(u => u.Id == unitId) is { } u ? $"{Naming.Humanize(u.Type.ShortName)} #{u.Id}" : $"unit #{unitId}";
 
     private void Rebuild()
     {
@@ -290,10 +291,10 @@ public partial class NegotiationPanel : PanelContainer
             {
                 dynamic.AddChild(Heading("Trade at this colony"));
                 int quote = _game.CheckSellToForeignColony(trader, colony.Position, s.GoodsId, s.Amount).Cost;
-                dynamic.AddChild(ActionButton("TradeSell", $"Sell {s.Amount} {Short(s.GoodsId)} for {quote}g", () =>
+                dynamic.AddChild(ActionButton("TradeSell", $"Sell {s.Amount} {Naming.Humanize(Short(s.GoodsId))} for {quote}g", () =>
                 {
                     int got = _game.SellToForeignColony(trader, colony.Position, s.GoodsId, s.Amount);
-                    _outcome = $"You sold {s.Amount} {Short(s.GoodsId)} to the {PowerLabel(colony.OwnerId)} for {got} gold.";
+                    _outcome = $"You sold {s.Amount} {Naming.Humanize(Short(s.GoodsId))} to the {PowerLabel(colony.OwnerId)} for {got} gold.";
                     Changed();
                 }));
             }
@@ -311,10 +312,10 @@ public partial class NegotiationPanel : PanelContainer
                     dynamic.AddChild(Heading("Trade at this colony"));
                 }
                 int quote = _game.CheckBuyFromForeignColony(trader, colony.Position, b.GoodsId, b.Amount).Cost;
-                dynamic.AddChild(ActionButton("TradeBuy", $"Buy {b.Amount} {Short(b.GoodsId)} for {quote}g", () =>
+                dynamic.AddChild(ActionButton("TradeBuy", $"Buy {b.Amount} {Naming.Humanize(Short(b.GoodsId))} for {quote}g", () =>
                 {
                     int paid = _game.BuyFromForeignColony(trader, colony.Position, b.GoodsId, b.Amount);
-                    _outcome = $"You bought {b.Amount} {Short(b.GoodsId)} from the {PowerLabel(colony.OwnerId)} for {paid} gold.";
+                    _outcome = $"You bought {b.Amount} {Naming.Humanize(Short(b.GoodsId))} from the {PowerLabel(colony.OwnerId)} for {paid} gold.";
                     Changed();
                 }));
             }
@@ -534,7 +535,7 @@ public partial class NegotiationPanel : PanelContainer
                 .FirstOrDefault();
         if (humanColony is not null && rivalColony is not null && goods is { } gd)
         {
-            dynamic.AddChild(ActionButton("AddGoods", $"Give {gd.Amount} {Short(gd.GoodsId)} (from {humanColony.Name})", () =>
+            dynamic.AddChild(ActionButton("AddGoods", $"Give {gd.Amount} {Naming.Humanize(Short(gd.GoodsId))} (from {humanColony.Name})", () =>
             {
                 _clauses.Add(new GoodsTradeItem(HumanId, targetId, humanColony.Id, rivalColony.Id, gd.GoodsId, gd.Amount));
                 Rebuild();
@@ -565,7 +566,7 @@ public partial class NegotiationPanel : PanelContainer
         Unit? giveUnit = _game.Units.FirstOrDefault(u => u.OwnerId == HumanId && u.OwnerNationId is null);
         if (giveUnit is not null)
         {
-            dynamic.AddChild(ActionButton("AddUnitGive", $"Hand over {giveUnit.Type.ShortName} #{giveUnit.Id}", () =>
+            dynamic.AddChild(ActionButton("AddUnitGive", $"Hand over {Naming.Humanize(giveUnit.Type.ShortName)} #{giveUnit.Id}", () =>
             {
                 _clauses.Add(new UnitTradeItem(HumanId, targetId, giveUnit.Id));
                 Rebuild();
@@ -574,7 +575,7 @@ public partial class NegotiationPanel : PanelContainer
         Unit? takeUnit = _game.Units.FirstOrDefault(u => u.OwnerId == targetId && u.OwnerNationId is null);
         if (takeUnit is not null)
         {
-            dynamic.AddChild(ActionButton("AddUnitDemand", $"Demand {takeUnit.Type.ShortName} #{takeUnit.Id}", () =>
+            dynamic.AddChild(ActionButton("AddUnitDemand", $"Demand {Naming.Humanize(takeUnit.Type.ShortName)} #{takeUnit.Id}", () =>
             {
                 _clauses.Add(new UnitTradeItem(targetId, HumanId, takeUnit.Id));
                 Rebuild();

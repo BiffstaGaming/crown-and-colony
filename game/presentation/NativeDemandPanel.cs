@@ -1,6 +1,7 @@
 using System;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Natives;
+using CrownAndColony.GameLogic.Specification;
 using Godot;
 
 namespace CrownAndColony.Presentation;
@@ -60,7 +61,7 @@ public partial class NativeDemandPanel : PanelContainer
     {
         string what = demand.GoodsId is null
             ? $"{demand.Amount} gold"
-            : $"{demand.Amount} {_game.Ruleset.Goods(demand.GoodsId).ShortName}";
+            : $"{demand.Amount} {Naming.Humanize(_game.Ruleset.Goods(demand.GoodsId).ShortName)}";
         return $"They demand {what} from {demand.ColonyName}.\nPay tribute, or refuse and risk a raid?";
     }
 

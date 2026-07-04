@@ -19,7 +19,7 @@ public partial class FindSettlementPanel : PanelContainer
     {
         ColonyArt.FramePanel(this); // parchment image frame + dark-ink theme (not Godot's transparent default)
         GetNode<Label>("VBox/FindTitle").Text = "Find settlement";
-        var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
+        var dynamic = GetNode<VBoxContainer>("VBox/Scroll/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
             dynamic.RemoveChild(child); child.QueueFree(); // detach now (signal-safe), free deferred — avoids freed-while-emitting when a child button's handler drives the rebuild

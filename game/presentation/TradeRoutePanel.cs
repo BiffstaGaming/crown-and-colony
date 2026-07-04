@@ -74,7 +74,7 @@ public partial class TradeRoutePanel : PanelContainer
     private void Rebuild()
     {
         GetNode<Label>("VBox/TradeRouteTitle").Text = "Trade routes";
-        var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
+        var dynamic = GetNode<VBoxContainer>("VBox/Scroll/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
             dynamic.RemoveChild(child); child.QueueFree(); // detach now (Rebuild reuses names), free deferred — signal-safe
@@ -202,7 +202,7 @@ public partial class TradeRoutePanel : PanelContainer
                     // Use the short name in the node id (Godot node names can't hold the dotted goods id; ShortName is
                     // the unique last segment, e.g. "sugar"). The full id still flows into LoadGoods/the engine below.
                     Name = $"Stop_{stopIndex}_Good_{g.ShortName}",
-                    Text = g.ShortName,
+                    Text = Naming.Humanize(g.ShortName), // "tradeGoods" → "Trade Goods" (node name above stays raw)
                     ButtonPressed = draft.LoadGoods.Contains(goodsId),
                 };
                 check.Toggled += pressed =>

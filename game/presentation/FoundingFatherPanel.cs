@@ -37,7 +37,7 @@ public partial class FoundingFatherPanel : PanelContainer
             dynamic.RemoveChild(child); child.QueueFree(); // detach now (signal-safe), free deferred — avoids freed-while-emitting when a child button's handler drives the rebuild
         }
 
-        string current = _game.CurrentFather is { } cf ? _game.Ruleset.Father(cf).ShortName : "(none)";
+        string current = _game.CurrentFather is { } cf ? Naming.Humanize(_game.Ruleset.Father(cf).ShortName) : "(none)";
         dynamic.AddChild(new Label { Text = $"Currently recruiting: {current}" });
         dynamic.AddChild(new Label { Text = $"Liberty to elect the next father: {_game.TotalFoundingFatherCost()}" });
         dynamic.AddChild(new HSeparator());
@@ -65,7 +65,7 @@ public partial class FoundingFatherPanel : PanelContainer
             var choose = new Button
             {
                 Name = $"Choose_{father.ShortName}",
-                Text = isCurrent ? $"{father.ShortName}  ({father.Type})  — recruiting" : $"{father.ShortName}  ({father.Type})",
+                Text = isCurrent ? $"{Naming.Humanize(father.ShortName)}  ({father.Type})  — recruiting" : $"{Naming.Humanize(father.ShortName)}  ({father.Type})",
                 Disabled = isCurrent,
                 SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
             };

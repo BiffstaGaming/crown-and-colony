@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Specification;
 using Godot;
 
 namespace CrownAndColony.Presentation;
@@ -26,6 +27,7 @@ public partial class MonarchDialog : PanelContainer
 
     public override void _Ready()
     {
+        ColonyArt.FramePanel(this); // parchment image frame + dark-ink theme (not Godot's default gray box)
         GetNode<Button>("VBox/Buttons/AcceptButton").Pressed += () => Resolve(accept: true);
         GetNode<Button>("VBox/Buttons/DeclineButton").Pressed += () => Resolve(accept: false);
     }
@@ -67,7 +69,7 @@ public partial class MonarchDialog : PanelContainer
     {
         if (IsTaxDemand(demand.Action))
         {
-            string goods = _game.Ruleset.Goods(demand.GoodsId!).ShortName;
+            string goods = Naming.Humanize(_game.Ruleset.Goods(demand.GoodsId!).ShortName);
             string colony = ColonyName(demand.ColonyId);
             return $"The Crown demands a tax rise from {_game.TaxRate}% to {demand.TaxRaise}%, " +
                    $"citing your {goods} at {colony}.\n" +

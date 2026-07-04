@@ -164,6 +164,10 @@ public static class ColonyTheme
         theme.SetColor("font_color", "Label", Ink);
         theme.SetColor("font_outline_color", "Label", new Color(Parchment, 0.85f));
         theme.SetConstant("outline_size", "Label", 1);
+        // A RichTextLabel does NOT inherit Label's font_color — it has its own "default_color" theme item whose engine
+        // default is white, so without this the Help/About bodies (the only RichTextLabels, both on parchment) render
+        // near-white on cream and are unreadable. Dark ink matches the surrounding Labels. (86d3jy0rn playtest audit.)
+        theme.SetColor("default_color", "RichTextLabel", Ink);
     }
 
     private static void StyleSeparators(Theme theme)

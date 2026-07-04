@@ -34,7 +34,7 @@ public class FindSettlementPanelTests
         var panel = controller.GetNode<PanelContainer>("UI/FindSettlementPanel");
         AssertThat(panel.Visible).IsTrue();
 
-        var button = controller.GetNode<Button>($"UI/FindSettlementPanel/VBox/Dynamic/Find_{colony.Id}");
+        var button = controller.GetNode<Button>($"UI/FindSettlementPanel/VBox/Scroll/Dynamic/Find_{colony.Id}");
         AssertThat(button.Text).Contains(colony.Name);
 
         button.EmitSignal(BaseButton.SignalName.Pressed);
