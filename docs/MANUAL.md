@@ -6,6 +6,11 @@ and how a game ends. It assumes no prior knowledge of the original *Colonization
 have played it, everything here will feel familiar; if you have not, read on and you will be
 running a thriving New-World empire in no time.
 
+> 📖 **Prefer to browse or search?** This single file is the *offline edition*. The same guide,
+> expanded and split into chapters with search, is the **[Governor's Handbook](guide/index.md)**
+> in `docs/guide/` — the canonical player guide, published as a website (MkDocs Material) once
+> GitHub Pages is enabled. Both describe the same game.
+
 > This is the full static, written guide. A concise version of it is also available **in-game**:
 > the **Help** button on the title screen and the in-game pause menu opens a Help screen covering the
 > goal, the core gameplay loops and a controls reference. A step-by-step interactive tutorial is

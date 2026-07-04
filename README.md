@@ -51,11 +51,12 @@ ruleset is designed to make a content change rather than a code change.
 
 ## Playing the game
 
-New to Crown & Colony? The **[Player's Manual](docs/MANUAL.md)** is a from-scratch, player-facing
-guide: the goal of the game, the New Game setup, the core loops (exploring, founding and running
-colonies, the Europe economy, immigration, natives, combat), the controls and keybindings,
-save/load, and the road to independence and victory. (The README itself is developer/build-facing;
-the manual is for someone playing a packaged build.)
+New to Crown & Colony? The **[Governor's Handbook](docs/guide/index.md)** is the full, from-scratch
+player guide: the goal of the game, the New Game setup, the core loops (exploring, founding and
+running colonies, the Europe economy, immigration, natives, combat), the controls and keybindings,
+save/load, and the road to independence and victory. It's authored as Markdown in `docs/guide/`
+and published as a website (MkDocs Material → GitHub Pages). A single-file **offline edition**
+lives at [`docs/MANUAL.md`](docs/MANUAL.md). (The README itself is developer/build-facing.)
 
 ## Architecture
 

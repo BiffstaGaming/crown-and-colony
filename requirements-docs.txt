@@ -1,0 +1,4 @@
+# Documentation website toolchain (MkDocs Material → GitHub Pages).
+# Install:  pip install -r requirements-docs.txt
+# Serve locally:  mkdocs serve      Build:  mkdocs build --strict
+mkdocs-material>=9.5

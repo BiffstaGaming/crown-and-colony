@@ -9,7 +9,8 @@ This file defines what documentation exists, where it lives, who it's written fo
 | **Repo `docs/systems/`** | One doc per game system (map, units, colonies, economy, combat…) — dual-audience, from `TEMPLATE-game-system.md` | Must change in the same commit as code → can never drift |
 | **Repo `docs/modules/`** | One doc per code module/namespace — technical audience, from `TEMPLATE-code-module.md` | Same-commit rule |
 | **Repo `docs/templates/`** | The templates themselves | Versioned with the standards |
-| **Repo `docs/MANUAL.md`** | Player-facing how-to-play guide (ships with packaged builds; linked from README and the in-game About screen) | Player audience, not code-coupled; keep in step with the system docs when player-visible behaviour changes |
+| **Repo `docs/guide/` + `mkdocs.yml`** | Player-facing **Governor's Handbook** — the *canonical* multi-page player guide, published as a website (MkDocs Material → GitHub Pages) | Player audience, not code-coupled; keep in step with the system docs when player-visible behaviour changes |
+| **Repo `docs/MANUAL.md`** | Single-file / offline player manual (ships with packaged builds; linked from README and the in-game About screen) | Player audience; the **canonical guide is `docs/guide/`** — keep this offline edition in step, or regenerate it from the guide |
 | **Repo — inline** | C# XML doc comments (`///`) on all public types/members | Lives closest to the code; IDE & generated reference |
 | **Repo `CREDITS.md`** (root) | Consolidated asset license/attribution for GPL-v2 distribution — aggregates the per-folder `PROVENANCE.md` files | Ships with the distributed game; mirrors the Asset Register (doc 05) |
 | **ClickUp doc 01** | Project Plan & Roadmap | Project-level, not code-coupled |

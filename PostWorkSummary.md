@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-05 — Player guide: full 22-chapter website built (MkDocs → Pages) (86d3k3a1f)
+
+**Requested:** After picking website-primary, build the full user guide and host it.
+**Did:**
+- **Authored all 22 chapters** (~30k words) via a 2-phase workflow (author → adversarial faithfulness verify), each grounded in `docs/MANUAL.md` + the mapped `docs/systems/*.md`. The verify pass **corrected 10 chapters** (e.g. softened a Colopedia overstatement, fixed the tutorial to its real 5 steps, corrected 7 items in the colonists/education chapter). Files in `docs/guide/*.md`.
+- **Scaffolded the site:** `mkdocs.yml` (Material theme, 6-part nav), `docs/guide/index.md` home, `requirements-docs.txt`, `.github/workflows/docs.yml` (build validates on push; **deploy is manual-dispatch only** so nothing publishes without your say-so).
+- **Validated locally:** `mkdocs build --strict` → **EXIT 0**, no broken links/nav (MkDocs 1.6.1 in a venv). Fixed 4 stray `\"` escapes in ch04.
+- **Reconciled docs (no-drift):** `docs/guide/` is now canonical; `docs/MANUAL.md` reworded as the offline single-file edition (banner added); README + `docs/DOCUMENTATION.md` doc-map updated; `/site/` gitignored.
+**Status:** Site builds **strict-clean locally (EXIT 0)**. **No game-code/logic change** → C#/Godot CI untouched; the docs `build` job runs on this push. Committed + pushed.
+**Changed:** new `docs/guide/` (index + 22 chapters), `mkdocs.yml`, `requirements-docs.txt`, `.github/workflows/docs.yml`; edits to `docs/MANUAL.md`, `README.md`, `docs/DOCUMENTATION.md`, `.gitignore`.
+**Decisions:** MkDocs Material → GitHub Pages (free); `docs/guide/` canonical, `MANUAL.md` kept as the offline edition for now; **deploy gated to manual dispatch** because enabling public Pages is your outward-facing call.
+**Scheduled next:** You enable Pages + run the "Docs site" workflow to publish; then I wire the in-game **About-screen link** to the Handbook and decide `MANUAL.md`'s fate (redirect vs auto-generated from the guide). Kanban **`86d3k3a1f`**.
+**Follow-ups:** generate the Colopedia reference tables from FreeCol XML (zero-drift numbers); optionally switch the workflow to auto-publish on push once you're happy.
+**Needs you:** (1) **Settings → Pages → Source: "GitHub Actions"**; (2) **Actions → "Docs site" → Run workflow** to publish. Then read through the live guide.
+
+---
+
 ## 2026-07-05 — Player user guide: hosting recommendation + website preview (86d3k3a1f)
 
 **Requested:** Begin creating an entire user guide for the whole game, and advise where to host it (in-game vs website).

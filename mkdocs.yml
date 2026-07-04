@@ -1,0 +1,80 @@
+# Crown & Colony — player guide website (MkDocs Material → GitHub Pages).
+# The canonical guide source is docs/guide/*.md. Build:  mkdocs build --strict
+site_name: "Crown & Colony — Governor's Handbook"
+site_description: "The complete player's guide to Crown & Colony, a GPL-v2 remake of Sid Meier's Colonization built on the FreeCol specification."
+site_url: "https://biffstagaming.github.io/crown-and-colony/"
+repo_url: "https://github.com/BiffstaGaming/crown-and-colony"
+repo_name: "BiffstaGaming/crown-and-colony"
+copyright: "Crown &amp; Colony is a fan-made, GPL-v2 remake built on the FreeCol specification. It contains no code, assets, or data from the original Sid Meier titles."
+
+docs_dir: docs/guide
+site_dir: site
+
+theme:
+  name: material
+  icon:
+    logo: material/compass-outline
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.action.edit
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.details
+
+nav:
+  - Home: index.md
+  - "Part I · Getting Started":
+      - 01-welcome.md
+      - 02-new-game.md
+      - 03-interface.md
+  - "Part II · The New World":
+      - 04-map-terrain.md
+      - 05-units-movement.md
+      - 06-exploration.md
+  - "Part III · Colonies & Economy":
+      - 07-founding-colony.md
+      - 08-managing-colony.md
+      - 09-colonists-education.md
+      - 10-goods-production.md
+      - 11-buildings.md
+      - 12-trade-europe.md
+  - "Part IV · Powers & Politics":
+      - 13-king-taxes.md
+      - 14-founding-fathers.md
+      - 15-natives-diplomacy.md
+      - 16-rival-powers.md
+  - "Part V · War & Victory":
+      - 17-combat.md
+      - 18-road-to-independence.md
+      - 19-war-of-independence.md
+      - 20-winning-scoring.md
+  - "Part VI · Mastery & Reference":
+      - 21-strategy.md
+      - 22-reference.md
