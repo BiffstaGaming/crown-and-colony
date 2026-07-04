@@ -10,8 +10,10 @@ namespace CrownAndColony.GameLogic.Tests.World;
 /// <summary>
 /// New-game world-size / land-mass options (<c>86d3c9w9c</c>, FreeCol <c>MapGeneratorOptions</c>): a player picks the
 /// map size and how much of it is land; the picks thread through <see cref="Game.New"/> →
-/// <see cref="MapGenerator.Generate"/>. The presets are "data not code" (<see cref="WorldSizeOptions"/>); the defaults
-/// match the shipped world so a default game is byte-identical. No save-format change — map dimensions already persist.
+/// <see cref="MapGenerator.Generate"/>. The presets are "data not code" (<see cref="WorldSizeOptions"/>). The
+/// player-facing default is FreeCol's <b>40×100 portrait, 25% land</b> (86d3jy0rn) — deliberately distinct from
+/// <see cref="Game.New"/>'s own small parameterless default (36×24, 45%), which stays a fast unit-test fixture. No
+/// save-format change — map dimensions already persist.
 /// </summary>
 public class WorldSizeOptionsTests
 {
@@ -30,11 +32,13 @@ public class WorldSizeOptionsTests
     }
 
     [Fact]
-    public void TheDefaults_MatchTheShippedWorld()
+    public void TheDefaults_AreFreeColPortrait()
     {
-        Assert.Equal(36, WorldSizeOptions.DefaultSize.Width);
-        Assert.Equal(24, WorldSizeOptions.DefaultSize.Height);
-        Assert.Equal(MapGenerator.DefaultLandMassFraction, WorldSizeOptions.DefaultLandMass.Fraction);
+        // The player-facing default is FreeCol's map default: 40×100 portrait (taller than wide), 25% land (86d3jy0rn).
+        Assert.Equal(40, WorldSizeOptions.DefaultSize.Width);
+        Assert.Equal(100, WorldSizeOptions.DefaultSize.Height);
+        Assert.True(WorldSizeOptions.DefaultSize.Height > WorldSizeOptions.DefaultSize.Width, "the default map is portrait");
+        Assert.Equal(0.25, WorldSizeOptions.DefaultLandMass.Fraction);
 
         // The default indices point at the default presets (the dialog pre-selects them).
         Assert.Equal(WorldSizeOptions.DefaultSize, WorldSizeOptions.Sizes[WorldSizeOptions.DefaultSizeIndex]);
@@ -91,19 +95,20 @@ public class WorldSizeOptionsTests
     }
 
     [Fact]
-    public void GameNew_AtTheDefaultSize_MatchesTheParameterlessDefault()
+    public void GameNew_AtThePresentationDefaultSize_ProducesTheFreeColPortraitMap()
     {
-        // Omitting the world-shape params and passing the shipped defaults must produce the identical map (so the
-        // default new game — and the visual goldens/soak baseline that depend on it — never shift).
-        Game omitted = Game.New(Classic, seed: 13);
+        // The player-facing default (WorldSizeOptions.DefaultSize) builds FreeCol's 40×100 portrait map — deliberately
+        // DIFFERENT from Game.New's own small parameterless default (36×24), which stays a fast unit-test fixture and is
+        // NOT meant to mirror the player's map any more (86d3jy0rn). This test pins that split so neither side drifts.
         WorldSize size = WorldSizeOptions.DefaultSize;
-        Game explicitDefault = Game.New(Classic, seed: 13, size.Width, size.Height,
+        Game presentationDefault = Game.New(Classic, seed: 13, size.Width, size.Height,
             landMassFraction: WorldSizeOptions.DefaultLandMass.Fraction);
+        Assert.Equal(40, presentationDefault.Map.Width);
+        Assert.Equal(100, presentationDefault.Map.Height);
 
-        Assert.Equal(omitted.Map.Width, explicitDefault.Map.Width);
-        Assert.Equal(
-            omitted.Map.AllPositions().Select(p => omitted.Map.TerrainAt(p).Id),
-            explicitDefault.Map.AllPositions().Select(p => explicitDefault.Map.TerrainAt(p).Id));
+        Game bareDefault = Game.New(Classic, seed: 13);
+        Assert.Equal(36, bareDefault.Map.Width); // Game.New's fixture default is unchanged (fast + stable L1/L2)
+        Assert.NotEqual(bareDefault.Map.Width, presentationDefault.Map.Width); // the two intentionally diverge now
     }
 
     [Fact]

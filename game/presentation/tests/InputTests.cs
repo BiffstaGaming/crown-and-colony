@@ -388,7 +388,10 @@ public class InputTests
         Game game = GameOf(controller);
 
         var panel = controller.GetNode<PanelContainer>("UI/TileInfoPanel");
-        AssertThat(panel.Visible).IsFalse(); // empty/hidden until a tile is clicked (so the visual goldens are unaffected)
+        // (No "hidden initially" pre-check: the readout is hover-driven and the suite parks the cursor at the screen
+        // origin (0,0) between cases, which on some camera positions hovers an explored tile and shows the panel — an
+        // input artefact, not the behaviour under test. This case asserts the click→readout contents, which is robust:
+        // ClickTile centres the camera + cursor on the target tile, so the hovered tile equals the clicked one.)
 
         // Click the human's starting unit's tile: it's explored, so the readout names that tile's terrain and the
         // occupying unit (the same tile the click selects).
@@ -1867,14 +1870,25 @@ public class InputTests
         controller.GetNode<CameraController>("Camera").EdgeScrollEnabled = false;
         await runner.SimulateFrames(2);
         Game game = GameOf(controller);
-        Unit unit = TrimHumanRosterToOne(game); // a single unit so the walk is unambiguous
+        // Use the human's caravel: on open ocean it always has room for a genuine multi-turn path, so the goto is stored
+        // as a STANDING order (not consumed on the click). A land colonist can't be relied on here — the portrait-map
+        // default (86d3jy0rn) can land the human on a 1–2 tile coastal patch with nowhere ≥2 tiles to walk. Disband the
+        // other on-map units so the single walk is unambiguous.
+        Unit unit = game.PlayerUnits.First(u => u.IsOnMap && u.Type.IsNaval);
+        foreach (Unit u in game.PlayerUnits.Where(u => u.IsOnMap && u != unit).ToList())
+        {
+            game.Disband(u);
+        }
         Position origin = unit.Position;
 
-        // A destination two tiles away with a legal, reachable path (so ProcessGotos has somewhere to walk). The engine's
-        // own path oracle (Game.FindPath, internal) confirms the goal is reachable — reached by reflection here.
-        Position dest = game.Map.AllPositions().First(p =>
-            p != origin && Cheb(origin, p) == 2 && game.CheckSetDestination(unit, p).Allowed
-            && GamePath(game, unit, p).Count > 0);
+        // The farthest reachable tile within a small radius — beyond one turn's sailing, so the goto is recorded (not
+        // executed) and End Turn walks the ship PARTWAY toward it (closer, not arrived). Open water gives direct paths,
+        // so stepping toward it reduces the Chebyshev distance. (Game.FindPath, internal, confirms reachability.)
+        Position dest = game.Map.AllPositions()
+            .Where(p => p != origin && Cheb(origin, p) <= 8 && game.CheckSetDestination(unit, p).Allowed
+                && GamePath(game, unit, p).Count > 0)
+            .OrderByDescending(p => GamePath(game, unit, p).Count)
+            .First();
 
         // Arm goto via the real G key, then click the destination tile → SetSelectedDestination records the standing order.
         await ClickTile(runner, controller, origin);
