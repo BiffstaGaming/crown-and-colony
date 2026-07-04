@@ -54,6 +54,7 @@ public partial class MiniMap : Control
 
     private static readonly Color FallbackTerrain = new(0.5f, 0.5f, 0.5f);
     private static readonly Color Border = new(0.75f, 0.66f, 0.45f); // parchment-ish frame
+    private static readonly Color ViewBox = new(1f, 1f, 1f, 0.9f); // the "where am I looking" current-view outline
 
     // Default entity-dot colours; the colourblind toggle swaps these via AccessibilityPalette (read on each redraw,
     // so toggling the setting re-colours the minimap the next time it draws).
@@ -72,8 +73,29 @@ public partial class MiniMap : Control
     private int _zoom = 2; // default ~4 px/tile
     private Game? _game;
 
+    // The main map camera, so the minimap can draw a "current view" box and follow it as the player pans/zooms
+    // (86d3jy0rn — Chris: "the minimap isn't moving"). Watched in _Process; a change queues a redraw of the box.
+    private Camera2D? _camera;
+    private Vector2 _lastCamPos = Vector2.Inf;
+    private Vector2 _lastCamZoom;
+
     /// <summary>Raised with the map tile a click maps to, so the host can recenter the main camera there.</summary>
     public event Action<Position>? TileSelected;
+
+    /// <summary>Gives the minimap the main-map camera so it can draw + follow the current-view box.</summary>
+    public void SetCamera(Camera2D camera) => _camera = camera;
+
+    /// <summary>Redraws the current-view box whenever the camera pans or zooms (the terrain is unchanged, but the box follows the view).</summary>
+    public override void _Process(double delta)
+    {
+        if (_camera is null || (_camera.Position == _lastCamPos && _camera.Zoom == _lastCamZoom))
+        {
+            return;
+        }
+        _lastCamPos = _camera.Position;
+        _lastCamZoom = _camera.Zoom;
+        QueueRedraw();
+    }
 
     /// <summary>The current zoom level's pixels-per-tile (exposed for tests / the host).</summary>
     public int PixelsPerTile => ZoomSteps[_zoom];
@@ -160,6 +182,32 @@ public partial class MiniMap : Control
             {
                 DrawDot(u.Position, pp, offX, offY, dot, u.OwnerId == human ? OwnUnitDot : RivalUnitDot);
             }
+        }
+
+        // Current-view box: the main camera's visible rectangle, projected from the iso world back to flat tile space
+        // (a rotated square on the top-down minimap) so the player can see — and, via _Process, follow — where they are
+        // looking. Skipped until the camera is wired (bare test scenes) or if it has a degenerate zoom.
+        if (_camera is { } cam && cam.Zoom.X > 0f && cam.Zoom.Y > 0f)
+        {
+            Vector2 halfWorld = GetViewportRect().Size / cam.Zoom / 2f;
+            Vector2 centre = cam.Position;
+            Vector2[] corners =
+            {
+                centre + new Vector2(-halfWorld.X, -halfWorld.Y),
+                centre + new Vector2(halfWorld.X, -halfWorld.Y),
+                centre + new Vector2(halfWorld.X, halfWorld.Y),
+                centre + new Vector2(-halfWorld.X, halfWorld.Y),
+            };
+            var box = new Vector2[5];
+            for (int i = 0; i < 4; i++)
+            {
+                // Inverse of MapView.TileCentre: iso world (wx,wy) → tile (x,y), then tile → minimap pixel.
+                float tx = (corners[i].X / (MapView.TileW / 2f) + corners[i].Y / (MapView.TileH / 2f)) / 2f;
+                float ty = (corners[i].Y / (MapView.TileH / 2f) - corners[i].X / (MapView.TileW / 2f)) / 2f;
+                box[i] = new Vector2(tx * pp - offX, ty * pp - offY);
+            }
+            box[4] = box[0];
+            DrawPolyline(box, ViewBox, 1.5f);
         }
 
         // Frame.

@@ -319,6 +319,7 @@ public partial class GameController : Node2D
         _disbandButton.Pressed += DisbandSelectedUnit;
         _miniMap = GetNode<MiniMap>("UI/MiniMap");
         _miniMap.TileSelected += CenterCameraOnTile;
+        _miniMap.SetCamera(GetNode<CameraController>("Camera")); // so the minimap draws + follows the current-view box
         GetNode<Button>("UI/MiniMap/ZoomInButton").Pressed += _miniMap.ZoomIn;
         GetNode<Button>("UI/MiniMap/ZoomOutButton").Pressed += _miniMap.ZoomOut;
         // On-screen map-controls cluster (zoom +/− + recentre) — built in code, added to the HUD CanvasLayer (86d3fq0ch).
