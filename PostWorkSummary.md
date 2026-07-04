@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-05 — Player user guide: hosting recommendation + website preview (86d3k3a1f)
+
+**Requested:** Begin creating an entire user guide for the whole game, and advise where to host it (in-game vs website).
+**Did:**
+- **Surveyed the real state** (3-agent workflow): the game is **feature-complete end-to-end**, and a **near-complete player guide already exists** — `docs/MANUAL.md` (14 sections) + in-game Help + 5-step tutorial + in-game Colopedia. Reframed the task as *expand to full coverage + host*, not from scratch.
+- Defined the full **22-chapter target structure** (FreeCol `doc/FreeCol.tex` + classic `specification.xml` aligned), seeded from `MANUAL.md` + the dual-audience system docs.
+- Built a **browsable website preview** (Claude Artifact) of the guide — all 22 chapters, cartographer/ledger visual identity, sidebar nav + filter — to make the "website" option tangible.
+- **Recommended** the delivery model (see Decisions).
+**Status:** No code/logic change; nothing pushed except this summary. Survey workflow completed; preview published as an Artifact.
+**Changed:** `PostWorkSummary.md` (this entry). No game files touched. New kanban task `86d3k3a1f` (In Review).
+**Decisions:** **Author once as Markdown in-repo (single source of truth) → publish as a website via MkDocs Material on free GitHub Pages; keep in-game Help + Colopedia for at-the-table reference; bundle an offline copy with builds.** MkDocs Material over Docusaurus (Markdown-native, zero-JS, lowest friction for a solo C#/PHP dev). Website = canonical; in-game = reference. Not either/or — "author once, publish everywhere."
+**Scheduled next:** On Chris's host pick — scaffold the chosen delivery (`mkdocs.yml` + `docs/guide/` 22 pages + Pages workflow) and expand every chapter from `MANUAL.md` + system docs. Kanban task **`86d3k3a1f`**.
+**Follow-ups:** Reconcile `docs/MANUAL.md` (single-file, bundled/About-linked) with the multi-page guide to avoid drift; update README + `docs/DOCUMENTATION.md` doc-map + in-game About link when the guide moves; later generate the Colopedia reference tables from FreeCol XML.
+**Needs you:** Pick the host — **website / in-game / both**. My recommendation: **both, website-primary** (MkDocs → GitHub Pages, in-game Help/Colopedia kept). And (if website) confirm you're happy to enable public GitHub Pages.
+
+---
+
 ## 2026-07-04 — Minimap current-view box + North-America map clarification (86d3jy0rn) ✅
 
 **Requested (Chris, screenshot on the revealed portrait map):** (1) "the minimap isn't moving"; (2) "do you think this looks right? For being North America?"
