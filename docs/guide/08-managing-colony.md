@@ -2,6 +2,11 @@
 
 Founding a colony is only the beginning. The real work of a governor happens on the **colony screen** — the town-management view where you decide who farms, who builds, what gets constructed, and how your settlement defends itself. This chapter walks you through that screen and the systems behind it. If you have not yet founded your first town, read [Founding a Colony](07-founding-colony.md) first.
 
+<figure markdown="span">
+![The colony screen](img/colony-screen.png){ width="720" }
+<figcaption>The colony screen — worked tiles and the buildings grid, with population, food, the build queue and the Sons-of-Liberty band.</figcaption>
+</figure>
+
 ## Opening the colony screen
 
 Click any of your colonies on the map to open its full view. It fills the screen on a brown parchment backdrop, laid out like a real colonial town ledger. From here you manage everything the colony does. You can also **rename** the colony (type a new name in the box at the top and press **Rename**) or **Abandon** it entirely — though a colony with a stockade, fort or fortress cannot be abandoned, and a colony must always keep at least one colonist.

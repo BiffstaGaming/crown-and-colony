@@ -2,6 +2,11 @@
 
 Every game of Crown & Colony begins at the **title screen** and, from there, at the **New Game** setup panel — the handful of choices that shape the world you are about to lead. This chapter walks you through both. If you just want to get playing, the good news is that every setting has a sensible default, so you can leave them all alone and press **Start** for a faithful, classic game. If you want to tailor the challenge, read on.
 
+<figure markdown="span">
+![The New Game setup panel](img/new-game-dialog.png){ width="720" }
+<figcaption>The New Game setup — scenario, map, size, difficulty and nation, each with a sensible default.</figcaption>
+</figure>
+
 ## The main menu
 
 When you launch the game you arrive at the title screen — the game's name over an antique map of the New World — with six choices:
@@ -71,5 +76,13 @@ You never have to finish a game in one sitting. Crown & Colony keeps your progre
 - **Save and load slots** — from the pause menu (press `Esc` during play) or the main menu's **Load Game**, you can use five named save slots. Each filled slot shows the turn it holds and when you saved it, and a filled slot can be deleted to free it up. Saving over a filled slot asks you to confirm first.
 - **Autosave** — by default the game quietly saves itself into its own Autosave slot at the end of every turn, so you always have a recent fallback. You can change how often this happens, or turn it off, in **Settings → Game**. The Autosave entry appears in the slot list and can be loaded like any other, but a manual save never overwrites it.
 - **Pause menu** — press `Esc` during play to pause and bring up Resume, Save, Load, Settings and Quit.
+
+<figure markdown="span">
+![The custom difficulty editor](img/difficulty-editor.png){ width="620" }
+<figcaption>Choosing <strong>Custom</strong> difficulty opens an editor for the individual tuning numbers — Founding-Father cost, land prices, native behaviour and more.</figcaption>
+</figure>
+
+!!! info "How the difficulty levels compare"
+    For a side-by-side of what the five standard levels change — the tax ceiling, the liberty cost of each Founding Father, land prices and native conversion — see [Tables & Data → Difficulty levels](23-tables-data.md#difficulty-levels).
 
 That is everything you need to get a game underway. Next, get your bearings with [The Screen & Interface](03-interface.md).

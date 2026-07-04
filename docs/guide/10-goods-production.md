@@ -79,6 +79,6 @@ Reading net production turns guesswork into diagnosis. When a chain is not worki
 4. **Food net is negative.** The colony is heading for starvation. Shift workers onto food tiles before a colonist is lost — food always comes first.
 
 !!! tip
-    For the exact yields, building outputs and costs of every good, open the in-game **Colopedia** with `C`. It is the complete reference; this chapter teaches the shape of the system so those numbers make sense.
+    For every good's exact **starting price** and every building's **per-worker input→output**, see the generated [goods](23-tables-data.md#goods-the-market) and [buildings](23-tables-data.md#buildings) tables in Tables & Data — or open the in-game **Colopedia** with `C` for the live figures. This chapter teaches the shape of the system so those numbers make sense.
 
 Once your chains are balanced and your warehouses aren't overflowing, you have a colony that quietly produces sellable goods every turn — ready to feed [Trade & the Europe Screen](12-trade-europe.md) and bankroll your ambitions.

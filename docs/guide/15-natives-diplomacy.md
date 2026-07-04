@@ -2,6 +2,11 @@
 
 The New World is already inhabited. Long before your first sail comes over the horizon, the indigenous nations have built settlements across the map, and you discover them as you explore — a settlement you have never seen stays hidden under the fog. The natives are not simply enemies. Handled well they are teachers, trading partners and, in your war for independence, potential allies. Handled badly they become raiders who burn your frontier. This chapter is about that relationship, and about the parallel dance of war and peace you play with the [rival European powers](16-rival-powers.md).
 
+<figure markdown="span">
+![A native settlement dialog](img/native-settlement.png){ width="380" }
+<figcaption>Meeting a native settlement — its mood toward you and the expert skill it can teach a visiting colonist.</figcaption>
+</figure>
+
 ## The eight nations
 
 There are **eight** native nations, and they build three kinds of settlement:

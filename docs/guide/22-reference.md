@@ -2,6 +2,11 @@
 
 This closing chapter is your quick-lookup shelf. When you need the exact facts of the world — every terrain, resource, unit, building and Founding Father — the game itself holds the authoritative answer. This chapter tells you where that answer lives, gives you the full keyboard reference, defines the terms used throughout this handbook, and closes with a short note on what Crown & Colony is.
 
+<figure markdown="span">
+![The in-game Colopedia](img/colopedia.png){ width="720" }
+<figcaption>The in-game Colopedia (press C) — the live, always-current reference of goods, terrain, units and more.</figcaption>
+</figure>
+
 ## The in-game Colopedia
 
 Press `C` at any time in the game view to open the **Colopedia** — the game's own encyclopaedia of everything in the world. It is the reference to trust above all others, because it is built directly from the same ruleset data that runs your game. If a value ever changes, the Colopedia changes with it; a hand-written table in a manual can drift out of date, but the Colopedia cannot.
@@ -20,7 +25,7 @@ Use it to look up:
 !!! tip
     Get into the habit of opening the Colopedia before a big decision — which good to specialise in, which Father to chase, whether a tile is worth settling. It is faster than guessing and it is never wrong about the current rules.
 
-Because the Colopedia is always current and always complete, this handbook deliberately does **not** reproduce its long numeric tables. Where you need exact yields, prices or costs, look them up there. The chapters in this guide teach you *how the systems work* and *how to play well*; the Colopedia gives you *the precise numbers* for the game in front of you.
+The chapters in this guide teach you *how the systems work* and *how to play well*, keeping the prose readable rather than crowding it with figures. For the numbers themselves, this handbook collects the most-used reference tables — terrain, goods and prices, buildings, **all 25 Founding Fathers**, unit stats, native nations and difficulty — in **[Tables & Data](23-tables-data.md)**, generated from the same ruleset as the game so they can never drift. For anything not listed there, or the exact figure in the game in front of you, the Colopedia is the final word.
 
 ## Keyboard reference
 
@@ -70,6 +75,6 @@ For the fuller explanation of panning, zooming and the on-screen map controls, s
 
 Crown & Colony is a fan-made remake that follows the classic *Colonization* ruleset as its primary reference. It is built on the **FreeCol** specification and is released under the **GPL v2** licence. It contains no code, artwork, or data from the original commercial titles — everything here is an independent reimplementation.
 
-Because the game is built from that shared ruleset data, the surest source of truth for any exact figure is always the in-game Colopedia in front of you. When this handbook describes a value in words rather than numbers, that is deliberate — press `C`, and read the real thing.
+Because the game is built from that shared ruleset data, the surest source of truth for any exact figure is always the in-game Colopedia in front of you — and the **[Tables & Data](23-tables-data.md)** appendix is generated from that very same data, so it mirrors the game rather than a hand-copied snapshot.
 
 If you have read this far, you have the whole picture: from your first ship on the high seas to the day the King's fleet appears on the horizon. Go and build a nation.

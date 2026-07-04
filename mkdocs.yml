@@ -38,6 +38,10 @@ theme:
     - search.highlight
     - content.action.edit
 
+plugins:
+  - search
+  - glightbox   # click any screenshot to zoom it
+
 markdown_extensions:
   - admonition
   - attr_list
@@ -78,3 +82,4 @@ nav:
   - "Part VI · Mastery & Reference":
       - 21-strategy.md
       - 22-reference.md
+      - 23-tables-data.md

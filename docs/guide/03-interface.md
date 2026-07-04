@@ -2,6 +2,11 @@
 
 Crown & Colony is played mostly with the mouse: click a unit to select it, click a tile to move it or give an order, and click one of your colonies to open its management screen. The keyboard supplies shortcuts for the common actions, but you never have to memorise them. This chapter walks you around the main screen, shows you how to steer the camera, and explains what happens when you end a turn.
 
+<figure markdown="span">
+![The main game screen](img/world-map-hud.png){ width="720" }
+<figcaption>The main screen: the top status bar, the isometric map, the framed minimap (with its view-box), and the right-hand action cluster.</figcaption>
+</figure>
+
 ## The main screen at a glance
 
 The bulk of the screen is the map — the New World you are exploring and settling. Around it sit the panels and buttons that tell you how your colony is doing and let you issue orders.

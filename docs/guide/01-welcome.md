@@ -2,6 +2,11 @@
 
 Welcome, Governor. This chapter tells you what Crown & Colony is, what you are trying to achieve, and how to get a game running and your first colony founded in about ten minutes. If you have never played the classic *Colonization*, start here — you will be running a thriving New-World empire by the end of it.
 
+<figure markdown="span">
+![The Crown & Colony title screen](img/main-menu.png){ width="720" }
+<figcaption>The title screen — where every game begins.</figcaption>
+</figure>
+
 ## What the game is
 
 You command one of the European powers sending settlers across the ocean to the New World. You begin with a single ship carrying your first colonists, an unexplored continent ahead of you, and a very long game to play. Over that game you will:

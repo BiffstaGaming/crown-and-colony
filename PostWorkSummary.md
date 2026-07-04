@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-05 — Detailed handbook shipped: 15 screenshots + generated data appendix (86d3k3a1f)
+
+**Requested:** More detailed handbook, with screenshots. (Your picks: generated data appendix + auto-generate all screenshots.)
+**Did:**
+- **15 screenshots wired in.** The repeatable capture harness (`DocsCaptureTests.cs`, `DOCS_CAPTURE=1`) renders seeded screens to 1024×600 PNGs; captured **8 gameplay screens** (world map+HUD, colony, Europe, Founding Fathers, Colopedia, colony report, native settlement, trade routes) + reused **7 clean menu goldens**. Hero images in 8 chapters + 2 secondary; **click-to-zoom** via mkdocs-glightbox.
+- **Generated data appendix** — new `docs/guide/23-tables-data.md`. `DocsDataGenerator.cs` (`DOCS_DATA=1`, engine-free) reads the ruleset through the game's own parser and writes the whole chapter: terrain, goods+prices, buildings, **all 25 Founding Fathers with real effect text**, unit stats + combat roles, native nations, difficulty levels. **Drift-safe** — one command regenerates it.
+- **Cross-linked** the chapters the data most helps (ch2 difficulty, ch10 goods/buildings, ch14 all-25 fathers) and rewrote ch22's "no tables here" framing to point at the appendix.
+- **Validated:** `mkdocs build --strict` → **EXIT 0** (with glightbox); all 7 appendix anchors + 15 images resolve. Both generator tools are **inert in CI** (gated behind env vars; no-op pass).
+**Status:** Site builds **strict-clean locally**. Committed + pushed; the docs `build` job runs on push. **No game-logic change** → C#/Godot CI untouched (2 inert test files added).
+**Changed:** new `docs/guide/img/` (15 PNGs), `docs/guide/23-tables-data.md`, `DocsCaptureTests.cs`, `DocsDataGenerator.cs`; edits to 9 chapters, `mkdocs.yml`, `requirements-docs.txt`.
+**Decisions:** appendix generated from the ruleset parser (correct-by-construction, no drift); screenshots 1024×600 (UI base resolution); the two narrow-modal shots cropped to the modal (a decorative minimap frame couldn't be hidden in-engine).
+**Scheduled next:** you enable GitHub Pages + run the "Docs site" workflow to publish. Optional: capture the dynamic screens (combat odds, monarch, victory) that need bespoke state. Kanban **`86d3k3a1f`**.
+**Follow-ups:** wire the in-game About link to the Handbook; decide `MANUAL.md`'s fate; annotated callouts on the HUD/colony shots if wanted.
+**Needs you:** publish when ready (Settings → Pages → "GitHub Actions", then Actions → "Docs site" → Run workflow), and have a read through.
+
+---
+
 ## 2026-07-05 — Detailed handbook: screenshot pipeline proven + PoC (86d3k3a1f)
 
 **Requested:** Make the handbook more detailed, with screenshots.

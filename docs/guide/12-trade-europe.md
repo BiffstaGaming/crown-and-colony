@@ -7,6 +7,11 @@ screen**, your mother country's harbour — how prices rise and fall, and the
 many ways to move goods to market: by ship, by custom house, by trade route,
 and by trading with the people already living in the New World.
 
+<figure markdown="span">
+![The Europe harbour screen](img/europe-screen.png){ width="720" }
+<figcaption>The Europe harbour — the goods market with live buy/sell prices, the recruitment dock, and your ships in port.</figcaption>
+</figure>
+
 If you have not yet read [Goods & Production Chains](10-goods-production.md),
 skim it first — this chapter assumes you know what your colonies produce and
 why. For the buildings that generate income (churches, custom houses), see
@@ -135,6 +140,11 @@ prompt you when a ship first reaches the high seas). The crossing takes about
   cross in the Europe screen's in-transit lanes.
 
 ## Trade routes: hands-off hauling
+
+<figure markdown="span">
+![The trade route editor](img/trade-routes.png){ width="380" }
+<figcaption>The trade-route editor — pick the stops (colonies and/or Europe) and tick the goods to carry; a ship or wagon then runs the route on its own.</figcaption>
+</figure>
 
 Doing all of this by hand — load a ship, sail it out, sell, sail home, repeat —
 gets tedious. A **trade route** automates it. Click **Trade Routes**, then:

@@ -2,3 +2,4 @@
 # Install:  pip install -r requirements-docs.txt
 # Serve locally:  mkdocs serve      Build:  mkdocs build --strict
 mkdocs-material>=9.5
+mkdocs-glightbox>=0.4

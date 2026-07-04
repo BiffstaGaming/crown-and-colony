@@ -2,6 +2,11 @@
 
 Behind every great colonial power stands a **Continental Congress** — a gathering of famous statesmen, explorers, soldiers, priests and merchants who lend their genius to your cause. Each one you recruit is a **Founding Father**, and each grants a permanent, nation-wide benefit that can quietly reshape how your whole empire works. Choosing whom to court, and in what order, is one of the most important strategic threads in the game.
 
+<figure markdown="span">
+![The Continental Congress screen](img/founding-fathers.png){ width="720" }
+<figcaption>The Continental Congress — the five-field candidate slate and the liberty needed to elect the next father.</figcaption>
+</figure>
+
 ## Where Founding Fathers come from
 
 Founding Fathers are earned with **liberty**, and liberty comes from **liberty bells**. Your colonies' **town halls** ring bells every turn, and those bells serve two purposes at once (see [Managing a Colony](08-managing-colony.md)):
@@ -58,4 +63,9 @@ Because you only bank toward one father at a time, and each costs more than the 
 - **A conquest game** — **Cortés** and the military fathers turn plunder and privateering into a war chest.
 - **Diplomatic insulation** — **Franklin** keeps the King and rival powers off your back while you build toward the Declaration.
 
-There is no single correct order — but there is an order that fits *your* plan. Decide how you intend to win, then court the fathers who get you there fastest. For the bigger picture of turning liberty into a nation, see [The Road to Independence](18-road-to-independence.md).
+There is no single correct order — but there is an order that fits *your* plan. Decide how you intend to win, then court the fathers who get you there fastest.
+
+!!! info "All twenty-five fathers at a glance"
+    This chapter highlights the most pivotal fathers. For the **complete list — all 25, grouped by field, each with its exact effect** — see [Tables & Data → Founding Fathers](23-tables-data.md#founding-fathers).
+
+For the bigger picture of turning liberty into a nation, see [The Road to Independence](18-road-to-independence.md).
