@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-04 — Hidden Admin/cheat menu: unlock code + Show all map (86d3jypd1) ✅
+
+**Requested (Chris):** an Admin menu unlockable by a code "like the 90s/2000s games", including "Show all map" for now.
+**Asked & built to your choices** (secret hotkey → code box · code `eldorado` · per-session unlock):
+- **Unlock:** press **backtick/tilde (`` ` ``)** in-game → a parchment **"Enter code"** box → type `eldorado` (case-insensitive) → **Unlock** → the **Admin menu**. Once unlocked, the key opens the menu directly. **Session-only** (a fresh/loaded game re-locks it), not persisted.
+- **Show all map:** a **presentation-only** reveal (ADR-006) — `RefreshView` feeds the map/river/improvement layers an all-tiles set + the colony/settlement/rumour/unit markers and the **minimap** bypass fog. Reveals the whole board (terrain, rival colonies, native settlements, rumours, enemy units, minimap) **without touching game state / saves / RNG** — fully reversible, can't desync.
+- New `GameController.Admin.cs` partial (flags + two themed `AcceptDialog`s — auto-centred, no corner-pin risk) + a `Key.Quoteleft` case in `_UnhandledInput` (non-rebindable cheat key, stands down while typing); `MiniMap.ShowState(game, revealAll)`; `MapView.ExploredTileCount` test seam.
+**Status:** **L3/L4 380 green** (+5 `AdminMenuTests`). Committed `2067a97`, pushed, **CI green on both jobs**. Verified by **rendering**: the code box, the Admin menu (Show-all-map toggle), and the fogged-vs-revealed board + minimap. Presentation-only; no save/RNG/golden impact. Docs: new `docs/systems/admin-menu.md` (dual-audience) + presentation.md changelog.
+**Changed:** `GameController.cs` (hotkey + reveal threading), new `GameController.Admin.cs`, `MiniMap.cs`, `MapView.cs`, new `AdminMenuTests.cs`, presentation.md, admin-menu.md. Commit `2067a97`.
+**Decisions:** presentation-only reveal (no `Explored` mutation) so it's reversible + save/AI-safe; backtick as a deliberately obscure non-rebindable cheat key; per-session unlock (your call). Godot `AcceptDialog`s (auto-centred) instead of custom overlays — sidesteps the corner-pin trap.
+**Scheduled next:** back to `[EPIC P8] Australia variant` (`86d3b3r7h`) — the only remaining backlog item. New task `86d3jypd1` (Admin menu) is In Review pending your playtest.
+**Follow-ups:** more admin actions when wanted (add gold, instant-build, spawn unit, reveal-and-mark-explored) — each a new toggle in `ShowAdminMenu`; a persistent-unlock pref if you change your mind.
+**Needs you:** in a game, press **`` ` ``** (backtick, under Esc), type **eldorado**, and try **Show all map**.
+
+---
+
 ## 2026-07-04 — New-Game dialog fix + overlay-wide polish audit (86d3jy0rn) ✅
 
 **Requested (Chris, screenshot):** the New Game screen was pinned to the top-left corner, unframed, options cut off with Start/Back off-screen — "I have to manually re-size… then the border goes wrong?" applied to the setup dialog too.
