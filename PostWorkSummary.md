@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-04 — Opening cinematic centred + portrait FreeCol-faithful map (86d3jy0rn) ✅
+
+**Requested (Chris, 3 screenshots):** (1) the Start intro isn't centred/main-focus; (2) the "America" map feels "WAY different to original Colonization — squished? rotated incorrectly?"
+**Did:**
+- **Opening cinematic** (`fc414d2`): at a maximised window it sat in a top-left ~1024×600 box with the menu showing through beside it, uncentred — the same corner-pin family (built + `Play()`ed in one frame before its `FullRect` size propagated). New `OpeningCinematic.FillViewport()` pins it to the whole viewport (explicit `Position=0 / Size=viewport`), called from `Play()` + on resize. **Verified by rendering at 1600×900** (full-bleed backdrop, dead-centred title card). `OpeningCinematicTests` 6 green.
+- **Map "squished/rotated"** — root-caused: our default was **landscape** (Standard 36×24, wider than tall) + 45% land, so the continent ran sideways in iso. Colonization/FreeCol maps are **portrait** (FreeCol default **40×100, 25% land**). **Asked Chris → he chose FreeCol-faithful 40×100**, leave the iso projection. Changed `WorldSizeOptions` to portrait (Small 30×72, **Standard 40×100**, Large 56×140, Huge 72×180), default land 25%. **Player-facing default only** — `Game.New`'s parameterless default stays 36×24/45% as a fast L1/L2 fixture (decoupled; a test pins the split). Regenerated 11 map-dependent goldens; hardened 2 brittle L3 cases (tile-info hover pre-check removed; goto now walks the caravel on open water, not a colonist the portrait default can strand on a tiny coastal patch). **Verified the new start renders healthy** (caravel + colonists on a coast).
+**Status:** **L1/L2 2710 + L3/L4 380 green; CI green on both jobs** for both commits (`fc414d2`, `d8cd8f5`). The map goldens now show the portrait world.
+**Changed:** `OpeningCinematic.cs`; `WorldSizeOptions.cs` + its test; `InputTests.cs` (2 hardened cases); 11 goldens; `map-terrain.md` + presentation.md changelogs.
+**Decisions:** absolute-fill for the cinematic (corner-pin-proof, like the dialogs). Portrait 40×100 default per your pick. Kept `Game.New`'s small default for the engine-free suite (fast + stable) — the player map and the unit-test fixture deliberately diverge.
+**Scheduled next:** back to `[EPIC P8] Australia variant` (`86d3b3r7h`) — the only remaining backlog item.
+**Follow-ups:** **watch the nightly L5 soak's per-turn budget** — the default new game is now ~4.6× more tiles (40×100 vs 36×24); the soak may need a budget bump. If turn times feel slow to you in-game, we can dial Standard down.
+**Needs you:** start a **New Game** and confirm the map now feels like Colonization (portrait, north–south). If AI turns feel slow on the bigger map, tell me and I'll tune the default size.
+
+---
+
 ## 2026-07-04 — Hidden Admin/cheat menu: unlock code + Show all map (86d3jypd1) ✅
 
 **Requested (Chris):** an Admin menu unlockable by a code "like the 90s/2000s games", including "Show all map" for now.
