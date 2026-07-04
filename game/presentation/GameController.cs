@@ -1254,6 +1254,13 @@ public partial class GameController : Node2D
                 // here and panning is never broken; only a drag-free right-click falls through to open the menu (86d3f0vrz).
                 HandleRightClick(rightClick.Position);
                 break;
+            case InputEventKey { Pressed: true, Echo: false, Keycode: Key.Quoteleft } when !IsTextInputFocused():
+                // The hidden Admin/cheat key: backtick/tilde (`) opens the code box (or the Admin menu once unlocked this
+                // session). Not a rebindable game action — a deliberately obscure key like the 90s/2000s cheat consoles.
+                // See GameController.Admin.cs.
+                OpenAdminMenu();
+                GetViewport().SetInputAsHandled();
+                break;
             case InputEventKey { Pressed: true, Echo: false } key when !IsTextInputFocused():
                 if (IsDuplicateKeyDown(key))
                 {
@@ -2842,10 +2849,15 @@ public partial class GameController : Node2D
             _notice = _notice is null ? rumour.Message : $"{_notice}  {rumour.Message}";
         }
 
-        _mapView.ShowState(_game.Map, _game.Explored, _game.CurrentlyVisible);
-        _riverLayer.ShowState(_game.Map, _game.Explored, _game.CurrentlyVisible);
-        _improvementLayer.ShowState(_game.Map, _game.Explored, _game.CurrentlyVisible);
-        _miniMap.ShowState(_game);
+        // The Admin "Show all map" cheat (GameController.Admin.cs) reveals the whole map presentation-only: it draws every
+        // tile as explored + currently-visible without touching game state (no save/RNG/AI impact, ADR-006/009). Off, the
+        // real fog sets are used.
+        IReadOnlySet<Position> explored = _revealAll ? AllMapPositions() : _game.Explored;
+        IReadOnlySet<Position> visible = _revealAll ? AllMapPositions() : _game.CurrentlyVisible;
+        _mapView.ShowState(_game.Map, explored, visible);
+        _riverLayer.ShowState(_game.Map, explored, visible);
+        _improvementLayer.ShowState(_game.Map, explored, visible);
+        _miniMap.ShowState(_game, _revealAll);
         // Outline the selected unit's standing goto destination, if any, and preview the projected route (86d3fq1pe).
         if (_selectedUnit is { Destination: { } dest })
         {
@@ -3157,7 +3169,8 @@ public partial class GameController : Node2D
         {
             // Only colonies on explored tiles are shown — a foreign power's colony stays hidden under the
             // human's fog until discovered (the human's own colonies always reveal their own surroundings).
-            if (!_game.IsExplored(colony.Position))
+            // The Admin "Show all map" cheat reveals every colony.
+            if (!_revealAll && !_game.IsExplored(colony.Position))
             {
                 continue;
             }
@@ -3184,7 +3197,7 @@ public partial class GameController : Node2D
         }
         foreach (var settlement in _game.NativeSettlements)
         {
-            if (!_game.IsExplored(settlement.Position))
+            if (!_revealAll && !_game.IsExplored(settlement.Position)) // Admin "Show all map" reveals every settlement
             {
                 continue;
             }
@@ -3209,7 +3222,7 @@ public partial class GameController : Node2D
         }
         foreach (Position rumour in _game.Map.Rumours)
         {
-            if (_game.IsExplored(rumour))
+            if (_revealAll || _game.IsExplored(rumour)) // Admin "Show all map" reveals every rumour tile
             {
                 _rumourLayer.AddChild(new RumourMarker { Position = MapView.TileCentre(rumour) });
             }
@@ -3243,9 +3256,9 @@ public partial class GameController : Node2D
                 continue; // aboard a ship or in Europe — nothing to draw on the map
             }
             bool human = !unit.IsNative && unit.OwnerId == _game.HumanPlayer.PlayerId;
-            if (!human && !_game.IsVisible(unit.Position))
+            if (!human && !_revealAll && !_game.IsVisible(unit.Position))
             {
-                continue; // a rival or brave is drawn only while in the human's line of sight (fog)
+                continue; // a rival or brave is drawn only while in the human's line of sight (fog); Admin reveal shows all
             }
             var marker = new UnitMarker
             {

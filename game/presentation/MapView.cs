@@ -143,6 +143,9 @@ public partial class MapView : Node2D
         QueueRedraw();
     }
 
+    /// <summary>The number of tiles currently drawn as explored — the test seam for the Admin "Show all map" reveal (it jumps to the full map when the cheat is on). 0 before any state is shown.</summary>
+    internal int ExploredTileCount => _explored?.Count ?? 0;
+
     /// <summary>Projects a map position to the pixel centre of its diamond.</summary>
     public static Vector2 TileCentre(Position p) =>
         new((p.X - p.Y) * (TileW / 2f), (p.X + p.Y) * (TileH / 2f));

@@ -78,10 +78,14 @@ public partial class MiniMap : Control
     /// <summary>The current zoom level's pixels-per-tile (exposed for tests / the host).</summary>
     public int PixelsPerTile => ZoomSteps[_zoom];
 
-    /// <summary>Assigns the game to read and triggers a redraw. Reads only — never mutates (ADR-006).</summary>
-    public void ShowState(Game game)
+    /// <summary>Whether the Admin "Show all map" cheat is on — draw the whole minimap ignoring fog (86d3jypd1).</summary>
+    private bool _revealAll;
+
+    /// <summary>Assigns the game to read and triggers a redraw. Reads only — never mutates (ADR-006). <paramref name="revealAll"/> is the Admin "Show all map" cheat: draw every tile/entity regardless of fog.</summary>
+    public void ShowState(Game game, bool revealAll = false)
     {
         _game = game;
+        _revealAll = revealAll;
         QueueRedraw();
     }
 
@@ -114,9 +118,9 @@ public partial class MiniMap : Control
         // Terrain cells (explored only; remembered tiles dimmed) — fog-respecting.
         foreach (Position p in map.AllPositions())
         {
-            if (!_game.IsExplored(p))
+            if (!_revealAll && !_game.IsExplored(p))
             {
-                continue; // unexplored → the dark backdrop shows through
+                continue; // unexplored → the dark backdrop shows through (Admin "Show all map" reveals every tile)
             }
 
             var cell = new Rect2(p.X * pp - offX, p.Y * pp - offY, pp, pp);
@@ -126,9 +130,9 @@ public partial class MiniMap : Control
             }
 
             Color colour = TerrainColor.GetValueOrDefault(map.TerrainAt(p).ShortName, FallbackTerrain);
-            if (!_game.IsVisible(p))
+            if (!_revealAll && !_game.IsVisible(p))
             {
-                colour = colour.Darkened(0.4f); // remembered, out of current sight
+                colour = colour.Darkened(0.4f); // remembered, out of current sight (reveal-all draws it bright)
             }
             DrawRect(cell, colour);
         }
@@ -138,21 +142,21 @@ public partial class MiniMap : Control
         float dot = Math.Max(2f, pp);
         foreach (Colony c in _game.Colonies)
         {
-            if (_game.IsExplored(c.Position))
+            if (_revealAll || _game.IsExplored(c.Position))
             {
                 DrawDot(c.Position, pp, offX, offY, dot, c.OwnerId == human ? OwnColonyDot : RivalColonyDot);
             }
         }
         foreach (NativeSettlement s in _game.NativeSettlements)
         {
-            if (_game.IsExplored(s.Position))
+            if (_revealAll || _game.IsExplored(s.Position))
             {
                 DrawDot(s.Position, pp, offX, offY, dot, NativeDot);
             }
         }
         foreach (Unit u in _game.Units)
         {
-            if (u.IsOnMap && _game.IsVisible(u.Position))
+            if (u.IsOnMap && (_revealAll || _game.IsVisible(u.Position)))
             {
                 DrawDot(u.Position, pp, offX, offY, dot, u.OwnerId == human ? OwnUnitDot : RivalUnitDot);
             }
