@@ -68,6 +68,7 @@ public partial class OpeningCinematic : Control
         Theme = ColonyTheme.Get();
         SetAnchorsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Stop; // the whole surface takes clicks (click-anywhere-to-advance)
+        GetViewport().SizeChanged += FillViewport; // keep covering the whole window when it resizes
 
         // Backdrop: the antique map, darkened by a translucent vignette so the cream beat text reads clearly over it
         // (the same image + dim treatment the menu uses). A missing asset (CI before import) just leaves the dim fill.
@@ -167,8 +168,23 @@ public partial class OpeningCinematic : Control
     public void Play()
     {
         Show();
+        // Cover the whole window before the first beat. This overlay is added + shown in the same frame it is built, so
+        // its FullRect size hasn't been propagated from the parent yet — without this the backdrop/vignette and the
+        // centred text card lay out inside a stale, smaller rect pinned top-left (the menu shows through beside it, and
+        // the card isn't centred — 86d3jy0rn). Forced now and again deferred once the layout has settled.
+        FillViewport();
+        Callable.From(FillViewport).CallDeferred();
         GrabFocus(); // so Esc (ui_cancel) reaches this control's _UnhandledKeyInput even over the freed menu
         PlayBeat(0);
+    }
+
+    /// <summary>Pins this overlay to the whole viewport with an explicit rect (top-left anchor + size), so the backdrop,
+    /// vignette and centred card always fill/centre on the real window regardless of parent-size propagation timing.</summary>
+    private void FillViewport()
+    {
+        SetAnchorsPreset(LayoutPreset.TopLeft);
+        Position = Vector2.Zero;
+        Size = GetViewportRect().Size;
     }
 
     /// <summary>Fades beat <paramref name="index"/> in, holds it, fades it out, then chains to the next — or ends the cinematic after the last beat. A no-op once <see cref="Finished"/> has fired.</summary>
