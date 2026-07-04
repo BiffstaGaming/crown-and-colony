@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-04 — New-Game dialog fix + overlay-wide polish audit (86d3jy0rn) ✅
+
+**Requested (Chris, screenshot):** the New Game screen was pinned to the top-left corner, unframed, options cut off with Start/Back off-screen — "I have to manually re-size… then the border goes wrong?" applied to the setup dialog too.
+**Did (fixed the reported screen, then swept every overlay for the same bug class — ultracode multi-agent audit + adversarial verify; verified fixes by RENDERING):**
+- **New-Game dialog** (`2c718f1`): root cause was a **corner-pin** — the overlay Control ends up 0×0 when built+hidden, so a centre-anchor resolved against a zero-size parent and pinned the panel to (0,0). Now positioned with **absolute offsets under top-left anchors** off `GetViewportRect()`; `this`+dim forced to cover the viewport (real modal dim); **height-capped scroll** with **Title/Start/Back pinned** (always visible); **carved-wood frame** added. Polish: aligned dropdown column; renamed the confusing **"Land mass"/"Landmass"** → **"Land amount"/"Land shape"**. New `new-game-dialog` golden (it had none — why the bug shipped).
+- **Overlay audit** (`05a0d7d`): 6 auditor agents + adversarial verify found **15 confirmed issues**, all fixed. **HIGH:** `ColonyReportPanel`/`TradeRoutePanel`/`FindSettlementPanel` content wasn't in a `ScrollContainer` → tall tabs/routes/colony-lists pushed **Close/Create off-screen** (wrapped each in a Scroll, pinned actions); **Help/About body text rendered white-on-parchment** (RichTextLabel doesn't inherit Label's colour → set `default_color=Ink` in the theme). **MED:** `DifficultyEditor` refactored to the robust centred/framed/scrolled/pinned pattern; `MonarchDialog` was the lone unframed event modal (framed); raw camelCase ids humanised in FoundingFather/Congress/Foreign-Natives-Score tabs/NativeSettlement/Negotiation. **LOW:** `tradeGoods` leaks in NativeDemand/Monarch/TradeRoute checkboxes.
+**Status:** **L3/L4 375 green**; **CI green on both jobs** for all three commits (`428369c` Settings, `2c718f1` New-Game, `05a0d7d` audit). Verified by rendering help/about/difficulty/new-game/report + the panels' L3 suites. Presentation-only (ADR-006); no save/RNG impact. New goldens: `new-game-dialog`, `difficulty-editor`; `help-panel`/`about-panel` regenerated (dark text).
+**Changed:** `NewGameDialog.cs`, `DifficultyEditor.cs`, `ColonyTheme.cs`, `MonarchDialog.cs`, `FoundingFatherPanel.cs`, `NativeDemandPanel.cs`, `NativeSettlementPanel.cs`, `NegotiationPanel.cs`, `ColonyReportPanel.cs`, `TradeRoutePanel.cs`, `FindSettlementPanel.cs`, `main.tscn`, 4 test files, 3 goldens, presentation.md. Commits `2c718f1` + `05a0d7d`.
+**Decisions:** absolute-offset centring over CenterContainer/centre-anchor (the corner-pin trap for AddChild overlays built while hidden); pin action buttons OUTSIDE the scroll; theme-level RichTextLabel colour (fixes all parchment RichText at once). Kept node `Name`s raw so humanising visible Text doesn't break L3 lookups.
+**Scheduled next:** back to `[EPIC P8] Australia variant` (`86d3b3r7h`) — the only remaining backlog item; this whole polish pass folds into in-review task `86d3jy0rn`.
+**Follow-ups:** the audit was scoped to the code-built overlays; the always-on HUD widgets (MiniMap/MapControls) were deliberately excluded (corner-anchored by design). If Chris still sees any dark-on-dark or clipped panel, point me at it.
+**Needs you:** on your machine, open **New Game** (confirm it's centred/framed, nothing cut off), **Settings → custom difficulty** (framed, scrolls, OK/Cancel visible), and **Help/About** (text now readable).
+
+---
+
 ## 2026-07-04 — Settings screen: fits any window + border stays aligned (86d3jy0rn) ✅
 
 **Requested (Chris, with 2 screenshots):** "I have to manually re-size the window to be able to see items? Then the entire border goes wrong?" — the Settings screen was cut off at the default window and its carved-wood frame broke when he resized.
