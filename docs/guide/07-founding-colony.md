@@ -2,6 +2,11 @@
 
 Your first colony is the moment your expedition stops wandering and starts building an empire. Everything that follows — production, trade, liberty bells, and eventually the war for independence — flows from the towns you plant on the map. This chapter shows you how to found a colony, how to read a piece of land before you commit to it, and where a beginner should sink that all-important first settlement.
 
+<figure markdown="span">
+![Founding a colony on the map](img/world-map-hud.png){ width="720" }
+<figcaption>The map view where you choose a site: a colonist ashore, a colony founded, terrain and coast around it.</figcaption>
+</figure>
+
 If you have not yet got a colonist ashore, read [Exploration & Discovery](06-exploration.md) first. Once your settlers are standing on dry land, you are ready.
 
 ## How to found a colony

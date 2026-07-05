@@ -2,6 +2,11 @@
 
 You have spent the whole game building toward this: colonies fat with rebels, a standing army, and a name ready for a new nation. This chapter covers the moment you break away and the war that follows. If you have not yet reached the point of declaring, read [The Road to Independence](18-road-to-independence.md) first.
 
+<figure markdown="span">
+![The forces of the war](img/colopedia-units.png){ width="720" }
+<figcaption>The Colopedia lists the King's Regulars, men-o-war and your own regulars — the armies of the war.</figcaption>
+</figure>
+
 ## Declaring: Liberty or Death
 
 Once your colonies average at least **50% rebel support** (the plain average of each colony's Sons-of-Liberty level, big or small) and you hold at least one **port**, an **Independence** button appears among your controls. There is one more condition: it must not yet be too late in history. After a **last colonial year** — the year **1800** in the classic game — the mother country will no longer let a colony break away, and the button never appears.

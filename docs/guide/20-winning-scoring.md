@@ -2,6 +2,11 @@
 
 Every game of *Crown & Colony* is heading somewhere. You can play for years of in-game time as a peaceful trader, a conqueror of native cities, or a single-minded revolutionary — but sooner or later the game ends, a final score is tallied, and your name (or something less flattering) is written into the high-score table. This chapter explains how to win, how to lose, and exactly how your score is added up.
 
+<figure markdown="span">
+![The high-scores table](img/high-scores.png){ width="720" }
+<figcaption>Your best games, ranked and recorded at the end of each — the hall of fame.</figcaption>
+</figure>
+
 ## How to win
 
 There is no single scripted path to victory. What counts as a "win" depends on which victory conditions were switched on when you set up the game (see [Starting a New Game](02-new-game.md)), but the headline goal is always the same.

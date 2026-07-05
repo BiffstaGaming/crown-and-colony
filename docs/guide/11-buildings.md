@@ -2,6 +2,11 @@
 
 Your colonists do two kinds of work. Some go out to the tiles around the colony to gather food and raw goods; the rest stay **inside the colony**, working in its buildings. This chapter is about those buildings — what they do, how you put them up, and the order that gets a young colony on its feet fastest.
 
+<figure markdown="span">
+![The Colopedia — Buildings](img/colopedia-buildings.png){ width="720" }
+<figcaption>Every building, the population it needs, its cost, and what it produces or grants.</figcaption>
+</figure>
+
 If you have not yet read [Managing a Colony](08-managing-colony.md) and [Goods & Production Chains](10-goods-production.md), start there. This chapter builds on both.
 
 ## What a building does

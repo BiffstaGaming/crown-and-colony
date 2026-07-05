@@ -29,11 +29,16 @@ public class DocsCaptureTests
 
     // ---- panel captures: open, let it settle, hide the floating map chrome LAST (a deferred RefreshView re-shows
     // the minimap/controls, so hiding before the settle frames doesn't stick), repaint once, then save. -----------
+    // The minimap, its wood-framed backing panel (MiniMapBack), the +/-/N map controls, and the action-cluster
+    // backing all float on the "UI" CanvasLayer above modal panels. Hide them all for a clean full-panel capture.
+    private static readonly string[] MapChrome =
+        ["UI/MiniMap", "UI/MiniMapBack", "UI/MapControls", "UI/ActionClusterBack"];
+
     private static async Task CapturePanel(ISceneRunner runner, GameController controller, string name)
     {
         await runner.SimulateFrames(4);
-        controller.GetNode<CanvasItem>("UI/MiniMap").Visible = false;
-        if (controller.GetNodeOrNull<CanvasItem>("UI/MapControls") is { } mc) mc.Visible = false;
+        foreach (string path in MapChrome)
+            if (controller.GetNodeOrNull<CanvasItem>(path) is { } node) node.Visible = false;
         await runner.SimulateFrames(1);
         Save(controller, name);
     }
@@ -181,6 +186,60 @@ public class DocsCaptureTests
         game.FoundColony(game.Units[0]);
         controller.OpenTradeRoutePanel();
         await CapturePanel(runner, controller, "trade-routes");
+    }
+
+    [TestCase(Timeout = 120000)]
+    public async Task Capture_ColopediaTabs()
+    {
+        if (!Enabled) return;
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        GameController controller = LoadGame(runner);
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        var panel = controller.GetNode<ColopediaPanel>("UI/ColopediaPanel");
+        panel.Open(game);              // applies the opaque parchment frame (OpenTo alone leaves the map showing through)
+        await runner.SimulateFrames(2);
+        // Each reference tab, captured separately. An empty anchor is harmless (it just skips the row highlight).
+        (ColopediaPanel.Category cat, string name)[] tabs =
+        [
+            (ColopediaPanel.Category.Terrain, "colopedia-terrain"),
+            (ColopediaPanel.Category.Units, "colopedia-units"),
+            (ColopediaPanel.Category.Buildings, "colopedia-buildings"),
+            (ColopediaPanel.Category.Fathers, "colopedia-fathers"),
+            (ColopediaPanel.Category.Nations, "colopedia-nations"),
+            (ColopediaPanel.Category.Resources, "colopedia-resources"),
+            (ColopediaPanel.Category.Concepts, "colopedia-concepts"),
+        ];
+        foreach ((ColopediaPanel.Category cat, string name) in tabs)
+        {
+            panel.OpenTo(game, cat, "");
+            await CapturePanel(runner, controller, name);
+        }
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task Capture_HighScores()
+    {
+        if (!Enabled) return;
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        GameController controller = LoadGame(runner);
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        controller.OpenHighScoresPanel();
+        await CapturePanel(runner, controller, "high-scores");
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task Capture_MessageLog()
+    {
+        if (!Enabled) return;
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        GameController controller = LoadGame(runner);
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        controller.OpenMessageLogPanel();
+        await CapturePanel(runner, controller, "message-log");
     }
 
     private static Game GameOf(GameController controller) =>

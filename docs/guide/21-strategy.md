@@ -2,6 +2,11 @@
 
 You have read how every system works. This chapter is about putting them together: how to open a game, how to build an economy that funds a revolution, and how to time your bid for independence so the King's army does not simply roll over you. None of it is compulsory — Crown & Colony rewards traders, conquerors and revolutionaries alike — but the advice below will keep you out of the potholes that sink most first games.
 
+<figure markdown="span">
+![The colony report](img/colony-report.png){ width="720" }
+<figcaption>A one-screen overview of every colony's people, production and needs — invaluable for steering an empire.</figcaption>
+</figure>
+
 ## Opening moves
 
 Your very first turns decide the shape of your empire, and the biggest mistake is settling the first tile you land on.

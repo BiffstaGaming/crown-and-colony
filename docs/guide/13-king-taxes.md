@@ -2,6 +2,11 @@
 
 You did not sail to the New World alone. Back in the mother country your **King** watches over your colonies, and he is anything but a silent partner. He taxes your trade, drags you into wars, occasionally does you a favour — and, all the while, quietly builds the army he will one day send to crush you if you ever reach for independence. This chapter explains what the Crown can do to you, what you can do about it, and how his growing demands push your own colonists toward rebellion.
 
+<figure markdown="span">
+![Taxes fall on your Europe trade](img/europe-screen.png){ width="720" }
+<figcaption>Every sale in Europe is taxed by the Crown — and the King raises that rate over the game.</figcaption>
+</figure>
+
 ## Your relationship with the Crown
 
 Once your colonies are a few decades old, the King begins to take an interest. Each turn he weighs his options, and most turns he simply does **nothing**. But as the years pass he grows bolder and his interventions come more often. Early in the game — and any time you hold no colonies at all — he leaves you entirely alone. He also stops meddling once you have **declared independence**; from that point you answer to no crown but your own.

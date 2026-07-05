@@ -2,6 +2,11 @@
 
 Sooner or later you will fight — a native war party raiding your frontier, a rival European power's soldiers marching on your ports, or, at the end, the King's own army. This chapter explains how a battle is decided, how to arm your colonists for war, and how ships duel on the open sea. Combat in Crown & Colony is fast and decisive: you pick a target, you see the odds, you commit, and the dice are rolled at once.
 
+<figure markdown="span">
+![Unit combat strength in the Colopedia](img/colopedia-units.png){ width="720" }
+<figcaption>Offence and defence for every unit type — the numbers a battle is decided on.</figcaption>
+</figure>
+
 ## Arming your units
 
 A bare colonist cannot fight — it has no attacking strength at all. War begins in your warehouse, not on the battlefield. Standing inside one of your colonies, a colonist trades goods from the stores for a military role:

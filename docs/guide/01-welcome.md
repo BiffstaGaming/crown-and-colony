@@ -54,6 +54,11 @@ When the map appears you have a ship and your first colonists near the coast, on
 
 ## Where to find help
 
+<figure markdown="span">
+![The Colopedia Concepts tab](img/colopedia-concepts.png){ width="640" }
+<figcaption>The in-game Colopedia also has a **Concepts** tab — short help articles on every part of the game, cross-linked to each other.</figcaption>
+</figure>
+
 You are never expected to memorise anything. Help is always a keypress away:
 
 | Where | How to open it | What it gives you |

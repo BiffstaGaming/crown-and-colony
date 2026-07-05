@@ -40,6 +40,11 @@ You pick **which candidate to pursue**. From then on, your accumulated liberty b
 
 ## Notable Founding Fathers
 
+<figure markdown="span">
+![The Colopedia Founding Fathers tab](img/colopedia-fathers.png){ width="640" }
+<figcaption>The Colopedia lists every Founding Father by field with the exact bonus each one grants.</figcaption>
+</figure>
+
 There are many fathers across the five fields; the in-game **Colopedia** lists every one with its portrait, field and exact effect. Here are some of the most consequential:
 
 - **Thomas Jefferson** (political) — greatly boosts your **liberty-bell production**. Because bells feed both Sons of Liberty and Congress itself, Jefferson accelerates *every* future father. He is often the first father worth chasing.

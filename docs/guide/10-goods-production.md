@@ -2,6 +2,11 @@
 
 Everything your colonies do comes down to goods. You gather raw materials from the land, turn them into finished products inside your buildings, and sell those products in Europe or trade them to the natives for gold. This chapter explains the goods, how they chain together into products, and how to read a colony's production so you can spot and fix problems.
 
+<figure markdown="span">
+![The Colopedia — Goods](img/colopedia.png){ width="720" }
+<figcaption>Every good, its starting price and the chain that refines it — the Colopedia's Goods tab.</figcaption>
+</figure>
+
 If you have not yet set up a colony's workers, read [Managing a Colony](08-managing-colony.md) first; this chapter builds on it.
 
 ## Raw goods versus manufactured goods

@@ -2,6 +2,11 @@
 
 Every colony runs on the backs of its colonists. Who works a tile or a workshop matters enormously: the same forest tile hands one colonist a trickle of furs and another a steady stream, and the difference is *expertise*. This chapter explains the kinds of colonist you will command, how experts multiply your output, the three roads to expertise, and how to run your schools and your labour pool.
 
+<figure markdown="span">
+![Colonists and buildings in a colony](img/colony-screen.png){ width="720" }
+<figcaption>Colonists work the land and the buildings; build a schoolhouse here and an expert will train them.</figcaption>
+</figure>
+
 ## The kinds of colonist
 
 Not all colonists are equal. When people arrive from Europe, are born in your colonies, or fall into your hands another way, they come in several grades:

@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-05 — Screenshots on (almost) every page (86d3k3a1f)
+
+**Requested (Chris):** almost every page has no screenshot — wants coverage across the whole guide.
+**Did:**
+- **Captured 9 more screens** via the harness: the 7 **Colopedia reference tabs** (Terrain, Units, Buildings, Fathers, Nations, Resources, Concepts), the **high-scores** table, and the **message log**.
+- **Fixed two capture bugs the new shots exposed:** the Colopedia tabs let the map bleed through (`OpenTo` skips the opaque frame — now call `Open()` first); and a wood-framed backing panel (`MiniMapBack`, separate from the minimap I'd hidden) floated behind margined modals. Re-captured everything **clean at 1024×600** — the two narrow modals (native-settlement, trade-routes) are full-frame now too.
+- **Wired a hero screenshot into all 14 remaining chapters** + 3 secondaries (in-game help, message log, full fathers list). **Every content chapter (01–22) now has a screenshot**; only the pure-data appendix and the card home page don't (they don't need one). Removed 4 unused menu shots.
+- `mkdocs build --strict` → **EXIT 0**; 20 images, all referenced.
+**Status:** strict-clean locally. Committing + pushing.
+**Changed:** +9 images in `docs/guide/img` (2 re-captured full-frame, 4 unused removed); heroes in 14 chapters + secondaries in 3; `DocsCaptureTests.cs` (Colopedia-tabs / high-scores / message-log cases + the MiniMapBack fix).
+**Decisions:** reference-heavy chapters use the matching Colopedia tab; a few reuse the best-fit gameplay shot; King (ch13→Europe/tax) and War (ch19→unit stats) use thematic reuses. The live Monarch / Declaration / pre-combat dialogs need fabricated pending state — deferred.
+**Scheduled next:** optional — capture the **Monarch tax dialog, pre-combat odds and Declaration** (need injected state) so ch13/ch17/ch19 get their real dialog. Publish (Pages) when ready. Kanban **`86d3k3a1f`**.
+**Follow-ups:** the dynamic dialogs above; About-screen link; `MANUAL.md` fate.
+**Needs you:** refresh the local preview (**http://127.0.0.1:8000/crown-and-colony/**) and check the coverage; say if you want the live Monarch/combat/Declaration dialogs captured too.
+
+---
+
 ## 2026-07-05 — Appendix fixes: real difficulty names + capitalised goods (86d3k3a1f)
 
 **Requested (Chris feedback):** the difficulty-levels table used the wrong names (not what's shown in-game); and stop lower-casing goods ("2 Furs, not 2 furs").

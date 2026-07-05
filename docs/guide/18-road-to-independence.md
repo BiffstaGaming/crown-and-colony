@@ -2,6 +2,11 @@
 
 Every colony you found begins as a loyal outpost of your mother country. Independence is not a button you press on a whim — it is the payoff of a long campaign to turn your colonists into revolutionaries. This chapter is about that campaign: how to grow rebel sentiment, what unlocks the fateful choice, and how to make sure that when you finally raise the flag you can survive the King's response.
 
+<figure markdown="span">
+![The Continental Congress](img/founding-fathers.png){ width="720" }
+<figcaption>Liberty bells recruit Founding Fathers and push your colonies' Sons of Liberty toward the 50% needed to declare.</figcaption>
+</figure>
+
 ## Liberty bells and rebel sentiment
 
 The fuel of the whole enterprise is the **liberty bell**, produced in your colonies' **town halls**. Staff a town hall with colonists (statesmen are the experts) and it rings out bells every turn. Those bells do two jobs at once:

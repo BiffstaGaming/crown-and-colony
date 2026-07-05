@@ -2,6 +2,11 @@
 
 The New World is your board, your larder and your battlefield all at once. Every colony you found, every road you cut and every war you fight happens on this map, so a governor who reads the land well has an edge before a single musket is fired. This chapter explains how the map is laid out, what the different kinds of ground are worth, how terrain speeds or slows your units, how the map is revealed as you explore, and — most usefully — how to read a stretch of coast and pick a good place to settle.
 
+<figure markdown="span">
+![The Colopedia — Terrain](img/colopedia-terrain.png){ width="720" }
+<figcaption>Every terrain type — its move cost, defence bonus and what it can be worked for — in the in-game Colopedia (press C).</figcaption>
+</figure>
+
 ## How the map is laid out
 
 The world is a grid of tiles. Most of it is one of two things: **land**, where your colonists live and work, and **ocean**, which your ships cross and your fishermen work. A rim of water wraps the landmass, so every continent has a coast.

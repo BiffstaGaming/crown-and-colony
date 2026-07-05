@@ -2,6 +2,11 @@
 
 Everything you do in the New World, you do through **units** — the colonists, ships, soldiers, wagons and specialists that carry out your will. This chapter explains what the different units are, how they move across land and sea, and the orders you give them to keep your empire running without babysitting every figure on the map.
 
+<figure markdown="span">
+![The Colopedia — Units](img/colopedia-units.png){ width="720" }
+<figcaption>Every unit type with its movement, combat strength and how it is obtained, in the Colopedia.</figcaption>
+</figure>
+
 ## The units you command
 
 You start with a **ship** and a **colonist**, but your roster grows quickly. Units fall into a few broad families.

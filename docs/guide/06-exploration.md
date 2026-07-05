@@ -2,6 +2,11 @@
 
 You do not arrive in the New World with a map. Beyond the tiles right around your ship the whole continent is black, and it stays black until one of your units walks or sails close enough to peel back the fog. Exploration is how you find the good land, the native nations, the rival powers — and the scattered fortunes that can bankroll an empire.
 
+<figure markdown="span">
+![The Colopedia — Resources](img/colopedia-resources.png){ width="720" }
+<figcaption>The special bonus resources a tile can carry — the finds that reward a good scout.</figcaption>
+</figure>
+
 ## Why explore
 
 Every step into the unknown pays off in more than one way:

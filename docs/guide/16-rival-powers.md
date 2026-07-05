@@ -2,6 +2,11 @@
 
 You are not the only crown planting flags in the New World. Other European powers land their own ships and colonists, spread out along the coast, and set about building empires of their own. They can be trading partners, uneasy neighbours, or open enemies — and how you handle them shapes your independence race and your final score.
 
+<figure markdown="span">
+![The Colopedia — Nations](img/colopedia-nations.png){ width="720" }
+<figcaption>The European powers you compete with, each with its own national advantage.</figcaption>
+</figure>
+
 This chapter covers how you meet the rivals, what you can do at the negotiation table, and how their presence weighs on the rest of your game. For the native nations, see [Natives & Diplomacy](15-natives-diplomacy.md); for the mechanics of actual fighting, see [Combat: Land & Naval](17-combat.md).
 
 ## Meeting the other powers

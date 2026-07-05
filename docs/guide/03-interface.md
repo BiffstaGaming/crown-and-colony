@@ -36,6 +36,11 @@ The camera always stays over the map — it will show a little margin past the e
 
 ## Ending a turn
 
+<figure markdown="span">
+![The message log](img/message-log.png){ width="640" }
+<figcaption>The message log — a filterable, per-turn history of everything that happened: combat, the economy, native raids and the King.</figcaption>
+</figure>
+
 The game advances in turns. On your turn you move your units, manage your colonies and trade. When you are finished, press **End Turn** (or `Enter`) and the world resolves: every other European power and native nation takes its turn, your colonies produce and grow, immigrants arrive, ships at sea advance, native tempers cool, and the calendar moves on. Then it is your turn again.
 
 ### The turn report and message log
