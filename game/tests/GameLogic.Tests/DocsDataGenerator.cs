@@ -69,8 +69,9 @@ public class DocsDataGenerator
             + "can teach a visiting colonist. See [Natives & Diplomacy](15-natives-diplomacy.md).",
             Natives(r));
         Section(sb, "Difficulty levels",
-            "How the five levels change the game. Higher levels raise the liberty cost of each Founding Father, let the King tax you "
-            + "higher, make native land dearer, and make converts rarer. See [Starting a New Game](02-new-game.md).",
+            "The five levels, from **Discoverer** (gentlest) to **Viceroy** (harshest), with **Conquistador** the default. Higher "
+            + "levels raise the liberty cost of each Founding Father, let the King tax you higher, make native land dearer, and make "
+            + "converts rarer. See [Starting a New Game](02-new-game.md).",
             Difficulty());
 
         File.WriteAllText(OutFile, sb.ToString().Replace("\r\n", "\n").TrimEnd() + "\n");
@@ -102,8 +103,8 @@ public class DocsDataGenerator
             var centre = t.Productions.FirstOrDefault(p => p.Unattended);
             string yield = centre is null || centre.Outputs.Count == 0
                 ? "—"
-                : string.Join(", ", centre.Outputs.Select(o => $"{Short(o.GoodsId)} {o.Amount}"));
-            sb.AppendLine($"| {Title(t.ShortName)} | {move} | {def} | {t.WorkTurns} | {(t.CanSettle ? "yes" : "no")} | {yield} |");
+                : string.Join(", ", centre.Outputs.Select(o => $"{Title(Short(o.GoodsId))} {o.Amount}"));
+            sb.AppendLine($"| {Title(t.ShortName)} | {move} | {def} | {t.WorkTurns} | {(t.CanSettle ? "Yes" : "No")} | {yield} |");
         }
         return sb.ToString();
     }
@@ -121,10 +122,10 @@ public class DocsDataGenerator
         foreach (GoodsType g in r.GoodsTypes)
         {
             string kind = g.Market != null
-                ? (g.MadeFrom != null ? "manufactured" : g.IsNewWorldGoods ? "raw (New World)" : "raw")
-                : g.IsFood ? "food (not traded)"
-                : g.MadeFrom != null ? "manufactured (not traded)"
-                : "special";
+                ? (g.MadeFrom != null ? "Manufactured" : g.IsNewWorldGoods ? "Raw (New World)" : "Raw")
+                : g.IsFood ? "Food (not traded)"
+                : g.MadeFrom != null ? "Manufactured (not traded)"
+                : "Special";
             string sell = g.Market is { } m ? m.InitialPrice.ToString() : "—";
             string buy = g.Market is { } m2 ? m2.InitialAskPrice.ToString() : "—";
             string from = g.MadeFrom is { } f ? Title(Short(f)) : "—";
@@ -146,16 +147,16 @@ public class DocsDataGenerator
             var conv = bld.Productions.FirstOrDefault(p => p.Inputs.Count > 0 && p.Outputs.Count > 0);
             var effect = new List<string>();
             if (conv != null)
-                effect.Add($"{string.Join("+", conv.Inputs.Select(i => Short(i.GoodsId)))} → {string.Join("+", conv.Outputs.Select(o => Short(o.GoodsId)))}");
+                effect.Add($"{string.Join(" + ", conv.Inputs.Select(i => Title(Short(i.GoodsId))))} → {string.Join(" + ", conv.Outputs.Select(o => Title(Short(o.GoodsId))))}");
             else
             {
                 var auto = bld.Productions.FirstOrDefault(p => p.Outputs.Count > 0);
-                if (auto != null) effect.Add($"makes {string.Join("+", auto.Outputs.Select(o => Short(o.GoodsId)))}");
+                if (auto != null) effect.Add($"Makes {string.Join(" + ", auto.Outputs.Select(o => Title(Short(o.GoodsId))))}");
             }
-            if (bld.DefenceBonus > 0) effect.Add($"defence +{bld.DefenceBonus}%");
-            if (bld.WarehouseStorage > 0) effect.Add($"storage +{bld.WarehouseStorage}");
-            if (bld.BellBonus > 0) effect.Add($"bells +{bld.BellBonus}%");
-            if (bld.MaximumSkill > 0) effect.Add($"teaches (skill ≤{bld.MaximumSkill})");
+            if (bld.DefenceBonus > 0) effect.Add($"Defence +{bld.DefenceBonus}%");
+            if (bld.WarehouseStorage > 0) effect.Add($"Storage +{bld.WarehouseStorage}");
+            if (bld.BellBonus > 0) effect.Add($"Bells +{bld.BellBonus}%");
+            if (bld.MaximumSkill > 0) effect.Add($"Teaches (skill ≤{bld.MaximumSkill})");
             sb.AppendLine($"| {Title(bld.ShortName)} | {(bld.UpgradesFrom is { } u ? Title(Short(u)) : "—")} | {(hammers > 0 ? hammers.ToString() : "—")} | {(tools > 0 ? tools.ToString() : "—")} | {bld.Workplaces} | {bld.RequiredPopulation} | {(effect.Count > 0 ? string.Join("; ", effect) : "—")} |");
         }
         return sb.ToString();
@@ -205,7 +206,7 @@ public class DocsDataGenerator
         foreach (RoleType role in r.Roles.Where(x => x.Offence != 0 || x.Defence != 0 || x.MovementBonus != 0))
         {
             string equip = role.RequiredGoods.Count > 0
-                ? string.Join(", ", role.RequiredGoods.Select(g => $"{g.Amount} {Short(g.GoodsId)}"))
+                ? string.Join(", ", role.RequiredGoods.Select(g => $"{g.Amount} {Title(Short(g.GoodsId))}"))
                 : "—";
             sb.AppendLine($"| {Title(role.ShortName)} | +{role.Offence:0.#} | +{role.Defence:0.#} | {(role.MovementBonus != 0 ? $"+{role.MovementBonus / b:0.#} tiles" : "—")} | {equip} |");
         }
@@ -237,7 +238,8 @@ public class DocsDataGenerator
         foreach (DifficultyLevel lvl in DifficultyLevels.All)
         {
             DifficultyOptions d = Ruleset.LoadClassic(lvl.Id).Difficulty;
-            sb.AppendLine($"| {Title(Short(lvl.Id))} | {d.FoundingFatherFactor} | {d.Monarch.MaximumTaxRate}% | {d.LandPriceFactor} | {d.NativeConvertProbability}% |");
+            string name = lvl.Name + (lvl.Id == DifficultyLevels.DefaultId ? " *(default)*" : "");
+            sb.AppendLine($"| {name} | {d.FoundingFatherFactor} | {d.Monarch.MaximumTaxRate}% | {d.LandPriceFactor} | {d.NativeConvertProbability}% |");
         }
         return sb.ToString();
     }

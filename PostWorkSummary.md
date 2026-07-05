@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-05 — Appendix fixes: real difficulty names + capitalised goods (86d3k3a1f)
+
+**Requested (Chris feedback):** the difficulty-levels table used the wrong names (not what's shown in-game); and stop lower-casing goods ("2 Furs, not 2 furs").
+**Did:**
+- **Difficulty names fixed.** The generator used the internal ids (Very Easy…Very Hard); the game actually shows the classic Colonization titles via `DifficultyLevel.Name` — now **Discoverer, Explorer, Conquistador *(default)*, Governor, Viceroy**. Named them in the section intro too.
+- **Capitalised goods/effects** throughout the generated tables: terrain centre yields ("Grain 3, Cotton 2"), building effects ("Lumber → Hammers", "Makes Bells", "Defence +100%"), unit-role equipment ("50 Muskets, 50 Horses"), goods "Kind" column ("Raw", "Manufactured"…), and Yes/No.
+- Regenerated `23-tables-data.md` from the tool; `mkdocs build --strict` → EXIT 0.
+**Status:** Fixed in the generator (correct-by-construction), regenerated, strict-clean. Committing + pushing.
+**Changed:** `DocsDataGenerator.cs`, regenerated `docs/guide/23-tables-data.md`; this summary.
+**Decisions:** goods capitalised in the **tables** (Colonization proper-noun style); chapter prose keeps sentence-case common nouns — say the word if you want goods capitalised in prose too.
+**Scheduled next:** publish (Pages) when ready; optional dynamic-screen screenshots. Kanban **`86d3k3a1f`**.
+**Follow-ups:** unchanged from prior entry (About link, MANUAL.md fate, annotated callouts).
+**Needs you:** confirm the tables read right now; tell me if you also want goods capitalised in the flowing chapter text.
+
+---
+
 ## 2026-07-05 — Detailed handbook shipped: 15 screenshots + generated data appendix (86d3k3a1f)
 
 **Requested:** More detailed handbook, with screenshots. (Your picks: generated data appendix + auto-generate all screenshots.)

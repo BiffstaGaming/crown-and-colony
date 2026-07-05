@@ -11,29 +11,29 @@ Move cost is **tiles per turn** to cross (open ground costs 1). Defence is the b
 
 | Terrain | Move (tiles) | Defence | Work turns | Can settle | Centre yield (unattended) |
 |---|---|---|---|---|---|
-| Plains | 1 | — | 3 | yes | grain 3, cotton 2 |
-| Grassland | 1 | — | 3 | yes | grain 3, tobacco 3 |
-| Prairie | 1 | — | 3 | yes | grain 3, cotton 3 |
-| Savannah | 1 | — | 3 | yes | grain 3, sugar 3 |
-| Marsh | 2 | +25% | 5 | yes | grain 3, tobacco 2 |
-| Swamp | 2 | +25% | 7 | yes | grain 3, sugar 2 |
-| Desert | 1 | — | 3 | yes | grain 2, ore 2 |
-| Tundra | 1 | — | 4 | yes | grain 3, ore 2 |
-| Mixed Forest | 2 | +50% | 4 | yes | grain 2, furs 3 |
-| Conifer Forest | 2 | +50% | 4 | yes | grain 2, furs 2 |
-| Broadleaf Forest | 2 | +50% | 4 | yes | grain 2, furs 2 |
-| Tropical Forest | 2 | +50% | 6 | yes | grain 2, furs 2 |
-| Wetland Forest | 3 | +50% | 6 | yes | grain 2, furs 2 |
-| Rain Forest | 3 | +75% | 7 | yes | grain 2, sugar 1 |
-| Scrub Forest | 1 | +50% | 4 | yes | grain 2, furs 2 |
-| Boreal Forest | 2 | +50% | 4 | yes | grain 2, furs 3 |
-| Hills | 2 | +100% | 4 | yes | grain 2, ore 4 |
-| Mountains | 3 | +150% | 7 | no | — |
-| Arctic | 2 | — | 4 | yes | grain 2 |
-| Ocean | — (water) | — | 4 | no | — |
-| Lake | — (water) | — | 4 | no | — |
-| High Seas | — (water) | — | 4 | no | — |
-| Great River | — (water) | — | 4 | no | — |
+| Plains | 1 | — | 3 | Yes | Grain 3, Cotton 2 |
+| Grassland | 1 | — | 3 | Yes | Grain 3, Tobacco 3 |
+| Prairie | 1 | — | 3 | Yes | Grain 3, Cotton 3 |
+| Savannah | 1 | — | 3 | Yes | Grain 3, Sugar 3 |
+| Marsh | 2 | +25% | 5 | Yes | Grain 3, Tobacco 2 |
+| Swamp | 2 | +25% | 7 | Yes | Grain 3, Sugar 2 |
+| Desert | 1 | — | 3 | Yes | Grain 2, Ore 2 |
+| Tundra | 1 | — | 4 | Yes | Grain 3, Ore 2 |
+| Mixed Forest | 2 | +50% | 4 | Yes | Grain 2, Furs 3 |
+| Conifer Forest | 2 | +50% | 4 | Yes | Grain 2, Furs 2 |
+| Broadleaf Forest | 2 | +50% | 4 | Yes | Grain 2, Furs 2 |
+| Tropical Forest | 2 | +50% | 6 | Yes | Grain 2, Furs 2 |
+| Wetland Forest | 3 | +50% | 6 | Yes | Grain 2, Furs 2 |
+| Rain Forest | 3 | +75% | 7 | Yes | Grain 2, Sugar 1 |
+| Scrub Forest | 1 | +50% | 4 | Yes | Grain 2, Furs 2 |
+| Boreal Forest | 2 | +50% | 4 | Yes | Grain 2, Furs 3 |
+| Hills | 2 | +100% | 4 | Yes | Grain 2, Ore 4 |
+| Mountains | 3 | +150% | 7 | No | — |
+| Arctic | 2 | — | 4 | Yes | Grain 2 |
+| Ocean | — (water) | — | 4 | No | — |
+| Lake | — (water) | — | 4 | No | — |
+| High Seas | — (water) | — | 4 | No | — |
+| Great River | — (water) | — | 4 | No | — |
 
 ## Goods & the market
 
@@ -41,27 +41,27 @@ Move cost is **tiles per turn** to cross (open ground costs 1). Defence is the b
 
 | Good | Kind | Sell | Buy | Made from | Makes |
 |---|---|---|---|---|---|
-| Food | raw | 1 | 9 | — | Horses |
-| Grain | food (not traded) | — | — | — | — |
-| Fish | food (not traded) | — | — | — | — |
-| Sugar | raw (New World) | 2 | 4 | — | Rum |
-| Tobacco | raw (New World) | 2 | 4 | — | Cigars |
-| Cotton | raw (New World) | 2 | 4 | — | Cloth |
-| Furs | raw (New World) | 2 | 4 | — | Coats |
-| Lumber | raw | 1 | 6 | — | Hammers |
-| Ore | raw | 4 | 7 | — | Tools |
-| Silver | raw | 16 | 18 | — | — |
-| Horses | manufactured | 1 | 3 | Food | — |
-| Rum | manufactured | 10 | 12 | Sugar | — |
-| Cigars | manufactured | 10 | 12 | Tobacco | — |
-| Cloth | manufactured | 10 | 12 | Cotton | — |
-| Coats | manufactured | 10 | 12 | Furs | — |
-| Trade Goods | raw | 1 | 3 | — | — |
-| Tools | manufactured | 1 | 3 | Ore | Muskets |
-| Muskets | manufactured | 1 | 3 | Tools | — |
-| Bells | special | — | — | — | — |
-| Crosses | special | — | — | — | — |
-| Hammers | manufactured (not traded) | — | — | Lumber | — |
+| Food | Raw | 1 | 9 | — | Horses |
+| Grain | Food (not traded) | — | — | — | — |
+| Fish | Food (not traded) | — | — | — | — |
+| Sugar | Raw (New World) | 2 | 4 | — | Rum |
+| Tobacco | Raw (New World) | 2 | 4 | — | Cigars |
+| Cotton | Raw (New World) | 2 | 4 | — | Cloth |
+| Furs | Raw (New World) | 2 | 4 | — | Coats |
+| Lumber | Raw | 1 | 6 | — | Hammers |
+| Ore | Raw | 4 | 7 | — | Tools |
+| Silver | Raw | 16 | 18 | — | — |
+| Horses | Manufactured | 1 | 3 | Food | — |
+| Rum | Manufactured | 10 | 12 | Sugar | — |
+| Cigars | Manufactured | 10 | 12 | Tobacco | — |
+| Cloth | Manufactured | 10 | 12 | Cotton | — |
+| Coats | Manufactured | 10 | 12 | Furs | — |
+| Trade Goods | Raw | 1 | 3 | — | — |
+| Tools | Manufactured | 1 | 3 | Ore | Muskets |
+| Muskets | Manufactured | 1 | 3 | Tools | — |
+| Bells | Special | — | — | — | — |
+| Crosses | Special | — | — | — | — |
+| Hammers | Manufactured (not traded) | — | — | Lumber | — |
 
 ## Buildings
 
@@ -69,46 +69,46 @@ Move cost is **tiles per turn** to cross (open ground costs 1). Defence is the b
 
 | Building | Upgrades from | Hammers | Tools | Workers | Req. pop | Effect |
 |---|---|---|---|---|---|---|
-| Town Hall | — | — | — | 3 | 1 | makes bells |
-| Carpenter House | — | — | — | 3 | 1 | lumber → hammers |
-| Lumber Mill | Carpenter House | 52 | — | 3 | 3 | lumber → hammers |
-| Blacksmith House | — | — | — | 3 | 1 | ore → tools |
-| Blacksmith Shop | Blacksmith House | 64 | 20 | 3 | 1 | ore → tools |
-| Iron Works | Blacksmith Shop | 240 | 100 | 3 | 8 | ore → tools |
-| Tobacconist House | — | — | — | 3 | 1 | tobacco → cigars |
-| Tobacconist Shop | Tobacconist House | 64 | 20 | 3 | 1 | tobacco → cigars |
-| Cigar Factory | Tobacconist Shop | 160 | 100 | 3 | 8 | tobacco → cigars |
-| Weaver House | — | — | — | 3 | 1 | cotton → cloth |
-| Weaver Shop | Weaver House | 64 | 20 | 3 | 1 | cotton → cloth |
-| Textile Mill | Weaver Shop | 160 | 100 | 3 | 8 | cotton → cloth |
-| Distiller House | — | — | — | 3 | 1 | sugar → rum |
-| Rum Distillery | Distiller House | 64 | 20 | 3 | 1 | sugar → rum |
-| Rum Factory | Rum Distillery | 160 | 100 | 3 | 8 | sugar → rum |
-| Fur Trader House | — | — | — | 3 | 1 | furs → coats |
-| Fur Trading Post | Fur Trader House | 56 | 20 | 3 | 1 | furs → coats |
-| Fur Factory | Fur Trading Post | 160 | 100 | 3 | 6 | furs → coats |
-| Schoolhouse | — | 64 | — | 1 | 4 | teaches (skill ≤1) |
-| College | Schoolhouse | 160 | 50 | 2 | 8 | teaches (skill ≤2) |
-| University | College | 200 | 100 | 3 | 10 | teaches (skill ≤4) |
-| Armory | — | 52 | — | 3 | 1 | tools → muskets |
-| Magazine | Armory | 120 | 50 | 3 | 8 | tools → muskets |
-| Arsenal | Magazine | 240 | 100 | 3 | 8 | tools → muskets |
-| Chapel | — | — | — | 0 | 1 | makes crosses |
-| Church | Chapel | 64 | — | 3 | 3 | makes crosses |
-| Cathedral | Church | 176 | 100 | 3 | 8 | makes crosses |
-| Stockade | — | 64 | — | 0 | 3 | defence +100% |
-| Fort | Stockade | 120 | 100 | 0 | 3 | defence +150% |
-| Fortress | Fort | 320 | 200 | 0 | 8 | defence +200% |
-| Depot | — | — | — | 0 | 1 | storage +100 |
-| Warehouse | Depot | 80 | — | 0 | 1 | storage +200 |
-| Warehouse Expansion | Warehouse | 80 | 20 | 0 | 1 | storage +300 |
-| Country | — | — | — | 0 | 1 | food → horses |
-| Stables | Country | 64 | — | 0 | 1 | food → horses |
+| Town Hall | — | — | — | 3 | 1 | Makes Bells |
+| Carpenter House | — | — | — | 3 | 1 | Lumber → Hammers |
+| Lumber Mill | Carpenter House | 52 | — | 3 | 3 | Lumber → Hammers |
+| Blacksmith House | — | — | — | 3 | 1 | Ore → Tools |
+| Blacksmith Shop | Blacksmith House | 64 | 20 | 3 | 1 | Ore → Tools |
+| Iron Works | Blacksmith Shop | 240 | 100 | 3 | 8 | Ore → Tools |
+| Tobacconist House | — | — | — | 3 | 1 | Tobacco → Cigars |
+| Tobacconist Shop | Tobacconist House | 64 | 20 | 3 | 1 | Tobacco → Cigars |
+| Cigar Factory | Tobacconist Shop | 160 | 100 | 3 | 8 | Tobacco → Cigars |
+| Weaver House | — | — | — | 3 | 1 | Cotton → Cloth |
+| Weaver Shop | Weaver House | 64 | 20 | 3 | 1 | Cotton → Cloth |
+| Textile Mill | Weaver Shop | 160 | 100 | 3 | 8 | Cotton → Cloth |
+| Distiller House | — | — | — | 3 | 1 | Sugar → Rum |
+| Rum Distillery | Distiller House | 64 | 20 | 3 | 1 | Sugar → Rum |
+| Rum Factory | Rum Distillery | 160 | 100 | 3 | 8 | Sugar → Rum |
+| Fur Trader House | — | — | — | 3 | 1 | Furs → Coats |
+| Fur Trading Post | Fur Trader House | 56 | 20 | 3 | 1 | Furs → Coats |
+| Fur Factory | Fur Trading Post | 160 | 100 | 3 | 6 | Furs → Coats |
+| Schoolhouse | — | 64 | — | 1 | 4 | Teaches (skill ≤1) |
+| College | Schoolhouse | 160 | 50 | 2 | 8 | Teaches (skill ≤2) |
+| University | College | 200 | 100 | 3 | 10 | Teaches (skill ≤4) |
+| Armory | — | 52 | — | 3 | 1 | Tools → Muskets |
+| Magazine | Armory | 120 | 50 | 3 | 8 | Tools → Muskets |
+| Arsenal | Magazine | 240 | 100 | 3 | 8 | Tools → Muskets |
+| Chapel | — | — | — | 0 | 1 | Makes Crosses |
+| Church | Chapel | 64 | — | 3 | 3 | Makes Crosses |
+| Cathedral | Church | 176 | 100 | 3 | 8 | Makes Crosses |
+| Stockade | — | 64 | — | 0 | 3 | Defence +100% |
+| Fort | Stockade | 120 | 100 | 0 | 3 | Defence +150% |
+| Fortress | Fort | 320 | 200 | 0 | 8 | Defence +200% |
+| Depot | — | — | — | 0 | 1 | Storage +100 |
+| Warehouse | Depot | 80 | — | 0 | 1 | Storage +200 |
+| Warehouse Expansion | Warehouse | 80 | 20 | 0 | 1 | Storage +300 |
+| Country | — | — | — | 0 | 1 | Food → Horses |
+| Stables | Country | 64 | — | 0 | 1 | Food → Horses |
 | Docks | — | 52 | — | 0 | 1 | — |
 | Drydock | Docks | 80 | 50 | 0 | 4 | — |
 | Shipyard | Drydock | 240 | 100 | 0 | 8 | — |
-| Printing Press | — | 52 | 20 | 0 | 1 | bells +50% |
-| Newspaper | Printing Press | 120 | 50 | 0 | 4 | bells +100% |
+| Printing Press | — | 52 | 20 | 0 | 1 | Bells +50% |
+| Newspaper | Printing Press | 120 | 50 | 0 | 4 | Bells +100% |
 | Custom House | — | 160 | 50 | 0 | 1 | — |
 
 ## Founding Fathers
@@ -215,15 +215,15 @@ All 25 fathers and exactly what each one does, grouped by field. You earn them w
 
 | Role | Offence | Defence | Move bonus | Equipment |
 |---|---|---|---|---|
-| Scout | +1 | +1 | +3 tiles | 50 horses |
-| Soldier | +2 | +1 | — | 50 muskets |
-| Dragoon | +3 | +2 | +3 tiles | 50 muskets, 50 horses |
+| Scout | +1 | +1 | +3 tiles | 50 Horses |
+| Soldier | +2 | +1 | — | 50 Muskets |
+| Dragoon | +3 | +2 | +3 tiles | 50 Muskets, 50 Horses |
 | Missionary | +0 | +0 | +1 tiles | — |
-| Infantry | +2 | +1 | — | 50 muskets |
-| Cavalry | +3 | +2 | +3 tiles | 50 muskets, 50 horses |
-| Mounted Brave | +1 | +1 | +3 tiles | 25 horses |
-| Armed Brave | +2 | +1 | — | 25 muskets |
-| Native Dragoon | +3 | +2 | +3 tiles | 25 muskets, 25 horses |
+| Infantry | +2 | +1 | — | 50 Muskets |
+| Cavalry | +3 | +2 | +3 tiles | 50 Muskets, 50 Horses |
+| Mounted Brave | +1 | +1 | +3 tiles | 25 Horses |
+| Armed Brave | +2 | +1 | — | 25 Muskets |
+| Native Dragoon | +3 | +2 | +3 tiles | 25 Muskets, 25 Horses |
 
 ## Native nations
 
@@ -242,12 +242,12 @@ The eight indigenous nations, their settlement kind, how easily they take offenc
 
 ## Difficulty levels
 
-How the five levels change the game. Higher levels raise the liberty cost of each Founding Father, let the King tax you higher, make native land dearer, and make converts rarer. See [Starting a New Game](02-new-game.md).
+The five levels, from **Discoverer** (gentlest) to **Viceroy** (harshest), with **Conquistador** the default. Higher levels raise the liberty cost of each Founding Father, let the King tax you higher, make native land dearer, and make converts rarer. See [Starting a New Game](02-new-game.md).
 
 | Level | Father cost factor | Max tax | Land price factor | Native convert % |
 |---|---|---|---|---|
-| Very Easy | 24 | 50% | 40 | 50% |
-| Easy | 32 | 60% | 50 | 40% |
-| Medium | 40 | 65% | 60 | 30% |
-| Hard | 48 | 70% | 70 | 20% |
-| Very Hard | 56 | 75% | 80 | 10% |
+| Discoverer | 24 | 50% | 40 | 50% |
+| Explorer | 32 | 60% | 50 | 40% |
+| Conquistador *(default)* | 40 | 65% | 60 | 30% |
+| Governor | 48 | 70% | 70 | 20% |
+| Viceroy | 56 | 75% | 80 | 10% |
