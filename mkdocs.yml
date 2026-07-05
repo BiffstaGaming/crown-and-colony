@@ -38,6 +38,9 @@ theme:
     - search.highlight
     - content.action.edit
 
+extra_css:
+  - stylesheets/extra.css
+
 plugins:
   - search
   - glightbox   # click any screenshot to zoom it

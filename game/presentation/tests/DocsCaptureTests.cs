@@ -22,7 +22,12 @@ namespace CrownAndColony.Presentation.Tests;
 public class DocsCaptureTests
 {
     private const ulong Seed = 424242;
+    // Most panels fill the game's 1024x600 base window cleanly. The two content-heavy screens (the colony's full
+    // buildings grid, Europe's whole harbour) overflow it, so they capture at 1440x1080 (4:3) — the UI lays out
+    // correctly there (verified) and both render clean (opaque parchment / sky backdrop). Centred modals look worse
+    // enlarged (a small panel adrift in dead space), so they stay at 1024x600.
     private static readonly Vector2I CaptureSize = new(1024, 600);
+    private static readonly Vector2I Big = new(1440, 1080);
     private const string OutDir = "C:/Users/Chris/Code/Colonization/docs/guide/img";
 
     private static bool Enabled => System.Environment.GetEnvironmentVariable("DOCS_CAPTURE") == "1";
@@ -79,6 +84,7 @@ public class DocsCaptureTests
         if (!Enabled) return;
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
         GameController controller = LoadGame(runner);
+        controller.GetWindow().Size = Big; // the whole colony (full buildings grid, worked tiles, idle colonists) fits at 1440x1080
         controller.StartNewGame(Seed);
         await runner.SimulateFrames(2);
         Game game = GameOf(controller);
@@ -93,6 +99,7 @@ public class DocsCaptureTests
         if (!Enabled) return;
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
         GameController controller = LoadGame(runner);
+        controller.GetWindow().Size = Big; // the whole harbour (recruit/train dock + full goods market) fits at 1440x1080
         controller.StartNewGame(Seed);
         await runner.SimulateFrames(2);
         Game game = new SaveGame

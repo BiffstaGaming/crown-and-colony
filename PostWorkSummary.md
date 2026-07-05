@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-05 — Bigger colony/Europe screenshots + larger display (86d3k3a1f)
+
+**Requested (Chris):** the colony-screen image is too small to see anything — needs a bigger resolution so the entire colony is visible.
+**Did:**
+- **Root cause:** the colony screen was *clipped* at the 1024×600 base window (the buildings grid ran off-screen). Tested four larger sizes — **1440×1080** shows the **entire** colony (full 4-column buildings grid, worked tiles, construction, idle colonists, "Outside the colony") and lays out correctly (the scout's "layout breaks above 1024×600" worry was wrong).
+- **Captured colony + Europe at 1440×1080** (both overflow the base window and render clean at the big size — opaque parchment / sky backdrop). Kept the centred dialogs and Colopedia tabs at **1024×600** (they look worse enlarged — a small panel adrift in dead space with a map/fog artifact).
+- **Display:** new `docs/guide/stylesheets/extra.css` — widened the content column (also helps the wide data tables) and shows screenshots large with a soft frame; **click any to zoom** to full resolution (glightbox).
+- `mkdocs build --strict` → **EXIT 0**.
+**Status:** strict-clean locally. Committing + pushing.
+**Changed:** `colony-screen.png` + `europe-screen.png` now 1440×1080; new `docs/guide/stylesheets/extra.css`; `mkdocs.yml` (extra_css); `DocsCaptureTests.cs` (per-panel sizing + removed the size-test scaffold).
+**Decisions:** only the two content-heavy panels use 1440×1080 (they overflow the base window and render clean); the rest stay 1024×600 (centred modals look worse enlarged). Inline images are big + click-to-zoom for full detail.
+**Scheduled next:** publish (Pages) when ready; optional Monarch/combat/Declaration dialogs for ch13/17/19. Kanban **`86d3k3a1f`**.
+**Follow-ups:** the dynamic dialogs; About-screen link; `MANUAL.md` fate.
+**Needs you:** refresh the local preview (**http://127.0.0.1:8000/crown-and-colony/**) → "Managing a Colony" now shows the whole colony; click the image to zoom to full detail.
+
+---
+
 ## 2026-07-05 — Screenshots on (almost) every page (86d3k3a1f)
 
 **Requested (Chris):** almost every page has no screenshot — wants coverage across the whole guide.
