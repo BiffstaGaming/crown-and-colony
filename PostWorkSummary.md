@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-07 — Second-round fidelity fixes: De Soto naval sight + overcrowding −1 + native buy-back + doc-deviations (3 shipped)
+
+**Requested (Chris):** second-round triage — "de soto naval sight - yes, overcrowding - yes, native buy back - yes, custom house - no, continental - no, document updates - yes" (boycott declined; tax cap not mentioned).
+**Did:**
+- **✅ De Soto naval sight + overcrowding −1** (`86d3kgbtj`, commit `61e90e3`) — Hernando de Soto's +1 line-of-sight now lifts **every unit incl. ships** (dropped the `!IsNaval` gate in `LineOfSightOf`, widening FreeCol's land-only scope to match Col1). `Colony.ProductionBonus` dropped FreeCol's 2nd "very-bad government" −2 tier — **Col1 has a single −1 bad-government tier**; `Government.VeryBad` stays parsed but unapplied, preferred-size hint collapsed to one tier. RNG-free, no save bump.
+- **✅ Native buy-back volume** (`86d3kgbrw`, commit `4771621`) — buying from a settlement is now **gated on a prior sale** and **carrier-capped** (wagon buys back 100 per 100 sold, ship/galleon only 25, proportional) — the original 1994 mechanic (verified vs **two** community references), replacing FreeCol's free-buy-from-store. Transient per-carrier allowance (granted on sell, spent on buy, cleared each `EndTurn`); **no save bump**, **human-only** so AI/soak untouched. Panel is oracle-driven → the Buy button only appears after a sale.
+- **✅ Document deviations** (`86d3kgbu2`, commit `42d5c82`) — docs-only: added the **5 Tier-4 do-not-import cautions** (Civ4Col REF figures, Civ IV scout terrain-LoS, multiplicative combat stacking / no hidden modifiers, FF escape-reroll exploit, unverifiable LCR odds) + **4 Tier-2 deviation notes** (warehouse food-199, road +1 silver, native trade premiums/soft-cap/food-loop, market price-recovery) to the matching system docs. **Also fixed real drift** the De Soto slice missed: fog-of-war.md (×4) + founding-fathers.md (×1) still said de Soto was "land units only".
+**Status:** **L1/L2 2736 green** (the 2 perf soak micro-benchmarks are the known machine-load flake — both pass in isolation; 4 correctness soak tests green, byte-stable); **L3 NativeSettlementPanel 15 green**; all 3 commits pushed, **CI green incl. the L3 Godot job** (De Soto run `28823043953` ✓✓, buy-back run `28824562221` ✓✓).
+**Changed:** `Game.cs`, `Game.Natives.cs`, `Colony.cs`, `GovernmentLimits.cs`, `NativeSettlementPanel.cs`; +7 L1 (`NativeTradeTests`), buy/De-Soto/overcrowding tests rewired; 9 system docs + `feature-parity.md` (De Soto row 50, overcrowding 487→No, new buy-back row → **totals 968/21/27**) + review doc. Commits `61e90e3`, `4771621`, `42d5c82`.
+**Decisions:** buy-back allowance kept **transient/human-only** (no save bump, soak-safe) — a deliberate FreeCol→Col1 departure, documented. Overcrowding **drops** FreeCol's −2 tier rather than re-tuning it. Fixed De Soto doc drift proactively (it was a genuine no-drift violation).
+**Scheduled next:** **Tax cap 75%** decision (`86d3kgbtj` leftover) — see Needs-you; nothing else is pending (all other findings triaged: shipped or Cancelled).
+**Follow-ups:** flaky-scene-test chip `task_dd365b94` (pre-existing); man-o'-war pre-war availability is a *verification* item (Tier 2 #8, "needs a code check") — out of scope for the docs task, offer separately if wanted.
+**Needs you:** **Tax cap — yes/no?** We already cap tax via `model.option.maximumTax` on a **difficulty ladder** (veryEasy 50 → medium 65 → hardest 75); **Col1 used a flat 75%**. Bumping medium/all levels to 75 is a 1-value data change but a *rebalance* (harsher King on easy/medium) like the ones you declined. My lean: **decline / keep FreeCol's ladder** (it already reaches 75 at the top), but it's your call — asked in chat.
+
+---
+
 ## 2026-07-07 — Native first contact shipped (Col1 accept/reject → war + land)
 
 **Requested (Chris):** "yes, follow col1" — implement the native first-contact peace offer (previously blocked on source); then list the remaining tasks.
