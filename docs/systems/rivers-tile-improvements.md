@@ -81,7 +81,7 @@ A unit may build an improvement when it is a colonial land unit, on the map, hol
 
 | Improvement | Buildable on | Work turns (base + add) | Tools | Effect on completion |
 |---|---|---|---|---|
-| **Road** (`model.improvement.road`) | any land (scope: not water) | terrain + **0** | 20 (one count) | movement-cost 1 along connected road/river tiles; +2 furs, +2 lumber, +1 ore, +1 silver |
+| **Road** (`model.improvement.road`) | any land (scope: not water) | terrain + **0** | 20 (one count) | movement-cost 1 along connected road/river tiles; +2 furs, +2 lumber, +1 ore, +1 silver *(Col1-fidelity note `86d3kgbu2`: the original boosted **furs / lumber / ore only** — the +1 silver is a FreeCol-classic addition we inherit; accepted deviation, see [review](../reference/col1-online-fidelity-review-2026-07.md) Tier 2)* |
 | **Plow** (`model.improvement.plow`) | cleared land — not forest, hills, mountains, arctic, water | terrain + **2** | 20 | +1 grain, +1 sugar, +1 tobacco, +1 cotton |
 | **Clear forest** (`model.improvement.clearForest`) | forest only | terrain + **2** | 20 | terrain → its cleared base type (mixed→plains, conifer→grassland, …); a one-off lumber batch (20, scrub 10) to the owning colony |
 

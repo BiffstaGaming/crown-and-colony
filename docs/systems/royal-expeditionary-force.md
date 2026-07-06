@@ -34,6 +34,8 @@ There's a friendly mirror to the King's army: the **foreign Intervention Force**
 
 **Deviations from original / FreeCol:** the composition + the `×1.1` navy-growth rule + the 1-3 land roll match FreeCol; the base **counts** are now `refSize` difficulty data (`86d3c9rg6`), while the unit **types** stay hardcoded (faithful-subset). RNG is the ephemeral monarch generator (off stream 0).
 
+> ⚠️ **Do not re-tune the REF toward the "8 Regulars / 4 Dragoons / 4 Artillery / 4 Men-o'-War, navy-first growth, `revolutionEuropeUnitThreshold`" figures circulating online** (`86d3kgbu2`, Col1-fidelity pass — [review](../reference/col1-online-fidelity-review-2026-07.md) Tier 4 cautions). Those are **Civ IV: Colonization (2008)** numbers — a *different game*. The 1994 manual only says the REF "grows"; our FreeCol-derived `refSize` + `×1.1` growth is the best-sourced model. Treat the folklore figures as unverifiable, not as a fidelity target.
+
 ## 3. Technical design
 
 - `Force` (`GameSession/Force.cs`): `LandUnits`/`NavalUnits` as `ForceEntry(UnitTypeId, RoleId, Count)` blocks; `AddLand`/`AddNaval` merge into a matching block; `SpaceRequired(ruleset)` / `NavalCapacity(ruleset)`; `LandUnitCount`/`NavalUnitCount`. The **intervention** force uses a separate, simpler `InterventionForceComposition`/`InterventionForceUnit` pair (declared alongside `Ruleset`) — it doesn't need the space/capacity ferry maths, so it's a flat list of `(UnitTypeId, RoleId, Count)` blocks with the land/naval split decided at spawn from each unit type's `IsNaval` flag.

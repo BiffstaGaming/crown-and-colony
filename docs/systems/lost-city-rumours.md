@@ -37,6 +37,8 @@ Whatever the result, the rumour is a one-shot: investigating it clears it from t
 
 The more land a map has, the more rumours appear (roughly one per 35 land tiles).
 
+> ⚠️ **Fidelity caveat — the exact odds are unverifiable, so "feels off" is not a bug** (`86d3kgbu2`, Col1-fidelity pass — [review](../reference/col1-online-fidelity-review-2026-07.md) Tier 4 cautions). The original 1994 game **never published** its lost-city-rumour outcome probabilities or gold formulas, and they were never reliably reverse-engineered. Our numbers are a faithful port of FreeCol's `dx`-scaled model — the best available reference — but they are **not** a checkable match to the original. Treat a "the rewards feel too generous/stingy" report as a tuning preference, not a correctness bug, and do not chase it against a Col1 "true value" that doesn't exist.
+
 ## 2. Detailed rules
 
 - **How many:** target = `width × height × 45% / 35` (FreeCol's "a rumour every `rumourNumber`=35 land tiles", using our generator's ~45%-land estimate in place of FreeCol's `landMass` option). On the default 36×24 map that's **11**. The actual number can be fewer if eligible tiles run out (never more).

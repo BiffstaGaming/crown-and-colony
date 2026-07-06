@@ -85,6 +85,8 @@ You sell your colonies' goods to Europe for **gold**, and Europe charges a **sal
 - [ ] Cross-check the chunked sell-down revenue against a FreeCol play-through for a known seed.
 - [ ] AI buying goods in Europe (needs a docked AI ship — FP-6).
 
+> ⚠️ **Col1-fidelity notes — two accepted Tier-2 price deviations** (`86d3kgbu2`, Col1-fidelity pass — [review](../reference/col1-online-fidelity-review-2026-07.md) Tier 2): (a) **price recovery is a uniform `turn/10` drift toward baseline**, whereas Col1 used **per-good rise/fall rates** (silver recovers slowly, ore quickly), so relative good economics drift from the original over a long game; (b) the **Dutch advantage** in Col1 was *both* reduced trade impact *and* faster price recovery — we model only the trade-impact halving (`tradeBonus −50%`, above), leaving the recovery half (the smaller effect) unmodelled. Both low-impact; documented so a future pass doesn't chase them as bugs.
+
 ## Changelog
 
 | Date | Change | Commit |
