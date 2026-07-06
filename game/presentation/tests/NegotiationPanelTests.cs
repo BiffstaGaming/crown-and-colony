@@ -693,7 +693,15 @@ public class NegotiationPanelTests
             game.Map.InBounds(p) && !game.Map.TerrainAt(p).IsWater && game.Map.TerrainAt(p).CanSettle
             && game.ColonyAt(p) == null && game.NativeSettlementAt(p) == null && !game.Map.IsNativeOwned(p)
             && !game.Units.Any(u => u.IsOnMap && u.Position == p)
-            && p.Neighbours().Any(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater)
+            && p.Neighbours().Any(n => game.Map.InBounds(n) && game.Map.TerrainAt(n).IsWater) // coastal: a water neighbour (the sell tests dock a ship there)
+            // AND a FREE LAND neighbour, guaranteed here so callers that place an adjacent land unit (the demand-tribute
+            // test's artillery) always find one — the old predicate required only a water neighbour, so when this first
+            // coastal site's land neighbours were all occupied (starting units / a native settlement, which varies with
+            // the scene-suite's process state) the caller's `.First(free land)` threw "sequence contains no matching
+            // element" — a recurring L3 flake surfacing on DemandTributeFromColony (86d3kgbu2 flaky-scene sweep).
+            && p.Neighbours().Any(n => game.Map.InBounds(n) && !game.Map.TerrainAt(n).IsWater
+                && game.ColonyAt(n) == null && game.NativeSettlementAt(n) == null
+                && !game.Units.Any(u => u.IsOnMap && u.Position == n))
             && p.Neighbours().All(n => !game.Map.InBounds(n) || game.ColonyAt(n) == null));
         Unit founder = game.SpawnUnit(game.Ruleset.Unit(Colony.FreeColonistTypeId), site);
         Colony colony = game.FoundColony(founder);
