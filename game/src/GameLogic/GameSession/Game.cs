@@ -12414,8 +12414,23 @@ public sealed partial class Game
     /// <see cref="ComputeBuildingProduction"/> (the shared pure calculator the production-summary read also uses) and
     /// applies them to the warehouse; breeding is its own auto-production path.
     /// </summary>
-    private void RunBuildingProduction(Colony colony, BuildingType building, int foodProducedThisTurn, bool ownerBankrupt = false)
+    private void RunBuildingProduction(Colony colony, BuildingType building, int foodProducedThisTurn, IGameRandom rng, bool ownerBankrupt = false)
     {
+        // Col1 building learning-by-doing (86d3kgbpd): the expert this building's work teaches + the good it makes, so a
+        // free occupant can learn it by working (rolled below). Every classic building entry is single-output.
+        string? expertType = null;
+        string? expertStorageId = null;
+        foreach (ProductionEntry probe in building.Productions)
+        {
+            if (BuildingExpertType(probe) is { } et)
+            {
+                expertType = et;
+                expertStorageId = Ruleset.StorageIdOf(probe.Outputs.First(o => Ruleset.ExpertForProducing(o.GoodsId) == et).GoodsId);
+                break;
+            }
+        }
+        int expertGoodProduced = 0;
+
         foreach (ProductionEntry entry in building.Productions)
         {
             // Auto-production breeding (horses): a herd-size growth formula — gated at the breeding number, capped at
@@ -12430,7 +12445,18 @@ public sealed partial class Game
             foreach ((string storageId, int delta) in ComputeBuildingProduction(colony, building, entry, colony.StoreOf, ownerBankrupt))
             {
                 colony.AddGoods(storageId, delta);
+                if (storageId == expertStorageId && delta > 0)
+                {
+                    expertGoodProduced += delta; // this turn's output of the expert's good is the experience gain
+                }
             }
+        }
+
+        // A free colonist working this building may learn its trade over time (mirrors the tile-worker experience path).
+        // A building with no expert (a warehouse / depot / stockade) teaches nothing — no roll, no RNG draw.
+        if (expertType is not null)
+        {
+            AccrueAndRollBuildingExperience(colony, building.Id, expertType, expertGoodProduced, rng);
         }
     }
 
@@ -13190,7 +13216,7 @@ public sealed partial class Game
         bool ownerBankrupt = owner.Bankrupt;
         foreach (string buildingId in colony.Buildings)
         {
-            RunBuildingProduction(colony, Ruleset.Building(buildingId), foodThisTurn, ownerBankrupt);
+            RunBuildingProduction(colony, Ruleset.Building(buildingId), foodThisTurn, rng, ownerBankrupt);
         }
 
         // 1d. Construction completes when materials are saved up.
@@ -13575,6 +13601,53 @@ public sealed partial class Game
         if (maxValue > 0 && rng.Next(maxValue) < Math.Min(colony.TileWorkerExperienceAt(tile), maxExperience))
         {
             colony.UpgradeTileWorker(tile, expertType);
+        }
+    }
+
+    /// <summary>
+    /// The classic on-the-job experience probability (FreeCol's tile-expert <c>&lt;unit-type-change&gt;</c> rows all use
+    /// <c>probability="4"</c>). FreeCol's classic spec carries NO experience row for a building expert — it teaches them
+    /// only in schools — but the original 1994 Colonization let a colonist learn any building trade by working it, so
+    /// Col1's building learning-by-doing (86d3kgbpd) reuses this same rate.
+    /// </summary>
+    private const int ClassicBuildingExperienceProbability = 4;
+
+    /// <summary>
+    /// Building on-the-job learning (86d3kgbpd — the original 1994 Colonization's "a colonist learns through experience"
+    /// for BUILDINGS, absent from FreeCol which teaches building experts only in schools): a <b>free</b> colonist working
+    /// <paramref name="buildingId"/> accrues this turn's <paramref name="produced"/> output as shared experience toward
+    /// its <paramref name="expertType"/> and rolls a per-turn chance to upgrade one free occupant in place — the same
+    /// <c>experience / (100·maxExp/probability)</c> formula as the tile path (<see cref="AccrueAndRollExperience"/>),
+    /// peaking at 4%/turn once experience caps. Draws <b>no</b> RNG when no free colonist staffs the building (and clears
+    /// any stale pool), so it never perturbs the deterministic stream where there is nothing to learn; experts and
+    /// non-free workers cannot self-upgrade.
+    /// </summary>
+    internal void AccrueAndRollBuildingExperience(Colony colony, string buildingId, string expertType, int produced, IGameRandom rng)
+    {
+        // Only free colonists learn on the job; with none in the building there is nothing to learn (and no RNG drawn).
+        if (!colony.BuildingOccupants(buildingId).Any(t => t == Colony.FreeColonistTypeId))
+        {
+            colony.ClearBuildingWorkerExperience(buildingId);
+            return;
+        }
+        int maxExperience = Ruleset.Unit(Colony.FreeColonistTypeId).MaximumExperience;
+        if (maxExperience <= 0)
+        {
+            return;
+        }
+        // A variant may add an explicit experience <unit-type-change> to a building expert; otherwise use Col1's rate.
+        int probability = Ruleset.ExperienceUpgradeProbability(Colony.FreeColonistTypeId, expertType);
+        if (probability <= 0)
+        {
+            probability = ClassicBuildingExperienceProbability;
+        }
+
+        colony.AddBuildingWorkerExperience(buildingId, produced, maxExperience);
+        int maxValue = 100 * maxExperience / probability; // classic: 100·200/4 = 5000 → peak chance 200/5000 = 4%/turn
+        if (maxValue > 0 && rng.Next(maxValue) < Math.Min(colony.BuildingWorkerExperienceAt(buildingId), maxExperience))
+        {
+            colony.UpgradeBuildingWorker(buildingId, Colony.FreeColonistTypeId, expertType); // one free colonist graduates
+            colony.ClearBuildingWorkerExperience(buildingId); // reset the shared pool after a graduation
         }
     }
 

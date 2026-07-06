@@ -1377,7 +1377,7 @@ public class MonarchTests
         string json = CrownAndColony.GameLogic.Persistence.SaveGame.From(FoundedGame()).ToJson();
         Assert.DoesNotContain("\"PendingMonarchDemand\"", json);
         Assert.DoesNotContain("\"LastTaxRaiseTurn\"", json);
-        Assert.Equal(69, CrownAndColony.GameLogic.Persistence.SaveGame.CurrentVersion);
+        Assert.Equal(70, CrownAndColony.GameLogic.Persistence.SaveGame.CurrentVersion);
     }
 
     [Fact]

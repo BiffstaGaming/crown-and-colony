@@ -82,7 +82,7 @@ public class CustomHouseTests
 
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
-        Assert.Equal(69, SaveGame.CurrentVersion);
+        Assert.Equal(70, SaveGame.CurrentVersion);
         Assert.Equal(AutoExportMode.ExportAllOverLevel, restored.AutoExportMode);
         Assert.Equal(new Colony.ExportSetting(true, 75), restored.Colonies.Single(c => c.Id == colony.Id).ExportOf(Sugar));
     }
@@ -166,7 +166,7 @@ public class CustomHouseTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
         Colony loaded = restored.Colonies.Single(c => c.Id == colony.Id);
 
-        Assert.Equal(69, SaveGame.CurrentVersion);
+        Assert.Equal(70, SaveGame.CurrentVersion);
         Assert.Equal(130, loaded.ExportOf(Sugar).ImportLevel);                 // set level survives
         Assert.Equal(Colony.ImportLevelUnset, loaded.ExportOf(Ore).ImportLevel); // export-only good loads import-unset
         Assert.Equal(new Colony.ExportSetting(true, 60), loaded.ExportOf(Ore));  // its export pair intact

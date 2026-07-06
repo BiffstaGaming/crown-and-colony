@@ -251,5 +251,5 @@ public class NativeInteractionTests
     }
 
     [Fact]
-    public void SaveVersion_IsCurrent() => Assert.Equal(69, SaveGame.CurrentVersion);
+    public void SaveVersion_IsCurrent() => Assert.Equal(70, SaveGame.CurrentVersion);
 }

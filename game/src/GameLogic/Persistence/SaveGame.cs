@@ -21,7 +21,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 69;
+    public const int CurrentVersion = 70;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -665,6 +665,12 @@ public sealed record SaveGame
                     // no school is mid-training, so a non-teaching game stays byte-identical to v59.
                     SchoolTrainingSlots: c.SchoolTrainingTurns.Count > 0
                         ? c.SchoolTrainingTurns.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<int>)kv.Value.ToList())
+                        : null,
+                    // Building on-the-job experience (v70): each building's free workers' accrued experience toward its
+                    // expert; only POSITIVE values are stored (a 0 pool is the default and restore skips it, matching the
+                    // per-tile filter — so a game with no in-progress building learning stays byte-identical to v69).
+                    BuildingWorkerExperience: c.BuildingWorkerExperience.Any(kv => kv.Value > 0)
+                        ? c.BuildingWorkerExperience.Where(kv => kv.Value > 0).ToDictionary(kv => kv.Key, kv => kv.Value)
                         : null))
                 .ToList(),
             Resources = game.Map.Resources.Count > 0
@@ -951,6 +957,12 @@ public sealed record SaveGame
                 {
                     colony.RestoreBuildingWorkerTypes(buildingId, types);
                 }
+                // Building on-the-job experience (v70; pre-v70 / absent ⇒ 0).
+                foreach ((string buildingId, int experience) in
+                         c.BuildingWorkerExperience ?? new Dictionary<string, int>())
+                {
+                    colony.SetBuildingWorkerExperience(buildingId, experience);
+                }
                 foreach (string type in c.IdleWorkerTypes ?? [])
                 {
                     colony.AddIdleColonist(type);
@@ -1190,6 +1202,7 @@ public sealed record SaveGame
 /// <param name="SchoolTraining">Pre-v60 per-school single-counter training turns (v32..v59; one int per school). Read-only legacy field for loading older saves — restored as the building's slot-0 teacher turns; never written by v60+ (which uses <paramref name="SchoolTrainingSlots"/>).</param>
 /// <param name="TeaPartyBellTurns">Turns remaining of the Boston-Tea-Party bell surge (v37; null/omitted when 0, so a no-party colony is byte-identical to v36).</param>
 /// <param name="SchoolTrainingSlots">Per school building, the per-teacher-slot accrued training turns (v60; a college/university teaches one student per teacher in parallel, so each teacher carries its own counter). Null/omitted when no school is mid-training, so a non-teaching game is byte-identical to v59.</param>
+/// <param name="BuildingWorkerExperience">Per building, its free colonists' shared accrued on-the-job experience toward that building's expert (v70, building learning-by-doing 86d3kgbpd; null/omitted when none accrued, so a game with no in-progress building learning is byte-identical to v69).</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
     IReadOnlyDictionary<string, int>? Stores = null,
@@ -1205,7 +1218,8 @@ public sealed record SavedColony(
     IReadOnlyList<string>? IdleWorkerTypes = null,
     IReadOnlyDictionary<string, int>? SchoolTraining = null,
     int? TeaPartyBellTurns = null,
-    IReadOnlyDictionary<string, IReadOnlyList<int>>? SchoolTrainingSlots = null);
+    IReadOnlyDictionary<string, IReadOnlyList<int>>? SchoolTrainingSlots = null,
+    IReadOnlyDictionary<string, int>? BuildingWorkerExperience = null);
 
 /// <summary>A colony's custom-house export/import setting for one good (v28+; only non-default goods are stored).</summary>
 /// <param name="Exported">Whether the good auto-exports.</param>

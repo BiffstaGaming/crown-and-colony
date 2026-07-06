@@ -147,7 +147,7 @@ public class AiCustomHouseTests
 
         string json = SaveGame.From(game).ToJson();
         Assert.Equal(json, SaveGame.From(SaveGame.FromJson(json).Restore(Classic)).ToJson());
-        Assert.Equal(69, SaveGame.CurrentVersion); // no new save version was needed
+        Assert.Equal(70, SaveGame.CurrentVersion); // no new save version was needed
     }
 
     [Fact]

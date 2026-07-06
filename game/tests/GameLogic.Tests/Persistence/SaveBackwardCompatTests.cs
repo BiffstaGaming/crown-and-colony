@@ -165,7 +165,7 @@ public class SaveBackwardCompatTests
             if (v68Lines[i].Contains("\"Version\":"))
             {
                 Assert.Contains("68", v68Lines[i]);
-                Assert.Contains("69", resavedLines[i]);
+                Assert.Contains("70", resavedLines[i]);
                 continue; // the one permitted difference
             }
             Assert.Equal(v68Lines[i], resavedLines[i]);

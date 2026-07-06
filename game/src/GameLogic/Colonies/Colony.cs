@@ -69,6 +69,7 @@ public sealed class Colony
     private readonly Dictionary<string, List<string>> _buildingWorkerTypes = []; // building → its non-free occupants' types
     private readonly List<string> _idleWorkerTypes = [];                          // non-free colonists with no assignment
     private readonly Dictionary<Position, int> _tileWorkerExperience = [];        // tile → its free-colonist worker's accrued on-the-job experience (86d3c9pgj; absent ⇒ 0, cleared when the occupant leaves/changes)
+    private readonly Dictionary<string, int> _buildingWorkerExperience = [];      // building id → its free-colonist occupants' shared accrued on-the-job experience toward that building's expert (86d3kgbpd; absent ⇒ 0, cleared on a graduation or when no free colonist staffs it)
     private readonly Dictionary<string, List<int>> _schoolTrainingTurns = [];     // school building id → per-teacher-slot turns accrued toward each teacher's current student (86d3fpyc0; absent/short ⇒ 0; one entry per parallel teacher — schoolhouse 1, college 2, university 3)
 
     /// <summary>The unit-type id of a plain colonist — the implicit default for any worker without an overlay entry.</summary>
@@ -182,6 +183,12 @@ public sealed class Colony
 
     /// <summary>Accrued tile-worker experience by tile (sparse — a tile with no/zero experience is absent). 86d3c9pgj.</summary>
     public IReadOnlyDictionary<Position, int> TileWorkerExperience => _tileWorkerExperience;
+
+    /// <summary>On-the-job experience the free colonists working <paramref name="buildingId"/> have accrued toward its expert (86d3kgbpd; 0 by default).</summary>
+    public int BuildingWorkerExperienceAt(string buildingId) => _buildingWorkerExperience.GetValueOrDefault(buildingId);
+
+    /// <summary>Accrued building-worker experience by building (sparse — a building with no/zero experience is absent). 86d3kgbpd.</summary>
+    public IReadOnlyDictionary<string, int> BuildingWorkerExperience => _buildingWorkerExperience;
 
     /// <summary>
     /// The unit-type ids of a building's workers — the non-free occupants from the overlay plus free colonists padded
@@ -497,6 +504,22 @@ public sealed class Colony
         if (experience > 0)
         {
             _tileWorkerExperience[tile] = experience;
+        }
+    }
+
+    /// <summary>Adds <paramref name="amount"/> on-the-job experience to <paramref name="buildingId"/>'s free workers, clamped to <paramref name="cap"/> (86d3kgbpd).</summary>
+    internal void AddBuildingWorkerExperience(string buildingId, int amount, int cap) =>
+        _buildingWorkerExperience[buildingId] = Math.Min(_buildingWorkerExperience.GetValueOrDefault(buildingId) + amount, cap);
+
+    /// <summary>Clears a building's accrued on-the-job experience — on a graduation, or when no free colonist staffs it (86d3kgbpd).</summary>
+    internal void ClearBuildingWorkerExperience(string buildingId) => _buildingWorkerExperience.Remove(buildingId);
+
+    /// <summary>Restores a building's accrued worker experience from a save (skips 0 to keep the map sparse). 86d3kgbpd.</summary>
+    internal void SetBuildingWorkerExperience(string buildingId, int experience)
+    {
+        if (experience > 0)
+        {
+            _buildingWorkerExperience[buildingId] = experience;
         }
     }
 
