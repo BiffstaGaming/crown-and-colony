@@ -40,7 +40,7 @@ Ordered by player impact. "Effort" is rough: **Data** = ruleset/option value cha
 | 1 | **Treasure King's-cut** | Flat, **difficulty-scaled 50% → 70%** (Discoverer→Viceroy); galleon/Cortés = free | Cut = **current tax rate** → early treasure cashes almost fee-free. Matches *neither* Col1 nor FreeCol (flat 60%) | **High** | High | Data | Replace with difficulty-driven 50→70% fee; keep galleon/Cortés free path. Fix parity row 304. |
 | 2 | **Native first contact** | Chief offers **peace + small land grant**; **reject → immediate war** | One-way audience: reveal tiles + flat 10–80 gold gift. No accept/reject, no war branch, no land | **High** | Med | Code | Model Accept/Reject (reject→war) + starting land parcel; keep tales-reveal, drop auto-gold. First native interaction every game. |
 | 3 | **"+50% attacking a colony"** | Bonus for **all European regular troops** assaulting a colony (on top of the universal +50%) | Gated to **REF only** (`IsRefUnit`) | Med | High | Code | Apply colony-assault +50% to any land unit attacking a settlement. Fix parity row 212 (Col1="No" is wrong). |
-| 4 | **Tax cap** | King raises sales tax up to **75%** | Capped at **65%** (FreeCol `maximumTax`) | Med | High* | Data | Raise classic `maximumTax` to 75, or document 65 as a deliberate FreeCol-following choice. *Cross-corroborated by two independent agents.* |
+| 4 | **Tax cap** — ⛔ **declined 2026-07-07 (keep ladder)** | King raises sales tax up to **75%** | Capped on a difficulty ladder (medium **65%**, hardest **75%**) via FreeCol `maximumTax` | Med | High* | Data | **Chris chose to keep FreeCol's difficulty-scaled ladder** (50→65→75) — it already reaches Col1's flat 75% at the hardest level; a flat 75% is a rebalance (harsher King on easy/medium). Documented as an accepted deviation. *Cross-corroborated by two independent agents.* |
 | 5 | **Building learning-by-doing** | A free colonist working **any** job — incl. a distillery/weaver/blacksmith — can become that building's master ("learned through experience") | Only **tile** workers self-upgrade; building experts can never be self-taught | Med | High | Code | Implement building-worker experience, or accept the omission. **Parity row 152's note is factually wrong** (claims FreeCol's table covers building work — it covers 9 outdoor experts only). |
 | 6 | **Custom-house export logic** | Sells a good **only when stock ≥ 100**, always **leaves 50**; then waits (hysteresis) | Sells everything above a configurable level **every turn** (trickle) | Med | Med-High | Data/Code | Add a classic "100-arm / 50-floor" mode. Chunky vs trickle sales give different income & price curves. |
 | 7 | **Overcrowding penalty** | Single "bad government" tier: **−1** to all production (at 6–10 Tories by difficulty) | FreeCol's **two** tiers: −1, then **−2** at >10 Tories | Med | Med-High | Data | For strict fidelity cap the penalty at −1 (data-only limit change). Fix parity row 485 (claims Col1 had a −2 tier). |
@@ -139,10 +139,13 @@ break them:
   (`86d3kgbna`), Col1 scoring profile (`86d3kgbq0`), 1800/1850 auto-end (`86d3kgbrc`).
 - **Second-round triage (2026-07-07, Chris):** **✅ shipped** — De Soto naval sight + overcrowding −1 (from quick-values
   `86d3kgbtj`), **native buy-back volume** (#11, `86d3kgbrw` — sell-first + carrier cap wagon 100 / ship 25, verified
-  against two community references; transient, human-only, no save bump). **Approved, in progress** —
-  document-deviations (`86d3kgbu2`). **Declined (→ Cancelled)** — custom-house classic mode (`86d3kgbpn`),
-  Continental muster (`86d3kgbr0`), boycott-lift ×500 (dropped from `86d3kgbtj`). **Pending Chris** — tax cap 75%
-  (from `86d3kgbtj`, not yet decided).
+  against two community references; transient, human-only, no save bump), **document-deviations** (`86d3kgbu2` — the
+  5 Tier-4 do-not-import cautions + 4 Tier-2 deviation notes added to the system docs, plus a De Soto doc-drift fix).
+  **Declined (→ Cancelled)** — custom-house classic mode (`86d3kgbpn`), Continental muster (`86d3kgbr0`),
+  boycott-lift ×500 (dropped from `86d3kgbtj`), **tax cap 75%** (`86d3kgbtj` sub-item — **Chris chose 2026-07-07 to
+  keep FreeCol's difficulty-scaled `maximumTax` ladder** 50→65→75, which already reaches Col1's flat 75% at the hardest
+  level; a flat 75% is a rebalance like the others he kept). **The Col1 online-fidelity arc is now complete** — every
+  Tier-1/2 finding is shipped or a documented accepted deviation.
 - **All 8 Tier-3 parity-doc corrections stand regardless** — they fix factual errors in the doc, not behaviour.
 
 1. **Doc-only (safe, no-drift):** apply the Tier 3 corrections to `feature-parity.md`; add the Tier 4 cautions to the
