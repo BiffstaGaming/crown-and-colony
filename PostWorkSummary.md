@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-06 (overnight) — Implemented approved fidelity fixes: 2 shipped, first-contact blocked on source
+
+**Requested (Chris, going to bed):** "begin working through ALL of the ones I've told you to do" (the 3 approved: colony-assault, building learning-by-doing, native first contact) + "update documents as required."
+**Did:**
+- **✅ Colony-assault +50% for all European powers** (`86d3kgbp3`, commit `da3d3ba`→pushed `d9dbb99`). `AttackContext.Bombard` now fires for any non-native attacker storming a colony (`inColony && !attacker.IsNative`) at both combat sites — widened from the REF-only gate; value still from the spec. +1 L2; two forced-roll `ColonyDefenceBonusTests` re-calibrated. **CI fully green** (incl. L3/L4). Docs: combat.md (both layers + changelog), feature-parity row 212→Yes.
+- **✅ Building learning-by-doing** (`86d3kgbpd`, commit `39912d9`, **save v70**). A free colonist working a building accrues its expert-good output + rolls the tile-path 4%-peak chance to upgrade in place to the building's expert (`Game.AccrueAndRollBuildingExperience` ← `RunBuildingProduction`; per-building pool `Colony._buildingWorkerExperience`; owner's stream). +12 L2 (incl. a 0-pool round-trip regression the 25-seed soak caught first). ~31 version-pin tests bumped 69→70. Docs: education-schools.md (both layers + changelog), save-load.md, feature-parity row 152→Yes (totals **968/21/26**). CI scene job **flaked on an unrelated headless-pick test** (`InputTests.RightClickTileMenu_ActivatesAUnitInAStack` — founds no colony, never EndTurns, so my code can't touch it; full scene suite passes 391/391 locally) → **re-ran the job**.
+- **⛔ Native first contact — deliberately NOT implemented** (`86d3kgbnq` → In Design, blocked). Re-verified the source before touching core code: the **1994 manual does NOT confirm** the accept/reject→war + land-grant mechanic (only "they tell you how many major towns…"); it's **Fandom-only (secondary)**, which the review flagged can conflate Col1 with **Civ4Col-2008**. Shipping an every-game core-behaviour change on unconfirmed sourcing would risk making the game *less* faithful — the trap the whole review avoids, and exactly the "verify vs manual first" caveat I set. Captured a full implementation map on the task for when it's confirmed.
+**Status:** **2 fidelity features shipped** (each 2721 L1/L2 + 5 soak green locally; colony-assault CI fully green; building-learning CI scene job re-running after an unrelated flake). Feature 3 deferred pending Chris's source call. No broken behaviour on main.
+**Changed:** `Game.cs`, `Combat.cs`, `Colony.cs`, `SaveGame.cs`, `combat.md`, `education-schools.md`, `save-load.md`, `feature-parity.md`, review doc, +1 new test file, ~31 version-pin test bumps. Commits `da3d3ba`(→`d9dbb99`), `39912d9`.
+**Decisions:** implemented the two **manual-confirmed** items; **deferred first-contact** because the primary source doesn't corroborate it (honoring my own "verify-first" caveat). Committed + pushed each as its own CI-gated slice.
+**Scheduled next:** Chris **confirm-or-drop the first-contact mechanic** from a Col1 source (`86d3kgbnq`, In Design); then the still-to-triage fidelity items — custom-house `86d3kgbpn`, muster `86d3kgbr0`, buy-back `86d3kgbrw`, quick-values `86d3kgbtj`, document-deviations `86d3kgbu2`.
+**Follow-ups:** flaky scene test hardening (chip `task_dd365b94`); confirm the feature-2 CI rerun went green.
+**Needs you:** (1) **confirm/deny the Col1 first-contact accept/reject→war+land mechanic** from an authoritative source before I build it (it may be a Civ4Col conflation); (2) triage the remaining 5 fidelity tasks.
+
+---
+
 ## 2026-07-06 — Online-research fidelity pass: original Col1 vs Crown & Colony
 
 **Requested (Chris):** another pass through FreeCol/Colonization mechanics **including online searches**, then compare with what C&C has.
