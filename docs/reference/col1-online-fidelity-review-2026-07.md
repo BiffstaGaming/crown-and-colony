@@ -65,7 +65,7 @@ Ordered by player impact. "Effort" is rough: **Data** = ruleset/option value cha
 | Rebel-sentiment score | +1 per **point of rebel sentiment** | Σ banked **liberty bells** (different quantity) | Med | Part of the scoring-profile item (#8). |
 | Price recovery model | **Per-good** rise/fall rates (silver recovers slow, ore fast) | Uniform `turn/10` drift toward baseline | Med | Relative good economics drift from the original. |
 | Dutch advantage | Reduced trade impact **and faster price recovery** | Only trade impact halved (`tradeBonus −50%`) | Low | Recovery half is the smaller effect. |
-| Man-o'-War availability | Appears in New-World waters **only during the War of Independence** | Verify no pre-war man-o'-war is obtainable (SUPPORT_SEA should grant a frigate) | Low | Needs a quick code check. |
+| Man-o'-War availability — ✅ **verified faithful 2026-07-07 (`86d3kgbu2`)** | Appears in New-World waters **only during the War of Independence** | **Confirmed: no pre-war man-o'-war is obtainable.** SUPPORT_SEA grants a **frigate** (`NavalSupportUnitTypeId`); the man-o'-war has no Europe `price` (`IsPurchasable` false), requires `independentNation` to build (post-declaration), and is never in a mercenary/support offer (`LoadMercenaries`/`GetSupport` use veteranSoldier/frigate). `ManOWarUnitTypeId` is used only in the King's REF (`BuildBaseRef`/`AddToRef`) and the post-declaration Foreign Intervention Force (`PlayerType.Rebel` only) — both war-time. | Low | ✅ Done — no change needed. |
 | Native camp food loop | Camps **demand** food; advanced tribes **gift** up to 75 food to starving colonies | Food branch flagged "unreachable" in our doc; tier split absent | Med | Blocked partly by our abstract food model; revisit when it matures. |
 
 ---
