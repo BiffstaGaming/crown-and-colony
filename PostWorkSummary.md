@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-07 — Loose ends: 2 flaky L3 scene tests fixed + man-o'-war pre-war availability verified
+
+**Requested (Chris):** "Fix the flaky scene and confirm the pre-war availability of man-o'war."
+**Did:**
+- **✅ Flaky test #1 — `InputTests.RightClickTileMenu_ActivatesAUnitInAStack`** (`task_dd365b94`, commit `a0911f9`): it computed the right-click screen point as `GetVisibleRect().Size / 2`, assuming the camera perfectly centred the tile — but when the seed's start sits near a map edge the Camera2D **clamps to its limits**, so `TileAtScreen(viewportSize/2)` picked the wrong (or out-of-bounds) tile → empty menu → `.First()` threw (the headless "0 tiles picked" flake). Fixed by **projecting the tile centre through the same transform `TileAtScreen` inverts** (`GetGlobalTransformWithCanvas`), so the pick round-trips to the exact tile regardless of CI viewport size or camera clamp. CI green.
+- **✅ Flaky test #2 — `NegotiationPanelTests.DemandTributeFromColony…`** (commit `4c1d1a3`): a **second, distinct** L3 flake that surfaced on my push (unrelated to my diff — it had passed 30 min earlier). `FoundCoastalColony` only guaranteed a *water* neighbour, so the test's `.First(free land)` for placing an adjacent artillery threw when the site's land neighbours were occupied (varies with scene-suite process state). Fixed by requiring a **free land neighbour at site-selection**. All 16 `NegotiationPanelTests` green.
+- **✅ Man-o'-war pre-war availability — verified confirmed-faithful** (`86d3kgbu2`, commit `33c8b52`, docs-only): **no man-o'-war is obtainable before the War of Independence.** SUPPORT_SEA grants a **frigate** (`NavalSupportUnitTypeId`); the man-o'-war has no Europe `price` (`IsPurchasable` false → `CheckBuyUnit` refuses), needs `independentNation` to build (post-declaration), and is in **no** support/mercenary offer (`LoadMercenaries` = veteran soldiers only). `ManOWarUnitTypeId` is used only in the King's REF (`BuildBaseRef`/`AddToRef`) and the post-declaration Foreign Intervention Force (`PlayerType.Rebel` only) — both war-time.
+**Status:** **CI fully green** — run `28829035311` (commit `4c1d1a3`): **L1+L2 ✓ + L3 ✓** (both flaky tests now pass on CI; the first also verified green on run `28828656013`'s successor). NegotiationPanelTests 16/16 green locally.
+**Changed:** `game/presentation/tests/InputTests.cs` (flake #1), `game/presentation/tests/NegotiationPanelTests.cs` (flake #2); docs `col1-online-fidelity-review-2026-07.md` (row #8 → verified) + `monarchy.md` (SUPPORT_SEA = frigate + confirmed-faithful note). Commits `a0911f9`, `33c8b52`, `4c1d1a3`.
+**Decisions:** hardened `FoundCoastalColony` at the source (guarantee a free land neighbour) rather than papering the one test — fixes the class of flake for all callers. Man-o'-war = confirmed faithful, **no code change** (verification only).
+**Scheduled next:** — nothing pending; the Col1 online-fidelity arc + both flagged loose ends are all closed. Awaiting your next steer.
+**Follow-ups:** —
+**Needs you:** **Nothing.** Both flaky scenes fixed + man-o'-war verified; CI green.
+
+---
+
 ## 2026-07-07 — Second-round fidelity fixes: De Soto naval sight + overcrowding −1 + native buy-back + doc-deviations (3 shipped)
 
 **Requested (Chris):** second-round triage — "de soto naval sight - yes, overcrowding - yes, native buy back - yes, custom house - no, continental - no, document updates - yes" (boycott declined; tax cap not mentioned).
