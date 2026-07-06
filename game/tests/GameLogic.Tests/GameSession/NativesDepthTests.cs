@@ -70,17 +70,21 @@ public class NativesDepthTests
         (Game game, NativeSettlement settlement, Unit ship) = SetupCoastalTrade();
         settlement.AddGoods("model.goods.sugar", 80);
         game.RecomputeWantedGoods(settlement);
-        int standard = game.NativeBuyPrice(settlement, "model.goods.sugar", 40);
+        // Col1 buy-back (86d3kgbrw): a ship must sell before the chief will sell back, and then only up to 25 — sell a
+        // lot of cloth to earn the allowance, then buy back 20 sugar (inside the ship's 25-unit ceiling).
+        ship.AddCargo("model.goods.cloth", 100);
+        game.SellToNatives(ship, settlement, "model.goods.cloth", 100);
+        int standard = game.NativeBuyPrice(settlement, "model.goods.sugar", 20);
         int agreed = standard * 8 / 10; // the player haggled the chief down ~20% (inside the ½-standard floor)
         Assert.True(agreed < standard && agreed > standard / 2, "the haggled bid must sit between the floor and the standard ask");
         int goldBefore = game.Gold;
 
-        int paid = game.BuyFromNatives(ship, settlement, "model.goods.sugar", 40, agreed);
+        int paid = game.BuyFromNatives(ship, settlement, "model.goods.sugar", 20, agreed);
 
         Assert.Equal(agreed, paid);                      // the engine charged the AGREED price…
         Assert.NotEqual(standard, paid);                 // …not the standard one
         Assert.Equal(goldBefore - agreed, game.Gold);
-        Assert.Equal(40, ship.CargoOf("model.goods.sugar"));
+        Assert.Equal(20, ship.CargoOf("model.goods.sugar"));
     }
 
     [Fact]

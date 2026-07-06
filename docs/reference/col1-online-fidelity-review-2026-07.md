@@ -47,7 +47,7 @@ Ordered by player impact. "Effort" is rough: **Data** = ruleset/option value cha
 | 8 | **End-game score values** | colonist +2, skilled +4, father +5, +1/1000 gold, +1/rebel-sentiment-point, **−(difficulty+1)** per razed native settlement | FreeCol's table: colonist **+3**, settlement penalty pinned **−5**, nation-destroy −50, + ship/soldier points Col1 never had | Med | High | Data | Add a Col1 scoring profile; keep FreeCol's for its ruleset. Score is the whole endgame. Flag parity rows 1071–1078. |
 | 9 | **Continental Army muster** | Mobilized veteran fraction **scales with rebel sentiment** (100% SoL → 100% mobilize) | FreeCol per-colony cap `(units+2)·(SoL−50)/100`; **zero below 50%** | Med | Med | Data/Code | Consider Col1-faithful muster (⌈SoL% × veterans⌉) as a ruleset option. Sets your opening army in the war you built toward. |
 | 10 | **Fixed end-year auto-end** | Game **auto-ends & scores** in **1800** (at peace) or **1850** (still fighting the War of Independence) | **No max-turn cap** — the calendar just advances forever; never force-scores | Med | High | Code | Implement the 1800/1850 auto-end → score screen (P7). Years are canonical, not approximate. |
-| 11 | **Native buy-back volume** | You may buy back only up to what you **just sold**, capped by carrier: **wagon ≤100, ship ≤25** per 100 sold | Offers the settlement's **whole store** regardless of any prior sale; ship = wagon | Med | High | Code | Track last-sold qty per session; cap buy at min(sold, store) with ship (25) vs wagon (100) multiplier. |
+| 11 | **Native buy-back volume** ✅ **shipped 2026-07-07 (`86d3kgbrw`)** | You may buy back only up to what you **just sold**, capped by carrier: **wagon ≤100, ship ≤25** per 100 sold | ~~Offers the settlement's whole store regardless of any prior sale; ship = wagon~~ → **now Col1-faithful**: `NativeBuyBackAllowance` gates buying on a sale, wagon 1:1 ≤100 / ship ¼ ≤25, cleared each turn (transient, human-only, no save bump) | Med | High | Code | ✅ Done — sell-first + carrier cap; verified against two community references. |
 | 12 | **Boycott-lift cost** | ≈ **ask price × 500** (Tools 2500, Coats 4000, Cloth 5500 observed) | **sale price × 300** ("classic factor"), keyed off *bid* not *ask* | Med | Med-High | Data | Re-derive arrears factor toward ask×500. Our boycotts are ~40% cheaper to clear than the original's. |
 | 13 | **Recruit price on the docks** | **Three distinct per-slot fees**, varying by **unit type**, falling as crosses accrue | **One shared price** for all three slots; not type-dependent; flat +30 escalation | Med | Med | Code | Keep FreeCol formula as baseline; document the delta. Per-slot quote only if faithful recruitment feel matters. |
 | 14 | **De Soto extended sight** | **All** units (incl. ships & scouts) get sight **2** | **+1 to land units only** (FreeCol `navalUnit=false`) — ships get nothing | Med | High | Data/Code | Lift naval sight too (or set land+naval to ≥2). Deliberate deviation from Col1 even though it matches FreeCol. |
@@ -138,9 +138,11 @@ break them:
 - **Do not change — keep current/FreeCol behaviour as an accepted deviation (tasks → Cancelled):** treasure King's-cut
   (`86d3kgbna`), Col1 scoring profile (`86d3kgbq0`), 1800/1850 auto-end (`86d3kgbrc`).
 - **Second-round triage (2026-07-07, Chris):** **✅ shipped** — De Soto naval sight + overcrowding −1 (from quick-values
-  `86d3kgbtj`). **Approved, in progress** — native buy-back (`86d3kgbrw`), document-deviations (`86d3kgbu2`).
-  **Declined (→ Cancelled)** — custom-house classic mode (`86d3kgbpn`), Continental muster (`86d3kgbr0`), boycott-lift
-  ×500 (dropped from `86d3kgbtj`). **Pending Chris** — tax cap 75% (from `86d3kgbtj`, not yet decided).
+  `86d3kgbtj`), **native buy-back volume** (#11, `86d3kgbrw` — sell-first + carrier cap wagon 100 / ship 25, verified
+  against two community references; transient, human-only, no save bump). **Approved, in progress** —
+  document-deviations (`86d3kgbu2`). **Declined (→ Cancelled)** — custom-house classic mode (`86d3kgbpn`),
+  Continental muster (`86d3kgbr0`), boycott-lift ×500 (dropped from `86d3kgbtj`). **Pending Chris** — tax cap 75%
+  (from `86d3kgbtj`, not yet decided).
 - **All 8 Tier-3 parity-doc corrections stand regardless** — they fix factual errors in the doc, not behaviour.
 
 1. **Doc-only (safe, no-drift):** apply the Tier 3 corrections to `feature-parity.md`; add the Tier 4 cautions to the

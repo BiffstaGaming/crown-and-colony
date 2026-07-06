@@ -331,25 +331,31 @@ public class NativeSettlementPanelTests
     }
 
     [TestCase(Timeout = 60000)]
-    public async Task BuyButton_BuysFromTheSettlementStore_ForGold_LoadingTheHold_DrainingTheStore()
+    public async Task BuyButton_AfterSelling_BuysBackUpToTheShipCeiling_LoadingTheHold_DrainingTheStore()
     {
+        // Col1 buy-back (86d3kgbrw): a settlement only sells to a trader that JUST sold to it, and a ship may buy back at
+        // most 25 (a quarter of a full sale). So the buy flow is a sell-then-buy: the ship sells its 100 sugar (earning a
+        // 25-unit allowance and emptying the hold), then buys back the 25-unit lot the allowance permits.
         (ISceneRunner runner, GameController controller, Game game, NativeSettlement settlement, Unit ship) =
-            await OpenTradePanel(shipCargo: 0, settlementSugar: 80, humanGold: 10000);
+            await OpenTradePanel(shipCargo: 100, settlementSugar: 80, humanGold: 10000);
 
-        // The settlement holds sugar to sell; the ship is empty and the human can afford it.
-        AssertThat(ship.CargoOf(Sugar)).IsEqual(0);
-        int goldBefore = game.Gold;
-        int stockBefore = settlement.GeneralStockOf(Sugar);
-        int lot = System.Math.Min(stockBefore, 100); // GoodsToSell offers the store capped at one hold (100)
+        // Sell first — until then the chief offers nothing, so no Buy button exists.
+        AssertThat(FindButton(controller, "Buy")).IsNull();
+        await Press(runner, controller, "Sell");
+        await Press(runner, controller, "Trade_sugar");
+        await Press(runner, controller, "Accept");
+        AssertThat(ship.CargoOf(Sugar)).IsEqual(0);            // the hold emptied into the store
+        int stockAfterSell = settlement.GeneralStockOf(Sugar); // 80 + 100 = 180
+        int goldAfterSell = game.Gold;
 
-        // Open the Buy sub-flow, pick the sugar lot, accept (pay) the natives' asking price.
+        // Now the Buy button appears; buy back the 25-unit ceiling.
         await Press(runner, controller, "Buy");
         await Press(runner, controller, "Trade_sugar");
         await Press(runner, controller, "Accept");
 
-        AssertThat(game.Gold).IsLess(goldBefore);                                // gold was spent
-        AssertThat(ship.CargoOf(Sugar)).IsEqual(lot);                            // the hold loaded the lot
-        AssertThat(settlement.GeneralStockOf(Sugar)).IsEqual(stockBefore - lot); // the store drained by the lot
+        AssertThat(game.Gold).IsLess(goldAfterSell);                                 // gold was spent buying back
+        AssertThat(ship.CargoOf(Sugar)).IsEqual(25);                                 // the ship's 25-unit buy-back ceiling
+        AssertThat(settlement.GeneralStockOf(Sugar)).IsEqual(stockAfterSell - 25);   // the store drained by the lot
     }
 
     [TestCase(Timeout = 60000)]

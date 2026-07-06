@@ -276,10 +276,14 @@ public partial class NativeSettlementPanel : PanelContainer
         ship.Cargo.Any(kv => kv.Value > 0)
         && SellableGoods(ship).Any(g => _game.CheckSellToNatives(ship, _settlement, g.GoodsId, g.Amount).Allowed);
 
-    /// <summary>Whether the acting ship could buy here (it has free hold space and the settlement offers a good it can afford).</summary>
+    /// <summary>
+    /// Whether the acting ship could buy here: it has free hold space and the settlement offers a good it can afford.
+    /// Under the Col1 buy-back rule this is <b>false until the ship has sold to the settlement this visit</b> — a settlement
+    /// only sells to a trader that just traded to it (<see cref="Game.GoodsToSell(NativeSettlement, Unit)"/> is empty otherwise).
+    /// </summary>
     private bool CanBuy(Unit ship) =>
         _game.CargoSlotsFree(ship) > 0
-        && BuyableGoods().Any(g => _game.CheckBuyFromNatives(ship, _settlement, g.GoodsId, g.Amount).Allowed);
+        && BuyableGoods(ship).Any(g => _game.CheckBuyFromNatives(ship, _settlement, g.GoodsId, g.Amount).Allowed);
 
     /// <summary>The goods the acting ship is carrying, as (id, amount) pairs the player can offer to sell (most-carried first).</summary>
     private IReadOnlyList<(string GoodsId, int Amount)> SellableGoods(Unit ship) =>
@@ -289,8 +293,8 @@ public partial class NativeSettlementPanel : PanelContainer
             .Select(kv => (kv.Key, kv.Value))
             .ToList();
 
-    /// <summary>The goods the settlement currently offers for sale (FreeCol getSellGoods, via <see cref="Game.GoodsToSell"/>).</summary>
-    private IReadOnlyList<(string GoodsId, int Amount)> BuyableGoods() => _game.GoodsToSell(_settlement);
+    /// <summary>The goods the settlement offers <paramref name="ship"/> for sale, each lot capped at its Col1 buy-back allowance (empty until it has sold here this visit) — via <see cref="Game.GoodsToSell(NativeSettlement, Unit)"/>.</summary>
+    private IReadOnlyList<(string GoodsId, int Amount)> BuyableGoods(Unit ship) => _game.GoodsToSell(_settlement, ship);
 
     /// <summary>Opens the buy/sell sub-flow: clears any prior pick and shows the goods list for the chosen direction.</summary>
     private void OpenTrade(bool buying)
@@ -325,7 +329,7 @@ public partial class NativeSettlementPanel : PanelContainer
             return;
         }
 
-        IReadOnlyList<(string GoodsId, int Amount)> goods = _buying ? BuyableGoods() : SellableGoods(ship);
+        IReadOnlyList<(string GoodsId, int Amount)> goods = _buying ? BuyableGoods(ship) : SellableGoods(ship);
         dynamic.AddChild(Hint(_buying ? "Buy from their store:" : "Sell from your hold:"));
         bool any = false;
         foreach ((string goodsId, int amount) in goods)

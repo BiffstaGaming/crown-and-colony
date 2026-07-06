@@ -204,6 +204,18 @@ public class NativeTradeTests
         return (game, settlement, ship);
     }
 
+    /// <summary>
+    /// Sells a lot of cloth so <paramref name="carrier"/> earns a Col1 buy-back allowance at <paramref name="settlement"/>
+    /// — the units it may then buy (a wagon 1:1, a ship ¼, capped 100/25). Returns the allowance earned. Sells cloth (an
+    /// unwanted good the sugar-store assertions don't touch) and leaves the hold free to load the purchase (86d3kgbrw).
+    /// </summary>
+    private static int EarnBuyBackAllowance(Game game, Unit carrier, NativeSettlement settlement, int sell = 100)
+    {
+        carrier.AddCargo("model.goods.cloth", sell);
+        game.SellToNatives(carrier, settlement, "model.goods.cloth", sell);
+        return game.NativeBuyAllowanceRemaining(carrier, settlement);
+    }
+
     [Fact]
     public void GoodsToSell_ListsTheStore_AboveTheTradeMinimum_MostValuableFirst()
     {
@@ -235,31 +247,108 @@ public class NativeTradeTests
     public void BuyFromNatives_DrainsStock_LoadsShip_DebitsGold_LowersAlarm_EndsTurn()
     {
         (Game game, NativeSettlement settlement, Unit ship) = SetupBuy(sugarStock: 80);
-        int price = game.CheckBuyFromNatives(ship, settlement, "model.goods.sugar", 40).Cost;
+        Assert.Equal(25, EarnBuyBackAllowance(game, ship, settlement)); // a ship must sell first, then may buy back ≤ 25 (Col1)
+        int price = game.CheckBuyFromNatives(ship, settlement, "model.goods.sugar", 25).Cost;
         int goldBefore = game.Gold;
-        int alarmBefore = settlement.Alarm;
+        int alarmBefore = settlement.Alarm; // captured after the sale, which already earned some goodwill
 
-        int paid = game.BuyFromNatives(ship, settlement, "model.goods.sugar", 40);
+        int paid = game.BuyFromNatives(ship, settlement, "model.goods.sugar", 25);
 
         Assert.Equal(price, paid);
         Assert.Equal(goldBefore - paid, game.Gold);
-        Assert.Equal(40, ship.CargoOf("model.goods.sugar"));
-        Assert.Equal(40, settlement.GeneralStockOf("model.goods.sugar")); // 80 → 40
+        Assert.Equal(25, ship.CargoOf("model.goods.sugar"));
+        Assert.Equal(55, settlement.GeneralStockOf("model.goods.sugar")); // 80 → 55
         Assert.True(settlement.Alarm < alarmBefore, "buying builds a little goodwill");
         Assert.Equal(0, ship.MovementLeft);
+        Assert.Equal(0, game.NativeBuyAllowanceRemaining(ship, settlement)); // the 25-unit allowance is fully spent
     }
 
     [Fact]
-    public void BuyFromNatives_RefusedWhenStockShort_Unaffordable_OrHostile()
+    public void BuyFromNatives_RefusedWhenStockShort_NoneInStore_OrHostile()
     {
-        (Game game, NativeSettlement settlement, Unit ship) = SetupBuy(sugarStock: 30);
+        (Game game, NativeSettlement settlement, Unit ship) = SetupBuy(sugarStock: 10);
+        EarnBuyBackAllowance(game, ship, settlement); // sell first so these refusals are the stock/hostile gates, not the sell-first gate
 
-        Assert.False(game.CheckBuyFromNatives(ship, settlement, "model.goods.sugar", 40).Allowed); // only 30 in store
-        Assert.False(game.CheckBuyFromNatives(ship, settlement, "model.goods.ore", 10).Allowed);    // none in store
+        Assert.False(game.CheckBuyFromNatives(ship, settlement, "model.goods.sugar", 20).Allowed); // only 10 in store (≤ the 25 allowance)
+        Assert.False(game.CheckBuyFromNatives(ship, settlement, "model.goods.ore", 5).Allowed);     // none in store
 
         // Hostile settlement refuses entirely.
         game.ChangeNativeAlarm(settlement, 500); // → Angry
-        Assert.False(game.CheckBuyFromNatives(ship, settlement, "model.goods.sugar", 20).Allowed);
+        Assert.False(game.CheckBuyFromNatives(ship, settlement, "model.goods.sugar", 5).Allowed);
+    }
+
+    // ---- Col1 buy-back allowance: a settlement only sells to a trader that just sold to it (86d3kgbrw) ----
+
+    [Fact]
+    public void Buying_IsRefusedUntilTheCarrierHasSoldToTheSettlement()
+    {
+        (Game game, NativeSettlement settlement, Unit ship) = SetupBuy(sugarStock: 80);
+
+        // No sale yet → the chief offers nothing to buy (the divergence from FreeCol's free-buy store).
+        Assert.Equal(0, game.NativeBuyAllowanceRemaining(ship, settlement));
+        Assert.False(game.CheckBuyFromNatives(ship, settlement, "model.goods.sugar", 10).Allowed);
+        Assert.Empty(game.GoodsToSell(settlement, ship));
+
+        EarnBuyBackAllowance(game, ship, settlement); // sell 100 cloth
+        Assert.True(game.CheckBuyFromNatives(ship, settlement, "model.goods.sugar", 10).Allowed);
+        Assert.Contains(game.GoodsToSell(settlement, ship), g => g.GoodsId == "model.goods.sugar");
+    }
+
+    [Fact]
+    public void BuyBackCeiling_IsAWagon100_AShip25_PerFullSale()
+    {
+        (Game shipGame, NativeSettlement shipCamp, Unit ship) = SetupBuy(sugarStock: 200);
+        Assert.Equal(25, EarnBuyBackAllowance(shipGame, ship, shipCamp, sell: 100)); // a ship buys back a quarter of a full sale
+
+        (Game wagonGame, NativeSettlement wagonCamp, Unit wagon) = SetupOverlandBuy(sugarStock: 200);
+        Assert.Equal(100, EarnBuyBackAllowance(wagonGame, wagon, wagonCamp, sell: 100)); // a wagon buys back the whole sale
+
+        // The ship's offered lots are capped at 25 even though the store holds 200; the wagon may take a full 100 hold.
+        Assert.All(shipGame.GoodsToSell(shipCamp, ship), g => Assert.True(g.Amount <= 25, $"{g.GoodsId} offered {g.Amount}"));
+        Assert.Contains(wagonGame.GoodsToSell(wagonCamp, wagon), g => g.Amount == 100);
+    }
+
+    [Fact]
+    public void BuyBack_ScalesProportionally_WithTheAmountSold()
+    {
+        (Game game, NativeSettlement settlement, Unit ship) = SetupBuy(sugarStock: 80);
+        Assert.Equal(10, EarnBuyBackAllowance(game, ship, settlement, sell: 40)); // sold 40 via ship → 40 × 25/100 = 10
+    }
+
+    [Fact]
+    public void BuyingSpendsTheAllowance_AndAFreshTurnClearsIt()
+    {
+        (Game game, NativeSettlement settlement, Unit wagon) = SetupOverlandBuy(sugarStock: 200);
+        EarnBuyBackAllowance(game, wagon, settlement, sell: 100); // allowance 100 (wagon)
+        game.BuyFromNatives(wagon, settlement, "model.goods.sugar", 60);
+        Assert.Equal(40, game.NativeBuyAllowanceRemaining(wagon, settlement)); // 100 − 60
+
+        game.EndTurn(); // a new round is a fresh trade session
+        Assert.Equal(0, game.NativeBuyAllowanceRemaining(wagon, settlement));                        // must sell again to buy again
+        Assert.False(game.CheckBuyFromNatives(wagon, settlement, "model.goods.sugar", 10).Allowed);
+    }
+
+    [Fact]
+    public void BuyBackAllowance_IsScopedToTheSettlementSoldTo()
+    {
+        (Game game, NativeSettlement soldTo, Unit ship) = SetupBuy(sugarStock: 80);
+        var other = new NativeSettlement(7778, "model.nationType.apache", "model.settlement.camp", false, soldTo.Position, 5, null);
+
+        EarnBuyBackAllowance(game, ship, soldTo); // the allowance is earned at soldTo only
+        Assert.True(game.NativeBuyAllowanceRemaining(ship, soldTo) > 0);
+        Assert.Equal(0, game.NativeBuyAllowanceRemaining(ship, other)); // none at a settlement it did not sell to
+    }
+
+    [Fact]
+    public void BuyBackAllowance_IsTransient_AddsNoSaveField()
+    {
+        (Game game, NativeSettlement settlement, Unit ship) = SetupBuy(sugarStock: 80);
+        EarnBuyBackAllowance(game, ship, settlement);
+        Assert.True(game.NativeBuyAllowanceRemaining(ship, settlement) > 0); // a live allowance…
+
+        string json = SaveGame.From(game).ToJson();
+        Assert.DoesNotContain("BuyAllowance", json); // …that the save never serialises (a trade session is a single dialog, not persisted)
+        Assert.Equal(70, SaveGame.CurrentVersion);   // and so adds no save field / version bump (its transience is exercised in BuyingSpendsTheAllowance_AndAFreshTurnClearsIt)
     }
 
     // ---- Stock-driven wanted goods ----
@@ -412,6 +501,16 @@ public class NativeTradeTests
         return (game, settlement, wagon);
     }
 
+    /// <summary>An inland camp pre-stocked with sugar, beside a wagon train; the human holds gold to buy with.</summary>
+    private static (Game game, NativeSettlement settlement, Unit wagon) SetupOverlandBuy(int sugarStock)
+    {
+        (Game game, NativeSettlement settlement, Unit wagon) = SetupOverlandTrade(null, startingGold: 10000);
+        settlement.AddGoods("model.goods.sugar", sugarStock);
+        game.RecomputeWantedGoods(settlement);
+        game.ChangeNativeAlarm(settlement, 300); // Content, so trading is allowed
+        return (game, settlement, wagon);
+    }
+
     [Fact]
     public void WagonSalePrice_OmitsTheShipTradePenalty_PaysMoreThanACaravel()
     {
@@ -457,11 +556,19 @@ public class NativeTradeTests
     [Fact]
     public void WagonBuy_FromAnInlandSettlement_Works_AndIsAlreadyPenaltyFree()
     {
-        (Game game, NativeSettlement settlement, Unit wagon) = SetupOverlandTrade(null, startingGold: 10000);
-        settlement.AddGoods("model.goods.sugar", 80);
-        game.RecomputeWantedGoods(settlement);
-        game.ChangeNativeAlarm(settlement, 300); // Content
+        (Game game, NativeSettlement settlement, Unit wagon) = SetupOverlandBuy(sugarStock: 80);
 
+        // Buying carries no ship-trade penalty for any carrier (NativeBuyPrice has no naval term): the inland camp and an
+        // identical coastal camp quote the same price for the same lot — computed before any sale perturbs the stores.
+        (Game shipGame, NativeSettlement coastal, _) = SetupCoastalTrade(null, startingGold: 10000);
+        coastal.AddGoods("model.goods.sugar", 80);
+        shipGame.RecomputeWantedGoods(coastal);
+        Assert.Equal(
+            shipGame.NativeBuyPrice(coastal, "model.goods.sugar", 40),
+            game.NativeBuyPrice(settlement, "model.goods.sugar", 40));
+
+        // A wagon earns a full 1:1 buy-back allowance, so it may buy the 40-unit lot outright (a ship could take only 25).
+        Assert.Equal(100, EarnBuyBackAllowance(game, wagon, settlement));
         MoveCheck check = game.CheckBuyFromNatives(wagon, settlement, "model.goods.sugar", 40);
         Assert.True(check.Allowed, check.Reason);
         int goldBefore = game.Gold;
@@ -471,12 +578,6 @@ public class NativeTradeTests
         Assert.Equal(goldBefore - paid, game.Gold);
         Assert.Equal(40, wagon.CargoOf("model.goods.sugar"));
         Assert.Equal(40, settlement.GeneralStockOf("model.goods.sugar")); // 80 → 40
-        // Buying carries no ship-trade penalty for any carrier (NativeBuyPrice has no naval term), so the wagon paid
-        // exactly the formula price — the same a caravel would pay for the identical lot.
-        (Game shipGame, NativeSettlement coastal, _) = SetupCoastalTrade(null, startingGold: 10000);
-        coastal.AddGoods("model.goods.sugar", 80);
-        shipGame.RecomputeWantedGoods(coastal);
-        Assert.Equal(shipGame.NativeBuyPrice(coastal, "model.goods.sugar", 40), check.Cost);
     }
 
     [Fact]

@@ -2293,6 +2293,7 @@ public sealed partial class Game
         ship.AddCargo(goodsId, -amount);
         settlement.AddGoods(goodsId, amount); // the goods join the settlement's store (FreeCol moveGoods unit→settlement)
         player.Gold += price; // natives pay in gold; no European market tax
+        GrantNativeBuyAllowance(ship, settlement, amount); // Col1: the sale earns a carrier-scaled buy-back allowance (86d3kgbrw)
         ChangeNativeAlarm(settlement, player.PlayerId, -Math.Max(1, price / 50)); // goodwill toward this trader (FreeCol ALARM_BONUS_SELL ≈ 20% → price/50; min 1 per trade)
         RecomputeWantedGoods(settlement); // the fuller store re-prices its cravings (FreeCol csSell → updateWantedGoods)
         ship.MovementLeft = 0; // opening a trade session ends the carrier's turn
@@ -2337,9 +2338,99 @@ public sealed partial class Game
     /// <summary>A settlement won't sell fewer than this many units of a good (FreeCol <c>IndianSettlement.TRADE_MINIMUM_SIZE</c>).</summary>
     private const int NativeTradeMinimumSize = 20;
 
+    // ===== Col1 buy-back allowance (86d3kgbrw): a settlement only sells to a trader that JUST sold to it =====
+    //
+    // In the original 1994 game a native settlement will not simply hand over its store on demand — it offers to sell you
+    // some of its own goods only in response to a sale, and only up to a carrier-scaled fraction of what you just sold
+    // (verified: two independent community references — sell 100 → a wagon train can buy 100, a galleon 25; sell less and
+    // the buy-back shrinks proportionally). This replaces our earlier free-buy-from-the-store model (FreeCol lets a trader
+    // drain a settlement without trading anything to it), which was the divergence flagged in the online-fidelity pass.
+
+    /// <summary>
+    /// Transient per-visit buy-back state, keyed by carrier unit id → (the settlement it sold to, units still buyable).
+    /// A sell path fills it (<see cref="GrantNativeBuyAllowance"/>); a buy path spends it (<see cref="ConsumeNativeBuyAllowance"/>).
+    /// Never persisted — a trade session is a single dialog, so a save/load starts fresh — and cleared each round in
+    /// <see cref="EndTurn"/>. Only the human trades with natives, so this never touches the AI turn or the soak (the
+    /// ADR-009 byte-stability invariant is unaffected).
+    /// </summary>
+    private readonly Dictionary<int, (int SettlementId, int Remaining)> _nativeBuyAllowance = new();
+
+    /// <summary>The most a ship/galleon may buy back from a settlement per visit, whatever it sold (Col1 — sea traders are limited to 25; a wagon train's ceiling is a full hold, <see cref="NativeTradeCargoSize"/> = 100).</summary>
+    private const int NativeShipBuyBackCap = 25;
+
+    /// <summary>
+    /// The Col1 buy-back allowance a carrier earns by selling <paramref name="amountSold"/> to a settlement: a wagon train
+    /// (<paramref name="naval"/> false) may buy back the full amount (1:1, capped at <see cref="NativeTradeCargoSize"/> = 100),
+    /// a ship (<paramref name="naval"/> true) only a quarter of it (25 per 100 sold, capped at <see cref="NativeShipBuyBackCap"/>).
+    /// Matches "sell 100 → wagon 100 / galleon 25; sell less, buy proportionally less". RNG-free.
+    /// </summary>
+    private static int NativeBuyBackAllowance(bool naval, int amountSold) =>
+        naval
+            ? Math.Min(amountSold * NativeShipBuyBackCap / NativeTradeCargoSize, NativeShipBuyBackCap)
+            : Math.Min(amountSold, NativeTradeCargoSize);
+
+    /// <summary>
+    /// How many units <paramref name="carrier"/> may still buy from <paramref name="settlement"/> this visit — the Col1
+    /// buy-back allowance it earned by selling here (0 if it has not sold to this settlement since its last turn). The buy
+    /// UI caps each offered lot at this; <see cref="CheckBuyFromNatives"/> refuses a buy beyond it.
+    /// </summary>
+    public int NativeBuyAllowanceRemaining(Unit carrier, NativeSettlement settlement) =>
+        _nativeBuyAllowance.TryGetValue(carrier.Id, out (int SettlementId, int Remaining) a) && a.SettlementId == settlement.Id
+            ? a.Remaining
+            : 0;
+
+    /// <summary>
+    /// Records the buy-back allowance a carrier earns by selling <paramref name="amountSold"/> to <paramref name="settlement"/>
+    /// (called from every sell path). Sets the carrier's allowance for this settlement to the carrier-scaled amount; a
+    /// follow-up sale this visit never shrinks an allowance already earned (we keep the larger).
+    /// </summary>
+    private void GrantNativeBuyAllowance(Unit carrier, NativeSettlement settlement, int amountSold)
+    {
+        int earned = NativeBuyBackAllowance(carrier.Type.IsNaval, amountSold);
+        int existing = NativeBuyAllowanceRemaining(carrier, settlement);
+        _nativeBuyAllowance[carrier.Id] = (settlement.Id, Math.Max(existing, earned));
+    }
+
+    /// <summary>Spends <paramref name="amountBought"/> of a carrier's buy-back allowance after a purchase, dropping the entry once exhausted.</summary>
+    private void ConsumeNativeBuyAllowance(Unit carrier, int amountBought)
+    {
+        if (!_nativeBuyAllowance.TryGetValue(carrier.Id, out (int SettlementId, int Remaining) a))
+        {
+            return;
+        }
+        int remaining = a.Remaining - amountBought;
+        if (remaining > 0)
+        {
+            _nativeBuyAllowance[carrier.Id] = (a.SettlementId, remaining);
+        }
+        else
+        {
+            _nativeBuyAllowance.Remove(carrier.Id);
+        }
+    }
+
+    /// <summary>
+    /// The goods a settlement offers a specific <paramref name="carrier"/> to buy, each lot capped at the carrier's
+    /// remaining Col1 buy-back allowance (<see cref="NativeBuyAllowanceRemaining"/>) — so the list is <b>empty until the
+    /// carrier has sold to the settlement this visit</b>, and a ship is never offered more than 25. The buy UI reads this;
+    /// <see cref="GoodsToSell(NativeSettlement)"/> (no carrier) still lists the raw store for callers that don't gate on a sale.
+    /// </summary>
+    public IReadOnlyList<(string GoodsId, int Amount)> GoodsToSell(NativeSettlement settlement, Unit carrier)
+    {
+        int allowance = NativeBuyAllowanceRemaining(carrier, settlement);
+        return allowance <= 0
+            ? []
+            : GoodsToSell(settlement)
+                .Select(g => (g.GoodsId, Amount: Math.Min(g.Amount, allowance)))
+                .Where(g => g.Amount > 0)
+                .ToList();
+    }
+
     /// <summary>
     /// Whether the carrier <paramref name="ship"/> (a ship or an overland wagon train) may buy <paramref name="amount"/>
-    /// of a good from <paramref name="settlement"/> now. The buy price carries no ship-trade penalty for either carrier
+    /// of a good from <paramref name="settlement"/> now. Gated on the Col1 buy-back allowance — the carrier must have
+    /// <b>just sold</b> to this settlement, and <paramref name="amount"/> may not exceed what that sale earned it
+    /// (<see cref="NativeBuyAllowanceRemaining"/>). The buy price carries no ship-trade penalty for either carrier
     /// (FreeCol applies that only to the player's sale).
     /// </summary>
     public MoveCheck CheckBuyFromNatives(Unit ship, NativeSettlement settlement, string goodsId, int amount)
@@ -2359,6 +2450,15 @@ public sealed partial class Game
         if (amount <= 0)
         {
             return MoveCheck.No("Nothing to buy.");
+        }
+        int allowance = NativeBuyAllowanceRemaining(ship, settlement);
+        if (allowance <= 0)
+        {
+            return MoveCheck.No("The settlement will only sell to you just after you trade goods to it.");
+        }
+        if (amount > allowance)
+        {
+            return MoveCheck.No($"After that trade the settlement will sell you at most {allowance} more.");
         }
         if (settlement.GeneralStockOf(goodsId) < amount)
         {
@@ -2395,6 +2495,7 @@ public sealed partial class Game
         settlement.AddGoods(goodsId, -amount); // drained from the settlement's store (FreeCol moveGoods settlement→unit)
         ship.AddCargo(goodsId, amount);
         player.Gold -= price; // no European market tax
+        ConsumeNativeBuyAllowance(ship, amount); // Col1: the purchase spends the buy-back allowance the sale earned (86d3kgbrw)
         ChangeNativeAlarm(settlement, player.PlayerId, -Math.Max(1, price / 200)); // a little goodwill (FreeCol ALARM_BONUS_BUY ≈ 5% → price/200; min 1)
         RecomputeWantedGoods(settlement); // the emptier store re-prices its cravings (FreeCol csBuy → updateWantedGoods)
         ship.MovementLeft = 0; // opening a trade session ends the carrier's turn
@@ -8261,6 +8362,7 @@ public sealed partial class Game
         _stanceChangeNotices.Clear(); // and any turn-driven (tension-derived) stance shifts involving the human this turn (FP-6b; UpdateColonialStances re-fills it)
         _priceChangeNotices.Clear(); // and any Europe-market price moves from last turn (re-derived below by comparing the live prices to the baseline snapshot)
         _rumourNotices.Clear(); // and any rumour outcomes the human explored this turn (normally drained by the UI mid-turn; cleared here belt-and-braces)
+        _nativeBuyAllowance.Clear(); // and any unspent native buy-back allowance (86d3kgbrw) — a new turn is a fresh trade session; the human must sell again to buy again
         ClearPendingHumanProposals(); // and this round's AI alliance/cease-fire offers to the human (86d3drn4f; drained by the negotiation UI, cleared here belt-and-braces so the seam holds only the current round)
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
         DeclinePendingMounds();     // an unanswered strange-mounds prompt counts as "leave them be" — clears it before the AI turns so it can't strand or block exploration across the round

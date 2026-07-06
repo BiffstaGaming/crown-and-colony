@@ -225,6 +225,7 @@ public partial class Game
         ship.AddCargo(goodsId, -amount);
         settlement.AddGoods(goodsId, amount); // the goods join the settlement's store (FreeCol moveGoods unit→settlement)
         player.Gold += price; // natives pay in gold at the agreed price; no European market tax
+        GrantNativeBuyAllowance(ship, settlement, amount); // Col1: the sale earns a carrier-scaled buy-back allowance (86d3kgbrw)
         ChangeNativeAlarm(settlement, player.PlayerId, -Math.Max(1, price / 50)); // goodwill scales with what was paid (FreeCol ALARM_BONUS_SELL)
         RecomputeWantedGoods(settlement); // the fuller store re-prices its cravings (FreeCol csSell → updateWantedGoods)
         ship.MovementLeft = 0; // opening a trade session ends the ship's turn
@@ -255,6 +256,7 @@ public partial class Game
         settlement.AddGoods(goodsId, -amount); // drained from the settlement's store (FreeCol moveGoods settlement→unit)
         ship.AddCargo(goodsId, amount);
         player.Gold -= price; // the agreed price; no European market tax
+        ConsumeNativeBuyAllowance(ship, amount); // Col1: the purchase spends the buy-back allowance the sale earned (86d3kgbrw)
         ChangeNativeAlarm(settlement, player.PlayerId, -Math.Max(1, price / 200)); // a little goodwill (FreeCol ALARM_BONUS_BUY)
         RecomputeWantedGoods(settlement); // the emptier store re-prices its cravings (FreeCol csBuy → updateWantedGoods)
         ship.MovementLeft = 0; // opening a trade session ends the ship's turn
