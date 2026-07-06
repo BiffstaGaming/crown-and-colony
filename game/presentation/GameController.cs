@@ -2644,7 +2644,50 @@ public partial class GameController : Node2D
                 _notice = outcome;
             }
             RefreshView();
+            // Speaking with a chief for the FIRST time makes contact: the tribe's peace offer awaits (Col1, 86d3kgbnq) —
+            // surface the accept/reject dialog over the deferred Game.PendingFirstContact.
+            MaybePromptFirstContact();
         });
+    }
+
+    /// <summary>
+    /// Surfaces the native first-contact peace offer (Col1, 86d3kgbnq): when the human first speaks with a tribe's chief
+    /// (<see cref="Game.PendingFirstContact"/>), a parchment dialog offers to ACCEPT the peace (peace + a small land
+    /// grant + the chief's welcome) or REJECT it (the tribe declares war). Presentation only — the rules live in
+    /// <see cref="Game.ResolvePendingFirstContact(bool)"/>. No-op when nothing is pending or the human is defeated.
+    /// </summary>
+    private void MaybePromptFirstContact()
+    {
+        if (_game.IsHumanDefeated || _game.PendingFirstContact is null)
+        {
+            return;
+        }
+        _nativePanel.Hide(); // the settlement panel steps aside for the offer
+        var dialog = new ConfirmationDialog
+        {
+            Theme = ColonyTheme.Get(), // parchment-framed dialog instead of Godot's default gray box
+            Title = "First contact",
+            DialogText = "The chief of a native tribe greets you, offering peace and a small grant of land.\n\n"
+                       + "Accept their friendship — or reject it, and the tribe will declare war.",
+            OkButtonText = "Accept peace",
+            CancelButtonText = "Reject (war)",
+        };
+        dialog.Confirmed += () =>
+        {
+            dialog.QueueFree();
+            _notice = _game.ResolvePendingFirstContact(accept: true);
+            PlaySound(SoundEvent.CargoSold); // a friendly welcome — reuse the positive cash/gift cue
+            RefreshView();
+        };
+        dialog.Canceled += () =>
+        {
+            dialog.QueueFree();
+            _notice = _game.ResolvePendingFirstContact(accept: false);
+            PlaySound(SoundEvent.IllegalMove); // war declared — the hostile buzz
+            RefreshView();
+        };
+        AddChild(dialog);
+        dialog.PopupCentered();
     }
 
     private void QuickSave()

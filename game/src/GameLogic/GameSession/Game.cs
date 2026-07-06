@@ -151,6 +151,7 @@ public sealed partial class Game
     private readonly List<TemporaryModifier> _temporaryModifiers = []; // transient: duration-bounded modifiers currently in force; empty in classic (nothing registers one), so never saved and the default game is byte-identical (86d3drpgz)
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
+    private PendingFirstContactOffer? _pendingFirstContact; // transient: a native tribe's first-contact peace offer awaiting the human's accept/reject (not saved)
     private FountainResult _lastFountainResult; // transient: how the most recent FoY burst was handled — picks the player-facing message in ExploreRumour
     private int _citiesOfCibolaRemaining = CibolaCityCount; // persisted (v63): the finite "Seven Cities of Gold" left to discover; once 0 a Cibola roll degrades to ordinary ruins (FreeCol NameCache.getNextCityOfCibola)
     private readonly Player _human;
@@ -1644,10 +1645,124 @@ public sealed partial class Game
         }
 
         bool alreadyScouted = settlement.HasBeenVisitedBy(player.PlayerId); // captured before the mark — drives the scout "nothing" revisit
+        bool firstNationContact = !HasContactedNation(player.PlayerId, settlement.NationTypeId); // never met this tribe before
         settlement.MarkVisitedBy(player.PlayerId); // per-player first contact (FreeCol's per-player hasVisited)
+
+        // Col1 first contact with a TRIBE: the chief offers peace + a small land grant, and the HUMAN may accept or
+        // reject (reject → war). Defer to the accept/reject dialog (ResolvePendingFirstContact). An AI power — and any
+        // later settlement of an already-met tribe — resolves inline as before (auto-accept, no land grant, no dialog).
+        if (firstNationContact && player.IsHuman)
+        {
+            _pendingFirstContact = new PendingFirstContactOffer(unit.Id, settlement.Id, settlement.NationTypeId, unit.RoleId == ScoutRoleId);
+            unit.MovementLeft = 0; // the audience ends the unit's turn, accepted or not
+            return 0; // deferred — the presentation opens the offer dialog and calls ResolvePendingFirstContact
+        }
+
         return unit.RoleId == ScoutRoleId
             ? ScoutSpeakToChief(player, unit, settlement, random, alreadyScouted)
             : VisitAsColonist(player, unit, settlement, random);
+    }
+
+    // ── Native first contact (Col1: the chief offers peace + a land grant; a human may accept or reject → war) ───────
+
+    /// <param name="UnitId">The visitor unit (its tile anchors the land grant); its owner is the human.</param>
+    /// <param name="SettlementId">The settlement whose chief made the offer.</param>
+    /// <param name="NationTypeId">The native nation met for the first time.</param>
+    /// <param name="IsScout">Whether the visitor is a scout (an accepted welcome runs the scout audience vs the colonist visit).</param>
+    public sealed record PendingFirstContactOffer(int UnitId, int SettlementId, string NationTypeId, bool IsScout);
+
+    /// <summary>
+    /// A native tribe's first-contact peace offer awaiting the human's accept/reject, or null if none. Col1: on first
+    /// meeting a tribe (the human's first speak-with-chief of that NATION) the chief offers peace and a small grant of
+    /// land — accept for the land + the chief's welcome, or reject and the tribe declares war. Transient UI state (never
+    /// saved; a save mid-prompt reloads with the tribe simply un-met — the settlement is already marked visited). An AI
+    /// power auto-establishes contact inline and never sets this.
+    /// </summary>
+    public PendingFirstContactOffer? PendingFirstContact => _pendingFirstContact;
+
+    /// <summary>Whether <paramref name="playerId"/> has already met <paramref name="nationTypeId"/> (visited any of its settlements).</summary>
+    private bool HasContactedNation(int playerId, string nationTypeId) =>
+        _nativeSettlements.Any(s => s.NationTypeId == nationTypeId && s.HasBeenVisitedBy(playerId));
+
+    /// <summary>
+    /// Resolves the pending native first-contact offer for the human and returns a short player-facing line (ADR-006).
+    /// <paramref name="accept"/> takes the peace: a small land grant around the visitor + the chief's welcome (the
+    /// ordinary first-visit reveal + gift). Reject and the tribe declares war — its whole nation's tension toward the
+    /// human spikes to war level. Empty string when nothing is pending.
+    /// </summary>
+    public string ResolvePendingFirstContact(bool accept) => ResolvePendingFirstContact(accept, RandomFor(_human));
+
+    /// <summary>Resolves the pending offer, drawing the accepted chief's-welcome gift from <paramref name="random"/> (the human's stream 0 by default; the overload exists for scripted tests, like the <c>Visit</c>/<c>Attack</c> RNG overloads).</summary>
+    internal string ResolvePendingFirstContact(bool accept, IGameRandom random)
+    {
+        if (_pendingFirstContact is not { } pending)
+        {
+            return "";
+        }
+        _pendingFirstContact = null;
+        string nation = NativeNationDisplayName(pending.NationTypeId);
+        if (!accept)
+        {
+            // Reject → the tribe declares war: its nation-wide tension toward the human spikes to war level (the raids
+            // fall out of the native AI, as with InciteWar), and the stance flips at once for the reports (mirrors the
+            // independence most-hated-nation path — the direct SetNativeStance write).
+            RaiseTribeTension(pending.NationTypeId, _human.PlayerId, InciteWarAlarm);
+            SetNativeStance(pending.NationTypeId, _human.PlayerId, Stance.War);
+            return $"You spurn the {nation} chief's offer — the {nation} declare war!";
+        }
+        // Accept → peace (the natives' default) plus a small grant of the tribe's land around your unit, then the chief's
+        // welcome (the ordinary first-visit reveal + gift).
+        int grantedTiles = 0;
+        int gift = 0;
+        if (_units.FirstOrDefault(u => u.Id == pending.UnitId) is { } unit)
+        {
+            grantedTiles = GrantFirstContactLand(pending.NationTypeId, unit.Position);
+            if (_nativeSettlements.FirstOrDefault(s => s.Id == pending.SettlementId) is { } settlement)
+            {
+                gift = pending.IsScout
+                    ? ScoutSpeakToChief(_human, unit, settlement, random, alreadyScouted: false)
+                    : VisitAsColonist(_human, unit, settlement, random);
+            }
+        }
+        string land = grantedTiles > 0 ? $" and grant you {grantedTiles} tiles of land" : "";
+        string beads = gift > 0 ? $" (a gift of {gift} gold)" : "";
+        return $"The {nation} welcome you in peace{land}{beads}.";
+    }
+
+    /// <summary>
+    /// The tribe's first-contact land grant: it cedes the tiles it owns immediately around <paramref name="near"/> (the
+    /// visitor's own tile + its 8 neighbours) to the player as a PERSISTENT claim (<see cref="GameMap.ClaimFromNatives"/>,
+    /// the saved override the derivation honours — so the grant survives save/load, unlike a bare ownership clear).
+    /// Returns the number of tiles granted.
+    /// </summary>
+    private int GrantFirstContactLand(string nationTypeId, Position near)
+    {
+        int granted = 0;
+        foreach (Position p in near.Neighbours().Append(near))
+        {
+            if (Map.InBounds(p) && Map.NativeOwnerOf(p) == nationTypeId && !Map.IsClaimedFromNatives(p))
+            {
+                Map.ClaimFromNatives(p);
+                granted++;
+            }
+        }
+        return granted;
+    }
+
+    /// <summary>An unanswered native first-contact offer at turn-end defaults to ACCEPTANCE (peace): the human chose to visit the chief, so peace is the safe timeout — never an accidental war.</summary>
+    private void AcceptPendingFirstContactOnTimeout()
+    {
+        if (_pendingFirstContact is not null)
+        {
+            ResolvePendingFirstContact(accept: true);
+        }
+    }
+
+    /// <summary>A native nation's display name from its type id (<c>model.nationType.apache</c> → <c>Apache</c>).</summary>
+    private string NativeNationDisplayName(string nationTypeId)
+    {
+        string s = Ruleset.NativeNation(nationTypeId).ShortName;
+        return s.Length == 0 ? nationTypeId : char.ToUpperInvariant(s[0]) + s[1..];
     }
 
     /// <summary>The role ability a unit must carry to found a mission (FreeCol <c>model.role.missionary</c> grants it).</summary>
@@ -8149,6 +8264,7 @@ public sealed partial class Game
         ClearPendingHumanProposals(); // and this round's AI alliance/cease-fire offers to the human (86d3drn4f; drained by the negotiation UI, cleared here belt-and-braces so the seam holds only the current round)
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
         DeclinePendingMounds();     // an unanswered strange-mounds prompt counts as "leave them be" — clears it before the AI turns so it can't strand or block exploration across the round
+        AcceptPendingFirstContactOnTimeout(); // an unanswered native peace offer defaults to acceptance (peace) — clears it before the AI turns; a friendlier timeout than an accidental war
         int startIndex = _currentPlayerIndex;
         do
         {

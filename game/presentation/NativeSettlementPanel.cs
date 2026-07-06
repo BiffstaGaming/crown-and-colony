@@ -168,9 +168,11 @@ public partial class NativeSettlementPanel : PanelContainer
             dynamic.AddChild(ActionButton("Speak", "Speak with chief", () =>
             {
                 int gift = _game.Visit(unit, _settlement);
-                _outcome = gift > 0
-                    ? $"The chief shared tales of nearby lands and gave {gift} gold."
-                    : "The chief shared tales of nearby lands.";
+                _outcome = _game.PendingFirstContact is not null
+                    ? "" // first contact — the tribe's peace offer awaits; the controller opens the accept/reject dialog
+                    : gift > 0
+                        ? $"The chief shared tales of nearby lands and gave {gift} gold."
+                        : "The chief shared tales of nearby lands.";
                 Changed();
             }));
         }

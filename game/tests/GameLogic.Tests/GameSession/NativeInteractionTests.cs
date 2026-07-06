@@ -83,7 +83,7 @@ public class NativeInteractionTests
     // ---- Speak with the chief ----
 
     [Fact]
-    public void Visit_RevealsLand_GivesGift_AndIsOnceOnly()
+    public void Visit_FirstContact_DefersToTheOffer_ThenAcceptGivesGiftRevealAndIsOnceOnly()
     {
         (Game game, NativeSettlement settlement, Unit colonist) = Setup();
         int goldBefore = game.Gold;
@@ -92,13 +92,22 @@ public class NativeInteractionTests
         MoveCheck check = game.CheckVisit(colonist, settlement);
         Assert.True(check.Allowed);
 
-        int gift = game.Visit(colonist, settlement);
-
-        Assert.InRange(gift, 10, 80);
-        Assert.Equal(goldBefore + gift, game.Gold);
+        // Col1 first contact with a tribe (86d3kgbnq): the chief offers peace — the visit defers to the accept/reject
+        // prompt (no inline gift), and the audience ends the unit's turn either way.
+        int deferred = game.Visit(colonist, settlement);
+        Assert.Equal(0, deferred);
+        Assert.NotNull(game.PendingFirstContact);
+        Assert.Equal(settlement.NationTypeId, game.PendingFirstContact!.NationTypeId);
         Assert.True(settlement.HasBeenVisited);
-        Assert.True(game.Explored.Count > exploredBefore, "speaking with the chief reveals nearby lands");
         Assert.Equal(0, colonist.MovementLeft);
+
+        // Accept the peace → the chief's welcome (reveal + a 10–80 gift) lands.
+        string outcome = game.ResolvePendingFirstContact(accept: true);
+        Assert.Contains("peace", outcome);
+        Assert.Null(game.PendingFirstContact);
+        int gift = game.Gold - goldBefore;
+        Assert.InRange(gift, 10, 80);
+        Assert.True(game.Explored.Count > exploredBefore, "the chief's welcome reveals nearby lands");
 
         // A second visit is refused — you've already spoken with this chief.
         Assert.False(game.CheckVisit(colonist, settlement).Allowed);

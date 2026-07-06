@@ -61,6 +61,46 @@ public class NativeSettlementPanelTests
         AssertThat(FindButton(controller, "Denounce")).IsNull();
     }
 
+    // ---- Native first contact (86d3kgbnq): the chief's peace offer — accept (peace) or reject (war) ----
+
+    [TestCase(Timeout = 60000)]
+    public async Task SpeakWithChief_FirstContact_OpensThePeaceOffer_AcceptEstablishesPeace()
+    {
+        (ISceneRunner runner, GameController controller, Game game, NativeSettlement settlement, _) =
+            await OpenMissionPanel(missionary: false);
+
+        // First contact: speaking with the chief defers to the Col1 peace offer (no inline result), and surfaces the
+        // accept/reject dialog (a parchment ConfirmationDialog parented to the controller).
+        await Press(runner, controller, "Speak");
+        await runner.SimulateFrames(1);
+        AssertThat(game.PendingFirstContact).IsNotNull();
+        var dialog = controller.GetChildren().OfType<ConfirmationDialog>().FirstOrDefault();
+        AssertThat(dialog).IsNotNull();
+
+        // Accept the peace → the offer resolves and the tribe is NOT at war.
+        dialog!.EmitSignal("confirmed");
+        await runner.SimulateFrames(1);
+        AssertThat(game.PendingFirstContact).IsNull();
+        AssertThat(game.NativeStanceToward(settlement.NationTypeId, game.HumanPlayer.PlayerId)).IsNotEqual(Stance.War);
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task SpeakWithChief_FirstContact_RejectDeclaresWar()
+    {
+        (ISceneRunner runner, GameController controller, Game game, NativeSettlement settlement, _) =
+            await OpenMissionPanel(missionary: false);
+
+        await Press(runner, controller, "Speak");
+        await runner.SimulateFrames(1);
+        var dialog = controller.GetChildren().OfType<ConfirmationDialog>().First();
+
+        // Reject the offer (the Cancel button = "Reject (war)") → the tribe declares war.
+        dialog.EmitSignal("canceled");
+        await runner.SimulateFrames(1);
+        AssertThat(game.PendingFirstContact).IsNull();
+        AssertThat(game.NativeStanceToward(settlement.NationTypeId, game.HumanPlayer.PlayerId)).IsEqual(Stance.War);
+    }
+
     [TestCase(Timeout = 60000)]
     public async Task DenounceMissionButton_ShownOverARivalMission_OustsTheRival_InstallingTheHumansMission()
     {

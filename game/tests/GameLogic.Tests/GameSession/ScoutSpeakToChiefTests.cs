@@ -15,7 +15,9 @@ namespace CrownAndColony.GameLogic.Tests.GameSession;
 /// Scout speaks with the chief (<c>86d3c9tf0</c>, FreeCol <c>InGameController.scoutSpeakToChief</c>): a scout-role
 /// unit's chief audience rolls die-at-hateful / nothing-if-scouted / a seasoned-scout training chance / "tales" (a
 /// map reveal) / "beads" (gold from the settlement type's <c>&lt;gifts&gt;</c> range, +10% for an expert scout).
-/// A non-scout colonist still gets the basic visit (covered by <c>NativeInteractionTests</c>).
+/// Since native first contact (<c>86d3kgbnq</c>), the FIRST audience with a nation is the accepted peace offer — the
+/// scout outcome runs on <c>ResolvePendingFirstContact(accept)</c> (which takes a scripted-RNG overload); a later
+/// settlement of an already-met tribe runs the audience inline. A non-scout colonist gets the basic flat gift.
 /// </summary>
 public class ScoutSpeakToChiefTests
 {
@@ -67,7 +69,7 @@ public class ScoutSpeakToChiefTests
         });
     }
 
-    // ---- Outcomes ----
+    // ---- Outcomes (the first audience with a nation is the accepted peace offer, 86d3kgbnq) ----
 
     [Fact]
     public void Scout_GetsBeads_FromTheSettlementTypeGiftsRange()
@@ -76,12 +78,12 @@ public class ScoutSpeakToChiefTests
         SettlementGifts gifts = Classic.Settlement(settlement.SettlementTypeId).Gifts!;
         int goldBefore = game.HumanPlayer.Gold;
 
-        // rnd 4 → not expert (≠0), not tales (>3). FreeCol's CONTINUOUS gifts roll: gold = roll + Min×Factor
-        // (a non-multiple roll of 50 distinguishes it from the discrete plunder formula (roll+Min)×Factor).
-        int gained = game.Visit(game.HumanPlayer, scout, settlement, new ScriptedRandom(4, 50));
+        game.Visit(game.HumanPlayer, scout, settlement); // first contact → the offer is pending
+        // Accept the peace; the scout audience then rolls. rnd 4 → not expert (≠0), not tales (>3). FreeCol's CONTINUOUS
+        // gifts roll: gold = roll + Min×Factor (a non-multiple roll of 50 distinguishes it from the discrete plunder formula).
+        game.ResolvePendingFirstContact(accept: true, new ScriptedRandom(4, 50));
 
         int expected = 50 + (gifts.Minimum * gifts.Factor);
-        Assert.Equal(expected, gained);
         Assert.Equal(goldBefore + expected, game.HumanPlayer.Gold);
         Assert.True(settlement.HasBeenVisited);
     }
@@ -91,12 +93,13 @@ public class ScoutSpeakToChiefTests
     {
         (Game game, NativeSettlement settlement, Unit scout) = ScoutAtSettlement(NotHatefulNorScoutTeacher);
         int goldBefore = game.HumanPlayer.Gold;
+        int exploredBefore = game.HumanPlayer.Explored.Count;
 
-        int gained = game.Visit(game.HumanPlayer, scout, settlement, new ScriptedRandom(1, 0)); // rnd 1 ≤ 3 → tales
+        game.Visit(game.HumanPlayer, scout, settlement);
+        game.ResolvePendingFirstContact(accept: true, new ScriptedRandom(1, 0)); // rnd 1 ≤ 3 → tales
 
-        Assert.Equal(0, gained);
-        Assert.Equal(goldBefore, game.HumanPlayer.Gold);
-        Assert.True(settlement.HasBeenVisited);
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);                       // no beads
+        Assert.True(game.HumanPlayer.Explored.Count > exploredBefore, "tales reveal nearby lands");
     }
 
     [Fact]
@@ -105,8 +108,8 @@ public class ScoutSpeakToChiefTests
         (Game game, NativeSettlement settlement, Unit scout) = ScoutAtSettlement(NotHatefulNorScoutTeacher);
         int id = scout.Id;
 
-        // rnd 0 → expert training (no gift draw — an empty remainder would throw).
-        game.Visit(game.HumanPlayer, scout, settlement, new ScriptedRandom(0));
+        game.Visit(game.HumanPlayer, scout, settlement);
+        game.ResolvePendingFirstContact(accept: true, new ScriptedRandom(0)); // rnd 0 → expert training (no gift draw)
 
         Assert.Equal(SeasonedScout, game.Units.Single(u => u.Id == id).Type.Id);
     }
@@ -118,10 +121,11 @@ public class ScoutSpeakToChiefTests
         game.ChangeNativeAlarm(settlement, NativeSettlement.MaxAlarm); // → Hateful
         int id = scout.Id;
 
-        // No RNG drawn before the scout dies (an empty ScriptedRandom would throw on a draw).
-        int gained = game.Visit(game.HumanPlayer, scout, settlement, new ScriptedRandom());
+        game.Visit(game.HumanPlayer, scout, settlement);
+        // Accepting the (contrived) offer at a hateful settlement still runs the audience, which slays the scout —
+        // no RNG drawn before the death (an empty ScriptedRandom would throw on a draw).
+        game.ResolvePendingFirstContact(accept: true, new ScriptedRandom());
 
-        Assert.Equal(0, gained);
         Assert.DoesNotContain(game.Units, u => u.Id == id);
     }
 
@@ -130,22 +134,24 @@ public class ScoutSpeakToChiefTests
     {
         (Game game, NativeSettlement settlement, Unit scout) = ScoutAtSettlement(NotHatefulNorScoutTeacher, SeasonedScout);
         SettlementGifts gifts = Classic.Settlement(settlement.SettlementTypeId).Gifts!;
+        int goldBefore = game.HumanPlayer.Gold;
 
-        int gained = game.Visit(game.HumanPlayer, scout, settlement, new ScriptedRandom(4, 50)); // beads (continuous roll 50)
+        game.Visit(game.HumanPlayer, scout, settlement);
+        game.ResolvePendingFirstContact(accept: true, new ScriptedRandom(4, 50)); // beads (continuous roll 50)
 
-        Assert.Equal((50 + (gifts.Minimum * gifts.Factor)) * 11 / 10, gained); // +10% for an expert scout
+        Assert.Equal(goldBefore + ((50 + (gifts.Minimum * gifts.Factor)) * 11 / 10), game.HumanPlayer.Gold); // +10% for an expert scout
     }
 
     [Fact]
     public void ASecondScoutVisit_ToTheSameChief_GetsNothing_AndConsumesExactlyOneRnd()
     {
         // FreeCol InGameController:3518-3521 — on a revisit the scouting `rnd` is drawn FIRST, then hasAnyScouted()
-        // short-circuits to "nothing": no gold, no skill, no extra reveal, the turn just ends. We allow a scout to
-        // revisit (CheckVisit no longer hard-rejects a scout role) and consume exactly one rnd.
+        // short-circuits to "nothing": no gold, no skill, no extra reveal, the turn just ends.
         (Game game, NativeSettlement settlement, Unit scout) = ScoutAtSettlement(NotHatefulNorScoutTeacher);
 
-        // First visit: a normal beads outcome (rnd 4, gift roll 50) marks the chief scouted by this player.
-        game.Visit(game.HumanPlayer, scout, settlement, new ScriptedRandom(4, 50));
+        // First audience = the accepted first contact: a normal beads outcome (rnd 4, gift roll 50) marks the chief scouted.
+        game.Visit(game.HumanPlayer, scout, settlement);
+        game.ResolvePendingFirstContact(accept: true, new ScriptedRandom(4, 50));
         Assert.True(settlement.HasBeenVisitedBy(game.HumanPlayer.PlayerId));
 
         // The scout is allowed back (a colonist would still be refused — covered by NativeInteractionTests).
@@ -156,9 +162,11 @@ public class ScoutSpeakToChiefTests
         int exploredBefore = game.HumanPlayer.Explored.Count;
         int id = scout.Id;
 
-        // Revisit: a SINGLE rnd is consumed (an empty remainder would throw — proving exactly one draw), then "nothing".
+        // Revisit: the nation is already met, so it runs the audience INLINE (no offer). A SINGLE rnd is consumed
+        // (an empty remainder would throw — proving exactly one draw), then "nothing".
         int gained = game.Visit(game.HumanPlayer, scout, settlement, new ScriptedRandom(7));
 
+        Assert.Null(game.PendingFirstContact);                            // no fresh offer — nation already met
         Assert.Equal(0, gained);                                          // no gold
         Assert.Equal(goldBefore, game.HumanPlayer.Gold);
         Assert.Equal(exploredBefore, game.HumanPlayer.Explored.Count);    // no new reveal
@@ -180,9 +188,9 @@ public class ScoutSpeakToChiefTests
         Unit colonist = game.SpawnUnit(Classic.Unit(FreeColonist), adjacent); // default role, NOT a scout
         int goldBefore = game.HumanPlayer.Gold;
 
-        int gift = game.Visit(game.HumanPlayer, colonist, settlement, new ScriptedRandom(35)); // flat gift = the Next(10,81) roll
+        game.Visit(game.HumanPlayer, colonist, settlement);
+        game.ResolvePendingFirstContact(accept: true, new ScriptedRandom(35)); // flat gift = the Next(10,81) roll
 
-        Assert.Equal(35, gift); // the basic-visit path takes the scripted Next(GiftMin, GiftMax+1) value directly
-        Assert.Equal(goldBefore + 35, game.HumanPlayer.Gold);
+        Assert.Equal(goldBefore + 35, game.HumanPlayer.Gold); // the basic-visit path takes the scripted Next(GiftMin, GiftMax+1) value directly
     }
 }

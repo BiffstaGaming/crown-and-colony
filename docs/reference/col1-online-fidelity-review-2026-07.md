@@ -132,8 +132,9 @@ break them:
 
 ### Triage decisions (2026-07-06, Chris)
 
-- **Change — approved:** native first contact (`86d3kgbnq`), colony-assault +50% for all Europeans
-  (`86d3kgbp3` — **✅ shipped 2026-07-06**), building learning-by-doing (`86d3kgbpd` — **✅ shipped 2026-07-06, save v70**).
+- **Change — approved (all shipped):** native first contact (`86d3kgbnq` — **✅ shipped 2026-07-07**; Chris confirmed
+  "follow Col1" after the manual came back inconclusive), colony-assault +50% for all Europeans (`86d3kgbp3` —
+  **✅ shipped 2026-07-06**), building learning-by-doing (`86d3kgbpd` — **✅ shipped 2026-07-06, save v70**).
 - **Do not change — keep current/FreeCol behaviour as an accepted deviation (tasks → Cancelled):** treasure King's-cut
   (`86d3kgbna`), Col1 scoring profile (`86d3kgbq0`), 1800/1850 auto-end (`86d3kgbrc`).
 - **Still to triage:** custom-house classic mode (`86d3kgbpn`), Continental muster (`86d3kgbr0`), native buy-back
