@@ -41,12 +41,13 @@ public class ColonyPreferredSizeTests
     }
 
     [Fact]
-    public void GovernmentChange_ShrinkingOutOfVeryBad_Improves()
+    public void GovernmentChange_ShrinkingOutOfBadGovernment_Improves()
     {
-        // pop 12, no liberty → 12 tories (Very-Bad, > 10). Shrink to 10 → 10 tories (not Very-Bad): government improves.
-        Colony colony = ColonyWith(population: 12, liberty: 0);
-        Assert.Equal(-2, colony.ProductionBonus);
-        Assert.Equal(1, colony.GovernmentChange(10));
+        // pop 8, no liberty → 8 tories (bad government, > 6). Shrink to 6 → 6 tories (not > 6): the penalty lifts. (Col1
+        // has ONE −1 bad-government tier — no FreeCol −2 "very bad" tier — 86d3kgbtj.)
+        Colony colony = ColonyWith(population: 8, liberty: 0);
+        Assert.Equal(-1, colony.ProductionBonus);
+        Assert.Equal(1, colony.GovernmentChange(6));
     }
 
     // ── B. UnitsToAdd — room to grow before the bonus is first lost ──────────────────────────────────────────
@@ -73,8 +74,9 @@ public class ColonyPreferredSizeTests
     [Fact]
     public void UnitsToRemove_ReturnsTheFirstImprovingReduction()
     {
-        // pop 12, no liberty → 12 tories (Very-Bad). Removing 2 → 10 tories (out of Very-Bad): the first improvement.
-        Colony colony = ColonyWith(population: 12, liberty: 0);
+        // pop 8, no liberty → 8 tories (bad government, > 6). Removing 2 → 6 tories (not > 6): the penalty lifts (Col1's
+        // single −1 tier — 86d3kgbtj).
+        Colony colony = ColonyWith(population: 8, liberty: 0);
         Assert.Equal(2, colony.UnitsToRemove());
     }
 
@@ -103,9 +105,9 @@ public class ColonyPreferredSizeTests
     public void PreferredSizeChange_OvercrowdedLowSoL_IsNegativeCrowdToShed()
     {
         // Bonus < 0 → the colony wants to shrink: the negation of the units-to-remove.
-        Colony colony = ColonyWith(population: 12, liberty: 0);
-        Assert.Equal(-2, colony.ProductionBonus);
-        Assert.Equal(-2, colony.PreferredSizeChange()); // −UnitsToRemove (2)
+        Colony colony = ColonyWith(population: 8, liberty: 0); // 8 tories → −1 (Col1's single bad-government tier)
+        Assert.Equal(-1, colony.ProductionBonus);
+        Assert.Equal(-2, colony.PreferredSizeChange()); // −UnitsToRemove (2: shed to 6 tories)
     }
 
     [Fact]

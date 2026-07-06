@@ -137,8 +137,10 @@ break them:
   **✅ shipped 2026-07-06**), building learning-by-doing (`86d3kgbpd` — **✅ shipped 2026-07-06, save v70**).
 - **Do not change — keep current/FreeCol behaviour as an accepted deviation (tasks → Cancelled):** treasure King's-cut
   (`86d3kgbna`), Col1 scoring profile (`86d3kgbq0`), 1800/1850 auto-end (`86d3kgbrc`).
-- **Still to triage:** custom-house classic mode (`86d3kgbpn`), Continental muster (`86d3kgbr0`), native buy-back
-  (`86d3kgbrw`), quick ruleset values (`86d3kgbtj`), document-deviations (`86d3kgbu2`).
+- **Second-round triage (2026-07-07, Chris):** **✅ shipped** — De Soto naval sight + overcrowding −1 (from quick-values
+  `86d3kgbtj`). **Approved, in progress** — native buy-back (`86d3kgbrw`), document-deviations (`86d3kgbu2`).
+  **Declined (→ Cancelled)** — custom-house classic mode (`86d3kgbpn`), Continental muster (`86d3kgbr0`), boycott-lift
+  ×500 (dropped from `86d3kgbtj`). **Pending Chris** — tax cap 75% (from `86d3kgbtj`, not yet decided).
 - **All 8 Tier-3 parity-doc corrections stand regardless** — they fix factual errors in the doc, not behaviour.
 
 1. **Doc-only (safe, no-drift):** apply the Tier 3 corrections to `feature-parity.md`; add the Tier 4 cautions to the

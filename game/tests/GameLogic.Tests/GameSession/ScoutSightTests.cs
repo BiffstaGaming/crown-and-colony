@@ -40,7 +40,7 @@ public class ScoutSightTests
         Assert.Contains(twoAway, game.CurrentlyVisible);
     }
 
-    // ── Hernando de Soto: +1 sight for every land unit (86d3...) ────────────────────────────────────────────────
+    // ── Hernando de Soto: +1 sight for every unit — ships included (Col1, 86d3kgbtj) ───────────────────────────
 
     private const string DeSoto = "model.foundingFather.hernandoDeSoto";
 
@@ -66,8 +66,10 @@ public class ScoutSightTests
     }
 
     [Fact]
-    public void DeSoto_DoesNotExtendANavalUnitsSight()
+    public void DeSoto_ExtendsANavalUnitsSightToo_LikeEveryUnit()
     {
+        // Col1 fidelity (86d3kgbtj): de Soto lifts the sight of EVERY unit, ships included — FreeCol scopes the modifier
+        // navalUnit=false (land only), which we deliberately widen to match the original 1994 game.
         Game game = EmptyOceanMap();
         game.SpawnUnit(Classic.Unit("model.unit.caravel"), new Position(2, 2)); // a ship, sight 1
         Assert.True(game.IsVisible(new Position(3, 2)));   // sees one tile out…
@@ -75,7 +77,7 @@ public class ScoutSightTests
         Assert.False(game.IsVisible(twoAway));             // …but not two
 
         game.HumanPlayer.CongressList.Add(DeSoto);
-        Assert.False(game.IsVisible(twoAway));             // de Soto's bonus is land-only (navalUnit=false) → unchanged
+        Assert.True(game.IsVisible(twoAway));              // de Soto's +1 now lifts the ship's sight too → the 2-away tile is revealed
     }
 
     private static Game EmptyPlainsMap() => EmptyMap("model.tile.plains");

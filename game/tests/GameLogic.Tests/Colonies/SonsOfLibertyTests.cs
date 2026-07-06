@@ -84,7 +84,7 @@ public class SonsOfLibertyTests
     public void SevenTories_TriggerBadGovernment() => Assert.Equal(-1, ColonyWith(7, 0).ProductionBonus); // > 6 (medium limit)
 
     [Fact]
-    public void ElevenTories_TriggerVeryBadGovernment() => Assert.Equal(-2, ColonyWith(11, 0).ProductionBonus); // > 10 (medium limit)
+    public void ManyTories_StillCapAtTheSingleMinusOneTier() => Assert.Equal(-1, ColonyWith(11, 0).ProductionBonus); // Col1 caps at −1 — no FreeCol −2 "very bad" tier (86d3kgbtj)
 
     [Fact]
     public void HighSoL_OverridesTheToryPenalty() => Assert.Equal(1, ColonyWith(11, 1100).ProductionBonus); // SoL 50 wins over 6 tories

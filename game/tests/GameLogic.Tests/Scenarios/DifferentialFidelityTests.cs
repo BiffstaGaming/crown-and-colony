@@ -264,8 +264,9 @@ public class DifferentialFidelityTests
         // a penalty tier (tory count maxes at 4, below the >6/>10 thresholds), so 0/+1/+2 only here.
         var inv = new FidelityInvariant<int>(
             Name: $"production bonus tier for liberty={liberty} (pop 4)",
-            // Colony.calculateProductionBonus: SoL>=VERY_GOOD(100) → +2; >=GOOD(50) → +1; tory>VERY_BAD(10) → -2; >BAD(6) → -1.
-            FreeColRef: "freecol Colony.java calculateProductionBonus (SoL>=100 +2, >=50 +1, tory>6 -1, tory>10 -2)",
+            // Colony.calculateProductionBonus: SoL>=VERY_GOOD(100) → +2; >=GOOD(50) → +1; >BAD(6) → -1. (Col1 deviation,
+            // 86d3kgbtj: we DROP FreeCol's tory>VERY_BAD(10) → -2 tier — Col1 has one -1 bad-government tier. Untested here: pop 4 trips no penalty.)
+            FreeColRef: "freecol Colony.java calculateProductionBonus (SoL>=100 +2, >=50 +1, tory>6 -1; Col1 drops the tory>10 -2 tier)",
             Observe: () =>
             {
                 Colony colony = ColonyOfSize(4);

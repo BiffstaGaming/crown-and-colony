@@ -239,17 +239,18 @@ public class BuildingWorkerTypeProductionTests
     }
 
     [Fact]
-    public void NegativeBonus_IsFlooredPerWorker_NotPooledAcrossTheBuilding()
+    public void BadGovernment_PenalisesEachWorker_FlooredAtZero()
     {
-        // Bad government (11 tories → −2): a free colonist makes max(0, 3−2) = 1, a petty criminal max(0, (3−2)−2) = 0.
-        // FreeCol floors each worker separately → 1 hammer. The old pooled floor, max(0, (3+1) + 2×−2) = 0, wrongly
-        // wiped the productive colonist's output too.
+        // Bad government (11 tories → −1; Col1 caps at −1, no FreeCol −2 "very bad" tier — 86d3kgbtj): a free colonist
+        // makes max(0, 3−1) = 2 hammers, a petty criminal max(0, (3−2)−1) = 0. Each worker is floored SEPARATELY.
+        // (The old −2-government vehicle that pushed a productive colonist itself negative — distinguishing per-worker
+        // from a pooled floor — is gone with the Col1 single-tier cap; the per-worker floor remains, defensive.)
         Game game = Game.New(Classic, Seed);
         Colony colony = BuildingColony(game, Carpenter, population: 11, liberty: 0, Free, Petty);
-        Assert.Equal(-2, colony.ProductionBonus);
+        Assert.Equal(-1, colony.ProductionBonus);
         colony.AddGoods(Lumber, 30);
         game.EndTurn();
-        Assert.Equal(1, colony.StoreOf(Hammers));
+        Assert.Equal(2, colony.StoreOf(Hammers));
     }
 
     // ---- Non-1:1 factory under short input: FreeCol floors the required input first (+EPSILON), losing no unit ----

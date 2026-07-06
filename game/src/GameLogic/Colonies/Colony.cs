@@ -287,16 +287,17 @@ public sealed class Colony
     public int ToryCount => Population - RebelCount;
 
     /// <summary>
-    /// Per-producing-worker production bonus, −2..+2 (FreeCol <c>calculateProductionBonus</c>): SoL ≥ 100 → +2;
-    /// SoL ≥ 50 → +1; else by tory count: &gt; 10 → −2, &gt; 6 → −1, else 0 (the penalty tiers gate on absolute tory
-    /// count, so a small colony never gets one regardless of low SoL). Added to each attended worker's tile/building
+    /// Per-producing-worker production bonus, −1..+2: SoL ≥ 100 → +2; SoL ≥ 50 → +1; else by tory count: &gt; 6 → −1,
+    /// else 0. **Col1 fidelity (86d3kgbtj):** the original 1994 game had a SINGLE bad-government tier of −1 — FreeCol's
+    /// <c>calculateProductionBonus</c> adds a second "very bad" −2 tier (&gt; 10 tories) that Col1 did not, so we cap the
+    /// penalty at −1 (<c>Government.VeryBad</c> is no longer read for the bonus). The penalty tiers gate on absolute tory
+    /// count, so a small colony never gets one regardless of low SoL. Added to each attended worker's tile/building
     /// output (floored at 0) in <see cref="GameSession.Game"/>'s colony turn.
     /// </summary>
     public int ProductionBonus =>
         SonsOfLiberty >= Government.VeryGood ? 2
         : SonsOfLiberty >= Government.Good ? 1
-        : ToryCount > Government.VeryBad ? -2
-        : ToryCount > Government.Bad ? -1
+        : ToryCount > Government.Bad ? -1 // Col1: ONE bad-government tier of −1 — no FreeCol "very bad" −2 tier (86d3kgbtj)
         : 0;
 
     // ── Preferred-size advisory (FreeCol Colony.getPreferredSizeChange / getUnitsToAdd / getUnitsToRemove) ─────
@@ -346,20 +347,12 @@ public sealed class Colony
         {
             return -1;
         }
-        // No bonus applies at either end — penalties may.
-        if (newTory > Government.VeryBad)
-        {
-            return oldTory <= Government.VeryBad ? -1 : 0;
-        }
+        // No bonus applies at either end — the single bad-government penalty may (Col1's one −1 tier, 86d3kgbtj; no −2 very-bad tier).
         if (newTory > Government.Bad)
         {
-            if (oldTory <= Government.Bad)
-            {
-                return -1;
-            }
-            return oldTory > Government.VeryBad ? 1 : 0;
+            return oldTory <= Government.Bad ? -1 : 0; // growing INTO bad government costs −1; an already-bad colony is unchanged
         }
-        return oldTory > Government.Bad ? 1 : 0;
+        return oldTory > Government.Bad ? 1 : 0; // shrinking OUT of bad government improves +1
     }
 
     /// <summary>The upper bound on how many colonists the preferred-size advisory will suggest adding or removing (FreeCol <c>Colony.CHANGE_UPPER_BOUND</c> = 10).</summary>
