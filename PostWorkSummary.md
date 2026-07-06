@@ -29,9 +29,9 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 **Status:** **L1/L2 2736 green** (the 2 perf soak micro-benchmarks are the known machine-load flake — both pass in isolation; 4 correctness soak tests green, byte-stable); **L3 NativeSettlementPanel 15 green**; all 3 commits pushed, **CI green incl. the L3 Godot job** (De Soto run `28823043953` ✓✓, buy-back run `28824562221` ✓✓).
 **Changed:** `Game.cs`, `Game.Natives.cs`, `Colony.cs`, `GovernmentLimits.cs`, `NativeSettlementPanel.cs`; +7 L1 (`NativeTradeTests`), buy/De-Soto/overcrowding tests rewired; 9 system docs + `feature-parity.md` (De Soto row 50, overcrowding 487→No, new buy-back row → **totals 968/21/27**) + review doc. Commits `61e90e3`, `4771621`, `42d5c82`.
 **Decisions:** buy-back allowance kept **transient/human-only** (no save bump, soak-safe) — a deliberate FreeCol→Col1 departure, documented. Overcrowding **drops** FreeCol's −2 tier rather than re-tuning it. Fixed De Soto doc drift proactively (it was a genuine no-drift violation).
-**Scheduled next:** **Tax cap 75%** decision (`86d3kgbtj` leftover) — see Needs-you; nothing else is pending (all other findings triaged: shipped or Cancelled).
+**Scheduled next:** — **Col1 online-fidelity arc COMPLETE** (every Tier-1/2 finding shipped or a documented accepted deviation). Awaiting your next steer.
 **Follow-ups:** flaky-scene-test chip `task_dd365b94` (pre-existing); man-o'-war pre-war availability is a *verification* item (Tier 2 #8, "needs a code check") — out of scope for the docs task, offer separately if wanted.
-**Needs you:** **Tax cap — yes/no?** We already cap tax via `model.option.maximumTax` on a **difficulty ladder** (veryEasy 50 → medium 65 → hardest 75); **Col1 used a flat 75%**. Bumping medium/all levels to 75 is a 1-value data change but a *rebalance* (harsher King on easy/medium) like the ones you declined. My lean: **decline / keep FreeCol's ladder** (it already reaches 75 at the top), but it's your call — asked in chat.
+**Needs you:** **Nothing pending.** Tax cap **resolved 2026-07-07** — you chose to keep FreeCol's difficulty ladder (`maximumTax` 50→65→75, already reaching Col1's 75% at the hardest level); no code change. Decision recorded in the review doc + ClickUp Session Log.
 
 ---
 
