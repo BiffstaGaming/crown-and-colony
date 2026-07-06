@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-06 — Online-research fidelity pass: original Col1 vs Crown & Colony
+
+**Requested (Chris):** another pass through FreeCol/Colonization mechanics **including online searches**, then compare with what C&C has.
+**Did:**
+- Confirmed the existing `feature-parity.md` (968 Yes / 1015) was built entirely from FreeCol code + repo — **no online research**. Aimed this pass at the **original 1994 game** (manual, community wikis, strategy forums) via **6 parallel research agents** across all 22 domains, each cross-referencing online Col1 behaviour vs our parity doc + code.
+- **Meta-finding:** C&C is an exceptionally faithful *FreeCol* port; **where FreeCol's classic ruleset drifts from the real 1994 game, we inherited FreeCol's value, not Col1's** — a delta a code-only audit structurally cannot see.
+- Surfaced **14 genuine gameplay divergences** (treasure King's-cut = tax-rate not difficulty-scaled 50–70%; native first-contact missing peace/reject→war/land-grant; colony-assault +50% REF-only vs all-Europeans; tax cap 65 vs 75; building learning-by-doing missing; custom-house trickle vs 100-arm/50-floor; overcrowding −2 vs −1; end-game score values; Continental muster fraction; no 1800/1850 auto-end; native buy-back volume; boycott ×300 vs ~×500; recruit price per-slot; De Soto naval sight), **8 factual errors in the parity doc**, **30+ confirmed-faithful**, and **5 "do-not-import" cautions** (esp. the clean REF numbers online are **Civ4Col-2008 = a different game**).
+- Wrote the durable report `docs/reference/col1-online-fidelity-review-2026-07.md` + a visual **Artifact** dashboard for review.
+**Status:** **Research + doc corrections — no code/behaviour change**, no tests affected. 8 parity-doc rows corrected, **11 `[Fidelity]` kanban tasks filed** (Backlog), docs committed.
+**Changed:** new `docs/reference/col1-online-fidelity-review-2026-07.md`; 10 corrections in `docs/reference/feature-parity.md` (totals now 966 Yes / 22 Partial / 27 No; cross-ref to the review added); this summary. (Artifact in chat.)
+**Decisions:** Chris chose **case-by-case fidelity** (move high-impact toward Col1, document the rest) + **file tasks & fix doc errors**. Applied the 8 Tier-3 corrections; filed 11 tasks: treasure cut `86d3kgbna`, first contact `86d3kgbnq`, colony-assault `86d3kgbp3`, building-learning `86d3kgbpd`, custom-house `86d3kgbpn`, score-profile `86d3kgbq0`, muster `86d3kgbr0`, end-year `86d3kgbrc`, native buy-back `86d3kgbrw`, quick-values `86d3kgbtj`, document-deviations `86d3kgbu2`.
+**Scheduled next:** the two high-priority fidelity fixes — **treasure King's-cut `86d3kgbna`** then **native first contact `86d3kgbnq`** (both need a manual double-check first, per the sourcing caveat). Existing active item: player guide `86d3k3a1f`.
+**Follow-ups:** the low-effort Data cluster `86d3kgbtj` (tax cap 75 / overcrowding −1 / boycott ×500 / De Soto naval) = quickest fidelity ROI; higher-effort Code items are individually filed.
+**Needs you:** nothing blocking — triage the 11 `[Fidelity]` tasks into a wave when ready; verify the high-impact code changes against the manual before they ship.
+
+---
+
 ## 2026-07-05 — Bigger colony/Europe screenshots + larger display (86d3k3a1f)
 
 **Requested (Chris):** the colony-screen image is too small to see anything — needs a bigger resolution so the entire colony is visible.
