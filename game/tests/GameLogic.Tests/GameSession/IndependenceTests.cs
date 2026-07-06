@@ -531,9 +531,10 @@ public class IndependenceTests
     [Fact]
     public void NativeAttacker_OnARebelColony_GetsNoBombardOrPopularSupport()
     {
-        // ADR-009 byte-identity guard: a NON-REF attacker (a native brave) assaulting the same garrisoned rebel colony
-        // gets neither the bombard bonus (REF-only) nor popular support (it is not a War-of-Independence battle) — its
-        // odds are the plain attack-bonus vs role-defence figure, exactly as before this feature.
+        // ADR-009 byte-identity guard: a NATIVE attacker (a brave) assaulting the same garrisoned rebel colony gets
+        // neither the bombard/colony-assault bonus (natives never get it — it is a European powers' regulars bonus,
+        // 86d3kgbp3) nor popular support (it is not a War-of-Independence battle) — its odds are the plain
+        // attack-bonus vs role-defence figure, exactly as before this feature.
         (Game game, Colony colony) = RebellionReady();
         game.DeclareIndependence(game.HumanPlayer); // the colony is rebel-held
         colony.Liberty = Colony.LibertyPerRebel * colony.Population * 40 / 100; // 40% SoL — would matter only in a WoI battle

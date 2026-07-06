@@ -46,7 +46,7 @@ public enum CombatResult
 /// <param name="ArtilleryInOpen">Artillery attacking in the open, not in a settlement (−75%).</param>
 /// <param name="AmbushBonus">Ambush offence bonus — the defender's terrain defence percentage, gained as offence when ambushing from concealing terrain (FreeCol <c>AMBUSH_BONUS</c>).</param>
 /// <param name="GoodsCarried">Goods units in the (naval) attacker's hold — each unit is a −12.5% cargo penalty.</param>
-/// <param name="Bombard">The attacker carries the bombard (siege) bonus assaulting a settlement (FreeCol <c>model.modifier.bombardBonus</c>, REF-only, +50%).</param>
+/// <param name="Bombard">The attacker carries the bombard (siege) bonus assaulting a colony (+50%). FreeCol's classic spec scopes <c>model.modifier.bombardBonus</c> to the REF nation type; Col1 gives the bonus to the regular troops of every European power, so the attack slice sets this for any non-native attacker (a colonial power or the REF) — see <c>Game.CombatPowers</c>.</param>
 public readonly record struct AttackContext(
     bool WithoutAttackBonus = false,
     MovementPenalty Movement = MovementPenalty.None,
@@ -89,7 +89,7 @@ public readonly record struct DefenceContext(
 /// <param name="ArtilleryAgainstRaidBonus">Artillery defending a settlement against a native raid (<c>model.modifier.artilleryAgainstRaid</c>, classic +1.00).</param>
 /// <param name="FortifiedBonus">The fortified defence bonus (<c>model.modifier.fortified</c>, classic +0.50).</param>
 /// <param name="CargoPenalty">Per-goods-unit naval cargo penalty (<c>model.modifier.cargoPenalty</c>, classic −0.125).</param>
-/// <param name="BombardBonus">The siege (bombard) bonus an attacker gets assaulting a <em>settlement</em> (<c>model.modifier.bombardBonus</c>, classic +0.50). In the classic spec this lives on the Royal Expeditionary Force nation type, so only the REF carries it; <see cref="CombatModel"/> applies it only when <see cref="AttackContext.Bombard"/> is set.</param>
+/// <param name="BombardBonus">The siege (bombard) bonus an attacker gets assaulting a colony (<c>model.modifier.bombardBonus</c>, classic +0.50). FreeCol's classic spec parks this modifier on the Royal Expeditionary Force nation type, but Col1 grants the +50% colony-assault bonus to the regular troops of every European power; the attack slice therefore sets <see cref="AttackContext.Bombard"/> for any non-native attacker assaulting a colony (not just the REF), and <see cref="CombatModel"/> applies the value.</param>
 public readonly record struct CombatModifiers(
     double AttackBonus,
     double SmallMovementPenalty,
@@ -115,7 +115,7 @@ public readonly record struct CombatModifiers(
         ArtilleryAgainstRaidBonus: 1.00, // +100% — artillery defending a colony against a native raid
         FortifiedBonus: 0.50,            // +50%
         CargoPenalty: -0.125,            // −12.5% per goods unit carried (naval, both offence & defence)
-        BombardBonus: 0.50);             // +50% — the REF battering a rebel settlement (REF nation type only)
+        BombardBonus: 0.50);             // +50% — a European power's regulars assaulting a colony (Col1; classic spec parks the value on the REF nation type)
 }
 
 /// <summary>

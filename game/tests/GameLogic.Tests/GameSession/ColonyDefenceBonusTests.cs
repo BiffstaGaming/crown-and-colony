@@ -81,13 +81,15 @@ public class ColonyDefenceBonusTests
     [Fact]
     public void AStockade_RepelsAnAssaultThatWouldOtherwiseCapture()
     {
-        // artillery 7 ×1.5 = 10.5 attack vs the colony's lone colonist (defence 1). Unfortified win prob ≈ 0.913;
-        // a stockade doubles the defence (→2) so win prob ≈ 0.84. A roll of 0.875 sits in that gap.
+        // artillery 7 ×1.5 attack ×1.5 colony-assault bonus = 15.75 vs the colony's lone colonist (defence 1). Col1
+        // gives every European power's regulars the +50% colony-assault bonus (86d3kgbp3), so the human attacker now
+        // carries it too. Unfortified win prob ≈ 0.940; a stockade doubles the defence (→2) so win prob ≈ 0.887.
+        // A roll of 0.91 sits in that gap.
         var (open, openColony, openAtk, _, humanId) = StageRival(stockade: false);
         var (walled, walledColony, walledAtk, foreignId, _) = StageRival(stockade: true);
 
-        open.AttackColony(openAtk, openColony.Position, new FixedRandom(0.875));
-        walled.AttackColony(walledAtk, walledColony.Position, new FixedRandom(0.875));
+        open.AttackColony(openAtk, openColony.Position, new FixedRandom(0.91));
+        walled.AttackColony(walledAtk, walledColony.Position, new FixedRandom(0.91));
 
         Assert.Equal(humanId, open.Colonies.First(c => c.Id == openColony.Id).OwnerId);     // captured
         Assert.Equal(foreignId, walled.Colonies.First(c => c.Id == walledColony.Id).OwnerId); // the stockade held
@@ -147,9 +149,10 @@ public class ColonyDefenceBonusTests
     [Fact]
     public void Artillery_BattersAColonyGarrison_ButIsBrittleAttackingInTheOpen()
     {
-        // Attacker artillery (off 7) vs a king's regular (def 5). Sieging it inside a colony: 7 ×1.5 = 10.5 (no
-        // in-the-open penalty when the defender is in a settlement) → wins. The same attack in the open:
-        // 7 ×1.5 ×0.25 = 2.625 → loses. A forced roll of 0.5 sits between (≈0.68 vs ≈0.34).
+        // Attacker artillery (off 7) vs a king's regular (def 5). Sieging it inside a colony: 7 ×1.5 attack ×1.5
+        // colony-assault bonus = 15.75 (a European power's regulars get the +50% colony-assault bonus, 86d3kgbp3; and
+        // no in-the-open penalty when the defender is in a settlement) → wins. The same attack in the open:
+        // 7 ×1.5 ×0.25 = 2.625 → loses. A forced roll of 0.5 sits between (≈0.76 vs ≈0.34).
         var (colonyGame, colonyTarget, gun1) = StageArtilleryAttacker(targetInColony: true);
         var (openGame, openTarget, gun2) = StageArtilleryAttacker(targetInColony: false);
 

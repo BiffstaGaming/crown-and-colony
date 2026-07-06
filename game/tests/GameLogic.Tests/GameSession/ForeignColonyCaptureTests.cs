@@ -44,8 +44,8 @@ public class ForeignColonyCaptureTests
         Position adj = colony.Position.Neighbours().First(n => FreeLand(game, n));
         Unit attacker = game.SpawnUnit(Classic.Unit(Artillery), adj);
         attacker.OwnerId = power.PlayerId; // reassign from the human to the foreign power (SpawnUnit owners players via OwnerId)
-        // Capture odds are deliberately overwhelming (artillery offence 7 ×1.5 attack bonus vs the colony's lone
-        // colonist defence 1 → win prob ≈ 0.91), so the at-war capture lands turn 1 for seed 7 — the capture
+        // Capture odds are deliberately overwhelming (artillery offence 7 ×1.5 attack bonus ×1.5 colony-assault bonus
+        // vs the colony's lone colonist defence 1 → win prob ≈ 0.94), so the at-war capture lands turn 1 for seed 7 — the capture
         // assertions below hinge on that single roll. If an unrelated change shifts this power's stream-1
         // consumption the roll can re-seed; re-pick the seed (the L3 scene sibling hardens with three attackers).
         if (atWar)
@@ -167,5 +167,22 @@ public class ForeignColonyCaptureTests
         // The human starts with 0 gold, so the capture's plunder is a no-op here (a broke victim yields nothing);
         // the gold-bearing plunder case (and its stream-0 safety) is covered by ColonyPlunderTests.
         Assert.Equal(peace.HumanPlayer.Gold, war.HumanPlayer.Gold);
+    }
+
+    [Fact]
+    public void ColonialAttacker_AssaultingARivalColony_GetsTheColonyAssaultBonus()
+    {
+        // Col1 fidelity (86d3kgbp3): the +50% colony-assault (bombard/siege) bonus is not REF-only — Col1 grants it to
+        // the regular troops of EVERY European power attacking a colony. A foreign power's artillery assaulting a
+        // (garrisoned) rival colony therefore folds offence × 1.5 (attack bonus) × 1.5 (colony-assault bonus) — the same
+        // siege bonus the REF gets. (It is the AttackContext.Bombard flag, independent of the unit's own artillery ability.)
+        (Game game, Colony colony, Player power, _) = Stage(seed: 7, atWar: true);
+        game.SpawnUnit(Classic.Unit("model.unit.freeColonist"), colony.Position); // a human garrison so the preview has a real defender
+        Unit attacker = game.Units.First(u => u.OwnerId == power.PlayerId && u.IsOnMap && Cheb(u.Position, colony.Position) == 1);
+
+        Game.CombatOdds odds = game.CombatOddsAgainst(attacker, colony.Position)!;
+
+        double baseOffence = Classic.Unit(Artillery).Offence; // 7
+        Assert.Equal(baseOffence * 1.5 * 1.5, odds.AttackPower, 4); // attack bonus × colony-assault bonus (no longer REF-only)
     }
 }

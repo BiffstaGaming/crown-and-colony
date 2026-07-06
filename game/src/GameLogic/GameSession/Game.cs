@@ -2972,9 +2972,11 @@ public sealed partial class Game
             ArtilleryInOpen: !naval && attacker.Type.Bombard && !attackerInColony && !attacker.IsFortified && !inColony,
             AmbushBonus: ambush ? Map.TerrainAt(target).DefenceBonus : 0,
             GoodsCarried: naval ? GoodsSlotsUsed(attacker) : 0,
-            // The REF's bombard bonus also applies battering a garrison standing on a settlement tile (FreeCol
-            // getOffensiveModifiers: defender's tile hasSettlement → BOMBARD_BONUS), not just the colony-capture path.
-            Bombard: inColony && IsRefUnit(attacker));
+            // Colony-assault (bombard/siege) bonus (+50% offence). Col1 gives it to the regular troops of ALL European
+            // powers attacking a colony (manual), not just the REF — so any NON-NATIVE attacker (a colonial power or the
+            // REF) carries it when assaulting a colony tile. FreeCol's classic spec parks model.modifier.bombardBonus on
+            // the REF nation type; we widen the owner scope to match the original 1994 game (86d3kgbp3).
+            Bombard: inColony && !attacker.IsNative);
         double attack = CombatModel.AttackPower(OffenceBase(attacker) * OffenceAgainstNativeFactor(attacker, defender), ctx, Ruleset.CombatModifiers);
         double defence = DefencePowerOf(attacker, defender, target);
         return (attack, defence);
@@ -3302,15 +3304,15 @@ public sealed partial class Game
         // by the colony's fortification bonus below (FreeCol also Revere-auto-equips it — deferred).
         var defender = new Unit(0, Ruleset.Unit(StartingUnitTypeId), target) { OwnerId = formerOwner };
 
-        // REF siege fidelity (FreeCol getOffensiveModifiers settlement branch): the Royal Expeditionary Force batters a
-        // settlement with its bombard bonus (+50%), and in a War of Independence the colony's popular support scales its
-        // defence — a rebel-held town defends at its Sons-of-Liberty %, the REF assaults against 100−SoL%. Both are 0 in
-        // an ordinary (non-REF, non-WoI) capture, so that path is byte-identical (ADR-009).
+        // Colony-assault fidelity: the bombard/siege bonus (+50% offence assaulting a colony) applies to the regular
+        // troops of ALL European powers in Col1 (manual), not only the REF — so any non-native attacker carries it here
+        // (86d3kgbp3). Popular support stays REF-specific: in a War of Independence a rebel-held town defends at its
+        // Sons-of-Liberty %, the REF assaults against 100−SoL% (both 0 in an ordinary non-WoI capture, ADR-009).
         bool attackerIsRef = IsRefUnit(attacker);
         double popularSupport = IsWarOfIndependenceColonyBattle(attacker, formerOwner)
             ? CombatModel.PopularSupportPercent(colony.SonsOfLiberty, attackerIsRef)
             : 0;
-        var attackContext = new AttackContext(Movement: MovementPenaltyFor(attacker), Bombard: attackerIsRef);
+        var attackContext = new AttackContext(Movement: MovementPenaltyFor(attacker), Bombard: !attacker.IsNative);
         double attackPower = CombatModel.AttackPower(OffenceBase(attacker), attackContext, Ruleset.CombatModifiers);
         double defencePower = CombatModel.DefencePower(
             DefenceBase(defender),
