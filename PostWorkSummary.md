@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-07 — Native first contact shipped (Col1 accept/reject → war + land)
+
+**Requested (Chris):** "yes, follow col1" — implement the native first-contact peace offer (previously blocked on source); then list the remaining tasks.
+**Did:**
+- **✅ Native first contact** (`86d3kgbnq`, commit `50778d5`) — Chris confirmed it's Col1 despite the inconclusive manual, so I built it. On first meeting a tribe the chief offers **peace + a small land grant**: the human's first speak-with-chief of an un-contacted nation defers to an accept/reject dialog. **Accept** → peace + a persistent parcel of the tribe's land around the unit (`GameMap.ClaimFromNatives`, the saved override → **no save bump**) + the chief's welcome; **reject** → the tribe declares **war** (`RaiseTribeTension` to war level + `SetNativeStance`). AI powers + already-met tribes resolve inline (auto-accept, no land) → **soak byte-identical**; an unanswered offer times out to peace.
+- **UI:** a code-built parchment `ConfirmationDialog` (Accept peace / Reject (war)) from `GameController.MaybePromptFirstContact`, resolving over the oracle (ADR-006); the settlement panel's speak line is suppressed for the pending case.
+- **Tests:** +7 L1/L2 (`NativeFirstContactTests`) + adapted `ScoutSpeakToChiefTests`/`NativeInteractionTests` (the visit outcome now runs on accept) + 2 L3 (`NativeSettlementPanelTests`: accept→peace, reject→war).
+**Status:** **2727 L1/L2 + 5 soak + 393 scene green locally**; pushed `50778d5`, CI running (393/393 scene verified locally). **All three approved fidelity fixes now shipped.**
+**Changed:** `Game.cs`, `GameController.cs`, `NativeSettlementPanel.cs`; `natives.md` (both layers + changelog), `feature-parity.md` (row 698), review doc; +1 new L1/L2 file, +2 L3, 2 adapted test files. Commit `50778d5`.
+**Decisions:** trigger = the human's first deliberate speak-with-chief per nation (our proxy for Col1's on-meeting trigger; no ambient native-contact detection — documented deviation). Land grant reuses the persistent `_claimedFromNatives` override (no save bump). AI/soak untouched by design.
+**Scheduled next:** Chris triages the **5 remaining fidelity tasks** (listed in chat): custom-house `86d3kgbpn`, muster `86d3kgbr0`, buy-back `86d3kgbrw`, quick-values `86d3kgbtj`, document-deviations `86d3kgbu2`.
+**Follow-ups:** confirm feature-3 CI green (scene job); flaky-scene-test chip `task_dd365b94`.
+**Needs you:** decide which of the 5 remaining fidelity tasks to do (and their order).
+
+---
+
 ## 2026-07-06 (overnight) — Implemented approved fidelity fixes: 2 shipped, first-contact blocked on source
 
 **Requested (Chris, going to bed):** "begin working through ALL of the ones I've told you to do" (the 3 approved: colony-assault, building learning-by-doing, native first contact) + "update documents as required."
