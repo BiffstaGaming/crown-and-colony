@@ -1655,13 +1655,17 @@ public class InputTests
         controller.GetType().GetField("_selectedUnit", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(controller, null);
 
-        // Centre the camera on the tile so its diamond sits at screen-centre, then invoke the right-click handler with
-        // that screen-centre as the event position. Passing the position explicitly (rather than relying on a live
-        // cursor warp, which is unreliable headless) makes the case deterministic and exercises the real event-position
-        // pick path the dispatch uses.
+        // Centre the camera on the tile, then invoke the right-click handler with the tile's on-screen point as the
+        // event position. We PROJECT the tile's world centre through the very transform TileAtScreen inverts
+        // (GetGlobalTransformWithCanvas — camera pan/zoom folded in), so the pick round-trips back to THIS exact tile no
+        // matter the CI viewport size or any camera-limit clamp. The earlier `GetVisibleRect().Size / 2` assumed the
+        // camera perfectly centred the tile; when the seed's start sits near a map edge the camera clamps to its limits,
+        // the tile is no longer at viewport-centre, and the pick lands on the wrong (or out-of-bounds) tile → an empty
+        // menu whose .First() throws — the intermittent "headless 0 tiles picked" flake (task_dd365b94).
+        var mapView = controller.GetNode<MapView>("MapView");
         controller.GetNode<Camera2D>("Camera").Position = MapView.TileCentre(pos);
         await runner.SimulateFrames(1);
-        Vector2 screenCentre = controller.GetViewport().GetVisibleRect().Size / 2f;
+        Vector2 screenCentre = mapView.GetGlobalTransformWithCanvas() * MapView.TileCentre(pos);
         controller.GetType().GetMethod("HandleRightClick", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(controller, [screenCentre]);
         await runner.SimulateFrames(1);
