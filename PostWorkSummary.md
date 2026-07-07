@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-07 — Australia run-through: FreeCol maps verified + variant skeleton & real map SHIPPED (P8 slice 1)
+
+**Requested (Chris):** provided two FreeCol `.fsg` maps ("Australia only.fsg" / "Australia.fsg") — "can these be used? If yes, set up the first Australia run-through using ALL the design info + the maps."
+**Did:**
+- **✅ Maps verified — YES, usable, and genuinely Australia.** Both `.fsg` are zipped FreeCol saves; both carry **identical terrain** (30×80) — an ASCII render shows the continent (arid desert interior, forested/temperate coasts, **Tasmania** as a southern island). Every terrain id is a standard FreeCol type our ruleset already defines → resolves **1:1, no remapping**. (They differ only in pre-placed FreeCol players/units/settlements, which we discard — terrain only, like `america.txt`.)
+- **✅ Converted** the `.fsg` tile grid → `game/data/maps/australia.txt` (30×80, our terrain-grid format).
+- **✅ SHIPPED slice 1 — "Australian Federation" is selectable at New Game and plays on the real Australia map.** Registered `GameVariants.Australia` (ADR-018 — auto-appears in the Scenario dropdown; spec = copy of classic for now); added `MapSource.Australia` + `FixedMap.ImportAustralia` + an "Australia (fixed)" map-dropdown row. Save already records the variant id (v15) → reloads correctly, no save bump.
+- **Committed** the 22-file design corpus (was untracked) + the licensing provenance (CREDITS.md + maps PROVENANCE.md + the ClickUp Asset Register: FreeCol map pack by Euzimar, GPL v2, terrain-only).
+**Status:** **CI fully green** — run `28846451279` (commit `8eca117`): **L1+L2 ✓ + L3 ✓** (the L3 job exercises the new map dropdown). Full L1/L2 **2745** green (classic byte-identical, soak green); +7 L1 (`AustraliaVariantTests`); L3 New-Game/MainMenu 39 green.
+**Changed:** `GameVariant.cs`, `FixedMap.cs`, `NewGameDialog.cs`, `GameLogic.csproj`; `data/maps/australia.txt`, `data/rules/australia/` (copy of classic); `AustraliaVariantTests.cs` + L3 dropdown fix; docs `game-modes.md` + `IMPLEMENTATION_PLAN.md` + `CREDITS.md` + maps `PROVENANCE.md`. Commits `8eca117` (slice), plus design-corpus + credits commits. P8 tasks `86d3kwtf9` + `86d3kwtp5` → Shipped.
+**Decisions:** used the `.fsg` **terrain only** (discard its pre-placed FreeCol entities — our generators lay start/natives/resources). Variant spec starts as a **copy of classic** (Phase-0 skeleton) to prove the pipeline; the Australian **content** reskin is the next slices. FreeCol *does* have community Australia maps (my earlier "not in FreeCol" was about the base game).
+**Scheduled next:** **`[P8] Australian nations + place-names` (`86d3kwtrq`)** — reskin the spec to **British Australia** + Australian colony names (the foundational content pass that makes the mode visibly Australian), then the **Australian Pioneers** roster (`86d3kwtjb`), units, goods, and UI labels.
+**Follow-ups:** the map is terrain-only — six-colony **regions** + resource placement + the Australian content are the remaining `[P8]` tasks; confirm the Euzimar map pack's attribution terms before any public release (noted in CREDITS/PROVENANCE).
+**Needs you:** nothing blocking — the first run-through is launchable now (real Australia map, classic content). Tell me if you'd rather I lead the reskin with the **Australian Pioneers** (the figures) instead of nations/place-names.
+
+---
+
 ## 2026-07-07 — Australian mode: implementation planning (P8 kickoff)
 
 **Requested (Chris):** "start planning how to implement the Australian mode… an entirely different mode selectable at New Game, an Australian map, and the Australian Pioneers added in" (there's an existing design corpus in `docs/australian_federation_mode_md/`).
