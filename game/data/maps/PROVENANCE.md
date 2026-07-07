@@ -27,6 +27,32 @@ To re-extract (e.g. after a FreeCol update), parse the `<tile>` elements of the
 below and `MapImporter.cs` — to carry the `.fsm`'s bonuses/rumours/settlements too;
 we deliberately don't today, leaving those to the generators.)
 
+## `australia.txt`
+
+The **terrain grid** of a community-made FreeCol map of Australia, converted from the
+**FreeCol community map pack by *Euzimar*** (the `Australia.fsg` / `Australia only.fsg`
+files, dated 2017–2018), FreeCol saved-game format, licensed **GPL v2 or later** as
+FreeCol-package content. Adopted for the **Australian Federation** variant (P8);
+recorded in the Asset Register (ClickUp doc 05).
+
+A `.fsg` is a ZIP holding a full FreeCol `savegame.xml`. We extracted **only the
+terrain layer** — each `<tile x= y= type="model.tile.…">` — into the same compact grid
+as `america.txt` (header `WIDTH HEIGHT`, then `HEIGHT` rows of `WIDTH` terrain short
+names, row-major). The map is **30 × 80** — the Australian continent (arid interior,
+forested/temperate coasts, and Tasmania as a southern island). Every terrain id is a
+standard FreeCol type our `classic`/`australia` ruleset already defines, so it resolves
+1:1 with no remapping.
+
+The two `.fsg` files carry **identical terrain** (they differ only in pre-placed
+FreeCol players/units/settlements, which we discard). Rivers, resources, native
+settlements and the player's start are laid on by our generators — not taken from the
+`.fsg`, exactly as for `america.txt`. Loaded by `FixedMap.ImportAustralia` from the
+embedded resource `CrownAndColony.GameLogic.Maps.australia.txt`.
+
+**Distribution note:** this is community FreeCol content (GPL v2 map *data* — standard
+terrain only, no custom art); confirm the specific pack's attribution/terms before any
+public release.
+
 ## `example-overlays.txt`
 
 An **original, hand-written** tiny example map (not derived from any FreeCol or

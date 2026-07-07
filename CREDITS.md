@@ -12,7 +12,7 @@ detailed, file-by-file record):
 - `game/assets/freecol/sound/PROVENANCE.md` — sound effects
 - `game/assets/freecol/music/PROVENANCE.md` — background music + national anthems
 - `game/assets/fonts/PROVENANCE.md` — the UI font
-- `game/data/maps/PROVENANCE.md` — the fixed America map terrain grid
+- `game/data/maps/PROVENANCE.md` — the fixed America and Australia map terrain grids
 - `game/data/README.md` — the FreeCol ruleset XML and string data
 
 Adopted under ADR-006 (audio), ADR-013 (placeholder-asset policy) and ADR-014
@@ -32,7 +32,7 @@ FreeCol-sourced, OFL-font, and project-original files catalogued here are presen
 
 | License | Covers | Compatible with GPL-v2 distribution |
 |---|---|---|
-| **GPL v2 or later** | FreeCol art (sprites, terrain, UI, settlements, bonus/goods/building icons), sound effects, national anthems, ruleset XML + string data, America map terrain | Yes — same license as the game |
+| **GPL v2 or later** | FreeCol art (sprites, terrain, UI, settlements, bonus/goods/building icons), sound effects, national anthems, ruleset XML + string data, America + Australia map terrain | Yes — same license as the game |
 | **CC BY 4.0** | FreeCol background-music tracks | Yes — one-way compatible into GPL v2; attribution required (below) |
 | **SIL Open Font License 1.1 (OFL)** | The Cardo UI font | Yes — font is a data asset under OFL; game code stays GPL v2 |
 
@@ -191,6 +191,7 @@ all © **The FreeCol Team**, **GPL v2 or later**:
 | `game/data/rules/classic/specification.xml` | `data/rules/classic/specification.xml` | the classic ruleset, copied verbatim (© 2002–2022 The FreeCol Team) |
 | `game/data/rules/classic/european-nation-names.properties` | extracted from `data/strings/FreeColMessages.properties` | per-nation colony name lists |
 | `game/data/maps/america.txt` | terrain layer extracted from `data/maps/M_America_Mazim.fsm` (by *Mazim*) | terrain grid only; our generators add overlays |
+| `game/data/maps/australia.txt` | terrain layer converted from the FreeCol community map pack by *Euzimar* (`Australia.fsg`, 2017–18) | 30×80 terrain grid only (the Australian Federation variant, P8); standard FreeCol terrain ids; generators add overlays |
 
 `game/data/maps/example-overlays.txt` is **original** to this project (hand-written
 test fixture), under the project's own GPL v2 — no third-party licensing.
