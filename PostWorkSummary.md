@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Map view as a Settings option (isometric ⇄ top-down, persisted + live)
+
+**Requested (Chris):** "make isometric vs top-down a menu option so users can try both ways — I can test the top-down."
+**Did:** promoted the F6 prototype to a **real, persisted Settings option**:
+- **`SettingsModel.MapViewStyle`** (Isometric default / TopDown; key `map_view`; round-trips, garbage-safe, **no save bump**).
+- **Settings → Video → "Map view"** dropdown (code-built, no `.tscn` edit): Isometric (diamond) / Top-down (square).
+- `SettingsService.Apply` sets `MapView.TopDown` + fires a new **`Applied`** signal → `GameController` **re-renders + re-centres the camera live** when the map view changes (change-tracked, so a volume slider doesn't move the camera).
+- **`F6` now routes through the setting** (persists + syncs the menu) instead of flipping a raw flag.
+**Status:** Pushed **`e37d346`**; **default Isometric → shipped look unchanged**. Full **L1/L2 2745 green**; **72 L3 green** (goldens+input+main-scene — the map-view L3 resets the global flag in `[AfterTest]` so goldens stay iso). CI verifying.
+**Changed:** `SettingsModel.cs`, `SettingsService.cs`, `SettingsScreen.cs`, `GameController.cs`; `SettingsModelTests.cs` (+3 L1), `SettingsScreenTests.cs` (+1 L3); `docs/systems/settings.md` (both layers + table + robustness + verification + changelog). Commit `e37d346`.
+**Decisions:** an **enum setting** (extensible) applied via the service's `Apply`; a Godot **signal** for the live in-game redraw (decoupled); F6 kept as a shortcut but routed through the setting for consistency; **change-tracked** so only a real map-view change disturbs the camera.
+**Scheduled next:** **await Chris's top-down verdict** — now testable from the menu. If pursuing → the art-led full conversion (proper top-down tiles for terrain/forests/units/settlements + river/road width).
+**Needs you:** **Settings → Video → Map view → Top-down** (or press `F6` in-game) to test it live, then decide: pursue the full top-down conversion, or keep iso.
+
+---
+
 ## 2026-07-08 — Top-down square map: reversible prototype + before/after screenshots
 
 **Requested (Chris):** "can't you just copy and rotate the assets? … make it top-down squares, closer to the original Colonization, I don't like the diamond." Then: "create the prototype and show me (screenshots might be better)."
