@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Colony-screen polish pass (5 fixes from Chris's feedback)
+
+**Requested (Chris):** on the colony screen — (1) top-down tile dropdowns are cut off; (2) "+N room to grow" is hard to read; (3) buildings have random gaps between image/text/[+]; (4) "Producing" (top) duplicates "Production" (bottom) — maybe remove it; (5) red text is hard to read on the parchment — thoughts?
+**Did (all 5, verified with before/after captures):**
+- **(1) Pickers no longer clipped:** enlarged the top-down worked-tile cell **112→132px** and fit the "Work…" picker to the cell (width `tw−24`, centred) so it + the badges sit inside the square with margin.
+- **(2) "room to grow" legible:** darkened the advisory tint to a deep sage (`Advisory` → (0.27,0.40,0.22)).
+- **(3) No more mystery gaps:** the "gap" was the empty building workplaces rendering as near-invisible 0.25-alpha blanks. New **`EmptySlot()`** draws a visible bordered placeholder, so free slots read as a row of *slots* and the +/− controls sit right beneath.
+- **(4) Removed the top "Producing:" bar** (`ProductionBar`/`NetProduction` deleted) — the full per-good **Production** section at the bottom already shows it.
+- **(5) Red readable:** darkened shortfall/consumed ink to a deep brick red (`Negative` (0.9,0.3,0.25)→(0.58,0.11,0.08)) — much stronger contrast on the parchment (my recommendation; I can also bold it if you want more).
+**Status:** **45 `ColonyPanelTests` green** (the top-down grid-step assertion updated 112→132); build clean. Iso tile layout unchanged. Committed **(this commit)**; pushed. **The `colony-panel-seed424242` L4 golden will regenerate on CI Linux** — I'm triggering the `golden_update` workflow next and will commit the new PNG, so expect one intermediate red L4 until that lands.
+**Changed:** `game/presentation/ColonyPanel.cs` (all 5), `ColonyPanelTests.cs` (grid-step 112→132), `docs/systems/colonies.md` (changelog + L4 regen note). Commit **(this commit)**.
+**Decisions:** darker deep-brick red + deep-sage for readability (over adding outlines — keeps it clean); visible bordered empty slots (FreeCol shows slot placeholders) rather than removing the row; bigger top-down cell (132) rather than shrinking every widget.
+**Scheduled next:** **regenerate + commit the `colony-panel-seed424242` golden** (trigger `ci.yml` `golden_update=true` → download `goldens-linux` → commit the PNG → confirm CI green), then back to **Chris's top-down direction call** (full art pass vs keep iso). If deferred: **Australian Pioneers = Founding Fathers (`86d3kwtjb`)**.
+**Needs you:** eyeball the new colony screen (top-down + iso) when convenient; say if the red should be bolder still. Then the direction call.
+
+---
+
 ## 2026-07-08 — Colony screen goes top-down too (whole game now consistent)
 
 **Requested (Chris):** two questions — is top-down applied to the **Australia map**, and to **inside the Colony (the 9 worked tiles)?** — then: "Yes, the whole game should be top-down when it's changed in the settings."

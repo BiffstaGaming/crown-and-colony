@@ -45,10 +45,13 @@ public partial class ColonyPanel : PanelContainer
     /// <summary>Goods are moved on/off a carrier one hold-slot (100 units) at a time, clamped to what's actually available — FreeCol's per-stack load lot.</summary>
     private const int CargoLot = 100;
 
-    private static readonly Color Negative = new(0.9f, 0.3f, 0.25f);
+    // Deep brick red — was a bright (0.9,0.3,0.25) that washed out on the light parchment ground; this darker, less
+    // saturated red reads clearly against it (Chris feedback 2026-07-08). Used for shortfalls / consumed / negative net.
+    private static readonly Color Negative = new(0.58f, 0.11f, 0.08f);
 
-    /// <summary>Muted grey-green tint for the neutral/advisory population hint (room to grow, or at ideal size).</summary>
-    private static readonly Color Advisory = new(0.6f, 0.68f, 0.55f);
+    /// <summary>Deep sage-green tint for the neutral/advisory population hint (room to grow, or at ideal size). Darkened
+    /// from a washed-out (0.6,0.68,0.55) so it's legible on the parchment ground (Chris feedback 2026-07-08).</summary>
+    private static readonly Color Advisory = new(0.27f, 0.40f, 0.22f);
 
     /// <summary>Warehouse high-water-mark warning tint (amber) — a good at/near capacity that will spill on End Turn.</summary>
     private static readonly Color WarehouseHigh = new(0.85f, 0.55f, 0.15f);
@@ -248,7 +251,8 @@ public partial class ColonyPanel : PanelContainer
         var card = new VBoxContainer { Name = "ContentCard", SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
         card.AddThemeConstantOverride("separation", 10);
 
-        card.AddChild(ProductionBar());
+        // (The old compact "Producing:" summary bar was removed — Chris 2026-07-08 — as it duplicated the full
+        // per-good "Production" section at the bottom of the screen.)
 
         // Colony management: rename the colony, and abandon it (give it up). The abandon button is gated on the engine's
         // CheckAbandonColony oracle so it is greyed (with the reason) when the colony can't be abandoned (ADR-006).
@@ -417,36 +421,8 @@ public partial class ColonyPanel : PanelContainer
         return box;
     }
 
-    // ── Top: the colony's net production, FreeCol's production row ───────────────────────────────────────────
-
-    private Control ProductionBar()
-    {
-        var bar = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        bar.AddChild(new Label { Text = "Producing: " });
-        foreach ((string good, int net) in NetProduction().OrderBy(kv => kv.Key, StringComparer.Ordinal))
-        {
-            if (net == 0)
-            {
-                continue;
-            }
-            var cell = new VBoxContainer();
-            cell.AddChild(IconRect(ColonyArt.GoodsIcon(Short(good)), 28, 28));
-            var amount = new Label { Text = (net > 0 ? "+" : "") + net, HorizontalAlignment = HorizontalAlignment.Center };
-            if (net < 0)
-            {
-                amount.AddThemeColorOverride("font_color", Negative); // theme ink is dark; flag shortfalls in red
-            }
-            cell.AddChild(amount);
-            bar.AddChild(cell);
-        }
-        return bar;
-    }
-
-    /// <summary>
-    /// A colony's per-turn net production (tile yields + colony-centre auto-yield, less food eaten), via the shared
-    /// <see cref="Game.ColonyNetProduction"/> oracle so the colony screen and the empire report show one tested figure.
-    /// </summary>
-    private IReadOnlyDictionary<string, int> NetProduction() => _game.ColonyNetProduction(_colony);
+    // (ProductionBar / NetProduction were removed with the top "Producing:" summary — Chris 2026-07-08. The full
+    // per-good breakdown lives in the "Production" section — see ProductionOverview — reading Game.ColonyProductionSummary.)
 
     // ── Left: the isometric surrounding tiles + the construction panel ──────────────────────────────────────
 
@@ -455,9 +431,10 @@ public partial class ColonyPanel : PanelContainer
     private const int TileH = 80;
 
     // Top-down mode (MapView.TopDown): the 3×3 worked tiles render as squares of this side — a de-skewed square
-    // per cell (see DeskewTile) instead of an iso diamond — so the colony matches the map's top-down view. Sized
-    // to fit the same ~500×344 tile band the iso layout uses (3 × 112 = 336).
-    private const int TopDownTile = 112;
+    // per cell (see DeskewTile) instead of an iso diamond — so the colony matches the map's top-down view. 132px
+    // gives the per-tile widgets (the ~112px work picker, badge, worker sprite) room so they don't crowd the cell
+    // edges (Chris feedback 2026-07-08); 3 × 132 = 396, still inside the 500-wide tile column (the screen scrolls).
+    private const int TopDownTile = 132;
 
     private Control LeftColumn()
     {
@@ -661,7 +638,10 @@ public partial class ColonyPanel : PanelContainer
                 else if (_colony.IdleColonists > 0 && _game.ColonyCanWorkTile(_colony, tile)
                          && _game.TileWorkOptions(tile) is { Count: > 0 } options)
                 {
-                    var picker = new OptionButton { Name = $"Work_{tile.X}_{tile.Y}", CustomMinimumSize = new Vector2(104, 24) };
+                    // Top-down: fit the picker inside the square cell (12px margin each side) so it isn't clipped;
+                    // iso keeps the 104px width the wide diamond has room for.
+                    int pickerW = td ? tw - 24 : 104;
+                    var picker = new OptionButton { Name = $"Work_{tile.X}_{tile.Y}", CustomMinimumSize = new Vector2(pickerW, 24) };
                     picker.AddItem("Work…");
                     foreach ((string goodsId, int yield) in options)
                     {
@@ -675,7 +655,7 @@ public partial class ColonyPanel : PanelContainer
                             AssignWorkWithClaim(free, options[(int)index - 1].GoodsId);
                         }
                     };
-                    Place(view, picker, topLeft + (td ? new Vector2((tw - 104) / 2f, th / 2f - 12) : new Vector2(28, 28)));
+                    Place(view, picker, topLeft + (td ? new Vector2((tw - pickerW) / 2f, th / 2f - 12) : new Vector2(28, 28)));
                 }
             }
         }
@@ -1017,9 +997,7 @@ public partial class ColonyPanel : PanelContainer
             }
             else
             {
-                var empty = IconRect(null, 32, 32);
-                empty.Modulate = new Color(1, 1, 1, 0.25f); // faint empty-slot marker
-                slots.AddChild(empty);
+                slots.AddChild(EmptySlot()); // a visible bordered placeholder, not blank space (Chris 2026-07-08)
             }
         }
         box.AddChild(slots);
@@ -1511,6 +1489,21 @@ public partial class ColonyPanel : PanelContainer
         Size = new Vector2(width, height),
         MouseFilter = Control.MouseFilterEnum.Ignore,
     };
+
+    /// <summary>An empty building workplace: a subtle inset with a faint border so the free slots read as *slots*
+    /// (a visible row of them) rather than blank space between the name and the +/− controls (Chris 2026-07-08).</summary>
+    private static Control EmptySlot()
+    {
+        var slot = new PanelContainer { CustomMinimumSize = new Vector2(32, 32), MouseFilter = Control.MouseFilterEnum.Ignore };
+        slot.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        {
+            BgColor = new Color(0.16f, 0.10f, 0.05f, 0.16f),        // faint darker inset on the parchment
+            BorderColor = new Color(0.34f, 0.25f, 0.14f, 0.55f),    // thin warm-brown edge so the slot outline reads
+            BorderWidthLeft = 1, BorderWidthTop = 1, BorderWidthRight = 1, BorderWidthBottom = 1,
+            CornerRadiusTopLeft = 3, CornerRadiusTopRight = 3, CornerRadiusBottomLeft = 3, CornerRadiusBottomRight = 3,
+        });
+        return slot;
+    }
 
     /// <summary>Places a free-positioned child at <paramref name="pos"/> inside a layout-free <see cref="Control"/>; a control with no explicit size (a button/picker) is grown to its minimum so it renders.</summary>
     private static void Place(Control parent, Control child, Vector2 pos)

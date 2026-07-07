@@ -25,7 +25,7 @@ public class ColonyPanelTests
     private const string Carpenter = "model.building.carpenterHouse";
 
     // The colony's worked-tile step in top-down mode — must match ColonyPanel.TopDownTile.
-    private const float TopDownTile = 112f;
+    private const float TopDownTile = 132f;
 
     /// <summary>The map-view style is a process-wide static on <see cref="MapView"/>; reset it after every case so a
     /// top-down test can't leak into an iso one (or the shared iso goldens). Iso is the shipped default.</summary>
