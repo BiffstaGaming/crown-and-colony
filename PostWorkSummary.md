@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Top-down tile size + zoom fix (whole continent now fits)
+
+**Requested (Chris):** on the America map in top-down, "the overall tile set size needs to be changed — it's clearly missing the top and bottom of the Americas" (+ screenshot).
+**Did:**
+- **Diagnosed:** the America map is a tall **40×180** N–S strip; at the prototype's **96px** tiles with the camera's **0.5×** max zoom-out you saw only ~24 of 180 rows (iso hides this by rotating + vertically squishing).
+- **Fixed both levers:** `MapView.SquareTile` **96 → 64** (nearer the iso tile's on-screen footprint); `CameraController.ZoomLevels` gained two far-out levels **0.125× / 0.25×** so a tall map zooms right out to the whole continent (helps big **iso** maps too). **Default zoom stays 1.0×** (`DefaultZoomIndex` 2→4) → goldens unchanged.
+- **Verified:** captured the America map fully zoomed-out (revealed) — the **whole continent (N. America → isthmus → S. America) now fits in one view**. Published a fix Artifact: https://claude.ai/code/artifact/505cabbc-a744-4199-b6b0-d1a48bffaab3
+**Status:** Pushed **`96858cb`** (+ `9c27d08` doc). **28 L3 green** (`CameraNavTests` + `VisualGoldenTests` + `SettingsScreenTests`) — iso path + default view untouched. CI verifying. (Also: the prior map-view Settings option's CI came back **green** — L1+L2 ✓ + L3 ✓.)
+**Changed:** `MapView.cs` (SquareTile), `CameraController.cs` (zoom levels), `docs/systems/hud-input.md` (pinned zoom levels updated). Commits `96858cb`, `9c27d08`.
+**Decisions:** fixed the **tile size** (Chris's ask) **and** the **zoom-out range** (the real enabler for a tall map); kept the default zoom at 1.0× so nothing about the iso view or the goldens changes.
+**Needs you:** in top-down, **zoom out** (mouse wheel or the −/zoom-out button) to see the whole continent; tell me if 64px still feels too big and I'll drop it further. Then the standing question: pursue the full top-down art pass, or keep iso?
+
+---
+
 ## 2026-07-08 — Map view as a Settings option (isometric ⇄ top-down, persisted + live)
 
 **Requested (Chris):** "make isometric vs top-down a menu option so users can try both ways — I can test the top-down."
