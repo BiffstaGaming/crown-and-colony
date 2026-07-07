@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-07 — Australian mode: implementation planning (P8 kickoff)
+
+**Requested (Chris):** "start planning how to implement the Australian mode… an entirely different mode selectable at New Game, an Australian map, and the Australian Pioneers added in" (there's an existing design corpus in `docs/australian_federation_mode_md/`).
+**Did:**
+- **Reviewed the 22-file design corpus** (full 1788–1901 Federation campaign) + **mapped the current architecture** via an Explore agent. **Key finding:** the variant/mode layer (**ADR-018**) already exists and is tested — `GameVariant`/`GameVariants.All`, data-driven New-Game Scenario dropdown, variant id persisted in saves (v15+). So a selectable Australian mode is **mostly a content task** (author `game/data/rules/australia/specification.xml` + register one `GameVariant` + an authored map), **no engine/UI/save code** for the skeleton.
+- **Wrote + pushed the implementation plan** (`docs/australian_federation_mode_md/IMPLEMENTATION_PLAN.md`, commit `b582abe`): the architectural seams, the display-rename-vs-content-replace split (the transposability contract keeps `model.goods.bells` etc.), a phased build order (0 skeleton → 1 content → 2 map → 3 art → 4+ deep mechanics), and the milestone task breakdown.
+- **Decomposed the first milestone** ("Playable Australian Skeleton") into **8 `[P8]` ClickUp tasks** + updated the P8 epic (`86d3b3r7h` → In Design, with plan + task links).
+- **Corrected a FreeCol assumption:** Australia is **not** in FreeCol (Americas-only) — no map/ruleset to download; we author it using FreeCol's format + our `classic` spec as the template.
+**Status:** Planning deliverable — no code changes. Plan doc committed + pushed; 8 tasks created.
+**Changed:** `docs/australian_federation_mode_md/IMPLEMENTATION_PLAN.md` (commit `b582abe`); ClickUp: 8 new `[P8]` tasks (`86d3kwtf9`/`kwtrq`/`kwtvc`/`kwty1`/`kwtjb`/`kwu0c`/`kwtp5`/`kwu2q`) + epic `86d3b3r7h` updated.
+**Decisions (Chris's steers):** first milestone = **playable Australian skeleton** (reuse the engine + Australian content + UI reskin); map = **authored six-colony** map; **"Australian Pioneers" = the Founding-Father-equivalent historical figures** (the perk-granting people, not a tile-improver unit). Plus my finding: the mode plumbing already exists → it's a content task.
+**Scheduled next:** **`[P8] Variant skeleton` (`86d3kwtf9`)** — register `GameVariants.Australia` (copy-of-classic) so the mode is selectable and plays end-to-end, proving the pipeline before content authoring.
+**Follow-ups:** art licensing (biggest external-dependency risk — GPL-compatible Australian sprites); First Nations content is historically sensitive (design-led, check before shipping); the real Federation-victory loop is the one clearly code-heavy Phase-4 piece.
+**Needs you:** review the plan + the 8-task breakdown; then say go and I'll start the `[P8]` variant skeleton. (Reorder/reshape the tasks on the board as you like — I mass-created them from the milestone scope you picked.)
+
+---
+
 ## 2026-07-07 — Loose ends: 2 flaky L3 scene tests fixed + man-o'-war pre-war availability verified
 
 **Requested (Chris):** "Fix the flaky scene and confirm the pre-war availability of man-o'war."
