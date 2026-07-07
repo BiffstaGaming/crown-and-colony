@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Building-cell alignment fix (the real uniformity bug)
+
+**Requested (Chris):** looking at the full colony screenshot — the building **text, images, and slots are not all in line with each other**. Fix it.
+**Did:**
+- **Root cause found:** the shared `IconRect` helper never set `TextureRect.ExpandMode`, so it defaulted to **`KeepSize`** — the box's minimum size became the *texture's* size, not the 124×70 I asked for. Any building image bigger than that box (the tall town-hall art especially) inflated its cell's image row and shoved the name + slots to a different level than the neighbours. (Polish pass 2 reserved uniform *row heights* but this image-inflation defeated it.)
+- **Fixed:** `ExpandMode = IgnoreSize` on `IconRect` (honour the requested box, scale the texture to fit) → every building image is now the same size; plus **vertically centred the building-name label** in its 36px band so 1-line and 2-line names sit the same. Verified with a full capture — images, names, and slots now line up across every cell and row.
+**Status:** **45 `ColonyPanelTests` green**; build clean. Committing **(this commit)**, pushing. **The `colony-panel-seed424242` L4 golden regenerates** (building images now uniform) — triggering `golden_update`, expect one intermediate red L4 until the PNG lands.
+**Changed:** `ColonyPanel.cs` (`IconRect` ExpandMode + name VerticalAlignment), `docs/systems/colonies.md` (changelog + L4 note). Commit **(this commit)** + the golden commit to follow.
+**Decisions:** fixed it in the shared `IconRect` (correct for every icon — a box you specify should be honoured) rather than special-casing the building image; kept the 70px image height (the designed size) — offered to enlarge if Chris wants bigger building art now that they're uniform.
+**Scheduled next:** **regen + commit the colony golden**, then **Chris's top-down direction call**. If deferred: **Australian Pioneers = Founding Fathers (`86d3kwtjb`)**.
+**Needs you:** confirm the grid now lines up; want the building images **bigger** (now that they're uniform)? Plus the standing calls: rename "Country"→"Pasture"? and top-down full art vs keep iso?
+
+---
+
 ## 2026-07-08 — Colony-screen polish pass 2 (uniform buildings, minimap, Depot/Country)
 
 **Requested (Chris):** (1) building cells should all be the **same size with rows aligned** (image/text/slots/buttons on one level across cells), not staggered; (2) **what are the Depot and Country buildings?**; (3) the **minimap shouldn't show on the colony screen** (it did).

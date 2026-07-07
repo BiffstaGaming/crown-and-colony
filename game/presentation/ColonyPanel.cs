@@ -965,6 +965,7 @@ public partial class ColonyPanel : PanelContainer
         {
             Text = $"{Display(building.ShortName)} ({workers}/{building.Workplaces})",
             HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center, // centre in the fixed 36px band so 1-line and 2-line names sit the same
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
             CustomMinimumSize = new Vector2(124, 36),
             MouseFilter = Control.MouseFilterEnum.Ignore,
@@ -1488,6 +1489,12 @@ public partial class ColonyPanel : PanelContainer
     {
         Texture = texture,
         StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+        // IgnoreSize: honour the requested box (CustomMinimumSize) and scale the texture to fit it. Without this the
+        // TextureRect defaults to ExpandMode.KeepSize — its minimum size becomes the *texture's* size, so a building
+        // image bigger than 124×70 (e.g. the tall town-hall art) inflates its cell's image row and shoves the name +
+        // slots to a different level than the neighbouring cells. IgnoreSize makes every image box uniform so the
+        // whole grid's rows line up (Chris 2026-07-08).
+        ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
         CustomMinimumSize = new Vector2(width, height),
         Size = new Vector2(width, height),
         MouseFilter = Control.MouseFilterEnum.Ignore,
