@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Top-down square map: reversible prototype + before/after screenshots
+
+**Requested (Chris):** "can't you just copy and rotate the assets? … make it top-down squares, closer to the original Colonization, I don't like the diamond." Then: "create the prototype and show me (screenshots might be better)."
+**Did:**
+- **Corrected the premise honestly:** you can't *rotate* iso art to top-down (iso is a foreshortened 45°+tilt projection; forests/mountains/units are drawn "standing up") — but the goal is sound and **more faithful**: the 1994 Colonization was top-down square; iso is a FreeCol inheritance.
+- **Built a reversible top-down mode** (`MapView.TopDown`, default off): `TileCentre`/`TileAt` project the (already-square) grid straight down onto squares; `_Draw` branches to `DrawTopDown`, which **reuses the existing FreeCol ground art by de-skewing each diamond into its square via a 4-corner texture warp** (`DrawPolygon` with the diamond's corner UVs) — the correct "reuse the assets" method. Standing-up overlays (forests/hills) render as shrunk centred symbols (prototype stand-in).
+- **`F6` toggles iso ⇄ top-down live** in-game + re-centres the camera.
+- **Captured before/after screenshots** (Australia iso vs square, America square) via the golden-render harness (throwaway, deleted) and **published a comparison Artifact**: https://claude.ai/code/artifact/5fe2adb0-a0ec-48ec-8df1-a7c84a9b2107
+**Status:** Prototype pushed (`fd6f238`), behind a **default-off flag → shipped iso game byte-identical** (VisualGoldenTests + InputTests 65 green with the flag off); CI verifying. Build clean.
+**Changed:** `game/presentation/MapView.cs` (square mode + de-skew draw), `game/presentation/GameController.cs` (F6 toggle). Commit `fd6f238`.
+**Decisions:** **de-skew (4-corner warp), not rotate** — the honest way to reuse iso art top-down. Prototype behind a **reversible default-off flag** so the working iso game is untouched while Chris evaluates. Committed to main (flag-gated) so he can pull + run F6.
+**Scheduled next:** **await Chris's verdict** on the top-down look (Artifact + F6). If yes → the full conversion is **art-led** (proper top-down tiles for terrain/forests/units/settlements + river/road width) — a few weeks; if no → remove the flag-gated prototype (trivial).
+**Follow-ups:** rough edges by design (forest/hill symbols, iso-drawn unit sprites, iso-width rivers) — all replaced in a full pass.
+**Needs you:** **look at the Artifact + press `F6` in a running game to compare live, then tell me: pursue top-down square, or keep the iso diamonds?**
+
+---
+
 ## 2026-07-07 — Australia run-through: FreeCol maps verified + variant skeleton & real map SHIPPED (P8 slice 1)
 
 **Requested (Chris):** provided two FreeCol `.fsg` maps ("Australia only.fsg" / "Australia.fsg") — "can these be used? If yes, set up the first Australia run-through using ALL the design info + the maps."
