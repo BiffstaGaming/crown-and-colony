@@ -1262,6 +1262,18 @@ public partial class GameController : Node2D
                 OpenAdminMenu();
                 GetViewport().SetInputAsHandled();
                 break;
+            case InputEventKey { Pressed: true, Echo: false, Keycode: Key.F6 } when !IsTextInputFocused() && _game is not null:
+                // PROTOTYPE (P8 look-and-feel): F6 flips the map between the classic iso diamonds and top-down squares
+                // (MapView.TopDown), re-renders, and re-centres the camera in the new projection so the view doesn't jump
+                // off-screen. A throwaway evaluation toggle — not a rebindable action, off by default.
+                MapView.TopDown = !MapView.TopDown;
+                RefreshView();
+                if (_game.PlayerUnits.FirstOrDefault(u => u.IsOnMap) is { } anchor)
+                {
+                    GetNode<CameraController>("Camera").CenterOn(MapView.TileCentre(anchor.Position));
+                }
+                GetViewport().SetInputAsHandled();
+                break;
             case InputEventKey { Pressed: true, Echo: false } key when !IsTextInputFocused():
                 if (IsDuplicateKeyDown(key))
                 {

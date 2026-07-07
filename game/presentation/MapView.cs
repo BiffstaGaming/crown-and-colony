@@ -20,6 +20,18 @@ public partial class MapView : Node2D
     /// <summary>Diamond tile height in pixels.</summary>
     public const int TileH = 64;
 
+    /// <summary>
+    /// <b>Prototype top-down toggle (P8 look-and-feel).</b> When true the map projects straight down onto axis-aligned
+    /// <b>square</b> tiles (closer to the original 1994 Colonization) instead of isometric diamonds; when false (the
+    /// default, ADR-014) it renders the classic iso diamonds. Reversible: the iso path is untouched, so flipping this
+    /// back restores today's look exactly. The square path <b>reuses the existing FreeCol ground art</b> by de-skewing
+    /// each diamond into its square via a 4-corner texture warp (<see cref="DrawTopDown"/>) — not a rotation.
+    /// </summary>
+    public static bool TopDown;
+
+    /// <summary>Square tile edge in pixels for the top-down prototype.</summary>
+    public const int SquareTile = 96;
+
     /// <summary>Modulate for explored-but-not-currently-visible tiles ("remembered" — darkened).</summary>
     private static readonly Color DimTint = new(0.5f, 0.5f, 0.58f);
 
@@ -146,9 +158,11 @@ public partial class MapView : Node2D
     /// <summary>The number of tiles currently drawn as explored — the test seam for the Admin "Show all map" reveal (it jumps to the full map when the cheat is on). 0 before any state is shown.</summary>
     internal int ExploredTileCount => _explored?.Count ?? 0;
 
-    /// <summary>Projects a map position to the pixel centre of its diamond.</summary>
+    /// <summary>Projects a map position to the pixel centre of its tile — an iso diamond, or a top-down square when <see cref="TopDown"/>.</summary>
     public static Vector2 TileCentre(Position p) =>
-        new((p.X - p.Y) * (TileW / 2f), (p.X + p.Y) * (TileH / 2f));
+        TopDown
+            ? new(p.X * SquareTile, p.Y * SquareTile)
+            : new((p.X - p.Y) * (TileW / 2f), (p.X + p.Y) * (TileH / 2f));
 
     /// <summary>
     /// Shows a projected <b>goto route preview</b>: a waypoint line + dots from the unit's current tile through
@@ -206,6 +220,11 @@ public partial class MapView : Node2D
     /// </remarks>
     public static Position TileAt(Vector2 local)
     {
+        if (TopDown)
+        {
+            // Top-down: a plain rectilinear pick — nearest square-cell centre.
+            return new Position(Mathf.RoundToInt(local.X / SquareTile), Mathf.RoundToInt(local.Y / SquareTile));
+        }
         float gx = local.X / (TileW / 2f);
         float gy = local.Y / (TileH / 2f);
         return new Position(
@@ -261,6 +280,12 @@ public partial class MapView : Node2D
             return;
         }
 
+        if (TopDown)
+        {
+            DrawTopDown();
+            return;
+        }
+
         // Row-major order is back-to-front for upward-extending overlays.
         foreach (Position p in _map.AllPositions())
         {
@@ -304,6 +329,83 @@ public partial class MapView : Node2D
                 }
             }
         }
+    }
+
+    // ── Top-down square prototype (P8 look-and-feel) ────────────────────────────────────────────────────────────────
+    // Renders the map straight-down onto square tiles instead of iso diamonds. It REUSES the existing FreeCol ground
+    // art: each diamond ground texture is de-skewed into its square by a 4-corner texture warp (DrawPolygon with the
+    // diamond's corner UVs mapped to the square's corners) — the correct way to reuse iso art top-down (a plain rotate
+    // would leave it squished). Tall "standing-up" overlays (forests/hills/mountains) can't be de-skewed, so they're
+    // drawn as a shrunk centred symbol — a prototype stand-in until proper top-down tiles are sourced. Iso-only extras
+    // (the magenta unmapped-tile diamond) collapse to a square here.
+
+    /// <summary>The UV coordinates of a diamond's corners (top, right, bottom, left) in a tile texture whose diamond fills its bounds — used to de-skew the diamond onto a square via <see cref="CanvasItem.DrawPolygon"/>.</summary>
+    private static readonly Vector2[] DiamondUVs = [new(0.5f, 0f), new(1f, 0.5f), new(0.5f, 1f), new(0f, 0.5f)];
+
+    private void DrawTopDown()
+    {
+        float h = SquareTile / 2f;
+        foreach (Position p in _map!.AllPositions())
+        {
+            Vector2 c = TileCentre(p);
+            int variantSeed = p.X * 7919 + p.Y * 104729;
+            // Square-cell corners, clockwise from top-left (aligned to the DiamondUVs order top/right/bottom/left).
+            Vector2[] square = [new(c.X - h, c.Y - h), new(c.X + h, c.Y - h), new(c.X + h, c.Y + h), new(c.X - h, c.Y + h)];
+
+            if (_explored is not null && !_explored.Contains(p))
+            {
+                DrawDeskewed(_unexplored, variantSeed, square, Colors.White);
+                continue;
+            }
+
+            Color tint = _visible is not null && !_visible.Contains(p) ? DimTint : Colors.White;
+            TerrainType terrain = _map.TerrainAt(p);
+            string baseName = BaseFor.GetValueOrDefault(terrain.ShortName, terrain.ShortName);
+            if (_bases.TryGetValue(baseName, out Texture2D[]? baseVariants))
+            {
+                DrawDeskewed(baseVariants, variantSeed, square, tint);
+            }
+            else
+            {
+                DrawColoredPolygon(square, new Color(1f, 0f, 1f)); // unmapped terrain → magenta square
+            }
+
+            // Forest / hills / mountains: a shrunk centred symbol (the tall iso art can't be de-skewed) so the type reads.
+            if (_overlays.TryGetValue(terrain.ShortName, out Texture2D[]? overlay) && overlay.Length > 0)
+            {
+                DrawCentredSymbol(overlay[(variantSeed & int.MaxValue) % overlay.Length], c, tint, 0.85f);
+            }
+
+            if (_map.ResourceAt(p) is { } resourceId)
+            {
+                string shortName = resourceId[(resourceId.LastIndexOf('.') + 1)..];
+                if (_bonusIcons.TryGetValue(shortName, out Texture2D? icon))
+                {
+                    DrawTexture(icon, c - icon.GetSize() / 2f, tint);
+                }
+            }
+        }
+    }
+
+    /// <summary>De-skews a diamond ground texture onto the given square (4-corner texture warp), tinted by <paramref name="modulate"/>.</summary>
+    private void DrawDeskewed(Texture2D[] variants, int variantSeed, Vector2[] square, Color modulate)
+    {
+        if (variants.Length == 0)
+        {
+            return;
+        }
+        Texture2D texture = variants[(variantSeed & int.MaxValue) % variants.Length];
+        Color[] colors = [modulate, modulate, modulate, modulate];
+        DrawPolygon(square, colors, DiamondUVs, texture);
+    }
+
+    /// <summary>Draws a texture shrunk to <paramref name="fraction"/> of a square tile, centred on <paramref name="centre"/> — the top-down stand-in for a standing-up overlay.</summary>
+    private void DrawCentredSymbol(Texture2D texture, Vector2 centre, Color modulate, float fraction)
+    {
+        Vector2 texSize = texture.GetSize();
+        float scale = SquareTile * fraction / Math.Max(texSize.X, texSize.Y);
+        Vector2 drawn = texSize * scale;
+        DrawTextureRect(texture, new Rect2(centre - (drawn / 2f), drawn), tile: false, modulate);
     }
 
     /// <summary>Draws a tile texture bottom-aligned to the diamond (overlays are taller than 64px), tinted by <paramref name="modulate"/>.</summary>
