@@ -29,8 +29,8 @@ public partial class MapView : Node2D
     /// </summary>
     public static bool TopDown;
 
-    /// <summary>Square tile edge in pixels for the top-down prototype.</summary>
-    public const int SquareTile = 96;
+    /// <summary>Square tile edge in pixels for the top-down prototype — sized near the iso tile's on-screen footprint so the map shows a comparable extent (zoom out for the whole continent).</summary>
+    public const int SquareTile = 64;
 
     /// <summary>Modulate for explored-but-not-currently-visible tiles ("remembered" — darkened).</summary>
     private static readonly Color DimTint = new(0.5f, 0.5f, 0.58f);
