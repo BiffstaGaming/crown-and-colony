@@ -22,6 +22,7 @@ public partial class SettingsScreen : Control
 
     private SettingsService _service = null!;
     private OptionButton _windowMode = null!;
+    private OptionButton _mapView = null!; // isometric vs top-down (code-built, no scene edit)
     private CheckButton _vsync = null!;
     private CheckButton _mute = null!;
     private HSlider _master = null!;
@@ -86,6 +87,7 @@ public partial class SettingsScreen : Control
         _autosave.ValueChanged += OnAutosavePeriod;
         BuildTutorialToggle();  // the guided-intro tutorial-hints preference (86d3fq1h9), built in code (no scene edit)
         BuildPlayIntroToggle(); // the opening-cinematic toggle (86d3fq1kf), built in code (no scene edit)
+        BuildMapViewOption();   // the map view: isometric diamonds vs top-down squares, built in code (no scene edit)
         BuildMessagePopupToggles(); // the per-category popup-vs-silent message preference (86d3fq1tc), built in code (no scene edit)
         GetNode<Button>("Panel/VBox/KeyBindingsButton").Pressed += OnKeyBindings;
         GetNode<Button>("Panel/VBox/BackButton").Pressed += OnBack;
@@ -225,6 +227,45 @@ public partial class SettingsScreen : Control
         _service.UpdateAndApply(s => s.PlayIntro = on);
     }
 
+    /// <summary>
+    /// Builds the "Map view" dropdown in code (no scene edit): isometric diamonds (default) vs top-down squares. A client
+    /// display preference applied to <c>MapView.TopDown</c> via the service; a running game redraws on the service's
+    /// <c>Applied</c> signal. Presentation-only (ADR-006) — no game rule, no save.
+    /// </summary>
+    private void BuildMapViewOption()
+    {
+        var vbox = GetNode<VBoxContainer>("Panel/VBox");
+        int insertAt = GetNode<Button>("Panel/VBox/KeyBindingsButton").GetIndex();
+
+        var row = new HBoxContainer { Name = "MapViewRow" };
+        row.AddThemeConstantOverride("separation", 12);
+        row.AddChild(new Label
+        {
+            Text = "Map view",
+            CustomMinimumSize = new Vector2(220, 0),
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+        });
+        _mapView = new OptionButton { Name = "MapViewOption" };
+        _mapView.AddItem("Isometric (diamond)", (int)MapViewStyle.Isometric);
+        _mapView.AddItem("Top-down (square)", (int)MapViewStyle.TopDown);
+        _mapView.Selected = (int)_service.Settings.MapViewStyle;
+        _mapView.ItemSelected += OnMapView;
+        row.AddChild(_mapView);
+        vbox.AddChild(row);
+        vbox.MoveChild(row, insertAt); // above the Key Bindings button, alongside the other display options
+    }
+
+    // The map-view dropdown: isometric vs top-down. UpdateAndApply pushes MapView.TopDown + fires the service's Applied
+    // signal, so a running game redraws immediately (GameController re-syncs + re-centres). Back persists like the rest.
+    private void OnMapView(long index)
+    {
+        if (_populating)
+        {
+            return;
+        }
+        _service.UpdateAndApply(s => s.MapViewStyle = (MapViewStyle)(int)index);
+    }
+
     // Display order + label for each message category's popup toggle (matches the MessageLogPanel filter order).
     private static readonly (MessageCategory Category, string Label)[] PopupCategories =
     {
@@ -315,6 +356,10 @@ public partial class SettingsScreen : Control
     {
         _populating = true; // suppress the change handlers while we set control values programmatically
         _windowMode.Selected = (int)s.WindowMode;
+        if (_mapView is not null) // built after the first Populate (in _Ready); guarded so a re-show reflects the current value
+        {
+            _mapView.Selected = (int)s.MapViewStyle;
+        }
         _vsync.ButtonPressed = s.VSync;
         _mute.ButtonPressed = _service.MasterMute; // mute is presentation state on the service, not the model
         _master.Value = s.MasterVolume;

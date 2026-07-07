@@ -341,6 +341,12 @@ public partial class GameController : Node2D
         GetNode<CanvasLayer>("UI").AddChild(_tutorialPanel);
         // Hide the tutorial card while the pause menu is open too (it dims the whole HUD), and re-evaluate on close.
         GetNode<PauseMenu>("UI/PauseMenu").VisibilityChanged += RefreshTutorial;
+        // The map view (iso diamonds ⇄ top-down squares) is a live Settings option — when it changes, re-render the map
+        // and re-centre the camera in the new projection so the view doesn't jump off-screen. Signalled by SettingsService.
+        if (GetNodeOrNull<SettingsService>("/root/Settings") is { } settingsService)
+        {
+            settingsService.Applied += OnSettingsApplied;
+        }
         _colonyPanel = GetNode<PanelContainer>("UI/ColonyPanel");
         _europePanel = GetNode<PanelContainer>("UI/EuropePanel");
         _nativePanel = GetNode<PanelContainer>("UI/NativeSettlementPanel");
@@ -685,6 +691,7 @@ public partial class GameController : Node2D
     private void StartGame(Game game)
     {
         _game = game;
+        _lastMapTopDown = MapView.TopDown; // baseline the map projection so a later live map-view toggle is detected
         _selectedUnit = null;
         _inspectedTile = null;
         _hoveredTile = null; // a fresh/loaded game starts with no hovered tile (cleared so the tile-info panel is empty)
@@ -1263,14 +1270,14 @@ public partial class GameController : Node2D
                 GetViewport().SetInputAsHandled();
                 break;
             case InputEventKey { Pressed: true, Echo: false, Keycode: Key.F6 } when !IsTextInputFocused() && _game is not null:
-                // PROTOTYPE (P8 look-and-feel): F6 flips the map between the classic iso diamonds and top-down squares
-                // (MapView.TopDown), re-renders, and re-centres the camera in the new projection so the view doesn't jump
-                // off-screen. A throwaway evaluation toggle — not a rebindable action, off by default.
-                MapView.TopDown = !MapView.TopDown;
-                RefreshView();
-                if (_game.PlayerUnits.FirstOrDefault(u => u.IsOnMap) is { } anchor)
+                // F6 is a quick shortcut for the Settings "Map view" option: flip iso diamonds ⇄ top-down squares,
+                // persisted, and re-rendered via the service's Applied signal (OnSettingsApplied re-centres). Routing it
+                // through the setting keeps F6 and the Settings menu in sync.
+                if (GetNodeOrNull<SettingsService>("/root/Settings") is { } mapViewSvc)
                 {
-                    GetNode<CameraController>("Camera").CenterOn(MapView.TileCentre(anchor.Position));
+                    mapViewSvc.UpdateAndApply(s => s.MapViewStyle =
+                        s.MapViewStyle == MapViewStyle.TopDown ? MapViewStyle.Isometric : MapViewStyle.TopDown);
+                    mapViewSvc.Save();
                 }
                 GetViewport().SetInputAsHandled();
                 break;
@@ -1294,6 +1301,32 @@ public partial class GameController : Node2D
                     }
                 }
                 break;
+        }
+    }
+
+    /// <summary>The map projection the running game last rendered with — so an unrelated settings change (e.g. a volume slider) doesn't needlessly re-render/re-centre the map.</summary>
+    private bool _lastMapTopDown;
+
+    /// <summary>
+    /// Runs after the settings service applies a change. When the <b>map view</b> (iso diamonds ⇄ top-down squares) has
+    /// actually changed, re-render the map in the new projection and re-centre the camera so the view doesn't jump
+    /// off-screen. Other settings changes are ignored here (they apply themselves in <c>SettingsService.Apply</c>).
+    /// </summary>
+    private void OnSettingsApplied()
+    {
+        if (_game is null || MapView.TopDown == _lastMapTopDown)
+        {
+            return; // no game to redraw, or the map view didn't change
+        }
+        _lastMapTopDown = MapView.TopDown;
+        RefreshView(); // re-renders the map (and markers) in the new projection
+        if (_selectedUnit is { IsOnMap: true } sel)
+        {
+            GetNode<CameraController>("Camera").CenterOn(MapView.TileCentre(sel.Position));
+        }
+        else if (_game.PlayerUnits.FirstOrDefault(u => u.IsOnMap) is { } anchor)
+        {
+            GetNode<CameraController>("Camera").CenterOn(MapView.TileCentre(anchor.Position));
         }
     }
 

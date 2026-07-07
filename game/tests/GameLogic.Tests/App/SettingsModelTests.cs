@@ -12,6 +12,7 @@ public class SettingsModelTests
         var m = new SettingsModel();
 
         Assert.Equal(WindowMode.Windowed, m.WindowMode);
+        Assert.Equal(MapViewStyle.Isometric, m.MapViewStyle); // classic iso diamonds by default (ADR-014)
         Assert.True(m.VSync);
         Assert.Equal(1.0f, m.MasterVolume);
         Assert.Equal(0.8f, m.MusicVolume);
@@ -68,6 +69,7 @@ public class SettingsModelTests
         var original = new SettingsModel
         {
             WindowMode = WindowMode.Fullscreen,
+            MapViewStyle = MapViewStyle.TopDown,
             VSync = false,
             MasterVolume = 0.5f,
             MusicVolume = 0.25f,
@@ -81,6 +83,7 @@ public class SettingsModelTests
         SettingsModel restored = SettingsModel.FromDictionary(original.ToDictionary());
 
         Assert.Equal(original.WindowMode, restored.WindowMode);
+        Assert.Equal(original.MapViewStyle, restored.MapViewStyle); // the map-view preference round-trips
         Assert.Equal(original.VSync, restored.VSync);
         Assert.Equal(original.MasterVolume, restored.MasterVolume);
         Assert.Equal(original.MusicVolume, restored.MusicVolume);
@@ -212,6 +215,7 @@ public class SettingsModelTests
         SettingsModel m = SettingsModel.FromDictionary(new Dictionary<string, string>
         {
             ["window_mode"] = "Hologram",   // unknown enum → default
+            ["map_view"] = "Fisheye",       // unknown enum → default (Isometric)
             ["vsync"] = "yes",              // not "true" → false
             ["master_volume"] = "lots",     // unparseable → default (1.0)
             ["music_volume"] = "9.0",       // out of range → clamped to 1.0
@@ -222,6 +226,7 @@ public class SettingsModelTests
         });
 
         Assert.Equal(WindowMode.Windowed, m.WindowMode);
+        Assert.Equal(MapViewStyle.Isometric, m.MapViewStyle); // unknown "Fisheye" → default
         Assert.False(m.VSync);
         Assert.Equal(1.0f, m.MasterVolume);
         Assert.Equal(1.0f, m.MusicVolume);

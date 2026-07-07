@@ -15,6 +15,16 @@ public enum WindowMode
     Fullscreen,
 }
 
+/// <summary>How the game map is drawn — a client display preference, not a game rule.</summary>
+public enum MapViewStyle
+{
+    /// <summary>Classic isometric diamonds (the FreeCol look, ADR-014) — the default.</summary>
+    Isometric,
+
+    /// <summary>Top-down square tiles (closer to the original 1994 Colonization). Reuses the terrain art de-skewed; some overlays/sprites are still prototype stand-ins.</summary>
+    TopDown,
+}
+
 /// <summary>
 /// The player's <b>application</b> settings — client preferences (video + audio), not game rules. A plain,
 /// engine-free value object so it can be unit-tested (L1) without the Godot runtime: the Godot side
@@ -29,6 +39,7 @@ public sealed class SettingsModel
 {
     // Dictionary keys for round-tripping through SettingsService's ConfigFile (string-keyed, culture-invariant).
     private const string KeyWindowMode = "window_mode";
+    private const string KeyMapViewStyle = "map_view";
     private const string KeyVSync = "vsync";
     private const string KeyMaster = "master_volume";
     private const string KeyMusic = "music_volume";
@@ -51,6 +62,12 @@ public sealed class SettingsModel
 
     /// <summary>Window presentation mode. Default: <see cref="WindowMode.Windowed"/>.</summary>
     public WindowMode WindowMode { get; set; } = WindowMode.Windowed;
+
+    /// <summary>
+    /// How the map is drawn — isometric diamonds (default) or top-down squares. A client display preference applied to
+    /// <c>MapView.TopDown</c>; presentation-only, never touches game rules or the save. Default: <see cref="MapViewStyle.Isometric"/>.
+    /// </summary>
+    public MapViewStyle MapViewStyle { get; set; } = MapViewStyle.Isometric;
 
     /// <summary>Whether vertical sync is enabled. Default: on.</summary>
     public bool VSync { get; set; } = true;
@@ -126,6 +143,10 @@ public sealed class SettingsModel
         {
             WindowMode = WindowMode.Windowed;
         }
+        if (!Enum.IsDefined(typeof(MapViewStyle), MapViewStyle))
+        {
+            MapViewStyle = MapViewStyle.Isometric;
+        }
         // Drop any unknown/duplicate category token that slipped in (a hand-edited or stale config) so the hide/silence
         // sets never carry a value outside the enum.
         HiddenMessageCategories = new HashSet<MessageCategory>(
@@ -142,6 +163,7 @@ public sealed class SettingsModel
         var map = new Dictionary<string, string>
         {
             [KeyWindowMode] = WindowMode.ToString(),
+            [KeyMapViewStyle] = MapViewStyle.ToString(),
             [KeyVSync] = VSync ? "true" : "false",
             [KeyMaster] = MasterVolume.ToString("R", CultureInfo.InvariantCulture),
             [KeyMusic] = MusicVolume.ToString("R", CultureInfo.InvariantCulture),
@@ -178,6 +200,10 @@ public sealed class SettingsModel
         if (data.TryGetValue(KeyWindowMode, out string? wm) && Enum.TryParse(wm, ignoreCase: true, out WindowMode parsed))
         {
             m.WindowMode = parsed;
+        }
+        if (data.TryGetValue(KeyMapViewStyle, out string? mv) && Enum.TryParse(mv, ignoreCase: true, out MapViewStyle mvParsed))
+        {
+            m.MapViewStyle = mvParsed;
         }
         if (data.TryGetValue(KeyVSync, out string? vsync))
         {

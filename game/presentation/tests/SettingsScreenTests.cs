@@ -18,6 +18,33 @@ public class SettingsScreenTests
 {
     private const string SettingsScene = "res://scenes/SettingsScreen.tscn";
 
+    /// <summary>Reset the process-global map-projection flag after every case so a map-view test can't leak into the visual goldens (which render with the default iso projection).</summary>
+    [AfterTest]
+    public void ResetMapView() => MapView.TopDown = false;
+
+    [TestCase]
+    public async Task MapViewDropdown_SwitchesProjection_ToTopDown_AndBack()
+    {
+        ISceneRunner runner = ISceneRunner.Load(SettingsScene);
+        await runner.SimulateFrames(2);
+        var scene = runner.Scene();
+
+        var mapView = scene.GetNode<OptionButton>("Panel/Scroll/VBox/MapViewRow/MapViewOption");
+        AssertThat(mapView.ItemCount).IsEqual(2); // Isometric (diamond), Top-down (square)
+
+        // Pick Top-down → the shared map-projection flag flips on (applied via the settings service).
+        mapView.Selected = (int)MapViewStyle.TopDown;
+        mapView.EmitSignal(OptionButton.SignalName.ItemSelected, (int)MapViewStyle.TopDown);
+        await runner.SimulateFrames(1);
+        AssertThat(MapView.TopDown).IsTrue();
+
+        // Back to Isometric → the flag flips off again.
+        mapView.Selected = (int)MapViewStyle.Isometric;
+        mapView.EmitSignal(OptionButton.SignalName.ItemSelected, (int)MapViewStyle.Isometric);
+        await runner.SimulateFrames(1);
+        AssertThat(MapView.TopDown).IsFalse();
+    }
+
     [TestCase]
     public async Task SettingsScreen_ShowsTitleAndControls()
     {

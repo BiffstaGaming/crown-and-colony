@@ -35,6 +35,10 @@ public partial class SettingsService : Node
 
     private static readonly string[] AuxBuses = { "Music", "SFX" };
 
+    /// <summary>Raised after <see cref="Apply"/> pushes settings to the engine — the running game listens so a live change (e.g. the map view) redraws immediately.</summary>
+    [Signal]
+    public delegate void AppliedEventHandler();
+
     /// <summary>The live settings. Mutate through <see cref="UpdateAndApply"/> so changes reach the engine.</summary>
     public SettingsModel Settings { get; private set; } = new();
 
@@ -120,6 +124,8 @@ public partial class SettingsService : Node
         SetBusMute("Master", MasterMute);
         ApplyUiScale(Settings.UiScale);
         AccessibilityPalette.ColorblindMode = Settings.ColorblindMode;
+        MapView.TopDown = Settings.MapViewStyle == MapViewStyle.TopDown; // the map projection (iso diamonds vs top-down squares)
+        EmitSignal(SignalName.Applied); // let a running game redraw if a live setting (e.g. the map view) changed
     }
 
     // The root viewport's content-scale factor scales every Control under it (text + widgets) in one step, so a single
