@@ -959,19 +959,31 @@ public partial class ColonyPanel : PanelContainer
         drop.SetContent(box);
 
         box.AddChild(IconRect(ColonyArt.BuildingImage(building.ShortName), 124, 70));
-        // Display name wraps to (at most) two reserved lines so long names like "Tobacconist House" don't spill the
-        // cell, and every cell stays the same height. The slot count stays in the name (workers/workplaces).
-        var label = new Label
+        // Name on its own single line, then the (workers/workplaces) count on a separate line beneath it
+        // (Chris 2026-07-08). Two fixed-height labels: the name band is one line so EVERY building's name starts at
+        // the same Y across the grid (the old combined "Name (0/3)" wrapped to two lines only for the long names,
+        // which made their text start higher than the short ones). The font is trimmed to 12 so the longest name
+        // ("Tobacconist House") still fits one line in the 142px cell — no uneven wrapping.
+        var nameLabel = new Label
         {
-            Text = $"{Display(building.ShortName)} ({workers}/{building.Workplaces})",
+            Name = "BuildingName",
+            Text = Display(building.ShortName),
             HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center, // centre in the fixed 36px band so 1-line and 2-line names sit the same
-            AutowrapMode = TextServer.AutowrapMode.WordSmart,
-            CustomMinimumSize = new Vector2(124, 36),
+            AutowrapMode = TextServer.AutowrapMode.Off,
+            CustomMinimumSize = new Vector2(134, 20),
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        label.AddThemeFontSizeOverride("font_size", 13);
-        box.AddChild(label);
+        nameLabel.AddThemeFontSizeOverride("font_size", 12);
+        box.AddChild(nameLabel);
+        var countLabel = new Label
+        {
+            Text = $"({workers}/{building.Workplaces})",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            CustomMinimumSize = new Vector2(134, 16),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        countLabel.AddThemeFontSizeOverride("font_size", 12);
+        box.AddChild(countLabel);
 
         // Per-slot worker PORTRAITS (86d3f6754), FreeCol's in-building worker images: one sprite per occupant drawn
         // with its REAL unit type (an expert in a building is visible as that expert, not a bare count). Each occupied

@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Building name/count layout (count on its own line + even name start)
+
+**Requested (Chris):** (1) make the total e.g. "(0/3)" sit **below** the building name; (2) the text doesn't **start at the same height** for the long-named buildings (Blacksmith / Tobacconist / Fur Trader House) vs the others.
+**Did:**
+- **Split name + count into two labels:** the building name on its own line, then `(workers/workplaces)` on a separate line beneath it (was the combined `"Name (0/3)"`).
+- **Fixed the uneven start height:** the old combined string wrapped to two lines *only* for the long names, so their text started higher than the short ones. Splitting the count off + trimming the name font to 12 keeps **every name on one line** → all names now start at the same Y. Verified by capture: image / name / (count) / slots line up across every cell.
+**Status:** **45 `ColonyPanelTests` green** (no test asserts the label text); build clean. Committing **(this commit)**, pushing. **`colony-panel-seed424242` golden regenerates** — triggering `golden_update`; expect one intermediate red L4 until the PNG lands.
+**Changed:** `ColonyPanel.cs` (name/count split, font 12), `docs/systems/colonies.md` (changelog + L4 note). Commit **(this commit)** + the golden commit to follow.
+**Decisions:** trimmed the name font to 12 (fits the longest name "Tobacconist House" on one line) rather than widening cells (would push the 4-column grid past the golden capture width); count kept same font, plain, directly under the name.
+**Scheduled next:** **regen + commit the colony golden**, then **Chris's top-down direction call**. If deferred: **Australian Pioneers = Founding Fathers (`86d3kwtjb`)**.
+**Needs you:** confirm the buildings read right now; the standing calls — enlarge building art? rename "Country"→"Pasture"? top-down full art vs keep iso?
+
+---
+
 ## 2026-07-08 — Building-cell alignment fix (the real uniformity bug)
 
 **Requested (Chris):** looking at the full colony screenshot — the building **text, images, and slots are not all in line with each other**. Fix it.
