@@ -2853,6 +2853,8 @@ public partial class GameController : Node2D
             button.Visible = !fullScreenPanelOpen;
         }
         _actionClusterBack.Visible = !fullScreenPanelOpen; // the parchment backing hides with its buttons so it never floats beside an open panel
+        _miniMap.Visible = !fullScreenPanelOpen;           // the minimap + its parchment backing belong to the map HUD — hide them
+        _miniMapBack.Visible = !fullScreenPanelOpen;       // behind an open full-screen panel (Chris 2026-07-08) so they don't float over it
         _independenceButton.Visible = !fullScreenPanelOpen
             && !_game.IsHumanDefeated && _game.CheckDeclareIndependence(_game.HumanPlayer).Allowed;
     }

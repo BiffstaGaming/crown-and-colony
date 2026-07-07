@@ -977,7 +977,10 @@ public partial class ColonyPanel : PanelContainer
         // slot is a click-to-remove button (the FreeCol gesture — click a worker to take it out); empty workplaces show
         // a faint placeholder so the slot count reads at a glance.
         IReadOnlyList<string> occupants = _colony.BuildingOccupants(buildingId);
-        var slots = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+        // Fixed row heights (slots 36, controls 32) are reserved in EVERY cell — even a 0-workplace building (depot /
+        // pasture) keeps an empty row — so all cells are the same height and their image / name / slots / controls
+        // rows line up across the whole grid (Chris 2026-07-08).
+        var slots = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, MouseFilter = Control.MouseFilterEnum.Ignore, CustomMinimumSize = new Vector2(0, 36) };
         slots.AddThemeConstantOverride("separation", 2);
         for (int i = 0; i < building.Workplaces; i++)
         {
@@ -1002,7 +1005,7 @@ public partial class ColonyPanel : PanelContainer
         }
         box.AddChild(slots);
 
-        var controls = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+        var controls = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, MouseFilter = Control.MouseFilterEnum.Ignore, CustomMinimumSize = new Vector2(0, 32) };
         if (_game.CheckAssignBuildingWork(_colony, buildingId).Allowed)
         {
             var add = new Button { Name = $"Staff_{building.ShortName}", Text = "+" };

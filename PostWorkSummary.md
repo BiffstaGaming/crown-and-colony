@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Colony-screen polish pass 2 (uniform buildings, minimap, Depot/Country)
+
+**Requested (Chris):** (1) building cells should all be the **same size with rows aligned** (image/text/slots/buttons on one level across cells), not staggered; (2) **what are the Depot and Country buildings?**; (3) the **minimap shouldn't show on the colony screen** (it did).
+**Did:**
+- **(1) Uniform building grid:** the slots + controls rows now reserve a **fixed height (36 / 32) in every `BuildingCell`**, so even a 0-workplace building keeps an empty row and all cells are the same height — image/name/slots/controls line up across the whole grid. Verified with a capture (all cells now identical).
+- **(2) Answered:** both are real FreeCol buildings, not bugs — **Depot** = the base **warehouse** (100-good storage, upgrades Warehouse→Expansion); **Country** = FreeCol's name for the base **horse pasture** (breeds horses, upgrades to Stables). Both have 0 worker slots — they work automatically. (Offered to rename "Country"→"Pasture" for clarity — Chris's call.)
+- **(3) Minimap hidden on the colony screen:** added `_miniMap` + `_miniMapBack` to `GameController.RefreshHudButtonVisibility`, so they hide behind any open full-screen panel alongside the corner-HUD column (and return on close). Verified hidden in the capture.
+**Status:** **45 `ColonyPanelTests` green** (extended the existing HUD-hide L3 to assert the minimap hides/returns); build clean. Committed **(this commit)**, pushing. **The `colony-panel-seed424242` L4 golden regenerates again** (uniform cells + minimap gone) — triggering `golden_update` and committing the PNG, so expect one intermediate red L4 until it lands.
+**Changed:** `ColonyPanel.cs` (fixed slot/control row heights), `GameController.cs` (minimap in the HUD-hide), `ColonyPanelTests.cs` (+minimap assertions), `docs/systems/colonies.md` (changelog + L4 note). Commit **(this commit)** + the golden commit to follow.
+**Decisions:** reserve empty slot/control rows for uniform cell height (over per-cell heights) — the clean way to align every row across the grid; minimap folded into the existing full-screen-panel HUD-hide (one mechanism, not a special case); kept "Country"/"Depot" as-is pending Chris's rename call.
+**Scheduled next:** **regen + commit the colony golden** (trigger `ci.yml golden_update=true` → download `goldens-linux` → commit the PNG → confirm CI green), then **Chris's top-down direction call** (full art pass vs keep iso). If deferred: **Australian Pioneers = Founding Fathers (`86d3kwtjb`)**.
+**Needs you:** confirm the uniform building grid reads right; decide if "Country" should become "Pasture"; then the top-down direction call.
+
+---
+
 ## 2026-07-08 — Colony-screen polish pass (5 fixes from Chris's feedback)
 
 **Requested (Chris):** on the colony screen — (1) top-down tile dropdowns are cut off; (2) "+N room to grow" is hard to read; (3) buildings have random gaps between image/text/[+]; (4) "Producing" (top) duplicates "Production" (bottom) — maybe remove it; (5) red text is hard to read on the parchment — thoughts?

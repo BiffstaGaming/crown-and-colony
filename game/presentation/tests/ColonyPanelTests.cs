@@ -683,12 +683,18 @@ public class ColonyPanelTests
             AssertThat(button.Visible).IsFalse(); // specifically, the column is hidden while the panel is open
         }
 
+        // The minimap + its parchment backing belong to the map HUD — they must also hide behind the open panel
+        // (Chris 2026-07-08) so they don't float over the colony screen.
+        AssertThat(controller.GetNode<Control>("UI/MiniMap").Visible).IsFalse();
+        AssertThat(controller.GetNode<Control>("UI/MiniMapBack").Visible).IsFalse();
+
         // Closing the panel restores the always-on column.
         controller.GetNode<Button>("UI/ColonyPanel/VBox/CloseButton").EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(2);
         AssertThat(panel.Visible).IsFalse();
         AssertThat(controller.GetNode<Button>("UI/EndTurnButton").Visible).IsTrue();
         AssertThat(controller.GetNode<Button>("UI/EuropeButton").Visible).IsTrue();
+        AssertThat(controller.GetNode<Control>("UI/MiniMap").Visible).IsTrue(); // and the minimap returns with the HUD
     }
 
     [TestCase(Timeout = 60000)]
