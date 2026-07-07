@@ -454,6 +454,11 @@ public partial class ColonyPanel : PanelContainer
     private const int TileW = 160;
     private const int TileH = 80;
 
+    // Top-down mode (MapView.TopDown): the 3×3 worked tiles render as squares of this side — a de-skewed square
+    // per cell (see DeskewTile) instead of an iso diamond — so the colony matches the map's top-down view. Sized
+    // to fit the same ~500×344 tile band the iso layout uses (3 × 112 = 336).
+    private const int TopDownTile = 112;
+
     private Control LeftColumn()
     {
         // A fixed-width band (NOT expand) so the buildings column to its right takes the elastic width — one
@@ -551,9 +556,14 @@ public partial class ColonyPanel : PanelContainer
     /// </summary>
     private Control IsometricTiles()
     {
-        var view = new Control { Name = "TilesView", CustomMinimumSize = new Vector2(500, 344) };
-        var centre = new Vector2(250, 152);
-        var half = new Vector2(TileW / 2, TileH / 2);
+        // Top-down (MapView.TopDown) lays the 3×3 out as a square grid of de-skewed cells; iso keeps the diamond
+        // arrangement byte-for-byte. tw/th are the cell footprint; every element offset below branches on `td`.
+        bool td = MapView.TopDown;
+        int tw = td ? TopDownTile : TileW;
+        int th = td ? TopDownTile : TileH;
+        var view = new Control { Name = "TilesView", CustomMinimumSize = td ? new Vector2(3 * tw, 3 * th) : new Vector2(500, 344) };
+        var centre = td ? new Vector2(3 * tw / 2f, 3 * th / 2f) : new Vector2(250, 152);
+        var half = new Vector2(tw / 2f, th / 2f);
         if (_heldFrom is not null)
         {
             Place(view, new Label { Text = "Click a tile to move the colonist — the colony centre sends it idle" }, new Vector2(8, 0));
@@ -563,14 +573,25 @@ public partial class ColonyPanel : PanelContainer
             for (int dx = -1; dx <= 1; dx++)
             {
                 Position tile = new(_colony.Position.X + dx, _colony.Position.Y + dy);
-                Vector2 topLeft = centre + new Vector2((dx - dy) * (TileW / 2), (dx + dy) * (TileH / 2)) - half;
+                Vector2 offset = td
+                    ? new Vector2(dx * tw, dy * th)                                    // square grid
+                    : new Vector2((dx - dy) * (TileW / 2), (dx + dy) * (TileH / 2));   // iso diamonds
+                Vector2 topLeft = centre + offset - half;
                 if (!_game.Map.InBounds(tile))
                 {
                     continue;
                 }
-                foreach (Texture2D tex in ColonyArt.TerrainTextures(_game.Map.TerrainAt(tile).ShortName))
+                if (td)
                 {
-                    Place(view, IconRect(tex, TileW, TileH), topLeft);
+                    // One de-skewed square cell (base warped to a square + any overlay centred) — matches the map.
+                    Place(view, new DeskewTile(ColonyArt.TerrainTextures(_game.Map.TerrainAt(tile).ShortName), tw), topLeft);
+                }
+                else
+                {
+                    foreach (Texture2D tex in ColonyArt.TerrainTextures(_game.Map.TerrainAt(tile).ShortName))
+                    {
+                        Place(view, IconRect(tex, TileW, TileH), topLeft);
+                    }
                 }
 
                 // A transparent whole-tile hit button drives click-to-move. Added before the small ✕/picker controls
@@ -584,7 +605,7 @@ public partial class ColonyPanel : PanelContainer
                     Name = $"Tile_{tile.X}_{tile.Y}",
                     Flat = true,
                     Modulate = new Color(1, 1, 1, 0),
-                    CustomMinimumSize = new Vector2(TileW, TileH),
+                    CustomMinimumSize = new Vector2(tw, th),
                     MouseFilter = Control.MouseFilterEnum.Pass, // let the wrapping drop target see the drop
                 };
                 hit.SetAnchorsPreset(Control.LayoutPreset.FullRect); // fill the drop target so clicks hit the whole tile
@@ -593,7 +614,7 @@ public partial class ColonyPanel : PanelContainer
                 var hitTarget = new EuropeDropTarget
                 {
                     Name = $"TileDrop_{tile.X}_{tile.Y}",
-                    CustomMinimumSize = new Vector2(TileW, TileH),
+                    CustomMinimumSize = new Vector2(tw, th),
                 }.Configure(
                     canDrop: data => ColonyDrag.IsWorker(data) && CanDropWorkerOnTile(dropTile),
                     onDrop: data =>
@@ -610,7 +631,10 @@ public partial class ColonyPanel : PanelContainer
 
                 if (dx == 0 && dy == 0)
                 {
-                    Place(view, IconRect(ColonyArt.ColonyIcon(), 120, 80), topLeft + new Vector2(20, 0));
+                    Place(view, td
+                        ? IconRect(ColonyArt.ColonyIcon(), 96, 64)
+                        : IconRect(ColonyArt.ColonyIcon(), 120, 80),
+                        topLeft + (td ? new Vector2((tw - 96) / 2f, (th - 64) / 2f) : new Vector2(20, 0)));
                     continue;
                 }
                 if (_colony.TileWorkers.TryGetValue(tile, out string? good))
@@ -623,16 +647,16 @@ public partial class ColonyPanel : PanelContainer
                     {
                         colonist.Modulate = new Color(1f, 0.9f, 0.3f); // picked up — highlight the held colonist
                     }
-                    Place(view, colonist, topLeft + new Vector2(52, 8));
+                    Place(view, colonist, topLeft + (td ? new Vector2((tw - 56) / 2f, (th - 56) / 2f) : new Vector2(52, 8)));
                     // Show the yield for the tile's ACTUAL worker type (86d3f674x): an expert lumberjack's ×2 lumber, not
                     // the free-colonist base. TileWorkerNetYield folds the worker type AND the Sons-of-Liberty bonus exactly
                     // as the production overview banks it (ADR-006), so the diamond badge == the overview. No EffectiveYield
                     // wrapper here — it already includes ProductionBonus and floors at 0 (wrapping would double-count the SoL bonus).
-                    Place(view, Badge($"{Display(Short(good))} {_game.TileWorkerNetYield(_colony, tile, good)}"), topLeft + new Vector2(44, 0));
+                    Place(view, Badge($"{Display(Short(good))} {_game.TileWorkerNetYield(_colony, tile, good)}"), topLeft + (td ? new Vector2(tw / 2f - 30, 0) : new Vector2(44, 0)));
                     Position worked = tile;
                     var release = new Button { Name = $"Release_{tile.X}_{tile.Y}", Text = "✕", CustomMinimumSize = new Vector2(24, 20) };
                     release.Pressed += () => { _game.UnassignWork(_colony, worked); _heldFrom = null; Changed(); };
-                    Place(view, release, topLeft + new Vector2(64, 50));
+                    Place(view, release, topLeft + (td ? new Vector2(tw / 2f - 12, th - 22) : new Vector2(64, 50)));
                 }
                 else if (_colony.IdleColonists > 0 && _game.ColonyCanWorkTile(_colony, tile)
                          && _game.TileWorkOptions(tile) is { Count: > 0 } options)
@@ -651,7 +675,7 @@ public partial class ColonyPanel : PanelContainer
                             AssignWorkWithClaim(free, options[(int)index - 1].GoodsId);
                         }
                     };
-                    Place(view, picker, topLeft + new Vector2(28, 28));
+                    Place(view, picker, topLeft + (td ? new Vector2((tw - 104) / 2f, th / 2f - 12) : new Vector2(28, 28)));
                 }
             }
         }

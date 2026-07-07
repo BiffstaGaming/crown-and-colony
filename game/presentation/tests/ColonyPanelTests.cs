@@ -24,6 +24,70 @@ public class ColonyPanelTests
 {
     private const string Carpenter = "model.building.carpenterHouse";
 
+    // The colony's worked-tile step in top-down mode — must match ColonyPanel.TopDownTile.
+    private const float TopDownTile = 112f;
+
+    /// <summary>The map-view style is a process-wide static on <see cref="MapView"/>; reset it after every case so a
+    /// top-down test can't leak into an iso one (or the shared iso goldens). Iso is the shipped default.</summary>
+    [AfterTest]
+    public void ResetMapView() => MapView.TopDown = false;
+
+    [TestCase(Timeout = 60000)]
+    public async Task ColonyTiles_RenderAsDeskewedSquareGrid_WhenTopDown()
+    {
+        // Chris: the whole game should read top-down when the setting is on — including the colony's 9 worked tiles,
+        // which have their own projection (ColonyPanel.IsometricTiles), separate from the map. Set the mode, THEN
+        // build the panel so IsometricTiles takes its top-down branch.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony colony = game.FoundColony(game.Units[0]);
+
+        MapView.TopDown = true;
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        var tilesView = controller.GetNode<PanelContainer>("UI/ColonyPanel")
+            .FindChild("TilesView", recursive: true, owned: false) as Control;
+        AssertThat(tilesView).IsNotNull();
+        var cells = tilesView!.FindChildren("*", recursive: true, owned: false).OfType<DeskewTile>().ToList();
+
+        // Top-down → the worked tiles are de-skewed square cells (DeskewTile), not the iso diamond IconRects.
+        AssertThat(cells.Count > 0).IsTrue();
+
+        // …and they sit on an axis-aligned square grid: every cell's offset from the top-left cell is a whole number
+        // of TopDownTile steps on both axes (the iso layout would stagger them on diagonals).
+        float minX = cells.Min(c => c.Position.X);
+        float minY = cells.Min(c => c.Position.Y);
+        bool onSquareGrid = cells.All(c =>
+            Mathf.PosMod(c.Position.X - minX, TopDownTile) < 0.5f &&
+            Mathf.PosMod(c.Position.Y - minY, TopDownTile) < 0.5f);
+        AssertThat(onSquareGrid).IsTrue();
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task ColonyTiles_StayIsometric_WhenTopDownOff()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(424242);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony colony = game.FoundColony(game.Units[0]);
+
+        MapView.TopDown = false; // the shipped default
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        var tilesView = controller.GetNode<PanelContainer>("UI/ColonyPanel")
+            .FindChild("TilesView", recursive: true, owned: false) as Control;
+        AssertThat(tilesView).IsNotNull();
+        int squares = tilesView!.FindChildren("*", recursive: true, owned: false).OfType<DeskewTile>().Count();
+        AssertThat(squares).IsEqual(0); // iso → diamond IconRects, never a de-skewed square cell
+    }
+
     [TestCase(Timeout = 60000)]
     public async Task StaffButton_AssignsIdleColonist_ToTheWorkshop()
     {

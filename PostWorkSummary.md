@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Colony screen goes top-down too (whole game now consistent)
+
+**Requested (Chris):** two questions — is top-down applied to the **Australia map**, and to **inside the Colony (the 9 worked tiles)?** — then: "Yes, the whole game should be top-down when it's changed in the settings."
+**Did:**
+- **Answered both:** Australia (and every map) already renders top-down — it's a global `MapView` mode over whatever map is loaded, and the tile-size/zoom fix is map-agnostic (**Q1 ✓, no work needed**). The colony's 3×3 worked tiles were **not** — they had their own hardcoded iso projection in `ColonyPanel.IsometricTiles`, untouched by the setting (**Q2 ✗**). Also confirmed the **only** two iso terrain surfaces are the map (done) + the colony 3×3; everything else (units, colonies, settlements, rivers, improvements, combat, minimap) positions via `MapView.TileCentre`, which already follows the toggle.
+- **Made the colony screen follow the setting:** new reusable **`DeskewTile`** Control (Control-grid analogue of `MapView.DrawTopDown` — same 4-corner UV de-skew of the diamond ground onto a square + centred overlay symbol). `ColonyPanel.IsometricTiles` now branches on `MapView.TopDown`: a **square grid of `DeskewTile` cells** (top-down) vs the **byte-identical iso diamonds** (default). Every per-tile element (colony icon, worker sprite, yield badge, ✕, work picker, hit/drop target) re-centres for the square cell.
+- **Verified with before/after screenshots** (both shown in chat): iso = diamond arrangement; top-down = square grid — now matching the map.
+**Status:** **All 45 `ColonyPanelTests` green** (43 existing iso + **2 new** top-down) via the Godot runtime; build clean (0 warn/0 err). Iso path byte-identical → the iso `colony-panel-seed424242` golden unaffected (no regen). Committed **(this commit)**; CI verifying. (The prior tile-size fix `96858cb` + head `5ee1aa8` both came back **CI green**; the one red run was a transient NuGet-SDK fetch flake on a docs-only commit.)
+**Changed:** `game/presentation/DeskewTile.cs` (new + `.uid`), `ColonyPanel.cs` (top-down branch), `game/presentation/tests/ColonyPanelTests.cs` (+2 L3 + `[AfterTest]` reset); `docs/systems/colonies.md` + `docs/systems/settings.md` (both layers + changelog). Commit **(this commit)**.
+**Decisions:** kept the iso branch **byte-for-byte** (each element `td ? square-centred : original-offset`) so nothing shipped shifts; a **reusable `DeskewTile`** rather than duplicating the map's immediate-mode draw; top-down colony tile = **112px** square (fits the same ~500×344 band and holds the 104px work picker).
+**Scheduled next:** **await Chris's direction call on top-down** (pursue the art-led full conversion — proper top-down terrain/forest/unit/settlement sprites + river/road widths — or keep iso as default). No P8 task is mid-flight; if deferred, the next queued Australia-reskin task is **Australian Pioneers = Founding Fathers (`86d3kwtjb`)**.
+**Follow-ups:** if top-down becomes default → the standing 64px tile-size question + the art pass; a minimap projection double-check in top-down.
+**Needs you:** open a **colony** in **top-down** (Settings → Video → Map view → Top-down, or press **F6**) and confirm the 3×3 squares read right; then the direction call (full top-down art vs keep iso).
+
+---
+
 ## 2026-07-08 — Top-down tile size + zoom fix (whole continent now fits)
 
 **Requested (Chris):** on the America map in top-down, "the overall tile set size needs to be changed — it's clearly missing the top and bottom of the Americas" (+ screenshot).
