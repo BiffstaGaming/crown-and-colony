@@ -96,7 +96,7 @@ public class MainSceneTests
         var controller = (GameController)runner.Scene();
 
         // A deliberately non-default option set, every value flipped away from the byte-identical default:
-        //   variant   = Classic (explicit — only shipped variant; still exercises the PendingVariant → _variant seam)
+        //   variant   = Classic (explicit; Australia (P8) is the 2nd variant — still exercises the PendingVariant → _variant seam)
         //   victory   = REF off / Europeans off / Humans ON (default is on / on / off)
         //   fog of war = OFF        (default on)
         //   custom-house smuggling = OFF (default on)

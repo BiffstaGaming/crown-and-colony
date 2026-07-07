@@ -63,8 +63,9 @@ public class NewGameSetupUiTests
         (ISceneRunner _, NewGameDialog dialog) = await OpenDialog();
 
         var mapOption = Find<OptionButton>(dialog, "MapOption");
-        AssertThat(mapOption.ItemCount).IsEqual(3); // Random, America, Import map…
-        AssertThat(mapOption.GetItemText(2)).Contains("Import");
+        AssertThat(mapOption.ItemCount).IsEqual(4); // Random, America, Australia (P8), Import map…
+        AssertThat(mapOption.GetItemText(2)).Contains("Australia");
+        AssertThat(mapOption.GetItemText(3)).Contains("Import"); // the import row stays last, after the fixed maps
         // The status line exists but stays hidden until an import is attempted (default layout unchanged).
         var status = Find<Label>(dialog, "ImportStatusLabel");
         AssertThat(status.Visible).IsFalse();

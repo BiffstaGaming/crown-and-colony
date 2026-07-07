@@ -64,10 +64,11 @@ public partial class NewGameDialog : Control
     {
         (MapSource.Random, "Random New World"),
         (MapSource.America, "America (fixed)"),
+        (MapSource.Australia, "Australia (fixed)"),
     };
 
     /// <summary>The map-dropdown index of the "Import map…" row (86d3fq1cg) — the first row after <see cref="MapChoices"/>. Selecting it opens a file picker for a scenario/custom map (our <c>.txt</c> definition or an original-Colonization <c>.MP</c>); the validated import rides <see cref="PendingImportedMap"/>.</summary>
-    private const int ImportMapIndex = 2;
+    private static readonly int ImportMapIndex = MapChoices.Length;
 
     /// <summary>The offered rival-power counts (FreeCol's <c>NationOptions</c> roster size; 86d3fq1df), in dropdown order. Index 3 (= 3 rivals) is the classic default, pre-selected so an untouched Start is byte-identical.</summary>
     private static readonly int[] RivalCountChoices = { 0, 1, 2, 3, 4, 5, 6, 7 };

@@ -12,6 +12,9 @@ public enum MapSource
 
     /// <summary>FreeCol's hand-made map of the Americas (a fixed terrain grid, 40×180).</summary>
     America,
+
+    /// <summary>The authored Australia continent (a fixed terrain grid, 30×80) — the Australian Federation variant (P8).</summary>
+    Australia,
 }
 
 /// <summary>
@@ -27,6 +30,9 @@ public static class FixedMap
 {
     /// <summary>Manifest resource name of the embedded America terrain grid (see <c>GameLogic.csproj</c>).</summary>
     private const string AmericaResource = "CrownAndColony.GameLogic.Maps.america.txt";
+
+    /// <summary>Manifest resource name of the embedded Australia terrain grid — 30×80, converted from the FreeCol community map pack (P8; see <c>GameLogic.csproj</c>).</summary>
+    private const string AustraliaResource = "CrownAndColony.GameLogic.Maps.australia.txt";
 
     /// <summary>Manifest resource name of the embedded example overlay map (exercises every importer overlay; see <c>GameLogic.csproj</c>).</summary>
     private const string ExampleOverlaysResource = "CrownAndColony.GameLogic.Maps.example-overlays.txt";
@@ -47,7 +53,12 @@ public static class FixedMap
     /// <param name="source">The chosen map source.</param>
     /// <param name="ruleset">The ruleset whose ids the definition resolves against.</param>
     public static MapImportResult? TryImport(MapSource source, Ruleset ruleset) =>
-        source == MapSource.America ? ImportAmerica(ruleset) : null;
+        source switch
+        {
+            MapSource.America => ImportAmerica(ruleset),
+            MapSource.Australia => ImportAustralia(ruleset),
+            _ => null,
+        };
 
     /// <summary>Builds the America <see cref="GameMap"/> (FreeCol's M_America, 40×180) from the embedded terrain grid.</summary>
     /// <param name="ruleset">The ruleset whose <see cref="TerrainType"/>s the tile ids resolve against.</param>
@@ -61,6 +72,18 @@ public static class FixedMap
     /// </summary>
     /// <param name="ruleset">The ruleset whose ids the definition resolves against.</param>
     public static MapImportResult ImportAmerica(Ruleset ruleset) => Import(AmericaResource, ruleset);
+
+    /// <summary>Builds the Australia <see cref="GameMap"/> (30×80) from the embedded terrain grid — the Australian Federation variant (P8).</summary>
+    /// <param name="ruleset">The ruleset whose <see cref="TerrainType"/>s the tile ids resolve against.</param>
+    public static GameMap LoadAustralia(Ruleset ruleset) => ImportAustralia(ruleset).Map;
+
+    /// <summary>
+    /// Imports the Australia scenario (terrain grid, converted from the FreeCol community map pack by Euzimar — the same
+    /// standard FreeCol terrain ids the classic ruleset already defines, so it resolves 1:1). Terrain-only like the
+    /// America grid, so rivers, resources, native settlements and the player's start are layered on at game start.
+    /// </summary>
+    /// <param name="ruleset">The ruleset whose ids the definition resolves against.</param>
+    public static MapImportResult ImportAustralia(Ruleset ruleset) => Import(AustraliaResource, ruleset);
 
     /// <summary>
     /// Imports the embedded example overlay map (<c>example-overlays.txt</c>) — a tiny scenario that declares every

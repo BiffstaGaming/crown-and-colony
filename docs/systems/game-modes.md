@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | In development (selection layer + Classic variant; **scenario selector now surfaced at New Game**; further variants — e.g. Australia — are future data) |
-| **Last verified** | 2026-06-22 @ New-Game options surface (`86d3e4bu0`) |
-| **Code** | `game/src/GameLogic/Specification/GameVariant.cs`, `Ruleset.LoadEmbedded`; selection + `Pending*` threading in `game/presentation/GameController.cs`; the New-Game UI in `game/presentation/NewGameDialog.cs` |
-| **Tests** | `game/tests/GameLogic.Tests/Specification/GameVariantTests.cs` (L1/L2); `game/presentation/tests/MainMenuTests.cs` + `MainSceneTests.cs` (L3 — dialog forwarding + applied-to-started-game) |
+| **Status** | In development (selection layer + Classic variant; **scenario selector surfaced at New Game**; **Australian Federation variant skeleton registered (P8) — selectable and playable on the authored Australia map; content reskin in progress**) |
+| **Last verified** | 2026-07-07 @ Australia variant skeleton + map (P8, `86d3kwtf9`/`86d3kwtp5`) |
+| **Code** | `game/src/GameLogic/Specification/GameVariant.cs` (`ClassicAmerica` + `Australia`), `Ruleset.LoadEmbedded`; the fixed maps in `game/src/GameLogic/World/FixedMap.cs` (`MapSource.America`/`Australia`); selection + `Pending*` threading in `game/presentation/GameController.cs`; the New-Game UI in `game/presentation/NewGameDialog.cs` |
+| **Tests** | `game/tests/GameLogic.Tests/Specification/GameVariantTests.cs` + `AustraliaVariantTests.cs` (L1/L2); `game/presentation/tests/MainMenuTests.cs` + `MainSceneTests.cs` + `NewGameSetupUiTests.cs` (L3 — dialog forwarding + map dropdown + applied-to-started-game) |
 | **FreeCol reference** | FreeCol ships multiple rulesets (`data/rules/classic`, `data/rules/freecol`) + mods (`data/mods/`) — same "data selects the world" idea; the New-Game UI mirrors FreeCol's `NewPanel` (the "rules" dropdown) + `GameOptionsDialog` (option grouping) + `MapGeneratorOptionsDialog` |
 | **Related systems** | [ruleset-data](ruleset-data.md), [save-load](save-load.md), [founding-fathers](founding-fathers.md), [natives](natives.md), [fog-of-war](fog-of-war.md), [custom-house](custom-house.md), [independence](independence.md) (victory conditions), [map-terrain](map-terrain.md) |
 
@@ -18,7 +18,7 @@ The important promise: **picking a variant is the only thing that changes the da
 **Worked example:**
 > In the Classic variant you might recruit Thomas Jefferson (+50% bells). A future Australia variant would define its own historical figures with their own perks in its own data file — the election screen, the bonus maths, and everything else work unchanged, because they just apply whatever the selected variant's people grant.
 
-**What the player sees and does:** the **New Game** screen now opens with a **Scenario** dropdown at the top — the world the game tells. Today it lists only "Colonial America (Classic)", so a normal player leaves it as-is; the value of having it is that the *next* variant (Australia) becomes one more line in that dropdown, with no other change to the screen or the code. Below the scenario, the same screen lets the player tune the world before starting:
+**What the player sees and does:** the **New Game** screen opens with a **Scenario** dropdown at the top — the world the game tells. It now lists **"Colonial America (Classic)"** and **"Australian Federation"** (the P8 skeleton — a copy-of-classic ruleset being reskinned to Australian content, played on the authored Australia continent map). Picking Australian Federation was *one registry line* of change to add — no other change to the screen or the code. Below the scenario, the same screen lets the player tune the world before starting:
 
 - **Scenario** — which variant (ruleset) the game plays (Classic today).
 - **Map** — a procedurally generated random New World, or FreeCol's fixed America map.
@@ -93,13 +93,14 @@ The three `Ruleset.With*` overrides are configuration seams, not rules changes (
 - [ ] Surface more honoured game options as the engine grows to read them (the omitted `gameOptions.map`/`.colony` toggles), and wire + surface the map-generator counts (`riverNumber`/`mountainNumber`/`rumourNumber`/`bonusNumber`) through `Game.New` (today they are fixed constants in `MapGenerator`/`LostCityRumourGenerator`).
 - [ ] Optional: an editable difficulty (FreeCol's `model.difficulty.custom` + `DifficultyDialog`) — today only the five preset *levels* are offered.
 - [ ] Migrate the remaining hard-coded America-specific data into nation/ruleset data (colony names via `<nation>` parsing; review the well-known-id contract).
-- [ ] Decide on mod-overlay support (patch a base ruleset) vs. whole-spec variants, before the Australia variant (Phase 8).
-- [ ] The Australia variant itself (Phase 8): author its spec + register a `GameVariant` (it then appears in the Scenario dropdown automatically).
+- [ ] Decide on mod-overlay support (patch a base ruleset) vs. whole-spec variants (the Australia variant is currently a whole spec — a copy of classic being reskinned).
+- [x] **Australia variant skeleton** (P8, `86d3kgbu2` epic `86d3b3r7h`): registered `GameVariants.Australia` + the authored Australia continent map (`MapSource.Australia`, `australia.txt`); selectable and playable. **Remaining:** reskin the spec to Australian content — nations/units/goods/**Australian Pioneers** (the Founding-Father equivalent)/display labels (the other `[P8]` tasks). See `docs/australian_federation_mode_md/IMPLEMENTATION_PLAN.md`.
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-07-07 | **Australian Federation variant skeleton + map** (P8, `86d3kwtf9`/`86d3kwtp5`): registered `GameVariants.Australia` (spec = copy of classic for now, root id `australia`, embedded) so "Australian Federation" is selectable in the Scenario dropdown; added `MapSource.Australia` + the authored **Australia continent map** (`data/maps/australia.txt`, 30×80) — converted from the FreeCol community map pack by Euzimar (GPL v2), all-standard terrain ids resolving 1:1 to our ruleset. `NewGameDialog` map dropdown gains "Australia (fixed)". +7 L1 (`AustraliaVariantTests`: variant/anchors/map-import/boot/save) + L3 map-dropdown update. Classic default byte-identical (soak green); no save bump (variant id already v15). Content reskin is the remaining `[P8]` tasks. | _this commit_ |
 | 2026-07-03 | New-Game bridge L3 (`86d3fy56v`): `NewGameBridgeTests` pins the `Pending*` **read → clear → thread** seam from the consume side (five setup dials in, statics cleared, picks observable on the started game; plus the no-picks classic-default path); `GameController.CurrentGame` added as the read-only seam it asserts through. All cross-scene statics now reset in one helper (`ResetPendingStatics`) — extend it when adding a new `Pending*` static. Test + accessor only — no behaviour change | _this commit_ |
 | 2026-06-22 | New-Game options surface (`86d3e4bu0`): a **Scenario/variant** dropdown (the seam future variants plug into) + the honoured base game options grouped FreeCol-style (victory conditions / fog of war / custom-house smuggling), threaded through `GameController.PendingVariant`/`PendingCustomIgnoreBoycott` (+ existing `Pending*`). Defaults pre-selected = byte-identical default game (soak green); no save change. L3 dialog-forwarding + applied-to-started-game tests | _this commit_ |
 | 2026-06-13 | Variant/game-mode selection layer (`GameVariant`/`GameVariants`, `Ruleset.LoadEmbedded`), variant-aware saves (v15), transposability proof test (ADR-018) | Phase 5 (variant layer) |

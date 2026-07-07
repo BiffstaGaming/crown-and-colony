@@ -30,9 +30,17 @@
     <!-- Per-nation colony names (not in the spec XML — extracted from FreeCol's message strings; FP-3a). -->
     <EmbeddedResource Include="..\..\data\rules\classic\european-nation-names.properties"
                       LogicalName="CrownAndColony.GameLogic.Specification.classic.european-nation-names.properties" />
+    <!-- The Australian Federation variant (P8) — starts as a copy of classic; reskinned to Australian content in later slices. -->
+    <EmbeddedResource Include="..\..\data\rules\australia\specification.xml"
+                      LogicalName="CrownAndColony.GameLogic.Specification.australia.specification.xml" />
+    <EmbeddedResource Include="..\..\data\rules\australia\european-nation-names.properties"
+                      LogicalName="CrownAndColony.GameLogic.Specification.australia.european-nation-names.properties" />
     <!-- Fixed scenario maps — FreeCol's hand-made America map (terrain grid, extracted from M_America_Mazim.fsm; GPL v2). -->
     <EmbeddedResource Include="..\..\data\maps\america.txt"
                       LogicalName="CrownAndColony.GameLogic.Maps.america.txt" />
+    <!-- The Australia continent map (30×80 terrain grid), converted from the FreeCol community map pack by Euzimar (GPL v2). -->
+    <EmbeddedResource Include="..\..\data\maps\australia.txt"
+                      LogicalName="CrownAndColony.GameLogic.Maps.australia.txt" />
     <!-- A tiny example scenario exercising every MapImporter overlay (resources/improvements/rumours/settlements). -->
     <EmbeddedResource Include="..\..\data\maps\example-overlays.txt"
                       LogicalName="CrownAndColony.GameLogic.Maps.example-overlays.txt" />

@@ -222,7 +222,7 @@ public class MainMenuTests
         AssertThat(variantOption).IsNotNull();
         // Every shipped variant is offered, in registry order; the default (Classic) is pre-selected.
         AssertThat(variantOption!.ItemCount).IsEqual(GameVariants.All.Count);
-        variantOption.Select(0); // Classic — the only shipped variant today (still exercises the forwarding seam)
+        variantOption.Select(0); // Classic (index 0); Australia (P8) is now the 2nd variant — still exercises the forwarding seam
 
         var start = dialog.FindChild("StartButton", recursive: true, owned: false) as Button;
         AssertThat(start).IsNotNull();

@@ -51,6 +51,10 @@ public static class GameVariants
     internal const string ClassicSpecResource =
         "CrownAndColony.GameLogic.Specification.classic.specification.xml";
 
+    /// <summary>Resource name of the embedded Australian Federation specification (P8).</summary>
+    internal const string AustraliaSpecResource =
+        "CrownAndColony.GameLogic.Specification.australia.specification.xml";
+
     /// <summary>The faithful 1492 New World: the four European powers, the historic Founding Fathers, and the indigenous nations.</summary>
     public static readonly GameVariant ClassicAmerica = new(
         id: "classic",
@@ -59,8 +63,21 @@ public static class GameVariants
             + "Founding Fathers, and the indigenous nations. The faithful Colonization ruleset.",
         specResource: ClassicSpecResource);
 
+    /// <summary>
+    /// The Australian Federation setting (P8) — British Australia on the real continent, 1788–1901. The perk-granting
+    /// figures are the <b>Australian Pioneers</b> (this variant's Founding-Father equivalent). <b>Skeleton:</b> the spec
+    /// starts as a copy of classic and is reskinned to Australian content over the P8 slices; the map is the authored
+    /// Australia continent (<see cref="World.MapSource.Australia"/>).
+    /// </summary>
+    public static readonly GameVariant Australia = new(
+        id: "australia",
+        displayName: "Australian Federation",
+        description: "British Australia on the real continent, 1788–1901 — build the six colonies toward Federation. "
+            + "Recruit the Australian Pioneers (this world's founding figures). The authored Australia map.",
+        specResource: AustraliaSpecResource);
+
     /// <summary>Every shipped variant, in menu order.</summary>
-    public static IReadOnlyList<GameVariant> All { get; } = [ClassicAmerica];
+    public static IReadOnlyList<GameVariant> All { get; } = [ClassicAmerica, Australia];
 
     /// <summary>The variant used when none is chosen (new game / legacy saves).</summary>
     public static GameVariant Default => ClassicAmerica;
