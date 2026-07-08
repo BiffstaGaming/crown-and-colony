@@ -2300,7 +2300,7 @@ public partial class GameController : Node2D
     public void OpenColonyPanel(Colony colony)
     {
         _tutorial.NotifyColonyOpened(); // advances the tutorial's "put your colonists to work" step (86d3fq1h9)
-        ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView, LoadColonyCargo, UnloadColonyCargo, SetColonyExport, RenameColony, AbandonColony, PayBoycott, DumpColonyGoods, _variant.DisplayOverrides); // goods/unit/building names read per variant (86d3kwty1)
+        ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView, LoadColonyCargo, UnloadColonyCargo, SetColonyExport, RenameColony, AbandonColony, PayBoycott, DumpColonyGoods, _variant.DisplayOverrides, _variant.RebelFactionName, _variant.LoyalistFactionName); // goods/unit/building names + SoL-faction labels per variant (86d3kwty1/86d3kwu0c)
     }
 
     /// <summary>
@@ -2977,9 +2977,14 @@ public partial class GameController : Node2D
         // transient ⚠ notice. The selected/active unit's own detail now lives in the bottom-centre unit panel; the
         // debug seed + key hints were removed from the HUD (F1 shows the key legend).
         string nation = _game.HumanPlayer.NationId is { } nid ? NationLabel(nid) : "Colony";
+        // The liberty indicator reads in the variant's terms (classic "Liberty", Australia "Civic Voice") — title-cased
+        // from the variant's liberty label so the HUD matches the good's reskinned name (86d3kwu0c).
+        string libertyLabel = _variant.LibertyName is { Length: > 0 } lib
+            ? char.ToUpperInvariant(lib[0]) + lib[1..]
+            : "Liberty";
         string status =
             $"{nation}      Turn {_game.Turn} ({_game.CalendarLabel})      Gold {_game.HumanPlayer.Gold:N0}" +
-            $"      Tax {_game.TaxRate}%      Liberty {_game.NationalSonsOfLiberty(_game.HumanPlayer)}%";
+            $"      Tax {_game.TaxRate}%      {libertyLabel} {_game.NationalSonsOfLiberty(_game.HumanPlayer)}%";
         if (_notice is not null)
         {
             status += $"      ⚠ {_notice}";

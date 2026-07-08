@@ -110,13 +110,15 @@ public partial class ColonyPanel : PanelContainer
     /// them keep existing callers/tests working with no-op commands.
     /// </summary>
     /// <param name="displayOverrides">The active variant's display-name overrides (<see cref="GameLogic.Specification.GameVariant.DisplayOverrides"/>) — e.g. the Australian Federation shows <c>cotton</c> as "Wool"; <c>null</c>/empty (classic) leaves every name in its classic form.</param>
-    public void Open(Game game, Colony colony, Action onChange, Action<Unit, Colony, string, int> loadCargo, Action<Unit, Colony, string, int> unloadCargo, Action<Colony, string, bool, int> setExport, Action<Colony, string> renameColony, Action<Colony> abandonColony, Action<string> payBoycott, Action<Colony, string, int> dumpGoods, IReadOnlyDictionary<string, string>? displayOverrides = null)
+    public void Open(Game game, Colony colony, Action onChange, Action<Unit, Colony, string, int> loadCargo, Action<Unit, Colony, string, int> unloadCargo, Action<Colony, string, bool, int> setExport, Action<Colony, string> renameColony, Action<Colony> abandonColony, Action<string> payBoycott, Action<Colony, string, int> dumpGoods, IReadOnlyDictionary<string, string>? displayOverrides = null, string rebelFactionName = "Rebels", string loyalistFactionName = "Royalists")
     {
         _renameColony = renameColony;
         _abandonColony = abandonColony;
         _payBoycott = payBoycott;
         _dumpGoods = dumpGoods;
         _displayOverrides = displayOverrides;
+        _rebelFactionName = rebelFactionName;
+        _loyalistFactionName = loyalistFactionName;
         Open(game, colony, onChange, loadCargo, unloadCargo, setExport);
     }
 
@@ -216,6 +218,8 @@ public partial class ColonyPanel : PanelContainer
 
     /// <summary>The active variant's display-name overrides (Australia renames goods/units/buildings; classic = none). Set in <see cref="Open(Game, Colony, Action, Action{Unit, Colony, string, int}, Action{Unit, Colony, string, int}, Action{Colony, string, bool, int}, Action{Colony, string}, Action{Colony}, Action{string}, Action{Colony, string, int}, IReadOnlyDictionary{string, string})"/>.</summary>
     private IReadOnlyDictionary<string, string>? _displayOverrides;
+    private string _rebelFactionName = "Rebels";
+    private string _loyalistFactionName = "Royalists";
 
     /// <summary>
     /// A human display name for a ruleset short-name — the shared <see cref="Naming.Humanize"/> (one humaniser for
@@ -462,7 +466,7 @@ public partial class ColonyPanel : PanelContainer
 
         var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, Alignment = BoxContainer.AlignmentMode.Center };
         row.AddThemeConstantOverride("separation", 24);
-        row.AddChild(StatCell($"Rebels: {_colony.RebelCount}", "RebelCount", $"{sol}%", "RebelPercent"));
+        row.AddChild(StatCell($"{_rebelFactionName}: {_colony.RebelCount}", "RebelCount", $"{sol}%", "RebelPercent"));
 
         var centre = new VBoxContainer();
         centre.AddChild(new Label { Name = "PopulationCount", Text = $"Population: {_colony.Population}", HorizontalAlignment = HorizontalAlignment.Center });
@@ -475,7 +479,7 @@ public partial class ColonyPanel : PanelContainer
         centre.AddChild(PreferredSizeHint());
         row.AddChild(centre);
 
-        row.AddChild(StatCell($"Royalists: {_colony.ToryCount}", "RoyalistCount", $"{100 - sol}%", "RoyalistPercent"));
+        row.AddChild(StatCell($"{_loyalistFactionName}: {_colony.ToryCount}", "RoyalistCount", $"{100 - sol}%", "RoyalistPercent"));
         box.AddChild(row);
         box.AddChild(SolMeter(sol));
         return box;
@@ -632,7 +636,10 @@ public partial class ColonyPanel : PanelContainer
                     Position worked = tile;
                     const int releaseW = 24;
                     const int releaseH = 20;
-                    var release = new Button { Name = $"Release_{tile.X}_{tile.Y}", Text = "✕", CustomMinimumSize = new Vector2(releaseW, releaseH), ClipText = true };
+                    // No ClipText here: the ✕ is a single fixed glyph, and clipping it to the tiny content rect blanked
+                    // the button (Chris 2026-07-08). The Size pin below still keeps it inside the cell; only the picker's
+                    // variable-length good labels need ClipText.
+                    var release = new Button { Name = $"Release_{tile.X}_{tile.Y}", Text = "✕", CustomMinimumSize = new Vector2(releaseW, releaseH) };
                     release.Pressed += () => { _game.UnassignWork(_colony, worked); _heldFrom = null; Changed(); };
                     // Pin the size so Place can't grow it, then seat the whole button inside the cell's clipped
                     // bounds: at th-34 its bottom sits at th-14 (a 14px margin above the grid line), clear of the

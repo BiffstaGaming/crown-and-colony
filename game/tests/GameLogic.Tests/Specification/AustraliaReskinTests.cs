@@ -85,6 +85,8 @@ public class AustraliaReskinTests
         yield return new object[] { Field(v => v.RebelSentimentName), "Federationists", "Sons of Liberty" };
         yield return new object[] { Field(v => v.RebelColonistName), "Federationist", "Rebel" };
         yield return new object[] { Field(v => v.LoyalistColonistName), "Imperial Loyalist", "Tory" };
+        yield return new object[] { Field(v => v.RebelFactionName), "Federationists", "Rebels" };
+        yield return new object[] { Field(v => v.LoyalistFactionName), "Imperial Loyalists", "Royalists" };
         yield return new object[] { Field(v => v.ExpeditionaryForceName), "Imperial Pressure", "Royal Expeditionary Force" };
         yield return new object[] { Field(v => v.ExpeditionaryForceAbbrev), "Imperial Pressure", "REF" };
         yield return new object[] { Field(v => v.DeclareIndependenceName), "Put Constitution to Referendum", "Declare Independence" };

@@ -25,6 +25,8 @@ public sealed class GameVariant
         string rebelSentimentName = "Sons of Liberty",
         string rebelColonistName = "Rebel",
         string loyalistColonistName = "Tory",
+        string rebelFactionName = "Rebels",
+        string loyalistFactionName = "Royalists",
         string expeditionaryForceName = "Royal Expeditionary Force",
         string expeditionaryForceAbbrev = "REF",
         string declareIndependenceName = "Declare Independence",
@@ -43,6 +45,8 @@ public sealed class GameVariant
         RebelSentimentName = rebelSentimentName;
         RebelColonistName = rebelColonistName;
         LoyalistColonistName = loyalistColonistName;
+        RebelFactionName = rebelFactionName;
+        LoyalistFactionName = loyalistFactionName;
         ExpeditionaryForceName = expeditionaryForceName;
         ExpeditionaryForceAbbrev = expeditionaryForceAbbrev;
         DeclareIndependenceName = declareIndependenceName;
@@ -101,6 +105,12 @@ public sealed class GameVariant
 
     /// <summary>The word for a colonist loyal to the Crown — classic <b>Tory</b>, Australia <b>Imperial Loyalist</b>. Display label only.</summary>
     public string LoyalistColonistName { get; }
+
+    /// <summary>The colony screen's plural label for the pro-independence faction/count — classic <b>Rebels</b>, Australia <b>Federationists</b> (distinct from the classic "Sons of Liberty" sentiment name). Display label only (ADR-018).</summary>
+    public string RebelFactionName { get; }
+
+    /// <summary>The colony screen's plural label for the pro-Crown faction/count — classic <b>Royalists</b>, Australia <b>Imperial Loyalists</b>. Display label only (ADR-018).</summary>
+    public string LoyalistFactionName { get; }
 
     /// <summary>
     /// The name of the army the Crown sends to crush an independence bid — classic's <b>Royal Expeditionary Force</b>,
@@ -267,6 +277,8 @@ public static class GameVariants
         rebelSentimentName: "Federationists",           // Sons of Liberty
         rebelColonistName: "Federationist",              // Rebel colonist
         loyalistColonistName: "Imperial Loyalist",       // Tory colonist
+        rebelFactionName: "Federationists",              // colony-screen "Rebels" count
+        loyalistFactionName: "Imperial Loyalists",       // colony-screen "Royalists" count
         expeditionaryForceName: "Imperial Pressure",     // Royal Expeditionary Force
         expeditionaryForceAbbrev: "Imperial Pressure",   // REF (no short military acronym in the reskin)
         declareIndependenceName: "Put Constitution to Referendum", // Declare Independence
