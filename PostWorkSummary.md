@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — Australian variant NOVEL content (Phase-4d.2–4d.6): new buildings + tile improvements, Hargraves' gold rush, bespoke Pioneer effects
+
+**Requested:** Implement the Australian variant's novel content (4d) — new economy/civic buildings + tile improvements, Edward Hargraves' gold-reveal on-election effect, and a few bespoke Pioneer election effects. Isolated worktree, commit-only (no push/merge).
+**Did:**
+- **7 new buildings** (Australia spec, data-only, on existing modifier seams): Goldfields Office (+50% Gold, gated on Hargraves' `buildGoldfieldsOffice`), Freezing Works (cold-store warehouse; needs `buildFactory`+`hasPort`), Rail Depot (warehouse), Telegraph Office (+50% Civic Voice), Federation League Hall (+25% Civic Voice), Convention Hall (produces bells directly), Harbour Battery (+75% defence + bombards ships, needs port). **Agreement Council deferred** (needs First Nations 4b).
+- **4 new pioneer tile-improvements**: Goldfield (+2 Gold), Stock Route (+1 Wool/+1 grain), Telegraph Line (+1 Civic Voice), Rail (+2 ore). **Waterhole Camp / Eel Trap deferred** (agreement-gated, need 4b).
+- **Hargraves "Payable Gold"** — a new `Game.AustralianEffects.cs` partial (gated on Australia-only `model.ability.goldRush`): on election reveals **2–4 Gold deposits** on the player's explored dry elevation tiles near colonies (deterministic, injected RNG) + **one immigration surge**; his election also grants the Goldfields Office unlock.
+- **Phillip "Survival Rations"** (gated on `model.ability.survivalRations`): first settlement gets emergency Food (+100) + Tools (+20).
+- Minimal wiring: one call in `ElectAndRefreshFounders`. Docs updated (founding-fathers / rivers-tile-improvements / ruleset-data changelogs). New `AustralianContentTests` (21 tests).
+**Status:** **L1/L2 2896 green, soak 5/5 green (classic byte-identical)**, build clean. Two review agents (RNG-determinism + XML-correctness) found no defects. Committed on branch `worktree-agent-a99291459f428c2e7` (see commit hash below); **NOT pushed/merged** per instructions.
+**Changed:** `game/data/rules/australia/specification.xml` (+7 buildings, +4 improvements, +4 father abilities), `game/src/GameLogic/GameSession/Game.AustralianEffects.cs` (new), `Game.cs` (1 wiring line), 3 system-doc changelogs, `game/tests/.../AustralianContentTests.cs` (new).
+**Decisions:** New buildings/improvements use **existing goods** (silver=Gold, cotton=Wool, bells=Civic Voice) on the printing-press/warehouse/stockade seams — no new goods/conversion chains invented (a distinct Frozen Meat / Rails / Telegraph Wire good is a later goods pass). Only the two genuinely-novel, unblocked bespoke effects (Hargraves, Phillip) got handlers; Macarthur/Angas/Chisholm/Leichhardt keep their reused stand-ins (their designed extras need Sheep/Family-Settler units, rush-buy, exploration-points, or the Federation loop — see follow-ups). Effects keyed on Australia-only abilities → classic byte-identical automatically.
+**Scheduled next:** 4c era frequency-bands + Pioneer hard date-gates (the other non-sensitive additive Phase-4 content) — decompose from the Phase-4 epic. (No kanban id yet — ClickUp connector needs auth this session.)
+**Follow-ups:** 4d.7 Democracy figures onto the Federation loop (needs the just-landed 4a code); 4d.8 content balance (needs playtest — esp. Harbour Battery's +75% stacks additively on stockade/fort/fortress; new-building costs/upkeep untuned); deferred bespoke clauses (Hargraves gold-price volatility; Phillip starvation-floor + First-Contact tension; Macarthur free-Sheep; Chisholm Family Settler; Leichhardt scout +2 sight as a data modifier); Agreement Council + Waterhole Camp/Eel Trap (need 4b).
+**Needs you:** Nothing blocking. Optional: a balance judgement call on the new buildings' costs/upkeep and the Harbour Battery additive-defence stack (both deferred to 4d.8 playtest). ClickUp connector needs auth to log this in the Session Log + close the 4d task.
+
+---
+
 ## 2026-07-09 — Completed the started items: Federation victory loop + Colopedia/Help prose (both landed, CI-green)
 
 **Requested (Chris):** "Cap has reset. Move onto completing all of the items you started." (The two on preserved branches: the Federation victory loop and the Colopedia/Help prose reskin.)
