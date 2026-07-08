@@ -64,11 +64,19 @@ A `.fsg` is a ZIP holding a full FreeCol `savegame.xml`. We extracted **only the
 terrain layer** — each `<tile x= y= type="model.tile.…">` — into the same compact grid
 as `america.txt` (header `WIDTH HEIGHT`, then `HEIGHT` rows of `WIDTH` terrain short
 names, row-major). The FreeCol source is **30 × 80 in half-row coordinates**; the shipped
-grid is the de-staggered **60 × 40** (see the conversion note above — same 2 400 tiles,
+grid is the de-staggered **60 × 40** (see the conversion note above — same 2 400 cells,
 and the continent finally reads **wider than tall**, as Australia is: arid interior,
 forested/temperate coasts, Cape York and the Gulf of Carpentaria in the north, Tasmania
 as a southern island). Every terrain id is a standard FreeCol type our
 `classic`/`australia` ruleset already defines, so it resolves 1:1 with no remapping.
+
+**Intentional edit (2026-07-08):** the community source also included the **northern tip
+of New Zealand** off the south-east corner (a 12-tile island, columns 51–57 / rows 33–36
+of the de-staggered grid). Chris: *"this is for Australia only"* — those 12 land tiles were
+replaced with `ocean` in the shipped grid (Tasmania, an Australian state, stays; so does
+the one-tile Torres-Strait islet north-east of Cape York). Guarded by
+`AustraliaVariantTests.AustraliaMap_HasNoNewZealand_TheSouthEastIsOpenSea`, so a future
+re-conversion from the `.fsg` can't silently reintroduce it without re-applying this edit.
 
 The two `.fsg` files carry **identical terrain** (they differ only in pre-placed
 FreeCol players/units/settlements, which we discard). Rivers, resources, native

@@ -81,6 +81,23 @@ public class AustraliaVariantTests
     }
 
     [Fact]
+    public void AustraliaMap_HasNoNewZealand_TheSouthEastIsOpenSea()
+    {
+        // The FreeCol community source included the northern tip of New Zealand off the south-east corner; Chris
+        // (2026-07-08): "this is for Australia only" — it was edited out of the shipped grid (12 tiles → ocean;
+        // see data/maps/PROVENANCE.md). Tasmania stays (its easternmost land is column 50); everything east of it
+        // in the southern half must be open sea, so a future map re-conversion can't silently bring NZ back.
+        GameMap map = FixedMap.LoadAustralia(Australia);
+        for (int x = 51; x < map.Width; x++)
+        {
+            for (int y = 30; y < map.Height; y++)
+            {
+                Assert.True(map.TerrainAt(new Position(x, y)).IsWater, $"unexpected land at ({x},{y}) — New Zealand is back?");
+            }
+        }
+    }
+
+    [Fact]
     public void AustraliaMap_IsDeterministic_SameBytesEveryLoad()
     {
         GameMap a = FixedMap.LoadAustralia(Australia);

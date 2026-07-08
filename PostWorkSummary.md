@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — New Zealand removed from the Australia map
+
+**Requested (Chris):** "Is that… New Zealand off the coast on the bottom right of Australia? If yes, let's get rid of that — this is for Australia only."
+**Did:**
+- **Confirmed it was NZ:** flood-fill component analysis of the 60×40 grid found exactly three landmasses — the mainland+Tasmania (889 tiles, one component across the strait zigzag), a **separate 12-tile island at columns 51–57 / rows 33–36** (conifer/mixed forest, mountains, plains — classic NZ terrain), and a 1-tile Torres-Strait-style islet north-east of Cape York (kept — it's Australian).
+- **Removed it:** the 12 NZ tiles are now `ocean` in the shipped `australia.txt`. **Tasmania stays** (an Australian state; easternmost land col 50).
+- **Guarded it:** new `AustraliaMap_HasNoNewZealand_TheSouthEastIsOpenSea` L1 test (everything east of column 50 in the southern half must be water) — a future `.fsg` re-conversion can't silently reintroduce it. The intentional edit of the GPL source is recorded in `data/maps/PROVENANCE.md`.
+- **Render-verified** in-game: south-east corner is open sea; the artifact page is updated with the new capture.
+**Status:** **8/8 `AustraliaVariantTests` green** (incl. the new guard); committing + pushing, CI to confirm. (The de-stagger commit `dd9e4a5` before this came back **CI green**.)
+**Changed:** `game/data/maps/australia.txt` (12 tiles → ocean), `AustraliaVariantTests.cs` (+1 guard), `data/maps/PROVENANCE.md` (intentional-edit note), `docs/systems/game-modes.md` (changelog). Commit **(this commit)**.
+**Decisions:** removal by component analysis rather than eyeballed coordinates (provably got the whole island and nothing else); kept Tasmania and the Torres islet; documented the source-map edit in PROVENANCE (we're editing GPL community content — the deviation must be traceable).
+**Scheduled next:** **CI green**, then the standing **top-down direction call**. If deferred: **Australian Pioneers = Founding Fathers (`86d3kwtjb`)**.
+**Needs you:** the top-down call, whenever you're ready.
+
+---
+
 ## 2026-07-08 — Fixed maps de-staggered: Australia finally looks like Australia
 
 **Requested (Chris, with fully-zoomed-out screenshots):** "Australia is much wider than it is taller — this map feels stretched."
