@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Asset research for the Australian variant (candidate list, licence-verified)
+
+**Requested:** Research online for freely-licensed art/audio asset packs suitable for the Australian Federation variant; GPL-v2-compatible only; RESEARCH ONLY (no downloads/commits of binaries); produce a documented candidate doc; handle First Nations art with care.
+**Did:**
+- Wrote `docs/asset-research-australia.md` — per-category candidate tables (units, buildings, terrain, colonial imagery/portraits, music/audio) with source+URL, exact licence, GPL-v2 verdict (✅/❌/verify), attribution, suitability; a recommended shortlist, a "do NOT use / needs consultation" section, and a "needs Chris" list.
+- Verified each licence against source: **Kenney = CC0**; **S.T. Gill (d.1880) = PD**; **Trove/NLA pre-1955 AU photos = PD** (digitised PD stays PD); **Freesound CC0/CC-BY filterable**; **OFL GPL-compatible**; **CC-BY-SA 4.0 = one-way→GPLv3 only** (flagged as a Chris decision); **Pixabay "Content License" ≠ CC0 → GPL-incompatible (banned)**. Confirmed FreeCol's own art is GPL v2 (the default reuse base) from its `srcdata` READMEs.
+- Grounded the roster in the existing Australia design docs (units/buildings/goods 17, First Nations principles 15, research sources 21).
+**Status:** Doc only. **No binary asset downloaded or committed** (verified: `git status` shows only the .md; no png/ogg/ttf/etc.). Not built/tested (research deliverable, no code). Committed on branch, **not pushed/merged** (per instructions).
+**Changed:** `docs/asset-research-australia.md` (new), `PostWorkSummary.md`. Branch `worktree-agent-a7fd70572e6fc15c3`.
+**Decisions:** Recommend staying to **CC0 / PD / CC-BY / GPL / OFL only** and parking CC-BY-SA unless Chris accepts a GPLv3 relicense of the asset folder. FreeCol-art reskins are the pragmatic answer to the two big gaps (Australian-colonial units; industrial-Victorian buildings) — no open pack covers them.
+**Scheduled next:** Chris to **approve the shortlist**; then raise a blocking **4b task: "Cultural consultation protocol for any First Nations visual representation"** before any First Nations art. (Existing portrait task ref: `86d3mmdh7`.)
+**Follow-ups:** Per-file licence verification at import time (OGA mixes licences); mirror adopted assets into ClickUp Asset Register (doc 05) + `CREDITS.md`/`PROVENANCE.md`.
+**Needs you:** (1) Approve the 5-source shortlist. (2) **CC-BY-SA / GPLv3 decision** (recommend: decline, stay CC0/PD/CC-BY). (3) **First Nations consultation protocol** — blocking, needs proper protocol + likely paid consultation, not an asset grab. (4) Accept the two art gaps as reskin/custom work.
+
+---
+
 ## 2026-07-08 — Australia playtest fixes: it now actually shows up in-game
 
 **Requested (Chris, playtest):** intro still the American 1492 story; the colony-tile "Work…" dropdown + ✕ are clipped; the First Nations tribes aren't named; the colony is called "Jamestown" — *"a lot of work went into the Australian files, but tasks have not been done to introduce it into the game."* Fair hit.
