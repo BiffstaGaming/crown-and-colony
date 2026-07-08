@@ -249,6 +249,65 @@ public class DocsCaptureTests
         await CapturePanel(runner, controller, "message-log");
     }
 
+    // ---- Australian Federation captures: prove the reskin/content actually surfaces in-game (colony names,
+    // First Nations names, Australian labels). The variant is a private controller field, set by reflection the
+    // same way _game is; the Australia map is passed as the mapSource. Gated behind DOCS_CAPTURE like the rest. ----
+    private static void SetVariant(GameController controller, GameLogic.Specification.GameVariant variant) =>
+        controller.GetType().GetField("_variant", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(controller, variant);
+
+    private static GameController StartAustralia(ISceneRunner runner, Vector2I size)
+    {
+        GameController controller = LoadGame(runner);
+        controller.GetWindow().Size = size;
+        SetVariant(controller, GameLogic.Specification.GameVariants.Australia);
+        controller.StartNewGame(
+            Seed,
+            GameLogic.World.WorldSizeOptions.DefaultSize,
+            GameLogic.World.WorldSizeOptions.DefaultLandMass,
+            GameLogic.Specification.DifficultyLevels.Default,
+            GameLogic.World.MapSource.Australia);
+        return controller;
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task Capture_AustraliaColonyScreen()
+    {
+        if (!Enabled) return;
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        GameController controller = StartAustralia(runner, Big);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        Colony colony = game.FoundColony(game.Units[0]);
+        controller.OpenColonyPanel(colony);
+        await CapturePanel(runner, controller, "australia-colony");
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task Capture_AustraliaWorldHud()
+    {
+        if (!Enabled) return;
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        GameController controller = StartAustralia(runner, CaptureSize);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        game.FoundColony(game.Units[0]);
+        await runner.SimulateFrames(4);
+        Save(controller, "australia-world-hud");
+    }
+
+    [TestCase(Timeout = 60000)]
+    public async Task Capture_AustraliaNativeSettlement()
+    {
+        if (!Enabled) return;
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        GameController controller = StartAustralia(runner, CaptureSize);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        if (game.NativeSettlements.Count == 0) return; // no First Nations community placed on this seed
+        controller.OpenNativeSettlementPanel(game.NativeSettlements[0], null);
+        await CapturePanel(runner, controller, "australia-native");
+    }
+
     private static Game GameOf(GameController controller) =>
         (Game)controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(controller)!;
 
