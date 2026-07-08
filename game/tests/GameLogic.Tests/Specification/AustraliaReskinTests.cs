@@ -22,6 +22,9 @@ public class AustraliaReskinTests
     [InlineData("cotton", "Wool")]
     [InlineData("silver", "Gold")]
     [InlineData("bells", "Civic Voice")]
+    // Goods: sealing/skins economy replacing the fur trade (playtest gap, 86d3mm2q4)
+    [InlineData("furs", "Skins")]
+    [InlineData("coats", "Leather")]
     // Units (86d3kwtvc + retarget-pioneers 86d3mm2nv)
     [InlineData("pettyCriminal", "Convict Labourer")]
     [InlineData("indenturedServant", "Emancipist")]
@@ -32,6 +35,13 @@ public class AustraliaReskinTests
     [InlineData("depot", "Government Stores")]
     [InlineData("weaverHouse", "Wool Shed")]
     [InlineData("weaverShop", "Shearing Shed")]
+    // Buildings: remaining American-flavoured processing chains reskinned (playtest gap, 86d3mm2q4)
+    [InlineData("distillerHouse", "Rum Still")]      // rum chain (early NSW "Rum Corps")
+    [InlineData("furTraderHouse", "Skinner's Hut")]  // sealskins chain
+    [InlineData("furTradingPost", "Tannery")]
+    [InlineData("furFactory", "Leather Works")]
+    [InlineData("tobacconistHouse", "Tobacco Shed")] // northern tobacco chain
+    [InlineData("tobacconistShop", "Tobacco Works")]
     public void Australia_DisplayOverrides_RenameTheKeyEntities(string shortName, string australianName)
     {
         // The map carries the rename…
@@ -74,6 +84,24 @@ public class AustraliaReskinTests
         // A short name the Australia map does NOT rename still humanises the same in both variants.
         Assert.Equal("Expert Farmer", Naming.Humanize("expertFarmer", GameVariants.Australia.DisplayOverrides));
         Assert.Equal("Expert Farmer", Naming.Humanize("expertFarmer", GameVariants.ClassicAmerica.DisplayOverrides));
+    }
+
+    [Theory]
+    // The raw/processed goods a reskinned building chain works on are DELIBERATELY left classic (no forced rename):
+    // sugar cane (Queensland) and northern tobacco are already historically Australian, and rum/cigars read fine, so
+    // renaming them would only be noise. This guards that decision — these must NOT appear in the override map, and so
+    // must humanise the classic way even under Australia (a building agreeing with an un-renamed good is intentional).
+    [InlineData("sugar", "Sugar")]      // rum is made from sugar (kept classic)
+    [InlineData("tobacco", "Tobacco")]  // cigars are made from tobacco (kept classic)
+    [InlineData("rum", "Rum")]          // the Rum Still's output, already Australian-reading
+    [InlineData("cigars", "Cigars")]    // the Tobacco Works' output
+    [InlineData("cloth", "Cloth")]      // woven from Wool; classic name kept (doc 17 "Cloth/Textiles")
+    public void Australia_LeavesConsistentGoodsClassic_NoForcedRename(string shortName, string classicName)
+    {
+        Assert.False(GameVariants.Australia.DisplayOverrides.ContainsKey(shortName),
+            $"'{shortName}' should be left classic (no forced rename), not in the override map");
+        Assert.Equal(classicName, Naming.Humanize(shortName, GameVariants.Australia.DisplayOverrides));
+        Assert.Equal(classicName, Naming.Humanize(shortName, GameVariants.ClassicAmerica.DisplayOverrides));
     }
 
     // ───────────────────────── Chrome labels (86d3kwu0c) ─────────────────────────

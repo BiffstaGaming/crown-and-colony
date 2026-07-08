@@ -177,15 +177,24 @@ public static class GameVariants
     /// The Australian Federation's display-name overrides, keyed by ruleset short name (the id after the last dot).
     /// A display-layer reskin only (ADR-018) — every underlying id is unchanged. Grouped by the P8 task that owns it:
     /// <list type="bullet">
-    ///   <item><b>Goods</b> (86d3kwty1): <c>cotton</c>→Wool, <c>silver</c>→Gold, <c>bells</c>→Civic Voice.</item>
+    ///   <item><b>Goods</b> (86d3kwty1): <c>cotton</c>→Wool, <c>silver</c>→Gold, <c>bells</c>→Civic Voice; plus the
+    ///     playtest-gap closers (86d3mm2q4) — the sealing/skins economy that replaced the fur trade
+    ///     (<c>furs</c>→Skins, <c>coats</c>→Leather).</item>
     ///   <item><b>Units</b> (86d3kwtvc / 86d3mm2nv): <c>pettyCriminal</c>→Convict Labourer, <c>indenturedServant</c>→
     ///     Emancipist, <c>freeColonist</c>→Free Settler, plus the two pioneer stand-ins the perks already reuse —
     ///     the gold specialist <c>expertSilverMiner</c>→Digger and the wool specialist <c>masterCottonPlanter</c>→Shepherd.</item>
     ///   <item><b>Buildings</b> (86d3mm25r): <c>depot</c>→Government Stores; the wool-processing chain
-    ///     <c>weaverHouse</c>→Wool Shed and <c>weaverShop</c>→Shearing Shed (doc 17).</item>
+    ///     <c>weaverHouse</c>→Wool Shed and <c>weaverShop</c>→Shearing Shed (doc 17). The playtest gap closers
+    ///     (86d3mm2q4) reskin the remaining American-flavoured processing chains so a building agrees with the good it
+    ///     works: the rum chain (early NSW's "Rum Corps") <c>distillerHouse</c>→Rum Still; the sealskins chain
+    ///     <c>furTraderHouse</c>→Skinner's Hut / <c>furTradingPost</c>→Tannery / <c>furFactory</c>→Leather Works; and the
+    ///     northern tobacco chain <c>tobacconistHouse</c>→Tobacco Shed / <c>tobacconistShop</c>→Tobacco Works.</item>
     /// </list>
-    /// Declared <em>before</em> the <see cref="Australia"/> variant so it is initialised first (static field
-    /// initialisers run in textual order — a later-declared field would still be <c>null</c> at the variant's construction).
+    /// The raw goods a chain works on (<c>sugar</c>→rum, <c>tobacco</c>→cigars) keep their classic display — sugar cane
+    /// (Queensland) and northern tobacco are historically Australian already, so no forced rename; likewise
+    /// <c>rum</c>/<c>cigars</c>/<c>rumDistillery</c>/<c>rumFactory</c>/<c>cigarFactory</c> whose camelCase split already
+    /// reads Australian. Declared <em>before</em> the <see cref="Australia"/> variant so it is initialised first (static
+    /// field initialisers run in textual order — a later-declared field would still be <c>null</c> at construction).
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string> AustraliaDisplayOverrides =
         new Dictionary<string, string>
@@ -194,6 +203,9 @@ public static class GameVariants
             ["cotton"] = "Wool",
             ["silver"] = "Gold",
             ["bells"] = "Civic Voice",
+            // ── Goods: sealing/skins economy replacing the fur trade (playtest gap, 86d3mm2q4) ──
+            ["furs"] = "Skins",                      // raw hunted product (sealing/skins, not beaver furs)
+            ["coats"] = "Leather",                   // the processed skins product (classic "coats")
             // ── Units (86d3kwtvc + retarget-pioneers 86d3mm2nv) ──
             ["pettyCriminal"] = "Convict Labourer",
             ["indenturedServant"] = "Emancipist",
@@ -204,6 +216,13 @@ public static class GameVariants
             ["depot"] = "Government Stores",
             ["weaverHouse"] = "Wool Shed",           // cotton→cloth processing = wool processing
             ["weaverShop"] = "Shearing Shed",        // the advanced wool-processing upgrade
+            // ── Buildings: reskin the remaining American-flavoured processing chains (playtest gap, 86d3mm2q4) ──
+            ["distillerHouse"] = "Rum Still",        // rum chain (early NSW "Rum Corps"); rumDistillery/rumFactory read fine already
+            ["furTraderHouse"] = "Skinner's Hut",    // sealskins chain — the raw-skins processing house
+            ["furTradingPost"] = "Tannery",          // the mid tier of the skins chain
+            ["furFactory"] = "Leather Works",        // the advanced skins/leather chain
+            ["tobacconistHouse"] = "Tobacco Shed",   // northern tobacco chain (grown in the north); cigarFactory reads fine
+            ["tobacconistShop"] = "Tobacco Works",   // the advanced tobacco-processing upgrade
         };
 
     /// <summary>
