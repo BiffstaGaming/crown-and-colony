@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Australia event catalogue: batches 2 & 3 authored (1830–1901)
+
+**Requested:** Author the Australian Federation event catalogue batch 2 (expansion & gold, 1830–1872, ~9 events) and batch 3 (infrastructure & Federation, 1872–1901, ~11 events) as `<event-def>` DATA in the Australia spec — engine already exists, data only. Tests + docs changelog. Worktree branch; commit, do not push/merge.
+**Did:**
+- Appended **21 `<event-def>`s** to `game/data/rules/australia/specification.xml` `<historical-events>`, after batch 1. **Batch 2 (9):** transportation-ends, squatting-run, wool-boom, inland-exploration (settlement-gated `revealMap` dilemma), 1851 gold-rush, payable-field (settlement-gated `grantGoods`), gold-immigration-surge, Eureka-Stockade (reform/suppress dilemma), gold-escort-robbery, first-railway-and-telegraph. **Batch 3 (12):** Overland-Telegraph, Broken-Hill, refrigerated-meat, intercolonial-railway, Marvellous-Melbourne, 1893 bank-crash, Shearers'-Strike (recognise/break dilemma), SA-women's-suffrage, Federation-convention, Federation-referendum, Federation-drought.
+- All effects **player-scoped** (safe pre-first-colony) except the two colony effects, which carry a `<requires>` `settlements>=1` limit as instructed. `recordHistory` text kept sober/factual. First Nations first-contact/frontier content **excluded** (4c.11 review).
+- **Extended the catalog guard** (`AustraliaVariantTests.AustraliaCatalog_CarriesBatchesTwoAndThree_...`): asserts count grew (≥28), gold-rush + Eureka + Federation-convention/referendum + Overland-Telegraph + Broken-Hill present, the two settlement-gated events have a `<requires>`, and a per-effect **goods/unit-id validity sweep** (caught a real bug — see Decisions).
+- Docs (no-drift): `docs/systems/events.md` changelog row + open-issues + Last-verified.
+**Status:** Build clean (0 warn). **L1/L2 2848 green** (`Category!=Soak`, incl. the new guard). **Soak 5/5 green** — classic byte-identical (only the Australia spec changed). Committed on worktree branch, **not pushed / not merged**.
+**Changed:** `game/data/rules/australia/specification.xml` (+21 event-defs), `game/tests/GameLogic.Tests/Specification/AustraliaVariantTests.cs` (+1 guard test), `docs/systems/events.md`.
+**Decisions:** (1) The spec has **no `model.goods.meat`** (commented out; folded into food) — the id-validity sweep caught it as a hard test failure, so refrigerated-meat export is modelled as `grantGold` + a `model.goods.food` production boost. (2) Wool boom / gold rush target the classic ids `cotton` (displays "Wool") / `silver` (displays "Gold"). (3) Rail/telegraph use an additive `model.modifier.movementBonus` timed modifier (engine-recognised). (4) Eureka & Shearers' Strike are two-option dilemmas (reform vs. suppress / recognise vs. break); AI/auto-resolve picks the heavier reform option.
+**Scheduled next:** **Six-era event frequency bands (4c.10)** — the remaining open item on the events system (weight/cooldown tuning per era). No granular kanban id yet; sits under the Australia event stream (epic `86d3mmbg9`'s sibling). Alternatively, First Nations sombre-framing review (4c.11, `86d3mmc1x`) if Chris prioritises it.
+**Follow-ups:** Event-prompt presentation UI (L3/L4) for `PendingEventOffer` still outstanding — until it lands, multi-option dilemmas auto-resolve to the heaviest option.
+**Needs you:** **Framing check** on two judgement-call events: **Eureka Stockade** (reform vs. suppress-with-troops) and the **Great Shearers' Strike** (recognise-union vs. break-with-non-union-labour). Both are written sober and factual with the reform path as the heavier default, but they depict labour/authority conflict — confirm the tone reads as historically honest, not editorial.
+
+---
+
 ## 2026-07-08 — Australia playtest fixes: it now actually shows up in-game
 
 **Requested (Chris, playtest):** intro still the American 1492 story; the colony-tile "Work…" dropdown + ✕ are clipped; the First Nations tribes aren't named; the colony is called "Jamestown" — *"a lot of work went into the Australian files, but tasks have not been done to introduce it into the game."* Fair hit.

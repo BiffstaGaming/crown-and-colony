@@ -284,6 +284,82 @@ public class AustraliaVariantTests
     }
 
     [Fact]
+    public void AustraliaCatalog_CarriesBatchesTwoAndThree_ExpansionGoldAndFederation()
+    {
+        // Batches 2 (1830-1872: expansion & gold) and 3 (1872-1901: infrastructure & Federation) are authored as
+        // data appended to the batch-1 catalogue (86d3mmbg9). A clean parse is proven by the ruleset loading at all —
+        // a malformed id/attribute makes the whole Australia ruleset fail to load and every Australia test go red — so
+        // reaching this assertion means all ~30 event-defs parsed. Here we spot-check the marquee events of each batch.
+
+        // The catalogue grew well past batch 1's 11 (setup + 10). Batch 2 (~9) + batch 3 (~12) take it to ~30.
+        Assert.True(
+            Australia.HistoricalEvents.Count >= 28,
+            $"expected batches 1-3 (~30 events), got {Australia.HistoricalEvents.Count}");
+
+        // Batch 2 marquee: the 1851 gold rush — a one-shot bonanza that fills the treasury, draws immigrants, and
+        // lifts the gold good (id `silver`, displayed as "Gold"). Year-gated to 1851.
+        EventDef goldRush = Australia.HistoricalEvent("event.goldRush")!;
+        Assert.NotNull(goldRush);
+        Assert.True(goldRush.OneShot);
+        Assert.Equal(1851, goldRush.EarliestYear);
+        var goldRushEffects = goldRush.Options.SelectMany(o => o.Effects).ToList();
+        Assert.Contains(goldRushEffects, e => e.Kind == EventEffectKind.GrantGold && e.Value > 0);
+        Assert.Contains(goldRushEffects, e => e.Kind == EventEffectKind.GrantUnit);
+
+        // Batch 2 also carries the Eureka Stockade as a genuine dilemma (reform vs. suppress) — reform grants a large
+        // civic-voice (liberty) gain.
+        EventDef eureka = Australia.HistoricalEvent("event.eurekaStockade")!;
+        Assert.NotNull(eureka);
+        Assert.True(eureka.Options.Count >= 2, "Eureka is a dilemma with a reform option and a suppress option");
+        Assert.Contains(
+            eureka.Options.SelectMany(o => o.Effects),
+            e => e.Kind == EventEffectKind.GrantLiberty && e.Value > 0);
+
+        // Batch 3 marquee: a Federation-convention event and a Federation-referendum event, both year-gated into the
+        // 1897-1901 Federation window and granting civic voice (liberty) toward the constitutional settlement.
+        EventDef convention = Australia.HistoricalEvent("event.federationConvention")!;
+        Assert.NotNull(convention);
+        Assert.True(convention.EarliestYear >= 1893, "the Federation conventions are a Federation-era event");
+        Assert.Contains(
+            convention.Options.SelectMany(o => o.Effects),
+            e => e.Kind == EventEffectKind.GrantLiberty && e.Value > 0);
+
+        EventDef referendum = Australia.HistoricalEvent("event.federationReferendum")!;
+        Assert.NotNull(referendum);
+        Assert.Equal(1898, referendum.EarliestYear);
+
+        // Batch 3 also carries the Overland Telegraph (1872) and Broken Hill (1883) as one-shot milestones.
+        Assert.NotNull(Australia.HistoricalEvent("event.overlandTelegraph"));
+        Assert.True(Australia.HistoricalEvent("event.overlandTelegraph")!.OneShot);
+        Assert.NotNull(Australia.HistoricalEvent("event.brokenHill"));
+
+        // The two settlement-gated colony effects (inland-exploration reveal, payable-field ore find) carry a
+        // settlements>=1 requires gate so they can never fire before the first colony exists.
+        foreach (string gatedId in new[] { "event.inlandExploration", "event.payableField" })
+        {
+            EventDef gated = Australia.HistoricalEvent(gatedId)!;
+            Assert.NotNull(gated);
+            Assert.NotEmpty(gated.Requirements); // a <requires> settlements>=1 limit is present
+        }
+
+        // No event in the catalogue references a goods or unit id that the Australia ruleset does not define — an
+        // invalid id would otherwise surface only at runtime. Ruleset.Goods/Unit THROW KeyNotFoundException on an
+        // unknown id, so a bad reference here fails this test loudly. (revealMap/movementBonus carry no goods/unit id.)
+        foreach (EventEffect effect in Australia.HistoricalEvents.SelectMany(ev => ev.Options).SelectMany(o => o.Effects))
+        {
+            if (effect.Kind is EventEffectKind.TimedModifier or EventEffectKind.GrantGoods
+                && effect.TargetId is { } target && target.StartsWith("model.goods."))
+            {
+                Assert.NotNull(Australia.Goods(target));
+            }
+            if (effect.Kind == EventEffectKind.GrantUnit && effect.TargetId is { } unitId)
+            {
+                Assert.NotNull(Australia.Unit(unitId));
+            }
+        }
+    }
+
+    [Fact]
     public void AustraliaSave_RecordsTheVariant_AndReloadsUnderItsRuleset()
     {
         Game game = Game.New(Australia, seed: 0xA05UL, mapSource: MapSource.Australia);
