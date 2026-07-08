@@ -136,8 +136,13 @@ public partial class PauseMenu : Control
 
     private void OnAbout() => TrackOverlay(GD.Load<PackedScene>(AboutScenePath).Instantiate<AboutPanel>());
 
-    /// <summary>Opens the in-game help / tutorial screen over the paused game; its Back button closes it (the game stays paused).</summary>
-    private void OnHelp() => TrackOverlay(GD.Load<PackedScene>(HelpScenePath).Instantiate<HelpPanel>());
+    /// <summary>Opens the in-game help / tutorial screen over the paused game; its Back button closes it (the game stays paused). Configured with the active variant's help chrome (before it enters the tree) so the prose reads in the variant's language — Australia's "Federationists / Civic Voice / …", classic byte-identical.</summary>
+    private void OnHelp()
+    {
+        var help = GD.Load<PackedScene>(HelpScenePath).Instantiate<HelpPanel>();
+        help.Configure(Game.HelpChrome); // in-game variant chrome (86d3mm2q4) — set before AddChild so _Ready builds the variant's prose
+        TrackOverlay(help);
+    }
 
     private void OnSave()
     {

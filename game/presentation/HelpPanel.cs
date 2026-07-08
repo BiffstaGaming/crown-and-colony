@@ -20,6 +20,32 @@ public partial class HelpPanel : Control
 
     private const string BackdropPath = "res://assets/freecol/ui/map.jpg";
 
+    /// <summary>
+    /// The active variant's help chrome — the words the body prose weaves into its sentences so the guide reads in the
+    /// variant's language (classic "liberty / liberty bells / Sons of Liberty / Continental Congress / Royal
+    /// Expeditionary Force", Australia "Civic Voice / Federationists / Federation Convention / Imperial Pressure").
+    /// Defaults to <see cref="HelpChrome.Classic"/> so the pre-game main-menu Help (no variant chosen) and a classic game
+    /// render byte-identical classic prose. The in-game pause-menu Help sets it via <see cref="Configure"/> before adding
+    /// the panel to the tree (so <see cref="_Ready"/> builds the body in the variant's language).
+    /// </summary>
+    private HelpChrome _chrome = HelpChrome.Classic;
+
+    /// <summary>
+    /// Sets the variant's <paramref name="chrome"/> before the panel enters the tree so <see cref="_Ready"/> builds the
+    /// body in the variant's language. Call it on the freshly-instantiated panel, before <c>AddChild</c>. If the panel is
+    /// already in the tree, the body is rebuilt immediately. Passing the classic chrome (or never calling this) keeps the
+    /// prose byte-identical to the faithful text.
+    /// </summary>
+    /// <param name="chrome">The active variant's help chrome (e.g. <see cref="HelpChrome.From(GameLogic.Specification.GameVariant)"/>).</param>
+    public void Configure(HelpChrome chrome)
+    {
+        _chrome = chrome;
+        if (IsInsideTree())
+        {
+            GetNode<RichTextLabel>("Panel/VBox/Body").Text = BuildBody(_chrome);
+        }
+    }
+
     /// <summary>Builds the look, fills in the help text, and wires the Back button.</summary>
     public override void _Ready()
     {
@@ -35,20 +61,22 @@ public partial class HelpPanel : Control
         }
 
         // The authored placeholder body in the scene is overwritten here so the help text lives in one place (this file).
-        GetNode<RichTextLabel>("Panel/VBox/Body").Text = BuildBody();
+        GetNode<RichTextLabel>("Panel/VBox/Body").Text = BuildBody(_chrome);
 
         GetNode<Button>("Panel/VBox/BackButton").Pressed += OnBack;
     }
 
     // The full help text: goal, the core gameplay loops, and a controls reference. Original wording (GPL-clean),
     // condensed from docs/MANUAL.md. The controls section restates the authoritative key table from
-    // GameController.BuildKeyBindings — keep the two in step if a key changes.
-    private static string BuildBody() =>
+    // GameController.BuildKeyBindings — keep the two in step if a key changes. Variant-aware (86d3mm2q4): the chrome
+    // words are woven in so the guide reads in the active variant's language; the classic chrome (the default) makes
+    // every substitution site byte-identical to the faithful text.
+    private static string BuildBody(HelpChrome chrome) =>
         "[b]The goal of the game[/b]\n" +
         "You lead one of the European powers settling the New World. Explore the unknown continent, found and grow " +
-        "colonies, build an economy, deal with the native nations and rival powers, and ultimately win your " +
-        "colonists' hearts toward liberty so you can declare independence and defeat the King's army. Winning the " +
-        "War of Independence is the headline victory; optional alternative victories and a running score reward " +
+        $"colonies, build an economy, deal with the {chrome.NativesCollective} and rival powers, and ultimately win your " +
+        $"colonists' hearts toward {chrome.LibertyName} so you can {chrome.DeclareIndependenceName} and defeat the King's army. Winning the " +
+        $"{chrome.WarOfIndependenceName} is the headline victory; optional alternative victories and a running score reward " +
         "every play style.\n\n" +
 
         "[b]Explore[/b]\n" +
@@ -62,7 +90,7 @@ public partial class HelpPanel : Control
         "Move a colonist onto a good tile and press [b]B[/b] to found a colony. Click a colony to open its screen, " +
         "where you assign colonists to surrounding tiles to gather food and raw goods, put others to work inside " +
         "buildings to make finished products, queue construction, and manage food and defence. Plain colonists learn " +
-        "to become experts by working, by schooling, or by learning from a native settlement.\n\n" +
+        $"to become experts by working, by schooling, or by learning from a {chrome.NativeSettlementSingular}.\n\n" +
 
         "[b]The economy and Europe[/b]\n" +
         "Open the Europe screen with [b]E[/b] to sell the goods your ships carry back, buy goods, ships and trained " +
@@ -72,14 +100,14 @@ public partial class HelpPanel : Control
         "ship at all. New colonists also arrive through immigration, driven by the crosses your churches produce.\n\n" +
 
         "[b]Liberty and independence[/b]\n" +
-        "Your town halls produce liberty bells, which raise each colony's Sons of Liberty membership (a production " +
-        "bonus) and accumulate nationally toward recruiting Founding Fathers into your Continental Congress — each a " +
-        "lasting benefit. Once at least half your colonists are rebels and you hold a port, you may declare " +
-        "independence: Europe closes, some veterans rise as Continental regulars, and the Royal Expeditionary Force " +
+        $"Your town halls produce {chrome.BellsPhrase}, which raise each colony's {chrome.RebelSentimentName} membership (a production " +
+        $"bonus) and accumulate nationally toward recruiting Founding Fathers into your {chrome.CongressName} — each a " +
+        $"lasting benefit. Once at least half your colonists are {chrome.RebelCauseWord}s and you hold a port, you may {chrome.DeclareIndependenceName}: " +
+        $"Europe closes, some veterans rise as Continental regulars, and the {chrome.ExpeditionaryForceName} " +
         "sails in to crush you. Hold out and a foreign ally eventually lands to help.\n\n" +
 
         "[b]Natives[/b]\n" +
-        "Several native nations live on the map. Meet their chiefs, trade, learn skills, station missionaries, and " +
+        $"Several {chrome.NativesCollective} live on the map. Meet their chiefs, trade, learn skills, station missionaries, and " +
         "buy or take the land you settle. Each settlement has a mood toward you: raiding, land-grabbing and crowding " +
         "raise their alarm; peaceful trade and time calm them. An angry nation sends braves against your colonies.\n\n" +
 
