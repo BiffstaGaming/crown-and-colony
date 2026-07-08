@@ -46,6 +46,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 **Scheduled next:** **Six-era event frequency bands (4c.10)** — the remaining open item on the events system (weight/cooldown tuning per era). No granular kanban id yet; sits under the Australia event stream (epic `86d3mmbg9`'s sibling). Alternatively, First Nations sombre-framing review (4c.11, `86d3mmc1x`) if Chris prioritises it.
 **Follow-ups:** Event-prompt presentation UI (L3/L4) for `PendingEventOffer` still outstanding — until it lands, multi-option dilemmas auto-resolve to the heaviest option.
 **Needs you:** **Framing check** on two judgement-call events: **Eureka Stockade** (reform vs. suppress-with-troops) and the **Great Shearers' Strike** (recognise-union vs. break-with-non-union-labour). Both are written sober and factual with the reform path as the heavier default, but they depict labour/authority conflict — confirm the tone reads as historically honest, not editorial.
+## 2026-07-08 — Player guide: the Australian Federation chapter (docs only)
+
+**Requested:** Write a comprehensive, player-facing guide page for the Australian Federation mode, wire it into the MkDocs guide, and refresh the related docs — describing what's *actually implemented*, clearly flagging in-development features; docs only (no `.cs`/`.xml`/`.properties`); commit on branch, no push.
+**Did:**
+- New guide chapter **`docs/guide/24-australian-federation.md`** — what the mode is (First Fleet 1788 → Federation 1901), getting started (New Game → Australian Federation), the six colonies, the Australian economy (Wool/Gold/Civic Voice + Government Stores/Wool Shed/Pasture), the 25 **Australian Pioneers** → Federation Convention, Federationists/Imperial Loyalists, a sober **First Nations** section, the 1788–1901 events, and the Federation goal. Uses all three `australia-*.png` screenshots.
+- Cross-checked the design corpus (`australian_federation_mode_md/`) **against the implementation state** (system-doc changelogs) so every claim is marked *playable now* vs *in development*. Added an "at-a-glance" implemented-vs-coming summary; each in-dev system carries an admonition.
+- Wired into nav (`mkdocs.yml` → new "Part VII · Variants") + guide `index.md` (card + tip). Refreshed the offline **`docs/MANUAL.md`** (Scenario/Map rows were stale — said Australia was a *future* variant; now selectable/playable + an Australian-Federation pointer note).
+- Validated with the CI gate: **`mkdocs build --strict` passes clean** (no broken links / nav / image errors).
+**Status:** Docs only; `mkdocs build --strict` green. Committed on branch `worktree-agent-ad8aafbb0c61e9ef8` (see hash below). **Not pushed / not merged** (as instructed).
+**Changed:** `docs/guide/24-australian-federation.md` (new), `mkdocs.yml`, `docs/guide/index.md`, `docs/MANUAL.md`, `PostWorkSummary.md`.
+**Decisions:** Guide describes only shipped behaviour as live; **NSW/Sydney presented as the current start** (six-colony chooser flagged in-dev — logic API exists, no UI); building reskin described as *partial* (Tobacconist/Fur Trader/Distiller still American); **First Nations = naming pass only**, deep Respect/Tension/Country diplomacy flagged in-dev; **Federation victory flagged not-yet-winnable**. First Nations tone kept sober per doc 19; guide states the user-facing FN text is provisional/pending review.
+**Scheduled next:** Chris's sign-off on the sensitive framing already queued in the prior entry (the 4 intro beats + the First Nations name mapping), then decompose/execute **4a Federation** / **4b First Nations** (ADR-021/022). No new kanban task created for this docs pass.
+**Follow-ups:** As the mode grows, revisit this chapter's "In development" notes — especially when the colony-start dropdown, fuller building reskin, later event batches + event UI, and the Federation-victory loop land.
+**Needs you:** (1) A read-through of the new chapter for tone/accuracy, especially the **First Nations** section. (2) Confirm you're happy with a new "Part VII · Variants" nav section housing it.
 
 ---
 

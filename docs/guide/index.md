@@ -53,7 +53,19 @@ nation its freedom.
 
     [Strategy &amp; Tips](21-strategy.md) · [Reference &amp; Colopedia](22-reference.md)
 
+- **Part VII · Variants**
+
+    Beyond the classic Colonial-America game — the alternate worlds Crown &amp; Colony can tell.
+
+    [The Australian Federation](24-australian-federation.md)
+
 </div>
+
+!!! tip "New: the Australian Federation"
+    Crown &amp; Colony now includes a second world — a campaign that runs from the First Fleet of **1788** to
+    **Federation in 1901**, on the Australian continent, with wool for cotton and gold for silver. It is under
+    active development, but there is plenty to play. See
+    [**The Australian Federation →**](24-australian-federation.md).
 
 ## Help inside the game
 
