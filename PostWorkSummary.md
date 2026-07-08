@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — Event era-frequency bands (Phase-4c.10) — the six-era oracle + per-turn cadence (branch only)
+
+**Requested:** Implement 4c.10 era-frequency bands in the Australian Federation event engine — derive the era from the calendar year and modulate how often events fire per era (sparse Survival → busy Gold-Rush/Federation), keeping classic byte-identical and deterministic. Event-runtime file + tests + docs only (spec/`Game.cs`/`GameVariant.cs` owned by other streams). Commit on branch; do NOT push/merge.
+**Did:**
+- Added the **six-era oracle** to `Game.Events.cs`: `EventEra` enum (Survival/Expansion/ColonyFormation/GoldRush/Infrastructure/Federation + a `Pre` sentinel for outside the window), `EraForYear(year)` (pure, lower-bound-inclusive year→era read, mirrors `AgeForYear`), `CurrentEventEra`.
+- Added the **frequency band**: `EraFireChance(era)` (per-turn 0–100 fire chance) applied in `RollHistoricalEvents` between the throwaway-generator seed and the weighted draw — `if (chance < 100 && rng.Next(100) >= chance) return;`, modelled on the natural-disaster percentage gate. Rolls on the reserved event stream 105 only; never touches stream 0.
+- **Byte-identical classic preserved**: the `chance < 100` guard means `Pre` (every classic-1492-calendar year) takes *no* roll → generator + draw identical to pre-4c.10; the pre-existing `count == 0` guard still short-circuits classic before any event code. Soak green.
+- +6 tests in `HistoricalEventTests` (a 13-case boundary/interior `EraForYear` Theory, inert-vs-modulated chance, `CurrentEventEra` off the calendar, classic-inert-fires-every-turn, sparse-Survival-vs-busy-GoldRush cadence, same-seed determinism). Used `Ruleset.WithStartingYear(...)` to place fixtures in real Australian years; counted firings via an inert-silver probe.
+- Docs: `docs/systems/events.md` — plain-English era-band table + technical methods + verification rows + changelog; moved the 4c.10 open-issue to **done** and logged a new follow-up (move bands to a data-driven spec section later).
+**Status:** Build clean (0 warn/0 err). **L1/L2 2895 green** (`Category!=Soak`), **soak 5 green** (byte-identical). CI not run (branch not pushed, per instructions).
+**Changed:** `game/src/GameLogic/GameSession/Game.Events.cs`, `game/tests/GameLogic.Tests/GameSession/HistoricalEventTests.cs`, `docs/systems/events.md`. ClickUp `86d3mmbzc` → In Review (with a comment on the tuning + design).
+**Decisions:** (1) Chances Survival 20% / moderate eras 35% / GoldRush+Federation 60% / Pre 100% — renders doc 13's Frequent/Moderate labels. (2) Reconciled the doc-vs-task tension: doc 13 calls 1788–97 "Frequent survival events" but the task steer is a *sparse* opening, so the founding era gets the **lowest** per-turn chance (the "frequency" is authored-content density; the band throttles surfacing). (3) **Code constants, not a spec `<frequency-bands>` section** — the spec is owned by another stream; recommend moving them to data when spec + runtime rejoin one owner (follow-up logged).
+**Scheduled next:** `[P8-4c.9] Pioneer hard gates + linked events — replace the age-weight approximation` (`86d3mmbt7`, Backlog) — the next non-sensitive 4c content item. (4c.11 sensitive-content review + 4b First Nations remain sign-off/approval-gated.)
+**Follow-ups:** Move the era boundaries/chances to a data-driven spec section (new open-issue in `docs/systems/events.md`); a later balance pass could revisit the exact percentages once real catalogue content is live.
+**Needs you:** Sanity-check the era **tuning percentages** (esp. the deliberately-sparse 20% for the 1788 opening vs doc 13's "Frequent survival" wording) — flag if you want the founding years busier. Nothing else blocks.
+
+---
+
 ## 2026-07-09 — Completed the started items: Federation victory loop + Colopedia/Help prose (both landed, CI-green)
 
 **Requested (Chris):** "Cap has reset. Move onto completing all of the items you started." (The two on preserved branches: the Federation victory loop and the Colopedia/Help prose reskin.)

@@ -42,8 +42,10 @@ public sealed partial class Game
     /// bypassing the weighted draw and requirement gates. Each is auto-resolved (no offer) so opening state is seeded
     /// deterministically.</item>
     /// <item>Then the ordinary pipeline: gather every <see cref="EventDef"/> currently <see cref="IsEventEligible">eligible</see>
-    /// for this player, draw one by seeded weight on the reserved <see cref="EventStreamId"/> stream (seeded from the
-    /// player's own state read WITHOUT advancing stream 0), and either offer it to the human or auto-resolve it for an AI.</item>
+    /// for this player, apply the <see cref="EraFireChance">era-frequency band</see> (4c.10 — a per-turn "fires at all"
+    /// gate keyed off <see cref="CurrentEventEra"/>, inert outside the 1788–1901 window), draw one by seeded weight on the
+    /// reserved <see cref="EventStreamId"/> stream (seeded from the player's own state read WITHOUT advancing stream 0),
+    /// and either offer it to the human or auto-resolve it for an AI.</item>
     /// </list>
     /// At most one drawn event fires per player per turn (like the disaster roll).
     /// </summary>
@@ -82,6 +84,17 @@ public sealed partial class Game
         ulong baseState = RandomFor(player).SaveState().State;
         var rng = new Pcg32Random(baseState ^ ((ulong)Turn << 3) ^ ((ulong)player.PlayerId << 40), EventStreamId);
 
+        // (2a) Era-frequency band (4c.10): a per-turn "does an event fire at all" gate so early Survival turns are sparse
+        // and the Gold-Rush / Federation eras are busy, matching doc 13's Frequent/Moderate cadence. Modelled on the
+        // natural-disaster percentage gate (rng.Next(100) >= chance → skip). A full-chance era (100 — the classic
+        // calendar and any year outside the 1788–1901 Australian window) skips the roll entirely, so the throwaway
+        // generator advances exactly as it did before this feature and the weighted draw below is unperturbed there.
+        int fireChance = EraFireChance(CurrentEventEra);
+        if (fireChance < 100 && rng.Next(100) >= fireChance)
+        {
+            return; // this era's cadence skips the draw this turn (throwaway stream only — never touches stream 0)
+        }
+
         var weighted = eligible.Select(e => (Math.Max(1, e.Weight), e)).ToList();
         EventDef drawn = RandomChoice.WeightedRandom(rng, weighted);
 
@@ -98,6 +111,109 @@ public sealed partial class Game
             FireEvent(player, drawn, colonyId, rng);
         }
     }
+
+    /// <summary>
+    /// The six historical eras of the Australian scenario (1788–1901), used by the event engine's per-turn
+    /// frequency band (4c.10). Each era carries a designed cadence (<see cref="EraFireChance"/>) so events fire at a
+    /// story-appropriate density — sparse survival years, busy gold-rush and Federation years — per
+    /// <c>docs/australian_federation_mode_md/13_Event_System_Design.md</c> "Recommended event frequency".
+    /// <see cref="Pre"/> is the sentinel for any year <b>outside</b> that window (notably the classic 1492+ calendar),
+    /// where the band is inert (full chance, no roll).
+    /// </summary>
+    public enum EventEra
+    {
+        /// <summary>Any year before the Australian window (e.g. the classic 1492 calendar) — the band is inert here.</summary>
+        Pre,
+        /// <summary>1788–1796: the First-Fleet survival years (doc 13: frequent survival events).</summary>
+        Survival,
+        /// <summary>1797–1829: early expansion / public-works (doc 13: moderate).</summary>
+        Expansion,
+        /// <summary>1830–1850: colony formation and immigration (doc 13: moderate).</summary>
+        ColonyFormation,
+        /// <summary>1851–1871: the gold rush — gold / crisis / reform (doc 13: frequent).</summary>
+        GoldRush,
+        /// <summary>1872–1888: infrastructure and commercial growth (doc 13: moderate).</summary>
+        Infrastructure,
+        /// <summary>1889–1901+: the Federation drive — conventions and referenda (doc 13: frequent).</summary>
+        Federation,
+    }
+
+    /// <summary>
+    /// The era for the current calendar year (4c.10) — a pure read off <see cref="CurrentYear"/>, no RNG or state
+    /// change. The lower bound of each band is inclusive (mirroring <see cref="Ruleset.AgeForYear"/>): a year before
+    /// 1788 (the classic calendar's whole run) maps to <see cref="EventEra.Pre"/>, where the frequency band is a no-op.
+    /// </summary>
+    public EventEra CurrentEventEra => EraForYear(CurrentYear);
+
+    /// <summary>
+    /// Maps a calendar year to its <see cref="EventEra"/> (4c.10). Boundaries are the six eras of doc 13's frequency
+    /// table, lower-bound inclusive. Pure and RNG-free — safe to call anywhere, including from tests at exact boundary
+    /// years. A year below <see cref="EraSurvivalStart"/> is <see cref="EventEra.Pre"/> (the inert sentinel).
+    /// </summary>
+    /// <param name="year">The in-game calendar year (e.g. <see cref="CurrentYear"/>).</param>
+    /// <returns>The era the year falls in.</returns>
+    internal static EventEra EraForYear(int year) => year switch
+    {
+        < EraSurvivalStart => EventEra.Pre,
+        < EraExpansionStart => EventEra.Survival,
+        < EraColonyFormationStart => EventEra.Expansion,
+        < EraGoldRushStart => EventEra.ColonyFormation,
+        < EraInfrastructureStart => EventEra.GoldRush,
+        < EraFederationStart => EventEra.Infrastructure,
+        _ => EventEra.Federation,
+    };
+
+    /// <summary>
+    /// The per-turn probability (0–100) that an eligible event fires at all in <paramref name="era"/> (4c.10) — the
+    /// frequency band. <see cref="EventEra.Pre"/> (and thus the entire classic game) returns 100, so its gate is
+    /// skipped and the engine's RNG consumption and draw are unchanged; the Australian eras return their designed
+    /// cadence (doc 13: "frequent" eras high, "moderate" eras lower). These are documented tuning constants that could
+    /// later move to a spec <c>&lt;frequency-bands&gt;</c> section (see the events system doc's open issues).
+    /// </summary>
+    /// <param name="era">The era to look up.</param>
+    /// <returns>The per-turn fire chance, 0–100 (100 = always, the inert default).</returns>
+    internal static int EraFireChance(EventEra era) => era switch
+    {
+        EventEra.Survival => EraChanceSurvival,
+        EventEra.Expansion => EraChanceExpansion,
+        EventEra.ColonyFormation => EraChanceColonyFormation,
+        EventEra.GoldRush => EraChanceGoldRush,
+        EventEra.Infrastructure => EraChanceInfrastructure,
+        EventEra.Federation => EraChanceFederation,
+        _ => 100, // EventEra.Pre — outside the Australian window (classic calendar): inert, no roll, no behaviour change
+    };
+
+    // --- Era boundaries (4c.10): the six eras of doc 13's "Recommended event frequency" table, lower-bound inclusive.
+    //     Read off the calendar year, so they hold for any calendar the variant configures. ---
+
+    /// <summary>First year of the Survival era — the founding of the colony (1788). Below this, <see cref="EventEra.Pre"/>.</summary>
+    private const int EraSurvivalStart = 1788;
+    /// <summary>First year of the Expansion era (1797).</summary>
+    private const int EraExpansionStart = 1797;
+    /// <summary>First year of the Colony-Formation era (1830).</summary>
+    private const int EraColonyFormationStart = 1830;
+    /// <summary>First year of the Gold-Rush era (1851).</summary>
+    private const int EraGoldRushStart = 1851;
+    /// <summary>First year of the Infrastructure era (1872).</summary>
+    private const int EraInfrastructureStart = 1872;
+    /// <summary>First year of the Federation era (1889) — runs to 1901 and beyond.</summary>
+    private const int EraFederationStart = 1889;
+
+    // --- Per-era per-turn fire chance (4c.10), 0–100. Doc 13 labels each era Frequent or Moderate; we render that as a
+    //     high vs. lower per-turn chance. Tuning judgement — see the events system doc / this file's summary. ---
+
+    /// <summary>Survival (1788–1796): sparse — the founding years should not be swamped with popups (tuning: 20%).</summary>
+    private const int EraChanceSurvival = 20;
+    /// <summary>Expansion (1797–1829): moderate cadence (35%).</summary>
+    private const int EraChanceExpansion = 35;
+    /// <summary>Colony formation (1830–1850): moderate cadence (35%).</summary>
+    private const int EraChanceColonyFormation = 35;
+    /// <summary>Gold rush (1851–1871): frequent — the busiest, most dramatic era (60%).</summary>
+    private const int EraChanceGoldRush = 60;
+    /// <summary>Infrastructure (1872–1888): moderate cadence (35%).</summary>
+    private const int EraChanceInfrastructure = 35;
+    /// <summary>Federation (1889–1901+): frequent — conventions and referenda drive the finale (60%).</summary>
+    private const int EraChanceFederation = 60;
 
     /// <summary>
     /// Whether a normal <see cref="EventDef"/> is currently eligible to be drawn for <paramref name="player"/> (4c.3):

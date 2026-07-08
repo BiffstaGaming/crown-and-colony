@@ -466,6 +466,134 @@ public class HistoricalEventTests
         Assert.Equal(firedTurn, game.EventLastFiredTurn["event.firstSettlement"]); // never fires again
     }
 
+    // ===== 4c.10: era-frequency bands =====
+
+    /// <summary>A repeatable (cooldown-1) single-option event that adds exactly +1 silver to the colony whenever it
+    /// fires. Silver is neither produced (no miner on a fresh centre-tile colony) nor consumed by a 1-colonist colony,
+    /// so the colony's silver store is exactly the number of times the era band let the event fire over a run of turns —
+    /// an inert counter robust to whatever the base game does to gold (tax/upkeep) meanwhile (see the GrantEffects test).</summary>
+    private const string CadenceProbeEvents = @"
+      <historical-events>
+        <event-def id='event.cadence' weight='100' cooldown='1'>
+          <option id='only'><effect kind='grantGoods' target='model.goods.silver' value='1'/></option>
+        </event-def>
+      </historical-events>";
+
+    [Theory]
+    // Below the Australian window (the classic 1492 calendar's whole run) → the inert Pre sentinel.
+    [InlineData(1492, Game.EventEra.Pre)]
+    [InlineData(1787, Game.EventEra.Pre)]
+    // The six eras of doc 13's frequency table, lower-bound inclusive, tested at each boundary and one interior year.
+    [InlineData(1788, Game.EventEra.Survival)]
+    [InlineData(1796, Game.EventEra.Survival)]
+    [InlineData(1797, Game.EventEra.Expansion)]
+    [InlineData(1829, Game.EventEra.Expansion)]
+    [InlineData(1830, Game.EventEra.ColonyFormation)]
+    [InlineData(1850, Game.EventEra.ColonyFormation)]
+    [InlineData(1851, Game.EventEra.GoldRush)]
+    [InlineData(1871, Game.EventEra.GoldRush)]
+    [InlineData(1872, Game.EventEra.Infrastructure)]
+    [InlineData(1888, Game.EventEra.Infrastructure)]
+    [InlineData(1889, Game.EventEra.Federation)]
+    [InlineData(1901, Game.EventEra.Federation)]
+    [InlineData(1950, Game.EventEra.Federation)] // runs open-ended past 1901
+    public void EraForYear_MapsBoundaryYearsToTheCorrectEra(int year, Game.EventEra expected)
+    {
+        Assert.Equal(expected, Game.EraForYear(year));
+    }
+
+    [Fact]
+    public void EraFireChance_IsInertOutsideTheWindow_AndModulatedInside()
+    {
+        // Pre (outside 1788–1901, i.e. every classic-calendar year) is full chance → the gate is skipped, no behaviour
+        // change. Inside the window the "frequent" eras (gold rush, Federation) are strictly busier than the "moderate"
+        // and "survival" eras, matching doc 13.
+        Assert.Equal(100, Game.EraFireChance(Game.EventEra.Pre));
+
+        int survival = Game.EraFireChance(Game.EventEra.Survival);
+        int moderate = Game.EraFireChance(Game.EventEra.Expansion);
+        int goldRush = Game.EraFireChance(Game.EventEra.GoldRush);
+        int federation = Game.EraFireChance(Game.EventEra.Federation);
+
+        Assert.InRange(survival, 1, 99);   // sparse but not silent
+        Assert.True(survival < moderate);  // survival is the sparsest band
+        Assert.True(moderate < goldRush);  // "frequent" > "moderate"
+        Assert.Equal(goldRush, federation); // both finale eras are "frequent"
+        Assert.Equal(Game.EraFireChance(Game.EventEra.ColonyFormation), moderate);   // the moderate eras share a chance
+        Assert.Equal(Game.EraFireChance(Game.EventEra.Infrastructure), moderate);
+    }
+
+    [Fact]
+    public void CurrentEventEra_ReadsOffTheCalendarYear()
+    {
+        // The classic calendar (turn 1 = 1492) is always Pre; a variant calendar started in 1851 opens in the gold rush.
+        Ruleset classicCal = LoadClassicWithEvents(CadenceProbeEvents);
+        Game classic = Game.New(classicCal, Seed);
+        Assert.Equal(Game.EventEra.Pre, classic.CurrentEventEra);
+
+        Ruleset goldCal = LoadClassicWithEvents(CadenceProbeEvents).WithStartingYear(1851);
+        Game gold = Game.New(goldCal, Seed);
+        Assert.Equal(1851, gold.CurrentYear);
+        Assert.Equal(Game.EventEra.GoldRush, gold.CurrentEventEra);
+    }
+
+    [Fact]
+    public void EraBand_IsInertOnTheClassicCalendar_EventStillFiresEveryTurn()
+    {
+        // Pre = full chance = the gate is skipped entirely (no RNG roll before the draw), so on the classic 1492 calendar
+        // a cooldown-1 event fires on every one of the human's processed turns exactly as it did before 4c.10.
+        Game game = Game.New(LoadClassicWithEvents(CadenceProbeEvents), Seed);
+        Colony colony = FoundColony(game);
+        const int turns = 12;
+        for (int i = 0; i < turns; i++)
+        {
+            game.EndTurn();
+        }
+        Assert.Equal(turns, colony.StoreOf("model.goods.silver")); // fired on all 12 turns — band inert outside the window
+    }
+
+    [Fact]
+    public void EraBand_FiresSparselyInSurvival_AndBusilyInGoldRush()
+    {
+        // Same event, same seed, same number of turns — only the era differs. The Survival band (sparse) must let the
+        // event fire on markedly fewer turns than the Gold-Rush band (frequent), and neither degenerately (0 or every
+        // turn) inside the window. This is the cadence the era-frequency modulation exists to produce (doc 13).
+        const int turns = 16; // stays inside a single era for both calendars (no boundary crossing over 16 turns)
+
+        int survivalFirings = CountFiringsOverEra(startingYear: 1788, turns);
+        int goldRushFirings = CountFiringsOverEra(startingYear: 1851, turns);
+
+        // Sanity: both games actually stayed in their intended era for the whole window.
+        Assert.True(survivalFirings is > 0 and < turns, $"survival should be sparse but non-silent, was {survivalFirings}");
+        Assert.True(goldRushFirings is > 0 and < turns, $"gold rush should be busy but not every turn, was {goldRushFirings}");
+        Assert.True(goldRushFirings > survivalFirings,
+            $"gold rush ({goldRushFirings}) should fire more often than survival ({survivalFirings})");
+    }
+
+    [Fact]
+    public void EraBand_IsDeterministic_SameSeedSameCalendarSameCadence()
+    {
+        // The band draws on the throwaway event stream only, seeded from read-only player state — so two same-seed,
+        // same-calendar games produce the identical firing count (ADR-009).
+        Assert.Equal(CountFiringsOverEra(1788, 20), CountFiringsOverEra(1788, 20));
+        Assert.Equal(CountFiringsOverEra(1851, 20), CountFiringsOverEra(1851, 20));
+    }
+
+    /// <summary>Runs a fresh 1-colony game on a calendar started at <paramref name="startingYear"/> for
+    /// <paramref name="turns"/> human turns and returns how many times the +1-silver cadence probe fired (the inert
+    /// silver store, which only the event touches).</summary>
+    private static int CountFiringsOverEra(int startingYear, int turns)
+    {
+        Ruleset r = LoadClassicWithEvents(CadenceProbeEvents).WithStartingYear(startingYear);
+        Game game = Game.New(r, Seed);
+        Colony colony = FoundColony(game);
+        for (int i = 0; i < turns; i++)
+        {
+            game.EndTurn();
+        }
+        return colony.StoreOf("model.goods.silver");
+    }
+
     // ===== Persistence: fired-turns round-trip (v71, omit-when-empty) =====
 
     [Fact]
