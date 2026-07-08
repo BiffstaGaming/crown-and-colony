@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — Completed the started items: Federation victory loop + Colopedia/Help prose (both landed, CI-green)
+
+**Requested (Chris):** "Cap has reset. Move onto completing all of the items you started." (The two on preserved branches: the Federation victory loop and the Colopedia/Help prose reskin.)
+**Did:** finished both via focused agents that rebased the preserved work onto current main, completed + tested it; I integrated each as a staged CI-green milestone.
+- **Federation victory loop (4a, ADR-021)** — `fa1ce89`. The agent found the "3 cref errors" were really the *unfinished persistence layer* and implemented the whole thing: per-colony **Federation Support** (from Civic Voice) aggregated over the six map regions, **Convention Points + a FederationPhase state machine**, a **seeded referendum**, automatic constitution-draft + **Commonwealth proclamation victory** (`Ruleset.VictoryFederation` branched into `Game.Winner` + `ResolveCommonwealthFederation`), and a **Federation HUD panel**. Save **v72** (all omit-when-default; 42 pin-tests bumped). Imperial Pressure kept political-only (no REF invasion — the ADR-021 default); the 5 victory grades deferred (documented). **VERIFIED IN-GAME** (`docs/guide/img/australia-federation.png`): "The Road to Federation", six colony support bars, gated "Call the Federation Convention". +14 L1 (`FederationVictoryTests`) +2 L3 (`FederationPanelTests`); **classic byte-identical (soak 5/5)**.
+- **Colopedia + Help prose reskin** — `57f5416`. Finished `HelpChrome` (+ fixed a latent `record struct` zero-init bug the branch shipped); the Colopedia Concepts tab (13 topics) + in-game Help body now read the Australian terms (Federationists / Civic Voice / Federation Convention / First Nations / Imperial Pressure). Classic byte-identity independently verified. +2 L3.
+**Status:** all merged + pushed; **CI green (L1/L2 + L3)** through `cd4c7ec`; L1/L2 2875 + soak 5 green. The perf-budget soak test flakes intermittently under load (nightly-only, not a gate; passes on a quiet machine).
+**Decisions:** applied the drafted ADR-021 defaults (Imperial-Pressure-political-only; grades/clauses/quotas deferred; uniform 40%-convention/50%-referendum thresholds) — **all pending Chris's ADR-021 sign-off.** Held the deep First Nations redesign (4b) — sensitive + ADR-022 sign-off-gated — for Chris.
+**Scheduled next:** continue the *non-sensitive additive* Phase-4 content (4d novel: Hargraves gold, bespoke Pioneer election effects, new economy/civic buildings + improvements; 4c: era frequency-bands + Pioneer hard-gates) — launching now. Deep First Nations (4b) + art production remain sign-off/approval-gated.
+**Follow-ups:** the deferred Federation grades/clauses/quotas + per-colony support targets + AI-pursues-Federation; 2 cosmetic Australia phrasings ("Imperial Pressure (Imperial Pressure)"; a stiff referendum action label).
+**Needs you:** (1) **Sign off ADR-021** (the Federation loop is live on the default settings above) **+ ADR-022** (unblocks 4b). (2) Playtest an Australian game → the Federation panel is on the HUD (Australia-only). (3) The sensitive framings (intro beats, tribe names, Eureka/Shearers events) still await your review.
+
+---
+
 ## 2026-07-09 — Colopedia + Help instructional-prose reskin (finished the preserved branch)
 
 **Requested:** Complete the Colopedia/Help instructional-PROSE reskin for the Australian variant — bring in only the prose files from the spend-limit-killed branch `8aa2b53`, finish the incomplete `HelpChrome`, thread the variant through the panels, keep classic byte-identical, add Australia assertions. (DisplayOverrides half already merged to main; not touched.)
