@@ -64,6 +64,7 @@ public sealed class Ruleset
         bool victoryDefeatRef,
         bool victoryDefeatEuropeans,
         bool victoryDefeatHumans,
+        bool victoryFederation,
         CombatModifiers combatModifiers,
         ColonyConstants colonyConstants,
         MovementConstants movementConstants,
@@ -86,6 +87,7 @@ public sealed class Ruleset
         VictoryDefeatRef = victoryDefeatRef;
         VictoryDefeatEuropeans = victoryDefeatEuropeans;
         VictoryDefeatHumans = victoryDefeatHumans;
+        VictoryFederation = victoryFederation;
         _terrainById = terrainById;
         _unitById = unitById;
         _goodsById = goodsById;
@@ -347,6 +349,18 @@ public sealed class Ruleset
     /// single-human game it is off by default). A spec without the option falls back to false.
     /// </summary>
     public bool VictoryDefeatHumans { get; private set; }
+
+    /// <summary>
+    /// Victory condition: the human wins by <b>Federation of the colonies</b> — the Australian-Federation win path
+    /// (Phase-4a, ADR-021), the spec <c>model.option.victoryFederation</c> boolean game option in the
+    /// <c>gameOptions.victoryConditions</c> group. <b>Classic default false</b> (classic ships no such option, so the
+    /// fallback is false): the classic War-of-Independence win is untouched and no Federation state is ever accrued. The
+    /// Australia spec sets it <b>true</b>, replacing the Declare-Independence/War win with reaching the Commonwealth
+    /// proclamation by 1901 (<see cref="GameSession.Game.FederationPhase"/> / <see cref="GameSession.Game.Winner"/>). A
+    /// spec without the option falls back to false, so the default classic game is byte-identical (ADR-009). This is
+    /// parse-time only — there is no New-Game override seam for it (unlike the three defeat conditions).
+    /// </summary>
+    public bool VictoryFederation { get; }
 
     /// <summary>
     /// Returns this ruleset with the three alternative <b>victory conditions</b> overridden to the player's New-Game
@@ -1156,6 +1170,10 @@ public sealed class Ruleset
         bool victoryDefeatRef = ParseBooleanOption(root, "model.option.victoryDefeatREF", fallback: true);
         bool victoryDefeatEuropeans = ParseBooleanOption(root, "model.option.victoryDefeatEuropeans", fallback: true);
         bool victoryDefeatHumans = ParseBooleanOption(root, "model.option.victoryDefeatHumans", fallback: false);
+        // The Australian-Federation victory condition (Phase-4a, ADR-021). Classic ships no such option so the fallback
+        // is FALSE — the default game never accrues Federation state, draws no new RNG, and stays byte-identical
+        // (ADR-009); the Australia spec sets it true to replace the War-of-Independence win with Federation by 1901.
+        bool victoryFederation = ParseBooleanOption(root, "model.option.victoryFederation", fallback: false);
 
         // The unattached, top-level <modifiers> combat percentages (attack bonus, movement/amphibious/artillery
         // penalties, fortified/artillery-against-raid bonuses, naval cargo penalty). Each missing modifier falls back
@@ -1187,7 +1205,7 @@ public sealed class Ruleset
             roles, disasters, unitChanges, experienceUpgrades, educationTurns, nativeLearning, europeanNations, events, eventDefs, calendar, fatherAgeYears,
             difficulty, gameOptions, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage,
             interventionBells, interventionTurns, interventionForce,
-            victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, combatModifiers, colonyConstants, movementConstants,
+            victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, victoryFederation, combatModifiers, colonyConstants, movementConstants,
             defaultColonyNames);
     }
 

@@ -21,7 +21,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 71;
+    public const int CurrentVersion = 72;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -346,6 +346,16 @@ public sealed record SaveGame
     /// → the turn it last fired, for one-shot/cooldown gating of the data-driven event engine, 4c.3); <b>omitted when the
     /// map is empty</b>, and the classic ruleset ships no historical events so the map is always empty there — a default
     /// game serialises byte-identically to v70, and a pre-v71 save (or any save with no events fired) loads with none.
+    /// v72 added the <b>Australian-Federation victory state</b> (Phase-4a, ADR-021) as four additive omit-when-default
+    /// slices: a colony's banked <see cref="SavedColony.FederationSupport"/> (omitted when 0 — every colony in a classic
+    /// game, which never accrues it); and three top-level game fields — the <see cref="FederationPhase"/> ordinal
+    /// (omitted for the default <c>ColonialMaturity</c> = 0, which a classic game never leaves), the
+    /// <see cref="ConventionPoints"/> (omitted when 0), and the <see cref="ReferendumState"/> (attempt count +
+    /// carried flag, omitted when no referendum has been held). The classic ruleset ships
+    /// <c>model.option.victoryFederation</c> false, so no Federation state is ever accrued there — a default game
+    /// serialises <b>byte-identically to v71</b> (every one of these tokens omitted), and a pre-v72 save loads with no
+    /// Federation state (the pre-feature behaviour). Determinism (ADR-009): the whole loop is gated off in classic, so a
+    /// reloaded classic game continues on the identical random sequence and the soak stays byte-identical.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
