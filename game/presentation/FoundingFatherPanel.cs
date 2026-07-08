@@ -17,20 +17,23 @@ public partial class FoundingFatherPanel : PanelContainer
 {
     private Game _game = null!;
     private Action _onChange = () => { };
+    private string _congressName = "Continental Congress";
 
     /// <summary>Opens the dialog. <paramref name="onChange"/> runs after a choice (to refresh the host view).</summary>
-    public void Open(Game game, Action onChange)
+    /// <param name="congressName">The variant's name for the father-electing body (<see cref="GameLogic.Specification.GameVariant.CongressName"/> — classic "Continental Congress", Australia "Federation Convention"); defaults to the classic label so existing callers/tests are unchanged.</param>
+    public void Open(Game game, Action onChange, string congressName = "Continental Congress")
     {
         ColonyArt.FramePanel(this); // parchment image frame + dark-ink theme (not Godot's transparent default)
         _game = game;
         _onChange = onChange;
+        _congressName = congressName;
         Rebuild();
         Show();
     }
 
     private void Rebuild()
     {
-        GetNode<Label>("VBox/FatherTitle").Text = "Continental Congress";
+        GetNode<Label>("VBox/FatherTitle").Text = _congressName;
         var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {

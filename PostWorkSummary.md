@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — The Australian Pioneers: the Federation Convention is open
+
+**Requested (Chris):** "Begin implementing the Australian specific story/pioneers (founding fathers)/etc that are provided in the Australia documents."
+**Did (kanban `86d3kwtjb` — the headline P8 deliverable):**
+- **Authored all 25 Australian Pioneers** in `australia/specification.xml`, replacing the classic fathers — five per design category (docs `07_*`–`12_*`): Industry & Commerce (Macarthur, Mort, Angas, Hargraves, Kidman), Exploration & Infrastructure (Flinders, Sturt, Leichhardt, McDouall Stuart, Todd), Settlement/Admin/Defence (Phillip, Macquarie, Ruse, Reibey, Jervois), Democracy & Federation (Parkes, Barton, Quick, Griffith, Spence), Social Reform & First Nations (Chisholm, Lalor, Lee, Lawson, Barak).
+- **Every perk reuses a wired classic effect** (pure data, ADR-017/018 — zero engine code): e.g. Todd's Electric Telegraph = +25% Civic Voice (bells), Mort's Cold Stores = the factory-tier unlock, Jervois's Harbour Batteries = free fortifications at pop 3+, Ruse's Experiment Farm = a free Expert Farmer on election (the design's literal perk), Lalor's Eureka Oath = tax feeds civic voice, Lawson's Dawn Press = better migrants + you choose who sails, Barak's Coranderrk Delegation = First Nations tension grows 25% slower (deliberately **no** alarm-wipe — doc 15's principles; conquest payloads unused).
+- **Era-gating via age weights** (the design's anachronism rule): no Democracy & Federation figure carries early-game weight — verified live: a fresh Australian game offers four categories and **no Federation figure**.
+- **"Federation Convention"** label: new `GameVariant.CongressName` titles the electing panel + the report's Congress tab per variant (classic stays "Continental Congress").
+- **Render-verified** (screenshot in chat): the Federation Convention offering Macarthur (Trade) / Flinders (Exploration) / Ruse (Military) / Lawson (Religious) on turn 1.
+**Status:** **+13 L1/L2 (`AustralianPioneersTests`)**; **full L1/L2 2766 green**; **56 affected L3 green** (FoundingFather/Report/MainScene/MainMenu/Colopedia panels). Classic variant byte-untouched. Committing + pushing; CI to confirm → then the kanban task → Shipped.
+**Changed:** `game/data/rules/australia/specification.xml` (the 25-pioneer `<founding-fathers>` block), `GameVariant.cs` (`CongressName`), `Naming.cs` (McDouall override), `FoundingFatherPanel.cs`/`ColonyReportPanel.cs`/`GameController.cs` (label threading), `AustralianPioneersTests.cs` (new); docs `founding-fathers.md` (variant note + changelog), `game-modes.md` (changelog), `IMPLEMENTATION_PLAN.md` (progress).
+**Decisions:** payload-mapping per figure chosen for design fidelity within the wired-effects vocabulary (documented per-figure in the spec's comments); **cotton/silver as wool/gold stand-ins** until the goods reskin (`86d3kwty1`) — retarget then; category display names (e.g. "Industry & Commerce" instead of "Trade") deferred to the UI reskin (`86d3kwu0c`); the corpus's linked events / hard date/region gates are Phase 4 (events system), not faked now.
+**Scheduled next:** **CI green → task `86d3kwtjb` Shipped**, then the next P8 reskin slice: **nations & place-names (`86d3kwtrq`)** — the six colonies' naming + British/colonial powers framing. (The "story" (campaign arc doc 03) rides the Phase-4 event system — a later epic.)
+**Needs you:** start an **Australian Federation** game and elect a pioneer or two (press **F** for the Federation Convention). Standing: the top-down direction call.
+
+---
+
 ## 2026-07-08 — New Zealand removed from the Australia map
 
 **Requested (Chris):** "Is that… New Zealand off the coast on the bottom right of Australia? If yes, let's get rid of that — this is for Australia only."

@@ -2772,39 +2772,74 @@
        A founding fathers with these settings would only be available
        to the Spanish nation and nations with the Trade advantage.
   -->
+  <!-- ═══ The Australian Pioneers (P8, 86d3kwtjb) — this variant's Founding-Father equivalent. ═══
+       25 figures in the design corpus's five categories (docs/australian_federation_mode_md/07_* – 12_*),
+       mapped onto the engine's five father types:
+         Industry & Commerce                  → trade
+         Exploration & Infrastructure         → exploration
+         Settlement, Administration & Defence → military
+         Democracy & Federation               → political
+         Social Reform & First Nations        → religious
+       Skeleton slice: every perk REUSES an effect the engine already applies for a classic father
+       (ADR-017 / task 86d3kwtjb — no engine code): goods/SoL/bells modifiers, build-unlock abilities,
+       free buildings/units, boycott-lift / reveal events, recruit-pool shaping, and the native-alarm
+       damp. The corpus's bespoke mechanics (linked events, date/region gates, new improvements) arrive
+       with later phases; until then the AGE WEIGHTS are the soft date gate — Democracy & Federation
+       figures carry NO age-1 weight, so no Federation figure is ever offered in the early game (the
+       anachronism rule, doc 07). Colonial-conquest payloads (native plunder, convert capture/upgrade,
+       privateer raiding) are deliberately NOT reused — doc 15's First Nations design principles. -->
   <founding-fathers>
-    <founding-father id="model.foundingFather.adamSmith" type="trade"
-                     weight1="2" weight2="8" weight3="6">
+    <!-- ── Industry & Commerce (trade) ─────────────────────────────────────── -->
+    <!-- Elizabeth Macarthur — "Merino Bloodlines": the wool pioneer. Until the goods reskin (86d3kwty1)
+         lands wool, cotton is the raw-textile stand-in — Henry Hudson's +100% payload retargeted. -->
+    <founding-father id="model.foundingFather.elizabethMacarthur" type="trade"
+                     weight1="8" weight2="4" weight3="1">
+      <modifier id="model.goods.cotton" index="40"
+                type="percentage" value="100">
+        <scope ability-id="model.ability.person" match-negated="false"/>
+      </modifier>
+    </founding-father>
+    <!-- Thomas Sutcliffe Mort — "Cold Stores": refrigeration works = the factory-tier unlock (Adam Smith's payload). -->
+    <founding-father id="model.foundingFather.thomasSutcliffeMort" type="trade"
+                     weight1="0" weight2="5" weight3="8">
       <ability id="model.ability.buildFactory"
                value="true"/>
     </founding-father>
-    <founding-father id="model.foundingFather.jacobFugger" type="trade"
-                     weight1="0" weight2="5" weight3="8">
+    <!-- George Fife Angas — "Colonial Credit": clears every trade boycott at once (Jacob Fugger's payload —
+         the design literally says "clears one debt, credit squeeze, or boycott-style trade penalty"). -->
+    <founding-father id="model.foundingFather.georgeFifeAngas" type="trade"
+                     weight1="2" weight2="6" weight3="6">
       <event id="model.event.boycottsLifted"/>
     </founding-father>
-    <founding-father id="model.foundingFather.peterMinuit" type="trade"
-                     weight1="9" weight2="1" weight3="1">
-      <!-- Player saves 100% percent, i.e. pays nothing. -->
-      <modifier id="model.modifier.landPaymentModifier"
-                type="percentage" value="-100"/>
+    <!-- Edward Hargraves — "Payable Gold": the gold rush; silver is the classic mineral stand-in for gold. -->
+    <founding-father id="model.foundingFather.edwardHargraves" type="trade"
+                     weight1="1" weight2="7" weight3="7">
+      <modifier id="model.goods.silver" index="40"
+                type="percentage" value="100">
+        <scope ability-id="model.ability.person" match-negated="false"/>
+      </modifier>
     </founding-father>
-    <founding-father id="model.foundingFather.peterStuyvesant" type="trade"
-                     weight1="2" weight2="4" weight3="8">
-      <ability id="model.ability.buildCustomHouse"
-               value="true"/>
+    <!-- Sidney Kidman — "Overland Stations": the Cattle King's station network feeds the continent
+         (+25% food from worked tiles — the generic tile-yield goods fold). -->
+    <founding-father id="model.foundingFather.sidneyKidman" type="trade"
+                     weight1="0" weight2="5" weight3="8">
+      <modifier id="model.goods.food" index="40"
+                type="percentage" value="25">
+        <scope ability-id="model.ability.person" match-negated="false"/>
+      </modifier>
     </founding-father>
-    <founding-father id="model.foundingFather.janDeWitt" type="trade"
-                     weight1="2" weight2="6" weight3="10">
-      <ability id="model.ability.tradeWithForeignColonies"
-               value="true"/>
-      <ability id="model.ability.customHouseTradesWithForeignCountries"
-               value="true"/>
-      <ability id="model.ability.betterForeignAffairsReport"
-               value="true"/>
+
+    <!-- ── Exploration & Infrastructure (exploration) ──────────────────────── -->
+    <!-- Matthew Flinders — "Complete Coastline": +1 sight for every unit, ships included (De Soto's
+         line-of-sight payload, unscoped — the design says "ships gain +1 sight"). -->
+    <founding-father id="model.foundingFather.matthewFlinders" type="exploration"
+                     weight1="8" weight2="5" weight3="2">
+      <modifier id="model.modifier.lineOfSightBonus"
+                type="additive" value="1"/>
     </founding-father>
-    <founding-father id="model.foundingFather.ferdinandMagellan"
-                     type="exploration"
-                     weight1="2" weight2="10" weight3="10">
+    <!-- Charles Sturt — "River Highways": faster water movement + a quicker crossing (Magellan's naval payload). -->
+    <founding-father id="model.foundingFather.charlesSturt" type="exploration"
+                     weight1="4" weight2="8" weight3="4">
       <modifier id="model.modifier.movementBonus"
                 type="additive" value="3">
         <scope ability-id="model.ability.navalUnit" ability-value="true"/>
@@ -2815,32 +2850,62 @@
       </modifier>
       <event id="model.event.movementChange"/>
     </founding-father>
-    <founding-father id="model.foundingFather.franciscoDeCoronado"
-                     type="exploration"
-                     weight1="3" weight2="5" weight3="7">
+    <!-- Ludwig Leichhardt — "Naturalist Journals": exploration rumours always turn out well (De Soto's
+         rumour payload — the design says rumours are far less likely to be negative). -->
+    <founding-father id="model.foundingFather.ludwigLeichhardt" type="exploration"
+                     weight1="4" weight2="8" weight3="4">
+      <ability id="model.ability.rumoursAlwaysPositive"
+               value="true"/>
+    </founding-father>
+    <!-- John McDouall Stuart — "North-South Crossing": the continental route reveals every settlement
+         (Coronado's payload, incl. the wider colony sight ring). -->
+    <founding-father id="model.foundingFather.johnMcDouallStuart" type="exploration"
+                     weight1="2" weight2="6" weight3="8">
       <event id="model.event.seeAllColonies"/>
       <modifier id="model.modifier.exposedTilesRadius"
                 type="additive" value="3"/>
     </founding-father>
-    <founding-father id="model.foundingFather.hernandoDeSoto"
-                     type="exploration"
-                     weight1="5" weight2="10" weight3="5">
-      <modifier id="model.modifier.lineOfSightBonus"
-                type="additive" value="1">
-        <scope ability-id="model.ability.navalUnit" ability-value="false"/>
+    <!-- Charles Todd — "Electric Telegraph": +25% Civic Voice (bells) — Jefferson's payload at the design's value. -->
+    <founding-father id="model.foundingFather.charlesTodd" type="exploration"
+                     weight1="0" weight2="4" weight3="10">
+      <modifier id="model.goods.bells" index="40"
+                type="percentage" value="25">
+        <scope ability-id="model.ability.person" match-negated="true"/>
       </modifier>
-      <ability id="model.ability.rumoursAlwaysPositive"
+    </founding-father>
+
+    <!-- ── Settlement, Administration & Defence (military) ─────────────────── -->
+    <!-- Arthur Phillip — "Survival Rations": the founding governor keeps a settlement defended — its last
+         soldier re-arms automatically from stores (Paul Revere's payload). -->
+    <founding-father id="model.foundingFather.arthurPhillip" type="military"
+                     weight1="10" weight2="2" weight3="1">
+      <ability id="model.ability.automaticEquipment"
+               value="true">
+        <scope type="model.role.soldier"/>
+      </ability>
+    </founding-father>
+    <!-- Lachlan Macquarie — "Public Works Governor": the great builder arrives with a master carpenter
+         (the free-unit-on-election mechanism, John Paul Jones's payload shape). -->
+    <founding-father id="model.foundingFather.lachlanMacquarie" type="military"
+                     weight1="3" weight2="8" weight3="4">
+      <unit id="model.unit.masterCarpenter"/>
+    </founding-father>
+    <!-- James Ruse — "Experiment Farm": the design's literal perk — a free Expert Farmer arrives. -->
+    <founding-father id="model.foundingFather.jamesRuse" type="military"
+                     weight1="9" weight2="4" weight3="1">
+      <unit id="model.unit.expertFarmer"/>
+    </founding-father>
+    <!-- Mary Reibey — "Merchant Fleet": her ports trade on their own — the custom-house unlock
+         (Peter Stuyvesant's payload). -->
+    <founding-father id="model.foundingFather.maryReibey" type="military"
+                     weight1="2" weight2="7" weight3="6">
+      <ability id="model.ability.buildCustomHouse"
                value="true"/>
     </founding-father>
-    <founding-father id="model.foundingFather.henryHudson" type="exploration"
-                     weight1="10" weight2="1" weight3="1">
-      <modifier id="model.goods.furs" index="40"
-                type="percentage" value="100">
-        <scope ability-id="model.ability.person" match-negated="false"/>
-      </modifier>
-    </founding-father>
-    <founding-father id="model.foundingFather.laSalle" type="exploration"
-                     weight1="7" weight2="5" weight3="3">
+    <!-- William Jervois — "Harbour Batteries": every established colony gets free fortifications
+         (La Salle's payload — the design literally grants a free Battery/Stockade-equivalent at pop 3+). -->
+    <founding-father id="model.foundingFather.williamJervois" type="military"
+                     weight1="0" weight2="4" weight3="8">
       <event id="model.event.freeBuilding"
              value="model.building.stockade"/>
       <modifier id="model.modifier.buildingPriceBonus"
@@ -2848,72 +2913,19 @@
         <scope type="model.building.stockade"/>
       </modifier>
     </founding-father>
-    <founding-father id="model.foundingFather.hernanCortes" type="military"
-                     weight1="6" weight2="5" weight3="1">
-      <ability id="model.ability.plunderNatives"/>
-      <modifier id="model.modifier.treasureTransportFee"
-                type="percentage" value="-100"/>
-    </founding-father>
-    <founding-father id="model.foundingFather.georgeWashington" type="military"
-                     weight1="0" weight2="4" weight3="10">
-      <ability id="model.ability.automaticPromotion"
-               value="true"/>
-    </founding-father>
-    <founding-father id="model.foundingFather.paulRevere" type="military"
-                     weight1="10" weight2="2" weight3="1">
-      <ability id="model.ability.automaticEquipment"
-               value="true">
-        <scope type="model.role.soldier"/>
-      </ability>
-    </founding-father>
-    <founding-father id="model.foundingFather.francisDrake" type="military"
-                     weight1="4" weight2="8" weight3="6">
-      <modifier id="model.modifier.offence" index="50"
-                type="percentage" value="50">
-        <scope type="model.unit.privateer"/>
-      </modifier>
-      <modifier id="model.modifier.defence" index="50"
-                type="percentage" value="50">
-        <scope type="model.unit.privateer"/>
-      </modifier>
-    </founding-father>
-    <founding-father id="model.foundingFather.johnPaulJones" type="military"
-                     weight1="0" weight2="6" weight3="7">
-      <unit id="model.unit.frigate"/>
-    </founding-father>
-    <founding-father id="model.foundingFather.thomasJefferson" type="political"
-                     weight1="4" weight2="5" weight3="6">
-      <modifier id="model.goods.bells" index="40"
-                type="percentage" value="50">
-        <scope ability-id="model.ability.person" match-negated="true"/>
-      </modifier>
-    </founding-father>
-    <founding-father id="model.foundingFather.pocahontas" type="political"
-                     weight1="7" weight2="5" weight3="3">
-      <modifier id="model.modifier.nativeAlarmModifier"
-                type="percentage" value="-50"/>
-      <event id="model.event.resetNativeAlarm"/>
-    </founding-father>
-    <founding-father id="model.foundingFather.thomasPaine" type="political"
-                     weight1="1" weight2="2" weight3="8">
-      <ability id="model.ability.addTaxToBells"
-               value="true"/>
-      <!-- The value of the modifier is intentionally zero.  This
-           modifier is used as a template and the value in the copy is
-           set to the current tax. -->
-      <modifier id="model.goods.bells" index="40"
-                type="percentage" value="0">
-        <scope ability-id="model.ability.person" match-negated="true"/>
-      </modifier>
-    </founding-father>
-    <founding-father id="model.foundingFather.simonBolivar" type="political"
-                     weight1="0" weight2="4" weight3="6">
+
+    <!-- ── Democracy & Federation (political) — no age-1 weight: no Federation figure early. ── -->
+    <!-- Henry Parkes — "Tenterfield Oration": +20 Sons-of-Liberty/Federation Support in every colony
+         (Simón Bolívar's payload). -->
+    <founding-father id="model.foundingFather.henryParkes" type="political"
+                     weight1="0" weight2="3" weight3="10">
       <modifier id="model.modifier.SoL"
                 type="additive" value="20"/>
     </founding-father>
-    <founding-father id="model.foundingFather.benjaminFranklin"
-                     type="political"
-                     weight1="5" weight2="5" weight3="5">
+    <!-- Edmund Barton — "Nation for a Continent": the consensus-builder — no war is declared over his head,
+         his peace is always accepted, treaties hold (Benjamin Franklin's payload). -->
+    <founding-father id="model.foundingFather.edmundBarton" type="political"
+                     weight1="0" weight2="2" weight3="10">
       <ability id="model.ability.ignoreEuropeanWars"
                value="true"/>
       <ability id="model.ability.alwaysOfferedPeace"
@@ -2921,8 +2933,68 @@
       <modifier id="model.modifier.peaceTreaty"
                 type="percentage" value="50"/>
     </founding-father>
-    <founding-father id="model.foundingFather.williamBrewster" type="religious"
-                     weight1="7" weight2="4" weight3="1">
+    <!-- John Quick — "Corowa Plan": the colonies formally talk to one another — intercolonial trade + the
+         richer foreign-affairs report (Jan de Witt's payload). -->
+    <founding-father id="model.foundingFather.johnQuick" type="political"
+                     weight1="0" weight2="3" weight3="9">
+      <ability id="model.ability.tradeWithForeignColonies"
+               value="true"/>
+      <ability id="model.ability.customHouseTradesWithForeignCountries"
+               value="true"/>
+      <ability id="model.ability.betterForeignAffairsReport"
+               value="true"/>
+    </founding-father>
+    <!-- Samuel Griffith — "Draft Constitution": the drafting energises civic voice (+30% bells). -->
+    <founding-father id="model.foundingFather.samuelGriffith" type="political"
+                     weight1="0" weight2="3" weight3="9">
+      <modifier id="model.goods.bells" index="40"
+                type="percentage" value="30">
+        <scope ability-id="model.ability.person" match-negated="true"/>
+      </modifier>
+    </founding-father>
+    <!-- Catherine Helen Spence — "Fair Representation": +10 Sons-of-Liberty/Federation Support everywhere
+         (Bolívar's payload at the design's smaller magnitude). -->
+    <founding-father id="model.foundingFather.catherineHelenSpence" type="political"
+                     weight1="0" weight2="3" weight3="9">
+      <modifier id="model.modifier.SoL"
+                type="additive" value="10"/>
+    </founding-father>
+
+    <!-- ── Social Reform & First Nations (religious) ───────────────────────── -->
+    <!-- Caroline Chisholm — "Immigrants' Friend": immigration flows faster (+30% crosses, Penn's payload at
+         the design's value) and a settler family arrives at once (a free colonist on the Europe dock). -->
+    <founding-father id="model.foundingFather.carolineChisholm" type="religious"
+                     weight1="6" weight2="6" weight3="2">
+      <modifier id="model.goods.crosses" index="40"
+                type="percentage" value="30">
+        <scope ability-id="model.ability.person" match-negated="true"/>
+      </modifier>
+      <unit id="model.unit.freeColonist"/>
+    </founding-father>
+    <!-- Peter Lalor — "Eureka Oath": unfair taxation feeds civic voice instead of only anger — the tax rate
+         is added to bell production (Thomas Paine's payload; the zero-value modifier is the runtime
+         template whose copy takes the current tax). -->
+    <founding-father id="model.foundingFather.peterLalor" type="religious"
+                     weight1="1" weight2="6" weight3="8">
+      <ability id="model.ability.addTaxToBells"
+               value="true"/>
+      <modifier id="model.goods.bells" index="40"
+                type="percentage" value="0">
+        <scope ability-id="model.ability.person" match-negated="true"/>
+      </modifier>
+    </founding-father>
+    <!-- Mary Lee — "Votes for Women": civic institutions speak louder (+25% bells). -->
+    <founding-father id="model.foundingFather.maryLee" type="religious"
+                     weight1="0" weight2="4" weight3="9">
+      <modifier id="model.goods.bells" index="40"
+                type="percentage" value="25">
+        <scope ability-id="model.ability.person" match-negated="true"/>
+      </modifier>
+    </founding-father>
+    <!-- Louisa Lawson — "The Dawn Press": the press lifts who arrives — no more transported criminals or
+         indentured servants on the dock, and YOU choose who emigrates (William Brewster's payload). -->
+    <founding-father id="model.foundingFather.louisaLawson" type="religious"
+                     weight1="1" weight2="4" weight3="8">
       <ability id="model.ability.selectRecruit"
                value="true"/>
       <ability id="model.ability.canRecruitUnit"
@@ -2932,31 +3004,13 @@
       </ability>
       <event id="model.event.newRecruits"/>
     </founding-father>
-    <founding-father id="model.foundingFather.williamPenn" type="religious"
-                     weight1="8" weight2="5" weight3="2">
-      <modifier id="model.goods.crosses" index="40"
-                type="percentage" value="50">
-        <scope ability-id="model.ability.person" match-negated="true"/>
-      </modifier>
-    </founding-father>
-    <founding-father id="model.foundingFather.fatherJeanDeBrebeuf"
-                     type="religious"
-                     weight1="6" weight2="6" weight3="1">
-      <ability id="model.ability.expertMissionary"
-               value="true">
-        <scope ability-id="model.ability.establishMission"/>
-      </ability>
-    </founding-father>
-    <founding-father id="model.foundingFather.juanDeSepulveda" type="religious"
-                     weight1="3" weight2="8" weight3="3">
-      <modifier id="model.modifier.nativeConvertBonus"
-                type="percentage" value="20"/>
-    </founding-father>
-    <founding-father id="model.foundingFather.bartolomeDeLasCasas"
-                     type="religious"
-                     weight1="0" weight2="5" weight3="10">
-      <ability id="model.ability.upgradeConvert"
-               value="true"/>
+    <!-- William Barak — "Coranderrk Delegation": respectful relations — ambient First Nations tension grows
+         25% slower (the native-alarm damp at the design's magnitude; deliberately NO alarm-reset event —
+         relations are earned, not wiped). -->
+    <founding-father id="model.foundingFather.williamBarak" type="religious"
+                     weight1="0" weight2="5" weight3="8">
+      <modifier id="model.modifier.nativeAlarmModifier"
+                type="percentage" value="-25"/>
     </founding-father>
   </founding-fathers>
 

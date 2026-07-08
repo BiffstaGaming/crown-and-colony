@@ -2479,7 +2479,7 @@ public partial class GameController : Node2D
 
     /// <summary>Opens the empire colony report (per-colony population / production / build requirements). Public so scene tests can drive it.</summary>
     public void OpenColonyReportPanel() =>
-        ((ColonyReportPanel)_colonyReportPanel).Open(_game, OpenColopediaFromReport);
+        ((ColonyReportPanel)_colonyReportPanel).Open(_game, OpenColopediaFromReport, _variant.CongressName); // Congress tab titled per variant (86d3kwtjb)
 
     /// <summary>
     /// The report → Colopedia deep-link (`86d3fymc5`; FreeCol's <c>ReportPanel.showColopediaPanel</c>): hides the empire
@@ -2531,7 +2531,7 @@ public partial class GameController : Node2D
 
     /// <summary>Opens the Founding Father choice dialog (pick which offered father to recruit). Public so scene tests can drive it.</summary>
     public void OpenFoundingFatherPanel() =>
-        ((FoundingFatherPanel)_foundingFatherPanel).Open(_game, RefreshView);
+        ((FoundingFatherPanel)_foundingFatherPanel).Open(_game, RefreshView, _variant.CongressName); // "Continental Congress" / "Federation Convention" (86d3kwtjb)
 
     /// <summary>
     /// Opens the Declaration-of-Independence signing screen (consequences + confirm, then the signed declaration). The

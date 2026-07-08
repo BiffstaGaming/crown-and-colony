@@ -17,11 +17,13 @@ public sealed class GameVariant
 {
     private readonly string _specResource;
 
-    internal GameVariant(string id, string displayName, string description, string specResource)
+    internal GameVariant(string id, string displayName, string description, string specResource,
+        string congressName = "Continental Congress")
     {
         Id = id;
         DisplayName = displayName;
         Description = description;
+        CongressName = congressName;
         _specResource = specResource;
     }
 
@@ -33,6 +35,13 @@ public sealed class GameVariant
 
     /// <summary>One-line description for the variant-select screen.</summary>
     public string Description { get; }
+
+    /// <summary>
+    /// The player-facing name of this variant's father-electing body — classic's <b>Continental Congress</b>, the
+    /// Australian Federation's <b>Federation Convention</b> (task 86d3kwtjb). A display label only: the election
+    /// machinery is identical for every variant (ADR-018); the presentation titles its Congress panel/report with this.
+    /// </summary>
+    public string CongressName { get; }
 
     /// <summary>Loads this variant's ruleset by parsing its embedded specification, applying a difficulty level.</summary>
     /// <param name="difficultyLevelId">The difficulty level to apply (default <c>model.difficulty.medium</c> → the historical balance).</param>
@@ -74,7 +83,8 @@ public static class GameVariants
         displayName: "Australian Federation",
         description: "British Australia on the real continent, 1788–1901 — build the six colonies toward Federation. "
             + "Recruit the Australian Pioneers (this world's founding figures). The authored Australia map.",
-        specResource: AustraliaSpecResource);
+        specResource: AustraliaSpecResource,
+        congressName: "Federation Convention");
 
     /// <summary>Every shipped variant, in menu order.</summary>
     public static IReadOnlyList<GameVariant> All { get; } = [ClassicAmerica, Australia];

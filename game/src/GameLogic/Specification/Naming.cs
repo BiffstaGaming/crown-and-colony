@@ -22,6 +22,8 @@ public static class Naming
     private static readonly Dictionary<string, string> Overrides = new()
     {
         ["country"] = "Pasture",
+        // The Australian Pioneer whose Scots patronymic the camelCase split would mangle ("Mc Douall").
+        ["johnMcDouallStuart"] = "John McDouall Stuart",
     };
 
     /// <summary>The human-friendly form of a camelCase short name (splits on camelCase boundaries, capitalises each word), with the odd <see cref="Overrides"/> entry for names whose literal split would mislead.</summary>

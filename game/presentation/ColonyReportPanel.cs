@@ -125,19 +125,23 @@ public partial class ColonyReportPanel : PanelContainer
     /// Optional report → Colopedia deep-link (<c>86d3fymc5</c>): when supplied, report entity cells become link buttons
     /// that invoke it with the target category + anchor; when <c>null</c> they render as plain labels.
     /// </param>
-    public void Open(Game game, System.Action<ColopediaPanel.Category, string>? openColopedia = null)
+    /// <param name="congressName">The variant's name for the father-electing body (classic "Continental Congress", Australia "Federation Convention" — 86d3kwtjb); titles the Congress tab.</param>
+    public void Open(Game game, System.Action<ColopediaPanel.Category, string>? openColopedia = null, string congressName = "Continental Congress")
     {
         ColonyArt.FramePanel(this, dense: true); // parchment image frame + dark-ink in-game theme (not Godot's default gray box)
         _game = game;
         _openColopedia = openColopedia;
+        _congressName = congressName;
         _tab = Tab.Colonies;
         Rebuild();
         Show();
     }
 
+    private string _congressName = "Continental Congress";
+
     private void Rebuild()
     {
-        GetNode<Label>("VBox/ReportTitle").Text = Titles[_tab];
+        GetNode<Label>("VBox/ReportTitle").Text = _tab == Tab.Congress ? _congressName : Titles[_tab];
         var dynamic = GetNode<VBoxContainer>("VBox/Scroll/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
