@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using CrownAndColony.GameLogic.GameSession;
 using Godot;
 
@@ -20,15 +21,20 @@ public partial class EmigrationChoicePanel : PanelContainer
     private Game _game = null!;
     private Action<string> _onResolved = _ => { };
 
+    /// <summary>The active variant's display-name overrides (Australia renames the unit types; classic = none). Set in <see cref="Open"/>.</summary>
+    private IReadOnlyDictionary<string, string>? _displayOverrides;
+
     /// <summary>
     /// Opens the modal for the pending emigration choice over <paramref name="game"/>. <paramref name="onResolved"/>
     /// gets a one-line outcome. A no-op (stays hidden) when no choice is pending.
     /// </summary>
-    public void Open(Game game, Action<string> onResolved)
+    /// <param name="displayOverrides">The active variant's display-name overrides (<see cref="GameLogic.Specification.GameVariant.DisplayOverrides"/>) — Australia renames the recruit unit types; <c>null</c>/empty (classic) leaves names classic.</param>
+    public void Open(Game game, Action<string> onResolved, IReadOnlyDictionary<string, string>? displayOverrides = null)
     {
         ColonyArt.FramePanel(this); // parchment image frame + dark-ink theme (not Godot's transparent default)
         _game = game;
         _onResolved = onResolved;
+        _displayOverrides = displayOverrides;
         if (game.PendingEmigration is not { } pending)
         {
             Hide();
@@ -84,7 +90,7 @@ public partial class EmigrationChoicePanel : PanelContainer
         // re-open for the next one; otherwise close and report.
         if (_game.PendingEmigration is not null)
         {
-            Open(_game, _onResolved);
+            Open(_game, _onResolved, _displayOverrides); // keep the variant's renames on the re-armed prompt
             _onResolved($"{name} emigrated to Europe. Another emigrant is waiting.");
             return;
         }
@@ -92,6 +98,6 @@ public partial class EmigrationChoicePanel : PanelContainer
         _onResolved($"{name} emigrated to Europe.");
     }
 
-    /// <summary>Title-cases a unit short id for display (e.g. <c>expertFisherman</c> → <c>Expert Fisherman</c>) — the shared <see cref="GameLogic.Specification.Naming.Humanize"/> (one humaniser everywhere; this had its own duplicate copy).</summary>
-    private static string Title(string shortName) => GameLogic.Specification.Naming.Humanize(shortName);
+    /// <summary>Title-cases a unit short id for display (e.g. <c>expertFisherman</c> → <c>Expert Fisherman</c>), honouring the active variant's <see cref="_displayOverrides"/> first (Australia: <c>freeColonist</c> → "Free Settler") — the shared <see cref="GameLogic.Specification.Naming.Humanize"/>.</summary>
+    private string Title(string shortName) => GameLogic.Specification.Naming.Humanize(shortName, _displayOverrides);
 }

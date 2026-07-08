@@ -785,7 +785,7 @@ public partial class GameController : Node2D
             {
                 if (stack.Value > 0)
                 {
-                    items.Add($"{stack.Value} {Naming.Humanize(_game.Ruleset.Goods(stack.Key).ShortName)}");
+                    items.Add($"{stack.Value} {Naming.Humanize(_game.Ruleset.Goods(stack.Key).ShortName, _variant.DisplayOverrides)}"); // goods per variant (86d3kwty1)
                 }
             }
             foreach (Unit passenger in _game.Passengers(u))
@@ -796,7 +796,7 @@ public partial class GameController : Node2D
         }
         // A christened unit leads with its custom name (86d3drmzu), the generic type name following as its class.
         string named = u.Name is { Length: > 0 } name ? $"\"{name}\"  ·  " : "";
-        return $"{named}{Naming.Humanize(u.Type.ShortName)}  ·  moves {u.MovementLeft}/{u.Type.Movement}{role}{orders}{building}{goingTo}{cargo}";
+        return $"{named}{Naming.Humanize(u.Type.ShortName, _variant.DisplayOverrides)}  ·  moves {u.MovementLeft}/{u.Type.Movement}{role}{orders}{building}{goingTo}{cargo}"; // unit type per variant (86d3kwtvc)
     }
 
     /// <summary>
@@ -804,7 +804,7 @@ public partial class GameController : Node2D
     /// christened, else its generic type short name. Presentation-only (ADR-006) — the rename rule itself lives in
     /// <see cref="Game.NameUnit"/>.
     /// </summary>
-    private static string UnitDisplayName(Unit u) => u.Name is { Length: > 0 } name ? name : Naming.Humanize(u.Type.ShortName);
+    private string UnitDisplayName(Unit u) => u.Name is { Length: > 0 } name ? name : Naming.Humanize(u.Type.ShortName, _variant.DisplayOverrides); // unit type per variant (86d3kwtvc)
 
     /// <summary>
     /// One- or two-line readout for the HUD tile-info panel (FreeCol's <c>InfoPanel</c> tile-info): the clicked
@@ -840,7 +840,7 @@ public partial class GameController : Node2D
         }
         else if (_game.Units.FirstOrDefault(u => u.IsOnMap && u.Position == tile) is { } unit)
         {
-            line += $"\n{Naming.Humanize(unit.Type.ShortName)}"; // "freeColonist" → "Free Colonist" (86d3jy0rn)
+            line += $"\n{Naming.Humanize(unit.Type.ShortName, _variant.DisplayOverrides)}"; // "freeColonist" → "Free Colonist" / "Free Settler" per variant (86d3jy0rn / 86d3kwtvc)
         }
         return line;
     }
@@ -987,7 +987,7 @@ public partial class GameController : Node2D
             {
                 _notice = outcome;
                 RefreshView();
-            });
+            }, _variant.DisplayOverrides); // tribute goods per variant (86d3kwty1)
         }
         else
         {
@@ -2300,7 +2300,7 @@ public partial class GameController : Node2D
     public void OpenColonyPanel(Colony colony)
     {
         _tutorial.NotifyColonyOpened(); // advances the tutorial's "put your colonists to work" step (86d3fq1h9)
-        ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView, LoadColonyCargo, UnloadColonyCargo, SetColonyExport, RenameColony, AbandonColony, PayBoycott, DumpColonyGoods);
+        ((ColonyPanel)_colonyPanel).Open(_game, colony, RefreshView, LoadColonyCargo, UnloadColonyCargo, SetColonyExport, RenameColony, AbandonColony, PayBoycott, DumpColonyGoods, _variant.DisplayOverrides); // goods/unit/building names read per variant (86d3kwty1)
     }
 
     /// <summary>
@@ -2471,15 +2471,16 @@ public partial class GameController : Node2D
 
     /// <summary>Opens the Europe screen (dock, recruits, ships in port). Public so scene tests can drive it.</summary>
     public void OpenEuropePanel() =>
-        ((EuropePanel)_europePanel).Open(_game, RefreshView);
+        ((EuropePanel)_europePanel).Open(_game, RefreshView, _variant.DisplayOverrides); // goods/unit names per variant (86d3kwty1)
 
     /// <summary>Opens the trade-route management screen (list/create/assign/delete routes). Public so scene tests can drive it.</summary>
     public void OpenTradeRoutePanel() =>
-        ((TradeRoutePanel)_tradeRoutePanel).Open(_game, RefreshView);
+        ((TradeRoutePanel)_tradeRoutePanel).Open(_game, RefreshView, _variant.DisplayOverrides); // route goods per variant (86d3kwty1)
 
     /// <summary>Opens the empire colony report (per-colony population / production / build requirements). Public so scene tests can drive it.</summary>
     public void OpenColonyReportPanel() =>
-        ((ColonyReportPanel)_colonyReportPanel).Open(_game, OpenColopediaFromReport, _variant.CongressName); // Congress tab titled per variant (86d3kwtjb)
+        ((ColonyReportPanel)_colonyReportPanel).Open(_game, OpenColopediaFromReport, _variant.CongressName, // Congress tab titled per variant (86d3kwtjb)
+            _variant.DisplayOverrides, _variant.NativesName, _variant.ExpeditionaryForceName); // goods/native/REF chrome per variant (86d3kwty1/86d3kwu0c)
 
     /// <summary>
     /// The report → Colopedia deep-link (`86d3fymc5`; FreeCol's <c>ReportPanel.showColopediaPanel</c>): hides the empire
@@ -2489,7 +2490,7 @@ public partial class GameController : Node2D
     private void OpenColopediaFromReport(ColopediaPanel.Category category, string anchor)
     {
         _colonyReportPanel.Hide();
-        ((ColopediaPanel)_colopediaPanel).OpenTo(_game, category, anchor);
+        ((ColopediaPanel)_colopediaPanel).OpenTo(_game, category, anchor, _variant.DisplayOverrides); // goods/unit names per variant (86d3kwty1)
     }
 
     /// <summary>
@@ -2531,7 +2532,7 @@ public partial class GameController : Node2D
 
     /// <summary>Opens the Founding Father choice dialog (pick which offered father to recruit). Public so scene tests can drive it.</summary>
     public void OpenFoundingFatherPanel() =>
-        ((FoundingFatherPanel)_foundingFatherPanel).Open(_game, RefreshView, _variant.CongressName); // "Continental Congress" / "Federation Convention" (86d3kwtjb)
+        ((FoundingFatherPanel)_foundingFatherPanel).Open(_game, RefreshView, _variant.CongressName, _variant.DisplayOverrides); // "Continental Congress" / "Federation Convention" (86d3kwtjb); names per variant
 
     /// <summary>
     /// Opens the Declaration-of-Independence signing screen (consequences + confirm, then the signed declaration). The
@@ -2544,7 +2545,7 @@ public partial class GameController : Node2D
 
     /// <summary>Opens the Colopedia reference panel (the Goods category — a read-only ruleset reference). Public so scene tests can drive it.</summary>
     public void OpenColopediaPanel() =>
-        ((ColopediaPanel)_colopediaPanel).Open(_game);
+        ((ColopediaPanel)_colopediaPanel).Open(_game, _variant.DisplayOverrides); // goods/unit/building names per variant (86d3kwty1)
 
     /// <summary>Opens the emigration choice dialog for the pending <c>selectRecruit</c> choice (no-op when none pending). Public so scene tests can drive it.</summary>
     public void OpenEmigrationChoicePanel() =>
@@ -2555,7 +2556,7 @@ public partial class GameController : Node2D
                 _notice = outcome;
             }
             RefreshView();
-        });
+        }, _variant.DisplayOverrides); // recruit unit names per variant (86d3kwtvc)
 
     /// <summary>
     /// Opens the diplomacy / negotiation dialog (86d3c9xpt): the human answers any queued AI treaty offers
@@ -2568,7 +2569,7 @@ public partial class GameController : Node2D
         {
             _notice = "Diplomacy updated.";
             RefreshView();
-        });
+        }, _variant.DisplayOverrides); // treaty goods/unit names per variant (86d3kwty1/86d3kwtvc)
 
     /// <summary>
     /// Opens the negotiation dialog pinned to the rival colony <paramref name="rivalColony"/> — the scout-at-the-gate
@@ -2580,7 +2581,7 @@ public partial class GameController : Node2D
         {
             _notice = "Diplomacy updated.";
             RefreshView();
-        });
+        }, _variant.DisplayOverrides); // treaty goods/unit names per variant (86d3kwty1/86d3kwtvc)
 
     /// <summary>
     /// The scout-enters-rival-colony entry point (86d3c9ubw, FreeCol <c>moveScoutColony</c>): a selected scout adjacent
@@ -2606,7 +2607,8 @@ public partial class GameController : Node2D
             onNegotiate: () =>
             {
                 OpenNegotiationForColony(rivalColony);
-            });
+            },
+            _variant.DisplayOverrides); // variant-aware (86d3kwty1)
         return true;
     }
 
@@ -2692,7 +2694,7 @@ public partial class GameController : Node2D
             // Speaking with a chief for the FIRST time makes contact: the tribe's peace offer awaits (Col1, 86d3kgbnq) —
             // surface the accept/reject dialog over the deferred Game.PendingFirstContact.
             MaybePromptFirstContact();
-        });
+        }, _variant.DisplayOverrides); // goods/unit names consistent across panels (86d3kwty1/86d3kwtvc)
     }
 
     /// <summary>
@@ -3098,7 +3100,7 @@ public partial class GameController : Node2D
                     _notice = outcome;
                 }
                 RefreshView();
-            });
+            }, _variant.DisplayOverrides); // tax-demand goods per variant (86d3kwty1)
         }
 
         // A foreign power has proactively offered the human a treaty this turn (alliance / cease-fire, queued in

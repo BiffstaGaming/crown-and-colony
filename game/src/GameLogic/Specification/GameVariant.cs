@@ -21,13 +21,33 @@ public sealed class GameVariant
 
     internal GameVariant(string id, string displayName, string description, string specResource,
         string congressName = "Continental Congress",
-        IReadOnlyDictionary<string, string>? displayOverrides = null)
+        IReadOnlyDictionary<string, string>? displayOverrides = null,
+        string rebelSentimentName = "Sons of Liberty",
+        string rebelColonistName = "Rebel",
+        string loyalistColonistName = "Tory",
+        string expeditionaryForceName = "Royal Expeditionary Force",
+        string expeditionaryForceAbbrev = "REF",
+        string declareIndependenceName = "Declare Independence",
+        string warOfIndependenceName = "War of Independence",
+        string nativesName = "Native nations",
+        string nativeSettlementName = "Native settlement",
+        string libertyName = "liberty")
     {
         Id = id;
         DisplayName = displayName;
         Description = description;
         CongressName = congressName;
         DisplayOverrides = displayOverrides ?? NoOverrides;
+        RebelSentimentName = rebelSentimentName;
+        RebelColonistName = rebelColonistName;
+        LoyalistColonistName = loyalistColonistName;
+        ExpeditionaryForceName = expeditionaryForceName;
+        ExpeditionaryForceAbbrev = expeditionaryForceAbbrev;
+        DeclareIndependenceName = declareIndependenceName;
+        WarOfIndependenceName = warOfIndependenceName;
+        NativesName = nativesName;
+        NativeSettlementName = nativeSettlementName;
+        LibertyName = libertyName;
         _specResource = specResource;
     }
 
@@ -56,6 +76,59 @@ public sealed class GameVariant
     /// </summary>
     public IReadOnlyDictionary<string, string> DisplayOverrides { get; }
 
+    /// <summary>
+    /// The player-facing name of the pro-independence sentiment / movement — classic's <b>Sons of Liberty</b>, the
+    /// Australian Federation's <b>Federationists</b> (doc 19 UI-text table). A display label only (ADR-018): the
+    /// rebel-factor maths is identical for every variant; the presentation labels the sentiment with this.
+    /// </summary>
+    public string RebelSentimentName { get; }
+
+    /// <summary>The word for a colonist who supports independence — classic <b>Rebel</b>, Australia <b>Federationist</b>. Display label only.</summary>
+    public string RebelColonistName { get; }
+
+    /// <summary>The word for a colonist loyal to the Crown — classic <b>Tory</b>, Australia <b>Imperial Loyalist</b>. Display label only.</summary>
+    public string LoyalistColonistName { get; }
+
+    /// <summary>
+    /// The name of the army the Crown sends to crush an independence bid — classic's <b>Royal Expeditionary Force</b>,
+    /// the Australian Federation's <b>Imperial Pressure</b> (doc 19). Display label only (ADR-018): the REF mechanic is
+    /// identical for every variant; the reports/military panels title it with this.
+    /// </summary>
+    public string ExpeditionaryForceName { get; }
+
+    /// <summary>The short form of <see cref="ExpeditionaryForceName"/> — classic <b>REF</b>, Australia <b>Imperial Pressure</b> (used on the compact report tab).</summary>
+    public string ExpeditionaryForceAbbrev { get; }
+
+    /// <summary>
+    /// The name of the act that begins the independence sequence — classic's <b>Declare Independence</b>, the Australian
+    /// Federation's <b>Put Constitution to Referendum</b> (doc 19). Display label only (ADR-018).
+    /// </summary>
+    public string DeclareIndependenceName { get; }
+
+    /// <summary>
+    /// The name of the resulting struggle — classic's <b>War of Independence</b>, the Australian Federation's
+    /// <b>Federation Referendum</b> (doc 19). Display label only (ADR-018).
+    /// </summary>
+    public string WarOfIndependenceName { get; }
+
+    /// <summary>
+    /// The chrome word for the indigenous nations collectively — classic's <b>Native nations</b>, the Australian
+    /// Federation's <b>First Nations</b> (doc 19; a respectful, sombre relabel — no "savage"/"primitive"). Display label
+    /// only (ADR-018): this is the chrome WORD in panel titles/labels, <em>not</em> the specific nation display names
+    /// (Eora/Kulin/… — those are spec id-renames handled by the nations stream).
+    /// </summary>
+    public string NativesName { get; }
+
+    /// <summary>The chrome word for a single indigenous settlement — classic <b>Native settlement</b>, Australia <b>First Nations community</b> (doc 19: "First Nations Communities", not "Indian villages"). Display label only.</summary>
+    public string NativeSettlementName { get; }
+
+    /// <summary>
+    /// The chrome word for the accruing political capital that recruits pioneers / declares independence — classic
+    /// <b>liberty</b> (from liberty bells), the Australian Federation's <b>Civic Voice</b> (doc 19; the <c>bells</c> good
+    /// itself is renamed via <see cref="DisplayOverrides"/>). Display label only (ADR-018).
+    /// </summary>
+    public string LibertyName { get; }
+
     /// <summary>Loads this variant's ruleset by parsing its embedded specification, applying a difficulty level.</summary>
     /// <param name="difficultyLevelId">The difficulty level to apply (default <c>model.difficulty.medium</c> → the historical balance).</param>
     public Ruleset LoadRuleset(string difficultyLevelId = DifficultyLevels.DefaultId) =>
@@ -77,6 +150,39 @@ public static class GameVariants
     internal const string AustraliaSpecResource =
         "CrownAndColony.GameLogic.Specification.australia.specification.xml";
 
+    /// <summary>
+    /// The Australian Federation's display-name overrides, keyed by ruleset short name (the id after the last dot).
+    /// A display-layer reskin only (ADR-018) — every underlying id is unchanged. Grouped by the P8 task that owns it:
+    /// <list type="bullet">
+    ///   <item><b>Goods</b> (86d3kwty1): <c>cotton</c>→Wool, <c>silver</c>→Gold, <c>bells</c>→Civic Voice.</item>
+    ///   <item><b>Units</b> (86d3kwtvc / 86d3mm2nv): <c>pettyCriminal</c>→Convict Labourer, <c>indenturedServant</c>→
+    ///     Emancipist, <c>freeColonist</c>→Free Settler, plus the two pioneer stand-ins the perks already reuse —
+    ///     the gold specialist <c>expertSilverMiner</c>→Digger and the wool specialist <c>masterCottonPlanter</c>→Shepherd.</item>
+    ///   <item><b>Buildings</b> (86d3mm25r): <c>depot</c>→Government Stores; the wool-processing chain
+    ///     <c>weaverHouse</c>→Wool Shed and <c>weaverShop</c>→Shearing Shed (doc 17).</item>
+    /// </list>
+    /// Declared <em>before</em> the <see cref="Australia"/> variant so it is initialised first (static field
+    /// initialisers run in textual order — a later-declared field would still be <c>null</c> at the variant's construction).
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> AustraliaDisplayOverrides =
+        new Dictionary<string, string>
+        {
+            // ── Goods (86d3kwty1) ──
+            ["cotton"] = "Wool",
+            ["silver"] = "Gold",
+            ["bells"] = "Civic Voice",
+            // ── Units (86d3kwtvc + retarget-pioneers 86d3mm2nv) ──
+            ["pettyCriminal"] = "Convict Labourer",
+            ["indenturedServant"] = "Emancipist",
+            ["freeColonist"] = "Free Settler",
+            ["expertSilverMiner"] = "Digger",        // the gold specialist (silver = Gold stand-in)
+            ["masterCottonPlanter"] = "Shepherd",    // the wool specialist (cotton = Wool stand-in)
+            // ── Buildings (86d3mm25r) ──
+            ["depot"] = "Government Stores",
+            ["weaverHouse"] = "Wool Shed",           // cotton→cloth processing = wool processing
+            ["weaverShop"] = "Shearing Shed",        // the advanced wool-processing upgrade
+        };
+
     /// <summary>The faithful 1492 New World: the four European powers, the historic Founding Fathers, and the indigenous nations.</summary>
     public static readonly GameVariant ClassicAmerica = new(
         id: "classic",
@@ -97,7 +203,22 @@ public static class GameVariants
         description: "British Australia on the real continent, 1788–1901 — build the six colonies toward Federation. "
             + "Recruit the Australian Pioneers (this world's founding figures). The authored Australia map.",
         specResource: AustraliaSpecResource,
-        congressName: "Federation Convention");
+        congressName: "Federation Convention",
+        // The presentation reskin (P8, tasks 86d3kwty1/86d3kwtvc/86d3mm25r/86d3mm2nv). Keyed by ruleset SHORT NAME
+        // (the id after the last dot) — the underlying ids stay put (transposability anchors, ADR-018); only the
+        // player-facing display changes. Sources: docs/australian_federation_mode_md/17 (goods/units/buildings) + 19.
+        displayOverrides: AustraliaDisplayOverrides,
+        // Chrome labels (doc 19 UI-text renaming table). Australian text under Australia; classic strings are the defaults.
+        rebelSentimentName: "Federationists",           // Sons of Liberty
+        rebelColonistName: "Federationist",              // Rebel colonist
+        loyalistColonistName: "Imperial Loyalist",       // Tory colonist
+        expeditionaryForceName: "Imperial Pressure",     // Royal Expeditionary Force
+        expeditionaryForceAbbrev: "Imperial Pressure",   // REF (no short military acronym in the reskin)
+        declareIndependenceName: "Put Constitution to Referendum", // Declare Independence
+        warOfIndependenceName: "Federation Referendum",  // War of Independence
+        nativesName: "First Nations",                    // Native nations
+        nativeSettlementName: "First Nations community", // Native settlement
+        libertyName: "Civic Voice");                     // liberty
 
     /// <summary>Every shipped variant, in menu order.</summary>
     public static IReadOnlyList<GameVariant> All { get; } = [ClassicAmerica, Australia];

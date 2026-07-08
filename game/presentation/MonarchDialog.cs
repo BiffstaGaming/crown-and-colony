@@ -24,6 +24,8 @@ public partial class MonarchDialog : PanelContainer
     private Game _game = null!;
     private Action<string> _onResolved = _ => { };
     private MonarchAction _action;
+    /// <summary>The active variant's display-name overrides (Australia renames goods; classic = none). Set in <see cref="Open"/>.</summary>
+    private System.Collections.Generic.IReadOnlyDictionary<string, string>? _displayOverrides;
 
     public override void _Ready()
     {
@@ -37,7 +39,8 @@ public partial class MonarchDialog : PanelContainer
     /// (stays hidden) when no demand is pending. <paramref name="onResolved"/> runs once the player answers, with a
     /// one-line outcome for the status bar.
     /// </summary>
-    public void Open(Game game, Action<string> onResolved)
+    /// <param name="displayOverrides">The active variant's display-name overrides (Australia renames goods so the tax demand cites "Wool" consistently; <c>null</c>/empty for classic).</param>
+    public void Open(Game game, Action<string> onResolved, System.Collections.Generic.IReadOnlyDictionary<string, string>? displayOverrides = null)
     {
         if (game.PendingMonarchDemand is not { } demand)
         {
@@ -45,6 +48,7 @@ public partial class MonarchDialog : PanelContainer
         }
         _game = game;
         _onResolved = onResolved;
+        _displayOverrides = displayOverrides;
         _action = demand.Action;
         GetNode<Label>("VBox/MonarchTitle").Text = TitleFor(demand);
         GetNode<Label>("VBox/MonarchInfo").Text = Describe(demand);
@@ -69,7 +73,7 @@ public partial class MonarchDialog : PanelContainer
     {
         if (IsTaxDemand(demand.Action))
         {
-            string goods = Naming.Humanize(_game.Ruleset.Goods(demand.GoodsId!).ShortName);
+            string goods = Naming.Humanize(_game.Ruleset.Goods(demand.GoodsId!).ShortName, _displayOverrides); // goods per variant (86d3kwty1)
             string colony = ColonyName(demand.ColonyId);
             return $"The Crown demands a tax rise from {_game.TaxRate}% to {demand.TaxRaise}%, " +
                    $"citing your {goods} at {colony}.\n" +

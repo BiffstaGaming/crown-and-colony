@@ -44,6 +44,12 @@ public partial class NativeSettlementPanel : PanelContainer
     private Func<Unit, NativeSettlement, string> _denounceMission = (_, _) => "";
     private string _outcome = "";
 
+    /// <summary>The active variant's display-name overrides (Australia renames goods/units so they read consistently across panels; classic = none). Set in <see cref="Open"/>.</summary>
+    private System.Collections.Generic.IReadOnlyDictionary<string, string>? _displayOverrides;
+
+    /// <summary>The variant-aware human name of a full ruleset id (goods/unit), so a good reads the same in this native trade panel as everywhere else.</summary>
+    private string Humanized(string id) => Naming.Humanize(Short(id), _displayOverrides);
+
     /// <summary>The in-panel screen currently shown: the action menu, one of the trade sub-flows, or the incite rival-picker.</summary>
     private enum Screen { Actions, TradePick, TradeHaggle, IncitePick }
 
@@ -63,9 +69,10 @@ public partial class NativeSettlementPanel : PanelContainer
     /// <paramref name="onAction"/> runs after every action with its one-line outcome — the controller uses it to
     /// surface a status notice and to re-sync the map selection (an action may spend, upgrade, or destroy the unit).
     /// </summary>
+    /// <param name="displayOverrides">The active variant's display-name overrides (<see cref="GameLogic.Specification.GameVariant.DisplayOverrides"/>) — so a good reads the SAME name here as in every other panel (Australia: "Wool", never "Cotton"). <c>null</c>/empty for classic.</param>
     public void Open(Game game, NativeSettlement settlement, int actingUnitId,
         Func<Unit, NativeSettlement, string> establishMission, Func<Unit, NativeSettlement, string> denounceMission,
-        Action<string> onAction)
+        Action<string> onAction, System.Collections.Generic.IReadOnlyDictionary<string, string>? displayOverrides = null)
     {
         ColonyArt.FramePanel(this, dense: true); // parchment image frame + dark-ink in-game theme (not Godot's default gray box)
         _game = game;
@@ -74,6 +81,7 @@ public partial class NativeSettlementPanel : PanelContainer
         _establishMission = establishMission;
         _denounceMission = denounceMission;
         _onAction = onAction;
+        _displayOverrides = displayOverrides;
         _outcome = "";
         _screen = Screen.Actions;
         _tradeGoodsId = null;
@@ -111,7 +119,7 @@ public partial class NativeSettlementPanel : PanelContainer
         string type = Short(_settlement.SettlementTypeId);
         GetNode<Label>("VBox/NativeTitle").Text = _settlement.IsCapital ? $"{nation} {type} ★" : $"{nation} {type}";
 
-        string teaches = _settlement.LearnableSkill is { } skill && !_settlement.SkillConsumed ? Naming.Humanize(Short(skill)) : "nothing";
+        string teaches = _settlement.LearnableSkill is { } skill && !_settlement.SkillConsumed ? Humanized(skill) : "nothing";
         GetNode<Label>("VBox/NativeInfo").Text =
             $"Mood: {_settlement.AlarmLevel}   |   Teaches: {teaches}\n" +
             (_settlement.HasBeenVisited ? "You have spoken with this chief.\n" : "") +
@@ -179,10 +187,10 @@ public partial class NativeSettlementPanel : PanelContainer
         if (_game.CheckLearnSkill(unit, _settlement).Allowed)
         {
             any = true;
-            dynamic.AddChild(ActionButton("Learn", $"Learn {Naming.Humanize(Short(_settlement.LearnableSkill!))}", () =>
+            dynamic.AddChild(ActionButton("Learn", $"Learn {Humanized(_settlement.LearnableSkill!)}", () =>
             {
                 Unit expert = _game.LearnSkill(unit, _settlement);
-                _outcome = $"Your colonist trained as a {Naming.Humanize(Short(expert.Type.Id))}.";
+                _outcome = $"Your colonist trained as a {Humanized(expert.Type.Id)}.";
                 Changed();
             }));
         }
@@ -343,7 +351,7 @@ public partial class NativeSettlementPanel : PanelContainer
             }
             any = true;
             string verb = _buying ? "for" : "→";
-            dynamic.AddChild(ActionButton($"Trade_{Short(goodsId)}", $"{amount} {Naming.Humanize(Short(goodsId))}  {verb} {check.Cost} gold", () =>
+            dynamic.AddChild(ActionButton($"Trade_{Short(goodsId)}", $"{amount} {Humanized(goodsId)}  {verb} {check.Cost} gold", () =>
             {
                 _tradeGoodsId = goodsId;
                 _tradeAmount = amount;
@@ -377,7 +385,7 @@ public partial class NativeSettlementPanel : PanelContainer
             return;
         }
 
-        string lot = $"{_tradeAmount} {Naming.Humanize(Short(goodsId))}";
+        string lot = $"{_tradeAmount} {Humanized(goodsId)}";
         if (_haggleDone)
         {
             dynamic.AddChild(Hint($"The chief is done bargaining over {lot}."));
@@ -448,12 +456,12 @@ public partial class NativeSettlementPanel : PanelContainer
         if (_buying)
         {
             int paid = _game.BuyFromNatives(ship, _settlement, goodsId, _tradeAmount, _haggleCounter);
-            _outcome = $"Bought {_tradeAmount} {Naming.Humanize(Short(goodsId))} for {paid} gold.";
+            _outcome = $"Bought {_tradeAmount} {Humanized(goodsId)} for {paid} gold.";
         }
         else
         {
             int got = _game.SellToNatives(ship, _settlement, goodsId, _tradeAmount, _haggleCounter);
-            _outcome = $"Sold {_tradeAmount} {Naming.Humanize(Short(goodsId))} for {got} gold.";
+            _outcome = $"Sold {_tradeAmount} {Humanized(goodsId)} for {got} gold.";
         }
         _screen = Screen.Actions;
         _tradeGoodsId = null;

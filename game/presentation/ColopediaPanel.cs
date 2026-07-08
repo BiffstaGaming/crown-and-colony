@@ -68,11 +68,16 @@ public partial class ColopediaPanel : PanelContainer
         [Category.Concepts] = "Colopedia — Concepts",
     };
 
+    /// <summary>The active variant's display-name overrides (Australia renames goods/units/buildings; classic = none). Set in <see cref="Open"/>/<see cref="OpenTo"/>.</summary>
+    private IReadOnlyDictionary<string, string>? _displayOverrides;
+
     /// <summary>Opens the Colopedia on the Goods category over the current ruleset / market.</summary>
-    public void Open(Game game)
+    /// <param name="displayOverrides">The active variant's display-name overrides (<see cref="GameLogic.Specification.GameVariant.DisplayOverrides"/>) — Australia renames goods/units; <c>null</c>/empty (classic) leaves names classic.</param>
+    public void Open(Game game, IReadOnlyDictionary<string, string>? displayOverrides = null)
     {
         ColonyArt.FramePanel(this, dense: true); // parchment image frame + dark-ink in-game theme (not Godot's default gray box)
         _game = game;
+        _displayOverrides = displayOverrides;
         _category = Category.Goods;
         _focusNode = null;
         Rebuild();
@@ -90,9 +95,11 @@ public partial class ColopediaPanel : PanelContainer
     /// <param name="game">The current game (the panel may have been closed since last shown, so re-seed it).</param>
     /// <param name="category">The category the linked entity lives in.</param>
     /// <param name="anchor">The entity's ruleset <c>ShortName</c>, or a concept <b>title</b> for the Concepts category.</param>
-    public void OpenTo(Game game, Category category, string anchor)
+    /// <param name="displayOverrides">The active variant's display-name overrides (Australia renames goods/units; <c>null</c>/empty for classic).</param>
+    public void OpenTo(Game game, Category category, string anchor, IReadOnlyDictionary<string, string>? displayOverrides = null)
     {
         _game = game;
+        _displayOverrides = displayOverrides;
         Navigate(category, anchor); // sets category + focus row, Rebuild()s
         Show();
     }
@@ -264,8 +271,8 @@ public partial class ColopediaPanel : PanelContainer
         }
     }
 
-    /// <summary>A short descriptor of the good's role: food, a farmed raw good, refined from another good, or manufactured.</summary>
-    private static string GoodsKind(GoodsType g)
+    /// <summary>A short descriptor of the good's role: food, a farmed raw good, refined from another good, or manufactured (the "refined from" clause honours the active variant's <see cref="_displayOverrides"/>).</summary>
+    private string GoodsKind(GoodsType g)
     {
         if (g.IsFood)
         {
@@ -643,5 +650,5 @@ public partial class ColopediaPanel : PanelContainer
         new string(title.Where(char.IsLetterOrDigit).ToArray());
 
     /// <summary>Title-cases a short id for display (e.g. <c>tradeGoods</c> → <c>Trade Goods</c>) — the shared <see cref="Naming.Humanize"/> (one humaniser everywhere, so display overrides like country → "Pasture" apply uniformly; this had its own duplicate copy).</summary>
-    private static string Title(string shortName) => Naming.Humanize(shortName);
+    private string Title(string shortName) => Naming.Humanize(shortName, _displayOverrides);
 }

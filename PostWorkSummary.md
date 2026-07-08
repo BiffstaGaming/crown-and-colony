@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Australia presentation reskin: goods/units/buildings renamed + UI chrome relabelled
+
+**Requested:** Implement the Australian Federation presentation reskin (P8 tasks `86d3kwty1` goods / `86d3kwtvc` units / `86d3mm25r` buildings / `86d3mm2nv` retarget-pioneers / `86d3kwu0c` UI chrome) on the R0 display-override seam — display-layer only, ids untouched (ADR-018).
+**Did:**
+- Populated `GameVariants.Australia.DisplayOverrides` (keyed by ruleset short name): **goods** cotton→Wool, silver→Gold, bells→Civic Voice; **units** pettyCriminal→Convict Labourer, indenturedServant→Emancipist, freeColonist→Free Settler, expertSilverMiner→Digger, masterCottonPlanter→Shepherd; **buildings** depot→Government Stores, weaverHouse→Wool Shed, weaverShop→Shearing Shed.
+- Added **10 defaulted chrome-label fields** to `GameVariant` mirroring `CongressName` (Federationists / Rebel-colonist Federationist / Imperial Loyalist / Imperial Pressure(+abbrev) / Put Constitution to Referendum / Federation Referendum / First Nations / First Nations community / Civic Voice), Australian text for Australia, classic defaults for classic.
+- Threaded `_variant.DisplayOverrides` + the chrome labels into every entity display site across **11 panels** (Colony, ColonyReport, Colopedia, Europe, EmigrationChoice, FoundingFather, NativeSettlement, NativeDemand, Monarch, TradeRoute, Negotiation) — a good reads the same Australian name everywhere. Static `Display/Title` humaniser wrappers became instance methods consulting the stored overrides.
+- Retarget-pioneers: verified the silver/cotton stand-ins now DISPLAY as Gold/Wool automatically; no hard-coded silver/cotton wording surfaces in pioneer UI (fathers show name+type only).
+**Status:** build ✓; **L1/L2 2789 green** (2776 pre-existing + 13 new `AustraliaReskinTests`); **L3 405 total, 404 pass + 1 pre-existing pause-menu golden flake** (`PauseMenu_MatchesGolden`, 2.33% vs 2.0% — GREEN on isolated rerun; text-only reskin touches no menu chrome). Classic text byte-identical. Committed on branch `worktree-agent-ad411ee0670b38b14` — NOT pushed (lead integrates).
+**Changed:** `game/src/GameLogic/Specification/GameVariant.cs`, the 11 panels + `GameController.cs`, new `AustraliaReskinTests.cs` (L1) + `AustraliaReskinPanelTests.cs` (L3), `docs/systems/game-modes.md` (both layers + Verification rows + changelog). Commit **(this commit)**.
+**Decisions:** (1) Used **"Australian Pioneers"** for the founding-father equivalent, not doc 19's "Historical Figures" (per task instruction — already shipped). (2) Chrome threaded via defaulted `Open(...)` params mirroring the `CongressName` precedent (not a big variant-bundle) — keeps classic L3 tests green by default. (3) `AustraliaDisplayOverrides` field declared BEFORE the `Australia` variant (static-init order — a later field is null at construction; caught by the new L1 tests). (4) Left the raw suffix-split role/improvement/terrain sites and nation names alone (not this batch / other stream).
+**Scheduled next:** **Six colony regions + start sites (`86d3mm1xr`)** — the milestone-critical map work — unless the lead/Chris reorders.
+**Follow-ups:** "Sheep Station" (doc 17 building) has no clean classic wool-*producing* building id to map (`country` is the horse pasture, already globally "Pasture"); left unmapped — see Needs-you. The Colopedia/Help static PROSE (ColopediaConcepts.cs, HelpPanel.cs) still says "Sons of Liberty"/"bells"/"natives" — not variant-threaded this batch (static instructional content, not a panel Open param); flag if a fuller prose reskin is wanted.
+**Needs you:** Confirm the **"Sheep Station"** building mapping — I mapped Government Stores/Wool Shed/Shearing Shed but omitted Sheep Station (no faithful classic building produces wool; cotton/wool is tile-farmed). OK to leave, or map `country`→"Sheep Station" (it'd mislead — it breeds horses)?
+
+---
+
 ## 2026-07-08 — Australia mode: FULL decomposition — every epic broken into engine-mapped subtasks
 
 **Requested (Chris):** "Decompose everything into small individual tasks, include details on where/what needs to be done, ensuring that we utilise the backend engine that already exists." (Overrides the rolling-wave default — recorded as his call.)

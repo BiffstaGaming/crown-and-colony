@@ -56,10 +56,12 @@ public partial class EuropePanel : PanelContainer
     private const string PortraitRole = "default";
 
     /// <summary>Opens the panel. <paramref name="onChange"/> runs after every action.</summary>
-    public void Open(Game game, Action onChange)
+    /// <param name="displayOverrides">The active variant's display-name overrides (<see cref="GameLogic.Specification.GameVariant.DisplayOverrides"/>) — Australia renames goods/units; <c>null</c>/empty (classic) leaves names classic.</param>
+    public void Open(Game game, Action onChange, IReadOnlyDictionary<string, string>? displayOverrides = null)
     {
         _game = game;
         _onChange = onChange;
+        _displayOverrides = displayOverrides;
         EnsureOpaqueBackground();
         Theme = ColonyTheme.GetInGame(); // share the colony screen's cohesive parchment/wood styling (larger, bolder in-game body text)
         Rebuild();
@@ -461,7 +463,7 @@ public partial class EuropePanel : PanelContainer
                 Changed();
             });
             recruit.TooltipText = $"Recruit {Display(typeShort)} for {price} gold";
-            recruitRow.AddChild(UnitCard(typeShort, $"{price}g", recruit));
+            recruitRow.AddChild(UnitCard(typeShort, Display(typeShort), $"{price}g", recruit));
         }
         col.AddChild(recruitRow);
 
@@ -512,7 +514,7 @@ public partial class EuropePanel : PanelContainer
                 Changed();
             });
             action.TooltipText = $"{(train ? "Train" : "Buy")} {Display(shortName)} — {p} gold";
-            grid.AddChild(UnitCard(shortName, $"{p}g", action));
+            grid.AddChild(UnitCard(shortName, Display(shortName), $"{p}g", action));
         }
         return grid;
     }
@@ -524,7 +526,7 @@ public partial class EuropePanel : PanelContainer
     /// starts at the same Y on every card (a long name wraps <i>downwards</i>, it doesn't push its band up), the cost
     /// on its own fixed line, and the button pinned at the bottom. All cards share the same minimum size.
     /// </summary>
-    private static Control UnitCard(string spriteShortName, string costText, Button action)
+    private static Control UnitCard(string spriteShortName, string displayName, string costText, Button action)
     {
         var body = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
         body.AddThemeConstantOverride("separation", 2);
@@ -535,7 +537,7 @@ public partial class EuropePanel : PanelContainer
 
         var name = new Label
         {
-            Text = Display(spriteShortName),
+            Text = displayName,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Top, // first line at the same Y on every card
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
@@ -1156,8 +1158,11 @@ public partial class EuropePanel : PanelContainer
         HorizontalAlignment = HorizontalAlignment.Center,
     };
 
-    /// <summary>Title-cases a short id for display (<c>freeColonist</c> → "Free Colonist") — the shared <see cref="Naming.Humanize"/> (one humaniser everywhere, so display overrides apply uniformly; this had its own duplicate copy).</summary>
-    private static string Display(string shortName) => Naming.Humanize(shortName);
+    /// <summary>The active variant's display-name overrides (Australia renames goods/units; classic = none). Set in <see cref="Open"/>.</summary>
+    private IReadOnlyDictionary<string, string>? _displayOverrides;
+
+    /// <summary>Title-cases a short id for display (<c>freeColonist</c> → "Free Colonist"), honouring the active variant's <see cref="_displayOverrides"/> first (Australia: <c>freeColonist</c> → "Free Settler") — the shared <see cref="Naming.Humanize"/> so overrides apply uniformly.</summary>
+    private string Display(string shortName) => Naming.Humanize(shortName, _displayOverrides);
 
     /// <summary>Resolves a unit/ship sprite by type short name — the colony screen's portrait lookup (<see cref="UnitMarker.ResolveTexture"/> default role, falling back to <see cref="ColonyArt.UnitIcon"/>), so an expert/ship shows its own art.</summary>
     private static Texture2D? UnitSprite(string typeShortName) =>
