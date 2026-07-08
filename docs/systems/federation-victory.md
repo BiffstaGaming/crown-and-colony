@@ -34,6 +34,15 @@ Once enough colonies are behind the idea, the player calls a **Federation Conven
 
 **What the player sees and does:** In the Australian game a **Federation…** button appears in the bottom-right HUD (where the Declare-Independence button sits in the classic game). It opens the **Road to Federation** screen: the current phase, your Convention Points, a support bar for each of the six colonies, and the context action (Call Convention, or Put to Referendum) — greyed out with the reason shown until its requirements are met.
 
+**The Federation champions:** five of the Australian Pioneers you can recruit into the Federation Convention are the historical champions of Federation itself, and electing one gives your movement a real shove:
+- **Henry Parkes** — the "Father of Federation": his Tenterfield Oration lifts Federation Support in **every** one of your colonies at once.
+- **Edmund Barton** — the first Prime Minister: he banks a big chunk of Convention Points, bringing the convention forward.
+- **John Quick** — the referendum's architect: while he sits in your Convention, a close referendum is **more likely to carry** (the vote's bar is lowered).
+- **Samuel Griffith** — the constitution's chief drafter: he banks Convention Points toward finishing the draft, so the constitution completes sooner.
+- **Catherine Helen Spence** — the effective-voting campaigner: she reassures the **smaller colonies** (South Australia, Tasmania, Western Australia), lifting their Federation Support specifically — the small states' fear of being outvoted was the real obstacle to Federation.
+
+(These are on top of the general civic bonus each of those figures already gives.) None of them auto-wins the game — the region-support and referendum gates still apply; they just move you along the road faster.
+
 ## 2. Detailed rules
 
 *Audience: designers/testers — exact, but still readable.*
@@ -63,7 +72,19 @@ Once enough colonies are behind the idea, the player calls a **Federation Conven
 | Call Convention | `CheckCallConvention` / `CallConvention` | Federation victory enabled · phase = ColonialMaturity · ≥ 4 of 6 regions at ≥ 40% support · ≥ 200 Convention Points. |
 | Put to Referendum | `CheckPutToReferendum` / `HoldReferendum` | Federation victory enabled · phase = ConstitutionDrafted or Referendum (retry) · at least one settled region · **every** settled region at ≥ 50% support. |
 
-**Referendum roll (deterministic, ADR-009):** `HoldReferendum` seeds a dedicated generator (`Pcg32Random`, stream 107) from the human's own RNG state read **without advancing** stream 0, mixed with the turn and the attempt count. It rolls `0–99`; the vote **carries** when `roll < averageSettledSupport` (so support 100 always carries, 0 never does). A carried vote sets a "carried" flag that `ResolveCommonwealthFederation` reads next turn to proclaim the Commonwealth. A failed vote increments the attempt count and sheds ~10% of each settled colony's banked support (anti-Federation momentum), leaving the phase at Referendum for a retry.
+**Referendum roll (deterministic, ADR-009):** `HoldReferendum` seeds a dedicated generator (`Pcg32Random`, stream 107) from the human's own RNG state read **without advancing** stream 0, mixed with the turn and the attempt count. It rolls `0–99`; the vote **carries** when `roll < averageSettledSupport` (so support 100 always carries, 0 never does). The compared support is `min(100, AverageSettledSupport() + ReferendumThresholdRelief())` — the relief is `+10` while **John Quick** sits in the human's Congress (his "Corowa Plan", Phase-4d.7), else 0; it rides the persisted Congress (no new save state) and only ever fires for an Australia game, so classic is byte-identical. A carried vote sets a "carried" flag that `ResolveCommonwealthFederation` reads next turn to proclaim the Commonwealth. A failed vote increments the attempt count and sheds ~10% of each settled colony's banked support (anti-Federation momentum), leaving the phase at Referendum for a retry.
+
+**Democracy & Federation Pioneers — on-election Federation effects (Phase-4d.7):** the five Democracy & Federation Pioneers each drive the loop directly on election, on top of the reused civic effect each already carried. Each is gated on an **Australia-only ability** (classic declares none → no-op → byte-identical), and every Federation-state lever additionally short-circuits unless `Ruleset.VictoryFederation` is on. RNG-free.
+
+| Pioneer | Ability (Australia-only) | Federation effect | API |
+|---|---|---|---|
+| Henry Parkes ("Tenterfield Oration") | `model.ability.tenterfieldOration` | +`TenterfieldOrationSupport` (60) Federation Support to **every** colony on election — a broad boost across all regions. | `AddFederationSupportToAllColonies` |
+| Edmund Barton ("Nation for a Continent") | `model.ability.conventionDrive` | +`ConventionDrivePoints` (100 = half the call gate) national Convention Points on election — enter the convention sequence earlier (human-only). | `AddConventionPoints` |
+| John Quick ("Corowa Plan") | `model.ability.corowaPlan` | While in Congress, **lowers the referendum pass threshold** by `QuickReferendumRelief` (+10) — read live in `HoldReferendum`, not a one-off. | `ReferendumThresholdRelief` (in `HoldReferendum`) |
+| Samuel Griffith ("Draft Constitution") | `model.ability.draftConstitution` | +`DraftConstitutionPoints` (120 = 30% of the 400 draft gate) national Convention Points on election — the draft completes sooner (human-only). | `AddConventionPoints` |
+| Catherine Helen Spence ("Fair Representation") | `model.ability.fairRepresentation` | +`FairRepresentationSupport` (45) Federation Support to colonies in the **small** regions only (South Australia, Tasmania, Western Australia) on election. | `AddFederationSupportToSmallColonies` |
+
+The three point/support magnitudes are balance placeholders (see §5 — Chris to tune). The handlers live in `Game.AustralianEffects.cs` (dispatched from `ApplyAustralianElectionEffects`, itself called once on election from `ElectAndRefreshFounders`); the state-mutating API (`AddConventionPoints`, `AddFederationSupportToAllColonies`, `AddFederationSupportToSmallColonies`, `ReferendumThresholdRelief`) lives in `Game.Federation.cs`.
 
 **Winner:** `Game.Winner` checks Federation **first** — when the victory is enabled and the phase has reached Commonwealth, the human wins. Off (and skipped) for classic.
 
@@ -106,14 +127,14 @@ The Convention-Points sub-point remainder (`_conventionPointsHundredths`) is **e
 
 | Layer | Required? | Tests / goldens | Status |
 |---|---|---|---|
-| L1 Unit | Always | `FederationVictoryTests` — option parse; classic accrues nothing; accrual from Civic Voice; region aggregate; phase gates/advances; referendum determinism; persistence round-trip + classic-omits-tokens. | ✅ |
-| L2 Scenario | Always | `FederationVictoryTests.FullySupportedFederation_ReachesTheCommonwealthWin_ViaWinner` (full loop → `Game.Winner`); classic byte-stability proven by the global `SoakTests`. | ✅ |
+| L1 Unit | Always | `FederationVictoryTests` — option parse; classic accrues nothing; accrual from Civic Voice; region aggregate; phase gates/advances; referendum determinism; persistence round-trip + classic-omits-tokens. **`AustralianContentTests` (Phase-4d.7)** — the five Democracy Pioneers carry their Australia-only ability (classic has none); electing Parkes lifts every colony; electing Barton/Griffith bank Convention Points; electing Spence lifts the small colonies (SA/Tas/WA) more than the no-Spence control and leaves NSW/Vic untouched; Quick's relief flips a marginal referendum (seed 25) and never turns a carrying vote into a failure. | ✅ |
+| L2 Scenario | Always | `FederationVictoryTests.FullySupportedFederation_ReachesTheCommonwealthWin_ViaWinner` (full loop → `Game.Winner`); the Phase-4d.7 Pioneer tests elect each figure in a live Australia-map game and assert its Federation effect; classic byte-stability proven by the global `SoakTests`. | ✅ |
 | L3 Interaction | Yes (has UI) | `FederationPanelTests` — renders phase + Convention Points + six region rows; Call-Convention disabled with reason until thresholds met. | ✅ |
 | L4 Visual | Deferred | No Australia in-game HUD golden yet; classic goldens unaffected (button/panel invisible in classic). | ⬜ |
-| L5 Soak | Covered by global suite | `SoakTests` (25 seeds × 200 turns, classic) stays byte-identical — the Federation loop is gated off. | ✅ |
+| L5 Soak | Covered by global suite | `SoakTests` (25 seeds × 200 turns, classic) stays byte-identical — the Federation loop and every Pioneer effect are gated off. | ✅ |
 
-- **FreeCol cross-check:** N/A for the win path itself (Federation is our own design). The **accrual** reuses the FreeCol-faithful bells→Liberty bake unchanged, and Federation Support mirrors the FreeCol Sons-of-Liberty percentage formula (`points × 100 / (LibertyPerRebel × population)`, clamped 0–100).
-- **Local results (2026-07-09):** L1/L2 `dotnet test … --filter "Category!=Soak"` → 2875 passed / 0 failed (14 new Federation tests). Soak `--filter "Category=Soak"` → 5 passed / 0 failed (classic byte-identical). L3 `FederationPanelTests` → 2 passed; golden tests → 10 passed (no regression).
+- **FreeCol cross-check:** N/A for the win path itself (Federation is our own design). The **accrual** reuses the FreeCol-faithful bells→Liberty bake unchanged, and Federation Support mirrors the FreeCol Sons-of-Liberty percentage formula (`points × 100 / (LibertyPerRebel × population)`, clamped 0–100). The Democracy-Pioneer on-election effects are also our own design (the classic fathers have no Federation equivalent).
+- **Local results (2026-07-09, Phase-4d.7):** L1/L2 `dotnet test … --filter "Category!=Soak"` → 2923 passed / 0 failed (7 new Pioneer-effect tests in `AustralianContentTests`). Soak `--filter "Category=Soak"` → 5 passed / 0 failed (classic byte-identical — every Pioneer effect is keyed on an Australia-only ability).
 
 ## 5. Open issues / TODO
 
@@ -126,9 +147,12 @@ The Convention-Points sub-point remainder (`_conventionPointsHundredths`) is **e
 - [ ] **AI opponents do not pursue Federation** — the loop is human-only (it is the human's win path).
 - [ ] **L4 Australia HUD golden** — add once the Australia in-game HUD is a stable capture target.
 - [ ] **New-Game victory override seam** — `VictoryFederation` is parse-time only (no in-game toggle, unlike the three defeat conditions).
+- [ ] **Democracy-Pioneer effect magnitudes are balance placeholders (Phase-4d.7 — needs Chris)** — Parkes +60 support/colony, Spence +45 to each small colony, Barton +100 / Griffith +120 Convention Points, Quick +10 referendum relief. These are first-pass values (a colony's 100%-support ceiling is `200 × population`, so +60 is ~30% of a pop-1 colony's bar). Tune once the loop is playtested end-to-end.
+- [ ] **Some doc-11 Pioneer clauses could not be honoured on the current loop** — the loop has no per-colony support *targets* (so Barton's "NSW target −3" and Griffith's "hardest target −5" have no target to lower — mapped to Convention-Points pushes instead), no separate constitution-progress *bar* (Griffith's "+30%" is mapped to 30% of the draft Convention-Points gate), no Anti-Federation Sentiment resource (Parkes' "−10 apathy" is folded into the broad support boost), and no constitutional-clause costs / reform options / `Elected Delegates` mechanic (Quick's clause is mapped to a referendum threshold relief; Spence's Senate-Equality/PR clauses are deferred). Revisit when the deferred systems above land.
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-07-09 | **Phase-4d.7 — Democracy & Federation Pioneers get real on-election Federation effects.** Parkes (`tenterfieldOration`) → broad +Support to all colonies; Barton (`conventionDrive`) → +Convention Points toward the convention; Griffith (`draftConstitution`) → +Convention Points toward the draft; Spence (`fairRepresentation`) → +Support to the small colonies (SA/Tas/WA); Quick (`corowaPlan`) → lowers the referendum pass threshold (+10, read live from the persisted Congress in `HoldReferendum`). New API in `Game.Federation.cs` (`AddConventionPoints`, `AddFederationSupportToAllColonies`, `AddFederationSupportToSmallColonies`, `ReferendumThresholdRelief`); handlers in `Game.AustralianEffects.cs`; five Australia-only abilities added to `australia/specification.xml`. All keyed on Australia-only abilities + `VictoryFederation`, so classic is byte-identical (soak green). Magnitudes are balance placeholders; several doc-11 clauses mapped to the closest supported lever (see §5). | (this commit) |
 | 2026-07-09 | Initial implementation & documentation — Phase-4a core Federation victory loop: per-colony Federation Support, Convention Points, `FederationPhase` state machine, seeded referendum, Commonwealth win via `Game.Winner`, SaveGame v72 persistence (omit-when-default), Federation HUD panel. Imperial Pressure kept political only (no REF); five victory grades deferred. | (this commit) |

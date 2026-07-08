@@ -95,6 +95,86 @@ public sealed partial class Game
     /// <summary>Re-installs the restored "latest referendum carried" flag (save load, v72).</summary>
     internal void SetReferendumCarried(bool carried) => _referendumCarried = carried;
 
+    // ── Federation-state boosts (applied by the Australian Democracy-Pioneer on-election effects, Phase-4d.7) ──
+
+    /// <summary>
+    /// Banks <paramref name="points"/> extra national <see cref="ConventionPoints"/> for the human's Federation movement
+    /// (Phase-4d.7) — the lever the Democracy Pioneers who advance the constitutional groundwork pull (Edmund Barton's
+    /// convention drive, Samuel Griffith's drafting boost). <b>A no-op unless the ruleset enables the Federation victory</b>
+    /// (classic has none), so a classic game banks nothing and stays byte-identical (ADR-009). Negative amounts are
+    /// ignored; the total is never driven below 0. RNG-free.
+    /// </summary>
+    /// <param name="points">Convention Points to add (values ≤ 0 are ignored).</param>
+    internal void AddConventionPoints(int points)
+    {
+        if (!Ruleset.VictoryFederation || points <= 0)
+        {
+            return; // classic / non-Federation ruleset, or nothing to add — byte-identical (ADR-009)
+        }
+        _conventionPoints += points;
+    }
+
+    /// <summary>
+    /// Adds <paramref name="support"/> Federation Support to every colony <paramref name="player"/> holds (Phase-4d.7) —
+    /// the broad boost Henry Parkes' Tenterfield Oration grants across all colony regions. Each colony's banked support is
+    /// still clamped to its 100%-support ceiling by <see cref="Colony.AddFederationSupport"/>. <b>A no-op unless the
+    /// ruleset enables the Federation victory</b> (classic has none), so a classic game changes nothing and stays
+    /// byte-identical (ADR-009). Colonies are visited in id order (deterministic); RNG-free.
+    /// </summary>
+    /// <param name="player">The player whose colonies gain support (the electing Pioneer's owner).</param>
+    /// <param name="support">Federation Support points added to each colony.</param>
+    internal void AddFederationSupportToAllColonies(Player player, int support)
+    {
+        if (!Ruleset.VictoryFederation || support == 0)
+        {
+            return; // classic / non-Federation ruleset — byte-identical (ADR-009)
+        }
+        foreach (Colony colony in ColoniesOf(player).OrderBy(c => c.Id))
+        {
+            colony.AddFederationSupport(support);
+        }
+    }
+
+    /// <summary>
+    /// Adds <paramref name="support"/> Federation Support to every colony <paramref name="player"/> holds that lies in one
+    /// of the <b>smaller colony regions</b> — South Australia, Tasmania and Western Australia (Phase-4d.7). This is Catherine
+    /// Helen Spence's "Fair Representation" lever: the effective-voting campaigner reassures the small colonies (whose fear
+    /// of domination by the populous east was the real Federation obstacle) rather than brute-forcing national support. A
+    /// colony's region is resolved via <see cref="GameMap.RegionOf"/>. <b>A no-op unless the ruleset enables the Federation
+    /// victory</b> (classic has none), so a classic game changes nothing and stays byte-identical (ADR-009). Colonies are
+    /// visited in id order (deterministic); RNG-free.
+    /// </summary>
+    /// <param name="player">The player whose small-region colonies gain support (the electing Pioneer's owner).</param>
+    /// <param name="support">Federation Support points added to each small-region colony.</param>
+    internal void AddFederationSupportToSmallColonies(Player player, int support)
+    {
+        if (!Ruleset.VictoryFederation || support == 0)
+        {
+            return; // classic / non-Federation ruleset — byte-identical (ADR-009)
+        }
+        foreach (Colony colony in ColoniesOf(player).OrderBy(c => c.Id))
+        {
+            string? regionKey = Map.RegionOf(colony.Position)?.Key;
+            if (regionKey is not null && SmallFederationRegionKeys.Contains(regionKey))
+            {
+                colony.AddFederationSupport(support);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The three <b>smaller colony regions</b> of the Federation — South Australia, Tasmania and Western Australia. Their
+    /// fear of being outvoted by populous New South Wales and Victoria was the design's central small-state obstacle
+    /// (docs 05 / 11); Catherine Helen Spence's effect is weighted to exactly these three
+    /// (<see cref="AddFederationSupportToSmallColonies"/>).
+    /// </summary>
+    private static readonly System.Collections.Generic.HashSet<string> SmallFederationRegionKeys =
+    [
+        "model.region.southAustralia",
+        "model.region.tasmania",
+        "model.region.westernAustralia",
+    ];
+
     // ── The six colony regions (canonical Federation order — NSW, Vic, Qld, SA, Tas, WA) ──────────────────────
 
     /// <summary>
@@ -280,8 +360,12 @@ public sealed partial class Game
         var rng = new Pcg32Random(baseState ^ ((ulong)Turn << 5) ^ ((ulong)(_referendumAttempts + 1) << 33), FederationStreamId);
 
         // The vote carries on a 0–99 roll under the average settled-region support (a stronger movement is likelier to
-        // pass): support 100 always carries, support 0 never does.
-        int averageSupport = AverageSettledSupport();
+        // pass): support 100 always carries, support 0 never does. John Quick's "Corowa Plan" (Phase-4d.7) lowers the
+        // effective pass threshold — the elected-delegates process he designed makes a marginal referendum likelier to
+        // carry — by adding a fixed bonus to the support the roll is compared against (clamped to 100). The bonus rides
+        // the persisted Congress (no new save state), and only ever applies to an Australia game (the classic path never
+        // reaches HoldReferendum), so the default game is byte-identical (ADR-009).
+        int averageSupport = Math.Min(100, AverageSettledSupport() + ReferendumThresholdRelief());
         int roll = rng.Next(100);
         _referendumAttempts++;
 
@@ -302,6 +386,15 @@ public sealed partial class Game
         RecordFederationMilestone("The Federation referendum has failed. The movement must rebuild support.");
         return false;
     }
+
+    /// <summary>
+    /// John Quick's "Corowa Plan" referendum relief (Phase-4d.7): the extra Federation Support added to the referendum
+    /// roll's threshold when the human's Congress holds Quick (<see cref="QuickCorowaAbility"/>), otherwise 0. Reads the
+    /// persisted Congress via <see cref="HasAbilityFor"/>, so it needs no new save state and only fires for an Australia
+    /// game that has elected Quick — the classic path never reaches the referendum, so the default game is byte-identical.
+    /// </summary>
+    private int ReferendumThresholdRelief() =>
+        HasAbilityFor(_human, QuickCorowaAbility) ? QuickReferendumRelief : 0;
 
     /// <summary>The unweighted average Federation Support across the regions the human is settled in (0 when unsettled).</summary>
     private int AverageSettledSupport()
