@@ -50,6 +50,7 @@ public sealed partial class Game
 
     private FederationPhase _federationPhase = FederationPhase.ColonialMaturity;
     private int _conventionPoints;
+    private int _conventionPointsHundredths; // ephemeral sub-point carry (see AccrueFederationSupport); never persisted
     private int _referendumAttempts;
 
     /// <summary>
@@ -74,6 +75,14 @@ public sealed partial class Game
     /// </summary>
     public int ReferendumAttempts => _referendumAttempts;
 
+    /// <summary>
+    /// Whether the latest referendum has <b>carried</b> (Phase-4a): set the turn a referendum passes, and read by
+    /// <see cref="ResolveCommonwealthFederation"/> on the next turn resolution to proclaim the Commonwealth. False for a
+    /// classic game (which never holds one) and for a game whose latest referendum failed. Persisted (v72, omitted when
+    /// false).
+    /// </summary>
+    public bool ReferendumCarried => _referendumCarried;
+
     /// <summary>Re-installs the restored Federation phase (save load, v72).</summary>
     internal void SetFederationPhase(FederationPhase phase) => _federationPhase = phase;
 
@@ -82,6 +91,9 @@ public sealed partial class Game
 
     /// <summary>Re-installs the restored referendum-attempt count (save load, v72).</summary>
     internal void SetReferendumAttempts(int attempts) => _referendumAttempts = Math.Max(0, attempts);
+
+    /// <summary>Re-installs the restored "latest referendum carried" flag (save load, v72).</summary>
+    internal void SetReferendumCarried(bool carried) => _referendumCarried = carried;
 
     // ── The six colony regions (canonical Federation order — NSW, Vic, Qld, SA, Tas, WA) ──────────────────────
 
@@ -120,8 +132,15 @@ public sealed partial class Game
         colony.AddFederationSupport(netCivicVoice);
         if (player.IsHuman && netCivicVoice > 0)
         {
-            // Convention Points trail support: a light fraction of positive net Civic Voice, national-scope.
-            _conventionPoints += netCivicVoice * ConventionPointsPerCivicVoicePercent / 100;
+            // Convention Points trail support: a light fraction of each turn's positive net Civic Voice, national-scope.
+            // A hundredths accumulator carries the sub-point remainder forward so a low-output colony (whose net×25 is
+            // under 100) still accrues over time rather than truncating every turn to nothing — integer-only, so the
+            // whole loop stays deterministic (ADR-009). The remainder is ephemeral (not persisted): it is only ever
+            // touched by an Australia game (this method returns early in classic), so it never shifts the classic soak,
+            // and losing at most a fraction of a point across a save/reload is immaterial to the slow points axis.
+            _conventionPointsHundredths += netCivicVoice * ConventionPointsPerCivicVoicePercent;
+            _conventionPoints += _conventionPointsHundredths / 100;
+            _conventionPointsHundredths %= 100;
         }
     }
 
@@ -202,7 +221,7 @@ public sealed partial class Game
             return false;
         }
         _federationPhase = FederationPhase.ConventionCalled;
-        RecordHistoryIfHuman("The federation convention has been called.");
+        RecordFederationMilestone("The federation convention has been called.");
         return true;
     }
 
@@ -269,7 +288,7 @@ public sealed partial class Game
         if (roll < averageSupport)
         {
             _referendumCarried = true; // ResolveCommonwealthFederation proclaims the Commonwealth on the next EndTurn resolution
-            RecordHistoryIfHuman("The Federation referendum has carried.");
+            RecordFederationMilestone("The Federation referendum has carried.");
             return true;
         }
 
@@ -280,7 +299,7 @@ public sealed partial class Game
         {
             colony.AddFederationSupport(-(colony.FederationSupport / 10)); // shed ~10% of banked support
         }
-        RecordHistoryIfHuman("The Federation referendum has failed. The movement must rebuild support.");
+        RecordFederationMilestone("The Federation referendum has failed. The movement must rebuild support.");
         return false;
     }
 
@@ -321,7 +340,7 @@ public sealed partial class Game
             && _conventionPoints >= ConventionPointsToDraftConstitution)
         {
             _federationPhase = FederationPhase.ConstitutionDrafted;
-            RecordHistoryIfHuman("The draft constitution is complete.");
+            RecordFederationMilestone("The draft constitution is complete.");
         }
 
         // A carried referendum flags the win: the phase is at Referendum and every settled region still holds referendum
@@ -329,7 +348,7 @@ public sealed partial class Game
         if (_federationPhase == FederationPhase.Referendum && _referendumCarried)
         {
             _federationPhase = FederationPhase.Commonwealth;
-            RecordHistoryIfHuman("The Commonwealth of Australia is proclaimed. Federation is achieved!");
+            RecordFederationMilestone("The Commonwealth of Australia is proclaimed. Federation is achieved!");
         }
     }
 
@@ -338,12 +357,17 @@ public sealed partial class Game
 
     private bool _referendumCarried;
 
-    /// <summary>Records a Federation milestone in the human's history log (a no-op for an empty message).</summary>
-    private void RecordHistoryIfHuman(string message)
+    /// <summary>
+    /// Records a Federation milestone (convention called, constitution drafted, referendum carried/failed, Commonwealth
+    /// proclaimed) in the human's history log as a <see cref="HistoryEventKind.HistoricalEvent"/> (a no-op for an empty
+    /// message). Only ever reached on the human's Federation path (the loop is a human-only win), so the entry lands in
+    /// the human's log; a classic game never calls it.
+    /// </summary>
+    private void RecordFederationMilestone(string message)
     {
         if (message.Length > 0)
         {
-            RecordHistory(HistoryEventKind.FatherElected, message);
+            RecordHistory(HistoryEventKind.HistoricalEvent, message);
         }
     }
 }

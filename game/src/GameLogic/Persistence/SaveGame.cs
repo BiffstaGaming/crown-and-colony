@@ -350,8 +350,9 @@ public sealed record SaveGame
     /// slices: a colony's banked <see cref="SavedColony.FederationSupport"/> (omitted when 0 — every colony in a classic
     /// game, which never accrues it); and three top-level game fields — the <see cref="FederationPhase"/> ordinal
     /// (omitted for the default <c>ColonialMaturity</c> = 0, which a classic game never leaves), the
-    /// <see cref="ConventionPoints"/> (omitted when 0), and the <see cref="ReferendumState"/> (attempt count +
-    /// carried flag, omitted when no referendum has been held). The classic ruleset ships
+    /// <see cref="ConventionPoints"/> (omitted when 0), and the <see cref="Referendum"/> state (a
+    /// <see cref="SavedReferendum"/> — attempt count + carried flag, omitted when no referendum has been held). The
+    /// classic ruleset ships
     /// <c>model.option.victoryFederation</c> false, so no Federation state is ever accrued there — a default game
     /// serialises <b>byte-identically to v71</b> (every one of these tokens omitted), and a pre-v72 save loads with no
     /// Federation state (the pre-feature behaviour). Determinism (ADR-009): the whole loop is gated off in classic, so a
@@ -586,6 +587,29 @@ public sealed record SaveGame
     /// </summary>
     public IReadOnlyDictionary<string, int>? EventLastFiredTurn { get; init; }
 
+    /// <summary>
+    /// The Australian-Federation phase ordinal (v72, Phase-4a, ADR-021; <see cref="GameSession.FederationPhase"/>): the
+    /// stage of the Federation victory loop this save was in. Additive + <b>omitted when the default
+    /// <see cref="GameSession.FederationPhase.ColonialMaturity"/> (0)</b> — which a classic game (the Federation victory
+    /// option off) never leaves — so a default game serialises byte-identically to v71 and a pre-v72 save loads at the
+    /// default phase (the pre-feature behaviour).
+    /// </summary>
+    public int? FederationPhase { get; init; }
+
+    /// <summary>
+    /// The nation-level <b>Convention Points</b> banked toward the Federation (v72, Phase-4a; <see cref="Game.ConventionPoints"/>).
+    /// Additive + <b>omitted when 0</b> — a classic game never accrues any — so a default game is byte-identical to v71 and
+    /// a pre-v72 save loads with none.
+    /// </summary>
+    public int? ConventionPoints { get; init; }
+
+    /// <summary>
+    /// The Federation <b>referendum</b> state (v72, Phase-4a): how many referendums have been held and whether the latest
+    /// carried. Additive + <b>omitted when no referendum has been held</b> (<see cref="SavedReferendum"/>) — a classic
+    /// game never holds one — so a default game is byte-identical to v71 and a pre-v72 save loads with none held.
+    /// </summary>
+    public SavedReferendum? Referendum { get; init; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -694,7 +718,10 @@ public sealed record SaveGame
                     // per-tile filter — so a game with no in-progress building learning stays byte-identical to v69).
                     BuildingWorkerExperience: c.BuildingWorkerExperience.Any(kv => kv.Value > 0)
                         ? c.BuildingWorkerExperience.Where(kv => kv.Value > 0).ToDictionary(kv => kv.Key, kv => kv.Value)
-                        : null))
+                        : null,
+                    // Federation Support (v72, Phase-4a) — omitted when 0 so every classic colony (which never accrues it,
+                    // the Federation victory being off) stays byte-identical to v71.
+                    FederationSupport: c.FederationSupport == 0 ? null : c.FederationSupport))
                 .ToList(),
             Resources = game.Map.Resources.Count > 0
                 ? game.Map.Resources
@@ -842,6 +869,16 @@ public sealed record SaveGame
             EventLastFiredTurn = game.EventLastFiredTurn.Count > 0
                 ? game.EventLastFiredTurn.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToDictionary(kv => kv.Key, kv => kv.Value)
                 : null,
+            // The Australian-Federation victory state (v72, Phase-4a, ADR-021). Each slice is omit-when-default so a
+            // classic game — the Federation victory option off, so it never advances the phase, accrues points, or holds
+            // a referendum — writes none of these tokens and stays byte-identical to v71 (ADR-009).
+            FederationPhase = game.FederationPhase == GameSession.FederationPhase.ColonialMaturity
+                ? null
+                : (int)game.FederationPhase,
+            ConventionPoints = game.ConventionPoints == 0 ? null : game.ConventionPoints,
+            Referendum = game.ReferendumAttempts == 0 && !game.ReferendumCarried
+                ? null
+                : new SavedReferendum(game.ReferendumAttempts, game.ReferendumCarried ? true : null),
         };
     }
 
@@ -970,6 +1007,7 @@ public sealed record SaveGame
                     (c.CurrentBuild is null ? Enumerable.Empty<string>() : [c.CurrentBuild])
                         .Concat(c.BuildQueueRest ?? []));
                 colony.Liberty = c.Liberty ?? 0; // ≤v21 saves had no liberty → SoL 0%
+                colony.FederationSupport = c.FederationSupport ?? 0; // v72; pre-v72 / classic (never accrued) → 0 (Phase-4a)
                 colony.TeaPartyBellTurns = c.TeaPartyBellTurns ?? 0; // v37; pre-v37 / no party → 0
                 foreach ((string goods, SavedExport export) in c.Exports ?? new Dictionary<string, SavedExport>())
                 {
@@ -1111,6 +1149,22 @@ public sealed record SaveGame
         {
             game.RestoreEventState(eventState);
         }
+        // The Australian-Federation victory state (v72, Phase-4a, ADR-021). Each slice re-installs only when present:
+        // a classic save omits all three, so a classic game restores at the default phase with no points / no referendum
+        // (the pre-feature behaviour), and stays byte-identical (ADR-009).
+        if (FederationPhase is { } phase) // v72; pre-v72 / omitted → ColonialMaturity (0)
+        {
+            game.SetFederationPhase((GameSession.FederationPhase)phase);
+        }
+        if (ConventionPoints is { } points) // v72; pre-v72 / omitted → 0
+        {
+            game.SetConventionPoints(points);
+        }
+        if (Referendum is { } referendum) // v72; pre-v72 / omitted → none held
+        {
+            game.SetReferendumAttempts(referendum.Attempts);
+            game.SetReferendumCarried(referendum.Carried ?? false);
+        }
         return game;
     }
 
@@ -1235,6 +1289,7 @@ public sealed record SaveGame
 /// <param name="TeaPartyBellTurns">Turns remaining of the Boston-Tea-Party bell surge (v37; null/omitted when 0, so a no-party colony is byte-identical to v36).</param>
 /// <param name="SchoolTrainingSlots">Per school building, the per-teacher-slot accrued training turns (v60; a college/university teaches one student per teacher in parallel, so each teacher carries its own counter). Null/omitted when no school is mid-training, so a non-teaching game is byte-identical to v59.</param>
 /// <param name="BuildingWorkerExperience">Per building, its free colonists' shared accrued on-the-job experience toward that building's expert (v70, building learning-by-doing 86d3kgbpd; null/omitted when none accrued, so a game with no in-progress building learning is byte-identical to v69).</param>
+/// <param name="FederationSupport">Accumulated <b>Federation Support</b> points banked from this colony's Civic Voice (Australian-Federation victory, Phase-4a, ADR-021; <see cref="Colony.FederationSupport"/>). Null/omitted when 0 — every colony in a classic game (which never accrues it, the option being off) stays byte-identical to v71.</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
     IReadOnlyDictionary<string, int>? Stores = null,
@@ -1251,7 +1306,17 @@ public sealed record SavedColony(
     IReadOnlyDictionary<string, int>? SchoolTraining = null,
     int? TeaPartyBellTurns = null,
     IReadOnlyDictionary<string, IReadOnlyList<int>>? SchoolTrainingSlots = null,
-    IReadOnlyDictionary<string, int>? BuildingWorkerExperience = null);
+    IReadOnlyDictionary<string, int>? BuildingWorkerExperience = null,
+    int? FederationSupport = null);
+
+/// <summary>
+/// The Australian-Federation <b>referendum</b> state inside a <see cref="SaveGame"/> (v72, Phase-4a, ADR-021). The whole
+/// record is <b>omitted when no referendum has been held</b> (see <see cref="SaveGame.Referendum"/>) — a classic game
+/// never holds one — so a default game is byte-identical to v71 and a pre-v72 save loads with none held.
+/// </summary>
+/// <param name="Attempts">How many referendums have been held (<see cref="Game.ReferendumAttempts"/>).</param>
+/// <param name="Carried">Whether the latest referendum carried (the Commonwealth is being proclaimed); null/omitted when it has not (the common case — a carried referendum immediately resolves to the win), so a failed-referendum save stays compact.</param>
+public sealed record SavedReferendum(int Attempts, bool? Carried = null);
 
 /// <summary>A colony's custom-house export/import setting for one good (v28+; only non-default goods are stored).</summary>
 /// <param name="Exported">Whether the good auto-exports.</param>

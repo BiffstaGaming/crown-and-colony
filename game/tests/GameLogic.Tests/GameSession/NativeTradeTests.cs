@@ -348,7 +348,7 @@ public class NativeTradeTests
 
         string json = SaveGame.From(game).ToJson();
         Assert.DoesNotContain("BuyAllowance", json); // …that the save never serialises (a trade session is a single dialog, not persisted)
-        Assert.Equal(71, SaveGame.CurrentVersion);   // and so adds no save field / version bump (its transience is exercised in BuyingSpendsTheAllowance_AndAFreshTurnClearsIt)
+        Assert.Equal(72, SaveGame.CurrentVersion);   // and so adds no save field / version bump (its transience is exercised in BuyingSpendsTheAllowance_AndAFreshTurnClearsIt)
     }
 
     // ---- Stock-driven wanted goods ----
@@ -467,7 +467,7 @@ public class NativeTradeTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
         Assert.Equal(wanted, restored.NativeSettlements.First(s => s.Id == first.Id).WantedGoods);
-        Assert.Equal(71, SaveGame.CurrentVersion);
+        Assert.Equal(72, SaveGame.CurrentVersion);
     }
 
     // ---- Overland wagon-train trade pays no ship-trade penalty (86d3fpzun) ----

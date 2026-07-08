@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — Federation victory loop (Phase-4a, ADR-021) — completed & landed on branch
+
+**Requested:** Finish the salvaged Federation victory loop (branch `01d4db1`, ~90% coded): merge it onto current main, make it compile, complete the core loop, wire persistence + determinism, complete tests + docs. Commit on my branch; do NOT push/merge.
+**Did:**
+- **Merged** the preserved branch `worktree-agent-a6eee0973dd39d1ce` onto current main — clean (git `ort` correctly took main's newer files + the branch's Federation additions; no conflicts).
+- **Made it compile** — the 3 doc-cref errors were symptoms of **unfinished persistence**, not just comments. Implemented the whole SaveGame v72 layer (was missing): `SavedColony.FederationSupport`, top-level `FederationPhase`/`ConventionPoints`/`Referendum` (`SavedReferendum`), all **omit-when-default**; added `ReferendumCarried` read + `SetReferendumCarried` restore hook. Full solution (GameLogic + Godot) builds clean.
+- **Completed the loop**: added `model.option.victoryFederation=true` to the Australia spec; fixed a Convention-Points truncation bug (small Civic Voice → 0 points) with a deterministic hundredths remainder carry; switched Federation history entries to `HistoricalEvent`.
+- **Built the Federation panel** (presentation — the branch never got here): code-built `FederationPanel` (per-region support bars + phase + Convention Points + gated Call-Convention/Referendum actions, Australian labels hardcoded) + GameController wiring (Australia-only HUD "Federation…" button sharing the Independence grid slot — the two are mutually exclusive by ruleset).
+- **Tests + docs**: new `FederationVictoryTests` (14, L1/L2) + `FederationPanelTests` (2, L3); bulk-bumped **41** version pin-tests 71→72 (+ 1 `Contains("71")` round-trip sentinel); wrote `docs/systems/federation-victory.md` (both layers + verification table + changelog + deferred-scope open-issues).
+**Status:** **L1/L2 2875 green** (14 new); **SOAK 5 green** (classic byte-identical — determinism gate holds); **L3 FederationPanelTests 2 green** + Declaration/golden L3 unaffected (goldens 10 green). Full build clean. Committed on branch `worktree-agent-a1439d946c2dc04a3`; **NOT pushed/merged** (lead integrates).
+**Changed:** `Game.Federation.cs`, `FederationPhase.cs`, `Colony.cs`, `Game.cs`, `Game.Independence.cs`, `Ruleset.cs`, `SaveGame.cs`, `australia/specification.xml`, `GameController.cs`, new `FederationPanel.cs`, new `FederationVictoryTests.cs`, new `FederationPanelTests.cs`, new `docs/systems/federation-victory.md`, 42 test files (version pins).
+**Decisions:** (1) **Imperial Pressure kept political/economic only — NO REF invasion wired into the Federation path** (classic monarch/REF untouched), per ADR-021. (2) **Five victory GRADES DEFERRED** — a single Commonwealth win ships this milestone (documented in open-issues). (3) Convention-Points remainder is ephemeral (not persisted) — only ever touched by Australia, so classic soak is unaffected. (4) Federation replaces the WoI HUD button in Australia (mutually exclusive).
+**Scheduled next:** Lead to integrate this branch; then **First Nations deep redesign (4b, ADR-022)** — not started, sensitive, needs Chris's sign-off. (No new kanban id created — this completes the salvaged Federation task.)
+**Follow-ups:** L4 Australia HUD golden; per-colony historical support targets + constitutional clauses + the 5 victory grades (all deferred, listed in the system doc's open-issues); AI does not pursue Federation (human-only win).
+**Needs you:** (1) **Confirm the ADR-021 defaults I applied** (Imperial Pressure political-only; grades deferred; uniform 40%/50% thresholds vs the design's per-colony targets). (2) It's on a branch — the lead/you must integrate (I did not push/merge per instructions).
+
+---
+
 ## 2026-07-09 — Overnight run: Australia completeness push (spend-limit interrupted; safe work banked)
 
 **Requested (Chris, going to bed):** "Keep working until you hit your usage limit. Make the Australian Mode 100% complete. Update the User Guides / Documentation. If time, look online for new asset packs."
