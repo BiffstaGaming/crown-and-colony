@@ -3014,6 +3014,110 @@
     </founding-father>
   </founding-fathers>
 
+  <!-- ============================================================================
+       Historical events — the Australian Federation event engine (4c; ADR-023).
+       A data-driven <event-def> catalogue on the reused disaster/turn-loop machinery
+       (Ruleset.ParseHistoricalEvents / Game.Events). Classic defines none and replays
+       byte-identically; only this variant carries events. Effects use the reused
+       vocabulary (timed modifiers + one-shot grants); every effect here is player-scoped
+       (gold/liberty/unit/global-modifier/history) so an event is safe to fire before the
+       first colony exists. Year gates use the 1788-1901 calendar.
+       FIRST NATIONS contact / frontier content is deliberately EXCLUDED from this batch —
+       it is historically sensitive and goes through the sombre-framing review (4c.11,
+       task 86d3mmc1x) before any such event is authored.
+       Batch 1 (86d3mmbfn): Survival & early colony, 1788-1830. Setup event: 86d3mmb3r.
+       ============================================================================ -->
+  <historical-events>
+
+    <!-- Forced setup event (86d3mmb3r): fires once at scenario start. A sombre, factual
+         founding note; player-scoped effects only (no colony exists at turn 1). -->
+    <event-def id="event.sydneyCoveEstablished" trigger="scenarioStart">
+      <option id="landed">
+        <effect kind="recordHistory" text="26 January 1788: the First Fleet lands at Sydney Cove and the colony of New South Wales is proclaimed."/>
+        <effect kind="grantLiberty" value="20"/>
+      </option>
+    </event-def>
+
+    <!-- Catalog batch 1 (86d3mmbfn): supply, weather, wool and settlers. Misfortunes are
+         single-option; a few offer a genuine choice (auto/AI picks the heavier option). -->
+
+    <event-def id="event.secondFleetArrives" weight="4" one-shot="true" earliest-year="1790" expiry-year="1810">
+      <option id="accept">
+        <effect kind="recordHistory" text="More transports arrive from Britain, bearing convict labour for the young colony."/>
+        <effect kind="grantUnit" target="model.unit.pettyCriminal"/>
+        <effect kind="grantUnit" target="model.unit.pettyCriminal"/>
+      </option>
+    </event-def>
+
+    <event-def id="event.merinoSheep" weight="3" one-shot="true" earliest-year="1797" expiry-year="1830">
+      <option id="invest" weight="2">
+        <effect kind="recordHistory" text="Merino sheep are landed — the colony's wool prospects rise."/>
+        <effect kind="timedModifier" target="model.goods.cotton" type="percentage" value="30" duration="12"/>
+      </option>
+      <option id="ignore" weight="1">
+        <effect kind="recordHistory" text="The merino flock is left to graze; its promise will keep."/>
+      </option>
+    </event-def>
+
+    <event-def id="event.drought" weight="5" cooldown="8" earliest-year="1788" expiry-year="1901">
+      <option id="endure">
+        <effect kind="recordHistory" text="A harsh drought settles over the colony; the ground cracks and the crops wither."/>
+        <effect kind="timedModifier" target="model.goods.grain" type="percentage" value="-30" duration="4"/>
+      </option>
+    </event-def>
+
+    <event-def id="event.bushfire" weight="4" cooldown="10" earliest-year="1788" expiry-year="1901">
+      <option id="endure">
+        <effect kind="recordHistory" text="Bushfires sweep through the district, driven by a hot northerly wind."/>
+        <effect kind="timedModifier" target="model.goods.lumber" type="percentage" value="-25" duration="3"/>
+      </option>
+    </event-def>
+
+    <event-def id="event.hawkesburyFlood" weight="3" cooldown="12" earliest-year="1806" expiry-year="1901">
+      <option id="endure">
+        <effect kind="recordHistory" text="The Hawkesbury bursts its banks and the floodwaters take the season's grain."/>
+        <effect kind="timedModifier" target="model.goods.grain" type="percentage" value="-35" duration="3"/>
+      </option>
+    </event-def>
+
+    <event-def id="event.goodHarvest" weight="5" cooldown="6" earliest-year="1788" expiry-year="1901">
+      <option id="reap">
+        <effect kind="recordHistory" text="A bountiful season — the granaries fill and spirits lift."/>
+        <effect kind="grantLiberty" value="15"/>
+      </option>
+    </event-def>
+
+    <event-def id="event.whalingStation" weight="3" one-shot="true" earliest-year="1805" expiry-year="1850">
+      <option id="open">
+        <effect kind="recordHistory" text="A shore whaling station opens; oil and bone fetch a fine price in London."/>
+        <effect kind="grantGold" value="300"/>
+      </option>
+    </event-def>
+
+    <event-def id="event.freeSettlers" weight="4" cooldown="10" earliest-year="1793" expiry-year="1840">
+      <option id="welcome" weight="3">
+        <effect kind="recordHistory" text="Free settlers step ashore, seeking land and a new start."/>
+        <effect kind="grantUnit" target="model.unit.freeColonist"/>
+      </option>
+      <option id="assist" weight="1">
+        <effect kind="recordHistory" text="The colony rallies to help the new arrivals find their feet."/>
+        <effect kind="grantLiberty" value="10"/>
+      </option>
+    </event-def>
+
+    <event-def id="event.escapedConvicts" weight="3" cooldown="10" earliest-year="1788" expiry-year="1850">
+      <option id="pursue" weight="1">
+        <effect kind="recordHistory" text="A party of convicts absconds into the bush; the guard is turned out to recapture them."/>
+        <effect kind="grantGold" value="-100"/>
+      </option>
+      <option id="pardon" weight="1">
+        <effect kind="recordHistory" text="Rather than pursue the absconders, the governor offers emancipation to those who return and work."/>
+        <effect kind="grantLiberty" value="15"/>
+      </option>
+    </event-def>
+
+  </historical-events>
+
   <european-nation-types>
     <!-- default nation for multi-player games -->
     <european-nation-type id="model.nationType.default">

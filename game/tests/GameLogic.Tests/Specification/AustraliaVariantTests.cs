@@ -148,6 +148,30 @@ public class AustraliaVariantTests
     }
 
     [Fact]
+    public void AustraliaCatalog_CarriesTheSetupEventAndBatchOne_WhileClassicHasNone()
+    {
+        // Classic defines zero historical events → the event runtime is a strict no-op and classic replays
+        // byte-identically (86d3mmbfn/86d3mmb3r; ADR-023). Only the Australia variant carries a catalogue.
+        Assert.Empty(Ruleset.LoadClassic().HistoricalEvents);
+        Assert.True(Australia.HistoricalEvents.Count >= 10, "the 1788-1830 batch + setup event should be present");
+
+        // The forced setup event fires once at scenario start (the First Fleet landing).
+        EventDef sydney = Australia.HistoricalEvent("event.sydneyCoveEstablished")!;
+        Assert.NotNull(sydney);
+        Assert.Equal(EventTrigger.ScenarioStart, sydney.Trigger);
+        Assert.True(sydney.OneShot);
+
+        // A representative batch event — the merino-sheep wool boost, era-gated to the early colony, applying a
+        // timed modifier to the wool good (id `cotton`, displayed as "Wool" via the reskin's DisplayOverrides).
+        EventDef merino = Australia.HistoricalEvent("event.merinoSheep")!;
+        Assert.NotNull(merino);
+        Assert.Equal(1797, merino.EarliestYear);
+        Assert.Contains(
+            merino.Options.SelectMany(o => o.Effects),
+            e => e.Kind == EventEffectKind.TimedModifier && e.TargetId == "model.goods.cotton");
+    }
+
+    [Fact]
     public void AustraliaSave_RecordsTheVariant_AndReloadsUnderItsRuleset()
     {
         Game game = Game.New(Australia, seed: 0xA05UL, mapSource: MapSource.Australia);

@@ -103,11 +103,13 @@ Per-turn, per colonial player, in `RunPlayerTurn` (right after the natural-disas
 ## 5. Open issues / TODO
 
 - [ ] Event-prompt presentation (L3/L4) — the human-facing UI for `PendingEventOffer`.
-- [ ] Real Australian Federation event content authored against this schema (separate stream) — the Warrane/Sydney-Cove first-contact content is First-Nations-sensitive and is authored deliberately elsewhere; this engine ships only the mechanism, tested with synthetic neutral fixtures.
+- [x] **Batch 1 authored** (86d3mmbfn) — 10 non-sensitive 1788–1830 events (supply, drought, bushfire, flood, harvest, merino wool, whaling, free settlers, escaped convicts) + the **Sydney Cove** forced setup event (86d3mmb3r), all in `game/data/rules/australia/specification.xml` `<historical-events>`. Every effect is player-scoped (safe before the first colony). First Nations *first-contact/frontier* content is still deliberately EXCLUDED — it goes through the sombre-framing review (4c.11, `86d3mmc1x`) before authoring. Later batches (1830–1872, 1872–1901) + the six-era frequency bands (4c.10) remain.
+- [ ] Event-prompt presentation (L3/L4) — the human-facing UI for `PendingEventOffer` (single-option events auto-apply; multi-option dilemmas currently auto-resolve to the heaviest option until the UI lands).
 - [ ] Consider colony *selection* for colony-scoped effects when a player has several colonies (currently the first).
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
-| 2026-07-08 | Initial documentation — event schema/parser (4c.2), runtime (4c.3), effect vocabulary (4c.4), forced-setup mechanism (4c.5); save v70→71 for `EventLastFiredTurn` | 42d4bac |
+| 2026-07-08 | **Australian catalogue — batch 1 + setup event** (`86d3mmbfn`/`86d3mmb3r`): 10 non-sensitive 1788–1830 `<event-def>`s (supply/drought/bushfire/flood/harvest/merino-wool/whaling/free-settlers/escaped-convicts) + the forced `event.sydneyCoveEstablished` (scenario-start, one-shot) in the Australia spec. Player-scoped effects only (colony-independent). Classic still defines none → byte-identical. +1 L1 (`AustraliaVariantTests.AustraliaCatalog_...`). First Nations contact content deliberately excluded (4c.11 review). | (this commit) |
+| 2026-07-08 | Initial documentation — event schema/parser (4c.2), runtime (4c.3), effect vocabulary (4c.4), forced-setup mechanism (4c.5); save v70→71 for `EventLastFiredTurn` | 4248dc7 |
