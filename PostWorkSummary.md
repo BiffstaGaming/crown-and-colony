@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Australia mode: FULL decomposition — every epic broken into engine-mapped subtasks
+
+**Requested (Chris):** "Decompose everything into small individual tasks, include details on where/what needs to be done, ensuring that we utilise the backend engine that already exists." (Overrides the rolling-wave default — recorded as his call.)
+**Did:** read the remaining design corpus (docs 04, 05, 06, 13, 14, 15, 16, 17§buildings/improvements, 18), then created **41 subtasks** under the four epics — every one names its **What / Where / Engine-reuse seams / Depends**:
+- **4a Federation victory (10):** ADR → maturity/region oracles → per-region Support on the **SoL machinery** → Convention Points on the **liberty-accrual pattern** → data-driven clauses on the **father-record shape** → referendums with **timed-modifier** momentum (+NSW quota/WA late-entry options) → proclamation victory + grades on the **score system** → Imperial Pressure reframe of the **monarch/REF** → Federation panel → balance + variant soak.
+- **4b First Nations (11):** ADR (Tension = the **alarm engine**, Respect = new axis, Country Pressure reuses the **ambient-footprint computation**) → ~19 cultural groups as variant nations → Respect wired to existing **trade/gift/combat/land seams** → extended Tension sources → pressure accumulator → relationship-state oracle + gates → five agreements as **Check/command pairs** → diplomatic units (Mediator = the **mission-relief seam**) → legitimacy ↔ Federation → group event content → diplomacy UI. Sensitivity sign-offs marked throughout.
+- **4c Events (11):** ADR extending the **natural-disaster machinery** → `<event-def>` schema/parser with a named-condition vocabulary → turn-loop runtime (seeded on the player's stream; classic defines zero events → byte-identical) → effect vocabulary reusing **timed modifiers/grants/pool injections** → forced setup events → three catalog batches (1788–1830, 1830–1872, 1872–1901) → **Pioneer hard gates + linked events** → six-era oracle → the binding sensitive-content review.
+- **4d Novel content (8):** un-gate land movement modifiers (the one small engine change, Magellan pinned byte-identical) → economy + civic buildings on the **`required-ability` seam** → improvements incl. agreement-gated → Hargraves' gold reveal (**resource-placement + reveal seams**) → bespoke election-effect wave → Democracy figures onto 4a → content balance.
+- Plus **`86d3mmdh7` Pioneer portraits** under the art task — all 25 figures are public-domain (pre-1955), Barak's image flagged for a cultural-protocol check.
+**Status:** 41 ClickUp subtasks created (Backlog, under their epics); IMPLEMENTATION_PLAN §4 rewritten with the full decomposition + Phase-4 internal sequence (the three ADRs first). Docs-only commit, pushing.
+**Changed:** ClickUp (+41 subtasks), `IMPLEMENTATION_PLAN.md`. Commit **(this commit)**.
+**Decisions:** subtasks nested under their epics (board stays navigable; epic = the kanban card until its phase starts); ADR-first ordering inside each epic; every task binds to a named existing seam — anything that can't is explicitly split and challenged (per Chris's "utilise the backend engine" requirement).
+**Scheduled next:** unchanged — **Six colony regions + start sites (`86d3mm1xr`)** unless you reorder.
+**Needs you:** skim the epic subtasks (open each epic in ClickUp to see its nested breakdown); flag anything mis-scoped. Standing: the top-down call.
+
+---
+
 ## 2026-07-08 — Australia mode: the kanban is fully laid out
 
 **Requested (Chris):** "Begin creating the individual small tasks in ClickUp for the work that needs to be done for the Australia Game Mode."
