@@ -21,7 +21,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 70;
+    public const int CurrentVersion = 71;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -342,6 +342,10 @@ public sealed record SaveGame
     /// regions (river tiles reassigned to them, FreeCol <c>ServerRegion.addTile</c>) and the nine keyed thirds boxes
     /// to the table under the existing v35 region layer — an existing-layer <i>content</i> change, not a schema
     /// change: pre-v69 saves load their persisted layer verbatim (never re-derived while regions are present).
+    /// v70 (pre-existing). v71 added the <b>historical-event fired-turns</b> (<see cref="EventLastFiredTurn"/> — event id
+    /// → the turn it last fired, for one-shot/cooldown gating of the data-driven event engine, 4c.3); <b>omitted when the
+    /// map is empty</b>, and the classic ruleset ships no historical events so the map is always empty there — a default
+    /// game serialises byte-identically to v70, and a pre-v71 save (or any save with no events fired) loads with none.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -562,6 +566,15 @@ public sealed record SaveGame
     /// a reload dropped the slump).
     /// </summary>
     public IReadOnlyList<SavedTemporaryModifier>? TemporaryModifiers { get; init; }
+
+    /// <summary>
+    /// The data-driven <b>historical events</b> that have fired and the turn each last fired (v71; 4c.3): event id → last
+    /// turn, used to gate one-shot events (fired once ever) and cooldowns (a minimum turn gap between firings) across a
+    /// save/reload. Additive + <b>omitted when empty</b> (null) — the classic ruleset ships no historical events, so the
+    /// map is always empty there and a default game serialises byte-identically to v70; a pre-v71 save (or any save where
+    /// no event has fired) loads with none, so events accrue fresh exactly as before persistence.
+    /// </summary>
+    public IReadOnlyDictionary<string, int>? EventLastFiredTurn { get; init; }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -813,6 +826,11 @@ public sealed record SaveGame
                         m.FirstTurn, m.LastTurn, m.ColonyId,
                         m.Payload.ScopeUnitTypes is { Count: > 0 } scopes ? scopes.ToList() : null))
                     .ToList()
+                : null,
+            // The historical-event fired-turns (v71) — for one-shot/cooldown gating; omitted when empty (the classic
+            // default game fires no events, byte-identical to v70). Sorted by id so the serialised order is deterministic.
+            EventLastFiredTurn = game.EventLastFiredTurn.Count > 0
+                ? game.EventLastFiredTurn.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToDictionary(kv => kv.Key, kv => kv.Value)
                 : null,
         };
     }
@@ -1078,6 +1096,10 @@ public sealed record SaveGame
             game.RestoreTemporaryModifiers(timed.Select(m => new TemporaryModifier(
                 new FatherModifier(m.TargetId, (ModifierType)m.ModifierType, m.Value, m.Index, m.ScopeUnitTypes),
                 m.FirstTurn, m.LastTurn, m.ColonyId)));
+        }
+        if (EventLastFiredTurn is { } eventState) // v71; pre-v71 / omitted → no events fired yet (the pre-persistence behaviour)
+        {
+            game.RestoreEventState(eventState);
         }
         return game;
     }

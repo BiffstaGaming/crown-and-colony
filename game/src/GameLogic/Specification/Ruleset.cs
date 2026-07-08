@@ -30,6 +30,7 @@ public sealed class Ruleset
     private readonly Dictionary<string, string> _expertForProducing; // goods id → the unit type that is its expert
     private readonly Dictionary<string, EuropeanNation> _europeanNationById;
     private readonly Dictionary<string, SpecEvent> _eventById; // spec <event> elements, keyed by id
+    private readonly Dictionary<string, EventDef> _eventDefById; // spec <historical-events>/<event-def> elements, keyed by id (4c.2)
 
     private Ruleset(
         Dictionary<string, TerrainType> terrainById,
@@ -49,6 +50,7 @@ public sealed class Ruleset
         Dictionary<string, HashSet<string>> nativeLearningByFrom,
         Dictionary<string, EuropeanNation> europeanNationById,
         Dictionary<string, SpecEvent> eventById,
+        Dictionary<string, EventDef> eventDefById,
         Calendar calendar,
         IReadOnlyList<int> fatherAgeYears,
         DifficultyOptions difficulty,
@@ -99,6 +101,7 @@ public sealed class Ruleset
         _nativeLearningByFrom = nativeLearningByFrom;
         _europeanNationById = europeanNationById;
         _eventById = eventById;
+        _eventDefById = eventDefById;
         // Reverse the expert→good mapping into good→expert (FreeCol Specification.getExpertForProducing): the unit type
         // whose expert-production is a given good (grain → expert farmer, fish → expert fisherman, …). First definition
         // wins on the (classic-impossible) duplicate.
@@ -137,6 +140,7 @@ public sealed class Ruleset
         Roles = _roleById.Values.ToList();
         EuropeanNations = _europeanNationById.Values.ToList();
         Events = _eventById.Values.ToList();
+        HistoricalEvents = _eventDefById.Values.ToList();
     }
 
     /// <summary>
@@ -278,6 +282,19 @@ public sealed class Ruleset
     /// <c>model.event.spanishSuccession</c>; <c>null</c> if the ruleset defines no such event.</summary>
     /// <param name="id">The event id.</param>
     public SpecEvent? Event(string id) => _eventById.GetValueOrDefault(id);
+
+    /// <summary>
+    /// The data-driven <b>historical events</b> parsed from the spec's <c>&lt;historical-events&gt;</c> section (each an
+    /// <c>&lt;event-def&gt;</c>) — the Australian Federation event engine (4c.2). Distinct from <see cref="Events"/> (the
+    /// limit-gated declare-independence/Spanish-succession <see cref="SpecEvent"/>s). <b>Empty for the classic ruleset</b>
+    /// (it ships no such section), so the per-turn event runtime is a strict no-op there and the default game stays
+    /// byte-identical (ADR-006/009). A variant adds events by data alone.
+    /// </summary>
+    public IReadOnlyList<EventDef> HistoricalEvents { get; }
+
+    /// <summary>The historical <see cref="EventDef"/> with the given id, or <c>null</c> if the ruleset defines no such event.</summary>
+    /// <param name="id">The event id (e.g. <c>event.woolBoom</c>).</param>
+    public EventDef? HistoricalEvent(string id) => _eventDefById.GetValueOrDefault(id);
 
     /// <summary>
     /// The liberty (bells) a rebel must accrue during the War of Independence before a friendly foreign power lands
@@ -1090,6 +1107,11 @@ public sealed class Ruleset
         // Missing → an empty map, so a spec without events still loads (the default game's hardcoded paths fall back).
         Dictionary<string, SpecEvent> events = ParseEvents(root.Element("events"));
 
+        // The spec <historical-events> section (the data-driven event engine, 4c.2). A DISTINCT element from <events>
+        // above (deliberately named <event-def> to avoid the SpecEvent/<event> collision). Missing → an empty map, so
+        // the classic spec (which ships none) loads with no historical events and the per-turn runtime is a strict no-op.
+        Dictionary<string, EventDef> eventDefs = ParseHistoricalEvents(root.Element("historical-events"));
+
         Calendar calendar = ParseCalendar(root);
         IReadOnlyList<int> fatherAgeYears = ParseFatherAgeYears(root, calendar.StartingYear);
         DifficultyOptions difficulty = ParseDifficulty(root, difficultyLevelId);
@@ -1144,7 +1166,7 @@ public sealed class Ruleset
 
         return new Ruleset(
             terrain, units, goods, buildings, fathers, resources, improvements, nativeNations, settlements,
-            roles, disasters, unitChanges, experienceUpgrades, educationTurns, nativeLearning, europeanNations, events, calendar, fatherAgeYears,
+            roles, disasters, unitChanges, experienceUpgrades, educationTurns, nativeLearning, europeanNations, events, eventDefs, calendar, fatherAgeYears,
             difficulty, gameOptions, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage,
             interventionBells, interventionTurns, interventionForce,
             victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, combatModifiers, colonyConstants, movementConstants);
@@ -2114,7 +2136,11 @@ public sealed class Ruleset
             .Select(s => (string?)s.Attribute("type"))
             .Where(t => t is not null)
             .Select(t => t!)
-            .ToList());
+            .ToList(),
+        // A <scope ability-id="model.ability.navalUnit"/> child restricts the modifier to naval units (Magellan's and the
+        // naval nation-type's movementBonus; 4d.1). Captured so the movement fold can keep such a bonus off land units
+        // when it is un-gated for land movement — leaving Magellan/Portuguese byte-identical.
+        NavalScoped: m.Elements("scope").Any(s => (string?)s.Attribute("ability-id") == "model.ability.navalUnit"));
 
     private static FatherAbility ParseAbility(XElement a) => new(
         Id: RequiredAttribute(a, "id"),
@@ -2788,6 +2814,110 @@ public sealed class Ruleset
             }
         }
         return events;
+    }
+
+    /// <summary>
+    /// Parses the spec <c>&lt;historical-events&gt;</c> section into a map of <see cref="EventDef"/> keyed by id (the
+    /// data-driven event engine, 4c.2). Each <c>&lt;event-def&gt;</c> carries: an <c>id</c>; a draw <c>weight</c>; a
+    /// <c>cooldown</c>; a <c>one-shot</c> flag; optional <c>earliest-year</c>/<c>expiry-year</c> gates; a <c>trigger</c>
+    /// (<c>normal</c> — the default — or <c>scenarioStart</c> for a forced setup event); a <c>&lt;requires&gt;</c> block
+    /// of <c>&lt;limit&gt;</c> gates (reusing the existing <see cref="ParseLimit"/> engine); and one or more
+    /// <c>&lt;option&gt;</c> children, each with a <c>weight</c> and its <c>&lt;effect&gt;</c> vocabulary
+    /// (<see cref="ParseEventEffect"/>). A null section (the classic case) yields an empty map. Distinct from the
+    /// <c>&lt;events&gt;</c>/<see cref="ParseEvents"/> parser it sits beside — they never share element names.
+    /// </summary>
+    internal static Dictionary<string, EventDef> ParseHistoricalEvents(XElement? root)
+    {
+        var events = new Dictionary<string, EventDef>();
+        if (root is null)
+        {
+            return events;
+        }
+        foreach (XElement el in root.Elements("event-def"))
+        {
+            string id = RequiredAttribute(el, "id");
+            EventTrigger trigger = (string?)el.Attribute("trigger") == "scenarioStart"
+                ? EventTrigger.ScenarioStart
+                : EventTrigger.Normal;
+            // A scenario-start event is implicitly one-shot (it fires once at setup); an explicit one-shot="true" also forces it.
+            bool oneShot = trigger == EventTrigger.ScenarioStart || (bool?)el.Attribute("one-shot") == true;
+
+            var requirements = (el.Element("requires")?.Elements("limit") ?? [])
+                .Select(ParseLimit)
+                .ToList();
+
+            var options = el.Elements("option")
+                .Select(ParseEventOption)
+                .ToList();
+            if (options.Count == 0)
+            {
+                throw new RulesetFormatException($"<event-def> '{id}' must have at least one <option>.");
+            }
+
+            var ev = new EventDef(
+                Id: id,
+                Weight: (int?)el.Attribute("weight") ?? 1,
+                Cooldown: (int?)el.Attribute("cooldown") ?? 0,
+                OneShot: oneShot,
+                EarliestYear: (int?)el.Attribute("earliest-year") ?? 0,
+                ExpiryYear: (int?)el.Attribute("expiry-year") ?? 0,
+                Trigger: trigger,
+                Requirements: requirements,
+                Options: options);
+            if (!events.TryAdd(id, ev))
+            {
+                throw new RulesetFormatException($"Duplicate event-def id '{id}'.");
+            }
+        }
+        return events;
+    }
+
+    /// <summary>Parses one <c>&lt;option&gt;</c> of an <c>&lt;event-def&gt;</c> into an <see cref="EventOption"/>: its id, auto/AI weight, and effect list.</summary>
+    private static EventOption ParseEventOption(XElement el) => new(
+        Id: RequiredAttribute(el, "id"),
+        Weight: (int?)el.Attribute("weight") ?? 1,
+        Effects: el.Elements("effect")
+            .Select(ParseEventEffect)
+            .Where(e => e is not null)
+            .Select(e => e!)
+            .ToList());
+
+    /// <summary>
+    /// Parses one <c>&lt;effect&gt;</c> child of an event option into an <see cref="EventEffect"/>, or <c>null</c> when
+    /// its <c>kind</c> is one the base engine does not model (forward-compatible: a variant can carry a richer effect the
+    /// base engine ignores). The <c>kind</c> attribute maps to an <see cref="EventEffectKind"/>; each kind reads the
+    /// attributes it needs (<c>target</c>/<c>type</c>/<c>value</c>/<c>duration</c>/<c>role</c>/<c>text</c>).
+    /// </summary>
+    private static EventEffect? ParseEventEffect(XElement el)
+    {
+        EventEffectKind? kind = RequiredAttribute(el, "kind") switch
+        {
+            "timedModifier" => EventEffectKind.TimedModifier,
+            "grantGold" => EventEffectKind.GrantGold,
+            "grantLiberty" => EventEffectKind.GrantLiberty,
+            "grantUnit" => EventEffectKind.GrantUnit,
+            "grantGoods" => EventEffectKind.GrantGoods,
+            "revealMap" => EventEffectKind.RevealMap,
+            "recordHistory" => EventEffectKind.RecordHistory,
+            _ => null, // an unrecognised kind is skipped (forward-compatible)
+        };
+        if (kind is null)
+        {
+            return null;
+        }
+        return new EventEffect(
+            Kind: kind.Value,
+            TargetId: (string?)el.Attribute("target"),
+            ModifierType: (string?)el.Attribute("type") switch
+            {
+                "multiplicative" => ModifierType.Multiplicative,
+                "additive" => ModifierType.Additive,
+                _ => ModifierType.Percentage,
+            },
+            Value: (double?)el.Attribute("value") ?? 0,
+            Duration: (int?)el.Attribute("duration") ?? 1,
+            RoleId: (string?)el.Attribute("role"),
+            Text: (string?)el.Attribute("text"));
     }
 
     /// <summary>
