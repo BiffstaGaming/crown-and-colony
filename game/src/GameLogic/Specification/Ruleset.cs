@@ -66,9 +66,11 @@ public sealed class Ruleset
         bool victoryDefeatHumans,
         CombatModifiers combatModifiers,
         ColonyConstants colonyConstants,
-        MovementConstants movementConstants)
+        MovementConstants movementConstants,
+        IReadOnlyList<string> defaultColonyNames)
     {
         Calendar = calendar;
+        DefaultColonyNames = defaultColonyNames;
         CombatModifiers = combatModifiers;
         ColonyConstants = colonyConstants;
         MovementConstants = movementConstants;
@@ -701,6 +703,16 @@ public sealed class Ruleset
     /// </summary>
     public IReadOnlyList<EuropeanNation> EuropeanNations { get; }
 
+    /// <summary>
+    /// The variant's <b>default</b> colony-name list — the settlement names a colonial player with no
+    /// nation-specific list founds by, in founding order. Sourced from the ruleset's colony-name properties under
+    /// the <c>model.nation.default</c> bucket (FreeCol's fallback name scheme). The nation-less human uses this
+    /// (via <c>Game.ColonyNamesFor</c>) instead of the hard-coded American static list, so the Australia variant's
+    /// towns (Sydney first) surface in-game. <b>Empty when the ruleset declares no default bucket</b> — classic
+    /// ships none, so classic keeps its hard-coded fallback and stays byte-identical (ADR-018).
+    /// </summary>
+    public IReadOnlyList<string> DefaultColonyNames { get; }
+
     /// <summary>Looks up a European nation by ruleset id (e.g. <c>model.nation.dutch</c>).</summary>
     /// <exception cref="KeyNotFoundException">Unknown id.</exception>
     public EuropeanNation EuropeanNation(string id) =>
@@ -1100,8 +1112,14 @@ public sealed class Ruleset
 
         Dictionary<string, EuropeanNationType> europeanNationTypes =
             ParseEuropeanNationTypes(root.Element("european-nation-types"));
+        // Parse the colony-name properties ONCE: the per-nation lists feed the European nations, and the
+        // `model.nation.default` bucket becomes the variant DefaultColonyNames (the nation-less human's fallback,
+        // ADR-018). Absent → empty, so classic (which ships no default bucket) keeps its hard-coded fallback.
+        Dictionary<string, IReadOnlyList<string>> colonyNamesByNation = ParseColonyNames(colonyNames);
+        IReadOnlyList<string> defaultColonyNames =
+            colonyNamesByNation.GetValueOrDefault("model.nation.default", []);
         Dictionary<string, EuropeanNation> europeanNations = ParseEuropeanNations(
-            root.Element("nations"), europeanNationTypes, ParseColonyNames(colonyNames));
+            root.Element("nations"), europeanNationTypes, colonyNamesByNation);
 
         // The spec <events> section (declare-independence + Spanish-succession events, each with its <limit> gates).
         // Missing → an empty map, so a spec without events still loads (the default game's hardcoded paths fall back).
@@ -1169,7 +1187,8 @@ public sealed class Ruleset
             roles, disasters, unitChanges, experienceUpgrades, educationTurns, nativeLearning, europeanNations, events, eventDefs, calendar, fatherAgeYears,
             difficulty, gameOptions, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage,
             interventionBells, interventionTurns, interventionForce,
-            victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, combatModifiers, colonyConstants, movementConstants);
+            victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, combatModifiers, colonyConstants, movementConstants,
+            defaultColonyNames);
     }
 
     /// <summary>

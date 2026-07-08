@@ -522,14 +522,19 @@ public sealed partial class Game
 
     /// <summary>
     /// The colony-name list the colonial player <paramref name="ownerId"/> founds by: its European nation's
-    /// names (FP-3a data) if it has one, else the default list. The human is nation-less for now, so it uses
-    /// the default — keeping its colony names unchanged (FP-3b); foreign powers found by their own names.
+    /// names (FP-3a data) if it has one, else the ruleset's <see cref="Specification.Ruleset.DefaultColonyNames"/>
+    /// (the variant default bucket) if that is non-empty, else the hard-coded American <see cref="ColonyNames"/>.
+    /// The human is nation-less for now, so it uses the variant default — the Australia variant surfaces its towns
+    /// (Sydney first) here (ADR-018), while classic (no default bucket) still falls back to the American list, so
+    /// classic colony names are byte-identical. Foreign powers found by their own nation's names.
     /// </summary>
     private IReadOnlyList<string> ColonyNamesFor(int ownerId) =>
         PlayerById(ownerId)?.NationId is { } nationId
         && Ruleset.EuropeanNations.FirstOrDefault(n => n.Id == nationId) is { ColonyNames.Count: > 0 } nation
             ? nation.ColonyNames
-            : ColonyNames;
+            : Ruleset.DefaultColonyNames.Count > 0
+                ? Ruleset.DefaultColonyNames
+                : ColonyNames;
 
     /// <summary>The human player's treasury in gold.</summary>
     public int Gold => _human.Gold;

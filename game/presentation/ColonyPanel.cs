@@ -630,11 +630,15 @@ public partial class ColonyPanel : PanelContainer
                     // wrapper here — it already includes ProductionBonus and floors at 0 (wrapping would double-count the SoL bonus).
                     Place(view, Badge($"{Display(Short(good))} {_game.TileWorkerNetYield(_colony, tile, good)}"), topLeft + (td ? new Vector2(tw / 2f - 30, 4) : new Vector2(44, 0)));
                     Position worked = tile;
-                    var release = new Button { Name = $"Release_{tile.X}_{tile.Y}", Text = "✕", CustomMinimumSize = new Vector2(24, 20) };
+                    const int releaseW = 24;
+                    const int releaseH = 20;
+                    var release = new Button { Name = $"Release_{tile.X}_{tile.Y}", Text = "✕", CustomMinimumSize = new Vector2(releaseW, releaseH), ClipText = true };
                     release.Pressed += () => { _game.UnassignWork(_colony, worked); _heldFrom = null; Changed(); };
-                    // 8px inset from the cell's bottom edge — at th-22 the button sat ON the grid line under the
-                    // clipping ScrollContainer and read as cut off (Chris 2026-07-08).
-                    Place(view, release, topLeft + (td ? new Vector2(tw / 2f - 12, th - 28) : new Vector2(64, 50)));
+                    // Pin the size so Place can't grow it, then seat the whole button inside the cell's clipped
+                    // bounds: at th-34 its bottom sits at th-14 (a 14px margin above the grid line), clear of the
+                    // clipping ScrollContainer edge that previously cut off the lower pixels (Chris 2026-07-08).
+                    release.Size = new Vector2(releaseW, releaseH);
+                    Place(view, release, topLeft + (td ? new Vector2(tw / 2f - 12, th - 34) : new Vector2(64, 50)));
                 }
                 else if (_colony.IdleColonists > 0 && _game.ColonyCanWorkTile(_colony, tile)
                          && _game.TileWorkOptions(tile) is { Count: > 0 } options)
@@ -642,12 +646,25 @@ public partial class ColonyPanel : PanelContainer
                     // Top-down: fit the picker inside the square cell (12px margin each side) so it isn't clipped;
                     // iso keeps the 104px width the wide diamond has room for.
                     int pickerW = td ? tw - 24 : 104;
-                    var picker = new OptionButton { Name = $"Work_{tile.X}_{tile.Y}", CustomMinimumSize = new Vector2(pickerW, 24) };
+                    const int pickerH = 24;
+                    var picker = new OptionButton
+                    {
+                        Name = $"Work_{tile.X}_{tile.Y}",
+                        CustomMinimumSize = new Vector2(pickerW, pickerH),
+                        // An OptionButton's minimum size otherwise GROWS to fit its widest dropdown item, so a long
+                        // good label ("Sugar 3", "Furs 2"…) made the button overflow the cell and clip against the
+                        // next tile (Chris 2026-07-08). ClipText caps the LABEL, and pinning Size below (so Place
+                        // doesn't resize to GetCombinedMinimumSize) caps the CONTROL — together they hold pickerW.
+                        ClipText = true,
+                    };
                     picker.AddItem("Work…");
                     foreach ((string goodsId, int yield) in options)
                     {
                         picker.AddItem($"{Display(Short(goodsId))} {EffectiveYield(yield)}");
                     }
+                    // Pin the size BEFORE Place — Place only computes a size when it is still Zero, so the picker
+                    // keeps exactly pickerW×pickerH and never auto-grows past the cell.
+                    picker.Size = new Vector2(pickerW, pickerH);
                     Position free = tile;
                     picker.ItemSelected += index =>
                     {

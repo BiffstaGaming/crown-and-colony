@@ -3336,7 +3336,7 @@
                   type="percentage" value="100"/>
       </settlement>
     </indian-nation-type>
-    <indian-nation-type id="model.nationType.apache" extends="camp"
+    <indian-nation-type id="model.nationType.arrernte" extends="camp"
                         number-of-settlements="average" aggression="high">
       <skill id="model.unit.masterCottonPlanter" probability="20"/>
       <skill id="model.unit.expertFarmer" probability="10"/>
@@ -3344,7 +3344,7 @@
       <skill id="model.unit.masterTobaccoPlanter" probability="3"/>
       <region id="model.region.center" />
     </indian-nation-type>
-    <indian-nation-type id="model.nationType.sioux" extends="camp"
+    <indian-nation-type id="model.nationType.yawuru" extends="camp"
                         number-of-settlements="average" aggression="average">
       <skill id="model.unit.masterTobaccoPlanter" probability="20"/>
       <skill id="model.unit.expertFurTrapper" probability="10"/>
@@ -3352,7 +3352,7 @@
       <skill id="model.unit.expertFarmer" probability="3"/>
       <region id="model.region.northWest" />
     </indian-nation-type>
-    <indian-nation-type id="model.nationType.tupi" extends="camp"
+    <indian-nation-type id="model.nationType.kulin" extends="camp"
                         number-of-settlements="high" aggression="low">
       <skill id="model.unit.masterSugarPlanter" probability="20"/>
       <skill id="model.unit.seasonedScout" probability="10"/>
@@ -3362,14 +3362,14 @@
       <region id="model.region.southEast" />
       <region id="model.region.south" />
     </indian-nation-type>
-    <indian-nation-type id="model.nationType.arawak" extends="village"
+    <indian-nation-type id="model.nationType.eora" extends="village"
                         number-of-settlements="low" aggression="high">
       <skill id="model.unit.masterSugarPlanter" probability="20"/>
       <skill id="model.unit.expertFisherman" probability="10"/>
       <skill id="model.unit.masterFurTrader" probability="3"/>
       <region id="model.region.east" />
     </indian-nation-type>
-    <indian-nation-type id="model.nationType.cherokee" extends="village"
+    <indian-nation-type id="model.nationType.larrakia" extends="village"
                         number-of-settlements="average" aggression="low">
       <skill id="model.unit.masterCottonPlanter" probability="20"/>
       <skill id="model.unit.expertFisherman" probability="10"/>
@@ -3380,7 +3380,7 @@
       <skill id="model.unit.masterFurTrader" probability="3"/>
       <region id="model.region.north" />
     </indian-nation-type>
-    <indian-nation-type id="model.nationType.iroquois" extends="village"
+    <indian-nation-type id="model.nationType.yolngu" extends="village"
                         number-of-settlements="average" aggression="average">
       <skill id="model.unit.expertFurTrapper" probability="20"/>
       <skill id="model.unit.expertFarmer" probability="10"/>
@@ -3399,92 +3399,22 @@
       <skill id="model.unit.expertFisherman" probability="10"/>
       <skill id="model.unit.masterWeaver" probability="3"/>
     </indian-nation-type>
-    <indian-nation-type id="model.nationType.inca" extends="city"
+    <!-- Renamed from the classic `inca` AND re-based city→village (86d3-P8 naming pass): no First Nations
+         people is rendered as an Aztec-style walled "city empire". Extends the `village` template, so the
+         inline city <settlement> overrides are dropped and the Noongar found villages like every other group.
+         Skill/region kept as a straight rename. -->
+    <indian-nation-type id="model.nationType.noongar" extends="village"
                         aggression="low">
       <skill id="model.unit.expertOreMiner" probability="10"/>
       <region id="model.region.southWest" />
-      <settlement id="model.settlement.inca" capital="false"
-                  claimable-radius="2" extra-claimable-radius="2"
-                  minimum-size="8" maximum-size="12"
-                  minimum-growth="3" maximum-growth="12"
-                  trade-bonus="3" convert-threshold="100">
-        <plunder id="plunder.inca" probability="100"
-                 minimum="2" maximum="6" factor="2100">
-          <scope ability-id="model.ability.plunderNatives"
-                 ability-value="false"/>
-        </plunder>
-        <plunder id="plunder.inca.extra" probability="100"
-                 minimum="2" maximum="6" factor="3100">
-          <scope ability-id="model.ability.plunderNatives"
-                 ability-value="true"/>
-        </plunder>
-        <gifts probability="100" minimum="3" maximum="6" factor="200" />
-        <modifier id="model.modifier.defence" index="50"
-                  type="percentage" value="100"/>
-      </settlement>
-      <settlement id="model.settlement.inca.capital" capital="true"
-                  claimable-radius="3" extra-claimable-radius="3"
-                  minimum-size="10" maximum-size="12"
-                  minimum-growth="4" maximum-growth="14"
-                  trade-bonus="4" convert-threshold="100">
-        <plunder id="plunder.inca.capital" probability="100"
-                 minimum="2" maximum="6" factor="3000">
-          <scope ability-id="model.ability.plunderNatives"
-                 ability-value="false"/>
-        </plunder>
-        <plunder id="plunder.inca.capital.extra" probability="100"
-                 minimum="3" maximum="8" factor="4000">
-          <scope ability-id="model.ability.plunderNatives"
-                 ability-value="true"/>
-        </plunder>
-        <gifts probability="100" minimum="4" maximum="8" factor="300" />
-        <modifier id="model.modifier.defence" index="50"
-                  type="percentage" value="200"/>
-      </settlement>
     </indian-nation-type>
-    <indian-nation-type id="model.nationType.aztec" extends="city"
+    <!-- Renamed from the classic `aztec` AND re-based city→village (86d3-P8 naming pass): see the Noongar note
+         above. Extends the `village` template; the inline city <settlement> overrides are dropped. -->
+    <indian-nation-type id="model.nationType.wangkatja" extends="village"
                         aggression="high">
       <skill id="model.unit.masterSugarPlanter" probability="3"/>
       <skill id="model.unit.expertOreMiner" probability="3"/>
       <region id="model.region.west" />
-      <settlement id="model.settlement.aztec" capital="false"
-                  claimable-radius="2" extra-claimable-radius="2"
-                  minimum-size="8" maximum-size="12"
-                  minimum-growth="3" maximum-growth="12"
-                  trade-bonus="3" convert-threshold="100">
-        <plunder id="plunder.aztec" probability="100"
-                 minimum="5" maximum="9" factor="1000">
-          <scope ability-id="model.ability.plunderNatives"
-                 ability-value="false"/>
-        </plunder>
-        <plunder id="plunder.aztec.extra" probability="100"
-                 minimum="11" maximum="15" factor="1000">
-          <scope ability-id="model.ability.plunderNatives"
-                 ability-value="true"/>
-        </plunder>
-        <gifts probability="100" minimum="4" maximum="8" factor="200" />
-        <modifier id="model.modifier.defence" index="50"
-                  type="percentage" value="100"/>
-      </settlement>
-      <settlement id="model.settlement.aztec.capital" capital="true"
-                  claimable-radius="3" extra-claimable-radius="3"
-                  minimum-size="10" maximum-size="12"
-                  minimum-growth="4" maximum-growth="14"
-                  trade-bonus="4" convert-threshold="100">
-        <plunder id="plunder.aztec.capital" probability="100"
-                 minimum="7" maximum="12" factor="1000">
-          <scope ability-id="model.ability.plunderNatives"
-                 ability-value="false"/>
-        </plunder>
-        <plunder id="plunder.aztec.capital.extra" probability="100"
-                 minimum="16" maximum="19" factor="1000">
-          <scope ability-id="model.ability.plunderNatives"
-                 ability-value="true"/>
-        </plunder>
-        <gifts probability="100" minimum="5" maximum="10" factor="300" />
-        <modifier id="model.modifier.defence" index="50"
-                  type="percentage" value="200"/>
-      </settlement>
     </indian-nation-type>
   </indian-nation-types>
 
@@ -3504,22 +3434,24 @@
     <nation id="model.nation.spanish" color="0xffff00"
             nation-type="model.nationType.conquest" selectable="true"
             preferred-latitude="-19" ref="model.nation.spanishREF"/>
-    <nation id="model.nation.inca" color="0xf4f0c4"
-            nation-type="model.nationType.inca"/>
-    <nation id="model.nation.aztec" color="0xc4a020"
-            nation-type="model.nationType.aztec"/>
-    <nation id="model.nation.arawak" color="0x6888c0"
-            nation-type="model.nationType.arawak"/>
-    <nation id="model.nation.cherokee" color="0x6c3c18"
-            nation-type="model.nationType.cherokee"/>
-    <nation id="model.nation.iroquois" color="0x74a44c"
-            nation-type="model.nationType.iroquois"/>
-    <nation id="model.nation.sioux" color="0xc0ac84"
-            nation-type="model.nationType.sioux"/>
-    <nation id="model.nation.apache" color="0x900000"
-            nation-type="model.nationType.apache"/>
-    <nation id="model.nation.tupi" color="0x045c04"
-            nation-type="model.nationType.tupi"/>
+    <!-- First Nations peoples (renamed from the classic native nations, 86d3-P8 naming pass). Each keeps its
+         classic color + region; noongar/wangkatja were re-based city→village so no people is a "city empire". -->
+    <nation id="model.nation.noongar" color="0xf4f0c4"
+            nation-type="model.nationType.noongar"/>
+    <nation id="model.nation.wangkatja" color="0xc4a020"
+            nation-type="model.nationType.wangkatja"/>
+    <nation id="model.nation.eora" color="0x6888c0"
+            nation-type="model.nationType.eora"/>
+    <nation id="model.nation.larrakia" color="0x6c3c18"
+            nation-type="model.nationType.larrakia"/>
+    <nation id="model.nation.yolngu" color="0x74a44c"
+            nation-type="model.nationType.yolngu"/>
+    <nation id="model.nation.yawuru" color="0xc0ac84"
+            nation-type="model.nationType.yawuru"/>
+    <nation id="model.nation.arrernte" color="0x900000"
+            nation-type="model.nationType.arrernte"/>
+    <nation id="model.nation.kulin" color="0x045c04"
+            nation-type="model.nationType.kulin"/>
     <nation id="model.nation.dutchREF" color="0xffffff"
             nation-type="model.nationType.ref"/>
     <nation id="model.nation.frenchREF" color="0xffffff"

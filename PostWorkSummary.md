@@ -34,6 +34,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 **Scheduled next:** **Chris's sensitivity review of the 4 Australian beat strings** (verbatim in the chat report below) — no kanban task exists for this micro-fix; if Chris wants it tracked, file it under the Australia presentation stream. After sign-off, fold this branch into the P8 integration.
 **Follow-ups:** none code-side. (Optional: once First-Fleet start roster / era events land, the intro copy could name Arthur Phillip — deferred, not needed now.)
 **Needs you:** **Review the exact wording of the 4 Australian beats** (historically sensitive framing — reproduced in the chat report). Confirm it reads as sober/honest and not triumphalist, and adjust any phrasing you'd like before this merges.
+## 2026-07-08 — Australia playtest fixes: colony names + First Nations names + colony-panel clipping
+
+**Requested:** Three playtest issues — (1) the human's colonies are American (Jamestown/Plymouth); (2) the First Nations tribes are still Apache/Sioux/Aztec/…; (3) the colony-screen *Work…* picker + ✕ are clipped. Fix data-driven, classic byte-identical, in an isolated worktree; do not touch `GameVariant.cs`.
+**Did:**
+- **Fix 1 (colony names):** added `Ruleset.DefaultColonyNames` (new public property) sourced from the `model.nation.default` bucket in the colony-name properties; `Game.ColonyNamesFor` now uses it (when non-empty) for the nation-less human before the American fallback. Australia `european-nation-names.properties` ships that bucket **Sydney-first** (20 towns). Classic ships no bucket → empty → American fallback → byte-identical.
+- **Fix 2 (First Nations names):** renamed the 8 classic native nations in the Australia spec to real First Nations peoples (display name derives from the id suffix): apache→Arrernte, sioux→Yawuru, tupi→Kulin, arawak→**Eora**, cherokee→Larrakia, iroquois→Yolngu, inca→**Noongar**, aztec→**Wangkatja**. Re-based Noongar/Wangkatja `city`→`village` so no people is a walled "city empire". Rename only.
+- **Fix 3 (clipping):** the *Work…* `OptionButton` now `ClipText = true` + `Size` pinned to `pickerW×24` (can't auto-grow past `tw−24`); the ✕ pins its `Size` (24×20) and moves `th−28`→`th−34` (14px above the grid line, clear of the clipping `ScrollContainer`).
+- Docs (no-drift): `game-modes.md` (colony-name default + First Nations naming sections + 2 changelog rows), `colonies.md` (clipping-fix changelog row), XML `///` on `DefaultColonyNames`.
+**Status:** build clean; **L1/L2 2843 green** (incl. 5 new Australia tests), **soak 5 green** (classic byte-identical), **L3 `ColonyPanelTests` 50 green**. Committed on this worktree branch — **NOT pushed / NOT merged**.
+**Changed:** `Ruleset.cs` (+`DefaultColonyNames` prop/ctor/Load), `Game.cs` (`ColonyNamesFor`), `australia/specification.xml` (native renames + city→village), `australia/european-nation-names.properties` (+default bucket), `ColonyPanel.cs` (picker/✕ size caps), `AustraliaVariantTests.cs` (+5 tests), `game-modes.md`, `colonies.md`.
+**Decisions:** First Nations mapping ties each people to the region its classic predecessor used (Eora=Sydney/east, etc.); city→village drops the inline city `<settlement>` overrides (inherits the village template). Fix 3 was made without seeing the result — conservative caps + a bigger bottom inset.
+**Scheduled next:** **Chris visual re-check of the colony screen** (top-down worked tiles — confirm the *Work…* picker no longer clips the next tile and the ✕ is fully visible), then his **review of the First Nations old→new name mapping** for framing. Both feed the 4b First Nations task (`86d3mm31k`).
+**Follow-ups:** deep First Nations tension/respect redesign (4b/ADR-022, separate signed-off task); sandbox-power Australian colony names; if desired, per-people region tuning beyond the straight rename.
+**Needs you:** (1) **Visual re-check** the colony screen (fix 3 — made blind). (2) **Review the First Nations mapping** (Arrernte/Yawuru/Kulin/Eora/Larrakia/Yolngu/Noongar/Wangkatja) — is the framing right? (3) This is on an unpushed worktree branch — lead/you integrates.
 
 ---
 

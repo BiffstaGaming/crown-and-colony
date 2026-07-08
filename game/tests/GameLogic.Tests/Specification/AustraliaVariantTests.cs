@@ -1,7 +1,9 @@
 using System.Linq;
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 using Xunit;
 
@@ -145,6 +147,116 @@ public class AustraliaVariantTests
             Assert.Contains(town, british.ColonyNames);
         }
         Assert.DoesNotContain("Jamestown", british.ColonyNames);
+    }
+
+    [Fact]
+    public void AustraliaRuleset_HasADefaultColonyNameBucket_SydneyFirst()
+    {
+        // The variant default bucket (model.nation.default) is what the NATION-LESS human founds by — Sydney first
+        // (86d3-P8 fix 1). Without it the human would fall back to the hard-coded American static list.
+        Assert.NotEmpty(Australia.DefaultColonyNames);
+        Assert.Equal("Sydney", Australia.DefaultColonyNames[0]);
+        Assert.DoesNotContain("Jamestown", Australia.DefaultColonyNames);
+        foreach (string town in new[] { "Melbourne", "Adelaide", "Brisbane", "Perth", "Hobart", "Parramatta" })
+        {
+            Assert.Contains(town, Australia.DefaultColonyNames);
+        }
+    }
+
+    [Fact]
+    public void ClassicRuleset_HasNoDefaultColonyNameBucket_SoItsFallbackIsByteIdentical()
+    {
+        // Classic ships no model.nation.default bucket, so DefaultColonyNames is empty and Game.ColonyNamesFor keeps
+        // the hard-coded American fallback (Jamestown/Plymouth/…) — classic colony names are unchanged (ADR-018).
+        Assert.Empty(Ruleset.LoadClassic().DefaultColonyNames);
+    }
+
+    [Fact]
+    public void AustraliaGame_FoundsSydney_AsTheHumansFirstColony()
+    {
+        // End-to-end: the nation-less human's first colony reads its name from the variant default bucket, so an
+        // Australian game founds "Sydney" (the First Fleet), not "Jamestown" (86d3-P8 fix 1).
+        Game game = Game.New(Australia, seed: 0xA05UL, mapSource: MapSource.Australia);
+
+        // Walk the on-map colonist onto open land and found — mirrors AmericaGameTests' founding loop.
+        Colony? first = null;
+        for (int turn = 0; turn < 20 && first is null; turn++)
+        {
+            Unit? unit = game.PlayerUnits.FirstOrDefault(u => u.IsOnMap && !u.Type.IsNaval);
+            if (unit is not null)
+            {
+                if (game.CheckFoundColony(unit).Allowed)
+                {
+                    first = game.FoundColony(unit);
+                    break;
+                }
+                Position? next = unit.Position.Neighbours()
+                    .Where(n => game.CheckMove(unit, n).Allowed)
+                    .Cast<Position?>()
+                    .FirstOrDefault();
+                if (next is not null)
+                {
+                    game.MoveUnit(unit, next.Value);
+                }
+            }
+            game.EndTurn();
+        }
+
+        Assert.NotNull(first);
+        Assert.Equal("Sydney", first!.Name);
+    }
+
+    // --- First Nations naming pass (86d3-P8 fix 2) -----------------------------------
+
+    [Fact]
+    public void AustraliaNatives_UseFirstNationsPeoples_NotTheClassicTribes()
+    {
+        // The classic native nations were renamed to real Australian First Nations peoples (a naming pass only —
+        // the display name derives from the id suffix, so renaming the id renames the tribe). Eora (Sydney/coastal
+        // NSW) is the anchor; none of the classic New-World tribe ids survive.
+        var ids = Australia.NativeNationTypes.Select(n => n.Id).ToHashSet();
+        Assert.Equal(8, Australia.NativeNationTypes.Count);
+        foreach (string id in new[]
+                 {
+                     "model.nationType.eora", "model.nationType.kulin",
+                     "model.nationType.arrernte", "model.nationType.yawuru", "model.nationType.larrakia",
+                     "model.nationType.yolngu", "model.nationType.noongar", "model.nationType.wangkatja",
+                 })
+        {
+            Assert.Contains(id, ids);
+        }
+
+        // The classic tribe ids are gone from the Australia spec.
+        foreach (string classicId in new[]
+                 {
+                     "model.nationType.apache", "model.nationType.sioux", "model.nationType.tupi",
+                     "model.nationType.arawak", "model.nationType.cherokee", "model.nationType.iroquois",
+                     "model.nationType.inca", "model.nationType.aztec",
+                 })
+        {
+            Assert.DoesNotContain(classicId, ids);
+        }
+
+        // The display name resolves to the new people (id suffix → capitalised).
+        Assert.Equal("eora", Australia.NativeNation("model.nationType.eora").ShortName);
+    }
+
+    [Fact]
+    public void AustraliaNatives_NoFirstNationsPeopleIsRenderedAsACityEmpire()
+    {
+        // The classic aztec/inca used the advanced-empire "city" settlement template; when renamed they were
+        // re-based to the `village` template so no First Nations people is a walled city empire (docs 15/16/19).
+        // Every native nation now founds camps or villages — never a city settlement.
+        foreach (NativeNationType nation in Australia.NativeNationTypes)
+        {
+            Assert.DoesNotContain("city", nation.SettlementTypeId);
+            Assert.DoesNotContain("inca", nation.SettlementTypeId);
+            Assert.DoesNotContain("aztec", nation.SettlementTypeId);
+        }
+
+        // The Noongar (ex-inca) and Wangkatja (ex-aztec) both found ordinary villages now.
+        Assert.Equal("model.settlement.village", Australia.NativeNation("model.nationType.noongar").SettlementTypeId);
+        Assert.Equal("model.settlement.village", Australia.NativeNation("model.nationType.wangkatja").SettlementTypeId);
     }
 
     [Fact]
