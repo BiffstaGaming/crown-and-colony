@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Australia mode: the kanban is fully laid out
+
+**Requested (Chris):** "Begin creating the individual small tasks in ClickUp for the work that needs to be done for the Australia Game Mode."
+**Did:** audited the design corpus (docs 00–21) + IMPLEMENTATION_PLAN against the existing kanban, then created **9 new tasks** (no duplicates — the 5 existing P8 tasks stand):
+- **Granular, Ready for Development:** `86d3mm1xr` **Six colony regions + start sites** (NSW/Vic/Qld/SA/Tas/WA — the milestone's "six-colony map" requirement the terrain-only map doesn't yet meet; HIGH), `86d3mm25r` **Australian buildings reskin** (Government Stores/Sheep Station/Wool Shed… onto the classic chain), `86d3mm2fb` **Historical 1788 start** (First Fleet party + variant start year + Australia-era father-age thresholds).
+- **Granular, Backlog with dependencies wired:** `86d3mm2nv` **Retarget Pioneer stand-ins** (cotton→wool, silver→gold; *waiting on* goods `86d3kwty1`), `86d3mm2ug` **Colony start scenarios** (doc 04 Mode 3; *waiting on* `86d3mm1xr`).
+- **Phase-4+ EPICs (single tasks per rolling-wave — decompose when the phase starts):** `86d3mm2xq` **Federation victory loop** (docs 05/06 — the one big new mechanic), `86d3mm31k` **First Nations redesign** (docs 15/16/18 — design-led, Chris sign-off), `86d3mm38w` **Event system + 1788–1901 catalog + campaign story** (docs 03/13/14 — carries the Pioneers' linked events + hard gates), `86d3mm3cp` **Novel Pioneer effects + Phase-4 buildings/improvements**.
+- **Plan ⇄ kanban synced:** IMPLEMENTATION_PLAN §4 rewritten as the live task table (ids + statuses + sequence).
+**Status:** docs-only commit; pushing (CI trivially green).
+**Changed:** ClickUp list `901615382059` (+9 tasks, 2 dependencies), `docs/australian_federation_mode_md/IMPLEMENTATION_PLAN.md` (§4 sync). Commit **(this commit)**.
+**Decisions:** sandbox powers (doc 04 Mode 2) stay inside the nations task's optional scope rather than their own task; doc 17's novel buildings/improvements split — reskin-able chain now (`86d3mm25r`), new-mechanic ones ride EPIC 4d; the "story" is explicitly the event-system epic (4c), not a skeleton task.
+**Scheduled next:** the milestone-critical **Six colony regions + start sites (`86d3mm1xr`)** — or whichever P8 task you reorder to the top; the kanban order is your steer.
+**Needs you:** glance over the new tasks' scopes/priorities on the kanban and reorder if you want a different sequence. Standing: the top-down direction call.
+
+---
+
 ## 2026-07-08 — The Australian Pioneers: the Federation Convention is open
 
 **Requested (Chris):** "Begin implementing the Australian specific story/pioneers (founding fathers)/etc that are provided in the Australia documents."

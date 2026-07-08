@@ -82,20 +82,36 @@ Deferred until the skeleton is playable and signed off:
 
 ---
 
-## 4. First-milestone task breakdown (the "Playable Australian skeleton")
+## 4. Task breakdown ⇄ kanban (synced 2026-07-08)
 
-Proposed granular tasks (one work-block each: lands with tests + docs + CI green), to become ClickUp tasks under the P8 epic:
+Granular tasks (one work-block each: lands with tests + docs + CI green) live on the kanban (list `901615382059`); future phases stay single `[EPIC]` tasks until their phase starts (rolling-wave). Current state:
 
-1. **`[P8] Variant skeleton`** — register `GameVariants.Australia` (copy-of-classic spec), csproj embed, `GameVariantTests`/`NewGameBridge` coverage. *(Phase 0)*
-2. **`[P8] Australian nations + place-names`** — British Australia + First Nations nation entries; Australian colony-name list. *(Phase 1a)*
-3. **`[P8] Australian unit roster`** — convicts / settlers / experts as `<unit-type>` data. *(Phase 1b)*
-4. **`[P8] Australian goods + economy mapping`** — wool/gold/coal/etc. onto the production/market model. *(Phase 1c)*
-5. **`[P8] Australian Pioneers (Founding-Father roster)`** — the historical figures + reused perks, by category. *(Phase 1d)*
-6. **`[P8] UI reskin`** — Founding Fathers→Australian Pioneers, Liberty→Civic Voice, natives→First Nations display renames. *(Phase 1e)*
-7. **`[P8] Authored six-colony australia.txt map`** — continent + regions + resources; `MapSource.Australia` + dropdown. *(Phase 2)*
-8. **`[P8] Australian art pass (units/terrain)`** — GPL-compatible sprites + Asset Register entries. *(Phase 3, can overlap)*
+**Shipped:**
+1. **`86d3kwtf9` [P8] Variant skeleton** — `GameVariants.Australia`, selectable + playable. *(Phase 0)* ✅
+2. **`86d3kwtp5` [P8] Australia map** — the continent terrain grid (de-staggered 60×40, NZ removed). *(Phase 2, terrain)* ✅
+3. **`86d3kwtjb` [P8] Australian Pioneers** — the 25-figure roster + reused perks + Federation Convention label. *(Phase 1d)* ✅
 
-Sequence: **1 first** (proves the pipeline), then 2–6 in parallel (all data in one spec — mind merge order), then 7, with 8 overlapping. Each keeps the transposability anchors (§1) intact.
+**Ready for development:**
+4. **`86d3kwtrq` [P8] Australian nations + place-names** — British Australia (+ optional sandbox powers per `04_*`); First Nations nation entries; Australian colony-name list. *(Phase 1a)*
+5. **`86d3kwtvc` [P8] Australian unit roster** — convicts / settlers / experts as `<unit-type>` data. *(Phase 1b)*
+6. **`86d3kwty1` [P8] Australian goods + economy mapping** — wool/gold/coal/etc. *(Phase 1c)*
+7. **`86d3kwu0c` [P8] UI reskin** — Civic Voice / First Nations / category display names etc. (§2). *(Phase 1e)*
+8. **`86d3mm1xr` [P8] Six colony regions + start sites** — NSW/Vic/Qld/SA/Tas/WA named regions + start sites on the map (**the milestone's six-colony requirement**). *(Phase 2 completion)*
+9. **`86d3mm25r` [P8] Australian buildings reskin** — Government Stores / Sheep Station / Wool Shed… onto the classic chain (`17_*`; novel buildings → Phase 4). *(Phase 1)*
+10. **`86d3mm2fb` [P8] Historical 1788 start** — First Fleet party + variant start year (+ Australia-appropriate father-age thresholds). *(Phase 1/2)*
+
+**Backlog (granular):**
+11. **`86d3mm2nv` [P8] Retarget Pioneer stand-ins** (cotton→wool, silver→gold) — *waiting on* `86d3kwty1`.
+12. **`86d3mm2ug` [P8] Colony start scenarios** (doc `04_*` Mode 3, six selectable starts) — *waiting on* `86d3mm1xr`.
+13. **`86d3kwu2q` [P8] Australian art pass** — GPL-compatible sprites + Asset Register. *(Phase 3, can overlap)*
+
+**Phase 4+ epics (decompose when their phase starts, never earlier):**
+14. **`86d3mm2xq` [EPIC P8-4a] Federation victory loop** (`05_*`/`06_*`) — the one big new mechanic.
+15. **`86d3mm31k` [EPIC P8-4b] First Nations redesign** (`15_*`/`16_*`/`18_*`) — design-led, Chris sign-off on sensitive content.
+16. **`86d3mm38w` [EPIC P8-4c] Event system + 1788–1901 catalog + campaign story** (`03_*`/`13_*`/`14_*`) — includes the Pioneers' linked events + hard gates.
+17. **`86d3mm3cp` [EPIC P8-4d] Novel Pioneer effects + Phase-4 buildings/improvements** (`07_*`–`12_*` bespoke perks; Telegraph/Goldfield/Stock Route…).
+
+Sequence: 4–7 + 9 in parallel (all data in one spec — mind merge order), 8 then 10 (start sites feed the 1788 landfall), 11 after the goods, 13 overlapping; epics after the skeleton is signed off. Each keeps the transposability anchors (§1) intact.
 
 ---
 
