@@ -59,8 +59,8 @@ option has a sensible default, so you can simply press **Start** for a classic g
 
 | Option | What it does |
 |---|---|
-| **Scenario** | The ruleset / variant that defines the world. Currently *Colonial America (Classic)*. (Future variants, such as an Australia scenario, will appear here.) |
-| **Map** | *Random New World* (a freshly generated continent) or *America (fixed)* (a hand-drawn map of the Americas). |
+| **Scenario** | The ruleset / variant that defines the world. Two are available: *Colonial America (Classic)* and the *Australian Federation* — a 1788–1901 campaign on the Australian continent (still in active development; see the note below). |
+| **Map** | *Random New World* (a freshly generated continent), *America (fixed)* (a hand-drawn map of the Americas), or *Australia (fixed)* (the authored Australian continent, used by the Australian Federation scenario). |
 | **World size** | Small, Standard, Large or Huge. A bigger map means more room to expand — and a stronger King's army to face at the end. |
 | **Land mass** | How much of a random map is land (sparse → dense). More land means larger continents and fewer islands. |
 | **Landmass** | The shape of the land on a random map: one *Continent*, a few large *islands*, or many small *islands*. |
@@ -72,6 +72,13 @@ option has a sensible default, so you can simply press **Start** for a classic g
 
 > *Tip:* the world-size, land-mass and landmass-shape options only apply to a **random** map,
 > so they are greyed out if you choose the fixed America map.
+
+> 🇦🇺 **The Australian Federation.** Choosing that scenario plays the whole game on the Australian
+> continent, from the First Fleet of 1788 toward Federation in 1901 — wool for cotton, gold for
+> silver, *Civic Voice* for liberty, *Australian Pioneers* for Founding Fathers, and *First Nations*
+> communities across the map. It is under active development (the Federation-victory endgame and the
+> deep First Nations diplomacy are still being built), but there is plenty to play. The full write-up
+> is the **[Australian Federation](guide/24-australian-federation.md)** chapter of the Governor's Handbook.
 
 Press **Start** and the New World appears with your first ship and colonist, on turn 1.
 
