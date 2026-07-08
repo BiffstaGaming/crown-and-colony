@@ -19,6 +19,26 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — Overnight run: Australia completeness push (spend-limit interrupted; safe work banked)
+
+**Requested (Chris, going to bed):** "Keep working until you hit your usage limit. Make the Australian Mode 100% complete. Update the User Guides / Documentation. If time, look online for new asset packs."
+**Did:** launched a 5-stream parallel wave (worktree agents) + integrated as staged CI-green milestones. **Then the account hit its MONTHLY SPEND LIMIT**, which killed 3 of the 5 agents mid-work. I salvaged every safe/complete piece and preserved the rest on branches.
+- **LANDED (merged, pushed, green — L1/L2 2861 + soak determinism green; the nightly-only perf-budget soak flaked once at 2.4 ms under the multi-agent load, not a regression):**
+  - **Event catalogue batches 2 & 3** (`2d1a452`) — 21 real events 1830–1901 (gold rush, wool boom, Eureka Stockade, Broken Hill, refrigerated meat, 1893 crash, 1891 Shearers' Strike, SA women's suffrage 1894, Federation conventions/referendums, Federation drought…). First Nations frontier content excluded (4c.11).
+  - **Building/goods reskin completeness** (`259ddf5`) — the "buildings still American" playtest gap closed: distillerHouse→Rum Still, furTraderHouse→Skinner's Hut, tobacconistHouse→Tobacco Shed, furs→Skins, coats→Leather (+ a guard keeping sugar/tobacco/rum/cigars/cloth classic). Display-only, classic byte-identical.
+  - **User Guide** (`6f0e666`) — a full 229-line player guide `docs/guide/24-australian-federation.md` + nav wiring, with the rendered screenshots.
+  - **Asset research** (`add411c`) — `docs/asset-research-australia.md`: FreeCol GPL-v2 art as the reuse base + Kenney CC0 + S.T. Gill PD goldfields; Pixabay flagged GPL-incompatible; First Nations art = a cultural-consultation protocol issue, not an asset grab.
+- **PRESERVED ON BRANCH (spend-limit killed mid-work, NOT merged — for next session):**
+  - **Federation victory loop (4a, ADR-021)** — branch `worktree-agent-a6eee0973dd39d1ce` (`01d4db1`). ~90% coded (FederationPhase, Game.Federation, per-colony support, save-v72); the engine is **3 trivial doc-cref fixes from compiling**; the Federation panel + save pin-tests + verification are unfinished. **Design-gated on your ADR-021 sign-off anyway.**
+  - **Colopedia/Help prose reskin** — branch `worktree-agent-a495764ad4b28fa52` (`8aa2b53`). Incomplete (didn't compile — referenced a `HelpChrome.BellsName` it hadn't finished). Its self-contained DisplayOverrides half was salvaged (landed above); the prose refactor awaits completion.
+**Status:** main pushed `259ddf5`, CI running (L1/L2 + L3; both expected green). **NOT 100% complete** — see below.
+**Decisions:** salvage-and-bank over risk — merged only what compiled + tested; preserved incomplete/design-gated work on branches rather than break main under an uncertain remaining budget.
+**Scheduled next (the honest gap to "100%"):** (1) **Complete + land the Federation victory loop** (branch `01d4db1`) — needs your **ADR-021 sign-off** first (esp. the Imperial-Pressure/REF question). (2) **First Nations deep redesign (4b, ADR-022)** — not started; sensitive, needs sign-off. (3) 4d novel content (Hargraves gold, bespoke Pioneer effects, new improvements) + 4c era frequency-bands + the Colopedia/Help prose reskin (branch `8aa2b53`).
+**Follow-ups:** sandbox-power Australian colony names; event-prompt presentation UI; clean up the accumulated agent worktrees.
+**Needs you:** (1) **Sign off ADR-021 (Federation) + ADR-022 (First Nations)** — these unblock the two remaining deep mechanics. (2) **Review sensitive framings** already merged: the 4 intro beats, the First Nations tribe names, and two event dilemmas (Eureka Stockade, Shearers' Strike). (3) Approve the asset shortlist + the CC-BY-SA/GPLv3 call. (4) Raise your monthly spend limit if you want the overnight runs to go further.
+
+---
+
 ## 2026-07-08 — Asset research for the Australian variant (candidate list, licence-verified)
 
 **Requested:** Research online for freely-licensed art/audio asset packs suitable for the Australian Federation variant; GPL-v2-compatible only; RESEARCH ONLY (no downloads/commits of binaries); produce a documented candidate doc; handle First Nations art with care.
