@@ -27,11 +27,27 @@ public static class Naming
     };
 
     /// <summary>The human-friendly form of a camelCase short name (splits on camelCase boundaries, capitalises each word), with the odd <see cref="Overrides"/> entry for names whose literal split would mislead.</summary>
-    public static string Humanize(string shortName)
+    public static string Humanize(string shortName) => Humanize(shortName, null);
+
+    /// <summary>
+    /// The human-friendly form of a camelCase short name, honouring a <b>variant-scoped</b> display override first
+    /// (e.g. the Australian Federation shows <c>model.goods.bells</c> as "Civic Voice" and <c>cotton</c> as "Wool"
+    /// while the id — the transposability anchor the engine keys on — is untouched, ADR-018). The lookup order is
+    /// <paramref name="variantOverrides"/> → the global <see cref="Overrides"/> → the camelCase split, so a variant
+    /// relabels only what it names and everything else humanises as before. Classic passes no overrides, so its text
+    /// is byte-identical. This is the display-layer seam the wider localisation pass (<c>86d3fq1w6</c>) will build on.
+    /// </summary>
+    /// <param name="shortName">The ruleset short name / id suffix to display (e.g. <c>cotton</c>, <c>expertFarmer</c>).</param>
+    /// <param name="variantOverrides">The active variant's display overrides keyed by short name, or <c>null</c>/empty for none (classic).</param>
+    public static string Humanize(string shortName, IReadOnlyDictionary<string, string>? variantOverrides)
     {
         if (string.IsNullOrEmpty(shortName))
         {
             return shortName;
+        }
+        if (variantOverrides is not null && variantOverrides.TryGetValue(shortName, out string? variantLabel))
+        {
+            return variantLabel;
         }
         if (Overrides.TryGetValue(shortName, out string? overridden))
         {

@@ -16,14 +16,18 @@ namespace CrownAndColony.GameLogic.Specification;
 public sealed class GameVariant
 {
     private readonly string _specResource;
+    private static readonly IReadOnlyDictionary<string, string> NoOverrides =
+        new Dictionary<string, string>();
 
     internal GameVariant(string id, string displayName, string description, string specResource,
-        string congressName = "Continental Congress")
+        string congressName = "Continental Congress",
+        IReadOnlyDictionary<string, string>? displayOverrides = null)
     {
         Id = id;
         DisplayName = displayName;
         Description = description;
         CongressName = congressName;
+        DisplayOverrides = displayOverrides ?? NoOverrides;
         _specResource = specResource;
     }
 
@@ -42,6 +46,15 @@ public sealed class GameVariant
     /// machinery is identical for every variant (ADR-018); the presentation titles its Congress panel/report with this.
     /// </summary>
     public string CongressName { get; }
+
+    /// <summary>
+    /// Variant-scoped <b>display-name overrides</b>, keyed by ruleset short name (e.g. <c>bells</c> → "Civic Voice",
+    /// <c>cotton</c> → "Wool", <c>silver</c> → "Gold"). A display-layer rename only: the underlying ids are the
+    /// transposability anchors the engine keys on (ADR-018) and are never changed — the reskin renames what the
+    /// player reads, not what the engine plays by. Threaded to the presentation layer, which passes it to
+    /// <see cref="Naming.Humanize(string, IReadOnlyDictionary{string, string})"/>. Empty for classic (byte-identical text).
+    /// </summary>
+    public IReadOnlyDictionary<string, string> DisplayOverrides { get; }
 
     /// <summary>Loads this variant's ruleset by parsing its embedded specification, applying a difficulty level.</summary>
     /// <param name="difficultyLevelId">The difficulty level to apply (default <c>model.difficulty.medium</c> → the historical balance).</param>
