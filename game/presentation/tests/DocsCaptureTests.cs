@@ -308,6 +308,19 @@ public class DocsCaptureTests
         await CapturePanel(runner, controller, "australia-native");
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task Capture_AustraliaFederationPanel()
+    {
+        if (!Enabled) return;
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        GameController controller = StartAustralia(runner, CaptureSize);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        game.FoundColony(game.Units[0]); // a colony so the Federation panel shows a region with support
+        controller.OpenFederationPanel();
+        await CapturePanel(runner, controller, "australia-federation");
+    }
+
     private static Game GameOf(GameController controller) =>
         (Game)controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(controller)!;
 
