@@ -46,6 +46,17 @@ public partial class ColopediaPanel : PanelContainer
     private Game _game = null!;
     private Category _category = Category.Goods;
 
+    /// <summary>
+    /// The active variant's help chrome — the words <see cref="ColopediaConcepts"/> weaves into the Concepts topics so
+    /// they read in the variant's language (classic "Sons of Liberty / liberty bells / …", Australia "Federationists /
+    /// Civic Voice / …"). Defaults to <see cref="HelpChrome.Classic"/> so a panel opened without a variant (or a classic
+    /// game) shows byte-identical classic prose. Set in <see cref="Open"/>/<see cref="OpenTo"/>.
+    /// </summary>
+    private HelpChrome _chrome = HelpChrome.Classic;
+
+    /// <summary>The Concepts help topics for the active variant's chrome (classic by default). Rebuilt whenever <see cref="_chrome"/> changes so the Concepts tab, cross-links and slug node names all read in the same variant's language.</summary>
+    private IReadOnlyList<ColopediaConcepts.ColopediaConceptTopic> _concepts = ColopediaConcepts.BuildTopics(HelpChrome.Classic);
+
     /// <summary>The Concepts topic currently shown in the detail pane (the first topic by default).</summary>
     private string _concept = ColopediaConcepts.Topics[0].Title;
 
@@ -73,11 +84,13 @@ public partial class ColopediaPanel : PanelContainer
 
     /// <summary>Opens the Colopedia on the Goods category over the current ruleset / market.</summary>
     /// <param name="displayOverrides">The active variant's display-name overrides (<see cref="GameLogic.Specification.GameVariant.DisplayOverrides"/>) — Australia renames goods/units; <c>null</c>/empty (classic) leaves names classic.</param>
-    public void Open(Game game, IReadOnlyDictionary<string, string>? displayOverrides = null)
+    /// <param name="chrome">The active variant's help chrome for the Concepts prose — Australia's "Federationists / Civic Voice / …"; <c>null</c> (classic, or no variant) shows byte-identical classic prose.</param>
+    public void Open(Game game, IReadOnlyDictionary<string, string>? displayOverrides = null, HelpChrome? chrome = null)
     {
         ColonyArt.FramePanel(this, dense: true); // parchment image frame + dark-ink in-game theme (not Godot's default gray box)
         _game = game;
         _displayOverrides = displayOverrides;
+        SetChrome(chrome);
         _category = Category.Goods;
         _focusNode = null;
         Rebuild();
@@ -96,12 +109,30 @@ public partial class ColopediaPanel : PanelContainer
     /// <param name="category">The category the linked entity lives in.</param>
     /// <param name="anchor">The entity's ruleset <c>ShortName</c>, or a concept <b>title</b> for the Concepts category.</param>
     /// <param name="displayOverrides">The active variant's display-name overrides (Australia renames goods/units; <c>null</c>/empty for classic).</param>
-    public void OpenTo(Game game, Category category, string anchor, IReadOnlyDictionary<string, string>? displayOverrides = null)
+    /// <param name="chrome">The active variant's help chrome for the Concepts prose (Australia's words; <c>null</c> for classic).</param>
+    public void OpenTo(Game game, Category category, string anchor, IReadOnlyDictionary<string, string>? displayOverrides = null, HelpChrome? chrome = null)
     {
         _game = game;
         _displayOverrides = displayOverrides;
+        SetChrome(chrome);
         Navigate(category, anchor); // sets category + focus row, Rebuild()s
         Show();
+    }
+
+    /// <summary>
+    /// Adopts the active variant's help chrome (or the classic default when <paramref name="chrome"/> is null) and
+    /// rebuilds the Concepts topic set from it, so the tab list, the detail prose, the slug node names and the
+    /// cross-link anchors all read in the same variant's language. Keeps the current topic selected if the (possibly
+    /// renamed) variant still has a topic by that title, else falls back to the first topic.
+    /// </summary>
+    private void SetChrome(HelpChrome? chrome)
+    {
+        _chrome = chrome ?? HelpChrome.Classic;
+        _concepts = ColopediaConcepts.BuildTopics(_chrome);
+        if (!_concepts.Any(t => t.Title == _concept))
+        {
+            _concept = _concepts[0].Title;
+        }
     }
 
     private void Rebuild()
@@ -173,7 +204,7 @@ public partial class ColopediaPanel : PanelContainer
         if (category == Category.Concepts)
         {
             // The concept list keys on title; only switch if the topic exists, else stay on whatever was shown.
-            if (ColopediaConcepts.Topics.Any(t => t.Title == anchor))
+            if (_concepts.Any(t => t.Title == anchor))
             {
                 _concept = anchor;
             }
@@ -560,9 +591,9 @@ public partial class ColopediaPanel : PanelContainer
     private void BuildConcepts(VBoxContainer dynamic)
     {
         // If a previous tab/build left the selected topic unset (defensive), fall back to the first topic.
-        if (!ColopediaConcepts.Topics.Any(t => t.Title == _concept))
+        if (!_concepts.Any(t => t.Title == _concept))
         {
-            _concept = ColopediaConcepts.Topics[0].Title;
+            _concept = _concepts[0].Title;
         }
 
         var row = new HBoxContainer { Name = "ConceptsRow" };
@@ -570,7 +601,7 @@ public partial class ColopediaPanel : PanelContainer
         // Left: one named button per help topic; pressing it shows that topic in the detail pane.
         // The node name is a space-free slug of the title (Godot node-path lookups dislike spaces); Text keeps the title.
         var list = new VBoxContainer { Name = "ConceptList" };
-        foreach (ColopediaConcepts.ColopediaConceptTopic topic in ColopediaConcepts.Topics)
+        foreach (ColopediaConcepts.ColopediaConceptTopic topic in _concepts)
         {
             var b = new Button
             {
@@ -586,7 +617,7 @@ public partial class ColopediaPanel : PanelContainer
         row.AddChild(new VSeparator());
 
         // Right: the detail pane — the selected topic's title, its word-wrapped text, and its cross-link buttons.
-        ColopediaConcepts.ColopediaConceptTopic selected = ColopediaConcepts.Topics.First(t => t.Title == _concept);
+        ColopediaConcepts.ColopediaConceptTopic selected = _concepts.First(t => t.Title == _concept);
         var detail = new VBoxContainer { Name = "ConceptDetail", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         detail.AddChild(new Label { Name = "ConceptTitle", Text = selected.Title });
         detail.AddChild(new Label

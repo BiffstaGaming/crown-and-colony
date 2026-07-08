@@ -157,6 +157,66 @@ public class AustraliaReskinPanelTests
         AssertThat(CollectLabelText(bellsRow!)).Contains("Civic Voice"); // bells → Civic Voice
     }
 
+    [TestCase]
+    public async Task Colopedia_UnderAustralia_ConceptsPromptReadsAustralianTerms()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+        SetVariant(controller, GameVariants.Australia);
+
+        controller.OpenColopediaPanel();
+        await runner.SimulateFrames(1);
+
+        // Switch to the Concepts tab (the free-text help topics — the instructional prose that is now variant-aware).
+        controller.GetNode<Button>("UI/ColopediaPanel/VBox/Scroll/Dynamic/Tabs/Cat_Concepts")
+            .EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        var list = controller.GetNode<VBoxContainer>("UI/ColopediaPanel/VBox/Scroll/Dynamic/ConceptsRow/ConceptList");
+        // The politics topic title is built from the variant's chrome: "Federationists & Civic Voice"
+        // (slug "FederationistsCivicVoice"), never the classic "Sons of Liberty & bells" ("SonsofLibertybells").
+        AssertThat(list.GetNodeOrNull<Button>("Concept_FederationistsCivicVoice")).IsNotNull();
+        AssertThat(list.GetNodeOrNull<Button>("Concept_SonsofLibertybells")).IsNull();
+        // The natives topic is titled "First Nations relations"; the REF topic "The Imperial Pressure".
+        AssertThat(list.GetNodeOrNull<Button>("Concept_FirstNationsrelations")).IsNotNull();
+        AssertThat(list.GetNodeOrNull<Button>("Concept_TheImperialPressure")).IsNotNull();
+
+        // Open the politics topic; its detail prose weaves the Australian chrome words in, never the classic ones.
+        list.GetNode<Button>("Concept_FederationistsCivicVoice").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        string detail = controller.GetNode<Label>(
+            "UI/ColopediaPanel/VBox/Scroll/Dynamic/ConceptsRow/ConceptDetail/ConceptText").Text;
+        AssertThat(detail).Contains("Civic Voice");     // bells good → Civic Voice
+        AssertThat(detail).Contains("Federationists");  // Sons of Liberty → Federationists
+        AssertThat(detail).NotContains("liberty bells");
+        AssertThat(detail).NotContains("Sons of Liberty");
+    }
+
+    [TestCase]
+    public async Task Help_UnderAustralia_BodyReadsAustralianTerms()
+    {
+        // The in-game Help panel is configured with the active variant's chrome (as the pause menu does). Load the
+        // scene, then Configure with Australia's chrome — the body is rebuilt to read the variant's language.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/HelpPanel.tscn");
+        await runner.SimulateFrames(2);
+        var help = (HelpPanel)runner.Scene();
+        help.Configure(HelpChrome.From(GameVariants.Australia));
+        await runner.SimulateFrames(1);
+
+        string body = help.GetNode<RichTextLabel>("Panel/VBox/Body").Text;
+        AssertThat(body).Contains("Civic Voice");            // liberty / liberty bells → Civic Voice
+        AssertThat(body).Contains("Federationists");         // Sons of Liberty → Federationists
+        AssertThat(body).Contains("Federation Convention");  // Continental Congress → Federation Convention
+        AssertThat(body).Contains("Imperial Pressure");      // Royal Expeditionary Force → Imperial Pressure
+        AssertThat(body).Contains("First Nations");           // native nations → First Nations
+        // The classic chrome words must be gone under the variant.
+        AssertThat(body).NotContains("liberty bells");
+        AssertThat(body).NotContains("Sons of Liberty");
+        AssertThat(body).NotContains("Continental Congress");
+        AssertThat(body).NotContains("Royal Expeditionary Force");
+    }
+
     // ── helpers ──
 
     /// <summary>Recursively concatenates every <see cref="Label"/> / <see cref="Button"/> / <see cref="OptionButton"/> text under a node.</summary>

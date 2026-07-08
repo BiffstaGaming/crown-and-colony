@@ -141,6 +141,15 @@ public partial class GameController : Node2D
 
     private ulong _currentSeed;
     private GameVariant _variant = GameVariants.Default;
+
+    /// <summary>
+    /// The active variant's help chrome — the instructional-prose words for the in-game Help screen and the Colopedia
+    /// Concepts topics (classic "Sons of Liberty / liberty bells / …", Australia "Federationists / Civic Voice / …").
+    /// Exposed so the in-game pause-menu Help (opened by <see cref="PauseMenu"/>) reads the same variant's language the
+    /// Colopedia already does; the pre-game main-menu Help has no variant and stays classic. A display relabel only
+    /// (ADR-018) — same threading pattern as <c>_variant.DisplayOverrides</c>/<c>_variant.CongressName</c>.
+    /// </summary>
+    public HelpChrome HelpChrome => HelpChrome.From(_variant);
     private MapView _mapView = null!;
     private RiverOverlay _riverLayer = null!;
     private ImprovementOverlay _improvementLayer = null!;
@@ -2490,7 +2499,7 @@ public partial class GameController : Node2D
     private void OpenColopediaFromReport(ColopediaPanel.Category category, string anchor)
     {
         _colonyReportPanel.Hide();
-        ((ColopediaPanel)_colopediaPanel).OpenTo(_game, category, anchor, _variant.DisplayOverrides); // goods/unit names per variant (86d3kwty1)
+        ((ColopediaPanel)_colopediaPanel).OpenTo(_game, category, anchor, _variant.DisplayOverrides, HelpChrome.From(_variant)); // goods/unit names + Concepts help prose per variant (86d3kwty1/86d3mm2q4)
     }
 
     /// <summary>
@@ -2545,7 +2554,7 @@ public partial class GameController : Node2D
 
     /// <summary>Opens the Colopedia reference panel (the Goods category — a read-only ruleset reference). Public so scene tests can drive it.</summary>
     public void OpenColopediaPanel() =>
-        ((ColopediaPanel)_colopediaPanel).Open(_game, _variant.DisplayOverrides); // goods/unit/building names per variant (86d3kwty1)
+        ((ColopediaPanel)_colopediaPanel).Open(_game, _variant.DisplayOverrides, HelpChrome.From(_variant)); // goods/unit/building names + Concepts help prose per variant (86d3kwty1/86d3mm2q4)
 
     /// <summary>Opens the emigration choice dialog for the pending <c>selectRecruit</c> choice (no-op when none pending). Public so scene tests can drive it.</summary>
     public void OpenEmigrationChoicePanel() =>

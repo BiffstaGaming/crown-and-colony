@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — Colopedia + Help instructional-prose reskin (finished the preserved branch)
+
+**Requested:** Complete the Colopedia/Help instructional-PROSE reskin for the Australian variant — bring in only the prose files from the spend-limit-killed branch `8aa2b53`, finish the incomplete `HelpChrome`, thread the variant through the panels, keep classic byte-identical, add Australia assertions. (DisplayOverrides half already merged to main; not touched.)
+**Did:**
+- Brought in `ColopediaConcepts.cs` + `HelpChrome.cs` from the preserved branch; **finished `HelpChrome`** and reconciled the two files (the branch's `ColopediaConcepts` referenced members — `BellsName`/`NativesName`/`LoyalistPlural`/… — that never existed; I re-expressed the prose against `HelpChrome`'s granular fields so it can reproduce all three classic bell forms: "liberty bells" / "Bells" / "bells").
+- Made **Colopedia Concepts** (`ColopediaConcepts.BuildTopics(chrome)`) and the **in-game Help body** (`HelpPanel.BuildBody(chrome)`) variant-aware; threaded `HelpChrome.From(_variant)` through `ColopediaPanel.Open`/`OpenTo` (from `GameController`, line-local) and through `PauseMenu.OnHelp` → `HelpPanel.Configure` (new public `GameController.HelpChrome`).
+- **Verified classic byte-identity** with a throwaway console harness (since GdUnit can't diff full strings): all **13 Concepts topics** (titles+text+cross-links) and the **full Help body** reproduce the pre-reskin prose exactly.
+- **Caught + fixed a latent bug** the branch shipped: `HelpChrome.Classic = new()` — a `record struct`'s parameterless `new()` zero-inits (all strings null!), it does NOT apply the primary-ctor defaults. Changed to a one-positional-arg call (documented) so classic carries the real defaults.
+- Added 2 Australia L3 tests (Concepts prompt + Help body read the Australian terms) to `AustraliaReskinPanelTests`.
+**Status:** Build clean (0 warn/0 err). **L1/L2 2861 green** (Category!=Soak). **L3 411 green** (was 409; +2 mine) — the one `MenuGoldenTests.PauseMenu_MatchesGolden` blip is the documented pre-existing flake (re-ran → all 8 golden green; unrelated to this change). Committed on branch, **NOT pushed/merged** (per instructions).
+**Changed:** `game/presentation/HelpChrome.cs` (new, +uid), `ColopediaConcepts.cs`, `ColopediaPanel.cs`, `HelpPanel.cs`, `PauseMenu.cs`, `GameController.cs` (line-local at the 2 Colopedia open calls + 1 property — avoided the concurrent Federation-panel region), `tests/AustraliaReskinPanelTests.cs`, `docs/systems/game-modes.md` (changelog + coverage + code rows).
+**Decisions:** Treated `ColopediaConcepts` as the API surface but fixed its prose drift so classic is byte-identical (STEP 4 outranks "just add members"). Kept unlisted period words literal ("rebellion", "nation" in one Help site) where no chrome field cleanly maps and they're not in the rename table.
+**Scheduled next:** Land the **Federation victory loop (4a, ADR-021)** — branch `01d4db1`, ~90% coded, 3 doc-cref fixes from compiling — **but it needs Chris's ADR-021 sign-off first**.
+**Follow-ups:** Cosmetic Australia rough edges (all inherited from `GameVariant`'s own chrome labels, not this change): "The Imperial Pressure (Imperial Pressure)" reads redundant because Australia's REF name == its abbrev; "you may Put Constitution to Referendum from the Crown" is a stiff mid-sentence action label. Worth a chrome-label polish task if Chris wants.
+**Needs you:** Nothing to unblock this. (Optional: decide whether the two cosmetic Australia phrasings above are worth polishing.)
+
+---
+
 ## 2026-07-09 — Overnight run: Australia completeness push (spend-limit interrupted; safe work banked)
 
 **Requested (Chris, going to bed):** "Keep working until you hit your usage limit. Make the Australian Mode 100% complete. Update the User Guides / Documentation. If time, look online for new asset packs."
