@@ -9,7 +9,7 @@ namespace CrownAndColony.GameLogic.Tests.Specification;
 
 /// <summary>
 /// The Australian Federation variant (P8, ADR-018) — its skeleton slice: the variant is registered and selectable, its
-/// ruleset loads, the authored Australia continent map (30×80, converted from the FreeCol community map pack) imports and
+/// ruleset loads, the authored Australia continent map (60×40, de-staggered from the FreeCol community map pack) imports and
 /// boots a game, and a save records the variant so it reloads under the Australia ruleset. The spec starts as a copy of
 /// classic; the transposability-anchor guard here protects the later reskin slices (renaming display text must keep the
 /// well-known ids the engine machinery reads).
@@ -49,13 +49,15 @@ public class AustraliaVariantTests
     }
 
     [Fact]
-    public void AustraliaMap_ImportsAt30x80_EveryTileResolved()
+    public void AustraliaMap_ImportsAt60x40_EveryTileResolved()
     {
+        // 60×40 — de-staggered from the FreeCol 30×80 source (FreeCol y counts HALF-rows), restoring the continent's
+        // real wider-than-tall proportions (Chris 2026-07-08; see data/maps/PROVENANCE.md).
         GameMap map = FixedMap.LoadAustralia(Australia);
-        Assert.Equal(30, map.Width);
-        Assert.Equal(80, map.Height);
+        Assert.Equal(60, map.Width);
+        Assert.Equal(40, map.Height);
         // Reaching here means all 2400 tiles resolved (the importer throws on an unknown id).
-        Assert.Equal(30 * 80, map.AllPositions().Count());
+        Assert.Equal(60 * 40, map.AllPositions().Count());
     }
 
     [Fact]
@@ -63,7 +65,7 @@ public class AustraliaVariantTests
     {
         GameMap map = FixedMap.LoadAustralia(Australia);
 
-        // A continent adrift in ocean: the 30×80 grid is mostly water (Tasman/Indian/Southern seas + high seas).
+        // A continent adrift in ocean: the 60×40 grid is mostly water (Tasman/Indian/Southern seas + high seas).
         int water = map.AllPositions().Count(p => map.TerrainAt(p).IsWater);
         Assert.True(water > map.Width * map.Height / 2, $"expected mostly water, got {water}/{map.Width * map.Height}");
 
@@ -93,8 +95,8 @@ public class AustraliaVariantTests
     public void AustraliaGame_BootsOnItsMap_AndTheTurnAdvances()
     {
         Game game = Game.New(Australia, seed: 0xA05UL, mapSource: MapSource.Australia);
-        Assert.Equal(30, game.Map.Width);
-        Assert.Equal(80, game.Map.Height);
+        Assert.Equal(60, game.Map.Width);
+        Assert.Equal(40, game.Map.Height);
         Assert.NotEmpty(game.PlayerUnits); // the human landed with a starting party on the Australia map
 
         int before = game.Turn;

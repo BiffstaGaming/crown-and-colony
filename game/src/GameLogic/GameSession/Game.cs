@@ -4568,7 +4568,7 @@ public sealed partial class Game
     /// </param>
     /// <param name="mapSource">
     /// Which map to play on (default <see cref="MapSource.Random"/> → a procedurally generated New World, the historical
-    /// default game). <see cref="MapSource.America"/> loads FreeCol's fixed 40×180 America terrain instead; on a fixed
+    /// default game). <see cref="MapSource.America"/> loads FreeCol's fixed 80×90 America terrain instead; on a fixed
     /// map the <paramref name="mapWidth"/>/<paramref name="mapHeight"/>/<paramref name="landMassFraction"/> shape
     /// parameters are ignored (the loaded grid sets the dimensions) and rivers/resources/regions are laid on top.
     /// </param>

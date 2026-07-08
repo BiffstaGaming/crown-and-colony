@@ -10,10 +10,10 @@ public enum MapSource
     /// <summary>A procedurally generated random New World — the default (see <see cref="MapGenerator"/>).</summary>
     Random,
 
-    /// <summary>FreeCol's hand-made map of the Americas (a fixed terrain grid, 40×180).</summary>
+    /// <summary>FreeCol's hand-made map of the Americas (a fixed terrain grid, 80×90 — de-staggered from FreeCol's 40×180 half-row coordinates; see <c>data/maps/PROVENANCE.md</c>).</summary>
     America,
 
-    /// <summary>The authored Australia continent (a fixed terrain grid, 30×80) — the Australian Federation variant (P8).</summary>
+    /// <summary>The authored Australia continent (a fixed terrain grid, 60×40 — de-staggered from the FreeCol source's 30×80) — the Australian Federation variant (P8).</summary>
     Australia,
 }
 
@@ -31,7 +31,7 @@ public static class FixedMap
     /// <summary>Manifest resource name of the embedded America terrain grid (see <c>GameLogic.csproj</c>).</summary>
     private const string AmericaResource = "CrownAndColony.GameLogic.Maps.america.txt";
 
-    /// <summary>Manifest resource name of the embedded Australia terrain grid — 30×80, converted from the FreeCol community map pack (P8; see <c>GameLogic.csproj</c>).</summary>
+    /// <summary>Manifest resource name of the embedded Australia terrain grid — 60×40, de-staggered from the FreeCol community map pack (P8; see <c>GameLogic.csproj</c>).</summary>
     private const string AustraliaResource = "CrownAndColony.GameLogic.Maps.australia.txt";
 
     /// <summary>Manifest resource name of the embedded example overlay map (exercises every importer overlay; see <c>GameLogic.csproj</c>).</summary>
@@ -60,7 +60,7 @@ public static class FixedMap
             _ => null,
         };
 
-    /// <summary>Builds the America <see cref="GameMap"/> (FreeCol's M_America, 40×180) from the embedded terrain grid.</summary>
+    /// <summary>Builds the America <see cref="GameMap"/> (FreeCol's M_America, de-staggered to 80×90) from the embedded terrain grid.</summary>
     /// <param name="ruleset">The ruleset whose <see cref="TerrainType"/>s the tile ids resolve against.</param>
     public static GameMap LoadAmerica(Ruleset ruleset) => ImportAmerica(ruleset).Map;
 
@@ -73,7 +73,7 @@ public static class FixedMap
     /// <param name="ruleset">The ruleset whose ids the definition resolves against.</param>
     public static MapImportResult ImportAmerica(Ruleset ruleset) => Import(AmericaResource, ruleset);
 
-    /// <summary>Builds the Australia <see cref="GameMap"/> (30×80) from the embedded terrain grid — the Australian Federation variant (P8).</summary>
+    /// <summary>Builds the Australia <see cref="GameMap"/> (60×40) from the embedded terrain grid — the Australian Federation variant (P8).</summary>
     /// <param name="ruleset">The ruleset whose <see cref="TerrainType"/>s the tile ids resolve against.</param>
     public static GameMap LoadAustralia(Ruleset ruleset) => ImportAustralia(ruleset).Map;
 

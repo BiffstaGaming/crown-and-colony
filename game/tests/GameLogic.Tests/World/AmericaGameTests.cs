@@ -26,8 +26,8 @@ public class AmericaGameTests
         // Pass deliberately wrong world-size args: on a fixed map they must be ignored (the loaded grid sets the size).
         Game game = Game.New(Classic, seed: 42, mapWidth: 99, mapHeight: 7, mapSource: MapSource.America);
 
-        Assert.Equal(40, game.Map.Width);
-        Assert.Equal(180, game.Map.Height);
+        Assert.Equal(80, game.Map.Width);
+        Assert.Equal(90, game.Map.Height);
     }
 
     [Fact]

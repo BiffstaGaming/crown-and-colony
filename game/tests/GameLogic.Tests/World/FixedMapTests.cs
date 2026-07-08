@@ -19,14 +19,16 @@ public class FixedMapTests
     {
         GameMap map = FixedMap.LoadAmerica(Classic);
 
-        // FreeCol's M_America is a tall N–S strip of the Americas.
-        Assert.Equal(40, map.Width);
-        Assert.Equal(180, map.Height);
+        // FreeCol's M_America, de-staggered to our square grid (FreeCol y counts HALF-rows, so its 40×180 becomes
+        // 80×90 — same 7200 tiles, FreeCol's on-screen proportions; see data/maps/PROVENANCE.md).
+        Assert.Equal(80, map.Width);
+        Assert.Equal(90, map.Height);
 
         // Every tile resolved to a real terrain type (the loader throws on an unknown id, so reaching here means
-        // all 7200 tiles mapped); spot-check a couple of known cells from the source map's top-left corner.
+        // all 7200 tiles mapped); spot-check known cells from the source map's top-left corner — FreeCol (x=0,y=0)
+        // lands at our even column (0,0), FreeCol (x=2,y=0) at column 4 (col = 2x + y%2).
         Assert.Equal("model.tile.mountains", map.TerrainAt(new Position(0, 0)).Id);
-        Assert.Equal("model.tile.tundra", map.TerrainAt(new Position(2, 0)).Id);
+        Assert.Equal("model.tile.tundra", map.TerrainAt(new Position(4, 0)).Id);
     }
 
     [Fact]

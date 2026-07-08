@@ -28,7 +28,7 @@ namespace CrownAndColony.Presentation;
 /// </remarks>
 public partial class CameraController : Camera2D
 {
-    /// <summary>The discrete zoom levels (camera <c>Zoom</c> scalar), most-zoomed-out first. The wheel/keys/buttons step between adjacent entries; 1.0 is the default. The two far-out levels (0.125/0.25) let a tall map — e.g. the 40×180 America strip — zoom right out to show the whole continent.</summary>
+    /// <summary>The discrete zoom levels (camera <c>Zoom</c> scalar), most-zoomed-out first. The wheel/keys/buttons step between adjacent entries; 1.0 is the default. The two far-out levels (0.125/0.25) let a big map — e.g. the 80×90 America grid — zoom right out to show the whole continent.</summary>
     private static readonly float[] ZoomLevels = [0.125f, 0.25f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 3.0f];
 
     /// <summary>The index into <see cref="ZoomLevels"/> of the default (1.0×) level a fresh camera starts at.</summary>

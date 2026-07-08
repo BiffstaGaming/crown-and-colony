@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Fixed maps de-staggered: Australia finally looks like Australia
+
+**Requested (Chris, with fully-zoomed-out screenshots):** "Australia is much wider than it is taller — this map feels stretched."
+**Did:**
+- **Root cause found:** FreeCol maps use a **staggered isometric lattice** — the stored `y` counts **half-rows** (north/south moves are `y±2`; odd rows sit half a tile right and lower). Our converter read `(x,y)` literally into our square grid, so **every FreeCol map rendered twice as tall as its author intended** — Australia (30×80) became a 1:2.7 tall strip; America (40×180) a 1:4.5 one.
+- **Fixed with a lossless relabel** — `square (col,row) = (2x + y%2, y÷2)`: even columns carry the even half-rows, odd columns the offset odd half-rows. Same tile count, FreeCol's exact on-screen proportions. **Australia 30×80 → 60×40** (wider than tall ✓); **America 40×180 → 80×90**.
+- **Render-verified in-game** (top-down, revealed, zoomed out): Australia now shows Cape York, the Gulf of Carpentaria, the Bight and Tasmania at true proportions; America shows both continents through the isthmus. ASCII before/after in the converter run confirmed the geometry before shipping.
+- **Repeatability:** the converter is committed as `scripts/destagger-freecol-map.py`, and `data/maps/PROVENANCE.md` documents the lattice + relabel (any future `.fsm`/`.fsg` conversion must apply it).
+**Status:** **full L1/L2 2752 green** (dimension pins updated: `FixedMapTests` — incl. re-derived corner spot-checks — `AmericaGameTests`, `MapImporterTests`, `AustraliaVariantTests`); **46 L3 green** (MainMenu/NewGameSetup/MainScene/CameraNav/MiniMap). Saves unaffected (a save carries its own map+dims). No goldens contain the fixed maps (all use random-map seeds) → **no golden regen**. Committing + pushing, CI to confirm.
+**Changed:** `game/data/maps/australia.txt` + `america.txt` (regenerated grids), `scripts/destagger-freecol-map.py` (new), `FixedMap.cs`/`Game.cs`/`CameraController.cs`/`GameLogic.csproj` (comments), 4 test files, `data/maps/PROVENANCE.md` (conversion doc), `docs/systems/map-terrain.md` + `game-modes.md` (changelogs), `hud-input.md`/`feature-parity.md`/`IMPLEMENTATION_PLAN.md` (current-state mentions).
+**Decisions:** the interleave relabel (top-down/proportion-true) over the diamond relabel (iso-true but top-down-rotated) — Chris's preference is top-down; cost is a half-tile coastline zigzag texture, invisible at play zoom. Historical changelog rows keep the old dims (they describe their moment).
+**Scheduled next:** **CI green**, then the standing **top-down direction call**. If deferred: **Australian Pioneers = Founding Fathers (`86d3kwtjb`)**.
+**Needs you:** load Australia and see it — it's actually Australia now. Then the top-down call.
+
+---
+
 ## 2026-07-08 — "Country" → "Pasture" (display rename, humaniser consolidated)
 
 **Requested (Chris):** change "Country" to "Pasture"; building art is fine as-is.

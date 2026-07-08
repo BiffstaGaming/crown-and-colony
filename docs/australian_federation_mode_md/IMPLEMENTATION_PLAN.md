@@ -8,7 +8,7 @@
 
 This plan is the bridge between the **design corpus** (`00_README.md` … `21_Research_Sources.md` in this folder — the *what/why*) and the **code** (the *how*). Read the design corpus for the vision; read this for the build order.
 
-> **Progress — 2026-07-07:** **Phase 0 (variant skeleton) + the Australia map are SHIPPED** (`86d3kwtf9`/`86d3kwtp5`). "Australian Federation" is selectable at New Game and plays on the **real Australia continent map** — a 30×80 grid converted from the FreeCol community map pack by Euzimar (GPL v2; all-standard terrain ids resolve 1:1 to our ruleset), embedded as `game/data/maps/australia.txt`. The spec is still a copy of classic (`game/data/rules/australia/`); the **content reskin** (Phase 1 — nations, units, goods, Australian Pioneers, labels) is next. So the "first Australia run-through" is launchable now (Australian terrain, classic content); the Australian *content* is being layered in.
+> **Progress — 2026-07-07:** **Phase 0 (variant skeleton) + the Australia map are SHIPPED** (`86d3kwtf9`/`86d3kwtp5`). "Australian Federation" is selectable at New Game and plays on the **real Australia continent map** — a 60×40 grid (de-staggered 2026-07-08 from the FreeCol source's 30×80 half-row coordinates, so the continent reads wider than tall as it should) converted from the FreeCol community map pack by Euzimar (GPL v2; all-standard terrain ids resolve 1:1 to our ruleset), embedded as `game/data/maps/australia.txt`. The spec is still a copy of classic (`game/data/rules/australia/`); the **content reskin** (Phase 1 — nations, units, goods, Australian Pioneers, labels) is next. So the "first Australia run-through" is launchable now (Australian terrain, classic content); the Australian *content* is being layered in.
 
 ---
 

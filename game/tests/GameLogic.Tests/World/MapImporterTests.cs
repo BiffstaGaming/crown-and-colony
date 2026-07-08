@@ -304,8 +304,8 @@ public class MapImporterTests
         // America new game remains byte-identical (its rivers/resources/natives are laid by the game-start generators).
         MapImportResult result = FixedMap.ImportAmerica(Classic);
 
-        Assert.Equal(40, result.Map.Width);
-        Assert.Equal(180, result.Map.Height);
+        Assert.Equal(80, result.Map.Width);
+        Assert.Equal(90, result.Map.Height);
         Assert.Empty(result.Map.Resources);
         Assert.Empty(result.Map.AllImprovements());
         Assert.Empty(result.Map.Rumours);
