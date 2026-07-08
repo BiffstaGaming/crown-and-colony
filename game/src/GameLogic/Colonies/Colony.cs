@@ -265,6 +265,17 @@ public sealed class Colony
     public int Liberty { get; internal set; }
 
     /// <summary>
+    /// Accumulated <b>Federation Support</b> points banked from this colony's Civic Voice (Australian-Federation variant,
+    /// Phase-4a, ADR-021). Modelled exactly on <see cref="Liberty"/>: each turn the colony banks the same net
+    /// founding-father-modified bell figure the liberty pool gets (see <see cref="GameSession.Game"/>'s accrual pass),
+    /// floored at 0. Drives the per-region Federation Support the win path reads. Persisted (SaveGame v72, omitted when 0
+    /// so a colony with no banked support — every colony in a classic game, which never accrues it — stays byte-identical).
+    /// <b>Only accrued when the ruleset's Federation victory is enabled</b> (<see cref="Specification.Ruleset.VictoryFederation"/>);
+    /// classic leaves it 0 forever (ADR-009).
+    /// </summary>
+    public int FederationSupport { get; internal set; }
+
+    /// <summary>
     /// The owner's standing Sons-of-Liberty percentage modifier from Congress (Simón Bolívar's <c>model.modifier.SoL</c>
     /// = +20), folded into <see cref="SonsOfLiberty"/> after the liberty→% conversion exactly as FreeCol does. Derived
     /// from the owner's Congress (not persisted) — <see cref="GameSession.Game"/> refreshes it on election, founding,
@@ -850,6 +861,32 @@ public sealed class Colony
             Liberty = RebelLibertyDivisor * Population;
         }
     }
+
+    /// <summary>
+    /// Banks <paramref name="amount"/> Federation Support points (Australian-Federation variant, Phase-4a, ADR-021),
+    /// floored at 0 and capped at the 100%-support ceiling — the same shape as <see cref="AddLiberty"/>. The caller
+    /// (<see cref="GameSession.Game"/>'s accrual pass) only invokes this when the ruleset's Federation victory is enabled,
+    /// so a classic colony never accrues (ADR-009).
+    /// </summary>
+    /// <param name="amount">Net Civic Voice to bank this turn (may be negative on a net-negative bell turn).</param>
+    internal void AddFederationSupport(int amount)
+    {
+        FederationSupport = Math.Max(0, FederationSupport + amount);
+        int ceiling = RebelLibertyDivisor * Population;
+        if (Population > 0 && FederationSupport > ceiling)
+        {
+            FederationSupport = ceiling; // clamp banked points to the 100%-support cap (mirrors AddLiberty's full-SoL cap)
+        }
+    }
+
+    /// <summary>
+    /// This colony's Federation Support as a 0–100 percentage (Australian-Federation variant): the banked
+    /// <see cref="FederationSupport"/> points expressed against the same <c>RebelLibertyDivisor·population</c> full-support
+    /// ceiling <see cref="SonsOfLiberty"/> uses — <c>floor(support·100 / (200·population))</c>, clamped 0–100; 0 for an
+    /// empty colony. A pure read the per-region aggregate and the Federation panel consume.
+    /// </summary>
+    public int FederationSupportPercent =>
+        Population <= 0 ? 0 : Math.Clamp(FederationSupport * 100 / (RebelLibertyDivisor * Population), 0, 100);
 
     /// <summary>Removes food. Returns the shortfall (0 when the store covered it all).</summary>
     internal int ConsumeFood(int amount)

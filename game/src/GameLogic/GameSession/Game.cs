@@ -8433,6 +8433,7 @@ public sealed partial class Game
         UpdateColonialStances();    // stance follows tension: war → cease-fire → peace as it cools (FP-6b)
         RunMonarchTick();           // the player's King may act (tax/REF/war/mercenaries) — ephemeral RNG, stream 0 untouched (P6)
         ResolveWarOfIndependence(); // a rebel that has broken the REF wins its independence (P6)
+        ResolveCommonwealthFederation(); // Australia (Phase-4a): a carried referendum proclaims the Commonwealth — no-op in classic (Federation victory off)
         RunSpanishSuccession();     // from 1600, a fading European AI is absorbed by the dominant one (P6)
         ApplyAmbientNativeAlarm();   // natives resent the human's nearby colonies/troops (FreeCol csNewTurn) — before the calm-down
         ProcessMissions();           // missions accrue converts on the alarm this turn produced (FreeCol csStartTurn) — before the decay
@@ -11266,6 +11267,7 @@ public sealed partial class Game
                 int net = ApplyGoodsModifiers(player, BellsId, boosted) - Math.Max(0, colony.Population - Ruleset.Difficulty.UnitsThatUseNoBells);
                 player.Liberty += net;   // banked toward the next founding father
                 colony.AddLiberty(net);  // the colony's own Sons-of-Liberty liberty (AddLiberty floors at 0)
+                AccrueFederationSupport(player, colony, net); // Australia (Phase-4a): bank the same net Civic Voice as Federation Support — no-op in classic (Federation victory off)
             }
             colony.TickTeaPartyBonus(); // decay the tea-party surge each turn, even on a no-bell turn
         }

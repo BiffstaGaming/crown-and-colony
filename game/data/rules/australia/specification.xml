@@ -5137,6 +5137,13 @@
              other human players win the game? -->
         <booleanOption id="model.option.victoryDefeatHumans"
                        defaultValue="false"/>
+        <!-- Victory condition: the Australian-Federation win (Phase-4a, ADR-021). TRUE for the Australia
+             variant: the player wins by federating the six colonies into the Commonwealth by 1901
+             (Federation Support -> Convention -> referendum -> Commonwealth Proclamation) rather than by
+             the classic War of Independence. Classic ships no such option (fallback FALSE), so the default
+             game is byte-identical and untouched (ADR-009). -->
+        <booleanOption id="model.option.victoryFederation"
+                       defaultValue="true"/>
       </optionGroup>
       <optionGroup id="gameOptions.years">
         <!-- Australian Federation timeline (86d3mm2fb): the game runs 1788 (the First Fleet) to

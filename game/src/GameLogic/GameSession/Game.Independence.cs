@@ -1078,6 +1078,9 @@ public sealed partial class Game
     /// <b>pure read</b> over the live players, evaluated against the ruleset's enabled victory conditions (each a
     /// parsed-or-defaulted boolean, so the classic defaults leave the default game's outcome unchanged):
     /// <list type="bullet">
+    /// <item><b>Federation</b> (<see cref="Specification.Ruleset.VictoryFederation"/>, classic <b>off</b>, Australia on):
+    /// checked first — when the <see cref="FederationPhase"/> reaches <see cref="GameSession.FederationPhase.Commonwealth"/>
+    /// the human wins by Federation (Phase-4a, ADR-021). Off for classic, so its outcome is unchanged.</item>
     /// <item><b>Defeat the REF</b> (<see cref="Specification.Ruleset.VictoryDefeatRef"/>, classic on): the first
     /// nation to secure its <see cref="PlayerType.Independent"/>ence wins.</item>
     /// <item><b>Defeat all Europeans</b> (<see cref="Specification.Ruleset.VictoryDefeatEuropeans"/>, classic on):
@@ -1096,6 +1099,14 @@ public sealed partial class Game
             if (_victoryConditionsDisabled)
             {
                 return null; // the winner chose to keep playing — the victory conditions are off (FreeCol continuePlaying)
+            }
+            // Australian-Federation win (Phase-4a, ADR-021): when the Federation victory is enabled and the phase has
+            // reached the Commonwealth proclamation, the human wins by Federation. Checked FIRST for the Australia
+            // variant; off (and so skipped) for the classic ruleset, which leaves the phase at ColonialMaturity forever,
+            // so this changes nothing for the default game (ADR-009).
+            if (Ruleset.VictoryFederation && _federationPhase == FederationPhase.Commonwealth)
+            {
+                return _human;
             }
             if (Ruleset.VictoryDefeatRef
                 && _players.FirstOrDefault(p => p.PlayerType == PlayerType.Independent) is { } independent)

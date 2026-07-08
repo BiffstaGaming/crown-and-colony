@@ -196,6 +196,11 @@ public partial class GameController : Node2D
     private PanelContainer _declarationPanel = null!;
     private PanelContainer _negotiationPanel = null!;
     private AdvisorPanel _advisorPanel = null!;
+    // The Australian-Federation screen (Phase-4a, ADR-021): a code-built panel + its own contextual HUD button, both
+    // present only when the ruleset enables the Federation victory (Australia). It shares the Independence button's grid
+    // slot — Federation *replaces* the classic War-of-Independence win for the variant, so the two are mutually exclusive.
+    private FederationPanel _federationPanel = null!;
+    private Button _federationButton = null!;
     // Advisor dismissal is sticky per selected unit: once the player dismisses the advisor card for the active unit it
     // stays hidden for that unit (RefreshView runs on every move/action and would otherwise resurrect it, 86d3jrzah),
     // and re-appears when a *different* unit is selected. _advisorDismissedUnitId records which unit the flag applies to.
@@ -341,6 +346,16 @@ public partial class GameController : Node2D
         // Remember a dismissal so RefreshView stops re-showing the card for the current unit (cleared on unit change).
         _advisorPanel.Dismissed += () => _advisorDismissed = true;
         GetNode<CanvasLayer>("UI").AddChild(_advisorPanel);
+        // The Australian-Federation screen + its contextual HUD button (Phase-4a, ADR-021), built in code and added under
+        // the UI CanvasLayer. Both stay hidden unless the ruleset enables the Federation victory (Australia) — the classic
+        // HUD never shows them. The button shares the Independence slot (Federation replaces the WoI win for the variant).
+        _federationPanel = new FederationPanel();
+        GetNode<CanvasLayer>("UI").AddChild(_federationPanel);
+        _federationPanel.VisibilityChanged += RefreshHudButtonVisibility;
+        _federationPanel.VisibilityChanged += RefreshTutorial;
+        _federationButton = new Button { Name = "FederationButton", Text = "Federation…", Visible = false };
+        _federationButton.Pressed += OpenFederationPanel;
+        GetNode<CanvasLayer>("UI").AddChild(_federationButton);
         // The guided-intro tutorial card (86d3fq1h9), built in code and added under the UI CanvasLayer. "Got it" advances
         // one step; "Skip tutorial" completes the tutorial and turns the client preference off (persisted). Both re-run
         // the tutorial refresh so the card updates immediately.
@@ -497,6 +512,7 @@ public partial class GameController : Node2D
         PlaceGridButton(GetNode<Button>("UI/DiplomacyButton"), 1, 2);
         PlaceGridButton(GetNode<Button>("UI/HighScoresButton"), 0, 3);
         PlaceGridButton(_independenceButton, 1, 3); // contextual (hidden until independence is reachable)
+        PlaceGridButton(_federationButton, 1, 3);   // Australia-only: shares the slot (Federation replaces the WoI win)
 
         // End Turn: the one primary action — full width across the bottom of the cluster (inside the frame), accent-styled.
         _endTurnButton.SetAnchorsPreset(Control.LayoutPreset.BottomRight);
@@ -2552,6 +2568,15 @@ public partial class GameController : Node2D
     public void OpenDeclarationPanel() =>
         ((DeclarationPanel)_declarationPanel).Open(_game, RefreshView);
 
+    /// <summary>
+    /// Opens the Australian-Federation screen (per-region support, phase, Convention Points, and the call-convention /
+    /// referendum actions; Phase-4a, ADR-021). Presentation-only (ADR-006) — the panel reads the Federation oracles and
+    /// forwards the two commands. Only meaningful for a Federation-victory ruleset (Australia); the HUD button that
+    /// drives it is shown only then. Public so scene tests can drive it.
+    /// </summary>
+    public void OpenFederationPanel() =>
+        _federationPanel.Open(_game, RefreshView);
+
     /// <summary>Opens the Colopedia reference panel (the Goods category — a read-only ruleset reference). Public so scene tests can drive it.</summary>
     public void OpenColopediaPanel() =>
         ((ColopediaPanel)_colopediaPanel).Open(_game, _variant.DisplayOverrides, HelpChrome.From(_variant)); // goods/unit/building names + Concepts help prose per variant (86d3kwty1/86d3mm2q4)
@@ -2858,7 +2883,8 @@ public partial class GameController : Node2D
         bool fullScreenPanelOpen =
             _colonyPanel.Visible || _europePanel.Visible || _colopediaPanel.Visible || _colonyReportPanel.Visible ||
             _tradeRoutePanel.Visible || _negotiationPanel.Visible || _nativePanel.Visible || _highScoresPanel.Visible ||
-            _foundingFatherPanel.Visible || _declarationPanel.Visible || _victoryPanel.Visible || _findSettlementPanel.Visible;
+            _foundingFatherPanel.Visible || _declarationPanel.Visible || _victoryPanel.Visible || _findSettlementPanel.Visible ||
+            _federationPanel.Visible;
         foreach (Button button in _cornerHudButtons)
         {
             button.Visible = !fullScreenPanelOpen;
@@ -2870,7 +2896,13 @@ public partial class GameController : Node2D
         // And the camera itself: wheel zoom / panning must not act on the map behind an open panel (Chris 2026-07-08 —
         // scrolling in the Europe screen zoomed the background map). Re-enabled the moment the last panel closes.
         GetNode<CameraController>("Camera").InputEnabled = !fullScreenPanelOpen;
-        _independenceButton.Visible = !fullScreenPanelOpen
+        // Federation (Australia) replaces the classic War-of-Independence win, so the two contextual buttons are mutually
+        // exclusive: when the ruleset enables the Federation victory the Federation button shows (whenever the human is in
+        // the game and no panel is open) and the Independence button is suppressed; otherwise the classic Independence
+        // button keeps its own eligibility gate (Phase-4a, ADR-021).
+        bool federationVictory = _game.Ruleset.VictoryFederation;
+        _federationButton.Visible = federationVictory && !fullScreenPanelOpen && !_game.IsHumanDefeated;
+        _independenceButton.Visible = !federationVictory && !fullScreenPanelOpen
             && !_game.IsHumanDefeated && _game.CheckDeclareIndependence(_game.HumanPlayer).Allowed;
     }
 
@@ -2895,7 +2927,7 @@ public partial class GameController : Node2D
             _colonyPanel.Visible || _europePanel.Visible || _colopediaPanel.Visible || _colonyReportPanel.Visible ||
             _tradeRoutePanel.Visible || _negotiationPanel.Visible || _nativePanel.Visible || _highScoresPanel.Visible ||
             _foundingFatherPanel.Visible || _declarationPanel.Visible || _victoryPanel.Visible || _findSettlementPanel.Visible ||
-            GetNode<PauseMenu>("UI/PauseMenu").Visible;
+            _federationPanel.Visible || GetNode<PauseMenu>("UI/PauseMenu").Visible;
         if (!enabled || overlayOpen || _game.IsHumanDefeated)
         {
             _tutorialPanel.HideCard();
