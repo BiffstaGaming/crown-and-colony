@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Threading.Tasks;
 using CrownAndColony.GameLogic.App;
+using CrownAndColony.GameLogic.Specification;
 using GdUnit4;
 using Godot;
 using static GdUnit4.Assertions;
@@ -96,6 +97,32 @@ public class OpeningCinematicTests
         var beat = cinematic.FindChild("BeatLabel", recursive: true, owned: false) as Label;
         AssertThat(beat).IsNotNull();
         AssertThat(beat!.Text.Length).IsGreater(0);
+
+        cinematic.QueueFree();
+    }
+
+    [TestCase]
+    public async Task SetBeats_MakesTheIntroVariantAware()
+    {
+        // The bug this fixes: the American 1492 story played for every variant. With the Australian Federation's beats
+        // injected before Play(), the first panel is the 1788 First-Fleet scene, NOT the classic 1492 charter — proving
+        // the host's per-variant beats reach the cinematic (MainMenu passes PendingVariant.OpeningBeats).
+        ISceneRunner runner = ISceneRunner.Load(MenuScene);
+        await runner.SimulateFrames(2);
+        var menu = (Control)runner.Scene();
+
+        var cinematic = new OpeningCinematic();
+        menu.AddChild(cinematic);
+        await runner.SimulateFrames(1);
+        cinematic.SetBeats(GameVariants.Australia.OpeningBeats);
+        cinematic.Play();
+        await runner.SimulateFrames(1);
+
+        var beat = cinematic.FindChild("BeatLabel", recursive: true, owned: false) as Label;
+        AssertThat(beat).IsNotNull();
+        AssertThat(beat!.Text).IsEqual(GameVariants.Australia.OpeningBeats[0]);
+        AssertThat(beat.Text).Contains("1788");
+        AssertThat(beat.Text).NotContains("1492"); // never the classic American opening under the Australia variant
 
         cinematic.QueueFree();
     }

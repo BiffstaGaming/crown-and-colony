@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using CrownAndColony.GameLogic.Specification;
 using Godot;
 
 namespace CrownAndColony.Presentation;
@@ -5,10 +7,13 @@ namespace CrownAndColony.Presentation;
 /// <summary>
 /// The skippable <b>opening cinematic</b> shown when the player starts a <b>new</b> game from the main menu, after they
 /// confirm the New-Game setup and before the game board appears (86d3fq1kf). It is a short, atmospheric title sequence:
-/// a few narrative "story" beats — the King's charter, the ocean crossing, the landfall — that set the 1492 expedition
-/// scene, each fading in and out over the antique New-World map backdrop and the parchment/wood skin the menu already
-/// uses. It plays no audio (the war/menu music track is a separate task) and adds no new art (licensing) — text on
-/// parchment with a tasteful cross-fade only.
+/// a few narrative "story" beats — for classic, the King's charter, the ocean crossing, the landfall that set the 1492
+/// expedition scene — each fading in and out over the antique New-World map backdrop and the parchment/wood skin the
+/// menu already uses. The beats are <b>variant-aware</b>: the host injects the selected variant's
+/// <see cref="GameVariant.OpeningBeats"/> via <see cref="SetBeats"/> before <see cref="Play"/> (the Australian
+/// Federation supplies its own 1788→1901 arc), defaulting to the classic 1492 beats when none are set. It plays no audio
+/// (the war/menu music track is a separate task) and adds no new art (licensing) — text on parchment with a tasteful
+/// cross-fade only.
 /// </summary>
 /// <remarks>
 /// <para><b>Presentation-only (ADR-006).</b> The cinematic owns no game rules: it shows text and then raises
@@ -38,23 +43,12 @@ public partial class OpeningCinematic : Control
     private const double FadeOut = 0.7;
 
     /// <summary>
-    /// The narrative beats, in order — the 1492 expedition scene set in a handful of sentences (the King's charter,
-    /// the crossing, the landfall, the send-off). Original period-flavour wording (GPL-clean); a fixed list so the
-    /// sequence is deterministic (ADR-009). Kept short and bounded (task steer: "a handful of sentences total").
+    /// The narrative beats, in order — injected by the host from the selected variant so the intro is variant-aware
+    /// (classic's 1492 expedition scene; the Australian Federation's 1788→1901 arc). Defaults to the default variant's
+    /// beats (<see cref="GameVariants.Default"/> → the classic 1492 beats) so callers/tests that never set beats see the
+    /// original sequence unchanged. A fixed ordered list so the sequence is deterministic (ADR-009).
     /// </summary>
-    private static readonly string[] Beats =
-    {
-        "In the year of our Lord 1492, the Crown grants you a charter: sail west, claim new lands, and return their " +
-        "riches to the throne.",
-
-        "Your caravels slip their moorings and stand out to sea. For weeks there is only the grey Atlantic, the wind, " +
-        "and the faith of your colonists.",
-
-        "At last a cry from the masthead — land! A green and unknown shore rises from the ocean haze.",
-
-        "History waits ashore. Found your colonies, win your people's hearts, and one day raise a new nation of your " +
-        "own. The New World is yours to build.",
-    };
+    private IReadOnlyList<string> _beats = GameVariants.Default.OpeningBeats;
 
     /// <summary>The current beat index; advanced by the tween chain or by a click/Esc. Guards the one-shot <see cref="Finished"/>.</summary>
     private int _beatIndex;
@@ -162,6 +156,20 @@ public partial class OpeningCinematic : Control
     }
 
     /// <summary>
+    /// Sets the narrative beats to show, in order — call before <see cref="Play"/> to make the intro variant-aware
+    /// (the host passes the selected variant's <see cref="GameVariant.OpeningBeats"/>). A null or empty list is
+    /// ignored, leaving the classic default in place (so the cinematic never plays an empty sequence). Presentation-only:
+    /// the beats are display text; the machinery/timings are unchanged (ADR-018) and remain deterministic (ADR-009).
+    /// </summary>
+    public void SetBeats(IReadOnlyList<string>? beats)
+    {
+        if (beats is { Count: > 0 })
+        {
+            _beats = beats;
+        }
+    }
+
+    /// <summary>
     /// Starts the cinematic: shows the surface and plays the first beat. Call after adding the node to the tree. Safe
     /// to call once; the sequence then runs to <see cref="Finished"/> or is cut short by a click / Esc / Skip.
     /// </summary>
@@ -194,13 +202,13 @@ public partial class OpeningCinematic : Control
         {
             return;
         }
-        if (index >= Beats.Length)
+        if (index >= _beats.Count)
         {
             Finish();
             return;
         }
         _beatIndex = index;
-        _beatLabel.Text = Beats[index];
+        _beatLabel.Text = _beats[index];
         _beatLabel.Modulate = new Color(1, 1, 1, 0);
 
         _tween?.Kill();

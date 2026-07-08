@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Variant-aware opening cinematic (Australia gets the 1788 story, not 1492)
+
+**Requested:** Fix the playtest bug where the opening cinematic still played the American 1492 story for an Australian Federation game — make the beats variant-aware following the `GameVariant.CongressName` pattern. (Worktree branch; commit, do not push/merge.)
+**Did:**
+- Added **`GameVariant.OpeningBeats`** (`IReadOnlyList<string>`), a defaulted per-variant display field (sibling of `CongressName`, ADR-018). Classic defaults to `GameVariants.ClassicOpeningBeats` (the existing 1492 beats, byte-identical); **Australia** supplies its own sober 1788→1901 arc (First Fleet → penal years → six colonies → Federation), written per doc 19 tone rules (acknowledges the land was already home to many peoples; no triumphalism).
+- `OpeningCinematic` now plays an injectable `_beats` field via **`SetBeats(...)`**, defaulting to the default variant's beats so existing callers/tests are unchanged. Determinism (ADR-009) + skip/Esc untouched.
+- `MainMenu.StartGameAfterIntro` passes `(GameController.PendingVariant ?? GameVariants.Default).OpeningBeats` before `Play()`.
+- Tests: **+2 L1** (`AustraliaReskinTests`: beats differ classic↔Australia, both non-empty, classic 1st beat has "1492" / Australia's has "1788", classic default is the shared instance) **+1 L3** (`OpeningCinematicTests.SetBeats_MakesTheIntroVariantAware`: injected Australia beats → first panel is the 1788 scene, contains "1788", never "1492"). Did **not** weaken existing L3 assertions.
+- Docs (no-drift): `opening-cinematic.md` (both layers + verification table + changelog + Last-verified), `game-modes.md` (per-variant field list + changelog), XML `///` on `OpeningBeats` / `SetBeats` / the beat constants.
+**Status:** Build clean (0 warnings). **L1/L2 2840 green** (`Category!=Soak`, incl. the 2 new). **L3 OpeningCinematic suite 7/7 green** (`--filter ~OpeningCinematic`; 5 original + new Australia test + gate tests). Committed on worktree branch `worktree-agent-aac3d18c1b3ccb0d1` as **`da40110`** — **not pushed / not merged** (as instructed).
+**Changed:** `game/src/GameLogic/Specification/GameVariant.cs`, `game/presentation/OpeningCinematic.cs`, `game/presentation/MainMenu.cs`, `game/presentation/tests/OpeningCinematicTests.cs`, `game/tests/GameLogic.Tests/Specification/AustraliaReskinTests.cs`, `docs/systems/opening-cinematic.md`, `docs/systems/game-modes.md`. Commit `da40110`.
+**Decisions:** kept the classic beats as the shared default (both the classic variant and the cinematic's fallback point at the identical list) so classic intro text is byte-identical; cinematic defaults to `GameVariants.Default.OpeningBeats` (public) rather than the `internal ClassicOpeningBeats` because the presentation assembly can't see internals; `SetBeats` ignores null/empty so the intro never plays an empty sequence.
+**Scheduled next:** **Chris's sensitivity review of the 4 Australian beat strings** (verbatim in the chat report below) — no kanban task exists for this micro-fix; if Chris wants it tracked, file it under the Australia presentation stream. After sign-off, fold this branch into the P8 integration.
+**Follow-ups:** none code-side. (Optional: once First-Fleet start roster / era events land, the intro copy could name Arthur Phillip — deferred, not needed now.)
+**Needs you:** **Review the exact wording of the 4 Australian beats** (historically sensitive framing — reproduced in the chat report). Confirm it reads as sober/honest and not triumphalist, and adjust any phrasing you'd like before this merges.
+
+---
+
 ## 2026-07-08 — Australia mode: 20-task batch (reskin + map + event engine + Phase-4 ADRs)
 
 **Requested:** "Begin work on the Australia Mode… determine which can be run in parallel streams to reduce testing. Process 20 of these tasks."
