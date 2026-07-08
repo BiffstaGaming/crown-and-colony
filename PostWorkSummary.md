@@ -19,6 +19,25 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Australia playtest fixes: it now actually shows up in-game
+
+**Requested (Chris, playtest):** intro still the American 1492 story; the colony-tile "Work…" dropdown + ✕ are clipped; the First Nations tribes aren't named; the colony is called "Jamestown" — *"a lot of work went into the Australian files, but tasks have not been done to introduce it into the game."* Fair hit.
+**Did (diagnosed + verified against the actual running game, not just tests):**
+- Built an **in-game capture path** — render the Australia colony/native/world screens to PNG (`DocsCaptureTests.Capture_Australia*` + reflection-set variant) and *looked* at them before/after.
+- **Colony "Jamestown"→"Sydney":** the nation-less human fell back to a hard-coded American colony-name list; added `Ruleset.DefaultColonyNames` (a Sydney-first Australian bucket in the properties) → the colony now founds **Sydney**.
+- **First Nations named:** renamed the 8 native nations to real peoples — **Eora** (Sydney), Kulin (Vic), Noongar (SW), Yolngu (Arnhem), Arrernte (Central), Larrakia (Darwin), Yawuru (Kimberley), Wangkatja (WA desert); the two "city-empire" templates demoted to `village` so no people is framed as an Aztec empire. Naming pass only (deep 4b redesign stays with ADR-022).
+- **Intro:** `GameVariant.OpeningBeats` → variant-aware; Australia gets a **sober 1788→1901 arc** (First Fleet → penal years → six colonies → Federation) written to doc 19's tone (Country, "never ceded", "questions… still unanswered").
+- **Colony chrome:** "Rebels/Royalists"→**Federationists/Imperial Loyalists** (`GameVariant.RebelFactionName`/`LoyalistFactionName`); HUD "Liberty %"→**"Civic Voice %"**; **un-clipped the tile ✕** (the first clipping fix had wrongly added `ClipText` to the single-glyph button, blanking it).
+- **Re-rendered + confirmed in-game:** Sydney · Federationists · Imperial Loyalists · Arrernte · Civic Voice · ✕ visible.
+**Status:** **L1/L2 2850 + soak 5 green**, **L3 colony 52 green** (+ intro L3). Merged both fix worktrees + the label pass; pushed **`a4bf105`** (`bb84e87`→`a4bf105`); CI running.
+**Changed:** `Ruleset.cs` (`DefaultColonyNames`), `Game.cs` (`ColonyNamesFor`), `GameVariant.cs` (`OpeningBeats` + faction labels), `OpeningCinematic.cs`, `MainMenu.cs`, `ColonyPanel.cs`, `GameController.cs` (colony-open call + HUD), `australia/specification.xml` (native renames + city→village) + `european-nation-names.properties` (default bucket), `DocsCaptureTests.cs` (Australia captures), tests, docs, `docs/guide/img/australia-*.png`. Commits `da40110`/`eaaccc5`/`a4bf105` (+merges).
+**Decisions:** First Nations = **naming only** (the tension/respect redesign is signed-off 4b work); verified via **rendered captures**, not just tests — directly answering the "make it show up in the game" point.
+**Scheduled next:** **Chris sign-off** on the two sensitive items — the 4 intro beat strings + the First Nations name mapping (both reproduced for review). Then decompose/execute the deep **4a Federation** / **4b First Nations** off ADR-021/022.
+**Follow-ups:** **partial building reskin** — Tobacconist/Distiller/Fur Trader House still read American (the goods they process aren't reskinned); sandbox-power Australian colony names.
+**Needs you:** (1) **Review the 4 intro beats** + the **First Nations mapping** (sensitive framing). (2) Note the partial building reskin. (3) Playtest again — the colony should now open on **Sydney** with **Federationists/Imperial Loyalists** and a **Civic Voice** HUD.
+
+---
+
 ## 2026-07-08 — Variant-aware opening cinematic (Australia gets the 1788 story, not 1492)
 
 **Requested:** Fix the playtest bug where the opening cinematic still played the American 1492 story for an Australian Federation game — make the beats variant-aware following the `GameVariant.CongressName` pattern. (Worktree branch; commit, do not push/merge.)
