@@ -14343,14 +14343,20 @@ public sealed partial class Game
         return prefix + next;
     }
 
-    /// <summary>A human-readable label for a predefined region key (e.g. <c>model.region.pacific</c> → "Pacific Ocean").</summary>
+    /// <summary>
+    /// A human-readable label for a predefined region key (e.g. <c>model.region.pacific</c> → "Pacific Ocean",
+    /// <c>model.region.newSouthWales</c> → "New South Wales"). The four named oceans keep their "… Ocean" suffix;
+    /// any other keyed region (the Australia variant's six colony regions, the austral sea, the geographic-thirds
+    /// boxes) falls back to humanising the key's camelCase short part via <see cref="Naming.Humanize"/>, so a
+    /// multi-word colony key reads as words rather than as raw camelCase.
+    /// </summary>
     private static string PredefinedRegionLabel(string key) => key switch
     {
         "model.region.pacific" => "Pacific Ocean",
         "model.region.atlantic" => "Atlantic Ocean",
         "model.region.arctic" => "Arctic Ocean",
         "model.region.antarctic" => "Antarctic Ocean",
-        _ => key[(key.LastIndexOf('.') + 1)..], // fall back to the short key part
+        _ => Naming.Humanize(key[(key.LastIndexOf('.') + 1)..]), // humanise the camelCase short part
     };
 
     /// <summary>The in-bounds tiles within a square (Chebyshev) <paramref name="radius"/> of a centre.</summary>

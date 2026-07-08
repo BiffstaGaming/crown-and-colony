@@ -79,10 +79,41 @@ the one-tile Torres-Strait islet north-east of Cape York). Guarded by
 re-conversion from the `.fsg` can't silently reintroduce it without re-applying this edit.
 
 The two `.fsg` files carry **identical terrain** (they differ only in pre-placed
-FreeCol players/units/settlements, which we discard). Rivers, resources, native
-settlements and the player's start are laid on by our generators — not taken from the
-`.fsg`, exactly as for `america.txt`. Loaded by `FixedMap.ImportAustralia` from the
-embedded resource `CrownAndColony.GameLogic.Maps.australia.txt`.
+FreeCol players/units/settlements, which we discard). Rivers, resources and native
+settlements are laid on by our generators — not taken from the `.fsg`, exactly as for
+`america.txt`. Loaded by `FixedMap.ImportAustralia` from the embedded resource
+`CrownAndColony.GameLogic.Maps.australia.txt`.
+
+**Overlay layers — `[starts]` + `[regions]` (2026-07-08, `86d3mm1xr`).** Unlike
+`america.txt` (terrain-only), the shipped `australia.txt` **appends two importer overlay
+sections** after the terrain grid (see `MapImporter.cs` for the format):
+
+- `[starts]` fixes the **First-Fleet human landfall** at Sydney Cove — the New South
+  Wales coastal tile `(50, 24)`. (No `ref` line: the REF entry falls back to the nearest
+  water tile, as before. The 1788 start *year* is a separate stream's job — this only
+  places the landing *tile*.)
+- `[regions]` is the **six-colony region layer**: one keyed ocean region
+  (`model.region.australSea`, id 0) covering every water tile, plus the six historical
+  colonies as keyed `Land` regions (ids 1–6, in Federation order: New South Wales,
+  Victoria, Queensland, South Australia, Tasmania, Western Australia). Every one of the
+  2400 tiles is assigned (an importer hard constraint).
+
+Both overlays are produced **deterministically** by
+`scripts/generate-australia-regions.py` (committed alongside this file). The generator
+reads the terrain grid and partitions **land** by **nearest colony seed** (squared-
+Euclidean, over land tiles only) around six verified coastal seeds — the same six tiles
+the C# `AustraliaColonyStart` start API uses, so a colony's start always lies in its own
+region. **Water** (`ocean`/`highSeas`/`lake`/`greatRiver`) all goes to the single ocean
+region. The carve-up matches the variant's quadrant design (WA = western third, SA =
+south-central, NSW = mid/SE seaboard, Vic = far SE, Qld = NE, Tas = the southern tip).
+Note: on this de-staggered grid Tasmania is a *peninsula*, not a sea-separated island (no
+clear Bass Strait), so its region is a southern wedge anchored on the Tasmania seed rather
+than a flood-fill island. **To regenerate** (e.g. after a terrain re-conversion): re-run
+`python scripts/generate-australia-regions.py game/data/maps/australia.txt` — it strips any
+existing `[starts]`/`[regions]` first, so it is idempotent, and leaves the terrain grid
+byte-untouched (so the `AustraliaMap_HasNoNewZealand` guard still holds — regions never
+change terrain). The colony region **display names** derive from each key's camelCase
+suffix via `Naming.Humanize` (`newSouthWales` → "New South Wales"); there is no i18n table.
 
 **Distribution note:** this is community FreeCol content (GPL v2 map *data* — standard
 terrain only, no custom art); confirm the specific pack's attribution/terms before any
