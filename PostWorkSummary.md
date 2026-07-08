@@ -19,6 +19,25 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — Australia Phase-4 push COMPLETE (non-gated envelope) — capstone
+
+**Requested (Chris):** cap reset → "complete all of the items you started"; standing goal "100% complete", "keep working until usage limit".
+**Did (all merged + pushed + CI-green, `main` `8512420`; each has its own detailed entry below):**
+- **Completed the two started items:** the **Federation victory loop** (4a — support→convention→referendum→Commonwealth win, Federation HUD panel, save v72, verified in-game) and the **Colopedia/Help prose reskin** (variant-aware, classic byte-identical).
+- **Then pushed the rest of the *non-sensitive additive* Phase-4:** event **era frequency-bands** (4c.10); **novel content** (7 buildings, 4 tile improvements, Hargraves' gold rush, Phillip's rations — 4d.2–4d.6); the **Democracy Pioneers driving Federation** (4d.7 — Parkes/Barton/Quick/Griffith/Spence).
+**Status:** `main` CI-green throughout; **L1/L2 2923 + soak 5 byte-identical green** at HEAD. (The perf-budget soak test flakes intermittently under heavy load — nightly-only, not a gate; passes on a quiet machine.) IMPLEMENTATION_PLAN §progress + kanban synced.
+**The Australian Mode is now fully playable, fully reskinned, and Federation-winnable end-to-end.**
+**Remaining for literal 100% (all need Chris — not autonomously shippable):**
+1. **ADR-021 + ADR-022 sign-off** — the Federation loop is live on documented defaults; 4b First Nations deep redesign (Respect/Tension/agreements) is sensitive + gated (only the naming pass is done).
+2. **Art production** — shortlist researched; needs your asset approval + a First Nations cultural-consultation protocol.
+3. **Balance playtest (4d.8)** — the new buildings/effects/Federation magnitudes are first-pass placeholders.
+4. **Deferred refinements:** the 5 Federation victory grades + constitutional clauses + NSW/WA quotas + AI-pursues-Federation; Pioneer hard date-gates (4c.9, a rework of the working age-weight gating — deliberately not done late-session); sandbox-power colony names; 2 cosmetic label phrasings.
+5. **Review the sensitive framings already merged:** the 4 intro beats, the 8 First Nations tribe names, and the Eureka/Shearers event dilemmas.
+**Preserved-but-not-merged branches:** none outstanding — both salvaged branches (`01d4db1` Federation, `8aa2b53` prose) are now completed + landed.
+**Needs you:** the 5 items above — chiefly **sign off ADR-021/022** and **playtest** (New Game → Australian Federation → the Federation panel is on the HUD).
+
+---
+
 ## 2026-07-09 — Democracy & Federation Pioneers get real Federation effects (Phase-4d.7) (branch only)
 
 **Requested:** Give the five Democracy & Federation Pioneers (Parkes, Barton, Quick, Griffith, Spence) real on-election effects that drive the just-landed Federation victory loop. Isolated worktree; own `Game.AustralianEffects.cs` + `Game.Federation.cs` + the Australia spec's father entries + tests/docs; minimal election-path wiring; keep classic byte-identical. Commit on branch; do NOT push/merge.
