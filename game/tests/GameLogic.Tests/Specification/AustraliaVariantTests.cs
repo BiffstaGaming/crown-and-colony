@@ -157,5 +157,144 @@ public class AustraliaVariantTests
         SaveGame restored = SaveGame.FromJson(save.ToJson());
         Assert.Equal("australia", restored.Variant);                       // survives the JSON round-trip
         Assert.Same(GameVariants.Australia, GameVariants.Resolve(restored.Variant)); // → the Australia ruleset on load
+
+        // The imported six-colony region layer is persisted and reloads verbatim (regions are persisted state, and
+        // the Australia map now ships them — so the save must carry them, not re-derive from terrain).
+        Game reloaded = restored.Restore(Australia);
+        Assert.Equal(game.Map.Regions, reloaded.Map.Regions);              // table (keys/types/scores) identical
+        Assert.Equal(
+            game.Map.AllPositions().Select(game.Map.RegionIdAt),
+            reloaded.Map.AllPositions().Select(reloaded.Map.RegionIdAt));  // per-tile ids identical
+        Assert.Contains(reloaded.Map.Regions, r => r.Key == "model.region.newSouthWales");
+    }
+
+    // --- Six colony regions + start sites (86d3mm1xr) --------------------------------
+
+    /// <summary>The six colonies' expected region keys (the milestone's six-colony requirement) + the surrounding sea.</summary>
+    private static readonly string[] ColonyRegionKeys =
+    {
+        "model.region.newSouthWales", "model.region.victoria", "model.region.queensland",
+        "model.region.southAustralia", "model.region.tasmania", "model.region.westernAustralia",
+    };
+
+    [Fact]
+    public void AustraliaMap_DeclaresTheSixColonyRegions_PlusOneOcean()
+    {
+        GameMap map = FixedMap.LoadAustralia(Australia);
+
+        // 7 regions: one keyed ocean (region 0) + the six colony Land regions (ids 1..6, in Federation order).
+        Assert.Equal(7, map.Regions.Count);
+        Assert.Equal(RegionType.Ocean, map.Regions[0].Type);
+        Assert.Equal("model.region.australSea", map.Regions[0].Key);
+        for (int i = 0; i < ColonyRegionKeys.Length; i++)
+        {
+            Region colony = map.Regions[i + 1];
+            Assert.Equal(RegionType.Land, colony.Type);
+            Assert.Equal(ColonyRegionKeys[i], colony.Key);
+        }
+    }
+
+    [Fact]
+    public void AustraliaMap_AssignsEveryTile_AndAllSixColoniesCoverLand()
+    {
+        GameMap map = FixedMap.LoadAustralia(Australia);
+
+        // Every in-bounds tile carries a region (the importer enforces this, but assert it end-to-end): none NoRegion.
+        Assert.All(map.AllPositions(), p => Assert.NotEqual(GameMap.NoRegion, map.RegionIdAt(p)));
+
+        // Each of the six colony keys actually owns some land (a non-empty quadrant), and its tiles are all Land.
+        var keyByTile = map.AllPositions()
+            .GroupBy(p => map.RegionOf(p)!.Key!)
+            .ToDictionary(g => g.Key, g => g.Count());
+        foreach (string key in ColonyRegionKeys)
+        {
+            Assert.True(keyByTile.GetValueOrDefault(key, 0) > 0, $"expected land in region {key}");
+        }
+
+        // Water tiles are the ocean region; land tiles are never the ocean region (the layer matches the coastline).
+        Assert.All(map.AllPositions(), p =>
+            Assert.Equal(map.TerrainAt(p).IsWater, map.RegionOf(p)!.Key == "model.region.australSea"));
+    }
+
+    [Fact]
+    public void AustraliaMap_ColonyKeys_HumaniseToTheirDisplayNames()
+    {
+        // No i18n table yet: display text comes from Naming.Humanize on the key's camelCase suffix. Verify the
+        // multi-word colony keys read as proper names (so a discovered region shows "New South Wales", not the raw id).
+        Assert.Equal("New South Wales", Naming.Humanize("newSouthWales"));
+        Assert.Equal("South Australia", Naming.Humanize("southAustralia"));
+        Assert.Equal("Western Australia", Naming.Humanize("westernAustralia"));
+        Assert.Equal("Queensland", Naming.Humanize("queensland"));
+        Assert.Equal("Victoria", Naming.Humanize("victoria"));
+        Assert.Equal("Tasmania", Naming.Humanize("tasmania"));
+    }
+
+    [Fact]
+    public void AustraliaMap_FirstFleet_LandsInNewSouthWales()
+    {
+        // The map fixes the human's landfall (an imported [starts] human X Y) at the NSW coastal seed tile — Sydney
+        // Cove, the First Fleet's 1788 landing. Game.New honours it (imported.HumanStart), so the human's colonists
+        // land on-or-beside that exact tile, and the tile is inside the New South Wales region.
+        Game game = Game.New(Australia, seed: 0xA05UL, mapSource: MapSource.Australia);
+        Position nsw = AustraliaColonyStart.StartTile(AustraliaColony.NewSouthWales);
+
+        Assert.Equal("model.region.newSouthWales", game.Map.RegionOf(nsw)!.Key);
+        AssertHumanLandedAt(game, nsw);
+    }
+
+    // --- Colony start scenarios (86d3mm2ug) ------------------------------------------
+
+    [Theory]
+    [InlineData(AustraliaColony.NewSouthWales, "model.region.newSouthWales")]
+    [InlineData(AustraliaColony.Victoria, "model.region.victoria")]
+    [InlineData(AustraliaColony.Queensland, "model.region.queensland")]
+    [InlineData(AustraliaColony.SouthAustralia, "model.region.southAustralia")]
+    [InlineData(AustraliaColony.Tasmania, "model.region.tasmania")]
+    [InlineData(AustraliaColony.WesternAustralia, "model.region.westernAustralia")]
+    public void ColonyStart_LandsTheHuman_OnThatColonysCoast(AustraliaColony colony, string expectedKey)
+    {
+        // Each selectable start resolves to a coastal tile inside its own named region…
+        Position start = AustraliaColonyStart.StartTile(colony);
+        GameMap map = FixedMap.LoadAustralia(Australia);
+        Assert.Equal(expectedKey, map.RegionOf(start)!.Key);
+        Assert.Equal(expectedKey, AustraliaColonyStart.RegionKey(colony));
+        Assert.False(map.TerrainAt(start).IsWater, "a colony start must be a land tile");
+
+        // …and booting a game with that colony's import override lands the human's party on-or-beside that tile.
+        MapImportResult import = AustraliaColonyStart.ImportFor(colony, Australia);
+        Assert.Equal(start, import.HumanStart);
+        Game game = Game.New(Australia, seed: 0xA05UL, mapSource: MapSource.Australia, importOverride: import);
+        AssertHumanLandedAt(game, start);
+    }
+
+    [Fact]
+    public void ColonyStart_RegistryLists_AllSixInFederationOrder()
+    {
+        Assert.Equal(
+            new[]
+            {
+                AustraliaColony.NewSouthWales, AustraliaColony.Victoria, AustraliaColony.Queensland,
+                AustraliaColony.SouthAustralia, AustraliaColony.Tasmania, AustraliaColony.WesternAustralia,
+            },
+            AustraliaColonyStart.All);
+        Assert.Equal(AustraliaColony.NewSouthWales, AustraliaColonyStart.Default);
+    }
+
+    [Fact]
+    public void ColonyStart_DefaultColony_MatchesTheMapsOwnFirstFleetStart()
+    {
+        // NSW is the map's baked-in landfall, so its override HumanStart equals the plain import's — the default colony
+        // boots the same game as an ordinary Australia game (no relocation).
+        MapImportResult plain = FixedMap.ImportAustralia(Australia);
+        MapImportResult nsw = AustraliaColonyStart.ImportFor(AustraliaColony.NewSouthWales, Australia);
+        Assert.Equal(plain.HumanStart, nsw.HumanStart);
+    }
+
+    /// <summary>Asserts the human landed on the Australia map with a land unit on <paramref name="start"/> or an adjacent tile (the ship berths on adjacent water).</summary>
+    private static void AssertHumanLandedAt(Game game, Position start)
+    {
+        Assert.NotEmpty(game.PlayerUnits);
+        Assert.Contains(game.PlayerUnits, u =>
+            u.IsOnMap && !u.Type.IsNaval && (u.Position == start || u.Position.IsAdjacentTo(start)));
     }
 }

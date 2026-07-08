@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Australia map: six colony regions + start sites + colony-start scenarios
+
+**Requested:** implement the Map stream for the Australian Federation variant — (1) `86d3mm1xr` six colony regions + start sites on the Australia map, (2) `86d3mm2ug` colony-start scenarios (logic-level API, no Godot UI).
+**Did:**
+- **Region layer (`86d3mm1xr`):** wrote a deterministic generator `scripts/generate-australia-regions.py` that reads `australia.txt`'s terrain grid and appends a `[starts]` + `[regions]` overlay — the six historical colonies as keyed `Land` regions (NSW/Vic/Qld/SA/Tas/WA, partitioned by **nearest colony seed**) + one keyed ocean region (`model.region.australSea`) over all water; every one of the 2400 tiles assigned. `[starts]` fixes the First-Fleet human landfall at the NSW coastal tile (50,24). Regenerated `australia.txt`; terrain grid byte-untouched (so `HasNoNewZealand` still holds).
+- **Colony-start API (`86d3mm2ug`):** new `World/AustraliaColonyStart.cs` — `AustraliaColony` enum + `StartTile`/`RegionKey`/`ImportFor`/`All`/`Default`. `ImportFor` returns a `MapImportResult` with the chosen colony's `HumanStart` for `Game.New(importOverride:)` (the existing scenario-`[starts]` seam). Engine-free/RNG-free; the six start tiles ARE the generator's colony seeds, so a start always lies in its own region.
+- Routed `Game.PredefinedRegionLabel`'s keyed-region fallback through `Naming.Humanize` (`newSouthWales` → "New South Wales") — **did not touch Naming.cs** (another stream owns it).
+- Docs (no-drift): `map-terrain.md` (imported-region-layer subsection + changelog + status), `game-modes.md` (colony-start plain-English + technical table + verification + changelog + TODO), `PROVENANCE.md` (the overlay layer), `docs/modules/game-logic.md` (two API rows). XML `///` on all new public API.
+- +11 L1/L2 tests in `AustraliaVariantTests` (six regions declared, every tile assigned + all six keys present, keys humanise, First-Fleet lands in NSW, six colony starts each boot the human on that coast, registry/default, save region round-trip).
+**Status:** build clean (0 warnings); **L1/L2 2773 green** (was ~2761), **soak 5 green** (default byte-identical). Did NOT run L3/L4 Godot scene tests (engine/data change — out of scope per brief). Committed on worktree branch `worktree-agent-a0f795501dc656b5d` — **not pushed / not merged** (lead integrates).
+**Changed:** `scripts/generate-australia-regions.py` (new), `game/src/GameLogic/World/AustraliaColonyStart.cs` (new), `game/data/maps/australia.txt` (+overlays), `game/src/GameLogic/GameSession/Game.cs` (`PredefinedRegionLabel`), `game/tests/GameLogic.Tests/Specification/AustraliaVariantTests.cs`, `PROVENANCE.md`, `map-terrain.md`, `game-modes.md`, `docs/modules/game-logic.md`. Commit **(this commit)**.
+**Decisions:** nearest-seed land partition (deterministic + maintainable — hand-authoring 2400 tiles is infeasible); on this de-staggered grid Tasmania is a *peninsula* (no clear Bass Strait), so its region is a southern wedge anchored on the Tas seed, not a flood-fill island — geographically anchored correctly. Colony-start API mirrors the `importOverride`/`HumanStart` seam exactly (no `Game.New` change). Ocean is one keyed region (colony regions must be `RegionType.Land`, each a distinct key).
+**Scheduled next:** **Historical 1788 start (`86d3mm2fb`)** — First Fleet starting party + variant start year (its `[starts]` tile is already placed by this work; the year + roster are the remaining pieces) — unless you reorder.
+**Follow-ups:** the New-Game UI "Colony" dropdown (Australia-only) that surfaces `AustraliaColonyStart.All` is a later presentation task (`86d3mm2ug` is explicitly logic-only); per-colony difficulty hints (Tas/WA "Hard") not wired.
+**Needs you:** **Naming.cs hand-off (no action needed from me):** the six colony keys humanise correctly via the existing `Naming.Humanize` — **no override required** (verified in-test: `newSouthWales`→"New South Wales", etc.). If the Naming-stream owner later adds a display-override map for regions, no colony key needs one. Nothing blocking.
+
+---
+
 ## 2026-07-08 — Australia mode: FULL decomposition — every epic broken into engine-mapped subtasks
 
 **Requested (Chris):** "Decompose everything into small individual tasks, include details on where/what needs to be done, ensuring that we utilise the backend engine that already exists." (Overrides the rolling-wave default — recorded as his call.)
