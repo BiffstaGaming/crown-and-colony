@@ -158,7 +158,7 @@ public class BuildingWorkerExperienceTests
 
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
-        Assert.Equal(70, SaveGame.CurrentVersion);
+        Assert.Equal(71, SaveGame.CurrentVersion);
         Colony r = restored.Colonies.Single(c => c.Id == colony.Id);
         Assert.Equal(137, r.BuildingWorkerExperienceAt(Carpenter));
     }

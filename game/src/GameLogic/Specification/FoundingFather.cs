@@ -53,7 +53,8 @@ public static class ModifierMath
 /// <param name="Value">The modifier value (a percentage for <see cref="ModifierType.Percentage"/>).</param>
 /// <param name="Index">Application order — modifiers apply in ascending index (FreeCol <c>modifierIndex</c>).</param>
 /// <param name="ScopeUnitTypes">Unit-type ids this modifier is restricted to (FreeCol <c>&lt;scope&gt;</c>); empty/null = unscoped (applies to all). Francis Drake's combat modifiers scope to <c>model.unit.privateer</c>.</param>
-public sealed record FatherModifier(string TargetId, ModifierType Type, double Value, int Index, IReadOnlyList<string>? ScopeUnitTypes = null)
+/// <param name="NavalScoped">Whether this modifier is restricted to <b>naval</b> units by a <c>&lt;scope ability-id="model.ability.navalUnit"/&gt;</c> child (FreeCol's ability-scope; Magellan's and the naval nation-type's <c>movementBonus</c> carry it). Default <c>false</c> (no naval restriction) — byte-safe for every modifier that predates the scope-aware movement fold (4d.1). A <c>true</c> modifier applies only to naval units; a <c>false</c> movement modifier now applies to land units too.</param>
+public sealed record FatherModifier(string TargetId, ModifierType Type, double Value, int Index, IReadOnlyList<string>? ScopeUnitTypes = null, bool NavalScoped = false)
 {
     /// <summary>Applies this modifier to a running value.</summary>
     public double ApplyTo(double value) => ModifierMath.Apply(Type, value, Value);

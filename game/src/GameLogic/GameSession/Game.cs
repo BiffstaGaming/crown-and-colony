@@ -119,6 +119,14 @@ public sealed partial class Game
     /// nothing on it and round-trips byte-identically.</summary>
     private const ulong NativeTradeStreamId = 104;
 
+    /// <summary>RNG stream reserved for the per-turn <b>historical-event</b> roll (4c.3) — a high id like
+    /// <see cref="DisasterStreamId"/>, so the event draw never correlates with or shifts the human's economy stream 0
+    /// (ADR-006/ADR-009). The roll fires only when the ruleset defines <see cref="Specification.Ruleset.HistoricalEvents"/>
+    /// (the classic ruleset defines none → the event runtime never draws on this stream), so the classic default game
+    /// draws nothing here and stays byte-identical. Like the disaster stream, the generator is seeded per-turn from the
+    /// player's own RNG state read WITHOUT advancing it, so nothing on stream 0 shifts.</summary>
+    private const ulong EventStreamId = 105;
+
     private Pcg32Random? _nativeHaggleRandomField; // lazily seeded from the base state; see _nativeHaggleRandom
 
     /// <summary>The lazily-seeded native-haggle RNG (<see cref="NativeTradeStreamId"/>), derived from the game's base
@@ -152,6 +160,8 @@ public sealed partial class Game
     private NativeDemand? _pendingDemand; // transient: a native tribute demand awaiting the human's accept/refuse (not saved)
     private PendingMoundsDecision? _pendingMounds; // transient: a strange-mounds rumour awaiting the human's investigate/decline (not saved)
     private PendingFirstContactOffer? _pendingFirstContact; // transient: a native tribe's first-contact peace offer awaiting the human's accept/reject (not saved)
+    private EventOffer? _pendingEventOffer; // transient: a historical event awaiting the human's choice (4c.3); auto-resolved each EndTurn if ignored (not saved)
+    private readonly Dictionary<string, int> _eventLastFiredTurn = []; // persisted (v71, omit-when-empty): event id → the turn it last fired, for one-shot/cooldown gating; empty in classic (no events) so the token is omitted and the default game is byte-identical
     private FountainResult _lastFountainResult; // transient: how the most recent FoY burst was handled — picks the player-facing message in ExploreRumour
     private int _citiesOfCibolaRemaining = CibolaCityCount; // persisted (v63): the finite "Seven Cities of Gold" left to discover; once 0 a Cibola roll degrades to ordinary ruins (FreeCol NameCache.getNextCityOfCibola)
     private readonly Player _human;
@@ -5387,25 +5397,60 @@ public sealed partial class Game
     /// <summary>
     /// A unit's movement points for a fresh turn: its unit-type base plus its role's movement bonus
     /// (FreeCol <c>Unit.getInitialMovesLeft</c> folding <c>model.modifier.movementBonus</c>) — e.g. a
-    /// dragoon/scout/cavalry/mounted brave gets +9 (one extra "move" is 3 points). For a <b>naval</b> unit it
-    /// also folds the owner's <c>movementBonus</c> — <b>Ferdinand Magellan</b> (+3, Congress) and the <b>Portuguese</b>
-    /// <c>naval</c> nation-type advantage (+3, spec-scoped <c>model.ability.navalUnit</c>): both ride the same
-    /// <see cref="ApplyGoodsModifiers(Player, string, int, int?)"/> fold (which now also folds nation-type modifiers),
-    /// and the surrounding <c>IsNaval</c> gate <b>is</b> the naval scope — a land unit never enters this branch, so the
-    /// Portuguese +3 (like Magellan's) applies to ships only. Stacked when a Portuguese player also elects Magellan (+6).
+    /// dragoon/scout/cavalry/mounted brave gets +9 (one extra "move" is 3 points) — then the owner's
+    /// <c>movementBonus</c> modifiers, folded <b>scope-aware</b> (4d.1).
+    /// <para>
+    /// <b>Scope-aware fold.</b> The owner's <c>movementBonus</c> father/nation-type modifiers are folded per unit,
+    /// filtered by each modifier's naval scope (<see cref="FatherModifier.NavalScoped"/> — the
+    /// <c>&lt;scope ability-id="model.ability.navalUnit"/&gt;</c> child): a <b>naval-scoped</b> bonus applies only to
+    /// naval units, a <b>non-naval-scoped</b> bonus only to land units. So <b>Ferdinand Magellan</b> (+3, Congress,
+    /// naval-scoped) and the <b>Portuguese</b> naval nation-type advantage (+3, naval-scoped) still apply to <em>ships
+    /// only</em> — byte-identical to the previous <c>IsNaval</c> code gate — while a variant's land-scoped movement
+    /// modifier (an event bonus, a land-explorer father) now correctly reaches land units, which the old gate suppressed.
+    /// Classic ships no non-naval-scoped movement modifier, so land units get exactly their base + role bonus as before.
+    /// </para>
     /// The role lookup is null-safe so minimal rulesets without role data simply get the base.
     /// </summary>
     private int InitialMovement(Unit unit)
     {
         int moves = unit.Type.Movement + (int)(Ruleset.Roles.FirstOrDefault(r => r.Id == unit.RoleId)?.MovementBonus ?? 0);
-        if (unit.Type.IsNaval && PlayerById(unit.OwnerId) is { } owner)
+        if (PlayerById(unit.OwnerId) is { } owner)
         {
-            // Magellan (+3, Congress) AND the Portuguese naval nation-type advantage (+3) both target movementBonus;
-            // ApplyGoodsModifiers folds the father modifier and the nation-type one together. The IsNaval gate is the
-            // naval scope for both — so the nation advantage never leaks onto land units.
-            moves = ApplyGoodsModifiers(owner, MovementBonusId, moves);
+            moves = ApplyMovementBonusModifiers(owner, unit, moves);
         }
         return moves;
+    }
+
+    /// <summary>
+    /// Folds the owner's <c>model.modifier.movementBonus</c> modifiers into a unit's initial movement, <b>scope-aware</b>
+    /// by naval-ness (4d.1): a naval-scoped modifier applies only to a naval unit, a non-naval-scoped one only to a land
+    /// unit — so a naval bonus never leaks onto land (keeping Magellan/Portuguese byte-identical) and a land movement
+    /// bonus, previously suppressed by the old <c>IsNaval</c> gate, now applies. Gathers the same sources as
+    /// <see cref="ApplyGoodsModifiers(Player, string, int, int?)"/> (elected fathers + nation-type advantages + any active
+    /// timed movement modifier), folds in ascending index, and truncates. With no relevant modifier the base is returned
+    /// unchanged — the classic case for land units.
+    /// </summary>
+    private int ApplyMovementBonusModifiers(Player owner, Unit unit, int baseMoves)
+    {
+        bool naval = unit.Type.IsNaval;
+        var modifiers = owner.Congress.Select(Ruleset.Father)
+            .SelectMany(f => f.Modifiers)
+            .Where(m => m.TargetId == MovementBonusId)
+            .Concat(NationTypeModifiers(owner, MovementBonusId))
+            .Concat(ActiveTemporaryModifiers(MovementBonusId).Select(m => m.Payload))
+            .Where(m => m.NavalScoped == naval) // naval-scoped → naval units; non-naval-scoped → land units
+            .OrderBy(m => m.Index)
+            .ToList();
+        if (modifiers.Count == 0)
+        {
+            return baseMoves;
+        }
+        double result = baseMoves;
+        foreach (FatherModifier modifier in modifiers)
+        {
+            result = modifier.ApplyTo(result);
+        }
+        return (int)result;
     }
 
     /// <summary>
@@ -8367,6 +8412,7 @@ public sealed partial class Game
         RefusePendingDemand();      // a tribute demand the human ended the turn without answering counts as a refusal (FreeCol session timeout = reject)
         DeclinePendingMounds();     // an unanswered strange-mounds prompt counts as "leave them be" — clears it before the AI turns so it can't strand or block exploration across the round
         AcceptPendingFirstContactOnTimeout(); // an unanswered native peace offer defaults to acceptance (peace) — clears it before the AI turns; a friendlier timeout than an accidental war
+        AutoResolvePendingEventOffer(); // a historical event the human ended the turn without answering auto-resolves to its default option (4c.3) — no-op in classic (no events)
         int startIndex = _currentPlayerIndex;
         do
         {
@@ -8520,6 +8566,7 @@ public sealed partial class Game
         AccumulateImmigrationAndEmigrate(player);
         PayBuildingUpkeep(player); // deduct Σ building upkeep from gold; flag bankruptcy if unpayable — no-op in classic (enableUpkeep default off)
         RollNaturalDisasters(player); // per-turn colony disaster roll on a reserved stream — no-op in classic (naturalDisasters default 0)
+        RollHistoricalEvents(player); // per-turn data-driven event roll on a reserved stream — no-op in classic (ruleset defines no events)
         ProcessTradeRoutes(player); // auto-haul any carriers on a trade route (no-op + no RNG when none — stream-0-safe)
 
         if (!player.IsHuman)

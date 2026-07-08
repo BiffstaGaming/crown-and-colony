@@ -66,6 +66,14 @@ public enum HistoryEventKind
     /// the per-settlement <see cref="SettlementDestroyed"/> penalty.
     /// </summary>
     NationDestroyed,
+
+    /// <summary>
+    /// A data-driven <b>historical event</b> resolved for the human (4c.3): the <c>recordHistory</c> event effect
+    /// appends a narrative line to the log. Carries <b>score 0</b> — a purely narrative record; any score/state change
+    /// an event grants flows through its other effects, not this log line. Never emitted in the classic ruleset (it
+    /// ships no historical events).
+    /// </summary>
+    HistoricalEvent,
 }
 
 public sealed partial class Game
