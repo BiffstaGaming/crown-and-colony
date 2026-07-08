@@ -3116,6 +3116,269 @@
       </option>
     </event-def>
 
+    <!-- ========================================================================
+         Catalog batch 2 (86d3mmbg9): Expansion & gold, 1830-1872. Squatting and the
+         wool boom, the 1851 gold rushes and the immigration surge, Eureka and the
+         miners' licence, the first railways and telegraph, and the hardships of the
+         era (drought, gold-escort robbery). Sober, factual recordHistory text.
+         Player-scoped effects, except the two settlement-gated colony effects
+         (inland exploration reveal, gold-rush ore find) which carry a settlements>=1
+         requires gate so they never fire before the first colony. ==================== -->
+
+    <!-- Transportation of convicts to the eastern colonies ends (NSW 1840, Van Diemen's
+         Land 1853). A civic milestone for the free-settler colonies. -->
+    <event-def id="event.transportationEnds" weight="3" one-shot="true" earliest-year="1840" expiry-year="1868">
+      <option id="mark">
+        <effect kind="recordHistory" text="The transportation of convicts to the eastern colonies ends; the settlements turn to free labour and self-government."/>
+        <effect kind="grantLiberty" value="25"/>
+      </option>
+    </event-def>
+
+    <!-- Squatters drive their flocks far beyond the settled districts, taking up vast
+         pastoral runs. The wool clip and the colony's fortunes both grow. -->
+    <event-def id="event.squattingRun" weight="4" cooldown="10" earliest-year="1830" expiry-year="1880">
+      <option id="expand" weight="2">
+        <effect kind="recordHistory" text="Squatters take up vast pastoral runs far beyond the settled districts; the wool clip swells."/>
+        <effect kind="timedModifier" target="model.goods.cotton" type="percentage" value="25" duration="8"/>
+        <effect kind="grantGold" value="200"/>
+      </option>
+      <option id="regulate" weight="1">
+        <effect kind="recordHistory" text="The government issues depasturing licences to bring the squatters' runs under order."/>
+        <effect kind="grantGold" value="150"/>
+      </option>
+    </event-def>
+
+    <!-- The great wool boom: fine merino fleece from the colonies commands high prices on
+         the London market and underwrites the pastoral economy. -->
+    <event-def id="event.woolBoom" weight="4" cooldown="12" earliest-year="1835" expiry-year="1890">
+      <option id="ship">
+        <effect kind="recordHistory" text="Colonial merino fleece commands high prices on the London wool market; the clip ships out at a handsome return."/>
+        <effect kind="timedModifier" target="model.goods.cotton" type="percentage" value="35" duration="6"/>
+        <effect kind="grantGold" value="300"/>
+      </option>
+    </event-def>
+
+    <!-- An inland expedition sets out to cross the continent (the era of Sturt, Leichhardt,
+         and Burke & Wills). Fund it and the interior is opened to view — at a cost, and
+         with the ever-present risk of the arid centre. Colony-gated (revealMap needs a
+         colony); the decline option is player-safe. -->
+    <event-def id="event.inlandExploration" weight="3" cooldown="15" earliest-year="1844" expiry-year="1875">
+      <requires>
+        <limit id="hasSettlement" operator="ge">
+          <left-hand-side operand-type="settlements" scope-level="player"/>
+          <right-hand-side value="1"/>
+        </limit>
+      </requires>
+      <option id="fund" weight="2">
+        <effect kind="recordHistory" text="An expedition sets out to cross the interior; much country is charted, though the arid centre exacts a heavy toll."/>
+        <effect kind="grantGold" value="-150"/>
+        <effect kind="revealMap" value="4"/>
+      </option>
+      <option id="hold" weight="1">
+        <effect kind="recordHistory" text="The colony judges the interior crossing too costly and holds the expedition back for now."/>
+        <effect kind="grantLiberty" value="10"/>
+      </option>
+    </event-def>
+
+    <!-- The 1851 gold rushes (Bathurst, then Ballarat and Bendigo). A vast strike: the
+         treasury swells, ships empty at the wharves as diggers rush to the fields. -->
+    <event-def id="event.goldRush" weight="6" one-shot="true" earliest-year="1851" expiry-year="1870">
+      <option id="dig">
+        <effect kind="recordHistory" text="Gold is struck at Bathurst, then Ballarat and Bendigo; the rush is on, and diggers pour onto the fields."/>
+        <effect kind="grantGold" value="1000"/>
+        <effect kind="grantUnit" target="model.unit.freeColonist"/>
+        <effect kind="timedModifier" target="model.goods.silver" type="percentage" value="50" duration="10"/>
+      </option>
+    </event-def>
+
+    <!-- A rich payable field is opened near an established settlement — an ore strike that
+         boosts the colony's yield. Colony-gated (grantGoods needs a colony). -->
+    <event-def id="event.payableField" weight="4" cooldown="8" earliest-year="1851" expiry-year="1890">
+      <requires>
+        <limit id="hasSettlement" operator="ge">
+          <left-hand-side operand-type="settlements" scope-level="player"/>
+          <right-hand-side value="1"/>
+        </limit>
+      </requires>
+      <option id="work">
+        <effect kind="recordHistory" text="A rich payable field is opened near the settlement; the crushers run day and night."/>
+        <effect kind="grantGoods" target="model.goods.silver" value="100"/>
+      </option>
+    </event-def>
+
+    <!-- The gold-rush immigration surge: tens of thousands arrive from Britain, Europe,
+         China, and the Americas, tripling the colonial population in a decade. -->
+    <event-def id="event.goldImmigrationSurge" weight="5" cooldown="6" earliest-year="1852" expiry-year="1875">
+      <option id="welcome">
+        <effect kind="recordHistory" text="Shiploads of new arrivals land for the diggings; the colonial population swells."/>
+        <effect kind="grantUnit" target="model.unit.freeColonist"/>
+        <effect kind="grantUnit" target="model.unit.freeColonist"/>
+      </option>
+    </event-def>
+
+    <!-- The Eureka Stockade, Ballarat, December 1854: diggers burn their mining licences
+         in protest at the fee and the troopers' licence hunts. A genuine dilemma —
+         concede reform (the miner's right, and a lasting gain in civic voice) or send in
+         the troops (order restored at a cost in lives, gold, and legitimacy). -->
+    <event-def id="event.eurekaStockade" weight="4" one-shot="true" earliest-year="1854" expiry-year="1860">
+      <option id="reform" weight="2">
+        <effect kind="recordHistory" text="After the Eureka Stockade at Ballarat, the licence is abolished for the miner's right and the vote; the goldfields win a measure of democracy."/>
+        <effect kind="grantLiberty" value="40"/>
+      </option>
+      <option id="suppress" weight="1">
+        <effect kind="recordHistory" text="The troops storm the stockade at Ballarat; order is restored, but at a cost in blood and standing."/>
+        <effect kind="grantGold" value="-200"/>
+      </option>
+    </event-def>
+
+    <!-- A gold escort is held up on the road from the diggings and its consignment taken
+         (bushranging plagued the gold roads through the 1850s-60s). -->
+    <event-def id="event.goldEscortRobbery" weight="3" cooldown="10" earliest-year="1852" expiry-year="1880">
+      <option id="lose">
+        <effect kind="recordHistory" text="Bushrangers hold up the gold escort on the road from the diggings and make off with the consignment."/>
+        <effect kind="grantGold" value="-250"/>
+      </option>
+    </event-def>
+
+    <!-- The first railways and telegraph lines open (Melbourne-Port Melbourne rail, 1854;
+         the first colonial telegraph, 1854). The colonies begin to knit together, and
+         messages and goods move faster. -->
+    <event-def id="event.firstRailwayAndTelegraph" weight="3" one-shot="true" earliest-year="1854" expiry-year="1880">
+      <option id="build">
+        <effect kind="recordHistory" text="The first railway and telegraph lines open in the colonies; passengers, freight, and news begin to move at a new pace."/>
+        <effect kind="grantGold" value="-200"/>
+        <effect kind="timedModifier" target="model.modifier.movementBonus" type="additive" value="1" duration="12"/>
+      </option>
+    </event-def>
+
+    <!-- ========================================================================
+         Catalog batch 3 (86d3mmbg9): Infrastructure & Federation, 1872-1901. The
+         Overland Telegraph and intercolonial rail, Broken Hill and refrigerated meat,
+         the 1890s depression, bank crashes and the great strikes that founded the
+         labour movement, women's suffrage in South Australia, the Federation
+         conventions and referendums, and the drought that gripped the turn of the
+         century. Player-scoped effects (all Federation-era content is colony-
+         independent). Sober, factual recordHistory text. ============================= -->
+
+    <!-- The Overland Telegraph is completed, Adelaide to Darwin, 1872 — connected there to
+         the submarine cable, it links the colonies to Britain in hours, not months. -->
+    <event-def id="event.overlandTelegraph" weight="3" one-shot="true" earliest-year="1872" expiry-year="1885">
+      <option id="connect">
+        <effect kind="recordHistory" text="The Overland Telegraph is completed from Adelaide to Darwin and joined to the submarine cable; the colonies now reach London in hours, not months."/>
+        <effect kind="grantLiberty" value="20"/>
+        <effect kind="timedModifier" target="model.modifier.movementBonus" type="additive" value="1" duration="15"/>
+      </option>
+    </event-def>
+
+    <!-- The Broken Hill lode, 1883: one of the world's great silver-lead-zinc deposits,
+         and the making of the Broken Hill Proprietary company. -->
+    <event-def id="event.brokenHill" weight="4" one-shot="true" earliest-year="1883" expiry-year="1901">
+      <option id="mine">
+        <effect kind="recordHistory" text="A vast silver-lead lode is proved at Broken Hill; the mines and smelters make fortunes and a new mining colony."/>
+        <effect kind="grantGold" value="800"/>
+        <effect kind="timedModifier" target="model.goods.silver" type="percentage" value="40" duration="10"/>
+      </option>
+    </event-def>
+
+    <!-- Refrigerated meat export begins (the SS Strathleven carried the first successful
+         frozen cargo from Australia to London in 1880), opening the British market to
+         colonial beef and mutton. The spec has no separate 'meat' good (it is folded into
+         food/grazing), so the export earner is modelled as gold plus a food/grazing boost. -->
+    <event-def id="event.refrigeratedMeat" weight="4" one-shot="true" earliest-year="1880" expiry-year="1901">
+      <option id="export">
+        <effect kind="recordHistory" text="The first frozen meat cargoes reach London in good order; refrigeration opens the British market to colonial beef and mutton."/>
+        <effect kind="timedModifier" target="model.goods.food" type="percentage" value="25" duration="10"/>
+        <effect kind="grantGold" value="400"/>
+      </option>
+    </event-def>
+
+    <!-- More railways link the colonies, though each was built to its own gauge (the
+         break-of-gauge problem that would vex Federation). Costly, but the network grows. -->
+    <event-def id="event.intercolonialRailway" weight="3" cooldown="10" earliest-year="1873" expiry-year="1901">
+      <option id="build" weight="2">
+        <effect kind="recordHistory" text="A new trunk railway links the colonies further, though the differing gauges force a change of train at the border."/>
+        <effect kind="grantGold" value="-250"/>
+        <effect kind="timedModifier" target="model.modifier.movementBonus" type="additive" value="1" duration="10"/>
+      </option>
+      <option id="defer" weight="1">
+        <effect kind="recordHistory" text="The colony defers the costly railway extension for another session of parliament."/>
+      </option>
+    </event-def>
+
+    <!-- The land boom of "Marvellous Melbourne", 1880s: speculation, building, and easy
+         credit make Melbourne one of the richest cities in the world — for a while. -->
+    <event-def id="event.marvellousMelbourne" weight="3" one-shot="true" earliest-year="1880" expiry-year="1891">
+      <option id="boom">
+        <effect kind="recordHistory" text="Speculation and easy credit make 'Marvellous Melbourne' one of the richest cities in the world; land values soar."/>
+        <effect kind="grantGold" value="600"/>
+      </option>
+    </event-def>
+
+    <!-- The financial crash and depression of the early 1890s: the land boom collapses,
+         and a run on the banks in 1893 closes many of them, wiping out depositors. -->
+    <event-def id="event.bankCrash" weight="4" one-shot="true" earliest-year="1892" expiry-year="1897">
+      <option id="endure">
+        <effect kind="recordHistory" text="The land boom collapses and a run on the banks in 1893 closes many of them; depositors are ruined and the colonies fall into depression."/>
+        <effect kind="grantGold" value="-500"/>
+      </option>
+    </event-def>
+
+    <!-- The Great Shearers' Strike of 1891 in Queensland and the pastoral colonies — a
+         defining struggle that helped found the labour movement and the Labor party. A
+         dilemma: recognise the union (a lasting gain in civic voice) or break the strike
+         with non-union labour (the clip saved, at a cost in gold and standing). -->
+    <event-def id="event.shearersStrike" weight="4" one-shot="true" earliest-year="1891" expiry-year="1895">
+      <option id="recognise" weight="2">
+        <effect kind="recordHistory" text="The Great Shearers' Strike ends in a settlement; out of the shearers' unions grows a labour movement and, in time, a Labor party."/>
+        <effect kind="grantLiberty" value="35"/>
+      </option>
+      <option id="break" weight="1">
+        <effect kind="recordHistory" text="The strike is broken with non-union labour and mounted police; the clip comes in, but bitterness lingers on the runs."/>
+        <effect kind="grantGold" value="-200"/>
+        <effect kind="timedModifier" target="model.goods.cotton" type="percentage" value="-20" duration="4"/>
+      </option>
+    </event-def>
+
+    <!-- South Australia grants women the vote and the right to stand for parliament, 1894
+         — the first Australian colony, and among the first places in the world, to do so. -->
+    <event-def id="event.womensSuffrageSA" weight="3" one-shot="true" earliest-year="1894" expiry-year="1901">
+      <option id="enact">
+        <effect kind="recordHistory" text="South Australia grants women the vote and the right to stand for parliament — the first Australian colony to do so, and among the first in the world."/>
+        <effect kind="grantLiberty" value="30"/>
+      </option>
+    </event-def>
+
+    <!-- The Federation conventions: the Corowa conference (1893) and the National
+         Australasian Convention (1897-98) draft a constitution for a Commonwealth. -->
+    <event-def id="event.federationConvention" weight="4" one-shot="true" earliest-year="1897" expiry-year="1900">
+      <option id="convene">
+        <effect kind="recordHistory" text="Delegates from the colonies meet in convention and draft a constitution for a federal Commonwealth of Australia."/>
+        <effect kind="grantLiberty" value="35"/>
+      </option>
+    </event-def>
+
+    <!-- The Federation referendums, 1898-1900: the colonies vote, colony by colony, to
+         approve the draft constitution and join the Commonwealth. -->
+    <event-def id="event.federationReferendum" weight="4" one-shot="true" earliest-year="1898" expiry-year="1901">
+      <option id="vote" weight="2">
+        <effect kind="recordHistory" text="At referendum the colonies vote to approve the constitution and join the Commonwealth; the people carry Federation."/>
+        <effect kind="grantLiberty" value="45"/>
+      </option>
+      <option id="reconsider" weight="1">
+        <effect kind="recordHistory" text="A first referendum falls short of the quota; the constitution is amended and put to the people again."/>
+        <effect kind="grantLiberty" value="15"/>
+      </option>
+    </event-def>
+
+    <!-- The Federation Drought (roughly 1895-1902), one of the severest on record: the
+         Murray-Darling all but dries, and stock losses run into the tens of millions. -->
+    <event-def id="event.federationDrought" weight="4" cooldown="8" earliest-year="1895" expiry-year="1901">
+      <option id="endure">
+        <effect kind="recordHistory" text="The Federation Drought grips the continent; the rivers fall to a trickle and stock perish in their millions across the inland."/>
+        <effect kind="timedModifier" target="model.goods.grain" type="percentage" value="-35" duration="5"/>
+      </option>
+    </event-def>
+
   </historical-events>
 
   <european-nation-types>
