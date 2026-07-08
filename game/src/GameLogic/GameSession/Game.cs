@@ -11338,6 +11338,7 @@ public sealed partial class Game
             {
                 ResetAllNativeAlarm(); // FreeCol model.event.resetNativeAlarm — all native anger toward you forgotten
             }
+            ApplyAustralianElectionEffects(player, elected); // Australia-only bespoke perks (Hargraves gold rush, Phillip survival rations); no-op for classic
         }
 
         if (player.CurrentFather is null && player.OfferedFathers.Count == 0)

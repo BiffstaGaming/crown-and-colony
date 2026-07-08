@@ -1362,6 +1362,64 @@
       <modifier id="model.goods.fish" index="50"
                 type="additive" value="1"/>
     </tile-improvement-type>
+
+    <!-- ═══ Australian Federation novel content (Phase-4d.4) — new pioneer-built improvements. ═══
+         AUSTRALIA-ONLY: classic defines none of these ids and replays byte-identically. Each is built by the
+         pioneer role (model.role.pioneer, expending one tool load, like plow/road) and lays an additive yield
+         modifier on an existing good (silver=Gold, cotton=Wool). The agreement-gated improvements (Waterhole
+         Camp, Eel Trap) are DEFERRED — they depend on the First Nations 4b agreement system, which is not built. -->
+
+    <!-- Goldfield (doc 17): the diggings — +2 Gold (silver stand-in) on a dry tile. The design's "hills/mountains
+         only" placement intent lives in Edward Hargraves' gold-reveal handler (Game.AustralianEffects), which
+         seeds gold deposits on elevation tiles; the improvement itself is buildable on any dry tile, since the
+         scope vocabulary AND-combines scopes (it cannot express "hills OR mountains" in one type scope). The
+         doc's unrest side is a later balance pass. -->
+    <tile-improvement-type id="model.improvement.goldfield"
+                           add-work-turns="4" magnitude="1"
+                           required-role="model.role.pioneer"
+                           expended-amount="1" zIndex="130">
+      <scope method-name="isWater" method-value="false" />
+      <modifier id="model.goods.silver" index="50"
+                type="additive" value="2"/>
+    </tile-improvement-type>
+
+    <!-- Stock Route (doc 17): pastoral logistics — a drover's road that also lifts the tile's Wool (cotton
+         stand-in) and Food a little. Movement aid like a road; buildable on any dry non-forest tile. -->
+    <tile-improvement-type id="model.improvement.stockRoute"
+                           add-work-turns="2" magnitude="1"
+                           required-role="model.role.pioneer"
+                           expended-amount="1"
+                           movement-cost="1" zIndex="340">
+      <scope method-name="isWater" method-value="false" />
+      <modifier id="model.goods.cotton" index="50"
+                type="additive" value="1"/>
+      <modifier id="model.goods.grain" index="50"
+                type="additive" value="1"/>
+    </tile-improvement-type>
+
+    <!-- Telegraph Line (doc 17): communication + Civic Voice + Federation Support. A wire strung tile-to-tile;
+         a movement aid like a road that lifts the tile's Civic Voice (bells) contribution. -->
+    <tile-improvement-type id="model.improvement.telegraphLine"
+                           add-work-turns="3" magnitude="1"
+                           required-role="model.role.pioneer"
+                           expended-amount="1"
+                           movement-cost="1" zIndex="345">
+      <scope method-name="isWater" method-value="false" />
+      <modifier id="model.goods.bells" index="50"
+                type="additive" value="1"/>
+    </tile-improvement-type>
+
+    <!-- Rail (doc 17): late-game movement + heavy freight. Faster than a road (movement-cost 1) and lifts the
+         tile's Ore output for the mines/rails it serves. A distinct Rails good + full rail network are deferred. -->
+    <tile-improvement-type id="model.improvement.rail"
+                           add-work-turns="4" magnitude="1"
+                           required-role="model.role.pioneer"
+                           expended-amount="1"
+                           movement-cost="1" zIndex="360">
+      <scope method-name="isWater" method-value="false" />
+      <modifier id="model.goods.ore" index="50"
+                type="additive" value="2"/>
+    </tile-improvement-type>
   </tile-improvement-types>
 
   <unit-change-types>
@@ -2761,6 +2819,124 @@
       <ability id="model.ability.coastalOnly"
                value="false"/>
     </building-type>
+
+    <!-- ═══ Australian Federation novel content (Phase-4d.2/4d.3) — new buildings. ═══
+         AUSTRALIA-ONLY: classic defines none of these ids and replays byte-identically. Each is a
+         workplaces="0" utility building on the existing printing-press / warehouse / stockade modifier
+         seam — it layers a bonus onto a good that already exists in this spec (no new goods invented; the
+         goods reskin keeps silver=Gold and bells=Civic Voice). They keep the reskinned production chains
+         consistent rather than adding new conversion chains that would need goods that do not yet exist
+         (e.g. a distinct Frozen Meat / Rails / Telegraph Wire good — deferred to a later goods pass). -->
+
+    <!-- ── Economy (4d.2) ────────────────────────────────────────────────────── -->
+
+    <!-- Goldfields Office (doc 17): regulates the diggings — turns the raw gold rush into steady revenue.
+         Gated on model.ability.buildGoldfieldsOffice (granted by Edward Hargraves' "Payable Gold" election).
+         Boosts the colony's Gold (silver = Gold stand-in) output +50%. Doc's unrest side is a later balance pass. -->
+    <building-type id="model.building.goldfieldsOffice"
+                   workplaces="0"
+                   required-population="3" upkeep="10">
+      <required-goods id="model.goods.hammers"
+                      value="120"/>
+      <required-goods id="model.goods.tools"
+                      value="50"/>
+      <required-ability id="model.ability.buildGoldfieldsOffice"/>
+      <modifier id="model.goods.silver" index="70"
+                type="percentage" value="50">
+        <scope ability-id="model.ability.person" match-negated="true"/>
+      </modifier>
+    </building-type>
+
+    <!-- Freezing Works (doc 17): refrigerated export (Thomas Sutcliffe Mort's cold stores). No distinct meat
+         good exists yet, so this is modelled as a cold-store that expands the colony's food-holding capacity —
+         a warehouse-tier boost — and needs the factory unlock (Mort's buildFactory) + a coastal colony to ship. -->
+    <building-type id="model.building.freezingWorks"
+                   workplaces="0"
+                   required-population="6" upkeep="15">
+      <required-goods id="model.goods.hammers"
+                      value="160"/>
+      <required-goods id="model.goods.tools"
+                      value="100"/>
+      <required-ability id="model.ability.buildFactory"/>
+      <required-ability id="model.ability.hasPort"/>
+      <modifier id="model.modifier.warehouseStorage"
+                type="additive" value="100"/>
+    </building-type>
+
+    <!-- Rail Depot (doc 17): rail logistics — a heavy-freight goods store. A warehouse-tier building; late-game
+         by population. Rails-as-a-good and the rail network proper are deferred (need the new Rails good). -->
+    <building-type id="model.building.railDepot"
+                   workplaces="0"
+                   required-population="4" upkeep="10">
+      <required-goods id="model.goods.hammers"
+                      value="120"/>
+      <required-goods id="model.goods.tools"
+                      value="50"/>
+      <modifier id="model.modifier.warehouseStorage"
+                type="additive" value="100"/>
+    </building-type>
+
+    <!-- Telegraph Office (doc 17): communication + Federation Support. Boosts Civic Voice (bells) output +50%,
+         on the printing-press seam (a non-person production bonus). Feeds the Federation loop indirectly via the
+         Civic-Voice→Federation-Support bake already wired in Game.AccumulateLibertyAndElectFathers. -->
+    <building-type id="model.building.telegraphOffice"
+                   workplaces="0"
+                   required-population="4" upkeep="10">
+      <required-goods id="model.goods.hammers"
+                      value="120"/>
+      <required-goods id="model.goods.tools"
+                      value="50"/>
+      <modifier id="model.goods.bells" index="70"
+                type="percentage" value="50">
+        <scope ability-id="model.ability.person" match-negated="true"/>
+      </modifier>
+    </building-type>
+
+    <!-- ── Civic (4d.3) ──────────────────────────────────────────────────────── -->
+
+    <!-- Federation League Hall (doc 17): Federation Support + campaigners. A civic building that lifts Civic Voice
+         (bells) +25% — the Federation-era town-hall-adjacent civic engine. -->
+    <building-type id="model.building.federationLeagueHall"
+                   workplaces="0"
+                   required-population="4" upkeep="10">
+      <required-goods id="model.goods.hammers"
+                      value="120"/>
+      <required-goods id="model.goods.tools"
+                      value="50"/>
+      <modifier id="model.goods.bells" index="71"
+                type="percentage" value="25">
+        <scope ability-id="model.ability.person" match-negated="true"/>
+      </modifier>
+    </building-type>
+
+    <!-- Convention Hall (doc 17): Convention Points + constitution drafting. A workplace civic building where
+         statesmen (colonists) produce extra Civic Voice (bells) directly — the drafting chamber. -->
+    <building-type id="model.building.conventionHall"
+                   required-population="6" upkeep="15">
+      <production>
+        <output goods-type="model.goods.bells" value="3"/>
+      </production>
+      <required-goods id="model.goods.hammers"
+                      value="160"/>
+      <required-goods id="model.goods.tools"
+                      value="100"/>
+    </building-type>
+
+    <!-- Harbour Battery (doc 17): coastal defence (William Jervois' harbour batteries). A coastal fortification
+         granting a +75% colony defence bonus and the ability to bombard passing ships; needs a port. -->
+    <building-type id="model.building.harbourBattery"
+                   workplaces="0"
+                   required-population="3" upkeep="10">
+      <required-goods id="model.goods.hammers"
+                      value="120"/>
+      <required-goods id="model.goods.tools"
+                      value="80"/>
+      <required-ability id="model.ability.hasPort"/>
+      <modifier id="model.modifier.defence" index="50"
+                type="percentage" value="75"/>
+      <ability id="model.ability.bombardShips"
+               value="true"/>
+    </building-type>
   </building-types>
 
   <!-- By default, all founding fathers should be available to all
@@ -2811,13 +2987,21 @@
                      weight1="2" weight2="6" weight3="6">
       <event id="model.event.boycottsLifted"/>
     </founding-father>
-    <!-- Edward Hargraves — "Payable Gold": the gold rush; silver is the classic mineral stand-in for gold. -->
+    <!-- Edward Hargraves — "Payable Gold": the gold rush; silver is the classic mineral stand-in for gold.
+         BESPOKE on-election handler (4d.5, Game.AustralianEffects): reveals 2–4 Gold deposits on explored
+         elevation tiles near the player's colonies + one immigration surge (doc 08). His buildFactory-style
+         unlock grants model.ability.buildGoldfieldsOffice so the Goldfields Office (4d.2) can be built. The
+         +100% Gold modifier is the standing part; the reveal/surge are the one-shot election effect. -->
     <founding-father id="model.foundingFather.edwardHargraves" type="trade"
                      weight1="1" weight2="7" weight3="7">
       <modifier id="model.goods.silver" index="40"
                 type="percentage" value="100">
         <scope ability-id="model.ability.person" match-negated="false"/>
       </modifier>
+      <ability id="model.ability.buildGoldfieldsOffice"
+               value="true"/>
+      <ability id="model.ability.goldRush"
+               value="true"/>
     </founding-father>
     <!-- Sidney Kidman — "Overland Stations": the Cattle King's station network feeds the continent
          (+25% food from worked tiles — the generic tile-yield goods fold). -->
@@ -2876,13 +3060,18 @@
 
     <!-- ── Settlement, Administration & Defence (military) ─────────────────── -->
     <!-- Arthur Phillip — "Survival Rations": the founding governor keeps a settlement defended — its last
-         soldier re-arms automatically from stores (Paul Revere's payload). -->
+         soldier re-arms automatically from stores (Paul Revere's payload). BESPOKE on-election handler
+         (4d.6, Game.AustralianEffects, gated on model.ability.survivalRations): the first settlement
+         receives emergency Food + Tools (doc 10). The design's starvation-floor and First-Contact-tension
+         clauses are DEFERRED — they need a starvation-override and the First Nations tension system. -->
     <founding-father id="model.foundingFather.arthurPhillip" type="military"
                      weight1="10" weight2="2" weight3="1">
       <ability id="model.ability.automaticEquipment"
                value="true">
         <scope type="model.role.soldier"/>
       </ability>
+      <ability id="model.ability.survivalRations"
+               value="true"/>
     </founding-father>
     <!-- Lachlan Macquarie — "Public Works Governor": the great builder arrives with a master carpenter
          (the free-unit-on-election mechanism, John Paul Jones's payload shape). -->
