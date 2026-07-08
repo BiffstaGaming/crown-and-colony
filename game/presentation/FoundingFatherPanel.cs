@@ -19,14 +19,20 @@ public partial class FoundingFatherPanel : PanelContainer
     private Action _onChange = () => { };
     private string _congressName = "Continental Congress";
 
+    /// <summary>The active variant's display-name overrides (Australia renames goods/units; classic = none). Set in <see cref="Open"/>.</summary>
+    private System.Collections.Generic.IReadOnlyDictionary<string, string>? _displayOverrides;
+
     /// <summary>Opens the dialog. <paramref name="onChange"/> runs after a choice (to refresh the host view).</summary>
     /// <param name="congressName">The variant's name for the father-electing body (<see cref="GameLogic.Specification.GameVariant.CongressName"/> — classic "Continental Congress", Australia "Federation Convention"); defaults to the classic label so existing callers/tests are unchanged.</param>
-    public void Open(Game game, Action onChange, string congressName = "Continental Congress")
+    /// <param name="displayOverrides">The active variant's display-name overrides (<see cref="GameLogic.Specification.GameVariant.DisplayOverrides"/>) — kept consistent with the rest of the UI; <c>null</c>/empty for classic. Pioneer names carry their own explicit names, so this is a no-op today, but threading it keeps every display site variant-aware.</param>
+    public void Open(Game game, Action onChange, string congressName = "Continental Congress",
+        System.Collections.Generic.IReadOnlyDictionary<string, string>? displayOverrides = null)
     {
         ColonyArt.FramePanel(this); // parchment image frame + dark-ink theme (not Godot's transparent default)
         _game = game;
         _onChange = onChange;
         _congressName = congressName;
+        _displayOverrides = displayOverrides;
         Rebuild();
         Show();
     }
@@ -40,7 +46,7 @@ public partial class FoundingFatherPanel : PanelContainer
             dynamic.RemoveChild(child); child.QueueFree(); // detach now (signal-safe), free deferred — avoids freed-while-emitting when a child button's handler drives the rebuild
         }
 
-        string current = _game.CurrentFather is { } cf ? Naming.Humanize(_game.Ruleset.Father(cf).ShortName) : "(none)";
+        string current = _game.CurrentFather is { } cf ? Naming.Humanize(_game.Ruleset.Father(cf).ShortName, _displayOverrides) : "(none)";
         dynamic.AddChild(new Label { Text = $"Currently recruiting: {current}" });
         dynamic.AddChild(new Label { Text = $"Liberty to elect the next father: {_game.TotalFoundingFatherCost()}" });
         dynamic.AddChild(new HSeparator());
@@ -68,7 +74,7 @@ public partial class FoundingFatherPanel : PanelContainer
             var choose = new Button
             {
                 Name = $"Choose_{father.ShortName}",
-                Text = isCurrent ? $"{Naming.Humanize(father.ShortName)}  ({father.Type})  — recruiting" : $"{Naming.Humanize(father.ShortName)}  ({father.Type})",
+                Text = isCurrent ? $"{Naming.Humanize(father.ShortName, _displayOverrides)}  ({father.Type})  — recruiting" : $"{Naming.Humanize(father.ShortName, _displayOverrides)}  ({father.Type})",
                 Disabled = isCurrent,
                 SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
             };

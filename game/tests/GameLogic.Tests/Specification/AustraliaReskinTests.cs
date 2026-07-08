@@ -1,0 +1,107 @@
+using System.Collections.Generic;
+using CrownAndColony.GameLogic.Specification;
+using Xunit;
+
+namespace CrownAndColony.GameLogic.Tests.Specification;
+
+/// <summary>
+/// The Australian Federation <b>presentation reskin</b> (P8 tasks 86d3kwty1 goods / 86d3kwtvc units /
+/// 86d3mm25r buildings / 86d3mm2nv retarget-pioneers / 86d3kwu0c chrome labels): a display-layer rename only
+/// (ADR-018). The variant carries a <see cref="GameVariant.DisplayOverrides"/> map (keyed by ruleset SHORT NAME)
+/// and a set of defaulted chrome-label fields; the underlying ruleset ids never change. Classic carries no
+/// overrides and every chrome field at its classic default, so classic UI text is byte-identical.
+/// Sources: docs/australian_federation_mode_md/17 (goods/units/buildings) and 19 (UI text / lore).
+/// </summary>
+public class AustraliaReskinTests
+{
+    // ───────────────────────── DisplayOverrides (entity renames) ─────────────────────────
+
+    [Theory]
+    // Goods (86d3kwty1)
+    [InlineData("cotton", "Wool")]
+    [InlineData("silver", "Gold")]
+    [InlineData("bells", "Civic Voice")]
+    // Units (86d3kwtvc + retarget-pioneers 86d3mm2nv)
+    [InlineData("pettyCriminal", "Convict Labourer")]
+    [InlineData("indenturedServant", "Emancipist")]
+    [InlineData("freeColonist", "Free Settler")]
+    [InlineData("expertSilverMiner", "Digger")]     // the gold specialist (silver = Gold stand-in)
+    [InlineData("masterCottonPlanter", "Shepherd")] // the wool specialist (cotton = Wool stand-in)
+    // Buildings (86d3mm25r)
+    [InlineData("depot", "Government Stores")]
+    [InlineData("weaverHouse", "Wool Shed")]
+    [InlineData("weaverShop", "Shearing Shed")]
+    public void Australia_DisplayOverrides_RenameTheKeyEntities(string shortName, string australianName)
+    {
+        // The map carries the rename…
+        Assert.True(GameVariants.Australia.DisplayOverrides.TryGetValue(shortName, out string? mapped),
+            $"Australia.DisplayOverrides is missing '{shortName}'");
+        Assert.Equal(australianName, mapped);
+
+        // …and the humaniser honours it when given the variant's overrides.
+        Assert.Equal(australianName, Naming.Humanize(shortName, GameVariants.Australia.DisplayOverrides));
+
+        // Classic (no overrides) still shows the classic humanised form — NOT the Australian one.
+        Assert.NotEqual(australianName, Naming.Humanize(shortName, GameVariants.ClassicAmerica.DisplayOverrides));
+        Assert.NotEqual(australianName, Naming.Humanize(shortName)); // the single-arg (classic) overload too
+    }
+
+    [Fact]
+    public void ClassicAmerica_HasNoDisplayOverrides()
+    {
+        // Classic is byte-identical: its override map is empty, so every name humanises the classic way.
+        Assert.Empty(GameVariants.ClassicAmerica.DisplayOverrides);
+        Assert.Equal("Cotton", Naming.Humanize("cotton", GameVariants.ClassicAmerica.DisplayOverrides));
+        Assert.Equal("Free Colonist", Naming.Humanize("freeColonist", GameVariants.ClassicAmerica.DisplayOverrides));
+        Assert.Equal("Bells", Naming.Humanize("bells", GameVariants.ClassicAmerica.DisplayOverrides));
+    }
+
+    [Fact]
+    public void Overrides_AreKeyedByShortName_NotTheDottedId()
+    {
+        // The override map keys on the id suffix (short name), never the full ruleset id — the id is the
+        // transposability anchor and is never a key. A full id must miss the map and fall through to the split.
+        Assert.False(GameVariants.Australia.DisplayOverrides.ContainsKey("model.goods.cotton"));
+        Assert.True(GameVariants.Australia.DisplayOverrides.ContainsKey("cotton"));
+    }
+
+    [Fact]
+    public void Overrides_DoNotLeakIntoClassic_TransposabilityAnchorsUnchanged()
+    {
+        // Selecting a variant is the only thing that changes the display — the two maps share no state.
+        Assert.NotSame(GameVariants.Australia.DisplayOverrides, GameVariants.ClassicAmerica.DisplayOverrides);
+        // A short name the Australia map does NOT rename still humanises the same in both variants.
+        Assert.Equal("Expert Farmer", Naming.Humanize("expertFarmer", GameVariants.Australia.DisplayOverrides));
+        Assert.Equal("Expert Farmer", Naming.Humanize("expertFarmer", GameVariants.ClassicAmerica.DisplayOverrides));
+    }
+
+    // ───────────────────────── Chrome labels (86d3kwu0c) ─────────────────────────
+
+    public static IEnumerable<object[]> ChromeLabels()
+    {
+        // (accessor, Australian value, classic default). Mirrors the CongressName test in AustralianPioneersTests.
+        yield return new object[] { Field(v => v.CongressName), "Federation Convention", "Continental Congress" };
+        yield return new object[] { Field(v => v.RebelSentimentName), "Federationists", "Sons of Liberty" };
+        yield return new object[] { Field(v => v.RebelColonistName), "Federationist", "Rebel" };
+        yield return new object[] { Field(v => v.LoyalistColonistName), "Imperial Loyalist", "Tory" };
+        yield return new object[] { Field(v => v.ExpeditionaryForceName), "Imperial Pressure", "Royal Expeditionary Force" };
+        yield return new object[] { Field(v => v.ExpeditionaryForceAbbrev), "Imperial Pressure", "REF" };
+        yield return new object[] { Field(v => v.DeclareIndependenceName), "Put Constitution to Referendum", "Declare Independence" };
+        yield return new object[] { Field(v => v.WarOfIndependenceName), "Federation Referendum", "War of Independence" };
+        yield return new object[] { Field(v => v.NativesName), "First Nations", "Native nations" };
+        yield return new object[] { Field(v => v.NativeSettlementName), "First Nations community", "Native settlement" };
+        yield return new object[] { Field(v => v.LibertyName), "Civic Voice", "liberty" };
+    }
+
+    [Theory]
+    [MemberData(nameof(ChromeLabels))]
+    public void ChromeLabel_IsAustralianForAustralia_AndClassicDefaultForClassic(
+        System.Func<GameVariant, string> accessor, string australianValue, string classicDefault)
+    {
+        Assert.Equal(australianValue, accessor(GameVariants.Australia));
+        Assert.Equal(classicDefault, accessor(GameVariants.ClassicAmerica));
+    }
+
+    /// <summary>Boxes a chrome-field accessor for the MemberData rows (keeps the delegate strongly typed).</summary>
+    private static System.Func<GameVariant, string> Field(System.Func<GameVariant, string> accessor) => accessor;
+}

@@ -18,6 +18,8 @@ public partial class NativeDemandPanel : PanelContainer
 {
     private Game _game = null!;
     private Action<string> _onResolved = _ => { };
+    /// <summary>The active variant's display-name overrides (Australia renames goods; classic = none). Set in <see cref="Open"/>.</summary>
+    private System.Collections.Generic.IReadOnlyDictionary<string, string>? _displayOverrides;
 
     public override void _Ready()
     {
@@ -30,10 +32,12 @@ public partial class NativeDemandPanel : PanelContainer
     /// Opens the modal for a pending <paramref name="demand"/>. <paramref name="onResolved"/> runs once the player
     /// answers, with a one-line outcome for the status bar.
     /// </summary>
-    public void Open(Game game, NativeDemand demand, Action<string> onResolved)
+    /// <param name="displayOverrides">The active variant's display-name overrides (Australia renames goods so tribute reads "Wool" consistently; <c>null</c>/empty for classic).</param>
+    public void Open(Game game, NativeDemand demand, Action<string> onResolved, System.Collections.Generic.IReadOnlyDictionary<string, string>? displayOverrides = null)
     {
         _game = game;
         _onResolved = onResolved;
+        _displayOverrides = displayOverrides;
         GetNode<Label>("VBox/DemandTitle").Text = $"The {NationLabel(demand.DemandingNationId)} demand tribute";
         GetNode<Label>("VBox/DemandInfo").Text = Describe(demand);
         Show();
@@ -61,7 +65,7 @@ public partial class NativeDemandPanel : PanelContainer
     {
         string what = demand.GoodsId is null
             ? $"{demand.Amount} gold"
-            : $"{demand.Amount} {Naming.Humanize(_game.Ruleset.Goods(demand.GoodsId).ShortName)}";
+            : $"{demand.Amount} {Naming.Humanize(_game.Ruleset.Goods(demand.GoodsId).ShortName, _displayOverrides)}"; // goods per variant (86d3kwty1)
         return $"They demand {what} from {demand.ColonyName}.\nPay tribute, or refuse and risk a raid?";
     }
 

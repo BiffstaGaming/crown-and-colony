@@ -126,22 +126,38 @@ public partial class ColonyReportPanel : PanelContainer
     /// that invoke it with the target category + anchor; when <c>null</c> they render as plain labels.
     /// </param>
     /// <param name="congressName">The variant's name for the father-electing body (classic "Continental Congress", Australia "Federation Convention" — 86d3kwtjb); titles the Congress tab.</param>
-    public void Open(Game game, System.Action<ColopediaPanel.Category, string>? openColopedia = null, string congressName = "Continental Congress")
+    /// <param name="displayOverrides">The active variant's display-name overrides (<see cref="GameLogic.Specification.GameVariant.DisplayOverrides"/>) — Australia renames goods/units; <c>null</c>/empty (classic) leaves names classic.</param>
+    /// <param name="nativesName">The variant's chrome word for the indigenous nations (classic "Native nations", Australia "First Nations"); titles the Natives tab.</param>
+    /// <param name="expeditionaryForceName">The variant's name for the Crown's army (classic "Royal Expeditionary Force", Australia "Imperial Pressure"); the REF/Military headers.</param>
+    public void Open(Game game, System.Action<ColopediaPanel.Category, string>? openColopedia = null, string congressName = "Continental Congress",
+        IReadOnlyDictionary<string, string>? displayOverrides = null, string nativesName = "Native nations",
+        string expeditionaryForceName = "Royal Expeditionary Force")
     {
         ColonyArt.FramePanel(this, dense: true); // parchment image frame + dark-ink in-game theme (not Godot's default gray box)
         _game = game;
         _openColopedia = openColopedia;
         _congressName = congressName;
+        _displayOverrides = displayOverrides;
+        _nativesName = nativesName;
+        _expeditionaryForceName = expeditionaryForceName;
         _tab = Tab.Colonies;
         Rebuild();
         Show();
     }
 
     private string _congressName = "Continental Congress";
+    private IReadOnlyDictionary<string, string>? _displayOverrides;
+    private string _nativesName = "Native nations";
+    private string _expeditionaryForceName = "Royal Expeditionary Force";
 
     private void Rebuild()
     {
-        GetNode<Label>("VBox/ReportTitle").Text = _tab == Tab.Congress ? _congressName : Titles[_tab];
+        GetNode<Label>("VBox/ReportTitle").Text = _tab switch
+        {
+            Tab.Congress => _congressName,   // "Continental Congress" / "Federation Convention" (86d3kwtjb)
+            Tab.Natives => _nativesName,     // "Native nations" / "First Nations" (86d3kwu0c)
+            _ => Titles[_tab],
+        };
         var dynamic = GetNode<VBoxContainer>("VBox/Scroll/Dynamic");
         foreach (Node child in dynamic.GetChildren())
         {
@@ -1081,7 +1097,7 @@ public partial class ColonyReportPanel : PanelContainer
         dynamic.AddChild(new HSeparator());
 
         (int refLand, int refNaval) = _game.ExpeditionaryForceStrength();
-        dynamic.AddChild(new Label { Name = "MilitaryRefTitle", Text = "Royal Expeditionary Force (the army the King would send)" });
+        dynamic.AddChild(new Label { Name = "MilitaryRefTitle", Text = $"{_expeditionaryForceName} (the army the King would send)" });
         dynamic.AddChild(new Label
         {
             Name = "MilitaryRef",
@@ -1166,7 +1182,7 @@ public partial class ColonyReportPanel : PanelContainer
         dynamic.AddChild(new Label
         {
             Name = "RefHeader",
-            Text = $"The Royal Expeditionary Force currently massing: {land} land · {naval} naval",
+            Text = $"The {_expeditionaryForceName} currently massing: {land} land · {naval} naval",
         });
         dynamic.AddChild(new Label
         {
@@ -1470,8 +1486,8 @@ public partial class ColonyReportPanel : PanelContainer
     /// <summary>The readable tail of a <c>model.*.foo</c> id (e.g. <c>model.nation.dutch</c> → <c>dutch</c>).</summary>
     private static string Strip(string? id) => id is null ? "?" : id[(id.LastIndexOf('.') + 1)..];
 
-    /// <summary>Title-cases a camelCase short name for label text (e.g. <c>expertFarmer</c> → "Expert Farmer") — the shared <see cref="Naming.Humanize"/> (one humaniser everywhere, so display overrides apply uniformly; this had its own duplicate copy).</summary>
-    private static string Display(string shortName) => Naming.Humanize(shortName);
+    /// <summary>Title-cases a camelCase short name for label text (e.g. <c>expertFarmer</c> → "Expert Farmer") — the shared <see cref="Naming.Humanize"/>, honouring the active variant's <see cref="_displayOverrides"/> first (Australia: <c>cotton</c> → "Wool"). One humaniser everywhere so overrides apply uniformly.</summary>
+    private string Display(string shortName) => Naming.Humanize(shortName, _displayOverrides);
 
     private static string Signed(int n) => (n > 0 ? "+" : "") + n;
 }

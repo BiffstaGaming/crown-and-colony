@@ -109,12 +109,14 @@ public partial class ColonyPanel : PanelContainer
     /// status reporting (ADR-006), so the panel only chooses the target and forwards the click. The overloads without
     /// them keep existing callers/tests working with no-op commands.
     /// </summary>
-    public void Open(Game game, Colony colony, Action onChange, Action<Unit, Colony, string, int> loadCargo, Action<Unit, Colony, string, int> unloadCargo, Action<Colony, string, bool, int> setExport, Action<Colony, string> renameColony, Action<Colony> abandonColony, Action<string> payBoycott, Action<Colony, string, int> dumpGoods)
+    /// <param name="displayOverrides">The active variant's display-name overrides (<see cref="GameLogic.Specification.GameVariant.DisplayOverrides"/>) — e.g. the Australian Federation shows <c>cotton</c> as "Wool"; <c>null</c>/empty (classic) leaves every name in its classic form.</param>
+    public void Open(Game game, Colony colony, Action onChange, Action<Unit, Colony, string, int> loadCargo, Action<Unit, Colony, string, int> unloadCargo, Action<Colony, string, bool, int> setExport, Action<Colony, string> renameColony, Action<Colony> abandonColony, Action<string> payBoycott, Action<Colony, string, int> dumpGoods, IReadOnlyDictionary<string, string>? displayOverrides = null)
     {
         _renameColony = renameColony;
         _abandonColony = abandonColony;
         _payBoycott = payBoycott;
         _dumpGoods = dumpGoods;
+        _displayOverrides = displayOverrides;
         Open(game, colony, onChange, loadCargo, unloadCargo, setExport);
     }
 
@@ -212,13 +214,17 @@ public partial class ColonyPanel : PanelContainer
     /// <summary>A tile's per-worker yield as the colony actually banks it — the base plus the Sons-of-Liberty production bonus, floored at 0 (mirrors the production turn).</summary>
     private int EffectiveYield(int baseYield) => Math.Max(0, baseYield + _colony.ProductionBonus);
 
+    /// <summary>The active variant's display-name overrides (Australia renames goods/units/buildings; classic = none). Set in <see cref="Open(Game, Colony, Action, Action{Unit, Colony, string, int}, Action{Unit, Colony, string, int}, Action{Colony, string, bool, int}, Action{Colony, string}, Action{Colony}, Action{string}, Action{Colony, string, int}, IReadOnlyDictionary{string, string})"/>.</summary>
+    private IReadOnlyDictionary<string, string>? _displayOverrides;
+
     /// <summary>
     /// A human display name for a ruleset short-name — the shared <see cref="Naming.Humanize"/> (one humaniser for
     /// every display site, so overrides like country → "Pasture" apply everywhere; this had its own duplicate copy
-    /// the override could not reach). e.g. <c>tobacconistHouse</c> → "Tobacconist House". Used for label text only;
+    /// the override could not reach). e.g. <c>tobacconistHouse</c> → "Tobacconist House". Honours the active variant's
+    /// <see cref="_displayOverrides"/> first (Australia: <c>cotton</c> → "Wool"). Used for label text only;
     /// the control <c>Name</c>s the tests query still use <see cref="Short"/>.
     /// </summary>
-    private static string Display(string shortName) => Naming.Humanize(shortName);
+    private string Display(string shortName) => Naming.Humanize(shortName, _displayOverrides);
 
     private void Rebuild()
     {

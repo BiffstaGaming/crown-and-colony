@@ -23,6 +23,8 @@ public partial class TradeRoutePanel : PanelContainer
 {
     private Game _game = null!;
     private Action _onChange = () => { };
+    /// <summary>The active variant's display-name overrides (Australia renames goods so the route editor reads "Wool" consistently; classic = none). Set in <see cref="Open"/>.</summary>
+    private IReadOnlyDictionary<string, string>? _displayOverrides;
 
     /// <summary>
     /// The in-progress "New route" form (<c>86d3fpz5g</c>): an ordered list of draft stops the player is editing.
@@ -42,11 +44,13 @@ public partial class TradeRoutePanel : PanelContainer
     }
 
     /// <summary>Opens the panel. <paramref name="onChange"/> runs after every action.</summary>
-    public void Open(Game game, Action onChange)
+    /// <param name="displayOverrides">The active variant's display-name overrides (Australia renames goods; <c>null</c>/empty for classic).</param>
+    public void Open(Game game, Action onChange, IReadOnlyDictionary<string, string>? displayOverrides = null)
     {
         ColonyArt.FramePanel(this, dense: true); // parchment image frame + dark-ink in-game theme (not Godot's default gray box)
         _game = game;
         _onChange = onChange;
+        _displayOverrides = displayOverrides;
         ResetDraft();
         Rebuild();
         Show();
@@ -202,7 +206,7 @@ public partial class TradeRoutePanel : PanelContainer
                     // Use the short name in the node id (Godot node names can't hold the dotted goods id; ShortName is
                     // the unique last segment, e.g. "sugar"). The full id still flows into LoadGoods/the engine below.
                     Name = $"Stop_{stopIndex}_Good_{g.ShortName}",
-                    Text = Naming.Humanize(g.ShortName), // "tradeGoods" → "Trade Goods" (node name above stays raw)
+                    Text = Naming.Humanize(g.ShortName, _displayOverrides), // "tradeGoods" → "Trade Goods"; goods per variant (86d3kwty1) (node name above stays raw)
                     ButtonPressed = draft.LoadGoods.Contains(goodsId),
                 };
                 check.Toggled += pressed =>
