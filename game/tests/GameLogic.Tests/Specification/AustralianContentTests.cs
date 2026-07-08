@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
+using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
 using Xunit;
 
@@ -25,9 +27,15 @@ public class AustralianContentTests
 
     private const string Hargraves = "model.foundingFather.edwardHargraves";
     private const string Phillip = "model.foundingFather.arthurPhillip";
+    private const string Parkes = "model.foundingFather.henryParkes";
+    private const string Barton = "model.foundingFather.edmundBarton";
+    private const string Quick = "model.foundingFather.johnQuick";
+    private const string Griffith = "model.foundingFather.samuelGriffith";
+    private const string Spence = "model.foundingFather.catherineHelenSpence";
     private const string GoldResource = "model.resource.silver"; // silver = the reskin's Gold stand-in
     private const string FoodId = "model.goods.food";
     private const string ToolsId = "model.goods.tools";
+    private const ulong FederationSeed = 0xFED0A05UL;
 
     // ───────────────────────── new buildings (4d.2 / 4d.3) parse + are available ─────────────────────────
 
@@ -193,9 +201,223 @@ public class AustralianContentTests
         Assert.True(game.Colonies[0].StoreOf(ToolsId) >= toolsBefore + 20, "emergency tools should have been delivered");
     }
 
+    // ───────────────────────── Democracy & Federation Pioneers (4d.7) ─────────────────────────
+
+    [Fact]
+    public void DemocracyPioneers_CarryTheirAustraliaOnlyFederationAbilities()
+    {
+        Assert.Contains(Australia.Father(Parkes).Abilities, a => a.Id == "model.ability.tenterfieldOration" && a.Value);
+        Assert.Contains(Australia.Father(Barton).Abilities, a => a.Id == "model.ability.conventionDrive" && a.Value);
+        Assert.Contains(Australia.Father(Quick).Abilities, a => a.Id == "model.ability.corowaPlan" && a.Value);
+        Assert.Contains(Australia.Father(Griffith).Abilities, a => a.Id == "model.ability.draftConstitution" && a.Value);
+        Assert.Contains(Australia.Father(Spence).Abilities, a => a.Id == "model.ability.fairRepresentation" && a.Value);
+
+        // Classic knows none of these Federation-loop abilities (byte-identical guard).
+        foreach (string ability in new[]
+                 {
+                     "model.ability.tenterfieldOration", "model.ability.conventionDrive",
+                     "model.ability.corowaPlan", "model.ability.draftConstitution", "model.ability.fairRepresentation",
+                 })
+        {
+            Assert.DoesNotContain(Classic.FoundingFathers.SelectMany(f => f.Abilities), a => a.Id == ability);
+        }
+    }
+
+    [Fact]
+    public void ElectingParkes_LiftsFederationSupport_InEveryColonyRegion()
+    {
+        Game game = FederationGame(out var colonies);
+        int nswBefore = colonies[AustraliaColony.NewSouthWales].FederationSupport;
+        int waBefore = colonies[AustraliaColony.WesternAustralia].FederationSupport;
+
+        ElectFather(ref game, Parkes, ref colonies);
+
+        Assert.Contains(Parkes, game.Congress);
+        // The Tenterfield Oration boosts EVERY colony (both a big eastern colony and a small western one rose).
+        Assert.True(colonies[AustraliaColony.NewSouthWales].FederationSupport > nswBefore);
+        Assert.True(colonies[AustraliaColony.WesternAustralia].FederationSupport > waBefore);
+    }
+
+    [Fact]
+    public void ElectingBarton_BanksConventionPoints_DrivingTowardTheConvention()
+    {
+        Game game = FederationGame(out var colonies);
+        int pointsBefore = game.ConventionPoints;
+
+        ElectFather(ref game, Barton, ref colonies);
+
+        Assert.Contains(Barton, game.Congress);
+        Assert.True(game.ConventionPoints > pointsBefore, "Barton's convention drive must bank Convention Points");
+    }
+
+    [Fact]
+    public void ElectingGriffith_BanksConventionPoints_TowardDraftingTheConstitution()
+    {
+        Game game = FederationGame(out var colonies);
+        int pointsBefore = game.ConventionPoints;
+
+        ElectFather(ref game, Griffith, ref colonies);
+
+        Assert.Contains(Griffith, game.Congress);
+        Assert.True(game.ConventionPoints > pointsBefore, "Griffith's drafting boost must bank Convention Points");
+    }
+
+    [Fact]
+    public void ElectingSpence_LiftsFederationSupport_InTheSmallColoniesOnly()
+    {
+        // Two identical games: one elects Spence, one elects nobody. The election turn also banks the usual Civic-Voice
+        // accrual into EVERY colony, so we compare each colony's gain to the no-election control to isolate Spence's boost.
+        Game control = FederationGame(out var controlColonies);
+        var controlBefore = SupportByColony(controlColonies);
+        control.EndTurn(); // a plain turn — the natural per-colony accrual, no father elected
+        var controlAfter = SupportByColony(ReresolveAll(control));
+
+        Game game = FederationGame(out var colonies);
+        var before = SupportByColony(colonies);
+        ElectFather(ref game, Spence, ref colonies);
+        var after = SupportByColony(colonies);
+
+        Assert.Contains(Spence, game.Congress);
+
+        // The three SMALL colonies (SA/Tas/WA) gain MORE than the plain-accrual control (Spence's boost on top)…
+        foreach (AustraliaColony c in new[] { AustraliaColony.SouthAustralia, AustraliaColony.Tasmania, AustraliaColony.WesternAustralia })
+        {
+            Assert.True(after[c] - before[c] > controlAfter[c] - controlBefore[c],
+                $"small colony {c} should gain more than the no-Spence control");
+        }
+        // …while the two LARGE eastern colonies (NSW/Vic) gain no more than the plain-accrual control (untouched by Spence).
+        foreach (AustraliaColony c in new[] { AustraliaColony.NewSouthWales, AustraliaColony.Victoria })
+        {
+            Assert.True(after[c] - before[c] <= controlAfter[c] - controlBefore[c],
+                $"large colony {c} should gain no more than the no-Spence control");
+        }
+    }
+
+    [Fact]
+    public void ElectingQuick_LowersTheReferendumPassThreshold_LettingAMarginalVoteCarry()
+    {
+        // The referendum carries when support (plus Quick's +10 Corowa relief) beats a seeded 0–99 roll. Seed 25's roll
+        // lands in [50,60): at exactly the referendum bar (50% in every region) the vote FAILS without Quick but CARRIES
+        // with him — proving his relief lowers the effective pass threshold (read live from the persisted Congress). The
+        // relief rides the persisted Congress (no new save state) and only Australia reaches HoldReferendum, so classic
+        // stays byte-identical.
+        const ulong quickSeed = 25;
+        Assert.False(RunReferendum(quickSeed, withQuick: false, supportPercent: Game.RegionSupportForReferendum),
+            "without Quick, a referendum exactly at the 50% bar fails this seed's roll");
+        Assert.True(RunReferendum(quickSeed, withQuick: true, supportPercent: Game.RegionSupportForReferendum),
+            "with Quick in Congress, the same 50% referendum carries — his +10 relief lowered the bar");
+    }
+
+    [Fact]
+    public void Quick_NeverTurnsACarryingReferendumIntoAFailure()
+    {
+        // Quick can only ever help: at any support level, a vote that carries without him must still carry with him.
+        for (int support = Game.RegionSupportForReferendum; support <= 100; support += 10)
+        {
+            bool withoutQuick = RunReferendum(FederationSeed, withQuick: false, supportPercent: support);
+            bool withQuick = RunReferendum(FederationSeed, withQuick: true, supportPercent: support);
+            Assert.True(!withoutQuick || withQuick, $"Quick must never turn a carrying vote into a failure (support {support})");
+        }
+    }
+
     // ───────────────────────── fixtures ─────────────────────────
 
     private static int CountGold(Game game) => game.Map.Resources.Count(kv => kv.Value == GoldResource);
+
+    /// <summary>A snapshot of each colony's banked Federation Support, keyed by region.</summary>
+    private static Dictionary<AustraliaColony, int> SupportByColony(Dictionary<AustraliaColony, Colony> colonies) =>
+        colonies.ToDictionary(kv => kv.Key, kv => kv.Value.FederationSupport);
+
+    /// <summary>Re-resolves the six founded colonies of <paramref name="game"/> by their (stable) start tile.</summary>
+    private static Dictionary<AustraliaColony, Colony> ReresolveAll(Game game) =>
+        AustraliaColonyStart.All.ToDictionary(
+            c => c,
+            c => game.Colonies.Single(col => col.Position == AustraliaColonyStart.StartTile(c)));
+
+    /// <summary>
+    /// A live Australia-map game (regions resolve) with one colony founded in each of the six colony regions, and a
+    /// little Federation Support banked in each so the boosts have a visible base to lift. Returned with the colonies
+    /// keyed by region.
+    /// </summary>
+    private static Game FederationGame(out Dictionary<AustraliaColony, Colony> colonies)
+    {
+        Game game = Game.New(Australia, FederationSeed, mapSource: MapSource.Australia);
+        colonies = new Dictionary<AustraliaColony, Colony>();
+        foreach (AustraliaColony colony in AustraliaColonyStart.All)
+        {
+            Position tile = AustraliaColonyStart.StartTile(colony);
+            Unit colonist = game.SpawnUnit(Australia.Unit(Colony.FreeColonistTypeId), tile);
+            Colony founded = game.FoundColony(colonist);
+            founded.AddFederationSupport(founded.RebelLibertyDivisor * founded.Population * 10 / 100); // ~10% base
+            colonies[colony] = founded;
+        }
+        return game;
+    }
+
+    /// <summary>
+    /// Stages <paramref name="fatherId"/> for election on the human's player row (via the save layer, the
+    /// <see cref="FoundingFatherTests"/> pattern) and ends the turn so he is elected and his on-election effect fires.
+    /// Re-resolves <paramref name="colonies"/> against the restored game (the boosts mutate the restored colonies).
+    /// </summary>
+    private static void ElectFather(ref Game game, string fatherId, ref Dictionary<AustraliaColony, Colony> colonies)
+    {
+        SaveGame primed = SaveGame.From(game, "australia") with
+        {
+            Players = SaveGame.From(game, "australia").Players!
+                .Select(p => p.IsHuman ? p with { CurrentFather = fatherId, Liberty = 100_000 } : p).ToList(),
+        };
+        Game elected = SaveGame.FromJson(primed.ToJson()).Restore(Australia);
+        elected.EndTurn();
+        game = elected;
+
+        // Re-key the colonies to the restored instances by their (stable) start tile, so the caller reads the mutated ones.
+        var restored = new Dictionary<AustraliaColony, Colony>();
+        foreach (AustraliaColony colony in AustraliaColonyStart.All)
+        {
+            Position tile = AustraliaColonyStart.StartTile(colony);
+            restored[colony] = elected.Colonies.Single(c => c.Position == tile);
+        }
+        colonies = restored;
+    }
+
+    /// <summary>
+    /// Runs a single referendum at the given seed and per-colony support level, with or without John Quick in the human's
+    /// Congress, and returns whether it carried — the pair proves Quick's Corowa relief lowers the pass threshold.
+    /// </summary>
+    private static bool RunReferendum(ulong seed, bool withQuick, int supportPercent)
+    {
+        Game game = Game.New(Australia, seed, mapSource: MapSource.Australia);
+        var colonies = new Dictionary<AustraliaColony, Colony>();
+        foreach (AustraliaColony colony in AustraliaColonyStart.All)
+        {
+            Position tile = AustraliaColonyStart.StartTile(colony);
+            Unit colonist = game.SpawnUnit(Australia.Unit(Colony.FreeColonistTypeId), tile);
+            colonies[colony] = game.FoundColony(colonist);
+        }
+
+        if (withQuick)
+        {
+            SaveGame primed = SaveGame.From(game, "australia") with
+            {
+                Players = SaveGame.From(game, "australia").Players!
+                    .Select(p => p.IsHuman ? p with { Congress = new List<string> { Quick } } : p).ToList(),
+            };
+            game = SaveGame.FromJson(primed.ToJson()).Restore(Australia);
+        }
+
+        // Set every colony to a support level just under the seeded referendum roll so it fails without Quick's relief.
+        Game g = game;
+        Colony Reresolve(AustraliaColony c) =>
+            g.Colonies.Single(col => col.Position == AustraliaColonyStart.StartTile(c));
+        foreach (AustraliaColony colony in AustraliaColonyStart.All)
+        {
+            Colony col = Reresolve(colony);
+            col.FederationSupport = 0;
+            col.AddFederationSupport(col.RebelLibertyDivisor * col.Population * supportPercent / 100);
+        }
+        game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
+        return game.HoldReferendum();
+    }
 
     /// <summary>
     /// A 5×5 Australia-ruleset game: a pop-3 colony at the centre on plains, ringed by explored <b>hills</b> tiles

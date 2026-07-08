@@ -3104,15 +3104,20 @@
     </founding-father>
 
     <!-- ── Democracy & Federation (political) — no age-1 weight: no Federation figure early. ── -->
-    <!-- Henry Parkes — "Tenterfield Oration": +20 Sons-of-Liberty/Federation Support in every colony
-         (Simón Bolívar's payload). -->
+    <!-- Henry Parkes — "Tenterfield Oration": +20 Sons-of-Liberty in every colony (Simón Bolívar's payload) PLUS
+         (Phase-4d.7) an Australia-only on-election Federation-Support boost across all colony regions — his 1889 speech
+         that launched the movement (model.ability.tenterfieldOration; handled in Game.AustralianEffects). -->
     <founding-father id="model.foundingFather.henryParkes" type="political"
                      weight1="0" weight2="3" weight3="10">
       <modifier id="model.modifier.SoL"
                 type="additive" value="20"/>
+      <ability id="model.ability.tenterfieldOration"
+               value="true"/>
     </founding-father>
     <!-- Edmund Barton — "Nation for a Continent": the consensus-builder — no war is declared over his head,
-         his peace is always accepted, treaties hold (Benjamin Franklin's payload). -->
+         his peace is always accepted, treaties hold (Benjamin Franklin's payload) PLUS (Phase-4d.7) an Australia-only
+         on-election Convention-Points drive toward calling the convention — the first PM and lead campaigner
+         (model.ability.conventionDrive; handled in Game.AustralianEffects). -->
     <founding-father id="model.foundingFather.edmundBarton" type="political"
                      weight1="0" weight2="2" weight3="10">
       <ability id="model.ability.ignoreEuropeanWars"
@@ -3121,9 +3126,13 @@
                value="true"/>
       <modifier id="model.modifier.peaceTreaty"
                 type="percentage" value="50"/>
+      <ability id="model.ability.conventionDrive"
+               value="true"/>
     </founding-father>
     <!-- John Quick — "Corowa Plan": the colonies formally talk to one another — intercolonial trade + the
-         richer foreign-affairs report (Jan de Witt's payload). -->
+         richer foreign-affairs report (Jan de Witt's payload) PLUS (Phase-4d.7) an Australia-only referendum relief:
+         while he sits in Congress the referendum's effective pass threshold is lowered — the elected-delegates process
+         he designed (model.ability.corowaPlan; read live in Game.Federation.HoldReferendum). -->
     <founding-father id="model.foundingFather.johnQuick" type="political"
                      weight1="0" weight2="3" weight3="9">
       <ability id="model.ability.tradeWithForeignColonies"
@@ -3132,21 +3141,31 @@
                value="true"/>
       <ability id="model.ability.betterForeignAffairsReport"
                value="true"/>
+      <ability id="model.ability.corowaPlan"
+               value="true"/>
     </founding-father>
-    <!-- Samuel Griffith — "Draft Constitution": the drafting energises civic voice (+30% bells). -->
+    <!-- Samuel Griffith — "Draft Constitution": the drafting energises civic voice (+30% bells) PLUS (Phase-4d.7)
+         an Australia-only on-election Convention-Points boost toward drafting the constitution — the constitution's
+         chief drafter (model.ability.draftConstitution; handled in Game.AustralianEffects). -->
     <founding-father id="model.foundingFather.samuelGriffith" type="political"
                      weight1="0" weight2="3" weight3="9">
       <modifier id="model.goods.bells" index="40"
                 type="percentage" value="30">
         <scope ability-id="model.ability.person" match-negated="true"/>
       </modifier>
+      <ability id="model.ability.draftConstitution"
+               value="true"/>
     </founding-father>
-    <!-- Catherine Helen Spence — "Fair Representation": +10 Sons-of-Liberty/Federation Support everywhere
-         (Bolívar's payload at the design's smaller magnitude). -->
+    <!-- Catherine Helen Spence — "Fair Representation": +10 Sons-of-Liberty everywhere (Bolívar's payload at the
+         design's smaller magnitude) PLUS (Phase-4d.7) an Australia-only on-election Federation-Support boost weighted
+         to the small colonies (SA/Tas/WA) — the effective-voting campaigner who reassured the small states
+         (model.ability.fairRepresentation; handled in Game.AustralianEffects). -->
     <founding-father id="model.foundingFather.catherineHelenSpence" type="political"
                      weight1="0" weight2="3" weight3="9">
       <modifier id="model.modifier.SoL"
                 type="additive" value="10"/>
+      <ability id="model.ability.fairRepresentation"
+               value="true"/>
     </founding-father>
 
     <!-- ── Social Reform & First Nations (religious) ───────────────────────── -->
