@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Australia mode: 20-task batch (reskin + map + event engine + Phase-4 ADRs)
+
+**Requested:** "Begin work on the Australia Mode… determine which can be run in parallel streams to reduce testing. Process 20 of these tasks."
+**Did:** 6 recon agents mapped the surface, then 20 tasks ran as **file-disjoint parallel streams** (3 background worktree agents — map, event-engine, presentation-reskin — + a lead-driven spec/docs spine), integrated as **3 staged, pushed, CI-green milestones**:
+- **M1 `9e3e0c4`:** variant-scoped display seam (`GameVariant.DisplayOverrides` + `Naming` overload, ids untouched); 1788–1901 timeline (+`ages` fix so the Pioneer anachronism guard holds); Australian place-names (Sydney-first); six colony regions + colony-start API + First-Fleet landfall.
+- **M2 `3d7cd03`:** presentation reskin (Wool/Gold/Civic Voice + convict/settler/digger units + Government Stores/Wool Shed + 10 chrome labels across 11 panels); historical-event **engine** (schema/parser/runtime/effects, byte-identical when empty); un-gated land-movement modifiers (4d.1); maturity oracles (4a.2); save **v70→v71**.
+- **M3 `fe5cba6`:** event **catalog batch 1** — Sydney Cove setup event + 10 non-sensitive 1788–1830 events.
+- Drafted **ADR-021/022/023** (Federation victory / First Nations / event engine) → ClickUp doc 02; QA soak per-turn budget verified.
+**Status:** **L1/L2 2843 + soak 5 green**; M1 & M2 **CI green incl. L3** (`gh run view`), M3 CI in flight (spec-data only, L1/L2 already green). ~50 new tests. Classic byte-identical throughout.
+**Changed:** `Naming.cs`, `GameVariant.cs`, `australia/specification.xml` (+1788 years, +`<historical-events>`), `european-nation-names.properties`, `EventDef.cs`/`Game.Events.cs`/`Game.MaturityOracles.cs` (new), `Ruleset.cs`/`Game.cs`/`SaveGame.cs` (v71), `AustraliaColonyStart.cs` + `australia.txt` + region generator, 11 presentation panels, docs (`game-modes.md`, `events.md`, `map-terrain.md`, …), +test files. Commits `ae58adb`→`fe5cba6`.
+**Decisions:** display-only reskin (never id renames, ADR-018); ADRs are **drafts** naming real seams but leaving design calls to Chris; First Nations *content* (nation entries + first-contact events) **deliberately deferred** to 4b/4c.11 (sensitive + entangled with regions/tension model); "Sheep Station" building omitted (no faithful classic wool-producing building).
+**Scheduled next:** **Chris sign-off on ADR-021/022/023** (esp. the Federation "does Imperial Pressure keep the REF invasion?" call) — that unblocks decomposing/executing **4a Federation victory** (`86d3mm2xq`) and **4b First Nations** (`86d3mm31k`). Also queued: event catalog batches 2–3 + event-prompt UI + frequency bands (4c.10).
+**Follow-ups:** New-Game "Colony" picker UI; sandbox-power Australian names; Colopedia/Help static-prose reskin; deep First Nations nation entries; confirm the Sheep-Station call.
+**Needs you:** (1) **Playtest** an Australian Federation game (New Game → Australian Federation → 1788, Sydney-first colonies, Civic Voice/First Nations labels). (2) **Sign off the 3 draft ADRs** (doc 02 new page "Decision Records — P8 Australia") or answer their OPEN questions. (3) OK the "Sheep Station omitted" call. Standing: the top-down direction call.
+
+---
+
 ## 2026-07-08 — Australia map: six colony regions + start sites + colony-start scenarios
 
 **Requested:** implement the Map stream for the Australian Federation variant — (1) `86d3mm1xr` six colony regions + start sites on the Australia map, (2) `86d3mm2ug` colony-start scenarios (logic-level API, no Godot UI).
