@@ -122,6 +122,32 @@ public class AustraliaVariantTests
     }
 
     [Fact]
+    public void AustraliaTimeline_StartsIn1788_AtTheFirstFleet_AndRunsToFederation()
+    {
+        // The variant's calendar runs 1788 (the First Fleet) → 1901 (Federation), not the classic 1492–1850
+        // (86d3mm2fb). Only the gameOptions.years values change; the calendar machinery is unchanged.
+        Assert.Equal(1788, Australia.Calendar.YearForTurn(1)); // turn 1 is 1788
+        Assert.Equal(1899, Australia.LastColonialYear);        // the pre-Federation colonial cutoff
+        Game game = Game.New(Australia, seed: 0xA05UL, mapSource: MapSource.Australia);
+        Assert.Equal(1788, game.CurrentYear);                  // the booted game actually opens in 1788
+    }
+
+    [Fact]
+    public void AustralianColonies_UseAustralianPlaceNames_SydneyFirst()
+    {
+        // The primary British-Australian power (the `english` transposability anchor) founds Australian towns in
+        // historical order — Sydney (the First Fleet) first (86d3kwtrq). The New-World names are gone from its list.
+        EuropeanNation british =
+            Australia.EuropeanNations.First(n => n.ColonyNames.Contains("Sydney"));
+        Assert.Equal("Sydney", british.ColonyNames[0]);
+        foreach (string town in new[] { "Melbourne", "Adelaide", "Brisbane", "Perth", "Hobart" })
+        {
+            Assert.Contains(town, british.ColonyNames);
+        }
+        Assert.DoesNotContain("Jamestown", british.ColonyNames);
+    }
+
+    [Fact]
     public void AustraliaSave_RecordsTheVariant_AndReloadsUnderItsRuleset()
     {
         Game game = Game.New(Australia, seed: 0xA05UL, mapSource: MapSource.Australia);

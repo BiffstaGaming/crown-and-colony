@@ -4840,27 +4840,32 @@
                        defaultValue="false"/>
       </optionGroup>
       <optionGroup id="gameOptions.years">
-        <!-- The very first year of the game. -->
+        <!-- Australian Federation timeline (86d3mm2fb): the game runs 1788 (the First Fleet) to
+             1901 (Federation), not the classic 1492-1850. Only the year values change; the pacing
+             machinery is unchanged. maximumValue is raised to 1901 so lastYear validates. -->
+        <!-- The very first year of the game: the First Fleet's arrival at Sydney Cove. -->
         <integerOption id="model.option.startingYear"
-                       value="1492" minimumValue="1492" maximumValue="1900" />
-        <!-- The first year in which there are two turns. -->
+                       value="1788" minimumValue="1492" maximumValue="1901" />
+        <!-- The first year in which there are two turns: the pace quickens at the gold-rush era. -->
         <integerOption id="model.option.seasonYear"
-                       value="1600" minimumValue="1492" maximumValue="1900" />
-        <!-- The year in which owning a colony becomes mandatory. -->
+                       value="1830" minimumValue="1492" maximumValue="1901" />
+        <!-- The year in which owning a colony becomes mandatory (a grace period after 1788). -->
         <integerOption id="model.option.mandatoryColonyYear"
-                       value="1600" minimumValue="1492" maximumValue="1900" />
-        <!-- The very last year of the game. -->
+                       value="1820" minimumValue="1492" maximumValue="1901" />
+        <!-- The very last year of the game: Federation of the Commonwealth of Australia. -->
         <integerOption id="model.option.lastYear"
-                       value="1850" minimumValue="1492" maximumValue="1900" />
-        <!-- The last year of the game for a colonial player. -->
+                       value="1901" minimumValue="1492" maximumValue="1901" />
+        <!-- The last year of the game for a colonial (pre-Federation) player. -->
         <integerOption id="model.option.lastColonialYear"
-                       value="1800" minimumValue="1492" maximumValue="1900" />
-        <!-- Col1 gives a bonus for declaring independence before 1780.
-             1780 implies turn is (1600 - 1492) + 2 * (1780 - 1600) = 468. -->
+                       value="1899" minimumValue="1492" maximumValue="1901" />
+        <!-- Early-referendum bonus turn (the independence machinery, reframed as Federation in Phase 4).
+             A ~1880 declare implies turn (1830 - 1788) + 2 * (1880 - 1830) = 142 on the 1788/1830 scale. -->
         <integerOption id="model.option.independenceTurn"
-                       value="468" minimumValue="308" />
-        <!-- Years at which the founding father weights change. -->
-        <textOption id="model.option.ages" defaultValue="1600,1700" />
+                       value="142" minimumValue="40" />
+        <!-- Years at which the Australian Pioneer weights change (the three eras: founding 1788-1830,
+             expansion & gold 1830-1880, pre-Federation 1880-1901). A fresh 1788 game sits in the first
+             era, so the Democracy & Federation figures (weight1=0) are correctly absent early. -->
+        <textOption id="model.option.ages" defaultValue="1830,1880" />
         <!-- The number of seasons in the year. -->
         <integerOption id="model.option.seasons"
                        value="2" minimumValue="2" maximumValue="366" />
