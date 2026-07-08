@@ -1466,21 +1466,8 @@ public partial class ColonyReportPanel : PanelContainer
     /// <summary>The readable tail of a <c>model.*.foo</c> id (e.g. <c>model.nation.dutch</c> → <c>dutch</c>).</summary>
     private static string Strip(string? id) => id is null ? "?" : id[(id.LastIndexOf('.') + 1)..];
 
-    /// <summary>Title-cases a camelCase short name for label text (e.g. <c>expertFarmer</c> → "Expert Farmer"); presentation-only (ADR-006, no model data).</summary>
-    private static string Display(string shortName)
-    {
-        var sb = new System.Text.StringBuilder(shortName.Length + 4);
-        for (int i = 0; i < shortName.Length; i++)
-        {
-            char c = shortName[i];
-            if (i > 0 && char.IsUpper(c) && !char.IsUpper(shortName[i - 1]))
-            {
-                sb.Append(' ');
-            }
-            sb.Append(i == 0 ? char.ToUpperInvariant(c) : c);
-        }
-        return sb.ToString();
-    }
+    /// <summary>Title-cases a camelCase short name for label text (e.g. <c>expertFarmer</c> → "Expert Farmer") — the shared <see cref="Naming.Humanize"/> (one humaniser everywhere, so display overrides apply uniformly; this had its own duplicate copy).</summary>
+    private static string Display(string shortName) => Naming.Humanize(shortName);
 
     private static string Signed(int n) => (n > 0 ? "+" : "") + n;
 }

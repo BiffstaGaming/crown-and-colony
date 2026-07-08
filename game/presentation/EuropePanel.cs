@@ -1156,26 +1156,8 @@ public partial class EuropePanel : PanelContainer
         HorizontalAlignment = HorizontalAlignment.Center,
     };
 
-    /// <summary>Title-cases a short id for display (<c>freeColonist</c> → "Free Colonist", <c>expertOreMiner</c> → "Expert Ore Miner") — splits on camelCase humps, capitalises the first letter.</summary>
-    private static string Display(string shortName)
-    {
-        if (string.IsNullOrEmpty(shortName))
-        {
-            return shortName;
-        }
-        var sb = new System.Text.StringBuilder(shortName.Length + 4);
-        sb.Append(char.ToUpperInvariant(shortName[0]));
-        for (int i = 1; i < shortName.Length; i++)
-        {
-            char c = shortName[i];
-            if (char.IsUpper(c) && !char.IsUpper(shortName[i - 1]))
-            {
-                sb.Append(' ');
-            }
-            sb.Append(c);
-        }
-        return sb.ToString();
-    }
+    /// <summary>Title-cases a short id for display (<c>freeColonist</c> → "Free Colonist") — the shared <see cref="Naming.Humanize"/> (one humaniser everywhere, so display overrides apply uniformly; this had its own duplicate copy).</summary>
+    private static string Display(string shortName) => Naming.Humanize(shortName);
 
     /// <summary>Resolves a unit/ship sprite by type short name — the colony screen's portrait lookup (<see cref="UnitMarker.ResolveTexture"/> default role, falling back to <see cref="ColonyArt.UnitIcon"/>), so an expert/ship shows its own art.</summary>
     private static Texture2D? UnitSprite(string typeShortName) =>

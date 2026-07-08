@@ -92,20 +92,6 @@ public partial class EmigrationChoicePanel : PanelContainer
         _onResolved($"{name} emigrated to Europe.");
     }
 
-    /// <summary>Title-cases a unit short id for display (e.g. <c>expertFisherman</c> → <c>Expert Fisherman</c>).</summary>
-    private static string Title(string shortName)
-    {
-        var words = new System.Collections.Generic.List<string>();
-        int start = 0;
-        for (int i = 1; i < shortName.Length; i++)
-        {
-            if (char.IsUpper(shortName[i]) && !char.IsUpper(shortName[i - 1]))
-            {
-                words.Add(shortName[start..i]);
-                start = i;
-            }
-        }
-        words.Add(shortName[start..]);
-        return string.Join(" ", words.ConvertAll(w => w.Length == 0 ? w : char.ToUpperInvariant(w[0]) + w[1..]));
-    }
+    /// <summary>Title-cases a unit short id for display (e.g. <c>expertFisherman</c> → <c>Expert Fisherman</c>) — the shared <see cref="GameLogic.Specification.Naming.Humanize"/> (one humaniser everywhere; this had its own duplicate copy).</summary>
+    private static string Title(string shortName) => GameLogic.Specification.Naming.Humanize(shortName);
 }

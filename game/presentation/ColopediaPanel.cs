@@ -642,21 +642,6 @@ public partial class ColopediaPanel : PanelContainer
     private static string Slug(string title) =>
         new string(title.Where(char.IsLetterOrDigit).ToArray());
 
-    /// <summary>Title-cases a short id for display (e.g. <c>tradeGoods</c> → <c>Trade Goods</c>, <c>food</c> → <c>Food</c>).</summary>
-    private static string Title(string shortName)
-    {
-        // Split camelCase into words, then capitalise each (mirrors the colony screen's display helper, kept local).
-        var words = new List<string>();
-        int start = 0;
-        for (int i = 1; i < shortName.Length; i++)
-        {
-            if (char.IsUpper(shortName[i]) && !char.IsUpper(shortName[i - 1]))
-            {
-                words.Add(shortName[start..i]);
-                start = i;
-            }
-        }
-        words.Add(shortName[start..]);
-        return string.Join(" ", words.Select(w => w.Length == 0 ? w : char.ToUpperInvariant(w[0]) + w[1..]));
-    }
+    /// <summary>Title-cases a short id for display (e.g. <c>tradeGoods</c> → <c>Trade Goods</c>) — the shared <see cref="Naming.Humanize"/> (one humaniser everywhere, so display overrides like country → "Pasture" apply uniformly; this had its own duplicate copy).</summary>
+    private static string Title(string shortName) => Naming.Humanize(shortName);
 }

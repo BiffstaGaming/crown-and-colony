@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — "Country" → "Pasture" (display rename, humaniser consolidated)
+
+**Requested (Chris):** change "Country" to "Pasture"; building art is fine as-is.
+**Did:**
+- **Display-only override:** `Naming.Humanize` gains an override table — `country` → **"Pasture"** (FreeCol's `model.building.country` = the base horse pasture; "Country" told the player nothing). The **ruleset id is untouched** (saves/specs/FreeCol XML still say `country` — data fidelity for the Australia-variant plan).
+- **Found + fixed a drift trap while wiring it:** FIVE panels had their own private duplicate humanisers (`ColonyPanel`/`EuropePanel`/`ColonyReportPanel` `Display`, `ColopediaPanel`/`EmigrationChoicePanel` `Title`) — the override would never have reached them. All five now forward to the shared `Naming.Humanize` (output-identical for every other name), so the rename applies uniformly on the colony screen, Colopedia, reports and Europe, and future overrides can't miss a screen.
+**Status:** build clean; **+7 L1 `NamingTests` green** (the humaniser's first direct coverage); **101 L3 green** across all five touched panels (Colony 46 / Europe / Colopedia / ColonyReport / EmigrationChoice). Committing + pushing; the `colony-panel-seed424242` golden regenerates once more ("Pasture (0/0)" cell) — one intermediate red L4 until it lands.
+**Changed:** `Naming.cs` (override table), `ColonyPanel.cs`/`EuropePanel.cs`/`ColonyReportPanel.cs`/`ColopediaPanel.cs`/`EmigrationChoicePanel.cs` (duplicates → shared), `NamingTests.cs` (new), `docs/systems/colonies.md`. Commit **(this commit)** + golden to follow.
+**Decisions:** display-name override in the shared humaniser (engine-free `Naming`) over renaming the ruleset id (would fork our data files from FreeCol's and touch save fidelity); consolidated the duplicates rather than patching the override into each copy.
+**Scheduled next:** **golden regen + CI green**, then the one remaining call: **top-down direction** (full art pass vs keep iso). If deferred: **Australian Pioneers = Founding Fathers (`86d3kwtjb`)**.
+**Needs you:** the **top-down direction call** — full top-down art pass, or keep isometric as the shipped default?
+
+---
+
 ## 2026-07-08 — Playtest feedback pass: 7 fixes across colony / Europe / camera / treasure
 
 **Requested (Chris, from playtest screenshots):** (1) the ✕ is cut off on the colony tiles; (2) a queued Construction must leave the "Add to queue…" dropdown until removed; (3) the green "room to grow" is STILL hard to read; (4) what are the +/−/N buttons doing in the Colony window?; (5) Europe should use the colony-buildings card layout (image/text/button, button + cost always in the same spot); (6) with Europe open, the mouse wheel zooms the map behind it; (7) treasure should show its value on the unit on the map, not just in Europe.

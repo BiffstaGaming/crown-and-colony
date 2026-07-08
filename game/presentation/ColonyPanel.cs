@@ -213,24 +213,12 @@ public partial class ColonyPanel : PanelContainer
     private int EffectiveYield(int baseYield) => Math.Max(0, baseYield + _colony.ProductionBonus);
 
     /// <summary>
-    /// A human display name for a ruleset short-name, by splitting camelCase and capitalising — pure presentation
-    /// (ADR-006: no model data). e.g. <c>tobacconistHouse</c> → "Tobacconist House". Used for label text only; the
-    /// control <c>Name</c>s the tests query still use <see cref="Short"/>.
+    /// A human display name for a ruleset short-name — the shared <see cref="Naming.Humanize"/> (one humaniser for
+    /// every display site, so overrides like country → "Pasture" apply everywhere; this had its own duplicate copy
+    /// the override could not reach). e.g. <c>tobacconistHouse</c> → "Tobacconist House". Used for label text only;
+    /// the control <c>Name</c>s the tests query still use <see cref="Short"/>.
     /// </summary>
-    private static string Display(string shortName)
-    {
-        var sb = new System.Text.StringBuilder(shortName.Length + 4);
-        for (int i = 0; i < shortName.Length; i++)
-        {
-            char c = shortName[i];
-            if (i > 0 && char.IsUpper(c) && !char.IsUpper(shortName[i - 1]))
-            {
-                sb.Append(' ');
-            }
-            sb.Append(i == 0 ? char.ToUpperInvariant(c) : c);
-        }
-        return sb.ToString();
-    }
+    private static string Display(string shortName) => Naming.Humanize(shortName);
 
     private void Rebuild()
     {
