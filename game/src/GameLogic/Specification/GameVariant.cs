@@ -31,13 +31,15 @@ public sealed class GameVariant
         string warOfIndependenceName = "War of Independence",
         string nativesName = "Native nations",
         string nativeSettlementName = "Native settlement",
-        string libertyName = "liberty")
+        string libertyName = "liberty",
+        IReadOnlyList<string>? openingBeats = null)
     {
         Id = id;
         DisplayName = displayName;
         Description = description;
         CongressName = congressName;
         DisplayOverrides = displayOverrides ?? NoOverrides;
+        OpeningBeats = openingBeats ?? GameVariants.ClassicOpeningBeats;
         RebelSentimentName = rebelSentimentName;
         RebelColonistName = rebelColonistName;
         LoyalistColonistName = loyalistColonistName;
@@ -66,6 +68,17 @@ public sealed class GameVariant
     /// machinery is identical for every variant (ADR-018); the presentation titles its Congress panel/report with this.
     /// </summary>
     public string CongressName { get; }
+
+    /// <summary>
+    /// The ordered narrative <b>beats</b> of this variant's opening cinematic — the short story panels shown on the
+    /// interactive New-Game path before the board appears. Classic's default is the <b>1492</b> expedition scene
+    /// (charter → crossing → landfall → send-off); the Australian Federation supplies its own <b>1788</b> First-Fleet →
+    /// Federation arc (doc 03 story arc; doc 19 tone rules — sober, not triumphalist). A display-only field (ADR-018):
+    /// the cinematic machinery is identical for every variant; only the text differs. The presentation threads this into
+    /// <c>OpeningCinematic</c> before <c>Play()</c>. A fixed ordered list — no RNG (ADR-009). Defaults to
+    /// <see cref="GameVariants.ClassicOpeningBeats"/> so unspecified variants stay byte-identical to classic.
+    /// </summary>
+    public IReadOnlyList<string> OpeningBeats { get; }
 
     /// <summary>
     /// Variant-scoped <b>display-name overrides</b>, keyed by ruleset short name (e.g. <c>bells</c> → "Civic Voice",
@@ -183,6 +196,48 @@ public static class GameVariants
             ["weaverShop"] = "Shearing Shed",        // the advanced wool-processing upgrade
         };
 
+    /// <summary>
+    /// The <b>classic</b> opening-cinematic beats — the faithful 1492 expedition scene (charter → crossing → landfall →
+    /// send-off), in order. This is the shared default: both the classic variant and (via <see cref="GameVariant"/>'s
+    /// ctor) any variant that supplies no beats of its own point at this identical list, so classic intro text stays
+    /// byte-identical. Original period-flavour wording (GPL-clean); a fixed ordered list — no RNG (ADR-009).
+    /// </summary>
+    internal static readonly IReadOnlyList<string> ClassicOpeningBeats = new[]
+    {
+        "In the year of our Lord 1492, the Crown grants you a charter: sail west, claim new lands, and return their " +
+        "riches to the throne.",
+
+        "Your caravels slip their moorings and stand out to sea. For weeks there is only the grey Atlantic, the wind, " +
+        "and the faith of your colonists.",
+
+        "At last a cry from the masthead — land! A green and unknown shore rises from the ocean haze.",
+
+        "History waits ashore. Found your colonies, win your people's hearts, and one day raise a new nation of your " +
+        "own. The New World is yours to build.",
+    };
+
+    /// <summary>
+    /// The <b>Australian Federation</b> opening-cinematic beats — the 1788 First Fleet → 1901 Federation arc (doc 03
+    /// story arc), told in the sober, historically-honest register doc 19 requires: the arrival came to a continent
+    /// already home to many peoples, and the narrative acknowledges that rather than glorifying it. Four beats:
+    /// the First Fleet's voyage &amp; landing at Sydney Cove; the hard early penal years; growth into six colonies;
+    /// the road to Federation of the Commonwealth in 1901. Original wording (GPL-clean); a fixed ordered list (ADR-009).
+    /// </summary>
+    internal static readonly IReadOnlyList<string> AustraliaOpeningBeats = new[]
+    {
+        "In 1788 the First Fleet drops anchor at Sydney Cove — convicts, marines and settlers landing on the shore of " +
+        "a continent already home to many peoples, whose Country stretches beyond every horizon.",
+
+        "The early years are lean and uncertain. Rations run short, the soil resists the plough, and the fledgling " +
+        "penal colony survives on discipline, on the sea, and on an uneasy proximity to those whose land it is.",
+
+        "Decade by decade the settlements spread, until six separate British colonies stretch across the continent — " +
+        "their farms, wool, ports and goldfields growing on Country that was never ceded.",
+
+        "By 1901 the colonies debate a shared future. Guide them toward Federation and the Commonwealth of Australia — " +
+        "a new nation whose founding leaves many questions of land, belonging and justice still unanswered.",
+    };
+
     /// <summary>The faithful 1492 New World: the four European powers, the historic Founding Fathers, and the indigenous nations.</summary>
     public static readonly GameVariant ClassicAmerica = new(
         id: "classic",
@@ -218,7 +273,10 @@ public static class GameVariants
         warOfIndependenceName: "Federation Referendum",  // War of Independence
         nativesName: "First Nations",                    // Native nations
         nativeSettlementName: "First Nations community", // Native settlement
-        libertyName: "Civic Voice");                     // liberty
+        libertyName: "Civic Voice",                      // liberty
+        // The 1788→1901 opening cinematic (doc 03 arc; doc 19 tone — sober, not triumphalist). Classic keeps the
+        // 1492 default; the Australia variant supplies its own First-Fleet-to-Federation beats.
+        openingBeats: AustraliaOpeningBeats);
 
     /// <summary>Every shipped variant, in menu order.</summary>
     public static IReadOnlyList<GameVariant> All { get; } = [ClassicAmerica, Australia];

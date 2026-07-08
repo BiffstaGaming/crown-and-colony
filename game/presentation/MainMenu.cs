@@ -130,6 +130,11 @@ public partial class MainMenu : Control
             return;
         }
         var cinematic = new OpeningCinematic { Name = "OpeningCinematic" };
+        // Make the intro variant-aware: play the selected variant's beats (the Australian Federation's 1788→1901 arc
+        // instead of classic's 1492 scene). PendingVariant is set by the New-Game dialog; fall back to the default
+        // (classic) for the interactive path that hasn't picked one. The beats default to classic when null/empty.
+        var variant = GameController.PendingVariant ?? GameLogic.Specification.GameVariants.Default;
+        cinematic.SetBeats(variant.OpeningBeats);
         cinematic.Finished += () => GetTree().ChangeSceneToFile(GameScenePath);
         AddChild(cinematic);
         cinematic.Play();

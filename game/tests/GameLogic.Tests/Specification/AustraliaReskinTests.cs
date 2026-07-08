@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using CrownAndColony.GameLogic.Specification;
 using Xunit;
 
@@ -104,4 +105,35 @@ public class AustraliaReskinTests
 
     /// <summary>Boxes a chrome-field accessor for the MemberData rows (keeps the delegate strongly typed).</summary>
     private static System.Func<GameVariant, string> Field(System.Func<GameVariant, string> accessor) => accessor;
+
+    // ───────────────────────── Opening-cinematic beats (variant-aware intro) ─────────────────────────
+
+    [Fact]
+    public void OpeningBeats_AreAustralianForAustralia_AndClassicForClassic_BothNonEmpty()
+    {
+        IReadOnlyList<string> australia = GameVariants.Australia.OpeningBeats;
+        IReadOnlyList<string> classic = GameVariants.ClassicAmerica.OpeningBeats;
+
+        // Both variants ship a real, non-empty beat list…
+        Assert.NotEmpty(australia);
+        Assert.NotEmpty(classic);
+        Assert.All(australia, beat => Assert.False(string.IsNullOrWhiteSpace(beat)));
+        Assert.All(classic, beat => Assert.False(string.IsNullOrWhiteSpace(beat)));
+
+        // …and the Australian intro is genuinely different from the classic 1492 one (the bug this fixes: the American
+        // 1492 story used to play for every variant). Sequence-equality proves they diverge in content, not just count.
+        Assert.False(australia.SequenceEqual(classic), "Australia must not reuse the classic 1492 beats");
+
+        // Classic keeps the faithful 1492 opening (the byte-identical default); Australia opens on the 1788 First Fleet.
+        Assert.Contains("1492", classic[0]);
+        Assert.Contains("1788", australia[0]);
+    }
+
+    [Fact]
+    public void ClassicOpeningBeats_AreTheSharedDefault_ForVariantsThatSupplyNone()
+    {
+        // A variant that supplies no beats of its own falls back to the shared classic default (same instance),
+        // so classic intro text stays byte-identical no matter how variants are declared.
+        Assert.Same(GameVariants.ClassicOpeningBeats, GameVariants.ClassicAmerica.OpeningBeats);
+    }
 }
