@@ -49,9 +49,11 @@ public partial class ColonyPanel : PanelContainer
     // saturated red reads clearly against it (Chris feedback 2026-07-08). Used for shortfalls / consumed / negative net.
     private static readonly Color Negative = new(0.58f, 0.11f, 0.08f);
 
-    /// <summary>Deep sage-green tint for the neutral/advisory population hint (room to grow, or at ideal size). Darkened
-    /// from a washed-out (0.6,0.68,0.55) so it's legible on the parchment ground (Chris feedback 2026-07-08).</summary>
-    private static readonly Color Advisory = new(0.27f, 0.40f, 0.22f);
+    /// <summary>Green tint for the neutral/advisory population hint (room to grow, or at ideal size). Paired with a
+    /// dark text outline on the hint label (the <see cref="Badge"/> treatment) — colour alone could not reach readable
+    /// contrast on the parchment (Chris feedback 2026-07-08, twice), so the outline carries the separation and the
+    /// green can be bright enough to actually read as green.</summary>
+    private static readonly Color Advisory = new(0.55f, 0.78f, 0.42f);
 
     /// <summary>Warehouse high-water-mark warning tint (amber) — a good at/near capacity that will spill on End Turn.</summary>
     private static readonly Color WarehouseHigh = new(0.85f, 0.55f, 0.15f);
@@ -500,6 +502,9 @@ public partial class ColonyPanel : PanelContainer
             : "at ideal size";
         var label = new Label { Name = "PreferredSizeHint", Text = text, HorizontalAlignment = HorizontalAlignment.Center };
         label.AddThemeColorOverride("font_color", change < 0 ? Negative : Advisory);
+        // Dark outline (the Badge treatment) — the tint alone was unreadable on the parchment (Chris 2026-07-08).
+        label.AddThemeColorOverride("font_outline_color", new Color(0.10f, 0.08f, 0.04f, 0.9f));
+        label.AddThemeConstantOverride("outline_size", 3);
         return label;
     }
 
@@ -629,11 +634,13 @@ public partial class ColonyPanel : PanelContainer
                     // the free-colonist base. TileWorkerNetYield folds the worker type AND the Sons-of-Liberty bonus exactly
                     // as the production overview banks it (ADR-006), so the diamond badge == the overview. No EffectiveYield
                     // wrapper here — it already includes ProductionBonus and floors at 0 (wrapping would double-count the SoL bonus).
-                    Place(view, Badge($"{Display(Short(good))} {_game.TileWorkerNetYield(_colony, tile, good)}"), topLeft + (td ? new Vector2(tw / 2f - 30, 0) : new Vector2(44, 0)));
+                    Place(view, Badge($"{Display(Short(good))} {_game.TileWorkerNetYield(_colony, tile, good)}"), topLeft + (td ? new Vector2(tw / 2f - 30, 4) : new Vector2(44, 0)));
                     Position worked = tile;
                     var release = new Button { Name = $"Release_{tile.X}_{tile.Y}", Text = "✕", CustomMinimumSize = new Vector2(24, 20) };
                     release.Pressed += () => { _game.UnassignWork(_colony, worked); _heldFrom = null; Changed(); };
-                    Place(view, release, topLeft + (td ? new Vector2(tw / 2f - 12, th - 22) : new Vector2(64, 50)));
+                    // 8px inset from the cell's bottom edge — at th-22 the button sat ON the grid line under the
+                    // clipping ScrollContainer and read as cut off (Chris 2026-07-08).
+                    Place(view, release, topLeft + (td ? new Vector2(tw / 2f - 12, th - 28) : new Vector2(64, 50)));
                 }
                 else if (_colony.IdleColonists > 0 && _game.ColonyCanWorkTile(_colony, tile)
                          && _game.TileWorkOptions(tile) is { Count: > 0 } options)
@@ -879,6 +886,13 @@ public partial class ColonyPanel : PanelContainer
         var addable = new List<string>();
         foreach (BuildingType b in _game.Buildables(_colony))
         {
+            // A building already in the queue is not offered again (Chris 2026-07-08) — it would only be refused by
+            // the engine's CheckEnqueueBuild anyway (a building queues at most once); it returns to the dropdown the
+            // moment it's removed from the queue. Units are NOT filtered: they may be re-queued (e.g. 3 × artillery).
+            if (_colony.BuildQueue.Contains(b.Id))
+            {
+                continue;
+            }
             addable.Add(b.Id);
             options.AddItem($"{Display(b.ShortName)} ({CostLabel(b.BuildCost)})");
         }

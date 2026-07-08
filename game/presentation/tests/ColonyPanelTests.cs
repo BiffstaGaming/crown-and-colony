@@ -141,6 +141,47 @@ public class ColonyPanelTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task BuildOptions_HideAQueuedBuilding_UntilItLeavesTheQueue()
+    {
+        // Chris 2026-07-08: a Construction already selected must not still be offered in the "Add to queue…" dropdown
+        // (the engine would only refuse the duplicate anyway) — and it returns the moment it's removed from the queue.
+        (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
+
+        OptionButton Options() => (controller.GetNode<PanelContainer>("UI/ColonyPanel")
+            .FindChild("BuildOptions", recursive: true, owned: false) as OptionButton)!;
+        static List<string> Items(OptionButton o) =>
+            Enumerable.Range(0, o.ItemCount).Select(o.GetItemText).ToList();
+
+        var options = Options();
+        int before = options.ItemCount;
+        string queuedText = options.GetItemText(1); // the first offered building
+        options.EmitSignal(OptionButton.SignalName.ItemSelected, 1L);
+        await runner.SimulateFrames(1);
+        string queuedId = colony.BuildQueue[0];
+        AssertThat(game.Ruleset.Building(queuedId)).IsNotNull(); // item 1 is a building (buildings list first)
+
+        // The rebuilt dropdown no longer offers the queued building…
+        options = Options();
+        AssertThat(options.ItemCount).IsEqual(before - 1);
+        AssertThat(Items(options).Contains(queuedText)).IsFalse();
+
+        // …and offers it again once it's removed from the queue.
+        FindButton(controller, "RemoveBuild_0")!.EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+        options = Options();
+        AssertThat(options.ItemCount).IsEqual(before);
+        AssertThat(Items(options).Contains(queuedText)).IsTrue();
+
+        // Units are NOT filtered: queue the wagon train, and it must STILL be offered (multiples are legitimate).
+        int buildings = game.Buildables(colony).Count();
+        int wagonAt = game.BuildableUnits(colony).ToList().FindIndex(u => u.Id == "model.unit.wagonTrain");
+        options.EmitSignal(OptionButton.SignalName.ItemSelected, (long)(1 + buildings + wagonAt));
+        await runner.SimulateFrames(1);
+        AssertThat(colony.BuildQueue.Contains("model.unit.wagonTrain")).IsTrue();
+        AssertThat(Items(Options()).Any(t => t.EndsWith("— unit") && t.StartsWith("Wagon Train"))).IsTrue();
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task BuildMenu_OffersUnits_EnqueuesAndRemovesAWagonTrain()
     {
         (ISceneRunner runner, GameController controller, Game game, Colony colony) = await OpenPanel();
@@ -687,6 +728,17 @@ public class ColonyPanelTests
         // (Chris 2026-07-08) so they don't float over the colony screen.
         AssertThat(controller.GetNode<Control>("UI/MiniMap").Visible).IsFalse();
         AssertThat(controller.GetNode<Control>("UI/MiniMapBack").Visible).IsFalse();
+        // …as does the +/−/N zoom/recentre cluster (Chris 2026-07-08: "what is the +/−/N doing in the colony window?").
+        AssertThat(controller.GetNode<Control>("UI/MapControls").Visible).IsFalse();
+
+        // And the CAMERA is input-locked while the panel is open: a mouse wheel over the panel must not zoom the map
+        // underneath it (Chris 2026-07-08 — scrolling in the Europe screen zoomed the background map).
+        var camera = controller.GetNode<CameraController>("Camera");
+        AssertThat(camera.InputEnabled).IsFalse();
+        float zoomBefore = camera.ZoomLevel;
+        camera._UnhandledInput(new InputEventMouseButton { ButtonIndex = MouseButton.WheelUp, Pressed = true, Position = panelRect.GetCenter() });
+        await runner.SimulateFrames(1);
+        AssertThat(camera.ZoomLevel).IsEqualApprox(zoomBefore, 0.0001f); // wheel ignored — the map did not zoom
 
         // Closing the panel restores the always-on column.
         controller.GetNode<Button>("UI/ColonyPanel/VBox/CloseButton").EmitSignal(BaseButton.SignalName.Pressed);
@@ -694,7 +746,12 @@ public class ColonyPanelTests
         AssertThat(panel.Visible).IsFalse();
         AssertThat(controller.GetNode<Button>("UI/EndTurnButton").Visible).IsTrue();
         AssertThat(controller.GetNode<Button>("UI/EuropeButton").Visible).IsTrue();
-        AssertThat(controller.GetNode<Control>("UI/MiniMap").Visible).IsTrue(); // and the minimap returns with the HUD
+        AssertThat(controller.GetNode<Control>("UI/MiniMap").Visible).IsTrue();     // the minimap returns with the HUD
+        AssertThat(controller.GetNode<Control>("UI/MapControls").Visible).IsTrue(); // so does the zoom cluster
+        AssertThat(camera.InputEnabled).IsTrue();                                    // and the camera unlocks
+        camera._UnhandledInput(new InputEventMouseButton { ButtonIndex = MouseButton.WheelUp, Pressed = true, Position = panelRect.GetCenter() });
+        await runner.SimulateFrames(1);
+        AssertThat(camera.ZoomLevel > zoomBefore).IsTrue(); // wheel works again once the panel is closed
     }
 
     [TestCase(Timeout = 60000)]

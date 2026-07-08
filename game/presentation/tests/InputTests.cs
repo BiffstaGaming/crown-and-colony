@@ -1428,6 +1428,36 @@ public class InputTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task TreasureTrainMarker_ShowsTheCarriedGold_OnTheMap()
+    {
+        // Chris 2026-07-08: a treasure train's VALUE must be visible on the unit on the map — not only when it is
+        // taken to Europe. The marker draws a "{amount}g" badge (UnitMarker.TreasureAmount → the _Draw gold text);
+        // this wires-and-reads: an on-map train's marker carries the amount, every other marker stays at 0 (no badge).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.StartNewGame(Seed);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        int humanId = game.HumanPlayer.PlayerId;
+
+        // Stage (via the save layer — TreasureAmount is engine-internal) a human treasure train carrying 850 gold.
+        Unit founder = game.PlayerUnits.First(u => u.IsOnMap && u.Type.CanFoundColony);
+        Position spot = founder.Position;
+        SaveGame save = SaveGame.From(game);
+        int trainId = game.Units.Max(u => u.Id) + 1;
+        var train = new SavedUnit(trainId, "model.unit.treasureTrain", spot.X, spot.Y, 3,
+            OwnerId: humanId, TreasureAmount: 850);
+        Game injected = (save with { Units = save.Units.Append(train).ToList() }).Restore(game.Ruleset);
+        SetGame(controller, injected);
+
+        await ClickTile(runner, controller, spot); // any input-driven refresh rebuilds the marker layer
+
+        var markers = controller.GetNode<Node2D>("MapView/UnitLayer").GetChildren().OfType<UnitMarker>().ToList();
+        AssertThat(markers.Count(m => m.TreasureAmount == 850)).IsEqual(1); // the train's marker carries its value…
+        AssertThat(markers.Count(m => m.TreasureAmount == 0)).IsEqual(markers.Count - 1); // …and no one else grew a badge
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task ClickOwnColony_WithASelectedAdjacentUnit_MovesItOntoTheColonyTile_WithoutJoiningOrOpeningThePanel()
     {
         // 86d3fzmove: clicking the player's own colony with a selected adjacent unit MOVES the unit onto the colony

@@ -19,6 +19,25 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-08 — Playtest feedback pass: 7 fixes across colony / Europe / camera / treasure
+
+**Requested (Chris, from playtest screenshots):** (1) the ✕ is cut off on the colony tiles; (2) a queued Construction must leave the "Add to queue…" dropdown until removed; (3) the green "room to grow" is STILL hard to read; (4) what are the +/−/N buttons doing in the Colony window?; (5) Europe should use the colony-buildings card layout (image/text/button, button + cost always in the same spot); (6) with Europe open, the mouse wheel zooms the map behind it; (7) treasure should show its value on the unit on the map, not just in Europe.
+**Did (all 7; recon via a 5-agent parallel workflow, then implemented + capture-verified):**
+- **(1)** Top-down worked-tile widgets inset from the cell edges — ✕ at `th−28` (was 2px off the grid line under a clipping ScrollContainer), badge at y=4.
+- **(2)** `ConstructionPanel` skips buildings already in `colony.BuildQueue` (they return when removed); **units stay** (re-queueing 3× artillery is legitimate). +1 L3.
+- **(3)** "room to grow" gets the **Badge treatment**: dark outline (size 3) + a brighter green — outline carries the contrast, verified clearly readable in capture.
+- **(4)** **Answered:** +/− = map zoom, **N = "Recentre the map"** (snaps to your active unit) — the `MapControlsOverlay`. It (and everything map-HUD) now **hides behind any full-screen panel**.
+- **(5)** New shared `EuropePanel.UnitCard`: fixed bands (52px image / 42px name, first line at one Y / 20px cost line / **Recruit·Train·Buy button pinned at the bottom**) across Recruitment dock + Train + Purchase; `IconRect` gets the `IgnoreSize` fix. +1 L3 structural guard (offsets uniform within 2px across ALL cards).
+- **(6)** New `CameraController.InputEnabled` — wheel/drag/arrows/edge-scroll/± keys all early-exit while a panel is open (wired from the same `RefreshHudButtonVisibility` predicate); programmatic moves unaffected. Wheel-no-op asserted in L3.
+- **(7)** `UnitMarker.TreasureAmount` → `_Draw` renders **"850g"** in gold under the wagon (ColonyMarker pattern), fed from `Unit.TreasureAmount`. Verified on-map in capture. +1 L3.
+**Status:** build clean; **399-test full local L3: 397 green + 2 accounted-for** — `europe-panel` golden (deliberate redesign, regenerating on CI) and `PauseMenu` golden (**pre-existing local-only Windows font drift 2.24% vs 2.0%** — fails on clean HEAD too, green on CI Linux). Committing + pushing; **both `colony-panel-seed424242` + `europe-panel` goldens regenerate on CI** (colony: hint colour + hidden +/−/N; europe: cards + hidden cluster).
+**Changed:** `ColonyPanel.cs`, `EuropePanel.cs`, `CameraController.cs`, `GameController.cs`, `UnitMarker.cs`; tests `ColonyPanelTests` (+1 new, HUD-hide extended), `EuropePanelTests` (+1), `InputTests` (+1); docs `colonies.md`, `hud-input.md`, `europe.md`, `treasure-train.md` (all both-layers + changelogs). Commit **(this commit)** + golden commit to follow.
+**Decisions:** dropdown filter presentation-side (engine `CheckEnqueueBuild` already refuses duplicates; `Buildables` feeds the AI too, so its semantics stay); units not filtered from the dropdown; outline+brighter-green over darker-green (colour alone can't reach contrast on parchment); camera lock via one `InputEnabled` gate rather than per-input special cases; treasure badge as a marker property (0 = render exactly as before).
+**Scheduled next:** **golden regen + commit → CI green**, then **Chris's top-down direction call** (full art pass vs keep iso). If deferred: **Australian Pioneers = Founding Fathers (`86d3kwtjb`)**.
+**Needs you:** playtest the same screens again — colony (✕, dropdown, green), Europe (cards, no background zoom), a treasure train. Standing calls: enlarge building art? rename "Country"→"Pasture"? top-down direction.
+
+---
+
 ## 2026-07-08 — Building name/count layout (count on its own line + even name start)
 
 **Requested (Chris):** (1) make the total e.g. "(0/3)" sit **below** the building name; (2) the text doesn't **start at the same height** for the long-named buildings (Blacksmith / Tobacconist / Fur Trader House) vs the others.

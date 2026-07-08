@@ -69,6 +69,14 @@ public partial class CameraController : Camera2D
     /// <summary>The current discrete zoom level's scalar (1.0 = default). Exposed for the overlay/tests.</summary>
     public float ZoomLevel => ZoomLevels[_zoomIndex];
 
+    /// <summary>
+    /// Master gate for all direct camera input — wheel zoom, drag/arrow/edge panning, +/- keys. Set false by
+    /// <c>GameController.RefreshHudButtonVisibility</c> while a full-screen panel (colony, Europe, reports…) is open so
+    /// the map behind the panel doesn't zoom/pan under stray input (Chris 2026-07-08); true again when it closes.
+    /// Programmatic moves (<see cref="CenterOn"/>, <see cref="ZoomInStep"/>…) are unaffected.
+    /// </summary>
+    public bool InputEnabled { get; set; } = true;
+
     public override void _Ready() => Zoom = new Vector2(ZoomLevels[_zoomIndex], ZoomLevels[_zoomIndex]);
 
     /// <summary>
@@ -96,6 +104,10 @@ public partial class CameraController : Camera2D
 
     public override void _UnhandledInput(InputEvent @event)
     {
+        if (!InputEnabled)
+        {
+            return; // a full-screen panel is open — the map must not react underneath it
+        }
         switch (@event)
         {
             case InputEventMouseButton { ButtonIndex: MouseButton.WheelUp, Pressed: true } wheelUp:
@@ -143,6 +155,10 @@ public partial class CameraController : Camera2D
 
     public override void _Process(double delta)
     {
+        if (!InputEnabled)
+        {
+            return; // a full-screen panel is open — no keyboard/edge panning underneath it
+        }
         // Arrow-key pan (continuous while held). WASD is deliberately NOT used for panning: W = wait/next-unit,
         // S/D/C etc. are GameController hotkeys (skip/disband/colopedia) — binding them to the camera too would
         // double-fire. Arrow keys are the unambiguous, Col1/FreeCol-standard map-pan keys.

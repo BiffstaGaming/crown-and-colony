@@ -205,6 +205,55 @@ public class EuropePanelTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task RecruitTrainPurchaseCards_ShareOneLayout_CostAndButtonAtTheSameSpotOnEveryCard()
+    {
+        // Chris 2026-07-08: Europe must use the colony-buildings card treatment — image / name / cost / button with
+        // the cost and the action button at the SAME spot on every card. Structural guard: within each card the
+        // action button and the Cost_ label sit at a fixed offset from the card's top, identical across ALL cards
+        // (recruit + train + purchase), and every card is the same size.
+        (ISceneRunner runner, GameController controller, Game game) = await OpenEurope(new SaveGame
+        {
+            Turn = 1, RandomStateValue = 1, RandomIncrement = 1,
+            MapWidth = 1, MapHeight = 1, Terrain = ["model.tile.highSeas"],
+            Units = [], Explored = [], Gold = 5000,
+        });
+        await runner.SimulateFrames(2); // settle the layout pass
+
+        var panel = controller.GetNode<PanelContainer>("UI/EuropePanel");
+        var actions = panel.FindChildren("*", recursive: true, owned: false).OfType<Button>()
+            .Where(b => { string n = b.Name; return n.StartsWith("Recruit_") || n.StartsWith("Train_") || n.StartsWith("Purchase_"); })
+            .ToList();
+        AssertThat(actions.Count > 6).IsTrue(); // 3 recruit slots + the train grid + the purchase grid
+
+        // Each action button's parent chain reaches its card (the PanelContainer frame); measure offsets within it.
+        static PanelContainer CardOf(Node node)
+        {
+            for (Node? n = node.GetParent(); n is not null; n = n.GetParent())
+            {
+                if (n is PanelContainer frame) { return frame; }
+            }
+            throw new System.InvalidOperationException("action button not inside a card frame");
+        }
+        List<float> buttonOffsets = [.. actions.Select(b => b.GetGlobalRect().Position.Y - CardOf(b).GetGlobalRect().Position.Y)];
+        List<Vector2> cardSizes = [.. actions.Select(b => CardOf(b).GetGlobalRect().Size)];
+        var costs = panel.FindChildren("*", recursive: true, owned: false).OfType<Label>()
+            .Where(l => l.Name.ToString().StartsWith("Cost_")).ToList();
+        List<float> costOffsets = [.. costs.Select(l => l.GetGlobalRect().Position.Y - CardOf(l).GetGlobalRect().Position.Y)];
+
+        // Sub-pixel container rounding is fine; a band drifting by 2px+ between cards is the bug this guards against.
+        const float Tolerance = 2f;
+        AssertThat(buttonOffsets.Max() - buttonOffsets.Min() <= Tolerance)
+            .OverrideFailureMessage($"action buttons sit at different offsets from their card tops: [{string.Join(", ", buttonOffsets.Select(o => o.ToString("F1")))}]")
+            .IsTrue();
+        AssertThat(costOffsets.Max() - costOffsets.Min() <= Tolerance)
+            .OverrideFailureMessage($"cost labels sit at different offsets from their card tops: [{string.Join(", ", costOffsets.Select(o => o.ToString("F1")))}]")
+            .IsTrue();
+        AssertThat(cardSizes.Max(s => s.Y) - cardSizes.Min(s => s.Y) <= Tolerance)
+            .OverrideFailureMessage($"cards have different heights: [{string.Join(", ", cardSizes.Select(s => s.Y.ToString("F1")))}]")
+            .IsTrue();
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task PurchaseButton_RoutesToBuyUnit_AndArtilleryEscalates()
     {
         // Artillery routes to BuyUnit (the escalating path): buying it once docks a unit and ratchets the player's

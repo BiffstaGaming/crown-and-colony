@@ -67,6 +67,24 @@ public partial class UnitMarker : Node2D
         }
     }
 
+    private int _treasureAmount;
+
+    /// <summary>
+    /// The gold value carried by this unit, drawn as a small "Ng" badge under the marker so a treasure train's worth
+    /// is visible on the map — not only at the Europe/cash-in moment (Chris 2026-07-08). 0 (every non-treasure unit)
+    /// draws nothing, so all other markers render exactly as before. Read from <c>Unit.TreasureAmount</c> by
+    /// <c>GameController.SyncUnitMarkers</c>; presentation-only.
+    /// </summary>
+    public int TreasureAmount
+    {
+        get => _treasureAmount;
+        set
+        {
+            _treasureAmount = value;
+            QueueRedraw();
+        }
+    }
+
     /// <summary>
     /// Picks the sprite for a unit by its ruleset type + role short names (FreeCol resolves a unit's image by type
     /// <i>and</i> role — a colonist in the soldier role looks different from a plain one; a native brave in the
@@ -186,6 +204,20 @@ public partial class UnitMarker : Node2D
             const float radius = MapView.TileH * 0.30f;
             DrawCircle(Vector2.Zero, radius, new Color(0.75f, 0.15f, 0.15f));
             DrawArc(Vector2.Zero, radius, 0, Mathf.Tau, 32, Colors.Black, 2f);
+        }
+
+        // Treasure badge: the carried gold ("850g") under the marker, ColonyMarker's shadow-text pattern in treasure
+        // gold. Only a unit actually carrying treasure draws it (Chris 2026-07-08 — the value must be visible on the
+        // map, not only in Europe).
+        if (_treasureAmount > 0)
+        {
+            Font font = ThemeDB.FallbackFont;
+            const int fontSize = 12;
+            string badge = $"{_treasureAmount}g";
+            Vector2 text = font.GetStringSize(badge, HorizontalAlignment.Left, -1, fontSize);
+            Vector2 origin = new(-text.X / 2f, MapView.TileH * 0.32f + fontSize);
+            DrawString(font, origin + Vector2.One, badge, HorizontalAlignment.Left, -1, fontSize, Colors.Black);
+            DrawString(font, origin, badge, HorizontalAlignment.Left, -1, fontSize, new Color(1f, 0.85f, 0.25f));
         }
     }
 }

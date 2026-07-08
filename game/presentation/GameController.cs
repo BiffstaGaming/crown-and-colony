@@ -2855,6 +2855,10 @@ public partial class GameController : Node2D
         _actionClusterBack.Visible = !fullScreenPanelOpen; // the parchment backing hides with its buttons so it never floats beside an open panel
         _miniMap.Visible = !fullScreenPanelOpen;           // the minimap + its parchment backing belong to the map HUD — hide them
         _miniMapBack.Visible = !fullScreenPanelOpen;       // behind an open full-screen panel (Chris 2026-07-08) so they don't float over it
+        _mapControls.Visible = !fullScreenPanelOpen;       // the +/−/N zoom/recentre cluster is map HUD too — same rule (Chris 2026-07-08)
+        // And the camera itself: wheel zoom / panning must not act on the map behind an open panel (Chris 2026-07-08 —
+        // scrolling in the Europe screen zoomed the background map). Re-enabled the moment the last panel closes.
+        GetNode<CameraController>("Camera").InputEnabled = !fullScreenPanelOpen;
         _independenceButton.Visible = !fullScreenPanelOpen
             && !_game.IsHumanDefeated && _game.CheckDeclareIndependence(_game.HumanPlayer).Allowed;
     }
@@ -3356,6 +3360,7 @@ public partial class GameController : Node2D
                 Position = MapView.TileCentre(unit.Position),
                 Selected = _selectedUnit == unit,
                 OwnerColor = human ? default : OwnerColorOf(unit),
+                TreasureAmount = unit.TreasureAmount, // 0 for every non-treasure unit → no badge (Chris 2026-07-08)
             };
             // Role short name (e.g. "soldier"/"pioneer", or "default" for unarmed) so the marker can pick the
             // role-specific FreeCol sprite — a colonist-soldier looks different from a plain colonist.

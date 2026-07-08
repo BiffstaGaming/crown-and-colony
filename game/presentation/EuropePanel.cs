@@ -455,27 +455,13 @@ public partial class EuropePanel : PanelContainer
         {
             int s = slot;
             string typeShort = Short(dock[slot]);
-            // Each recruit slot is a portrait card sized wide enough that the wrapped colonist name and the Recruit button
-            // fit without clipping in the 17px-bold theme (Chris's playtest). The full name shows on the card AND in the
-            // button tooltip; the button itself is the compact price (the action is obvious from the card).
-            var slotCard = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(116, 0) };
-            slotCard.AddThemeConstantOverride("separation", 4);
-            var framed = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            framed.AddThemeStyleboxOverride("panel", SlotStyle(filled: true));
-            framed.AddChild(slotCard);
-
-            slotCard.AddChild(Centered(UnitPortrait(typeShort, 44)));
-            slotCard.AddChild(new Label { Text = Display(typeShort), HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart });
-            var recruit = GatedButton($"Recruit_{slot}", $"Recruit · {price}g", _game.CheckRecruit(slot).Allowed, () =>
+            var recruit = GatedButton($"Recruit_{slot}", "Recruit", _game.CheckRecruit(slot).Allowed, () =>
             {
                 if (_game.CheckRecruit(s).Allowed) { _game.Recruit(s); }
                 Changed();
             });
-            recruit.SizeFlagsHorizontal = SizeFlags.Fill;
-            recruit.ClipText = true; // never let the price label spill past the card edge
             recruit.TooltipText = $"Recruit {Display(typeShort)} for {price} gold";
-            slotCard.AddChild(recruit);
-            recruitRow.AddChild(framed);
+            recruitRow.AddChild(UnitCard(typeShort, $"{price}g", recruit));
         }
         col.AddChild(recruitRow);
 
@@ -499,13 +485,14 @@ public partial class EuropePanel : PanelContainer
     }
 
     /// <summary>
-    /// A compact icon grid of unit/ship buttons (3 columns): each button shows the type's <b>sprite</b> stacked over its
-    /// <b>name</b> (word-wrapped) and its price (the full name also in the tooltip) — the spatial replacement for the old
-    /// vertical text list, with the name on the cell rather than tooltip-only (Chris's playtest). When
-    /// <paramref name="train"/> is true the buttons are named <c>Train_{short}</c> and route to
-    /// <see cref="Game.TrainUnit(string)"/> (gated on <see cref="Game.CheckTrain(string)"/>); otherwise they are
-    /// <c>Purchase_{short}</c> routing to <see cref="Game.BuyUnit(string)"/> (gated on <see cref="Game.CheckBuyUnit"/>).
-    /// Each is a <see cref="GatedButton"/> so an unaffordable action greys rather than vanishes (ADR-006).
+    /// A compact card grid of unit/ship cards (3 columns), each a uniform <see cref="UnitCard"/> — sprite / name /
+    /// price / action button, every band at the same spot on every card (Chris 2026-07-08: mirror the colony
+    /// buildings grid; previously the whole cell was one Button with free-flowing content, so the price and action
+    /// floated at different heights per card). When <paramref name="train"/> is true the action buttons are named
+    /// <c>Train_{short}</c> and route to <see cref="Game.TrainUnit(string)"/> (gated on
+    /// <see cref="Game.CheckTrain(string)"/>); otherwise they are <c>Purchase_{short}</c> routing to
+    /// <see cref="Game.BuyUnit(string)"/> (gated on <see cref="Game.CheckBuyUnit"/>). Each action is a
+    /// <see cref="GatedButton"/> so an unaffordable one greys rather than vanishes (ADR-006).
     /// </summary>
     private Control UnitButtonGrid(IReadOnlyList<UnitType> types, bool train)
     {
@@ -518,43 +505,65 @@ public partial class EuropePanel : PanelContainer
             string shortName = type.ShortName;
             int p = _game.EuropeUnitPrice(id);
             bool allowed = train ? _game.CheckTrain(id).Allowed : _game.CheckBuyUnit(id).Allowed;
-            // Sized to its content with padding so the 44px sprite, the wrapped unit NAME and the price (in the 17px-bold
-            // in-game theme) all fit without clipping — the cell now shows sprite + name + price (Chris's playtest: show
-            // the names, don't hide them in the tooltip). The name wraps onto a second line if needed; the cell is taller
-            // to accommodate it. The content VBox fills the button (FullRect) and centres vertically.
-            var button = new Button
-            {
-                Name = train ? $"Train_{shortName}" : $"Purchase_{shortName}",
-                Disabled = !allowed,
-                TooltipText = $"{(train ? "Train" : "Buy")} {Display(shortName)} — {p} gold",
-                SizeFlagsHorizontal = SizeFlags.ExpandFill,
-                CustomMinimumSize = new Vector2(124, 148), // room for the 44px sprite + a two-line wrapped name + the price
-            };
-            var content = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore, Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            content.AddThemeConstantOverride("separation", 2);
-            content.SetAnchorsPreset(LayoutPreset.FullRect);
-            content.AddChild(Centered(IconRect(UnitSprite(shortName), 44, 44)));
-            // The unit name under the sprite — word-wrapped (a long name like "Veteran Soldier" flows onto two lines)
-            // and centred, in the readable dark Ink on the light card. The button's tooltip still carries the full name.
-            content.AddChild(new Label
-            {
-                Text = Display(shortName),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                AutowrapMode = TextServer.AutowrapMode.WordSmart,
-                SizeFlagsHorizontal = SizeFlags.ExpandFill,
-                MouseFilter = MouseFilterEnum.Ignore,
-            });
-            content.AddChild(new Label { Text = $"{p}g", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore });
-            button.AddChild(content);
-            button.Pressed += () =>
+            var action = GatedButton(train ? $"Train_{shortName}" : $"Purchase_{shortName}", train ? "Train" : "Buy", allowed, () =>
             {
                 if (train) { if (_game.CheckTrain(id).Allowed) { _game.TrainUnit(id); } }
                 else { if (_game.CheckBuyUnit(id).Allowed) { _game.BuyUnit(id); } }
                 Changed();
-            };
-            grid.AddChild(button);
+            });
+            action.TooltipText = $"{(train ? "Train" : "Buy")} {Display(shortName)} — {p} gold";
+            grid.AddChild(UnitCard(shortName, $"{p}g", action));
         }
         return grid;
+    }
+
+    /// <summary>
+    /// One uniform recruit/train/purchase card (Chris 2026-07-08 — the colony buildings-grid treatment for Europe):
+    /// fixed-height bands so the <b>image</b>, <b>name</b>, <b>cost</b> and <b>action button</b> each sit at the same
+    /// spot on every card — the 44px sprite in a fixed 52px band, the name in a fixed two-line band whose first line
+    /// starts at the same Y on every card (a long name wraps <i>downwards</i>, it doesn't push its band up), the cost
+    /// on its own fixed line, and the button pinned at the bottom. All cards share the same minimum size.
+    /// </summary>
+    private static Control UnitCard(string spriteShortName, string costText, Button action)
+    {
+        var body = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+        body.AddThemeConstantOverride("separation", 2);
+
+        var image = new CenterContainer { CustomMinimumSize = new Vector2(0, 52), MouseFilter = MouseFilterEnum.Ignore };
+        image.AddChild(IconRect(UnitSprite(spriteShortName), 44, 44));
+        body.AddChild(image);
+
+        var name = new Label
+        {
+            Text = Display(spriteShortName),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Top, // first line at the same Y on every card
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            CustomMinimumSize = new Vector2(0, 42),
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        name.AddThemeFontSizeOverride("font_size", 13);
+        body.AddChild(name);
+
+        var cost = new Label
+        {
+            Text = costText,
+            Name = $"Cost_{spriteShortName}",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            CustomMinimumSize = new Vector2(0, 20),
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        body.AddChild(cost);
+
+        action.SizeFlagsHorizontal = SizeFlags.Fill;
+        action.SizeFlagsVertical = SizeFlags.ShrinkEnd; // pinned to the card's bottom edge
+        action.ClipText = true;
+        body.AddChild(action);
+
+        var framed = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(120, 158) };
+        framed.AddThemeStyleboxOverride("panel", SlotStyle(filled: true));
+        framed.AddChild(body);
+        return framed;
     }
 
     // ── Zone 3: the goods market ────────────────────────────────────────────────────────────────────────────────
@@ -1180,6 +1189,10 @@ public partial class EuropePanel : PanelContainer
     {
         Texture = texture,
         StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+        // IgnoreSize: honour the requested box and scale the texture to fit — without it the box's minimum size is
+        // the TEXTURE's size, so a large sprite inflates its card's image band and misaligns the rows across cards
+        // (the exact bug the colony's BuildingCell grid had; Chris 2026-07-08).
+        ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
         CustomMinimumSize = new Vector2(width, height),
         MouseFilter = Control.MouseFilterEnum.Ignore,
     };
