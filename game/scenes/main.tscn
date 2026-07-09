@@ -1,4 +1,4 @@
-[gd_scene load_steps=27 format=3]
+[gd_scene load_steps=28 format=3]
 
 [ext_resource type="Script" path="res://presentation/GameController.cs" id="1"]
 [ext_resource type="Script" path="res://presentation/MapView.cs" id="2"]
@@ -19,6 +19,7 @@
 [ext_resource type="Script" path="res://presentation/TurnMessagePanel.cs" id="18"]
 [ext_resource type="Script" path="res://presentation/ColopediaPanel.cs" id="19"]
 [ext_resource type="Script" path="res://presentation/EmigrationChoicePanel.cs" id="20"]
+[ext_resource type="Script" path="res://presentation/EventChoicePanel.cs" id="29"]
 [ext_resource type="Script" path="res://presentation/RiverOverlay.cs" id="21"]
 [ext_resource type="Script" path="res://presentation/ImprovementOverlay.cs" id="22"]
 [ext_resource type="Script" path="res://presentation/MonarchDialog.cs" id="23"]
@@ -551,6 +552,41 @@ horizontal_alignment = 1
 autowrap_mode = 2
 
 [node name="Dynamic" type="VBoxContainer" parent="UI/EmigrationChoicePanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="EventChoicePanel" type="PanelContainer" parent="UI"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -260.0
+offset_top = -170.0
+offset_right = 260.0
+offset_bottom = 170.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("29")
+
+[node name="VBox" type="VBoxContainer" parent="UI/EventChoicePanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="EventTitle" type="Label" parent="UI/EventChoicePanel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="EventPrompt" type="Label" parent="UI/EventChoicePanel/VBox"]
+layout_mode = 2
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Dynamic" type="VBoxContainer" parent="UI/EventChoicePanel/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 8

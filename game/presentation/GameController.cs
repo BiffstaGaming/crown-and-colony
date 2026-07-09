@@ -182,6 +182,7 @@ public partial class GameController : Node2D
     private PanelContainer _moundsPanel = null!;
     private MonarchDialog _monarchDialog = null!;
     private EmigrationChoicePanel _emigrationPanel = null!;
+    private EventChoicePanel _eventPanel = null!;
     private PreCombatPanel _preCombatPanel = null!;
     private TurnMessagePanel _turnMessagePanel = null!;
     private MessageLogPanel _messageLogPanel = null!;
@@ -378,6 +379,7 @@ public partial class GameController : Node2D
         _moundsPanel = GetNode<PanelContainer>("UI/MoundsDecisionPanel");
         _monarchDialog = GetNode<MonarchDialog>("UI/MonarchDialog");
         _emigrationPanel = GetNode<EmigrationChoicePanel>("UI/EmigrationChoicePanel");
+        _eventPanel = GetNode<EventChoicePanel>("UI/EventChoicePanel");
         _preCombatPanel = GetNode<PreCombatPanel>("UI/PreCombatPanel");
         _turnMessagePanel = GetNode<TurnMessagePanel>("UI/TurnMessagePanel");
         _messageLogPanel = GetNode<MessageLogPanel>("UI/MessageLogPanel");
@@ -2592,6 +2594,17 @@ public partial class GameController : Node2D
             RefreshView();
         }, _variant.DisplayOverrides); // recruit unit names per variant (86d3kwtvc)
 
+    /// <summary>Opens the historical-event choice dialog for the pending multi-option event (no-op when none pending). Public so scene tests can drive it.</summary>
+    public void OpenEventChoicePanel() =>
+        _eventPanel.Open(_game, outcome =>
+        {
+            if (!string.IsNullOrEmpty(outcome))
+            {
+                _notice = outcome;
+            }
+            RefreshView();
+        });
+
     /// <summary>
     /// Opens the diplomacy / negotiation dialog (86d3c9xpt): the human answers any queued AI treaty offers
     /// (<see cref="Game.PendingHumanProposals"/>) and may open a fresh negotiation with a contacted rival. The
@@ -3131,6 +3144,20 @@ public partial class GameController : Node2D
         if (!_game.IsHumanDefeated && _game.PendingEmigration is not null && !_emigrationPanel.Visible)
         {
             OpenEmigrationChoicePanel();
+        }
+
+        // A human offered a multi-option historical event (an Australian 1788-1901 dilemma) — surface the choice popup.
+        // The offer is TRANSIENT: it auto-resolves to the default option at the next end of turn, so if it clears while
+        // the popup is still up (the player pressed End Turn instead of answering) the stale popup MUST be hidden — else a
+        // click would resolve a no-longer-pending offer (ChooseEventOption throws) and the stuck panel would suppress the
+        // next turn's event. Mirrors the native-demand panel's open/else-hide. Suppressed on defeat.
+        if (!_game.IsHumanDefeated && _game.PendingEventOffer is not null && !_eventPanel.Visible)
+        {
+            OpenEventChoicePanel();
+        }
+        else if (_game.PendingEventOffer is null && _eventPanel.Visible)
+        {
+            _eventPanel.Hide();
         }
 
         // The home-nation King has made a demand awaiting an answer (a tax rise or a mercenary offer set

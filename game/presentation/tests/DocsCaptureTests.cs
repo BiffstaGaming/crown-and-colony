@@ -270,6 +270,28 @@ public class DocsCaptureTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task Capture_AustraliaEvent()
+    {
+        if (!Enabled) return;
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        GameController controller = StartAustralia(runner, CaptureSize);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        // Arm a genuine 1854 dilemma (the Eureka Stockade: concede reform vs send in the troops) as the engine would for
+        // a human, then surface the event popup so the shot shows the authored title, prompt, and labelled choices.
+        game.GetType().GetField("_pendingEventOffer", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(game, new Game.EventOffer("event.eurekaStockade", null, new[] { "reform", "suppress" }));
+        controller.OpenEventChoicePanel();
+        await runner.SimulateFrames(4);
+        // Hide the map chrome, the floating action cluster, and the first-turn tutorial card (which would never coincide
+        // with an 1854 event in real play) for a clean popup shot — hidden LAST so a settle-frame refresh can't re-show them.
+        foreach (string path in new[] { "UI/MiniMap", "UI/MiniMapBack", "UI/MapControls", "UI/ActionCluster", "UI/ActionClusterBack", "UI/TutorialPanel" })
+            if (controller.GetNodeOrNull<CanvasItem>(path) is { } node) node.Visible = false;
+        await runner.SimulateFrames(1);
+        Save(controller, "australia-event");
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task Capture_AustraliaColonyScreen()
     {
         if (!Enabled) return;

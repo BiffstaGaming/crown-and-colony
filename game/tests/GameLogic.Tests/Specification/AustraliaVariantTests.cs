@@ -291,6 +291,22 @@ public class AustraliaVariantTests
     }
 
     [Fact]
+    public void HistoricalEvents_CarryAuthoredPopupText_ForTheDilemmas()
+    {
+        // WS1.1b: the multi-option dilemmas carry authored name/prompt/labels so the event popup renders real prose,
+        // not humanized ids. (Unauthored events would fall back to the humanized id — but all 31 are now authored.)
+        EventDef eureka = Australia.HistoricalEvent("event.eurekaStockade")!;
+        Assert.Equal("The Eureka Stockade", eureka.DisplayName);
+        Assert.False(string.IsNullOrWhiteSpace(eureka.Prompt));
+        Assert.Equal("Concede reform", eureka.Option("reform")!.DisplayLabel);
+        Assert.Equal("Send in the troops", eureka.Option("suppress")!.DisplayLabel);
+
+        // The adversarial verify pass corrected the gold-immigration prompt for accuracy (the *gold colonies'*
+        // population tripled, not the whole continent's) — the corrected text is what shipped.
+        Assert.Contains("gold colonies", Australia.HistoricalEvent("event.goldImmigrationSurge")!.Prompt);
+    }
+
+    [Fact]
     public void AustraliaCatalog_CarriesTheSetupEventAndBatchOne_WhileClassicHasNone()
     {
         // Classic defines zero historical events → the event runtime is a strict no-op and classic replays

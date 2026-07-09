@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — WS1.1b: event-choice popup — the 31-event narrative is now interactive
+
+**Requested (Chris):** continue with WS1.1b (the event popup).
+**Did:**
+- **First hole closed.** Built `EventChoicePanel` (a parchment-framed modal, modelled on `EmigrationChoicePanel`) that consumes `Game.PendingEventOffer` → renders the event's title + prompt + a labelled button per choice → `ChooseEventOption`. Wired into `GameController.RefreshView`. **Before this, a human's multi-option dilemma (Gold Rush / Eureka / Shearers' Strike) silently auto-resolved to the default.**
+- **Authored all 31 events' popup text** (name/prompt/labels) via an orchestrated **fan-out + adversarial-verify workflow** (3 era-batch authors + 1 high-effort verify). The verify pass **caught a real historical inaccuracy** (gold-immigration "colonial population triples" → the *gold colonies'* population; continent-wide it was ~2.7×) and flagged sensitive events for your 4c.11 sign-off. Spliced into the spec via a script — **presentation attributes only; effects untouched** (diff verified).
+- **Adversarial code-review caught a real bug** (fixed + regression-tested): the event offer is *transient* (auto-resolves at End Turn), so pressing End Turn with the popup up would leave a stale popup whose click throws `InvalidMoveException` and suppresses the next event. Now `RefreshView` hides on clear and `Resolve` bails if the offer is gone.
+- **Verified in-game:** render capture `docs/guide/img/australia-event.png` shows **"The Eureka Stockade"** with **"Concede reform"** / **"Send in the troops"** on the parchment frame.
+**Status:** `main` (this commit), CI pending. Full L1/L2 **2935** + **5 soak** + **2 L3** (`EventChoicePanelTests`) green; Godot solution builds clean.
+**Changed:** `EventChoicePanel.cs` (new) + uid, `EventChoicePanelTests.cs` (new) + uid, `main.tscn` (node + ext_resource), `GameController.cs` (wiring + transient-offer fix), `DocsCaptureTests.cs` (capture), `australia/specification.xml` (31 events' text), `AustraliaVariantTests.cs`, `events.md`, `australia-event.png`.
+**Decisions:** popup text lives inline on the `<event-def>`/`<option>` (name/prompt/label attrs) with humanized-id fallback; the popup shows only multi-option dilemmas (single-option events auto-resolve + log). Used a workflow for the text (parallel authoring + adversarial tone/accuracy verify) — it earned its keep, catching the inaccuracy + the sensitive flags.
+**Scheduled next:** **WS1.2 — Commonwealth victory + failure screens** (the second hole); then WS1.3 (variant-aware art seam) + WS1.4 (Pioneer portraits).
+**Needs you (4c.11 sign-off):** review the sensitive event framings — the **Second Fleet** ("Death Fleet" tragedy that grants convict labour), the **First-Nations dispossession** subjects (Sydney Cove / squatting / inland exploration), and the **Chinese gold-rush immigration** event. All authored to doc-19 tone (sombre, anti-"empty land"), but they need your explicit OK.
+
+---
+
 ## 2026-07-09 — ClickUp backlog completed + WS1 underway
 
 **Requested (Chris):** ensure all requirements are individual ClickUp tasks; then begin working through the first round of WS1.
