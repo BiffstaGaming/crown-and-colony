@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — Road-to-100% plan (understand docs → gaps → full polished plan)
+
+**Requested (Chris):** understand the Australia documentation, determine what needs updating, and 100% plan out the rest to bring Australian Mode to a POLISHED, GOOD-LOOKING UI/gameplay.
+**Did:**
+- Ran a **two-agent audit**: (A) a full requirements sweep of all 22 design docs (UI/art emphasis), (B) a live-code current-state inventory (GameLogic / Presentation / Art). Cross-referenced the prior doc-vs-impl audit.
+- **Current state (honest):** GameLogic **~80%** (rich spec, working Federation loop, event engine, Pioneer effects); Presentation **~70%** (thorough text reskin on a *real* custom parchment/wood theme, but two player-facing HOLES); Australian art **~0%** (100% FreeCol art + Australian text labels; `ColonyArt` isn't even variant-aware, so no Australian art *could* load).
+- **Verified the two holes:** (1) **no** presentation consumes `PendingEventOffer` → the 31-event narrative is invisible, human choices auto-resolve to the default; (2) `VictoryPanel` isn't Federation-aware → the Commonwealth win shows the classic *"swept the rivals from the New World"* + "English", not "Commonwealth of Australia".
+- **Wrote the plan:** `docs/australian_federation_mode_md/ROAD_TO_100.md` — six prioritised workstreams (Playable&Polished Core → Australian Visual Identity → Federation Depth → Living-World Events&Pioneers → First Nations → Content/Balance/Ship), each item scoped to land tests+docs+CI-green, gated items flagged (🔒 sign-off/consultation, 🎨 art/licensing), a polish-first sequence + rationale, and a Decisions-needed list.
+**Status:** planning only — **no code changes**. `ROAD_TO_100.md` committed. `main` still CI-green at the A/B/C milestones (`64339bd`).
+**Changed:** `docs/australian_federation_mode_md/ROAD_TO_100.md` (new) + this summary.
+**Decisions:** recommended **polish-first** ordering — close the two holes + make it look Australian *before* deepening systems (a shallow-but-polished game beats a deep-but-broken one).
+**Scheduled next:** **WS1.1 — Event-choice popup UI** (turns on the whole 31-event system; the single biggest player-facing fix) — pending Chris's steer on the §5 decisions.
+**Needs you (the §5 gating decisions):** (1) confirm polish-first priority; (2) **art approach** (public-domain sourcing / commission / interim recolours); (3) **First Nations depth** — now / defer / reduced-interim + how to run the cultural consultation; (4) per-colony difficulty magnitudes; (5) game name/trademark; (6) Mode 2 in or out; (7) ADR-021/022 + sensitive-framing sign-offs.
+
+---
+
 ## 2026-07-09 — Doc-audit response + fixes (A/B/C): gold-rush pacing, FN aggression, 5 Pioneers remapped
 
 **Requested (Chris):** what year should Australia Mode start (per docs), and is there other info I've missed? → then (from the follow-up choices) fix the small spec fixes + FN aggression + remap the 5 wrong Pioneers [+ Mode 3 + conditional events, scheduled]; keep **Mode 1 only** (no Mode 2 sandbox).
