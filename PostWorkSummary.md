@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-10 — WS1.4: Pioneer-portrait seam wired + Asset Register stocked
+
+**Requested (Chris):** continue into WS1.4 (portraits) — decisions: *you supply the vetted images*; *Barak held* pending cultural-protocol sign-off.
+**Did:**
+- **The seam needed no new code** — WS1.3 already routes `ColonyArt.FatherPortrait("henryParkes")` to `res://assets/australia/fathers/henryParkes.jpg` first (else FreeCol, else text-only). Confirmed both callers (`FoundingFatherPanel`, `ColopediaPanel`) degrade to button-only when a portrait is absent. So dropping a correctly-named `.jpg` makes the portrait appear with **zero recompile**.
+- **Stocked the sourcing shopping-list.** New `game/assets/australia/fathers/README.md` (naming convention: `<shortName>.jpg`, 200×237) + the researched, **PD-verified Asset Register** `game/assets/australia/PROVENANCE.md`: recommended public-domain source + copyright basis for all **24** non-Barak Pioneers (State/National libraries, NPG, Wikimedia Commons). **0/24 supplied** — you source + vet the files, then fill the Source-URL/Licence columns.
+- **A research→adversarial-verify workflow produced + checked the register** (6 agents, web-search grounded). The verify pass caught a real error (the Flinders de Chazal portrait is an **oil c.1806–07**, not an "1801 miniature") and flagged the key licensing trap: the **five figures who died 1920–1935** (Barton, Griffith, Quick, Lawson, **Kidman**) need a *photograph* published pre-1931 / taken pre-1955 — a modern-authored *painting* of them can still be in copyright. **Kidman (d.1935) is riskiest**; **James Ruse has no authenticated likeness** (use the headstone or a labelled placeholder). All caveats are in the register.
+- **William Barak held** — the register + folder README both state `williamBarak.jpg` is intentionally not sourced pending your sign-off; he renders text-only meanwhile (by design).
+**Status:** `main` (this commit), CI pending. Docs-only/asset-scaffold — **no C#/data change**: build ✓ (0 errors), headless Godot import ✓ (the `.md` files are ignored by the importer). Loading + text-only fallback are covered by `ColonyArtTests` (WS1.3). Full L1/L2 unaffected (engine-free); CI re-runs it.
+**Changed:** `game/assets/australia/fathers/README.md` (new), `game/assets/australia/PROVENANCE.md` (new register), `founding-fathers.md` (+variant-portrait note +changelog), `game-modes.md` (changelog).
+**Decisions:** you supply + vet the images (cleanest licence control); Barak held; the register leads with the PD basis + vetting caveats so nothing licence-unsafe slips in.
+**Scheduled next:** **WS1.5 — the Mode-3 per-colony colony picker** (pure code; local task M-D `#26`). Portraits stay 0/24 until you drop images; I'll wire them in as they arrive.
+**Needs you:** (1) **source + drop the 24 portrait `.jpg`s** when you have time (register has the shopping-list); (2) **William Barak cultural-protocol sign-off** to un-hold his portrait; (3) the still-open WS1.1b **4c.11 event sign-off**.
+
+---
+
 ## 2026-07-09 — WS1.3: variant-aware art seam — Australian art unblocked
 
 **Requested (Chris):** continue with WS1.3.
