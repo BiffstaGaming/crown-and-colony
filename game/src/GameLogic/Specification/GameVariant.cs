@@ -38,7 +38,8 @@ public sealed class GameVariant
         string libertyName = "liberty",
         IReadOnlyList<string>? openingBeats = null,
         MapSource? forcedMapSource = null,
-        int? defaultForeignPowerCount = null)
+        int? defaultForeignPowerCount = null,
+        bool referendumVictoryOnly = false)
     {
         Id = id;
         DisplayName = displayName;
@@ -60,6 +61,7 @@ public sealed class GameVariant
         LibertyName = libertyName;
         ForcedMapSource = forcedMapSource;
         DefaultForeignPowerCount = defaultForeignPowerCount;
+        ReferendumVictoryOnly = referendumVictoryOnly;
         _specResource = specResource;
     }
 
@@ -174,6 +176,15 @@ public sealed class GameVariant
     /// are the native nations and are unaffected by this.
     /// </summary>
     public int? DefaultForeignPowerCount { get; }
+
+    /// <summary>
+    /// Whether this variant is won <b>only by the Federation Referendum</b> (the Commonwealth proclamation) — <c>true</c>
+    /// for the Australian Federation, whose referendum replaces the classic War-of-Independence / last-power-standing wins
+    /// entirely (Chris 2026-07-09). The engine already makes the Federation victory exclusive whenever it is enabled
+    /// (<see cref="GameSession.Game.Winner"/>); the New-Game dialog reads this to switch off + lock the three classic
+    /// victory-condition checkboxes so the UI matches. <c>false</c> for classic (the player picks the classic conditions).
+    /// </summary>
+    public bool ReferendumVictoryOnly { get; }
 
     /// <summary>Loads this variant's ruleset by parsing its embedded specification, applying a difficulty level.</summary>
     /// <param name="difficultyLevelId">The difficulty level to apply (default <c>model.difficulty.medium</c> → the historical balance).</param>
@@ -335,7 +346,11 @@ public static class GameVariants
         // continent was British-settled alone (the Dutch/French charted the coast but founded no colonies). The New-Game
         // dialog reads these to default + lock the map and rival-power pickers (Chris 2026-07-09).
         forcedMapSource: MapSource.Australia,
-        defaultForeignPowerCount: 0);
+        defaultForeignPowerCount: 0,
+        // The Australian Federation is won ONLY by the referendum → Commonwealth proclamation (Chris 2026-07-09); the
+        // classic War-of-Independence / last-power-standing wins do not apply (and would be a turn-1 instant win under
+        // 0 rivals). Game.Winner enforces this; the dialog switches off + locks the classic victory checkboxes.
+        referendumVictoryOnly: true);
 
     /// <summary>Every shipped variant, in menu order.</summary>
     public static IReadOnlyList<GameVariant> All { get; } = [ClassicAmerica, Australia];

@@ -360,6 +360,30 @@ public class AustraliaVariantTests
     }
 
     [Fact]
+    public void AustraliaVictory_IsOnlyByReferendum_NotTheClassicWarOrLastPowerWins()
+    {
+        // The Australian Federation is won SOLELY by the referendum → Commonwealth proclamation (Chris 2026-07-09):
+        // the classic War-of-Independence / last-power-standing wins are off, and Game.Winner makes the Federation
+        // victory exclusive whenever it is enabled.
+        Assert.True(GameVariants.Australia.ReferendumVictoryOnly);
+        Assert.False(GameVariants.ClassicAmerica.ReferendumVictoryOnly);
+
+        // The ruleset options agree: only the Federation victory is on.
+        Assert.True(Australia.VictoryFederation);
+        Assert.False(Australia.VictoryDefeatRef);
+        Assert.False(Australia.VictoryDefeatEuropeans);
+
+        // With 0 rival powers the human is the only European from turn 1 — under the classic "defeat all Europeans"
+        // condition that would be an instant win. Here a fresh (pre-Commonwealth) Australia game has NO winner: you
+        // must federate. (Classic, which ships that condition on, is unaffected — Game.Winner's Federation branch is
+        // skipped when VictoryFederation is off.)
+        Game game = Game.New(Australia, seed: 0xA05UL, mapSource: MapSource.Australia, foreignPowerCount: 0);
+        Assert.Null(game.Winner);
+        game.EndTurn();
+        Assert.Null(game.Winner);
+    }
+
+    [Fact]
     public void AustraliaVariant_FixesItsWorld_TheAustraliaMap_AndZeroRivalPowers()
     {
         // The Australian Federation is fixed to the authored Australia continent and to a colonial contest of ONE —

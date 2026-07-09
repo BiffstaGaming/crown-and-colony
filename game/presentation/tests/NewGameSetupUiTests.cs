@@ -81,6 +81,9 @@ public class NewGameSetupUiTests
         var variantOption = Find<OptionButton>(dialog, "VariantOption");
         var mapOption = Find<OptionButton>(dialog, "MapOption");
         var rivalOption = Find<OptionButton>(dialog, "RivalCountOption");
+        var refCheck = Find<CheckBox>(dialog, "VictoryRefCheck");
+        var europeansCheck = Find<CheckBox>(dialog, "VictoryEuropeansCheck");
+        var humansCheck = Find<CheckBox>(dialog, "VictoryHumansCheck");
 
         int australiaIndex = GameVariants.All.ToList().FindIndex(v => v.Id == "australia");
         AssertThat(australiaIndex).IsGreaterEqual(0);
@@ -94,14 +97,22 @@ public class NewGameSetupUiTests
         AssertThat(mapOption.GetItemText(mapOption.Selected)).Contains("Australia");
         AssertThat(rivalOption.Disabled).IsTrue();
         AssertThat(rivalOption.GetItemText(rivalOption.Selected)).IsEqual("0"); // 0 rival powers
+        // Won only by the Federation referendum: the three classic win checkboxes are switched off + locked.
+        AssertThat(refCheck.Disabled).IsTrue();
+        AssertThat(refCheck.ButtonPressed).IsFalse();
+        AssertThat(europeansCheck.Disabled).IsTrue();
+        AssertThat(europeansCheck.ButtonPressed).IsFalse();
+        AssertThat(humansCheck.Disabled).IsTrue();
 
-        // Back to Classic → both pickers free again.
+        // Back to Classic → the pickers and win conditions are free again (default game unconstrained).
         variantOption.Select(0);
         variantOption.EmitSignal(OptionButton.SignalName.ItemSelected, 0L);
         await runner.SimulateFrames(1);
 
         AssertThat(mapOption.Disabled).IsFalse();
         AssertThat(rivalOption.Disabled).IsFalse();
+        AssertThat(refCheck.Disabled).IsFalse();
+        AssertThat(refCheck.ButtonPressed).IsTrue(); // classic's "defeat REF" default restored
     }
 
     [TestCase]

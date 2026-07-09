@@ -5333,16 +5333,15 @@
                           defaultValue="0"/>
       </optionGroup>
       <optionGroup id="gameOptions.victoryConditions">
-        <!-- Victory condition: Should the player who first defeats
-             the Royal Expeditionary Force win the game? -->
+        <!-- The Australian Federation is won ONLY by Referendum (the Commonwealth proclamation below) — Chris 2026-07-09.
+             The three classic win paths are OFF: the War-of-Independence/defeat-REF win is replaced by Federation, and
+             "defeat all other Europeans / humans" is meaningless here (the variant seeds 0 rival powers — it would be a
+             turn-1 instant win). Game.Winner also makes the Federation victory exclusive whenever it is enabled, so these
+             cannot be re-enabled into a second win path. -->
         <booleanOption id="model.option.victoryDefeatREF"
-                       defaultValue="true"/>
-        <!-- Victory condition: Should a player who first defeats all
-             other european players win the game? -->
+                       defaultValue="false"/>
         <booleanOption id="model.option.victoryDefeatEuropeans"
-                       defaultValue="true"/>
-        <!-- Victory condition: Should a player who first defeats all
-             other human players win the game? -->
+                       defaultValue="false"/>
         <booleanOption id="model.option.victoryDefeatHumans"
                        defaultValue="false"/>
         <!-- Victory condition: the Australian-Federation win (Phase-4a, ADR-021). TRUE for the Australia

@@ -204,6 +204,7 @@ public partial class NewGameDialog : Control
     private CheckBox _victoryRefCheck = null!;
     private CheckBox _victoryEuropeansCheck = null!;
     private CheckBox _victoryHumansCheck = null!;
+    private (bool Ref, bool Europeans, bool Humans) _victoryDefaults; // the classic victory-condition defaults, restored when a variant unlocks them
     // The fog-of-war toggle (FreeCol's model.option.fogOfWar, gameOptions.map group). Initialised to the ruleset's
     // parsed spec default (classic on) so an untouched Start is byte-identical; unticking it keeps every explored tile
     // permanently visible.
@@ -387,10 +388,6 @@ public partial class NewGameDialog : Control
         _rivalCountOption.Selected = RivalCountDefaultIndex;
         vbox.AddChild(LabeledRow("Rival powers", _rivalCountOption));
 
-        // Apply any map / rival-power lock the initially-selected variant imposes (Classic imposes none, so the dialog
-        // opens exactly as before; Australia would open on the locked Australia map with 0 rivals). Both dropdowns exist now.
-        SyncVariantConstraints(_variantOption.Selected);
-
         // Starting year (FreeCol model.option.startingYear; 86d3fq1fd). 1492 is the historical, byte-identical default.
         _startYearOption = new OptionButton { Name = "StartYearOption" };
         foreach (int y in StartYearChoices)
@@ -434,6 +431,11 @@ public partial class NewGameDialog : Control
         vbox.AddChild(_victoryRefCheck);
         vbox.AddChild(_victoryEuropeansCheck);
         vbox.AddChild(_victoryHumansCheck);
+        _victoryDefaults = (defaults.VictoryDefeatRef, defaults.VictoryDefeatEuropeans, defaults.VictoryDefeatHumans);
+
+        // Now that every control a variant can constrain exists (map, rival powers, victory checks), apply the initially
+        // selected variant's locks. Classic imposes none, so the dialog opens exactly as before (byte-identical default).
+        SyncVariantConstraints(_variantOption.Selected);
 
         // gameOptions.map — fog of war (model.option.fogOfWar): ticked = the classic remembered-but-hidden fog; unticked
         // = explored tiles stay permanently visible. Read by Game.CurrentlyVisible/IsVisible. Spec default classic on.
@@ -700,6 +702,17 @@ public partial class NewGameDialog : Control
         {
             _rivalCountOption.Disabled = false;
         }
+
+        // Victory conditions: a referendum-only variant (Australia) is won SOLELY by the Federation referendum, so the
+        // three classic win checkboxes are switched off + locked (Game.Winner also enforces this — the checkboxes would
+        // be inert otherwise). A normal variant restores its default conditions and re-enables them.
+        bool referendumOnly = variant.ReferendumVictoryOnly;
+        _victoryRefCheck.ButtonPressed = !referendumOnly && _victoryDefaults.Ref;
+        _victoryEuropeansCheck.ButtonPressed = !referendumOnly && _victoryDefaults.Europeans;
+        _victoryHumansCheck.ButtonPressed = !referendumOnly && _victoryDefaults.Humans;
+        _victoryRefCheck.Disabled = referendumOnly;
+        _victoryEuropeansCheck.Disabled = referendumOnly;
+        _victoryHumansCheck.Disabled = referendumOnly;
     }
 
     /// <summary>

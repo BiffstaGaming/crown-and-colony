@@ -1100,13 +1100,16 @@ public sealed partial class Game
             {
                 return null; // the winner chose to keep playing — the victory conditions are off (FreeCol continuePlaying)
             }
-            // Australian-Federation win (Phase-4a, ADR-021): when the Federation victory is enabled and the phase has
-            // reached the Commonwealth proclamation, the human wins by Federation. Checked FIRST for the Australia
-            // variant; off (and so skipped) for the classic ruleset, which leaves the phase at ColonialMaturity forever,
-            // so this changes nothing for the default game (ADR-009).
-            if (Ruleset.VictoryFederation && _federationPhase == FederationPhase.Commonwealth)
+            // Australian-Federation win (Phase-4a, ADR-021): when the Federation victory is enabled it is the SOLE win
+            // path — the referendum → Commonwealth proclamation replaces the classic War-of-Independence / last-power-
+            // standing model entirely, so the classic conditions below are skipped for it (Chris 2026-07-09: "the winning
+            // way for Australia is only by Referendum"). This also avoids a degenerate instant win: the variant seeds 0
+            // rival European powers, which would otherwise satisfy "defeat all other Europeans" on turn 1. Off (and so
+            // skipped) for the classic ruleset — its phase never leaves ColonialMaturity — so the default game keeps the
+            // classic conditions unchanged and byte-identical (ADR-009).
+            if (Ruleset.VictoryFederation)
             {
-                return _human;
+                return _federationPhase == FederationPhase.Commonwealth ? _human : null;
             }
             if (Ruleset.VictoryDefeatRef
                 && _players.FirstOrDefault(p => p.PlayerType == PlayerType.Independent) is { } independent)
