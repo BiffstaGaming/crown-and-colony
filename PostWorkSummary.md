@@ -19,6 +19,26 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — Three playtest fixes: readable intro + Australia map/rivals locked to the scenario
+
+**Requested (Chris):** intro runs too quick to read; set the Australia map fixed for Australia Mode; set 0 foreign powers for Australia ("unless I'm mistaken") — investigate, confirm, then update.
+**Investigated + confirmed:**
+- **Intro:** each beat held a fixed **2.6 s** — too short for the multi-sentence Australian beats. Confirmed.
+- **Map:** the New-Game Scenario and Map dropdowns were **independent** — picking Australian Federation left the map on the default (Random), so you could get Australian content on a random map. Confirmed the gap.
+- **Foreign powers:** the game seeds **3 rival European powers by default** (`Game.ForeignPowerCount = 3`), and an Australia game got them too. **Chris is right:** historically Australia was colonised by **Britain alone** — the Dutch (VOC) and French charted/explored the coast (New Holland; La Pérouse, Baudin) but founded **no colonies** here, so there is no multi-power colonial contest to model. 0 rivals is historically correct.
+**Did:**
+1. **Intro** — `OpeningCinematic` hold is now **length-proportional**: `HoldFor(beat) = clamp(3.5 + len·0.045, 4.5, 9.0)` s (~22 chars/s), so longer beats stay readable; still skippable (click/Esc/Skip).
+2. **Map** — new `GameVariant.ForcedMapSource` (Australia → `MapSource.Australia`); the New-Game Scenario dropdown now sets + **locks** the Map picker when a variant fixes it.
+3. **Rivals** — new `GameVariant.DefaultForeignPowerCount` (Australia → **0**); the Scenario dropdown sets + **locks** the Rival-powers picker. (First Nations communities are the native nations and are unaffected.)
+Setting-only (ADR-006); **Classic leaves both pickers free** → default game unchanged.
+**Status:** `main` `bd2d057`, **CI green (L1/L2 + L3)**; L1/L2 2924 + L3 green. +1 L1 (`AustraliaVariantTests` world-lock) +1 L3 (`NewGameSetupUiTests` map/rival lock).
+**Changed:** `OpeningCinematic.cs`, `GameVariant.cs` (+2 props, Australia values), `NewGameDialog.cs` (variant→map/rival sync+lock), `AustraliaVariantTests.cs`, `NewGameSetupUiTests.cs`, `game-modes.md` + `opening-cinematic.md` changelogs.
+**Decisions:** locked (disabled) the pickers for a variant that fixes them, rather than just defaulting — "fixed" per Chris; easy to relax to default-only if you'd prefer them adjustable.
+**Scheduled next:** unchanged — the sign-off/approval-gated items (ADR-021/022, art, balance playtest).
+**Needs you:** playtest the New-Game screen (pick Australian Federation → Map = Australia + Rival powers = 0, both locked) and the slower intro; tell me if you'd rather the pickers be adjustable defaults instead of locked.
+
+---
+
 ## 2026-07-09 — Australia Phase-4 push COMPLETE (non-gated envelope) — capstone
 
 **Requested (Chris):** cap reset → "complete all of the items you started"; standing goal "100% complete", "keep working until usage limit".
