@@ -3807,8 +3807,14 @@
                   type="percentage" value="100"/>
       </settlement>
     </indian-nation-type>
+    <!-- First Nations aggression note (doc 15 §5): resistance to colonisation must be *contextual* — a response
+         to land pressure and broken agreements — never an innate "warlike" trait. The classic reskin left three
+         peoples (Arrernte, Eora, Wangkatja) at the inherited aggression="high" copied from the Aztec/warlike
+         source types. That innate-high framing is neutralised here (high → average); no First Nations people is
+         modelled as inherently more hostile than another. The holistic contextual-resistance system is deferred
+         to epic 4b (ADR-022, sign-off-gated). -->
     <indian-nation-type id="model.nationType.arrernte" extends="camp"
-                        number-of-settlements="average" aggression="high">
+                        number-of-settlements="average" aggression="average">
       <skill id="model.unit.masterCottonPlanter" probability="20"/>
       <skill id="model.unit.expertFarmer" probability="10"/>
       <skill id="model.unit.masterSugarPlanter" probability="3"/>
@@ -3834,7 +3840,7 @@
       <region id="model.region.south" />
     </indian-nation-type>
     <indian-nation-type id="model.nationType.eora" extends="village"
-                        number-of-settlements="low" aggression="high">
+                        number-of-settlements="low" aggression="average">
       <skill id="model.unit.masterSugarPlanter" probability="20"/>
       <skill id="model.unit.expertFisherman" probability="10"/>
       <skill id="model.unit.masterFurTrader" probability="3"/>
@@ -3880,9 +3886,10 @@
       <region id="model.region.southWest" />
     </indian-nation-type>
     <!-- Renamed from the classic `aztec` AND re-based city→village (86d3-P8 naming pass): see the Noongar note
-         above. Extends the `village` template; the inline city <settlement> overrides are dropped. -->
+         above. Extends the `village` template; the inline city <settlement> overrides are dropped. Aggression
+         lowered from the inherited aztec "high" to "average" — see the First Nations aggression note above. -->
     <indian-nation-type id="model.nationType.wangkatja" extends="village"
-                        aggression="high">
+                        aggression="average">
       <skill id="model.unit.masterSugarPlanter" probability="3"/>
       <skill id="model.unit.expertOreMiner" probability="3"/>
       <region id="model.region.west" />
@@ -5359,9 +5366,12 @@
         <!-- The very first year of the game: the First Fleet's arrival at Sydney Cove. -->
         <integerOption id="model.option.startingYear"
                        value="1788" minimumValue="1492" maximumValue="1901" />
-        <!-- The first year in which there are two turns: the pace quickens at the gold-rush era. -->
+        <!-- The first year in which there are two turns per year: the pace quickens at the 1851 gold rush,
+             giving the busy Gold-Rush → Federation half of the campaign (1851-1901) finer granularity while
+             the sparse founding era (1788-1851) stays one deliberate turn per year. 1851 is the doc-03
+             Gold-Rush era boundary. -->
         <integerOption id="model.option.seasonYear"
-                       value="1830" minimumValue="1492" maximumValue="1901" />
+                       value="1851" minimumValue="1492" maximumValue="1901" />
         <!-- The year in which owning a colony becomes mandatory (a grace period after 1788). -->
         <integerOption id="model.option.mandatoryColonyYear"
                        value="1820" minimumValue="1492" maximumValue="1901" />
@@ -5372,13 +5382,17 @@
         <integerOption id="model.option.lastColonialYear"
                        value="1899" minimumValue="1492" maximumValue="1901" />
         <!-- Early-referendum bonus turn (the independence machinery, reframed as Federation in Phase 4).
-             A ~1880 declare implies turn (1830 - 1788) + 2 * (1880 - 1830) = 142 on the 1788/1830 scale. -->
+             A ~1880 declare implies turn (1851 - 1788) + 2 * (1880 - 1851) = 121 on the 1788/1851 scale
+             (two turns per year begins at the 1851 gold rush; see seasonYear above). -->
         <integerOption id="model.option.independenceTurn"
-                       value="142" minimumValue="40" />
-        <!-- Years at which the Australian Pioneer weights change (the three eras: founding 1788-1830,
-             expansion & gold 1830-1880, pre-Federation 1880-1901). A fresh 1788 game sits in the first
-             era, so the Democracy & Federation figures (weight1=0) are correctly absent early. -->
-        <textOption id="model.option.ages" defaultValue="1830,1880" />
+                       value="121" minimumValue="40" />
+        <!-- Years at which the Australian Pioneer weights change. Both boundaries are real campaign-era lines
+             from doc 03: 1830 (Separate Colonies) and 1889 (Federation Movement). So the three weight ages are
+             founding 1788-1830, growth & gold 1830-1889, Federation 1889-1901. A fresh 1788 game sits in the
+             first age, so the Democracy & Federation figures (weight1=0) are correctly absent early and become
+             common exactly as the 1889-1901 Federation campaign opens (they stay rare-available from 1830 via
+             weight2). Boundary values are playtest-tunable (4d.8). -->
+        <textOption id="model.option.ages" defaultValue="1830,1889" />
         <!-- The number of seasons in the year. -->
         <integerOption id="model.option.seasons"
                        value="2" minimumValue="2" maximumValue="366" />

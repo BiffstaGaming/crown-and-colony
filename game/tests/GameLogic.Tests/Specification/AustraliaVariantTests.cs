@@ -132,6 +132,17 @@ public class AustraliaVariantTests
         Assert.Equal(1899, Australia.LastColonialYear);        // the pre-Federation colonial cutoff
         Game game = Game.New(Australia, seed: 0xA05UL, mapSource: MapSource.Australia);
         Assert.Equal(1788, game.CurrentYear);                  // the booted game actually opens in 1788
+
+        // Two turns per year begin at the 1851 gold rush (the doc-03 Gold-Rush era boundary), not 1830 — the busy
+        // Gold-Rush → Federation half of the campaign gets finer granularity while the sparse founding era stays one
+        // deliberate turn per year (spec fix 2026-07-09; the comment said "gold rush" but the value read 1830).
+        Assert.Equal(1851, Australia.Calendar.SeasonYear);
+        // The Pioneer age boundaries are real campaign-era lines from doc 03: 1830 (Separate Colonies) and 1889
+        // (Federation Movement) — so the Democracy & Federation Pioneers become common exactly as the campaign opens.
+        Assert.Equal(1, Australia.AgeForYear(1788)); // founding era
+        Assert.Equal(2, Australia.AgeForYear(1830)); // growth & gold begins
+        Assert.Equal(2, Australia.AgeForYear(1888)); // still age 2 the year before Federation
+        Assert.Equal(3, Australia.AgeForYear(1889)); // Federation Movement opens age 3
     }
 
     [Fact]
@@ -257,6 +268,26 @@ public class AustraliaVariantTests
         // The Noongar (ex-inca) and Wangkatja (ex-aztec) both found ordinary villages now.
         Assert.Equal("model.settlement.village", Australia.NativeNation("model.nationType.noongar").SettlementTypeId);
         Assert.Equal("model.settlement.village", Australia.NativeNation("model.nationType.wangkatja").SettlementTypeId);
+    }
+
+    [Fact]
+    public void AustraliaNatives_NoFirstNationsPeopleIsInnatelyWarlike()
+    {
+        // doc 15 §5: First Nations resistance must be *contextual* — a response to land pressure and broken
+        // agreements — never an innate "warlike" trait. The classic reskin left three peoples (Eora/Arrernte/
+        // Wangkatja) at aggression="high" inherited from the Aztec/warlike source types; that innate-high framing
+        // is neutralised (spec fix 2026-07-09). The holistic contextual-resistance system is deferred to 4b/ADR-022.
+        foreach (NativeNationType nation in Australia.NativeNationTypes)
+        {
+            Assert.NotEqual(NativeAggression.High, nation.Aggression);
+        }
+
+        // The three formerly-"high" peoples are now Average — no First Nations people is modelled as inherently
+        // more hostile than another.
+        foreach (string id in new[] { "model.nationType.eora", "model.nationType.arrernte", "model.nationType.wangkatja" })
+        {
+            Assert.Equal(NativeAggression.Average, Australia.NativeNation(id).Aggression);
+        }
     }
 
     [Fact]
