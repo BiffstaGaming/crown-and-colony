@@ -96,5 +96,6 @@ If you'd rather never see it, turn it off: **Settings → Game → "Play opening
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-07-09 | **Beat dwell is now length-proportional** (Chris: "the intro runs too quick to read"). The fixed 2.6 s hold was too short for the multi-sentence beats; replaced with `HoldFor(beat)` = `clamp(3.5 + len·0.045, 4.5, 9.0)` s, so a longer sentence stays up long enough to read (~22 chars/s) while a short one still lingers. Skippable throughout (click/Esc/Skip), so the max is generous. Presentation-only; `OpeningCinematicTests` (content, not timing) unchanged and green. | (this commit) |
 | 2026-07-08 | Variant-aware beats: added `GameVariant.OpeningBeats` (classic-defaulted to the 1492 beats; Australia supplies its own sober 1788→1901 arc per docs 03/19). `OpeningCinematic` now plays injected beats (`SetBeats`), and `MainMenu` passes the selected variant's beats. Classic text byte-identical; determinism/skip unchanged. Fixes the playtest bug where the American 1492 story played for the Australian Federation. | _(this branch)_ |
 | 2026-07-03 | Initial: skippable new-game opening cinematic (4 fade beats), wired into the interactive New-Game path; "Play intro" settings toggle (default on); save format untouched. | `86d3fq1kf` |

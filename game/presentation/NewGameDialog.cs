@@ -301,6 +301,7 @@ public partial class NewGameDialog : Control
             _variantByIndex.Add(variant);
         }
         _variantOption.Selected = VariantDefaultIndex(); // the default variant (Classic) — byte-identical
+        _variantOption.ItemSelected += OnVariantSelected; // a variant may fix + lock the map / rival count (e.g. Australia)
         vbox.AddChild(LabeledRow("Scenario", _variantOption));
 
         _mapOption = new OptionButton { Name = "MapOption" };
@@ -385,6 +386,10 @@ public partial class NewGameDialog : Control
         }
         _rivalCountOption.Selected = RivalCountDefaultIndex;
         vbox.AddChild(LabeledRow("Rival powers", _rivalCountOption));
+
+        // Apply any map / rival-power lock the initially-selected variant imposes (Classic imposes none, so the dialog
+        // opens exactly as before; Australia would open on the locked Australia map with 0 rivals). Both dropdowns exist now.
+        SyncVariantConstraints(_variantOption.Selected);
 
         // Starting year (FreeCol model.option.startingYear; 86d3fq1fd). 1492 is the historical, byte-identical default.
         _startYearOption = new OptionButton { Name = "StartYearOption" };
@@ -649,6 +654,52 @@ public partial class NewGameDialog : Control
         _sizeOption.Disabled = !randomMap;
         _landOption.Disabled = !randomMap;
         _landStyleOption.Disabled = !randomMap; // a fixed/imported map's land shape is loaded, so the style doesn't apply
+    }
+
+    /// <summary>
+    /// Scenario/variant-dropdown selection handler: a variant may <b>fix its world</b> — e.g. the Australian Federation
+    /// always plays on the Australia continent with no rival European powers (<see cref="GameVariant.ForcedMapSource"/> /
+    /// <see cref="GameVariant.DefaultForeignPowerCount"/>, per Chris 2026-07-09). When it does, the Map / Rival-powers
+    /// pickers are set to those values and <b>locked</b> (the scenario defines them); a variant that fixes neither
+    /// (Classic) leaves both free, so the dialog is unchanged for the default game.
+    /// </summary>
+    private void OnVariantSelected(long index) => SyncVariantConstraints(index);
+
+    private void SyncVariantConstraints(long index)
+    {
+        GameVariant variant = _variantByIndex[(int)index];
+
+        // Map: a fixed variant selects + locks the picker; a free one re-enables it. Setting Selected in code emits no
+        // ItemSelected signal, so refresh the size/land enablement (which keys off the map) ourselves.
+        if (variant.ForcedMapSource is { } forced)
+        {
+            int mapIndex = System.Array.FindIndex(MapChoices, c => c.Source == forced);
+            if (mapIndex >= 0)
+            {
+                _mapOption.Selected = mapIndex;
+            }
+            _mapOption.Disabled = true;
+        }
+        else
+        {
+            _mapOption.Disabled = false;
+        }
+        UpdateWorldSizeEnabled();
+
+        // Rival European powers: a fixed variant selects + locks the count; a free one re-enables it.
+        if (variant.DefaultForeignPowerCount is { } rivals)
+        {
+            int rivalIndex = System.Array.IndexOf(RivalCountChoices, rivals);
+            if (rivalIndex >= 0)
+            {
+                _rivalCountOption.Selected = rivalIndex;
+            }
+            _rivalCountOption.Disabled = true;
+        }
+        else
+        {
+            _rivalCountOption.Disabled = false;
+        }
     }
 
     /// <summary>

@@ -360,6 +360,19 @@ public class AustraliaVariantTests
     }
 
     [Fact]
+    public void AustraliaVariant_FixesItsWorld_TheAustraliaMap_AndZeroRivalPowers()
+    {
+        // The Australian Federation is fixed to the authored Australia continent and to a colonial contest of ONE —
+        // historically the continent was British-settled alone (the Dutch/French charted the coast but founded no
+        // colonies), so there are 0 rival European powers (Chris 2026-07-09). The New-Game dialog reads these to
+        // default + lock the map and rival-power pickers. Classic fixes neither (the player chooses freely).
+        Assert.Equal(MapSource.Australia, GameVariants.Australia.ForcedMapSource);
+        Assert.Equal(0, GameVariants.Australia.DefaultForeignPowerCount);
+        Assert.Null(GameVariants.ClassicAmerica.ForcedMapSource);
+        Assert.Null(GameVariants.ClassicAmerica.DefaultForeignPowerCount);
+    }
+
+    [Fact]
     public void AustraliaSave_RecordsTheVariant_AndReloadsUnderItsRuleset()
     {
         Game game = Game.New(Australia, seed: 0xA05UL, mapSource: MapSource.Australia);

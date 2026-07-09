@@ -1,3 +1,5 @@
+using CrownAndColony.GameLogic.World;
+
 namespace CrownAndColony.GameLogic.Specification;
 
 /// <summary>
@@ -34,7 +36,9 @@ public sealed class GameVariant
         string nativesName = "Native nations",
         string nativeSettlementName = "Native settlement",
         string libertyName = "liberty",
-        IReadOnlyList<string>? openingBeats = null)
+        IReadOnlyList<string>? openingBeats = null,
+        MapSource? forcedMapSource = null,
+        int? defaultForeignPowerCount = null)
     {
         Id = id;
         DisplayName = displayName;
@@ -54,6 +58,8 @@ public sealed class GameVariant
         NativesName = nativesName;
         NativeSettlementName = nativeSettlementName;
         LibertyName = libertyName;
+        ForcedMapSource = forcedMapSource;
+        DefaultForeignPowerCount = defaultForeignPowerCount;
         _specResource = specResource;
     }
 
@@ -151,6 +157,23 @@ public sealed class GameVariant
     /// itself is renamed via <see cref="DisplayOverrides"/>). Display label only (ADR-018).
     /// </summary>
     public string LibertyName { get; }
+
+    /// <summary>
+    /// The map this variant is <b>fixed to</b>, if any — e.g. the Australian Federation always plays on the authored
+    /// Australia continent (<see cref="MapSource.Australia"/>), so the New-Game map picker is set to it and locked. A
+    /// setting-only convenience (ADR-006): the engine still takes whatever map it is handed; this just drives the UI
+    /// default + lock so a scenario isn't played on the wrong world. <c>null</c> for classic (the player chooses).
+    /// </summary>
+    public MapSource? ForcedMapSource { get; }
+
+    /// <summary>
+    /// The number of rival European colonial powers this variant seeds by default, if it fixes one — e.g. the Australian
+    /// Federation is **0** (historically the continent was colonised by Britain alone; the Dutch and French explored and
+    /// charted its coasts but founded no colonies here, so there is no multi-power colonial contest to model). <c>null</c>
+    /// for classic → the engine's default roster (three rivals). A New-Game default + lock; the First Nations communities
+    /// are the native nations and are unaffected by this.
+    /// </summary>
+    public int? DefaultForeignPowerCount { get; }
 
     /// <summary>Loads this variant's ruleset by parsing its embedded specification, applying a difficulty level.</summary>
     /// <param name="difficultyLevelId">The difficulty level to apply (default <c>model.difficulty.medium</c> → the historical balance).</param>
@@ -307,7 +330,12 @@ public static class GameVariants
         libertyName: "Civic Voice",                      // liberty
         // The 1788→1901 opening cinematic (doc 03 arc; doc 19 tone — sober, not triumphalist). Classic keeps the
         // 1492 default; the Australia variant supplies its own First-Fleet-to-Federation beats.
-        openingBeats: AustraliaOpeningBeats);
+        openingBeats: AustraliaOpeningBeats,
+        // The variant is fixed to the authored Australia continent and to a colonial contest of one — historically the
+        // continent was British-settled alone (the Dutch/French charted the coast but founded no colonies). The New-Game
+        // dialog reads these to default + lock the map and rival-power pickers (Chris 2026-07-09).
+        forcedMapSource: MapSource.Australia,
+        defaultForeignPowerCount: 0);
 
     /// <summary>Every shipped variant, in menu order.</summary>
     public static IReadOnlyList<GameVariant> All { get; } = [ClassicAmerica, Australia];

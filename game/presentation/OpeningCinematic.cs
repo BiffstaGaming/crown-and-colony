@@ -37,10 +37,24 @@ public partial class OpeningCinematic : Control
     /// <summary>FreeCol's antique New-World map (GPL v2 — see <c>assets/freecol/PROVENANCE.md</c>), reused as the cinematic backdrop (the same image the main menu shows), so no new asset is added.</summary>
     private const string BackdropPath = "res://assets/freecol/ui/map.jpg";
 
-    /// <summary>Seconds a beat takes to fade in, seconds it holds fully visible, and seconds it takes to fade out. Short enough that the whole sequence is a handful of seconds; the player can skip at any time.</summary>
+    /// <summary>Seconds a beat takes to fade in and out. The player can skip at any time.</summary>
     private const double FadeIn = 0.8;
-    private const double Hold = 2.6;
     private const double FadeOut = 0.7;
+
+    /// <summary>
+    /// How long a fully-faded-in beat stays on screen, <b>proportional to its length</b> so a longer sentence gets
+    /// enough time to read (the fixed 2.6 s was too quick for the multi-sentence beats — Chris 2026-07-09). A base
+    /// dwell plus ~0.045 s/character (~22 chars/s, comfortable for atmospheric text), clamped to a sane range so a
+    /// very short beat still lingers and a very long one doesn't drag. It's skippable throughout, so the max is generous.
+    /// </summary>
+    private const double HoldBase = 3.5;
+    private const double HoldPerChar = 0.045;
+    private const double HoldMin = 4.5;
+    private const double HoldMax = 9.0;
+
+    /// <summary>The on-screen dwell for <paramref name="beat"/> — long enough to read its full length (see the constants above).</summary>
+    private static double HoldFor(string beat) =>
+        System.Math.Clamp(HoldBase + (beat?.Length ?? 0) * HoldPerChar, HoldMin, HoldMax);
 
     /// <summary>
     /// The narrative beats, in order — injected by the host from the selected variant so the intro is variant-aware
@@ -214,7 +228,7 @@ public partial class OpeningCinematic : Control
         _tween?.Kill();
         _tween = CreateTween();
         _tween.TweenProperty(_beatLabel, "modulate:a", 1.0, FadeIn);
-        _tween.TweenInterval(Hold);
+        _tween.TweenInterval(HoldFor(_beats[index]));
         _tween.TweenProperty(_beatLabel, "modulate:a", 0.0, FadeOut);
         // Chain to the next beat when this one has fully faded out (the tween is deterministic; no RNG).
         _tween.TweenCallback(Callable.From(() => PlayBeat(index + 1)));

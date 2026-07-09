@@ -72,6 +72,39 @@ public class NewGameSetupUiTests
     }
 
     [TestCase]
+    public async Task SelectingAustralia_FixesAndLocksTheMapAndRivalPowers()
+    {
+        // Chris 2026-07-09: the Australian Federation is fixed to the Australia continent and to 0 rival powers
+        // (historically British-settled alone). Selecting it sets + LOCKS the map and rival-power pickers; switching
+        // back to Classic frees them again (the default game is unconstrained).
+        (ISceneRunner runner, NewGameDialog dialog) = await OpenDialog();
+        var variantOption = Find<OptionButton>(dialog, "VariantOption");
+        var mapOption = Find<OptionButton>(dialog, "MapOption");
+        var rivalOption = Find<OptionButton>(dialog, "RivalCountOption");
+
+        int australiaIndex = GameVariants.All.ToList().FindIndex(v => v.Id == "australia");
+        AssertThat(australiaIndex).IsGreaterEqual(0);
+
+        // Select() alone emits no ItemSelected in Godot, so emit it the way a real click would.
+        variantOption.Select(australiaIndex);
+        variantOption.EmitSignal(OptionButton.SignalName.ItemSelected, (long)australiaIndex);
+        await runner.SimulateFrames(1);
+
+        AssertThat(mapOption.Disabled).IsTrue();
+        AssertThat(mapOption.GetItemText(mapOption.Selected)).Contains("Australia");
+        AssertThat(rivalOption.Disabled).IsTrue();
+        AssertThat(rivalOption.GetItemText(rivalOption.Selected)).IsEqual("0"); // 0 rival powers
+
+        // Back to Classic → both pickers free again.
+        variantOption.Select(0);
+        variantOption.EmitSignal(OptionButton.SignalName.ItemSelected, 0L);
+        await runner.SimulateFrames(1);
+
+        AssertThat(mapOption.Disabled).IsFalse();
+        AssertThat(rivalOption.Disabled).IsFalse();
+    }
+
+    [TestCase]
     public async Task ImportingAValidFile_ShowsItsSummary_AndForwardsPendingImportedMap()
     {
         (ISceneRunner runner, NewGameDialog dialog) = await OpenDialog();
