@@ -147,20 +147,80 @@ public class AustralianPioneersTests
     }
 
     [Fact]
-    public void GeorgeFifeAngas_ColonialCredit_LiftsBoycotts_AndMcDouallStuart_RevealsTheSettledMap()
+    public void GeorgeFifeAngas_ColonialCredit_LiftsBoycotts()
     {
-        Assert.True(Australia.Father("model.foundingFather.georgeFifeAngas").LiftsBoycotts);           // Fugger's payload
-        Assert.True(Australia.Father("model.foundingFather.johnMcDouallStuart").RevealsAllColonies);   // Coronado's payload
+        Assert.True(Australia.Father("model.foundingFather.georgeFifeAngas").LiftsBoycotts); // Fugger's payload
+    }
+
+    // ───────────────────────── remapped perks (M-C, doc-audit fix 2026-07-09) ─────────────────────────
+    // Five Pioneers previously carried a reused payload from the *wrong* design domain. Each is remapped to a
+    // known-working effect drawn from its own design clause (docs 08–12); fuller multi-clause fidelity is 4c.9.
+
+    [Fact]
+    public void CharlesSturt_RiverHighways_Boosts_SettlementFood_By25Percent()
+    {
+        // "River Highways" (doc 09): Sturt's rivers make settlement powerful — +25% Food from worked tiles (the
+        // tile-yield fold). Replaces the old Magellan NAVAL movement payload (wrong domain — Sturt explored inland
+        // rivers, not the ocean).
+        Game plain = PioneerGame(congress: null);
+        Game sturt = PioneerGame(congress: ["model.foundingFather.charlesSturt"]);
+        Assert.Equal(100, plain.ApplyGoodsModifiers("model.goods.food", 100));
+        Assert.Equal(125, sturt.ApplyGoodsModifiers("model.goods.food", 100));
+
+        FoundingFather father = Australia.Father("model.foundingFather.charlesSturt");
+        Assert.DoesNotContain(father.Modifiers, m => m.TargetId == "model.modifier.movementBonus");
+        Assert.DoesNotContain(father.Modifiers, m => m.TargetId == "model.modifier.sailHighSeas");
     }
 
     [Fact]
-    public void LouisaLawson_TheDawnPress_LiftsWhoArrives_BrewsterShaped()
+    public void SidneyKidman_OverlandStations_GrantLandUnits_ExtraMovement_NotFood()
     {
-        FoundingFather lawson = Australia.Father("model.foundingFather.louisaLawson");
-        Assert.Contains(lawson.Abilities, a => a.Id == "model.ability.selectRecruit" && a.Value);
-        FatherAbility ban = Assert.Single(lawson.Abilities, a => a.Id == "model.ability.canRecruitUnit" && !a.Value);
-        Assert.Contains("model.unit.indenturedServant", ban.ScopeTypes);
-        Assert.Contains("model.unit.pettyCriminal", ban.ScopeTypes);
+        // "Overland Stations" (doc 08): droving across the interior — a non-naval-scoped +3 movementBonus (one extra
+        // move) that ApplyMovementBonusModifiers folds onto LAND units only (LandMovementModifierTests proves the fold).
+        FoundingFather kidman = Australia.Father("model.foundingFather.sidneyKidman");
+        FatherModifier move = Assert.Single(kidman.Modifiers, m => m.TargetId == "model.modifier.movementBonus");
+        Assert.False(move.NavalScoped); // reaches land units, not ships
+        Assert.Equal(3, move.Value);    // +1 move (3 movement points)
+
+        Assert.DoesNotContain(kidman.Modifiers, m => m.TargetId == "model.goods.food"); // no longer the +25% food
+    }
+
+    [Fact]
+    public void JohnMcDouallStuart_NorthSouthCrossing_WidensSight_WithoutRevealingRivalColonies()
+    {
+        // "North-South Crossing" (doc 09): the overland survey opens the interior — a wider exposed-tile radius plus
+        // +1 line-of-sight — but does NOT expose every rival settlement (the seeAllColonies reveal was dropped: a
+        // route survey reveals terrain, not the enemy's cities).
+        FoundingFather stuart = Australia.Father("model.foundingFather.johnMcDouallStuart");
+        Assert.False(stuart.RevealsAllColonies);
+        Assert.Contains(stuart.Modifiers, m => m.TargetId == "model.modifier.exposedTilesRadius" && m.Value == 3);
+        Assert.Contains(stuart.Modifiers, m => m.TargetId == "model.modifier.lineOfSightBonus" && m.Value == 1);
+    }
+
+    [Fact]
+    public void LachlanMacquarie_PublicWorks_IsGatedByTheAustralianAbility_NotAFreeUnit()
+    {
+        // "Public Works Governor" (doc 10): a bespoke on-election handler gated on the Australia-only ability lays a
+        // free road by each pop-3+ colony (behaviour proven in AustralianContentTests). No longer a free carpenter.
+        FoundingFather macquarie = Australia.Father("model.foundingFather.lachlanMacquarie");
+        Assert.Contains(macquarie.Abilities, a => a.Id == "model.ability.publicWorks" && a.Value);
+        Assert.Empty(macquarie.FreeUnits);
+    }
+
+    [Fact]
+    public void LouisaLawson_TheDawnPress_Boosts_BuildingCivicVoice_By50Percent()
+    {
+        // "The Dawn Press" (doc 12): newspapers / civic buildings produce +50% Civic Voice (bells) — the person-negated
+        // bells fold (bells NOT from a field colonist = building-produced), the Charles-Todd payload shape at +50%.
+        Game plain = PioneerGame(congress: null);
+        Game lawson = PioneerGame(congress: ["model.foundingFather.louisaLawson"]);
+        Assert.Equal(100, plain.ApplyGoodsModifiers("model.goods.bells", 100));
+        Assert.Equal(150, lawson.ApplyGoodsModifiers("model.goods.bells", 100));
+
+        // No longer William Brewster's recruit payload (unrelated to newspapers).
+        FoundingFather father = Australia.Father("model.foundingFather.louisaLawson");
+        Assert.DoesNotContain(father.Abilities, a => a.Id == "model.ability.selectRecruit");
+        Assert.DoesNotContain(father.Abilities, a => a.Id == "model.ability.canRecruitUnit");
     }
 
     // ───────────────────────── display ─────────────────────────

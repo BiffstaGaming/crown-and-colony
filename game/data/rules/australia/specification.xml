@@ -3003,14 +3003,17 @@
       <ability id="model.ability.goldRush"
                value="true"/>
     </founding-father>
-    <!-- Sidney Kidman — "Overland Stations": the Cattle King's station network feeds the continent
-         (+25% food from worked tiles — the generic tile-yield goods fold). -->
+    <!-- Sidney Kidman — "Overland Stations" (doc 08): the Cattle King's chain of stations along the stock routes let
+         drovers move mobs of stock vast distances across the arid interior. Modelled as +1 movement (a 3-point move)
+         for LAND units — a bare, non-naval-scoped movementBonus, which ApplyMovementBonusModifiers folds onto land
+         units only (naval-scoped bonuses like Magellan stay ships-only; see LandMovementModifierTests). Was +25%
+         Food, which is not in Kidman's design (his signature is droving movement); the drought-resistance, Stock-Route
+         improvement and +1-Industry clauses need systems we do not have yet (deferred 4c.9). -->
     <founding-father id="model.foundingFather.sidneyKidman" type="trade"
                      weight1="0" weight2="5" weight3="8">
-      <modifier id="model.goods.food" index="40"
-                type="percentage" value="25">
-        <scope ability-id="model.ability.person" match-negated="false"/>
-      </modifier>
+      <modifier id="model.modifier.movementBonus"
+                type="additive" value="3"/>
+      <event id="model.event.movementChange"/>
     </founding-father>
 
     <!-- ── Exploration & Infrastructure (exploration) ──────────────────────── -->
@@ -3021,18 +3024,18 @@
       <modifier id="model.modifier.lineOfSightBonus"
                 type="additive" value="1"/>
     </founding-father>
-    <!-- Charles Sturt — "River Highways": faster water movement + a quicker crossing (Magellan's naval payload). -->
+    <!-- Charles Sturt — "River Highways" (doc 09): Sturt opened the inland river systems (the Murray-Darling) as
+         logistics corridors, making river settlement viable. His design's core is that river settlements become
+         powerful — modelled as +25% Food from worked tiles (the tile-yield food fold, the Henry-Hudson
+         production-modifier shape). Was Magellan's NAVAL movement payload — the wrong domain: Sturt explored inland
+         RIVERS, not the ocean. Terrain-scoped river movement/-trade and the River-Expedition event pool are the
+         deferred fuller mechanic (4c.9). -->
     <founding-father id="model.foundingFather.charlesSturt" type="exploration"
                      weight1="4" weight2="8" weight3="4">
-      <modifier id="model.modifier.movementBonus"
-                type="additive" value="3">
-        <scope ability-id="model.ability.navalUnit" ability-value="true"/>
+      <modifier id="model.goods.food" index="40"
+                type="percentage" value="25">
+        <scope ability-id="model.ability.person" match-negated="false"/>
       </modifier>
-      <modifier id="model.modifier.sailHighSeas"
-                type="additive" value="-1">
-        <scope ability-id="model.ability.navalUnit" ability-value="true"/>
-      </modifier>
-      <event id="model.event.movementChange"/>
     </founding-father>
     <!-- Ludwig Leichhardt — "Naturalist Journals": exploration rumours always turn out well (De Soto's
          rumour payload — the design says rumours are far less likely to be negative). -->
@@ -3041,13 +3044,17 @@
       <ability id="model.ability.rumoursAlwaysPositive"
                value="true"/>
     </founding-father>
-    <!-- John McDouall Stuart — "North-South Crossing": the continental route reveals every settlement
-         (Coronado's payload, incl. the wider colony sight ring). -->
+    <!-- John McDouall Stuart — "North-South Crossing" (doc 09): the first to cross the continent south-to-north,
+         opening the interior route later followed by the Overland Telegraph. Modelled as a wider exposed-tile radius
+         (Coronado's payload — the interior opens around the player's units) PLUS +1 line-of-sight (the surveyed
+         route is seen further). Dropped the seeAllColonies reveal — that exposes every RIVAL settlement, which an
+         overland survey does not do; the arid-movement −50% and telegraph-cost clauses are deferred (4c.9). -->
     <founding-father id="model.foundingFather.johnMcDouallStuart" type="exploration"
                      weight1="2" weight2="6" weight3="8">
-      <event id="model.event.seeAllColonies"/>
       <modifier id="model.modifier.exposedTilesRadius"
                 type="additive" value="3"/>
+      <modifier id="model.modifier.lineOfSightBonus"
+                type="additive" value="1"/>
     </founding-father>
     <!-- Charles Todd — "Electric Telegraph": +25% Civic Voice (bells) — Jefferson's payload at the design's value. -->
     <founding-father id="model.foundingFather.charlesTodd" type="exploration"
@@ -3073,11 +3080,16 @@
       <ability id="model.ability.survivalRations"
                value="true"/>
     </founding-father>
-    <!-- Lachlan Macquarie — "Public Works Governor": the great builder arrives with a master carpenter
-         (the free-unit-on-election mechanism, John Paul Jones's payload shape). -->
+    <!-- Lachlan Macquarie — "Public Works Governor" (doc 10): the governor whose public-works programme built the
+         roads and civic infrastructure of early NSW. BESPOKE on-election handler (Game.AustralianEffects, gated on
+         the Australia-only model.ability.publicWorks): every colony of population 3+ gains one free road on an
+         adjacent buildable land tile (the design's clause 1, exact). Was a free master carpenter — a builder, but
+         not the design's public-works mechanic. The −20% public-building cost, Public-Works-Program policy and
+         emancipist-relief clauses are deferred (4c.9) — building rush-buy (buildingPriceBonus) is not modelled. -->
     <founding-father id="model.foundingFather.lachlanMacquarie" type="military"
                      weight1="3" weight2="8" weight3="4">
-      <unit id="model.unit.masterCarpenter"/>
+      <ability id="model.ability.publicWorks"
+               value="true"/>
     </founding-father>
     <!-- James Ruse — "Experiment Farm": the design's literal perk — a free Expert Farmer arrives. -->
     <founding-father id="model.foundingFather.jamesRuse" type="military"
@@ -3199,18 +3211,17 @@
         <scope ability-id="model.ability.person" match-negated="true"/>
       </modifier>
     </founding-father>
-    <!-- Louisa Lawson — "The Dawn Press": the press lifts who arrives — no more transported criminals or
-         indentured servants on the dock, and YOU choose who emigrates (William Brewster's payload). -->
+    <!-- Louisa Lawson — "The Dawn Press" (doc 12): founder of The Dawn, the paper that campaigned for women's
+         suffrage and reform. The press amplifies civic voice — modelled as +50% Civic Voice (bells) produced by
+         BUILDINGS (the person-negated bells fold — bells from the town hall / printing press / newspaper, not from
+         a field colonist; the Charles-Todd payload shape at the design's +50%). Was William Brewster's recruit
+         payload, unrelated to newspapers; the reform-event-frequency and female-migrant clauses are deferred (4c.9). -->
     <founding-father id="model.foundingFather.louisaLawson" type="religious"
                      weight1="1" weight2="4" weight3="8">
-      <ability id="model.ability.selectRecruit"
-               value="true"/>
-      <ability id="model.ability.canRecruitUnit"
-               value="false">
-        <scope type="model.unit.indenturedServant"/>
-        <scope type="model.unit.pettyCriminal"/>
-      </ability>
-      <event id="model.event.newRecruits"/>
+      <modifier id="model.goods.bells" index="40"
+                type="percentage" value="50">
+        <scope ability-id="model.ability.person" match-negated="true"/>
+      </modifier>
     </founding-father>
     <!-- William Barak — "Coranderrk Delegation": respectful relations — ambient First Nations tension grows
          25% slower (the native-alarm damp at the design's magnitude; deliberately NO alarm-reset event —

@@ -27,6 +27,7 @@ public class AustralianContentTests
 
     private const string Hargraves = "model.foundingFather.edwardHargraves";
     private const string Phillip = "model.foundingFather.arthurPhillip";
+    private const string Macquarie = "model.foundingFather.lachlanMacquarie";
     private const string Parkes = "model.foundingFather.henryParkes";
     private const string Barton = "model.foundingFather.edmundBarton";
     private const string Quick = "model.foundingFather.johnQuick";
@@ -199,6 +200,47 @@ public class AustralianContentTests
         Assert.Contains(Phillip, game.Congress);
         Assert.True(game.Colonies[0].StoreOf(FoodId) > foodBefore, "emergency food should have been delivered");
         Assert.True(game.Colonies[0].StoreOf(ToolsId) >= toolsBefore + 20, "emergency tools should have been delivered");
+    }
+
+    // ───────────────────────── Lachlan Macquarie's "Public Works" (4d.6 / M-C remap) ─────────────────────────
+
+    [Fact]
+    public void Macquarie_CarriesThePublicWorksMarker_NotAFreeCarpenter()
+    {
+        FoundingFather macquarie = Australia.Father(Macquarie);
+        Assert.Contains(macquarie.Abilities, a => a.Id == "model.ability.publicWorks" && a.Value);
+        Assert.Empty(macquarie.FreeUnits); // was a free master carpenter — the wrong (non-public-works) payload
+    }
+
+    [Fact]
+    public void ElectingMacquarie_LaysAFreeRoad_ByAnEstablishedColony()
+    {
+        // "Public Works Governor" (doc 10): a pop-3+ colony gains one free road on an adjacent land tile on election.
+        // RationsGame is a single pop-3 colony at (1,1) on an all-plains 3×3 map with no improvements — so the handler
+        // lays exactly one road on a neighbouring plains tile.
+        Game game = RationsGame(currentFather: Macquarie, liberty: 45);
+        Assert.DoesNotContain(game.Map.AllImprovements(), i => i.Improvement.IsRoad);
+
+        game.EndTurn(); // Macquarie elected → the public-works road is laid
+
+        Assert.Contains(Macquarie, game.Congress);
+        (Position pos, _) = Assert.Single(game.Map.AllImprovements(), i => i.Improvement.IsRoad); // one road, one colony
+        Assert.NotEqual(game.Colonies[0].Position, pos); // adjacent to the colony, not its own centre tile
+        Assert.False(game.Map.TerrainAt(pos).IsWater);   // and on land
+    }
+
+    [Fact]
+    public void ElectingMacquarie_IsDeterministic_SameSetupSameRoad()
+    {
+        // The road choice is RNG-free (first eligible neighbour in (row, column) order) — two identical setups place the
+        // road on the same tile, never perturbing the seeded stream (ADR-009).
+        Game a = RationsGame(currentFather: Macquarie, liberty: 45);
+        Game b = RationsGame(currentFather: Macquarie, liberty: 45);
+        a.EndTurn();
+        b.EndTurn();
+        Assert.Equal(
+            a.Map.AllImprovements().Where(i => i.Improvement.IsRoad).Select(i => i.Position),
+            b.Map.AllImprovements().Where(i => i.Improvement.IsRoad).Select(i => i.Position));
     }
 
     // ───────────────────────── Democracy & Federation Pioneers (4d.7) ─────────────────────────

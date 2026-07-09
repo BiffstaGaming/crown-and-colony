@@ -2,6 +2,7 @@ using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.Randomness;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.World;
+using CrownAndColony.GameLogic.World.Improvements;
 
 namespace CrownAndColony.GameLogic.GameSession;
 
@@ -27,6 +28,9 @@ public sealed partial class Game
 
     /// <summary>Arthur Phillip's "Survival Rations" marker — his election supplies the first settlement (doc 10). Australia-only.</summary>
     private const string SurvivalRationsAbility = "model.ability.survivalRations";
+
+    /// <summary>Lachlan Macquarie's "Public Works" marker — his election lays a free road by each established colony (doc 10). Australia-only.</summary>
+    private const string PublicWorksAbility = "model.ability.publicWorks";
 
     // ── Democracy & Federation Pioneers (Phase-4d.7) — each gated on an Australia-only ability so classic never runs it ──
 
@@ -76,6 +80,9 @@ public sealed partial class Game
     /// <summary>Emergency Tools granted to Arthur Phillip's first settlement.</summary>
     private const int SurvivalRationsTools = 20;
 
+    /// <summary>The minimum colony population for Lachlan Macquarie's public-works road (doc 10: "colonies of population 3+").</summary>
+    private const int PublicWorksMinPopulation = 3;
+
     /// <summary>
     /// Applies any Australian-variant bespoke election effect the just-elected <paramref name="elected"/> Pioneer
     /// carries, for <paramref name="player"/>. A no-op unless the Pioneer declares one of the Australian-only gating
@@ -94,6 +101,10 @@ public sealed partial class Game
         if (father.Abilities.Any(a => a.Id == SurvivalRationsAbility && a.Value))
         {
             ApplySurvivalRations(player); // Arthur Phillip — "Survival Rations"
+        }
+        if (father.Abilities.Any(a => a.Id == PublicWorksAbility && a.Value))
+        {
+            ApplyPublicWorks(player); // Lachlan Macquarie — "Public Works Governor"
         }
         if (father.Abilities.Any(a => a.Id == TenterfieldOrationAbility && a.Value))
         {
@@ -178,6 +189,42 @@ public sealed partial class Game
         }
         first.AddGoods(Colony.FoodId, SurvivalRationsFood);
         first.AddGoods(ToolsGoodsId, SurvivalRationsTools);
+    }
+
+    /// <summary>
+    /// Lachlan Macquarie's "Public Works Governor" (doc 10): the public-works programme lays new roads. On election
+    /// every one of <paramref name="player"/>'s colonies of population <see cref="PublicWorksMinPopulation"/>+ gains one
+    /// free road on an adjacent buildable land tile that carries none yet (the design's clause 1, exact). Deterministic
+    /// and RNG-free (ADR-009): colonies are visited in stable id order and the target is the first eligible neighbour in
+    /// (row, column) order, so the choice never draws from the RNG stream. A no-op for a colony with no eligible tile,
+    /// and — since only Macquarie declares the gating ability — for every classic game (byte-identical).
+    /// </summary>
+    /// <param name="player">The player who elected Macquarie.</param>
+    private void ApplyPublicWorks(Player player)
+    {
+        TileImprovementType road = Ruleset.Improvement(TileImprovementType.RoadId);
+        foreach (Colony colony in ColoniesOf(player).OrderBy(c => c.Id))
+        {
+            if (colony.Population < PublicWorksMinPopulation)
+            {
+                continue; // only established colonies (doc 10: population 3+)
+            }
+
+            // The first eligible neighbour in (row, column) order — a land tile the road applies to that has no road yet.
+            Position? target = TilesInRange(colony.Position, 1)
+                .Where(p => p != colony.Position
+                            && !Map.TerrainAt(p).IsWater
+                            && road.AppliesTo(Map.TerrainAt(p))
+                            && !Map.ImprovementsAt(p).Any(i => i.IsRoad))
+                .OrderBy(p => p.Y).ThenBy(p => p.X)
+                .Select(p => (Position?)p)
+                .FirstOrDefault();
+
+            if (target is { } pos)
+            {
+                Map.AddImprovement(pos, road);
+            }
+        }
     }
 
     /// <summary>
