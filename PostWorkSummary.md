@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — WS1.2: Commonwealth victory screen — the second hole closed
+
+**Requested (Chris):** continue with 1.2.
+**Did:**
+- **Second player-facing hole closed.** The Federation win was firing but `VictoryPanel` showed the classic *"Every rival European power has been swept from the New World"* reason + named the winner "English". Made `VictoryPanel` Federation-aware: it now titles the screen **"The Commonwealth of Australia is proclaimed"**, shows the doc-19 proclamation, and the **BINDING historically-honest addendum** (Aboriginal and Torres Strait Islander peoples + other communities excluded from the 1901 settlement).
+- **Variant-scoped (ADR-018):** new nullable `GameVariant.CommonwealthVictoryTitle`/`CommonwealthProclamation`/`CommonwealthAddendum` (Australia set, classic null), threaded to `VictoryPanel.Open`. `IsFederationVictory` gates on the variant text + `VictoryFederation` (the exclusive win). Classic byte-identical; the score/stats sections are unchanged.
+- **Verified in-game:** render capture `docs/guide/img/australia-victory.png` — the trophy title + proclamation + the honest addendum, wrapped on the parchment frame.
+**Status:** `main` (this commit), CI pending. Full L1/L2 **2936** + **5 soak** + **5 L3** (`VictoryPanelTests`, incl. the 4 classic) green; solution builds clean. +1 L1 (`AustraliaReskinTests`) +1 L3 (`VictoryPanelTests` Federation case). Adversarial review run (as on WS1.1b).
+**Changed:** `VictoryPanel.cs` (Federation branch + `Wrapped` helper), `GameVariant.cs` (+3 fields + Australia values), `GameController.cs` (threading), `VictoryPanelTests.cs`, `AustraliaReskinTests.cs`, `DocsCaptureTests.cs` (capture), `federation-victory.md`, `australia-victory.png`.
+**Decisions:** the victory text lives in `GameVariant` (consistent with the reskin chrome + ADR-018). Deferred: the referendum-failure screen (a failed referendum is mid-game — retry, not game-over) and the low-legitimacy-victory warning (needs the First Nations legitimacy system, WS5).
+**Scheduled next:** **WS1.3 — variant-aware art seam** (`ColonyArt`; the prerequisite that unblocks all of WS2's Australian art); then WS1.4 (Pioneer portraits) + WS1.5 (colony picker).
+**Needs you:** the WS1.1b **4c.11 event sign-off** is still open (the Second Fleet / dispossession / Chinese-immigration framings). Otherwise nothing blocking.
+
+---
+
 ## 2026-07-09 — WS1.1b: event-choice popup — the 31-event narrative is now interactive
 
 **Requested (Chris):** continue with WS1.1b (the event popup).

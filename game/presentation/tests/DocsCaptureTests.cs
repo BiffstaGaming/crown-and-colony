@@ -292,6 +292,26 @@ public class DocsCaptureTests
     }
 
     [TestCase(Timeout = 60000)]
+    public async Task Capture_AustraliaVictory()
+    {
+        if (!Enabled) return;
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        GameController controller = StartAustralia(runner, CaptureSize);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        // Drive the Federation phase to Commonwealth (SetFederationPhase is internal) → the human wins by Federation;
+        // open the victory screen so the shot shows the Commonwealth proclamation + the honest addendum.
+        game.GetType().GetField("_federationPhase", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(game, GameLogic.GameSession.FederationPhase.Commonwealth);
+        controller.OpenVictoryPanel();
+        await runner.SimulateFrames(4);
+        foreach (string path in new[] { "UI/MiniMap", "UI/MiniMapBack", "UI/MapControls", "UI/ActionCluster", "UI/ActionClusterBack", "UI/TutorialPanel" })
+            if (controller.GetNodeOrNull<CanvasItem>(path) is { } node) node.Visible = false;
+        await runner.SimulateFrames(1);
+        Save(controller, "australia-victory");
+    }
+
+    [TestCase(Timeout = 60000)]
     public async Task Capture_AustraliaColonyScreen()
     {
         if (!Enabled) return;

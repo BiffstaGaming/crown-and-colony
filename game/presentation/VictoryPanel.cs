@@ -23,6 +23,9 @@ namespace CrownAndColony.Presentation;
 public partial class VictoryPanel : PanelContainer
 {
     private Game _game = null!;
+    private string? _commonwealthTitle;
+    private string? _commonwealthProclamation;
+    private string? _commonwealthAddendum;
 
     /// <summary>
     /// Invoked when the player chooses to <b>keep playing</b> after winning (the "Keep Playing" button). The host
@@ -42,10 +45,13 @@ public partial class VictoryPanel : PanelContainer
     /// Opens the victory screen over <paramref name="game"/> when it has a <see cref="Game.Winner"/>. A no-op (and
     /// stays hidden) if the game is still running, so a caller can blindly offer it after a turn resolves.
     /// </summary>
-    public void Open(Game game)
+    public void Open(Game game, string? commonwealthTitle = null, string? commonwealthProclamation = null, string? commonwealthAddendum = null)
     {
         ColonyArt.FramePanel(this); // parchment image frame + dark-ink theme (not Godot's transparent default)
         _game = game;
+        _commonwealthTitle = commonwealthTitle;
+        _commonwealthProclamation = commonwealthProclamation;
+        _commonwealthAddendum = commonwealthAddendum;
         if (_game.Winner is null)
         {
             Hide();
@@ -55,10 +61,17 @@ public partial class VictoryPanel : PanelContainer
         Show();
     }
 
+    /// <summary>True when the game was won by the Federation path — a variant that supplies the Commonwealth text and has
+    /// the Federation victory enabled (Australia). When on, <see cref="Specification.Ruleset.VictoryFederation"/> is the
+    /// <em>exclusive</em> win, so the winner is always the human at the Commonwealth proclamation.</summary>
+    private bool IsFederationVictory => _commonwealthTitle is not null && _game.Ruleset.VictoryFederation;
+
     private void Rebuild()
     {
         Player winner = _game.Winner!;
-        GetNode<Label>("VBox/VictoryTitle").Text = $"🏆 {WinnerName(winner)} is victorious!";
+        GetNode<Label>("VBox/VictoryTitle").Text = IsFederationVictory
+            ? $"🏆 {_commonwealthTitle}"
+            : $"🏆 {WinnerName(winner)} is victorious!";
 
         var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
         foreach (Node child in dynamic.GetChildren())
@@ -70,7 +83,20 @@ public partial class VictoryPanel : PanelContainer
         }
 
         // ── How the game was won ──────────────────────────────────────────────────────────────────────────
-        dynamic.AddChild(new Label { Name = "VictoryReason", Text = VictoryReason(winner) });
+        if (IsFederationVictory)
+        {
+            // The Commonwealth proclamation (doc 19), then the BINDING historically-honest addendum on who the 1901
+            // settlement excluded — Federation is not framed as resolving everything (docs 03/15/19).
+            dynamic.AddChild(Wrapped("VictoryReason", _commonwealthProclamation ?? string.Empty));
+            if (!string.IsNullOrWhiteSpace(_commonwealthAddendum))
+            {
+                dynamic.AddChild(Wrapped("VictoryAddendum", _commonwealthAddendum!));
+            }
+        }
+        else
+        {
+            dynamic.AddChild(new Label { Name = "VictoryReason", Text = VictoryReason(winner) });
+        }
         dynamic.AddChild(new HSeparator());
 
         // ── Final score, itemised (the winner's PlayerScore broken down) ──────────────────────────────────
@@ -126,6 +152,17 @@ public partial class VictoryPanel : PanelContainer
 
     private static void ScoreLine(VBoxContainer dynamic, string name, string label, int points) =>
         dynamic.AddChild(new Label { Name = name, Text = $"    {label}: {points}" });
+
+    /// <summary>A centred, word-wrapped paragraph label (for the long Commonwealth proclamation + honest addendum),
+    /// bounded so the panel does not stretch out to a single line.</summary>
+    private static Label Wrapped(string name, string text) => new()
+    {
+        Name = name,
+        Text = text,
+        AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        CustomMinimumSize = new Vector2(560, 0),
+        HorizontalAlignment = HorizontalAlignment.Center,
+    };
 
     /// <summary>
     /// Which victory condition fired for <paramref name="winner"/>, matching <see cref="Game.Winner"/>'s checked order

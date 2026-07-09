@@ -3234,11 +3234,11 @@ public partial class GameController : Node2D
             return;
         }
         _victoryShown = true;
-        ((VictoryPanel)_victoryPanel).Open(_game);
+        ((VictoryPanel)_victoryPanel).Open(_game, _variant.CommonwealthVictoryTitle, _variant.CommonwealthProclamation, _variant.CommonwealthAddendum);
     }
 
     /// <summary>Opens the victory / end-of-game stats screen directly (the winner's score + final stats). Public so scene tests can drive it.</summary>
-    public void OpenVictoryPanel() => ((VictoryPanel)_victoryPanel).Open(_game);
+    public void OpenVictoryPanel() => ((VictoryPanel)_victoryPanel).Open(_game, _variant.CommonwealthVictoryTitle, _variant.CommonwealthProclamation, _variant.CommonwealthAddendum);
 
     /// <summary>
     /// Records the human's final score on the persisted leaderboard the first time the game ends — a win

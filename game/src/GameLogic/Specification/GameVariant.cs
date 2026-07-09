@@ -39,7 +39,10 @@ public sealed class GameVariant
         IReadOnlyList<string>? openingBeats = null,
         MapSource? forcedMapSource = null,
         int? defaultForeignPowerCount = null,
-        bool referendumVictoryOnly = false)
+        bool referendumVictoryOnly = false,
+        string? commonwealthVictoryTitle = null,
+        string? commonwealthProclamation = null,
+        string? commonwealthAddendum = null)
     {
         Id = id;
         DisplayName = displayName;
@@ -62,6 +65,9 @@ public sealed class GameVariant
         ForcedMapSource = forcedMapSource;
         DefaultForeignPowerCount = defaultForeignPowerCount;
         ReferendumVictoryOnly = referendumVictoryOnly;
+        CommonwealthVictoryTitle = commonwealthVictoryTitle;
+        CommonwealthProclamation = commonwealthProclamation;
+        CommonwealthAddendum = commonwealthAddendum;
         _specResource = specResource;
     }
 
@@ -185,6 +191,18 @@ public sealed class GameVariant
     /// victory-condition checkboxes so the UI matches. <c>false</c> for classic (the player picks the classic conditions).
     /// </summary>
     public bool ReferendumVictoryOnly { get; }
+
+    /// <summary>The victory-screen title when this variant is won by the Federation path (e.g. Australia's "The Commonwealth
+    /// of Australia is proclaimed"), or <c>null</c> for a variant with no Federation victory (classic → the panel keeps its
+    /// "{winner} is victorious!" title). Display text only (ADR-018).</summary>
+    public string? CommonwealthVictoryTitle { get; }
+
+    /// <summary>The Federation-victory proclamation shown on the victory screen (doc 19 "Victory text"), or <c>null</c> for none.</summary>
+    public string? CommonwealthProclamation { get; }
+
+    /// <summary>The historically-honest addendum shown beneath the proclamation (doc 19) — the exclusion of Aboriginal and
+    /// Torres Strait Islander peoples and other communities from the 1901 settlement — or <c>null</c> for none. Binding for Australia.</summary>
+    public string? CommonwealthAddendum { get; }
 
     /// <summary>Loads this variant's ruleset by parsing its embedded specification, applying a difficulty level.</summary>
     /// <param name="difficultyLevelId">The difficulty level to apply (default <c>model.difficulty.medium</c> → the historical balance).</param>
@@ -350,7 +368,17 @@ public static class GameVariants
         // The Australian Federation is won ONLY by the referendum → Commonwealth proclamation (Chris 2026-07-09); the
         // classic War-of-Independence / last-power-standing wins do not apply (and would be a turn-1 instant win under
         // 0 rivals). Game.Winner enforces this; the dialog switches off + locks the classic victory checkboxes.
-        referendumVictoryOnly: true);
+        referendumVictoryOnly: true,
+        // The Commonwealth victory screen (doc 19 "Victory text" — verbatim). The honest addendum is a BINDING requirement:
+        // Federation is not framed as resolving everything (docs 03/15/19).
+        commonwealthVictoryTitle: "The Commonwealth of Australia is proclaimed",
+        commonwealthProclamation:
+            "The colonies have voted to federate. The Commonwealth of Australia is proclaimed, and the continent's "
+            + "colonial governments enter a new constitutional era.",
+        commonwealthAddendum:
+            "Federation joins the colonies, but it does not resolve every question. Many Aboriginal and Torres Strait "
+            + "Islander peoples and other communities were excluded from the political settlement. Country, sovereignty, "
+            + "representation, and justice remain unfinished parts of the national story.");
 
     /// <summary>Every shipped variant, in menu order.</summary>
     public static IReadOnlyList<GameVariant> All { get; } = [ClassicAmerica, Australia];

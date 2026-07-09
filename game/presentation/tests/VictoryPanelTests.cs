@@ -4,6 +4,8 @@ using System.Threading.Tasks;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
 using CrownAndColony.GameLogic.Persistence;
+using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.World;
 using CrownAndColony.Presentation;
 using GdUnit4;
 using Godot;
@@ -126,6 +128,42 @@ public class VictoryPanelTests
         AssertThat(game.IsHumanRetired).IsTrue(); // the player withdrew — the game is over for them
         AssertThat(controller.GetNode<PanelContainer>("UI/VictoryPanel").Visible).IsFalse();
     }
+
+    [TestCase]
+    public async Task FederationVictory_ShowsTheCommonwealthProclamation_AndTheHonestAddendum()
+    {
+        // WS1.2: an Australia game won by the Federation path shows the Commonwealth proclamation + the BINDING honest
+        // addendum (doc 19), titled "the Commonwealth of Australia is proclaimed" — NOT the classic "swept the rivals"
+        // reason or the nation-id name ("English").
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        Game game = Game.New(GameVariants.Australia.LoadRuleset(), 0xC0FFEEUL, mapSource: MapSource.Australia);
+        // Drive the Federation phase to Commonwealth (SetFederationPhase is internal to GameLogic) → Federation is the
+        // exclusive win for Australia, so Game.Winner becomes the human at the proclamation.
+        typeof(Game).GetField("_federationPhase", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(game, FederationPhase.Commonwealth);
+        AssertThat(game.Winner).IsNotNull();
+        SetGame(controller, game);
+        SetVariant(controller, GameVariants.Australia); // so OpenVictoryPanel threads the variant's Commonwealth text
+
+        controller.OpenVictoryPanel();
+        await runner.SimulateFrames(1);
+
+        var panel = controller.GetNode<PanelContainer>("UI/VictoryPanel");
+        AssertThat(panel.Visible).IsTrue();
+        AssertThat(controller.GetNode<Label>("UI/VictoryPanel/VBox/VictoryTitle").Text).Contains("Commonwealth of Australia");
+
+        var dynamic = controller.GetNode<VBoxContainer>("UI/VictoryPanel/VBox/Dynamic");
+        AssertThat(dynamic.GetNode<Label>("VictoryReason").Text).Contains("voted to federate");
+        AssertThat(dynamic.GetNode<Label>("VictoryReason").Text).NotContains("swept"); // not the classic reason
+        AssertThat(dynamic.GetNode<Label>("VictoryAddendum").Text).Contains("Aboriginal and Torres Strait Islander");
+    }
+
+    private static void SetVariant(GameController controller, GameVariant variant) =>
+        controller.GetType().GetField("_variant", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(controller, variant);
 
     /// <summary>Builds a winning game (the human as an Independent nation) on the controller and returns it.</summary>
     private static Game WinningGame(GameController controller)

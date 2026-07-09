@@ -106,6 +106,23 @@ public class AustraliaReskinTests
 
     // ───────────────────────── Chrome labels (86d3kwu0c) ─────────────────────────
 
+    [Fact]
+    public void CommonwealthVictoryText_IsSetForAustralia_WithTheHonestAddendum_AndNullForClassic()
+    {
+        // WS1.2: the Federation victory-screen text is variant-scoped (ADR-018). Australia carries the doc-19
+        // proclamation + the BINDING honest addendum; classic carries none (→ the victory panel keeps its classic
+        // "{winner} is victorious!" title + reason).
+        GameVariant aus = GameVariants.Australia;
+        Assert.Equal("The Commonwealth of Australia is proclaimed", aus.CommonwealthVictoryTitle);
+        Assert.Contains("voted to federate", aus.CommonwealthProclamation);
+        Assert.Contains("Aboriginal and Torres Strait Islander peoples", aus.CommonwealthAddendum);
+
+        GameVariant classic = GameVariants.ClassicAmerica;
+        Assert.Null(classic.CommonwealthVictoryTitle);
+        Assert.Null(classic.CommonwealthProclamation);
+        Assert.Null(classic.CommonwealthAddendum);
+    }
+
     public static IEnumerable<object[]> ChromeLabels()
     {
         // (accessor, Australian value, classic default). Mirrors the CongressName test in AustralianPioneersTests.
