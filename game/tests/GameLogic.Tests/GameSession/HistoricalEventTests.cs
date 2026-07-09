@@ -133,6 +133,37 @@ public class HistoricalEventTests
     }
 
     [Fact]
+    public void Parser_ReadsEventPresentationText_NamePromptLabel_AndHumanizesTheIdWhenAbsent()
+    {
+        // WS1.1a — the event-popup text layer. Authored name/prompt/label render verbatim; an unauthored event/option
+        // falls back to the humanized id (event.merinoSheep -> "Merino Sheep", invest -> "Invest") so partial authoring
+        // still shows sensible text. Presentation-only — never read by the resolver.
+        Ruleset r = LoadClassicWithEvents(@"
+          <historical-events>
+            <event-def id='event.merinoSheep' name='Merino Sheep Arrive' prompt='John Macarthur lands merino stock. Back the flocks?'>
+              <option id='invest' label='Back the flocks'><effect kind='grantGold' value='10'/></option>
+              <option id='ignore'><effect kind='recordHistory' text='The offer passes.'/></option>
+            </event-def>
+            <event-def id='event.bushfire'>
+              <option id='endure'><effect kind='recordHistory' text='The colony endures.'/></option>
+            </event-def>
+          </historical-events>");
+
+        EventDef merino = r.HistoricalEvent("event.merinoSheep")!;
+        Assert.Equal("Merino Sheep Arrive", merino.Name);
+        Assert.Equal("Merino Sheep Arrive", merino.DisplayName);
+        Assert.Equal("John Macarthur lands merino stock. Back the flocks?", merino.Prompt);
+        Assert.Equal("Back the flocks", merino.Option("invest")!.DisplayLabel); // authored label
+
+        // Fallbacks: an option with no label, and an event with no name, humanize their ids.
+        Assert.Null(merino.Option("ignore")!.Label);
+        Assert.Equal("Ignore", merino.Option("ignore")!.DisplayLabel);
+        EventDef bushfire = r.HistoricalEvent("event.bushfire")!;
+        Assert.Null(bushfire.Name);
+        Assert.Equal("Bushfire", bushfire.DisplayName); // event.bushfire -> "Bushfire"
+    }
+
+    [Fact]
     public void Parser_ScenarioStartEvent_IsImplicitlyOneShot()
     {
         Ruleset r = LoadClassicWithEvents(@"

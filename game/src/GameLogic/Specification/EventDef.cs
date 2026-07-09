@@ -71,10 +71,18 @@ public sealed record EventEffect(
 /// <param name="Id">The option id, unique within its event (e.g. <c>accept</c> / <c>refuse</c>). Referenced by <c>Game.ChooseEventOption</c>.</param>
 /// <param name="Weight">The deterministic auto/AI pick weight (the heaviest option is chosen when unanswered; ties break by ordinal id). ≥ 0.</param>
 /// <param name="Effects">The effects this option applies, in spec order.</param>
+/// <param name="Label">The choice-button text shown to the player (the <c>label</c> attribute), or <c>null</c> to fall
+/// back to the humanized option id. Presentation-only — never read by the resolver.</param>
 public sealed record EventOption(
     string Id,
     int Weight,
-    IReadOnlyList<EventEffect> Effects);
+    IReadOnlyList<EventEffect> Effects,
+    string? Label = null)
+{
+    /// <summary>The choice-button text shown to the player — the authored <see cref="Label"/> if present, else the
+    /// humanized option id (e.g. <c>invest</c> → "Invest") so a partially-authored event still renders a sensible button.</summary>
+    public string DisplayLabel => Label ?? Naming.Humanize(Id);
+}
 
 /// <summary>
 /// How an <see cref="EventDef"/> becomes eligible to fire (the <c>trigger</c> attribute).
@@ -113,6 +121,10 @@ public enum EventTrigger
 /// <param name="Trigger">How the event becomes eligible (<see cref="EventTrigger.Normal"/> pipeline vs. a forced <see cref="EventTrigger.ScenarioStart"/> event).</param>
 /// <param name="Requirements">The <see cref="Limit"/> gates (reusing the existing limit/operand engine) that must all hold for a normal event to be eligible; empty = no extra gate. Ignored for a scenario-start event.</param>
 /// <param name="Options">The choices offered; at least one. A single option is a forced outcome; several are a dilemma.</param>
+/// <param name="Name">The event's title shown in the popup (the <c>name</c> attribute), or <c>null</c> to fall back to
+/// the humanized id. Presentation-only.</param>
+/// <param name="Prompt">The dilemma text shown under the title — the historical + current-game context (the <c>prompt</c>
+/// attribute), or <c>null</c> for none. Presentation-only.</param>
 public sealed record EventDef(
     string Id,
     int Weight,
@@ -122,10 +134,16 @@ public sealed record EventDef(
     int ExpiryYear,
     EventTrigger Trigger,
     IReadOnlyList<Limit> Requirements,
-    IReadOnlyList<EventOption> Options)
+    IReadOnlyList<EventOption> Options,
+    string? Name = null,
+    string? Prompt = null)
 {
     /// <summary>Whether this is a forced scenario-setup event (fires once, unconditionally, at scenario start) — always one-shot.</summary>
     public bool IsScenarioStart => Trigger == EventTrigger.ScenarioStart;
+
+    /// <summary>The event title shown to the player — the authored <see cref="Name"/> if present, else the humanized id
+    /// suffix (e.g. <c>event.merinoSheep</c> → "Merino Sheep") so a partially-authored event still has a sensible title.</summary>
+    public string DisplayName => Name ?? Naming.Humanize(Id[(Id.LastIndexOf('.') + 1)..]);
 
     /// <summary>The option with the given id, or <c>null</c> if this event has no such option.</summary>
     /// <param name="optionId">The option id.</param>

@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — Started WS1 (holes-first): event popup-text layer (WS1.1a)
+
+**Requested (Chris):** start WS1 now, holes-first (event UI + victory screen); public-domain art piece-by-piece; defer the First Nations deep system.
+**Did:**
+- Began **WS1.1** (event-choice UI) and hit a scope finding: the 31 events carry **only ids + a `recordHistory` outcome line** — no title, dilemma context, or choice-button labels — so a *polished* popup needs an **event-text layer first**. Refined the plan (`ROAD_TO_100.md` WS1.1 → two parts: 1.1a text, 1.1b popup).
+- **Landed WS1.1a** — added presentation-only text to the event schema: `EventDef.Name`/`Prompt` + `EventOption.Label` (parsed from new `name`/`prompt`/`label` attributes), each with a **humanized-id fallback** (`event.merinoSheep`→"Merino Sheep", `invest`→"Invest") so partial authoring degrades gracefully. **Never read by the resolver** → zero logic/RNG impact; classic byte-identical.
+**Status:** `main` (this commit), CI pending. Full L1/L2 **2934** + **5 soak** green locally. +1 L1 (`HistoricalEventTests`).
+**Changed:** `EventDef.cs` (+Name/Prompt/Label + `Display*` props), `Ruleset.cs` (parser), `HistoricalEventTests.cs`, `events.md`, `ROAD_TO_100.md` (WS1.1 two-part scope).
+**Decisions:** kept the text fields presentation-only with graceful humanized fallback — so the popup can ship before all 31 events are authored, and unauthored events still read sensibly.
+**Scheduled next:** **WS1.1b — the event-choice popup** (consume `PendingEventOffer` → `ChooseEventOption`, doc-19 template, wired like `EmigrationChoicePanel`) + author the 31 events' name/prompt/labels. Then **WS1.2** (Commonwealth victory screen).
+**Needs you:** nothing blocking — proceeding through WS1. (Still open for later: per-colony difficulty magnitudes, game name/trademark, ADR-021/022 sign-offs.)
+
+---
+
 ## 2026-07-09 — Road-to-100% plan (understand docs → gaps → full polished plan)
 
 **Requested (Chris):** understand the Australia documentation, determine what needs updating, and 100% plan out the rest to bring Australian Mode to a POLISHED, GOOD-LOOKING UI/gameplay.

@@ -2900,7 +2900,9 @@ public sealed class Ruleset
                 ExpiryYear: (int?)el.Attribute("expiry-year") ?? 0,
                 Trigger: trigger,
                 Requirements: requirements,
-                Options: options);
+                Options: options,
+                Name: (string?)el.Attribute("name"),
+                Prompt: (string?)el.Attribute("prompt"));
             if (!events.TryAdd(id, ev))
             {
                 throw new RulesetFormatException($"Duplicate event-def id '{id}'.");
@@ -2917,7 +2919,8 @@ public sealed class Ruleset
             .Select(ParseEventEffect)
             .Where(e => e is not null)
             .Select(e => e!)
-            .ToList());
+            .ToList(),
+        Label: (string?)el.Attribute("label"));
 
     /// <summary>
     /// Parses one <c>&lt;effect&gt;</c> child of an event option into an <see cref="EventEffect"/>, or <c>null</c> when
