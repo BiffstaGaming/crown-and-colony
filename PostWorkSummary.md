@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — ClickUp backlog completed + WS1 underway
+
+**Requested (Chris):** ensure all requirements are individual ClickUp tasks; then begin working through the first round of WS1.
+**Did:**
+- **ClickUp:** read the existing kanban (`901615382059`) — the `[P8-4a…4d]` decomposition already covers Workstreams 3–6 (~40 tasks) plus portraits / colony-picker / art-pass. Created the **20 missing tasks** (2 epics `[EPIC P8-WS1]`/`[EPIC P8-WS2]`; the WS1 holes+seam `WS1.1a/1.1b/1.2/1.3`; the WS2 visual-identity items `2.1/2.2/2.3/2.6/2.7/2.8`; and the `WS3.9 / WS4.4 / WS4.5 / WS6.1 / WS6.2 / WS6.5 / WS6.6 / WS6.7` gaps) — so **every ROAD_TO_100 requirement now has a task**. Non-duplicative — added only genuine gaps (the existing 4a-4d tasks stay the canonical WS3–6 backlog).
+- **WS1 first round:** WS1.1a (event-text layer) already landed (`87fd03a`). Investigated **WS1.1b** (the popup): plan = a code-built modal panel (the `AdvisorPanel`/`EmigrationChoicePanel` pattern) consuming `Game.PendingEventOffer`, surfaced in `GameController.RefreshView`, on the project's overlay-modal wood-frame styling; on choice → `ChooseEventOption` + refresh; plus authoring the 31 events' name/prompt/labels.
+**Status:** ClickUp backlog complete (20 new tasks). `main` `87fd03a`, CI-green (WS1.1a). This entry: backlog + investigation (no new code).
+**Changed:** ClickUp only (20 tasks) + this summary.
+**Decisions:** created only the **gap** tasks, not duplicates of the existing 40 — the `[P8-4a/4b/4c/4d]` tasks Chris built on 2026-07-08 already are the WS3–6 backlog.
+**Scheduled next:** **WS1.1b — build the event popup** (Godot dialog + wire + author events) as a focused milestone; then WS1.2 (Commonwealth victory screen) + WS1.3 (variant-aware art seam).
+**Needs you:** nothing blocking. (Later, when their items come up: per-colony difficulty magnitudes, game name/trademark, ADR-021/022 sign-offs.)
+
+---
+
 ## 2026-07-09 — Started WS1 (holes-first): event popup-text layer (WS1.1a)
 
 **Requested (Chris):** start WS1 now, holes-first (event UI + victory screen); public-domain art piece-by-piece; defer the First Nations deep system.
