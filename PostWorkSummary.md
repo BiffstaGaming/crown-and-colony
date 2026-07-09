@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — Australia is won ONLY by the Federation Referendum
+
+**Requested (Chris):** ensure the winning way for Australia Mode is only by Referendum.
+**Investigated + confirmed:** `Game.Winner` checked, in order, Federation → defeat-REF → last-European → last-human. Australia had `victoryDefeatREF=true` and `victoryDefeatEuropeans=true`, so besides the referendum a player could still win by the War-of-Independence path — and worse, with the variant's new **0 rival powers** the human is the only European from turn 1, so "defeat all other Europeans" was a **turn-1 instant win**. Confirmed the bug.
+**Did:**
+- **Engine (the guarantee):** `Game.Winner` now makes the Federation victory **exclusive whenever it's enabled** — when `Ruleset.VictoryFederation` is on, the Commonwealth proclamation is the sole win and the three classic conditions are skipped entirely. (Classic has the option off → its branch is skipped → unchanged, byte-identical.)
+- **Data:** the Australia spec's `victoryDefeatREF`/`victoryDefeatEuropeans` set to `false` (consistency).
+- **UI:** new `GameVariant.ReferendumVictoryOnly` (Australia `true`); the New-Game dialog switches **off + locks** the three classic victory checkboxes for Australia (they were inert anyway; now the UI matches).
+**Status:** `main` `4a023d8`, **CI green (L1/L2 + L3)**; L1/L2 2925 + L3 green; soak determinism green (classic byte-identical). +1 L1 (`AustraliaVariantTests`: a fresh 0-rival Australia game has **no** winner — proves no instant win) +1 L3 (`NewGameSetupUiTests`: the win checkboxes lock off).
+**Changed:** `Game.Independence.cs` (`Winner` exclusivity), `GameVariant.cs` (+`ReferendumVictoryOnly`), `australia/specification.xml` (victory options), `NewGameDialog.cs` (victory-checkbox lock), `AustraliaVariantTests.cs`, `NewGameSetupUiTests.cs`, `game-modes.md` + `federation-victory.md` changelogs.
+**Decisions:** made the exclusivity an **engine rule** (`VictoryFederation` on ⇒ Federation is the only win) rather than relying on the spec/dialog alone — robust against any option/checkbox fiddling. The classic conquest/independence machinery still exists but can no longer grant a win in Australia.
+**Scheduled next:** unchanged — the sign-off/approval-gated items (ADR-021/022, art, balance playtest).
+**Needs you:** playtest — an Australian game should now only ever end via the Federation referendum → Commonwealth (no war/last-power wins; no turn-1 instant win). Confirm.
+
+---
+
 ## 2026-07-09 — Three playtest fixes: readable intro + Australia map/rivals locked to the scenario
 
 **Requested (Chris):** intro runs too quick to read; set the Australia map fixed for Australia Mode; set 0 foreign powers for Australia ("unless I'm mistaken") — investigate, confirm, then update.
