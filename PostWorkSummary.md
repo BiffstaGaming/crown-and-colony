@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — Doc-audit response + fixes (A/B/C): gold-rush pacing, FN aggression, 5 Pioneers remapped
+
+**Requested (Chris):** what year should Australia Mode start (per docs), and is there other info I've missed? → then (from the follow-up choices) fix the small spec fixes + FN aggression + remap the 5 wrong Pioneers [+ Mode 3 + conditional events, scheduled]; keep **Mode 1 only** (no Mode 2 sandbox).
+**Audit:** ran a full read-only audit of all 22 design docs vs the implementation. **Start year = 1788 → 1901 is CORRECT** (docs 01/03/04; the spec matches). Surfaced a prioritized gap list; the concrete items are now fixed (below), the larger ones scheduled.
+**Did — 3 CI-green milestones landed on `main`:**
+- **A — spec fixes** (`4fb56b2`): `seasonYear` 1830→**1851** (two-turns-per-year now begins at the gold rush, matching its own comment; `independenceTurn` 142→121 on the new scale); Pioneer `ages` 1830,1880→**1830,1889** (both real doc-03 era lines — the Democracy/Federation Pioneers become common exactly as the 1889-1901 campaign opens).
+- **B — First Nations aggression neutralised** (`4fb56b2`): Eora/Arrernte/Wangkatja were tagged innate `aggression="high"` (an Aztec/warlike reskin artifact); set to `average` per doc 15 §5 (resistance is contextual, not innate) — no FN people is now innately more hostile than another.
+- **C — 5 mis-mapped Pioneers remapped to faithful effects** (`64339bd`): Sturt (naval movement→+25% Food, river settlements), Kidman (off-design Food→+1 land movement, droving), Stuart (drop reveal-all-rivals→exposedTiles+lineOfSight), Macquarie (free carpenter→**bespoke free road** by each pop-3+ colony), Louisa Lawson (Brewster recruits→+50% building Civic Voice). Per docs 08–12; `buildingPriceBonus` ruled out (parsed but not consumed).
+**Status:** `main` `64339bd`, **CI green (L1/L2 + L3)** — verified on C's run itself. (The L3 Godot-host job flaked `Failed to connect: Connection timeout` on 3 prior runs incl. the referendum commit `4a023d8`, then passed on C's run — a transient host-start flake, not a regression; `4a023d8`'s earlier "CI green" was only verified locally.) Full L1/L2 **2933** + **5 soak** green locally; +11 L1/L2 across the three milestones.
+**Changed:** `australia/specification.xml` (pacing/ages/aggression + 5 pioneer remaps), `Game.AustralianEffects.cs` (+Macquarie `ApplyPublicWorks` road handler), `AustraliaVariantTests`/`AustralianPioneersTests`/`AustralianContentTests`, `game-modes.md` + `founding-fathers.md` changelogs.
+**Decisions:** kept **Mode 1 only** (0-rivals lock stays; Mode 2 deferred, your choice). Each Pioneer remapped to a *known-working* effect from its own design clause (fuller multi-clause fidelity is 4c.9). FN aggression set to `average` (neutral middle) not `low` — removes the warlike outlier without a wholesale redesign (that's 4b).
+**Scheduled next:** **M-D — Mode 3 per-colony difficulty + identity** (`901615382059` kanban; doc 04: NSW Standard / Tas·WA Hard / SA·Vic Medium / Qld Medium-Hard). The tiers/identities + the New-Game colony dropdown are concrete; the *mechanical* effect of each tier needs your steer (see Needs-you). Then **M-E — conditional/linked events** (doc 01 §2 — figure-attained/relationship gates + event chains; the large one).
+**Follow-ups:** deep FN systems (4b, sign-off-gated); Federation victory grades/clauses/quotas; distinct goods/units; per-figure Pioneer date-gates + fuller multi-clause perks (4c.9); balance playtest (4d.8).
+**Needs you:** (1) **What should per-colony difficulty DO mechanically** in Mode 3? Docs give tiers + flavour but no magnitudes — e.g. should "Hard" (Tas/WA) mean fewer starting resources / harsher isolation, and "low Federation support" (Qld/WA) a starting-support penalty or higher regional target? (2) Playtest sanity: an Australian game now quickens at the 1851 gold rush and no First Nations people reads as innately warlike.
+
+---
+
 ## 2026-07-09 — Australia is won ONLY by the Federation Referendum
 
 **Requested (Chris):** ensure the winning way for Australia Mode is only by Referendum.
