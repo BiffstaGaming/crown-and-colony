@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-09 — WS1.3: variant-aware art seam — Australian art unblocked
+
+**Requested (Chris):** continue with WS1.3.
+**Did:**
+- **The art prerequisite.** `ColonyArt.Load` (the single choke point every sprite/icon/portrait/terrain load routes through) now tries the current variant's art root — `res://assets/<root>/<path>` — first, falling back to the FreeCol base art per-asset; absent-everywhere still returns null (graceful text-only). New `GameVariant.ArtRoot` (Australia `"australia"`, classic `null`) set on the static `ColonyArt.VariantArtRoot` in `GameController.StartGame` (the convergence for both new-game + load); a new root clears the terrain cache.
+- **No visible change yet** — with no Australian assets shipped, every load still resolves to FreeCol. Pure plumbing that **unblocks WS1.4 (the 25 Pioneer portraits) + all of WS2's art** — now dropping a file at `res://assets/australia/...` overrides the FreeCol default.
+- **Adversarial review caught a real ordering bug** (fixed): the HUD chrome + `ColonyTheme` caches load in `GameController._Ready` *before* the variant is resolved, so a second in-process game would read the *prior* game's art root (e.g. Australian chrome on a Classic HUD) once variant `ui/*` art exists. Fixed by resetting `VariantArtRoot = null` at `_Ready` top — the chrome uses the base (FreeCol) art deterministically (variant-aware chrome/theme is WS2.1); the *panel* art (portraits/sprites, opened after `StartGame`) is variant-aware.
+**Status:** `main` (this commit), CI pending. Full L1/L2 **2937** + **5 soak** + **L3** (`ColonyArtTests` ×2 + 17 golden tests, re-run after the `_Ready` fix) green; the one local golden diff is the pre-existing `pause-menu` 2.24% rendering artifact (unchanged 13790px across all WS1 runs; passes on CI).
+**Changed:** `ColonyArt.cs` (`VariantArtRoot` + variant-first `Load`), `GameVariant.cs` (+`ArtRoot`), `GameController.cs` (`StartGame` sets the root + `_Ready` resets it), `ColonyArtTests.cs` (new) + uid, `AustraliaReskinTests.cs`, `game-modes.md`.
+**Decisions:** the seam is a single `Load` choke point (no per-caller threading); the art root is a `GameVariant` field (ADR-018) mirrored to a static `ColonyArt.VariantArtRoot` at game start (presentation-only; cache cleared on change; classic → null → FreeCol).
+**Scheduled next:** **WS1.4 — the 25 Pioneer portraits** (public-domain sourcing, per your art decision; the first Australian art on this seam — every Pioneer currently renders text-only). Then WS1.5 (colony picker).
+**Needs you:** WS1.1b **4c.11 event sign-off** still open. WS1.4 sources public-domain portraits (your approved approach); **William Barak's portrait needs a cultural-protocol check** before use.
+
+---
+
 ## 2026-07-09 — WS1.2: Commonwealth victory screen — the second hole closed
 
 **Requested (Chris):** continue with 1.2.

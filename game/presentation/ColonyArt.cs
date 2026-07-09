@@ -32,6 +32,30 @@ public static class ColonyArt
 
     private static readonly Dictionary<string, Texture2D[]> _terrain = [];
 
+    private static string? _variantArtRoot;
+
+    /// <summary>
+    /// The current variant's art root under <c>res://assets/</c> (e.g. <c>"australia"</c>), or <c>null</c> for the
+    /// classic/base game (FreeCol art only). Set by <see cref="GameController"/> at game start/load from
+    /// <see cref="GameLogic.Specification.GameVariant.ArtRoot"/>. <see cref="Load"/> uses a variant asset when it exists
+    /// and falls back to the FreeCol asset otherwise, so missing variant art degrades gracefully — every asset resolves
+    /// to FreeCol until the variant ships its own (WS1.3). Assigning a different root clears the terrain cache (whose
+    /// keys are art-root-independent short names); the other loads route through Godot's own path-keyed resource cache,
+    /// so they need no invalidation.
+    /// </summary>
+    public static string? VariantArtRoot
+    {
+        get => _variantArtRoot;
+        set
+        {
+            if (_variantArtRoot != value)
+            {
+                _variantArtRoot = value;
+                _terrain.Clear();
+            }
+        }
+    }
+
     /// <summary>The texture stack for a terrain (its base centre diamond, plus a forest/hills/mountains overlay on top); empty if no art exists. Cached.</summary>
     public static Texture2D[] TerrainTextures(string terrainShortName)
     {
@@ -199,6 +223,15 @@ public static class ColonyArt
 
     private static Texture2D? Load(string relativePath)
     {
+        // A variant asset wins when it exists (WS1.3): res://assets/<variant>/<path>, else the FreeCol base art.
+        if (_variantArtRoot is { } root)
+        {
+            string variantPath = $"res://assets/{root}/{relativePath}";
+            if (ResourceLoader.Exists(variantPath))
+            {
+                return GD.Load<Texture2D>(variantPath);
+            }
+        }
         string path = $"res://assets/freecol/{relativePath}";
         return ResourceLoader.Exists(path) ? GD.Load<Texture2D>(path) : null;
     }

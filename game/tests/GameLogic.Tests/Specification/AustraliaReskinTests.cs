@@ -123,6 +123,15 @@ public class AustraliaReskinTests
         Assert.Null(classic.CommonwealthAddendum);
     }
 
+    [Fact]
+    public void ArtRoot_IsAustraliaForTheVariant_AndNullForClassic()
+    {
+        // WS1.3: the variant declares its art root (res://assets/<root>/); ColonyArt tries it first, else the FreeCol
+        // base art. Australia sources under res://assets/australia/; classic ships no root (FreeCol only).
+        Assert.Equal("australia", GameVariants.Australia.ArtRoot);
+        Assert.Null(GameVariants.ClassicAmerica.ArtRoot);
+    }
+
     public static IEnumerable<object[]> ChromeLabels()
     {
         // (accessor, Australian value, classic default). Mirrors the CongressName test in AustralianPioneersTests.

@@ -284,6 +284,12 @@ public partial class GameController : Node2D
 
     public override void _Ready()
     {
+        // WS1.3: the HUD chrome + theme caches built below load their art BEFORE the variant is resolved (NewGame/LoadFrom
+        // set _variant, then StartGame sets the art root). Reset to the base (FreeCol) art root here so the chrome is
+        // deterministic and classic byte-identical regardless of a prior in-process game's variant; StartGame then sets
+        // the correct root for the panels (portraits/sprites) opened after the game starts. Variant-aware CHROME/theme is
+        // deferred to the Australian-theme work (WS2.1) — the seam here makes the panel art variant-aware (WS1.4/WS2.4).
+        ColonyArt.VariantArtRoot = null;
         _mapView = GetNode<MapView>("MapView");
         _mapView.HoveredTileChanged += OnHoveredTileChanged; // tile-yield-on-hover preview (86d3fq1nk)
         _riverLayer = GetNode<RiverOverlay>("MapView/RiverLayer");
@@ -718,6 +724,7 @@ public partial class GameController : Node2D
     private void StartGame(Game game)
     {
         _game = game;
+        ColonyArt.VariantArtRoot = _variant.ArtRoot; // WS1.3: variant art wins where it exists, else FreeCol (both new-game + load reach here after _variant is set)
         _lastMapTopDown = MapView.TopDown; // baseline the map projection so a later live map-view toggle is detected
         _selectedUnit = null;
         _inspectedTile = null;

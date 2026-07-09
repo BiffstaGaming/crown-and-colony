@@ -42,7 +42,8 @@ public sealed class GameVariant
         bool referendumVictoryOnly = false,
         string? commonwealthVictoryTitle = null,
         string? commonwealthProclamation = null,
-        string? commonwealthAddendum = null)
+        string? commonwealthAddendum = null,
+        string? artRoot = null)
     {
         Id = id;
         DisplayName = displayName;
@@ -68,6 +69,7 @@ public sealed class GameVariant
         CommonwealthVictoryTitle = commonwealthVictoryTitle;
         CommonwealthProclamation = commonwealthProclamation;
         CommonwealthAddendum = commonwealthAddendum;
+        ArtRoot = artRoot;
         _specResource = specResource;
     }
 
@@ -203,6 +205,11 @@ public sealed class GameVariant
     /// <summary>The historically-honest addendum shown beneath the proclamation (doc 19) — the exclusion of Aboriginal and
     /// Torres Strait Islander peoples and other communities from the 1901 settlement — or <c>null</c> for none. Binding for Australia.</summary>
     public string? CommonwealthAddendum { get; }
+
+    /// <summary>The variant's art root under <c>res://assets/</c> (e.g. <c>"australia"</c>), or <c>null</c> for the classic/base
+    /// game (FreeCol art only). A variant asset is used when it exists; otherwise the FreeCol asset is the fallback — so
+    /// missing variant art degrades gracefully (WS1.3). Consumed by <c>ColonyArt.VariantArtRoot</c> (presentation, ADR-006).</summary>
+    public string? ArtRoot { get; }
 
     /// <summary>Loads this variant's ruleset by parsing its embedded specification, applying a difficulty level.</summary>
     /// <param name="difficultyLevelId">The difficulty level to apply (default <c>model.difficulty.medium</c> → the historical balance).</param>
@@ -378,7 +385,10 @@ public static class GameVariants
         commonwealthAddendum:
             "Federation joins the colonies, but it does not resolve every question. Many Aboriginal and Torres Strait "
             + "Islander peoples and other communities were excluded from the political settlement. Country, sovereignty, "
-            + "representation, and justice remain unfinished parts of the national story.");
+            + "representation, and justice remain unfinished parts of the national story.",
+        // Australian art is sourced under res://assets/australia/ (WS1.3 seam) — falls back to the FreeCol art per-asset
+        // until each Australian sprite/portrait lands (WS1.4/WS2). Classic supplies no art root (FreeCol only).
+        artRoot: "australia");
 
     /// <summary>Every shipped variant, in menu order.</summary>
     public static IReadOnlyList<GameVariant> All { get; } = [ClassicAmerica, Australia];
