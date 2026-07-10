@@ -132,6 +132,15 @@ public class AustraliaReskinTests
         Assert.Null(GameVariants.ClassicAmerica.ArtRoot);
     }
 
+    [Fact]
+    public void HasStartingColonySelection_IsTrueForAustralia_AndFalseForClassic()
+    {
+        // WS1.5: Australia offers the Mode-3 starting-colony picker (the six historical colonies); classic has a single
+        // map-fixed landfall, so the New-Game dialog hides the picker for it (and never carries a colony pick).
+        Assert.True(GameVariants.Australia.HasStartingColonySelection);
+        Assert.False(GameVariants.ClassicAmerica.HasStartingColonySelection);
+    }
+
     public static IEnumerable<object[]> ChromeLabels()
     {
         // (accessor, Australian value, classic default). Mirrors the CongressName test in AustralianPioneersTests.

@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-10 — WS1.5: Mode-3 starting-colony picker (the last WS1 item)
+
+**Requested (Chris):** move onto 1.5.
+**Did:**
+- **The New-Game dialog now lets you pick your starting colony** (Australian Federation only). Choose the Australia scenario and a **"Starting colony"** dropdown appears with all six — *New South Wales — Standard*, *Tasmania — Hard*, *Western Australia — Hard*, *Queensland — Medium-Hard*, *South Australia / Victoria — Medium* — each with a one-line identity blurb beneath. Hidden for Classic; defaults to NSW.
+- **Wiring:** new `GameVariant.HasStartingColonySelection` gates the picker (built in `_Ready`, shown/reset in `SyncVariantConstraints` alongside the existing map/rival/victory locks). On Start it forwards `NewGameDialog.PendingStartColony` **only** for a non-default colony; `GameController.StartNewGame` converts it via the already-built `AustraliaColonyStart.ImportFor(colony, ruleset)` into `Game.New`'s `importOverride` (the same seam the map-import row uses). The data layer (`AustraliaColonyStart`) already existed — WS1.5 is the wiring; I added an `AustraliaColonyInfo` descriptor so the doc-04 tier + identity are single-sourced in GameLogic, not duplicated in the dialog.
+- **Byte-identical preserved:** classic and NSW-default Australia both forward `null` → the existing map path → unchanged. The determinism soak passed; I proved the one soak failure (`TurnProcessing` perf budget, 2.1 ms vs 2 ms) is a **pre-existing machine-load flake** — the clean stashed tree fails it *worse* (2.5 ms), and my change adds zero per-turn work.
+- **Difficulty decision (your reserved call, ROAD_TO_100 §5.4):** shipped the tier as **displayed framing** — the geography genuinely delivers the asymmetry (an island start is isolated, a remote coast far from help). An *explicit* mechanical modifier (e.g. a Federation-support penalty for Qld/WA) I deliberately **deferred to the balance pass** rather than invent magnitudes; see "Needs you".
+**Status:** verified, **not yet pushed** (committing now). Build ✓; L1/L2 **2944** (+7 new) ; determinism soak ✓ (byte-identical); L3 `NewGameSetupUiTests` **17** (+4 new picker cases) ✓; adversarial review (2 lenses + verify) **0 findings**.
+**Changed:** `GameVariant.cs` (+flag), `AustraliaColonyStart.cs` (+`AustraliaColonyInfo` descriptor), `NewGameDialog.cs` (picker + `PendingStartColony`), `GameController.cs` (host wiring), `AustraliaVariantTests.cs` + `AustraliaReskinTests.cs` + `NewGameSetupUiTests.cs` (tests), `game-modes.md` (both layers + changelog).
+**Decisions:** tier = displayed framing (geography is the difficulty), explicit mechanical modifier deferred to the balance pass; the picker rides the existing `importOverride` seam (no new Game.New surface); descriptor single-sourced in GameLogic.
+**Scheduled next:** **WS1 is complete** (1.1b/1.2/1.3/1.4/1.5 all shipped). Next natural step is **WS2 — Australian visual identity** (kanban EPIC `86d3n7ty5`; WS2.1 art direction `86d3n7tz9` / WS2.2 title+logo `86d3n7tzc`) — awaiting your steer + the game-name decision (ROAD_TO_100 §5.5).
+**Needs you:** (1) **explicit per-colony difficulty** — want a mechanical modifier now (I'd propose a small Federation-support penalty for Qld/WA + fewer starting Tools/Food for the Hard starts), or leave it as geographic framing until the balance pass? (2) still open: **WS1.4 portrait images** + **Barak sign-off** (`86d3n855a`) + **4c.11 event sign-off**; (3) the **game-name/trademark** pick to unblock WS2.2.
+
+---
+
 ## 2026-07-10 — WS1.4: Pioneer-portrait seam wired + Asset Register stocked
 
 **Requested (Chris):** continue into WS1.4 (portraits) — decisions: *you supply the vetted images*; *Barak held* pending cultural-protocol sign-off.

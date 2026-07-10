@@ -181,6 +181,17 @@ public partial class NewGameDialog : Control
     /// </summary>
     public static DifficultyOptions? PendingDifficultyOverrides { get; set; }
 
+    /// <summary>
+    /// The chosen <b>starting colony</b> for a Mode-3 variant (Australia; WS1.5) — null = the variant's default colony
+    /// (NSW → the map's own First-Fleet landfall, byte-identical to today's Australia game) or a non-Mode-3 variant. Set
+    /// on Start only when the Australia-only "Starting colony" dropdown is shown and a non-default colony is picked. The
+    /// new-game host (<see cref="GameController"/>) reads + clears it and converts it to a relocated map via
+    /// <see cref="AustraliaColonyStart.ImportFor"/>, threaded into <see cref="GameLogic.GameSession.Game.New"/>'s
+    /// <c>importOverride</c> (the same seam the "Import map…" row uses). <b>Session-only</b> — a save records the resulting
+    /// start position in its terrain/units, not this pick.
+    /// </summary>
+    public static AustraliaColony? PendingStartColony { get; set; }
+
     private OptionButton _variantOption = null!;
     private OptionButton _mapOption = null!;
     private OptionButton _sizeOption = null!;
@@ -198,6 +209,12 @@ public partial class NewGameDialog : Control
     private OptionButton _bonusNumberOption = null!;
     private OptionButton _rumourNumberOption = null!;
     private OptionButton _advantagesOption = null!;
+    // The Australia-only "Starting colony" picker (Mode 3, WS1.5) — built always but shown only when the selected variant
+    // offers colony starts (GameVariant.HasStartingColonySelection). _startColonyRow is the whole LabeledRow (hidden with
+    // the variant), _startColonyIdentityLabel is the wrapping identity/difficulty blurb under it.
+    private OptionButton _startColonyOption = null!;
+    private Control _startColonyRow = null!;
+    private Label _startColonyIdentityLabel = null!;
     // The alternative-victory-condition toggles (FreeCol's gameOptions.victoryConditions group): defeat the REF,
     // defeat all other Europeans, defeat all other humans. Initialised to the ruleset's parsed spec defaults so an
     // untouched Start is byte-identical (REF on, Europeans on, Humans off).
@@ -245,6 +262,13 @@ public partial class NewGameDialog : Control
     /// ruleset order. Populated in <see cref="_Ready"/> from the default-variant ruleset's <see cref="EuropeanNation"/>s.
     /// </summary>
     private readonly List<string?> _nationByIndex = new() { null };
+
+    /// <summary>
+    /// The <see cref="AustraliaColony"/> each <see cref="_startColonyOption"/> dropdown row maps to, by item index — the
+    /// six colonies in <see cref="AustraliaColonyStart.All"/> order (NSW first = the default). Populated in
+    /// <see cref="_Ready"/>; only consulted while the Australia variant is selected (the row is hidden otherwise).
+    /// </summary>
+    private readonly List<AustraliaColony> _startColonyByIndex = new();
 
     /// <summary>Builds the overlay (dim + centred, carved-wood-framed parchment panel + the scrolling option list with a
     /// pinned Title and Start/Back) and starts hidden.</summary>
@@ -325,6 +349,32 @@ public partial class NewGameDialog : Control
             CustomMinimumSize = new Vector2(340, 0),
         };
         vbox.AddChild(_importStatusLabel);
+
+        // Starting colony (Mode 3, WS1.5 — doc 04): an Australia-only picker of which of the six historical colonies to
+        // start in. Built here (right under the Map row it refines) but shown only for a Mode-3 variant
+        // (HasStartingColonySelection); SyncVariantConstraints toggles it. Each row reads "<name> — <tier>"; the wrapping
+        // label under it carries that colony's one-line gameplay identity (doc 04). Choosing one only relocates the human's
+        // landfall — RNG-free, and the default (NSW) is byte-identical to today's Australia game.
+        _startColonyOption = new OptionButton { Name = "StartColonyOption" };
+        foreach (AustraliaColony colony in AustraliaColonyStart.All)
+        {
+            _startColonyOption.AddItem($"{AustraliaColonyStart.DisplayName(colony)} — {AustraliaColonyStart.DifficultyTier(colony)}");
+            _startColonyByIndex.Add(colony);
+        }
+        _startColonyOption.Selected = 0; // NSW — the default landfall (AustraliaColonyStart.All[0] == Default)
+        _startColonyOption.ItemSelected += OnStartColonySelected;
+        _startColonyRow = LabeledRow("Starting colony", _startColonyOption);
+        _startColonyRow.Visible = false; // shown only for a Mode-3 variant (SyncVariantConstraints)
+        vbox.AddChild(_startColonyRow);
+
+        _startColonyIdentityLabel = new Label
+        {
+            Name = "StartColonyIdentityLabel",
+            Visible = false,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            CustomMinimumSize = new Vector2(340, 0),
+        };
+        vbox.AddChild(_startColonyIdentityLabel);
 
         _sizeOption = new OptionButton { Name = "SizeOption" };
         foreach (WorldSize s in WorldSizeOptions.Sizes)
@@ -545,7 +595,16 @@ public partial class NewGameDialog : Control
         PendingDifficultyOverrides = onCustomDifficulty ? _customDifficulty : null;
         // The chosen scenario / variant rides its own static into Game.New (it selects which ruleset the game loads —
         // ADR-018). The default variant (Classic, index 0) → the byte-identical default world.
-        GameController.PendingVariant = _variantByIndex[_variantOption.Selected];
+        GameVariant chosenVariant = _variantByIndex[_variantOption.Selected];
+        GameController.PendingVariant = chosenVariant;
+        // The starting colony (Mode 3, WS1.5) rides its own static into the host, which converts it to a relocated Australia
+        // map via AustraliaColonyStart.ImportFor → Game.New's importOverride. Only forwarded when the Australia-only picker
+        // is shown (a Mode-3 variant) AND a non-default colony is chosen; the default (NSW) and every non-Mode-3 variant
+        // leave it null, so the game boots via the map's own First-Fleet landfall (byte-identical to today's Australia game).
+        AustraliaColony chosenColony = _startColonyByIndex[_startColonyOption.Selected];
+        PendingStartColony = chosenVariant.HasStartingColonySelection && chosenColony != AustraliaColonyStart.Default
+            ? chosenColony
+            : null;
         // The chosen nation rides its own static into Game.New (the human's nation is GameLogic state, not a world
         // option — ADR-006). Index 0 ("No nation") maps to null → the classic nation-less human (byte-identical default).
         GameController.PendingNation = _nationByIndex[_nationOption.Selected];
@@ -713,7 +772,26 @@ public partial class NewGameDialog : Control
         _victoryRefCheck.Disabled = referendumOnly;
         _victoryEuropeansCheck.Disabled = referendumOnly;
         _victoryHumansCheck.Disabled = referendumOnly;
+
+        // Starting colony (Mode 3, WS1.5): a variant that offers colony starts (Australia) shows the picker + its identity
+        // blurb; every other variant hides them and the pick is reset to the default (NSW), so a non-Mode-3 game can never
+        // carry a stale colony choice.
+        bool colonyStarts = variant.HasStartingColonySelection;
+        _startColonyRow.Visible = colonyStarts;
+        _startColonyIdentityLabel.Visible = colonyStarts;
+        if (!colonyStarts)
+        {
+            _startColonyOption.Selected = 0; // NSW — the default (a select via code emits no ItemSelected)
+        }
+        UpdateStartColonyIdentity();
     }
+
+    /// <summary>Starting-colony-dropdown handler (Mode 3, WS1.5): refreshes the identity blurb shown under the picker.</summary>
+    private void OnStartColonySelected(long index) => UpdateStartColonyIdentity();
+
+    /// <summary>Sets the identity blurb (doc 04) under the starting-colony picker to the currently-selected colony's.</summary>
+    private void UpdateStartColonyIdentity() =>
+        _startColonyIdentityLabel.Text = AustraliaColonyStart.Identity(_startColonyByIndex[_startColonyOption.Selected]);
 
     /// <summary>
     /// Difficulty-dropdown selection handler (86d3fq0x7): a real level updates the remembered base index; the

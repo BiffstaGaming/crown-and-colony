@@ -463,4 +463,121 @@ public class NewGameSetupUiTests
         AssertThat(NewGameDialog.PendingDifficultyOverrides).IsNull();
         NewGameDialog.PendingDifficultyOverrides = null;
     }
+
+    // ── Starting-colony picker (Mode 3, WS1.5) ──────────────────────────────────────────────────────────────────────
+
+    private static int AustraliaVariantIndex => GameVariants.All.ToList().FindIndex(v => v.Id == "australia");
+
+    /// <summary>Selects the Australia variant the way a real click would (Select emits no ItemSelected in Godot).</summary>
+    private static async Task SelectAustralia(ISceneRunner runner, NewGameDialog dialog)
+    {
+        var variantOption = Find<OptionButton>(dialog, "VariantOption");
+        variantOption.Select(AustraliaVariantIndex);
+        variantOption.EmitSignal(OptionButton.SignalName.ItemSelected, (long)AustraliaVariantIndex);
+        await runner.SimulateFrames(1);
+    }
+
+    [TestCase]
+    public async Task StartingColonyPicker_IsShownForAustralia_WithSixColoniesAndTiers_HiddenForClassic()
+    {
+        (ISceneRunner runner, NewGameDialog dialog) = await OpenDialog();
+        var startColony = Find<OptionButton>(dialog, "StartColonyOption");
+        var startColonyRow = (Control)startColony.GetParent(); // the LabeledRow HBox (hidden with the variant)
+        var identity = Find<Label>(dialog, "StartColonyIdentityLabel");
+
+        // Classic (the default variant) hides the picker + its blurb — the default dialog is unchanged.
+        AssertThat(startColonyRow.Visible).IsFalse();
+        AssertThat(identity.Visible).IsFalse();
+
+        await SelectAustralia(runner, dialog);
+
+        // Australia shows the picker with all six colonies (NSW default), each label carrying its doc-04 difficulty tier,
+        // plus the selected colony's identity blurb underneath.
+        AssertThat(startColonyRow.Visible).IsTrue();
+        AssertThat(identity.Visible).IsTrue();
+        AssertThat(startColony.ItemCount).IsEqual(AustraliaColonyStart.All.Count);
+        AssertThat(startColony.Selected).IsEqual(0); // NSW — the default landfall
+        AssertThat(startColony.GetItemText(0)).Contains("New South Wales");
+        AssertThat(startColony.GetItemText(0)).Contains("Standard");
+        int waIndex = AustraliaColonyStart.All.ToList().IndexOf(AustraliaColony.WesternAustralia);
+        AssertThat(startColony.GetItemText(waIndex)).Contains("Hard");
+        AssertThat(identity.Text).IsEqual(AustraliaColonyStart.Identity(AustraliaColony.NewSouthWales));
+
+        // Back to Classic → the picker hides again and resets to the default (no stale pick can carry over).
+        var variantOption = Find<OptionButton>(dialog, "VariantOption");
+        variantOption.Select(0);
+        variantOption.EmitSignal(OptionButton.SignalName.ItemSelected, 0L);
+        await runner.SimulateFrames(1);
+        AssertThat(startColonyRow.Visible).IsFalse();
+        AssertThat(startColony.Selected).IsEqual(0);
+    }
+
+    [TestCase]
+    public async Task PickingANonDefaultColony_AndStarting_ForwardsPendingStartColony()
+    {
+        (ISceneRunner runner, NewGameDialog dialog) = await OpenDialog();
+        NewGameDialog.PendingStartColony = null; // clean slate (statics survive between tests)
+        try
+        {
+            dialog.Open((_, _, _, _) => { });
+            await SelectAustralia(runner, dialog);
+
+            var startColony = Find<OptionButton>(dialog, "StartColonyOption");
+            var identity = Find<Label>(dialog, "StartColonyIdentityLabel");
+            int tasIndex = AustraliaColonyStart.All.ToList().IndexOf(AustraliaColony.Tasmania);
+            startColony.Select(tasIndex);
+            startColony.EmitSignal(OptionButton.SignalName.ItemSelected, (long)tasIndex);
+            await runner.SimulateFrames(1);
+            AssertThat(identity.Text).IsEqual(AustraliaColonyStart.Identity(AustraliaColony.Tasmania)); // blurb tracks the pick
+
+            Find<Button>(dialog, "StartButton").EmitSignal(BaseButton.SignalName.Pressed);
+            await runner.SimulateFrames(1);
+
+            // A non-default colony rides the static into the new-game host (converted to importOverride via ImportFor).
+            AssertThat(NewGameDialog.PendingStartColony).IsEqual(AustraliaColony.Tasmania);
+        }
+        finally
+        {
+            NewGameDialog.PendingStartColony = null; // tidy the static for the next test
+        }
+    }
+
+    [TestCase]
+    public async Task AustraliaWithDefaultColony_NSW_LeavesPendingStartColonyNull()
+    {
+        (ISceneRunner runner, NewGameDialog dialog) = await OpenDialog();
+        NewGameDialog.PendingStartColony = null;
+        try
+        {
+            dialog.Open((_, _, _, _) => { });
+            await SelectAustralia(runner, dialog);
+
+            // Leave the picker on its default (NSW) — the map's own First-Fleet landfall. The default colony is never
+            // forwarded, so the game boots byte-identically to today's Australia game.
+            Find<Button>(dialog, "StartButton").EmitSignal(BaseButton.SignalName.Pressed);
+            await runner.SimulateFrames(1);
+
+            AssertThat(NewGameDialog.PendingStartColony).IsNull();
+        }
+        finally
+        {
+            NewGameDialog.PendingStartColony = null;
+        }
+    }
+
+    [TestCase]
+    public async Task ClassicStart_LeavesPendingStartColonyNull_EvenWithAStaleStatic()
+    {
+        (ISceneRunner runner, NewGameDialog dialog) = await OpenDialog();
+        // A stale pick from an aborted Australia session must be overwritten with null on a default (Classic) Start —
+        // the picker is hidden and never forwards a colony.
+        NewGameDialog.PendingStartColony = AustraliaColony.Tasmania;
+        dialog.Open((_, _, _, _) => { });
+
+        Find<Button>(dialog, "StartButton").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(NewGameDialog.PendingStartColony).IsNull();
+        NewGameDialog.PendingStartColony = null;
+    }
 }

@@ -586,6 +586,30 @@ public class AustraliaVariantTests
         Assert.Equal(plain.HumanStart, nsw.HumanStart);
     }
 
+    [Theory]
+    [InlineData(AustraliaColony.NewSouthWales, "New South Wales", "Standard")]
+    [InlineData(AustraliaColony.Victoria, "Victoria (Port Phillip)", "Medium")]
+    [InlineData(AustraliaColony.Queensland, "Queensland (Moreton Bay)", "Medium-Hard")]
+    [InlineData(AustraliaColony.SouthAustralia, "South Australia", "Medium")]
+    [InlineData(AustraliaColony.Tasmania, "Tasmania (Van Diemen's Land)", "Hard")]
+    [InlineData(AustraliaColony.WesternAustralia, "Western Australia (Swan River)", "Hard")]
+    public void ColonyStart_Descriptor_CarriesTheDoc04DisplayNameTierAndIdentity(AustraliaColony colony, string displayName, string tier)
+    {
+        // WS1.5: the Mode-3 picker's display data (doc 04 Mode 3 table) is single-sourced on AustraliaColonyStart, so the
+        // New-Game dialog just renders it (no design text duplicated into presentation).
+        Assert.Equal(displayName, AustraliaColonyStart.DisplayName(colony));
+        Assert.Equal(tier, AustraliaColonyStart.DifficultyTier(colony));
+        Assert.False(string.IsNullOrWhiteSpace(AustraliaColonyStart.Identity(colony)), "every colony needs a gameplay-identity blurb");
+
+        // Info() bundles the same values the individual accessors expose (they are shorthands over the one descriptor).
+        AustraliaColonyInfo info = AustraliaColonyStart.Info(colony);
+        Assert.Equal(displayName, info.DisplayName);
+        Assert.Equal(tier, info.DifficultyTier);
+        Assert.Equal(AustraliaColonyStart.Identity(colony), info.Identity);
+        Assert.Equal(AustraliaColonyStart.StartTile(colony), info.StartTile);
+        Assert.Equal(AustraliaColonyStart.RegionKey(colony), info.RegionKey);
+    }
+
     /// <summary>Asserts the human landed on the Australia map with a land unit on <paramref name="start"/> or an adjacent tile (the ship berths on adjacent water).</summary>
     private static void AssertHumanLandedAt(Game game, Position start)
     {

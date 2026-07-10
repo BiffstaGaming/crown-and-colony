@@ -43,7 +43,8 @@ public sealed class GameVariant
         string? commonwealthVictoryTitle = null,
         string? commonwealthProclamation = null,
         string? commonwealthAddendum = null,
-        string? artRoot = null)
+        string? artRoot = null,
+        bool hasStartingColonySelection = false)
     {
         Id = id;
         DisplayName = displayName;
@@ -70,6 +71,7 @@ public sealed class GameVariant
         CommonwealthProclamation = commonwealthProclamation;
         CommonwealthAddendum = commonwealthAddendum;
         ArtRoot = artRoot;
+        HasStartingColonySelection = hasStartingColonySelection;
         _specResource = specResource;
     }
 
@@ -210,6 +212,17 @@ public sealed class GameVariant
     /// game (FreeCol art only). A variant asset is used when it exists; otherwise the FreeCol asset is the fallback — so
     /// missing variant art degrades gracefully (WS1.3). Consumed by <c>ColonyArt.VariantArtRoot</c> (presentation, ADR-006).</summary>
     public string? ArtRoot { get; }
+
+    /// <summary>
+    /// Whether this variant offers a <b>starting-colony</b> choice at New Game (Mode 3, doc 04) — <c>true</c> for the
+    /// Australian Federation, whose six historical colonies (<see cref="World.AustraliaColonyStart"/>) are individually
+    /// selectable start sites; <c>false</c> for classic (the single map-fixed landfall). The New-Game dialog reads this to
+    /// show/hide its Australia-only "Starting colony" dropdown; the choice only <b>relocates the human's landfall</b> to the
+    /// chosen colony's coast (via <c>AustraliaColonyStart.ImportFor</c> → <see cref="GameSession.Game.New"/>'s
+    /// <c>importOverride</c>), so it perturbs no RNG stream (ADR-009) and the default colony (NSW) boots byte-identically to
+    /// today's Australia game. The per-colony difficulty framing (doc 04) is displayed identity, not (yet) a mechanical modifier.
+    /// </summary>
+    public bool HasStartingColonySelection { get; }
 
     /// <summary>Loads this variant's ruleset by parsing its embedded specification, applying a difficulty level.</summary>
     /// <param name="difficultyLevelId">The difficulty level to apply (default <c>model.difficulty.medium</c> → the historical balance).</param>
@@ -388,7 +401,10 @@ public static class GameVariants
             + "representation, and justice remain unfinished parts of the national story.",
         // Australian art is sourced under res://assets/australia/ (WS1.3 seam) — falls back to the FreeCol art per-asset
         // until each Australian sprite/portrait lands (WS1.4/WS2). Classic supplies no art root (FreeCol only).
-        artRoot: "australia");
+        artRoot: "australia",
+        // Mode 3 (doc 04): the six historical colonies are individually selectable start sites at New Game (WS1.5). The
+        // dialog surfaces AustraliaColonyStart; the choice only relocates the human's landfall (RNG-free; NSW = today's game).
+        hasStartingColonySelection: true);
 
     /// <summary>Every shipped variant, in menu order.</summary>
     public static IReadOnlyList<GameVariant> All { get; } = [ClassicAmerica, Australia];
