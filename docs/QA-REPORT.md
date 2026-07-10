@@ -1,6 +1,6 @@
 # QA Report — Crown & Colony
 
-> **Auto-generated from CI** on 2026-07-09 at commit `1a1013e` (save format **v72**). Do not hand-edit — this file is rewritten by [`scripts/generate-qa-report.py`](../scripts/generate-qa-report.py) on every CI run from the actual `dotnet test` results.
+> **Auto-generated from CI** on 2026-07-10 at commit `c5a65fe` (save format **v72**). Do not hand-edit — this file is rewritten by [`scripts/generate-qa-report.py`](../scripts/generate-qa-report.py) on every CI run from the actual `dotnet test` results.
 > This is a committed, point-in-time QA snapshot combining the **test results** (below) and the **visual goldens** (screenshots) in one place.
 > **End-to-end journeys:** the connected player-journey coverage is specified in [TEST-PLAN.md](TEST-PLAN.md).
 > **Live, always-current results:** the [GitHub Actions CI runs](https://github.com/BiffstaGaming/crown-and-colony/actions) — every push is gated on these same suites.
@@ -9,20 +9,20 @@
 
 | Layer | What it checks | Tooling | Count | Status | Where it runs |
 |---|---|---|---:|:--:|---|
-| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 2933 | ✅ | every push |
-| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 2933 | ✅ | every push |
-| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **2933** | ✅ | every push |
+| **L1 Unit** | Rules, formulas, state transitions (engine-free) | xUnit | included in 2937 | ✅ | every push |
+| **L2 Scenario** | Scripted multi-turn games, FreeCol cross-checks | xUnit | included in 2937 | ✅ | every push |
+| **L1+L2 total** | (the engine-free `GameLogic` suite) | xUnit | **2937** | ✅ | every push |
 | ↳ of which **E2E journeys** | Connected player journeys, milestone-asserted ([TEST-PLAN.md](TEST-PLAN.md)) | xUnit `[Trait E2E]` | 11 | ✅ | every push |
-| **L3 Interaction** | Real scenes driven by simulated input/signals | GdUnit4 | 397 | ✅ | every push (CI) |
+| **L3 Interaction** | Real scenes driven by simulated input/signals | GdUnit4 | 404 | ✅ | every push (CI) |
 | **L4 Visual** | Golden-screenshot diff of the rendered map/UI | GdUnit4 + custom diff | 18 | ✅ | every push (CI) |
 | **L5 Soak** | Multi-seed long runs + per-turn perf budget | xUnit | 5 | ✅ | nightly |
-| | | | **3353** | **all green** | |
+| | | | **3364** | **all green** | |
 
 Reproduce locally (toolchain in [CLAUDE.md](../CLAUDE.md)):
 ```
-dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (2933)
+dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category!=Soak"   # L1+L2 (2937)
 dotnet test game/tests/GameLogic.Tests/GameLogic.Tests.csproj --filter "Category=Soak"    # L5 (5)
-dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings                 # L3+L4 (415), needs GODOT_BIN
+dotnet test game/CrownAndColony.csproj --settings game/gdunit.runsettings                 # L3+L4 (422), needs GODOT_BIN
 ```
 
 ## Visual goldens (committed screenshots)
