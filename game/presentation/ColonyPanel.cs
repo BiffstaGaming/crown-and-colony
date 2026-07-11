@@ -230,12 +230,29 @@ public partial class ColonyPanel : PanelContainer
     /// </summary>
     private string Display(string shortName) => Naming.Humanize(shortName, _displayOverrides);
 
+    /// <summary>The player-facing name of a colony's <see cref="SettlementMaturity"/> tier, for the Australian colony header (WS2.7).</summary>
+    private static string MaturityLabel(SettlementMaturity tier) => tier switch
+    {
+        SettlementMaturity.Outpost => "Outpost",
+        SettlementMaturity.Township => "Township",
+        SettlementMaturity.ColonialTown => "Colonial Town",
+        SettlementMaturity.ColonialCapital => "Colonial Capital",
+        _ => "",
+    };
+
     private void Rebuild()
     {
         GetNode<Label>("VBox/ColonyTitle").Text = _colony.Name;
-        GetNode<Label>("VBox/ColonyInfo").Text =
+        string info =
             $"Population: {_colony.Population} ({_colony.IdleColonists} idle)   |   " +
             $"Food: {_colony.Food}/{Colony.FoodForGrowth}   |   Defence: +{_game.ColonyDefenceBonus(_colony)}%";
+        // WS2.7: the settlement-maturity tier (Outpost → Township → Colonial Town → Colonial Capital) — the Australian
+        // Federation-progression status. Australia-only (VictoryFederation) so the classic colony header is unchanged.
+        if (_game.Ruleset.VictoryFederation)
+        {
+            info += $"   |   {MaturityLabel(_game.SettlementMaturityOf(_colony))}";
+        }
+        GetNode<Label>("VBox/ColonyInfo").Text = info;
 
         var root = GetNode<VBoxContainer>("VBox/Scroll/Dynamic");
         root.AddThemeConstantOverride("separation", 8);

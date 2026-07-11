@@ -19,6 +19,18 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-11 — WS2.7: colony-maturity tier in the colony header
+
+**Requested (Chris):** finish WS2.7 — both remaining (maturity badge + Pioneer popup). This is the maturity badge (first of the two).
+**Did:** the `Game.SettlementMaturityOf` oracle (Outpost → Township → Colonial Town → Colonial Capital) was computed but shown nowhere — the Australian colony screen now shows the tier on its header info line (`ColonyPanel`, a `MaturityLabel` enum→name map). **Australia-only** (gated on `VictoryFederation`) → classic colony header unchanged. Render-verified (`australia-colony.png` — "Sydney … | Outpost").
+**Status:** `main` (this commit), CI verifying. Build ✓; +1 L3 (`AustraliaReskinPanelTests`: fresh Australia colony reads "Outpost"); full `ColonyPanelTests` 46 green (classic unaffected).
+**Changed:** `ColonyPanel.cs` (+tier on the info line + `MaturityLabel`), `AustraliaReskinPanelTests.cs` (+1), `australia-colony.png` (regen), `federation-victory.md` (changelog).
+**Decisions:** surfaced the tier on the existing header info line (Australia-gated) rather than a bespoke chip — a clean quick win; a fancier styled badge could follow.
+**Scheduled next:** the last WS2.7 target — the **Pioneer-attained celebration popup** (net-new modal; building now — reuses the Colopedia `FatherEffect` deriver for the summary + `Congress.Count` election detection).
+**Needs you:** nothing blocking.
+
+---
+
 ## 2026-07-11 — WS2.7 (cont.): event popup + HUD era indicator
 
 **Requested (Chris):** "That looks fine" (approved the Federation-panel direction) → continue WS2.7.

@@ -140,6 +140,31 @@ public class AustraliaReskinPanelTests
     }
 
     [TestCase]
+    public async Task ColonyPanel_UnderAustralia_ShowsTheSettlementMaturityTier()
+    {
+        // WS2.7: the Australian colony header carries the settlement-maturity tier (Outpost → … → Colonial Capital) — the
+        // Federation-progression status. This needs a REAL Australia game (VictoryFederation on), not just the display
+        // overrides (a classic ruleset), so start one through the production NewGame() path.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        GameController.PendingVariant = GameVariants.Australia;
+        GameController.PendingMapSource = CrownAndColony.GameLogic.World.MapSource.Australia;
+        typeof(GameController).GetMethod("NewGame", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(controller, null);
+        await runner.SimulateFrames(2);
+
+        Game game = GameOf(controller);
+        var colonist = System.Linq.Enumerable.First(game.Units, u => u.IsOnMap && u.Type.CanFoundColony);
+        Colony colony = game.FoundColony(colonist);
+        controller.OpenColonyPanel(colony);
+        await runner.SimulateFrames(1);
+
+        // A fresh population-1 colony is an Outpost; the tier reads in the colony header's info line (Australia-only).
+        AssertThat(controller.GetNode<Label>("UI/ColonyPanel/VBox/ColonyInfo").Text).Contains("Outpost");
+    }
+
+    [TestCase]
     public async Task Colopedia_UnderAustralia_RenamesGoodsAndBuildings()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
