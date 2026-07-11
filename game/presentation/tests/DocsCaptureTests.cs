@@ -395,6 +395,20 @@ public class DocsCaptureTests
         typeof(Colony).GetProperty("FederationSupport")!.SetValue(colony, raw); // public get / internal set — reflection reaches the setter
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task Capture_AustraliaPioneerAttained()
+    {
+        if (!Enabled) return;
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        GameController controller = StartAustralia(runner, CaptureSize);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        // The Historical-Figure-attained celebration for Henry Parkes (WS2.7 render-verify).
+        controller.GetNode<PioneerAttainedPanel>("UI/PioneerAttainedPanel")
+            .Open(game, "model.foundingFather.henryParkes", "Federation Convention", GameLogic.Specification.GameVariants.Australia.DisplayOverrides);
+        await CapturePanel(runner, controller, "australia-pioneer-attained");
+    }
+
     private static Game GameOf(GameController controller) =>
         (Game)controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(controller)!;
 

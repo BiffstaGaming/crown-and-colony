@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-12 — WS2.7: Historical-Figure-attained celebration popup (WS2.7 complete)
+
+**Requested (Chris):** finish WS2.7 — both remaining (maturity badge + Pioneer popup). This is the **Pioneer popup** — the second and last of the two, completing the WS2.7 UI-polish pass.
+**Did:**
+- **New `PioneerAttainedPanel`** — a parchment celebration modal for the moment a Founding Father / Australian **Pioneer** joins. Before this, the join was only a buried line in the History log. Shows the figure's name + the body joined (`CongressName` — "Federation Convention"), their design **category** (Trade→Industry & Commerce, Exploration→Exploration & Infrastructure, Military→Settlement/Admin/Defence, Political→Democracy & Federation, Religious→Social Reform & First Nations), a lore line, and a plain-English **perk summary** (mirrors the Colopedia father-effect deriver; names read through the variant `DisplayOverrides`).
+- **Wired into `GameController`** — detects a new `Congress` member each `RefreshView` (via `_lastCongressCount`) and opens the popup, **gated on `Ruleset.VictoryFederation`** → classic never shows it (classic UI byte-unchanged; presentation-only, ADR-006).
+- **Fixed two code-built-overlay bugs found by render-verify** — (1) a centre-anchored overlay corner-pins against its 0-size `CanvasLayer` parent → now centred by absolute position off `GetViewportRect` (the memory `godot-overlay-modal-pattern`); (2) an autowrap label with no pinned width reports its min-height one-char-wide, which ballooned the card to full viewport height with a slab of dead parchment → labels now pin a width and the panel hugs its content.
+**Status:** verified, **committing now**. Build ✓; +2 L3 (`PioneerAttainedPanelTests`: renders name/body/category/perk **and hugs its content** — the content-hug assert is a regression guard for the sizing bug; electing a figure through a live controller fires the popup). Render-verified (`australia-pioneer-attained.png` — "Henry Parkes joins the Federation Convention", centred, content-hugged). CI to confirm L3 on the Linux runner.
+**Changed:** `PioneerAttainedPanel.cs` (positioning + content-hug fix), `GameController.cs` (detection wiring — already present), `PioneerAttainedPanelTests.cs` (+regression guard), `DocsCaptureTests.cs` (+capture), `australia-pioneer-attained.png` (new), `federation-victory.md` (changelog + §3 note + L3 row).
+**Decisions:** centred + content-hugged via the documented code-built-overlay contract rather than a scene file — keeps the panel with its `FederationPanel` sibling in code, added to the same `UI` layer. Portrait is text-only for Australian Pioneers (FreeCol has no portraits for them; the seam is ready for the images Chris supplies).
+**Scheduled next:** WS2.7 is **done** (all four targets: Federation panel, event popup, HUD era, maturity badge, Pioneer popup). Awaiting Chris's steer on the next stream — options: **WS2** (deeper Australian visual identity), **WS3** (Federation depth — per-colony targets / clauses), **WS6** (content & balance — Pioneer magnitudes are placeholders). No kanban task is pre-selected.
+**Follow-ups:** Pioneer-effect magnitudes remain balance placeholders (doc federation-victory §5); Pioneer portraits await Chris's images (WS1.4 seam ready).
+**Needs you:** eyeball `australia-pioneer-attained.png` if you like. Sign-offs unchanged (William Barak cultural-protocol sign-off `86d3n855a`; 4c.11 event framings) — none touched here. **Pick the next stream when ready.**
+
+---
+
 ## 2026-07-11 — WS2.7: colony-maturity tier in the colony header
 
 **Requested (Chris):** finish WS2.7 — both remaining (maturity badge + Pioneer popup). This is the maturity badge (first of the two).

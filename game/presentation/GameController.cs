@@ -202,6 +202,10 @@ public partial class GameController : Node2D
     // slot — Federation *replaces* the classic War-of-Independence win for the variant, so the two are mutually exclusive.
     private FederationPanel _federationPanel = null!;
     private Button _federationButton = null!;
+    // WS2.7: the Historical-Figure-attained celebration modal (Australia-only), and the Congress size last seen — a new
+    // Congress member between refreshes means a figure was just elected, so the modal fires for the newest one.
+    private PioneerAttainedPanel _pioneerPanel = null!;
+    private int _lastCongressCount;
     // Advisor dismissal is sticky per selected unit: once the player dismisses the advisor card for the active unit it
     // stays hidden for that unit (RefreshView runs on every move/action and would otherwise resurrect it, 86d3jrzah),
     // and re-appears when a *different* unit is selected. _advisorDismissedUnitId records which unit the flag applies to.
@@ -360,6 +364,8 @@ public partial class GameController : Node2D
         GetNode<CanvasLayer>("UI").AddChild(_federationPanel);
         _federationPanel.VisibilityChanged += RefreshHudButtonVisibility;
         _federationPanel.VisibilityChanged += RefreshTutorial;
+        _pioneerPanel = new PioneerAttainedPanel(); // WS2.7 Historical-Figure-attained celebration (Australia-only)
+        GetNode<CanvasLayer>("UI").AddChild(_pioneerPanel);
         _federationButton = new Button { Name = "FederationButton", Text = "Federation…", Visible = false };
         _federationButton.Pressed += OpenFederationPanel;
         GetNode<CanvasLayer>("UI").AddChild(_federationButton);
@@ -735,6 +741,7 @@ public partial class GameController : Node2D
     private void StartGame(Game game)
     {
         _game = game;
+        _lastCongressCount = game.HumanPlayer.Congress.Count; // WS2.7: baseline the Congress size so a loaded game's existing figures don't re-fire the attained popup
         ColonyArt.VariantArtRoot = _variant.ArtRoot; // WS1.3: variant art wins where it exists, else FreeCol (both new-game + load reach here after _variant is set)
         _lastMapTopDown = MapView.TopDown; // baseline the map projection so a later live map-view toggle is detected
         _selectedUnit = null;
@@ -3017,6 +3024,19 @@ public partial class GameController : Node2D
         // (end turn, attacks, panels), so re-deriving the context here catches every war start/end. No-op when nothing
         // audible changed.
         RefreshMusicContext();
+
+        // WS2.7: a Historical Figure was just elected if the human's Congress grew since the last refresh — celebrate the
+        // newest one in a modal (Australia-only; classic keeps the plain history-log line). _lastCongressCount is bumped so
+        // it fires exactly once, and the Visible guard stops a re-open while it is already up.
+        int congressCount = _game.HumanPlayer.Congress.Count;
+        if (congressCount > _lastCongressCount)
+        {
+            if (_game.Ruleset.VictoryFederation && !_pioneerPanel.Visible)
+            {
+                _pioneerPanel.Open(_game, _game.HumanPlayer.Congress[^1], _variant.CongressName, _variant.DisplayOverrides);
+            }
+            _lastCongressCount = congressCount;
+        }
 
         // Drop a stale selection: the selected unit may have just joined a colony (or been removed in combat),
         // so it's no longer in the game — leaving it dangling would mis-route the next map click.
