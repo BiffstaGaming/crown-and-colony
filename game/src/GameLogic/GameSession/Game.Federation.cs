@@ -43,6 +43,13 @@ public sealed partial class Game
     /// <summary>The per-region Federation Support percentage every active region must reach before a referendum may be put (design Phase 5: "each colony has at least 50% Federation Support").</summary>
     internal const int RegionSupportForReferendum = 50;
 
+    /// <summary>
+    /// The per-region Federation Support percentage each colony region must reach for a referendum to be put — a read-only
+    /// oracle over <see cref="RegionSupportForReferendum"/> for the presentation layer (ADR-006), so the Federation panel
+    /// can draw the referendum bar (a threshold marker on each support gauge, and the "federation-ready" colour above it).
+    /// </summary>
+    public int ReferendumSupportThreshold => RegionSupportForReferendum;
+
     /// <summary>The share of each turn's net Civic Voice that also accrues as national Convention Points (a light fraction so points trail support — the design keeps them a separate, slower axis).</summary>
     private const int ConventionPointsPerCivicVoicePercent = 25;
 

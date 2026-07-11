@@ -19,6 +19,25 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-11 — WS2.7: Federation panel — plain → designed (UI polish)
+
+**Requested (Chris):** WS2.7 go for it (lift the panels from plain to designed).
+**Did:**
+- **Redesigned the marquee `FederationPanel`** (the campaign's central dashboard, and the plainest screen). Before: a centered title, a sentence, `Convention Points: N` as bare text, and six rows of **default grey Godot progress bars**. After, on the parchment/wood theme:
+  - a **five-step phase tracker** (Maturity → Convention → Constitution → Referendum → Commonwealth) with the current stage lit gold, past stages filled wood, future dimmed;
+  - per-colony **styled support gauges** — a recessed parchment trough + a fill **colored by readiness** (barn-red well below the bar, ochre climbing, federation-green at/over it) + a **gold threshold marker** at the 50% referendum bar;
+  - a **gold-edged Convention Points chip**, `ColonyTitle`/`SectionHeader` typographic variations, and a gold call-to-action on the one enabled action.
+- **Render-verified in-game** — captured `docs/guide/img/australia-federation.png` (the capture now founds six colonies with a support spread so the full gauge range shows). It reads clearly as designed.
+- **Presentation-only** (ADR-006) — the panel still just reads oracles + forwards the two commands; **no rules change**. One tiny GameLogic add: a public read-only `Game.ReferendumSupportThreshold` oracle (exposes the referendum bar for the marker + color). Australia-only panel → **classic UI untouched**.
+- **Scoped the whole of WS2.7 first** (a 5-agent workflow: current panels + theme primitives + golden harness + design intent). Golden note: pixel-golden regen is CI-Linux-only (a Windows render fails the diff), so I did **not** commit a Windows golden — render-verified + added an L3 **structural** test instead (the phase tracker + styled gauges + title variation), so a regression to the plain look is caught.
+**Status:** verified, **committing after the review** (adversarial review running). Build ✓; L1/L2 **2955** + determinism soak green; L3 `FederationPanelTests` **3** (+1 new) green.
+**Changed:** `FederationPanel.cs` (rewrite), `Game.Federation.cs` (+`ReferendumSupportThreshold` oracle), `FederationPanelTests.cs` (+1), `DocsCaptureTests.cs` (spread capture), `docs/guide/img/australia-federation.png` (regen), `federation-victory.md`.
+**Decisions:** focus the pass on the highest-impact marquee panel (FederationPanel) + show you before/after, rather than a shallow pass over all five WS2.7 targets; no committed pixel golden (CI-render constraint) — L3 structural test + render capture instead; palette re-declared locally (the EuropePanel precedent, ColonyTheme's is private).
+**Scheduled next:** the **other WS2.7 targets** as follow-ups — the **event popup** (`EventChoicePanel`) is the next quick win, then the HUD **era indicator** + colony-maturity badges + the Pioneer-attained popup. Or your pick.
+**Needs you:** **eyeball `docs/guide/img/australia-federation.png`** and tell me if the direction's right before I apply the same treatment to the other panels. Open sign-offs unchanged (portraits, Barak, 4c.11).
+
+---
+
 ## 2026-07-11 — WS4.4: four Pioneers get their second (Federation-support) clause
 
 **Requested (Chris):** move onto 4.4 (complete the deferred multi-clause Pioneer perks).

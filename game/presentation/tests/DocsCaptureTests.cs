@@ -357,10 +357,42 @@ public class DocsCaptureTests
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
         GameController controller = StartAustralia(runner, CaptureSize);
         await runner.SimulateFrames(2);
-        Game game = GameOf(controller);
-        game.FoundColony(game.Units[0]); // a colony so the Federation panel shows a region with support
+        // Build a fresh Australia game with a colony founded in every region (the FederationPanelTests fixture pattern —
+        // founding on the started game's owned tiles conflicts), seed a spread of Federation Support via reflection over the
+        // internal setter (the DocsCaptureTests idiom), and swap it into the controller so the redesigned gauges render
+        // across their full range: green over the referendum bar, ochre climbing to it, barn-red well below, gold bar marker
+        // on each. (WS2.7 render-verify.)
+        GameLogic.Specification.Ruleset aus = GameLogic.Specification.GameVariants.Australia.LoadRuleset();
+        Game game = Game.New(aus, 0xFED0A05UL, mapSource: GameLogic.World.MapSource.Australia);
+        (GameLogic.World.AustraliaColony Colony, int Pct)[] spread =
+        {
+            (GameLogic.World.AustraliaColony.NewSouthWales, 74),
+            (GameLogic.World.AustraliaColony.Victoria, 61),
+            (GameLogic.World.AustraliaColony.Queensland, 52),
+            (GameLogic.World.AustraliaColony.SouthAustralia, 38),
+            (GameLogic.World.AustraliaColony.Tasmania, 24),
+            (GameLogic.World.AustraliaColony.WesternAustralia, 11),
+        };
+        foreach ((GameLogic.World.AustraliaColony region, int pct) in spread)
+        {
+            GameLogic.World.Position tile = GameLogic.World.AustraliaColonyStart.StartTile(region);
+            Unit colonist = game.SpawnUnit(aus.Unit(Colony.FreeColonistTypeId), tile);
+            Colony founded = game.FoundColony(colonist);
+            SeedFederationSupport(founded, pct);
+        }
+        SetGame(controller, game);
+        await runner.SimulateFrames(1);
         controller.OpenFederationPanel();
         await CapturePanel(runner, controller, "australia-federation");
+    }
+
+    /// <summary>Sets a colony's Federation Support to <paramref name="percent"/>% of its own bar, via reflection over the
+    /// internal <c>RebelLibertyDivisor</c>/<c>FederationSupport</c> members (capture-only — the panel reads them back).</summary>
+    private static void SeedFederationSupport(Colony colony, int percent)
+    {
+        int divisor = (int)typeof(Colony).GetProperty("RebelLibertyDivisor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(colony)!;
+        int raw = percent * divisor * colony.Population / 100;
+        typeof(Colony).GetProperty("FederationSupport")!.SetValue(colony, raw); // public get / internal set — reflection reaches the setter
     }
 
     private static Game GameOf(GameController controller) =>

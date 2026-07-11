@@ -71,6 +71,40 @@ public class FederationPanelTests
     }
 
     [TestCase]
+    public async Task Open_RendersTheDesignedTreatment_PhaseTracker_AndStyledSupportGauges()
+    {
+        // WS2.7 UI polish: the panel is lifted from plain labels + default progress bars to a designed treatment. Guard the
+        // structural markers of that redesign — the five-step phase tracker, and per-region support GAUGES (a ProgressBar
+        // carrying background + fill stylebox overrides), so a regression back to the plain look is caught.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");
+        await runner.SimulateFrames(2);
+        var host = (Control)runner.Scene();
+
+        Game game = NewAustralia();
+        FoundIn(game, AustraliaColony.NewSouthWales);
+        FederationPanel panel = AddPanel(host);
+
+        panel.Open(game, () => { });
+        await runner.SimulateFrames(1);
+
+        var body = panel.GetNode<VBoxContainer>($"VBox/{FederationPanel.BodyName}");
+        // The five-step phase tracker, with a chip per phase.
+        var tracker = body.GetNodeOrNull<HBoxContainer>("PhaseTracker");
+        AssertThat(tracker).IsNotNull();
+        AssertThat(tracker!.GetChildCount()).IsEqual(5);
+        // Each region's bar is a styled gauge (recessed trough + coloured fill), not a stock ProgressBar.
+        var bar = body.GetNode<ProgressBar>("Region_newSouthWales/Bar");
+        AssertThat(bar.HasThemeStyleboxOverride("fill")).IsTrue();
+        AssertThat(bar.HasThemeStyleboxOverride("background")).IsTrue();
+        // The referendum-bar marker rides on the gauge.
+        AssertThat(bar.GetNodeOrNull("ReferendumMark")).IsNotNull();
+        // The title carries the theme's display-title variation (designed hierarchy).
+        AssertThat(panel.GetNode<Label>("VBox/FederationTitle").ThemeTypeVariation.ToString()).IsEqual("ColonyTitle");
+
+        panel.QueueFree();
+    }
+
+    [TestCase]
     public async Task CallConvention_IsDisabledWithAReason_UntilThresholdsAreMet()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");
