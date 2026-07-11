@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-11 — WS2.7 (cont.): event popup + HUD era indicator
+
+**Requested (Chris):** "That looks fine" (approved the Federation-panel direction) → continue WS2.7.
+**Did:**
+- **Event popup (`EventChoicePanel`) designed treatment** — from a bare title + prompt + unlabelled buttons to the doc-19 template: the title in the display serif (`ColonyTitle`), the prompt as a centred wrapped paragraph, and the choices as **numbered** ("1. …" / "2. …") full-width buttons under a **"Choose a response:"** lead-in. Render-verified (`australia-event.png` — the Eureka dilemma now reads as a clear titled prompt + numbered choice list).
+- **HUD era indicator** — the status strip now shows the current Australian **era** (Survival → … → Federation), read from the existing public `Game.CurrentEventEra` oracle via a small presentation-side mapper. Render-verified — the HUD reads "Turn 1 (1788) · Survival". **Empty for classic** (every year is `EventEra.Pre`), so the classic HUD string is **byte-for-byte unchanged** (the concat reproduces the old string exactly).
+- **Presentation-only** (ADR-006) — no rules change, no GameLogic change (both read existing oracles).
+**Status:** verified, **committing now**. Build ✓; L3 `EventChoicePanelTests` + `MainSceneTests` green (+2 assertions/test: numbered choices + lead-in + title variation; era token for Australia, absent for classic). The 8 map-golden **local** failures are the known Windows-vs-CI-Linux renderer diff (UI-only change can't touch map tiles; they pass on CI).
+**Changed:** `EventChoicePanel.cs`, `GameController.cs` (+`EventEraLabel` + era token), `EventChoicePanelTests.cs` (+asserts), `MainSceneTests.cs` (+HUD-era test), `australia-event.png` + `australia-world-hud.png` (regen), `events.md` (changelog).
+**Decisions:** kept the event buttons theme-default wood (not gold) — they're equal choices, not a single CTA; the 2-part flavor/consequence body split (doc 19) is deferred — the engine exposes a single `ev.Prompt` (needs a new EventDef field).
+**Scheduled next:** the last WS2.7 targets — **colony-maturity badges** (the `SettlementMaturityOf` oracle exists, surfaced nowhere) and the **Pioneer-attained celebration popup** (net-new modal; the join moment is only a history-log line today). Or your pick.
+**Needs you:** eyeball `australia-event.png` if you like; nothing blocking. Sign-offs unchanged.
+
+---
+
 ## 2026-07-11 — WS2.7: Federation panel — plain → designed (UI polish)
 
 **Requested (Chris):** WS2.7 go for it (lift the panels from plain to designed).

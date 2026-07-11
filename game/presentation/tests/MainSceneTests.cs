@@ -41,6 +41,30 @@ public class MainSceneTests
     }
 
     [TestCase]
+    public async Task Hud_ShowsTheAustralianEraToken_ForAustralia_ButNotForClassic()
+    {
+        // WS2.7: the HUD status strip carries an Australian-era token (Survival … Gold Rush … Federation). It is empty for
+        // the classic calendar (every year is EventEra.Pre, outside the 1788–1901 window), so the classic HUD is unchanged.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        // The default scene is a classic 1492 game → no era token.
+        AssertThat(controller.GetNode<Label>("UI/StatusLabel").Text.Contains("Survival")).IsFalse();
+
+        // Start an Australia game (opens in 1788 — the Survival era) via the production NewGame() path.
+        GameController.PendingVariant = GameVariants.Australia;
+        GameController.PendingMapSource = CrownAndColony.GameLogic.World.MapSource.Australia;
+        typeof(GameController).GetMethod("NewGame", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(controller, null);
+        await runner.SimulateFrames(2);
+
+        // …and the status strip now carries the era token (1788 → Survival).
+        string status = controller.GetNode<Label>("UI/StatusLabel").Text;
+        AssertThat(status).Contains("1788");
+        AssertThat(status).Contains("Survival");
+    }
+
+    [TestCase]
     public async Task CalendarHud_ShowsTheDate_AndAdvancesWithTheTurn()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");

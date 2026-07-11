@@ -42,27 +42,54 @@ public partial class EventChoicePanel : PanelContainer
             return;
         }
 
-        GetNode<Label>("VBox/EventTitle").Text = ev.DisplayName;
+        // WS2.7 designed treatment: the event title carries the theme's display-title variation; the prompt reads as a
+        // centred, wrapped paragraph; the choices are a "Choose a response:" lead-in over NUMBERED, full-width choice
+        // buttons (doc 19's event-popup template). Presentation-only — the wood-on-parchment styling is the shared theme.
+        var title = GetNode<Label>("VBox/EventTitle");
+        title.Text = ev.DisplayName;
+        title.ThemeTypeVariation = "ColonyTitle";
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+
         var prompt = GetNode<Label>("VBox/EventPrompt");
         prompt.Text = ev.Prompt ?? string.Empty;
         prompt.Visible = !string.IsNullOrWhiteSpace(ev.Prompt);
+        prompt.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        prompt.HorizontalAlignment = HorizontalAlignment.Center;
+        prompt.CustomMinimumSize = new Vector2(460, 0); // a comfortable reading measure
 
         var dynamic = GetNode<VBoxContainer>("VBox/Dynamic");
+        dynamic.AddThemeConstantOverride("separation", 6);
         foreach (Node child in dynamic.GetChildren())
         {
             dynamic.RemoveChild(child); child.QueueFree(); // detach now (signal-safe), free deferred — a button's handler drives the resolve
         }
 
+        if (offer.OptionIds.Count > 1)
+        {
+            dynamic.AddChild(new Label
+            {
+                Name = "ChooseLeadIn",
+                Text = "Choose a response:",
+                HorizontalAlignment = HorizontalAlignment.Center,
+            });
+        }
+
+        int number = 1;
         foreach (string optionId in offer.OptionIds)
         {
             string chosen = optionId; // capture for the closure
+            string label = ev.Option(optionId)?.DisplayLabel ?? Naming.Humanize(optionId);
             var button = new Button
             {
                 Name = $"Choose_{optionId}",
-                Text = ev.Option(optionId)?.DisplayLabel ?? Naming.Humanize(optionId),
+                Text = $"{number}.   {label}", // numbered choices (doc 19 template)
+                Alignment = HorizontalAlignment.Left, // reads as a list of responses
+                SizeFlagsHorizontal = SizeFlags.ExpandFill, // full-width choice rows
+                CustomMinimumSize = new Vector2(0, 34),
             };
             button.Pressed += () => Resolve(chosen);
             dynamic.AddChild(button);
+            number++;
         }
 
         Show();

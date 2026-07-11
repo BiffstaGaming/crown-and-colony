@@ -49,6 +49,11 @@ public class EventChoicePanelTests
         AssertThat(reform).IsNotNull();
         AssertThat(suppress).IsNotNull();
         AssertThat(reform!.Text).IsNotEmpty();
+        // WS2.7 designed treatment: the choices are numbered ("1." / "2.") under a "Choose a response:" lead-in.
+        AssertThat(reform.Text).StartsWith("1.");
+        AssertThat(suppress!.Text).StartsWith("2.");
+        AssertThat(controller.GetNodeOrNull("UI/EventChoicePanel/VBox/Dynamic/ChooseLeadIn")).IsNotNull();
+        AssertThat(controller.GetNode<Label>("UI/EventChoicePanel/VBox/EventTitle").ThemeTypeVariation.ToString()).IsEqual("ColonyTitle");
 
         reform.EmitSignal(BaseButton.SignalName.Pressed);
         await runner.SimulateFrames(1);

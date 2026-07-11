@@ -1255,6 +1255,22 @@ public partial class GameController : Node2D
     }
 
     /// <summary>
+    /// The player-facing name of the current Australian historical era, for the HUD status strip (WS2.7). Returns the empty
+    /// string for <see cref="Game.EventEra.Pre"/> — every year outside the 1788–1901 Australian window, which is the whole
+    /// classic calendar — so the classic HUD shows no era token and stays byte-for-byte unchanged.
+    /// </summary>
+    private static string EventEraLabel(Game.EventEra era) => era switch
+    {
+        Game.EventEra.Survival => "Survival",
+        Game.EventEra.Expansion => "Expansion",
+        Game.EventEra.ColonyFormation => "Colony Formation",
+        Game.EventEra.GoldRush => "Gold Rush",
+        Game.EventEra.Infrastructure => "Infrastructure",
+        Game.EventEra.Federation => "Federation",
+        _ => "", // Pre — the classic calendar / any year outside the window: no era token
+    };
+
+    /// <summary>
     /// The single authoritative table of in-game keyboard shortcuts (`86d3f0vjg`; named-action migration `86d3f0wjj`).
     /// Both the <see cref="_UnhandledInput"/> dispatch <b>and</b> the F1 keys legend are generated from this one list,
     /// so a key and its on-screen description can never drift apart. Each row pairs a named <c>InputMap</c> action id
@@ -3054,8 +3070,13 @@ public partial class GameController : Node2D
         string libertyLabel = _variant.LibertyName is { Length: > 0 } lib
             ? char.ToUpperInvariant(lib[0]) + lib[1..]
             : "Liberty";
+        // WS2.7: an Australian-era token in the status strip (Survival … Gold Rush … Federation). Empty outside the
+        // 1788–1901 window (the whole classic calendar is EventEra.Pre), so the classic HUD is byte-for-byte unchanged.
+        string era = EventEraLabel(_game.CurrentEventEra);
         string status =
-            $"{nation}      Turn {_game.Turn} ({_game.CalendarLabel})      Gold {_game.HumanPlayer.Gold:N0}" +
+            $"{nation}      Turn {_game.Turn} ({_game.CalendarLabel})" +
+            (era.Length > 0 ? $"  ·  {era}" : "") +
+            $"      Gold {_game.HumanPlayer.Gold:N0}" +
             $"      Tax {_game.TaxRate}%      {libertyLabel} {_game.NationalSonsOfLiberty(_game.HumanPlayer)}%";
         if (_notice is not null)
         {
