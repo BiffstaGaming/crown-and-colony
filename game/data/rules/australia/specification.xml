@@ -2986,6 +2986,9 @@
     <founding-father id="model.foundingFather.georgeFifeAngas" type="trade"
                      weight1="2" weight2="6" weight3="6">
       <event id="model.event.boycottsLifted"/>
+      <!-- WS4.4 (doc 08 clause 4): "Colonial Credit" — the Father of South Australia lifts SA Federation Support on
+           election. Australia-only ability (classic declares none → no-op → byte-identical); handled in Game.AustralianEffects. -->
+      <ability id="model.ability.colonialCredit" value="true"/>
     </founding-father>
     <!-- Edward Hargraves — "Payable Gold": the gold rush; silver is the classic mineral stand-in for gold.
          BESPOKE on-election handler (4d.5, Game.AustralianEffects): reveals 2–4 Gold deposits on explored
@@ -3210,6 +3213,9 @@
                 type="percentage" value="25">
         <scope ability-id="model.ability.person" match-negated="true"/>
       </modifier>
+      <!-- WS4.4 (doc 12 clause 2): the SA suffrage campaigner lowers South Australia's Federation support target (modelled
+           as +support to SA) on election. Australia-only ability (classic declares none → no-op → byte-identical). -->
+      <ability id="model.ability.womensSuffrage" value="true"/>
     </founding-father>
     <!-- Louisa Lawson — "The Dawn Press" (doc 12): founder of The Dawn, the paper that campaigned for women's
          suffrage and reform. The press amplifies civic voice — modelled as +50% Civic Voice (bells) produced by

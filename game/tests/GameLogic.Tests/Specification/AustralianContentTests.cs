@@ -33,6 +33,8 @@ public class AustralianContentTests
     private const string Quick = "model.foundingFather.johnQuick";
     private const string Griffith = "model.foundingFather.samuelGriffith";
     private const string Spence = "model.foundingFather.catherineHelenSpence";
+    private const string Angas = "model.foundingFather.georgeFifeAngas"; // WS4.4
+    private const string MaryLee = "model.foundingFather.maryLee"; // WS4.4
     private const string GoldResource = "model.resource.silver"; // silver = the reskin's Gold stand-in
     private const string FoodId = "model.goods.food";
     private const string ToolsId = "model.goods.tools";
@@ -359,6 +361,93 @@ public class AustralianContentTests
             bool withoutQuick = RunReferendum(FederationSeed, withQuick: false, supportPercent: support);
             bool withQuick = RunReferendum(FederationSeed, withQuick: true, supportPercent: support);
             Assert.True(!withoutQuick || withQuick, $"Quick must never turn a carrying vote into a failure (support {support})");
+        }
+    }
+
+    // ───────────────────────── WS4.4: second Federation-support clauses ─────────────────────────
+
+    [Fact]
+    public void WS44Pioneers_CarryTheirAustraliaOnlyFederationSupportAbilities()
+    {
+        // WS4.4 adds a second, region-scoped Federation-support clause to four Pioneers. Angas + Mary Lee get a new
+        // Australia-only ability; Barton + Griffith extend their EXISTING conventionDrive/draftConstitution handlers
+        // (no new ability — asserted by the on-election tests below).
+        Assert.Contains(Australia.Father(Angas).Abilities, a => a.Id == "model.ability.colonialCredit" && a.Value);
+        Assert.Contains(Australia.Father(MaryLee).Abilities, a => a.Id == "model.ability.womensSuffrage" && a.Value);
+
+        // Classic knows neither (byte-identical guard).
+        foreach (string ability in new[] { "model.ability.colonialCredit", "model.ability.womensSuffrage" })
+        {
+            Assert.DoesNotContain(Classic.FoundingFathers.SelectMany(f => f.Abilities), a => a.Id == ability);
+        }
+    }
+
+    [Fact]
+    public void ElectingAngas_LiftsFederationSupport_InSouthAustraliaOnly() =>
+        AssertElectionBoostsOneRegionOnly(Angas, AustraliaColony.SouthAustralia);
+
+    [Fact]
+    public void ElectingMaryLee_LiftsFederationSupport_InSouthAustraliaOnly() =>
+        AssertElectionBoostsOneRegionOnly(MaryLee, AustraliaColony.SouthAustralia);
+
+    [Fact]
+    public void ElectingBarton_AlsoLiftsFederationSupport_InNewSouthWales() =>
+        // Barton's convention-point drive is unchanged (a separate test); WS4.4 adds an NSW support boost on top.
+        AssertElectionBoostsOneRegionOnly(Barton, AustraliaColony.NewSouthWales);
+
+    [Fact]
+    public void ElectingGriffith_AlsoLiftsFederationSupport_InTheHardestColony()
+    {
+        // Griffith's WS4.4 clause boosts the player's HARDEST (lowest-support) colony. FederationGame is deterministic
+        // (fixed seed), so the hardest colony is stable; assert it gains more than the no-election control, and no other
+        // colony does (exactly one +5 boost landed).
+        Game control = FederationGame(out var controlColonies);
+        var controlBefore = SupportByColony(controlColonies);
+        control.EndTurn();
+        var controlAfter = SupportByColony(ReresolveAll(control));
+
+        Game game = FederationGame(out var colonies);
+        var before = SupportByColony(colonies);
+        // Hardest = lowest support as a percentage of its own (per-colony) referendum bar — the same measure the handler
+        // and the referendum gate use (not raw points, which aren't comparable across colony populations).
+        AustraliaColony hardest = colonies.OrderBy(kv => kv.Value.FederationSupportPercent).ThenBy(kv => kv.Value.Id).First().Key;
+        ElectFather(ref game, Griffith, ref colonies);
+        var after = SupportByColony(colonies);
+
+        Assert.Contains(Griffith, game.Congress);
+        Assert.True(after[hardest] - before[hardest] > controlAfter[hardest] - controlBefore[hardest],
+            $"the hardest colony {hardest} should gain more than the no-election control");
+        foreach (AustraliaColony c in AustraliaColonyStart.All.Where(c => c != hardest))
+        {
+            Assert.True(after[c] - before[c] <= controlAfter[c] - controlBefore[c],
+                $"{c} (not the hardest colony) should gain no more than the no-election control");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that electing <paramref name="fatherId"/> lifts Federation Support in <paramref name="boostedRegion"/>'s
+    /// colony <b>more</b> than a no-election control, while every other region gains no more than the control — isolating
+    /// the region-scoped on-election boost from the turn's ordinary Civic-Voice accrual (the Spence-test method).
+    /// </summary>
+    private static void AssertElectionBoostsOneRegionOnly(string fatherId, AustraliaColony boostedRegion)
+    {
+        Game control = FederationGame(out var controlColonies);
+        var controlBefore = SupportByColony(controlColonies);
+        control.EndTurn();
+        var controlAfter = SupportByColony(ReresolveAll(control));
+
+        Game game = FederationGame(out var colonies);
+        var before = SupportByColony(colonies);
+        ElectFather(ref game, fatherId, ref colonies);
+        var after = SupportByColony(colonies);
+
+        Assert.Contains(fatherId, game.Congress);
+        Assert.True(after[boostedRegion] - before[boostedRegion] > controlAfter[boostedRegion] - controlBefore[boostedRegion],
+            $"{boostedRegion} should gain more than the no-election control");
+        foreach (AustraliaColony c in AustraliaColonyStart.All.Where(c => c != boostedRegion))
+        {
+            Assert.True(after[c] - before[c] <= controlAfter[c] - controlBefore[c],
+                $"{c} should gain no more than the no-election control (only {boostedRegion} is boosted)");
         }
     }
 

@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-11 — WS4.4: four Pioneers get their second (Federation-support) clause
+
+**Requested (Chris):** move onto 4.4 (complete the deferred multi-clause Pioneer perks).
+**Did:**
+- **Scoped all 25 Pioneers × ~4 clauses first** (a 5-agent workflow vs docs 08–12 + the code + a feasibility map). The honest finding: **most deferred clauses are blocked on ~28 missing backing systems** (terrain-scoped modifiers, construction-cost/rush-buy modifiers, new tile-improvement/reform/policy frameworks, spoilage/drought/distance-decay, etc.) — exactly the task's "as their backing systems land" gate. I did **not** fake those; I captured the full deferral map (which system unblocks which clause) in ROAD_TO_100.
+- **Shipped the clean, faithful, no-new-system slice: four Federation-support second-clauses**, each reusing the proven `AddFederationSupport…`/on-election-handler pattern (a doc "**target −N**" = **+N support** to that colony/region). **Angas** "Colonial Credit" → +5 SA (new ability + handler); **Mary Lee** → +5 SA (new ability + handler); **Barton** → also +3 NSW (extended his existing convention-drive handler); **Griffith** → also +5 to the *hardest* (lowest-support) colony (extended his drafting handler + new `AddFederationSupportToHardestColony`). All Australia-only + VictoryFederation-gated → **classic byte-identical**; RNG-free.
+- **Deliberately deferred (verified, not gold-plated):** Leichhardt's scout-scoped +2 sight — I checked and it's *not* a pure spec change (the sight fold doesn't honour unit-type scope; regular scouts have no scope-able ability), so it needs a small sight-fold change → follow-up. The two victory-**gate** live-reads (Barton "referendum callable >50", Quick "convention −25%") are balance-sensitive → Federation pass.
+- **Adversarial review** running; will fold any finding before pushing.
+**Status:** verified, **committing after the review**. Build ✓; full L1/L2 **2955** (+5 WS4.4 tests) + determinism soak green (classic byte-identical).
+**Changed:** `Game.Federation.cs` (+2 support helpers), `Game.AustralianEffects.cs` (2 new handlers + 2 extended + dispatch + consts), `specification.xml` (Angas/Mary Lee abilities), `AustralianContentTests.cs` (+5 tests), `founding-fathers.md` + `federation-victory.md` + `ROAD_TO_100.md` (docs + deferral map).
+**Decisions:** ship only the backable-faithful subset (4 clauses) + document the rest as system-blocked; "target −N" modelled as "+N support" (equivalent vs the fixed ceiling); Barton/Griffith extend existing handlers (one ability per Pioneer). Magnitudes are the docs' own (+3/+5), flagged as balance placeholders (a stacking note for SA).
+**Scheduled next:** awaiting Chris's steer — WS2.7 (UI polish, no art), Fidelity native first contact, or WS2 visual identity (name now locked as Crown & Colony).
+**Needs you:** nothing blocking. The WS4.4 magnitudes + the SA-stacking join the existing Federation balance-placeholder list (federation-victory §5). Still-open sign-offs (unchanged): WS1.4 portrait images + Barak + 4c.11 framings.
+
+---
+
 ## 2026-07-11 — M-E: conditional & linked events + game name confirmed
 
 **Requested (Chris):** confirm the game name (→ **Crown & Colony**, ampersand — already in code, no change), then take on a self-contained dev item → **M-E: conditional/linked events (doc 01 §2)**.

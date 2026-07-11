@@ -163,6 +163,54 @@ public sealed partial class Game
     }
 
     /// <summary>
+    /// Adds <paramref name="support"/> Federation Support to every colony <paramref name="player"/> holds in the single
+    /// region <paramref name="regionKey"/> (WS4.4 — the region-scoped Pioneer levers: George Fife Angas' South-Australian
+    /// credit and Mary Lee's South-Australian suffrage advocacy both lift SA; Edmund Barton's convention drive lifts NSW).
+    /// A per-colony <b>target reduction of N</b> is modelled as <b>+N support</b> to that colony — mathematically the same
+    /// against the fixed support ceiling, reusing this one lever. <b>A no-op unless the ruleset enables the Federation
+    /// victory</b> (classic has none) → byte-identical (ADR-009). Colonies visited in id order (deterministic); RNG-free.
+    /// </summary>
+    /// <param name="player">The player whose colonies in the region gain support (the electing Pioneer's owner).</param>
+    /// <param name="regionKey">The <see cref="Region.Key"/> of the colony region to boost (e.g. <c>model.region.southAustralia</c>).</param>
+    /// <param name="support">Federation Support points added to each colony in that region.</param>
+    internal void AddFederationSupportToRegion(Player player, string regionKey, int support)
+    {
+        if (!Ruleset.VictoryFederation || support == 0)
+        {
+            return; // classic / non-Federation ruleset — byte-identical (ADR-009)
+        }
+        foreach (Colony colony in ColoniesOf(player).OrderBy(c => c.Id))
+        {
+            if (Map.RegionOf(colony.Position)?.Key == regionKey)
+            {
+                colony.AddFederationSupport(support);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Adds <paramref name="support"/> Federation Support to the single colony <paramref name="player"/> holds that is
+    /// <b>farthest from its referendum bar</b> — the "hardest to carry" colony (WS4.4 — Samuel Griffith's clause: as chief
+    /// drafter he wins over the most reluctant colony, "the hardest colony's target −5"). Each colony's support ceiling is
+    /// <b>per-colony</b> (<c>RebelLibertyDivisor × Population</c>), and the referendum reads
+    /// <see cref="Colony.FederationSupportPercent"/> — so the hardest colony is the one with the lowest support <b>as a
+    /// percentage of its own bar</b>, not the lowest raw points (a big low-% colony would otherwise be missed). Ties break
+    /// by colony id (deterministic). <b>A no-op unless the ruleset enables the Federation victory</b> (classic has none) →
+    /// byte-identical (ADR-009). RNG-free.
+    /// </summary>
+    /// <param name="player">The player whose hardest colony gains support (the electing Pioneer's owner).</param>
+    /// <param name="support">Federation Support points added to that one colony.</param>
+    internal void AddFederationSupportToHardestColony(Player player, int support)
+    {
+        if (!Ruleset.VictoryFederation || support == 0)
+        {
+            return; // classic / non-Federation ruleset — byte-identical (ADR-009)
+        }
+        Colony? hardest = ColoniesOf(player).OrderBy(c => c.FederationSupportPercent).ThenBy(c => c.Id).FirstOrDefault();
+        hardest?.AddFederationSupport(support);
+    }
+
+    /// <summary>
     /// The three <b>smaller colony regions</b> of the Federation — South Australia, Tasmania and Western Australia. Their
     /// fear of being outvoted by populous New South Wales and Victoria was the design's central small-state obstacle
     /// (docs 05 / 11); Catherine Helen Spence's effect is weighted to exactly these three

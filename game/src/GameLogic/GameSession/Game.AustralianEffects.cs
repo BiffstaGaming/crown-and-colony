@@ -49,6 +49,12 @@ public sealed partial class Game
     /// <summary>Catherine Helen Spence's "Fair Representation" marker — her election lifts Federation Support in the small colonies (doc 11). Australia-only.</summary>
     private const string FairRepresentationAbility = "model.ability.fairRepresentation";
 
+    /// <summary>George Fife Angas' "Colonial Credit" marker (WS4.4, doc 08 clause 4) — his election lifts Federation Support in South Australia. Australia-only.</summary>
+    private const string ColonialCreditAbility = "model.ability.colonialCredit";
+
+    /// <summary>Mary Lee's "Women's Suffrage" marker (WS4.4, doc 12 clause 2) — the SA suffrage campaigner's election lifts Federation Support in South Australia. Australia-only.</summary>
+    private const string WomensSuffrageAbility = "model.ability.womensSuffrage";
+
     /// <summary>Federation Support Henry Parkes' Tenterfield Oration adds to every colony on election (doc 11: "+10 Federation Support" — scaled up to a meaningful jump against the <c>200 × population</c> support ceiling; a balance placeholder, see docs/systems/federation-victory.md §5).</summary>
     private const int TenterfieldOrationSupport = 60;
 
@@ -63,6 +69,21 @@ public sealed partial class Game
 
     /// <summary>Federation Support John Quick's "Corowa Plan" adds to the referendum pass threshold while he sits in Congress (doc 11: failed-referendum recoverability / a marginal vote likelier to carry).</summary>
     internal const int QuickReferendumRelief = 10;
+
+    // ── WS4.4: the region-scoped / hardest-colony Federation-support Pioneer clauses (doc magnitudes; a "target −N"
+    //    is modelled as +N support to the affected colony/region — same effect against the fixed support ceiling). ──
+
+    /// <summary>Federation Support George Fife Angas' "Colonial Credit" adds to South Australia on election (doc 08 clause 4: "South Australia gains +5 Federation Support").</summary>
+    private const int ColonialCreditSupport = 5;
+
+    /// <summary>Federation Support Mary Lee's SA suffrage advocacy adds to South Australia on election (doc 12 clause 2: "South Australia Federation target −5").</summary>
+    private const int WomensSuffrageSupport = 5;
+
+    /// <summary>Federation Support Edmund Barton's convention drive adds to New South Wales on election (doc 11 clause 3: "NSW support target −3").</summary>
+    private const int BartonNswSupport = 3;
+
+    /// <summary>Federation Support Samuel Griffith's drafting adds to the player's hardest (lowest-support) colony on election (doc 11 clause 2: "hardest colony target −5").</summary>
+    private const int GriffithHardestColonySupport = 5;
 
     /// <summary>The Gold deposit placed by the gold rush (the reskin's <c>silver</c> = Gold stand-in resource).</summary>
     private const string GoldResourceId = "model.resource.silver";
@@ -121,6 +142,14 @@ public sealed partial class Game
         if (father.Abilities.Any(a => a.Id == FairRepresentationAbility && a.Value))
         {
             ApplyFairRepresentation(player); // Catherine Helen Spence — "Fair Representation"
+        }
+        if (father.Abilities.Any(a => a.Id == ColonialCreditAbility && a.Value))
+        {
+            ApplyColonialCredit(player); // George Fife Angas — "Colonial Credit" (WS4.4, doc 08 C4)
+        }
+        if (father.Abilities.Any(a => a.Id == WomensSuffrageAbility && a.Value))
+        {
+            ApplyWomensSuffrage(player); // Mary Lee — SA suffrage advocacy (WS4.4, doc 12 C2)
         }
         // John Quick — "Corowa Plan": no on-election handler. His referendum relief is read live from the persisted
         // Congress in Game.Federation.HoldReferendum (ReferendumThresholdRelief), so electing him needs no state change.
@@ -252,6 +281,9 @@ public sealed partial class Game
         {
             AddConventionPoints(ConventionDrivePoints);
         }
+        // WS4.4 (doc 11 clause 3): Barton, a New South Welshman and the first PM, additionally lowers NSW's support target
+        // (modelled as +BartonNswSupport to the player's NSW colonies). Federation-gated → byte-identical for classic.
+        AddFederationSupportToRegion(player, AustraliaColonyStart.RegionKey(AustraliaColony.NewSouthWales), BartonNswSupport);
     }
 
     /// <summary>
@@ -268,7 +300,33 @@ public sealed partial class Game
         {
             AddConventionPoints(DraftConstitutionPoints);
         }
+        // WS4.4 (doc 11 clause 2): as chief drafter Griffith wins over the most reluctant colony — a one-off boost to the
+        // player's hardest (lowest-support) colony (modelled as +GriffithHardestColonySupport). Federation-gated → classic byte-identical.
+        AddFederationSupportToHardestColony(player, GriffithHardestColonySupport);
     }
+
+    /// <summary>
+    /// George Fife Angas' "Colonial Credit" (WS4.4, doc 08 clause 4): the financier and "Father of South Australia" — on
+    /// election, once the Federation movement is visible, South Australia gains a one-off <see cref="ColonialCreditSupport"/>
+    /// Federation Support boost. Delegates to <see cref="AddFederationSupportToRegion"/> (South Australia), a no-op
+    /// (byte-identical) unless the ruleset enables the Federation victory. RNG-free. (His other designed clauses — clearing a
+    /// debt, rush-buy discount, immigration growth — are deferred: no rush-buy or immigration-growth-rate system exists yet.)
+    /// </summary>
+    /// <param name="player">The player who elected Angas.</param>
+    private void ApplyColonialCredit(Player player) =>
+        AddFederationSupportToRegion(player, AustraliaColonyStart.RegionKey(AustraliaColony.SouthAustralia), ColonialCreditSupport);
+
+    /// <summary>
+    /// Mary Lee's South-Australian suffrage advocacy (WS4.4, doc 12 clause 2): the suffrage campaigner whose South Australia
+    /// led the colonies (and the world) on votes for women — on election, South Australia's Federation support target is
+    /// lowered (modelled as a one-off <see cref="WomensSuffrageSupport"/> Federation Support boost to the player's SA
+    /// colonies). Delegates to <see cref="AddFederationSupportToRegion"/>, a no-op (byte-identical) unless the ruleset enables
+    /// the Federation victory. RNG-free. (Her other clauses — Town-Hall/Newspaper Civic Voice (shipped), the suffrage reform
+    /// event, and the reform victory grade — are the standing bells modifier + deferred reform/victory-grade systems.)
+    /// </summary>
+    /// <param name="player">The player who elected Mary Lee.</param>
+    private void ApplyWomensSuffrage(Player player) =>
+        AddFederationSupportToRegion(player, AustraliaColonyStart.RegionKey(AustraliaColony.SouthAustralia), WomensSuffrageSupport);
 
     /// <summary>
     /// Catherine Helen Spence's "Fair Representation" (doc 11): the effective-voting campaigner who reassured the smaller
