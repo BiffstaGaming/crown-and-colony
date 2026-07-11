@@ -42,6 +42,14 @@ public class HistoricalEventTests
         return colony;
     }
 
+    /// <summary>
+    /// A single-colonial-player game (no European rivals) — the model the Australian Federation actually runs under
+    /// (<see cref="GameVariant.DefaultForeignPowerCount"/> = 0). Used by the linked/conditional-event tests: the
+    /// per-event fired-set is game-global, so with rival colonial players an AI could fire a chain's next link the same
+    /// turn the human fires its prerequisite; a solo game exercises the sequential chain deterministically for one player.
+    /// </summary>
+    private static Game NewSolo(Ruleset r) => Game.New(r, Seed, foreignPowerCount: 0);
+
     // ===== Classic: strict no-op =====
 
     [Fact]
@@ -310,6 +318,137 @@ public class HistoricalEventTests
         }
         Assert.Equal(goldBefore, game.HumanPlayer.Gold);
         Assert.Empty(game.EventLastFiredTurn);
+    }
+
+    // ===== M-E: conditional / linked events (doc 01 §2) =====
+
+    [Fact]
+    public void Parser_ReadsRequiredFathersAndRequiredEvents()
+    {
+        // The <requires> bucket now carries, beside its <limit> gates, <father> (a Figure that must be attained) and
+        // <event> (a prerequisite event that must have fired) children — the two M-E prerequisite kinds.
+        Ruleset r = LoadClassicWithEvents(@"
+          <historical-events>
+            <event-def id='event.root'><option id='only'><effect kind='grantGold' value='1'/></option></event-def>
+            <event-def id='event.gated'>
+              <requires>
+                <father id='model.foundingFather.charlesTodd'/>
+                <father id='lachlanMacquarie'/>
+                <event id='event.root'/>
+              </requires>
+              <option id='only'><effect kind='grantGold' value='1'/></option>
+            </event-def>
+          </historical-events>");
+
+        EventDef gated = r.HistoricalEvent("event.gated")!;
+        Assert.Equal(new[] { "model.foundingFather.charlesTodd", "lachlanMacquarie" }, gated.RequiredFathers);
+        Assert.Equal(new[] { "event.root" }, gated.RequiredEvents);
+        // An event with no <requires> (or none of these children) has empty prerequisite lists.
+        Assert.Empty(r.HistoricalEvent("event.root")!.RequiredFathers);
+        Assert.Empty(r.HistoricalEvent("event.root")!.RequiredEvents);
+    }
+
+    [Fact]
+    public void Parser_RejectsARequiredEventThatDoesNotExist()
+    {
+        // A linked-event prerequisite must name a real event — a typo'd id would silently make the event never fire, so
+        // the parser rejects it (checked after the whole set is built, so forward references are still legal).
+        Assert.Throws<RulesetFormatException>(() => LoadClassicWithEvents(@"
+          <historical-events>
+            <event-def id='event.orphan'>
+              <requires><event id='event.doesNotExist'/></requires>
+              <option id='only'><effect kind='grantGold' value='1'/></option>
+            </event-def>
+          </historical-events>"));
+    }
+
+    [Fact]
+    public void RequiredFather_GatesEligibility_UntilTheFigureIsAttained()
+    {
+        // A Figure prerequisite (doc 01 §2, e.g. the Macquarie Governorship needing Macquarie): the event cannot fire
+        // until that Figure is attained (elected to Congress). The <father> id is the SHORT name here — it matches the
+        // full Congress id by dotted suffix.
+        Ruleset r = LoadClassicWithEvents(@"
+          <historical-events>
+            <event-def id='event.needsFigure' weight='100' one-shot='true'>
+              <requires><father id='adamSmith'/></requires>
+              <option id='only'><effect kind='grantGold' value='300'/></option>
+            </event-def>
+          </historical-events>");
+        Assert.Equal(new[] { "adamSmith" }, r.HistoricalEvent("event.needsFigure")!.RequiredFathers); // parsed the <father> prerequisite (a real classic father id the per-turn modifier fold can resolve)
+        Game game = NewSolo(r);
+        FoundColony(game);
+        int goldBefore = game.HumanPlayer.Gold;
+
+        for (int i = 0; i < 8; i++)
+        {
+            game.EndTurn();
+        }
+        Assert.False(game.EventLastFiredTurn.ContainsKey("event.needsFigure")); // no Figure attained → never eligible
+        Assert.Equal(goldBefore, game.HumanPlayer.Gold);
+
+        // Attain the Figure; the event is now eligible and fires (weight 100; the era band is inert on the classic calendar).
+        game.HumanPlayer.CongressList.Add("model.foundingFather.adamSmith");
+        for (int i = 0; i < 3 && !game.EventLastFiredTurn.ContainsKey("event.needsFigure"); i++)
+        {
+            game.EndTurn();
+        }
+        Assert.True(game.EventLastFiredTurn.ContainsKey("event.needsFigure"));
+        Assert.Equal(goldBefore + 300, game.HumanPlayer.Gold);
+    }
+
+    [Fact]
+    public void LinkedEvent_FiresOnlyAfterItsPrerequisiteEventHasFired()
+    {
+        // A two-event chain (doc 01 §2 "linked event hooks"): 'after' requires 'before' to have fired. On turn 1 only
+        // 'before' is eligible ('after' is gated); once 'before' fires (one-shot) 'after' unlocks and fires next turn.
+        // 'after' grants inert silver so its firing is observable independently of gold.
+        Ruleset r = LoadClassicWithEvents(@"
+          <historical-events>
+            <event-def id='event.before' weight='100' one-shot='true'>
+              <option id='only'><effect kind='grantGold' value='10'/></option>
+            </event-def>
+            <event-def id='event.after' weight='100' one-shot='true'>
+              <requires><event id='event.before'/></requires>
+              <option id='only'><effect kind='grantGoods' target='model.goods.silver' value='50'/></option>
+            </event-def>
+          </historical-events>");
+        Game game = NewSolo(r);
+        Colony colony = FoundColony(game);
+
+        game.EndTurn(); // turn 1: only 'before' is eligible → it fires; 'after' is still gated (its prerequisite just fired)
+        Assert.True(game.EventLastFiredTurn.ContainsKey("event.before"));
+        Assert.False(game.EventLastFiredTurn.ContainsKey("event.after"));
+        Assert.Equal(0, colony.StoreOf("model.goods.silver"));
+
+        game.EndTurn(); // turn 2: 'before' is spent, 'after' is now unlocked → it fires
+        Assert.True(game.EventLastFiredTurn.ContainsKey("event.after"));
+        Assert.Equal(50, colony.StoreOf("model.goods.silver"));
+    }
+
+    [Fact]
+    public void LinkedEvent_NeverFires_WhenItsPrerequisiteIsBlocked()
+    {
+        // The chain is only as reachable as its root: if the prerequisite can never fire (here it expired before the game
+        // even opened), the dependent event stays permanently ineligible.
+        Ruleset r = LoadClassicWithEvents(@"
+          <historical-events>
+            <event-def id='event.blockedRoot' weight='100' one-shot='true' expiry-year='1400'>
+              <option id='only'><effect kind='grantGold' value='10'/></option>
+            </event-def>
+            <event-def id='event.dependent' weight='100' one-shot='true'>
+              <requires><event id='event.blockedRoot'/></requires>
+              <option id='only'><effect kind='grantGoods' target='model.goods.silver' value='50'/></option>
+            </event-def>
+          </historical-events>");
+        Game game = NewSolo(r);
+        Colony colony = FoundColony(game);
+        for (int i = 0; i < 15; i++)
+        {
+            game.EndTurn();
+        }
+        Assert.Empty(game.EventLastFiredTurn); // root expired, dependent gated on it → neither ever fires
+        Assert.Equal(0, colony.StoreOf("model.goods.silver"));
     }
 
     // ===== 4c.3: offer → choose / auto-resolve =====

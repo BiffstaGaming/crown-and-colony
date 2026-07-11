@@ -246,11 +246,33 @@ public sealed partial class Game
         {
             return false; // still cooling down since it last fired
         }
+        // M-E (doc 01 §2 "gameplay prerequisites" + "linked event hooks"): the event needs its required Historical
+        // Figures attained and its prerequisite events already fired. Both read persisted state (Congress /
+        // _eventLastFiredTurn), no RNG — so eligibility stays deterministic and classic (no events) never reaches here.
+        if (!ev.RequiredFathers.All(f => PlayerHasFather(player, f)))
+        {
+            return false; // a Figure this event depends on has not been attained
+        }
+        if (!ev.RequiredEvents.All(HasEventFiredById))
+        {
+            return false; // a prerequisite event in this chain has not fired yet
+        }
         return ev.Requirements.All(limit => EvaluateLimit(limit, player)); // reuse the existing limit/operand engine
     }
 
     /// <summary>Whether the event has ever fired this game (its id is recorded in <c>_eventLastFiredTurn</c>).</summary>
     private bool HasEventFired(EventDef ev) => _eventLastFiredTurn.ContainsKey(ev.Id);
+
+    /// <summary>Whether the event with the given id has ever fired this game (the linked-event prerequisite read, M-E).</summary>
+    private bool HasEventFiredById(string eventId) => _eventLastFiredTurn.ContainsKey(eventId);
+
+    /// <summary>
+    /// Whether <paramref name="player"/> has attained (elected to Congress) the Historical Figure named by
+    /// <paramref name="fatherId"/> (M-E prerequisite read). Matches the id either exactly or by dotted suffix, so an
+    /// event may name a father by its full id (<c>model.foundingFather.charlesTodd</c>) or its short name (<c>charlesTodd</c>).
+    /// </summary>
+    private static bool PlayerHasFather(Player player, string fatherId) =>
+        player.Congress.Any(f => f == fatherId || f.EndsWith("." + fatherId, System.StringComparison.Ordinal));
 
     /// <summary>Records that the event fired on the current turn (for one-shot/cooldown gating).</summary>
     private void MarkEventFired(EventDef ev) => _eventLastFiredTurn[ev.Id] = Turn;

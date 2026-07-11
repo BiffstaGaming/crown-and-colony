@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-11 — M-E: conditional & linked events + game name confirmed
+
+**Requested (Chris):** confirm the game name (→ **Crown & Colony**, ampersand — already in code, no change), then take on a self-contained dev item → **M-E: conditional/linked events (doc 01 §2)**.
+**Did:**
+- **Events now gate on *play*, not just the calendar** (doc 01 §2). `EventDef` gained two prerequisite lists — **`RequiredFathers`** (a Historical Figure must be attained, read against `Player.Congress`) and **`RequiredEvents`** (a prior event must have fired — **linked events**, read against the game-wide fired-set) — parsed from `<requires>` `<father>`/`<event>` children; the parser rejects a dangling linked-event id. `IsEventEligible` ANDs both with the existing year/cooldown/limit gates.
+- **Wired six historically-apt links** on the Australia catalogue: Merino Flock→Wool Boom; Gold Rush→(payable field / immigration surge / Eureka Stockade); land boom→1893 bank crash; and the **Overland Telegraph gated on Charles Todd** (the man who built it). Most events stay calendar-driven — the conditionality is targeted.
+- **No RNG, no save change** (reuses `Congress` + the existing fired-set); classic ships no events → the gates never run → **byte-identical** (determinism soak green).
+- **Adversarial review caught a real latent bug** (fixed): `eurekaStockade`'s window (1854–1860) closed before its prerequisite `goldRush` (one-shot, fires anytime 1851–1870) could fire on a late-gold-rush seed → Eureka permanently unreachable. Extended Eureka's window to 1870 to cover goldRush's firing tail, and added a **reachability-guard test** (a linked event that expires must outlast each prerequisite's expiry) so the class of bug can't recur. Review otherwise clean (it correctly dismissed a father-id-validation nit — the shipped ids are correct).
+**Status:** verified, **committing now**. Build ✓; full L1/L2 **2950** (+6 M-E tests incl. the reachability guard) ; determinism soak green (classic byte-identical). Two initial test failures were test-side (classic seeds AI rivals + I'd used a non-classic father id) — fixed by modelling Australia's 0-rival setup; the gate itself was correct.
+**Changed:** `EventDef.cs` (+2 lists), `Ruleset.cs` (parse `<father>`/`<event>` + dangling-ref validation), `Game.Events.cs` (2 gates + `HasEventFiredById`/`PlayerHasFather`), `specification.xml` (6 links + Eureka window), `HistoricalEventTests.cs` + `AustraliaVariantTests.cs` (tests), `events.md` (both layers + changelog).
+**Decisions:** **name = Crown & Colony (ampersand)**, confirmed — no code change (unblocks the trademark task + WS2.2 logo). M-E prerequisites as small dedicated `EventDef` fields (not new `Limit` operands — keeps the classic limit engine clean); deferred within M-E (not gold-plating): choice-specific linking + state-based supersede/expiry (year+one-shot already cover expiry).
+**Scheduled next:** awaiting Chris's steer — another self-contained dev item (e.g. WS4.4 full Pioneer perks, WS2.7 UI polish, or Fidelity native first contact), or WS2 visual identity (now unblocked by the name).
+**Needs you:** nothing blocking. Still-open sign-offs (unchanged): WS1.4 portrait images + Barak (`86d3n855a`) + 4c.11 event framings.
+
+---
+
 ## 2026-07-10 — WS1.5: Mode-3 starting-colony picker (the last WS1 item)
 
 **Requested (Chris):** move onto 1.5.

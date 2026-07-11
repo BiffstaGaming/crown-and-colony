@@ -120,6 +120,14 @@ public enum EventTrigger
 /// <param name="ExpiryYear">The last in-game year the event may fire (0 = never expires). After this year the event is permanently ineligible.</param>
 /// <param name="Trigger">How the event becomes eligible (<see cref="EventTrigger.Normal"/> pipeline vs. a forced <see cref="EventTrigger.ScenarioStart"/> event).</param>
 /// <param name="Requirements">The <see cref="Limit"/> gates (reusing the existing limit/operand engine) that must all hold for a normal event to be eligible; empty = no extra gate. Ignored for a scenario-start event.</param>
+/// <param name="RequiredFathers">The Historical Figures / founding fathers that must have been <b>attained</b> (elected to
+/// the player's Congress) for this event to be eligible (doc 01 §2 "gameplay prerequisites" — e.g. the Macquarie Governorship
+/// requiring Lachlan Macquarie). Each is a father id matched full-or-suffix against <c>Player.Congress</c>; empty = no gate.
+/// The classic ruleset ships no historical events, so this never runs there.</param>
+/// <param name="RequiredEvents">The other historical events that must have <b>already fired</b> for this event to be eligible
+/// (doc 01 §2 "linked event hooks" — an event chain, e.g. the Wool Boom requiring the Merino Flock, or the gold follow-ons
+/// requiring the Gold Rush). Each is an <see cref="Id"/> of another event; empty = no gate. Read against the engine's
+/// fired-set, so the prerequisite must have fired earlier in the game.</param>
 /// <param name="Options">The choices offered; at least one. A single option is a forced outcome; several are a dilemma.</param>
 /// <param name="Name">The event's title shown in the popup (the <c>name</c> attribute), or <c>null</c> to fall back to
 /// the humanized id. Presentation-only.</param>
@@ -134,6 +142,8 @@ public sealed record EventDef(
     int ExpiryYear,
     EventTrigger Trigger,
     IReadOnlyList<Limit> Requirements,
+    IReadOnlyList<string> RequiredFathers,
+    IReadOnlyList<string> RequiredEvents,
     IReadOnlyList<EventOption> Options,
     string? Name = null,
     string? Prompt = null)

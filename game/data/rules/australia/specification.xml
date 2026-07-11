@@ -3370,6 +3370,8 @@
     <!-- The great wool boom: fine merino fleece from the colonies commands high prices on
          the London market and underwrites the pastoral economy. -->
     <event-def id="event.woolBoom" weight="4" cooldown="12" earliest-year="1835" expiry-year="1890" name="The Wool Boom" prompt="Fine merino fleece from the colonies commands record prices on the London wool market, and the pastoral economy rides high on the sheep's back. London buyers clamour for every bale the colony can send. Will you ship the season's clip to market?">
+      <!-- M-E (doc 01 §2, linked event): the Wool Boom presupposes the Merino Flock was taken up — no flock, no boom. -->
+      <requires><event id="event.merinoSheep"/></requires>
       <option id="ship" label="Ship the clip to London">
         <effect kind="recordHistory" text="Colonial merino fleece commands high prices on the London wool market; the clip ships out at a handsome return."/>
         <effect kind="timedModifier" target="model.goods.cotton" type="percentage" value="35" duration="6"/>
@@ -3418,6 +3420,8 @@
           <left-hand-side operand-type="settlements" scope-level="player"/>
           <right-hand-side value="1"/>
         </limit>
+        <!-- M-E (doc 01 §2, linked event): a payable field is a gold-rush consequence — it needs the Gold Rush struck first. -->
+        <event id="event.goldRush"/>
       </requires>
       <option id="work" label="Work the field">
         <effect kind="recordHistory" text="A rich payable field is opened near the settlement; the crushers run day and night."/>
@@ -3428,6 +3432,8 @@
     <!-- The gold-rush immigration surge: tens of thousands arrive from Britain, Europe,
          China, and the Americas, tripling the colonial population in a decade. -->
     <event-def id="event.goldImmigrationSurge" weight="5" cooldown="6" earliest-year="1852" expiry-year="1875" name="The World Comes to the Diggings" prompt="The gold draws people from across the globe — from Britain and Ireland, from Europe and the Americas, and in great numbers from southern China. Shipload after shipload lands for the diggings, and within a single decade the population of the gold colonies more than triples. Will you welcome the new arrivals?">
+      <!-- M-E (doc 01 §2, linked event): the diggings immigration surge presupposes the Gold Rush. -->
+      <requires><event id="event.goldRush"/></requires>
       <option id="welcome" label="Welcome the new arrivals">
         <effect kind="recordHistory" text="Shiploads of new arrivals land for the diggings; the colonial population swells."/>
         <effect kind="grantUnit" target="model.unit.freeColonist"/>
@@ -3439,7 +3445,11 @@
          in protest at the fee and the troopers' licence hunts. A genuine dilemma —
          concede reform (the miner's right, and a lasting gain in civic voice) or send in
          the troops (order restored at a cost in lives, gold, and legitimacy). -->
-    <event-def id="event.eurekaStockade" weight="4" one-shot="true" earliest-year="1854" expiry-year="1860" name="The Eureka Stockade" prompt="At Ballarat the diggers have burned their mining licences and thrown up a rough stockade, in protest at the heavy fee and the troopers' relentless licence hunts. They raise the flag of the Southern Cross and swear an oath to stand by one another and defend their rights. Will you concede reform, or order the troops to break the stockade by force?">
+    <event-def id="event.eurekaStockade" weight="4" one-shot="true" earliest-year="1854" expiry-year="1870" name="The Eureka Stockade" prompt="At Ballarat the diggers have burned their mining licences and thrown up a rough stockade, in protest at the heavy fee and the troopers' relentless licence hunts. They raise the flag of the Southern Cross and swear an oath to stand by one another and defend their rights. Will you concede reform, or order the troops to break the stockade by force?">
+      <!-- M-E (doc 01 §2, linked event): the Eureka Stockade is a goldfields rebellion — it presupposes the Gold Rush.
+           Its expiry-year is 1870 (not 1854's own era) so the window covers goldRush's full 1851-1870 one-shot firing
+           tail — otherwise a seed where goldRush fires late would leave Eureka permanently unreachable (M-E review find). -->
+      <requires><event id="event.goldRush"/></requires>
       <option id="reform" weight="2" label="Concede reform">
         <effect kind="recordHistory" text="After the Eureka Stockade at Ballarat, the licence is abolished for the miner's right and the vote; the goldfields win a measure of democracy."/>
         <effect kind="grantLiberty" value="40"/>
@@ -3482,6 +3492,8 @@
     <!-- The Overland Telegraph is completed, Adelaide to Darwin, 1872 — connected there to
          the submarine cable, it links the colonies to Britain in hours, not months. -->
     <event-def id="event.overlandTelegraph" weight="3" one-shot="true" earliest-year="1872" expiry-year="1885" name="The Overland Telegraph" prompt="In 1872 a single iron wire is strung nearly two thousand miles from Adelaide to Darwin, where it meets the submarine cable running on to Java and London. A message that once took months by ship can now reach Britain in hours, drawing the scattered colonies closer together. Will you throw the colony's weight behind completing the line?">
+      <!-- M-E (doc 01 §2, Figure prerequisite): the Overland Telegraph was Charles Todd's project — it needs him attained. -->
+      <requires><father id="model.foundingFather.charlesTodd"/></requires>
       <option id="connect" label="Complete the line">
         <effect kind="recordHistory" text="The Overland Telegraph is completed from Adelaide to Darwin and joined to the submarine cable; the colonies now reach London in hours, not months."/>
         <effect kind="grantLiberty" value="20"/>
@@ -3536,6 +3548,8 @@
     <!-- The financial crash and depression of the early 1890s: the land boom collapses,
          and a run on the banks in 1893 closes many of them, wiping out depositors. -->
     <event-def id="event.bankCrash" weight="4" one-shot="true" earliest-year="1892" expiry-year="1897" name="The Bank Crash of 1893" prompt="The land boom collapses, and in 1893 a run on the banks shutters many of them across the colonies, wiping out ordinary depositors overnight. The colonies slide into a deep depression from which recovery will be slow and uneven. There is little to be done but weather the ruin.">
+      <!-- M-E (doc 01 §2, linked event): the 1893 crash is the collapse of the land boom — it needs Marvellous Melbourne first. -->
+      <requires><event id="event.marvellousMelbourne"/></requires>
       <option id="endure" label="Weather the ruin">
         <effect kind="recordHistory" text="The land boom collapses and a run on the banks in 1893 closes many of them; depositors are ruined and the colonies fall into depression."/>
         <effect kind="grantGold" value="-500"/>

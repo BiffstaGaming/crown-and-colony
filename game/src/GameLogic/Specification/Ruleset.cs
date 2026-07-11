@@ -2879,9 +2879,13 @@ public sealed class Ruleset
             // A scenario-start event is implicitly one-shot (it fires once at setup); an explicit one-shot="true" also forces it.
             bool oneShot = trigger == EventTrigger.ScenarioStart || (bool?)el.Attribute("one-shot") == true;
 
-            var requirements = (el.Element("requires")?.Elements("limit") ?? [])
-                .Select(ParseLimit)
-                .ToList();
+            // The <requires> bucket carries the general limit gates (existing) plus the two M-E prerequisite kinds:
+            // <father id="…"/> (a Historical Figure that must be attained) and <event id="…"/> (a linked event that must
+            // have already fired). All are ANDed with the year/cooldown gates in Game.IsEventEligible.
+            XElement? requires = el.Element("requires");
+            var requirements = (requires?.Elements("limit") ?? []).Select(ParseLimit).ToList();
+            var requiredFathers = (requires?.Elements("father") ?? []).Select(f => RequiredAttribute(f, "id")).ToList();
+            var requiredEvents = (requires?.Elements("event") ?? []).Select(e => RequiredAttribute(e, "id")).ToList();
 
             var options = el.Elements("option")
                 .Select(ParseEventOption)
@@ -2900,12 +2904,27 @@ public sealed class Ruleset
                 ExpiryYear: (int?)el.Attribute("expiry-year") ?? 0,
                 Trigger: trigger,
                 Requirements: requirements,
+                RequiredFathers: requiredFathers,
+                RequiredEvents: requiredEvents,
                 Options: options,
                 Name: (string?)el.Attribute("name"),
                 Prompt: (string?)el.Attribute("prompt"));
             if (!events.TryAdd(id, ev))
             {
                 throw new RulesetFormatException($"Duplicate event-def id '{id}'.");
+            }
+        }
+
+        // A linked-event prerequisite must name a real event (catch authoring typos early — a dangling id would silently
+        // make the event never fire). Checked after the full set is built so forward references (A requires a later-declared B) are legal.
+        foreach (EventDef ev in events.Values)
+        {
+            foreach (string requiredId in ev.RequiredEvents)
+            {
+                if (!events.ContainsKey(requiredId))
+                {
+                    throw new RulesetFormatException($"<event-def> '{ev.Id}' requires unknown event '{requiredId}'.");
+                }
             }
         }
         return events;
