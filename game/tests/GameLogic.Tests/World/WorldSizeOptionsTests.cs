@@ -91,7 +91,7 @@ public class WorldSizeOptionsTests
         Assert.Equal(
             game.Map.AllPositions().Select(p => game.Map.TerrainAt(p).Id),
             restored.Map.AllPositions().Select(p => restored.Map.TerrainAt(p).Id));
-        Assert.Equal(72, SaveGame.CurrentVersion); // the landmass-style feature adds no save field of its own (later bumps are unrelated slices)
+        Assert.Equal(73, SaveGame.CurrentVersion); // the landmass-style feature adds no save field of its own (later bumps are unrelated slices)
     }
 
     [Fact]
@@ -126,6 +126,6 @@ public class WorldSizeOptionsTests
         Assert.Equal(
             game.Map.AllPositions().Select(p => game.Map.TerrainAt(p).Id),
             restored.Map.AllPositions().Select(p => restored.Map.TerrainAt(p).Id));
-        Assert.Equal(72, SaveGame.CurrentVersion); // the map-size feature itself added no save field (later bumps are unrelated slices)
+        Assert.Equal(73, SaveGame.CurrentVersion); // the map-size feature itself added no save field (later bumps are unrelated slices)
     }
 }

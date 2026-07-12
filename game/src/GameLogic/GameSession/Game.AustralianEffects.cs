@@ -70,20 +70,21 @@ public sealed partial class Game
     /// <summary>Federation Support John Quick's "Corowa Plan" adds to the referendum pass threshold while he sits in Congress (doc 11: failed-referendum recoverability / a marginal vote likelier to carry).</summary>
     internal const int QuickReferendumRelief = 10;
 
-    // ── WS4.4: the region-scoped / hardest-colony Federation-support Pioneer clauses (doc magnitudes; a "target −N"
-    //    is modelled as +N support to the affected colony/region — same effect against the fixed support ceiling). ──
+    // ── The region-scoped / hardest-colony Federation Pioneer clauses. Angas is a +support boost; Barton, Griffith and
+    //    Mary Lee lower a region's referendum TARGET directly (WS3.2 — the honest form of their doc "target −N" clauses,
+    //    replacing WS4.4's +support proxy now that per-region targets exist). ──
 
     /// <summary>Federation Support George Fife Angas' "Colonial Credit" adds to South Australia on election (doc 08 clause 4: "South Australia gains +5 Federation Support").</summary>
     private const int ColonialCreditSupport = 5;
 
-    /// <summary>Federation Support Mary Lee's SA suffrage advocacy adds to South Australia on election (doc 12 clause 2: "South Australia Federation target −5").</summary>
-    private const int WomensSuffrageSupport = 5;
+    /// <summary>Percentage points Mary Lee's SA suffrage advocacy shaves off South Australia's referendum target on election (doc 12 clause 2: "South Australia Federation target −5").</summary>
+    private const int WomensSuffrageTargetReduction = 5;
 
-    /// <summary>Federation Support Edmund Barton's convention drive adds to New South Wales on election (doc 11 clause 3: "NSW support target −3").</summary>
-    private const int BartonNswSupport = 3;
+    /// <summary>Percentage points Edmund Barton's convention drive shaves off New South Wales' referendum target on election (doc 11 clause 3: "NSW support target −3").</summary>
+    private const int BartonNswTargetReduction = 3;
 
-    /// <summary>Federation Support Samuel Griffith's drafting adds to the player's hardest (lowest-support) colony on election (doc 11 clause 2: "hardest colony target −5").</summary>
-    private const int GriffithHardestColonySupport = 5;
+    /// <summary>Percentage points Samuel Griffith's drafting shaves off the hardest settled region's referendum target on election (doc 11 clause 2: "hardest colony target −5").</summary>
+    private const int GriffithHardestTargetReduction = 5;
 
     /// <summary>The Gold deposit placed by the gold rush (the reskin's <c>silver</c> = Gold stand-in resource).</summary>
     private const string GoldResourceId = "model.resource.silver";
@@ -280,10 +281,10 @@ public sealed partial class Game
         if (player.IsHuman)
         {
             AddConventionPoints(ConventionDrivePoints);
+            // WS3.2 (doc 11 clause 3): Barton, a New South Welshman and the first PM, lowers New South Wales' referendum
+            // TARGET (was WS4.4's +support proxy). Federation-gated inside ReduceFederationTarget → classic byte-identical.
+            ReduceFederationTarget(AustraliaColonyStart.RegionKey(AustraliaColony.NewSouthWales), BartonNswTargetReduction);
         }
-        // WS4.4 (doc 11 clause 3): Barton, a New South Welshman and the first PM, additionally lowers NSW's support target
-        // (modelled as +BartonNswSupport to the player's NSW colonies). Federation-gated → byte-identical for classic.
-        AddFederationSupportToRegion(player, AustraliaColonyStart.RegionKey(AustraliaColony.NewSouthWales), BartonNswSupport);
     }
 
     /// <summary>
@@ -299,10 +300,10 @@ public sealed partial class Game
         if (player.IsHuman)
         {
             AddConventionPoints(DraftConstitutionPoints);
+            // WS3.2 (doc 11 clause 2): as chief drafter Griffith wins over the most reluctant colony — lowers the hardest
+            // settled region's referendum TARGET (was WS4.4's +support proxy). Federation-gated → classic byte-identical.
+            ReduceHardestRegionTarget(GriffithHardestTargetReduction);
         }
-        // WS4.4 (doc 11 clause 2): as chief drafter Griffith wins over the most reluctant colony — a one-off boost to the
-        // player's hardest (lowest-support) colony (modelled as +GriffithHardestColonySupport). Federation-gated → classic byte-identical.
-        AddFederationSupportToHardestColony(player, GriffithHardestColonySupport);
     }
 
     /// <summary>
@@ -317,16 +318,22 @@ public sealed partial class Game
         AddFederationSupportToRegion(player, AustraliaColonyStart.RegionKey(AustraliaColony.SouthAustralia), ColonialCreditSupport);
 
     /// <summary>
-    /// Mary Lee's South-Australian suffrage advocacy (WS4.4, doc 12 clause 2): the suffrage campaigner whose South Australia
-    /// led the colonies (and the world) on votes for women — on election, South Australia's Federation support target is
-    /// lowered (modelled as a one-off <see cref="WomensSuffrageSupport"/> Federation Support boost to the player's SA
-    /// colonies). Delegates to <see cref="AddFederationSupportToRegion"/>, a no-op (byte-identical) unless the ruleset enables
-    /// the Federation victory. RNG-free. (Her other clauses — Town-Hall/Newspaper Civic Voice (shipped), the suffrage reform
-    /// event, and the reform victory grade — are the standing bells modifier + deferred reform/victory-grade systems.)
+    /// Mary Lee's South-Australian suffrage advocacy (WS3.2, doc 12 clause 2): the suffrage campaigner whose South Australia
+    /// led the colonies (and the world) on votes for women — on election, South Australia's referendum <b>target</b> is
+    /// lowered by <see cref="WomensSuffrageTargetReduction"/> percentage points (was WS4.4's +support proxy). Delegates to
+    /// <see cref="ReduceFederationTarget"/>, a no-op (byte-identical) unless the ruleset enables the Federation victory, and
+    /// human-only (the target is the human's referendum bar). RNG-free. (Her other clauses — Town-Hall/Newspaper Civic Voice
+    /// (shipped), the suffrage reform event, and the reform victory grade — are the standing bells modifier + deferred
+    /// reform/victory-grade systems.)
     /// </summary>
     /// <param name="player">The player who elected Mary Lee.</param>
-    private void ApplyWomensSuffrage(Player player) =>
-        AddFederationSupportToRegion(player, AustraliaColonyStart.RegionKey(AustraliaColony.SouthAustralia), WomensSuffrageSupport);
+    private void ApplyWomensSuffrage(Player player)
+    {
+        if (player.IsHuman)
+        {
+            ReduceFederationTarget(AustraliaColonyStart.RegionKey(AustraliaColony.SouthAustralia), WomensSuffrageTargetReduction);
+        }
+    }
 
     /// <summary>
     /// Catherine Helen Spence's "Fair Representation" (doc 11): the effective-voting campaigner who reassured the smaller

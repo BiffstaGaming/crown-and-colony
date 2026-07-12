@@ -105,6 +105,35 @@ public class FederationPanelTests
     }
 
     [TestCase]
+    public async Task Open_AnchorsEachRegionsReferendumMark_AtItsOwnTarget()
+    {
+        // WS3.2 regression guard: the gold referendum marker on each gauge must sit at that REGION's own target — New
+        // South Wales at 0.57, Tasmania at 0.94 — read from Game.ReferendumTargetFor, not a uniform 0.50. A regression to
+        // a hard-coded uniform anchor (or feeding SupportColor the old flat bar) would visually undo WS3.2 yet leave the
+        // other panel tests green, so pin the two extremes here.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");
+        await runner.SimulateFrames(2);
+        var host = (Control)runner.Scene();
+
+        Game game = NewAustralia();
+        FoundIn(game, AustraliaColony.NewSouthWales); // target 57%
+        FoundIn(game, AustraliaColony.Tasmania);      // target 94% — the steep small-colony bar
+        FederationPanel panel = AddPanel(host);
+
+        panel.Open(game, () => { });
+        await runner.SimulateFrames(1);
+
+        var body = panel.GetNode<VBoxContainer>($"VBox/{FederationPanel.BodyName}");
+        var nswMark = body.GetNode<ColorRect>("Region_newSouthWales/Bar/ReferendumMark");
+        var tasMark = body.GetNode<ColorRect>("Region_tasmania/Bar/ReferendumMark");
+        AssertThat(nswMark.AnchorLeft).IsEqualApprox(0.57f, 0.001f);
+        AssertThat(tasMark.AnchorLeft).IsEqualApprox(0.94f, 0.001f);
+        AssertThat(nswMark.AnchorLeft).IsLess(tasMark.AnchorLeft); // the per-region bars genuinely differ
+
+        panel.QueueFree();
+    }
+
+    [TestCase]
     public async Task CallConvention_IsDisabledWithAReason_UntilThresholdsAreMet()
     {
         ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");

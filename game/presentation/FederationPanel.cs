@@ -17,7 +17,7 @@ namespace CrownAndColony.Presentation;
 ///
 /// <para>Pure presentation (ADR-006): every reading comes from a <see cref="Game"/> oracle — per-region support
 /// (<see cref="Game.RegionSupportSummary"/>), the phase (<see cref="Game.FederationPhase"/>), the points
-/// (<see cref="Game.ConventionPoints"/>), the referendum bar (<see cref="Game.ReferendumSupportThreshold"/>) and the two
+/// (<see cref="Game.ConventionPoints"/>), each region's own referendum target (<see cref="Game.ReferendumTargetFor"/>) and the two
 /// action gates (<see cref="Game.CheckCallConvention"/> / <see cref="Game.CheckPutToReferendum"/>). The only mutations are
 /// the forwarded commands (<see cref="Game.CallConvention"/> / <see cref="Game.HoldReferendum"/>); all the rules
 /// (thresholds, the seeded referendum roll, the win) live in GameLogic. Built entirely in code (no scene file), mirroring
@@ -232,6 +232,7 @@ public partial class FederationPanel : PanelContainer
     private void AddRegionRow(string regionKey, int supportPercent)
     {
         string display = RegionDisplayNames.GetValueOrDefault(regionKey, regionKey);
+        int target = _game.ReferendumTargetFor(regionKey); // WS3.2: this region's own referendum bar (NSW 57 … Tas/Vic 94), not a uniform 50
         var row = new HBoxContainer { Name = $"Region_{ShortKey(regionKey)}" };
         row.AddThemeConstantOverride("separation", 10);
 
@@ -254,13 +255,14 @@ public partial class FederationPanel : PanelContainer
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             SizeFlagsVertical = SizeFlags.ShrinkCenter,
         };
-        Color fill = SupportColor(supportPercent);
+        Color fill = SupportColor(supportPercent, target);
         bar.AddThemeStyleboxOverride("background", Flat(ParchmentDark, ParchmentEdge, 1, 4)); // recessed trough (BuildingCell recipe)
         bar.AddThemeStyleboxOverride("fill", Flat(fill, fill.Darkened(0.25f), 1, 4));
 
-        // The referendum bar: a thin gold marker at the threshold %, anchored as a fraction of the gauge width so it stays
-        // on the bar however wide the row grows. A colony's fill reaching the marker (and turning green) is "referendum-ready".
-        float threshold = _game.ReferendumSupportThreshold / 100f;
+        // The referendum bar: a thin gold marker at this region's own target %, anchored as a fraction of the gauge width so
+        // it stays on the bar however wide the row grows. A colony's fill reaching the marker (and turning green) is
+        // "referendum-ready" — so the marker sits at NSW 57% but Tasmania/Victoria 94% (WS3.2 per-region targets).
+        float threshold = target / 100f;
         var marker = new ColorRect
         {
             Name = "ReferendumMark",
@@ -289,11 +291,11 @@ public partial class FederationPanel : PanelContainer
         _body.AddChild(row);
     }
 
-    /// <summary>The support-gauge fill colour for a support percentage, measured against the referendum bar: barn-red well
-    /// below, ochre approaching (from half the bar up), federation-green at or over the bar.</summary>
-    private Color SupportColor(int supportPercent)
+    /// <summary>The support-gauge fill colour for a support percentage, measured against that region's own referendum
+    /// <paramref name="bar"/> (WS3.2): barn-red well below, ochre approaching (from half the bar up), federation-green at or
+    /// over the bar. A region with a 94% target (Tasmania/Victoria) stays red/ochre far longer than a 57% one (NSW).</summary>
+    private static Color SupportColor(int supportPercent, int bar)
     {
-        int bar = _game.ReferendumSupportThreshold;
         if (supportPercent >= bar)
         {
             return SupportReady;

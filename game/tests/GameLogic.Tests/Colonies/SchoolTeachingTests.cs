@@ -290,7 +290,7 @@ public class SchoolTeachingTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
         Colony r = restored.Colonies.Single(c => c.Id == colony.Id);
 
-        Assert.Equal(72, SaveGame.CurrentVersion);
+        Assert.Equal(73, SaveGame.CurrentVersion);
         Assert.Equal(2, r.SchoolTrainingTurnsAt(College, 0)); // both per-teacher counters survive the round-trip
         Assert.Equal(2, r.SchoolTrainingTurnsAt(College, 1));
         restored.RunSchoolTeaching(r);
@@ -389,7 +389,7 @@ public class SchoolTeachingTests
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
         Colony r = restored.Colonies.Single(c => c.Id == colony.Id);
 
-        Assert.Equal(72, SaveGame.CurrentVersion);
+        Assert.Equal(73, SaveGame.CurrentVersion);
         Assert.Equal(2, r.SchoolTrainingTurnsAt(Schoolhouse)); // mid-training progress survives
         restored.RunSchoolTeaching(r);
         restored.RunSchoolTeaching(r);

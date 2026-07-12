@@ -21,7 +21,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 72;
+    public const int CurrentVersion = 73;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -355,8 +355,13 @@ public sealed record SaveGame
     /// classic ruleset ships
     /// <c>model.option.victoryFederation</c> false, so no Federation state is ever accrued there — a default game
     /// serialises <b>byte-identically to v71</b> (every one of these tokens omitted), and a pre-v72 save loads with no
-    /// Federation state (the pre-feature behaviour). Determinism (ADR-009): the whole loop is gated off in classic, so a
-    /// reloaded classic game continues on the identical random sequence and the soak stays byte-identical.
+    /// Federation state (the pre-feature behaviour). v73 (WS3.2) added the per-region <b>Federation-target reductions</b>
+    /// (<see cref="FederationTargetReductions"/> — region key → percentage points a Democracy Pioneer shaved off that
+    /// region's referendum target); <b>omitted when empty</b>, which it always is in a classic game (Federation off) and in
+    /// an Australia game that has elected no target-lowering Pioneer (Barton / Griffith / Mary Lee) — so a default game
+    /// serialises byte-identically to v72 and a pre-v73 save loads with none. Determinism (ADR-009): the whole loop is
+    /// gated off in classic, so a reloaded classic game continues on the identical random sequence and the soak stays
+    /// byte-identical.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -609,6 +614,15 @@ public sealed record SaveGame
     /// game never holds one — so a default game is byte-identical to v71 and a pre-v72 save loads with none held.
     /// </summary>
     public SavedReferendum? Referendum { get; init; }
+
+    /// <summary>
+    /// The per-region Federation-support <b>target reductions</b> banked by the Democracy Pioneers (v73, WS3.2;
+    /// <see cref="Game.FederationTargetReductions"/>): region key → percentage points shaved off that region's base
+    /// referendum target. Additive + <b>omitted when empty</b> — a classic game (Federation off) and an Australia game that
+    /// has elected no target-lowering Pioneer (Barton / Griffith / Mary Lee) bank none — so a default game is byte-identical
+    /// to v72 and a pre-v73 save loads with no reductions. Sorted by key for a deterministic serialised order.
+    /// </summary>
+    public IReadOnlyDictionary<string, int>? FederationTargetReductions { get; init; }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -879,6 +893,11 @@ public sealed record SaveGame
             Referendum = game.ReferendumAttempts == 0 && !game.ReferendumCarried
                 ? null
                 : new SavedReferendum(game.ReferendumAttempts, game.ReferendumCarried ? true : null),
+            // The per-region referendum-target reductions (v73, WS3.2) — Barton/Griffith/Mary Lee lowering a region's bar;
+            // omitted when empty (classic + a no-Pioneer Australia game bank none, byte-identical to v72). Sorted by key.
+            FederationTargetReductions = game.FederationTargetReductions.Count > 0
+                ? game.FederationTargetReductions.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToDictionary(kv => kv.Key, kv => kv.Value)
+                : null,
         };
     }
 
@@ -1164,6 +1183,13 @@ public sealed record SaveGame
         {
             game.SetReferendumAttempts(referendum.Attempts);
             game.SetReferendumCarried(referendum.Carried ?? false);
+        }
+        if (FederationTargetReductions is { } reductions) // v73 (WS3.2); pre-v73 / omitted → no reductions banked
+        {
+            foreach (KeyValuePair<string, int> entry in reductions)
+            {
+                game.SetFederationTargetReduction(entry.Key, entry.Value);
+            }
         }
         return game;
     }

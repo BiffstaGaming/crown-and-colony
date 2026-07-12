@@ -340,16 +340,29 @@ public class AustralianContentTests
     [Fact]
     public void ElectingQuick_LowersTheReferendumPassThreshold_LettingAMarginalVoteCarry()
     {
-        // The referendum carries when support (plus Quick's +10 Corowa relief) beats a seeded 0–99 roll. Seed 25's roll
-        // lands in [50,60): at exactly the referendum bar (50% in every region) the vote FAILS without Quick but CARRIES
-        // with him — proving his relief lowers the effective pass threshold (read live from the persisted Congress). The
-        // relief rides the persisted Congress (no new save state) and only Australia reaches HoldReferendum, so classic
-        // stays byte-identical.
-        const ulong quickSeed = 25;
-        Assert.False(RunReferendum(quickSeed, withQuick: false, supportPercent: Game.RegionSupportForReferendum),
-            "without Quick, a referendum exactly at the 50% bar fails this seed's roll");
-        Assert.True(RunReferendum(quickSeed, withQuick: true, supportPercent: Game.RegionSupportForReferendum),
-            "with Quick in Congress, the same 50% referendum carries — his +10 relief lowered the bar");
+        // With every region at exactly its own target (WS3.2) the gate opens and the average support (~75%) sets the pass
+        // bar; a referendum carries when that average (plus Quick's +10 Corowa relief) beats a seeded 0–99 roll. Some seeds'
+        // rolls land in the marginal band where the vote FAILS without Quick but CARRIES with him — find one, proving his
+        // relief lowers the effective pass threshold (read live from the persisted Congress; only Australia reaches
+        // HoldReferendum, so classic stays byte-identical). supportPercent 0 leaves each region at its own target.
+        for (ulong seed = 1; seed <= 400; seed++)
+        {
+            bool withoutQuick, withQuick;
+            try
+            {
+                withoutQuick = RunReferendum(seed, withQuick: false, supportPercent: 0);
+                withQuick = RunReferendum(seed, withQuick: true, supportPercent: 0);
+            }
+            catch (LandClaimRequiredException)
+            {
+                continue; // this seed places a First Nations land claim on a colony start tile — skip it
+            }
+            if (!withoutQuick && withQuick)
+            {
+                return; // Quick's relief flipped a marginal vote from fail → carry
+            }
+        }
+        Assert.Fail("expected some seed in 1..400 to yield a marginal referendum Quick's +10 relief could flip");
     }
 
     [Fact]
@@ -387,47 +400,62 @@ public class AustralianContentTests
         AssertElectionBoostsOneRegionOnly(Angas, AustraliaColony.SouthAustralia);
 
     [Fact]
-    public void ElectingMaryLee_LiftsFederationSupport_InSouthAustraliaOnly() =>
-        AssertElectionBoostsOneRegionOnly(MaryLee, AustraliaColony.SouthAustralia);
+    public void ElectingMaryLee_LowersSouthAustraliasReferendumTarget() =>
+        // WS3.2: Mary Lee's suffrage advocacy lowers SA's referendum target by 5 (80 → 75) — the honest form of her clause
+        // (was a +support proxy). A separate ability test confirms she carries womensSuffrage.
+        AssertElectionReducesRegionTarget(MaryLee, AustraliaColony.SouthAustralia, 5);
 
     [Fact]
-    public void ElectingBarton_AlsoLiftsFederationSupport_InNewSouthWales() =>
-        // Barton's convention-point drive is unchanged (a separate test); WS4.4 adds an NSW support boost on top.
-        AssertElectionBoostsOneRegionOnly(Barton, AustraliaColony.NewSouthWales);
+    public void ElectingBarton_LowersNewSouthWalesReferendumTarget() =>
+        // WS3.2: Barton's convention drive lowers NSW's referendum target by 3 (57 → 54). His Convention-Points banking is
+        // unchanged (a separate test).
+        AssertElectionReducesRegionTarget(Barton, AustraliaColony.NewSouthWales, 3);
 
     [Fact]
-    public void ElectingGriffith_AlsoLiftsFederationSupport_InTheHardestColony()
+    public void ElectingGriffith_LowersTheHardestRegionsReferendumTarget()
     {
-        // Griffith's WS4.4 clause boosts the player's HARDEST (lowest-support) colony. FederationGame is deterministic
-        // (fixed seed), so the hardest colony is stable; assert it gains more than the no-election control, and no other
-        // colony does (exactly one +5 boost landed).
-        Game control = FederationGame(out var controlColonies);
-        var controlBefore = SupportByColony(controlColonies);
-        control.EndTurn();
-        var controlAfter = SupportByColony(ReresolveAll(control));
-
+        // WS3.2: Griffith, as chief drafter, lowers the HARDEST settled region's referendum target by 5. Which region is
+        // hardest is state-dependent (resolved by the handler at election time), so assert the robust invariant: exactly
+        // one region's target dropped, and by exactly 5. His Convention-Points banking is unchanged (a separate test).
         Game game = FederationGame(out var colonies);
-        var before = SupportByColony(colonies);
-        // Hardest = lowest support as a percentage of its own (per-colony) referendum bar — the same measure the handler
-        // and the referendum gate use (not raw points, which aren't comparable across colony populations).
-        AustraliaColony hardest = colonies.OrderBy(kv => kv.Value.FederationSupportPercent).ThenBy(kv => kv.Value.Id).First().Key;
+        var before = TargetsByRegion(game); // no reduction yet → every region at its base target
         ElectFather(ref game, Griffith, ref colonies);
-        var after = SupportByColony(colonies);
+        var after = TargetsByRegion(game);
 
         Assert.Contains(Griffith, game.Congress);
-        Assert.True(after[hardest] - before[hardest] > controlAfter[hardest] - controlBefore[hardest],
-            $"the hardest colony {hardest} should gain more than the no-election control");
-        foreach (AustraliaColony c in AustraliaColonyStart.All.Where(c => c != hardest))
+        var moved = AustraliaColonyStart.All.Where(c => after[c] != before[c]).ToList();
+        Assert.Single(moved);
+        Assert.Equal(before[moved[0]] - 5, after[moved[0]]);
+    }
+
+    /// <summary>
+    /// Asserts that electing <paramref name="fatherId"/> lowers <paramref name="region"/>'s referendum target by exactly
+    /// <paramref name="reduction"/> percentage points, leaving every other region's target untouched (WS3.2 — the honest
+    /// "target −N" Pioneer clauses of Barton/Mary Lee).
+    /// </summary>
+    private static void AssertElectionReducesRegionTarget(string fatherId, AustraliaColony region, int reduction)
+    {
+        Game game = FederationGame(out var colonies);
+        var before = TargetsByRegion(game);
+        ElectFather(ref game, fatherId, ref colonies);
+        var after = TargetsByRegion(game);
+
+        Assert.Contains(fatherId, game.Congress);
+        Assert.Equal(before[region] - reduction, after[region]);
+        foreach (AustraliaColony c in AustraliaColonyStart.All.Where(c => c != region))
         {
-            Assert.True(after[c] - before[c] <= controlAfter[c] - controlBefore[c],
-                $"{c} (not the hardest colony) should gain no more than the no-election control");
+            Assert.Equal(before[c], after[c]); // only the one region's target moves
         }
     }
+
+    /// <summary>Each region's effective referendum target (WS3.2), keyed by region — the read the Pioneer target-reduction clauses move.</summary>
+    private static Dictionary<AustraliaColony, int> TargetsByRegion(Game game) =>
+        AustraliaColonyStart.All.ToDictionary(c => c, c => game.ReferendumTargetFor(AustraliaColonyStart.RegionKey(c)));
 
     /// <summary>
     /// Asserts that electing <paramref name="fatherId"/> lifts Federation Support in <paramref name="boostedRegion"/>'s
     /// colony <b>more</b> than a no-election control, while every other region gains no more than the control — isolating
-    /// the region-scoped on-election boost from the turn's ordinary Civic-Voice accrual (the Spence-test method).
+    /// the region-scoped on-election +support boost from the turn's ordinary Civic-Voice accrual (Angas' clause, WS4.4).
     /// </summary>
     private static void AssertElectionBoostsOneRegionOnly(string fatherId, AustraliaColony boostedRegion)
     {
@@ -536,15 +564,18 @@ public class AustralianContentTests
             game = SaveGame.FromJson(primed.ToJson()).Restore(Australia);
         }
 
-        // Set every colony to a support level just under the seeded referendum roll so it fails without Quick's relief.
+        // Seat every region at least at its own referendum target (WS3.2) so the per-region gate opens — the pass ROLL,
+        // which Quick's Corowa relief shifts, is what these tests exercise (not the gate). A supportPercent above a region's
+        // target lifts it further (used by the monotonicity test to sweep the average from ~75% up to 100%).
         Game g = game;
         Colony Reresolve(AustraliaColony c) =>
             g.Colonies.Single(col => col.Position == AustraliaColonyStart.StartTile(c));
         foreach (AustraliaColony colony in AustraliaColonyStart.All)
         {
             Colony col = Reresolve(colony);
+            int level = Math.Max(supportPercent, g.ReferendumTargetFor(AustraliaColonyStart.RegionKey(colony)));
             col.FederationSupport = 0;
-            col.AddFederationSupport(col.RebelLibertyDivisor * col.Population * supportPercent / 100);
+            col.AddFederationSupport(col.RebelLibertyDivisor * col.Population * level / 100);
         }
         game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
         return game.HoldReferendum();

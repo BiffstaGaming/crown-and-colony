@@ -44,11 +44,35 @@ public sealed partial class Game
     internal const int RegionSupportForReferendum = 50;
 
     /// <summary>
-    /// The per-region Federation Support percentage each colony region must reach for a referendum to be put — a read-only
-    /// oracle over <see cref="RegionSupportForReferendum"/> for the presentation layer (ADR-006), so the Federation panel
-    /// can draw the referendum bar (a threshold marker on each support gauge, and the "federation-ready" colour above it).
+    /// The <b>uniform fallback</b> referendum bar (= <see cref="RegionSupportForReferendum"/>, 50) — a read-only oracle
+    /// retained for back-compat and as the classic/no-target default. <b>WS3.2 superseded this for the panel and the gate:</b>
+    /// use the per-region <see cref="ReferendumTargetFor"/> (which returns this value only for a region the ruleset authors
+    /// no target for). Kept so classic — which authors no per-region targets — has a single named bar.
     /// </summary>
     public int ReferendumSupportThreshold => RegionSupportForReferendum;
+
+    /// <summary>
+    /// The <b>base</b> per-region referendum target (WS3.2, doc 05): the Federation Support percentage a settled colony
+    /// region must reach before a referendum may be put. Australia authors the six historical targets as variant data
+    /// (<see cref="Specification.Ruleset.FederationRegionTargets"/> — NSW 57 / Vic 94 / Qld 56 / SA 80 / Tas 94 / WA 70);
+    /// a region the ruleset does not specify — and every region of a classic game, whose ruleset specifies none — falls
+    /// back to the uniform <see cref="RegionSupportForReferendum"/>, so the default game is byte-identical (ADR-009).
+    /// </summary>
+    /// <param name="regionKey">One of <see cref="FederationRegionKeys"/> (e.g. <c>model.region.newSouthWales</c>).</param>
+    private int BaseReferendumTargetFor(string regionKey) =>
+        Ruleset.FederationRegionTargets.TryGetValue(regionKey, out int target) ? target : RegionSupportForReferendum;
+
+    /// <summary>
+    /// The <b>effective</b> per-region referendum target (WS3.2): the base target (<see cref="BaseReferendumTargetFor"/>)
+    /// less any reduction banked by the Democracy Pioneers who lower a region's bar (Edmund Barton's New South Wales
+    /// convention drive, Samuel Griffith's hardest-colony drafting, Mary Lee's South-Australian suffrage advocacy),
+    /// clamped 0–100. This is the read the referendum gate (<see cref="CheckPutToReferendum"/>) and the Federation panel's
+    /// per-region threshold marker + readiness colour consume (ADR-006). Falls back to the uniform bar for a region with
+    /// no authored target (so classic — which authors none and never reaches the gate — is byte-identical, ADR-009).
+    /// </summary>
+    /// <param name="regionKey">One of <see cref="FederationRegionKeys"/> (e.g. <c>model.region.newSouthWales</c>).</param>
+    public int ReferendumTargetFor(string regionKey) =>
+        Math.Clamp(BaseReferendumTargetFor(regionKey) - _federationTargetReductions.GetValueOrDefault(regionKey), 0, 100);
 
     /// <summary>The share of each turn's net Civic Voice that also accrues as national Convention Points (a light fraction so points trail support — the design keeps them a separate, slower axis).</summary>
     private const int ConventionPointsPerCivicVoicePercent = 25;
@@ -59,6 +83,16 @@ public sealed partial class Game
     private int _conventionPoints;
     private int _conventionPointsHundredths; // ephemeral sub-point carry (see AccrueFederationSupport); never persisted
     private int _referendumAttempts;
+
+    /// <summary>
+    /// Per-region referendum-<b>target</b> reductions banked by the Democracy Pioneers (WS3.2): region key → total
+    /// percentage points shaved off that region's <see cref="BaseReferendumTargetFor"/> (read via
+    /// <see cref="ReferendumTargetFor"/>). Empty for a classic game and for an Australia game that has elected no
+    /// target-lowering Pioneer, so it is omitted from the save (byte-identical, ADR-009); a token appears only once such a
+    /// Pioneer (Barton / Griffith / Mary Lee) is elected in an Australia game. Griffith's chosen region is state-dependent
+    /// at election time, so the reductions genuinely must be persisted rather than re-derived. Persisted (SaveGame v73).
+    /// </summary>
+    private readonly Dictionary<string, int> _federationTargetReductions = new();
 
     /// <summary>
     /// The current stage of the Federation victory loop (Phase-4a). <see cref="FederationPhase.ColonialMaturity"/> for
@@ -101,6 +135,23 @@ public sealed partial class Game
 
     /// <summary>Re-installs the restored "latest referendum carried" flag (save load, v72).</summary>
     internal void SetReferendumCarried(bool carried) => _referendumCarried = carried;
+
+    /// <summary>
+    /// Re-installs a restored per-region referendum-target reduction (save load, v73). Ignores non-positive amounts, so a
+    /// classic / no-Pioneer save (which stores none) restores an empty map and stays byte-identical (ADR-009).
+    /// </summary>
+    /// <param name="regionKey">The region key whose target was reduced (one of <see cref="FederationRegionKeys"/>).</param>
+    /// <param name="amount">The total percentage-point reduction banked against that region.</param>
+    internal void SetFederationTargetReduction(string regionKey, int amount)
+    {
+        if (amount > 0)
+        {
+            _federationTargetReductions[regionKey] = amount;
+        }
+    }
+
+    /// <summary>The banked per-region referendum-target reductions (WS3.2), for save serialisation. Empty unless a target-lowering Pioneer has been elected in an Australia game.</summary>
+    internal IReadOnlyDictionary<string, int> FederationTargetReductions => _federationTargetReductions;
 
     // ── Federation-state boosts (applied by the Australian Democracy-Pioneer on-election effects, Phase-4d.7) ──
 
@@ -196,25 +247,50 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Adds <paramref name="support"/> Federation Support to the single colony <paramref name="player"/> holds that is
-    /// <b>farthest from its referendum bar</b> — the "hardest to carry" colony (WS4.4 — Samuel Griffith's clause: as chief
-    /// drafter he wins over the most reluctant colony, "the hardest colony's target −5"). Each colony's support ceiling is
-    /// <b>per-colony</b> (<c>RebelLibertyDivisor × Population</c>), and the referendum reads
-    /// <see cref="Colony.FederationSupportPercent"/> — so the hardest colony is the one with the lowest support <b>as a
-    /// percentage of its own bar</b>, not the lowest raw points (a big low-% colony would otherwise be missed). Ties break
-    /// by colony id (deterministic). <b>A no-op unless the ruleset enables the Federation victory</b> (classic has none) →
-    /// byte-identical (ADR-009). RNG-free.
+    /// Reduces the referendum <b>target</b> of the single region <paramref name="regionKey"/> by <paramref name="amount"/>
+    /// percentage points (WS3.2 — the honest form of a Democracy Pioneer's "target −N" clause: Edmund Barton's convention
+    /// drive lowers New South Wales' bar, Mary Lee's suffrage advocacy lowers South Australia's — replacing WS4.4's
+    /// +support proxy). The reduction banks in <see cref="_federationTargetReductions"/> (persisted), stacks with any
+    /// other, and is folded into an effective 0–100 target by <see cref="ReferendumTargetFor"/>. <b>A no-op unless the
+    /// ruleset enables the Federation victory</b> (classic has none) → byte-identical (ADR-009). Non-positive amounts are
+    /// ignored. RNG-free.
     /// </summary>
-    /// <param name="player">The player whose hardest colony gains support (the electing Pioneer's owner).</param>
-    /// <param name="support">Federation Support points added to that one colony.</param>
-    internal void AddFederationSupportToHardestColony(Player player, int support)
+    /// <param name="regionKey">The <see cref="Region.Key"/> whose referendum target drops (e.g. <c>model.region.newSouthWales</c>).</param>
+    /// <param name="amount">Percentage points to shave off the region's referendum target (values ≤ 0 are ignored).</param>
+    internal void ReduceFederationTarget(string regionKey, int amount)
     {
-        if (!Ruleset.VictoryFederation || support == 0)
+        if (!Ruleset.VictoryFederation || amount <= 0)
         {
             return; // classic / non-Federation ruleset — byte-identical (ADR-009)
         }
-        Colony? hardest = ColoniesOf(player).OrderBy(c => c.FederationSupportPercent).ThenBy(c => c.Id).FirstOrDefault();
-        hardest?.AddFederationSupport(support);
+        _federationTargetReductions[regionKey] = _federationTargetReductions.GetValueOrDefault(regionKey) + amount;
+    }
+
+    /// <summary>
+    /// Reduces the referendum target of the <b>hardest settled region to carry</b> by <paramref name="amount"/> percentage
+    /// points (WS3.2 — Samuel Griffith's clause: as chief drafter he wins over the most reluctant colony, "the hardest
+    /// colony's target −5" — replacing WS4.4's +support proxy). The hardest region is the settled region whose support sits
+    /// farthest <b>below its own target</b> (the smallest <see cref="RegionFederationSupport"/> − <see cref="ReferendumTargetFor"/>
+    /// margin — the honest "hardest", replacing WS4.4's rank-by-raw-percentage); ties break by canonical
+    /// <see cref="FederationRegionKeys"/> order (deterministic). The chosen region is captured now (it is state-dependent,
+    /// so it must be banked, not re-derived). <b>A no-op unless the ruleset enables the Federation victory</b> (classic has
+    /// none) and when the human is settled nowhere → byte-identical (ADR-009). RNG-free.
+    /// </summary>
+    /// <param name="amount">Percentage points to shave off the hardest region's referendum target (values ≤ 0 are ignored).</param>
+    internal void ReduceHardestRegionTarget(int amount)
+    {
+        if (!Ruleset.VictoryFederation || amount <= 0)
+        {
+            return; // classic / non-Federation ruleset — byte-identical (ADR-009)
+        }
+        string? hardest = FederationRegionKeys
+            .Where(k => HumanColoniesInRegion(k).Count > 0)
+            .OrderBy(k => RegionFederationSupport(k) - ReferendumTargetFor(k))
+            .FirstOrDefault();
+        if (hardest is not null)
+        {
+            ReduceFederationTarget(hardest, amount);
+        }
     }
 
     /// <summary>
@@ -361,11 +437,13 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Whether the human may <b>put Federation to a referendum</b> right now (Phase-4a): the Federation victory is
+    /// Whether the human may <b>put Federation to a referendum</b> right now (Phase-4a/WS3.2): the Federation victory is
     /// enabled, the constitution has been drafted (phase <see cref="FederationPhase.ConstitutionDrafted"/> or a prior
     /// referendum has failed leaving the phase at <see cref="FederationPhase.Referendum"/>), and every one of the six
-    /// regions in which the human holds a colony is at or above <see cref="RegionSupportForReferendum"/> support (design
-    /// Phase 5). A pure, RNG-free read the panel gates its "put to referendum" action on.
+    /// regions in which the human holds a colony has reached <b>its own historical target</b>
+    /// (<see cref="ReferendumTargetFor"/> — NSW 57 / Vic 94 / Qld 56 / SA 80 / Tas 94 / WA 70 for Australia; the uniform
+    /// <see cref="RegionSupportForReferendum"/> as a fallback), design Phase 5. A pure, RNG-free read the panel gates its
+    /// "put to referendum" action on.
     /// </summary>
     public MoveCheck CheckPutToReferendum()
     {
@@ -377,15 +455,22 @@ public sealed partial class Game
         {
             return MoveCheck.No("The constitution must be drafted before a referendum can be held.");
         }
-        // Every region the human is settled in must be at referendum strength (a region with no human colony is not put).
+        // Every region the human is settled in must have reached its own referendum target (a region with no human colony
+        // is not put). Report the region furthest below its target (the one blocking the vote) with its concrete numbers —
+        // the panel's per-region gauges show which colony it is.
         List<string> settledRegions = FederationRegionKeys.Where(k => HumanColoniesInRegion(k).Count > 0).ToList();
         if (settledRegions.Count == 0)
         {
             return MoveCheck.No("No colony regions are settled.");
         }
-        if (settledRegions.Any(k => RegionFederationSupport(k) < RegionSupportForReferendum))
+        string? shortfall = settledRegions
+            .Where(k => RegionFederationSupport(k) < ReferendumTargetFor(k))
+            .OrderBy(k => RegionFederationSupport(k) - ReferendumTargetFor(k))
+            .FirstOrDefault();
+        if (shortfall is not null)
         {
-            return MoveCheck.No($"Every settled colony must reach {RegionSupportForReferendum}% Federation Support.");
+            return MoveCheck.No(
+                $"Every settled colony must reach its Federation Support target (one needs {ReferendumTargetFor(shortfall)}%, at {RegionFederationSupport(shortfall)}%).");
         }
         return MoveCheck.Yes(0);
     }

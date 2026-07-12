@@ -65,6 +65,7 @@ public sealed class Ruleset
         bool victoryDefeatEuropeans,
         bool victoryDefeatHumans,
         bool victoryFederation,
+        IReadOnlyDictionary<string, int> federationRegionTargets,
         CombatModifiers combatModifiers,
         ColonyConstants colonyConstants,
         MovementConstants movementConstants,
@@ -88,6 +89,7 @@ public sealed class Ruleset
         VictoryDefeatEuropeans = victoryDefeatEuropeans;
         VictoryDefeatHumans = victoryDefeatHumans;
         VictoryFederation = victoryFederation;
+        FederationRegionTargets = federationRegionTargets;
         _terrainById = terrainById;
         _unitById = unitById;
         _goodsById = goodsById;
@@ -361,6 +363,16 @@ public sealed class Ruleset
     /// parse-time only — there is no New-Game override seam for it (unlike the three defeat conditions).
     /// </summary>
     public bool VictoryFederation { get; }
+
+    /// <summary>
+    /// The per-region historical <b>Federation-support targets</b> (WS3.2, doc 05) — the Federation Support percentage
+    /// every settled colony in a region must reach before a referendum may be put, keyed by region key (one of
+    /// <c>GameSession.Game.FederationRegionKeys</c>). Australia declares all six (NSW 57 / Vic 94 / Qld 56 / SA 80 /
+    /// Tas 94 / WA 70); the classic ruleset declares none, so this is <b>empty</b> and every region falls back to the
+    /// uniform referendum bar (<c>Game.RegionSupportForReferendum</c> = 50) — byte-identical (ADR-009). Variant data
+    /// (ADR-018): a variant sets its own targets by authoring the <c>model.option.federationTarget.*</c> options.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> FederationRegionTargets { get; }
 
     /// <summary>
     /// Returns this ruleset with the three alternative <b>victory conditions</b> overridden to the player's New-Game
@@ -1174,6 +1186,7 @@ public sealed class Ruleset
         // is FALSE — the default game never accrues Federation state, draws no new RNG, and stays byte-identical
         // (ADR-009); the Australia spec sets it true to replace the War-of-Independence win with Federation by 1901.
         bool victoryFederation = ParseBooleanOption(root, "model.option.victoryFederation", fallback: false);
+        IReadOnlyDictionary<string, int> federationRegionTargets = ParseFederationRegionTargets(root);
 
         // The unattached, top-level <modifiers> combat percentages (attack bonus, movement/amphibious/artillery
         // penalties, fortified/artillery-against-raid bonuses, naval cargo penalty). Each missing modifier falls back
@@ -1205,7 +1218,7 @@ public sealed class Ruleset
             roles, disasters, unitChanges, experienceUpgrades, educationTurns, nativeLearning, europeanNations, events, eventDefs, calendar, fatherAgeYears,
             difficulty, gameOptions, difficultyLevelId, upkeepEnabled, naturalDisasterPercentage,
             interventionBells, interventionTurns, interventionForce,
-            victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, victoryFederation, combatModifiers, colonyConstants, movementConstants,
+            victoryDefeatRef, victoryDefeatEuropeans, victoryDefeatHumans, victoryFederation, federationRegionTargets, combatModifiers, colonyConstants, movementConstants,
             defaultColonyNames);
     }
 
@@ -1596,6 +1609,37 @@ public sealed class Ruleset
         return ParseInt((string?)option.Attribute("value"))
             ?? ParseInt((string?)option.Attribute("defaultValue"))
             ?? fallback;
+    }
+
+    /// <summary>The id prefix of the per-region Federation-support target options; the suffix after it is the region-key suffix.</summary>
+    private const string FederationTargetOptionPrefix = "model.option.federationTarget.";
+
+    /// <summary>
+    /// Parses the per-region Federation-support <b>targets</b> (WS3.2) — every <c>&lt;integerOption&gt;</c> whose id is
+    /// <c>model.option.federationTarget.&lt;suffix&gt;</c> — into a dictionary keyed by the matching region key
+    /// <c>model.region.&lt;suffix&gt;</c> (one of <c>GameSession.Game.FederationRegionKeys</c>), each clamped 0–100. The
+    /// classic ruleset declares none, so the result is <b>empty</b> and every region falls back to the uniform referendum
+    /// bar (<c>Game.RegionSupportForReferendum</c> = 50) — byte-identical (ADR-009). Australia (doc 05) declares all six.
+    /// Data-driven (ADR-018): a variant defines its own targets by authoring these options; no code change.
+    /// </summary>
+    /// <param name="root">The ruleset document root.</param>
+    internal static IReadOnlyDictionary<string, int> ParseFederationRegionTargets(XElement root)
+    {
+        var targets = new Dictionary<string, int>();
+        foreach (XElement option in root.Descendants("integerOption"))
+        {
+            string? id = (string?)option.Attribute("id");
+            if (id is null || !id.StartsWith(FederationTargetOptionPrefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+            int? value = ParseInt((string?)option.Attribute("value")) ?? ParseInt((string?)option.Attribute("defaultValue"));
+            if (value is { } v)
+            {
+                targets[$"model.region.{id[FederationTargetOptionPrefix.Length..]}"] = Math.Clamp(v, 0, 100);
+            }
+        }
+        return targets;
     }
 
     /// <summary>

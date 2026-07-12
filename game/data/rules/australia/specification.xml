@@ -5389,6 +5389,27 @@
              game is byte-identical and untouched (ADR-009). -->
         <booleanOption id="model.option.victoryFederation"
                        defaultValue="true"/>
+        <!-- Per-colony historical Federation-support TARGETS (WS3.2, doc 05 §"Federation support targets";
+             ADR-018 variant data). Each region's referendum bar — the Federation Support percentage every
+             settled colony in that region must reach before a referendum may be put — set from the final
+             1898-1900 referendum outcomes, so the small pro-Federation colonies (Tas/Vic) are near-certain
+             while NSW/Qld are the hard political negotiation. Read by id-suffix in Ruleset.ParseFederationRegionTargets
+             into Ruleset.FederationRegionTargets and consumed by Game.ReferendumTargetFor. Classic ships none, so
+             the dictionary is empty and every region falls back to the uniform 50% (RegionSupportForReferendum) —
+             byte-identical (ADR-009). The suffix after "federationTarget." is the region-key suffix (a colony's
+             region is one of Game.FederationRegionKeys, model.region.<suffix>). -->
+        <integerOption id="model.option.federationTarget.newSouthWales"
+                       value="57" minimumValue="0" maximumValue="100"/>
+        <integerOption id="model.option.federationTarget.victoria"
+                       value="94" minimumValue="0" maximumValue="100"/>
+        <integerOption id="model.option.federationTarget.queensland"
+                       value="56" minimumValue="0" maximumValue="100"/>
+        <integerOption id="model.option.federationTarget.southAustralia"
+                       value="80" minimumValue="0" maximumValue="100"/>
+        <integerOption id="model.option.federationTarget.tasmania"
+                       value="94" minimumValue="0" maximumValue="100"/>
+        <integerOption id="model.option.federationTarget.westernAustralia"
+                       value="70" minimumValue="0" maximumValue="100"/>
       </optionGroup>
       <optionGroup id="gameOptions.years">
         <!-- Australian Federation timeline (86d3mm2fb): the game runs 1788 (the First Fleet) to

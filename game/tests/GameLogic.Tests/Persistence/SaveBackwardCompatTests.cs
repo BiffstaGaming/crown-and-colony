@@ -165,7 +165,7 @@ public class SaveBackwardCompatTests
             if (v68Lines[i].Contains("\"Version\":"))
             {
                 Assert.Contains("68", v68Lines[i]);
-                Assert.Contains("72", resavedLines[i]);
+                Assert.Contains(SaveGame.CurrentVersion.ToString(), resavedLines[i]); // re-saved at today's version
                 continue; // the one permitted difference
             }
             Assert.Equal(v68Lines[i], resavedLines[i]);

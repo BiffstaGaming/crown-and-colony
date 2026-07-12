@@ -164,21 +164,27 @@ public class FederationVictoryTests
     }
 
     [Fact]
-    public void Referendum_IsGated_UntilEverySettledRegionReachesStrength()
+    public void Referendum_IsGated_UntilEverySettledRegionReachesItsOwnTarget()
     {
         Game game = NewAustralia();
         FoundAllSixRegions(game, out var colonies);
         game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
 
-        foreach (Colony c in colonies.Values)
+        // Every settled region at exactly its own historical target (NSW 57 … Tas/Vic 94) → the referendum opens.
+        foreach ((AustraliaColony region, Colony colony) in colonies)
         {
-            SetSupportPercent(c, Game.RegionSupportForReferendum);
+            SetSupportPercent(colony, game.ReferendumTargetFor(AustraliaColonyStart.RegionKey(region)));
         }
-        // Drop one settled region below the bar → the referendum is closed.
-        SetSupportPercent(colonies[AustraliaColony.WesternAustralia], Game.RegionSupportForReferendum - 1);
+        Assert.True(game.CheckPutToReferendum().Allowed);
+
+        // Tasmania at 90% — comfortably past the old uniform 50 bar, but short of its 94% target → still closed. This is the
+        // WS3.2 behaviour change: the small, historically pro-Federation colonies must reach their high target, not a flat 50.
+        Assert.Equal(94, game.ReferendumTargetFor("model.region.tasmania"));
+        SetSupportPercent(colonies[AustraliaColony.Tasmania], 90);
         Assert.False(game.CheckPutToReferendum().Allowed);
 
-        SetSupportPercent(colonies[AustraliaColony.WesternAustralia], Game.RegionSupportForReferendum);
+        // Back to its own target → open again.
+        SetSupportPercent(colonies[AustraliaColony.Tasmania], 94);
         Assert.True(game.CheckPutToReferendum().Allowed);
     }
 
@@ -188,10 +194,10 @@ public class FederationVictoryTests
         Game game = NewAustralia();
         FoundAllSixRegions(game, out var colonies);
         game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
-        // Exactly at the referendum bar: enough to hold a vote, but far from a certain pass — a low roll fails it.
-        foreach (Colony c in colonies.Values)
+        // Exactly at each region's own target: enough to hold a vote, but far from a certain pass — a low roll fails it.
+        foreach ((AustraliaColony region, Colony colony) in colonies)
         {
-            SetSupportPercent(c, Game.RegionSupportForReferendum);
+            SetSupportPercent(colony, game.ReferendumTargetFor(AustraliaColonyStart.RegionKey(region)));
         }
         int bankedBefore = colonies[AustraliaColony.NewSouthWales].FederationSupport;
 
@@ -229,15 +235,16 @@ public class FederationVictoryTests
             return game.HoldReferendum();
         }
 
-        // Two runs with identical seed, turn, and support roll the same referendum result.
-        Assert.Equal(RunToReferendum(Seed, 60), RunToReferendum(Seed, 60));
-        Assert.Equal(RunToReferendum(Seed, 60), RunToReferendum(Seed, 60));
+        // Two runs with identical seed, turn, and support roll the same referendum result. 95% clears every region's target
+        // (max 94), so the gate opens and the pass roll — not the gate — is what is being tested for determinism.
+        Assert.Equal(RunToReferendum(Seed, 95), RunToReferendum(Seed, 95));
+        Assert.Equal(RunToReferendum(Seed, 95), RunToReferendum(Seed, 95));
     }
 
     // ─────────────────────────────── persistence (v72, omit-when-default) ───────────────────────────────
 
     [Fact]
-    public void SaveVersion_IsCurrent() => Assert.Equal(72, SaveGame.CurrentVersion);
+    public void SaveVersion_IsCurrent() => Assert.Equal(73, SaveGame.CurrentVersion);
 
     [Fact]
     public void ClassicSave_OmitsEveryFederationToken()
@@ -251,6 +258,56 @@ public class FederationVictoryTests
         Assert.DoesNotContain("FederationPhase", json);
         Assert.DoesNotContain("ConventionPoints", json);
         Assert.DoesNotContain("Referendum", json);
+        Assert.DoesNotContain("FederationTargetReductions", json); // WS3.2 (v73) — classic banks no target reductions
+    }
+
+    // ─────────────────────────────── per-region targets (WS3.2) ───────────────────────────────
+
+    [Fact]
+    public void FederationRegionTargets_ParseTheSixHistoricalValues_EmptyForClassic()
+    {
+        Assert.Empty(Classic.FederationRegionTargets); // classic authors none → fall back to the uniform bar everywhere
+        Assert.Equal(57, Australia.FederationRegionTargets["model.region.newSouthWales"]);
+        Assert.Equal(94, Australia.FederationRegionTargets["model.region.victoria"]);
+        Assert.Equal(56, Australia.FederationRegionTargets["model.region.queensland"]);
+        Assert.Equal(80, Australia.FederationRegionTargets["model.region.southAustralia"]);
+        Assert.Equal(94, Australia.FederationRegionTargets["model.region.tasmania"]);
+        Assert.Equal(70, Australia.FederationRegionTargets["model.region.westernAustralia"]);
+    }
+
+    [Fact]
+    public void ReferendumTargetFor_ReadsThePerRegionTarget_FallsBackToTheUniformBar()
+    {
+        Game australia = NewAustralia();
+        Assert.Equal(57, australia.ReferendumTargetFor("model.region.newSouthWales"));
+        Assert.Equal(94, australia.ReferendumTargetFor("model.region.tasmania"));
+
+        // A region the Australia spec does not author (not one of the six) falls back to the uniform bar…
+        Assert.Equal(Game.RegionSupportForReferendum, australia.ReferendumTargetFor("model.region.pacific"));
+        // …and a classic game — whose ruleset authors none — reads the uniform bar for every region.
+        Game classic = Game.New(Classic, Seed);
+        Assert.Equal(Game.RegionSupportForReferendum, classic.ReferendumTargetFor("model.region.newSouthWales"));
+    }
+
+    [Fact]
+    public void TargetReductions_RoundTripThroughASave_AndAreAbsentBeforeAnyElection()
+    {
+        // A fresh Australia game (no target-lowering Pioneer elected) banks no reductions → the token is omitted.
+        Game clean = NewAustralia();
+        FoundIn(clean, AustraliaColony.NewSouthWales);
+        Assert.DoesNotContain("FederationTargetReductions", SaveGame.From(clean, "australia").ToJson());
+
+        // Bank a NSW target reduction (Barton's clause) → it is written, and restores to the same effective target.
+        Game game = NewAustralia();
+        FoundIn(game, AustraliaColony.NewSouthWales);
+        game.ReduceFederationTarget("model.region.newSouthWales", 3);
+        Assert.Equal(54, game.ReferendumTargetFor("model.region.newSouthWales")); // 57 − 3
+
+        string json = SaveGame.From(game, "australia").ToJson();
+        Assert.Contains("FederationTargetReductions", json);
+        Game restored = SaveGame.FromJson(json).Restore(Australia);
+        Assert.Equal(54, restored.ReferendumTargetFor("model.region.newSouthWales"));
+        Assert.Equal(94, restored.ReferendumTargetFor("model.region.tasmania")); // untouched regions keep their base target
     }
 
     [Fact]

@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-12 — WS3.2: per-colony historical Federation referendum targets (Federation depth)
+
+**Requested (Chris):** "WS3" (Federation depth). After a scoping workflow + two locked decisions from Chris (adopt the six documented targets as-is; flip all three "target −N" Pioneer clauses), implemented the foundational first task WS3.2.
+**Did:**
+- **Scoped WS3** with a 3-agent workflow (current loop / design target / data seam → decomposition). Recovered the canonical six per-colony referendum targets from doc 05 and cross-checked them myself: NSW 57 / Vic 94 / Qld 56 / SA 80 / Tas 94 / WA 70.
+- **Per-region referendum targets** — authored the six as Australia variant data (`specification.xml` `model.option.federationTarget.*`, ADR-018), parsed into `Ruleset.FederationRegionTargets`; new `Game.ReferendumTargetFor(regionKey)` oracle (base − banked reduction, clamped 0–100, uniform-50 fallback). `CheckPutToReferendum` now gates on each region's **own** target — a deliberate difficulty increase (Tas/Vic need 94%, not 50%). Convention counter stays a uniform 40% (design Phase-3).
+- **Flipped 3 Pioneer clauses from fake +support to real target reductions** — Barton −3 NSW, Griffith −5 hardest settled region, Mary Lee −5 SA (banked in a persisted `_federationTargetReductions` map; Angas/Parkes/Spence stay +support). Removed the now-dead `AddFederationSupportToHardestColony`.
+- **Panel** — the per-region gauge marker + readiness colour now read each region's own target (NSW greens at 57%, Tas/Vic markers out at 94%). Render-verified (`australia-federation.png`).
+- **Save v73** — `FederationTargetReductions` slice, omit-when-default (classic + no-Pioneer Australia game byte-identical).
+**Status:** verified, **review running then commit**. Build ✓; full **L1/L2 2958 green** (incl. +6 new WS3.2 tests + ~42 version-pin bumps + Quick-test rebaselined to the per-region gate) + **determinism soak green** (classic byte-identical) + **L3 `FederationPanelTests` green**. An adversarial-review workflow (3 lenses → verify) is running before I commit.
+**Changed:** `Game.Federation.cs`, `Game.AustralianEffects.cs`, `Ruleset.cs`, `SaveGame.cs`, `FederationPanel.cs`, `australia/specification.xml`, `federation-victory.md` (both layers + changelog + verification), `FederationVictoryTests.cs`, `AustralianContentTests.cs`, `SaveBackwardCompatTests.cs` + version-pin bumps across ~30 test files, `australia-federation.png`.
+**Decisions:** targets = referendum bar only (convention stays 40%); adopt the six documented "Suggested" numbers as-is; flip all three clauses incl. Mary Lee (Chris, 2026-07-12). Griffith's hardest region is state-dependent → reductions persisted, not re-derived.
+**Scheduled next:** the remaining WS3 tasks are decomposed but sign-off-gated — **WS3.3** constitutional clauses (needs Chris: the 7 clause costs/effects are unspecified), **WS3.7** phase-1/2 gates (needs threshold numbers), **WS3.8** six-phase UI labels (no sign-off — a good low-risk next), **WS3.5/3.6/3.4** deferred. Recommend WS3.8 or pick clause design with Chris. Will create the WS3 ClickUp tasks.
+**Follow-ups:** targets could later be difficulty-scaled / population-weighted (deferred, noted in federation-victory §5). Pioneer magnitudes remain balance placeholders.
+**Needs you:** eyeball `australia-federation.png` (per-region markers). For WS3.3 (clauses) I'll need the clause set + costs/effects, or your steer to WS3.8 (UI-only) next. Sign-offs unchanged (Barak `86d3n855a`; 4c.11 framings).
+
+---
+
 ## 2026-07-12 — WS2.7: Historical-Figure-attained celebration popup (WS2.7 complete)
 
 **Requested (Chris):** finish WS2.7 — both remaining (maturity badge + Pioneer popup). This is the **Pioneer popup** — the second and last of the two, completing the WS2.7 UI-polish pass.
