@@ -103,6 +103,36 @@ public sealed partial class Game
     public FederationPhase FederationPhase => _federationPhase;
 
     /// <summary>
+    /// The current player-facing <b>narrative stage</b> of the Federation campaign (WS3.8) — the design's six named phases
+    /// (doc 05) mapped from the mechanical <see cref="FederationPhase"/> plus the calendar. Within
+    /// <see cref="FederationPhase.ColonialMaturity"/> the stage is <see cref="FederationStage.FederationMovement"/> once the
+    /// 1889+ Federation era has begun (<see cref="CurrentEventEra"/> = <see cref="EventEra.Federation"/>), else
+    /// <see cref="FederationStage.ColonialMaturity"/>; the other mechanical states map one-to-one. A pure, RNG-free read
+    /// (no persisted state) the Federation panel labels its phase tracker + era indicator from (ADR-006).
+    /// <see cref="FederationStage.None"/> for a classic game (no Federation campaign), so nothing is shown there.
+    /// </summary>
+    public FederationStage CurrentFederationStage
+    {
+        get
+        {
+            if (!Ruleset.VictoryFederation)
+            {
+                return FederationStage.None; // classic — no Federation campaign
+            }
+            return _federationPhase switch
+            {
+                FederationPhase.ColonialMaturity =>
+                    CurrentEventEra == EventEra.Federation ? FederationStage.FederationMovement : FederationStage.ColonialMaturity,
+                FederationPhase.ConventionCalled => FederationStage.ConventionProcess,
+                FederationPhase.ConstitutionDrafted => FederationStage.DraftConstitution,
+                FederationPhase.Referendum => FederationStage.Referendum,
+                FederationPhase.Commonwealth => FederationStage.Commonwealth,
+                _ => FederationStage.ColonialMaturity,
+            };
+        }
+    }
+
+    /// <summary>
     /// The nation-level <b>Convention Points</b> banked toward drafting the constitution and calling a convention
     /// (Phase-4a). Accrues alongside Federation Support from the human's Civic Voice; 0 for a classic game. Persisted
     /// (v72, omitted when 0).

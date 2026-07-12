@@ -16,7 +16,8 @@ namespace CrownAndColony.Presentation;
 /// (<see cref="Specification.Ruleset.VictoryFederation"/> — false for classic, so the classic HUD is untouched).
 ///
 /// <para>Pure presentation (ADR-006): every reading comes from a <see cref="Game"/> oracle — per-region support
-/// (<see cref="Game.RegionSupportSummary"/>), the phase (<see cref="Game.FederationPhase"/>), the points
+/// (<see cref="Game.RegionSupportSummary"/>), the campaign stage (<see cref="Game.CurrentFederationStage"/> — the six
+/// named design phases), the points
 /// (<see cref="Game.ConventionPoints"/>), each region's own referendum target (<see cref="Game.ReferendumTargetFor"/>) and the two
 /// action gates (<see cref="Game.CheckCallConvention"/> / <see cref="Game.CheckPutToReferendum"/>). The only mutations are
 /// the forwarded commands (<see cref="Game.CallConvention"/> / <see cref="Game.HoldReferendum"/>); all the rules
@@ -51,14 +52,15 @@ public partial class FederationPanel : PanelContainer
     private static readonly Color SupportMid = new(0.78f, 0.58f, 0.24f);   // ochre/amber — climbing toward the bar
     private static readonly Color SupportReady = new(0.32f, 0.48f, 0.24f); // muted federation-green — at/over the referendum bar
 
-    /// <summary>The five phases of the road to Federation, in journey order, for the step tracker.</summary>
-    private static readonly (FederationPhase Phase, string Label)[] PhaseSteps =
+    /// <summary>The six narrative stages of the road to Federation (design doc 05), in journey order, for the step tracker (WS3.8).</summary>
+    private static readonly (FederationStage Stage, string Label)[] StageSteps =
     {
-        (FederationPhase.ColonialMaturity, "Maturity"),
-        (FederationPhase.ConventionCalled, "Convention"),
-        (FederationPhase.ConstitutionDrafted, "Constitution"),
-        (FederationPhase.Referendum, "Referendum"),
-        (FederationPhase.Commonwealth, "Commonwealth"),
+        (FederationStage.ColonialMaturity, "Maturity"),
+        (FederationStage.FederationMovement, "Movement"),
+        (FederationStage.ConventionProcess, "Convention"),
+        (FederationStage.DraftConstitution, "Constitution"),
+        (FederationStage.Referendum, "Referendum"),
+        (FederationStage.Commonwealth, "Commonwealth"),
     };
 
     /// <summary>The six colony regions' display names, keyed by their <c>model.region.*</c> key (Australia-only; hard-coded).</summary>
@@ -125,14 +127,29 @@ public partial class FederationPanel : PanelContainer
         Show();
     }
 
-    /// <summary>The current phase's player-facing narrative sentence (Australian narrative), read from the <see cref="Game.FederationPhase"/> oracle.</summary>
-    private static string PhaseName(FederationPhase phase) => phase switch
+    /// <summary>The design phase number + name for the era indicator (WS3.8 — doc 05's six named phases).</summary>
+    private static (int Number, string Name) StageHeading(FederationStage stage) => stage switch
     {
-        FederationPhase.ColonialMaturity => "The colonies are growing — the movement gathers support.",
-        FederationPhase.ConventionCalled => "The Federation Convention has been called — the constitution is being drafted.",
-        FederationPhase.ConstitutionDrafted => "The draft constitution is complete — a referendum may be held.",
-        FederationPhase.Referendum => "A Federation referendum is under way.",
-        FederationPhase.Commonwealth => "The Commonwealth of Australia is proclaimed — Federation is achieved!",
+        FederationStage.ColonialMaturity => (1, "Colonial Maturity"),
+        FederationStage.FederationMovement => (2, "Federation Movement"),
+        FederationStage.ConventionProcess => (3, "Convention Process"),
+        FederationStage.DraftConstitution => (4, "Draft Constitution"),
+        FederationStage.Referendum => (5, "Referendums"),
+        FederationStage.Commonwealth => (6, "Commonwealth"),
+        _ => (0, ""),
+    };
+
+    /// <summary>The current stage's player-facing narrative sentence (WS3.8), read from the <see cref="Game.CurrentFederationStage"/> oracle. The Referendum stage folds in design Phase 6 (Failure and Retry) after a failed vote.</summary>
+    private string StageNarrative(FederationStage stage) => stage switch
+    {
+        FederationStage.ColonialMaturity => "The colonies are growing — nationhood is still a distant idea.",
+        FederationStage.FederationMovement => "The Federation movement is astir — leagues and orators press the cause across the colonies.",
+        FederationStage.ConventionProcess => "The Federation Convention has been called — the constitution is being drafted.",
+        FederationStage.DraftConstitution => "The draft constitution is complete — a referendum may be held.",
+        FederationStage.Referendum => _game.ReferendumAttempts > 0 && !_game.ReferendumCarried
+            ? "The last referendum failed — the movement must rebuild support before trying again."
+            : "A Federation referendum is under way.",
+        FederationStage.Commonwealth => "The Commonwealth of Australia is proclaimed — Federation is achieved!",
         _ => "",
     };
 
@@ -141,12 +158,26 @@ public partial class FederationPanel : PanelContainer
     {
         ClearBody();
 
-        _body.AddChild(BuildPhaseTracker(_game.FederationPhase));
+        FederationStage stage = _game.CurrentFederationStage; // WS3.8: the design's six named phases, mapped from the mechanical state
+        _body.AddChild(BuildPhaseTracker(stage));
+
+        // Era indicator: names the current design phase ("Phase 2 · Federation Movement") above the narrative line.
+        (int number, string name) = StageHeading(stage);
+        if (number > 0)
+        {
+            _body.AddChild(new Label
+            {
+                Name = "StageName",
+                Text = $"Phase {number} · {name}",
+                HorizontalAlignment = HorizontalAlignment.Center,
+                ThemeTypeVariation = "SectionHeader", // the theme's section-header variation (gold, larger)
+            });
+        }
 
         var phaseLine = new Label
         {
             Name = "PhaseLine",
-            Text = PhaseName(_game.FederationPhase),
+            Text = StageNarrative(stage),
             HorizontalAlignment = HorizontalAlignment.Center,
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
@@ -172,27 +203,28 @@ public partial class FederationPanel : PanelContainer
     }
 
     /// <summary>
-    /// The five-step phase tracker: one chip per stage of the road to Federation, in journey order. The stage the movement
-    /// has reached is lit (wood face + gold edge, cream text); completed stages read as filled dark wood; stages still ahead
-    /// sit as dim recessed parchment — so the player sees at a glance how far the movement has come.
+    /// The six-step phase tracker (WS3.8 — doc 05's named stages): one chip per stage of the road to Federation, in journey
+    /// order. The stage the movement has reached is lit (wood face + gold edge, cream text); completed stages read as filled
+    /// dark wood; stages still ahead sit as dim recessed parchment — so the player sees at a glance how far the movement has
+    /// come. Driven by <see cref="Game.CurrentFederationStage"/> (which splits Maturity vs Movement by the calendar).
     /// </summary>
-    private Control BuildPhaseTracker(FederationPhase current)
+    private Control BuildPhaseTracker(FederationStage current)
     {
-        int currentIndex = Array.FindIndex(PhaseSteps, s => s.Phase == current);
+        int currentIndex = Array.FindIndex(StageSteps, s => s.Stage == current);
         var tracker = new HBoxContainer { Name = "PhaseTracker", Alignment = BoxContainer.AlignmentMode.Center };
         tracker.AddThemeConstantOverride("separation", 4);
 
-        for (int i = 0; i < PhaseSteps.Length; i++)
+        for (int i = 0; i < StageSteps.Length; i++)
         {
             bool active = i == currentIndex;
             bool done = i < currentIndex;
             Color bg = active ? WoodMid : done ? WoodDark : ParchmentDark;
             Color border = active ? Gold : ParchmentEdge;
 
-            var chip = new PanelContainer { Name = $"Phase_{PhaseSteps[i].Phase}" };
+            var chip = new PanelContainer { Name = $"Phase_{StageSteps[i].Stage}" };
             chip.AddThemeStyleboxOverride("panel", Flat(bg, border, active ? 2 : 1, 4, 6, 3));
 
-            var label = new Label { Text = PhaseSteps[i].Label, HorizontalAlignment = HorizontalAlignment.Center };
+            var label = new Label { Text = StageSteps[i].Label, HorizontalAlignment = HorizontalAlignment.Center };
             label.AddThemeColorOverride("font_color", active || done ? TextOnWood : new Color(Ink, 0.62f)); // future stages dimmed but legible
             label.AddThemeFontSizeOverride("font_size", 13);
             chip.AddChild(label);

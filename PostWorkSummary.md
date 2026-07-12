@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-12 — WS3.8: six named campaign stages + era indicator (Federation depth, UI)
+
+**Requested (Chris):** "3.8 go" — the six-phase mapping + era indicator (the low-sign-off, presentation-only WS3 task).
+**Did:**
+- **New pure oracle `Game.CurrentFederationStage`** (`FederationStage` enum) mapping the coarse 5-state mechanical `FederationPhase` onto the design's **six named phases** (doc 05: Colonial Maturity → Federation Movement → Convention Process → Draft Constitution → Referendums → Commonwealth). Splits the two that share the `ColonialMaturity` mechanical state by the calendar — **Federation Movement** once the 1889+ Federation era begins (`CurrentEventEra == EventEra.Federation`, reusing the 4c.10 era bands, no magic year). `None` for classic.
+- **FederationPanel** — the phase tracker grew from 5 to **6 steps** and gained a gold **era-indicator** header ("Phase 2 · Federation Movement"); the narrative line folds in design Phase 6 (Failure/Retry) after a failed vote. Render-verified (`australia-federation.png` — "Phase 1 · Colonial Maturity", six chips).
+- **No new game state** (pure derived read, no save bump) → classic byte-identical, no soak impact.
+**Status:** **verified, committing**. Build ✓; +2 L1 (`FederationVictoryTests`: six-stage mapping incl. the 1889 Maturity→Movement split + classic `None`) +2 L3 (`FederationPanelTests`: 6-step tracker + era indicator names the current phase, not hard-coded). Full L1/L2 + determinism soak + L3 green.
+**Changed:** `FederationPhase.cs` (+`FederationStage` enum), `Game.Federation.cs` (+`CurrentFederationStage` oracle), `FederationPanel.cs` (six-step tracker + era indicator), `FederationVictoryTests.cs` (+2), `FederationPanelTests.cs` (+2, tracker count 5→6), `federation-victory.md` (both layers + changelog + verification), `australia-federation.png`.
+**Decisions:** put the six-phase mapping in a testable GameLogic oracle (ADR-006), not scattered in the panel; reuse the existing `EventEra` bands for the 1889 movement signal rather than a hardcoded year; fold Failure/Retry into a narrative note (it's a loop-back, not a forward tracker step).
+**Scheduled next:** WS3 remaining — **WS3.7** phase-1/2 gates (needs Civic-Voice threshold numbers), **WS3.3** constitutional clauses (needs the clause costs/effects), **WS3.5/3.6/3.4** deferred. All in the kanban. Awaiting Chris's steer (or a numbers hand-off for WS3.3/3.7).
+**Needs you:** eyeball the six-stage tracker in `australia-federation.png` if you like. For WS3.3/WS3.7 I'll need the design numbers, or pick another stream. Sign-offs unchanged.
+
+---
+
 ## 2026-07-12 — WS3.2: per-colony historical Federation referendum targets (Federation depth)
 
 **Requested (Chris):** "WS3" (Federation depth). After a scoping workflow + two locked decisions from Chris (adopt the six documented targets as-is; flip all three "target −N" Pioneer clauses), implemented the foundational first task WS3.2.

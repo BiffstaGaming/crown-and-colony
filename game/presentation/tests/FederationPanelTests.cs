@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Persistence;
 using CrownAndColony.GameLogic.Specification;
 using CrownAndColony.GameLogic.Units;
 using CrownAndColony.GameLogic.World;
@@ -88,10 +89,12 @@ public class FederationPanelTests
         await runner.SimulateFrames(1);
 
         var body = panel.GetNode<VBoxContainer>($"VBox/{FederationPanel.BodyName}");
-        // The five-step phase tracker, with a chip per phase.
+        // The six-step phase tracker (WS3.8 — doc 05's named stages), with a chip per stage.
         var tracker = body.GetNodeOrNull<HBoxContainer>("PhaseTracker");
         AssertThat(tracker).IsNotNull();
-        AssertThat(tracker!.GetChildCount()).IsEqual(5);
+        AssertThat(tracker!.GetChildCount()).IsEqual(6);
+        // The era indicator names the current design phase.
+        AssertThat(body.GetNode<Label>("StageName").Text).Contains("Colonial Maturity"); // a fresh 1788 game → Phase 1
         // Each region's bar is a styled gauge (recessed trough + coloured fill), not a stock ProgressBar.
         var bar = body.GetNode<ProgressBar>("Region_newSouthWales/Bar");
         AssertThat(bar.HasThemeStyleboxOverride("fill")).IsTrue();
@@ -100,6 +103,31 @@ public class FederationPanelTests
         AssertThat(bar.GetNodeOrNull("ReferendumMark")).IsNotNull();
         // The title carries the theme's display-title variation (designed hierarchy).
         AssertThat(panel.GetNode<Label>("VBox/FederationTitle").ThemeTypeVariation.ToString()).IsEqual("ColonyTitle");
+
+        panel.QueueFree();
+    }
+
+    [TestCase]
+    public async Task Open_NamesTheCurrentDesignPhase_AsAnEraIndicator_NotHardcoded()
+    {
+        // WS3.8: the era indicator names the design phase for the current mechanical state. Advance to ConstitutionDrafted
+        // via the save layer (public) so the label must read Game.CurrentFederationStage, not a hard-coded Phase 1.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");
+        await runner.SimulateFrames(2);
+        var host = (Control)runner.Scene();
+
+        Game game = NewAustralia();
+        FoundIn(game, AustraliaColony.NewSouthWales);
+        Game drafted = (SaveGame.From(game, "australia") with { FederationPhase = (int)FederationPhase.ConstitutionDrafted })
+            .Restore(Australia);
+        FederationPanel panel = AddPanel(host);
+
+        panel.Open(drafted, () => { });
+        await runner.SimulateFrames(1);
+
+        var stageName = panel.GetNode<Label>($"VBox/{FederationPanel.BodyName}/StageName");
+        AssertThat(stageName.Text).Contains("Phase 4");
+        AssertThat(stageName.Text).Contains("Draft Constitution");
 
         panel.QueueFree();
     }

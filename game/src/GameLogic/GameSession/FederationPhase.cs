@@ -50,3 +50,37 @@ public enum FederationPhase
     /// </summary>
     Commonwealth = 4,
 }
+
+/// <summary>
+/// The player-facing <b>narrative stage</b> of the Federation campaign (WS3.8) — the design's six named phases
+/// (doc 05: Colonial Maturity → Federation Movement → Convention Process → Draft Constitution → Referendums → the
+/// Commonwealth win), mapped from the coarser mechanical <see cref="FederationPhase"/> by
+/// <see cref="Game.CurrentFederationStage"/>. Two of them share one mechanical state and are told apart by context:
+/// <see cref="ColonialMaturity"/> vs <see cref="FederationMovement"/> (the movement is under way once the 1889+ Federation
+/// era has begun — <see cref="Game.EventEra.Federation"/>), both within <see cref="FederationPhase.ColonialMaturity"/>.
+/// Design Phase 6 (Failure and Retry) is not a forward stage — it is surfaced in the panel's narrative when a referendum
+/// has failed. Pure presentation labelling (no persisted state); <see cref="None"/> for a classic game (no campaign).
+/// </summary>
+public enum FederationStage
+{
+    /// <summary>Not a Federation game (classic) — there is no campaign stage to show.</summary>
+    None,
+
+    /// <summary>Design Phase 1 — the colonies grow and mature toward nationhood (before the 1889 Federation era).</summary>
+    ColonialMaturity,
+
+    /// <summary>Design Phase 2 — the Federation movement gathers (the 1889+ Federation era), before a convention is called.</summary>
+    FederationMovement,
+
+    /// <summary>Design Phase 3 — the Federation Convention sits and drafts the constitution.</summary>
+    ConventionProcess,
+
+    /// <summary>Design Phase 4 — the draft constitution is complete; a referendum may be put.</summary>
+    DraftConstitution,
+
+    /// <summary>Design Phase 5 — a referendum is under way (design Phase 6, Failure/Retry, is a narrative note here after a failed vote).</summary>
+    Referendum,
+
+    /// <summary>The Commonwealth is proclaimed — the human has won by Federation.</summary>
+    Commonwealth,
+}

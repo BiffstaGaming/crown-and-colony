@@ -310,6 +310,39 @@ public class FederationVictoryTests
         Assert.Equal(94, restored.ReferendumTargetFor("model.region.tasmania")); // untouched regions keep their base target
     }
 
+    // ─────────────────────────────── narrative stages (WS3.8) ───────────────────────────────
+
+    [Fact]
+    public void CurrentFederationStage_MapsTheMechanicalPhase_ToTheSixDesignStages()
+    {
+        Assert.Equal(FederationStage.None, Game.New(Classic, Seed).CurrentFederationStage); // classic — no campaign
+
+        Game game = NewAustralia();
+        // A fresh 1788 Australia game: mechanical ColonialMaturity, before the 1889 Federation era → Colonial Maturity.
+        Assert.Equal(FederationStage.ColonialMaturity, game.CurrentFederationStage);
+
+        game.SetFederationPhase(FederationPhase.ConventionCalled);
+        Assert.Equal(FederationStage.ConventionProcess, game.CurrentFederationStage);
+        game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
+        Assert.Equal(FederationStage.DraftConstitution, game.CurrentFederationStage);
+        game.SetFederationPhase(FederationPhase.Referendum);
+        Assert.Equal(FederationStage.Referendum, game.CurrentFederationStage);
+        game.SetFederationPhase(FederationPhase.Commonwealth);
+        Assert.Equal(FederationStage.Commonwealth, game.CurrentFederationStage);
+    }
+
+    [Fact]
+    public void CurrentFederationStage_IsFederationMovement_OnceThe1889EraBegins_WhileStillAtColonialMaturity()
+    {
+        // Advance an Australia game into the 1889+ Federation era (via the save layer's turn) while still mechanically at
+        // ColonialMaturity → the narrative stage becomes Federation Movement (design Phase 2, the same mechanical state).
+        Game game = NewAustralia();
+        Game late = (SaveGame.From(game, "australia") with { Turn = 140 }).Restore(Australia); // turn 140 = 1889+ on the Australian calendar
+        Assert.True(late.CurrentYear >= 1889, "turn 140 must sit in the 1889+ Federation era");
+        Assert.Equal(FederationPhase.ColonialMaturity, late.FederationPhase); // still mechanically at maturity
+        Assert.Equal(FederationStage.FederationMovement, late.CurrentFederationStage);
+    }
+
     [Fact]
     public void FederationState_RoundTripsThroughASave()
     {
