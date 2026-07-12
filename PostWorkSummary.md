@@ -19,6 +19,18 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-12 — FederationPanel overflow fix (autonomous)
+
+**Requested (Chris):** autonomous continuation. Self-identified bug: the feature-rich FederationPanel overflowed.
+**Did:** The panel had grown a lot (WS2.7 tracker + WS3.8 era + WS3.3 drafting section + 6 support gauges), and its code-built shell sized to content with **no scroll** → at the drafting phase the **Close button was off-screen** (unreachable — a real usability bug my recent work created). Wrapped the body in a `ScrollContainer` inside a **centred, viewport-capped** shell with Title + Close pinned (the `godot-overlay-modal-pattern`); a deferred `Relayout` sizes to `min(content+chrome, viewport−margin)` + centres. Also added the full **E2E Federation-journey L2 test** (maturity → movement → convention → drafting → referendum → Commonwealth win through the real actions) — proving the WS3 depth streams integrate + Federation is winnable end-to-end.
+**Status:** **committing, then CI**. Build ✓; +1 L3 (panel capped + Close reachable) + the E2E L2 test; all 8 `FederationPanelTests` green (body paths → `VBox/Scroll/Body`). Render-verified (`australia-constitution-drafting.png` — centred, scrollbar, Close reachable). E2E committed separately (765aa44).
+**Changed:** `FederationPanel.cs` (ScrollContainer + Relayout), `FederationPanelTests.cs` (+1 guard, body paths), `federation-victory.md` (changelog + L2 E2E verification), `australia-constitution-drafting.png` + `australia-federation.png` (regen).
+**Decisions:** applied the documented overlay pattern (scroll + cap + centre) rather than a fixed-size dialog (content-hug when short, scroll when tall).
+**Scheduled next (autonomous):** the clean backing-oracle Federation-depth work is done (WS3.2/3.7/3.8/3.3); the remaining WS3 (3.5 Anti-Federation Sentiment / 3.6 NSW quota + WA late-entry) needs **un-backed design invention** (formulas / quota numbers / a victory-mode decision) that's genuinely yours — I'll write those up + a Session Log entry rather than invent contested design solo.
+**Needs you:** decisions on WS3.5/3.6 numbers when you're back; Immigration Policy clause sign-off.
+
+---
+
 ## 2026-07-12 — WS3.3 M2: interactive constitution-drafting UI (autonomous)
 
 **Requested (Chris):** autonomous continuation. M2 = the interactive drafting UI (M1 shipped the logic).

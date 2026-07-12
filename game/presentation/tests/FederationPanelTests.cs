@@ -58,7 +58,7 @@ public class FederationPanelTests
         await runner.SimulateFrames(1);
 
         AssertThat(panel.Visible).IsTrue();
-        var body = panel.GetNode<VBoxContainer>($"VBox/{FederationPanel.BodyName}");
+        var body = panel.GetNode<VBoxContainer>($"VBox/Scroll/{FederationPanel.BodyName}");
         AssertThat(body.GetNodeOrNull("PhaseLine")).IsNotNull();
         AssertThat(body.GetNodeOrNull("ConventionPoints")).IsNotNull();
         // One row per federation region, in canonical order.
@@ -88,7 +88,7 @@ public class FederationPanelTests
         panel.Open(game, () => { });
         await runner.SimulateFrames(1);
 
-        var body = panel.GetNode<VBoxContainer>($"VBox/{FederationPanel.BodyName}");
+        var body = panel.GetNode<VBoxContainer>($"VBox/Scroll/{FederationPanel.BodyName}");
         // The six-step phase tracker (WS3.8 — doc 05's named stages), with a chip per stage.
         var tracker = body.GetNodeOrNull<HBoxContainer>("PhaseTracker");
         AssertThat(tracker).IsNotNull();
@@ -125,7 +125,7 @@ public class FederationPanelTests
         panel.Open(drafted, () => { });
         await runner.SimulateFrames(1);
 
-        var stageName = panel.GetNode<Label>($"VBox/{FederationPanel.BodyName}/StageName");
+        var stageName = panel.GetNode<Label>($"VBox/Scroll/{FederationPanel.BodyName}/StageName");
         AssertThat(stageName.Text).Contains("Phase 4");
         AssertThat(stageName.Text).Contains("Draft Constitution");
 
@@ -151,12 +151,38 @@ public class FederationPanelTests
         panel.Open(game, () => { });
         await runner.SimulateFrames(1);
 
-        var body = panel.GetNode<VBoxContainer>($"VBox/{FederationPanel.BodyName}");
+        var body = panel.GetNode<VBoxContainer>($"VBox/Scroll/{FederationPanel.BodyName}");
         var nswMark = body.GetNode<ColorRect>("Region_newSouthWales/Bar/ReferendumMark");
         var tasMark = body.GetNode<ColorRect>("Region_tasmania/Bar/ReferendumMark");
         AssertThat(nswMark.AnchorLeft).IsEqualApprox(0.57f, 0.001f);
         AssertThat(tasMark.AnchorLeft).IsEqualApprox(0.94f, 0.001f);
         AssertThat(nswMark.AnchorLeft).IsLess(tasMark.AnchorLeft); // the per-region bars genuinely differ
+
+        panel.QueueFree();
+    }
+
+    [TestCase]
+    public async Task Open_CapsThePanelToTheViewport_AndKeepsCloseReachable()
+    {
+        // Regression guard: the feature-rich body (drafting section + six support gauges) must scroll inside a capped,
+        // centred shell — never push the Close button off-screen (the code-built-overlay overflow trap).
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");
+        await runner.SimulateFrames(2);
+        var host = (Control)runner.Scene();
+
+        Game game = NewAustralia();
+        FoundIn(game, AustraliaColony.NewSouthWales);
+        Game convention = (SaveGame.From(game, "australia") with { FederationPhase = (int)FederationPhase.ConventionCalled, ConventionPoints = 1000 })
+            .Restore(Australia);
+        FederationPanel panel = AddPanel(host);
+        panel.Open(convention, () => { });
+        await runner.SimulateFrames(2);
+
+        // The body sits inside a ScrollContainer; Close is pinned in the VBox (a sibling of the scroll) so it is always in
+        // the panel; and the panel never exceeds the viewport height (the scroll takes any overflow).
+        AssertThat(panel.GetNodeOrNull("VBox/Scroll")).IsNotNull();
+        AssertThat(panel.GetNodeOrNull("VBox/CloseButton")).IsNotNull();
+        AssertThat(panel.Size.Y).IsLessEqual(panel.GetViewportRect().Size.Y);
 
         panel.QueueFree();
     }
@@ -175,7 +201,7 @@ public class FederationPanelTests
         panel.Open(game, () => { });
         await runner.SimulateFrames(1);
 
-        var body = panel.GetNode<VBoxContainer>($"VBox/{FederationPanel.BodyName}");
+        var body = panel.GetNode<VBoxContainer>($"VBox/Scroll/{FederationPanel.BodyName}");
         var button = body.GetNode<Button>("CallConventionButton");
         AssertThat(button.Disabled).IsTrue();
         AssertThat(body.GetNodeOrNull("CallConventionButtonReason")).IsNotNull();
@@ -201,7 +227,7 @@ public class FederationPanelTests
         panel.Open(convention, () => { });
         await runner.SimulateFrames(1);
 
-        var body = panel.GetNode<VBoxContainer>($"VBox/{FederationPanel.BodyName}");
+        var body = panel.GetNode<VBoxContainer>($"VBox/Scroll/{FederationPanel.BodyName}");
         AssertThat(body.GetNodeOrNull("DraftHeader")).IsNotNull();
         AssertThat(body.GetNodeOrNull("ConstitutionProgressBar")).IsNotNull();
         AssertThat(body.GetNodeOrNull("Clause_senateEquality")).IsNotNull();
@@ -227,12 +253,12 @@ public class FederationPanelTests
         await runner.SimulateFrames(1);
 
         AssertThat(convention.ConstitutionProgressPercent).IsEqual(0);
-        var body = panel.GetNode<VBoxContainer>($"VBox/{FederationPanel.BodyName}");
+        var body = panel.GetNode<VBoxContainer>($"VBox/Scroll/{FederationPanel.BodyName}");
         body.GetNode<Button>("Clause_senateEquality/DraftButton").EmitSignal(Button.SignalName.Pressed);
         await runner.SimulateFrames(1);
 
         AssertThat(convention.ConstitutionProgressPercent).IsEqual(34); // Senate Equality (weight 34) is now drafted
-        body = panel.GetNode<VBoxContainer>($"VBox/{FederationPanel.BodyName}");
+        body = panel.GetNode<VBoxContainer>($"VBox/Scroll/{FederationPanel.BodyName}");
         AssertThat(body.GetNodeOrNull("Clause_senateEquality/DraftButton")).IsNull(); // the row rebuilt to a drafted tick
         AssertThat(body.GetNodeOrNull("Clause_senateEquality/Drafted")).IsNotNull();
 

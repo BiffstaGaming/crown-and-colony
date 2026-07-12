@@ -87,6 +87,10 @@ public partial class FederationPanel : PanelContainer
         AddThemeStyleboxOverride("panel", ColonyArt.ParchmentSkin());
         Visible = false;
         CustomMinimumSize = new Vector2(440, 0);
+        // Centre + height-cap the panel: the feature-rich body (phase tracker, drafting, six support gauges, actions) can
+        // exceed the viewport, so the body scrolls inside a capped, centred shell with the Title + Close pinned outside it —
+        // otherwise Close is pushed off-screen (the godot-overlay-modal-pattern). Re-laid-out on show + on viewport resize.
+        GetViewport().SizeChanged += Relayout;
 
         var vbox = new VBoxContainer { Name = "VBox" };
         vbox.AddThemeConstantOverride("separation", 8);
@@ -102,14 +106,38 @@ public partial class FederationPanel : PanelContainer
         vbox.AddChild(_title);
         vbox.AddChild(new HSeparator());
 
-        _body = new VBoxContainer { Name = BodyName };
+        _body = new VBoxContainer { Name = BodyName, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _body.AddThemeConstantOverride("separation", 8);
-        vbox.AddChild(_body);
+        var scroll = new ScrollContainer
+        {
+            Name = "Scroll",
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, // vertical-only; the body never scrolls sideways
+        };
+        scroll.AddChild(_body);
+        vbox.AddChild(scroll);
 
         vbox.AddChild(new HSeparator());
         var close = new Button { Name = "CloseButton", Text = "Close" };
         close.Pressed += Hide;
         vbox.AddChild(close);
+    }
+
+    /// <summary>The non-scrolling shell height (title + two separators + Close + the VBox separations) — the body height is added on top, capped at the viewport.</summary>
+    private const float PanelChromeHeight = 120f;
+
+    /// <summary>
+    /// Centres the panel over the viewport and caps its height so the body scrolls rather than pushing Close off-screen
+    /// (the code-built-overlay contract). Sizes to the body's content plus the fixed chrome when that fits, else to the
+    /// viewport (leaving the scroll to take the overflow). Called deferred after each render + on viewport resize.
+    /// </summary>
+    private void Relayout()
+    {
+        Vector2 vp = GetViewportRect().Size;
+        float width = Mathf.Min(460f, Mathf.Max(440f, vp.X - 24f));
+        float height = Mathf.Min(_body.GetCombinedMinimumSize().Y + PanelChromeHeight, vp.Y - 24f);
+        Size = new Vector2(width, height);
+        Position = new Vector2(Mathf.Max(0f, (vp.X - width) / 2f), Mathf.Max(12f, (vp.Y - height) / 2f));
     }
 
     /// <summary>
@@ -209,6 +237,8 @@ public partial class FederationPanel : PanelContainer
         _body.AddChild(new HSeparator());
 
         AddActions();
+
+        Callable.From(Relayout).CallDeferred(); // re-cap + re-centre once the rebuilt body has laid out to its real height
     }
 
     /// <summary>
