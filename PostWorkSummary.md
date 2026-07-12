@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-12 — WS3.5 + WS3.6: Anti-Federation Sentiment + NSW quota / WA late-entry
+
+**Requested (Chris):** save the "decisions-via-questions" preference, then "finish WS3.5/3.6". All design forks answered via AskUserQuestion.
+**Did:**
+- **WS3.5 (M1) — active Anti-Federation Sentiment:** new per-colony `Colony.AntiFederation` (0–60) that **grows** each turn from tagged causes (Apathy = raw support <50% / Crown pressure = tax ≥40% / a failed-vote spike) and **decays** (faster with Quick/Barton seated). **Bites at the referendum stage only** (a new `RegionNetFederationSupport` oracle) — the convention gate + panel bars keep reading raw, so the shared oracle is *not* re-pointed (removed the plan's biggest risk). Replaced the permanent failed-vote support shed with a decaying spike. SaveGame **v75** (omit-when-default). New `Game.AntiFederation.cs`.
+- **WS3.6 (M2) — NSW quota + WA late-entry:** NSW must clear its 57% **and** an absolute **1200 mobilisation quota** (fails deterministically before the roll — the 1898→1899 re-run; waived by Capital Compromise; costs a small NSW-only decaying spike). **WA holds out** (blocking the whole vote — all six mandatory) until its **goldfields mature** → target 70→55. **All six enforced mandatory** (found-all-six gate). No save bump.
+- **M3 — panel surfacing:** barn-red opposition band + cause chips on each gauge; NSW quota warning; WA marker slides 70→55 + hold-out reason (both free).
+- **Adversarially reviewed M1 & M2** (3 lenses + per-finding verify); fixed **2 majors** (M1's failure test passed vacuously by *carrying* → now seed-searches a real rejection; M2's determinism test short-circuited before the roll; and "all-6-mandatory" wasn't truly enforced — a player could skip WA → added the gate) + several minors/nits.
+**Status:** **3 staged commits, all CI ✓** — M1 `cf5fb68` (both jobs green after an L3 Godot-host-timeout flake rerun), M2 `258c911` (both green), M3 `70dc67e` (CI watching). Full **L1/L2 2987** + determinism soak byte-identical + **10 L3** `FederationPanelTests` green.
+**Changed:** `Game.AntiFederation.cs` (new), `Game.Federation.cs`, `Game.cs`, `Colony.cs`, `SaveGame.cs` (v75), `Game.Constitution.cs`, `FederationPanel.cs`; `FederationVictoryTests.cs` (+18), `AustralianContentTests.cs`, `FederationPanelTests.cs` (+2); `federation-victory.md` (both layers, §5 flips, 3 changelog rows). Commits `cf5fb68` / `258c911` / `70dc67e`.
+**Decisions (all via AskUserQuestion — your new preference):** keep balance as-is (revisit later); **active** opposition; **referendum-stage bite only**; **decaying-spike-only** on a rejected vote; **all six mandatory**; **single national vote gated on WA's goldfields** (chosen after I gave you the accurate history — WA joined as an original state via goldfields pressure, not a later accession); **NSW quota-failure costs something** → implemented as a small NSW-only *decaying* spike (consistent with decaying-only). Magnitudes first-pass/tunable.
+**Scheduled next:** a **`[QA] Federation balance pass`** — the WS3.5/3.6 magnitudes (accrual/decay/cap/spike, quota 1200, WA maturity bar) + the steep WS3.7 gate you kept are all first-pass; this is the "revisit later" you chose. I'll create the kanban task. (Or pick another content/feature stream if you'd rather.)
+**Follow-ups:** WS3.4 five victory grades (blocked on WS5 First Nations legitimacy); the deferred constitution clauses (Defence Union / High Court / Railway) need systems that don't exist yet.
+**Needs you:** (1) a **playtest** of a Federation game toward 1901 to calibrate difficulty — you chose "keep balance as-is, revisit later"; this is the revisit. (2) **Immigration Policy clause** (= White Australia Policy) still awaits your cultural-protocol sign-off. (3) **WS5 First Nations** relations needs your cultural direction before any code.
+
+---
+
 ## 2026-07-12 — FederationPanel overflow fix (autonomous)
 
 **Requested (Chris):** autonomous continuation. Self-identified bug: the feature-rich FederationPanel overflowed.
