@@ -150,6 +150,53 @@ public class FederationVictoryTests
         Assert.Equal(FederationPhase.ConstitutionDrafted, game.FederationPhase);
     }
 
+    [Fact]
+    [Trait("Category", "E2E")]
+    public void FullFederationJourney_MaturityToConventionToDraftToReferendumToCommonwealth()
+    {
+        // The COMPLETE Federation loop through the real player actions (no SetFederationPhase shortcuts) — proving the
+        // depth streams integrate: WS3.7 maturity/movement gates → the convention → WS3.3 clause drafting → the WS3.2
+        // per-region referendum → the Commonwealth win.
+        Game game = NewAustralia();
+        FoundAllSixRegions(game, out var colonies);
+
+        // Phase 1/2 — mature four capitals + trade routes + Parkes (movement); then bank a landslide of support + points.
+        SatisfyMaturityAndMovement(game, colonies);
+        Assert.True(game.CheckColonialMaturity().Allowed);
+        Assert.True(game.CheckFederationMovement().Allowed);
+        foreach (Colony c in colonies.Values)
+        {
+            SetSupportPercent(c, 100);
+        }
+        game.SetConventionPoints(1000);
+        game.HumanPlayer.Gold = 5000;
+
+        // Phase 3 — call the convention.
+        Assert.True(game.CheckCallConvention().Allowed);
+        Assert.True(game.CallConvention());
+        Assert.Equal(FederationPhase.ConventionCalled, game.FederationPhase);
+
+        // Phase 4 — draft the three clauses past the 80% gate; the constitution completes at end of turn.
+        Assert.True(game.DraftClause("senateEquality"));
+        Assert.True(game.DraftClause("capitalCompromise"));
+        Assert.True(game.DraftClause("intercolonialFreeTrade"));
+        Assert.Equal(100, game.ConstitutionProgressPercent);
+        game.EndTurn();
+        Assert.Equal(FederationPhase.ConstitutionDrafted, game.FederationPhase);
+
+        // Phase 5/6 — every region past its own referendum target (a landslide carries); the Commonwealth is proclaimed next turn.
+        foreach (Colony c in colonies.Values)
+        {
+            SetSupportPercent(c, 100); // re-bank (the clause effects + a turn's accrual shifted support)
+        }
+        Assert.True(game.CheckPutToReferendum().Allowed);
+        Assert.True(game.HoldReferendum(), "a 100%-support federation must carry its referendum");
+        Assert.Null(game.Winner);
+        game.EndTurn();
+        Assert.Equal(FederationPhase.Commonwealth, game.FederationPhase);
+        Assert.Same(game.HumanPlayer, game.Winner);
+    }
+
     // ─────────────────────────────── referendum + Commonwealth win ───────────────────────────────
 
     [Fact]
