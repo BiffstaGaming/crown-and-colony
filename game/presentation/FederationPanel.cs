@@ -303,7 +303,8 @@ public partial class FederationPanel : PanelContainer
     private void AddRegionRow(string regionKey, int supportPercent)
     {
         string display = RegionDisplayNames.GetValueOrDefault(regionKey, regionKey);
-        int target = _game.ReferendumTargetFor(regionKey); // WS3.2: this region's own referendum bar (NSW 57 … Tas/Vic 94), not a uniform 50
+        int target = _game.ReferendumTargetFor(regionKey); // WS3.2: this region's own referendum bar (NSW 57 … Tas/Vic 94), not a uniform 50; WS3.6: WA reads 55 once its goldfields mature
+        int opposition = _game.RegionAntiFederationSentiment(regionKey); // WS3.5: opposition that drags this region's effective support at the vote (0 unless accrued)
         var row = new HBoxContainer { Name = $"Region_{ShortKey(regionKey)}" };
         row.AddThemeConstantOverride("separation", 10);
 
@@ -349,6 +350,27 @@ public partial class FederationPanel : PanelContainer
             OffsetBottom = -2f,
         };
         bar.AddChild(marker);
+
+        // WS3.5 — the Anti-Federation Sentiment overlay: a semi-transparent barn-red band spanning the support this region
+        // would LOSE at the referendum (from its net effective % up to its raw earned %), drawn over the fill so the player
+        // sees at a glance how much of their support is opposed. Only drawn when opposition has accrued.
+        if (opposition > 0)
+        {
+            float netFraction = _game.RegionNetFederationSupport(regionKey) / 100f;
+            float rawFraction = supportPercent / 100f;
+            bar.AddChild(new ColorRect
+            {
+                Name = "OppositionBand",
+                Color = new Color(SupportLow, 0.55f),
+                MouseFilter = MouseFilterEnum.Ignore,
+                AnchorLeft = netFraction,
+                AnchorRight = rawFraction,
+                AnchorTop = 0f,
+                AnchorBottom = 1f,
+                OffsetTop = 2f,
+                OffsetBottom = -2f,
+            });
+        }
         row.AddChild(bar);
 
         row.AddChild(new Label
@@ -360,6 +382,22 @@ public partial class FederationPanel : PanelContainer
             VerticalAlignment = VerticalAlignment.Center,
         });
         _body.AddChild(row);
+
+        // WS3.5 — the opposition cause chip: a compact barn-red caption naming why this region is opposed (Apathy / Crown
+        // pressure / Referendum setback) and by how much, beneath its gauge. Only when opposition has accrued.
+        if (opposition > 0)
+        {
+            IReadOnlyList<string> causes = _game.RegionAntiFederationCauses(regionKey);
+            string causeText = causes.Count > 0 ? string.Join(", ", causes) : "opposition";
+            var oppositionLabel = new Label
+            {
+                Name = $"Opposition_{ShortKey(regionKey)}",
+                Text = $"      −{opposition}% opposition · {causeText}",
+            };
+            oppositionLabel.AddThemeColorOverride("font_color", new Color(SupportLow.Lightened(0.12f), 0.95f));
+            oppositionLabel.AddThemeFontSizeOverride("font_size", 12);
+            _body.AddChild(oppositionLabel);
+        }
     }
 
     /// <summary>The support-gauge fill colour for a support percentage, measured against that region's own referendum
@@ -390,6 +428,23 @@ public partial class FederationPanel : PanelContainer
         if (_game.FederationPhase is FederationPhase.ConstitutionDrafted or FederationPhase.Referendum)
         {
             AddActionButton("ReferendumButton", "Put Federation to a Referendum", referendum, OnHoldReferendum);
+
+            // WS3.6 — the NSW mobilisation-quota warning: telegraph the historical 1898 hurdle (New South Wales has the
+            // percentage but not the turnout quota) before the vote, so a quota failure is a signposted obstacle, not a
+            // gotcha. Only shown while a referendum is on the table and the quota is not yet cleared or waived.
+            MoveCheck quota = _game.CheckNswReferendumQuota();
+            if (!quota.Allowed && !string.IsNullOrEmpty(quota.Reason))
+            {
+                var warning = new Label
+                {
+                    Name = "NswQuotaWarning",
+                    Text = quota.Reason,
+                    AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                };
+                warning.AddThemeColorOverride("font_color", new Color(SupportLow.Lightened(0.18f), 0.95f)); // a barn-red caution
+                _body.AddChild(warning);
+            }
         }
     }
 

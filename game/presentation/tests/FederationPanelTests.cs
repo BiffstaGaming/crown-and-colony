@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Threading.Tasks;
 using CrownAndColony.GameLogic.Colonies;
 using CrownAndColony.GameLogic.GameSession;
@@ -157,6 +158,71 @@ public class FederationPanelTests
         AssertThat(nswMark.AnchorLeft).IsEqualApprox(0.57f, 0.001f);
         AssertThat(tasMark.AnchorLeft).IsEqualApprox(0.94f, 0.001f);
         AssertThat(nswMark.AnchorLeft).IsLess(tasMark.AnchorLeft); // the per-region bars genuinely differ
+
+        panel.QueueFree();
+    }
+
+    [TestCase]
+    public async Task Open_RendersTheAntiFederationOverlay_AndCauseChip_WhenOppositionHasAccrued()
+    {
+        // WS3.5: a region with banked Anti-Federation Sentiment shows a barn-red opposition band on its gauge (net → raw)
+        // and a cause chip naming why. A region with none shows neither.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");
+        await runner.SimulateFrames(2);
+        var host = (Control)runner.Scene();
+
+        Game game = NewAustralia();
+        FoundIn(game, AustraliaColony.NewSouthWales);
+        FoundIn(game, AustraliaColony.Victoria); // a second region with NO opposition — the control
+        // Inject NSW support 40% + 30% opposition via the save layer (the internal setters aren't reachable here): raw 40,
+        // net 10, so the band spans a visible slice and "Apathy" (raw < 50) is the live cause.
+        SaveGame save = SaveGame.From(game, "australia");
+        Game opposed = (save with
+        {
+            Colonies = save.Colonies!
+                .Select(c => c.X == AustraliaColonyStart.StartTile(AustraliaColony.NewSouthWales).X
+                          && c.Y == AustraliaColonyStart.StartTile(AustraliaColony.NewSouthWales).Y
+                    ? c with { FederationSupport = 80, AntiFederation = 30 }
+                    : c)
+                .ToList(),
+        }).Restore(Australia);
+        FederationPanel panel = AddPanel(host);
+        panel.Open(opposed, () => { });
+        await runner.SimulateFrames(1);
+
+        var body = panel.GetNode<VBoxContainer>($"VBox/Scroll/{FederationPanel.BodyName}");
+        // NSW: the opposition band rides the gauge and the cause chip names the driver.
+        AssertThat(body.GetNodeOrNull("Region_newSouthWales/Bar/OppositionBand")).IsNotNull();
+        var chip = body.GetNode<Label>("Opposition_newSouthWales");
+        AssertThat(chip.Text).Contains("opposition");
+        AssertThat(chip.Text).Contains("Apathy");
+        // Victoria: no opposition → neither the band nor the chip.
+        AssertThat(body.GetNodeOrNull("Region_victoria/Bar/OppositionBand")).IsNull();
+        AssertThat(body.GetNodeOrNull("Opposition_victoria")).IsNull();
+
+        panel.QueueFree();
+    }
+
+    [TestCase]
+    public async Task Open_ShowsTheNswQuotaWarning_WhenNswIsShortOfTheMobilisationQuota()
+    {
+        // WS3.6: with a referendum on the table and NSW below its mobilisation quota, the panel telegraphs the historical
+        // 1898 hurdle so a quota failure isn't a gotcha.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");
+        await runner.SimulateFrames(2);
+        var host = (Control)runner.Scene();
+
+        Game game = NewAustralia();
+        FoundIn(game, AustraliaColony.NewSouthWales); // a lean pop-1 NSW → mobilisation well below the 1200 quota
+        Game drafted = (SaveGame.From(game, "australia") with { FederationPhase = (int)FederationPhase.ConstitutionDrafted })
+            .Restore(Australia);
+        FederationPanel panel = AddPanel(host);
+        panel.Open(drafted, () => { });
+        await runner.SimulateFrames(1);
+
+        var body = panel.GetNode<VBoxContainer>($"VBox/Scroll/{FederationPanel.BodyName}");
+        var warning = body.GetNode<Label>("NswQuotaWarning");
+        AssertThat(warning.Text).Contains("mobilisation quota");
 
         panel.QueueFree();
     }
