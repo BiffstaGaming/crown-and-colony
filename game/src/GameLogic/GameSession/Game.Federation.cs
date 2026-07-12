@@ -577,10 +577,11 @@ public sealed partial class Game
     /// Whether the human may <b>put Federation to a referendum</b> right now (Phase-4a/WS3.2): the Federation victory is
     /// enabled, the constitution has been drafted (phase <see cref="FederationPhase.ConstitutionDrafted"/> or a prior
     /// referendum has failed leaving the phase at <see cref="FederationPhase.Referendum"/>), and every one of the six
-    /// regions in which the human holds a colony has reached <b>its own historical target</b>
-    /// (<see cref="ReferendumTargetFor"/> — NSW 57 / Vic 94 / Qld 56 / SA 80 / Tas 94 / WA 70 for Australia; the uniform
-    /// <see cref="RegionSupportForReferendum"/> as a fallback), design Phase 5. A pure, RNG-free read the panel gates its
-    /// "put to referendum" action on.
+    /// regions in which the human holds a colony has reached <b>its own historical target</b> on <b>net</b> support
+    /// (<see cref="RegionNetFederationSupport"/> — raw earned support less Anti-Federation Sentiment, WS3.5; opposition bites
+    /// here, at the vote) versus <see cref="ReferendumTargetFor"/> — NSW 57 / Vic 94 / Qld 56 / SA 80 / Tas 94 / WA 70 for
+    /// Australia; the uniform <see cref="RegionSupportForReferendum"/> as a fallback), design Phase 5. A pure, RNG-free read
+    /// the panel gates its "put to referendum" action on.
     /// </summary>
     public MoveCheck CheckPutToReferendum()
     {
@@ -592,22 +593,23 @@ public sealed partial class Game
         {
             return MoveCheck.No("The constitution must be drafted before a referendum can be held.");
         }
-        // Every region the human is settled in must have reached its own referendum target (a region with no human colony
-        // is not put). Report the region furthest below its target (the one blocking the vote) with its concrete numbers —
-        // the panel's per-region gauges show which colony it is.
+        // Every region the human is settled in must have reached its own referendum target — measured on NET support
+        // (raw earned support less Anti-Federation Sentiment, WS3.5): opposition bites here, at the vote. A region with no
+        // human colony is not put. Report the region furthest below its target (the one blocking the vote) with its concrete
+        // numbers — the panel's per-region gauges + opposition overlay show which colony it is.
         List<string> settledRegions = FederationRegionKeys.Where(k => HumanColoniesInRegion(k).Count > 0).ToList();
         if (settledRegions.Count == 0)
         {
             return MoveCheck.No("No colony regions are settled.");
         }
         string? shortfall = settledRegions
-            .Where(k => RegionFederationSupport(k) < ReferendumTargetFor(k))
-            .OrderBy(k => RegionFederationSupport(k) - ReferendumTargetFor(k))
+            .Where(k => RegionNetFederationSupport(k) < ReferendumTargetFor(k))
+            .OrderBy(k => RegionNetFederationSupport(k) - ReferendumTargetFor(k))
             .FirstOrDefault();
         if (shortfall is not null)
         {
             return MoveCheck.No(
-                $"Every settled colony must reach its Federation Support target (one needs {ReferendumTargetFor(shortfall)}%, at {RegionFederationSupport(shortfall)}%).");
+                $"Every settled colony must reach its Federation Support target (one needs {ReferendumTargetFor(shortfall)}%, at {RegionNetFederationSupport(shortfall)}% after opposition).");
         }
         return MoveCheck.Yes(0);
     }
@@ -653,12 +655,14 @@ public sealed partial class Game
             return true;
         }
 
-        // Failure (design Phase 6): anti-Federation momentum — a temporary support penalty on every settled colony, so
-        // the movement loses ground and must rebuild before it can retry. Modelled with the timed-modifier machinery
-        // (the Boston-Tea-Party precedent) but applied as a direct one-off support drain (Phase-4a core keeps it simple).
+        // Failure (design Phase 6): anti-Federation momentum — a one-off Anti-Federation Sentiment spike on every human
+        // colony (WS3.5), so the movement loses effective ground and must rebuild before it can retry. This formalises the
+        // retired permanent ~10% support shed as a DECAYING drag (Chris's "decaying spike only" decision — faithful to the
+        // design's "temporary anti-Federation momentum"): the spike erodes over time (faster with Quick/Barton seated), so
+        // repeated failures don't permanently scar the banked support. Opposition bites at the next referendum's net support.
         foreach (Colony colony in ColoniesOf(_human).ToList())
         {
-            colony.AddFederationSupport(-(colony.FederationSupport / 10)); // shed ~10% of banked support
+            colony.AddAntiFederation(FailedReferendumSpike, AntiFederationCap);
         }
         RecordFederationMilestone("The Federation referendum has failed. The movement must rebuild support.");
         return false;
@@ -673,12 +677,12 @@ public sealed partial class Game
     private int ReferendumThresholdRelief() =>
         HasAbilityFor(_human, QuickCorowaAbility) ? QuickReferendumRelief : 0;
 
-    /// <summary>The unweighted average Federation Support across the regions the human is settled in (0 when unsettled).</summary>
+    /// <summary>The unweighted average <b>net</b> Federation Support (raw less Anti-Federation Sentiment, WS3.5) across the regions the human is settled in — the strength the referendum roll is compared against (0 when unsettled). Equals the raw average when no opposition has accrued.</summary>
     private int AverageSettledSupport()
     {
         List<int> settled = FederationRegionKeys
             .Where(k => HumanColoniesInRegion(k).Count > 0)
-            .Select(RegionFederationSupport)
+            .Select(RegionNetFederationSupport)
             .ToList();
         return settled.Count == 0 ? 0 : settled.Sum() / settled.Count;
     }
@@ -715,8 +719,9 @@ public sealed partial class Game
             RecordFederationMilestone("The draft constitution is complete.");
         }
 
-        // A carried referendum flags the win: the phase is at Referendum and every settled region still holds referendum
-        // strength (a failed referendum shed support and so fails this guard, leaving the phase at Referendum for a retry).
+        // A carried referendum flags the win: the phase is at Referendum and _referendumCarried is set. A failed referendum
+        // leaves _referendumCarried false (it instead spikes decaying Anti-Federation Sentiment, WS3.5), so this guard is
+        // skipped and the phase stays at Referendum for a retry.
         if (_federationPhase == FederationPhase.Referendum && _referendumCarried)
         {
             _federationPhase = FederationPhase.Commonwealth;

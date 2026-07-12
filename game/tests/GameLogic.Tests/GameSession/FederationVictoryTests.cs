@@ -246,33 +246,55 @@ public class FederationVictoryTests
     }
 
     [Fact]
-    public void FailedReferendum_ShedsSupport_AndLeavesThePhaseForARetry()
+    public void FailedReferendum_SpikesAntiFederation_AndLeavesThePhaseForARetry()
     {
-        Game game = NewAustralia();
-        FoundAllSixRegions(game, out var colonies);
-        game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
-        // Exactly at each region's own target: enough to hold a vote, but far from a certain pass — a low roll fails it.
-        foreach ((AustraliaColony region, Colony colony) in colonies)
+        // The gate requires every region at its own target, so the average NET support is pinned at ~75 → a roll ≥ 75
+        // rejects the vote (~25% of seeds). Search the fixed seed range for one whose FIRST referendum fails, so the WS3.5
+        // spike is ALWAYS exercised — a single fixed seed could land on a carry and vacuously skip the assertions.
+        for (ulong seed = 1; seed < 500; seed++)
         {
-            SetSupportPercent(colony, game.ReferendumTargetFor(AustraliaColonyStart.RegionKey(region)));
-        }
-        int bankedBefore = colonies[AustraliaColony.NewSouthWales].FederationSupport;
+            Game game = Game.New(Australia, seed, mapSource: MapSource.Australia);
+            System.Collections.Generic.Dictionary<AustraliaColony, Colony> colonies;
+            try
+            {
+                FoundAllSixRegions(game, out colonies);
+            }
+            catch (LandClaimRequiredException)
+            {
+                continue; // this seed seats a colony on native-owned land — skip it and try the next
+            }
+            game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
+            foreach ((AustraliaColony region, Colony colony) in colonies)
+            {
+                SetSupportPercent(colony, game.ReferendumTargetFor(AustraliaColonyStart.RegionKey(region)));
+            }
+            Colony nsw = colonies[AustraliaColony.NewSouthWales];
+            int bankedBefore = nsw.FederationSupport;
+            Assert.Equal(0, nsw.AntiFederation); // no opposition banked yet
 
-        bool carried = game.HoldReferendum();
-        if (!carried)
-        {
-            Assert.Equal(FederationPhase.Referendum, game.FederationPhase);   // stays for a retry (design Phase 6)
+            if (game.HoldReferendum())
+            {
+                continue; // this seed carried — try the next until we hit a genuine rejection
+            }
+
+            // A rejected referendum (WS3.5, Chris's "decaying spike only" decision): spikes DECAYING anti-Federation
+            // sentiment on every colony and no longer permanently sheds banked support — the drag erodes over time rather
+            // than scarring the movement. The phase stays at Referendum for a retry (design Phase 6).
+            Assert.Equal(FederationPhase.Referendum, game.FederationPhase);
             Assert.Equal(1, game.ReferendumAttempts);
-            Assert.True(colonies[AustraliaColony.NewSouthWales].FederationSupport < bankedBefore,
-                "a failed referendum sheds banked support (anti-Federation momentum)");
+            Assert.Equal(bankedBefore, nsw.FederationSupport); // no permanent support shed
+            Assert.True(nsw.AntiFederation > 0, "a failed referendum spikes anti-Federation sentiment (temporary momentum)");
+            // The "Referendum setback" cause tag now surfaces (phase == Referendum, an attempt logged, not carried).
+            Assert.Contains("Referendum setback",
+                game.RegionAntiFederationCauses(AustraliaColonyStart.RegionKey(AustraliaColony.NewSouthWales)));
+
             game.EndTurn();
             Assert.NotEqual(FederationPhase.Commonwealth, game.FederationPhase); // never wins on a failed vote
             Assert.Null(game.Winner);
+            return; // asserted a genuine failure — done
         }
-        else
-        {
-            Assert.Equal(1, game.ReferendumAttempts);
-        }
+
+        Assert.Fail("no seed in 1..499 produced a failed first referendum — the referendum gate/roll math must have changed");
     }
 
     // ─────────────────────────────── referendum determinism (ADR-009) ───────────────────────────────
@@ -298,10 +320,211 @@ public class FederationVictoryTests
         Assert.Equal(RunToReferendum(Seed, 95), RunToReferendum(Seed, 95));
     }
 
+    // ─────────────────────────────── anti-Federation sentiment (WS3.5) ───────────────────────────────
+
+    private const string QuickId = "model.foundingFather.johnQuick";
+    private const string BartonId = "model.foundingFather.edmundBarton";
+
+    [Fact]
+    public void AntiFederation_GrowsWhenSupportLow_MoreThanWhenSupportHigh()
+    {
+        Game game = NewAustralia();
+        Colony low = FoundIn(game, AustraliaColony.NewSouthWales);
+        Colony high = FoundIn(game, AustraliaColony.Victoria);
+        SetSupportPercent(low, 15);   // apathetic → opposition grows (low-support cause active)
+        SetSupportPercent(high, 90);  // engaged → no low-support cause
+        for (int i = 0; i < 4; i++)
+        {
+            game.HumanPlayer.TaxRate = 0; // isolate the low-support cause (no Crown pressure on either)
+            game.EndTurn();
+        }
+        Assert.True(low.AntiFederation > 0, "a chronically low-support colony accrues Anti-Federation Sentiment");
+        Assert.True(low.AntiFederation > high.AntiFederation, "the neglected colony accrues more opposition than the well-supported one");
+    }
+
+    [Fact]
+    public void AntiFederation_GrowsUnderHighTax_EvenOnAWellSupportedColony()
+    {
+        Game game = NewAustralia();
+        Colony colony = FoundIn(game, AustraliaColony.Victoria);
+        SetSupportPercent(colony, 90); // engaged → only Crown pressure can drive opposition here
+        for (int i = 0; i < 5; i++)
+        {
+            game.HumanPlayer.TaxRate = 60; // oppressive imperial tax (≥ CrownPressureTaxThreshold)
+            game.EndTurn();
+        }
+        Assert.True(colony.AntiFederation > 0, "high Crown tax accrues opposition nation-wide, even on a well-supported colony");
+    }
+
+    [Fact]
+    public void AntiFederation_DecaysWithNoCause_FasterWithTheReconcilerPioneers()
+    {
+        static int RemainingAfterDecay(bool electReconcilers)
+        {
+            Game game = NewAustralia();
+            Colony colony = FoundIn(game, AustraliaColony.Victoria);
+            SetSupportPercent(colony, 90);   // no low-support cause
+            colony.AntiFederation = 30;      // pre-existing opposition to erode
+            if (electReconcilers)
+            {
+                game.HumanPlayer.CongressList.Add(QuickId);   // Corowa reconciler
+                game.HumanPlayer.CongressList.Add(BartonId);  // convention-drive reconciler
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                game.HumanPlayer.TaxRate = 0; // no Crown pressure
+                game.EndTurn();
+            }
+            return colony.AntiFederation;
+        }
+
+        int withoutHelp = RemainingAfterDecay(false);
+        int withHelp = RemainingAfterDecay(true);
+        Assert.True(withoutHelp < 30, "opposition decays on its own when no cause is active");
+        Assert.True(withHelp < withoutHelp, "Quick + Barton accelerate the decay (the 'lower the recovery cost' buy-down)");
+    }
+
+    [Fact]
+    public void AntiFederation_NeverExceedsTheCap()
+    {
+        Game game = NewAustralia();
+        Colony colony = FoundIn(game, AustraliaColony.NewSouthWales);
+        SetSupportPercent(colony, 5);
+        colony.AntiFederation = Game.AntiFederationCap - 1;
+        for (int i = 0; i < 5; i++)
+        {
+            game.HumanPlayer.TaxRate = 60; // both causes active — maximum accrual pressure
+            game.EndTurn();
+        }
+        Assert.Equal(Game.AntiFederationCap, colony.AntiFederation); // clamped, never exceeds the cap
+    }
+
+    [Fact]
+    public void AntiFederation_IsDeterministic_ForTheSameSeedAndState()
+    {
+        static int Run()
+        {
+            Game game = NewAustralia();
+            Colony colony = FoundIn(game, AustraliaColony.NewSouthWales);
+            SetSupportPercent(colony, 20);
+            for (int i = 0; i < 5; i++)
+            {
+                game.HumanPlayer.TaxRate = 45;
+                game.EndTurn();
+            }
+            return colony.AntiFederation;
+        }
+        Assert.Equal(Run(), Run()); // integer, id-ordered, RNG-free (ADR-009)
+    }
+
+    [Fact]
+    public void AntiFederation_BitesOnNetSupport_ButLeavesTheRawReadsAlone()
+    {
+        Game game = NewAustralia();
+        FoundAllSixRegions(game, out var colonies);
+        string nsw = AustraliaColonyStart.RegionKey(AustraliaColony.NewSouthWales);
+        SetSupportPercent(colonies[AustraliaColony.NewSouthWales], 70);
+        colonies[AustraliaColony.NewSouthWales].AntiFederation = 40;
+
+        Assert.Equal(70, game.RegionFederationSupport(nsw));        // raw — the convention gate + panel bars read this
+        Assert.Equal(40, game.RegionAntiFederationSentiment(nsw));  // opposition overlay
+        Assert.Equal(30, game.RegionNetFederationSupport(nsw));     // net = 70 − 40 — only the referendum reads this
+    }
+
+    [Fact]
+    public void AntiFederation_CanBlockAReferendum_ThatRawSupportWouldPass()
+    {
+        Game game = NewAustralia();
+        FoundAllSixRegions(game, out var colonies);
+        MakeCapital(colonies[AustraliaColony.WesternAustralia]); // future-proof for the WS3.6 WA goldfields gate (harmless in M1)
+        game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
+        foreach ((AustraliaColony region, Colony colony) in colonies)
+        {
+            SetSupportPercent(colony, game.ReferendumTargetFor(AustraliaColonyStart.RegionKey(region)));
+        }
+        Assert.True(game.CheckPutToReferendum().Allowed); // every region at its raw target, no opposition → gate open
+
+        // Pile opposition on NSW: its NET support falls below target, so the vote is blocked — though the RAW read still meets it.
+        string nsw = AustraliaColonyStart.RegionKey(AustraliaColony.NewSouthWales);
+        colonies[AustraliaColony.NewSouthWales].AntiFederation = 30;
+        Assert.True(game.RegionFederationSupport(nsw) >= game.ReferendumTargetFor(nsw)); // raw still meets the bar
+        Assert.False(game.CheckPutToReferendum().Allowed);                               // …but net (referendum) does not
+    }
+
+    [Fact]
+    public void AntiFederationCauses_ReflectTheActiveDrivers()
+    {
+        Game game = NewAustralia();
+        FoundAllSixRegions(game, out var colonies);
+        string nsw = AustraliaColonyStart.RegionKey(AustraliaColony.NewSouthWales);
+        SetSupportPercent(colonies[AustraliaColony.NewSouthWales], 20); // below the apathy threshold
+        colonies[AustraliaColony.NewSouthWales].AntiFederation = 10;    // opposition present → causes surface
+        game.HumanPlayer.TaxRate = 60;                                  // Crown pressure active
+
+        var causes = game.RegionAntiFederationCauses(nsw);
+        Assert.Contains("Apathy", causes);
+        Assert.Contains("Crown pressure", causes);
+        Assert.DoesNotContain("Referendum setback", causes); // no referendum held yet
+    }
+
+    [Fact]
+    public void AntiFederation_DoesNotBiteTheConventionGate_OnlyTheReferendum()
+    {
+        // Set up a fully-openable convention (maturity + movement + 100% support + points).
+        Game game = NewAustralia();
+        FoundAllSixRegions(game, out var colonies);
+        SatisfyMaturityAndMovement(game, colonies);
+        foreach (Colony c in colonies.Values)
+        {
+            SetSupportPercent(c, 100); // re-bank to 100% against the capital populations
+        }
+        game.SetConventionPoints(Game.ConventionPointsToCallConvention);
+        Assert.True(game.CheckCallConvention().Allowed); // all prerequisites met, no opposition
+
+        // Pile MAXIMUM opposition on every colony. It drags NET (referendum) support hard, but the convention gate reads
+        // RAW support — so the convention must STILL open (design intent #1: opposition bites only at the referendum).
+        foreach (Colony c in colonies.Values)
+        {
+            c.AntiFederation = Game.AntiFederationCap;
+        }
+        Assert.True(game.CheckCallConvention().Allowed,
+            "opposition must not bite the convention gate — it bites only at the referendum stage");
+    }
+
+    [Fact]
+    public void Classic_NeverAccruesAntiFederation()
+    {
+        Game game = Game.New(Classic, Seed);
+        Colony colony = Found(game);
+        for (int i = 0; i < 5; i++)
+        {
+            game.HumanPlayer.TaxRate = 60;
+            game.EndTurn();
+        }
+        Assert.Equal(0, colony.AntiFederation); // gated off in classic (ADR-009)
+    }
+
+    [Fact]
+    public void AntiFederation_RoundTripsThroughASave_AndOmitsAtZero()
+    {
+        Game game = NewAustralia();
+        Colony colony = FoundIn(game, AustraliaColony.NewSouthWales);
+        colony.AntiFederation = 25;
+        string json = SaveGame.From(game, "australia").ToJson();
+        Assert.Contains("AntiFederation", json);
+        Game restored = SaveGame.FromJson(json).Restore(Australia);
+        Assert.Equal(25, restored.Colonies.Single(c => c.Id == colony.Id).AntiFederation);
+
+        // Omitted when 0: a fresh Australia game with no opposition writes no AntiFederation token (byte-identical to v74).
+        Game clean = NewAustralia();
+        FoundIn(clean, AustraliaColony.Victoria);
+        Assert.DoesNotContain("AntiFederation", SaveGame.From(clean, "australia").ToJson());
+    }
+
     // ─────────────────────────────── persistence (v72, omit-when-default) ───────────────────────────────
 
     [Fact]
-    public void SaveVersion_IsCurrent() => Assert.Equal(74, SaveGame.CurrentVersion);
+    public void SaveVersion_IsCurrent() => Assert.Equal(75, SaveGame.CurrentVersion);
 
     [Fact]
     public void ClassicSave_OmitsEveryFederationToken()
@@ -316,6 +539,7 @@ public class FederationVictoryTests
         Assert.DoesNotContain("ConventionPoints", json);
         Assert.DoesNotContain("Referendum", json);
         Assert.DoesNotContain("FederationTargetReductions", json); // WS3.2 (v73) — classic banks no target reductions
+        Assert.DoesNotContain("AntiFederation", json); // WS3.5 (v75) — classic accrues no opposition
     }
 
     // ─────────────────────────────── per-region targets (WS3.2) ───────────────────────────────

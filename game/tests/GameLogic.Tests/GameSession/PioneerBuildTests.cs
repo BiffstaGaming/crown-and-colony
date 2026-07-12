@@ -307,5 +307,5 @@ public class PioneerBuildTests
     }
 
     [Fact]
-    public void SaveVersion_IsCurrent() => Assert.Equal(74, SaveGame.CurrentVersion);
+    public void SaveVersion_IsCurrent() => Assert.Equal(75, SaveGame.CurrentVersion);
 }

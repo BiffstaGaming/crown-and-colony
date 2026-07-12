@@ -11272,6 +11272,7 @@ public sealed partial class Game
             colony.TickTeaPartyBonus(); // decay the tea-party surge each turn, even on a no-bell turn
         }
         player.Liberty = Math.Max(0, player.Liberty); // a net-negative bell turn can't push the founding-father pool below 0
+        AccrueAntiFederationSentiment(player); // Australia (WS3.5): grow/decay per-colony Anti-Federation Sentiment — no-op in classic and for AIs (Federation victory off / not human)
 
         // Classic Colonization closes the Continental Congress at the Declaration of Independence: a Rebel/Independent
         // player elects no NEW fathers and is offered none (the bells→Liberty bake above stays ungated so Sons of

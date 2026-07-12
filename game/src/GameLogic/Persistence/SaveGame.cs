@@ -21,7 +21,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 74;
+    public const int CurrentVersion = 75;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -362,7 +362,11 @@ public sealed record SaveGame
     /// serialises byte-identically to v72 and a pre-v73 save loads with none. v74 (WS3.3) added the <b>drafted
     /// constitutional clauses</b> (<see cref="DraftedConstitutionClauses"/> — the ids drafted into the constitution);
     /// <b>omitted when empty</b>, which it always is in a classic game (Federation off) and in an Australia game that has
-    /// drafted none — so a default game serialises byte-identically to v73 and a pre-v74 save loads with none. Determinism
+    /// drafted none — so a default game serialises byte-identically to v73 and a pre-v74 save loads with none. v75 (WS3.5)
+    /// added the per-colony <b>Anti-Federation Sentiment</b> (<see cref="SavedColony.AntiFederation"/> — the opposition
+    /// percentage that drags a colony's effective support at the referendum); <b>omitted when 0</b>, which it always is in a
+    /// classic game (never accrues, gated on the human + Federation victory) and in an Australia game where no opposition has
+    /// banked — so a default game serialises byte-identically to v74 and a pre-v75 save loads with none. Determinism
     /// (ADR-009): the whole loop is gated off in classic, so a reloaded classic game continues on the identical random
     /// sequence and the soak stays byte-identical.
     /// </summary>
@@ -747,7 +751,10 @@ public sealed record SaveGame
                         : null,
                     // Federation Support (v72, Phase-4a) — omitted when 0 so every classic colony (which never accrues it,
                     // the Federation victory being off) stays byte-identical to v71.
-                    FederationSupport: c.FederationSupport == 0 ? null : c.FederationSupport))
+                    FederationSupport: c.FederationSupport == 0 ? null : c.FederationSupport,
+                    // Anti-Federation Sentiment (v75, WS3.5) — omitted when 0 so every classic colony (which never accrues
+                    // it, gated on the human + Federation victory) stays byte-identical to v74.
+                    AntiFederation: c.AntiFederation == 0 ? null : c.AntiFederation))
                 .ToList(),
             Resources = game.Map.Resources.Count > 0
                 ? game.Map.Resources
@@ -1042,6 +1049,7 @@ public sealed record SaveGame
                         .Concat(c.BuildQueueRest ?? []));
                 colony.Liberty = c.Liberty ?? 0; // ≤v21 saves had no liberty → SoL 0%
                 colony.FederationSupport = c.FederationSupport ?? 0; // v72; pre-v72 / classic (never accrued) → 0 (Phase-4a)
+                colony.AntiFederation = c.AntiFederation ?? 0; // v75; pre-v75 / classic (never accrued) → 0 (WS3.5)
                 colony.TeaPartyBellTurns = c.TeaPartyBellTurns ?? 0; // v37; pre-v37 / no party → 0
                 foreach ((string goods, SavedExport export) in c.Exports ?? new Dictionary<string, SavedExport>())
                 {
@@ -1338,6 +1346,7 @@ public sealed record SaveGame
 /// <param name="SchoolTrainingSlots">Per school building, the per-teacher-slot accrued training turns (v60; a college/university teaches one student per teacher in parallel, so each teacher carries its own counter). Null/omitted when no school is mid-training, so a non-teaching game is byte-identical to v59.</param>
 /// <param name="BuildingWorkerExperience">Per building, its free colonists' shared accrued on-the-job experience toward that building's expert (v70, building learning-by-doing 86d3kgbpd; null/omitted when none accrued, so a game with no in-progress building learning is byte-identical to v69).</param>
 /// <param name="FederationSupport">Accumulated <b>Federation Support</b> points banked from this colony's Civic Voice (Australian-Federation victory, Phase-4a, ADR-021; <see cref="Colony.FederationSupport"/>). Null/omitted when 0 — every colony in a classic game (which never accrues it, the option being off) stays byte-identical to v71.</param>
+/// <param name="AntiFederation"><b>Anti-Federation Sentiment</b>, the per-colony opposition percentage that drags the colony's effective support at the referendum (Australian-Federation variant, WS3.5; <see cref="Colony.AntiFederation"/>). Null/omitted when 0 — every colony in a classic game (which never accrues it, gated on the human + Federation victory) stays byte-identical to v74.</param>
 public sealed record SavedColony(
     int Id, string Name, int X, int Y, int Population,
     IReadOnlyDictionary<string, int>? Stores = null,
@@ -1355,7 +1364,8 @@ public sealed record SavedColony(
     int? TeaPartyBellTurns = null,
     IReadOnlyDictionary<string, IReadOnlyList<int>>? SchoolTrainingSlots = null,
     IReadOnlyDictionary<string, int>? BuildingWorkerExperience = null,
-    int? FederationSupport = null);
+    int? FederationSupport = null,
+    int? AntiFederation = null);
 
 /// <summary>
 /// The Australian-Federation <b>referendum</b> state inside a <see cref="SaveGame"/> (v72, Phase-4a, ADR-021). The whole

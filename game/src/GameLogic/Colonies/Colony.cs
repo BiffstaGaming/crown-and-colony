@@ -276,6 +276,17 @@ public sealed class Colony
     public int FederationSupport { get; internal set; }
 
     /// <summary>
+    /// This colony's <b>Anti-Federation Sentiment</b>, a 0–<c>AntiFederationCap</c> opposition percentage (Australian-Federation
+    /// variant, WS3.5; the doc-06 <c>anti_federation[colony]</c> variable). Grows from tagged causes (apathy, Crown pressure,
+    /// a failed-vote spike) and decays each turn — see <see cref="GameSession.Game"/>'s anti-Federation accrual pass. It drags
+    /// the colony's effective Federation Support <b>only at the referendum</b> (via <c>Game.RegionNetFederationSupport</c>), so
+    /// it never touches the raw banked <see cref="FederationSupport"/>. Persisted (SaveGame v75, omitted when 0 so every colony
+    /// in a classic game — which never accrues it, the Federation victory being off — stays byte-identical, ADR-009).
+    /// <b>Only accrued when the ruleset's Federation victory is enabled</b> for the human; classic leaves it 0 forever.
+    /// </summary>
+    public int AntiFederation { get; internal set; }
+
+    /// <summary>
     /// The owner's standing Sons-of-Liberty percentage modifier from Congress (Simón Bolívar's <c>model.modifier.SoL</c>
     /// = +20), folded into <see cref="SonsOfLiberty"/> after the liberty→% conversion exactly as FreeCol does. Derived
     /// from the owner's Congress (not persisted) — <see cref="GameSession.Game"/> refreshes it on election, founding,
@@ -887,6 +898,20 @@ public sealed class Colony
     /// </summary>
     public int FederationSupportPercent =>
         Population <= 0 ? 0 : Math.Clamp(FederationSupport * 100 / (RebelLibertyDivisor * Population), 0, 100);
+
+    /// <summary>
+    /// Adjusts this colony's <see cref="AntiFederation"/> opposition by <paramref name="amount"/> (Australian-Federation
+    /// variant, WS3.5), clamped to 0–<paramref name="cap"/> — negative to decay it, positive to accrue/spike it. Unlike
+    /// <see cref="FederationSupport"/> this is a direct 0-100-style percentage (not points against a population ceiling), so
+    /// the cap is the flat <c>Game.AntiFederationCap</c> the caller passes. The caller (<see cref="GameSession.Game"/>'s
+    /// anti-Federation pass) only invokes this for the human in a Federation game, so a classic colony never accrues (ADR-009).
+    /// </summary>
+    /// <param name="amount">The change to apply (may be negative for decay).</param>
+    /// <param name="cap">The opposition ceiling (<c>Game.AntiFederationCap</c>).</param>
+    internal void AddAntiFederation(int amount, int cap)
+    {
+        AntiFederation = Math.Clamp(AntiFederation + amount, 0, cap);
+    }
 
     /// <summary>Removes food. Returns the shortfall (0 when the store covered it all).</summary>
     internal int ConsumeFood(int amount)
