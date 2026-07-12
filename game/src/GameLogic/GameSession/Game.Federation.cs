@@ -77,6 +77,28 @@ public sealed partial class Game
     /// <summary>The share of each turn's net Civic Voice that also accrues as national Convention Points (a light fraction so points trail support — the design keeps them a separate, slower axis).</summary>
     private const int ConventionPointsPerCivicVoicePercent = 25;
 
+    // ── Phase-1/2 prerequisite gate counts (WS3.7, design doc 05 §"Victory phases"; Australia-only, adopted as-is). ──
+    // Central + tunable; the design's fixed counts. The two "Civic Voice threshold" criteria are folded into the stronger
+    // maturity/movement signals (they carry no design number and the 4-capital gate already implies large civic output).
+
+    /// <summary>Design Phase 1 (Colonial Maturity): the number of colony regions that must hold a <see cref="SettlementMaturity.ColonialCapital"/> before a convention can be called ("at least 4 colony regions have a capital-level settlement").</summary>
+    internal const int Phase1CapitalRegions = 4;
+
+    /// <summary>Design Phase 1: the number of colony regions that must be settled ("at least 3 colony regions have Town Hall or equivalent" — every colony has the free base Town Hall, so this reads as settled-region count).</summary>
+    internal const int Phase1SettledRegions = 3;
+
+    /// <summary>Design Phase 1: the number of trade routes the human must run ("at least 2 intercolonial trade routes exist" — a raw route count; a true region-spanning "intercolonial" test has no oracle yet and is deferred).</summary>
+    internal const int Phase1TradeRoutes = 2;
+
+    /// <summary>Design Phase 2 (Federation Movement): the number of settled colony regions required ("at least 4 colony regions discovered/settled").</summary>
+    internal const int Phase2SettledRegions = 4;
+
+    /// <summary>Design Phase 2: the number of active newspapers required ("at least 2 newspapers active").</summary>
+    internal const int Phase2Newspapers = 2;
+
+    /// <summary>The Henry Parkes founding-father id — the "Federation champion attained" signal for the Phase-2 movement gate (design doc 05 Phase 2). Australia-only content; the gate is a no-op in classic.</summary>
+    private const string HenryParkesFatherId = "model.foundingFather.henryParkes";
+
     // ── State (persisted, SaveGame v72; omitted when default so classic stays byte-identical) ─────────────────
 
     private FederationPhase _federationPhase = FederationPhase.ColonialMaturity;
@@ -106,8 +128,8 @@ public sealed partial class Game
     /// The current player-facing <b>narrative stage</b> of the Federation campaign (WS3.8) — the design's six named phases
     /// (doc 05) mapped from the mechanical <see cref="FederationPhase"/> plus the calendar. Within
     /// <see cref="FederationPhase.ColonialMaturity"/> the stage is <see cref="FederationStage.FederationMovement"/> once the
-    /// 1889+ Federation era has begun (<see cref="CurrentEventEra"/> = <see cref="EventEra.Federation"/>), else
-    /// <see cref="FederationStage.ColonialMaturity"/>; the other mechanical states map one-to-one. A pure, RNG-free read
+    /// movement is under way (<see cref="FederationMovementUnderway"/> — the 1889+ Federation era OR Henry Parkes elected,
+    /// WS3.7), else <see cref="FederationStage.ColonialMaturity"/>; the other mechanical states map one-to-one. A pure, RNG-free read
     /// (no persisted state) the Federation panel labels its phase tracker + era indicator from (ADR-006).
     /// <see cref="FederationStage.None"/> for a classic game (no Federation campaign), so nothing is shown there.
     /// </summary>
@@ -122,7 +144,7 @@ public sealed partial class Game
             return _federationPhase switch
             {
                 FederationPhase.ColonialMaturity =>
-                    CurrentEventEra == EventEra.Federation ? FederationStage.FederationMovement : FederationStage.ColonialMaturity,
+                    FederationMovementUnderway ? FederationStage.FederationMovement : FederationStage.ColonialMaturity,
                 FederationPhase.ConventionCalled => FederationStage.ConventionProcess,
                 FederationPhase.ConstitutionDrafted => FederationStage.DraftConstitution,
                 FederationPhase.Referendum => FederationStage.Referendum,
@@ -422,11 +444,85 @@ public sealed partial class Game
     // ── Phase machine + convention / referendum actions ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Whether the human may <b>call a federation convention</b> right now (Phase-4a): the Federation victory is enabled,
-    /// the phase is still <see cref="FederationPhase.ColonialMaturity"/>, at least <see cref="RegionsToCallConvention"/>
-    /// of the six regions are above <see cref="RegionSupportThreshold"/> support, and at least
-    /// <see cref="ConventionPointsToCallConvention"/> Convention Points have accrued (design Phase 3). A pure, RNG-free
-    /// read the panel gates its "call convention" action on.
+    /// Whether the <b>Federation movement is under way</b> (WS3.7, design doc 05 Phase 2's first criterion): the year has
+    /// reached the 1889+ Federation era (<see cref="CurrentEventEra"/> = <see cref="EventEra.Federation"/>) OR the human has
+    /// elected Henry Parkes (the Tenterfield Oration champion). The signal that splits the narrative
+    /// <see cref="FederationStage.ColonialMaturity"/> from <see cref="FederationStage.FederationMovement"/> and forms the
+    /// first clause of <see cref="CheckFederationMovement"/>. (The design's third OR-branch — "Civic Voice reaches a high
+    /// threshold" — carries no design number and is folded away; the year/Parkes signals already open the movement.)
+    /// </summary>
+    private bool FederationMovementUnderway =>
+        CurrentEventEra == EventEra.Federation || PlayerHasFather(_human, HenryParkesFatherId);
+
+    /// <summary>
+    /// Whether the colonies have reached <b>Colonial Maturity</b> — design Phase 1 (WS3.7): at least
+    /// <see cref="Phase1CapitalRegions"/> colony regions hold a <see cref="SettlementMaturity.ColonialCapital"/>, at least
+    /// <see cref="Phase1SettledRegions"/> regions are settled, and the human runs at least <see cref="Phase1TradeRoutes"/>
+    /// trade routes. A pure, RNG-free read; <b>a strict No for classic</b> (the Federation victory is off), so it never
+    /// affects the default game (ADR-009). Returns a clause-specific reason so the panel can show which prerequisite blocks.
+    /// </summary>
+    public MoveCheck CheckColonialMaturity()
+    {
+        if (!Ruleset.VictoryFederation)
+        {
+            return MoveCheck.No("Federation is not this game's victory path.");
+        }
+        int capitalRegions = FederationRegionKeys.Count(k =>
+            HumanColoniesInRegion(k).Any(c => SettlementMaturityOf(c) == SettlementMaturity.ColonialCapital));
+        if (capitalRegions < Phase1CapitalRegions)
+        {
+            return MoveCheck.No($"At least {Phase1CapitalRegions} colony regions need a Colonial Capital ({capitalRegions} so far).");
+        }
+        if (SettledRegionCount < Phase1SettledRegions)
+        {
+            return MoveCheck.No($"At least {Phase1SettledRegions} colony regions must be settled.");
+        }
+        if (_human.TradeRoutes.Count < Phase1TradeRoutes)
+        {
+            return MoveCheck.No($"At least {Phase1TradeRoutes} intercolonial trade routes are needed.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>
+    /// Whether the <b>Federation movement</b> has taken hold — design Phase 2 (WS3.7): the movement is under way
+    /// (<see cref="FederationMovementUnderway"/> — 1889+ or Parkes), at least <see cref="Phase2SettledRegions"/> colony
+    /// regions are settled, and at least <see cref="Phase2Newspapers"/> newspapers are active. A pure, RNG-free read;
+    /// <b>a strict No for classic</b>, so the default game is unaffected (ADR-009). Clause-specific reasons.
+    /// </summary>
+    public MoveCheck CheckFederationMovement()
+    {
+        if (!Ruleset.VictoryFederation)
+        {
+            return MoveCheck.No("Federation is not this game's victory path.");
+        }
+        if (!FederationMovementUnderway)
+        {
+            return MoveCheck.No("The Federation movement has not yet stirred (needs 1889, or Henry Parkes).");
+        }
+        if (SettledRegionCount < Phase2SettledRegions)
+        {
+            return MoveCheck.No($"At least {Phase2SettledRegions} colony regions must be settled.");
+        }
+        int newspapers = ColoniesOf(_human).Count(c => c.Buildings.Contains(NewspaperBuildingId));
+        if (newspapers < Phase2Newspapers)
+        {
+            return MoveCheck.No($"At least {Phase2Newspapers} newspapers must be active.");
+        }
+        return MoveCheck.Yes(0);
+    }
+
+    /// <summary>The number of the six Federation regions the human holds at least one colony in (WS3.7 gate helper).</summary>
+    private int SettledRegionCount => FederationRegionKeys.Count(k => HumanColoniesInRegion(k).Count > 0);
+
+    /// <summary>
+    /// Whether the human may <b>call a federation convention</b> right now (Phase-4a / WS3.7): the Federation victory is
+    /// enabled, the phase is still <see cref="FederationPhase.ColonialMaturity"/>, the design's <b>Phase-1 Colonial
+    /// Maturity</b> and <b>Phase-2 Federation Movement</b> prerequisites are met (<see cref="CheckColonialMaturity"/> /
+    /// <see cref="CheckFederationMovement"/>), at least <see cref="RegionsToCallConvention"/> of the six regions are above
+    /// <see cref="RegionSupportThreshold"/> support, and at least <see cref="ConventionPointsToCallConvention"/> Convention
+    /// Points have accrued (design Phase 3). A pure, RNG-free read the panel gates its "call convention" action on; the
+    /// earliest-unmet prerequisite is surfaced first.
     /// </summary>
     public MoveCheck CheckCallConvention()
     {
@@ -437,6 +533,17 @@ public sealed partial class Game
         if (_federationPhase != FederationPhase.ColonialMaturity)
         {
             return MoveCheck.No("A convention has already been called.");
+        }
+        // WS3.7: the colonies must have matured (Phase 1) and the movement must have begun (Phase 2) before a convention.
+        MoveCheck maturity = CheckColonialMaturity();
+        if (!maturity.Allowed)
+        {
+            return maturity;
+        }
+        MoveCheck movement = CheckFederationMovement();
+        if (!movement.Allowed)
+        {
+            return movement;
         }
         if (RegionsAtLeast(RegionSupportThreshold) < RegionsToCallConvention)
         {

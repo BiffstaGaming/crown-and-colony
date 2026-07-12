@@ -103,9 +103,12 @@ public class FederationVictoryTests
     public void CallConvention_IsGated_UntilFourRegionsAndPointsCross()
     {
         Game game = NewAustralia();
-
-        // Three regions above threshold is not enough (needs four).
         FoundAllSixRegions(game, out var colonies);
+        // Satisfy the WS3.7 Phase-1/2 prerequisites first (they gate before the support/points checks), so this test
+        // isolates the Phase-3 region-support + Convention-Points gates. The four capitals are NSW/Vic/Qld/SA.
+        SatisfyMaturityAndMovement(game, colonies);
+
+        // Three of the four capital regions above threshold is not enough (needs four).
         SetSupportPercent(colonies[AustraliaColony.NewSouthWales], 50);
         SetSupportPercent(colonies[AustraliaColony.Victoria], 50);
         SetSupportPercent(colonies[AustraliaColony.Queensland], 50);
@@ -384,9 +387,121 @@ public class FederationVictoryTests
         Assert.False(restored.ReferendumCarried);
     }
 
+    // ─────────────────────────────── phase-1/2 prerequisite gates (WS3.7) ───────────────────────────────
+
+    private const string ParkesId = "model.foundingFather.henryParkes";
+
+    [Fact]
+    public void PhaseGates_ReturnNo_ForClassic()
+    {
+        Game classic = Game.New(Classic, Seed);
+        Assert.False(classic.CheckColonialMaturity().Allowed);   // classic has no Federation campaign — a strict No, no state
+        Assert.False(classic.CheckFederationMovement().Allowed);
+    }
+
+    [Fact]
+    public void ColonialMaturity_NeedsFourCapitals_SettledRegions_AndTradeRoutes()
+    {
+        Game game = NewAustralia();
+        FoundAllSixRegions(game, out var colonies);
+        Assert.False(game.CheckColonialMaturity().Allowed); // fresh outposts → the capital gate is closed
+
+        foreach (AustraliaColony c in new[] { AustraliaColony.NewSouthWales, AustraliaColony.Victoria, AustraliaColony.Queensland, AustraliaColony.SouthAustralia })
+        {
+            MakeCapital(colonies[c]);
+        }
+        Assert.False(game.CheckColonialMaturity().Allowed); // four capitals + six settled regions, but no trade routes yet
+
+        AddTradeRoutes(game, Game.Phase1TradeRoutes);
+        Assert.True(game.CheckColonialMaturity().Allowed);
+
+        colonies[AustraliaColony.SouthAustralia].Population = 2; // drop one capital below tier → only three capital regions
+        Assert.False(game.CheckColonialMaturity().Allowed);
+    }
+
+    [Fact]
+    public void FederationMovement_NeedsTheSignal_FourRegions_AndTwoNewspapers()
+    {
+        Game game = NewAustralia();
+        FoundAllSixRegions(game, out var colonies);
+        Assert.False(game.CheckFederationMovement().Allowed); // 1788, no Parkes → the movement has not stirred
+
+        game.HumanPlayer.CongressList.Add(ParkesId); // the movement signal
+        Assert.False(game.CheckFederationMovement().Allowed); // six settled regions, but no newspapers yet
+
+        colonies[AustraliaColony.NewSouthWales].AddBuilding("model.building.newspaper");
+        colonies[AustraliaColony.Victoria].AddBuilding("model.building.newspaper");
+        Assert.True(game.CheckFederationMovement().Allowed);
+    }
+
+    [Fact]
+    public void CallConvention_IsGatedByMaturityAndMovement_ButOpensWhenAllAreMet()
+    {
+        Game game = NewAustralia();
+        FoundAllSixRegions(game, out var colonies);
+        foreach (Colony c in colonies.Values)
+        {
+            SetSupportPercent(c, 100);
+        }
+        game.SetConventionPoints(Game.ConventionPointsToCallConvention);
+        // Support + Convention Points alone no longer open the convention — the Phase-1/2 prerequisites gate it (WS3.7).
+        Assert.False(game.CheckCallConvention().Allowed);
+
+        // Meet Phase 1 (four Colonial Capitals + trade routes) and Phase 2 (Parkes + the capitals' newspapers).
+        SatisfyMaturityAndMovement(game, colonies);
+        foreach (Colony c in colonies.Values)
+        {
+            SetSupportPercent(c, 100); // re-bank to 100% against the new (larger) capital populations
+        }
+
+        Assert.True(game.CheckColonialMaturity().Allowed);
+        Assert.True(game.CheckFederationMovement().Allowed);
+        Assert.True(game.CheckCallConvention().Allowed, "maturity + movement + support + points all met → the convention opens");
+        Assert.True(game.CallConvention());
+    }
+
+    [Fact]
+    public void CurrentFederationStage_IsFederationMovement_WhenParkesElected_BeforeThe1889Era()
+    {
+        Game game = NewAustralia(); // 1788 — well before the Federation era
+        Assert.Equal(FederationStage.ColonialMaturity, game.CurrentFederationStage);
+        game.HumanPlayer.CongressList.Add(ParkesId);
+        Assert.Equal(FederationStage.FederationMovement, game.CurrentFederationStage); // Parkes stirs the movement early
+    }
+
     // ───────────────────────────────────────── helpers ─────────────────────────────────────────
 
     private static Game NewAustralia() => Game.New(Australia, Seed, mapSource: MapSource.Australia);
+
+    /// <summary>Promotes a colony to a Colonial Capital (population 10 + port + newspaper + school) for the WS3.7 gate tests.</summary>
+    private static void MakeCapital(Colony colony)
+    {
+        colony.Population = 10;
+        colony.AddBuilding("model.building.docks");
+        colony.AddBuilding("model.building.newspaper");
+        colony.AddBuilding("model.building.schoolhouse");
+    }
+
+    /// <summary>Adds <paramref name="count"/> two-stop trade routes to the human's route list (the WS3.7 Phase-1 trade-route gate reads the count).</summary>
+    private static void AddTradeRoutes(Game game, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            game.HumanPlayer.TradeRoutesList.Add(new TradeRoute(i + 1, $"Route {i + 1}",
+                [new TradeRouteStop(i * 2 + 1, []), new TradeRouteStop(i * 2 + 2, [])]));
+        }
+    }
+
+    /// <summary>Satisfies the WS3.7 Phase-1 (four Colonial Capitals + trade routes) and Phase-2 (Parkes + the capitals' newspapers) gates for the four eastern regions.</summary>
+    private static void SatisfyMaturityAndMovement(Game game, System.Collections.Generic.Dictionary<AustraliaColony, Colony> colonies)
+    {
+        foreach (AustraliaColony c in new[] { AustraliaColony.NewSouthWales, AustraliaColony.Victoria, AustraliaColony.Queensland, AustraliaColony.SouthAustralia })
+        {
+            MakeCapital(colonies[c]); // pop 10 + docks + newspaper + school → Colonial Capital (its newspaper also feeds the Phase-2 count)
+        }
+        AddTradeRoutes(game, Game.Phase1TradeRoutes);
+        game.HumanPlayer.CongressList.Add(ParkesId);
+    }
 
     /// <summary>Founds a colony from the first colony-capable unit on the map (the human's start party).</summary>
     private static Colony Found(Game game) =>

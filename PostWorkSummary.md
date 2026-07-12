@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-12 — WS3.7: Federation phase-1/2 prerequisite gates
+
+**Requested (Chris):** "3.7" → then chose "adopt doc 05 as-is" (the steep, faithful gate counts).
+**Did:**
+- **Scoped WS3.7** with a workflow (design docs 05/06 + code oracles → per-criterion oracle map + numbers proposal). Confirmed most ingredients already have oracles (`SettlementMaturityOf`, `IsColonyRegionActive` from WS2.7), so **no new systems** were needed.
+- **Two new pure-read gates** in `Game.Federation.cs`: `CheckColonialMaturity()` (design Phase 1 — ≥4 regions with a Colonial Capital, ≥3 settled regions, ≥2 trade routes) and `CheckFederationMovement()` (design Phase 2 — movement under way [1889 era **or** Parkes elected], ≥4 settled regions, ≥2 newspapers). Wired as **hard preconditions into `CheckCallConvention`** before the support/points checks (earliest-unmet surfaced first).
+- **Folded** the two design "Civic Voice threshold" criteria (no design number, redundant given the 4-capital gate) rather than invent numbers; deferred (no oracle) the true-intercolonial-trade / discovered-but-unsettled / trade-friction criteria with a note.
+- **Refined WS3.8** `CurrentFederationStage` to split Maturity→Movement on the movement signal (Parkes before 1889 now reads "Federation Movement").
+- Counts are central `internal const`s (4/3/2/4/2), **doc-05 as-is per Chris**, tunable after playtest.
+**Status:** verified, **review running then commit**. Build ✓; +5 L1 (`FederationVictoryTests`: each gate's clauses, classic-No byte-safety, and the convention gated by maturity/movement but opening when all met) + fixed 1 pre-existing test (now satisfies the new prerequisites first). Full **L1/L2 2965** + **determinism soak** (classic byte-identical, no save bump) + **L3 `FederationPanelTests`** green. Adversarial-review workflow (2 lenses → verify) running.
+**Changed:** `Game.Federation.cs` (2 gates + `FederationMovementUnderway` + `SettledRegionCount` + consts + wire-in + stage refinement), `FederationVictoryTests.cs` (+5, +2 helpers, fixed 1), `federation-victory.md` (both layers + changelog + verification + §5 done).
+**Decisions:** gates check maturity→movement→support→points (design phase order); adopt doc-05 counts as-is (Chris); fold the unspecified civic-voice criteria; no save bump (pure reads).
+**Scheduled next:** WS3 remaining — **WS3.3** constitutional clauses (needs the 7 clause costs/effects from Chris), **WS3.5/3.6/3.4** deferred. Or another stream. Awaiting Chris's steer.
+**Needs you:** for WS3.3 I'll need the clause costs/effects; otherwise pick a stream. The 4-capital gate is steep — worth a playtest to confirm Federation stays reachable (tunable consts). Sign-offs unchanged.
+
+---
+
 ## 2026-07-12 — WS1.4 close-out: William Barak portrait (cultural-protocol sign-off)
 
 **Requested (Chris):** signed off on the held William Barak portrait ("that will do") + "download it yourself".
