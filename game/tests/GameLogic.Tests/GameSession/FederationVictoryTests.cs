@@ -162,6 +162,7 @@ public class FederationVictoryTests
 
         // Phase 1/2 — mature four capitals + trade routes + Parkes (movement); then bank a landslide of support + points.
         SatisfyMaturityAndMovement(game, colonies);
+        MakeCapital(colonies[AustraliaColony.WesternAustralia]); // WS3.6: mature WA's goldfields so it joins (the NSW quota is waived below by drafting Capital Compromise)
         Assert.True(game.CheckColonialMaturity().Allowed);
         Assert.True(game.CheckFederationMovement().Allowed);
         foreach (Colony c in colonies.Values)
@@ -185,9 +186,12 @@ public class FederationVictoryTests
         Assert.Equal(FederationPhase.ConstitutionDrafted, game.FederationPhase);
 
         // Phase 5/6 — every region past its own referendum target (a landslide carries); the Commonwealth is proclaimed next turn.
+        game.HumanPlayer.TaxRate = 0; // no Crown pressure at vote time
+        MakeCapital(colonies[AustraliaColony.WesternAustralia]); // restore WA to a capital (the mid-journey turn starved the food-less test colony below capital size)
         foreach (Colony c in colonies.Values)
         {
             SetSupportPercent(c, 100); // re-bank (the clause effects + a turn's accrual shifted support)
+            c.AntiFederation = 0;      // clear any mid-journey opposition so the landslide carries cleanly (net == raw == 100)
         }
         Assert.True(game.CheckPutToReferendum().Allowed);
         Assert.True(game.HoldReferendum(), "a 100%-support federation must carry its referendum");
@@ -204,6 +208,7 @@ public class FederationVictoryTests
     {
         Game game = NewAustralia();
         FoundAllSixRegions(game, out var colonies);
+        SatisfyReferendumSpecialRules(colonies); // WS3.6: WA joins + NSW clears its quota
         foreach (Colony c in colonies.Values)
         {
             SetSupportPercent(c, 100); // a landslide — the referendum always carries
@@ -225,9 +230,10 @@ public class FederationVictoryTests
     {
         Game game = NewAustralia();
         FoundAllSixRegions(game, out var colonies);
+        SatisfyReferendumSpecialRules(colonies); // WS3.6: WA joins (else its hold-out blocks the whole vote); NSW quota is moot (this test never holds a referendum)
         game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
 
-        // Every settled region at exactly its own historical target (NSW 57 … Tas/Vic 94) → the referendum opens.
+        // Every settled region at exactly its own historical target (NSW 57 … Tas/Vic 94; WA 55 once matured) → the referendum opens.
         foreach ((AustraliaColony region, Colony colony) in colonies)
         {
             SetSupportPercent(colony, game.ReferendumTargetFor(AustraliaColonyStart.RegionKey(region)));
@@ -248,8 +254,8 @@ public class FederationVictoryTests
     [Fact]
     public void FailedReferendum_SpikesAntiFederation_AndLeavesThePhaseForARetry()
     {
-        // The gate requires every region at its own target, so the average NET support is pinned at ~75 → a roll ≥ 75
-        // rejects the vote (~25% of seeds). Search the fixed seed range for one whose FIRST referendum fails, so the WS3.5
+        // The gate requires every region at its own target (WA matured → 55), so the average NET support is pinned at ~72 →
+        // a roll ≥ 72 rejects the vote (~28% of seeds). Search the fixed seed range for one whose FIRST referendum fails, so the WS3.5
         // spike is ALWAYS exercised — a single fixed seed could land on a carry and vacuously skip the assertions.
         for (ulong seed = 1; seed < 500; seed++)
         {
@@ -263,6 +269,7 @@ public class FederationVictoryTests
             {
                 continue; // this seed seats a colony on native-owned land — skip it and try the next
             }
+            SatisfyReferendumSpecialRules(colonies); // WS3.6: reach the ROLL (not the WA hold-out gate or the NSW quota pre-empt)
             game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
             foreach ((AustraliaColony region, Colony colony) in colonies)
             {
@@ -306,6 +313,7 @@ public class FederationVictoryTests
         {
             Game game = Game.New(Australia, seed, mapSource: MapSource.Australia);
             FoundAllSixRegions(game, out var colonies);
+            SatisfyReferendumSpecialRules(colonies); // WS3.6: reach the ROLL (not the WA hold-out gate or the NSW quota pre-empt)
             game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
             foreach (Colony c in colonies.Values)
             {
@@ -315,7 +323,7 @@ public class FederationVictoryTests
         }
 
         // Two runs with identical seed, turn, and support roll the same referendum result. 95% clears every region's target
-        // (max 94), so the gate opens and the pass roll — not the gate — is what is being tested for determinism.
+        // (max 94), so the gate opens and the pass ROLL — not the gate, the WA hold-out or the NSW quota — is tested here.
         Assert.Equal(RunToReferendum(Seed, 95), RunToReferendum(Seed, 95));
         Assert.Equal(RunToReferendum(Seed, 95), RunToReferendum(Seed, 95));
     }
@@ -519,6 +527,123 @@ public class FederationVictoryTests
         Game clean = NewAustralia();
         FoundIn(clean, AustraliaColony.Victoria);
         Assert.DoesNotContain("AntiFederation", SaveGame.From(clean, "australia").ToJson());
+    }
+
+    // ─────────────────────────────── NSW quota + WA late-entry (WS3.6) ───────────────────────────────
+
+    private const string WesternAustraliaKey = "model.region.westernAustralia";
+
+    [Fact]
+    public void WaLateEntry_HoldsOutUntilItsGoldfieldsMature_ThenJoinsAt55()
+    {
+        Game game = NewAustralia();
+        FoundAllSixRegions(game, out var colonies);
+        game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
+        foreach (Colony c in colonies.Values)
+        {
+            SetSupportPercent(c, 95); // comfortably above every base target, including WA's 70
+        }
+        Assert.Equal(70, game.ReferendumTargetFor(WesternAustraliaKey));   // un-matured → base target
+        Assert.False(game.CheckPutToReferendum().Allowed);                 // WA holds out even at 95% — it blocks the whole vote
+
+        // WA's goldfields boom into an established colony → it joins, and its target drops 70 → 55.
+        MakeCapital(colonies[AustraliaColony.WesternAustralia]);
+        SetSupportPercent(colonies[AustraliaColony.WesternAustralia], 95); // re-seat against the new pop-10 ceiling
+        Assert.Equal(55, game.ReferendumTargetFor(WesternAustraliaKey));   // 70 − 15 late-entry cut
+        Assert.True(game.CheckPutToReferendum().Allowed);                  // WA joined + every region past its target → gate open
+    }
+
+    [Fact]
+    public void NswMobilisationQuota_FailsTheReferendum_DeterministicallyAndCostsSomething()
+    {
+        Game game = NewAustralia();
+        FoundAllSixRegions(game, out var colonies);
+        MakeCapital(colonies[AustraliaColony.WesternAustralia]); // WA joins so the gate opens and we reach the quota pre-empt
+        game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
+        foreach ((AustraliaColony region, Colony colony) in colonies)
+        {
+            SetSupportPercent(colony, game.ReferendumTargetFor(AustraliaColonyStart.RegionKey(region)));
+        }
+        Colony nsw = colonies[AustraliaColony.NewSouthWales]; // a lean pop-1 colony at 57% → mobilisation ~114 << 1200
+        Assert.False(game.CheckNswReferendumQuota().Allowed); // advisory: NSW has the % but not the mobilisation quota
+        Assert.True(game.CheckPutToReferendum().Allowed);     // the GATE is open (the quota bites in HoldReferendum, not the gate)
+        int supportBefore = nsw.FederationSupport;
+
+        // Holding the referendum fails DETERMINISTICALLY on the NSW quota — before any roll — so it fails on every seed.
+        Assert.False(game.HoldReferendum());
+        Assert.Equal(FederationPhase.Referendum, game.FederationPhase); // stays for a retry
+        Assert.Equal(1, game.ReferendumAttempts);
+        Assert.Equal(supportBefore, nsw.FederationSupport);            // a turnout technicality — no support shed
+        Assert.True(nsw.AntiFederation > 0, "a quota failure spikes a small, NSW-only opposition (Chris's 'costs something')");
+        // Other colonies are untouched (unlike a genuine roll rejection, which spikes every colony).
+        Assert.Equal(0, colonies[AustraliaColony.Victoria].AntiFederation);
+    }
+
+    [Fact]
+    public void NswQuota_IsWaivedByCapitalCompromise_AndClearedByMobilisation()
+    {
+        // Waiver path: drafting the Capital Compromise clause (the 1899 concessions) lets the referendum through despite a
+        // short NSW mobilisation.
+        Game waived = NewAustralia();
+        FoundAllSixRegions(waived, out var colonies);
+        MakeCapital(colonies[AustraliaColony.WesternAustralia]);
+        waived.SetFederationPhase(FederationPhase.ConstitutionDrafted);
+        foreach (Colony c in colonies.Values)
+        {
+            SetSupportPercent(c, 100);
+        }
+        Assert.False(waived.CheckNswReferendumQuota().Allowed);     // still short on numbers…
+        waived.SetDraftedClause("capitalCompromise");              // …but the 1899 concessions waive it
+        Assert.True(waived.CheckNswReferendumQuota().Allowed);
+        Assert.True(waived.HoldReferendum(), "the waiver lets a 100%-support vote reach — and carry — the roll");
+
+        // Mobilisation path: growing NSW's civic base past the quota also clears it (no waiver needed).
+        Game grown = NewAustralia();
+        FoundAllSixRegions(grown, out var big);
+        MakeCapital(big[AustraliaColony.WesternAustralia]);
+        big[AustraliaColony.NewSouthWales].Population = 20; // pop 20 at 100% banks 4000 > the 1200 quota
+        grown.SetFederationPhase(FederationPhase.ConstitutionDrafted);
+        foreach (Colony c in big.Values)
+        {
+            SetSupportPercent(c, 100);
+        }
+        Assert.True(grown.CheckNswReferendumQuota().Allowed);
+        Assert.True(grown.HoldReferendum());
+    }
+
+    [Fact]
+    public void AllSixColonies_AreMandatory_TheVoteIsBlockedUntilEveryRegionIsFounded()
+    {
+        Game game = NewAustralia();
+        // Found only the five EASTERN regions (skip Western Australia) at a landslide — you must not be able to dodge WA's
+        // steep target by never settling it (Chris's "all six mandatory" decision, WS3.6).
+        var colonies = new System.Collections.Generic.Dictionary<AustraliaColony, Colony>();
+        foreach (AustraliaColony region in new[] { AustraliaColony.NewSouthWales, AustraliaColony.Victoria, AustraliaColony.Queensland, AustraliaColony.SouthAustralia, AustraliaColony.Tasmania })
+        {
+            colonies[region] = FoundIn(game, region);
+        }
+        game.SetFederationPhase(FederationPhase.ConstitutionDrafted);
+        colonies[AustraliaColony.NewSouthWales].Population = 20; // clear the NSW quota so it isn't what blocks the vote
+        foreach (Colony c in colonies.Values)
+        {
+            SetSupportPercent(c, 100);
+        }
+        Assert.False(game.CheckPutToReferendum().Allowed); // only 5 of 6 regions founded → blocked
+
+        // Found and mature the sixth region (WA); now all six are settled and it can proceed (WA joins at 55).
+        Colony wa = FoundIn(game, AustraliaColony.WesternAustralia);
+        MakeCapital(wa);
+        SetSupportPercent(wa, 100);
+        Assert.True(game.CheckPutToReferendum().Allowed);
+    }
+
+    [Fact]
+    public void WaLateEntry_AndNswQuota_AreNoOpsForClassic()
+    {
+        Game classic = Game.New(Classic, Seed);
+        Found(classic);
+        Assert.Equal(Game.RegionSupportForReferendum, classic.ReferendumTargetFor(WesternAustraliaKey)); // uniform 50 — no WA late-entry cut
+        Assert.True(classic.CheckNswReferendumQuota().Allowed);                                          // never blocks in classic
     }
 
     // ─────────────────────────────── persistence (v72, omit-when-default) ───────────────────────────────
@@ -859,6 +984,18 @@ public class FederationVictoryTests
             game.HumanPlayer.TradeRoutesList.Add(new TradeRoute(i + 1, $"Route {i + 1}",
                 [new TradeRouteStop(i * 2 + 1, []), new TradeRouteStop(i * 2 + 2, [])]));
         }
+    }
+
+    /// <summary>
+    /// Satisfies the WS3.6 special referendum rules so a test can reach the vote: matures Western Australia's goldfields (a
+    /// Colonial Capital, so WA stops holding out and its target drops 70 → 55) and grows New South Wales' civic base
+    /// (population 20, so at ≥57% it banks ≥ 2280 > <see cref="Game.NswMobilisationQuota"/> 1200). Call BEFORE seating
+    /// support so <c>ReferendumTargetFor(WA)</c> already reads 55.
+    /// </summary>
+    private static void SatisfyReferendumSpecialRules(System.Collections.Generic.Dictionary<AustraliaColony, Colony> colonies)
+    {
+        MakeCapital(colonies[AustraliaColony.WesternAustralia]); // WA goldfields boom → it joins; target 70 → 55
+        colonies[AustraliaColony.NewSouthWales].Population = 20;  // clears the NSW mobilisation quota at its 57% target
     }
 
     /// <summary>Satisfies the WS3.7 Phase-1 (four Colonial Capitals + trade routes) and Phase-2 (Parkes + the capitals' newspapers) gates for the four eastern regions.</summary>

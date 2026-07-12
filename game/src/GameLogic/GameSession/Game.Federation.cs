@@ -66,13 +66,26 @@ public sealed partial class Game
     /// The <b>effective</b> per-region referendum target (WS3.2): the base target (<see cref="BaseReferendumTargetFor"/>)
     /// less any reduction banked by the Democracy Pioneers who lower a region's bar (Edmund Barton's New South Wales
     /// convention drive, Samuel Griffith's hardest-colony drafting, Mary Lee's South-Australian suffrage advocacy),
-    /// clamped 0–100. This is the read the referendum gate (<see cref="CheckPutToReferendum"/>) and the Federation panel's
+    /// clamped 0–100. <b>WS3.6:</b> Western Australia additionally takes a live <see cref="WaLateEntryReduction"/> (−15,
+    /// 70 → 55) once its goldfields mature (<see cref="WaGoldfieldsMatured"/>) — a non-banked, non-Pioneer cut stacked on
+    /// top of any banked reduction and absorbed by the same 0–100 clamp; gated on the Federation victory (classic is
+    /// unaffected). This is the read the referendum gate (<see cref="CheckPutToReferendum"/>) and the Federation panel's
     /// per-region threshold marker + readiness colour consume (ADR-006). Falls back to the uniform bar for a region with
     /// no authored target (so classic — which authors none and never reaches the gate — is byte-identical, ADR-009).
     /// </summary>
     /// <param name="regionKey">One of <see cref="FederationRegionKeys"/> (e.g. <c>model.region.newSouthWales</c>).</param>
-    public int ReferendumTargetFor(string regionKey) =>
-        Math.Clamp(BaseReferendumTargetFor(regionKey) - _federationTargetReductions.GetValueOrDefault(regionKey), 0, 100);
+    public int ReferendumTargetFor(string regionKey)
+    {
+        int reduction = _federationTargetReductions.GetValueOrDefault(regionKey);
+        // WS3.6: once Western Australia's goldfields mature, its join threshold drops 70 → 55 (a live reduction on top of any
+        // banked Pioneer cut). Gated on the Federation victory so classic — which authors no WA target and never matures a
+        // goldfields boom in this sense — is byte-identical. The 0–100 clamp absorbs any stack with a Griffith WA reduction.
+        if (Ruleset.VictoryFederation && regionKey == WesternAustraliaKey && WaGoldfieldsMatured())
+        {
+            reduction += WaLateEntryReduction;
+        }
+        return Math.Clamp(BaseReferendumTargetFor(regionKey) - reduction, 0, 100);
+    }
 
     /// <summary>The share of each turn's net Civic Voice that also accrues as national Convention Points (a light fraction so points trail support — the design keeps them a separate, slower axis).</summary>
     private const int ConventionPointsPerCivicVoicePercent = 25;
@@ -98,6 +111,28 @@ public sealed partial class Game
 
     /// <summary>The Henry Parkes founding-father id — the "Federation champion attained" signal for the Phase-2 movement gate (design doc 05 Phase 2). Australia-only content; the gate is a no-op in classic.</summary>
     private const string HenryParkesFatherId = "model.foundingFather.henryParkes";
+
+    // ── WS3.6 special referendum rules (NSW mobilisation quota + WA goldfields late-entry; all six mandatory) ─────
+    // First-pass, tunable (like the WS3.7 gate counts). Both derived live from already-persisted state → no save bump.
+
+    /// <summary>The New South Wales region key — the colony the WS3.6 mobilisation quota applies to.</summary>
+    private const string NewSouthWalesKey = "model.region.newSouthWales";
+
+    /// <summary>The Western Australia region key — the WS3.6 late-entry hold-out colony.</summary>
+    private const string WesternAustraliaKey = "model.region.westernAustralia";
+
+    /// <summary>
+    /// New South Wales' <b>mobilisation quota</b> (WS3.6): the minimum total banked Federation Support (raw points, summed
+    /// over the human's NSW colonies) the referendum needs on top of NSW's 57% support target. The historical 1898 NSW
+    /// referendum passed on a majority but fell short of the legislated ~80,000-yes floor, forcing the 1899 re-run. A lean
+    /// single NSW Colonial Capital (pop 10) at exactly 57% banks ~1140 &lt; 1200, so the quota bites until NSW's civic base
+    /// grows (a second town / higher support) or the Capital Compromise clause waives it. Absolute (not %-scaled) on purpose
+    /// — that IS the historical mechanic. Tunable; the load-bearing balance dial.
+    /// </summary>
+    internal const int NswMobilisationQuota = 1200;
+
+    /// <summary>Western Australia's late-entry referendum-target cut (WS3.6): once WA's goldfields mature, its target drops 70 → 55 (design doc 05's "WA at least 55%"), folded live into <see cref="ReferendumTargetFor"/>.</summary>
+    internal const int WaLateEntryReduction = 15;
 
     // ── State (persisted, SaveGame v72; omitted when default so classic stays byte-identical) ─────────────────
 
@@ -430,6 +465,53 @@ public sealed partial class Game
     private List<Colony> HumanColoniesInRegion(string regionKey) =>
         ColoniesOf(_human).Where(c => Map.RegionOf(c.Position)?.Key == regionKey).ToList();
 
+    // ── WS3.6 — NSW mobilisation quota + WA goldfields late-entry (derived live; RNG-free) ─────────────────────
+
+    /// <summary>
+    /// Whether Western Australia's <b>goldfields have matured</b> enough for WA to join the Federation (WS3.6): the human
+    /// holds a <see cref="SettlementMaturity.ColonialCapital"/> — or at least two <see cref="SettlementMaturity.ColonialTown"/>s
+    /// (a capital counts as a town) — among its WA colonies. Historically WA was dragged into the Commonwealth as an
+    /// <b>original state</b> by its 1890s gold rush (the Kalgoorlie/Coolgardie "t'othersider" agitation for Federation, the
+    /// "Auralia" separation threat), not by the eastern colonies acceding it later — so WA's late entry keys on its own
+    /// development, not an elapsed clock. Mirrors the <see cref="IsColonyRegionActive"/> activation rule, human-scoped. A
+    /// pure, RNG-free read; false in classic (no WA colonies) and until WA's goldfields boom.
+    /// </summary>
+    private bool WaGoldfieldsMatured()
+    {
+        List<Colony> wa = HumanColoniesInRegion(WesternAustraliaKey);
+        int capitals = wa.Count(c => SettlementMaturityOf(c) == SettlementMaturity.ColonialCapital);
+        int towns = wa.Count(c => SettlementMaturityOf(c) is SettlementMaturity.ColonialTown or SettlementMaturity.ColonialCapital);
+        return capitals >= 1 || towns >= 2;
+    }
+
+    /// <summary>
+    /// New South Wales' total <b>mobilisation</b> (WS3.6): the sum of raw banked <see cref="Colony.FederationSupport"/> over
+    /// the human's NSW colonies — the absolute "turnout" stock the <see cref="NswMobilisationQuota"/> tests (the historical
+    /// 1898 quota was an absolute minimum-YES-vote floor, not a percentage). Raw points, so Anti-Federation Sentiment (which
+    /// only bites at the percentage aggregation) never touches it — the quota and the support target stay orthogonal.
+    /// </summary>
+    private int NswMobilisation() => HumanColoniesInRegion(NewSouthWalesKey).Sum(c => c.FederationSupport);
+
+    /// <summary>
+    /// Whether New South Wales would <b>clear its mobilisation quota</b> if a referendum were held now (WS3.6, advisory) —
+    /// the panel telegraphs the historical 1898 quota hurdle so it is not a gotcha. <b>No</b> when the human holds NSW but
+    /// its mobilisation is below <see cref="NswMobilisationQuota"/> and the Capital Compromise waiver is not drafted;
+    /// <b>Yes</b> otherwise. Gated on the Federation victory (never blocks in classic). A pure, RNG-free read.
+    /// </summary>
+    public MoveCheck CheckNswReferendumQuota()
+    {
+        if (!Ruleset.VictoryFederation || HumanColoniesInRegion(NewSouthWalesKey).Count == 0)
+        {
+            return MoveCheck.Yes(0); // not applicable → never blocks
+        }
+        if (_draftedClauses.Contains(CapitalCompromiseClauseId) || NswMobilisation() >= NswMobilisationQuota)
+        {
+            return MoveCheck.Yes(0);
+        }
+        return MoveCheck.No(
+            $"New South Wales has the numbers but not the mobilisation quota ({NswMobilisation()}/{NswMobilisationQuota}) — build its civic base or agree the Capital Compromise, or its referendum will fall short.");
+    }
+
     /// <summary>
     /// Federation Support in each of the six regions (Phase-4a), keyed by <see cref="Region.Key"/> in the canonical
     /// <see cref="FederationRegionKeys"/> order — the data the Federation panel draws as per-region bars. A pure read.
@@ -597,10 +679,21 @@ public sealed partial class Game
         // (raw earned support less Anti-Federation Sentiment, WS3.5): opposition bites here, at the vote. A region with no
         // human colony is not put. Report the region furthest below its target (the one blocking the vote) with its concrete
         // numbers — the panel's per-region gauges + opposition overlay show which colony it is.
+        // WS3.6 — all six colonies are mandatory (Chris's decision: no 5-colony victory). Every one of the six regions must
+        // be founded before Federation can be put to the vote — otherwise a player could simply never settle Western
+        // Australia (or Tasmania) to dodge its steep target. Reported first, with how many regions remain unsettled.
         List<string> settledRegions = FederationRegionKeys.Where(k => HumanColoniesInRegion(k).Count > 0).ToList();
-        if (settledRegions.Count == 0)
+        if (settledRegions.Count < FederationRegionKeys.Count)
         {
-            return MoveCheck.No("No colony regions are settled.");
+            int unsettled = FederationRegionKeys.Count - settledRegions.Count;
+            return MoveCheck.No($"All six colonies must be founded to federate ({unsettled} colony region{(unsettled == 1 ? "" : "s")} still unsettled).");
+        }
+        // WS3.6 — Western Australia holds out (all six are mandatory, so its refusal blocks the whole national vote) until
+        // its goldfields grow into an established colony (the historical goldfields-pressure that carried WA in as an
+        // original state). Headlines while WA is immature, before the per-region support shortfall.
+        if (HumanColoniesInRegion(WesternAustraliaKey).Count > 0 && !WaGoldfieldsMatured())
+        {
+            return MoveCheck.No("Western Australia is holding out — its goldfields must grow into an established colony before it will join the Federation.");
         }
         string? shortfall = settledRegions
             .Where(k => RegionNetFederationSupport(k) < ReferendumTargetFor(k))
@@ -632,6 +725,25 @@ public sealed partial class Game
             return false;
         }
         _federationPhase = FederationPhase.Referendum;
+
+        // WS3.6 — New South Wales mobilisation quota (the historical 1898→1899 re-run): NSW can pass its 57% support target
+        // yet fall short of the legislated minimum-YES quota. If so, the referendum fails on NSW's numbers alone — a
+        // DETERMINISTIC pre-empt before the RNG roll (no chance involved). Drafting the Capital Compromise clause (the 1899
+        // concessions) waives it. Chris's "the quota-failure costs something" decision: a quota failure also spikes a small,
+        // NSW-only, DECAYING Anti-Federation Sentiment (unlike a genuine roll rejection, it is a turnout technicality, so the
+        // spike is smaller and confined to NSW — no nationwide drain). Reported ahead of time by CheckNswReferendumQuota.
+        if (HumanColoniesInRegion(NewSouthWalesKey).Count > 0
+            && NswMobilisation() < NswMobilisationQuota
+            && !_draftedClauses.Contains(CapitalCompromiseClauseId))
+        {
+            _referendumAttempts++;
+            foreach (Colony nswColony in HumanColoniesInRegion(NewSouthWalesKey))
+            {
+                nswColony.AddAntiFederation(NswQuotaFailureSpike, AntiFederationCap);
+            }
+            RecordFederationMilestone("New South Wales carried on numbers but fell short of the required quota — a second referendum is needed.");
+            return false;
+        }
 
         // A dedicated referendum generator seeded off the human's own RNG state — never advancing stream 0 (we read its
         // saved state word read-only). The attempt count mixes in so a retry rolls independently.

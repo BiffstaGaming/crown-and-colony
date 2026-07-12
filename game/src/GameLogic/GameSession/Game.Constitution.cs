@@ -25,6 +25,9 @@ public sealed partial class Game
     /// <summary>A curated constitutional clause the human can draft (WS3.3): its stable id, display name, meter weight, and Convention-Point + gold cost.</summary>
     private sealed record ConstitutionClause(string Id, string DisplayName, int WeightPercent, int ConventionPointCost, int GoldCost);
 
+    /// <summary>The <b>Capital Compromise</b> clause id (WS3.3) — also the WS3.6 waiver for the New South Wales mobilisation quota (the 1899 concessions that carried NSW's re-run, incl. siting the federal capital in NSW). Shared so the catalog and the quota check can't drift.</summary>
+    internal const string CapitalCompromiseClauseId = "capitalCompromise";
+
     /// <summary>The design's "≥80% drafted" completion gate (doc 05 Phase 5): the constitution is complete once <see cref="ConstitutionProgressPercent"/> reaches this.</summary>
     internal const int ConstitutionDraftThresholdPercent = 80;
 

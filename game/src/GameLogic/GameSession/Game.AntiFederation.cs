@@ -55,6 +55,9 @@ public sealed partial class Game
     /// <summary>One-off opposition spike added to every human colony when a referendum is <b>rejected at the roll</b> (WS3.5, formalising the retired permanent ~10% support shed as a <em>decaying</em> drag — Chris's "decaying spike only" decision, faithful to the design's "temporary anti-Federation momentum").</summary>
     internal const int FailedReferendumSpike = 20;
 
+    /// <summary>Smaller opposition spike added to the human's <b>New South Wales</b> colonies only when the referendum fails NSW's mobilisation <b>quota</b> (WS3.6 — Chris's "the quota-failure costs something" decision). Smaller than the full roll-rejection spike because a quota shortfall is a turnout technicality, not an outright rejection; still decaying (recoverable), so repeated quota misses don't permanently scar NSW.</summary>
+    internal const int NswQuotaFailureSpike = 10;
+
     /// <summary>The opposition ceiling (%): opposition is bounded so a colony's net referendum support can drop by at most this many points (a 100%-raw colony still nets ≥ 40%) — heavy drag, but a colony's earned support is never fully erased. A whole-percent int, so it round-trips a save exactly.</summary>
     internal const int AntiFederationCap = 60;
 

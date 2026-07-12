@@ -341,8 +341,8 @@ public class AustralianContentTests
     [Fact]
     public void ElectingQuick_LowersTheReferendumPassThreshold_LettingAMarginalVoteCarry()
     {
-        // With every region at exactly its own target (WS3.2) the gate opens and the average support (~75%) sets the pass
-        // bar; a referendum carries when that average (plus Quick's +10 Corowa relief) beats a seeded 0–99 roll. Some seeds'
+        // With every region at exactly its own target (WS3.2; WA matured → 55, WS3.6) the gate opens and the average support
+        // (~72%) sets the pass bar; a referendum carries when that average (plus Quick's +10 Corowa relief) beats a seeded 0–99 roll. Some seeds'
         // rolls land in the marginal band where the vote FAILS without Quick but CARRIES with him — find one, proving his
         // relief lowers the effective pass threshold (read live from the persisted Congress; only Australia reaches
         // HoldReferendum, so classic stays byte-identical). supportPercent 0 leaves each region at its own target.
@@ -567,10 +567,21 @@ public class AustralianContentTests
 
         // Seat every region at least at its own referendum target (WS3.2) so the per-region gate opens — the pass ROLL,
         // which Quick's Corowa relief shifts, is what these tests exercise (not the gate). A supportPercent above a region's
-        // target lifts it further (used by the monotonicity test to sweep the average from ~75% up to 100%).
+        // target lifts it further (used by the monotonicity test to sweep the average from ~72% up to 100%).
         Game g = game;
         Colony Reresolve(AustraliaColony c) =>
             g.Colonies.Single(col => col.Position == AustraliaColonyStart.StartTile(c));
+
+        // WS3.6: mature WA's goldfields (a Colonial Capital, so it joins and its target drops 70 → 55) and grow NSW's civic
+        // base (pop 20, so it clears the mobilisation quota at its 57% target) — these two special rules would otherwise
+        // block the vote at the gate / quota pre-empt, but the ROLL (which Quick's relief shifts) is what these tests exercise.
+        Colony wa = Reresolve(AustraliaColony.WesternAustralia);
+        wa.Population = 10;
+        wa.AddBuilding("model.building.docks");
+        wa.AddBuilding("model.building.newspaper");
+        wa.AddBuilding("model.building.schoolhouse");
+        Reresolve(AustraliaColony.NewSouthWales).Population = 20;
+
         foreach (AustraliaColony colony in AustraliaColonyStart.All)
         {
             Colony col = Reresolve(colony);
