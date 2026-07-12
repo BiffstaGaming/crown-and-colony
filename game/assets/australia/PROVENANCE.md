@@ -22,10 +22,9 @@ The head-and-shoulders portrait shown beside each Australian Pioneer in the
 `ColonyArt.FatherPortrait`. Filenames are the ruleset **short name** so the loader is
 a direct lookup. Absent → the Pioneer renders text-only (graceful).
 
-**Status: 0 / 24 supplied.** William Barak (the 25th) is intentionally **held** —
-see the bottom of this section. The "recommended source" column is a sourcing guide
-(researched + PD-verified 2026-07-10); Chris sources and vets the actual files, then
-fills **Source URL** and **Licence**.
+**Status: 1 / 25 supplied** — **`williamBarak.jpg`** (signed off + added 2026-07-12; see the bottom of this
+section). The other 24 remain to source: the "recommended source" column is a sourcing guide (researched +
+PD-verified 2026-07-10); Chris sources and vets the actual files, then fills **Source URL** and **Licence**.
 
 > **Public-domain basis, in brief.** In Australia a photograph *taken before
 > 1 Jan 1955* is PD regardless of photographer; a *painted* portrait runs
@@ -83,10 +82,21 @@ fills **Source URL** and **Licence**.
 - **Samuel Griffith** — the NPG URL spells the middle name **"Walter"** while his legal
   middle name is **"Walker"** (used above). The mismatch is expected, not a typo to fix.
 
-### `williamBarak.jpg` — HELD (the 25th Pioneer)
+### `williamBarak.jpg` — SUPPLIED (signed off 2026-07-12)
 
-William Barak (Wurundjeri *ngurungaeta*, c.1824–1903) is **intentionally not sourced**.
-His portrait carries First Nations cultural-protocol / ICIP considerations (doc 15) and
-awaits **Chris's explicit sign-off / consultation** before use. Until then he renders
-text-only (the seam degrades gracefully) — by design, not a missing asset. Do not add
-`williamBarak.jpg` without that sign-off.
+William Barak (Wurundjeri *ngurungaeta*, c.1824–1903), the 25th Pioneer. His portrait was **held** pending a
+First Nations cultural-protocol / ICIP decision (doc 15); **Chris signed off on 2026-07-12** and chose this image.
+
+| Field | Value |
+|---|---|
+| **Image** | Studio portrait photograph of William Barak (bearded, dark buttoned jacket), Coranderrk. |
+| **Photographer / date** | **Carl Walter, 1866** (his Coranderrk series, exhibited at the 1866–67 Intercolonial Exhibition). |
+| **Original held by** | State Library of Victoria (the physical albumen print). |
+| **File source** | Wikimedia Commons — [`File:William Barak 1866.jpg`](https://commons.wikimedia.org/wiki/File:William_Barak_1866.jpg) (downloaded 2026-07-12, 622×830). |
+| **Licence** | **Public domain — PD-Australia**: an Australian photograph taken before 1 Jan 1956, copyright expired. GPL-v2-compatible for distribution. |
+
+**Cultural note (informational, recorded for transparency).** Copyright has expired, but this is an image of a
+First Nations ancestor: the SLV's own catalogue marks its copy *"all rights reserved"* (an institutional
+reproduction claim, not a subsisting copyright), and the living cultural authority for Barak's people is the
+[Wurundjeri Woi Wurrung Cultural Heritage Aboriginal Corporation](https://www.wurundjeri.com.au/our-story/ancestors-past/).
+The ICIP layer sits beyond copyright; this was a deliberate, signed-off decision — see task `86d3n855a`.

@@ -44,9 +44,10 @@ GPL, etc.), and its source URL + licence **must** be recorded in
 [`../PROVENANCE.md`](../PROVENANCE.md) before it ships. When in doubt, leave it out
 and ask. Never use an image derived from the 1994/2008 Sid Meier game.
 
-## `williamBarak.jpg` — HELD (do not add yet)
+## `williamBarak.jpg` — SUPPLIED (signed off 2026-07-12)
 
-William Barak (Wurundjeri *ngurungaeta*) is **intentionally not sourced here**. His
-portrait carries First Nations cultural-protocol / ICIP considerations (doc 15) and
-awaits Chris's explicit sign-off / consultation before use. Until then he renders
-text-only (the seam degrades gracefully) — this is by design, not a missing asset.
+William Barak (Wurundjeri *ngurungaeta*) was **held** pending a First Nations
+cultural-protocol / ICIP decision (doc 15); **Chris signed off on 2026-07-12**. The
+supplied file is Carl Walter's **public-domain (PD-Australia) 1866 photograph**, from
+Wikimedia Commons — full provenance + the cultural note are in
+[`../PROVENANCE.md`](../PROVENANCE.md). He now renders like any other Pioneer.

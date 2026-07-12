@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-12 — WS1.4 close-out: William Barak portrait (cultural-protocol sign-off)
+
+**Requested (Chris):** signed off on the held William Barak portrait ("that will do") + "download it yourself".
+**Did:**
+- **Researched the provenance** before touching anything — identified the pasted image as **Carl Walter's 1866 photograph** of Barak (Coranderrk series) and verified Wikimedia Commons hosts it as **PD-Australia** (pre-1956 Australian photograph, copyright expired → GPL-v2-compatible). Flagged the one nuance for the record: the State Library of Victoria's own copy carries an "all rights reserved" reproduction claim (doesn't revive expired copyright), and the Wurundjeri Woi Wurrung corporation is the living cultural authority (ICIP layer beyond copyright).
+- **Downloaded the verified PD original** from Commons → `game/assets/australia/fathers/williamBarak.jpg` (622×830), ran the Godot headless import (committed the `.import` sidecar). Confirmed it's the exact image Chris supplied.
+- **Render-verified** — added `Capture_AustraliaWilliamBarak`; the portrait shows aspect-fitted (not stretched) in the attained/Convention context (`docs/guide/img/australia-william-barak.png`). +1 CI L3 guard (`ColonyArtTests`: Barak's portrait resolves under the australia root).
+- **Recorded + un-held everything** — Asset Register (`PROVENANCE.md`: Carl Walter 1866 / PD-Australia / Commons + the cultural note), fathers `README.md`, `founding-fathers.md` (prose + changelog), ClickUp task `86d3n855a` → **Shipped**.
+**Status:** **committing, then CI**. Build ✓; L3 `ColonyArtTests` (3) + the Barak capture green. No code/logic/save/RNG change (asset + docs + tests only) → nothing else affected.
+**Changed:** `williamBarak.jpg` (+`.import`), `PROVENANCE.md`, `fathers/README.md`, `founding-fathers.md`, `ColonyArtTests.cs` (+1), `DocsCaptureTests.cs` (+capture), `australia-william-barak.png`.
+**Decisions:** downloaded the Commons PD-Australia original (clean provenance) rather than the untraceable paste; used the attained-panel surface for render-verify; left Barak's **gameplay** effect as the safe native-alarm-damp placeholder (the full relational-diplomacy design stays deferred on WS5).
+**Scheduled next:** back to your steer — WS3 remaining (WS3.7 gates / WS3.3 clauses need design numbers), or another stream. Related FN gates still open: `4c.11` event framings, `WS2.6` FN community art.
+**Needs you:** nothing on Barak — done. Pick the next item when ready.
+
+---
+
 ## 2026-07-12 — WS3.8: six named campaign stages + era indicator (Federation depth, UI)
 
 **Requested (Chris):** "3.8 go" — the six-phase mapping + era indicator (the low-sign-off, presentation-only WS3 task).

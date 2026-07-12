@@ -56,4 +56,21 @@ public class ColonyArtTests
             ColonyArt.VariantArtRoot = prev;
         }
     }
+
+    [TestCase]
+    public void WilliamBarakPortrait_LoadsUnderTheAustraliaRoot()
+    {
+        // WS1.4 close-out: Barak's portrait is the one supplied Australian Pioneer image (Carl Walter 1866, PD-Australia;
+        // signed off 2026-07-12). Guard that it resolves through the variant art seam — a rename/removal fails here.
+        string? prev = ColonyArt.VariantArtRoot;
+        try
+        {
+            ColonyArt.VariantArtRoot = "australia";
+            AssertThat(ColonyArt.FatherPortrait("williamBarak")).IsNotNull();
+        }
+        finally
+        {
+            ColonyArt.VariantArtRoot = prev;
+        }
+    }
 }

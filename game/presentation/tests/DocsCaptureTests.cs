@@ -409,6 +409,20 @@ public class DocsCaptureTests
         await CapturePanel(runner, controller, "australia-pioneer-attained");
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task Capture_AustraliaWilliamBarak()
+    {
+        if (!Enabled) return;
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        GameController controller = StartAustralia(runner, CaptureSize);
+        await runner.SimulateFrames(2);
+        Game game = GameOf(controller);
+        // Render-verify William Barak's now-supplied portrait (Carl Walter 1866, PD-Australia) in the attained modal.
+        controller.GetNode<PioneerAttainedPanel>("UI/PioneerAttainedPanel")
+            .Open(game, "model.foundingFather.williamBarak", "Federation Convention", GameLogic.Specification.GameVariants.Australia.DisplayOverrides);
+        await CapturePanel(runner, controller, "australia-william-barak");
+    }
+
     private static Game GameOf(GameController controller) =>
         (Game)controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(controller)!;
 
