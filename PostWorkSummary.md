@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-12 — WS3.3 M2: interactive constitution-drafting UI (autonomous)
+
+**Requested (Chris):** autonomous continuation. M2 = the interactive drafting UI (M1 shipped the logic).
+**Did:**
+- **FederationPanel Draft-Constitution section** — shown while a convention is drafting: a styled **progress gauge** toward the ≥80% gate (gold marker at the gate), and one **row per clause** (name, weight, cost) with either a gold **Draft** button (disabled-with-reason tooltip when unaffordable) or a **✓ drafted** tick. Pressing Draft forwards `Game.DraftClause` + rebuilds. Pure presentation (reads the M1 oracles).
+- **Render-verified** (`australia-constitution-drafting.png`): "34% drafted (need 80%)", Senate Equality ✓ drafted, the gold-locked Capital Compromise / Free Trade rows.
+**Status:** **committing, then CI**. Build ✓; +2 L3 (`FederationPanelTests`: section renders gauge + clause rows at ConventionCalled; a Draft button drafts on press + row rebuilds to the tick). M1 CI already green (run 29177237273). WS3.3 **complete**.
+**Changed:** `FederationPanel.cs` (Draft-Constitution section + clause rows + `OnDraftClause`), `FederationPanelTests.cs` (+2), `DocsCaptureTests.cs` (+capture), `federation-victory.md` (changelog + L3 verification + §5), `australia-constitution-drafting.png`.
+**Decisions:** M2 is presentation-only wiring to the already-reviewed M1 oracles → self-reviewed (closure captures the clause id in a local; rebuild refreshes) rather than a full review workflow.
+**Scheduled next (autonomous):** WS3.3 done → close its ClickUp task; then the remaining WS3 (WS3.5 Anti-Federation Sentiment / WS3.6 NSW quota + WA late-entry — both need design numbers I'll propose, or WS3.4 grades which needs WS5) or another stream. I'll pick the highest-value non-sensitive item.
+**Needs you:** Immigration Policy clause still awaits your cultural-protocol sign-off. Clause costs/magnitudes first-pass (playtest).
+
+---
+
 ## 2026-07-12 — WS3.3 M1: constitutional clauses + drafting mechanism (autonomous)
 
 **Requested (Chris):** "continue through the next recommended items… make decisions based off what SHOULD be done" (away for a few hours). WS3.3 was the next Federation-depth item.

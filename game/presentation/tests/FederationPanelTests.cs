@@ -182,4 +182,60 @@ public class FederationPanelTests
 
         panel.QueueFree();
     }
+
+    [TestCase]
+    public async Task Open_AtConventionCalled_RendersTheDraftConstitutionSection()
+    {
+        // WS3.3 M2: once a convention is called, the panel shows the Draft-Constitution section — a progress gauge + one
+        // row per clause with a Draft button. Advance to the drafting phase (+ points banked) via the save layer.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");
+        await runner.SimulateFrames(2);
+        var host = (Control)runner.Scene();
+
+        Game game = NewAustralia();
+        FoundIn(game, AustraliaColony.NewSouthWales);
+        Game convention = (SaveGame.From(game, "australia") with { FederationPhase = (int)FederationPhase.ConventionCalled, ConventionPoints = 1000 })
+            .Restore(Australia);
+        FederationPanel panel = AddPanel(host);
+
+        panel.Open(convention, () => { });
+        await runner.SimulateFrames(1);
+
+        var body = panel.GetNode<VBoxContainer>($"VBox/{FederationPanel.BodyName}");
+        AssertThat(body.GetNodeOrNull("DraftHeader")).IsNotNull();
+        AssertThat(body.GetNodeOrNull("ConstitutionProgressBar")).IsNotNull();
+        AssertThat(body.GetNodeOrNull("Clause_senateEquality")).IsNotNull();
+        // Senate Equality has no gold cost, so with 1000 points banked its Draft button is enabled.
+        AssertThat(body.GetNode<Button>("Clause_senateEquality/DraftButton").Disabled).IsFalse();
+
+        panel.QueueFree();
+    }
+
+    [TestCase]
+    public async Task DraftButton_DraftsTheClause_OnPress()
+    {
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/MainMenu.tscn");
+        await runner.SimulateFrames(2);
+        var host = (Control)runner.Scene();
+
+        Game game = NewAustralia();
+        FoundIn(game, AustraliaColony.NewSouthWales);
+        Game convention = (SaveGame.From(game, "australia") with { FederationPhase = (int)FederationPhase.ConventionCalled, ConventionPoints = 1000 })
+            .Restore(Australia);
+        FederationPanel panel = AddPanel(host);
+        panel.Open(convention, () => { });
+        await runner.SimulateFrames(1);
+
+        AssertThat(convention.ConstitutionProgressPercent).IsEqual(0);
+        var body = panel.GetNode<VBoxContainer>($"VBox/{FederationPanel.BodyName}");
+        body.GetNode<Button>("Clause_senateEquality/DraftButton").EmitSignal(Button.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(convention.ConstitutionProgressPercent).IsEqual(34); // Senate Equality (weight 34) is now drafted
+        body = panel.GetNode<VBoxContainer>($"VBox/{FederationPanel.BodyName}");
+        AssertThat(body.GetNodeOrNull("Clause_senateEquality/DraftButton")).IsNull(); // the row rebuilt to a drafted tick
+        AssertThat(body.GetNodeOrNull("Clause_senateEquality/Drafted")).IsNotNull();
+
+        panel.QueueFree();
+    }
 }

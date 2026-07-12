@@ -386,6 +386,33 @@ public class DocsCaptureTests
         await CapturePanel(runner, controller, "australia-federation");
     }
 
+    [TestCase(Timeout = 60000)]
+    public async Task Capture_AustraliaConstitutionDrafting()
+    {
+        if (!Enabled) return;
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        GameController controller = StartAustralia(runner, CaptureSize);
+        await runner.SimulateFrames(2);
+        // Advance an Australia game to the convention (drafting) phase with points banked (via the save layer), draft one
+        // clause, and open the panel — the WS3.3 M2 Draft-Constitution section: the progress gauge with its 80% gate marker,
+        // a drafted clause (Senate Equality, no gold cost) and the gold-locked rows. (WS3.3 render-verify.)
+        GameLogic.Specification.Ruleset aus = GameLogic.Specification.GameVariants.Australia.LoadRuleset();
+        Game game = Game.New(aus, 0xFED0A05UL, mapSource: GameLogic.World.MapSource.Australia);
+        GameLogic.World.Position tile = GameLogic.World.AustraliaColonyStart.StartTile(GameLogic.World.AustraliaColony.NewSouthWales);
+        Unit colonist = game.SpawnUnit(aus.Unit(Colony.FreeColonistTypeId), tile);
+        game.FoundColony(colonist);
+        Game drafting = (GameLogic.Persistence.SaveGame.From(game, "australia") with
+        {
+            FederationPhase = (int)GameLogic.GameSession.FederationPhase.ConventionCalled,
+            ConventionPoints = 1000,
+        }).Restore(aus);
+        drafting.DraftClause("senateEquality");
+        SetGame(controller, drafting);
+        await runner.SimulateFrames(1);
+        controller.OpenFederationPanel();
+        await CapturePanel(runner, controller, "australia-constitution-drafting");
+    }
+
     /// <summary>Sets a colony's Federation Support to <paramref name="percent"/>% of its own bar, via reflection over the
     /// internal <c>RebelLibertyDivisor</c>/<c>FederationSupport</c> members (capture-only — the panel reads them back).</summary>
     private static void SeedFederationSupport(Colony colony, int percent)

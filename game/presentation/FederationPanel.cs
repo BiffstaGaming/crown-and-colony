@@ -186,17 +186,12 @@ public partial class FederationPanel : PanelContainer
 
         _body.AddChild(BuildConventionPointsChip(_game.ConventionPoints));
 
-        // WS3.3: while a convention is drafting the constitution, show progress toward the design's ≥80% completion gate.
-        // (M1 read-only line; the interactive per-clause drafting UI is M2.)
+        // WS3.3: while a convention is drafting the constitution, show the Draft-Constitution section — a progress gauge
+        // toward the ≥80% completion gate and one row per curated clause (name, cost, and a Draft button / drafted tick).
         if (_game.FederationPhase == FederationPhase.ConventionCalled)
         {
-            _body.AddChild(new Label
-            {
-                Name = "ConstitutionProgress",
-                Text = $"Draft Constitution — {_game.ConstitutionProgressPercent}% (need {_game.ConstitutionDraftThreshold}%)",
-                HorizontalAlignment = HorizontalAlignment.Center,
-                ThemeTypeVariation = "SectionHeader",
-            });
+            _body.AddChild(new HSeparator());
+            BuildDraftConstitution();
         }
 
         _body.AddChild(new HSeparator());
@@ -412,6 +407,117 @@ public partial class FederationPanel : PanelContainer
     {
         _game.HoldReferendum();
         _onChange(); // a carried referendum wins next turn; a failed one shed support — the host view changes either way
+        Render();
+    }
+
+    /// <summary>
+    /// WS3.3: the <b>Draft Constitution</b> section — a styled progress gauge toward the design's ≥80% completion gate
+    /// (with a gold marker at the gate, read from <see cref="Game.ConstitutionDraftThreshold"/>) plus one row per curated
+    /// clause. Each row shows the clause name, its meter weight and cost, and either a <b>Draft</b> button (gold when
+    /// affordable, else disabled with the gate reason as tooltip) or a "drafted" tick. Pure presentation — the rows read
+    /// <see cref="Game.ConstitutionClauses"/> and forward <see cref="Game.DraftClause"/>.
+    /// </summary>
+    private void BuildDraftConstitution()
+    {
+        _body.AddChild(new Label { Name = "DraftHeader", Text = "Draft Constitution", ThemeTypeVariation = "SectionHeader" });
+
+        int progress = _game.ConstitutionProgressPercent;
+        int threshold = _game.ConstitutionDraftThreshold;
+        var gauge = new ProgressBar
+        {
+            Name = "ConstitutionProgressBar",
+            MinValue = 0,
+            MaxValue = 100,
+            Value = progress,
+            ShowPercentage = false,
+            CustomMinimumSize = new Vector2(200, 18),
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            SizeFlagsVertical = SizeFlags.ShrinkCenter,
+        };
+        Color fill = progress >= threshold ? SupportReady : SupportMid; // green once the ≥80% gate is met, ochre while drafting
+        gauge.AddThemeStyleboxOverride("background", Flat(ParchmentDark, ParchmentEdge, 1, 4));
+        gauge.AddThemeStyleboxOverride("fill", Flat(fill, fill.Darkened(0.25f), 1, 4));
+        gauge.AddChild(new ColorRect
+        {
+            Name = "DraftThresholdMark",
+            Color = new Color(Gold, 0.95f),
+            MouseFilter = MouseFilterEnum.Ignore,
+            AnchorLeft = threshold / 100f,
+            AnchorRight = threshold / 100f,
+            AnchorTop = 0f,
+            AnchorBottom = 1f,
+            OffsetLeft = -1f,
+            OffsetRight = 1f,
+            OffsetTop = 2f,
+            OffsetBottom = -2f,
+        });
+        _body.AddChild(gauge);
+        _body.AddChild(new Label
+        {
+            Name = "ConstitutionProgress",
+            Text = $"{progress}% drafted (need {threshold}%)",
+            HorizontalAlignment = HorizontalAlignment.Center,
+        });
+
+        foreach ((string Id, string DisplayName, int WeightPercent, int ConventionPointCost, int GoldCost, bool IsDrafted, MoveCheck DraftCheck) clause in _game.ConstitutionClauses())
+        {
+            AddClauseRow(clause);
+        }
+    }
+
+    /// <summary>One Draft-Constitution clause row (WS3.3): name + weight, cost, and a Draft button (or a drafted tick).</summary>
+    private void AddClauseRow((string Id, string DisplayName, int WeightPercent, int ConventionPointCost, int GoldCost, bool IsDrafted, MoveCheck DraftCheck) clause)
+    {
+        var row = new HBoxContainer { Name = $"Clause_{clause.Id}" };
+        row.AddThemeConstantOverride("separation", 8);
+        row.AddChild(new Label
+        {
+            Name = "Name",
+            Text = $"{clause.DisplayName}  ({clause.WeightPercent}%)",
+            CustomMinimumSize = new Vector2(190, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        row.AddChild(new Label
+        {
+            Name = "Cost",
+            Text = clause.GoldCost > 0 ? $"{clause.ConventionPointCost} pts · {clause.GoldCost} gold" : $"{clause.ConventionPointCost} pts",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+
+        if (clause.IsDrafted)
+        {
+            var tick = new Label { Name = "Drafted", Text = "✓ drafted", VerticalAlignment = VerticalAlignment.Center };
+            tick.AddThemeColorOverride("font_color", SupportReady);
+            row.AddChild(tick);
+        }
+        else
+        {
+            var button = new Button { Name = "DraftButton", Text = "Draft", Disabled = !clause.DraftCheck.Allowed };
+            if (clause.DraftCheck.Allowed)
+            {
+                string id = clause.Id;
+                button.Pressed += () => OnDraftClause(id);
+                button.AddThemeStyleboxOverride("normal", Flat(WoodMid, Gold, 2, 5, 10, 4));
+                button.AddThemeStyleboxOverride("hover", Flat(WoodMid.Lightened(0.12f), Gold, 2, 5, 10, 4));
+                button.AddThemeColorOverride("font_color", TextOnWood);
+            }
+            else if (!string.IsNullOrEmpty(clause.DraftCheck.Reason))
+            {
+                button.TooltipText = clause.DraftCheck.Reason; // why it's locked (insufficient points/gold, already drafted)
+            }
+            row.AddChild(button);
+        }
+        _body.AddChild(row);
+    }
+
+    /// <summary>Forwards <see cref="Game.DraftClause"/> (spends the cost, applies the one-off effect), refreshes the host, and rebuilds the body.</summary>
+    private void OnDraftClause(string clauseId)
+    {
+        if (_game.DraftClause(clauseId))
+        {
+            _onChange();
+        }
         Render();
     }
 
