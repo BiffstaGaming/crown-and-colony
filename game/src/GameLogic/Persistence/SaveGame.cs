@@ -21,7 +21,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 73;
+    public const int CurrentVersion = 74;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -359,9 +359,12 @@ public sealed record SaveGame
     /// (<see cref="FederationTargetReductions"/> — region key → percentage points a Democracy Pioneer shaved off that
     /// region's referendum target); <b>omitted when empty</b>, which it always is in a classic game (Federation off) and in
     /// an Australia game that has elected no target-lowering Pioneer (Barton / Griffith / Mary Lee) — so a default game
-    /// serialises byte-identically to v72 and a pre-v73 save loads with none. Determinism (ADR-009): the whole loop is
-    /// gated off in classic, so a reloaded classic game continues on the identical random sequence and the soak stays
-    /// byte-identical.
+    /// serialises byte-identically to v72 and a pre-v73 save loads with none. v74 (WS3.3) added the <b>drafted
+    /// constitutional clauses</b> (<see cref="DraftedConstitutionClauses"/> — the ids drafted into the constitution);
+    /// <b>omitted when empty</b>, which it always is in a classic game (Federation off) and in an Australia game that has
+    /// drafted none — so a default game serialises byte-identically to v73 and a pre-v74 save loads with none. Determinism
+    /// (ADR-009): the whole loop is gated off in classic, so a reloaded classic game continues on the identical random
+    /// sequence and the soak stays byte-identical.
     /// </summary>
     public int Version { get; init; } = CurrentVersion;
 
@@ -623,6 +626,15 @@ public sealed record SaveGame
     /// to v72 and a pre-v73 save loads with no reductions. Sorted by key for a deterministic serialised order.
     /// </summary>
     public IReadOnlyDictionary<string, int>? FederationTargetReductions { get; init; }
+
+    /// <summary>
+    /// The <b>drafted constitutional clauses</b> (v74, WS3.3; <see cref="Game.DraftedClauses"/>): the ids of the clauses the
+    /// human has drafted into the constitution, in draft order. Additive + <b>omitted when empty</b> — a classic game
+    /// (Federation off) and an Australia game that has drafted none carry none — so a default game is byte-identical to v73
+    /// and a pre-v74 save loads with no clauses. The clause one-off effects mutated already-persisted state at draft time, so
+    /// they are not re-applied on restore.
+    /// </summary>
+    public IReadOnlyList<string>? DraftedConstitutionClauses { get; init; }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -898,6 +910,9 @@ public sealed record SaveGame
             FederationTargetReductions = game.FederationTargetReductions.Count > 0
                 ? game.FederationTargetReductions.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToDictionary(kv => kv.Key, kv => kv.Value)
                 : null,
+            // The drafted constitutional clauses (v74, WS3.3) — in draft order; omitted when empty (classic + a no-clause
+            // Australia game draft none, byte-identical to v73).
+            DraftedConstitutionClauses = game.DraftedClauses.Count > 0 ? game.DraftedClauses.ToList() : null,
         };
     }
 
@@ -1189,6 +1204,13 @@ public sealed record SaveGame
             foreach (KeyValuePair<string, int> entry in reductions)
             {
                 game.SetFederationTargetReduction(entry.Key, entry.Value);
+            }
+        }
+        if (DraftedConstitutionClauses is { } clauses) // v74 (WS3.3); pre-v74 / omitted → no clauses drafted
+        {
+            foreach (string clauseId in clauses)
+            {
+                game.SetDraftedClause(clauseId);
             }
         }
         return game;

@@ -213,5 +213,5 @@ public class NewWorldNameTests
     }
 
     [Fact]
-    public void SaveVersion_IsCurrent() => Assert.Equal(73, SaveGame.CurrentVersion);
+    public void SaveVersion_IsCurrent() => Assert.Equal(74, SaveGame.CurrentVersion);
 }

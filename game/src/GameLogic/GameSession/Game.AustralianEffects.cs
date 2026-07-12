@@ -64,9 +64,6 @@ public sealed partial class Game
     /// <summary>Convention Points Edmund Barton's convention drive banks on election (doc 11: enter the final sequence earlier) — half the call-convention gate, a decisive push toward it without auto-winning.</summary>
     private const int ConventionDrivePoints = ConventionPointsToCallConvention / 2;
 
-    /// <summary>Convention Points Samuel Griffith's drafting boost banks on election (doc 11: "+30% Draft Constitution progress") — 30% of the drafting gate, so a called convention drafts markedly sooner.</summary>
-    private const int DraftConstitutionPoints = ConventionPointsToDraftConstitution * 30 / 100;
-
     /// <summary>Federation Support John Quick's "Corowa Plan" adds to the referendum pass threshold while he sits in Congress (doc 11: failed-referendum recoverability / a marginal vote likelier to carry).</summary>
     internal const int QuickReferendumRelief = 10;
 
@@ -288,20 +285,19 @@ public sealed partial class Game
     }
 
     /// <summary>
-    /// Samuel Griffith's "Draft Constitution" (doc 11): the chief drafter of the Australian constitution — on election the
-    /// human's Federation movement banks <see cref="DraftConstitutionPoints"/> extra Convention Points toward drafting the
-    /// constitution, so a called convention completes its draft sooner (the design's "+30% Draft Constitution progress").
-    /// Delegates to <see cref="AddConventionPoints"/>, a no-op (byte-identical) unless the ruleset enables the Federation
-    /// victory. RNG-free.
+    /// Samuel Griffith's "Draft Constitution" (doc 11): the chief drafter of the Australian constitution. His "+30% Draft
+    /// Constitution progress" clause is now a <b>live draft-progress bonus</b> (WS3.3) — read from his Congress seat by
+    /// <see cref="ConstitutionProgressPercent"/> (<see cref="GriffithProgressBonus"/>), no on-election banking needed, so
+    /// there is nothing to do here for the drafting side. On election he still lowers the hardest settled region's
+    /// referendum target (WS3.2, doc 11 clause 2). Federation-gated → classic byte-identical. RNG-free.
     /// </summary>
-    /// <param name="player">The player who elected Griffith (Convention Points are national — the human's movement).</param>
+    /// <param name="player">The player who elected Griffith.</param>
     private void ApplyDraftConstitution(Player player)
     {
         if (player.IsHuman)
         {
-            AddConventionPoints(DraftConstitutionPoints);
             // WS3.2 (doc 11 clause 2): as chief drafter Griffith wins over the most reluctant colony — lowers the hardest
-            // settled region's referendum TARGET (was WS4.4's +support proxy). Federation-gated → classic byte-identical.
+            // settled region's referendum TARGET. His "+30% draft progress" is the live ConstitutionProgressPercent bonus.
             ReduceHardestRegionTarget(GriffithHardestTargetReduction);
         }
     }

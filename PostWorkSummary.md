@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-12 — WS3.3 M1: constitutional clauses + drafting mechanism (autonomous)
+
+**Requested (Chris):** "continue through the next recommended items… make decisions based off what SHOULD be done" (away for a few hours). WS3.3 was the next Federation-depth item.
+**Did (M1 — the drafting system + logic; M2 = interactive UI is the follow-on):**
+- **Scoped WS3.3** with a workflow (design clauses + code backing → curated non-sensitive subset + magnitudes + staged plan), vetted against my own read.
+- **Constitution drafting** (`Game.Constitution.cs`, new): the human **drafts clauses** (`DraftClause`/`CheckDraftClause`) that spend Convention Points (`SpendConventionPoints`) + gold and add weight to a 0–100% **`ConstitutionProgressPercent`** meter; `ResolveCommonwealthFederation` drafts the constitution at **≥80%** (design Phase-5), retiring the flat 400-CP gate. Clause effects are **one-off at draft** (reuse existing levers → no double-apply on load). **Griffith's "+30%" re-pointed** from the retired +120-CP on-election proxy to a **live meter bonus** (derived from his Congress seat, no save state).
+- **3 curated non-sensitive clauses** (weights sum 100): Senate Equality (SA/Tas/WA +25, NSW/Vic −8; 90 CP), Capital Compromise (NSW/Vic target −3; 60 CP + 600 g), Intercolonial Free Trade (one-off +12 nationwide proxy; 70 CP + 900 g).
+- **HELD (sensitive):** Immigration Policy = the White Australia Policy → **deliberately not implemented**, deferred pending your cultural-protocol sign-off (doc 15 / 4c.11 category). Defence Union / High Court / Railway Standardisation + Free Trade's faithful standing form deferred on missing systems.
+- **Save v74:** `DraftedConstitutionClauses` omit-when-default slice + the version-pin bulk-fix. **Panel:** a read-only progress line (M1); interactive clause buttons are M2.
+**Status:** **review running then commit**. Build ✓; +6 L1 (clause gates, cost/effect, progress + Griffith bonus, ≥80% draft transition, save round-trip; Griffith re-point) + fixed the ConstitutionDrafts + Griffith tests. Full **L1/L2 2970** + **determinism soak** (classic byte-identical) green. Adversarial-review workflow (2 lenses) running before commit.
+**Changed:** `Game.Constitution.cs` (new), `Game.Federation.cs` (gate re-point + retired const), `Game.AustralianEffects.cs` (Griffith re-point), `SaveGame.cs` (v74 slice), `FederationPanel.cs` (read-only line), `FederationVictoryTests.cs` (+6, rewrote 1), `AustralianContentTests.cs` (Griffith), version-pin bulk-fix, `federation-victory.md` (both layers + changelog + verification + §5).
+**Decisions (mine, documented + tunable):** clause costs/magnitudes first-pass; one-off effects (not standing modifiers) for the no-new-system clauses; ITF as an honestly-labelled one-off proxy; Immigration Policy held; Griffith re-pointed to the meter (his design effect is drafting, not calling).
+**Scheduled next (autonomous):** **WS3.3 M2** — interactive per-clause drafting UI in the FederationPanel + L3 + render-verify, then finalize the ClickUp task. After that, next WS3 or another stream.
+**Needs you:** Immigration Policy clause awaits your cultural-protocol sign-off (like the Barak/4c.11 items) — I won't touch it. The clause costs/magnitudes are first-pass; worth a playtest.
+
+---
+
 ## 2026-07-12 — WS3.7: Federation phase-1/2 prerequisite gates
 
 **Requested (Chris):** "3.7" → then chose "adopt doc 05 as-is" (the steep, faithful gate counts).

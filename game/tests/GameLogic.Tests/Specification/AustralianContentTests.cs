@@ -295,15 +295,16 @@ public class AustralianContentTests
     }
 
     [Fact]
-    public void ElectingGriffith_BanksConventionPoints_TowardDraftingTheConstitution()
+    public void ElectingGriffith_ContributesDraftProgress_TowardTheConstitution()
     {
         Game game = FederationGame(out var colonies);
-        int pointsBefore = game.ConventionPoints;
+        int progressBefore = game.ConstitutionProgressPercent;
 
         ElectFather(ref game, Griffith, ref colonies);
 
         Assert.Contains(Griffith, game.Congress);
-        Assert.True(game.ConventionPoints > pointsBefore, "Griffith's drafting boost must bank Convention Points");
+        // WS3.3: Griffith's "+30% draft progress" is now a live constitution-meter bonus (not banked Convention Points).
+        Assert.Equal(progressBefore + Game.GriffithProgressBonusPercent, game.ConstitutionProgressPercent);
     }
 
     [Fact]

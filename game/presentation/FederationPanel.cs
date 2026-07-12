@@ -185,6 +185,20 @@ public partial class FederationPanel : PanelContainer
         _body.AddChild(phaseLine);
 
         _body.AddChild(BuildConventionPointsChip(_game.ConventionPoints));
+
+        // WS3.3: while a convention is drafting the constitution, show progress toward the design's ≥80% completion gate.
+        // (M1 read-only line; the interactive per-clause drafting UI is M2.)
+        if (_game.FederationPhase == FederationPhase.ConventionCalled)
+        {
+            _body.AddChild(new Label
+            {
+                Name = "ConstitutionProgress",
+                Text = $"Draft Constitution — {_game.ConstitutionProgressPercent}% (need {_game.ConstitutionDraftThreshold}%)",
+                HorizontalAlignment = HorizontalAlignment.Center,
+                ThemeTypeVariation = "SectionHeader",
+            });
+        }
+
         _body.AddChild(new HSeparator());
 
         _body.AddChild(new Label

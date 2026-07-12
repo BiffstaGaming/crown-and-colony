@@ -98,7 +98,7 @@ public class TreasureTrainTests
 
         Game restored = SaveGame.FromJson(SaveGame.From(game).ToJson()).Restore(Classic);
 
-        Assert.Equal(73, SaveGame.CurrentVersion);
+        Assert.Equal(74, SaveGame.CurrentVersion);
         Assert.Equal(1234, restored.Units.Single(u => u.Id == id).TreasureAmount);
     }
 

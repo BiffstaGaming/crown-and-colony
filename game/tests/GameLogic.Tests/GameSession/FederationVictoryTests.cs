@@ -129,16 +129,23 @@ public class FederationVictoryTests
     }
 
     [Fact]
-    public void ConstitutionDrafts_Automatically_OnceEnoughPointsBank()
+    public void ConstitutionDrafts_Automatically_OnceClauseProgressReaches80Percent()
     {
         Game game = NewAustralia();
         game.SetFederationPhase(FederationPhase.ConventionCalled);
+        game.SetConventionPoints(500);
+        game.HumanPlayer.Gold = 5000;
 
-        game.SetConventionPoints(Game.ConventionPointsToDraftConstitution - 1);
+        // Two of the three clauses = 67%, below the 80% completion gate → not yet drafted at end of turn (WS3.3).
+        Assert.True(game.DraftClause("senateEquality"));
+        Assert.True(game.DraftClause("capitalCompromise"));
+        Assert.Equal(67, game.ConstitutionProgressPercent);
         game.EndTurn(); // resolution runs ResolveCommonwealthFederation
         Assert.Equal(FederationPhase.ConventionCalled, game.FederationPhase);
 
-        game.SetConventionPoints(Game.ConventionPointsToDraftConstitution);
+        // The third clause → 100% → the constitution drafts automatically at end of turn.
+        Assert.True(game.DraftClause("intercolonialFreeTrade"));
+        Assert.Equal(100, game.ConstitutionProgressPercent);
         game.EndTurn();
         Assert.Equal(FederationPhase.ConstitutionDrafted, game.FederationPhase);
     }
@@ -247,7 +254,7 @@ public class FederationVictoryTests
     // ─────────────────────────────── persistence (v72, omit-when-default) ───────────────────────────────
 
     [Fact]
-    public void SaveVersion_IsCurrent() => Assert.Equal(73, SaveGame.CurrentVersion);
+    public void SaveVersion_IsCurrent() => Assert.Equal(74, SaveGame.CurrentVersion);
 
     [Fact]
     public void ClassicSave_OmitsEveryFederationToken()
@@ -467,6 +474,97 @@ public class FederationVictoryTests
         Assert.Equal(FederationStage.ColonialMaturity, game.CurrentFederationStage);
         game.HumanPlayer.CongressList.Add(ParkesId);
         Assert.Equal(FederationStage.FederationMovement, game.CurrentFederationStage); // Parkes stirs the movement early
+    }
+
+    // ─────────────────────────────── constitution drafting (WS3.3) ───────────────────────────────
+
+    private const string GriffithId = "model.foundingFather.samuelGriffith";
+
+    [Fact]
+    public void Classic_HasNoConstitutionClauses_AndDraftsNothing()
+    {
+        Game classic = Game.New(Classic, Seed);
+        Assert.Empty(classic.ConstitutionClauses());
+        Assert.Equal(0, classic.ConstitutionProgressPercent);
+        Assert.False(classic.CheckDraftClause("senateEquality").Allowed);
+        Assert.DoesNotContain("DraftedConstitutionClauses", SaveGame.From(classic, "classic").ToJson());
+    }
+
+    [Fact]
+    public void CheckDraftClause_GatesOnPhase_Points_Gold_Duplicate_AndUnknown()
+    {
+        Game game = NewAustralia();
+        Assert.False(game.CheckDraftClause("senateEquality").Allowed); // before the convention → cannot draft
+
+        game.SetFederationPhase(FederationPhase.ConventionCalled);
+        game.HumanPlayer.Gold = 0;
+        game.SetConventionPoints(0);
+        Assert.False(game.CheckDraftClause("senateEquality").Allowed);    // no Convention Points
+        game.SetConventionPoints(1000);
+        Assert.True(game.CheckDraftClause("senateEquality").Allowed);     // Senate Equality has no gold cost
+        Assert.False(game.CheckDraftClause("capitalCompromise").Allowed); // …but Capital Compromise needs gold
+        Assert.False(game.CheckDraftClause("bogusClause").Allowed);       // unknown id
+
+        Assert.True(game.DraftClause("senateEquality"));
+        Assert.False(game.CheckDraftClause("senateEquality").Allowed);    // already drafted
+    }
+
+    [Fact]
+    public void DraftClause_DeductsCosts_AndAppliesTheOneOffEffect()
+    {
+        Game game = NewAustralia();
+        FoundAllSixRegions(game, out var colonies);
+        game.SetFederationPhase(FederationPhase.ConventionCalled);
+        game.SetConventionPoints(1000);
+        game.HumanPlayer.Gold = 5000;
+
+        int saBefore = colonies[AustraliaColony.SouthAustralia].FederationSupport;
+        Assert.True(game.DraftClause("senateEquality"));  // SA/Tas/WA gain support
+        Assert.Equal(1000 - 90, game.ConventionPoints);   // Convention Points deducted
+        Assert.True(colonies[AustraliaColony.SouthAustralia].FederationSupport > saBefore);
+
+        Assert.Equal(57, game.ReferendumTargetFor("model.region.newSouthWales"));
+        int goldBefore = game.HumanPlayer.Gold;
+        Assert.True(game.DraftClause("capitalCompromise")); // NSW/Vic referendum target −3, costs gold
+        Assert.Equal(goldBefore - 600, game.HumanPlayer.Gold);
+        Assert.Equal(54, game.ReferendumTargetFor("model.region.newSouthWales")); // 57 − 3
+    }
+
+    [Fact]
+    public void ConstitutionProgress_SumsClauseWeights_PlusGriffithsDerivedBonus()
+    {
+        Game game = NewAustralia();
+        game.SetFederationPhase(FederationPhase.ConventionCalled);
+        game.SetConventionPoints(1000);
+        game.HumanPlayer.Gold = 5000;
+        Assert.Equal(0, game.ConstitutionProgressPercent);
+
+        game.DraftClause("senateEquality");    // 34
+        game.DraftClause("capitalCompromise"); // +33 = 67 (< the 80% gate)
+        Assert.Equal(67, game.ConstitutionProgressPercent);
+
+        // Griffith in Congress contributes a live +30% (no on-election banking, WS3.3) → 97% ≥ 80.
+        game.HumanPlayer.CongressList.Add(GriffithId);
+        Assert.Equal(97, game.ConstitutionProgressPercent);
+    }
+
+    [Fact]
+    public void DraftedClauses_RoundTripThroughASave_AndAreAbsentBeforeAnyDraft()
+    {
+        Game clean = NewAustralia();
+        Assert.DoesNotContain("DraftedConstitutionClauses", SaveGame.From(clean, "australia").ToJson());
+
+        Game game = NewAustralia();
+        game.SetFederationPhase(FederationPhase.ConventionCalled);
+        game.SetConventionPoints(1000);
+        game.HumanPlayer.Gold = 5000;
+        game.DraftClause("senateEquality");
+
+        string json = SaveGame.From(game, "australia").ToJson();
+        Assert.Contains("DraftedConstitutionClauses", json);
+        Game restored = SaveGame.FromJson(json).Restore(Australia);
+        Assert.Contains("senateEquality", restored.DraftedClauses);
+        Assert.Equal(34, restored.ConstitutionProgressPercent); // the drafted clause's weight is restored
     }
 
     // ───────────────────────────────────────── helpers ─────────────────────────────────────────

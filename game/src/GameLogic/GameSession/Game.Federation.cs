@@ -705,9 +705,11 @@ public sealed partial class Game
             return; // classic: no Federation loop, byte-identical (ADR-009)
         }
 
-        // Convention called → draft the constitution once enough points have banked (a second Convention-Points gate).
+        // Convention called → draft the constitution once the drafted clauses reach the design's ≥80% completion gate
+        // (WS3.3; `ConstitutionProgressPercent` sums the drafted clause weights + Griffith's derived +30%). Replaces the
+        // old flat Convention-Points gate — the player now drafts clauses in `Game.Constitution.cs`.
         if (_federationPhase == FederationPhase.ConventionCalled
-            && _conventionPoints >= ConventionPointsToDraftConstitution)
+            && ConstitutionProgressPercent >= ConstitutionDraftThresholdPercent)
         {
             _federationPhase = FederationPhase.ConstitutionDrafted;
             RecordFederationMilestone("The draft constitution is complete.");
@@ -721,9 +723,6 @@ public sealed partial class Game
             RecordFederationMilestone("The Commonwealth of Australia is proclaimed. Federation is achieved!");
         }
     }
-
-    /// <summary>Convention Points needed to complete the draft constitution (design "Draft Constitution completion"; double the call-convention gate so drafting trails calling).</summary>
-    internal const int ConventionPointsToDraftConstitution = ConventionPointsToCallConvention * 2;
 
     private bool _referendumCarried;
 
