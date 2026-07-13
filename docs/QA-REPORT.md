@@ -1,6 +1,6 @@
 # QA Report — Crown & Colony
 
-> **Auto-generated from CI** on 2026-07-12 at commit `0df7d30` (save format **v75**). Do not hand-edit — this file is rewritten by [`scripts/generate-qa-report.py`](../scripts/generate-qa-report.py) on every CI run from the actual `dotnet test` results.
+> **Auto-generated from CI** on 2026-07-13 at commit `aa8d04a` (save format **v75**). Do not hand-edit — this file is rewritten by [`scripts/generate-qa-report.py`](../scripts/generate-qa-report.py) on every CI run from the actual `dotnet test` results.
 > This is a committed, point-in-time QA snapshot combining the **test results** (below) and the **visual goldens** (screenshots) in one place.
 > **End-to-end journeys:** the connected player-journey coverage is specified in [TEST-PLAN.md](TEST-PLAN.md).
 > **Live, always-current results:** the [GitHub Actions CI runs](https://github.com/BiffstaGaming/crown-and-colony/actions) — every push is gated on these same suites.
