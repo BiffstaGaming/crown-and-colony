@@ -156,6 +156,23 @@
                 production-weight="3.0">
       <market initial-amount="1000" initial-price="8" price-difference="2" />
     </goods-type>
+    <!-- Coal (doc 17, WS6.1 slice 2): the bulk industrial mineral — Newcastle/Hunter and Illawarra coal fuelled the
+         colonies and their shipping, and was exported as bunker fuel. Deliberately the OPPOSITE economic profile to
+         Copper: high volume, low price (a big market at 2000, price 3 — cheaper even than bulk Ore at 4), mined at a
+         high base yield on hills. Not new-world-goods (a mineral, like Ore/Gold/Copper). Its designed "industry and
+         rail" INPUT role needs consumers that don't exist yet — deferred; today it is a bulk export. -->
+    <goods-type id="model.goods.coal" is-farmed="true"
+                production-weight="3.0">
+      <market initial-amount="2000" initial-price="3" price-difference="3" />
+    </goods-type>
+    <!-- Sandalwood (doc 17, WS6.1 slice 2): the Western Australian aromatic-timber export, cut from the arid scrub and
+         shipped to China — one of WA's earliest earners. Low volume, high value (market 800, price 10). Harvested from
+         scrub forest (its real habitat). new-world-goods="true" like the other harvested colonial exports (furs/cotton),
+         so its price rise is capped. -->
+    <goods-type id="model.goods.sandalwood" is-farmed="true"
+                new-world-goods="true" production-weight="2.5">
+      <market initial-amount="800" initial-price="10" price-difference="2" />
+    </goods-type>
     <goods-type id="model.goods.horses" is-farmed="false" is-military="true"
                 breeding-number="2" made-from="model.goods.food">
       <market initial-amount="1000" initial-price="1" price-difference="2" />
@@ -703,6 +720,12 @@
       <production>
         <output goods-type="model.goods.ore" value="1"/>
       </production>
+      <!-- WS6.1 slice 2: the arid scrub is Australian sandalwood country (WA) — cut and shipped to China. Base 2
+           (>= 1 is required per TileYieldPotential's baseYield<=0 guard). scrubForest's own <gen> band is dry, warm
+           and low-altitude, which is exactly the habitat, so no extra scoping is needed. Australia-only. -->
+      <production>
+        <output goods-type="model.goods.sandalwood" value="2"/>
+      </production>
       <resource type="model.resource.oasis" probability="100"/>
       <disaster id="model.disaster.brushfire" probability="50"/>
       <disaster id="model.disaster.drought" probability="50"/>
@@ -758,6 +781,11 @@
            guard means a resource modifier alone could never enable a good). Australia-only. -->
       <production>
         <output goods-type="model.goods.copper" value="2"/>
+      </production>
+      <!-- WS6.1 slice 2: the hill country also carries the coal measures (Hunter/Illawarra). A high base yield (3)
+           because Coal is the bulk, cheap industrial mineral — the volume play, against Copper's low-yield/mid-price. -->
+      <production>
+        <output goods-type="model.goods.coal" value="3"/>
       </production>
       <resource type="model.resource.ore" probability="100"/>
       <disaster id="model.disaster.earthquake" probability="50"/>

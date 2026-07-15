@@ -141,33 +141,52 @@ public class AustralianContentTests
 
     // ───────────────────────── distinct goods (WS6.1) ─────────────────────────
 
-    [Fact]
-    public void Copper_IsADistinctAustralianGood_Tradeable_MinedOnHills_AndAbsentFromClassic()
+    [Theory]
+    [InlineData("model.goods.copper", "model.tile.hills", 8, false)]           // the SA copper boom — mid-value mineral
+    [InlineData("model.goods.coal", "model.tile.hills", 3, false)]             // Hunter/Illawarra — the bulk, cheap fuel
+    [InlineData("model.goods.sandalwood", "model.tile.scrubForest", 10, true)] // the WA aromatic export to China
+    public void DistinctAustralianGoods_AreTradeable_ProducedWithABaseYield_AndAbsentFromClassic(
+        string goodsId, string terrainId, int price, bool isNewWorld)
     {
-        // WS6.1 slice 1: the first genuinely DISTINCT Australian good — a real new goods-type, not a display reskin
-        // of a classic stand-in (unlike silver shown as "Gold" / cotton as "Wool"). The South Australian copper boom
-        // (Burra/Kapunda/Moonta) made raw copper one of the colonies' great exports.
-        GoodsType copper = Australia.Goods("model.goods.copper");
-        Assert.True(copper.IsFarmed);                 // tile-mined, not a building product
-        Assert.True(copper.IsTradeable);              // the per-player Market auto-seeds every good carrying a <market>
-        Assert.Equal(8, copper.Market!.InitialPrice); // mid-value: above bulk Ore (4), below Gold (the silver stand-in, 16)
-        Assert.False(copper.IsNewWorldGoods);         // prices like the other minerals (no new-world price cap)
-
-        // Mined on hills with a base yield >= 1 — REQUIRED: TileYieldPotential's `baseYield <= 0 -> 0` guard means a
-        // resource modifier alone could never enable a good.
+        // WS6.1: genuinely NEW goods — not the silver-shown-as-"Gold" / cotton-as-"Wool" display reskins. Each needs a
+        // <market> to be tradeable (the per-player Market seeds every good carrying one) and a production source with a
+        // base yield >= 1 — REQUIRED, since TileYieldPotential's `baseYield <= 0 -> 0` guard means a resource modifier
+        // alone could never enable a good.
+        GoodsType good = Australia.Goods(goodsId);
+        Assert.True(good.IsFarmed);                     // tile-produced, not a building product
+        Assert.True(good.IsTradeable);
+        Assert.Equal(price, good.Market!.InitialPrice);
+        Assert.Equal(isNewWorld, good.IsNewWorldGoods); // the minerals price uncapped; the harvested export is capped
         Assert.Contains(
-            Australia.Terrain("model.tile.hills").Productions.SelectMany(p => p.Outputs),
-            o => o.GoodsId == "model.goods.copper" && o.Amount >= 1);
-        // …and a copper-bearing ore deposit lifts it further (reusing the EXISTING ore resource, so the map
-        // generator's resource placement is untouched).
-        Assert.Contains(Australia.Resource("model.resource.ore").Modifiers, m => m.GoodsId == "model.goods.copper");
+            Australia.Terrain(terrainId).Productions.SelectMany(p => p.Outputs),
+            o => o.GoodsId == goodsId && o.Amount >= 1);
 
-        // AUSTRALIA-ONLY → classic's ruleset, market and saves stay byte-identical (ADR-018); no save bump.
-        Assert.DoesNotContain(Classic.GoodsTypes, g => g.Id == "model.goods.copper");
+        // AUSTRALIA-ONLY → classic's ruleset, market and saves stay byte-identical (ADR-018); no save bump, no engine code.
+        Assert.DoesNotContain(Classic.GoodsTypes, g => g.Id == goodsId);
         Assert.DoesNotContain(
-            Classic.Terrain("model.tile.hills").Productions.SelectMany(p => p.Outputs),
-            o => o.GoodsId == "model.goods.copper");
+            Classic.Terrain(terrainId).Productions.SelectMany(p => p.Outputs), o => o.GoodsId == goodsId);
+    }
+
+    [Fact]
+    public void CopperAndCoal_AreOppositeEconomicProfiles_AndCopperRidesTheOreDeposit()
+    {
+        // The two hill minerals are distinct plays, not duplicates: Copper is low-yield/high-price, Coal is
+        // high-yield/low-price (cheaper even than bulk Ore at 4) — value vs volume.
+        GoodsType copper = Australia.Goods("model.goods.copper");
+        GoodsType coal = Australia.Goods("model.goods.coal");
+        Assert.True(copper.Market!.InitialPrice > coal.Market!.InitialPrice);
+        Assert.True(coal.Market.InitialAmount > copper.Market.InitialAmount);   // the bigger market = the bulk good
+        Assert.True(HillYield("model.goods.coal") > HillYield("model.goods.copper"));
+        // Copper still sits below Gold (the silver stand-in) — the precious mineral stays the top earner.
+        Assert.True(copper.Market.InitialPrice < Australia.Goods("model.goods.silver").Market!.InitialPrice);
+
+        // A copper-bearing ore body lifts Copper — reusing the EXISTING ore resource (rather than adding a new copper
+        // resource to hills) left the map generator's resource placement untouched. Classic's ore resource is untouched.
+        Assert.Contains(Australia.Resource("model.resource.ore").Modifiers, m => m.GoodsId == "model.goods.copper");
         Assert.DoesNotContain(Classic.Resource("model.resource.ore").Modifiers, m => m.GoodsId == "model.goods.copper");
+
+        static int HillYield(string goodsId) => Australia.Terrain("model.tile.hills").Productions
+            .SelectMany(p => p.Outputs).Where(o => o.GoodsId == goodsId).Max(o => o.Amount);
     }
 
     // ───────────────────────── Hargraves' "Payable Gold" (4d.5) ─────────────────────────

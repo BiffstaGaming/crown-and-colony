@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-15 — WS6.1 Slice 2: Coal + Sandalwood (two more distinct goods)
+
+**Requested (Chris):** "Move onto the next lot of items."
+**Did:**
+- **Coal** — the bulk industrial mineral (Newcastle/Hunter + Illawarra coal, which fuelled the colonies and their shipping): market 2000 / price **3**, mined on **hills** at base **3**. Deliberately the **opposite economic profile to Copper** — high volume / low price (cheaper even than bulk Ore at 4) vs Copper's low volume / mid price — so the two hill minerals are genuinely distinct plays, not duplicates. Its doc-17 "industry and rail" *input* role needs consumers that don't exist yet → deferred; today it's a bulk export.
+- **Sandalwood** — the WA aromatic-timber export shipped to China: market 800 / price **10**, `new-world-goods` (so its price rise is capped, like the other harvested colonial exports), cut from **scrubForest** at base **2**. That terrain's own `<gen>` band is dry/warm/low — exactly the habitat — so no extra scoping was needed.
+- **Deliberately did NOT add Pearls** (the third good in my own plan): doc 17 flags it with "labour exploitation risk events" — the pearling industry's exploitation of Aboriginal, Torres Strait Islander and Asian divers. That's squarely in the bucket I told you stays gated, so it goes to the 4c.11 sensitive review rather than an autonomous slice.
+**Status:** **Full L1/L2 3001 green**; classic byte-identical; still **no engine code and no save bump** — the whole workstream is proving to be pure data. Committed + pushed (this commit), CI watching.
+**Changed:** `specification.xml` (2 goods-types + hills coal production + scrubForest sandalwood production), `AustralianContentTests.cs` (distinct-goods Theory now covers all three + a Copper-vs-Coal profile guard), `docs/systems/market.md` (changelog + verified), `WS6.1_DISTINCT_GOODS_PLAN.md` (slice 2 → shipped), `PostWorkSummary.md`.
+**Decisions:** Coal as volume-vs-value counterweight to Copper (so the shared hills terrain offers a real choice, not two near-identical minerals); Sandalwood marked `new-world-goods` for the price cap (consistent with furs/cotton); Pearls held for the sensitive review; no resource amplification for either (base yields only — not every good needs one); icons still deferred to the art pass.
+**Scheduled next:** **WS6.1 Slices 3–4 — the Gold and Wool promotions.** These are the valuable ones: they make the core reskins real and **Wool unblocks the distinct Shearing Shed + the WS6.3 pastoral buildings I deferred**. Heavier than the additive goods (they retarget the expert unit, `model.resource.*`, events and modifiers, and remove the `DisplayOverride`), but the pattern is now proven and the architecture is friendlier than scoped.
+**Needs you:** nothing — only First Nations (ADR-022/ICIP) + 4c.11 sensitive text remain yours.
+
+---
+
 ## 2026-07-15 — WS6.1 Slice 1: Copper, the first distinct Australian good (+ I stopped gating you)
 
 **Requested (Chris):** "I don't want to be a gate for some of this, make decisions and continue."
