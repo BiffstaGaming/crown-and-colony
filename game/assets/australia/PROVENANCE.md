@@ -14,6 +14,32 @@ derived from the 1994/2008 Sid Meier game. When in doubt, leave it out and ask.
 
 ---
 
+## Goods icons (`goods/<shortName>.png`)
+
+The icon shown beside each good in the colony warehouse, the Europe market screen and the
+reports, loaded by `ColonyArt.GoodsIcon(shortName)` through the WS1.3 variant art seam. A
+**novel** short name has **no FreeCol fallback** (there is no `freecol/goods/gold.png`), so
+without a file here the good renders **name-only**.
+
+**These are all interim placeholders reused from our own committed FreeCol base art**
+(`game/assets/freecol/goods/`, **GPL v2** — see [that folder's PROVENANCE](../freecol/PROVENANCE.md)).
+Copying GPL art within this GPL-v2 project is licence-clean and needs no new sourcing.
+Bespoke Australian goods art is a WS2 art-pass follow-up.
+
+| File | Source (all GPL v2, from `assets/freecol/goods/`) | Why this placeholder |
+|---|---|---|
+| `gold.png` | `silver.png` | **Exact, not a compromise** — until WS6.1 the game *showed* the classic `silver` good renamed "Gold", so this is already the icon players associate with Gold. |
+| `wool.png` | `cotton.png` | **Exact, same reason** — `cotton` was displayed as "Wool" before WS6.1. |
+| `copper.png` | `ore.png` | A generic mineral/ore icon stands in for the copper ore export. |
+| `coal.png` | `ore.png` | Ditto — a mineral icon for the bulk coal measures. |
+| `sandalwood.png` | `lumber.png` | A timber icon for the aromatic-timber export. |
+
+> **Follow-up (WS2 art pass):** `copper` / `coal` / `sandalwood` share reused icons and are
+> visually indistinct (coal and copper are the same image). Bespoke art should replace them;
+> `gold` and `wool` are already correct and need no change.
+
+---
+
 ## Pioneer portraits (`fathers/<shortName>.jpg`, target 200×237)
 
 The head-and-shoulders portrait shown beside each Australian Pioneer in the

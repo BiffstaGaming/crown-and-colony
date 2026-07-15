@@ -272,8 +272,9 @@ public static class GameVariants
         new Dictionary<string, string>
         {
             // ── Goods (86d3kwty1) ──
-            ["cotton"] = "Wool",
-            ["silver"] = "Gold",
+            // NOTE: cotton→"Wool" and silver→"Gold" are GONE (WS6.1): those two are no longer stand-ins renamed at the
+            // display layer — the Australian spec now defines the REAL goods `model.goods.wool` and `model.goods.gold`,
+            // whose short names humanize to "Wool"/"Gold" with no override needed. Only genuine reskins remain here.
             ["bells"] = "Civic Voice",
             // ── Goods: sealing/skins economy replacing the fur trade (playtest gap, 86d3mm2q4) ──
             ["furs"] = "Skins",                      // raw hunted product (sealing/skins, not beaver furs)
@@ -282,8 +283,10 @@ public static class GameVariants
             ["pettyCriminal"] = "Convict Labourer",
             ["indenturedServant"] = "Emancipist",
             ["freeColonist"] = "Free Settler",
-            ["expertSilverMiner"] = "Digger",        // the gold specialist (silver = Gold stand-in)
-            ["masterCottonPlanter"] = "Shepherd",    // the wool specialist (cotton = Wool stand-in)
+            // The two expert UNIT ids stay put (transposability anchors), but since WS6.1 they are expert at the REAL
+            // goods: the Australian spec re-points their expert-production to model.goods.gold / model.goods.wool.
+            ["expertSilverMiner"] = "Digger",        // the Gold specialist
+            ["masterCottonPlanter"] = "Shepherd",    // the Wool specialist
             // ── Buildings (86d3mm25r) ──
             ["depot"] = "Government Stores",
             ["weaverHouse"] = "Wool Shed",           // cotton→cloth processing = wool processing

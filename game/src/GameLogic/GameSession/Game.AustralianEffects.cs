@@ -83,8 +83,9 @@ public sealed partial class Game
     /// <summary>Percentage points Samuel Griffith's drafting shaves off the hardest settled region's referendum target on election (doc 11 clause 2: "hardest colony target −5").</summary>
     private const int GriffithHardestTargetReduction = 5;
 
-    /// <summary>The Gold deposit placed by the gold rush (the reskin's <c>silver</c> = Gold stand-in resource).</summary>
-    private const string GoldResourceId = "model.resource.silver";
+    /// <summary>The Gold deposit placed by the gold rush. Since WS6.1 this is a <b>real</b> Australian resource
+    /// (<c>model.resource.gold</c>) — it was previously the classic <c>silver</c> resource standing in for Gold.</summary>
+    private const string GoldResourceId = "model.resource.gold";
 
     /// <summary>The fewest / most Gold deposits Hargraves reveals on election (doc 08: "2–4 Gold deposits").</summary>
     private const int MinGoldDeposits = 2;

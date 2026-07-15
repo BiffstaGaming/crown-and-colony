@@ -381,7 +381,7 @@ public class AustraliaVariantTests
         Assert.Equal(1797, merino.EarliestYear);
         Assert.Contains(
             merino.Options.SelectMany(o => o.Effects),
-            e => e.Kind == EventEffectKind.TimedModifier && e.TargetId == "model.goods.cotton");
+            e => e.Kind == EventEffectKind.TimedModifier && e.TargetId == "model.goods.wool");
     }
 
     [Fact]

@@ -35,7 +35,7 @@ public class AustralianContentTests
     private const string Spence = "model.foundingFather.catherineHelenSpence";
     private const string Angas = "model.foundingFather.georgeFifeAngas"; // WS4.4
     private const string MaryLee = "model.foundingFather.maryLee"; // WS4.4
-    private const string GoldResource = "model.resource.silver"; // silver = the reskin's Gold stand-in
+    private const string GoldResource = "model.resource.gold"; // the REAL Gold resource since WS6.1 (was the silver stand-in)
     private const string FoodId = "model.goods.food";
     private const string ToolsId = "model.goods.tools";
     private const ulong FederationSeed = 0xFED0A05UL;
@@ -95,11 +95,11 @@ public class AustralianContentTests
     // ───────────────────────── new tile improvements (4d.4) parse + are available ─────────────────────────
 
     [Theory]
-    [InlineData("model.improvement.goldfield", "model.goods.silver")]  // +Gold
-    [InlineData("model.improvement.stockRoute", "model.goods.cotton")] // +Wool (cotton stand-in)
+    [InlineData("model.improvement.goldfield", "model.goods.gold")]  // +Gold
+    [InlineData("model.improvement.stockRoute", "model.goods.wool")] // +Wool
     [InlineData("model.improvement.telegraphLine", "model.goods.bells")] // +Civic Voice
     [InlineData("model.improvement.rail", "model.goods.ore")]          // +Ore
-    [InlineData("model.improvement.pasture", "model.goods.cotton")]    // WS6.3: +Wool (grazing)
+    [InlineData("model.improvement.pasture", "model.goods.wool")]    // WS6.3: +Wool (grazing)
     [InlineData("model.improvement.cattleRun", "model.goods.grain")]   // WS6.3: +Food (cattle/meat proxy)
     public void NewAustralianImprovements_ParseIntoTheAustraliaRuleset_WithTheirYieldModifier(
         string improvementId, string yieldGoodsId)
@@ -125,14 +125,14 @@ public class AustralianContentTests
     public void PastoralImprovements_AreDistinctSpecialists_Pasture_Wool_CattleRun_Food()
     {
         // WS6.3: the two new pastoral improvements each specialise (unlike the +1/+1 Stock Route logistics road) —
-        // Pasture lifts Wool (cotton stand-in) +2, Cattle Run lifts Food (grain) +2, and neither carries the other's good.
+        // Pasture lifts Wool +2, Cattle Run lifts Food (grain) +2, and neither carries the other's good.
         var pasture = Australia.Improvement("model.improvement.pasture");
-        Assert.Contains(pasture.Modifiers, m => m.GoodsId == "model.goods.cotton" && m.Value == 2);
+        Assert.Contains(pasture.Modifiers, m => m.GoodsId == "model.goods.wool" && m.Value == 2);
         Assert.DoesNotContain(pasture.Modifiers, m => m.GoodsId == "model.goods.grain");
 
         var cattleRun = Australia.Improvement("model.improvement.cattleRun");
         Assert.Contains(cattleRun.Modifiers, m => m.GoodsId == "model.goods.grain" && m.Value == 2);
-        Assert.DoesNotContain(cattleRun.Modifiers, m => m.GoodsId == "model.goods.cotton");
+        Assert.DoesNotContain(cattleRun.Modifiers, m => m.GoodsId == "model.goods.wool");
 
         // Australia-only — classic has neither.
         Assert.DoesNotContain(Classic.ImprovementTypes, i => i.Id == "model.improvement.pasture");
@@ -177,8 +177,8 @@ public class AustralianContentTests
         Assert.True(copper.Market!.InitialPrice > coal.Market!.InitialPrice);
         Assert.True(coal.Market.InitialAmount > copper.Market.InitialAmount);   // the bigger market = the bulk good
         Assert.True(HillYield("model.goods.coal") > HillYield("model.goods.copper"));
-        // Copper still sits below Gold (the silver stand-in) — the precious mineral stays the top earner.
-        Assert.True(copper.Market.InitialPrice < Australia.Goods("model.goods.silver").Market!.InitialPrice);
+        // Copper still sits below Gold — the precious mineral stays the top earner.
+        Assert.True(copper.Market.InitialPrice < Australia.Goods("model.goods.gold").Market!.InitialPrice);
 
         // A copper-bearing ore body lifts Copper — reusing the EXISTING ore resource (rather than adding a new copper
         // resource to hills) left the map generator's resource placement untouched. Classic's ore resource is untouched.
@@ -196,8 +196,8 @@ public class AustralianContentTests
     {
         FoundingFather hargraves = Australia.Father(Hargraves);
         Assert.Contains(hargraves.Abilities, a => a.Id == "model.ability.goldRush" && a.Value);
-        // The standing +100% Gold (silver stand-in) production modifier rides on unchanged.
-        Assert.Contains(hargraves.Modifiers, m => m.TargetId == "model.goods.silver" && m.Value == 100);
+        // The standing +100% Gold production modifier rides on unchanged.
+        Assert.Contains(hargraves.Modifiers, m => m.TargetId == "model.goods.gold" && m.Value == 100);
     }
 
     [Fact]

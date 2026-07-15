@@ -18,9 +18,9 @@ public class AustraliaReskinTests
     // ───────────────────────── DisplayOverrides (entity renames) ─────────────────────────
 
     [Theory]
-    // Goods (86d3kwty1)
-    [InlineData("cotton", "Wool")]
-    [InlineData("silver", "Gold")]
+    // Goods (86d3kwty1). NOTE: cotton→"Wool" and silver→"Gold" are deliberately GONE (WS6.1) — those two stopped
+    // being display-renamed stand-ins and became the REAL goods model.goods.wool / model.goods.gold, which humanize
+    // natively with no override. See RealAustralianGoods_NeedNoDisplayOverride below.
     [InlineData("bells", "Civic Voice")]
     // Goods: sealing/skins economy replacing the fur trade (playtest gap, 86d3mm2q4)
     [InlineData("furs", "Skins")]
@@ -29,8 +29,8 @@ public class AustraliaReskinTests
     [InlineData("pettyCriminal", "Convict Labourer")]
     [InlineData("indenturedServant", "Emancipist")]
     [InlineData("freeColonist", "Free Settler")]
-    [InlineData("expertSilverMiner", "Digger")]     // the gold specialist (silver = Gold stand-in)
-    [InlineData("masterCottonPlanter", "Shepherd")] // the wool specialist (cotton = Wool stand-in)
+    [InlineData("expertSilverMiner", "Digger")]     // the Gold specialist (unit id kept; expert-production now model.goods.gold)
+    [InlineData("masterCottonPlanter", "Shepherd")] // the Wool specialist (unit id kept; expert-production now model.goods.wool)
     // Buildings (86d3mm25r)
     [InlineData("depot", "Government Stores")]
     [InlineData("weaverHouse", "Wool Shed")]
@@ -72,8 +72,32 @@ public class AustraliaReskinTests
     {
         // The override map keys on the id suffix (short name), never the full ruleset id — the id is the
         // transposability anchor and is never a key. A full id must miss the map and fall through to the split.
-        Assert.False(GameVariants.Australia.DisplayOverrides.ContainsKey("model.goods.cotton"));
-        Assert.True(GameVariants.Australia.DisplayOverrides.ContainsKey("cotton"));
+        Assert.False(GameVariants.Australia.DisplayOverrides.ContainsKey("model.goods.bells"));
+        Assert.True(GameVariants.Australia.DisplayOverrides.ContainsKey("bells"));
+    }
+
+    [Fact]
+    public void RealAustralianGoods_NeedNoDisplayOverride_TheyHumaniseNatively()
+    {
+        // WS6.1: Gold and Wool stopped being classic stand-ins renamed at the display layer (silver→"Gold",
+        // cotton→"Wool") and became REAL goods in the Australian spec. So their overrides are gone — the humaniser
+        // produces the right label straight from the short name, and the ruleset carries the real ids.
+        Assert.False(GameVariants.Australia.DisplayOverrides.ContainsKey("silver"));
+        Assert.False(GameVariants.Australia.DisplayOverrides.ContainsKey("cotton"));
+        Assert.Equal("Gold", Naming.Humanize("gold", GameVariants.Australia.DisplayOverrides));
+        Assert.Equal("Wool", Naming.Humanize("wool", GameVariants.Australia.DisplayOverrides));
+
+        Ruleset australia = GameVariants.Australia.LoadRuleset();
+        Assert.NotNull(australia.Goods("model.goods.gold"));
+        Assert.NotNull(australia.Goods("model.goods.wool"));
+        // …and the stand-ins they replaced are gone from the Australian ruleset entirely (no half-wired economy).
+        Assert.DoesNotContain(australia.GoodsTypes, g => g.Id == "model.goods.silver");
+        Assert.DoesNotContain(australia.GoodsTypes, g => g.Id == "model.goods.cotton");
+        // Classic is untouched — it still has the classic goods and no overrides at all.
+        Ruleset classic = Ruleset.LoadClassic();
+        Assert.Contains(classic.GoodsTypes, g => g.Id == "model.goods.silver");
+        Assert.Contains(classic.GoodsTypes, g => g.Id == "model.goods.cotton");
+        Assert.DoesNotContain(classic.GoodsTypes, g => g.Id == "model.goods.gold");
     }
 
     [Fact]
