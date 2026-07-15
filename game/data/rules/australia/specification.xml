@@ -1420,6 +1420,31 @@
       <modifier id="model.goods.ore" index="50"
                 type="additive" value="2"/>
     </tile-improvement-type>
+
+    <!-- Pasture (doc 17, WS6.3): improved grazing land for sheep — the pastoral wool improvement. Lifts the tile's
+         Wool (cotton stand-in) by +2. The dedicated wool specialist: unlike the Stock Route (a +1/+1 logistics road
+         that also aids movement), Pasture is a grazing improvement with no movement aid, worth more for wool.
+         Buildable on any dry non-forest land (the outback rangelands). Value is a first-pass balance placeholder. -->
+    <tile-improvement-type id="model.improvement.pasture"
+                           add-work-turns="3" magnitude="1"
+                           required-role="model.role.pioneer"
+                           expended-amount="1" zIndex="335">
+      <scope method-name="isWater" method-value="false" />
+      <modifier id="model.goods.cotton" index="50"
+                type="additive" value="2"/>
+    </tile-improvement-type>
+
+    <!-- Cattle Run (doc 17, WS6.3): open cattle range — the pastoral meat improvement. No distinct Meat/Hides good
+         exists yet (deferred to the goods pass), so the beef output is modelled as +2 Food (grain). The food
+         specialist, distinct from the wool-focused Pasture and the +1/+1 Stock Route. Dry non-forest land; tunable. -->
+    <tile-improvement-type id="model.improvement.cattleRun"
+                           add-work-turns="3" magnitude="1"
+                           required-role="model.role.pioneer"
+                           expended-amount="1" zIndex="337">
+      <scope method-name="isWater" method-value="false" />
+      <modifier id="model.goods.grain" index="50"
+                type="additive" value="2"/>
+    </tile-improvement-type>
   </tile-improvement-types>
 
   <unit-change-types>

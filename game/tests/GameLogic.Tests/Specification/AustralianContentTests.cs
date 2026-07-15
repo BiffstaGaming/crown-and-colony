@@ -99,6 +99,8 @@ public class AustralianContentTests
     [InlineData("model.improvement.stockRoute", "model.goods.cotton")] // +Wool (cotton stand-in)
     [InlineData("model.improvement.telegraphLine", "model.goods.bells")] // +Civic Voice
     [InlineData("model.improvement.rail", "model.goods.ore")]          // +Ore
+    [InlineData("model.improvement.pasture", "model.goods.cotton")]    // WS6.3: +Wool (grazing)
+    [InlineData("model.improvement.cattleRun", "model.goods.grain")]   // WS6.3: +Food (cattle/meat proxy)
     public void NewAustralianImprovements_ParseIntoTheAustraliaRuleset_WithTheirYieldModifier(
         string improvementId, string yieldGoodsId)
     {
@@ -117,6 +119,24 @@ public class AustralianContentTests
         // Waterhole Camp / Eel Trap depend on the First Nations 4b agreement system (not built) — deliberately absent.
         Assert.DoesNotContain(Australia.ImprovementTypes, i => i.Id == "model.improvement.waterholeCamp");
         Assert.DoesNotContain(Australia.ImprovementTypes, i => i.Id == "model.improvement.eelTrap");
+    }
+
+    [Fact]
+    public void PastoralImprovements_AreDistinctSpecialists_Pasture_Wool_CattleRun_Food()
+    {
+        // WS6.3: the two new pastoral improvements each specialise (unlike the +1/+1 Stock Route logistics road) —
+        // Pasture lifts Wool (cotton stand-in) +2, Cattle Run lifts Food (grain) +2, and neither carries the other's good.
+        var pasture = Australia.Improvement("model.improvement.pasture");
+        Assert.Contains(pasture.Modifiers, m => m.GoodsId == "model.goods.cotton" && m.Value == 2);
+        Assert.DoesNotContain(pasture.Modifiers, m => m.GoodsId == "model.goods.grain");
+
+        var cattleRun = Australia.Improvement("model.improvement.cattleRun");
+        Assert.Contains(cattleRun.Modifiers, m => m.GoodsId == "model.goods.grain" && m.Value == 2);
+        Assert.DoesNotContain(cattleRun.Modifiers, m => m.GoodsId == "model.goods.cotton");
+
+        // Australia-only — classic has neither.
+        Assert.DoesNotContain(Classic.ImprovementTypes, i => i.Id == "model.improvement.pasture");
+        Assert.DoesNotContain(Classic.ImprovementTypes, i => i.Id == "model.improvement.cattleRun");
     }
 
     // ───────────────────────── Hargraves' "Payable Gold" (4d.5) ─────────────────────────

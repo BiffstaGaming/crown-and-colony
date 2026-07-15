@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-15 — WS6.3 pastoral tile improvements (Pasture + Cattle Run)
+
+**Requested (Chris):** "Move on to the next" (= the WS6.3 pastoral content I recommended).
+**Did:**
+- **Verified WS6.3's true state first** — the roadmap called it "unblocked," but most of it is actually blocked: the pastoral **buildings** (Cattle Station, a *distinct* Shearing Shed) need distinct Meat/Wool goods that don't exist yet (WS6.1) — a processing building without them is just the existing `weaverShop` reskin; the **Waterhole Camp / Eel Trap** camps are First-Nations-agreement-gated (WS5). The genuinely clean, non-blocked part is the two doc-17 pastoral **improvements**.
+- **Shipped Pasture + Cattle Run** as pioneer-built tile improvements on the proven `goldfield`/`stockRoute` yield-modifier seam: **Pasture** +2 Wool (grazing specialist), **Cattle Run** +2 Food (cattle/meat specialist) — each a distinct niche vs. the +1/+1 Stock Route logistics road. Data-only, no engine code; Australia-only → classic byte-identical.
+**Status:** **Full L1/L2 2997 green** (0 failed); classic byte-identical. Committed + pushed to main (this commit), CI watching.
+**Changed:** `game/data/rules/australia/specification.xml` (2 `<tile-improvement-type>`s), `AustralianContentTests.cs` (+2 parse rows +1 specialist test), `docs/systems/rivers-tile-improvements.md` (changelog + verified), `PostWorkSummary.md`.
+**Decisions:** shipped only the non-blocked improvements; **deferred the pastoral buildings to WS6.1** (they need real Meat/Wool goods) and the camps to WS5 — consistent with the spec's existing new-goods deferral note. Magnitudes first-pass/tunable.
+**Scheduled next:** **WS6.1 distinct goods is now the keystone** — it unblocks the pastoral buildings (Cattle Station / Shearing Shed) + WS6.2 units and makes the Wool/Gold reskins real. It's a bigger, economy-touching change, so I'd want your nod on scope. Otherwise the **WS6.7 test-coverage gap** (Australian L4 goldens + L5 soak) is the other high-value fully-unblocked option.
+**Needs you:** unchanged big-ticket items (art approach, First Nations direction + ADR-022, a playtest toward 1901, 4c.11 sign-off, game name) — **plus** a steer on whether to take on **WS6.1 distinct goods** next (the keystone for the remaining pastoral/economic content, but a larger economy change).
+
+---
+
 ## 2026-07-15 — WS4.3 Pioneer earliest-year availability gates
 
 **Requested (Chris):** after the WS4.2 slice, answered my next-focus question with **"More unblocked content."**
