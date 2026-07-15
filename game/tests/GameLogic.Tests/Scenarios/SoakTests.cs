@@ -19,6 +19,44 @@ namespace CrownAndColony.GameLogic.Tests.Scenarios;
 public class SoakTests
 {
     private static readonly Ruleset Classic = Ruleset.LoadClassic();
+    private static readonly Ruleset Australia = GameVariants.Australia.LoadRuleset();
+
+    [Fact]
+    public void Australia_TenSeeds_TwoHundredTurns_InvariantsHold_AndRoundTripByteIdentical()
+    {
+        // WS6.7: the Australian Federation mode had **zero** L5 soak coverage — every seed above runs the CLASSIC
+        // ruleset — even though the variant carries its own calendar (1788–1901), event engine, Federation loop,
+        // Pioneers and, since WS6.1, a real distinct-goods economy (Gold/Wool/Copper/Coal/Sandalwood + the
+        // Cattle→Meat→Frozen Meat chain). This runs the real variant on its real map so those systems get long-run,
+        // multi-seed exercise. 200 turns carries the calendar past 1901, so the whole campaign arc is covered.
+        // Ten seeds (not the classic twenty-five) keeps the nightly budget sane — Australia seeds no rival powers,
+        // so each turn is cheaper, but the event/Federation machinery is extra per-turn work.
+        for (ulong seed = 2000; seed < 2010; seed++)
+        {
+            Game game = Game.New(Australia, seed, mapSource: MapSource.Australia);
+            for (int turn = 0; turn < 200; turn++)
+            {
+                game.EndTurn();
+            }
+
+            Assert.All(game.Colonies, c =>
+            {
+                Assert.True(c.Population >= 1, $"seed {seed}: colony starved out");
+                Assert.All(c.Stores.Values, v => Assert.True(v >= 0, $"seed {seed}: negative goods store"));
+                Assert.True(c.TileWorkers.Count + c.BuildingWorkers.Values.Sum() <= c.Population,
+                    $"seed {seed}: assignments exceed population");
+            });
+            Assert.All(game.Explored, p => Assert.True(game.Map.InBounds(p)));
+            Assert.All(game.Players, p =>
+                Assert.True(p.Gold >= 0, $"seed {seed}: player {p.PlayerId} treasury went negative ({p.Gold})"));
+
+            // The whole end state — including the variant-only state (the event fired-set, Federation/anti-Federation
+            // values, and the new goods' colony stores + market deltas) — survives a save/load round-trip
+            // byte-identically **under the Australia ruleset**. This is what proves the WS6.1 goods persist cleanly.
+            string json = SaveGame.From(game).ToJson();
+            Assert.Equal(json, SaveGame.From(SaveGame.FromJson(json).Restore(Australia)).ToJson());
+        }
+    }
 
     [Fact]
     public void TwentyFiveSeeds_TwoHundredTurns_InvariantsAlwaysHold()
