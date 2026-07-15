@@ -111,10 +111,8 @@
     <goods-type id="model.goods.fish" is-farmed="true" storable="false"
                 stored-as="model.goods.food" is-food="true"
                 production-weight="5.0" />
-    <!--
-        <goods-type id="model.goods.meat" is-farmed="true" storable="false"
-        stored-as="model.goods.food" is-food="true" />
-    -->
+    <!-- (FreeCol's commented-out `meat`-as-a-food-variant stub is deliberately dropped here: WS6.1 slice 5 defines a
+         REAL model.goods.meat below as a storable pastoral export worked up from Cattle, not a food stand-in.) -->
     <goods-type id="model.goods.sugar" is-farmed="true"
                 new-world-goods="true" production-weight="2.5">
       <market initial-amount="1500" initial-price="2" price-difference="2" />
@@ -172,6 +170,35 @@
     <goods-type id="model.goods.sandalwood" is-farmed="true"
                 new-world-goods="true" production-weight="2.5">
       <market initial-amount="800" initial-price="10" price-difference="2" />
+    </goods-type>
+
+    <!-- ═══ The pastoral chain (doc 17, WS6.1 slice 5): Food -> Cattle -> Meat -> Frozen Meat ═══
+         The spine of the Australian pastoral economy, built entirely on mechanics the engine already has: Cattle
+         BREED from surplus Food exactly like horses (breeding-number), and each step up the chain is an ordinary
+         building input->output conversion (the weaver's cotton->cloth shape). This is what the WS6.3 pastoral pass
+         had to defer for want of real goods — it unblocks the Cattle Station and gives the Freezing Works its real
+         job. Prices are first-pass and tunable. -->
+
+    <!-- Cattle: the herd. Bred from surplus Food (the horses mechanic — livestock the colony grows rather than
+         mines or farms), and the raw input a Cattle Station works into Meat. Low unit value: the worth is in what
+         it becomes. -->
+    <goods-type id="model.goods.cattle" is-farmed="false"
+                breeding-number="2" made-from="model.goods.food">
+      <market initial-amount="1200" initial-price="2" price-difference="2" />
+    </goods-type>
+    <!-- Meat: worked up from Cattle at a Cattle Station. Feeds the colonies and ships to market; the mid rung. -->
+    <goods-type id="model.goods.meat" is-farmed="false"
+                made-from="model.goods.cattle">
+      <market initial-amount="1000" initial-price="5" price-difference="2" />
+    </goods-type>
+    <!-- Frozen Meat (1870s+): doc 17 says plainly "Requires Freezing Works" — and now it really does. The 1880
+         Strathleven voyage proved refrigerated meat could cross the tropics, turning colonial beef and mutton into
+         a premium British export, so this is the high-value top of the chain (price 12, a thin market at 600).
+         Thomas Mort's "Cold Stores" perk (his buildFactory unlock gates the Freezing Works) finally pays off in the
+         mechanic it was named for, as does the refrigeratedMeat event that WS4.2 gated on him. -->
+    <goods-type id="model.goods.frozenMeat" is-farmed="false"
+                made-from="model.goods.meat">
+      <market initial-amount="600" initial-price="12" price-difference="2" />
     </goods-type>
     <goods-type id="model.goods.horses" is-farmed="false" is-military="true"
                 breeding-number="2" made-from="model.goods.food">
@@ -2922,12 +2949,32 @@
       </modifier>
     </building-type>
 
-    <!-- Freezing Works (doc 17): refrigerated export (Thomas Sutcliffe Mort's cold stores). No distinct meat
-         good exists yet, so this is modelled as a cold-store that expands the colony's food-holding capacity —
-         a warehouse-tier boost — and needs the factory unlock (Mort's buildFactory) + a coastal colony to ship. -->
+    <!-- Cattle Station (doc 17, WS6.1 slice 5): the pastoral station that works the herd into Meat — the building
+         the WS6.3 pastoral pass had to DEFER for want of a real Meat good. An ordinary workplace conversion
+         (cattle -> meat), the weaver's shape. Cheap and early: the station is sheds and yards, not a factory. -->
+    <building-type id="model.building.cattleStation"
+                   required-population="3" upkeep="8">
+      <production>
+        <input goods-type="model.goods.cattle" value="3"/>
+        <output goods-type="model.goods.meat" value="3"/>
+      </production>
+      <required-goods id="model.goods.hammers"
+                      value="64"/>
+      <required-goods id="model.goods.tools"
+                      value="20"/>
+    </building-type>
+
+    <!-- Freezing Works (doc 17): refrigerated export — Thomas Sutcliffe Mort's cold stores. **WS6.1 slice 5 gave it
+         its real job:** now that Meat and Frozen Meat exist it actually refrigerates (meat -> frozenMeat) instead of
+         standing in as a food-holding cold store. It keeps the warehouse boost (a freezing works IS a cold store)
+         and its gates: Mort's factory unlock + a port to ship from — doc 17's "Frozen Meat requires Freezing Works",
+         literally. Dropping workplaces="0" is what lets colonists work it. -->
     <building-type id="model.building.freezingWorks"
-                   workplaces="0"
                    required-population="6" upkeep="15">
+      <production>
+        <input goods-type="model.goods.meat" value="3"/>
+        <output goods-type="model.goods.frozenMeat" value="3"/>
+      </production>
       <required-goods id="model.goods.hammers"
                       value="160"/>
       <required-goods id="model.goods.tools"

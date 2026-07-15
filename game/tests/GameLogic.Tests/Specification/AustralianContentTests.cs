@@ -48,6 +48,7 @@ public class AustralianContentTests
     [InlineData("model.building.freezingWorks")]
     [InlineData("model.building.railDepot")]
     [InlineData("model.building.telegraphOffice")]
+    [InlineData("model.building.cattleStation")] // WS6.1 slice 5 (the WS6.3 pastoral building, finally unblocked)
     // Civic (4d.3)
     [InlineData("model.building.federationLeagueHall")]
     [InlineData("model.building.conventionHall")]
@@ -187,6 +188,46 @@ public class AustralianContentTests
 
         static int HillYield(string goodsId) => Australia.Terrain("model.tile.hills").Productions
             .SelectMany(p => p.Outputs).Where(o => o.GoodsId == goodsId).Max(o => o.Amount);
+    }
+
+    [Fact]
+    public void PastoralChain_RunsFoodToCattleToMeatToFrozenMeat_OnTheBreedingAndConversionMechanics()
+    {
+        // WS6.1 slice 5: the pastoral spine, built only from mechanics the engine already had.
+        // Cattle BREED from surplus Food — the horses mechanic (breeding-number + made-from food), not a tile crop.
+        GoodsType cattle = Australia.Goods("model.goods.cattle");
+        Assert.False(cattle.IsFarmed);
+        Assert.Equal("model.goods.food", cattle.MadeFrom);
+        Assert.NotNull(cattle.BreedingNumber);
+
+        // …then each rung is an ordinary made-from conversion, rising in value: cattle (2) -> meat (5) -> frozen (12).
+        GoodsType meat = Australia.Goods("model.goods.meat");
+        GoodsType frozen = Australia.Goods("model.goods.frozenMeat");
+        Assert.Equal("model.goods.cattle", meat.MadeFrom);
+        Assert.Equal("model.goods.meat", frozen.MadeFrom);
+        Assert.True(cattle.Market!.InitialPrice < meat.Market!.InitialPrice);
+        Assert.True(meat.Market.InitialPrice < frozen.Market!.InitialPrice); // refrigeration is the premium rung
+
+        // The Cattle Station works the herd into meat…
+        Assert.Contains(Australia.Building("model.building.cattleStation").Productions,
+            p => p.Inputs.Any(i => i.GoodsId == "model.goods.cattle")
+              && p.Outputs.Any(o => o.GoodsId == "model.goods.meat"));
+
+        // …and the Freezing Works really refrigerates now (doc 17: "Frozen Meat requires Freezing Works"), still
+        // gated on Mort's factory unlock + a port. It was a stand-in cold-store while no Meat good existed.
+        BuildingType works = Australia.Building("model.building.freezingWorks");
+        Assert.Contains(works.Productions,
+            p => p.Inputs.Any(i => i.GoodsId == "model.goods.meat")
+              && p.Outputs.Any(o => o.GoodsId == "model.goods.frozenMeat"));
+        Assert.True(works.RequiredAbilitiesOrEmpty.GetValueOrDefault("model.ability.buildFactory")); // Mort's "Cold Stores"
+        Assert.True(works.RequiredAbilitiesOrEmpty.GetValueOrDefault("model.ability.hasPort"));      // ship it from a port
+
+        // Australia-only → classic byte-identical (it has neither the goods nor the station).
+        foreach (string id in new[] { "model.goods.cattle", "model.goods.meat", "model.goods.frozenMeat" })
+        {
+            Assert.DoesNotContain(Classic.GoodsTypes, g => g.Id == id);
+        }
+        Assert.DoesNotContain(Classic.BuildingTypes, b => b.Id == "model.building.cattleStation");
     }
 
     // ───────────────────────── Hargraves' "Payable Gold" (4d.5) ─────────────────────────

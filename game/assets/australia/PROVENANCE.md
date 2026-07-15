@@ -33,10 +33,14 @@ Bespoke Australian goods art is a WS2 art-pass follow-up.
 | `copper.png` | `ore.png` | A generic mineral/ore icon stands in for the copper ore export. |
 | `coal.png` | `ore.png` | Ditto — a mineral icon for the bulk coal measures. |
 | `sandalwood.png` | `lumber.png` | A timber icon for the aromatic-timber export. |
+| `cattle.png` | `horses.png` | The only livestock icon available — Cattle breed like horses, so it reads sensibly. |
+| `meat.png` | `food.png` | A foodstuff icon for the worked-up meat. |
+| `frozenMeat.png` | `fish.png` | Chosen over `food.png` purely so Meat and Frozen Meat are **not identical on screen**. |
 
-> **Follow-up (WS2 art pass):** `copper` / `coal` / `sandalwood` share reused icons and are
-> visually indistinct (coal and copper are the same image). Bespoke art should replace them;
-> `gold` and `wool` are already correct and need no change.
+> **Follow-up (WS2 art pass):** `copper`/`coal` share one image (both `ore.png`) and are visually
+> indistinct; `cattle`/`meat`/`frozenMeat` are stand-ins from unrelated goods. Bespoke art should
+> replace all of those. **`gold` and `wool` are already correct** (they are the exact icons the
+> game showed for Gold/Wool before WS6.1) and need no change.
 
 ---
 
