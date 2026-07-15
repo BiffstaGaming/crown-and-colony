@@ -11361,7 +11361,8 @@ public sealed partial class Game
         foreach (FatherType type in Enum.GetValues<FatherType>())
         {
             var candidates = Ruleset.FoundingFathers
-                .Where(f => f.Type == type && !elected.Contains(f.Id) && f.WeightForAge(age) > 0)
+                .Where(f => f.Type == type && !elected.Contains(f.Id) && f.WeightForAge(age) > 0
+                            && f.IsAvailableInYear(CurrentYear)) // WS4.3 precise year gate — inert for classic (no earliest-year → 0)
                 .ToList();
             if (candidates.Count == 0)
             {

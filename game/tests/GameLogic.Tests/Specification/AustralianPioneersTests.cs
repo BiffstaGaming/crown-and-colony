@@ -13,8 +13,10 @@ namespace CrownAndColony.GameLogic.Tests.Specification;
 /// equivalent, authored in <c>australia/specification.xml</c> from the design corpus
 /// (docs/australian_federation_mode_md/07_*–12_*). Skeleton slice: 25 figures in the five design categories
 /// (mapped onto the engine's five father types), every perk a REUSED effect the engine already applies for a
-/// classic father (ADR-017 — no engine code), recruited via the unchanged election machinery. The age weights
-/// are the soft date gate: no Democracy &amp; Federation figure carries age-1 weight (the anachronism rule).
+/// classic father (ADR-017 — no engine code), recruited via the unchanged election machinery. A precise per-figure
+/// <b>earliest-year</b> (WS4.3) is the hard availability gate — a Pioneer is offered only from its historical year;
+/// the age weights now just tune relative likelihood. No Democracy &amp; Federation figure appears before the late
+/// game (the anachronism rule), and the 1788 founding offers only Arthur Phillip.
 /// </summary>
 public class AustralianPioneersTests
 {
@@ -73,15 +75,53 @@ public class AustralianPioneersTests
     }
 
     [Fact]
-    public void EarlyOffers_ExcludeTheFederationCategory_AndOfferTheOtherFour()
+    public void EarlyOffers_AreYearGated_OnlyPhillipAtTheFounding()
     {
-        // A fresh Australian game (age 1): four offers — one per non-political category — and never a
-        // Democracy & Federation figure.
+        // WS4.3: Pioneers are offered only from their historical earliest year, not merely by age-weight band. At the
+        // 1788 founding the sole figure on the scene is Arthur Phillip, the founding Governor (every other Pioneer
+        // arrives later), so the first offer is Phillip alone — and (as before) never a Democracy & Federation figure.
         Game game = Game.New(Australia, seed: 0xA05UL, mapSource: MapSource.Australia);
-        Assert.Equal(4, game.OfferedFathers.Count);
-        foreach (string offered in game.OfferedFathers)
+        Assert.Equal(1788, game.CurrentYear);
+        Assert.All(game.OfferedFathers, id => Assert.True(
+            Australia.Father(id).IsAvailableInYear(game.CurrentYear), $"{id} offered before its earliest year"));
+        Assert.All(game.OfferedFathers, id => Assert.NotEqual(FatherType.Political, Australia.Father(id).Type));
+        Assert.Equal(
+            new[] { "model.foundingFather.arthurPhillip" },
+            game.OfferedFathers.OrderBy(x => x, System.StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public void Pioneers_CarryHistoricalEarliestYears_WithinTheCampaignWindow()
+    {
+        // WS4.3: every Pioneer carries a precise earliest-year availability gate within the 1788–1901 campaign window
+        // (the coarse age-weight bands are now only relative-likelihood tuning). Spot-check the anchors.
+        foreach (FoundingFather f in Australia.FoundingFathers)
         {
-            Assert.NotEqual(FatherType.Political, Australia.Father(offered).Type);
+            Assert.InRange(f.EarliestYear, 1788, 1901);
+        }
+        Assert.Equal(1788, Australia.Father("model.foundingFather.arthurPhillip").EarliestYear);   // the founding Governor opens the roster
+        Assert.Equal(1851, Australia.Father("model.foundingFather.edwardHargraves").EarliestYear); // the gold strike
+        Assert.Equal(1882, Australia.Father("model.foundingFather.edmundBarton").EarliestYear);    // Federation era only
+        // Classic fathers carry NO year gate → 0 → the offer draw is byte-identical (the whole classic path is untouched).
+        Assert.All(Classic.FoundingFathers, f => Assert.Equal(0, f.EarliestYear));
+    }
+
+    [Fact]
+    public void FigureGatedEvents_StayReachable_TheirGatingFatherUnlocksBeforeTheEventWindowCloses()
+    {
+        // WS4.2 × WS4.3 interplay: an event gated on a Figure (RequiredFathers) is only reachable if that Figure can be
+        // ELECTED before the event's window closes — i.e. the father's earliest-year ≤ the event's expiry-year. (A father
+        // unlocking after its gated event's expiry would make the event permanently unreachable.) Guards the two figure
+        // gates shipped in WS4.2 (Mort→refrigeratedMeat, Spence→womensSuffrageSA) and the earlier Todd→overlandTelegraph.
+        foreach (EventDef e in Australia.HistoricalEvents.Where(ev => ev.RequiredFathers.Count > 0 && ev.ExpiryYear > 0))
+        {
+            foreach (string reqFatherId in e.RequiredFathers)
+            {
+                FoundingFather f = Australia.FoundingFathers.First(
+                    ff => ff.Id == reqFatherId || ff.Id.EndsWith("." + reqFatherId, System.StringComparison.Ordinal));
+                Assert.True(f.EarliestYear <= e.ExpiryYear,
+                    $"event {e.Id} (expiry {e.ExpiryYear}) needs father {f.ShortName} (earliest {f.EarliestYear}) — unreachable, father unlocks too late");
+            }
         }
     }
 

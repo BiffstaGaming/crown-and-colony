@@ -1069,6 +1069,8 @@ public sealed class Ruleset
                 Weight1: (int?)el.Attribute("weight1") ?? 0,
                 Weight2: (int?)el.Attribute("weight2") ?? 0,
                 Weight3: (int?)el.Attribute("weight3") ?? 0,
+                // Precise historical-availability gate (WS4.3), layered over the age-weight bands. Absent (classic) → 0 → inert.
+                EarliestYear: (int?)el.Attribute("earliest-year") ?? 0,
                 Modifiers: el.Elements("modifier").Select(ParseModifier).ToList(),
                 Abilities: el.Elements("ability").Select(ParseAbility).ToList(),
                 // Free buildings (FreeCol model.event.freeBuilding): La Salle → a free stockade per qualifying colony.

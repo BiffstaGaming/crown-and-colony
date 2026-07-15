@@ -19,6 +19,21 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-15 — WS4.3 Pioneer earliest-year availability gates
+
+**Requested (Chris):** after the WS4.2 slice, answered my next-focus question with **"More unblocked content."**
+**Did:**
+- **Replaced the coarse 3-band age-weight *availability* approximation with a precise per-Pioneer `earliest-year` gate.** New `FoundingFather.EarliestYear` + `IsAvailableInYear(year)`, parsed from the spec, ANDed into `GenerateOffers`' candidate filter. **Inert for classic** (no classic father sets it → 0 → offer draw byte-identical, soak untouched).
+- **Authored all 25 Australian Pioneers' historical years** (Phillip 1788 → Hargraves 1851 → Barton 1882 / Quick 1889 / Kidman 1886), so the roster now unlocks across the 1788–1901 campaign instead of by age band — the 1788 founding offers **only Arthur Phillip**; the Federation figures gate to the Federation era. Synergises with the WS4.2 figure-gates (each gating father unlocks before its event's window closes — a new reachability invariant guards it).
+- Verified the engine handles a thin/empty early roster gracefully (liberty banks toward the next available Pioneer; empty categories take no RNG draw); only one existing test encoded the old "4 offers at start" behaviour — updated it to the accurate Phillip-only founding.
+**Status:** **Full L1/L2 2994 green** (0 failed); classic byte-identical. Committed + pushed to main (this commit), CI watching.
+**Changed:** `FoundingFather.cs` (+`EarliestYear`/`IsAvailableInYear`), `Ruleset.cs` (parse `earliest-year`), `Game.cs` (`GenerateOffers` year gate), `specification.xml` (25 `earliest-year`s), `AustralianPioneersTests.cs` (rewrote EarlyOffers + 2 new tests), `docs/systems/founding-fathers.md` (both layers + changelog + verified), `PostWorkSummary.md`.
+**Decisions:** kept the age weights as relative-likelihood tuning (didn't flatten them — minimal change); years are first-pass/tunable; deferred WS4.3's "typed prerequisites" (fathers gated on events/other-fathers) as a follow-up (avoid gold-plating).
+**Scheduled next:** continuing "more unblocked content" per your steer — best next candidates: **WS6.3** pastoral buildings (Cattle Station / distinct Shearing Shed / Pasture / Cattle Run), then **WS6.2** economic units / **WS6.1** distinct goods. (The WS6.7 test-coverage gap remains the other strong unblocked option.)
+**Needs you:** unchanged from the WS4.2 entry below — the big-ticket work (art approach, First Nations direction + ADR-022, a playtest toward 1901, sensitive-event 4c.11 sign-off, game name/trademark) still awaits your calls.
+
+---
+
 ## 2026-07-15 — WS4.2 deeper event causality + roadmap ground-truth audit
 
 **Requested (Chris):** "Determine the next development work to be done on this project and begin."

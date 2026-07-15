@@ -2969,7 +2969,7 @@
     <!-- Elizabeth Macarthur — "Merino Bloodlines": the wool pioneer. Until the goods reskin (86d3kwty1)
          lands wool, cotton is the raw-textile stand-in — Henry Hudson's +100% payload retargeted. -->
     <founding-father id="model.foundingFather.elizabethMacarthur" type="trade"
-                     weight1="8" weight2="4" weight3="1">
+                     weight1="8" weight2="4" weight3="1" earliest-year="1793">
       <modifier id="model.goods.cotton" index="40"
                 type="percentage" value="100">
         <scope ability-id="model.ability.person" match-negated="false"/>
@@ -2977,14 +2977,14 @@
     </founding-father>
     <!-- Thomas Sutcliffe Mort — "Cold Stores": refrigeration works = the factory-tier unlock (Adam Smith's payload). -->
     <founding-father id="model.foundingFather.thomasSutcliffeMort" type="trade"
-                     weight1="0" weight2="5" weight3="8">
+                     weight1="0" weight2="5" weight3="8" earliest-year="1843">
       <ability id="model.ability.buildFactory"
                value="true"/>
     </founding-father>
     <!-- George Fife Angas — "Colonial Credit": clears every trade boycott at once (Jacob Fugger's payload —
          the design literally says "clears one debt, credit squeeze, or boycott-style trade penalty"). -->
     <founding-father id="model.foundingFather.georgeFifeAngas" type="trade"
-                     weight1="2" weight2="6" weight3="6">
+                     weight1="2" weight2="6" weight3="6" earliest-year="1836">
       <event id="model.event.boycottsLifted"/>
       <!-- WS4.4 (doc 08 clause 4): "Colonial Credit" — the Father of South Australia lifts SA Federation Support on
            election. Australia-only ability (classic declares none → no-op → byte-identical); handled in Game.AustralianEffects. -->
@@ -2996,7 +2996,7 @@
          unlock grants model.ability.buildGoldfieldsOffice so the Goldfields Office (4d.2) can be built. The
          +100% Gold modifier is the standing part; the reveal/surge are the one-shot election effect. -->
     <founding-father id="model.foundingFather.edwardHargraves" type="trade"
-                     weight1="1" weight2="7" weight3="7">
+                     weight1="1" weight2="7" weight3="7" earliest-year="1851">
       <modifier id="model.goods.silver" index="40"
                 type="percentage" value="100">
         <scope ability-id="model.ability.person" match-negated="false"/>
@@ -3013,7 +3013,7 @@
          Food, which is not in Kidman's design (his signature is droving movement); the drought-resistance, Stock-Route
          improvement and +1-Industry clauses need systems we do not have yet (deferred 4c.9). -->
     <founding-father id="model.foundingFather.sidneyKidman" type="trade"
-                     weight1="0" weight2="5" weight3="8">
+                     weight1="0" weight2="5" weight3="8" earliest-year="1886">
       <modifier id="model.modifier.movementBonus"
                 type="additive" value="3"/>
       <event id="model.event.movementChange"/>
@@ -3023,7 +3023,7 @@
     <!-- Matthew Flinders — "Complete Coastline": +1 sight for every unit, ships included (De Soto's
          line-of-sight payload, unscoped — the design says "ships gain +1 sight"). -->
     <founding-father id="model.foundingFather.matthewFlinders" type="exploration"
-                     weight1="8" weight2="5" weight3="2">
+                     weight1="8" weight2="5" weight3="2" earliest-year="1801">
       <modifier id="model.modifier.lineOfSightBonus"
                 type="additive" value="1"/>
     </founding-father>
@@ -3034,7 +3034,7 @@
          RIVERS, not the ocean. Terrain-scoped river movement/-trade and the River-Expedition event pool are the
          deferred fuller mechanic (4c.9). -->
     <founding-father id="model.foundingFather.charlesSturt" type="exploration"
-                     weight1="4" weight2="8" weight3="4">
+                     weight1="4" weight2="8" weight3="4" earliest-year="1828">
       <modifier id="model.goods.food" index="40"
                 type="percentage" value="25">
         <scope ability-id="model.ability.person" match-negated="false"/>
@@ -3043,7 +3043,7 @@
     <!-- Ludwig Leichhardt — "Naturalist Journals": exploration rumours always turn out well (De Soto's
          rumour payload — the design says rumours are far less likely to be negative). -->
     <founding-father id="model.foundingFather.ludwigLeichhardt" type="exploration"
-                     weight1="4" weight2="8" weight3="4">
+                     weight1="4" weight2="8" weight3="4" earliest-year="1844">
       <ability id="model.ability.rumoursAlwaysPositive"
                value="true"/>
     </founding-father>
@@ -3053,7 +3053,7 @@
          route is seen further). Dropped the seeAllColonies reveal — that exposes every RIVAL settlement, which an
          overland survey does not do; the arid-movement −50% and telegraph-cost clauses are deferred (4c.9). -->
     <founding-father id="model.foundingFather.johnMcDouallStuart" type="exploration"
-                     weight1="2" weight2="6" weight3="8">
+                     weight1="2" weight2="6" weight3="8" earliest-year="1858">
       <modifier id="model.modifier.exposedTilesRadius"
                 type="additive" value="3"/>
       <modifier id="model.modifier.lineOfSightBonus"
@@ -3061,7 +3061,7 @@
     </founding-father>
     <!-- Charles Todd — "Electric Telegraph": +25% Civic Voice (bells) — Jefferson's payload at the design's value. -->
     <founding-father id="model.foundingFather.charlesTodd" type="exploration"
-                     weight1="0" weight2="4" weight3="10">
+                     weight1="0" weight2="4" weight3="10" earliest-year="1855">
       <modifier id="model.goods.bells" index="40"
                 type="percentage" value="25">
         <scope ability-id="model.ability.person" match-negated="true"/>
@@ -3075,7 +3075,7 @@
          receives emergency Food + Tools (doc 10). The design's starvation-floor and First-Contact-tension
          clauses are DEFERRED — they need a starvation-override and the First Nations tension system. -->
     <founding-father id="model.foundingFather.arthurPhillip" type="military"
-                     weight1="10" weight2="2" weight3="1">
+                     weight1="10" weight2="2" weight3="1" earliest-year="1788">
       <ability id="model.ability.automaticEquipment"
                value="true">
         <scope type="model.role.soldier"/>
@@ -3090,26 +3090,26 @@
          not the design's public-works mechanic. The −20% public-building cost, Public-Works-Program policy and
          emancipist-relief clauses are deferred (4c.9) — building rush-buy (buildingPriceBonus) is not modelled. -->
     <founding-father id="model.foundingFather.lachlanMacquarie" type="military"
-                     weight1="3" weight2="8" weight3="4">
+                     weight1="3" weight2="8" weight3="4" earliest-year="1810">
       <ability id="model.ability.publicWorks"
                value="true"/>
     </founding-father>
     <!-- James Ruse — "Experiment Farm": the design's literal perk — a free Expert Farmer arrives. -->
     <founding-father id="model.foundingFather.jamesRuse" type="military"
-                     weight1="9" weight2="4" weight3="1">
+                     weight1="9" weight2="4" weight3="1" earliest-year="1789">
       <unit id="model.unit.expertFarmer"/>
     </founding-father>
     <!-- Mary Reibey — "Merchant Fleet": her ports trade on their own — the custom-house unlock
          (Peter Stuyvesant's payload). -->
     <founding-father id="model.foundingFather.maryReibey" type="military"
-                     weight1="2" weight2="7" weight3="6">
+                     weight1="2" weight2="7" weight3="6" earliest-year="1811">
       <ability id="model.ability.buildCustomHouse"
                value="true"/>
     </founding-father>
     <!-- William Jervois — "Harbour Batteries": every established colony gets free fortifications
          (La Salle's payload — the design literally grants a free Battery/Stockade-equivalent at pop 3+). -->
     <founding-father id="model.foundingFather.williamJervois" type="military"
-                     weight1="0" weight2="4" weight3="8">
+                     weight1="0" weight2="4" weight3="8" earliest-year="1877">
       <event id="model.event.freeBuilding"
              value="model.building.stockade"/>
       <modifier id="model.modifier.buildingPriceBonus"
@@ -3123,7 +3123,7 @@
          (Phase-4d.7) an Australia-only on-election Federation-Support boost across all colony regions — his 1889 speech
          that launched the movement (model.ability.tenterfieldOration; handled in Game.AustralianEffects). -->
     <founding-father id="model.foundingFather.henryParkes" type="political"
-                     weight1="0" weight2="3" weight3="10">
+                     weight1="0" weight2="3" weight3="10" earliest-year="1850">
       <modifier id="model.modifier.SoL"
                 type="additive" value="20"/>
       <ability id="model.ability.tenterfieldOration"
@@ -3134,7 +3134,7 @@
          on-election Convention-Points drive toward calling the convention — the first PM and lead campaigner
          (model.ability.conventionDrive; handled in Game.AustralianEffects). -->
     <founding-father id="model.foundingFather.edmundBarton" type="political"
-                     weight1="0" weight2="2" weight3="10">
+                     weight1="0" weight2="2" weight3="10" earliest-year="1882">
       <ability id="model.ability.ignoreEuropeanWars"
                value="true"/>
       <ability id="model.ability.alwaysOfferedPeace"
@@ -3149,7 +3149,7 @@
          while he sits in Congress the referendum's effective pass threshold is lowered — the elected-delegates process
          he designed (model.ability.corowaPlan; read live in Game.Federation.HoldReferendum). -->
     <founding-father id="model.foundingFather.johnQuick" type="political"
-                     weight1="0" weight2="3" weight3="9">
+                     weight1="0" weight2="3" weight3="9" earliest-year="1889">
       <ability id="model.ability.tradeWithForeignColonies"
                value="true"/>
       <ability id="model.ability.customHouseTradesWithForeignCountries"
@@ -3163,7 +3163,7 @@
          an Australia-only on-election Convention-Points boost toward drafting the constitution — the constitution's
          chief drafter (model.ability.draftConstitution; handled in Game.AustralianEffects). -->
     <founding-father id="model.foundingFather.samuelGriffith" type="political"
-                     weight1="0" weight2="3" weight3="9">
+                     weight1="0" weight2="3" weight3="9" earliest-year="1872">
       <modifier id="model.goods.bells" index="40"
                 type="percentage" value="30">
         <scope ability-id="model.ability.person" match-negated="true"/>
@@ -3176,7 +3176,7 @@
          to the small colonies (SA/Tas/WA) — the effective-voting campaigner who reassured the small states
          (model.ability.fairRepresentation; handled in Game.AustralianEffects). -->
     <founding-father id="model.foundingFather.catherineHelenSpence" type="political"
-                     weight1="0" weight2="3" weight3="9">
+                     weight1="0" weight2="3" weight3="9" earliest-year="1860">
       <modifier id="model.modifier.SoL"
                 type="additive" value="10"/>
       <ability id="model.ability.fairRepresentation"
@@ -3187,7 +3187,7 @@
     <!-- Caroline Chisholm — "Immigrants' Friend": immigration flows faster (+30% crosses, Penn's payload at
          the design's value) and a settler family arrives at once (a free colonist on the Europe dock). -->
     <founding-father id="model.foundingFather.carolineChisholm" type="religious"
-                     weight1="6" weight2="6" weight3="2">
+                     weight1="6" weight2="6" weight3="2" earliest-year="1841">
       <modifier id="model.goods.crosses" index="40"
                 type="percentage" value="30">
         <scope ability-id="model.ability.person" match-negated="true"/>
@@ -3198,7 +3198,7 @@
          is added to bell production (Thomas Paine's payload; the zero-value modifier is the runtime
          template whose copy takes the current tax). -->
     <founding-father id="model.foundingFather.peterLalor" type="religious"
-                     weight1="1" weight2="6" weight3="8">
+                     weight1="1" weight2="6" weight3="8" earliest-year="1854">
       <ability id="model.ability.addTaxToBells"
                value="true"/>
       <modifier id="model.goods.bells" index="40"
@@ -3208,7 +3208,7 @@
     </founding-father>
     <!-- Mary Lee — "Votes for Women": civic institutions speak louder (+25% bells). -->
     <founding-father id="model.foundingFather.maryLee" type="religious"
-                     weight1="0" weight2="4" weight3="9">
+                     weight1="0" weight2="4" weight3="9" earliest-year="1879">
       <modifier id="model.goods.bells" index="40"
                 type="percentage" value="25">
         <scope ability-id="model.ability.person" match-negated="true"/>
@@ -3223,7 +3223,7 @@
          a field colonist; the Charles-Todd payload shape at the design's +50%). Was William Brewster's recruit
          payload, unrelated to newspapers; the reform-event-frequency and female-migrant clauses are deferred (4c.9). -->
     <founding-father id="model.foundingFather.louisaLawson" type="religious"
-                     weight1="1" weight2="4" weight3="8">
+                     weight1="1" weight2="4" weight3="8" earliest-year="1887">
       <modifier id="model.goods.bells" index="40"
                 type="percentage" value="50">
         <scope ability-id="model.ability.person" match-negated="true"/>
@@ -3233,7 +3233,7 @@
          25% slower (the native-alarm damp at the design's magnitude; deliberately NO alarm-reset event —
          relations are earned, not wiped). -->
     <founding-father id="model.foundingFather.williamBarak" type="religious"
-                     weight1="0" weight2="5" weight3="8">
+                     weight1="0" weight2="5" weight3="8" earliest-year="1863">
       <modifier id="model.modifier.nativeAlarmModifier"
                 type="percentage" value="-25"/>
     </founding-father>

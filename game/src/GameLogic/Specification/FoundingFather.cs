@@ -84,6 +84,10 @@ public sealed record FatherAbility(string Id, bool Value, IReadOnlyList<string> 
 /// <param name="Weight1">Offer weight in the early game (age 1); 0 = never offered then.</param>
 /// <param name="Weight2">Offer weight in the mid game (age 2).</param>
 /// <param name="Weight3">Offer weight in the late game (age 3).</param>
+/// <param name="EarliestYear">The earliest in-game year this father may be offered (0 = no year gate, the classic
+/// default). A precise historical-availability gate layered over the coarse age-weight bands (WS4.3): a variant Pioneer
+/// becomes electable only from this year (e.g. Edmund Barton from 1882, Edward Hargraves from the 1851 gold strike).
+/// Classic fathers set no <c>earliest-year</c> → 0 → the gate is inert, so the classic offer draw is byte-identical.</param>
 /// <param name="Modifiers">Bonuses this father applies when elected.</param>
 /// <param name="Abilities">Capabilities this father grants/denies when elected.</param>
 /// <param name="FreeBuildings">
@@ -109,6 +113,7 @@ public sealed record FoundingFather(
     int Weight1,
     int Weight2,
     int Weight3,
+    int EarliestYear,
     IReadOnlyList<FatherModifier> Modifiers,
     IReadOnlyList<FatherAbility> Abilities,
     IReadOnlyList<string> FreeBuildings,
@@ -126,4 +131,10 @@ public sealed record FoundingFather(
         2 => Weight2,
         _ => Weight3,
     };
+
+    /// <summary>Whether this father may be offered in <paramref name="year"/> — true when it has no year gate
+    /// (<see cref="EarliestYear"/> 0, the classic default) or the year has reached it (WS4.3, the historical
+    /// availability gate). Layered over <see cref="WeightForAge"/>: a father must clear both to be a candidate.</summary>
+    /// <param name="year">The current in-game calendar year.</param>
+    public bool IsAvailableInYear(int year) => EarliestYear == 0 || year >= EarliestYear;
 }
