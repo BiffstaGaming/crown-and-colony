@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-15 — WS6.1 distinct goods: scoping / ADR pass
+
+**Requested (Chris):** chose "Take on WS6.1 distinct goods" (with "start with an ADR/scoping pass, then land incrementally behind tests").
+**Did:**
+- **Scoped the distinct-goods economy change** (2 parallel code audits + reads across goods-type / production / market / save / UI / AI). **Key finding: the architecture makes this remarkably safe** — `classic/` and `australia/` are separate full-copy spec files, so a good declared only in `australia/specification.xml` is never instantiated in classic → **classic byte-identical automatically, NO save bump, NO enum breaks** (everything is property-driven: `IsFarmed`/`IsFood`/`IsTradeable`/…). Production / market / native-cravings / UI / rival-AI are automatic (they iterate ruleset goods; Australia has 0 rival powers anyway). The only per-good work: a production source (terrain base **≥1** — the `baseYield<=0` guard means a resource modifier alone can't enable a good), a `<market>` child if tradeable, and a goods **icon** (GPL placeholder copied from `assets/freecol/goods/`, or defer name-only).
+- **Wrote the ADR + incremental plan** ([WS6.1_DISTINCT_GOODS_PLAN.md](docs/australian_federation_mode_md/WS6.1_DISTINCT_GOODS_PLAN.md)): the decision (australia-spec-only, classic untouched), a risk table, and an ordered slice plan — **additive goods first** (Copper → Coal/Sandalwood/Pearls) as safe pattern-setters, then the heavier **promotions** (Gold, Wool — retarget experts/resources/events + remove the `DisplayOverride`s; **Wool unblocks a distinct Shearing Shed**), then the **pastoral chain** (Cattle/Meat/Frozen Meat → unblocks the WS6.3 buildings I deferred).
+**Status:** ADR/scoping committed (this commit). **No economy change yet** — deliberate: the goods system is the most byte-stability-sensitive area, and your steer was "ADR/scoping first."
+**Changed:** `docs/australian_federation_mode_md/WS6.1_DISTINCT_GOODS_PLAN.md` (new), `PostWorkSummary.md`.
+**Decisions:** additive goods before promotions (prove the pattern at low risk first); GPL-placeholder icons (no external sourcing / art-approval needed); australia-spec-only → no save bump, no classic touch.
+**Scheduled next:** **Slice 1 — Copper** (a new distinct mined export good: `<goods-type>` + `<market>` + a copper resource + a hills base-production ≥1 + L1 tests; icon deferred name-only). Fully specced in the plan doc; ready to implement.
+**Needs you:** optional — a steer on the good-ordering (I recommend the **safe additive Copper first**, then the Gold/Wool promotions; say so if you'd rather I lead with Gold or Wool). Big-ticket items unchanged.
+
+---
+
 ## 2026-07-15 — WS6.3 pastoral tile improvements (Pasture + Cattle Run)
 
 **Requested (Chris):** "Move on to the next" (= the WS6.3 pastoral content I recommended).
