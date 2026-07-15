@@ -145,6 +145,17 @@
                 production-weight="3.0">
       <market initial-amount="500" initial-price="16" price-difference="2" />
     </goods-type>
+    <!-- Copper (doc 17, WS6.1 slice 1): the first genuinely DISTINCT Australian good — a real new good, not a
+         display reskin of a classic stand-in. The South Australian copper boom (Burra, Kapunda, Moonta) made raw
+         copper one of the colonies' great exports, shipped to Wales for smelting. A mid-value mineral: above bulk
+         Ore (4), below Gold (the silver stand-in, 16). NOT new-world-goods, so it prices like the other minerals
+         (no price cap). Mined on hills (base yield below); a copper-bearing ore deposit lifts it further.
+         AUSTRALIA-ONLY: classic defines no such good, so its ruleset, market and saves stay byte-identical
+         (ADR-018) — no save bump. Price/yield are first-pass and tunable. -->
+    <goods-type id="model.goods.copper" is-farmed="true"
+                production-weight="3.0">
+      <market initial-amount="1000" initial-price="8" price-difference="2" />
+    </goods-type>
     <goods-type id="model.goods.horses" is-farmed="false" is-military="true"
                 breeding-number="2" made-from="model.goods.food">
       <market initial-amount="1000" initial-price="1" price-difference="2" />
@@ -215,6 +226,11 @@
     <resource-type id="model.resource.ore"
                    minimum-value="200" maximum-value="4000">
       <modifier id="model.goods.ore" index="10"
+                type="additive" value="2"/>
+      <!-- WS6.1: an ore body is copper-bearing — the deposit also lifts Copper on a tile that mines it (hills).
+           Reusing the EXISTING ore resource (rather than adding a new copper resource to the terrain) keeps the
+           map generator's resource placement untouched. -->
+      <modifier id="model.goods.copper" index="10"
                 type="additive" value="2"/>
     </resource-type>
     <resource-type id="model.resource.silver"
@@ -736,6 +752,12 @@
       </production>
       <production>
         <output goods-type="model.goods.ore" value="4"/>
+      </production>
+      <!-- WS6.1: the hill country also bears copper (the South Australian copper belt) — a colonist may work a
+           hills tile for Copper instead of grain/ore. Base 2 (>= 1 is required: TileYieldPotential's baseYield<=0
+           guard means a resource modifier alone could never enable a good). Australia-only. -->
+      <production>
+        <output goods-type="model.goods.copper" value="2"/>
       </production>
       <resource type="model.resource.ore" probability="100"/>
       <disaster id="model.disaster.earthquake" probability="50"/>

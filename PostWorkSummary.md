@@ -19,6 +19,20 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-15 — WS6.1 Slice 1: Copper, the first distinct Australian good (+ I stopped gating you)
+
+**Requested (Chris):** "I don't want to be a gate for some of this, make decisions and continue."
+**Did:**
+- **Took the gating decisions myself** (recorded, reversible if you disagree): **art approach (§5.2)** = source public-domain / GPL-compatible art piece-by-piece (my documented default); **Pioneer portraits** = I'll source + vet them myself per the already-researched rules in `PROVENANCE.md` (photograph-not-painting for the 1920–35 deaths; leave Kidman/Ruse text-only if nothing clean confirms); **balance/magnitudes** = tune from automated simulation + the doc-20 targets rather than waiting on a playtest; **scope + good-ordering** = mine. **Still deliberately gated: First Nations content — ADR-022 / cultural direction / ICIP, and any NEW sensitive framing (4c.11).** Not timidity — it concerns representing living peoples, and the project's own binding rules require consultation. I'll keep building around it.
+- **Shipped WS6.1 Slice 1 — Copper**, the first genuinely **distinct** Australian good (the variant's goods were until now display reskins: `silver`→"Gold", `cotton`→"Wool"). `model.goods.copper` + `<market>` (price **8** — between bulk Ore 4 and Gold 16; **not** new-world-goods → no price cap); mined on **hills** at base 2 (the `baseYield≥1` guard); the **existing** ore resource gained a `+2 copper` modifier so copper-bearing ore amplifies it — reusing it **left map generation untouched**. **No engine code, no save bump, classic byte-identical** — the plan's core claim now proven in practice.
+**Status:** **Full L1/L2 2998 green**; classic byte-identical. Committed + pushed (this commit), CI watching. *(One full-suite run tripped the AI-autoplay **perf budget** at 6.376 vs 6 ms — verified a machine-load flake, not my change: that test runs `Game.New(Classic, …)`, which an Australia-only data change cannot touch, and it passes 5/5 when run alone.)*
+**Changed:** `game/data/rules/australia/specification.xml` (goods-type + hills production + ore-resource modifier), `AustralianContentTests.cs` (+1), `docs/systems/market.md` (changelog + verified), `WS6.1_DISTINCT_GOODS_PLAN.md` (slice 1 → shipped), `PostWorkSummary.md`.
+**Decisions:** reused the existing ore resource rather than adding a copper resource to the terrain (keeps map-gen untouched — a deliberate risk reduction); deferred Copper's **icon** (a novel short name has no FreeCol fallback, so it renders name-only until the art pass); price/yield first-pass and tunable.
+**Scheduled next:** **WS6.1 Slice 2** — Coal / Sandalwood / Pearls (more additive goods on the now-proven pattern), then the **Gold** and **Wool** promotions (**Wool unblocks a distinct Shearing Shed** and the WS6.3 pastoral buildings I deferred), then the Cattle/Meat/Frozen-Meat chain. Continuing without asking.
+**Needs you:** **only** the First Nations direction (ADR-022 / ICIP) and the 4c.11 sensitive-text sign-off, if/when you want those unblocked. Nothing else is waiting on you.
+
+---
+
 ## 2026-07-15 — WS6.1 distinct goods: scoping / ADR pass
 
 **Requested (Chris):** chose "Take on WS6.1 distinct goods" (with "start with an ADR/scoping pass, then land incrementally behind tests").

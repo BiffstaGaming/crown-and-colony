@@ -139,6 +139,37 @@ public class AustralianContentTests
         Assert.DoesNotContain(Classic.ImprovementTypes, i => i.Id == "model.improvement.cattleRun");
     }
 
+    // ───────────────────────── distinct goods (WS6.1) ─────────────────────────
+
+    [Fact]
+    public void Copper_IsADistinctAustralianGood_Tradeable_MinedOnHills_AndAbsentFromClassic()
+    {
+        // WS6.1 slice 1: the first genuinely DISTINCT Australian good — a real new goods-type, not a display reskin
+        // of a classic stand-in (unlike silver shown as "Gold" / cotton as "Wool"). The South Australian copper boom
+        // (Burra/Kapunda/Moonta) made raw copper one of the colonies' great exports.
+        GoodsType copper = Australia.Goods("model.goods.copper");
+        Assert.True(copper.IsFarmed);                 // tile-mined, not a building product
+        Assert.True(copper.IsTradeable);              // the per-player Market auto-seeds every good carrying a <market>
+        Assert.Equal(8, copper.Market!.InitialPrice); // mid-value: above bulk Ore (4), below Gold (the silver stand-in, 16)
+        Assert.False(copper.IsNewWorldGoods);         // prices like the other minerals (no new-world price cap)
+
+        // Mined on hills with a base yield >= 1 — REQUIRED: TileYieldPotential's `baseYield <= 0 -> 0` guard means a
+        // resource modifier alone could never enable a good.
+        Assert.Contains(
+            Australia.Terrain("model.tile.hills").Productions.SelectMany(p => p.Outputs),
+            o => o.GoodsId == "model.goods.copper" && o.Amount >= 1);
+        // …and a copper-bearing ore deposit lifts it further (reusing the EXISTING ore resource, so the map
+        // generator's resource placement is untouched).
+        Assert.Contains(Australia.Resource("model.resource.ore").Modifiers, m => m.GoodsId == "model.goods.copper");
+
+        // AUSTRALIA-ONLY → classic's ruleset, market and saves stay byte-identical (ADR-018); no save bump.
+        Assert.DoesNotContain(Classic.GoodsTypes, g => g.Id == "model.goods.copper");
+        Assert.DoesNotContain(
+            Classic.Terrain("model.tile.hills").Productions.SelectMany(p => p.Outputs),
+            o => o.GoodsId == "model.goods.copper");
+        Assert.DoesNotContain(Classic.Resource("model.resource.ore").Modifiers, m => m.GoodsId == "model.goods.copper");
+    }
+
     // ───────────────────────── Hargraves' "Payable Gold" (4d.5) ─────────────────────────
 
     [Fact]
